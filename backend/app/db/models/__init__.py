@@ -12,6 +12,7 @@ from app.db.models.identity import (
     ExternalIdentity,
     TenantMembership,
     TenantInvitation,
+    TenantInvitationAuditEvent,
     WorkOSEventReceipt,
 )
 from app.db.models.vehicle import Vehicle
@@ -96,6 +97,7 @@ __all__ = [
     "ExternalIdentity",
     "TenantMembership",
     "TenantInvitation",
+    "TenantInvitationAuditEvent",
     "WorkOSEventReceipt",
     "Vehicle",
     "VehicleMergeRecord",

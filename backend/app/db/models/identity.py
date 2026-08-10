@@ -51,11 +51,31 @@ class TenantInvitation(BaseModel):
     intended_role_slug = Column(String(64), nullable=False)
     resource_scope = Column(JSONB, nullable=False, default=dict, server_default="{}")
     driver_profile_id = Column(UUID(as_uuid=True), ForeignKey("driver_profiles.id"), nullable=True, index=True)
+    # Explicit local identity target for an already-existing staff account.
+    # This is never inferred from email; exact provider invitation acceptance
+    # is still required before the WorkOS identity is attached.
+    target_user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True, index=True)
     status = Column(String(24), nullable=False, default="creating", server_default="creating", index=True)
     expires_at = Column(DateTime(timezone=True), nullable=True)
     accepted_at = Column(DateTime(timezone=True), nullable=True)
     revoked_at = Column(DateTime(timezone=True), nullable=True)
     invited_by_user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True)
+
+
+class TenantInvitationAuditEvent(BaseModel):
+    """Append-only manager/provider actions affecting a tenant invitation."""
+
+    __tablename__ = "tenant_invitation_audit_events"
+
+    tenant_id = Column(UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=False, index=True)
+    invitation_id = Column(UUID(as_uuid=True), ForeignKey("tenant_invitations.id"), nullable=False, index=True)
+    driver_profile_id = Column(UUID(as_uuid=True), ForeignKey("driver_profiles.id"), nullable=True, index=True)
+    actor_user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True, index=True)
+    action = Column(String(48), nullable=False, index=True)
+    status_from = Column(String(24), nullable=True)
+    status_to = Column(String(24), nullable=False)
+    provider_event_id = Column(String(255), nullable=True, unique=True, index=True)
+    metadata_json = Column(JSONB, nullable=False, default=dict, server_default="{}")
 
 
 class WorkOSEventReceipt(BaseModel):

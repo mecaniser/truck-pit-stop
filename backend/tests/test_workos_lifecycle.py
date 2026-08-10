@@ -120,7 +120,7 @@ async def test_exact_invitation_creates_passwordless_projection_and_links_driver
     db_session.add(invitation); await db_session.commit()
 
     async def accepted(_invitation_id):
-        return {"id": "inv_1", "state": "accepted", "accepted_user_id": "wu_driver", "organization_id": "org_1", "role_slug": "driver"}
+        return {"id": "inv_1", "state": "accepted", "accepted_user_id": "wu_driver", "organization_id": "org_1", "role_slug": "driver", "email": "driver@example.test"}
     monkeypatch.setattr(workos_provider, "get_invitation", accepted)
     claims = {"sub": "wu_driver", "org_id": "org_1", "role": "driver", "permissions": ["driver_portal:use", "inspections:perform", "incidents:report"]}
     user, resolved_tenant, membership = await identity_lifecycle.resolve_authenticated_identity(
@@ -145,7 +145,7 @@ async def test_invitation_never_binds_by_email_or_wrong_accepted_user(db_session
     db_session.add(TenantInvitation(tenant_id=tenant.id, principal_id=principal.id, provider_invitation_id="inv_2", email_snapshot="same@example.test", intended_role_slug="mechanic", status="pending", invited_by_user_id=inviter.id, resource_scope={}))
     await db_session.commit()
     async def wrong(_invitation_id):
-        return {"id": "inv_2", "state": "accepted", "accepted_user_id": "someone_else", "organization_id": "org_2", "role_slug": "mechanic"}
+        return {"id": "inv_2", "state": "accepted", "accepted_user_id": "someone_else", "organization_id": "org_2", "role_slug": "mechanic", "email": "same@example.test"}
     monkeypatch.setattr(workos_provider, "get_invitation", wrong)
     with pytest.raises(HTTPException) as exc:
         await identity_lifecycle.resolve_authenticated_identity(
@@ -154,6 +154,78 @@ async def test_invitation_never_binds_by_email_or_wrong_accepted_user(db_session
             workos_user={"id": "wu_new", "email": "same@example.test"},
         )
     assert exc.value.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_exact_invitation_links_explicit_existing_owner_without_email_merge(db_session, monkeypatch):
+    tenant = Tenant(name="Existing Owner", slug="existing-owner", workos_organization_id="org_owner")
+    db_session.add(tenant)
+    await db_session.flush()
+    owner = User(
+        email="owner-existing@example.test",
+        hashed_password=get_password_hash("Str0ng@Pass!"),
+        first_name="Existing",
+        last_name="Owner",
+        role=UserRole.GARAGE_OWNER,
+        tenant_id=tenant.id,
+        is_active=True,
+        is_verified=True,
+    )
+    db_session.add(owner)
+    await db_session.flush()
+    principal = IdentityPrincipal(user_id=owner.id, status="pending")
+    db_session.add(principal)
+    await db_session.flush()
+    invitation = TenantInvitation(
+        tenant_id=tenant.id,
+        principal_id=principal.id,
+        provider_invitation_id="inv_owner",
+        email_snapshot=owner.email,
+        intended_role_slug="garage_owner",
+        target_user_id=owner.id,
+        status="pending",
+        invited_by_user_id=owner.id,
+        resource_scope={},
+    )
+    db_session.add(invitation)
+    await db_session.commit()
+    original_password = owner.hashed_password
+
+    async def accepted(_invitation_id):
+        return {
+            "id": "inv_owner",
+            "state": "accepted",
+            "accepted_user_id": "wu_existing_owner",
+            "organization_id": "org_owner",
+            "role_slug": "garage_owner",
+            "email": owner.email,
+        }
+
+    monkeypatch.setattr(workos_provider, "get_invitation", accepted)
+    user, resolved_tenant, membership = await identity_lifecycle.resolve_authenticated_identity(
+        db_session,
+        claims={
+            "sub": "wu_existing_owner",
+            "org_id": "org_owner",
+            "role": "garage_owner",
+            "permissions": ["organization:manage", "members:manage"],
+        },
+        workos_user={
+            "id": "wu_existing_owner",
+            "email": owner.email,
+            "first_name": owner.first_name,
+            "last_name": owner.last_name,
+            "email_verified": True,
+        },
+    )
+    await db_session.commit()
+    assert user.id == owner.id
+    assert user.hashed_password == original_password
+    assert user.tenant_id == tenant.id
+    assert user.workos_user_id == "wu_existing_owner"
+    assert resolved_tenant.id == tenant.id
+    assert membership.role_slug == "garage_owner"
+    assert invitation.status == "accepted"
 
 
 @pytest.mark.asyncio

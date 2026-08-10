@@ -109,6 +109,8 @@ async def resolve_authenticated_identity(
             and provider_invitation.get("accepted_user_id") == workos_user_id
             and provider_invitation.get("organization_id") == workos_org_id
             and provider_invitation.get("role_slug") == invitation.intended_role_slug
+            and isinstance(provider_invitation.get("email"), str)
+            and provider_invitation["email"].casefold() == invitation.email_snapshot.casefold()
             and role_slug == invitation.intended_role_slug
         ):
             matched = invitation
@@ -121,29 +123,54 @@ async def resolve_authenticated_identity(
     last_name = workos_user.get("last_name") or "User"
     if not isinstance(email, str) or not email:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="WorkOS user email is unavailable")
-    # A collision is intentionally not auto-linked. An administrator must
-    # resolve it through an explicit identity-linking workflow.
-    if (await db.execute(select(User.id).where(User.email == email))).scalar_one_or_none():
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="An existing local identity requires explicit linking")
     principal = await db.get(IdentityPrincipal, matched.principal_id)
-    if not principal or principal.user_id is not None:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Invitation identity is already linked")
-    user = User(
-        email=email,
-        hashed_password=None,
-        first_name=first_name,
-        last_name=last_name,
-        role=ROLE_TO_USER_ROLE[matched.intended_role_slug],
-        tenant_id=tenant.id,  # compatibility projection only
-        workos_user_id=workos_user_id,
-        workos_identity_status="active",
-        workos_identity_linked_at=datetime.now(timezone.utc),
-        is_active=True,
-        is_verified=bool(workos_user.get("email_verified")),
-    )
-    db.add(user)
-    await db.flush()
-    principal.user_id = user.id
+    if not principal:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Invitation identity is unavailable")
+
+    if matched.target_user_id:
+        # Existing staff is linked only through the exact local FK selected
+        # before the invitation was sent and the exact accepted provider
+        # invitation checked above. Email is an integrity check, not lookup.
+        user = await db.get(User, matched.target_user_id)
+        if (
+            not user
+            or user.deleted_at
+            or not user.is_active
+            or user.tenant_id != tenant.id
+            or user.role != ROLE_TO_USER_ROLE[matched.intended_role_slug]
+            or user.email.casefold() != matched.email_snapshot.casefold()
+            or email.casefold() != matched.email_snapshot.casefold()
+            or principal.user_id != user.id
+            or (user.workos_user_id and user.workos_user_id != workos_user_id)
+        ):
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Explicit invitation identity requires review")
+        user.workos_user_id = workos_user_id
+        user.workos_identity_status = "active"
+        user.workos_identity_linked_at = user.workos_identity_linked_at or datetime.now(timezone.utc)
+        user.is_verified = user.is_verified or bool(workos_user.get("email_verified"))
+    else:
+        # A collision is intentionally not auto-linked. An administrator must
+        # resolve it through an explicit target_user_id invitation workflow.
+        if (await db.execute(select(User.id).where(User.email == email))).scalar_one_or_none():
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="An existing local identity requires explicit linking")
+        if principal.user_id is not None:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Invitation identity is already linked")
+        user = User(
+            email=email,
+            hashed_password=None,
+            first_name=first_name,
+            last_name=last_name,
+            role=ROLE_TO_USER_ROLE[matched.intended_role_slug],
+            tenant_id=tenant.id,  # compatibility projection only
+            workos_user_id=workos_user_id,
+            workos_identity_status="active",
+            workos_identity_linked_at=datetime.now(timezone.utc),
+            is_active=True,
+            is_verified=bool(workos_user.get("email_verified")),
+        )
+        db.add(user)
+        await db.flush()
+        principal.user_id = user.id
     principal.status = "active"
     db.add(ExternalIdentity(principal_id=principal.id, provider="workos", provider_subject=workos_user_id, status="active", email_snapshot=email))
     membership = TenantMembership(

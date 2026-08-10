@@ -125,6 +125,34 @@ async def get_invitation(invitation_id: str) -> Dict[str, Any]:
     return result
 
 
+async def resend_invitation(invitation_id: str) -> Dict[str, Any]:
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        response = await client.post(
+            f"https://api.workos.com/user_management/invitations/{invitation_id}/resend",
+            headers={"Authorization": f"Bearer {settings.WORKOS_API_KEY}"},
+        )
+    if response.status_code >= 400:
+        raise WorkOSProviderError("WorkOS invitation could not be resent")
+    result = response.json()
+    if not isinstance(result, dict) or result.get("id") != invitation_id:
+        raise WorkOSProviderError("WorkOS invitation response is malformed")
+    return result
+
+
+async def revoke_invitation(invitation_id: str) -> Dict[str, Any]:
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        response = await client.post(
+            f"https://api.workos.com/user_management/invitations/{invitation_id}/revoke",
+            headers={"Authorization": f"Bearer {settings.WORKOS_API_KEY}"},
+        )
+    if response.status_code >= 400:
+        raise WorkOSProviderError("WorkOS invitation could not be revoked")
+    result = response.json()
+    if not isinstance(result, dict) or result.get("id") != invitation_id:
+        raise WorkOSProviderError("WorkOS invitation response is malformed")
+    return result
+
+
 async def get_or_create_organization(*, tenant_id: str, name: str) -> Dict[str, Any]:
     headers = {"Authorization": f"Bearer {settings.WORKOS_API_KEY}"}
     async with httpx.AsyncClient(timeout=10.0) as client:

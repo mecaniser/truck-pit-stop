@@ -1,29 +1,40 @@
 """WorkOS organization lifecycle, invitation, session, and webhook endpoints."""
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
+from urllib.parse import urlencode
 
-from fastapi import APIRouter, Cookie, Depends, HTTPException, Request, Response, status
+from fastapi import APIRouter, Cookie, Depends, HTTPException, Query, Request, Response, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.dependencies import get_db
-from app.core.dependencies import get_current_active_user
+from app.core.dependencies import get_current_active_user, get_token_from_request
 from app.core.redis import get_token_version
-from app.core.security import create_access_token
-from app.core.workos_auth import CurrentPrincipal, require_permission
+from app.core.security import create_access_token, decode_token
+from app.core.workos_auth import CurrentPrincipal, get_current_principal, require_permission
 from app.db.models.driver_accountability import DriverProfile
-from app.db.models.identity import IdentityPrincipal, TenantInvitation
+from app.db.models.identity import (
+    ExternalIdentity,
+    IdentityPrincipal,
+    TenantInvitation,
+    TenantInvitationAuditEvent,
+    TenantMembership,
+)
 from app.db.models.tenant import Tenant
 from app.db.models.user import User, UserRole
 from app.schemas.workos_lifecycle import (
     WorkOSInvitationCreate,
     WorkOSInvitationResponse,
+    DriverPortalAccessResponse,
+    DriverInvitationCapability,
+    WorkOSCapabilitiesResponse,
     WorkOSSessionResponse,
     WorkOSWebhookResponse,
     WorkOSOrganizationProvision,
     WorkOSOrganizationResponse,
 )
+from app.schemas.auth import UserResponse
 from app.services.identity_lifecycle import INVITABLE_ROLES, resolve_authenticated_identity
 from app.services import workos_provider, workos_session, workos_webhooks
 from app.services.workos_provider import WorkOSProviderError
@@ -41,6 +52,10 @@ async def _platform_admin(current_user: User = Depends(get_current_active_user))
 def _cookie_domain() -> Optional[str]:
     value = settings.COOKIE_DOMAIN.strip()
     return value or None
+
+
+def _safe_return_path(value: Optional[str]) -> str:
+    return value if value and value.startswith("/") and not value.startswith("//") else "/"
 
 
 def _set_access_cookie(response: Response, token: str) -> None:
@@ -77,9 +92,224 @@ def _invitation_response(invitation: TenantInvitation) -> WorkOSInvitationRespon
         email=invitation.email_snapshot,
         role_slug=invitation.intended_role_slug,
         driver_profile_id=invitation.driver_profile_id,
+        target_user_id=invitation.target_user_id,
         status=invitation.status,
         expires_at=invitation.expires_at,
     )
+
+
+def _provider_datetime(value) -> Optional[datetime]:
+    if not isinstance(value, str):
+        return None
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+
+def _is_expired(invitation: TenantInvitation) -> bool:
+    if not invitation.expires_at:
+        return False
+    expires_at = invitation.expires_at
+    if expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=timezone.utc)
+    return expires_at <= datetime.now(timezone.utc)
+
+
+def _audit_invitation(
+    db: AsyncSession,
+    invitation: TenantInvitation,
+    *,
+    action: str,
+    status_from: Optional[str],
+    status_to: str,
+    actor_user_id=None,
+    provider_event_id: Optional[str] = None,
+    metadata: Optional[dict] = None,
+) -> None:
+    db.add(TenantInvitationAuditEvent(
+        tenant_id=invitation.tenant_id,
+        invitation_id=invitation.id,
+        driver_profile_id=invitation.driver_profile_id,
+        actor_user_id=actor_user_id,
+        action=action,
+        status_from=status_from,
+        status_to=status_to,
+        provider_event_id=provider_event_id,
+        metadata_json=metadata or {},
+    ))
+
+
+async def _driver_for_manager(db: AsyncSession, driver_profile_id, tenant_id) -> DriverProfile:
+    driver = (await db.execute(select(DriverProfile).where(
+        DriverProfile.id == driver_profile_id,
+        DriverProfile.tenant_id == tenant_id,
+        DriverProfile.deleted_at.is_(None),
+    ))).scalar_one_or_none()
+    if not driver:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Driver profile not found")
+    return driver
+
+
+async def _latest_driver_invitation(db: AsyncSession, driver: DriverProfile) -> Optional[TenantInvitation]:
+    invitations = (await db.execute(
+        select(TenantInvitation)
+        .where(
+            TenantInvitation.driver_profile_id == driver.id,
+            TenantInvitation.tenant_id == driver.tenant_id,
+            TenantInvitation.intended_role_slug == "driver",
+            TenantInvitation.deleted_at.is_(None),
+        )
+        .order_by(TenantInvitation.created_at.desc(), TenantInvitation.id.desc())
+    )).scalars().all()
+    # A fresh live invitation supersedes terminal history. This avoids relying
+    # on timestamp precision when a replacement is created in the same flush.
+    live = next((item for item in invitations if item.status == "pending" and not _is_expired(item)), None)
+    return live or (invitations[0] if invitations else None)
+
+
+async def _driver_portal_projection(db: AsyncSession, driver: DriverProfile) -> DriverPortalAccessResponse:
+    invitation = await _latest_driver_invitation(db, driver)
+    access_status = "not_invited"
+
+    if driver.user_id:
+        user = await db.get(User, driver.user_id)
+        principal = (await db.execute(select(IdentityPrincipal).where(
+            IdentityPrincipal.user_id == driver.user_id,
+            IdentityPrincipal.deleted_at.is_(None),
+        ))).scalar_one_or_none()
+        external = None
+        membership = None
+        if principal:
+            external = (await db.execute(select(ExternalIdentity).where(
+                ExternalIdentity.principal_id == principal.id,
+                ExternalIdentity.provider == "workos",
+                ExternalIdentity.deleted_at.is_(None),
+            ))).scalar_one_or_none()
+            membership = (await db.execute(select(TenantMembership).where(
+                TenantMembership.principal_id == principal.id,
+                TenantMembership.tenant_id == driver.tenant_id,
+                TenantMembership.role_slug == "driver",
+                TenantMembership.deleted_at.is_(None),
+            ))).scalar_one_or_none()
+        if not user or not principal or not external or not membership:
+            access_status = "needs_review"
+        elif not user.is_active or principal.status != "active" or external.status != "active" or membership.status != "active":
+            access_status = "suspended"
+        else:
+            access_status = "active"
+    elif invitation:
+        if invitation.status == "pending" and _is_expired(invitation):
+            access_status = "expired"
+        elif invitation.status in {"pending", "expired", "revoked"}:
+            access_status = invitation.status
+        elif invitation.status == "accepted" or invitation.status == "creating":
+            access_status = "needs_review"
+        else:
+            access_status = "needs_review"
+
+    terminal_invitation = invitation and access_status in {"expired", "revoked"}
+    return DriverPortalAccessResponse(
+        driver_profile_id=driver.id,
+        profile_status=driver.employment_status,
+        portal_access_status=access_status,
+        local_user_id=driver.user_id,
+        invitation_id=invitation.id if invitation else None,
+        email=invitation.email_snapshot if invitation else driver.email,
+        invited_at=invitation.created_at if invitation else None,
+        expires_at=invitation.expires_at if invitation else None,
+        accepted_at=invitation.accepted_at if invitation else None,
+        revoked_at=invitation.revoked_at if invitation else None,
+        last_sign_in_at=None,
+        can_invite=not driver.user_id and (not invitation or bool(terminal_invitation)),
+        can_resend=not driver.user_id and access_status in {"pending", "expired", "revoked"},
+        can_revoke=not driver.user_id and access_status == "pending",
+    )
+
+
+@router.get("/capabilities", response_model=WorkOSCapabilitiesResponse)
+async def get_workos_capabilities(
+    return_to: Optional[str] = Query(None),
+    current_user: User = Depends(get_current_active_user),
+    token: str = Depends(get_token_from_request),
+    db: AsyncSession = Depends(get_db),
+):
+    """Describe whether this session may manage driver invitations.
+
+    This endpoint is intentionally descriptive. Only ``require_permission``
+    authorizes invitation actions; legacy roles never become WorkOS grants.
+    """
+    claims = decode_token(token) or {}
+    session_provider = "workos" if claims.get("auth_provider") == "workos" else "legacy"
+    tenant_id = claims.get("tid") or current_user.tenant_id
+    tenant = await db.get(Tenant, tenant_id) if tenant_id else None
+    organization_provisioned = bool(tenant and tenant.is_active and tenant.workos_organization_id)
+
+    def response(reason: str, *, available: bool = False, reauth: bool = False):
+        reauth_path = None
+        if reauth:
+            reauth_path = f"/auth/workos/login?{urlencode({'return_to': _safe_return_path(return_to)})}"
+        return WorkOSCapabilitiesResponse(
+            session_provider=session_provider,
+            workos_auth_enabled=settings.WORKOS_AUTH_ENABLED,
+            organization_provisioned=organization_provisioned,
+            driver_invitation_management=DriverInvitationCapability(
+                available=available,
+                reason=reason,
+                reauth_path=reauth_path,
+            ),
+        )
+
+    if not settings.WORKOS_AUTH_ENABLED:
+        return response("workos_auth_disabled")
+    if not organization_provisioned:
+        return response("organization_not_provisioned")
+
+    if session_provider == "workos":
+        try:
+            principal = await get_current_principal(token=token, db=db)
+        except HTTPException:
+            return response("manager_not_provisioned")
+        if "members:manage" not in principal.permissions:
+            return response("missing_permission")
+        return response("available", available=True)
+
+    manager_roles = {UserRole.GARAGE_OWNER, UserRole.GARAGE_ADMIN, UserRole.FLEET_MANAGER}
+    if current_user.role not in manager_roles:
+        return response("manager_not_provisioned")
+    projected_membership = (await db.execute(
+        select(TenantMembership.id)
+        .join(IdentityPrincipal, IdentityPrincipal.id == TenantMembership.principal_id)
+        .where(
+            IdentityPrincipal.user_id == current_user.id,
+            IdentityPrincipal.status == "active",
+            IdentityPrincipal.deleted_at.is_(None),
+            TenantMembership.tenant_id == tenant.id,
+            TenantMembership.status == "active",
+            TenantMembership.deleted_at.is_(None),
+        )
+    )).scalar_one_or_none()
+    if not current_user.workos_user_id and not projected_membership:
+        return response("manager_not_provisioned")
+    return response("workos_reauthentication_required", reauth=True)
+
+
+@router.get("/me", response_model=UserResponse)
+async def get_workos_session_user(
+    principal: CurrentPrincipal = Depends(get_current_principal),
+    db: AsyncSession = Depends(get_db),
+):
+    """Bootstrap SPA state only from a validated WorkOS cookie session."""
+    user = await db.get(User, principal.local_user_id)
+    tenant = await db.get(Tenant, principal.tenant_id)
+    if not user or not tenant:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="WorkOS session is unavailable")
+    result = UserResponse.model_validate(user)
+    result.tenant_name = tenant.name
+    result.tenant_slug = tenant.slug
+    result.tenant_logo_url = tenant.logo_url
+    result.messaging_enabled = tenant.messaging_enabled
+    return result
 
 
 @router.post("/organizations/provision", response_model=WorkOSOrganizationResponse)
@@ -92,6 +322,36 @@ async def provision_organization(
     tenant = await db.get(Tenant, body.tenant_id)
     if not tenant or tenant.deleted_at or tenant.enrollment_status != "approved":
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Only an approved tenant can be provisioned")
+    owner = await db.get(User, body.owner_user_id)
+    if (
+        not owner
+        or owner.deleted_at
+        or not owner.is_active
+        or owner.tenant_id != tenant.id
+        or owner.role != UserRole.GARAGE_OWNER
+        or owner.email.casefold() != str(body.owner_email).casefold()
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="The selected owner account does not exactly match this tenant",
+        )
+    existing = (await db.execute(select(TenantInvitation).where(
+        TenantInvitation.tenant_id == tenant.id,
+        TenantInvitation.email_snapshot == str(body.owner_email),
+        TenantInvitation.intended_role_slug == "garage_owner",
+        TenantInvitation.target_user_id == owner.id,
+        TenantInvitation.status.in_(("creating", "pending", "accepted")),
+        TenantInvitation.deleted_at.is_(None),
+    ))).scalar_one_or_none()
+    identity = (await db.execute(select(IdentityPrincipal).where(
+        IdentityPrincipal.user_id == owner.id,
+        IdentityPrincipal.deleted_at.is_(None),
+    ))).scalar_one_or_none()
+    if identity and not existing:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="The selected owner already has an identity principal",
+        )
     try:
         organization = await workos_provider.get_or_create_organization(tenant_id=str(tenant.id), name=tenant.name)
     except WorkOSProviderError as exc:
@@ -99,13 +359,6 @@ async def provision_organization(
     if tenant.workos_organization_id and tenant.workos_organization_id != organization["id"]:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Tenant is linked to a different WorkOS organization")
     tenant.workos_organization_id = organization["id"]
-    existing = (await db.execute(select(TenantInvitation).where(
-        TenantInvitation.tenant_id == tenant.id,
-        TenantInvitation.email_snapshot == str(body.owner_email),
-        TenantInvitation.intended_role_slug == "garage_owner",
-        TenantInvitation.status.in_(("creating", "pending", "accepted")),
-        TenantInvitation.deleted_at.is_(None),
-    ))).scalar_one_or_none()
     if existing:
         await db.commit()
         return WorkOSOrganizationResponse(
@@ -113,7 +366,7 @@ async def provision_organization(
             workos_organization_id=tenant.workos_organization_id,
             owner_invitation=_invitation_response(existing),
         )
-    identity = IdentityPrincipal(status="pending")
+    identity = IdentityPrincipal(user_id=owner.id, status="pending")
     db.add(identity)
     await db.flush()
     invitation = TenantInvitation(
@@ -122,6 +375,7 @@ async def provision_organization(
         email_snapshot=str(body.owner_email),
         intended_role_slug="garage_owner",
         resource_scope={},
+        target_user_id=owner.id,
         status="creating",
         invited_by_user_id=platform_admin.id,
     )
@@ -141,6 +395,14 @@ async def provision_organization(
     invitation.status = provider.get("state") if provider.get("state") in {"pending", "accepted"} else "pending"
     if isinstance(provider.get("expires_at"), str):
         invitation.expires_at = datetime.fromisoformat(provider["expires_at"].replace("Z", "+00:00"))
+    _audit_invitation(
+        db,
+        invitation,
+        action="created",
+        status_from="creating",
+        status_to=invitation.status,
+        actor_user_id=platform_admin.id,
+    )
     await db.commit()
     return WorkOSOrganizationResponse(
         tenant_id=tenant.id,
@@ -165,9 +427,19 @@ async def create_invitation(
     if body.role_slug == "driver":
         if not body.driver_profile_id:
             raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="A driver profile is required")
-        driver = await db.get(DriverProfile, body.driver_profile_id)
+        driver = (await db.execute(select(DriverProfile).where(
+            DriverProfile.id == body.driver_profile_id,
+        ).with_for_update())).scalar_one_or_none()
         if not driver or driver.tenant_id != principal.tenant_id or driver.deleted_at or driver.user_id:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Driver profile is not available for linking")
+        existing = (await db.execute(select(TenantInvitation.id).where(
+            TenantInvitation.driver_profile_id == driver.id,
+            TenantInvitation.tenant_id == principal.tenant_id,
+            TenantInvitation.status.in_(("creating", "pending", "accepted")),
+            TenantInvitation.deleted_at.is_(None),
+        ))).scalar_one_or_none()
+        if existing:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Driver profile already has a live portal invitation")
     elif body.driver_profile_id:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Driver profile is valid only for driver invitations")
 
@@ -201,8 +473,165 @@ async def create_invitation(
     expires_at = provider.get("expires_at")
     if isinstance(expires_at, str):
         invitation.expires_at = datetime.fromisoformat(expires_at.replace("Z", "+00:00"))
+    _audit_invitation(
+        db,
+        invitation,
+        action="created",
+        status_from="creating",
+        status_to=invitation.status,
+        actor_user_id=principal.local_user_id,
+    )
     await db.commit()
     return _invitation_response(invitation)
+
+
+@router.get("/driver-profiles/{driver_profile_id}/portal-access", response_model=DriverPortalAccessResponse)
+async def get_driver_portal_access(
+    driver_profile_id: str,
+    principal: CurrentPrincipal = Depends(require_permission("members:manage")),
+    db: AsyncSession = Depends(get_db),
+):
+    driver = await _driver_for_manager(db, driver_profile_id, principal.tenant_id)
+    return await _driver_portal_projection(db, driver)
+
+
+async def _driver_invitation_for_manager(
+    db: AsyncSession,
+    invitation_id: str,
+    tenant_id,
+) -> tuple[TenantInvitation, DriverProfile]:
+    invitation = (await db.execute(select(TenantInvitation).where(
+        TenantInvitation.id == invitation_id,
+        TenantInvitation.tenant_id == tenant_id,
+        TenantInvitation.intended_role_slug == "driver",
+        TenantInvitation.driver_profile_id.is_not(None),
+        TenantInvitation.deleted_at.is_(None),
+    ).with_for_update())).scalar_one_or_none()
+    if not invitation:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Driver portal invitation not found")
+    driver = await _driver_for_manager(db, invitation.driver_profile_id, tenant_id)
+    return invitation, driver
+
+
+@router.post("/invitations/{invitation_id}/resend", response_model=DriverPortalAccessResponse)
+async def resend_driver_invitation(
+    invitation_id: str,
+    principal: CurrentPrincipal = Depends(require_permission("members:manage")),
+    db: AsyncSession = Depends(get_db),
+):
+    invitation, driver = await _driver_invitation_for_manager(db, invitation_id, principal.tenant_id)
+    if driver.user_id:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Driver portal identity is already linked")
+    effective_status = "expired" if invitation.status == "pending" and _is_expired(invitation) else invitation.status
+    tenant = await db.get(Tenant, principal.tenant_id)
+    if not tenant or not tenant.workos_organization_id:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Tenant has no WorkOS organization")
+    try:
+        if effective_status == "pending":
+            provider = await workos_provider.resend_invitation(invitation.provider_invitation_id)
+            previous = invitation.status
+            invitation.status = "pending"
+            invitation.expires_at = _provider_datetime(provider.get("expires_at")) or invitation.expires_at
+            target = invitation
+            action = "resent"
+        elif effective_status in {"expired", "revoked"}:
+            if invitation.status == "pending":
+                invitation.status = "expired"
+                _audit_invitation(
+                    db,
+                    invitation,
+                    action="expired_observed",
+                    status_from="pending",
+                    status_to="expired",
+                    actor_user_id=principal.local_user_id,
+                )
+            invitation.status = effective_status
+            provider = await workos_provider.send_invitation(
+                email=invitation.email_snapshot,
+                organization_id=tenant.workos_organization_id,
+                role_slug="driver",
+                inviter_user_id=principal.workos_user_id,
+            )
+            target = TenantInvitation(
+                tenant_id=invitation.tenant_id,
+                principal_id=invitation.principal_id,
+                provider_invitation_id=provider["id"],
+                email_snapshot=invitation.email_snapshot,
+                intended_role_slug="driver",
+                resource_scope=invitation.resource_scope,
+                driver_profile_id=invitation.driver_profile_id,
+                status="pending",
+                expires_at=_provider_datetime(provider.get("expires_at")),
+                invited_by_user_id=principal.local_user_id,
+            )
+            db.add(target)
+            await db.flush()
+            previous = None
+            action = "reissued"
+        else:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Invitation cannot be resent in its current state")
+    except WorkOSProviderError as exc:
+        await db.rollback()
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc))
+    _audit_invitation(
+        db,
+        target,
+        action=action,
+        status_from=previous,
+        status_to=target.status,
+        actor_user_id=principal.local_user_id,
+        metadata={"replaces_invitation_id": str(invitation.id)} if target.id != invitation.id else {},
+    )
+    await db.commit()
+    return await _driver_portal_projection(db, driver)
+
+
+@router.post("/invitations/{invitation_id}/revoke", response_model=DriverPortalAccessResponse)
+async def revoke_driver_invitation(
+    invitation_id: str,
+    principal: CurrentPrincipal = Depends(require_permission("members:manage")),
+    db: AsyncSession = Depends(get_db),
+):
+    invitation, driver = await _driver_invitation_for_manager(db, invitation_id, principal.tenant_id)
+    if driver.user_id:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Active portal access must be suspended through membership management")
+    effective_status = "expired" if invitation.status == "pending" and _is_expired(invitation) else invitation.status
+    if effective_status in {"revoked", "expired"}:
+        if invitation.status == "pending":
+            invitation.status = "expired"
+            _audit_invitation(
+                db,
+                invitation,
+                action="expired_observed",
+                status_from="pending",
+                status_to="expired",
+                actor_user_id=principal.local_user_id,
+            )
+        invitation.status = effective_status
+        await db.commit()
+        return await _driver_portal_projection(db, driver)
+    if effective_status != "pending" or not invitation.provider_invitation_id:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Invitation cannot be revoked in its current state")
+    try:
+        provider = await workos_provider.revoke_invitation(invitation.provider_invitation_id)
+    except WorkOSProviderError as exc:
+        await db.rollback()
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc))
+    if provider.get("state") != "revoked":
+        await db.rollback()
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="WorkOS invitation revocation was not confirmed")
+    invitation.status = "revoked"
+    invitation.revoked_at = _provider_datetime(provider.get("revoked_at")) or datetime.now(timezone.utc)
+    _audit_invitation(
+        db,
+        invitation,
+        action="revoked",
+        status_from="pending",
+        status_to="revoked",
+        actor_user_id=principal.local_user_id,
+    )
+    await db.commit()
+    return await _driver_portal_projection(db, driver)
 
 
 @router.get("/invitations/{invitation_id}", response_model=WorkOSInvitationResponse)
