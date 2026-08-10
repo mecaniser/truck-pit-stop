@@ -11,6 +11,7 @@ from fastapi import HTTPException
 from fastapi import Request
 from fastapi.responses import JSONResponse
 from fastapi.testclient import TestClient
+from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.types import ASGIApp, Message, Scope
 
 from app.core.pagination import build_paginated_payload, paginated_or_list
@@ -55,6 +56,7 @@ async def _run_asgi_request(
     path: str,
     headers: list[tuple[bytes, bytes]],
     incoming_messages: list[Message],
+    block_when_empty: bool = False,
 ) -> list[Message]:
     scope: Scope = {
         "type": "http",
@@ -77,6 +79,8 @@ async def _run_asgi_request(
     async def receive() -> Message:
         if queue:
             return queue.pop(0)
+        if block_when_empty:
+            await asyncio.Event().wait()
         return {"type": "http.disconnect"}
 
     async def send(message: Message) -> None:
@@ -139,6 +143,77 @@ def test_idempotency_replay_and_conflict(monkeypatch, fake_redis):
 
     r3 = client.post("/api/v1/items", json={"name": "different"}, headers={"Idempotency-Key": key})
     assert r3.status_code == 409
+
+
+def test_idempotency_preserves_streamed_body_through_base_middleware(monkeypatch, fake_redis):
+    """The replay receive channel must not invent a client disconnect.
+
+    Starlette's BaseHTTPMiddleware streams the downstream response while it
+    listens for a real disconnect.  A synthetic disconnect can cancel that
+    stream after its Content-Length header is sent but before its body.
+    """
+    import app.middleware.idempotency as idempotency_module
+
+    async def _fake_get_redis():
+        return fake_redis
+
+    class PassthroughMiddleware(BaseHTTPMiddleware):
+        async def dispatch(self, request, call_next):
+            return await call_next(request)
+
+    monkeypatch.setattr(idempotency_module, "get_redis", _fake_get_redis)
+
+    app = FastAPI()
+    app.add_middleware(PassthroughMiddleware)
+    app.add_middleware(IdempotencyMiddleware)
+
+    @app.post("/api/v1/invitations", status_code=201)
+    async def create_invitation(payload: dict):
+        return {"id": "invitation_123", "payload": payload}
+
+    request_body = b'{"role":"driver"}'
+    headers = [
+        (b"content-type", b"application/json"),
+        (b"content-length", str(len(request_body)).encode()),
+        (b"idempotency-key", b"driver-invitation-123"),
+    ]
+
+    def run_request():
+        return asyncio.run(
+            _run_asgi_request(
+                app,
+                method="POST",
+                path="/api/v1/invitations",
+                headers=headers,
+                incoming_messages=[
+                    {"type": "http.request", "body": request_body, "more_body": False}
+                ],
+                block_when_empty=True,
+            )
+        )
+
+    first = run_request()
+    replay = run_request()
+
+    first_start = next(message for message in first if message["type"] == "http.response.start")
+    first_body = b"".join(
+        message.get("body", b"") for message in first if message["type"] == "http.response.body"
+    )
+    replay_start = next(message for message in replay if message["type"] == "http.response.start")
+    replay_body = b"".join(
+        message.get("body", b"") for message in replay if message["type"] == "http.response.body"
+    )
+    replay_headers = {
+        key.decode("latin1").lower(): value.decode("latin1")
+        for key, value in replay_start.get("headers", [])
+    }
+
+    expected = {"id": "invitation_123", "payload": {"role": "driver"}}
+    assert first_start["status"] == 201
+    assert json.loads(first_body) == expected
+    assert replay_start["status"] == 201
+    assert replay_body == first_body
+    assert replay_headers["x-idempotency-replayed"] == "true"
 
 
 def test_idempotency_is_optional(monkeypatch, fake_redis):

@@ -129,16 +129,17 @@ class IdempotencyMiddleware:
             if not message.get("more_body", False):
                 break
 
-        receive_state = {"sent_body": False, "sent_empty": False}
+        receive_state = {"sent_body": False}
 
         async def replay_receive():
             if not receive_state["sent_body"]:
                 receive_state["sent_body"] = True
                 return {"type": "http.request", "body": body, "more_body": False}
-            if not receive_state["sent_empty"]:
-                receive_state["sent_empty"] = True
-                return {"type": "http.request", "body": b"", "more_body": False}
-            return {"type": "http.disconnect"}
+            # Preserve the real transport's disconnect timing. Inventing an
+            # immediate disconnect here lets BaseHTTPMiddleware cancel a
+            # streaming response after Content-Length is sent but before its
+            # body reaches capture_send.
+            return await receive()
 
         # Build a lightweight request object for key resolution.
         from starlette.requests import Request
