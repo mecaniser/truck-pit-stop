@@ -438,6 +438,17 @@
 .fleet-root .driver-portal-badge.is-suspended,.fleet-root .driver-portal-badge.is-needs_review{border-color:color-mix(in srgb,var(--red) 45%,var(--line));color:var(--red)!important;}
 .fleet-root .driver-portal-gate,.fleet-root .driver-portal-active{display:flex;align-items:center;justify-content:space-between;gap:12px;}
 .fleet-root .driver-portal-active{justify-content:flex-start;color:var(--green);font-size:12px;}
+.fleet-root .driver-portal-review{display:grid;grid-template-columns:auto 1fr;gap:10px;align-items:start;padding:12px 0;border-block:1px solid color-mix(in srgb,var(--red) 32%,var(--line));color:var(--red);}
+.fleet-root .driver-portal-review>svg{margin-top:2px;}
+.fleet-root .driver-portal-review>div{display:grid;gap:3px;min-width:0;}
+.fleet-root .driver-portal-review strong{font-size:12px;line-height:1.4;}
+.fleet-root .driver-portal-review span{color:var(--muted-2);font-size:12px;line-height:1.45;}
+.fleet-root .driver-portal-review .dbtn{justify-self:start;margin-top:6px;}
+.fleet-root .driver-portal-review-confirm{display:grid;gap:10px;margin-top:4px;}
+.fleet-root .driver-portal-review-confirm p{margin:0;color:var(--muted-2);font-size:12px;line-height:1.5;}
+.fleet-root .driver-portal-review-confirm>div{display:flex;flex-wrap:wrap;gap:8px;}
+.fleet-root .driver-portal-review-confirm>div .dbtn{margin-top:0;}
+.fleet-root .driver-portal-review-neutral{border-color:var(--line);color:var(--yellow);}
 .fleet-root .driver-portal-invite{display:grid;gap:10px;}
 .fleet-root .driver-portal-invite label{display:grid;gap:6px;color:var(--muted-2);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;}
 .fleet-root .driver-portal-invite input{width:100%;min-height:44px;padding:0 12px;border:1px solid var(--line);border-radius:10px;background:#0f161e;color:var(--text);font:inherit;}

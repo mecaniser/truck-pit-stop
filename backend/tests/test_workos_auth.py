@@ -47,6 +47,7 @@ async def test_login_issues_bound_state_and_safe_return(client, fake_redis):
     assert "response_type=code" in response.headers["location"]
     assert "provider=authkit" in response.headers["location"]
     assert "redirect_uri=http%3A%2F%2Flocalhost" in response.headers["location"]
+    assert "prompt=login" in response.headers["location"]
     state = response.cookies.get("workos_oauth_state")
     assert state and await fake_redis.get(f"workos:oauth-state:{state}") == "1"
     assert response.cookies.get("workos_return_to").strip('"') == "/"

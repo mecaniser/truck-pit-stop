@@ -109,6 +109,9 @@ async def workos_login(
         "client_id": settings.WORKOS_CLIENT_ID,
         "redirect_uri": settings.WORKOS_REDIRECT_URI,
         "response_type": "code", "provider": "authkit", "state": state,
+        # A shared browser may be used by managers and drivers. Never let an
+        # existing AuthKit session silently choose the wrong local identity.
+        "prompt": "login",
     }
     if tenant_id is not None:
         tenant = await db.scalar(select(Tenant).where(Tenant.id == tenant_id))
@@ -120,8 +123,6 @@ async def workos_login(
         # Organization selection is a routing hint only. The callback still
         # verifies the signed org_id and maps it independently to this tenant.
         authorize_params["organization_id"] = tenant.workos_organization_id
-        # Do not silently reuse an AuthKit browser session for another account.
-        authorize_params["prompt"] = "login"
     query = urlencode(authorize_params)
     response = RedirectResponse(f"https://api.workos.com/user_management/authorize?{query}", status_code=status.HTTP_307_TEMPORARY_REDIRECT)
     response.set_cookie("workos_oauth_state", state, httponly=True, secure=settings.COOKIE_SECURE_EFFECTIVE, samesite="lax", max_age=600, path="/api/v1/auth/workos")

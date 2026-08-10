@@ -533,6 +533,54 @@ async def _driver_invitation_for_manager(
     return invitation, driver
 
 
+async def _observe_terminal_provider_invitation(
+    db: AsyncSession,
+    invitation: TenantInvitation,
+    tenant: Tenant,
+    actor_user_id,
+) -> bool:
+    """Reconcile an accepted/revoked provider invitation after an action fails.
+
+    Local development has no public webhook receiver, so WorkOS can advance an
+    invitation while the local projection still says pending. The provider
+    record is accepted only after all immutable invitation fields match.
+    """
+    provider = await workos_provider.get_invitation(invitation.provider_invitation_id)
+    if (
+        provider.get("id") != invitation.provider_invitation_id
+        or provider.get("organization_id") != tenant.workos_organization_id
+        or provider.get("role_slug") != "driver"
+        or not isinstance(provider.get("email"), str)
+        or provider["email"].casefold() != invitation.email_snapshot.casefold()
+    ):
+        raise WorkOSProviderError("WorkOS invitation state could not be verified")
+
+    provider_state = provider.get("state")
+    previous = invitation.status
+    if provider_state == "accepted":
+        invitation.status = "accepted"
+        invitation.accepted_at = _provider_datetime(provider.get("accepted_at")) or datetime.now(timezone.utc)
+        invitation.provider_user_id = provider.get("accepted_user_id") or invitation.provider_user_id
+        action = "accepted_observed"
+    elif provider_state == "revoked":
+        invitation.status = "revoked"
+        invitation.revoked_at = _provider_datetime(provider.get("revoked_at")) or datetime.now(timezone.utc)
+        action = "revoked_observed"
+    else:
+        return False
+
+    _audit_invitation(
+        db,
+        invitation,
+        action=action,
+        status_from=previous,
+        status_to=invitation.status,
+        actor_user_id=actor_user_id,
+    )
+    await db.commit()
+    return True
+
+
 @router.post("/invitations/{invitation_id}/resend", response_model=DriverPortalAccessResponse)
 async def resend_driver_invitation(
     invitation_id: str,
@@ -591,6 +639,13 @@ async def resend_driver_invitation(
         else:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Invitation cannot be resent in its current state")
     except WorkOSProviderError as exc:
+        try:
+            if await _observe_terminal_provider_invitation(
+                db, invitation, tenant, principal.local_user_id
+            ):
+                return await _driver_portal_projection(db, driver)
+        except WorkOSProviderError:
+            pass
         await db.rollback()
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc))
     _audit_invitation(
@@ -632,9 +687,19 @@ async def revoke_driver_invitation(
         return await _driver_portal_projection(db, driver)
     if effective_status != "pending" or not invitation.provider_invitation_id:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Invitation cannot be revoked in its current state")
+    tenant = await db.get(Tenant, principal.tenant_id)
+    if not tenant or not tenant.workos_organization_id:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Tenant has no WorkOS organization")
     try:
         provider = await workos_provider.revoke_invitation(invitation.provider_invitation_id)
     except WorkOSProviderError as exc:
+        try:
+            if await _observe_terminal_provider_invitation(
+                db, invitation, tenant, principal.local_user_id
+            ):
+                return await _driver_portal_projection(db, driver)
+        except WorkOSProviderError:
+            pass
         await db.rollback()
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc))
     if provider.get("state") != "revoked":

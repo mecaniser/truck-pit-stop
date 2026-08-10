@@ -438,6 +438,45 @@ async def test_pending_resend_updates_expiry_and_appends_audit(db_session, monke
 
 
 @pytest.mark.asyncio
+async def test_resend_reconciles_provider_accepted_invitation(db_session, monkeypatch):
+    tenant, manager, principal = await _manager_context(db_session)
+    driver = await _driver(db_session, tenant)
+    invitation = await _invitation(db_session, tenant, manager, driver)
+    accepted_at = datetime.now(timezone.utc)
+
+    async def rejected_resend(_provider_invitation_id):
+        raise WorkOSProviderError("WorkOS invitation could not be resent")
+
+    async def accepted(provider_invitation_id):
+        return {
+            "id": provider_invitation_id,
+            "state": "accepted",
+            "accepted_at": accepted_at.isoformat(),
+            "accepted_user_id": "wu_driver",
+            "organization_id": tenant.workos_organization_id,
+            "role_slug": "driver",
+            "email": invitation.email_snapshot,
+        }
+
+    monkeypatch.setattr(workos_provider, "resend_invitation", rejected_resend)
+    monkeypatch.setattr(workos_provider, "get_invitation", accepted)
+
+    result = await workos_lifecycle.resend_driver_invitation(
+        str(invitation.id), principal, db_session
+    )
+
+    assert result.portal_access_status == "needs_review"
+    assert result.can_resend is False
+    assert result.can_revoke is False
+    assert invitation.status == "accepted"
+    assert invitation.provider_user_id == "wu_driver"
+    events = (await db_session.execute(select(TenantInvitationAuditEvent))).scalars().all()
+    assert [(event.action, event.status_from, event.status_to) for event in events] == [
+        ("accepted_observed", "pending", "accepted")
+    ]
+
+
+@pytest.mark.asyncio
 async def test_expired_resend_creates_fresh_invitation_and_preserves_history(db_session, monkeypatch):
     tenant, manager, principal = await _manager_context(db_session)
     driver = await _driver(db_session, tenant)
