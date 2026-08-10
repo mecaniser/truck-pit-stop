@@ -10,6 +10,9 @@ class Tenant(BaseModel):
     
     name = Column(String(255), nullable=False, index=True)
     slug = Column(String(100), unique=True, nullable=False, index=True)
+    # Stable external authority mapping.  An organization grants access to a
+    # tenant; it is never inferred from a customer or a browser-supplied id.
+    workos_organization_id = Column(String(255), unique=True, nullable=True, index=True)
     address = Column(String(500), nullable=True)
     phone = Column(String(20), nullable=True)
     email = Column(String(255), nullable=True)

@@ -49,6 +49,15 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
     REFRESH_TOKEN_EXPIRE_DAYS_REMEMBER: int = 30  # "Remember me" duration
+
+    # WorkOS is introduced alongside (not in place of) legacy JWT login. Keep
+    # this disabled until a tenant has completed the audited dual-run cutover.
+    WORKOS_AUTH_ENABLED: bool = False
+    WORKOS_API_KEY: str = ""
+    WORKOS_CLIENT_ID: str = ""
+    WORKOS_REDIRECT_URI: str = "http://localhost:8000/api/v1/auth/workos/callback"
+    WORKOS_WEBHOOK_SECRET: str = ""
+    WORKOS_POST_LOGIN_URL: str = "http://localhost:5173"
     
     @field_validator('SECRET_KEY')
     @classmethod

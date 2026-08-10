@@ -1,5 +1,6 @@
 from datetime import timedelta, datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, status, Request, Response, Cookie
+from fastapi.responses import RedirectResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_, func
 from app.core.security import (
@@ -47,6 +48,8 @@ from pydantic import BaseModel, Field, EmailStr
 from typing import Optional, List
 import secrets
 import re
+import httpx
+from urllib.parse import urlencode
 from app.services.email_service import (
     send_password_reset_email,
     send_enrollment_received_email,
@@ -58,6 +61,60 @@ from app.core.password_policy import validate_password
 
 router = APIRouter()
 logger = get_logger(__name__)
+
+
+def _workos_enabled() -> None:
+    if not settings.WORKOS_AUTH_ENABLED:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="WorkOS authentication is disabled")
+    if not settings.WORKOS_API_KEY or not settings.WORKOS_CLIENT_ID:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="WorkOS authentication is not configured")
+
+
+@router.get("/workos/login", include_in_schema=False)
+async def workos_login():
+    """Start AuthKit without changing any legacy login behavior."""
+    _workos_enabled()
+    query = urlencode({
+        "client_id": settings.WORKOS_CLIENT_ID,
+        "redirect_uri": settings.WORKOS_REDIRECT_URI,
+        "provider": "authkit",
+    })
+    return RedirectResponse(f"https://api.workos.com/user_management/authorize?{query}")
+
+
+@router.get("/workos/callback", include_in_schema=False)
+async def workos_callback(code: str, db: AsyncSession = Depends(get_db)):
+    """Exchange a WorkOS code, map its organization to a tenant, issue the
+    existing local cookie/JWT session, then return to the configured SPA.
+    """
+    _workos_enabled()
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        result = await client.post(
+            "https://api.workos.com/user_management/authenticate",
+            headers={"Authorization": f"Bearer {settings.WORKOS_API_KEY}"},
+            json={"client_id": settings.WORKOS_CLIENT_ID, "code": code},
+        )
+    if result.status_code >= 400:
+        logger.warning("workos_code_exchange_failed", status_code=result.status_code)
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="WorkOS authentication failed")
+    payload = result.json()
+    workos_user_id = (payload.get("user") or {}).get("id")
+    workos_org_id = payload.get("organization_id") or (payload.get("organization") or {}).get("id")
+    if not workos_user_id or not workos_org_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="WorkOS organization membership is required")
+    user = (await db.execute(select(User).where(User.workos_user_id == workos_user_id))).scalar_one_or_none()
+    tenant = (await db.execute(select(Tenant).where(Tenant.workos_organization_id == workos_org_id))).scalar_one_or_none()
+    if not user or not tenant or not user.is_active or not tenant.is_active:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="WorkOS access is not provisioned")
+    user.tenant_id = tenant.id
+    user.workos_identity_status = "active"
+    user.workos_identity_linked_at = user.workos_identity_linked_at or datetime.now(timezone.utc)
+    await db.commit()
+    response = RedirectResponse(settings.WORKOS_POST_LOGIN_URL)
+    access_token = create_access_token(data={"sub": str(user.id)}, tenant_id=str(tenant.id))
+    refresh_token = create_refresh_token(data={"sub": str(user.id)}, tenant_id=str(tenant.id))
+    set_auth_cookies(response, access_token, refresh_token)
+    return response
 
 
 async def _build_user_response(user: User, db: AsyncSession) -> UserResponse:

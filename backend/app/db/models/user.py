@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Boolean, ForeignKey, Enum as SQLEnum, Integer
+from sqlalchemy import Column, String, Boolean, ForeignKey, Enum as SQLEnum, Integer, DateTime
 from sqlalchemy.orm import relationship
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 import enum
@@ -19,6 +19,11 @@ class User(BaseModel):
     __tablename__ = "users"
     
     email = Column(String(255), unique=True, nullable=False, index=True)
+    # Optional WorkOS projection. Existing password users remain valid during
+    # cutover, so these fields are deliberately nullable and additive.
+    workos_user_id = Column(String(255), unique=True, nullable=True, index=True)
+    workos_identity_status = Column(String(32), nullable=False, default="legacy", server_default="legacy")
+    workos_identity_linked_at = Column(DateTime(timezone=True), nullable=True)
     hashed_password = Column(String(255), nullable=False)
     first_name = Column(String(100), nullable=False)
     last_name = Column(String(100), nullable=False)
