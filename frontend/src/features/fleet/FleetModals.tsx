@@ -5,7 +5,7 @@ import type { AxiosError } from 'axios'
 import toast from 'react-hot-toast'
 import {
   X, Pencil, AlertTriangle, ClipboardCheck, CheckCircle2, XCircle, Plus, ClipboardList, Trash2, UserRound, Play, Flag, Calendar,
-  Check, Minus, RotateCcw, Wrench, Camera, Search, ChevronDown,
+  Check, Minus, RotateCcw, Wrench, Camera, Search, ChevronDown, ShieldCheck,
 } from 'lucide-react'
 import api from '../../lib/api'
 import SlidePanel from '@/components/SlidePanel'
@@ -17,7 +17,7 @@ import MapboxAddressInput from '@/components/MapboxAddressInput'
 import { useAuthStore } from '../../stores/authStore'
 import type {
   BoardTruck, TruckDetail, Inspection, InspectionDetail, InspectionItem, InspectionItemResult, InspectionResult, IncidentSeverity, IncidentEntry,
-  PMServiceEntry,
+  PMServiceEntry, DriverProfile, LegacyDriverContact, VehicleDriverAssignment,
 } from './types'
 import { fleetUnitLabel, fmtDate, money, fmt } from './helpers'
 import { formatHoursMinutes } from '@/lib/durationFormat'
@@ -25,6 +25,7 @@ import { isSupportedPhotoFile, runPhotoUploadQueue, uploadDirectPhoto, type Phot
 import { formatUSPhone } from '@/utils/phone'
 import { duplicateVinConflict, duplicateVinTruckLabel, type DuplicateVinConflict } from './duplicateVin'
 import type { QueryClient } from '@tanstack/react-query'
+import { getWorkOSCapabilities, startWorkOSLogin } from '../../lib/workosAuth'
 
 /**
  * Fleet work orders ARE repair orders — creating/completing/deleting one changes
@@ -1969,45 +1970,170 @@ function Row({ k, v }: { k: string; v: string }) {
 
 export function AssignDriverModal({ truck, driverPhone, onClose }: { truck: BoardTruck; driverPhone?: string | null; onClose: () => void }) {
   const qc = useQueryClient()
-  const [name, setName] = useState(truck.driver_name || '')
-  const [phone, setPhone] = useState(driverPhone ? formatUSPhone(driverPhone) : '')
-  const hadDriver = Boolean(truck.driver_name)
-
-  const save = useMutation({
-    mutationFn: async (next?: { name: string; phone: string }) => (await api.patch(`/fleet/trucks/${truck.id}`, {
-      driver_name: (next?.name ?? name).trim(),
-      driver_phone: (next?.phone ?? phone).trim(),
+  const legacyParts = (truck.driver_name || '').trim().split(/\s+/).filter(Boolean)
+  const [search, setSearch] = useState('')
+  const [creating, setCreating] = useState(false)
+  const [draft, setDraft] = useState({
+    first_name: legacyParts[0] || '',
+    last_name: legacyParts.slice(1).join(' '),
+    phone: driverPhone ? formatUSPhone(driverPhone) : '',
+    email: '',
+    employee_number: '',
+  })
+  const capabilities = useQuery({
+    queryKey: ['workos-capabilities', '/fleet'],
+    queryFn: () => getWorkOSCapabilities('/fleet'),
+  })
+  const current = useQuery<VehicleDriverAssignment | null>({
+    queryKey: ['fleet-vehicle-driver', truck.id],
+    queryFn: async () => (await api.get(`/fleet-identity/vehicles/${truck.id}/driver`)).data,
+    enabled: capabilities.data?.session_provider === 'workos',
+    retry: false,
+  })
+  const drivers = useQuery<DriverProfile[]>({
+    queryKey: ['fleet-driver-profiles'],
+    queryFn: async () => (await api.get('/fleet-identity/drivers')).data,
+    enabled: capabilities.data?.session_provider === 'workos',
+    retry: false,
+  })
+  const legacyContacts = useQuery<LegacyDriverContact[]>({
+    queryKey: ['fleet-legacy-driver-contacts'],
+    queryFn: async () => (await api.get('/fleet-identity/drivers/legacy-contacts')).data,
+    enabled: capabilities.data?.session_provider === 'workos',
+    retry: false,
+  })
+  const assign = useMutation({
+    mutationFn: async (driver: DriverProfile) => (await api.put(`/fleet-identity/vehicles/${truck.id}/driver`, {
+      driver_id: driver.id,
+      vehicle_id: truck.id,
+      start_odometer: truck.odometer ?? undefined,
     })).data,
-    onSuccess: (_data, next) => {
-      toast.success((next?.name ?? name).trim() ? 'Driver assigned' : 'Driver removed')
+    onSuccess: () => {
+      toast.success('Driver profile assigned')
+      qc.invalidateQueries({ queryKey: ['fleet-vehicle-driver', truck.id] })
       qc.invalidateQueries({ queryKey: ['fleet-truck', truck.id] })
       invalidateFleetAndCockpit(qc)
       onClose()
     },
-    onError: (e: any) => toast.error(e.response?.data?.detail || 'Failed to save driver'),
+    onError: (e: AxiosError<{ detail?: string }>) => toast.error(e.response?.data?.detail || 'Driver could not be assigned'),
   })
+  const create = useMutation({
+    mutationFn: async () => (await api.post('/fleet-identity/drivers', {
+      first_name: draft.first_name.trim(),
+      last_name: draft.last_name.trim(),
+      phone: draft.phone.trim() || undefined,
+      email: draft.email.trim() || undefined,
+      employee_number: draft.employee_number.trim() || undefined,
+    })).data as DriverProfile,
+    onSuccess: (driver) => {
+      qc.setQueryData<DriverProfile[]>(['fleet-driver-profiles'], (items = []) => [...items, driver])
+      assign.mutate(driver)
+    },
+    onError: (e: AxiosError<{ detail?: string }>) => toast.error(e.response?.data?.detail || 'Driver profile could not be created'),
+  })
+  const remove = useMutation({
+    mutationFn: async () => api.delete(`/fleet-identity/vehicles/${truck.id}/driver`),
+    onSuccess: () => {
+      toast.success('Driver released from this truck')
+      qc.setQueryData(['fleet-vehicle-driver', truck.id], null)
+      qc.invalidateQueries({ queryKey: ['fleet-truck', truck.id] })
+      invalidateFleetAndCockpit(qc)
+      onClose()
+    },
+    onError: (e: AxiosError<{ detail?: string }>) => toast.error(e.response?.data?.detail || 'Driver could not be released'),
+  })
+  const filteredDrivers = (drivers.data || []).filter((driver) => {
+    if (driver.employment_status !== 'active') return false
+    const haystack = `${driver.first_name} ${driver.last_name} ${driver.email || ''} ${driver.phone || ''} ${driver.employee_number || ''}`.toLowerCase()
+    return haystack.includes(search.trim().toLowerCase())
+  })
+  const filteredLegacyContacts = (legacyContacts.data || []).filter((contact) => {
+    const haystack = `${contact.name} ${contact.phone || ''}`.toLowerCase()
+    return haystack.includes(search.trim().toLowerCase())
+  })
+  const chooseLegacyContact = (contact: LegacyDriverContact) => {
+    const parts = contact.name.trim().split(/\s+/).filter(Boolean)
+    setDraft({
+      first_name: parts[0] || '',
+      last_name: parts.slice(1).join(' '),
+      phone: contact.phone ? formatUSPhone(contact.phone) : '',
+      email: '',
+      employee_number: '',
+    })
+    setCreating(true)
+  }
+  const busy = assign.isPending || create.isPending || remove.isPending
+  const needsWorkOS = capabilities.data && capabilities.data.session_provider !== 'workos'
 
   return (
     <SidekickPanel
-      title={fleetUnitLabel(truck)} subtitle={hadDriver ? 'Change driver' : 'Assign driver'} icon={<UserRound size={18} className="text-[var(--yellow)]" />}
+      title={fleetUnitLabel(truck)} subtitle="Driver assignment" icon={<UserRound size={18} className="text-[var(--yellow)]" />}
       onClose={onClose} width="max-w-[460px]" tone="neutral"
       footer={(
-        <div className={'fleet-sidekick-actions' + (hadDriver ? ' fleet-sidekick-actions-three' : '')}>
-          {hadDriver && (
-            <button className="dbtn dbtn-danger" disabled={save.isPending} onClick={() => { setName(''); setPhone(''); save.mutate({ name: '', phone: '' }) }}>
-              Remove driver
-            </button>
-          )}
-          <button type="button" className="dbtn dbtn-ghost" disabled={save.isPending} onClick={onClose}>Cancel</button>
-          <button className={yellowBtn} disabled={save.isPending || !name.trim()} onClick={() => save.mutate({ name, phone })}>
-            {save.isPending ? <Spinner size="sm" /> : <UserRound size={15} />} {hadDriver ? 'Save driver' : 'Assign driver'}
-          </button>
+        <div className="fleet-sidekick-actions">
+          {current.data && <button type="button" className="dbtn dbtn-danger" disabled={busy} onClick={() => remove.mutate()}>Release driver</button>}
+          <button type="button" className="dbtn dbtn-ghost" disabled={busy} onClick={onClose}>Done</button>
         </div>
       )}
     >
-      <div style={{ display: 'grid', gap: 12 }}>
-        <Field label="Driver name"><input value={name} onChange={(e) => setName(e.target.value)} placeholder="Full name" /></Field>
-        <Field label="Driver phone"><input value={phone} onChange={(e) => setPhone(formatUSPhone(e.target.value))} placeholder="(704) 555-0123" /></Field>
+      <div className="driver-assignment-flow">
+        {needsWorkOS ? (
+          <div className="driver-workos-gate">
+            <ShieldCheck size={20} />
+            <div><strong>Organization sign-in required</strong><span>Driver profiles and custody history are protected by your fleet permissions.</span></div>
+            <button type="button" className={yellowBtn} onClick={() => startWorkOSLogin('/fleet', capabilities.data?.driver_invitation_management.reauth_path)}>Continue with WorkOS</button>
+          </div>
+        ) : (
+          <>
+            {current.data && (
+              <div className="driver-current-assignment">
+                <span className="avatar">{`${current.data.driver.first_name[0] || ''}${current.data.driver.last_name[0] || ''}`}</span>
+                <div><small>Currently assigned</small><strong>{current.data.driver.first_name} {current.data.driver.last_name}</strong><span>{current.data.custody_acknowledged_at ? 'Driver confirmed custody' : 'Waiting for driver confirmation'}</span></div>
+              </div>
+            )}
+            <div className="driver-assignment-heading">
+              <div><h3>{current.data ? 'Choose a replacement' : 'Choose a driver profile'}</h3><p>The selected profile begins a new custody period. Earlier assignments remain in history.</p></div>
+              <button type="button" className="dbtn dbtn-ghost" onClick={() => setCreating((value) => !value)}>{creating ? 'Choose existing' : 'New profile'}</button>
+            </div>
+            {creating ? (
+              <div className="driver-profile-form">
+                <div className="driver-profile-name-row">
+                  <Field label="First name"><input autoFocus value={draft.first_name} onChange={(e) => setDraft({ ...draft, first_name: e.target.value })} /></Field>
+                  <Field label="Last name"><input value={draft.last_name} onChange={(e) => setDraft({ ...draft, last_name: e.target.value })} /></Field>
+                </div>
+                <Field label="Email for Driver Portal"><input type="email" value={draft.email} onChange={(e) => setDraft({ ...draft, email: e.target.value })} placeholder="driver@company.com" /></Field>
+                <Field label="Phone"><input value={draft.phone} onChange={(e) => setDraft({ ...draft, phone: formatUSPhone(e.target.value) })} placeholder="(704) 555-0123" /></Field>
+                <Field label="Employee number (optional)"><input value={draft.employee_number} onChange={(e) => setDraft({ ...draft, employee_number: e.target.value })} /></Field>
+                <p className="driver-profile-note">Creating a profile does not create a login. You can review the profile, then send a secure Driver Portal invitation from Truck details.</p>
+                <button type="button" className={yellowBtn} disabled={busy || !draft.first_name.trim() || !draft.last_name.trim()} onClick={() => create.mutate()}>{busy ? <Spinner size="sm" /> : <UserRound size={15} />} Create and assign profile</button>
+              </div>
+            ) : (
+              <>
+                <label className="driver-profile-search"><Search size={16} /><input type="search" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search drivers" aria-label="Search driver profiles" /></label>
+                <div className="driver-profile-list">
+                  {(drivers.isLoading || legacyContacts.isLoading) && <div className="driver-profile-empty"><Spinner size="sm" /> Loading drivers…</div>}
+                  {(drivers.isError || legacyContacts.isError) && <div className="driver-profile-empty">Driver records could not be loaded. Close this panel and try again.</div>}
+                  {!drivers.isLoading && !legacyContacts.isLoading && !drivers.isError && !legacyContacts.isError && filteredDrivers.map((driver) => {
+                    const selected = current.data?.driver.id === driver.id
+                    return <button type="button" key={driver.id} className="driver-profile-option" disabled={busy || selected} onClick={() => assign.mutate(driver)}>
+                      <span className="avatar avatar-sm">{`${driver.first_name[0] || ''}${driver.last_name[0] || ''}`}</span>
+                      <span><strong>{driver.first_name} {driver.last_name}</strong><small>{driver.email || driver.phone || driver.employee_number || 'Profile ready'}</small></span>
+                      <span className={selected ? 'driver-profile-state is-current' : 'driver-profile-state'}>{selected ? 'Current' : 'Assign'}</span>
+                    </button>
+                  })}
+                  {!drivers.isLoading && !legacyContacts.isLoading && !drivers.isError && !legacyContacts.isError && filteredLegacyContacts.map((contact) => (
+                    <button type="button" key={`legacy:${contact.name}:${contact.phone || ''}`} className="driver-profile-option is-legacy" disabled={busy} onClick={() => chooseLegacyContact(contact)}>
+                      <span className="avatar avatar-sm">{contact.name.split(/\s+/).slice(0, 2).map((part) => part[0]).join('')}</span>
+                      <span><strong>{contact.name}</strong><small>Legacy contact · {contact.vehicle_count} {contact.vehicle_count === 1 ? 'truck' : 'trucks'}{contact.phone ? ` · ${formatUSPhone(contact.phone)}` : ''}</small></span>
+                      <span className="driver-profile-state">Create profile</span>
+                    </button>
+                  ))}
+                  {!drivers.isLoading && !legacyContacts.isLoading && !drivers.isError && !legacyContacts.isError && filteredDrivers.length === 0 && filteredLegacyContacts.length === 0 && <div className="driver-profile-empty">No matching drivers. Create a profile to preserve this driver’s custody and incident history.</div>}
+                </div>
+              </>
+            )}
+          </>
+        )}
       </div>
     </SidekickPanel>
   )

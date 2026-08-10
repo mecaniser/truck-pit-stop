@@ -12,13 +12,13 @@ import api from '../../lib/api'
 import { isSupportedPhotoFile, runPhotoUploadQueue, uploadDirectPhoto, type PhotoUploadStatus } from '@/lib/photoUpload'
 import type {
   BoardTruck, TruckDetail as TruckDetailData, IncidentSeverity, IncidentEntry, FleetPhoto, HistoryEntry, PartEntry, Inspection,
-  VehicleMergePreview, VehicleMergeResult, VehicleMergeSummary,
+  VehicleMergePreview, VehicleMergeResult, VehicleMergeSummary, VehicleDriverAssignment,
 } from './types'
 import { STATUS_META, fleetUnitLabel, fmt, money, fmtDate, pmState, initials } from './helpers'
-import { formatUSPhone } from '@/utils/phone'
 import FleetMap from './FleetMap'
 import { TruckEditModal, LogIncidentModal, EditIncidentModal, InspectionsSection, NewWorkOrderModal, WorkOrderPanel, AssignDriverModal, SchedulePMModal, Modal, SidekickPanel, invalidateFleetAndCockpit, type InspectionsSectionHandle } from './FleetModals'
 import { useAuthStore } from '../../stores/authStore'
+import { getWorkOSCapabilities, startWorkOSLogin, type WorkOSCapabilities } from '../../lib/workosAuth'
 
 const sevClass: Record<IncidentSeverity, string> = {
   critical: 'inc-high', high: 'inc-high', medium: 'inc-med', low: 'inc-low',
@@ -1188,6 +1188,137 @@ function RecognizePMModal({ entry, truck, onClose, onDone }: {
 
 /* The detail view is the source of truth for the truck's relationships and
    service context. Editing deliberately starts from here, not from the board. */
+type DriverPortalAccess = {
+  driver_profile_id: string
+  profile_status: 'active' | 'inactive'
+  portal_access_status: 'not_invited' | 'pending' | 'active' | 'expired' | 'revoked' | 'suspended' | 'needs_review'
+  invitation_id?: string | null
+  email?: string | null
+  invited_at?: string | null
+  expires_at?: string | null
+  accepted_at?: string | null
+  can_invite: boolean
+  can_resend: boolean
+  can_revoke: boolean
+}
+
+const portalStatusCopy: Record<DriverPortalAccess['portal_access_status'], string> = {
+  not_invited: 'Portal not invited',
+  pending: 'Invitation pending',
+  active: 'Portal active',
+  expired: 'Invitation expired',
+  revoked: 'Invitation revoked',
+  suspended: 'Portal suspended',
+  needs_review: 'Portal needs review',
+}
+
+function invitationUnavailableCopy(capability?: WorkOSCapabilities) {
+  switch (capability?.driver_invitation_management.reason) {
+    case 'organization_not_provisioned': return 'Driver Portal invitations are not set up for this shop yet.'
+    case 'manager_not_provisioned': return 'Your organization sign-in has not been activated.'
+    case 'missing_permission': return 'You do not have permission to manage Driver Portal access.'
+    case 'workos_auth_disabled': return 'Driver Portal invitations are temporarily unavailable.'
+    default: return 'Continue with WorkOS to manage Driver Portal access.'
+  }
+}
+
+function TruckDriverSection({ truck, detail, onChangeDriver }: {
+  truck: BoardTruck; detail: TruckDetailData; onChangeDriver: () => void
+}) {
+  const qc = useQueryClient()
+  const portalIdempotencyKeys = useRef<Record<string, string>>({})
+  const [inviteEmail, setInviteEmail] = useState('')
+  const [inviteOpen, setInviteOpen] = useState(false)
+  const capabilities = useQuery({
+    queryKey: ['workos-capabilities', '/fleet'],
+    queryFn: () => getWorkOSCapabilities('/fleet'),
+  })
+  const assignment = useQuery<VehicleDriverAssignment | null>({
+    queryKey: ['fleet-vehicle-driver', truck.id],
+    queryFn: async () => (await api.get(`/fleet-identity/vehicles/${truck.id}/driver`)).data,
+    enabled: capabilities.data?.session_provider === 'workos',
+    retry: false,
+  })
+  const portal = useQuery<DriverPortalAccess>({
+    queryKey: ['driver-portal-access', assignment.data?.driver.id],
+    queryFn: async () => (await api.get(`/auth/workos/driver-profiles/${assignment.data!.driver.id}/portal-access`)).data,
+    enabled: Boolean(assignment.data && capabilities.data?.driver_invitation_management.available),
+    retry: false,
+  })
+  useEffect(() => {
+    if (assignment.data?.driver.email) setInviteEmail(assignment.data.driver.email)
+  }, [assignment.data?.driver.email])
+  const mutatePortal = useMutation({
+    mutationFn: async ({ action, invitationId }: { action: 'invite' | 'resend' | 'revoke'; invitationId?: string }) => {
+      const operationKey = `${action}:${invitationId || assignment.data?.driver.id || ''}:${inviteEmail.trim().toLowerCase()}`
+      const idempotencyKey = portalIdempotencyKeys.current[operationKey] || crypto.randomUUID()
+      portalIdempotencyKeys.current[operationKey] = idempotencyKey
+      const headers = { 'Idempotency-Key': idempotencyKey }
+      if (action === 'invite') {
+        await api.post('/auth/workos/invitations', {
+        email: inviteEmail.trim(), role_slug: 'driver', driver_profile_id: assignment.data!.driver.id, resource_scope: {},
+        }, { headers })
+      } else {
+        await api.post(`/auth/workos/invitations/${invitationId}/${action}`, {}, { headers })
+      }
+      return action
+    },
+    onSuccess: async (action) => {
+      portalIdempotencyKeys.current = {}
+      toast.success(action === 'invite' ? 'Driver Portal invitation sent' : action === 'resend' ? 'Invitation resent' : 'Invitation revoked')
+      await qc.invalidateQueries({ queryKey: ['driver-portal-access', assignment.data?.driver.id] })
+      setInviteOpen(false)
+    },
+    onError: (error: AxiosError<{ detail?: string }>) => {
+      if (error.response?.status === 409) void portal.refetch()
+      toast.error(error.response?.data?.detail || 'Driver Portal access could not be updated')
+    },
+  })
+  const driver = assignment.data?.driver
+  const displayName = driver ? `${driver.first_name} ${driver.last_name}` : truck.driver_name
+  const phone = driver?.phone || detail.driver_phone
+  const capability = capabilities.data?.driver_invitation_management
+  const portalState = portal.data
+
+  return (
+    <section className="fleet-reference-section">
+      <div className="fleet-reference-heading">
+        <h3 className="dmap-side-h">Driver &amp; crew</h3>
+        <button className="dbtn dbtn-ghost" onClick={onChangeDriver}>{driver || truck.driver_name ? 'Change driver' : 'Assign driver'}</button>
+      </div>
+      <div className="person person-driver fleet-driver-profile-row">
+        <div className="avatar">{initials(displayName)}</div>
+        <div className="fleet-driver-profile-copy">
+          <div className="person-name">{displayName || 'No driver assigned'}</div>
+          <div className="person-role">{driver ? 'Managed driver profile' : truck.driver_name ? 'Legacy contact — profile not created' : 'Assign a profile to begin custody tracking'}</div>
+        </div>
+        {phone && <a className="person-call" href={`tel:${phone}`} aria-label={`Call ${displayName || 'driver'}`}><Phone size={15} /></a>}
+      </div>
+      {driver && (
+        <div className="driver-portal-access">
+          <div className="driver-portal-access-head">
+            <div><strong>Driver Portal</strong><span>PTI, assigned equipment, incident reporting, and reviewed accountability.</span></div>
+            {portalState && <span className={`driver-portal-badge is-${portalState.portal_access_status}`}>{portalStatusCopy[portalState.portal_access_status]}</span>}
+          </div>
+          {!capability?.available ? (
+            <div className="driver-portal-gate"><span>{invitationUnavailableCopy(capabilities.data)}</span>{capability?.reauth_path && <button type="button" className="dbtn dbtn-ghost" onClick={() => startWorkOSLogin('/fleet', capability.reauth_path)}>Continue with WorkOS</button>}</div>
+          ) : portal.isLoading ? <div className="driver-portal-loading"><Spinner size="xs" /> Checking portal access…</div> : (
+            <>
+              {portalState?.portal_access_status === 'active' && <div className="driver-portal-active"><CheckCircle2 size={16} /><span>This driver can sign in and use the Driver Portal.</span></div>}
+              {portalState?.can_invite && !inviteOpen && <button type="button" className="dbtn dbtn-ghost" onClick={() => setInviteOpen(true)}>Invite to Driver Portal</button>}
+              {inviteOpen && <div className="driver-portal-invite"><label><span>Invitation email</span><input type="email" value={inviteEmail} onChange={(event) => setInviteEmail(event.target.value)} placeholder="driver@company.com" autoFocus /></label><div><button type="button" className="dbtn dbtn-ghost" onClick={() => setInviteOpen(false)}>Cancel</button><button type="button" className="dbtn dbtn-yellow" disabled={!inviteEmail.trim() || mutatePortal.isPending} onClick={() => mutatePortal.mutate({ action: 'invite' })}>{mutatePortal.isPending ? <Spinner size="xs" /> : null} Send invitation</button></div></div>}
+              {portalState?.can_resend && portalState.invitation_id && <button type="button" className="dbtn dbtn-ghost" disabled={mutatePortal.isPending} onClick={() => mutatePortal.mutate({ action: 'resend', invitationId: portalState.invitation_id! })}>Resend invitation</button>}
+              {portalState?.can_revoke && portalState.invitation_id && <button type="button" className="dbtn dbtn-danger" disabled={mutatePortal.isPending} onClick={() => mutatePortal.mutate({ action: 'revoke', invitationId: portalState.invitation_id! })}>Revoke invitation</button>}
+            </>
+          )}
+        </div>
+      )}
+      {truck.assigned_mechanic && <div className="person"><div className="avatar avatar-mech">{initials(truck.assigned_mechanic)}</div><div><div className="person-name">{truck.assigned_mechanic}</div><div className="person-role">Lead mechanic on file</div></div></div>}
+      {detail.crew.filter((member) => member !== truck.assigned_mechanic).slice(0, 3).map((member) => <div key={member} className="person person-sm"><div className="avatar avatar-sm">{initials(member)}</div><div><div className="person-name">{member}</div><div className="person-role">Worked on this truck</div></div></div>)}
+    </section>
+  )
+}
+
 function TruckDetailsModal({ truck, detail, canMerge, onChangeDriver, onEdit, onMerge, onClose }: {
   truck: BoardTruck; detail: TruckDetailData; canMerge: boolean; onChangeDriver: () => void; onEdit: () => void; onMerge: () => void; onClose: () => void
 }) {
@@ -1230,40 +1361,7 @@ function TruckDetailsModal({ truck, detail, canMerge, onChangeDriver, onEdit, on
         </div>
       </section>
 
-      <section className="fleet-reference-section">
-        <h3 className="dmap-side-h">Driver &amp; crew</h3>
-        <div className="person person-driver">
-          <div className="avatar">{initials(truck.driver_name)}</div>
-          <div>
-            <div className="person-name">{truck.driver_name || 'Unassigned'}</div>
-            <div className="person-role">{detail.driver_phone ? formatUSPhone(detail.driver_phone) : 'Assigned driver'}</div>
-          </div>
-          {detail.driver_phone && (
-            <a className="person-call" href={`tel:${detail.driver_phone}`} aria-label={`Call ${truck.driver_name || 'driver'}`}><Phone size={15} /></a>
-          )}
-          <button className="dbtn dbtn-ghost fleet-reference-driver-action" onClick={onChangeDriver}>
-            {truck.driver_name ? 'Change driver' : 'Assign driver'}
-          </button>
-        </div>
-        {truck.assigned_mechanic && (
-          <div className="person">
-            <div className="avatar avatar-mech">{initials(truck.assigned_mechanic)}</div>
-            <div>
-              <div className="person-name">{truck.assigned_mechanic}</div>
-              <div className="person-role">Lead mechanic on file</div>
-            </div>
-          </div>
-        )}
-        {detail.crew.filter((member) => member !== truck.assigned_mechanic).slice(0, 3).map((member) => (
-          <div key={member} className="person person-sm">
-            <div className="avatar avatar-sm">{initials(member)}</div>
-            <div>
-              <div className="person-name">{member}</div>
-              <div className="person-role">Worked on this truck</div>
-            </div>
-          </div>
-        ))}
-      </section>
+      <TruckDriverSection truck={truck} detail={detail} onChangeDriver={onChangeDriver} />
       <section className="fleet-reference-section">
         <h3 className="dmap-side-h">Service record</h3>
         <div className="id-grid">

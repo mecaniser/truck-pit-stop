@@ -276,6 +276,114 @@ async def start_custody_session(
     return session
 
 
+async def replace_vehicle_custody(
+    db: AsyncSession,
+    *,
+    tenant_id: UUID,
+    driver_id: UUID,
+    assigned_by_user_id: UUID,
+    vehicle_id: UUID,
+    starts_at: Optional[datetime] = None,
+    start_odometer: Optional[int] = None,
+    dispatch_reference: Optional[str] = None,
+    handoff_notes: Optional[str] = None,
+) -> EquipmentCustodySession:
+    """Replace a truck's active driver without rewriting prior custody.
+
+    The previous asset and session are closed at the handoff timestamp.  The
+    vehicle's legacy driver fields remain a compatibility projection for the
+    existing Fleet Board; custody is the source of truth.
+    """
+    began_at = starts_at or datetime.now(timezone.utc)
+    active_assets = list((await db.execute(
+        select(EquipmentCustodyAsset)
+        .where(
+            EquipmentCustodyAsset.tenant_id == tenant_id,
+            EquipmentCustodyAsset.vehicle_id == vehicle_id,
+            EquipmentCustodyAsset.released_at.is_(None),
+            EquipmentCustodyAsset.deleted_at.is_(None),
+        )
+    )).scalars())
+    active_session_ids = {asset.custody_session_id for asset in active_assets}
+    for session_id in active_session_ids:
+        session = await db.get(EquipmentCustodySession, session_id)
+        if session and session.tenant_id == tenant_id and session.ends_at is None:
+            if began_at < session.starts_at:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="Driver handoff cannot begin before the current custody period",
+                )
+            session_assets = list((await db.execute(select(EquipmentCustodyAsset).where(
+                EquipmentCustodyAsset.custody_session_id == session.id,
+                EquipmentCustodyAsset.tenant_id == tenant_id,
+                EquipmentCustodyAsset.released_at.is_(None),
+                EquipmentCustodyAsset.deleted_at.is_(None),
+            ))).scalars())
+            for session_asset in session_assets:
+                session_asset.released_at = began_at
+            session.ends_at = began_at
+            session.status = "closed"
+            session.released_by_user_id = assigned_by_user_id
+
+    # Flush the release before inserting the replacement so the active-asset
+    # uniqueness constraint remains a final safety net instead of a blocker.
+    await db.flush()
+    session = await start_custody_session(
+        db,
+        tenant_id=tenant_id,
+        driver_id=driver_id,
+        assigned_by_user_id=assigned_by_user_id,
+        vehicle_id=vehicle_id,
+        starts_at=began_at,
+        start_odometer=start_odometer,
+        dispatch_reference=dispatch_reference,
+        handoff_notes=handoff_notes,
+    )
+    driver = await db.get(DriverProfile, driver_id)
+    vehicle = await db.get(Vehicle, vehicle_id)
+    if driver and vehicle:
+        vehicle.driver_name = f"{driver.first_name} {driver.last_name}".strip()
+        vehicle.driver_phone = driver.phone
+    return session
+
+
+async def release_vehicle_custody(
+    db: AsyncSession,
+    *,
+    tenant_id: UUID,
+    vehicle_id: UUID,
+    released_by_user_id: UUID,
+) -> None:
+    ended_at = datetime.now(timezone.utc)
+    assets = list((await db.execute(
+        select(EquipmentCustodyAsset).where(
+            EquipmentCustodyAsset.tenant_id == tenant_id,
+            EquipmentCustodyAsset.vehicle_id == vehicle_id,
+            EquipmentCustodyAsset.released_at.is_(None),
+            EquipmentCustodyAsset.deleted_at.is_(None),
+        )
+    )).scalars())
+    active_session_ids = {asset.custody_session_id for asset in assets}
+    for session_id in active_session_ids:
+        session = await db.get(EquipmentCustodySession, session_id)
+        if session and session.tenant_id == tenant_id and session.ends_at is None:
+            session_assets = list((await db.execute(select(EquipmentCustodyAsset).where(
+                EquipmentCustodyAsset.custody_session_id == session.id,
+                EquipmentCustodyAsset.tenant_id == tenant_id,
+                EquipmentCustodyAsset.released_at.is_(None),
+                EquipmentCustodyAsset.deleted_at.is_(None),
+            ))).scalars())
+            for session_asset in session_assets:
+                session_asset.released_at = ended_at
+            session.ends_at = ended_at
+            session.status = "closed"
+            session.released_by_user_id = released_by_user_id
+    vehicle = await db.get(Vehicle, vehicle_id)
+    if vehicle and vehicle.tenant_id == tenant_id:
+        vehicle.driver_name = None
+        vehicle.driver_phone = None
+
+
 async def acknowledge_own_custody(
     db: AsyncSession,
     *,

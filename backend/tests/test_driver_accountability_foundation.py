@@ -29,6 +29,8 @@ from app.services.driver_accountability_service import (
     close_custody_session,
     create_driver_profile,
     get_driver_for_principal,
+    release_vehicle_custody,
+    replace_vehicle_custody,
     start_custody_session,
 )
 from app.api.v1.endpoints.fleet import (
@@ -258,6 +260,46 @@ async def test_driver_can_acknowledge_only_own_custody_and_close_releases_assets
     assert trailer_asset.end_odometer is None
 
 
+@pytest.mark.asyncio
+async def test_replacing_vehicle_driver_preserves_prior_custody_and_updates_board_projection(db_session):
+    tenant, _, employer, _, manager, driver_user, truck, trailer = await _seed_fleet(db_session)
+    first = await create_driver_profile(
+        db_session, tenant_id=tenant.id, first_name="Dana", last_name="Driver",
+        employer_customer_id=employer.id, user_id=driver_user.id,
+    )
+    second = await create_driver_profile(
+        db_session, tenant_id=tenant.id, first_name="Morgan", last_name="Miles",
+        employer_customer_id=employer.id, phone="7045551212",
+    )
+    prior = await start_custody_session(
+        db_session, tenant_id=tenant.id, driver_id=first.id,
+        assigned_by_user_id=manager.id, vehicle_id=truck.id,
+        trailer_ids=[trailer.id], start_odometer=truck.mileage,
+    )
+
+    replacement = await replace_vehicle_custody(
+        db_session, tenant_id=tenant.id, driver_id=second.id,
+        assigned_by_user_id=manager.id, vehicle_id=truck.id,
+        start_odometer=truck.mileage,
+    )
+    await db_session.flush()
+
+    assert prior.status == "closed"
+    assert prior.ends_at is not None
+    assert all(asset.released_at is not None for asset in prior.assets)
+    assert replacement.driver_id == second.id
+    assert truck.driver_name == "Morgan Miles"
+    assert truck.driver_phone == "7045551212"
+
+    await release_vehicle_custody(
+        db_session, tenant_id=tenant.id, vehicle_id=truck.id,
+        released_by_user_id=manager.id,
+    )
+    assert replacement.status == "closed"
+    assert truck.driver_name is None
+    assert truck.driver_phone is None
+
+
 def _workos_token(user: User, tenant: Tenant, permissions: set[str]) -> str:
     return create_access_token(
         data={
@@ -317,6 +359,93 @@ async def test_workos_permissions_and_self_scope_protect_driver_routes(client, d
         headers={"Authorization": f"Bearer {wrong_permission}"},
     )
     assert denied_self.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_manager_assigns_and_releases_driver_profile_through_vehicle_contract(client, db_session):
+    tenant, _, employer, _, manager, _, truck, _ = await _seed_fleet(db_session)
+    driver = await create_driver_profile(
+        db_session, tenant_id=tenant.id, first_name="Morgan", last_name="Miles",
+        employer_customer_id=employer.id, phone="7045551212",
+    )
+    await db_session.commit()
+    token = _workos_token(manager, tenant, {"fleet:view", "fleet:assign"})
+    headers = {"Authorization": f"Bearer {token}"}
+
+    assigned = await client.put(
+        f"/api/v1/fleet-identity/vehicles/{truck.id}/driver",
+        json={"driver_id": str(driver.id), "vehicle_id": str(truck.id), "start_odometer": truck.mileage},
+        headers=headers,
+    )
+    assert assigned.status_code == 200
+    assert assigned.json()["driver"]["id"] == str(driver.id)
+    assert assigned.json()["custody_status"] == "assigned"
+
+    current = await client.get(
+        f"/api/v1/fleet-identity/vehicles/{truck.id}/driver", headers=headers,
+    )
+    assert current.status_code == 200
+    assert current.json()["driver"]["first_name"] == "Morgan"
+
+    released = await client.delete(
+        f"/api/v1/fleet-identity/vehicles/{truck.id}/driver", headers=headers,
+    )
+    assert released.status_code == 204
+    after_release = await client.get(
+        f"/api/v1/fleet-identity/vehicles/{truck.id}/driver", headers=headers,
+    )
+    assert after_release.status_code == 200
+    assert after_release.json() is None
+
+
+@pytest.mark.asyncio
+async def test_manager_can_find_unconverted_legacy_driver_contacts(client, db_session):
+    tenant, _, _, _, manager, _, truck, _ = await _seed_fleet(db_session)
+    truck.driver_name = "Marcus Jones"
+    truck.driver_phone = "(910) 301-3928"
+    await db_session.commit()
+    token = _workos_token(manager, tenant, {"fleet:view"})
+
+    response = await client.get(
+        "/api/v1/fleet-identity/drivers/legacy-contacts",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert response.status_code == 200
+    assert response.json() == [{
+        "name": "Marcus Jones",
+        "phone": "(910) 301-3928",
+        "vehicle_count": 1,
+    }]
+
+
+@pytest.mark.asyncio
+async def test_manager_cannot_move_driver_profile_to_another_tenant_customer(client, db_session):
+    tenant, _, employer, other_employer, manager, _, _, _ = await _seed_fleet(db_session)
+    driver = await create_driver_profile(
+        db_session,
+        tenant_id=tenant.id,
+        first_name="Morgan",
+        last_name="Miles",
+        employer_customer_id=employer.id,
+    )
+    await db_session.commit()
+    token = _workos_token(manager, tenant, {"fleet:assign"})
+    headers = {"Authorization": f"Bearer {token}"}
+
+    cross_tenant = await client.patch(
+        f"/api/v1/fleet-identity/drivers/{driver.id}",
+        json={"employer_customer_id": str(other_employer.id)},
+        headers=headers,
+    )
+    assert cross_tenant.status_code == 404
+
+    missing_name = await client.patch(
+        f"/api/v1/fleet-identity/drivers/{driver.id}",
+        json={"first_name": None},
+        headers=headers,
+    )
+    assert missing_name.status_code == 422
 
 
 @pytest.mark.asyncio
