@@ -1,6 +1,6 @@
 import axios from 'axios'
 import { useAuthStore } from '../stores/authStore'
-import { requestTokenRefresh } from './authRefresh'
+import { requestTokenRefresh, requestWorkOSSessionRefresh } from './authRefresh'
 
 const api = axios.create({
   baseURL: import.meta.env.VITE_API_URL || '/api/v1',
@@ -58,9 +58,11 @@ api.interceptors.response.use(
 
     const originalRequest = error.config
     const isAuthEndpoint = originalRequest?.url?.includes('/auth/')
+    const isWorkOSSessionEndpoint = originalRequest?.url?.includes('/auth/workos/session/refresh')
+    const authProvider = useAuthStore.getState().authProvider
+    const mayRefresh = authProvider === 'workos' ? !isWorkOSSessionEndpoint : !isAuthEndpoint
 
-    // Don't retry auth endpoints (includes /auth/refresh)
-    if (error.response?.status === 401 && !isAuthEndpoint && !originalRequest._retry) {
+    if (error.response?.status === 401 && mayRefresh && !originalRequest._retry) {
       if (isRefreshing) {
         // Queue requests while refresh is in progress
         return new Promise((resolve, reject) => {
@@ -79,22 +81,25 @@ api.interceptors.response.use(
       isRefreshing = true
 
       try {
-        // Attempt to refresh the token
-        const refreshToken = useAuthStore.getState().refreshToken
-        const { access_token, refresh_token: newRefreshToken } = await requestTokenRefresh(refreshToken)
-        
-        // Update store with new tokens
-        useAuthStore.getState().setTokens(access_token, newRefreshToken)
-        
-        // Update the failed request's auth header
-        originalRequest.headers.Authorization = `Bearer ${access_token}`
-        
-        processQueue(null, access_token)
+        if (authProvider === 'workos') {
+          await requestWorkOSSessionRefresh()
+          delete originalRequest.headers?.Authorization
+          processQueue(null, null)
+        } else {
+          const refreshToken = useAuthStore.getState().refreshToken
+          const { access_token, refresh_token: newRefreshToken } = await requestTokenRefresh(refreshToken)
+          useAuthStore.getState().setTokens(access_token, newRefreshToken)
+          originalRequest.headers.Authorization = `Bearer ${access_token}`
+          processQueue(null, access_token)
+        }
         return api(originalRequest)
       } catch (refreshError) {
         processQueue(refreshError, null)
-        // Refresh failed - logout and redirect
-        useAuthStore.getState().logout()
+        if (authProvider === 'workos') {
+          useAuthStore.getState().clearSession()
+        } else {
+          void useAuthStore.getState().logout()
+        }
         window.location.href = '/login'
         return Promise.reject(refreshError)
       } finally {
