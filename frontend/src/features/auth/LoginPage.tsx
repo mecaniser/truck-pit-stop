@@ -53,9 +53,6 @@ export default function LoginPage() {
   const workOSStateExpired = searchParams.get('reason') === 'workos_state_expired'
   const organizationReturnTo = searchParams.get('return_to') || '/dashboard'
   const organizationTenantId = searchParams.get('tenant_id')
-  const defaultEmail = import.meta.env.DEV ? 'truxpitstop@gmail.com' : ''
-  const defaultPassword = import.meta.env.DEV ? 'BUse@1534' : ''
-
   useEffect(() => {
     const pageTitle = 'Staff Login | Diesel Bridge Network'
     const pageDescription = 'Secure login for Diesel Bridge Network staff and authorized users.'
@@ -82,8 +79,8 @@ export default function LoginPage() {
     resolver: zodResolver(loginSchema),
     mode: 'onBlur',
     defaultValues: {
-      email: defaultEmail,
-      password: defaultPassword,
+      email: '',
+      password: '',
       remember_me: false,
     },
   })
@@ -280,7 +277,7 @@ export default function LoginPage() {
           )}
           {workOSStateExpired && (
             <div className="rounded-xl border border-amber-700/50 bg-amber-900/20 px-4 py-3 text-sm leading-6 text-amber-200" role="alert">
-              That sign-in link has already been used or expired. Start a new sign-in below.
+              We couldn't safely complete organization sign-in after retrying. Continue with organization sign-in below to start a clean session.
             </div>
           )}
           {resetSuccess && (

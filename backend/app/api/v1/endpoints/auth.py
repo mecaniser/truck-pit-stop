@@ -87,26 +87,59 @@ def _return_path_with_reason(value: Optional[str], reason: str) -> str:
     return urlunsplit(("", "", parts.path or "/", urlencode(query), ""))
 
 
-def _clear_failed_workos_login(response: Response) -> None:
+def _clear_failed_workos_login(response: Response, *, clear_recovery: bool = True) -> None:
     response.delete_cookie("access_token", path="/", domain=_cookie_domain())
     response.delete_cookie("workos_session", path="/api/v1/auth/workos", domain=_cookie_domain())
     response.delete_cookie("refresh_token", path="/api/v1/auth", domain=_cookie_domain())
     response.delete_cookie("workos_oauth_state", path="/api/v1/auth/workos")
     response.delete_cookie("workos_return_to", path="/api/v1/auth/workos")
     response.delete_cookie("workos_tenant_id", path="/api/v1/auth/workos")
+    if clear_recovery:
+        response.delete_cookie("workos_recovery_attempted", path="/api/v1/auth/workos")
 
 
-def _workos_state_failure_response(request: Request) -> RedirectResponse:
-    """Return a stale OAuth callback to a safe, tenant-bound login surface."""
+async def _workos_state_failure_response(request: Request) -> RedirectResponse:
+    """Recover a stale callback without weakening browser-bound OAuth state.
+
+    A callback can be revisited after the original one already succeeded, or
+    an email client can open it outside the browser that started AuthKit. An
+    existing opaque WorkOS session is safe to resume because the refresh
+    endpoint independently revalidates its user, organization, membership,
+    and permissions. Without a session, restart AuthKit once with a new state;
+    a second failure stops at the login surface instead of looping.
+    """
     return_to = _safe_return_path(request.cookies.get("workos_return_to"))
+    session_id = request.cookies.get("workos_session")
+    if session_id and await workos_session.get_session(session_id):
+        response = RedirectResponse(settings.WORKOS_POST_LOGIN_URL.rstrip("/") + return_to)
+        response.delete_cookie("workos_oauth_state", path="/api/v1/auth/workos")
+        response.delete_cookie("workos_return_to", path="/api/v1/auth/workos")
+        response.delete_cookie("workos_tenant_id", path="/api/v1/auth/workos")
+        response.delete_cookie("workos_recovery_attempted", path="/api/v1/auth/workos")
+        return response
+
     login_path = "/driver/login" if return_to.startswith("/driver") else "/login"
-    parts = urlsplit(_return_path_with_reason(login_path, "workos_state_expired"))
-    query = list(parse_qsl(parts.query, keep_blank_values=True))
     raw_tenant_id = request.cookies.get("workos_tenant_id")
     try:
         tenant_id = str(UUID(raw_tenant_id)) if raw_tenant_id else None
     except (TypeError, ValueError):
         tenant_id = None
+
+    if request.cookies.get("workos_recovery_attempted") != "1":
+        retry_params = {"return_to": return_to, "recovery": "1"}
+        if tenant_id:
+            retry_params["tenant_id"] = tenant_id
+        response = RedirectResponse(f"/api/v1/auth/workos/login?{urlencode(retry_params)}")
+        response.set_cookie(
+            "workos_recovery_attempted", "1", httponly=True,
+            secure=settings.COOKIE_SECURE_EFFECTIVE, samesite="lax", max_age=600,
+            path="/api/v1/auth/workos",
+        )
+        _clear_failed_workos_login(response, clear_recovery=False)
+        return response
+
+    parts = urlsplit(_return_path_with_reason(login_path, "workos_state_expired"))
+    query = list(parse_qsl(parts.query, keep_blank_values=True))
     if tenant_id:
         query.append(("tenant_id", tenant_id))
     safe_path = urlunsplit(("", "", parts.path, urlencode(query), ""))
@@ -119,6 +152,7 @@ def _workos_state_failure_response(request: Request) -> RedirectResponse:
 async def workos_login(
     return_to: Optional[str] = None,
     tenant_id: Optional[UUID] = None,
+    recovery: bool = False,
     db: AsyncSession = Depends(get_db),
 ):
     """Start AuthKit without changing any legacy login behavior."""
@@ -150,6 +184,8 @@ async def workos_login(
     response.set_cookie("workos_return_to", _safe_return_path(return_to), httponly=True, secure=settings.COOKIE_SECURE_EFFECTIVE, samesite="lax", max_age=600, path="/api/v1/auth/workos")
     if tenant:
         response.set_cookie("workos_tenant_id", str(tenant.id), httponly=True, secure=settings.COOKIE_SECURE_EFFECTIVE, samesite="lax", max_age=600, path="/api/v1/auth/workos")
+    if not recovery:
+        response.delete_cookie("workos_recovery_attempted", path="/api/v1/auth/workos")
     await (await get_redis()).setex(f"workos:oauth-state:{state}", 600, "1")
     return response
 
@@ -162,11 +198,11 @@ async def workos_callback(request: Request, code: str, state: Optional[str] = No
     _workos_enabled()
     expected_state = request.cookies.get("workos_oauth_state")
     if not state or not expected_state or not secrets.compare_digest(state, expected_state):
-        return _workos_state_failure_response(request)
+        return await _workos_state_failure_response(request)
     # Consume only after confirming this browser owns the presented state.
     state_is_live = bool(await (await get_redis()).delete(f"workos:oauth-state:{state}"))
     if not state_is_live:
-        return _workos_state_failure_response(request)
+        return await _workos_state_failure_response(request)
     try:
         payload = await workos_provider.authenticate({
             "grant_type": "authorization_code",
@@ -231,6 +267,7 @@ async def workos_callback(request: Request, code: str, state: Optional[str] = No
     response.delete_cookie("workos_oauth_state", path="/api/v1/auth/workos")
     response.delete_cookie("workos_return_to", path="/api/v1/auth/workos")
     response.delete_cookie("workos_tenant_id", path="/api/v1/auth/workos")
+    response.delete_cookie("workos_recovery_attempted", path="/api/v1/auth/workos")
     return response
 
 
