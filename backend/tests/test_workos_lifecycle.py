@@ -17,7 +17,14 @@ from jose.utils import base64url_encode
 from app.core.config import settings
 from app.core.security import get_password_hash
 from app.db.models.driver_accountability import DriverProfile
-from app.db.models.identity import ExternalIdentity, IdentityPrincipal, TenantInvitation, TenantMembership, WorkOSEventReceipt
+from app.db.models.identity import (
+    ExternalIdentity,
+    IdentityPrincipal,
+    TenantInvitation,
+    TenantInvitationAuditEvent,
+    TenantMembership,
+    WorkOSEventReceipt,
+)
 from app.db.models.tenant import Tenant
 from app.db.models.user import User, UserRole
 from app.services import identity_lifecycle, workos_provider, workos_session, workos_webhooks
@@ -140,6 +147,126 @@ async def test_exact_invitation_creates_passwordless_projection_and_links_driver
     assert driver.user_id == user.id
     assert resolved_tenant.id == tenant.id
     assert membership.permissions == claims["permissions"]
+
+
+@pytest.mark.asyncio
+async def test_accepted_driver_email_collision_persists_review_without_identity_mutation(db_session, monkeypatch):
+    tenant = Tenant(name="Review", slug="review", workos_organization_id="org_review")
+    platform_user = User(
+        email="collision@example.test",
+        hashed_password="legacy-hash",
+        first_name="Platform",
+        last_name="Administrator",
+        role=UserRole.SUPER_ADMIN,
+        is_active=True,
+    )
+    db_session.add(tenant)
+    await db_session.flush()
+    inviter = User(
+        email="review-owner@example.test",
+        hashed_password="legacy-hash",
+        first_name="Review",
+        last_name="Owner",
+        role=UserRole.GARAGE_OWNER,
+        tenant_id=tenant.id,
+        is_active=True,
+    )
+    db_session.add_all([platform_user, inviter])
+    await db_session.flush()
+    driver = DriverProfile(
+        tenant_id=tenant.id,
+        first_name="Invited",
+        last_name="Driver",
+        email=platform_user.email,
+    )
+    pending_principal = IdentityPrincipal(status="pending")
+    db_session.add_all([driver, pending_principal])
+    await db_session.flush()
+    invitation = TenantInvitation(
+        tenant_id=tenant.id,
+        principal_id=pending_principal.id,
+        provider_invitation_id="inv_review",
+        email_snapshot=platform_user.email,
+        intended_role_slug="driver",
+        driver_profile_id=driver.id,
+        status="pending",
+        invited_by_user_id=inviter.id,
+        resource_scope={},
+    )
+    db_session.add(invitation)
+    await db_session.commit()
+    original_platform_state = (
+        platform_user.role,
+        platform_user.tenant_id,
+        platform_user.workos_user_id,
+        platform_user.workos_identity_status,
+    )
+
+    async def accepted(_invitation_id):
+        return {
+            "id": "inv_review",
+            "state": "accepted",
+            "accepted_user_id": "wu_review_driver",
+            "organization_id": "org_review",
+            "role_slug": "driver",
+            "email": platform_user.email,
+        }
+
+    async def membership(**kwargs):
+        assert kwargs == {"user_id": "wu_review_driver", "organization_id": "org_review"}
+        return {
+            "id": "om_review_driver",
+            "user_id": "wu_review_driver",
+            "organization_id": "org_review",
+            "status": "active",
+            "role": {"slug": "driver"},
+        }
+
+    monkeypatch.setattr(workos_provider, "get_invitation", accepted)
+    monkeypatch.setattr(workos_provider, "find_organization_membership", membership)
+    with pytest.raises(identity_lifecycle.IdentityReviewRequired) as exc:
+        await identity_lifecycle.resolve_authenticated_identity(
+            db_session,
+            claims={
+                "sub": "wu_review_driver",
+                "org_id": "org_review",
+                "role": "driver",
+                "permissions": ["driver_portal:use"],
+            },
+            workos_user={
+                "id": "wu_review_driver",
+                "email": platform_user.email,
+                "first_name": "Invited",
+                "last_name": "Driver",
+                "email_verified": True,
+            },
+        )
+    assert exc.value.reason == identity_lifecycle.IDENTITY_REVIEW_EMAIL_COLLISION
+    await db_session.commit()
+    await db_session.refresh(invitation)
+    await db_session.refresh(pending_principal)
+    await db_session.refresh(driver)
+    await db_session.refresh(platform_user)
+    assert invitation.status == "needs_review"
+    assert invitation.review_reason == "existing_local_email_collision"
+    assert invitation.provider_user_id == "wu_review_driver"
+    assert invitation.provider_membership_id == "om_review_driver"
+    assert invitation.accepted_at is not None
+    assert pending_principal.status == "pending" and pending_principal.user_id is None
+    assert driver.user_id is None
+    assert (
+        platform_user.role,
+        platform_user.tenant_id,
+        platform_user.workos_user_id,
+        platform_user.workos_identity_status,
+    ) == original_platform_state
+    assert not (await db_session.execute(select(ExternalIdentity))).scalars().all()
+    assert not (await db_session.execute(select(TenantMembership))).scalars().all()
+    audit = (await db_session.execute(select(TenantInvitationAuditEvent))).scalar_one()
+    assert audit.action == "identity_review_required"
+    assert audit.status_from == "pending" and audit.status_to == "needs_review"
+    assert audit.actor_user_id is None
+    assert audit.metadata_json == {"reason": "existing_local_email_collision"}
 
 
 @pytest.mark.asyncio

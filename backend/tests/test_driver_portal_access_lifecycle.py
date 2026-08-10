@@ -22,6 +22,7 @@ from app.db.models.tenant import Tenant
 from app.db.models.user import User, UserRole
 from app.schemas.workos_lifecycle import WorkOSInvitationCreate, WorkOSOrganizationProvision
 from app.services import workos_provider, workos_webhooks
+from app.services.workos_provider import WorkOSProviderError
 
 
 async def _manager_context(db_session, *, slug: str = "portal"):
@@ -494,6 +495,159 @@ async def test_revoke_is_provider_confirmed_audited_and_idempotent(db_session, m
 
 
 @pytest.mark.asyncio
+async def test_identity_review_cleanup_deactivates_membership_before_idempotent_local_close(db_session, monkeypatch):
+    tenant, manager, principal = await _manager_context(db_session)
+    platform_user = User(
+        email="collision-platform@example.test",
+        hashed_password="legacy-hash",
+        first_name="Platform",
+        last_name="Administrator",
+        role=UserRole.SUPER_ADMIN,
+        is_active=True,
+    )
+    db_session.add(platform_user)
+    await db_session.flush()
+    driver = await _driver(db_session, tenant, email=platform_user.email)
+    invitation = await _invitation(db_session, tenant, manager, driver, state="needs_review")
+    invitation.review_reason = "existing_local_email_collision"
+    invitation.provider_user_id = "wu_collision_driver"
+    invitation.provider_membership_id = "om_collision_driver"
+    invitation.accepted_at = datetime.now(timezone.utc)
+    identity = await db_session.get(IdentityPrincipal, invitation.principal_id)
+    await db_session.commit()
+    original_platform_state = (
+        platform_user.role,
+        platform_user.tenant_id,
+        platform_user.workos_user_id,
+        platform_user.is_active,
+    )
+    calls = []
+
+    async def accepted(provider_invitation_id):
+        assert provider_invitation_id == invitation.provider_invitation_id
+        return {
+            "id": provider_invitation_id,
+            "state": "accepted",
+            "accepted_user_id": "wu_collision_driver",
+            "organization_id": tenant.workos_organization_id,
+            "role_slug": "driver",
+            "email": platform_user.email,
+        }
+
+    async def membership(**kwargs):
+        assert kwargs == {
+            "user_id": "wu_collision_driver",
+            "organization_id": tenant.workos_organization_id,
+        }
+        return {
+            "id": "om_collision_driver",
+            "user_id": "wu_collision_driver",
+            "organization_id": tenant.workos_organization_id,
+            "status": "active",
+            "role": {"slug": "driver"},
+        }
+
+    async def deactivate(membership_id):
+        calls.append(membership_id)
+        # The endpoint must not close local state before WorkOS confirms this.
+        assert invitation.status == "needs_review"
+        assert identity.status == "pending"
+        return {"id": membership_id, "status": "inactive"}
+
+    monkeypatch.setattr(workos_provider, "get_invitation", accepted)
+    monkeypatch.setattr(workos_provider, "find_organization_membership", membership)
+    monkeypatch.setattr(workos_provider, "deactivate_organization_membership", deactivate)
+    review = await workos_lifecycle.get_driver_portal_access(str(driver.id), principal, db_session)
+    assert review.portal_access_status == "needs_review"
+    assert review.review_reason == "existing_local_email_collision"
+    assert review.can_invite is False
+    assert review.can_resend is False
+    assert review.can_revoke is False
+    assert review.can_cancel_review is True
+    first = await workos_lifecycle.cancel_driver_identity_review(
+        str(invitation.id), principal, db_session
+    )
+    second = await workos_lifecycle.cancel_driver_identity_review(
+        str(invitation.id), principal, db_session
+    )
+    assert first.portal_access_status == second.portal_access_status == "revoked"
+    assert first.review_reason == "existing_local_email_collision"
+    assert first.can_invite is True
+    assert first.can_resend is False
+    assert first.can_cancel_review is False
+    assert calls == ["om_collision_driver"]
+    await db_session.refresh(identity)
+    await db_session.refresh(driver)
+    await db_session.refresh(platform_user)
+    assert identity.status == "inactive" and identity.user_id is None
+    assert driver.user_id is None
+    assert (
+        platform_user.role,
+        platform_user.tenant_id,
+        platform_user.workos_user_id,
+        platform_user.is_active,
+    ) == original_platform_state
+    events = (await db_session.execute(select(TenantInvitationAuditEvent))).scalars().all()
+    assert len(events) == 1
+    assert events[0].action == "identity_review_cancelled"
+    assert events[0].actor_user_id == manager.id
+    assert events[0].metadata_json == {
+        "reason": "existing_local_email_collision",
+        "membership_outcome": "deactivated",
+    }
+
+
+@pytest.mark.asyncio
+async def test_identity_review_cleanup_fails_closed_when_membership_deactivation_fails(db_session, monkeypatch):
+    tenant, manager, principal = await _manager_context(db_session)
+    driver = await _driver(db_session, tenant)
+    invitation = await _invitation(db_session, tenant, manager, driver, state="needs_review")
+    invitation.review_reason = "existing_local_email_collision"
+    invitation.provider_user_id = "wu_cleanup_failure"
+    invitation.provider_membership_id = "om_cleanup_failure"
+    await db_session.commit()
+    invitation_id = invitation.id
+    identity_id = invitation.principal_id
+    driver_id = driver.id
+
+    async def accepted(_provider_invitation_id):
+        return {
+            "state": "accepted",
+            "accepted_user_id": "wu_cleanup_failure",
+            "organization_id": tenant.workos_organization_id,
+            "role_slug": "driver",
+            "email": driver.email,
+        }
+
+    async def membership(**_kwargs):
+        return {
+            "id": "om_cleanup_failure",
+            "user_id": "wu_cleanup_failure",
+            "organization_id": tenant.workos_organization_id,
+            "status": "active",
+            "role": {"slug": "driver"},
+        }
+
+    async def failure(_membership_id):
+        raise WorkOSProviderError("provider unavailable")
+
+    monkeypatch.setattr(workos_provider, "get_invitation", accepted)
+    monkeypatch.setattr(workos_provider, "find_organization_membership", membership)
+    monkeypatch.setattr(workos_provider, "deactivate_organization_membership", failure)
+    with pytest.raises(HTTPException) as exc:
+        await workos_lifecycle.cancel_driver_identity_review(
+            str(invitation_id), principal, db_session
+        )
+    assert exc.value.status_code == 502
+    refreshed = await db_session.get(TenantInvitation, invitation_id)
+    identity = await db_session.get(IdentityPrincipal, identity_id)
+    refreshed_driver = await db_session.get(DriverProfile, driver_id)
+    assert refreshed.status == "needs_review"
+    assert identity.status == "pending"
+    assert refreshed_driver.user_id is None
+
+
+@pytest.mark.asyncio
 async def test_invitation_webhook_transition_is_idempotent_and_audited(db_session):
     tenant, manager, _ = await _manager_context(db_session)
     driver = await _driver(db_session, tenant)
@@ -512,3 +666,23 @@ async def test_invitation_webhook_transition_is_idempotent_and_audited(db_sessio
     assert len(events) == 1
     assert events[0].action == "provider_reconciled"
     assert events[0].provider_event_id == event["id"]
+
+
+@pytest.mark.asyncio
+async def test_invitation_webhook_cannot_overwrite_identity_review(db_session):
+    tenant, manager, _ = await _manager_context(db_session)
+    driver = await _driver(db_session, tenant)
+    invitation = await _invitation(db_session, tenant, manager, driver, state="needs_review")
+    invitation.review_reason = "existing_local_email_collision"
+    await db_session.commit()
+    event = {
+        "id": f"event_{uuid4().hex}",
+        "event": "invitation.accepted",
+        "data": {"id": invitation.provider_invitation_id, "state": "accepted"},
+    }
+    raw = json.dumps(event, separators=(",", ":")).encode()
+    assert await workos_webhooks.process_event(event, raw, db_session) == "processed"
+    await db_session.refresh(invitation)
+    assert invitation.status == "needs_review"
+    assert invitation.review_reason == "existing_local_email_collision"
+    assert not (await db_session.execute(select(TenantInvitationAuditEvent))).scalars().all()

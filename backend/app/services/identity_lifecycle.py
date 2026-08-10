@@ -3,11 +3,17 @@ from datetime import datetime, timezone
 from typing import Any, Dict, Optional, Tuple
 
 from fastapi import HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.driver_accountability import DriverProfile
-from app.db.models.identity import ExternalIdentity, IdentityPrincipal, TenantInvitation, TenantMembership
+from app.db.models.identity import (
+    ExternalIdentity,
+    IdentityPrincipal,
+    TenantInvitation,
+    TenantInvitationAuditEvent,
+    TenantMembership,
+)
 from app.db.models.tenant import Tenant
 from app.db.models.user import User, UserRole
 from app.services import workos_provider
@@ -23,6 +29,21 @@ ROLE_TO_USER_ROLE = {
     "driver": UserRole.DRIVER,
 }
 INVITABLE_ROLES = frozenset(ROLE_TO_USER_ROLE)
+IDENTITY_REVIEW_EMAIL_COLLISION = "existing_local_email_collision"
+
+
+class IdentityReviewRequired(Exception):
+    """Exact invitation acceptance succeeded but local binding needs review."""
+
+    def __init__(self, invitation_id, reason: str):
+        self.invitation_id = invitation_id
+        self.reason = reason
+        super().__init__(reason)
+
+
+def _provider_role_slug(membership: Dict[str, Any]) -> Optional[str]:
+    role = membership.get("role")
+    return role.get("slug") if isinstance(role, dict) else None
 
 
 async def resolve_authenticated_identity(
@@ -94,10 +115,10 @@ async def resolve_authenticated_identity(
     invitations = (await db.execute(select(TenantInvitation).where(
         TenantInvitation.tenant_id == tenant.id,
         TenantInvitation.provider == "workos",
-        TenantInvitation.status.in_(("pending", "accepted")),
+        TenantInvitation.status.in_(("pending", "accepted", "needs_review")),
         TenantInvitation.provider_invitation_id.is_not(None),
         TenantInvitation.deleted_at.is_(None),
-    ))).scalars().all()
+    ).with_for_update())).scalars().all()
     matched = None
     for invitation in invitations:
         try:
@@ -126,6 +147,11 @@ async def resolve_authenticated_identity(
     principal = await db.get(IdentityPrincipal, matched.principal_id)
     if not principal:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Invitation identity is unavailable")
+    if (
+        matched.status == "needs_review"
+        and matched.review_reason == IDENTITY_REVIEW_EMAIL_COLLISION
+    ):
+        raise IdentityReviewRequired(matched.id, matched.review_reason)
 
     if matched.target_user_id:
         # Existing staff is linked only through the exact local FK selected
@@ -151,8 +177,43 @@ async def resolve_authenticated_identity(
     else:
         # A collision is intentionally not auto-linked. An administrator must
         # resolve it through an explicit target_user_id invitation workflow.
-        if (await db.execute(select(User.id).where(User.email == email))).scalar_one_or_none():
-            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="An existing local identity requires explicit linking")
+        if (await db.execute(
+            select(User.id).where(func.lower(User.email) == email.casefold())
+        )).scalar_one_or_none():
+            provider_membership = None
+            try:
+                provider_membership = await workos_provider.find_organization_membership(
+                    user_id=workos_user_id,
+                    organization_id=workos_org_id,
+                )
+            except WorkOSProviderError:
+                # The signed token and exact accepted invitation already prove
+                # the collision. Cleanup will re-fetch the precise membership
+                # and fail closed if WorkOS remains unavailable.
+                provider_membership = None
+            if provider_membership and (
+                provider_membership.get("status") != "active"
+                or _provider_role_slug(provider_membership) != matched.intended_role_slug
+            ):
+                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="WorkOS membership is unavailable")
+            previous_status = matched.status
+            matched.status = "needs_review"
+            matched.review_reason = IDENTITY_REVIEW_EMAIL_COLLISION
+            matched.provider_user_id = workos_user_id
+            matched.provider_membership_id = provider_membership.get("id") if provider_membership else None
+            matched.accepted_at = matched.accepted_at or datetime.now(timezone.utc)
+            db.add(TenantInvitationAuditEvent(
+                tenant_id=matched.tenant_id,
+                invitation_id=matched.id,
+                driver_profile_id=matched.driver_profile_id,
+                actor_user_id=None,
+                action="identity_review_required",
+                status_from=previous_status,
+                status_to="needs_review",
+                metadata_json={"reason": IDENTITY_REVIEW_EMAIL_COLLISION},
+            ))
+            await db.flush()
+            raise IdentityReviewRequired(matched.id, IDENTITY_REVIEW_EMAIL_COLLISION)
         if principal.user_id is not None:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Invitation identity is already linked")
         user = User(

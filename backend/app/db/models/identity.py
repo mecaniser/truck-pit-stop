@@ -55,6 +55,12 @@ class TenantInvitation(BaseModel):
     # This is never inferred from email; exact provider invitation acceptance
     # is still required before the WorkOS identity is attached.
     target_user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True, index=True)
+    # Provider identifiers captured only after exact invitation acceptance is
+    # proven. They let an administrator deactivate the precise membership
+    # during a reviewed collision cleanup without using email as identity.
+    provider_user_id = Column(String(255), nullable=True, index=True)
+    provider_membership_id = Column(String(255), nullable=True, index=True)
+    review_reason = Column(String(64), nullable=True, index=True)
     status = Column(String(24), nullable=False, default="creating", server_default="creating", index=True)
     expires_at = Column(DateTime(timezone=True), nullable=True)
     accepted_at = Column(DateTime(timezone=True), nullable=True)

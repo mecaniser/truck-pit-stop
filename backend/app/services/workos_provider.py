@@ -131,6 +131,62 @@ async def get_invitation(invitation_id: str) -> Dict[str, Any]:
     return result
 
 
+async def find_organization_membership(*, user_id: str, organization_id: str) -> Optional[Dict[str, Any]]:
+    """Return the exact active/inactive membership for a user and org.
+
+    Email is deliberately not accepted as a lookup key. WorkOS guarantees one
+    organization membership per user/organization pair; multiple matches are
+    treated as malformed provider state and fail closed.
+    """
+    params = [
+        ("user_id", user_id),
+        ("organization_id", organization_id),
+        ("statuses[]", "active"),
+        ("statuses[]", "inactive"),
+        ("limit", "10"),
+    ]
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        response = await client.get(
+            "https://api.workos.com/user_management/organization_memberships",
+            headers={"Authorization": f"Bearer {settings.WORKOS_API_KEY}"},
+            params=params,
+        )
+    if response.status_code >= 400:
+        raise WorkOSProviderError("WorkOS organization membership is unavailable")
+    result = response.json()
+    data = result.get("data") if isinstance(result, dict) else None
+    if not isinstance(data, list):
+        raise WorkOSProviderError("WorkOS organization membership response is malformed")
+    matches = [
+        item for item in data
+        if isinstance(item, dict)
+        and item.get("user_id") == user_id
+        and item.get("organization_id") == organization_id
+    ]
+    if len(matches) > 1:
+        raise WorkOSProviderError("WorkOS organization membership response is ambiguous")
+    return matches[0] if matches else None
+
+
+async def deactivate_organization_membership(membership_id: str) -> Dict[str, Any]:
+    """Deactivate one exact WorkOS organization membership.
+
+    WorkOS documents deactivation of an already inactive membership as a
+    successful no-op, which makes the local cleanup workflow safely retryable.
+    """
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        response = await client.put(
+            f"https://api.workos.com/user_management/organization_memberships/{membership_id}/deactivate",
+            headers={"Authorization": f"Bearer {settings.WORKOS_API_KEY}"},
+        )
+    if response.status_code >= 400:
+        raise WorkOSProviderError("WorkOS organization membership could not be deactivated")
+    result = response.json()
+    if not isinstance(result, dict) or result.get("id") != membership_id or result.get("status") != "inactive":
+        raise WorkOSProviderError("WorkOS organization membership response is malformed")
+    return result
+
+
 async def resend_invitation(invitation_id: str) -> Dict[str, Any]:
     async with httpx.AsyncClient(timeout=10.0) as client:
         response = await client.post(
