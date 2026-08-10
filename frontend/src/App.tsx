@@ -1,26 +1,27 @@
-import { useEffect, useState } from 'react'
+import { lazy, Suspense, useEffect, useState } from 'react'
 import axios from 'axios'
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import { Toaster, ToastBar, toast, useToasterStore } from 'react-hot-toast'
 import { useAuthStore } from './stores/authStore'
 import { ThemeProvider, useTheme, type NotificationPosition } from './contexts/ThemeContext'
-import LandingPage from './features/landing/LandingPage'
-import PrivacyPolicyPage from './features/landing/PrivacyPolicyPage'
-import TermsOfServicePage from './features/landing/TermsOfServicePage'
-import LoginPage from './features/auth/LoginPage'
-import DriverLoginPage from './features/auth/DriverLoginPage'
-import ForgotPasswordPage from './features/auth/ForgotPasswordPage'
-import ResetPasswordPage from './features/auth/ResetPasswordPage'
-import VerifyEmailPage from './features/auth/VerifyEmailPage'
-import GarageEnrollmentPage from './features/auth/GarageEnrollmentPage'
-import GarageEnrollmentSuccessPage from './features/auth/GarageEnrollmentSuccessPage'
-import DashboardLayout from './components/layout/DashboardLayout'
-import CustomerPortalPage from './features/customer-portal/CustomerPortalPage'
-import QuoteApprovalPage from './features/quote-approval/QuoteApprovalPage'
-import MechanicPortalPage from './features/mechanic-portal/MechanicPortalPage'
-import FleetApp from './features/fleet/FleetApp'
-import DriverPortalPage from './features/driver-portal/DriverPortalPage'
-import InvoiceAccessPage from './features/invoice-access/InvoiceAccessPage'
+
+const LandingPage = lazy(() => import('./features/landing/LandingPage'))
+const PrivacyPolicyPage = lazy(() => import('./features/landing/PrivacyPolicyPage'))
+const TermsOfServicePage = lazy(() => import('./features/landing/TermsOfServicePage'))
+const LoginPage = lazy(() => import('./features/auth/LoginPage'))
+const DriverLoginPage = lazy(() => import('./features/auth/DriverLoginPage'))
+const ForgotPasswordPage = lazy(() => import('./features/auth/ForgotPasswordPage'))
+const ResetPasswordPage = lazy(() => import('./features/auth/ResetPasswordPage'))
+const VerifyEmailPage = lazy(() => import('./features/auth/VerifyEmailPage'))
+const GarageEnrollmentPage = lazy(() => import('./features/auth/GarageEnrollmentPage'))
+const GarageEnrollmentSuccessPage = lazy(() => import('./features/auth/GarageEnrollmentSuccessPage'))
+const DashboardLayout = lazy(() => import('./components/layout/DashboardLayout'))
+const CustomerPortalPage = lazy(() => import('./features/customer-portal/CustomerPortalPage'))
+const QuoteApprovalPage = lazy(() => import('./features/quote-approval/QuoteApprovalPage'))
+const MechanicPortalPage = lazy(() => import('./features/mechanic-portal/MechanicPortalPage'))
+const FleetApp = lazy(() => import('./features/fleet/FleetApp'))
+const DriverPortalPage = lazy(() => import('./features/driver-portal/DriverPortalPage'))
+const InvoiceAccessPage = lazy(() => import('./features/invoice-access/InvoiceAccessPage'))
 
 type FaviconAssetSet = {
   svg: string
@@ -346,6 +347,20 @@ function MechanicRoute({ children }: { children: React.ReactNode }) {
   return <>{children}</>
 }
 
+function RouteLoading() {
+  const location = useLocation()
+  const isDarkWorkspace = /^\/(driver|fleet|mechanic)(\/|$)/.test(location.pathname)
+  return (
+    <main
+      className={`min-h-screen grid place-items-center ${isDarkWorkspace ? 'bg-[#081018] text-white' : 'bg-white text-slate-700'}`}
+      role="status"
+      aria-live="polite"
+    >
+      {isDarkWorkspace ? 'Opening workspace…' : 'Loading…'}
+    </main>
+  )
+}
+
 function App() {
   return (
     <ThemeProvider>
@@ -354,6 +369,7 @@ function App() {
       <RouteFaviconManager />
       <ToastLimiter />
       <AppToaster />
+      <Suspense fallback={<RouteLoading />}>
       <Routes>
         <Route path="/login" element={<LoginPage />} />
         <Route path="/driver/login" element={<DriverLoginPage />} />
@@ -415,6 +431,7 @@ function App() {
         <Route path="/privacy" element={<PrivacyPolicyPage />} />
         <Route path="/terms" element={<TermsOfServicePage />} />
       </Routes>
+      </Suspense>
     </BrowserRouter>
     </ThemeProvider>
   )

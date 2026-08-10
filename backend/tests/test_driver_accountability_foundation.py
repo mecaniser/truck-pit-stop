@@ -480,6 +480,20 @@ async def test_driver_portal_pti_and_incident_are_bound_to_active_custody(client
     assert equipment.status_code == 200
     assert {item["equipment_role"] for item in equipment.json()} == {"power_unit", "trailer"}
 
+    unconfirmed = await client.post(
+        "/api/v1/fleet-identity/me/inspections",
+        json={"vehicle_id": str(truck.id)},
+        headers=headers,
+    )
+    assert unconfirmed.status_code == 409
+    assert unconfirmed.json()["detail"] == "Confirm custody before using this equipment"
+
+    acknowledged = await client.post(
+        f"/api/v1/fleet-identity/me/custody/{custody.id}/acknowledge",
+        headers=headers,
+    )
+    assert acknowledged.status_code == 200
+
     started = await client.post(
         "/api/v1/fleet-identity/me/inspections",
         json={"vehicle_id": str(truck.id)},
@@ -488,10 +502,30 @@ async def test_driver_portal_pti_and_incident_are_bound_to_active_custody(client
     assert started.status_code == 201
     inspection_id = started.json()["id"]
     assert len(started.json()["items"]) == 19
+    first_item_id = started.json()["items"][0]["id"]
 
     await db_session.execute(
         update(FleetInspectionItem)
         .where(FleetInspectionItem.inspection_id == inspection_id)
+        .values(result=InspectionItemResult.PASS)
+    )
+    await db_session.execute(
+        update(FleetInspectionItem)
+        .where(FleetInspectionItem.id == first_item_id)
+        .values(result=InspectionItemResult.FAIL, note=None)
+    )
+    await db_session.commit()
+    missing_failure_note = await client.post(
+        f"/api/v1/fleet-identity/me/inspections/{inspection_id}/complete",
+        json={"odometer": 626001},
+        headers=headers,
+    )
+    assert missing_failure_note.status_code == 400
+    assert missing_failure_note.json()["detail"] == "Describe each failed check before submitting"
+
+    await db_session.execute(
+        update(FleetInspectionItem)
+        .where(FleetInspectionItem.id == first_item_id)
         .values(result=InspectionItemResult.PASS)
     )
     await db_session.commit()

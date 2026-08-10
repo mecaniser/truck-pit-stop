@@ -21,6 +21,7 @@ class WorkOSInvitationResponse(BaseModel):
     driver_profile_id: Optional[UUID]
     target_user_id: Optional[UUID] = None
     status: str
+    review_reason: Optional[str] = None
     expires_at: Optional[datetime]
 
 
@@ -48,10 +49,12 @@ class DriverPortalAccessResponse(BaseModel):
     expires_at: Optional[datetime] = None
     accepted_at: Optional[datetime] = None
     revoked_at: Optional[datetime] = None
+    review_reason: Optional[Literal["existing_local_email_collision"]] = None
     last_sign_in_at: Optional[datetime] = None
     can_invite: bool
     can_resend: bool
     can_revoke: bool
+    can_cancel_review: bool = False
 
 
 class DriverInvitationCapability(BaseModel):

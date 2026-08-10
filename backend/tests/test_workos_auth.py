@@ -11,6 +11,7 @@ from app.db.models.tenant import Tenant
 from app.core.workos_auth import CurrentPrincipal, get_current_principal, require_permission
 from app.core import workos_auth
 from app.services import workos_provider, workos_session
+from app.services.identity_lifecycle import IdentityReviewRequired
 from app.services.workos_provider import WorkOSProviderError
 from fastapi import HTTPException
 from uuid import uuid4
@@ -46,6 +47,7 @@ async def test_login_issues_bound_state_and_safe_return(client, fake_redis):
     assert "response_type=code" in response.headers["location"]
     assert "provider=authkit" in response.headers["location"]
     assert "redirect_uri=http%3A%2F%2Flocalhost" in response.headers["location"]
+    assert "prompt=login" in response.headers["location"]
     state = response.cookies.get("workos_oauth_state")
     assert state and await fake_redis.get(f"workos:oauth-state:{state}") == "1"
     assert response.cookies.get("workos_return_to").strip('"') == "/"
@@ -153,6 +155,38 @@ async def test_callback_issues_short_access_and_opaque_server_session(db_session
     session_id = next(value.split("workos_session=")[1].split(";")[0] for value in response.headers.getlist("set-cookie") if "workos_session=" in value)
     stored = await fake_redis.get(f"workos:session:{session_id}")
     assert stored and "provider-refresh" not in stored
+
+
+@pytest.mark.asyncio
+async def test_callback_redirects_identity_review_to_validated_frontend_path(db_session, fake_redis, monkeypatch):
+    assert auth._return_path_with_reason(
+        "//evil.example/steal", "identity_review_required"
+    ) == "/?reason=identity_review_required"
+    await fake_redis.setex("workos:oauth-state:review", 600, "1")
+    monkeypatch.setattr(auth, "get_redis", lambda: _resolved(fake_redis))
+    monkeypatch.setattr(workos_provider, "authenticate", _authenticate)
+    monkeypatch.setattr(workos_provider, "verify_access_token", _verify)
+    monkeypatch.setattr(settings, "WORKOS_POST_LOGIN_URL", "http://localhost:5173")
+
+    async def review_required(*_args, **_kwargs):
+        raise IdentityReviewRequired(uuid4(), "existing_local_email_collision")
+
+    monkeypatch.setattr(auth, "resolve_authenticated_identity", review_required)
+    response = await auth.workos_callback(
+        _request("review", "/driver/login?next=%2Fdriver&reason=stale"),
+        "code",
+        "review",
+        db_session,
+    )
+    assert response.status_code == 307
+    assert response.headers["location"] == (
+        "http://localhost:5173/driver/login?next=%2Fdriver&reason=identity_review_required"
+    )
+    assert "existing_local_email_collision" not in response.headers["location"]
+    cookies = response.headers.getlist("set-cookie")
+    assert any(value.startswith("access_token=") and "Max-Age=0" in value for value in cookies)
+    assert any(value.startswith("workos_session=") and "Max-Age=0" in value for value in cookies)
+    assert any(value.startswith("workos_oauth_state=") and "Max-Age=0" in value for value in cookies)
 
 
 def _workos_token(user_id, workos_user_id="wu_1", org_id="org_1", permissions=None):

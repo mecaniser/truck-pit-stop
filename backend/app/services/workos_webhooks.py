@@ -104,7 +104,11 @@ async def _sync_invitation(event_id: str, event_type: str, data: Dict[str, Any],
         return
     previous = invitation.status
     state = data.get("state")
-    invitation.status = state if state in {"pending", "accepted", "revoked", "expired"} else invitation.status
+    # A local identity-review state is stronger than invitation delivery
+    # state. Only the manager cleanup workflow may close it because that flow
+    # also proves the accepted membership is inactive first.
+    if invitation.status != "needs_review":
+        invitation.status = state if state in {"pending", "accepted", "revoked", "expired"} else invitation.status
     if state == "accepted":
         invitation.accepted_at = datetime.now(timezone.utc)
     if state == "revoked":

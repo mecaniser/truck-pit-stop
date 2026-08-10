@@ -35,7 +35,11 @@ from app.schemas.workos_lifecycle import (
     WorkOSOrganizationResponse,
 )
 from app.schemas.auth import UserResponse
-from app.services.identity_lifecycle import INVITABLE_ROLES, resolve_authenticated_identity
+from app.services.identity_lifecycle import (
+    IDENTITY_REVIEW_EMAIL_COLLISION,
+    INVITABLE_ROLES,
+    resolve_authenticated_identity,
+)
 from app.services import workos_provider, workos_session, workos_webhooks
 from app.services.workos_provider import WorkOSProviderError
 
@@ -94,6 +98,7 @@ def _invitation_response(invitation: TenantInvitation) -> WorkOSInvitationRespon
         driver_profile_id=invitation.driver_profile_id,
         target_user_id=invitation.target_user_id,
         status=invitation.status,
+        review_reason=invitation.review_reason,
         expires_at=invitation.expires_at,
     )
 
@@ -203,12 +208,13 @@ async def _driver_portal_projection(db: AsyncSession, driver: DriverProfile) -> 
             access_status = "expired"
         elif invitation.status in {"pending", "expired", "revoked"}:
             access_status = invitation.status
-        elif invitation.status == "accepted" or invitation.status == "creating":
+        elif invitation.status in {"accepted", "creating", "needs_review"}:
             access_status = "needs_review"
         else:
             access_status = "needs_review"
 
     terminal_invitation = invitation and access_status in {"expired", "revoked"}
+    collision_review = bool(invitation and invitation.review_reason == IDENTITY_REVIEW_EMAIL_COLLISION)
     return DriverPortalAccessResponse(
         driver_profile_id=driver.id,
         profile_status=driver.employment_status,
@@ -220,10 +226,20 @@ async def _driver_portal_projection(db: AsyncSession, driver: DriverProfile) -> 
         expires_at=invitation.expires_at if invitation else None,
         accepted_at=invitation.accepted_at if invitation else None,
         revoked_at=invitation.revoked_at if invitation else None,
+        review_reason=invitation.review_reason if invitation else None,
         last_sign_in_at=None,
         can_invite=not driver.user_id and (not invitation or bool(terminal_invitation)),
-        can_resend=not driver.user_id and access_status in {"pending", "expired", "revoked"},
+        can_resend=(
+            not driver.user_id
+            and access_status in {"pending", "expired", "revoked"}
+            and not collision_review
+        ),
         can_revoke=not driver.user_id and access_status == "pending",
+        can_cancel_review=(
+            not driver.user_id
+            and access_status == "needs_review"
+            and collision_review
+        ),
     )
 
 
@@ -517,6 +533,54 @@ async def _driver_invitation_for_manager(
     return invitation, driver
 
 
+async def _observe_terminal_provider_invitation(
+    db: AsyncSession,
+    invitation: TenantInvitation,
+    tenant: Tenant,
+    actor_user_id,
+) -> bool:
+    """Reconcile an accepted/revoked provider invitation after an action fails.
+
+    Local development has no public webhook receiver, so WorkOS can advance an
+    invitation while the local projection still says pending. The provider
+    record is accepted only after all immutable invitation fields match.
+    """
+    provider = await workos_provider.get_invitation(invitation.provider_invitation_id)
+    if (
+        provider.get("id") != invitation.provider_invitation_id
+        or provider.get("organization_id") != tenant.workos_organization_id
+        or provider.get("role_slug") != "driver"
+        or not isinstance(provider.get("email"), str)
+        or provider["email"].casefold() != invitation.email_snapshot.casefold()
+    ):
+        raise WorkOSProviderError("WorkOS invitation state could not be verified")
+
+    provider_state = provider.get("state")
+    previous = invitation.status
+    if provider_state == "accepted":
+        invitation.status = "accepted"
+        invitation.accepted_at = _provider_datetime(provider.get("accepted_at")) or datetime.now(timezone.utc)
+        invitation.provider_user_id = provider.get("accepted_user_id") or invitation.provider_user_id
+        action = "accepted_observed"
+    elif provider_state == "revoked":
+        invitation.status = "revoked"
+        invitation.revoked_at = _provider_datetime(provider.get("revoked_at")) or datetime.now(timezone.utc)
+        action = "revoked_observed"
+    else:
+        return False
+
+    _audit_invitation(
+        db,
+        invitation,
+        action=action,
+        status_from=previous,
+        status_to=invitation.status,
+        actor_user_id=actor_user_id,
+    )
+    await db.commit()
+    return True
+
+
 @router.post("/invitations/{invitation_id}/resend", response_model=DriverPortalAccessResponse)
 async def resend_driver_invitation(
     invitation_id: str,
@@ -575,6 +639,13 @@ async def resend_driver_invitation(
         else:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Invitation cannot be resent in its current state")
     except WorkOSProviderError as exc:
+        try:
+            if await _observe_terminal_provider_invitation(
+                db, invitation, tenant, principal.local_user_id
+            ):
+                return await _driver_portal_projection(db, driver)
+        except WorkOSProviderError:
+            pass
         await db.rollback()
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc))
     _audit_invitation(
@@ -616,9 +687,19 @@ async def revoke_driver_invitation(
         return await _driver_portal_projection(db, driver)
     if effective_status != "pending" or not invitation.provider_invitation_id:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Invitation cannot be revoked in its current state")
+    tenant = await db.get(Tenant, principal.tenant_id)
+    if not tenant or not tenant.workos_organization_id:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Tenant has no WorkOS organization")
     try:
         provider = await workos_provider.revoke_invitation(invitation.provider_invitation_id)
     except WorkOSProviderError as exc:
+        try:
+            if await _observe_terminal_provider_invitation(
+                db, invitation, tenant, principal.local_user_id
+            ):
+                return await _driver_portal_projection(db, driver)
+        except WorkOSProviderError:
+            pass
         await db.rollback()
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc))
     if provider.get("state") != "revoked":
@@ -633,6 +714,104 @@ async def revoke_driver_invitation(
         status_from="pending",
         status_to="revoked",
         actor_user_id=principal.local_user_id,
+    )
+    await db.commit()
+    return await _driver_portal_projection(db, driver)
+
+
+@router.post(
+    "/invitations/{invitation_id}/identity-review/cancel",
+    response_model=DriverPortalAccessResponse,
+)
+async def cancel_driver_identity_review(
+    invitation_id: str,
+    principal: CurrentPrincipal = Depends(require_permission("members:manage")),
+    db: AsyncSession = Depends(get_db),
+):
+    """Deactivate the exact accepted membership, then close local review.
+
+    This endpoint never resolves a collision by email and never mutates a
+    local User or DriverProfile. A retry after success is a no-op.
+    """
+    invitation, driver = await _driver_invitation_for_manager(db, invitation_id, principal.tenant_id)
+    if (
+        invitation.status == "revoked"
+        and invitation.review_reason == IDENTITY_REVIEW_EMAIL_COLLISION
+    ):
+        return await _driver_portal_projection(db, driver)
+    if (
+        invitation.status != "needs_review"
+        or invitation.review_reason != IDENTITY_REVIEW_EMAIL_COLLISION
+    ):
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Invitation is not awaiting identity review")
+    if driver.user_id:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Driver portal identity is already linked")
+    identity = (await db.execute(select(IdentityPrincipal).where(
+        IdentityPrincipal.id == invitation.principal_id,
+        IdentityPrincipal.deleted_at.is_(None),
+    ).with_for_update())).scalar_one_or_none()
+    if not identity or identity.user_id is not None or identity.status != "pending":
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Invitation identity requires administrator review")
+    tenant = await db.get(Tenant, principal.tenant_id)
+    if not tenant or not tenant.workos_organization_id or not invitation.provider_invitation_id:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Tenant invitation is not provisioned")
+
+    try:
+        provider_invitation = await workos_provider.get_invitation(invitation.provider_invitation_id)
+        provider_user_id = provider_invitation.get("accepted_user_id")
+        if (
+            provider_invitation.get("state") != "accepted"
+            or not isinstance(provider_user_id, str)
+            or provider_invitation.get("organization_id") != tenant.workos_organization_id
+            or provider_invitation.get("role_slug") != "driver"
+            or not isinstance(provider_invitation.get("email"), str)
+            or provider_invitation["email"].casefold() != invitation.email_snapshot.casefold()
+            or (invitation.provider_user_id and invitation.provider_user_id != provider_user_id)
+        ):
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Accepted WorkOS invitation requires review")
+        membership = await workos_provider.find_organization_membership(
+            user_id=provider_user_id,
+            organization_id=tenant.workos_organization_id,
+        )
+        membership_outcome = "already_absent"
+        if membership:
+            role = membership.get("role")
+            role_slug = role.get("slug") if isinstance(role, dict) else None
+            if (
+                role_slug != "driver"
+                or membership.get("status") not in {"active", "inactive"}
+                or (
+                    invitation.provider_membership_id
+                    and invitation.provider_membership_id != membership.get("id")
+                )
+            ):
+                raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="WorkOS membership requires review")
+            invitation.provider_membership_id = membership["id"]
+            if membership.get("status") == "active":
+                await workos_provider.deactivate_organization_membership(membership["id"])
+                membership_outcome = "deactivated"
+            else:
+                membership_outcome = "already_inactive"
+    except WorkOSProviderError as exc:
+        await db.rollback()
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc))
+
+    previous_status = invitation.status
+    invitation.provider_user_id = provider_user_id
+    invitation.status = "revoked"
+    invitation.revoked_at = invitation.revoked_at or datetime.now(timezone.utc)
+    identity.status = "inactive"
+    _audit_invitation(
+        db,
+        invitation,
+        action="identity_review_cancelled",
+        status_from=previous_status,
+        status_to="revoked",
+        actor_user_id=principal.local_user_id,
+        metadata={
+            "reason": IDENTITY_REVIEW_EMAIL_COLLISION,
+            "membership_outcome": membership_outcome,
+        },
     )
     await db.commit()
     return await _driver_portal_projection(db, driver)

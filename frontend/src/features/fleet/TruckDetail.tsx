@@ -6,7 +6,7 @@ import toast from 'react-hot-toast'
 import {
   Gauge, Calendar, Wrench, AlertTriangle, History, Truck, User, Box, Map as MapIcon,
   Shield, Phone, ClipboardList, ClipboardCheck, Pencil, CheckCircle2, ChevronDown, Check, Info, Trash2, Camera, MoreHorizontal,
-  Archive, ArrowLeft, ArrowRight, Combine, RotateCcw,
+  Archive, ArrowLeft, ArrowRight, Clock3, Combine, RotateCcw,
 } from 'lucide-react'
 import api from '../../lib/api'
 import { isSupportedPhotoFile, runPhotoUploadQueue, uploadDirectPhoto, type PhotoUploadStatus } from '@/lib/photoUpload'
@@ -1197,9 +1197,11 @@ type DriverPortalAccess = {
   invited_at?: string | null
   expires_at?: string | null
   accepted_at?: string | null
+  review_reason?: 'existing_local_email_collision' | null
   can_invite: boolean
   can_resend: boolean
   can_revoke: boolean
+  can_cancel_review?: boolean
 }
 
 const portalStatusCopy: Record<DriverPortalAccess['portal_access_status'], string> = {
@@ -1229,6 +1231,7 @@ function TruckDriverSection({ truck, detail, onChangeDriver }: {
   const portalIdempotencyKeys = useRef<Record<string, string>>({})
   const [inviteEmail, setInviteEmail] = useState('')
   const [inviteOpen, setInviteOpen] = useState(false)
+  const [reviewCancelOpen, setReviewCancelOpen] = useState(false)
   const capabilities = useQuery({
     queryKey: ['workos-capabilities', '/fleet'],
     queryFn: () => getWorkOSCapabilities('/fleet'),
@@ -1249,7 +1252,7 @@ function TruckDriverSection({ truck, detail, onChangeDriver }: {
     if (assignment.data?.driver.email) setInviteEmail(assignment.data.driver.email)
   }, [assignment.data?.driver.email])
   const mutatePortal = useMutation({
-    mutationFn: async ({ action, invitationId }: { action: 'invite' | 'resend' | 'revoke'; invitationId?: string }) => {
+    mutationFn: async ({ action, invitationId }: { action: 'invite' | 'resend' | 'revoke' | 'cancel_review'; invitationId?: string }) => {
       const operationKey = `${action}:${invitationId || assignment.data?.driver.id || ''}:${inviteEmail.trim().toLowerCase()}`
       const idempotencyKey = portalIdempotencyKeys.current[operationKey] || crypto.randomUUID()
       portalIdempotencyKeys.current[operationKey] = idempotencyKey
@@ -1258,6 +1261,8 @@ function TruckDriverSection({ truck, detail, onChangeDriver }: {
         await api.post('/auth/workos/invitations', {
         email: inviteEmail.trim(), role_slug: 'driver', driver_profile_id: assignment.data!.driver.id, resource_scope: {},
         }, { headers })
+      } else if (action === 'cancel_review') {
+        await api.post(`/auth/workos/invitations/${invitationId}/identity-review/cancel`, {}, { headers })
       } else {
         await api.post(`/auth/workos/invitations/${invitationId}/${action}`, {}, { headers })
       }
@@ -1265,9 +1270,10 @@ function TruckDriverSection({ truck, detail, onChangeDriver }: {
     },
     onSuccess: async (action) => {
       portalIdempotencyKeys.current = {}
-      toast.success(action === 'invite' ? 'Driver Portal invitation sent' : action === 'resend' ? 'Invitation resent' : 'Invitation revoked')
+      toast.success(action === 'invite' ? 'Driver Portal invitation sent' : action === 'resend' ? 'Invitation resent' : action === 'cancel_review' ? 'Invitation cancelled — use a driver-controlled email to invite again' : 'Invitation revoked')
       await qc.invalidateQueries({ queryKey: ['driver-portal-access', assignment.data?.driver.id] })
       setInviteOpen(false)
+      setReviewCancelOpen(false)
     },
     onError: (error: AxiosError<{ detail?: string }>) => {
       if (error.response?.status === 409) void portal.refetch()
@@ -1305,6 +1311,36 @@ function TruckDriverSection({ truck, detail, onChangeDriver }: {
           ) : portal.isLoading ? <div className="driver-portal-loading"><Spinner size="xs" /> Checking portal access…</div> : (
             <>
               {portalState?.portal_access_status === 'active' && <div className="driver-portal-active"><CheckCircle2 size={16} /><span>This driver can sign in and use the Driver Portal.</span></div>}
+              {portalState?.portal_access_status === 'needs_review' && portalState.review_reason === 'existing_local_email_collision' && (
+                <div className="driver-portal-review" role="alert">
+                  <AlertTriangle size={16} aria-hidden="true" />
+                  <div>
+                    <strong>This email is already used by another account.</strong>
+                    <span>Driver Portal access is paused. Cancel this invitation before using a driver-controlled email.</span>
+                    {portalState.can_cancel_review && portalState.invitation_id && !reviewCancelOpen && (
+                      <button type="button" className="dbtn dbtn-danger" onClick={() => setReviewCancelOpen(true)}>Cancel invitation</button>
+                    )}
+                    {portalState.can_cancel_review && portalState.invitation_id && reviewCancelOpen && (
+                      <div className="driver-portal-review-confirm">
+                        <p>This removes the accepted Driver Portal membership. The driver profile and truck history stay unchanged.</p>
+                        <div>
+                          <button type="button" className="dbtn dbtn-ghost" disabled={mutatePortal.isPending} onClick={() => setReviewCancelOpen(false)}>Keep invitation</button>
+                          <button type="button" className="dbtn dbtn-danger" disabled={mutatePortal.isPending} onClick={() => mutatePortal.mutate({ action: 'cancel_review', invitationId: portalState.invitation_id! })}>{mutatePortal.isPending ? <Spinner size="xs" /> : null} Remove portal access</button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+              {portalState?.portal_access_status === 'needs_review' && !portalState.review_reason && (
+                <div className="driver-portal-review driver-portal-review-neutral" role="status">
+                  <Clock3 size={16} aria-hidden="true" />
+                  <div>
+                    <strong>Invitation accepted — sign-in is not finished.</strong>
+                    <span>The driver must open Driver Portal and sign in with the invited email to activate access.</span>
+                  </div>
+                </div>
+              )}
               {portalState?.can_invite && !inviteOpen && <button type="button" className="dbtn dbtn-ghost" onClick={() => setInviteOpen(true)}>Invite to Driver Portal</button>}
               {inviteOpen && <div className="driver-portal-invite"><label><span>Invitation email</span><input type="email" value={inviteEmail} onChange={(event) => setInviteEmail(event.target.value)} placeholder="driver@company.com" autoFocus /></label><div><button type="button" className="dbtn dbtn-ghost" onClick={() => setInviteOpen(false)}>Cancel</button><button type="button" className="dbtn dbtn-yellow" disabled={!inviteEmail.trim() || mutatePortal.isPending} onClick={() => mutatePortal.mutate({ action: 'invite' })}>{mutatePortal.isPending ? <Spinner size="xs" /> : null} Send invitation</button></div></div>}
               {portalState?.can_resend && portalState.invitation_id && <button type="button" className="dbtn dbtn-ghost" disabled={mutatePortal.isPending} onClick={() => mutatePortal.mutate({ action: 'resend', invitationId: portalState.invitation_id! })}>Resend invitation</button>}

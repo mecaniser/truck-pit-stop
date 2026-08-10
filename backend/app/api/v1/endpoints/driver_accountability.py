@@ -162,6 +162,8 @@ async def _active_vehicle_custody(
     ).one_or_none()
     if not row:
         raise HTTPException(status_code=404, detail="Assigned equipment not found")
+    if row[0].acknowledged_at is None:
+        raise HTTPException(status_code=409, detail="Confirm custody before using this equipment")
     return row
 
 
@@ -727,6 +729,11 @@ async def complete_my_inspection(
         raise HTTPException(status_code=400, detail="Enter the current odometer")
     if any(item.result == InspectionItemResult.PENDING for item in inspection.items):
         raise HTTPException(status_code=400, detail="Complete every checklist item before submitting")
+    if any(
+        item.result == InspectionItemResult.FAIL and not (item.note or "").strip()
+        for item in inspection.items
+    ):
+        raise HTTPException(status_code=400, detail="Describe each failed check before submitting")
     if inspection.vehicle.mileage is not None and body.odometer < inspection.vehicle.mileage:
         raise HTTPException(status_code=400, detail="Odometer is below the last recorded mileage")
     inspection.status = InspectionStatus.COMPLETED

@@ -50,9 +50,9 @@ from typing import Optional, List
 from uuid import UUID
 import secrets
 import re
-from urllib.parse import urlencode
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 from app.services import workos_provider, workos_session
-from app.services.identity_lifecycle import resolve_authenticated_identity
+from app.services.identity_lifecycle import IdentityReviewRequired, resolve_authenticated_identity
 from app.services.workos_provider import WorkOSProviderError
 from app.services.email_service import (
     send_password_reset_email,
@@ -78,6 +78,23 @@ def _safe_return_path(value: Optional[str]) -> str:
     return value if value and value.startswith("/") and not value.startswith("//") else "/"
 
 
+def _return_path_with_reason(value: Optional[str], reason: str) -> str:
+    """Append one fixed, non-sensitive reason to a validated SPA path."""
+    safe = _safe_return_path(value)
+    parts = urlsplit(safe)
+    query = [(key, item) for key, item in parse_qsl(parts.query, keep_blank_values=True) if key != "reason"]
+    query.append(("reason", reason))
+    return urlunsplit(("", "", parts.path or "/", urlencode(query), ""))
+
+
+def _clear_failed_workos_login(response: Response) -> None:
+    response.delete_cookie("access_token", path="/", domain=_cookie_domain())
+    response.delete_cookie("workos_session", path="/api/v1/auth/workos", domain=_cookie_domain())
+    response.delete_cookie("refresh_token", path="/api/v1/auth", domain=_cookie_domain())
+    response.delete_cookie("workos_oauth_state", path="/api/v1/auth/workos")
+    response.delete_cookie("workos_return_to", path="/api/v1/auth/workos")
+
+
 @router.get("/workos/login", include_in_schema=False)
 async def workos_login(
     return_to: Optional[str] = None,
@@ -92,6 +109,9 @@ async def workos_login(
         "client_id": settings.WORKOS_CLIENT_ID,
         "redirect_uri": settings.WORKOS_REDIRECT_URI,
         "response_type": "code", "provider": "authkit", "state": state,
+        # A shared browser may be used by managers and drivers. Never let an
+        # existing AuthKit session silently choose the wrong local identity.
+        "prompt": "login",
     }
     if tenant_id is not None:
         tenant = await db.scalar(select(Tenant).where(Tenant.id == tenant_id))
@@ -103,8 +123,6 @@ async def workos_login(
         # Organization selection is a routing hint only. The callback still
         # verifies the signed org_id and maps it independently to this tenant.
         authorize_params["organization_id"] = tenant.workos_organization_id
-        # Do not silently reuse an AuthKit browser session for another account.
-        authorize_params["prompt"] = "login"
     query = urlencode(authorize_params)
     response = RedirectResponse(f"https://api.workos.com/user_management/authorize?{query}", status_code=status.HTTP_307_TEMPORARY_REDIRECT)
     response.set_cookie("workos_oauth_state", state, httponly=True, secure=settings.COOKIE_SECURE_EFFECTIVE, samesite="lax", max_age=600, path="/api/v1/auth/workos")
@@ -140,7 +158,26 @@ async def workos_callback(request: Request, code: str, state: Optional[str] = No
     workos_user = payload.get("user") or {}
     if workos_user.get("id") != claims["sub"]:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="WorkOS authentication identity mismatch")
-    user, tenant, _ = await resolve_authenticated_identity(db, claims=claims, workos_user=workos_user)
+    try:
+        user, tenant, _ = await resolve_authenticated_identity(db, claims=claims, workos_user=workos_user)
+    except IdentityReviewRequired as exc:
+        # Persist only the fail-closed review marker/audit written by the
+        # resolver. No local identity, DriverProfile, or session is activated.
+        await db.commit()
+        correlation_id = getattr(request.state, "correlation_id", "unknown")
+        logger.warning(
+            "workos_identity_review_required",
+            invitation_id=str(exc.invitation_id),
+            reason=exc.reason,
+            correlation_id=correlation_id,
+        )
+        return_to = _return_path_with_reason(
+            request.cookies.get("workos_return_to") if request else None,
+            "identity_review_required",
+        )
+        response = RedirectResponse(settings.WORKOS_POST_LOGIN_URL.rstrip("/") + return_to)
+        _clear_failed_workos_login(response)
+        return response
     user.workos_identity_status = "active"
     user.workos_identity_linked_at = user.workos_identity_linked_at or datetime.now(timezone.utc)
     refresh_token = payload.get("refresh_token")
