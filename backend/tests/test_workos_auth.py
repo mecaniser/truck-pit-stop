@@ -41,8 +41,11 @@ async def _resolved(value):
 
 
 @pytest.mark.asyncio
-async def test_login_issues_bound_state_and_safe_return(client, fake_redis):
-    response = await client.get("/api/v1/auth/workos/login?return_to=//evil.test", follow_redirects=False)
+async def test_login_issues_bound_state_and_safe_return(client, fake_redis, db_session):
+    tenant = Tenant(name="Bound", slug="bound", workos_organization_id="org_bound")
+    db_session.add(tenant)
+    await db_session.commit()
+    response = await client.get(f"/api/v1/auth/workos/login?tenant_id={tenant.id}&return_to=//evil.test", follow_redirects=False)
     assert response.status_code == 307
     assert "response_type=code" in response.headers["location"]
     assert "provider=authkit" in response.headers["location"]
@@ -51,6 +54,13 @@ async def test_login_issues_bound_state_and_safe_return(client, fake_redis):
     state = response.cookies.get("workos_oauth_state")
     assert state and await fake_redis.get(f"workos:oauth-state:{state}") == "1"
     assert response.cookies.get("workos_return_to").strip('"') == "/"
+
+
+@pytest.mark.asyncio
+async def test_login_requires_exact_garage_context(client):
+    response = await client.get("/api/v1/auth/workos/login?return_to=%2Fdashboard", follow_redirects=False)
+    assert response.status_code == 400
+    assert response.json()["detail"] == "Select a garage before starting organization sign-in"
 
 
 @pytest.mark.asyncio
@@ -97,9 +107,29 @@ async def test_login_rejects_inactive_or_unmapped_tenant(client, db_session):
 
 @pytest.mark.asyncio
 async def test_callback_rejects_missing_or_mismatched_state(client):
-    assert (await client.get("/api/v1/auth/workos/callback?code=x")).status_code == 401
-    await client.get("/api/v1/auth/workos/login")
-    assert (await client.get("/api/v1/auth/workos/callback?code=x&state=wrong")).status_code == 401
+    missing = await client.get("/api/v1/auth/workos/callback?code=x", follow_redirects=False)
+    assert missing.status_code == 307
+    assert missing.headers["location"].endswith("/login?reason=workos_state_expired")
+
+
+@pytest.mark.asyncio
+async def test_callback_redirects_stale_driver_state_to_tenant_bound_recovery(client, db_session):
+    tenant = Tenant(name="Driver tenant", slug="driver-tenant", workos_organization_id="org_driver")
+    db_session.add(tenant)
+    await db_session.commit()
+    started = await client.get(
+        f"/api/v1/auth/workos/login?tenant_id={tenant.id}&return_to=%2Fdriver",
+        follow_redirects=False,
+    )
+    stale = await client.get(
+        "/api/v1/auth/workos/callback?code=x&state=stale-state",
+        follow_redirects=False,
+    )
+    assert stale.status_code == 307
+    assert stale.headers["location"].endswith(
+        f"/driver/login?reason=workos_state_expired&tenant_id={tenant.id}"
+    )
+    assert "code=" not in stale.headers["location"]
 
 
 @pytest.mark.asyncio
@@ -265,12 +295,20 @@ async def test_callback_fails_closed_for_bad_workos_response(db_session, fake_re
 
 
 @pytest.mark.asyncio
-async def test_workos_state_replay_and_refresh_are_rejected(client, fake_redis, monkeypatch):
-    await client.get("/api/v1/auth/workos/login")
-    state = client.cookies.get("workos_oauth_state")
-    assert state
-    await fake_redis.delete(f"workos:oauth-state:{state}")
-    assert (await client.get(f"/api/v1/auth/workos/callback?code=x&state={state}")).status_code == 401
+async def test_workos_state_replay_and_refresh_are_rejected(client, db_session, fake_redis, monkeypatch):
+    tenant = Tenant(name="Replay", slug="replay", workos_organization_id="org_replay")
+    db_session.add(tenant)
+    await db_session.commit()
+    await client.get(f"/api/v1/auth/workos/login?tenant_id={tenant.id}")
+    assert client.cookies.get("workos_oauth_state")
+    stale = await client.get(
+        "/api/v1/auth/workos/callback?code=x&state=already-consumed",
+        follow_redirects=False,
+    )
+    assert stale.status_code == 307
+    assert stale.headers["location"].endswith(
+        f"/login?reason=workos_state_expired&tenant_id={tenant.id}"
+    )
     from app.core.security import create_access_token
     token = _workos_token(uuid4())
     response = await client.post("/api/v1/auth/refresh", json={"refresh_token": token})

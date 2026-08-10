@@ -1,6 +1,7 @@
 from pydantic_settings import BaseSettings
 from pydantic import Field, field_validator
 from typing import List
+from urllib.parse import urlparse
 
 
 class Settings(BaseSettings):
@@ -53,6 +54,10 @@ class Settings(BaseSettings):
     # WorkOS is introduced alongside (not in place of) legacy JWT login. Keep
     # this disabled until a tenant has completed the audited dual-run cutover.
     WORKOS_AUTH_ENABLED: bool = False
+    # WorkOS environments are independent security boundaries. Applications in
+    # one environment still share users and organizations, so production must
+    # never reuse a Staging API key merely because it has a distinct redirect.
+    WORKOS_ENVIRONMENT: str = "staging"  # "staging" or "production"
     WORKOS_API_KEY: str = ""
     WORKOS_CLIENT_ID: str = ""
     WORKOS_ISSUER: str = "https://api.workos.com"
@@ -61,6 +66,54 @@ class Settings(BaseSettings):
     WORKOS_POST_LOGIN_URL: str = "http://localhost:5173"
     WORKOS_ACCESS_TOKEN_MINUTES: int = Field(default=5, ge=1, le=15)
     WORKOS_SESSION_TTL_DAYS: int = Field(default=7, ge=1, le=30)
+
+    def validate_workos_deployment(self) -> None:
+        """Fail startup when WorkOS credentials and app environment can cross.
+
+        This deliberately validates only non-secret properties of the key and
+        public URLs. It never includes credential values in an exception.
+        """
+        if not self.WORKOS_AUTH_ENABLED:
+            return
+
+        workos_environment = self.WORKOS_ENVIRONMENT.strip().lower()
+        if workos_environment not in {"staging", "production"}:
+            raise ValueError("WORKOS_ENVIRONMENT must be 'staging' or 'production'")
+        if not self.WORKOS_API_KEY or not self.WORKOS_CLIENT_ID:
+            raise ValueError("WorkOS authentication requires an API key and Client ID")
+        application_is_production = self.ENVIRONMENT.strip().lower() == "production"
+        if application_is_production and workos_environment != "production":
+            raise ValueError("Application production cannot use WorkOS Staging")
+
+        if not self.WORKOS_API_KEY.startswith("sk_"):
+            raise ValueError("WorkOS API key must use the expected key format")
+
+        if not application_is_production:
+            return
+
+        expected_redirect = "https://api.dieselbridge.com/api/v1/auth/workos/callback"
+        expected_app_origin = "https://www.dieselbridge.com"
+        expected_client_id = "client_01KZKT5BFBKQ00AJT7ECAWDN5Y"
+        expected_issuer = f"https://api.workos.com/user_management/{expected_client_id}"
+        if self.WORKOS_CLIENT_ID != expected_client_id:
+            raise ValueError("Production must use the Diesel Bridge WorkOS Production Client ID")
+        if self.WORKOS_ISSUER.rstrip("/") != expected_issuer:
+            raise ValueError("Production WorkOS issuer must match the Production Client ID")
+        if self.WORKOS_REDIRECT_URI.rstrip("/") != expected_redirect:
+            raise ValueError("Production WorkOS redirect URI must use the Diesel Bridge API callback")
+        if self.WORKOS_POST_LOGIN_URL.rstrip("/") != expected_app_origin:
+            raise ValueError("Production WorkOS post-login URL must use the Diesel Bridge app origin")
+
+        for setting_name, value in (
+            ("WORKOS_REDIRECT_URI", self.WORKOS_REDIRECT_URI),
+            ("WORKOS_POST_LOGIN_URL", self.WORKOS_POST_LOGIN_URL),
+        ):
+            parsed = urlparse(value)
+            if parsed.scheme != "https" or parsed.hostname in {None, "localhost", "127.0.0.1", "::1"}:
+                raise ValueError(f"{setting_name} must be a public HTTPS URL in production")
+
+        if len(self.WORKOS_WEBHOOK_SECRET) < 20:
+            raise ValueError("Production WorkOS authentication requires a production webhook secret")
     
     @field_validator('SECRET_KEY')
     @classmethod

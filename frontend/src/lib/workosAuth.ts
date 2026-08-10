@@ -29,8 +29,12 @@ function apiBaseUrl(): string {
   return String(import.meta.env.VITE_API_URL || '/api/v1').replace(/\/$/, '')
 }
 
-export function buildWorkOSLoginUrl(returnTo: string): string {
-  return `${apiBaseUrl()}/auth/workos/login?return_to=${encodeURIComponent(safeReturnPath(returnTo))}`
+export function buildWorkOSLoginUrl(returnTo: string, tenantId: string): string {
+  const params = new URLSearchParams({
+    return_to: safeReturnPath(returnTo),
+    tenant_id: tenantId,
+  })
+  return `${apiBaseUrl()}/auth/workos/login?${params.toString()}`
 }
 
 export async function getWorkOSCapabilities(returnTo: string): Promise<WorkOSCapabilities> {
@@ -40,11 +44,14 @@ export async function getWorkOSCapabilities(returnTo: string): Promise<WorkOSCap
   return response.data
 }
 
-export function startWorkOSLogin(returnTo: string, reauthPath?: string | null): void {
+export function startWorkOSLogin(returnTo: string, reauthPath?: string | null, tenantId?: string | null): void {
   // A legacy Authorization header takes precedence over the new HttpOnly
   // WorkOS cookie. Clear the browser projection before leaving for AuthKit.
   useAuthStore.getState().clearSession()
   delete api.defaults.headers.common.Authorization
-  const target = reauthPath ? `${apiBaseUrl()}${reauthPath}` : buildWorkOSLoginUrl(returnTo)
+  if (!reauthPath && !tenantId) {
+    throw new Error('A garage is required for organization sign-in')
+  }
+  const target = reauthPath ? `${apiBaseUrl()}${reauthPath}` : buildWorkOSLoginUrl(returnTo, tenantId!)
   window.location.assign(target)
 }
