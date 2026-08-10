@@ -59,6 +59,7 @@ describe('LoginPage', () => {
   it('renders sign in button', () => {
     renderLogin()
     expect(screen.getByRole('button', { name: /sign in/i })).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: /driver portal/i })).not.toBeInTheDocument()
   })
 
   it('shows validation errors on empty submit', async () => {

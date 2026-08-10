@@ -119,7 +119,7 @@ function DriverHome() {
           <p>Confirm custody, complete your pre-trip inspection, and report conditions as they happen.</p>
         </div>
         <button type="button" className="driver-icon-button" onClick={async () => {
-          try { await api.post('/auth/workos/logout') } finally { clearSession(); window.location.assign('/login') }
+          try { await api.post('/auth/workos/logout') } finally { clearSession(); window.location.assign('/driver/login') }
         }} aria-label="Sign out"><LogOut /></button>
       </header>
 

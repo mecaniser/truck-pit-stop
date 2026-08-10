@@ -8,6 +8,7 @@ import LandingPage from './features/landing/LandingPage'
 import PrivacyPolicyPage from './features/landing/PrivacyPolicyPage'
 import TermsOfServicePage from './features/landing/TermsOfServicePage'
 import LoginPage from './features/auth/LoginPage'
+import DriverLoginPage from './features/auth/DriverLoginPage'
 import ForgotPasswordPage from './features/auth/ForgotPasswordPage'
 import ResetPasswordPage from './features/auth/ResetPasswordPage'
 import VerifyEmailPage from './features/auth/VerifyEmailPage'
@@ -57,6 +58,7 @@ const PUBLIC_ANALYTICS_PATHS = new Set([
   '/forgot-password',
   '/reset-password',
   '/verify-email',
+  '/driver/login',
 ])
 
 function isTokenAccessRoute(pathname: string): boolean {
@@ -263,7 +265,7 @@ function DriverRoute({ children }: { children: React.ReactNode }) {
     let active = true
     api.get('/auth/me')
       .then(({ data }) => {
-        if (active && data.role === 'driver') establishCookieSession(data)
+        if (active) establishCookieSession(data)
       })
       .catch(() => undefined)
       .finally(() => { if (active) setCheckingSession(false) })
@@ -271,7 +273,7 @@ function DriverRoute({ children }: { children: React.ReactNode }) {
   }, [establishCookieSession, isAuthenticated])
 
   if (checkingSession) return <div className="min-h-screen bg-[#081018] text-white grid place-items-center">Opening driver workspace…</div>
-  if (!useAuthStore.getState().isAuthenticated) return <Navigate to="/login" replace />
+  if (!useAuthStore.getState().isAuthenticated) return <Navigate to="/driver/login" replace />
   if ((user || useAuthStore.getState().user)?.role !== 'driver') return <Navigate to="/dashboard" replace />
   return <>{children}</>
 }
@@ -327,6 +329,7 @@ function App() {
       <AppToaster />
       <Routes>
         <Route path="/login" element={<LoginPage />} />
+        <Route path="/driver/login" element={<DriverLoginPage />} />
         <Route path="/register" element={<Navigate to="/login" replace />} />
         <Route path="/enroll" element={<GarageEnrollmentPage />} />
         <Route path="/enroll/success" element={<GarageEnrollmentSuccessPage />} />
