@@ -1,0 +1,309 @@
+from datetime import datetime, timedelta, timezone
+import json
+from uuid import uuid4
+
+import pytest
+from fastapi import HTTPException
+from sqlalchemy import select
+
+from app.api.v1.endpoints import workos_lifecycle
+from app.core.workos_auth import CurrentPrincipal
+from app.db.models.driver_accountability import DriverProfile
+from app.db.models.identity import (
+    ExternalIdentity,
+    IdentityPrincipal,
+    TenantInvitation,
+    TenantInvitationAuditEvent,
+    TenantMembership,
+)
+from app.db.models.tenant import Tenant
+from app.db.models.user import User, UserRole
+from app.schemas.workos_lifecycle import WorkOSInvitationCreate
+from app.services import workos_provider, workos_webhooks
+
+
+async def _manager_context(db_session, *, slug: str = "portal"):
+    tenant = Tenant(name="Portal Garage", slug=f"{slug}-{uuid4().hex[:8]}", workos_organization_id=f"org_{uuid4().hex}")
+    manager = User(
+        email=f"manager-{uuid4().hex}@example.test",
+        hashed_password=None,
+        first_name="Fleet",
+        last_name="Manager",
+        role=UserRole.FLEET_MANAGER,
+        tenant_id=tenant.id,
+        workos_user_id=f"wu_{uuid4().hex}",
+        is_active=True,
+        is_verified=True,
+    )
+    db_session.add_all([tenant, manager])
+    await db_session.flush()
+    principal = CurrentPrincipal(
+        local_user_id=manager.id,
+        workos_user_id=manager.workos_user_id,
+        workos_org_id=tenant.workos_organization_id,
+        tenant_id=tenant.id,
+        permissions=frozenset({"members:manage"}),
+    )
+    return tenant, manager, principal
+
+
+async def _driver(db_session, tenant, *, email="driver@example.test"):
+    driver = DriverProfile(
+        tenant_id=tenant.id,
+        first_name="Dana",
+        last_name="Driver",
+        email=email,
+        employment_status="active",
+    )
+    db_session.add(driver)
+    await db_session.flush()
+    return driver
+
+
+async def _invitation(db_session, tenant, manager, driver, *, state="pending", expires_at=None):
+    identity = IdentityPrincipal(status="pending")
+    db_session.add(identity)
+    await db_session.flush()
+    invitation = TenantInvitation(
+        tenant_id=tenant.id,
+        principal_id=identity.id,
+        provider_invitation_id=f"inv_{uuid4().hex}",
+        email_snapshot=driver.email,
+        intended_role_slug="driver",
+        resource_scope={},
+        driver_profile_id=driver.id,
+        status=state,
+        expires_at=expires_at or datetime.now(timezone.utc) + timedelta(days=7),
+        invited_by_user_id=manager.id,
+    )
+    db_session.add(invitation)
+    await db_session.flush()
+    return invitation
+
+
+@pytest.mark.asyncio
+async def test_portal_projection_separates_profile_and_access_states(db_session):
+    tenant, manager, principal = await _manager_context(db_session)
+    driver = await _driver(db_session, tenant)
+
+    empty = await workos_lifecycle.get_driver_portal_access(str(driver.id), principal, db_session)
+    assert empty.profile_status == "active"
+    assert empty.portal_access_status == "not_invited"
+    assert empty.can_invite is True
+
+    invitation = await _invitation(db_session, tenant, manager, driver)
+    pending = await workos_lifecycle.get_driver_portal_access(str(driver.id), principal, db_session)
+    assert pending.portal_access_status == "pending"
+    assert pending.invitation_id == invitation.id
+    assert pending.can_resend is True
+    assert pending.can_revoke is True
+
+    invitation.expires_at = datetime.now(timezone.utc) - timedelta(seconds=1)
+    driver.employment_status = "inactive"
+    await db_session.flush()
+    expired = await workos_lifecycle.get_driver_portal_access(str(driver.id), principal, db_session)
+    assert expired.profile_status == "inactive"
+    assert expired.portal_access_status == "expired"
+    assert expired.can_invite is True
+
+
+@pytest.mark.asyncio
+async def test_portal_projection_active_suspended_and_needs_review(db_session):
+    tenant, _, principal = await _manager_context(db_session)
+    driver = await _driver(db_session, tenant)
+    user = User(
+        email=f"driver-{uuid4().hex}@example.test",
+        hashed_password=None,
+        first_name="Dana",
+        last_name="Driver",
+        role=UserRole.DRIVER,
+        tenant_id=tenant.id,
+        workos_user_id=f"wu_{uuid4().hex}",
+        is_active=True,
+        is_verified=True,
+    )
+    db_session.add(user)
+    await db_session.flush()
+    driver.user_id = user.id
+
+    unprojected = await workos_lifecycle.get_driver_portal_access(str(driver.id), principal, db_session)
+    assert unprojected.portal_access_status == "needs_review"
+
+    identity = IdentityPrincipal(user_id=user.id, status="active")
+    db_session.add(identity)
+    await db_session.flush()
+    external = ExternalIdentity(principal_id=identity.id, provider="workos", provider_subject=user.workos_user_id, status="active")
+    membership = TenantMembership(
+        principal_id=identity.id,
+        tenant_id=tenant.id,
+        provider="workos",
+        role_slug="driver",
+        status="active",
+        permissions=["driver_portal:use"],
+        resource_scope={},
+    )
+    db_session.add_all([external, membership])
+    await db_session.flush()
+    active = await workos_lifecycle.get_driver_portal_access(str(driver.id), principal, db_session)
+    assert active.portal_access_status == "active"
+    assert active.local_user_id == user.id
+    assert active.can_invite is False
+
+    membership.status = "inactive"
+    await db_session.flush()
+    suspended = await workos_lifecycle.get_driver_portal_access(str(driver.id), principal, db_session)
+    assert suspended.portal_access_status == "suspended"
+
+
+@pytest.mark.asyncio
+async def test_driver_portal_status_is_tenant_scoped(db_session):
+    tenant, _, principal = await _manager_context(db_session)
+    other = Tenant(name="Other", slug=f"other-{uuid4().hex[:8]}")
+    db_session.add(other)
+    await db_session.flush()
+    driver = await _driver(db_session, other)
+    with pytest.raises(HTTPException) as exc:
+        await workos_lifecycle.get_driver_portal_access(str(driver.id), principal, db_session)
+    assert exc.value.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_create_driver_invitation_requires_explicit_unlinked_profile_and_is_audited(db_session, monkeypatch):
+    tenant, manager, principal = await _manager_context(db_session)
+    driver = await _driver(db_session, tenant)
+
+    async def send(**kwargs):
+        assert kwargs["organization_id"] == tenant.workos_organization_id
+        assert kwargs["role_slug"] == "driver"
+        return {
+            "id": "inv_created",
+            "state": "pending",
+            "expires_at": (datetime.now(timezone.utc) + timedelta(days=7)).isoformat(),
+        }
+
+    monkeypatch.setattr(workos_provider, "send_invitation", send)
+    created = await workos_lifecycle.create_invitation(
+        WorkOSInvitationCreate(
+            email="invitee@example.com",
+            role_slug="driver",
+            driver_profile_id=driver.id,
+        ),
+        principal,
+        db_session,
+    )
+    assert created.driver_profile_id == driver.id
+    assert created.status == "pending"
+    audit = (await db_session.execute(select(TenantInvitationAuditEvent))).scalar_one()
+    assert audit.action == "created"
+    assert audit.actor_user_id == manager.id
+
+    with pytest.raises(HTTPException) as exc:
+        await workos_lifecycle.create_invitation(
+            WorkOSInvitationCreate(
+                email="second@example.com",
+                role_slug="driver",
+                driver_profile_id=driver.id,
+            ),
+            principal,
+            db_session,
+        )
+    assert exc.value.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_pending_resend_updates_expiry_and_appends_audit(db_session, monkeypatch):
+    tenant, manager, principal = await _manager_context(db_session)
+    driver = await _driver(db_session, tenant)
+    invitation = await _invitation(db_session, tenant, manager, driver)
+    new_expiry = datetime.now(timezone.utc) + timedelta(days=8)
+    calls = []
+
+    async def resend(provider_invitation_id):
+        calls.append(provider_invitation_id)
+        return {"id": provider_invitation_id, "state": "pending", "expires_at": new_expiry.isoformat()}
+
+    monkeypatch.setattr(workos_provider, "resend_invitation", resend)
+    result = await workos_lifecycle.resend_driver_invitation(str(invitation.id), principal, db_session)
+    assert result.portal_access_status == "pending"
+    assert result.invitation_id == invitation.id
+    assert calls == [invitation.provider_invitation_id]
+    events = (await db_session.execute(select(TenantInvitationAuditEvent))).scalars().all()
+    assert [(event.action, event.actor_user_id) for event in events] == [("resent", manager.id)]
+
+
+@pytest.mark.asyncio
+async def test_expired_resend_creates_fresh_invitation_and_preserves_history(db_session, monkeypatch):
+    tenant, manager, principal = await _manager_context(db_session)
+    driver = await _driver(db_session, tenant)
+    expired = await _invitation(
+        db_session,
+        tenant,
+        manager,
+        driver,
+        expires_at=datetime.now(timezone.utc) - timedelta(days=1),
+    )
+
+    async def send(**kwargs):
+        assert kwargs["email"] == driver.email
+        assert kwargs["role_slug"] == "driver"
+        return {"id": "inv_fresh", "state": "pending", "expires_at": (datetime.now(timezone.utc) + timedelta(days=7)).isoformat()}
+
+    monkeypatch.setattr(workos_provider, "send_invitation", send)
+    result = await workos_lifecycle.resend_driver_invitation(str(expired.id), principal, db_session)
+    invitations = (await db_session.execute(
+        select(TenantInvitation).where(TenantInvitation.driver_profile_id == driver.id).order_by(TenantInvitation.created_at)
+    )).scalars().all()
+    assert len(invitations) == 2
+    assert expired.status == "expired"
+    assert result.portal_access_status == "pending"
+    assert result.invitation_id != expired.id
+    events = (await db_session.execute(
+        select(TenantInvitationAuditEvent).order_by(TenantInvitationAuditEvent.created_at, TenantInvitationAuditEvent.action)
+    )).scalars().all()
+    assert {event.action for event in events} == {"expired_observed", "reissued"}
+    reissued = next(event for event in events if event.action == "reissued")
+    assert reissued.status_from is None
+    assert reissued.status_to == "pending"
+
+
+@pytest.mark.asyncio
+async def test_revoke_is_provider_confirmed_audited_and_idempotent(db_session, monkeypatch):
+    tenant, manager, principal = await _manager_context(db_session)
+    driver = await _driver(db_session, tenant)
+    invitation = await _invitation(db_session, tenant, manager, driver)
+    calls = []
+
+    async def revoke(provider_invitation_id):
+        calls.append(provider_invitation_id)
+        return {"id": provider_invitation_id, "state": "revoked", "revoked_at": datetime.now(timezone.utc).isoformat()}
+
+    monkeypatch.setattr(workos_provider, "revoke_invitation", revoke)
+    first = await workos_lifecycle.revoke_driver_invitation(str(invitation.id), principal, db_session)
+    second = await workos_lifecycle.revoke_driver_invitation(str(invitation.id), principal, db_session)
+    assert first.portal_access_status == second.portal_access_status == "revoked"
+    assert calls == [invitation.provider_invitation_id]
+    events = (await db_session.execute(select(TenantInvitationAuditEvent))).scalars().all()
+    assert len(events) == 1
+    assert events[0].action == "revoked"
+    assert events[0].actor_user_id == manager.id
+
+
+@pytest.mark.asyncio
+async def test_invitation_webhook_transition_is_idempotent_and_audited(db_session):
+    tenant, manager, _ = await _manager_context(db_session)
+    driver = await _driver(db_session, tenant)
+    invitation = await _invitation(db_session, tenant, manager, driver)
+    event = {
+        "id": f"event_{uuid4().hex}",
+        "event": "invitation.accepted",
+        "data": {"id": invitation.provider_invitation_id, "state": "accepted"},
+    }
+    raw = json.dumps(event, separators=(",", ":")).encode()
+    assert await workos_webhooks.process_event(event, raw, db_session) == "processed"
+    assert await workos_webhooks.process_event(event, raw, db_session) == "duplicate"
+    await db_session.refresh(invitation)
+    assert invitation.status == "accepted"
+    events = (await db_session.execute(select(TenantInvitationAuditEvent))).scalars().all()
+    assert len(events) == 1
+    assert events[0].action == "provider_reconciled"
+    assert events[0].provider_event_id == event["id"]

@@ -13,7 +13,14 @@ from sqlalchemy.exc import IntegrityError
 
 from app.core.config import settings
 from app.core.redis import increment_token_version
-from app.db.models.identity import ExternalIdentity, IdentityPrincipal, TenantInvitation, TenantMembership, WorkOSEventReceipt
+from app.db.models.identity import (
+    ExternalIdentity,
+    IdentityPrincipal,
+    TenantInvitation,
+    TenantInvitationAuditEvent,
+    TenantMembership,
+    WorkOSEventReceipt,
+)
 from app.db.models.tenant import Tenant
 from app.db.models.user import User
 
@@ -89,18 +96,31 @@ async def _sync_membership(event_type: str, data: Dict[str, Any], db: AsyncSessi
     await _revoke_principal(external.principal_id, db)
 
 
-async def _sync_invitation(event_type: str, data: Dict[str, Any], db: AsyncSession) -> None:
+async def _sync_invitation(event_id: str, event_type: str, data: Dict[str, Any], db: AsyncSession) -> None:
     invitation = (await db.execute(select(TenantInvitation).where(
         TenantInvitation.provider_invitation_id == data.get("id")
     ))).scalar_one_or_none()
     if not invitation:
         return
+    previous = invitation.status
     state = data.get("state")
     invitation.status = state if state in {"pending", "accepted", "revoked", "expired"} else invitation.status
     if state == "accepted":
         invitation.accepted_at = datetime.now(timezone.utc)
     if state == "revoked":
         invitation.revoked_at = datetime.now(timezone.utc)
+    if invitation.status != previous:
+        db.add(TenantInvitationAuditEvent(
+            tenant_id=invitation.tenant_id,
+            invitation_id=invitation.id,
+            driver_profile_id=invitation.driver_profile_id,
+            actor_user_id=None,
+            action="provider_reconciled",
+            status_from=previous,
+            status_to=invitation.status,
+            provider_event_id=event_id,
+            metadata_json={"event_type": event_type},
+        ))
 
 
 async def _sync_user(event_type: str, data: Dict[str, Any], db: AsyncSession) -> None:
@@ -159,7 +179,7 @@ async def process_event(event: Dict[str, Any], raw_body: bytes, db: AsyncSession
     if event_type.startswith("organization_membership."):
         await _sync_membership(event_type, data, db)
     elif event_type.startswith("invitation."):
-        await _sync_invitation(event_type, data, db)
+        await _sync_invitation(event_id, event_type, data, db)
     elif event_type.startswith("user."):
         await _sync_user(event_type, data, db)
     elif event_type.startswith(("organization_role.", "permission.")):

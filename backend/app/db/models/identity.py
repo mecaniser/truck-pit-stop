@@ -58,6 +58,22 @@ class TenantInvitation(BaseModel):
     invited_by_user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True)
 
 
+class TenantInvitationAuditEvent(BaseModel):
+    """Append-only manager/provider actions affecting a tenant invitation."""
+
+    __tablename__ = "tenant_invitation_audit_events"
+
+    tenant_id = Column(UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=False, index=True)
+    invitation_id = Column(UUID(as_uuid=True), ForeignKey("tenant_invitations.id"), nullable=False, index=True)
+    driver_profile_id = Column(UUID(as_uuid=True), ForeignKey("driver_profiles.id"), nullable=True, index=True)
+    actor_user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True, index=True)
+    action = Column(String(48), nullable=False, index=True)
+    status_from = Column(String(24), nullable=True)
+    status_to = Column(String(24), nullable=False)
+    provider_event_id = Column(String(255), nullable=True, unique=True, index=True)
+    metadata_json = Column(JSONB, nullable=False, default=dict, server_default="{}")
+
+
 class WorkOSEventReceipt(BaseModel):
     __tablename__ = "workos_event_receipts"
 
