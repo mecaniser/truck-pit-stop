@@ -1,8 +1,11 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 
-import { Modal } from '../FleetModals'
+import { Modal, SidekickPanel } from '../FleetModals'
+
+beforeAll(() => vi.stubGlobal('scrollTo', vi.fn()))
+afterAll(() => vi.unstubAllGlobals())
 
 function renderModal({
   onClose = vi.fn(),
@@ -109,5 +112,31 @@ describe('Fleet Modal accessibility and lifecycle', () => {
 
     expect(opener).toHaveFocus()
     opener.remove()
+  })
+})
+
+describe('Fleet Sidekick shell', () => {
+  it('keeps task variants inside one shared shell contract', () => {
+    render(
+      <SidekickPanel
+        title="TPS-108"
+        subtitle="Weekly inspection"
+        icon={<span aria-hidden="true">inspection</span>}
+        onClose={vi.fn()}
+        variant="checklist"
+        tone="inspection"
+        headerExtra={<div>4 of 19 complete</div>}
+        footer={<button type="button">Review and complete</button>}
+      >
+        <div>Inspection checks</div>
+      </SidekickPanel>,
+    )
+
+    const dialog = screen.getByRole('dialog', { name: 'TPS-108' })
+    expect(dialog).toHaveClass('fleet-sidekick-shell-checklist')
+    expect(dialog).toHaveClass('fleet-sidekick-shell-tone-inspection')
+    expect(dialog.querySelector('[data-sidekick-variant="checklist"]')).toHaveTextContent('Inspection checks')
+    expect(screen.getByText('4 of 19 complete')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Review and complete' })).toBeInTheDocument()
   })
 })

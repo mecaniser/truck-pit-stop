@@ -1147,6 +1147,15 @@ function RecognizePMModal({ entry, truck, onClose, onDone }: {
       icon={<CheckCircle2 size={18} className="text-[var(--yellow)]" />}
       onClose={onClose}
       width="max-w-[520px]"
+      tone="maintenance"
+      footer={(
+        <div className="fleet-sidekick-actions">
+          <button type="button" className="dbtn dbtn-ghost" disabled={recognize.isPending} onClick={onClose}>Cancel</button>
+          <button type="button" className="dbtn dbtn-yellow" disabled={invalid || recognize.isPending} onClick={() => recognize.mutate()}>
+            {recognize.isPending ? <Spinner size="xs" /> : <CheckCircle2 size={15} />} Record PM completion
+          </button>
+        </div>
+      )}
     >
       <div className="recognize-pm-summary">
         <span>Existing repair order</span>
@@ -1173,12 +1182,6 @@ function RecognizePMModal({ entry, truck, onClose, onDone }: {
         </span>
       </div>
 
-      <div className="recognize-pm-actions">
-        <button type="button" className="dbtn dbtn-ghost recognize-pm-cancel" onClick={onClose}>Cancel</button>
-        <button type="button" className="dbtn dbtn-yellow recognize-pm-submit" disabled={invalid || recognize.isPending} onClick={() => recognize.mutate()}>
-          {recognize.isPending ? <Spinner size="xs" /> : <CheckCircle2 size={15} />} Record PM completion
-        </button>
-      </div>
     </SidekickPanel>
   )
 }
@@ -1195,78 +1198,84 @@ function TruckDetailsModal({ truck, detail, canMerge, onChangeDriver, onEdit, on
       icon={<Truck size={18} className="text-[var(--yellow)]" />}
       onClose={onClose}
       width="max-w-[560px]"
+      variant="reference"
+      tone="neutral"
     >
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 8 }}>
-        <div className="dmap-side-h" style={{ margin: 0 }}>Identity</div>
-        <button className="dbtn dbtn-ghost" style={{ height: 34, padding: '0 12px', fontSize: 12.5 }} onClick={onEdit}>
-          <Pencil size={14} /> Edit truck
-        </button>
-      </div>
-      <div className="id-grid">
-        <Stat label="VIN" value={truck.vin || '—'} mono />
-        <Stat label="Plate" value={truck.plate || '—'} mono />
-        <Stat label="Year" value={truck.year ?? '—'} mono />
-        <Stat label="Body type" value={truck.body_type || '—'} />
-        <Stat label="Make" value={truck.make} />
-        <Stat label="Model" value={truck.model} />
-        <Stat label="Truck owner / lessor" value={truck.owner_company_name || truck.fleet_company_name || '—'} />
-        <Stat label="Operating authority" value={truck.fleet_company_name || '—'} />
-        <Stat label="Default invoice recipient" value={detail.bill_to_company_name || detail.bill_to_contact_name || '—'} />
-        <Stat
-          label="Pricing for new work"
-          value={detail.bill_to_is_internal
-            ? `Internal · parts at garage cost · labor at ${detail.bill_labor_at_customer_rate ? 'customer rate' : 'garage cost'}`
-            : 'Standard customer pricing'}
-        />
-      </div>
-
-      <div className="dmap-side-h" style={{ margin: '18px 0 8px' }}>Service record</div>
-      <div className="id-grid">
-        <Stat label="Lifetime service spend" value={money(detail.lifetime_spend)} />
-        <Stat label="Incidents on record" value={detail.incidents_count || '—'} />
-      </div>
-
-      <div className="dmap-side-h" style={{ margin: '18px 0 8px' }}>Driver & crew</div>
-      <div className="person person-driver">
-        <div className="avatar">{initials(truck.driver_name)}</div>
-        <div>
-          <div className="person-name">{truck.driver_name || 'Unassigned'}</div>
-          <div className="person-role">{detail.driver_phone ? formatUSPhone(detail.driver_phone) : 'Assigned driver'}</div>
+      <section className="fleet-reference-section">
+        <div className="fleet-reference-heading">
+          <h3 className="dmap-side-h">Identity</h3>
+          <button className="dbtn dbtn-ghost" onClick={onEdit}>
+            <Pencil size={14} /> Edit truck
+          </button>
         </div>
-        {detail.driver_phone && (
-          <a className="person-call" href={`tel:${detail.driver_phone}`}><Phone size={15} /></a>
+        <div className="id-grid">
+          <Stat label="VIN" value={truck.vin || '—'} mono />
+          <Stat label="Plate" value={truck.plate || '—'} mono />
+          <Stat label="Year" value={truck.year ?? '—'} mono />
+          <Stat label="Body type" value={truck.body_type || '—'} />
+          <Stat label="Make" value={truck.make} />
+          <Stat label="Model" value={truck.model} />
+        </div>
+        <h4 className="fleet-reference-subhead">Relationships &amp; billing</h4>
+        <div className="id-grid">
+          <Stat label="Truck owner / lessor" value={truck.owner_company_name || truck.fleet_company_name || '—'} />
+          <Stat label="Operating authority" value={truck.fleet_company_name || '—'} />
+          <Stat label="Default invoice recipient" value={detail.bill_to_company_name || detail.bill_to_contact_name || '—'} />
+          <Stat
+            label="Pricing for new work"
+            value={detail.bill_to_is_internal
+              ? `Internal · parts at garage cost · labor at ${detail.bill_labor_at_customer_rate ? 'customer rate' : 'garage cost'}`
+              : 'Standard customer pricing'}
+          />
+        </div>
+      </section>
+
+      <section className="fleet-reference-section">
+        <h3 className="dmap-side-h">Driver &amp; crew</h3>
+        <div className="person person-driver">
+          <div className="avatar">{initials(truck.driver_name)}</div>
+          <div>
+            <div className="person-name">{truck.driver_name || 'Unassigned'}</div>
+            <div className="person-role">{detail.driver_phone ? formatUSPhone(detail.driver_phone) : 'Assigned driver'}</div>
+          </div>
+          {detail.driver_phone && (
+            <a className="person-call" href={`tel:${detail.driver_phone}`} aria-label={`Call ${truck.driver_name || 'driver'}`}><Phone size={15} /></a>
+          )}
+          <button className="dbtn dbtn-ghost fleet-reference-driver-action" onClick={onChangeDriver}>
+            {truck.driver_name ? 'Change driver' : 'Assign driver'}
+          </button>
+        </div>
+        {truck.assigned_mechanic && (
+          <div className="person">
+            <div className="avatar avatar-mech">{initials(truck.assigned_mechanic)}</div>
+            <div>
+              <div className="person-name">{truck.assigned_mechanic}</div>
+              <div className="person-role">Lead mechanic on file</div>
+            </div>
+          </div>
         )}
-        <button
-          className="dbtn dbtn-ghost"
-          style={{ height: 34, padding: '0 12px', fontSize: 12.5, marginLeft: detail.driver_phone ? 8 : 'auto' }}
-          onClick={onChangeDriver}
-        >
-          {truck.driver_name ? 'Change driver' : 'Assign driver'}
-        </button>
-      </div>
-      {truck.assigned_mechanic && (
-        <div className="person">
-          <div className="avatar avatar-mech">{initials(truck.assigned_mechanic)}</div>
-          <div>
-            <div className="person-name">{truck.assigned_mechanic}</div>
-            <div className="person-role">Lead mechanic on file</div>
+        {detail.crew.filter((member) => member !== truck.assigned_mechanic).slice(0, 3).map((member) => (
+          <div key={member} className="person person-sm">
+            <div className="avatar avatar-sm">{initials(member)}</div>
+            <div>
+              <div className="person-name">{member}</div>
+              <div className="person-role">Worked on this truck</div>
+            </div>
           </div>
+        ))}
+      </section>
+      <section className="fleet-reference-section">
+        <h3 className="dmap-side-h">Service record</h3>
+        <div className="id-grid">
+          <Stat label="Lifetime service spend" value={money(detail.lifetime_spend)} />
+          <Stat label="Incidents on record" value={detail.incidents_count || '—'} />
         </div>
-      )}
-      {detail.crew.filter((member) => member !== truck.assigned_mechanic).slice(0, 3).map((member) => (
-        <div key={member} className="person person-sm">
-          <div className="avatar avatar-sm">{initials(member)}</div>
-          <div>
-            <div className="person-name">{member}</div>
-            <div className="person-role">Worked on this truck</div>
-          </div>
-        </div>
-      ))}
+      </section>
       {canMerge && (
         <div className="truck-cleanup-actions">
           <div>
-            <strong>Duplicate cleanup</strong>
-            <span>Combine repair history when another card represents this same physical truck.</span>
+            <strong>Record maintenance</strong>
+            <span>Merge another record only when it represents this same physical truck.</span>
           </div>
           <button type="button" className="dbtn dbtn-ghost" onClick={onMerge}>
             <Combine size={15} /> Merge duplicate
