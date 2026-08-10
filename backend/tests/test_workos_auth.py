@@ -1,4 +1,5 @@
 """Focused boundary tests for the additive WorkOS flow."""
+import json
 import pytest
 from datetime import datetime, timezone
 from starlette.requests import Request
@@ -52,7 +53,8 @@ async def test_login_issues_bound_state_and_safe_return(client, fake_redis, db_s
     assert "redirect_uri=http%3A%2F%2Flocalhost" in response.headers["location"]
     assert "prompt=login" in response.headers["location"]
     state = response.cookies.get("workos_oauth_state")
-    assert state and await fake_redis.get(f"workos:oauth-state:{state}") == "1"
+    state_context = json.loads(await fake_redis.get(f"workos:oauth-state:{state}"))
+    assert state_context == {"return_to": "/", "tenant_id": str(tenant.id)}
     assert response.cookies.get("workos_return_to").strip('"') == "/"
 
 
@@ -113,6 +115,35 @@ async def test_callback_rejects_missing_or_mismatched_state(client):
     assert missing.headers["location"].endswith(
         "/api/v1/auth/workos/login?return_to=%2F&recovery=1"
     )
+
+
+@pytest.mark.asyncio
+async def test_callback_recovery_retains_server_bound_return_path_when_cookies_are_lost(
+    fake_redis
+):
+    tenant_id = uuid4()
+    await fake_redis.setex(
+        "workos:oauth-state:server-state",
+        600,
+        json.dumps({"return_to": "/dashboard", "tenant_id": str(tenant_id)}),
+    )
+    request = Request(
+        {
+            "type": "http",
+            "method": "GET",
+            "path": "/api/v1/auth/workos/callback",
+            "headers": [(b"cookie", b"workos_oauth_state=wrong-browser-state")],
+            "client": ("127.0.0.1", 1),
+        }
+    )
+    recovered = await auth.workos_callback(request, "code", "server-state", None)
+
+    assert recovered.status_code == 307
+    assert recovered.headers["location"].endswith(
+        "/api/v1/auth/workos/login?"
+        f"return_to=%2Fdashboard&recovery=1&tenant_id={tenant_id}"
+    )
+    assert await fake_redis.get("workos:oauth-state:server-state") is None
 
 
 @pytest.mark.asyncio
@@ -221,6 +252,42 @@ async def test_callback_issues_short_access_and_opaque_server_session(db_session
     session_id = next(value.split("workos_session=")[1].split(";")[0] for value in response.headers.getlist("set-cookie") if "workos_session=" in value)
     stored = await fake_redis.get(f"workos:session:{session_id}")
     assert stored and "provider-refresh" not in stored
+
+
+@pytest.mark.asyncio
+async def test_successful_callback_uses_server_bound_return_path_when_cookie_is_lost(
+    db_session, fake_redis, monkeypatch
+):
+    tenant = Tenant(name="Return", slug="return", workos_organization_id="org_1")
+    user = User(
+        email="u@example.test",
+        hashed_password="x",
+        first_name="U",
+        last_name="T",
+        role=UserRole.GARAGE_ADMIN,
+        tenant_id=None,
+        workos_user_id="wu_1",
+    )
+    db_session.add_all([tenant, user])
+    await db_session.commit()
+    await fake_redis.setex(
+        "workos:oauth-state:return-state",
+        600,
+        json.dumps({"return_to": "/dashboard", "tenant_id": None}),
+    )
+    monkeypatch.setattr(auth, "get_redis", lambda: _resolved(fake_redis))
+    monkeypatch.setattr(workos_provider, "authenticate", _authenticate)
+    monkeypatch.setattr(workos_provider, "verify_access_token", _verify)
+
+    response = await auth.workos_callback(
+        _request("return-state", return_to=""),
+        "code",
+        "return-state",
+        db_session,
+    )
+
+    assert response.status_code == 307
+    assert response.headers["location"].endswith("/dashboard")
 
 
 @pytest.mark.asyncio
