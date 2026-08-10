@@ -59,6 +59,25 @@ async def test_login_issues_bound_state_and_safe_return(client, fake_redis, db_s
 
 
 @pytest.mark.asyncio
+async def test_login_scopes_state_cookies_across_app_and_api_subdomains(
+    client, monkeypatch
+):
+    monkeypatch.setattr(settings, "COOKIE_DOMAIN", ".dieselbridge.com")
+
+    response = await client.get(
+        "/api/v1/auth/workos/login?return_to=%2Fdashboard",
+        follow_redirects=False,
+    )
+
+    cookies = response.headers.get_list("set-cookie")
+    for name in ("workos_oauth_state", "workos_return_to"):
+        cookie = next(value for value in cookies if value.startswith(f"{name}="))
+        assert "Domain=.dieselbridge.com" in cookie
+        assert "Path=/api/v1/auth/workos" in cookie
+        assert "HttpOnly" in cookie
+
+
+@pytest.mark.asyncio
 async def test_generic_login_defers_to_authoritative_organization_memberships(client):
     response = await client.get("/api/v1/auth/workos/login?return_to=%2Fdashboard", follow_redirects=False)
     assert response.status_code == 307
