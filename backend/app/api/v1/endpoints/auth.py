@@ -14,6 +14,7 @@ from app.core.security import (
 )
 from app.core.dependencies import get_db, get_current_active_user, get_token_from_request
 from app.core.redis import (
+    get_redis,
     get_token_version,
     increment_token_version,
     blacklist_token,
@@ -83,6 +84,7 @@ async def workos_login(return_to: Optional[str] = None):
     response = RedirectResponse()
     response.set_cookie("workos_oauth_state", state, httponly=True, secure=settings.COOKIE_SECURE_EFFECTIVE, samesite="lax", max_age=600, path="/api/v1/auth/workos")
     response.set_cookie("workos_return_to", _safe_return_path(return_to), httponly=True, secure=settings.COOKIE_SECURE_EFFECTIVE, samesite="lax", max_age=600, path="/api/v1/auth/workos")
+    await (await get_redis()).setex(f"workos:oauth-state:{state}", 600, "1")
     query = urlencode({
         "client_id": settings.WORKOS_CLIENT_ID,
         "redirect_uri": settings.WORKOS_REDIRECT_URI,
@@ -100,7 +102,9 @@ async def workos_callback(request: Request, code: str, state: Optional[str] = No
     """
     _workos_enabled()
     expected_state = request.cookies.get("workos_oauth_state") if request else None
-    if not state or not expected_state or not secrets.compare_digest(state, expected_state):
+    state_key = f"workos:oauth-state:{state}" if state else ""
+    state_is_live = bool(state and await (await get_redis()).delete(state_key))
+    if not state or not expected_state or not state_is_live or not secrets.compare_digest(state, expected_state):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired WorkOS login state")
     async with httpx.AsyncClient(timeout=10.0) as client:
         result = await client.post(
