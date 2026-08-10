@@ -128,7 +128,11 @@ async def workos_callback(request: Request, code: str, state: Optional[str] = No
     await db.commit()
     # WorkOS returns authorization claims with the code exchange.  The local
     # projection is intentionally short lived so membership removal is bounded.
-    permissions = payload.get("permissions") or ((payload.get("organization_membership") or {}).get("permissions")) or []
+    # WorkOS AuthKit's authorization-code response supplies the resolved
+    # membership permissions. Do not accept a missing/optional local value.
+    permissions = payload.get("permissions")
+    if not isinstance(permissions, list) or not all(isinstance(item, str) for item in permissions):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="WorkOS permissions are unavailable")
     return_to = _safe_return_path(request.cookies.get("workos_return_to") if request else None)
     response = RedirectResponse(settings.WORKOS_POST_LOGIN_URL.rstrip("/") + return_to)
     access_token = create_access_token(data={"sub": str(user.id), "auth_provider": "workos", "workos_user_id": workos_user_id, "workos_org_id": workos_org_id, "permissions": permissions}, expires_delta=timedelta(minutes=5), tenant_id=str(tenant.id))
