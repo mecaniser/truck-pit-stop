@@ -51,6 +51,7 @@ _startup_time: float = 0
 async def lifespan(app: FastAPI):
     """Application lifespan manager."""
     global _startup_time
+    settings.validate_workos_deployment()
     _startup_time = time.time()
     
     logger.info("application_starting", environment=settings.ENVIRONMENT)

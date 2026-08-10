@@ -13,7 +13,13 @@ link is populated only after an exact WorkOS invitation is accepted. Removing a
 login or membership never deletes or unlinks custody, PTIs, incidents, reviews,
 or actor/subject attribution.
 
-## Staging application
+## Environment isolation
+
+WorkOS Staging and Production are separate security boundaries. Creating a
+second application inside Staging is not sufficient because applications in a
+single WorkOS environment share users and organizations.
+
+Local development uses only WorkOS Staging:
 
 - Application: `Diesel Bridge Network`
 - Client ID: `client_01KZMJ9VY45WFBHD5H736CBSZC`
@@ -21,13 +27,16 @@ or actor/subject attribution.
 - App homepage: `http://localhost:5173`
 - Logout return: `http://localhost:5173/login`
 
-The future WorkOS Production application must be configured separately with:
+Production uses only WorkOS Production credentials, users, organizations,
+memberships, invitations, redirect registrations, and webhook secrets:
 
 - Callback: `https://api.dieselbridge.com/api/v1/auth/workos/callback`
 - App homepage: `https://www.dieselbridge.com`
 - Logout return: `https://www.dieselbridge.com/login`
 
-Do not place production credentials in the Staging environment.
+Never copy a WorkOS organization/user/membership ID between local and
+production databases. Rebind an existing local User only through the exact
+environment-specific invitation target; email is never a linking key.
 
 ## Environment
 
@@ -35,6 +44,7 @@ Required for the WorkOS path:
 
 ```text
 WORKOS_AUTH_ENABLED=true
+WORKOS_ENVIRONMENT=staging
 WORKOS_API_KEY=<Diesel Bridge Network application-scoped secret>
 WORKOS_CLIENT_ID=client_01KZMJ9VY45WFBHD5H736CBSZC
 WORKOS_ISSUER=https://api.workos.com
@@ -44,6 +54,11 @@ WORKOS_WEBHOOK_SECRET=<endpoint secret once a public webhook URL exists>
 WORKOS_ACCESS_TOKEN_MINUTES=5
 WORKOS_SESSION_TTL_DAYS=7
 ```
+
+Railway Production instead requires `WORKOS_ENVIRONMENT=production`, a
+`sk_live_` API key, the Production Client ID, the HTTPS production URLs above,
+and the Production webhook signing secret. Application startup fails closed if
+production is paired with Staging credentials or localhost URLs.
 
 Legacy login remains available while `WORKOS_AUTH_ENABLED=false` and during the
 tenant-by-tenant dual-run. A WorkOS-only user has `hashed_password = NULL` and is
@@ -66,7 +81,7 @@ is outside this WorkOS organization cutover.
 
 ## HTTP contract
 
-- `GET /api/v1/auth/workos/login?return_to=/driver` starts AuthKit with
+- `GET /api/v1/auth/workos/login?tenant_id=<uuid>&return_to=/driver` starts AuthKit with
   browser-bound, one-time state and a validated relative return path.
 - `GET /api/v1/auth/workos/callback` verifies the WorkOS-signed access token,
   resolves an active organization membership or exact accepted invitation,
