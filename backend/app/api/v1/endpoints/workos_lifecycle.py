@@ -32,6 +32,7 @@ from app.schemas.workos_lifecycle import (
     WorkOSSessionResponse,
     WorkOSWebhookResponse,
     WorkOSOrganizationProvision,
+    WorkOSProductionRebind,
     WorkOSOrganizationResponse,
 )
 from app.schemas.auth import UserResponse
@@ -422,6 +423,201 @@ async def provision_organization(
         status_from="creating",
         status_to=invitation.status,
         actor_user_id=platform_admin.id,
+    )
+    await db.commit()
+    return WorkOSOrganizationResponse(
+        tenant_id=tenant.id,
+        workos_organization_id=tenant.workos_organization_id,
+        owner_invitation=_invitation_response(invitation),
+    )
+
+
+@router.post("/organizations/rebind-production", response_model=WorkOSOrganizationResponse)
+async def rebind_production_organization(
+    body: WorkOSProductionRebind,
+    platform_admin: User = Depends(_platform_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Replace one exact Staging pilot projection with Production identities.
+
+    This is intentionally narrower than ordinary provisioning. The caller must
+    name every existing provider anchor, and the accepted Staging invitation is
+    retained as superseded audit history. Domain records and the local User ID
+    never change.
+    """
+    if (
+        settings.ENVIRONMENT.strip().lower() != "production"
+        or settings.WORKOS_ENVIRONMENT.strip().lower() != "production"
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Production WorkOS rebinding is unavailable in this environment",
+        )
+
+    tenant = (await db.execute(
+        select(Tenant).where(Tenant.id == body.tenant_id).with_for_update()
+    )).scalar_one_or_none()
+    owner = (await db.execute(
+        select(User).where(User.id == body.owner_user_id).with_for_update()
+    )).scalar_one_or_none()
+    if (
+        not tenant
+        or tenant.deleted_at
+        or not tenant.is_active
+        or tenant.enrollment_status != "approved"
+        or not owner
+        or owner.deleted_at
+        or not owner.is_active
+        or owner.tenant_id != tenant.id
+        or owner.role != UserRole.GARAGE_OWNER
+        or owner.email.casefold() != str(body.owner_email).casefold()
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="The selected owner account does not exactly match this tenant",
+        )
+
+    principal = (await db.execute(select(IdentityPrincipal).where(
+        IdentityPrincipal.user_id == owner.id,
+        IdentityPrincipal.deleted_at.is_(None),
+    ).with_for_update())).scalar_one_or_none()
+    old_invitation = (await db.execute(select(TenantInvitation).where(
+        TenantInvitation.provider_invitation_id == body.expected_staging_invitation_id,
+        TenantInvitation.tenant_id == tenant.id,
+        TenantInvitation.target_user_id == owner.id,
+        TenantInvitation.intended_role_slug == "garage_owner",
+        TenantInvitation.deleted_at.is_(None),
+    ).with_for_update())).scalar_one_or_none()
+    if not principal or not old_invitation or old_invitation.principal_id != principal.id:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Staging identity projection does not match")
+
+    external = (await db.execute(select(ExternalIdentity).where(
+        ExternalIdentity.principal_id == principal.id,
+        ExternalIdentity.provider == "workos",
+        ExternalIdentity.provider_subject == body.expected_staging_user_id,
+        ExternalIdentity.deleted_at.is_(None),
+    ).with_for_update())).scalar_one_or_none()
+    membership = (await db.execute(select(TenantMembership).where(
+        TenantMembership.principal_id == principal.id,
+        TenantMembership.tenant_id == tenant.id,
+        TenantMembership.deleted_at.is_(None),
+    ).with_for_update())).scalar_one_or_none()
+
+    # A completed first attempt is returned rather than generating another
+    # organization or invitation.
+    replacement = (await db.execute(select(TenantInvitation).where(
+        TenantInvitation.tenant_id == tenant.id,
+        TenantInvitation.principal_id == principal.id,
+        TenantInvitation.target_user_id == owner.id,
+        TenantInvitation.intended_role_slug == "garage_owner",
+        TenantInvitation.id != old_invitation.id,
+        TenantInvitation.status.in_(("creating", "pending", "accepted")),
+        TenantInvitation.deleted_at.is_(None),
+    ).order_by(TenantInvitation.created_at.desc()))).scalars().first()
+    if (
+        old_invitation.status == "superseded"
+        and replacement
+        and tenant.workos_organization_id
+        and tenant.workos_organization_id != body.expected_staging_organization_id
+        and external
+        and external.status == "superseded"
+        and membership
+        and membership.status in {"pending", "active"}
+    ):
+        return WorkOSOrganizationResponse(
+            tenant_id=tenant.id,
+            workos_organization_id=tenant.workos_organization_id,
+            owner_invitation=_invitation_response(replacement),
+        )
+
+    if (
+        tenant.workos_organization_id != body.expected_staging_organization_id
+        or owner.workos_user_id != body.expected_staging_user_id
+        or principal.status != "active"
+        or not external
+        or external.status != "active"
+        or not membership
+        or membership.status != "active"
+        or membership.role_slug != "garage_owner"
+        or old_invitation.status != "accepted"
+        or old_invitation.provider_invitation_id != body.expected_staging_invitation_id
+    ):
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Staging identity projection does not match")
+
+    try:
+        organization = await workos_provider.get_or_create_organization(
+            tenant_id=str(tenant.id),
+            name=tenant.name,
+        )
+    except WorkOSProviderError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc))
+    if organization.get("id") == body.expected_staging_organization_id:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="WorkOS Production organization is not isolated")
+
+    old_status = old_invitation.status
+    old_invitation.status = "superseded"
+    external.status = "superseded"
+    membership.status = "pending"
+    old_provider_membership_id = membership.provider_membership_id
+    membership.provider_membership_id = None
+    membership.permissions = []
+    membership.provider_updated_at = datetime.now(timezone.utc)
+    principal.status = "pending"
+    owner.workos_user_id = None
+    owner.workos_identity_status = "pending"
+    tenant.workos_organization_id = organization["id"]
+
+    invitation = TenantInvitation(
+        tenant_id=tenant.id,
+        principal_id=principal.id,
+        email_snapshot=str(body.owner_email),
+        intended_role_slug="garage_owner",
+        resource_scope={},
+        target_user_id=owner.id,
+        status="creating",
+        invited_by_user_id=platform_admin.id,
+    )
+    db.add(invitation)
+    await db.flush()
+    db.add(TenantInvitationAuditEvent(
+        tenant_id=tenant.id,
+        invitation_id=old_invitation.id,
+        driver_profile_id=None,
+        actor_user_id=platform_admin.id,
+        action="environment_rebind_started",
+        status_from=old_status,
+        status_to="superseded",
+        metadata_json={
+            "from_environment": "staging",
+            "to_environment": "production",
+            "old_organization_id": body.expected_staging_organization_id,
+            "old_user_id": body.expected_staging_user_id,
+            "old_membership_id": old_provider_membership_id,
+        },
+    ))
+    try:
+        provider = await workos_provider.send_invitation(
+            email=str(body.owner_email),
+            organization_id=tenant.workos_organization_id,
+            role_slug="garage_owner",
+            inviter_user_id=None,
+        )
+    except WorkOSProviderError as exc:
+        await db.rollback()
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc))
+
+    invitation.provider_invitation_id = provider["id"]
+    invitation.status = provider.get("state") if provider.get("state") in {"pending", "accepted"} else "pending"
+    if isinstance(provider.get("expires_at"), str):
+        invitation.expires_at = datetime.fromisoformat(provider["expires_at"].replace("Z", "+00:00"))
+    _audit_invitation(
+        db,
+        invitation,
+        action="created",
+        status_from="creating",
+        status_to=invitation.status,
+        actor_user_id=platform_admin.id,
+        metadata={"environment": "production"},
     )
     await db.commit()
     return WorkOSOrganizationResponse(

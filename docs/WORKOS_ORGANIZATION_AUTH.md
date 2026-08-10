@@ -99,6 +99,11 @@ is outside this WorkOS organization cutover.
 - `POST /api/v1/auth/workos/organizations/provision` is local platform-admin
   only and idempotently creates/links a WorkOS organization using the immutable
   tenant UUID as `external_id`, then invites the first `garage_owner`.
+- `POST /api/v1/auth/workos/organizations/rebind-production` is a one-tenant,
+  platform-admin-only cutover path. It requires the exact existing Staging
+  organization, user, and invitation IDs; archives those projections as
+  superseded; and creates an exact-target Production owner invitation. It is
+  idempotent and never changes the local User ID or domain history.
 - `POST /api/v1/auth/workos/webhook` verifies `WorkOS-Signature` and processes
   events idempotently.
 
