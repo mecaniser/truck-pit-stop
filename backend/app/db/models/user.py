@@ -12,6 +12,7 @@ class UserRole(str, enum.Enum):
     MECHANIC = "mechanic"            # Technician working on repairs
     RECEPTIONIST = "receptionist"    # Front desk staff
     FLEET_MANAGER = "fleet_manager"  # Manages the garage's own fleet (internal-cost repairs)
+    DRIVER = "driver"                # Restricted WorkOS-backed driver portal user
     CUSTOMER = "customer"            # Truck owner/operator
 
 

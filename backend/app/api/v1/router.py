@@ -1,5 +1,5 @@
 from fastapi import APIRouter
-from app.api.v1.endpoints import auth, customers, vehicles, repair_orders, inventory, dashboard, services, appointments, payments, mechanics, suppliers, quotes, invoices, stripe_connect, stripe_webhooks, quickbooks, google_reviews, admin, platform_payments, websocket, invoice_access, messages, twilio_webhooks, fleet, labor_book_time, activity, reports
+from app.api.v1.endpoints import auth, customers, vehicles, repair_orders, inventory, dashboard, services, appointments, payments, mechanics, suppliers, quotes, invoices, stripe_connect, stripe_webhooks, quickbooks, google_reviews, admin, platform_payments, websocket, invoice_access, messages, twilio_webhooks, fleet, driver_accountability, labor_book_time, activity, reports
 
 api_router = APIRouter()
 
@@ -25,6 +25,7 @@ api_router.include_router(mechanics.router, prefix="/mechanics", tags=["mechanic
 api_router.include_router(suppliers.router, prefix="/suppliers", tags=["suppliers"])
 api_router.include_router(messages.router, prefix="/messages", tags=["messages"])
 api_router.include_router(fleet.router, prefix="/fleet", tags=["fleet"])
+api_router.include_router(driver_accountability.router, prefix="/fleet-identity", tags=["fleet-identity"])
 api_router.include_router(stripe_connect.router, prefix="/stripe/connect", tags=["stripe-connect"])
 api_router.include_router(stripe_webhooks.router, prefix="/webhooks/stripe", tags=["webhooks"])
 api_router.include_router(quickbooks.router, prefix="/quickbooks", tags=["quickbooks"])

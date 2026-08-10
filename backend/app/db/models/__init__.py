@@ -9,6 +9,16 @@ from app.db.models.contact import Contact
 from app.db.models.user_customer_link import UserCustomerLink
 from app.db.models.vehicle import Vehicle
 from app.db.models.vehicle_relationship import VehicleCustomerRelationship, FleetMembership
+from app.db.models.driver_accountability import (
+    DriverProfile,
+    FleetTrailer,
+    EquipmentCustodySession,
+    EquipmentCustodyAsset,
+    FleetIncidentEvent,
+    FleetAccountabilityReview,
+    FleetAccountabilityAttribution,
+    FleetDriverReviewResponse,
+)
 from app.db.models.repair_order import RepairOrder
 from app.db.models.inventory import Inventory, PartsUsage
 from app.db.models.supplier import Supplier
@@ -77,6 +87,14 @@ __all__ = [
     "Vehicle",
     "VehicleCustomerRelationship",
     "FleetMembership",
+    "DriverProfile",
+    "FleetTrailer",
+    "EquipmentCustodySession",
+    "EquipmentCustodyAsset",
+    "FleetIncidentEvent",
+    "FleetAccountabilityReview",
+    "FleetAccountabilityAttribution",
+    "FleetDriverReviewResponse",
     "RepairOrder",
     "Inventory",
     "PartsUsage",
