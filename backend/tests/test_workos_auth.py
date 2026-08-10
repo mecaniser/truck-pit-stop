@@ -74,6 +74,12 @@ class _WorkOSClient:
     async def post(self, *args, **kwargs): return _WorkOSResponse()
 
 
+class _BadWorkOSClient(_WorkOSClient):
+    def __init__(self, status_code=400, payload=None): self.status_code, self.payload = status_code, payload or {}
+    async def post(self, *args, **kwargs):
+        result = _WorkOSResponse(); result.status_code = self.status_code; result.json = lambda: self.payload; return result
+
+
 @pytest.mark.asyncio
 async def test_callback_issues_only_short_workos_access_token(db_session, fake_redis, monkeypatch):
     tenant = Tenant(name="T", slug="t", workos_organization_id="org_1")
@@ -121,3 +127,29 @@ async def test_current_principal_rejects_legacy_and_permission_guard():
     principal = CurrentPrincipal(uuid4(), "wu", "org", uuid4(), frozenset({"fleet:view"}))
     with pytest.raises(HTTPException): await require_permission("fleet:view", "fleet:assign")(principal)
     assert await require_permission("fleet:view")(principal) == principal
+
+
+@pytest.mark.asyncio
+async def test_callback_fails_closed_for_bad_workos_response(db_session, fake_redis, monkeypatch):
+    tenant = Tenant(name="Reject", slug="reject", workos_organization_id="org_1")
+    user = User(email="reject@example.test", hashed_password="x", first_name="R", last_name="U", role=UserRole.GARAGE_ADMIN, workos_user_id="wu_1")
+    db_session.add_all([tenant, user]); await db_session.commit()
+    monkeypatch.setattr(auth, "get_redis", lambda: _resolved(fake_redis))
+    cases = [None, {"user": {}, "organization_id": "org_1", "permissions": []}, {"user": {"id": "wu_1"}, "permissions": []}, {"user": {"id": "wu_1"}, "organization_id": "org_1"}, {"user": {"id": "wu_1"}, "organization_id": "org_1", "permissions": "bad"}, {"user": {"id": "wu_1"}, "organization_id": "org_1", "permissions": [1]}]
+    for i, payload in enumerate(cases):
+        await fake_redis.setex(f"workos:oauth-state:r{i}", 600, "1")
+        monkeypatch.setattr(auth.httpx, "AsyncClient", lambda **kwargs: _BadWorkOSClient(400) if payload is None else _BadWorkOSClient(200, payload))
+        with pytest.raises(HTTPException): await auth.workos_callback(_request(f"r{i}"), "code", f"r{i}", db_session)
+
+
+@pytest.mark.asyncio
+async def test_workos_state_replay_and_refresh_are_rejected(client, fake_redis, monkeypatch):
+    await client.get("/api/v1/auth/workos/login")
+    state = client.cookies.get("workos_oauth_state")
+    assert state
+    await fake_redis.delete(f"workos:oauth-state:{state}")
+    assert (await client.get(f"/api/v1/auth/workos/callback?code=x&state={state}")).status_code == 401
+    from app.core.security import create_access_token
+    token = _workos_token(uuid4())
+    response = await client.post("/api/v1/auth/refresh", json={"refresh_token": token})
+    assert response.status_code == 401
