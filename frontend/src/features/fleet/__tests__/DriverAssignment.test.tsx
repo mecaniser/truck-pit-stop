@@ -52,6 +52,32 @@ function renderAssignment(onClose = vi.fn()) {
 describe('Driver profile assignment', () => {
   afterEach(() => Object.values(apiMocks).forEach((mock) => mock.mockReset()))
 
+  it('gates legacy managers before protected driver requests and exposes WorkOS reauthentication', async () => {
+    apiMocks.get.mockImplementation((url: string) => {
+      if (url === '/auth/workos/capabilities') return Promise.resolve({ data: {
+        session_provider: 'legacy', workos_auth_enabled: true, organization_provisioned: true,
+        driver_invitation_management: {
+          available: false,
+          reason: 'workos_reauthentication_required',
+          required_permission: 'members:manage',
+          reauth_path: '/auth/workos/login?return_to=%2Ffleet&tenant_id=tenant-wisconsin',
+        },
+      } })
+      return Promise.reject(new Error(`Protected request must not run before WorkOS reauthentication: ${url}`))
+    })
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
+
+    render(<QueryClientProvider client={client}><AssignDriverModal truck={truck} onClose={vi.fn()} /></QueryClientProvider>)
+
+    expect(await screen.findByText('Organization sign-in required')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Continue with WorkOS' })).toBeInTheDocument()
+    expect(screen.getByText(/Driver profiles and custody history are protected by your fleet permissions/i)).toBeInTheDocument()
+    expect(apiMocks.get).toHaveBeenCalledTimes(1)
+    expect(apiMocks.get).toHaveBeenCalledWith('/auth/workos/capabilities', {
+      params: { return_to: '/fleet' },
+    })
+  })
+
   it('assigns an explicitly selected profile and starts custody with the truck odometer', async () => {
     const user = userEvent.setup()
     const { onClose } = renderAssignment()
