@@ -81,17 +81,15 @@ async def workos_login(return_to: Optional[str] = None):
     _workos_enabled()
     state = secrets.token_urlsafe(32)
     # State is browser-bound and one-time: callback deletes it regardless of outcome.
-    response = RedirectResponse()
-    response.set_cookie("workos_oauth_state", state, httponly=True, secure=settings.COOKIE_SECURE_EFFECTIVE, samesite="lax", max_age=600, path="/api/v1/auth/workos")
-    response.set_cookie("workos_return_to", _safe_return_path(return_to), httponly=True, secure=settings.COOKIE_SECURE_EFFECTIVE, samesite="lax", max_age=600, path="/api/v1/auth/workos")
-    await (await get_redis()).setex(f"workos:oauth-state:{state}", 600, "1")
     query = urlencode({
         "client_id": settings.WORKOS_CLIENT_ID,
         "redirect_uri": settings.WORKOS_REDIRECT_URI,
         "response_type": "code", "state": state,
     })
-    response.headers["location"] = f"https://api.workos.com/user_management/authorize?{query}"
-    response.status_code = status.HTTP_307_TEMPORARY_REDIRECT
+    response = RedirectResponse(f"https://api.workos.com/user_management/authorize?{query}", status_code=status.HTTP_307_TEMPORARY_REDIRECT)
+    response.set_cookie("workos_oauth_state", state, httponly=True, secure=settings.COOKIE_SECURE_EFFECTIVE, samesite="lax", max_age=600, path="/api/v1/auth/workos")
+    response.set_cookie("workos_return_to", _safe_return_path(return_to), httponly=True, secure=settings.COOKIE_SECURE_EFFECTIVE, samesite="lax", max_age=600, path="/api/v1/auth/workos")
+    await (await get_redis()).setex(f"workos:oauth-state:{state}", 600, "1")
     return response
 
 
