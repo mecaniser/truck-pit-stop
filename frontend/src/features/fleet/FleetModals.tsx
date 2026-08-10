@@ -5,7 +5,7 @@ import type { AxiosError } from 'axios'
 import toast from 'react-hot-toast'
 import {
   X, Pencil, AlertTriangle, ClipboardCheck, CheckCircle2, XCircle, Plus, ClipboardList, Trash2, UserRound, Play, Flag, Calendar,
-  Check, Minus, RotateCcw, Wrench, Camera, Search,
+  Check, Minus, RotateCcw, Wrench, Camera, Search, ChevronDown,
 } from 'lucide-react'
 import api from '../../lib/api'
 import SlidePanel from '@/components/SlidePanel'
@@ -159,15 +159,33 @@ export function Modal({ title, icon, onClose, children, width = 480, scrollable 
 
 /** Persistent task shell for fleet workflows. Centered Modal is reserved for
  * destructive confirmation and other protected-focus decisions. */
-export function SidekickPanel({ title, subtitle, icon, onClose, children, footer, width = 'max-w-xl' }: {
+export type FleetSidekickVariant = 'quick' | 'builder' | 'checklist' | 'reference'
+export type FleetSidekickTone = 'neutral' | 'maintenance' | 'repair' | 'inspection' | 'safety'
+
+export function SidekickPanel({
+  title,
+  subtitle,
+  icon,
+  onClose,
+  children,
+  footer,
+  headerExtra,
+  width = 'max-w-xl',
+  variant = 'quick',
+  tone = 'neutral',
+}: {
   title: string
   subtitle?: string
   icon: React.ReactNode
   onClose: () => void
   children: React.ReactNode
   footer?: React.ReactNode
+  headerExtra?: React.ReactNode
   width?: string
+  variant?: FleetSidekickVariant
+  tone?: FleetSidekickTone
 }) {
+  const usesSectionSurface = variant === 'quick' || variant === 'reference'
   return (
     <SlidePanel
       isOpen
@@ -175,11 +193,19 @@ export function SidekickPanel({ title, subtitle, icon, onClose, children, footer
       title={title}
       subtitle={subtitle}
       headerIcon={icon}
+      headerExtra={headerExtra}
       onClose={onClose}
       footer={footer}
       width={width}
+      panelClassName={`fleet-sidekick-shell fleet-sidekick-shell-${variant} fleet-sidekick-shell-tone-${tone}`}
     >
-      <div className="dsec fleet-sidekick-body">{children}</div>
+      <div
+        className={`${usesSectionSurface ? 'dsec ' : ''}fleet-sidekick-body fleet-sidekick-${variant} fleet-sidekick-tone-${tone}`}
+        data-sidekick-variant={variant}
+        data-sidekick-tone={tone}
+      >
+        {children}
+      </div>
     </SlidePanel>
   )
 }
@@ -215,6 +241,15 @@ function Field({ label, children, full }: { label: string; children: React.React
       <span className="id-k" style={{ display: 'block', marginBottom: 5 }}>{label}</span>
       {children}
     </label>
+  )
+}
+
+function FieldGroup({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <fieldset className="fleet-field-group">
+      <legend className="id-k">{label}</legend>
+      {children}
+    </fieldset>
   )
 }
 
@@ -422,9 +457,20 @@ export function TruckEditModal({ truck, detail, onClose }: { truck: BoardTruck; 
   })
 
   return (
-    <SidekickPanel title={`Edit ${fleetUnitLabel(truck)}`} subtitle="Truck details" icon={<Pencil size={18} className="text-[var(--yellow)]" />} onClose={onClose} width="max-w-[560px]">
+    <SidekickPanel
+      title={fleetUnitLabel(truck)} subtitle="Edit truck" icon={<Pencil size={18} className="text-[var(--yellow)]" />}
+      onClose={onClose} width="max-w-[560px]" tone="neutral"
+      footer={(
+        <div className="fleet-sidekick-actions">
+          <button type="button" className="dbtn dbtn-ghost" disabled={save.isPending} onClick={onClose}>Cancel</button>
+          <button className={yellowBtn} disabled={save.isPending} onClick={() => save.mutate()}>
+            {save.isPending ? <Spinner size="sm" /> : <Pencil size={15} />} Save changes
+          </button>
+        </div>
+      )}
+    >
       <div className="dmap-side-h" style={{ marginBottom: 8 }}>Identity</div>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 16 }}>
+      <div className="fleet-form-grid fleet-form-grid-2 fleet-form-grid-spaced">
         <Field label="Unit #"><input value={f.unit_number} onChange={set('unit_number')} placeholder="TPS-109" /></Field>
         <Field label="Plate"><input value={f.license_plate} onChange={set('license_plate')} placeholder="ABC-1234" /></Field>
         <Field label="Make"><input value={f.make} onChange={set('make')} /></Field>
@@ -448,7 +494,7 @@ export function TruckEditModal({ truck, detail, onClose }: { truck: BoardTruck; 
         </Field>
       </div>
       <div className="dmap-side-h" style={{ marginBottom: 8 }}>Operations & location</div>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+      <div className="fleet-form-grid fleet-form-grid-2">
         <Field label="Odometer (mi)"><input value={f.odometer} onChange={set('odometer')} inputMode="numeric" /></Field>
         <Field label="PM interval (mi)"><input value={f.pm_interval_miles} onChange={set('pm_interval_miles')} inputMode="numeric" /></Field>
         <Field label="Next PM at (mi)"><input value={f.next_pm_miles} onChange={set('next_pm_miles')} inputMode="numeric" placeholder="odometer + interval" /></Field>
@@ -495,7 +541,7 @@ export function TruckEditModal({ truck, detail, onClose }: { truck: BoardTruck; 
                 <p style={{ margin: 0, fontSize: 12, color: 'var(--muted-2)' }}>These edits update the same customer on the Main Dashboard.</p>
                 <button type="button" className={ghostBtn} style={{ height: 30, padding: '0 9px', fontSize: 12, flexShrink: 0 }} onClick={cancelBillingEdit}>Cancel</button>
               </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+              <div className="fleet-form-grid fleet-form-grid-2">
                 <Field label="Company name" full><input value={f.bill_to_company_name} onChange={set('bill_to_company_name')} /></Field>
                 <Field label="First name *"><input required value={f.bill_to_first_name} onChange={set('bill_to_first_name')} /></Field>
                 <Field label="Last name *"><input required value={f.bill_to_last_name} onChange={set('bill_to_last_name')} /></Field>
@@ -548,9 +594,6 @@ export function TruckEditModal({ truck, detail, onClose }: { truck: BoardTruck; 
           </label>
         </>
       )}
-      <button className={yellowBtn} style={{ marginTop: 14, width: '100%', justifyContent: 'center' }} disabled={save.isPending} onClick={() => save.mutate()}>
-        {save.isPending ? <Spinner size="sm" /> : <Pencil size={15} />} Save changes
-      </button>
     </SidekickPanel>
   )
 }
@@ -757,15 +800,15 @@ export function NewWorkOrderModal({ truck, onClose, onCreated }: {
   )
 
   return (
-    <SlidePanel
-      isOpen
-      dark
+    <SidekickPanel
       onClose={onClose}
       width={WO_DRAWER_WIDTH}
       subtitle="Build repair order"
       title={fleetUnitLabel(truck)}
-      headerIcon={<ClipboardList size={18} className="text-[var(--yellow)]" />}
+      icon={<ClipboardList size={18} className="text-[var(--yellow)]" />}
       footer={footer}
+      variant="builder"
+      tone="repair"
     >
       <div className="wo-drawer-body wo-state-enter">
         <div className="wo-truckstrip">
@@ -888,14 +931,6 @@ export function NewWorkOrderModal({ truck, onClose, onCreated }: {
                   <button type="button" className={ghostBtn} disabled={!inventoryId} onClick={addPartLine}>Add part</button>
                 </div>
               )}
-
-              <div className="wo-builder-running" role="status" aria-live="polite">
-                <span>
-                  <small>Running estimate</small>
-                  <strong>{lineCount ? `${lineCount} item${lineCount === 1 ? '' : 's'} added` : 'Repair order is empty'}</strong>
-                </span>
-                {showPrices && <b>{money(estimatedTotal)}</b>}
-              </div>
             </section>
 
             <section className="wo-builder-scope" aria-labelledby="wo-builder-scope-heading">
@@ -903,7 +938,7 @@ export function NewWorkOrderModal({ truck, onClose, onCreated }: {
                 <div><h3 id="wo-builder-scope-heading">Draft scope</h3><p>{lineCount ? `${lineCount} item${lineCount === 1 ? '' : 's'} ready to create` : 'Nothing added yet'}</p></div>
               </div>
               {lineCount === 0 ? (
-                <div className="wo-builder-empty">Add services, labor, or parts as you find work around the truck.</div>
+                <p className="wo-builder-empty-note">Use Services, Labor, or Parts above to build this repair order.</p>
               ) : (
                 <div className="wo-builder-lines">
                   {selectedServiceEntries.map((service) => (
@@ -942,7 +977,7 @@ export function NewWorkOrderModal({ truck, onClose, onCreated }: {
                 </div>
               </div>
 
-              <div className="wo-builder-final-grid">
+              <div className={'wo-builder-final-grid' + (lineCount ? '' : ' is-single')}>
                 <div className="wo-builder-order-fields">
                   <Field label="Assign mechanic (optional)">
                     <select value={mechanicId} onChange={(event) => setMechanicId(event.target.value)} className="wo-select">
@@ -970,22 +1005,24 @@ export function NewWorkOrderModal({ truck, onClose, onCreated }: {
                   </div>
                 </div>
 
-                <div className="wo-builder-total wo-builder-review">
-                  <div><span>Draft review</span><strong>{lineCount} item{lineCount === 1 ? '' : 's'}</strong></div>
-                  <dl>
-                    <div><dt>Services</dt><dd>{selectedServices.length}</dd></div>
-                    <div><dt>Manual labor</dt><dd>{formatHoursMinutes(stagedLabor.reduce((sum, line) => sum + line.hours, 0))}</dd></div>
-                    <div><dt>Inventory parts</dt><dd>{stagedParts.reduce((sum, part) => sum + part.quantity, 0)}</dd></div>
-                  </dl>
-                  {showPrices && <div className="wo-builder-estimate"><span>Estimated total</span><strong>{money(estimatedTotal)}</strong></div>}
-                  <p>Labor and parts remain editable while the repair order is a draft.</p>
-                </div>
+                {lineCount > 0 && (
+                  <div className="wo-builder-total wo-builder-review">
+                    <div><span>Draft review</span><strong>{lineCount} item{lineCount === 1 ? '' : 's'}</strong></div>
+                    <dl>
+                      <div><dt>Services</dt><dd>{selectedServices.length}</dd></div>
+                      <div><dt>Manual labor</dt><dd>{formatHoursMinutes(stagedLabor.reduce((sum, line) => sum + line.hours, 0))}</dd></div>
+                      <div><dt>Inventory parts</dt><dd>{stagedParts.reduce((sum, part) => sum + part.quantity, 0)}</dd></div>
+                    </dl>
+                    {showPrices && <div className="wo-builder-estimate"><span>Estimated total</span><strong>{money(estimatedTotal)}</strong></div>}
+                    <p>Labor and parts remain editable while the repair order is a draft.</p>
+                  </div>
+                )}
               </div>
             </section>
           </main>
         </div>
       </div>
-    </SlidePanel>
+    </SidekickPanel>
   )
 }
 
@@ -1070,11 +1107,29 @@ export function SchedulePMModal({ truck, onClose, onDone, createMode = false }: 
     onError: (e: any) => toast.error(e.response?.data?.detail || 'Failed to schedule PM'),
   })
 
-  const modalTitle = createMode
-    ? `Create PM repair order · ${fleetUnitLabel(truck)}`
-    : `${rescheduling ? 'Reschedule' : 'Schedule'} PM · ${fleetUnitLabel(truck)}`
+  const taskLabel = createMode
+    ? 'Create PM repair order'
+    : `${rescheduling ? 'Reschedule' : 'Schedule'} PM`
+  const footer = (
+    <div className="fleet-sidekick-actions">
+      <button className={ghostBtn} disabled={save.isPending} onClick={onClose}>Cancel</button>
+      <button className={yellowBtn}
+        disabled={save.isPending || (createWO && (billToLoading || !billToCustomerId))} onClick={() => save.mutate()}>
+        {save.isPending ? <Spinner size="sm" /> : (createMode ? <ClipboardCheck size={15} /> : <Calendar size={15} />)}
+        {createMode ? 'Create repair order' : (createWO ? `${rescheduling ? 'Reschedule' : 'Schedule'} + create repair order` : 'Save schedule')}
+      </button>
+    </div>
+  )
   return (
-    <SidekickPanel title={modalTitle} subtitle="Preventive maintenance" icon={createMode ? <ClipboardCheck size={18} className="text-[var(--yellow)]" /> : <Calendar size={18} className="text-[var(--yellow)]" />} onClose={onClose} width="max-w-[520px]">
+    <SidekickPanel
+      title={fleetUnitLabel(truck)}
+      subtitle={taskLabel}
+      icon={createMode ? <ClipboardCheck size={18} className="text-[var(--yellow)]" /> : <Calendar size={18} className="text-[var(--yellow)]" />}
+      onClose={onClose}
+      width="max-w-[520px]"
+      footer={footer}
+      tone="maintenance"
+    >
       <div style={{ display: 'grid', gap: 12 }}>
         {/* Schedule fields belong to planning (reschedule), not to servicing the
             truck now. In create mode they're hidden: the next PM rolls forward
@@ -1120,7 +1175,7 @@ export function SchedulePMModal({ truck, onClose, onDone, createMode = false }: 
           </Field>
         )}
 
-        <Field label={`PM services${selected.length ? ` · ${selected.length} selected` : ''}`}>
+        <FieldGroup label={`PM services${selected.length ? ` · ${selected.length} selected` : ''}`}>
           <div className="pm-svc-list">
             {activeServices.length === 0 ? (
               <div className="pm-svc-empty">No PM services in the catalog yet.</div>
@@ -1142,7 +1197,7 @@ export function SchedulePMModal({ truck, onClose, onDone, createMode = false }: 
               })
             )}
           </div>
-        </Field>
+        </FieldGroup>
 
         {changedFromDefault && (
           <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--text)', cursor: 'pointer' }}>
@@ -1164,10 +1219,6 @@ export function SchedulePMModal({ truck, onClose, onDone, createMode = false }: 
           ? "Creates the maintenance repair order now. The next PM rolls forward automatically when this repair order is completed."
           : "PM shows as due when either the date or the odometer is reached. Completing a PM rolls both forward by the interval."}
       </p>
-      <button className={yellowBtn} style={{ marginTop: 14, width: '100%', justifyContent: 'center' }}
-        disabled={save.isPending || (createWO && (billToLoading || !billToCustomerId))} onClick={() => save.mutate()}>
-        {save.isPending ? <Spinner size="sm" /> : (createMode ? <ClipboardCheck size={15} /> : <Calendar size={15} />)} {createMode ? 'Create repair order' : (createWO ? `${rescheduling ? 'Reschedule' : 'Schedule'} + create repair order` : 'Save schedule')}
-      </button>
     </SidekickPanel>
   )
 }
@@ -1431,7 +1482,7 @@ function PMServicesSection({ roId, onChanged }: { roId: string; onChanged: () =>
 
   const active = services || []
   return (
-    <Field label={`PM services${sel.length ? ` · ${sel.length} selected` : ''}`}>
+    <FieldGroup label={`PM services${sel.length ? ` · ${sel.length} selected` : ''}`}>
       <div className="pm-svc-list">
         {active.length === 0 ? (
           <div className="pm-svc-empty">No PM services in the catalog yet.</div>
@@ -1457,7 +1508,7 @@ function PMServicesSection({ roId, onChanged }: { roId: string; onChanged: () =>
           {save.isPending ? <Spinner size="xs" /> : <ClipboardCheck size={14} />} Save PM services
         </button>
       )}
-    </Field>
+    </FieldGroup>
   )
 }
 
@@ -1472,10 +1523,11 @@ function WorkOrderBody({ repairOrderId, onClose, onChanged }: {
   const qc = useQueryClient()
   const num = (v: number | string | null | undefined) => (v == null ? 0 : Number(v))
 
-  const { data: wo, isLoading } = useQuery<WODetail>({
+  const workOrderQuery = useQuery<WODetail>({
     queryKey: ['fleet-wo', repairOrderId],
     queryFn: async () => (await api.get(`/repair-orders/${repairOrderId}/detail`)).data,
   })
+  const { data: wo, isLoading, isError, isFetching } = workOrderQuery
   const { data: mechanics } = useQuery<WOMechanic[]>({
     queryKey: ['fleet-mechanics'],
     queryFn: async () => (await api.get('/fleet/mechanics')).data,
@@ -1563,8 +1615,22 @@ function WorkOrderBody({ repairOrderId, onClose, onChanged }: {
 
   return (
     <>
-      {isLoading || !wo ? (
+      {isLoading ? (
         <div className="loader"><Spinner size="sm" /></div>
+      ) : isError ? (
+        <div className="query-failure" role="alert">
+          <AlertTriangle size={20} aria-hidden="true" />
+          <div className="query-failure-copy">
+            <strong>Repair order could not be loaded</strong>
+            <span>Your work was not changed. Check the connection and try again.</span>
+          </div>
+          <button type="button" className="query-retry" onClick={() => { void workOrderQuery.refetch() }} disabled={isFetching}>
+            {isFetching ? <Spinner size="xs" /> : <RotateCcw size={14} />}
+            {isFetching ? 'Retrying…' : 'Try again'}
+          </button>
+        </div>
+      ) : !wo ? (
+        <div className="empty-note">This repair order is no longer available.</div>
       ) : ['draft', 'quoted'].includes(wo.status) ? (
         <div className="wo-draft wo-state-enter">
           <div className="wo-draft-commandbar">
@@ -1874,19 +1940,19 @@ export function WorkOrderPanel({ repairOrderId, onClose, onChanged }: {
     queryFn: async () => (await api.get(`/repair-orders/${repairOrderId}/detail`)).data,
   })
   return (
-    <SlidePanel
-      isOpen
-      dark
+    <SidekickPanel
       onClose={onClose}
       width={WO_DRAWER_WIDTH}
       subtitle="Repair order"
       title={wo ? `${wo.order_number}${wo.is_pm ? ' · PM' : ''}` : 'Repair order'}
-      headerIcon={<ClipboardList size={18} className="text-[var(--yellow)]" />}
+      icon={<ClipboardList size={18} className="text-[var(--yellow)]" />}
+      variant="builder"
+      tone="repair"
     >
       <div className="wo-drawer-body">
         <WorkOrderBody repairOrderId={repairOrderId} onClose={onClose} onChanged={onChanged} />
       </div>
-    </SlidePanel>
+    </SidekickPanel>
   )
 }
 
@@ -1908,12 +1974,12 @@ export function AssignDriverModal({ truck, driverPhone, onClose }: { truck: Boar
   const hadDriver = Boolean(truck.driver_name)
 
   const save = useMutation({
-    mutationFn: async () => (await api.patch(`/fleet/trucks/${truck.id}`, {
-      driver_name: name.trim(),
-      driver_phone: phone.trim(),
+    mutationFn: async (next?: { name: string; phone: string }) => (await api.patch(`/fleet/trucks/${truck.id}`, {
+      driver_name: (next?.name ?? name).trim(),
+      driver_phone: (next?.phone ?? phone).trim(),
     })).data,
-    onSuccess: () => {
-      toast.success(name.trim() ? 'Driver assigned' : 'Driver removed')
+    onSuccess: (_data, next) => {
+      toast.success((next?.name ?? name).trim() ? 'Driver assigned' : 'Driver removed')
       qc.invalidateQueries({ queryKey: ['fleet-truck', truck.id] })
       invalidateFleetAndCockpit(qc)
       onClose()
@@ -1922,25 +1988,26 @@ export function AssignDriverModal({ truck, driverPhone, onClose }: { truck: Boar
   })
 
   return (
-    <SidekickPanel title={hadDriver ? 'Change driver' : 'Assign driver'} subtitle={fleetUnitLabel(truck)} icon={<UserRound size={18} className="text-[var(--yellow)]" />} onClose={onClose} width="max-w-[460px]">
+    <SidekickPanel
+      title={fleetUnitLabel(truck)} subtitle={hadDriver ? 'Change driver' : 'Assign driver'} icon={<UserRound size={18} className="text-[var(--yellow)]" />}
+      onClose={onClose} width="max-w-[460px]" tone="neutral"
+      footer={(
+        <div className={'fleet-sidekick-actions' + (hadDriver ? ' fleet-sidekick-actions-three' : '')}>
+          {hadDriver && (
+            <button className="dbtn dbtn-danger" disabled={save.isPending} onClick={() => { setName(''); setPhone(''); save.mutate({ name: '', phone: '' }) }}>
+              Remove driver
+            </button>
+          )}
+          <button type="button" className="dbtn dbtn-ghost" disabled={save.isPending} onClick={onClose}>Cancel</button>
+          <button className={yellowBtn} disabled={save.isPending || !name.trim()} onClick={() => save.mutate({ name, phone })}>
+            {save.isPending ? <Spinner size="sm" /> : <UserRound size={15} />} {hadDriver ? 'Save driver' : 'Assign driver'}
+          </button>
+        </div>
+      )}
+    >
       <div style={{ display: 'grid', gap: 12 }}>
         <Field label="Driver name"><input value={name} onChange={(e) => setName(e.target.value)} placeholder="Full name" /></Field>
         <Field label="Driver phone"><input value={phone} onChange={(e) => setPhone(formatUSPhone(e.target.value))} placeholder="(704) 555-0123" /></Field>
-      </div>
-      <div style={{ display: 'flex', gap: 8, marginTop: 14 }}>
-        {hadDriver && (
-          <button
-            className={ghostBtn}
-            disabled={save.isPending}
-            onClick={() => { setName(''); setPhone(''); save.mutate() }}
-            style={{ color: 'var(--red)' }}
-          >
-            Remove
-          </button>
-        )}
-        <button className={yellowBtn} style={{ flex: 1, justifyContent: 'center' }} disabled={save.isPending || !name.trim()} onClick={() => save.mutate()}>
-          {save.isPending ? <Spinner size="sm" /> : <UserRound size={15} />} {hadDriver ? 'Save driver' : 'Assign driver'}
-        </button>
       </div>
     </SidekickPanel>
   )
@@ -2035,14 +2102,25 @@ export function LogIncidentModal({ vehicleId, truckId, onClose }: { vehicleId: s
   }
 
   return (
-    <SidekickPanel title="Report road incident" subtitle="Record the event while it is fresh" icon={<AlertTriangle size={18} className="text-[var(--yellow)]" />} onClose={onClose} width="max-w-[540px]">
+    <SidekickPanel
+      title="Report road incident" subtitle="Record the event while it is fresh" icon={<AlertTriangle size={18} className="text-[var(--red)]" />}
+      onClose={onClose} width="max-w-[540px]" tone="safety"
+      footer={(
+        <div className="fleet-sidekick-actions">
+          <button type="button" className="dbtn dbtn-ghost" disabled={create.isPending} onClick={onClose}>Cancel</button>
+          <button className={yellowBtn} disabled={create.isPending} onClick={submit}>
+            {create.isPending ? <Spinner size="sm" /> : <Plus size={15} />} Report incident
+          </button>
+        </div>
+      )}
+    >
       <div style={{ marginBottom: 12 }}>
         <span className="id-k" style={{ display: 'block', marginBottom: 6 }}>Severity</span>
         <div style={{ display: 'flex', gap: 8 }}>
           {SEVS.map((s) => (
             <button key={s} onClick={() => setSeverity(s)}
               style={{
-                flex: 1, height: 36, borderRadius: 8, textTransform: 'capitalize', fontSize: 13, fontWeight: 600,
+                flex: 1, height: 44, borderRadius: 8, textTransform: 'capitalize', fontSize: 13, fontWeight: 600,
                 border: '1px solid ' + (severity === s ? sevTint[s] : 'var(--line)'),
                 background: severity === s ? `color-mix(in srgb, ${sevTint[s]} 16%, transparent)` : 'transparent',
                 color: severity === s ? sevTint[s] : 'var(--muted)',
@@ -2137,10 +2215,6 @@ export function LogIncidentModal({ vehicleId, truckId, onClose }: { vehicleId: s
           </label>
         )}
       </div>
-      <button className={yellowBtn} style={{ marginTop: 14, width: '100%', justifyContent: 'center' }}
-        disabled={create.isPending} onClick={submit}>
-        {create.isPending ? <Spinner size="sm" /> : <Plus size={15} />} Report incident
-      </button>
     </SidekickPanel>
   )
 }
@@ -2176,14 +2250,25 @@ export function EditIncidentModal({ incident, truckId, onClose }: { incident: In
   }
 
   return (
-    <SidekickPanel title="Edit road incident" subtitle="Update incident details" icon={<Pencil size={18} className="text-[var(--yellow)]" />} onClose={onClose} width="max-w-[540px]">
+    <SidekickPanel
+      title="Edit road incident" subtitle="Update incident details" icon={<Pencil size={18} className="text-[var(--red)]" />}
+      onClose={onClose} width="max-w-[540px]" tone="safety"
+      footer={(
+        <div className="fleet-sidekick-actions">
+          <button type="button" className="dbtn dbtn-ghost" disabled={save.isPending} onClick={onClose}>Cancel</button>
+          <button className={yellowBtn} disabled={save.isPending} onClick={submit}>
+            {save.isPending ? <Spinner size="sm" /> : <CheckCircle2 size={15} />} Save changes
+          </button>
+        </div>
+      )}
+    >
       <div style={{ marginBottom: 12 }}>
         <span className="id-k" style={{ display: 'block', marginBottom: 6 }}>Severity</span>
         <div style={{ display: 'flex', gap: 8 }}>
           {SEVS.map((s) => (
             <button key={s} onClick={() => setSeverity(s)}
               style={{
-                flex: 1, height: 36, borderRadius: 8, textTransform: 'capitalize', fontSize: 13, fontWeight: 600,
+                flex: 1, height: 44, borderRadius: 8, textTransform: 'capitalize', fontSize: 13, fontWeight: 600,
                 border: '1px solid ' + (severity === s ? sevTint[s] : 'var(--line)'),
                 background: severity === s ? `color-mix(in srgb, ${sevTint[s]} 16%, transparent)` : 'transparent',
                 color: severity === s ? sevTint[s] : 'var(--muted)',
@@ -2212,10 +2297,6 @@ export function EditIncidentModal({ incident, truckId, onClose }: { incident: In
           <span style={{ display: 'block', marginTop: 5, fontSize: 12, color: 'var(--red)' }}>{descError}</span>
         )}
       </div>
-      <button className={yellowBtn} style={{ marginTop: 14, width: '100%', justifyContent: 'center' }}
-        disabled={save.isPending} onClick={submit}>
-        {save.isPending ? <Spinner size="sm" /> : <CheckCircle2 size={15} />} Save changes
-      </button>
     </SidekickPanel>
   )
 }
@@ -2384,11 +2465,23 @@ function InspectionChecklistModal({ inspectionId, truckId, vehicleId, currentOdo
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({})
   const [userToggled, setUserToggled] = useState<Record<string, boolean>>({})
   const [noteDrafts, setNoteDrafts] = useState<Record<string, string>>({})
+  const [compactChecklist, setCompactChecklist] = useState(false)
+  const [savingNotes, setSavingNotes] = useState(false)
 
-  const { data: insp } = useQuery<InspectionDetail>({
+  useEffect(() => {
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return
+    const media = window.matchMedia('(max-width: 1023px)')
+    const sync = () => setCompactChecklist(media.matches)
+    sync()
+    media.addEventListener?.('change', sync)
+    return () => media.removeEventListener?.('change', sync)
+  }, [])
+
+  const inspectionQuery = useQuery<InspectionDetail>({
     queryKey: ['fleet-inspection', inspectionId],
     queryFn: async () => (await api.get(`/fleet/inspections/${inspectionId}`)).data,
   })
+  const { data: insp } = inspectionQuery
   const refreshLists = () => {
     qc.invalidateQueries({ queryKey: ['fleet-inspections', vehicleId] })
     qc.invalidateQueries({ queryKey: ['fleet-truck', truckId] })
@@ -2405,8 +2498,8 @@ function InspectionChecklistModal({ inspectionId, truckId, vehicleId, currentOdo
       await Promise.all((insp?.items || []).map((it) =>
         api.patch(`/fleet/inspections/${inspectionId}/items/${it.id}`, { result })))
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['fleet-inspection', inspectionId] }),
-    onError: (e: any) => toast.error(e.response?.data?.detail || 'Failed'),
+    onSettled: () => qc.invalidateQueries({ queryKey: ['fleet-inspection', inspectionId] }),
+    onError: (e: any) => toast.error(e.response?.data?.detail || 'Some inspection results could not be saved. The checklist was refreshed.'),
   })
   const complete = useMutation({
     mutationFn: async () => (await api.post(`/fleet/inspections/${inspectionId}/complete`, { odometer: Number(odometer) })).data,
@@ -2437,7 +2530,12 @@ function InspectionChecklistModal({ inspectionId, truckId, vehicleId, currentOdo
     return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib) || a.localeCompare(b)
   })
   const secComplete = (cat: string) => grouped[cat].every((it) => it.result !== 'pending')
-  const isCollapsed = (cat: string) => (userToggled[cat] ? !!collapsed[cat] : secComplete(cat))
+  const firstIncompleteCat = cats.find((cat) => !secComplete(cat))
+  const isCollapsed = (cat: string) => (
+    userToggled[cat]
+      ? !!collapsed[cat]
+      : secComplete(cat) || (compactChecklist && cat !== firstIncompleteCat)
+  )
   const secSummary = (cat: string): { text: string; color: string } => {
     const its = grouped[cat]
     const d = its.filter((i) => i.result !== 'pending').length
@@ -2463,7 +2561,13 @@ function InspectionChecklistModal({ inspectionId, truckId, vehicleId, currentOdo
 
   // First unmarked item (in display order) — the scroll/highlight target.
   let firstPendingId: string | null = null
-  for (const cat of cats) { for (const it of grouped[cat]) { if (it.result === 'pending') { firstPendingId = it.id; break } } if (firstPendingId) break }
+  let firstPendingCat: string | null = null
+  for (const cat of cats) {
+    for (const it of grouped[cat]) {
+      if (it.result === 'pending') { firstPendingId = it.id; firstPendingCat = cat; break }
+    }
+    if (firstPendingId) break
+  }
 
   const setStatus = (item: InspectionItem, result: InspectionItemResult) => {
     const next: InspectionItemResult = item.result === result ? 'pending' : result  // tap active to clear
@@ -2477,7 +2581,8 @@ function InspectionChecklistModal({ inspectionId, truckId, vehicleId, currentOdo
     setCollapsed((c) => ({ ...c, [cat]: nextCollapsed }))
   }
 
-  const reviewAndComplete = () => {
+  const reviewAndComplete = async () => {
+    if (patchItem.isPending || bulk.isPending || savingNotes) return
     if (problems.length) {
       setShowErrors(true)
       requestAnimationFrame(() => {
@@ -2490,7 +2595,30 @@ function InspectionChecklistModal({ inspectionId, truckId, vehicleId, currentOdo
       })
       return
     }
-    setShowErrors(false); setConfirming(true)
+
+    const dirtyNotes = items.filter((item) => (
+      Object.prototype.hasOwnProperty.call(noteDrafts, item.id)
+      && (noteDrafts[item.id] ?? '') !== (item.note || '')
+    ))
+    if (dirtyNotes.length) {
+      setSavingNotes(true)
+      try {
+        await Promise.all(dirtyNotes.map((item) => api.patch(
+          `/fleet/inspections/${inspectionId}/items/${item.id}`,
+          { note: noteDrafts[item.id] ?? '' },
+        )))
+        await inspectionQuery.refetch()
+      } catch (error) {
+        const apiError = error as AxiosError<{ detail?: string }>
+        toast.error(apiError.response?.data?.detail || 'Inspection notes could not be saved. Try again before completing.')
+        return
+      } finally {
+        setSavingNotes(false)
+      }
+    }
+
+    setShowErrors(false)
+    setConfirming(true)
   }
 
   const hasUnit = !!insp?.vehicle_unit_number
@@ -2499,50 +2627,111 @@ function InspectionChecklistModal({ inspectionId, truckId, vehicleId, currentOdo
   const statusText = !allMarked
     ? `${remaining} check${remaining === 1 ? '' : 's'} remaining`
     : failCount > 0 ? `${failCount} item${failCount === 1 ? '' : 's'} flagged — ready to review` : 'All clear — ready to submit'
+  const inspectionIcon = !insp
+    ? <Spinner size="sm" />
+    : !done
+      ? <ClipboardList size={18} className="text-[var(--yellow)]" />
+      : insp.result === 'pass'
+        ? <CheckCircle2 size={18} className="text-[var(--st-active)]" />
+        : insp.result === 'fail'
+          ? <AlertTriangle size={18} className="text-[var(--red)]" />
+          : <ClipboardList size={18} className="text-[var(--muted-2)]" />
+
+  const inspectionHeader = insp && !done ? (
+    <div className="ip-sidekick-progress">
+      <div className="ip-progress" role="progressbar" aria-label="Inspection progress" aria-valuemin={0} aria-valuemax={total} aria-valuenow={doneCount}>
+        <div className="ip-track" aria-hidden="true"><div className="ip-fill" style={{ width: `${progressPct}%` }} /></div>
+        <div className="ip-count">{doneCount}<span>/{total}</span></div>
+      </div>
+      <div className="ip-bulk">
+        <button className="ip-markall" onClick={markAllPass} disabled={bulk.isPending}>
+          <Check size={14} strokeWidth={3} /> MARK ALL PASS
+        </button>
+        <button className="ip-reset" onClick={resetAll} disabled={bulk.isPending} title="Reset all" aria-label="Reset all inspection results"><RotateCcw size={16} /></button>
+      </div>
+    </div>
+  ) : undefined
+
+  const inspectionFooter = !insp ? undefined : (
+    <div className="ip-foot ip-foot-sidekick">
+      {done ? (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {insp.repair_order_id ? (
+            <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6, fontSize: 13, fontWeight: 600, color: 'var(--st-active)' }}>
+              <Wrench size={15} /> Repair order created
+            </span>
+          ) : failCount > 0 ? (
+            <button className="ip-cta" onClick={() => createWO.mutate()} disabled={createWO.isPending}>
+              {createWO.isPending ? <Spinner size="sm" /> : <Wrench size={15} />} Create repair order · {failCount} item{failCount === 1 ? '' : 's'}
+            </button>
+          ) : null}
+          <button className="ip-cta ip-cta-ghost" onClick={onClose}>Close</button>
+        </div>
+      ) : confirming ? (
+        <>
+          <div className={'ip-review ' + (computedResult === 'fail' ? 'is-fail' : 'is-pass')}>
+            <div className="ip-review-title">
+              {computedResult === 'fail' ? <XCircle size={17} /> : <CheckCircle2 size={17} />}
+              Will be recorded as {computedResult === 'fail' ? 'FAILED' : 'PASSED'}
+            </div>
+            <div className="ip-review-meta">
+              {passCount} passed · {failCount} failed · {naCount} N/A · odometer {fmt(odoNum)} mi
+            </div>
+          </div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button className="ip-cta ip-cta-ghost" style={{ flex: 1 }} disabled={complete.isPending} onClick={() => setConfirming(false)}>Back</button>
+            <button className="ip-cta" style={{ flex: 2 }} disabled={complete.isPending} onClick={() => complete.mutate()}>
+              {complete.isPending ? <Spinner size="sm" /> : <Check size={16} strokeWidth={3} />} Confirm &amp; submit
+            </button>
+          </div>
+        </>
+      ) : (
+        <>
+          <div className={'ip-status' + (showErrors && problems.length ? ' warn' : '')}>
+            {showErrors && problems.length ? `Can't complete yet — ${problems.join(' · ')}.` : statusText}
+          </div>
+          <button className="ip-cta" onClick={() => { void reviewAndComplete() }} disabled={patchItem.isPending || bulk.isPending || savingNotes}>
+            {(patchItem.isPending || bulk.isPending || savingNotes) ? <Spinner size="sm" /> : <Check size={16} strokeWidth={3} />}
+            {(patchItem.isPending || bulk.isPending || savingNotes) ? 'Saving inspection…' : 'Review & complete'}
+          </button>
+        </>
+      )}
+    </div>
+  )
 
   return (
-    <SlidePanel
-      isOpen
-      dark
-      hideHeader
-      title={insp ? `Weekly inspection · ${unitLabel}` : 'Weekly inspection'}
+    <SidekickPanel
+      title={insp ? unitLabel : 'Weekly inspection'}
+      subtitle={insp ? 'Weekly inspection' : 'Loading inspection'}
+      icon={inspectionIcon}
       onClose={onClose}
-      width="max-w-full sm:max-w-[94vw] lg:max-w-[760px] xl:max-w-[880px]"
+      width="max-w-full sm:max-w-[94vw] lg:max-w-[760px]"
+      headerExtra={inspectionHeader}
+      footer={inspectionFooter}
+      variant="checklist"
+      tone={done && insp?.result === 'fail' ? 'safety' : 'inspection'}
     >
       <div className="ip-frame ip-frame-sidekick">
-        {!insp ? (
+        {inspectionQuery.isLoading ? (
           <div className="loader" style={{ margin: 'auto' }}><Spinner size="md" /></div>
+        ) : inspectionQuery.isError ? (
+          <div className="query-failure ip-query-failure" role="alert">
+            <AlertTriangle size={20} aria-hidden="true" />
+            <div className="query-failure-copy">
+              <strong>Inspection could not be loaded</strong>
+              <span>No checklist results were changed. Check the connection and try again.</span>
+            </div>
+            <button type="button" className="query-retry" onClick={() => { void inspectionQuery.refetch() }} disabled={inspectionQuery.isFetching}>
+              {inspectionQuery.isFetching ? <Spinner size="xs" /> : <RotateCcw size={14} />}
+              {inspectionQuery.isFetching ? 'Retrying…' : 'Try again'}
+            </button>
+          </div>
+        ) : !insp ? (
+          <div className="empty-note">This inspection is no longer available.</div>
         ) : (
           <>
-            <div className="ip-head">
-              <div className="ip-head-row">
-                <div className="ip-brand">
-                  <span className="ip-brand-sq"><Check size={19} strokeWidth={3} /></span>
-                  <div style={{ minWidth: 0 }}>
-                    <div className="ip-eyebrow">Weekly Inspection</div>
-                    <div className="ip-unit">{unitLabel}</div>
-                    {makeModel && <div className="ip-sub">{makeModel}</div>}
-                  </div>
-                </div>
-                <button className="ip-close" onClick={onClose} title="Close"><X size={15} /></button>
-              </div>
-              {!done && (
-                <>
-                  <div className="ip-progress">
-                    <div className="ip-track"><div className="ip-fill" style={{ width: `${progressPct}%` }} /></div>
-                    <div className="ip-count">{doneCount}<span>/{total}</span></div>
-                  </div>
-                  <div className="ip-bulk">
-                    <button className="ip-markall" onClick={markAllPass} disabled={bulk.isPending}>
-                      <Check size={14} strokeWidth={3} /> MARK ALL PASS
-                    </button>
-                    <button className="ip-reset" onClick={resetAll} disabled={bulk.isPending} title="Reset all"><RotateCcw size={16} /></button>
-                  </div>
-                </>
-              )}
-            </div>
-
             <div className="ip-body">
+              {makeModel && <div className="ip-context">{makeModel}</div>}
               {done && (
                 <div style={{ display: 'flex', gap: 8, alignItems: 'center', margin: '10px 2px 4px' }}>
                   <span className={'part-w ' + (insp.result === 'fail' ? 'w-off' : 'w-on')} style={{ textTransform: 'uppercase' }}>{insp.result || 'completed'}</span>
@@ -2551,21 +2740,54 @@ function InspectionChecklistModal({ inspectionId, truckId, vehicleId, currentOdo
                   </span>
                 </div>
               )}
+              {!done && (
+                <div className="ip-odo">
+                  <div className="ip-odo-card">
+                    <span className="ip-odo-k">Previous odometer</span>
+                    <span className="ip-odo-v">
+                      {currentOdometer != null ? `${fmt(currentOdometer)} mi` : 'None on record'}
+                      {lastReadingDate && <span> · {fmtDate(lastReadingDate)}</span>}
+                    </span>
+                  </div>
+                  <label className="ip-odo-field" htmlFor={`inspection-odometer-${inspectionId}`}>
+                    <span className="ip-odo-k ip-odo-label">Current odometer</span>
+                    <input id={`inspection-odometer-${inspectionId}`} ref={odoRef} className={'ip-odo-input' + (odoError ? ' err' : '')}
+                      value={odometer} inputMode="numeric" placeholder="Enter mileage"
+                      aria-invalid={odoError || undefined}
+                      onChange={(e) => setOdometer(e.target.value)} />
+                  </label>
+                  {odoBackwards && (
+                    <p className="ip-odo-error">
+                      Below the previous {fmt(currentOdometer as number)} mi — odometers don't go backwards, check the reading.
+                    </p>
+                  )}
+                </div>
+              )}
               {cats.map((cat) => {
                 const its = grouped[cat]
                 const complete = secComplete(cat)
                 const catHasPending = its.some((i) => i.result === 'pending')
                 // Force the section open when we're pointing out its unmarked items.
-                const collapsedNow = !done && isCollapsed(cat) && !(showErrors && catHasPending)
+                const collapsedNow = !done && isCollapsed(cat) && !(showErrors && catHasPending && cat === firstPendingCat)
                 const sum = secSummary(cat)
+                const categoryPanelId = `inspection-${inspectionId}-${cat.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`
                 return (
                   <div key={cat} className="ip-sec">
-                    <div className={'ip-sec-head' + (complete ? ' done' : '')} onClick={() => toggleSection(cat)}>
+                    <button
+                      type="button"
+                      className={'ip-sec-head' + (complete ? ' done' : '')}
+                      onClick={() => toggleSection(cat)}
+                      aria-expanded={!collapsedNow}
+                      aria-controls={categoryPanelId}
+                    >
                       <span className="ip-sec-name">{cat}</span>
-                      <span className="ip-sec-sum" style={{ color: sum.color }}>{sum.text}</span>
-                    </div>
+                      <span className="ip-sec-meta">
+                        <span className="ip-sec-sum" style={{ color: sum.color }}>{sum.text}</span>
+                        <ChevronDown className="ip-sec-chevron" size={16} aria-hidden="true" />
+                      </span>
+                    </button>
                     {!collapsedNow && (
-                      <div className="ip-sec-body">
+                      <div className="ip-sec-body" id={categoryPanelId}>
                         {its.map((item) => {
                           const noteVal = noteDrafts[item.id] ?? (item.note || '')
                           const itemErr = showErrors && item.result === 'pending'
@@ -2587,14 +2809,14 @@ function InspectionChecklistModal({ inspectionId, truckId, vehicleId, currentOdo
                                 </div>
                               ) : (
                                 <>
-                                  <div className={'ip-btns sel-' + item.result}>
-                                    <button className={'ip-choice pass' + (item.result === 'pass' ? ' is-on' : '')} onClick={() => setStatus(item, 'pass')} title="Pass">
+                                  <div className={'ip-btns sel-' + item.result} role="group" aria-label={`${item.label} result`}>
+                                    <button type="button" className={'ip-choice pass' + (item.result === 'pass' ? ' is-on' : '')} onClick={() => setStatus(item, 'pass')} title="Pass" aria-pressed={item.result === 'pass'} disabled={patchItem.isPending || bulk.isPending}>
                                       <Check size={16} strokeWidth={3} /> <span className="ip-choice-tx">PASS</span>
                                     </button>
-                                    <button className={'ip-choice fail' + (item.result === 'fail' ? ' is-on' : '')} onClick={() => setStatus(item, 'fail')} title="Fail">
+                                    <button type="button" className={'ip-choice fail' + (item.result === 'fail' ? ' is-on' : '')} onClick={() => setStatus(item, 'fail')} title="Fail" aria-pressed={item.result === 'fail'} disabled={patchItem.isPending || bulk.isPending}>
                                       <X size={18} /> <span className="ip-choice-tx">FAIL</span>
                                     </button>
-                                    <button className={'ip-choice na' + (item.result === 'na' ? ' is-on' : '')} onClick={() => setStatus(item, 'na')} title="N/A">
+                                    <button type="button" className={'ip-choice na' + (item.result === 'na' ? ' is-on' : '')} onClick={() => setStatus(item, 'na')} title="N/A" aria-pressed={item.result === 'na'} disabled={patchItem.isPending || bulk.isPending}>
                                       <Minus size={18} /> <span className="ip-choice-tx">N/A</span>
                                     </button>
                                   </div>
@@ -2617,78 +2839,11 @@ function InspectionChecklistModal({ inspectionId, truckId, vehicleId, currentOdo
                 )
               })}
 
-              {!done && (
-                <div className="ip-odo">
-                  <div className="ip-odo-card">
-                    <span className="ip-odo-k">Previous odometer</span>
-                    <span className="ip-odo-v">
-                      {currentOdometer != null ? `${fmt(currentOdometer)} mi` : 'None on record'}
-                      {lastReadingDate && <span> · {fmtDate(lastReadingDate)}</span>}
-                    </span>
-                  </div>
-                  <div className="ip-odo-k" style={{ marginTop: 10, color: odoError ? 'var(--red)' : undefined }}>New odometer (mi)</div>
-                  <input ref={odoRef} className={'ip-odo-input' + (odoError ? ' err' : '')}
-                    value={odometer} inputMode="numeric" placeholder="Enter current reading"
-                    onChange={(e) => setOdometer(e.target.value)} />
-                  {odoBackwards && (
-                    <p style={{ fontSize: 12, color: 'var(--red)', marginTop: 6 }}>
-                      Below the previous {fmt(currentOdometer as number)} mi — odometers don't go backwards, check the reading.
-                    </p>
-                  )}
-                </div>
-              )}
             </div>
 
-            <div className="ip-foot">
-              {done ? (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                  {insp.repair_order_id ? (
-                    <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6, fontSize: 13, fontWeight: 600, color: 'var(--st-active)' }}>
-                      <Wrench size={15} /> Repair order created
-                    </span>
-                  ) : failCount > 0 ? (
-                    <button className="ip-cta" onClick={() => createWO.mutate()} disabled={createWO.isPending}>
-                      {createWO.isPending ? <Spinner size="sm" /> : <Wrench size={15} />} Create repair order · {failCount} item{failCount === 1 ? '' : 's'}
-                    </button>
-                  ) : null}
-                  <button className="ip-cta ip-cta-ghost" onClick={onClose}>Close</button>
-                </div>
-              ) : confirming ? (
-                <>
-                  <div style={{
-                    borderRadius: 11, padding: '11px 13px', marginBottom: 10,
-                    border: '1px solid ' + (computedResult === 'fail' ? 'var(--red)' : 'var(--st-active)'),
-                    background: `color-mix(in srgb, ${computedResult === 'fail' ? 'var(--red)' : 'var(--st-active)'} 12%, transparent)`,
-                  }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 14, fontWeight: 800, color: computedResult === 'fail' ? 'var(--red)' : 'var(--st-active)' }}>
-                      {computedResult === 'fail' ? <XCircle size={17} /> : <CheckCircle2 size={17} />}
-                      Will be recorded as {computedResult === 'fail' ? 'FAILED' : 'PASSED'}
-                    </div>
-                    <div style={{ fontSize: 12.5, color: 'var(--muted)', marginTop: 6 }}>
-                      {passCount} passed · {failCount} failed · {naCount} N/A · odometer {fmt(odoNum)} mi
-                    </div>
-                  </div>
-                  <div style={{ display: 'flex', gap: 8 }}>
-                    <button className="ip-cta ip-cta-ghost" style={{ flex: 1 }} disabled={complete.isPending} onClick={() => setConfirming(false)}>Back</button>
-                    <button className="ip-cta" style={{ flex: 2 }} disabled={complete.isPending} onClick={() => complete.mutate()}>
-                      {complete.isPending ? <Spinner size="sm" /> : <Check size={16} strokeWidth={3} />} Confirm &amp; submit
-                    </button>
-                  </div>
-                </>
-              ) : (
-                <>
-                  <div className={'ip-status' + (showErrors && problems.length ? ' warn' : '')}>
-                    {showErrors && problems.length ? `Can't complete yet — ${problems.join(' · ')}.` : statusText}
-                  </div>
-                  <button className="ip-cta" onClick={reviewAndComplete}>
-                    <Check size={16} strokeWidth={3} /> Review &amp; complete
-                  </button>
-                </>
-              )}
-            </div>
           </>
         )}
       </div>
-    </SlidePanel>
+    </SidekickPanel>
   )
 }
