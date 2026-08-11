@@ -640,6 +640,186 @@ def test_error_snapshot_is_bounded_redacted_and_fails_closed():
     assert SENTINEL not in json.dumps(asdict(fallback), default=str)
 
 
+def test_request_context_materializes_as_bounded_redacted_json_primitives():
+    source = {
+        "payment_intent_id": "pi_safe",
+        "amount": 1250.5,
+        "attempt": 2,
+        "retryable": False,
+        "optional": None,
+        "password": SENTINEL,
+        "url": f"https://example.test/hook?token={SENTINEL}",
+        f"credential={SENTINEL}": "safe",
+        "nested": ["safe", f"Bearer {SENTINEL}", True, None],
+    }
+
+    materialized = error_service.sanitize_context(source)
+    serialized = json.dumps(
+        materialized,
+        ensure_ascii=False,
+        allow_nan=False,
+        separators=(",", ":"),
+        sort_keys=True,
+    )
+
+    def _assert_primitive_tree(value):
+        if type(value) is dict:
+            assert all(type(key) is str for key in value)
+            for item in value.values():
+                _assert_primitive_tree(item)
+            return
+        if type(value) is list:
+            for item in value:
+                _assert_primitive_tree(item)
+            return
+        assert value is None or type(value) in (str, int, float, bool)
+
+    assert materialized is not None
+    _assert_primitive_tree(materialized)
+    assert materialized["password"] == "[REDACTED]"
+    assert SENTINEL not in serialized
+    assert len(serialized.encode("utf-8")) <= (
+        error_service.ERROR_CONTEXT_MAX_SERIALIZED_BYTES
+    )
+
+
+def test_request_context_fails_closed_for_hostile_cyclic_deep_or_large_graphs():
+    class _Hostile:
+        def __str__(self):
+            raise AssertionError("hostile context must never be stringified")
+
+        def __repr__(self):
+            raise AssertionError("hostile context must never be represented")
+
+    cyclic = {}
+    cyclic["self"] = cyclic
+
+    deep = {}
+    cursor = deep
+    for _ in range(error_service.ERROR_CONTEXT_MAX_DEPTH + 1):
+        child = {}
+        cursor["child"] = child
+        cursor = child
+
+    too_many = {
+        f"item-{index}": index
+        for index in range(error_service.ERROR_CONTEXT_MAX_ITEMS + 1)
+    }
+    too_large = {
+        "items": [
+            "x" * error_service.ERROR_CONTEXT_MAX_STRING_LENGTH
+            for _ in range(error_service.ERROR_CONTEXT_MAX_ITEMS)
+        ]
+    }
+
+    for unsafe in (
+        {"user": _Hostile()},
+        cyclic,
+        deep,
+        too_many,
+        too_large,
+        {"nonfinite": float("nan")},
+        {"tuple": ("not", "json")},
+    ):
+        assert error_service.sanitize_context(unsafe) is None
+
+
+@pytest.mark.asyncio
+async def test_safe_stripe_scalar_context_survives_owned_persistence(monkeypatch):
+    fake_session = _ControlledSession()
+    monkeypatch.setattr(error_service, "AsyncSessionLocal", lambda: fake_session)
+    context = {
+        "payment_intent_id": "pi_safe",
+        "invoice_id": "invoice-safe",
+        "tenant_id": "tenant-safe",
+        "error_code": "declined",
+        "decline_code": None,
+        "amount": 1250.5,
+    }
+
+    result = await error_service.log_error(
+        "PaymentFailed_declined",
+        "Payment failed",
+        request_context=context,
+    )
+
+    assert result is fake_session.added
+    assert fake_session.added.request_context == context
+    assert json.loads(
+        json.dumps(fake_session.added.request_context, allow_nan=False)
+    ) == context
+
+
+@pytest.mark.asyncio
+async def test_request_context_source_graph_is_collectable_while_commit_is_in_flight(
+    monkeypatch,
+):
+    class _SourceUser:
+        def __str__(self):
+            raise AssertionError("source user must never be stringified")
+
+        def __repr__(self):
+            raise AssertionError("source user must never be represented")
+
+    class _SourceError(Exception):
+        def __str__(self):
+            raise AssertionError("source exception must never be stringified")
+
+        def __repr__(self):
+            raise AssertionError("source exception must never be represented")
+
+    commit_started = asyncio.Event()
+    commit_release = asyncio.Event()
+    fake_session = _ControlledSession(
+        hang_at="commit",
+        release_at={"commit": commit_release},
+        started={"commit": commit_started},
+    )
+    monkeypatch.setattr(error_service, "AsyncSessionLocal", lambda: fake_session)
+    monkeypatch.setattr(settings, "ERROR_LOG_PERSIST_TIMEOUT_SECONDS", 1.0)
+
+    user = _SourceUser()
+    user.secret = SENTINEL
+    request = _request(
+        path=f"/api/v1/quotes/token/{SENTINEL}/approve",
+        query_string=f"access_token={SENTINEL}".encode(),
+    )
+    request.state.user = user
+    exc = _SourceError(f"password={SENTINEL}")
+    source = {"nested": [request, user, exc], "secret": SENTINEL}
+    source["cycle"] = source
+    request_ref = weakref.ref(request)
+    user_ref = weakref.ref(user)
+    exc_ref = weakref.ref(exc)
+
+    task = asyncio.create_task(
+        error_service.log_error(
+            "OperationalError",
+            "safe failure",
+            request_context=source,
+        )
+    )
+    await asyncio.wait_for(commit_started.wait(), timeout=0.1)
+    assert fake_session.added.request_context is None
+    assert task.done() is False
+
+    del source
+    del request
+    del user
+    del exc
+    gc.collect()
+
+    assert request_ref() is None
+    assert user_ref() is None
+    assert exc_ref() is None
+    assert json.dumps(fake_session.added.request_context, allow_nan=False) == "null"
+
+    commit_release.set()
+    result = await asyncio.wait_for(task, timeout=0.2)
+    assert result is fake_session.added
+    assert fake_session.calls == ["add", "commit", "refresh", "close"]
+
+
 @pytest.mark.asyncio
 async def test_error_persistence_fallback_log_is_fixed_and_credential_free(monkeypatch):
     fake_session = _ControlledSession(fail_at="commit")

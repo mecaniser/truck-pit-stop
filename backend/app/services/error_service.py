@@ -5,10 +5,12 @@ Provides methods to log errors to the database and query them for the admin dash
 """
 import asyncio
 import ipaddress
+import json
+import math
 import re
 import traceback
 import weakref
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import Optional, Any
 from urllib.parse import urlsplit
@@ -20,7 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.core.correlation import normalize_optional_correlation_id
 from app.core.logging import get_logger
-from app.core.redaction import redact_sensitive, redact_text
+from app.core.redaction import REDACTED, redact_sensitive, redact_text
 from app.db.models.error_log import ErrorLog, ErrorCategory, ErrorSeverity
 from app.db.session import AsyncSessionLocal
 
@@ -35,8 +37,12 @@ ERROR_STACK_MAX_LENGTH = 50_000
 ERROR_ENDPOINT_MAX_LENGTH = 500
 ERROR_METHOD_MAX_LENGTH = 10
 ERROR_CLIENT_MAX_LENGTH = 64
+ERROR_CONTEXT_MAX_DEPTH = 6
+ERROR_CONTEXT_MAX_ITEMS = 64
+ERROR_CONTEXT_MAX_KEY_LENGTH = 128
+ERROR_CONTEXT_MAX_STRING_LENGTH = 2_048
+ERROR_CONTEXT_MAX_SERIALIZED_BYTES = 16_384
 ERROR_LOG_WORK_FRACTION = 0.45
-ERROR_LOG_PHASE_GRACE_FRACTION = 0.12
 ERROR_LOG_MAX_PHASE_CANCEL_WAVES = 2
 _SAFE_CLIENT_LABEL = re.compile(r"\A[A-Za-z0-9._:-]{1,64}\Z")
 _SENSITIVE_ROUTE_SEGMENT = re.compile(
@@ -226,11 +232,108 @@ def _persistence_semaphore() -> asyncio.BoundedSemaphore:
     return semaphore
 
 
-def sanitize_context(data: dict) -> dict:
-    """Recursively remove sensitive fields and URL-embedded credentials."""
-    if not data:
-        return {}
-    return redact_sensitive(data)
+class _UnsafeErrorContext(ValueError):
+    pass
+
+
+def _sensitive_context_key(key: str) -> bool:
+    probe = redact_sensitive({key: None})
+    return probe.get(key) == REDACTED
+
+
+def _materialize_context_value(
+    value: Any,
+    *,
+    depth: int,
+    ancestors: set[int],
+    item_count: list[int],
+) -> Any:
+    if depth > ERROR_CONTEXT_MAX_DEPTH:
+        raise _UnsafeErrorContext
+
+    if value is None or type(value) is bool:
+        return value
+    if type(value) is int:
+        return value
+    if type(value) is float:
+        if not math.isfinite(value):
+            raise _UnsafeErrorContext
+        return value
+    if type(value) is str:
+        return redact_text(value)[:ERROR_CONTEXT_MAX_STRING_LENGTH]
+
+    if type(value) not in (dict, list):
+        # Never stringify, repr, inspect, or retain arbitrary application,
+        # request, exception, traceback, ORM, or session objects.
+        raise _UnsafeErrorContext
+
+    identity = id(value)
+    if identity in ancestors:
+        raise _UnsafeErrorContext
+    ancestors.add(identity)
+    try:
+        if type(value) is list:
+            materialized = []
+            for item in value:
+                item_count[0] += 1
+                if item_count[0] > ERROR_CONTEXT_MAX_ITEMS:
+                    raise _UnsafeErrorContext
+                materialized.append(
+                    _materialize_context_value(
+                        item,
+                        depth=depth + 1,
+                        ancestors=ancestors,
+                        item_count=item_count,
+                    )
+                )
+            return materialized
+
+        materialized_dict: dict[str, Any] = {}
+        for key, item in value.items():
+            item_count[0] += 1
+            if item_count[0] > ERROR_CONTEXT_MAX_ITEMS or type(key) is not str:
+                raise _UnsafeErrorContext
+            safe_key = redact_text(key).strip()[:ERROR_CONTEXT_MAX_KEY_LENGTH]
+            if not safe_key or safe_key in materialized_dict:
+                raise _UnsafeErrorContext
+            if _sensitive_context_key(key):
+                materialized_dict[safe_key] = REDACTED
+            else:
+                materialized_dict[safe_key] = _materialize_context_value(
+                    item,
+                    depth=depth + 1,
+                    ancestors=ancestors,
+                    item_count=item_count,
+                )
+        return materialized_dict
+    finally:
+        ancestors.remove(identity)
+
+
+def sanitize_context(data: Any) -> Optional[dict[str, Any]]:
+    """Detach one bounded JSON-safe context or fail the whole context closed."""
+
+    if not data or type(data) is not dict:
+        return None
+    try:
+        materialized = _materialize_context_value(
+            data,
+            depth=0,
+            ancestors=set(),
+            item_count=[0],
+        )
+        serialized = json.dumps(
+            materialized,
+            ensure_ascii=False,
+            allow_nan=False,
+            separators=(",", ":"),
+            sort_keys=True,
+        ).encode("utf-8")
+        if len(serialized) > ERROR_CONTEXT_MAX_SERIALIZED_BYTES:
+            return None
+        return materialized
+    except Exception:
+        return None
 
 
 @dataclass(slots=True)
@@ -239,12 +342,36 @@ class _PersistenceLifecycleState:
     generation: int = 0
     phase_started_at: float = 0.0
     in_cleanup: bool = False
+    phase_changed: Optional[asyncio.Future] = field(
+        default=None,
+        repr=False,
+        compare=False,
+    )
 
     def begin(self, phase: str, *, cleanup: bool) -> None:
+        loop = asyncio.get_running_loop()
+        previous_phase = self.phase_changed
         self.phase = phase
         self.generation += 1
-        self.phase_started_at = asyncio.get_running_loop().time()
+        self.phase_started_at = loop.time()
         self.in_cleanup = cleanup
+        self.phase_changed = loop.create_future()
+        if previous_phase is not None and not previous_phase.done():
+            previous_phase.set_result(None)
+
+
+def _complete_future(future: asyncio.Future) -> None:
+    if not future.done():
+        future.set_result(None)
+
+
+def _event_loop_barrier() -> asyncio.Future:
+    """Resolve after callbacks already queued on the current loop have run."""
+
+    loop = asyncio.get_running_loop()
+    barrier = loop.create_future()
+    loop.call_soon(_complete_future, barrier)
+    return barrier
 
 
 def _consume_task_result(task: asyncio.Future) -> None:
@@ -296,9 +423,9 @@ async def _owned_error_lifecycle(
         try:
             await semaphore.acquire()
             permit_acquired = True
-            # Establish ownership before accepting a cancellation delivered on
-            # the exact loop turn that completed semaphore acquisition.
-            await asyncio.sleep(0)
+            # Establish ownership before accepting a cancellation queued on the
+            # exact loop turn that completed semaphore acquisition.
+            await _event_loop_barrier()
         except asyncio.CancelledError as exc:
             cancellation = exc
 
@@ -443,8 +570,15 @@ async def log_error(
     total_budget = float(settings.ERROR_LOG_PERSIST_TIMEOUT_SECONDS)
     work_deadline = started_at + (total_budget * ERROR_LOG_WORK_FRACTION)
     hard_deadline = started_at + total_budget
-    phase_grace = max(total_budget * ERROR_LOG_PHASE_GRACE_FRACTION, 0.001)
 
+    safe_request_context = sanitize_context(request_context)
+    request_context = None
+    safe_client_ip = (
+        safe_request_context.get("client_ip")
+        if safe_request_context is not None
+        and type(safe_request_context.get("client_ip")) is str
+        else None
+    )
     envelope = build_error_persistence_envelope(
         error_type=error_type,
         message=message,
@@ -457,18 +591,23 @@ async def log_error(
         user_id=user_id,
         tenant_id=tenant_id,
         stack_trace=stack_trace,
-        client_ip=(request_context or {}).get("client_ip")
-        if isinstance(request_context, dict)
-        else None,
+        client_ip=safe_client_ip,
     )
-    try:
-        safe_request_context = (
-            sanitize_context(request_context)
-            if isinstance(request_context, dict) and request_context
-            else None
-        )
-    except Exception:
-        safe_request_context = None
+    # The lifecycle receives only detached primitives and one new ORM row. Drop
+    # every caller-owned value before constructing its task so hostile or large
+    # source graphs can be collected while persistence is still in flight.
+    error_type = None
+    message = None
+    category = None
+    severity = None
+    correlation_id = None
+    endpoint = None
+    method = None
+    status_code = None
+    user_id = None
+    tenant_id = None
+    stack_trace = None
+    safe_client_ip = None
     error_log = ErrorLog(
         error_type=envelope.error_type,
         message=envelope.message,
@@ -497,7 +636,50 @@ async def log_error(
     external_cancellation: Optional[asyncio.CancelledError] = None
     observed_generation = -1
     phase_cancellation_waves = 0
-    next_phase_cancellation = work_deadline
+
+    async def _wait_for_signals(
+        signals: set[asyncio.Future],
+        *,
+        deadline: float,
+        return_on_external_cancel: bool,
+    ) -> None:
+        nonlocal external_cancellation
+
+        while not any(signal.done() for signal in signals):
+            remaining = deadline - loop.time()
+            if remaining <= 0:
+                return
+            try:
+                await asyncio.wait(
+                    signals,
+                    timeout=remaining,
+                    return_when=asyncio.FIRST_COMPLETED,
+                )
+            except asyncio.CancelledError as exc:
+                if external_cancellation is None:
+                    external_cancellation = exc
+                stop_requested.set()
+                if return_on_external_cancel:
+                    return
+
+    async def _deliver_cancellation_wave() -> bool:
+        """Deliver one wave and wait for its event-loop acknowledgement.
+
+        Cancelling a task schedules its waiter wakeup before this barrier. When
+        the barrier resolves, a cooperative driver has either changed lifecycle
+        phase or has explicitly resisted this exact wave. A second wave can then
+        target the same in-flight phase without relying on a timing window.
+        """
+
+        if lifecycle.done() or not lifecycle.cancel():
+            return False
+        barrier = _event_loop_barrier()
+        await _wait_for_signals(
+            {barrier},
+            deadline=hard_deadline,
+            return_on_external_cancel=False,
+        )
+        return True
 
     while not lifecycle.done():
         now = loop.time()
@@ -507,60 +689,37 @@ async def log_error(
         if state.generation != observed_generation:
             observed_generation = state.generation
             phase_cancellation_waves = 0
-            if state.in_cleanup:
-                next_phase_cancellation = state.phase_started_at + phase_grace
-            elif stop_requested.is_set():
-                next_phase_cancellation = now
-            else:
-                next_phase_cancellation = work_deadline
 
-        if not stop_requested.is_set() and now >= work_deadline:
+        if not stop_requested.is_set():
+            if now < work_deadline:
+                await _wait_for_signals(
+                    {lifecycle},
+                    deadline=work_deadline,
+                    return_on_external_cancel=True,
+                )
+                continue
             stop_requested.set()
-            next_phase_cancellation = now
 
         if (
             stop_requested.is_set()
-            and now >= next_phase_cancellation
             and phase_cancellation_waves < ERROR_LOG_MAX_PHASE_CANCEL_WAVES
             and not lifecycle.done()
         ):
-            lifecycle.cancel()
-            phase_cancellation_waves += 1
-            next_phase_cancellation = now + phase_grace
+            if await _deliver_cancellation_wave():
+                phase_cancellation_waves += 1
+            continue
 
         if lifecycle.done():
             break
 
-        if stop_requested.is_set():
-            wake_at = (
-                next_phase_cancellation
-                if phase_cancellation_waves < ERROR_LOG_MAX_PHASE_CANCEL_WAVES
-                else hard_deadline
-            )
-        else:
-            wake_at = work_deadline
-        wait_for = max(0.0, min(wake_at, hard_deadline) - loop.time())
-
-        try:
-            await asyncio.wait({lifecycle}, timeout=wait_for)
-        except asyncio.CancelledError as exc:
-            if external_cancellation is None:
-                external_cancellation = exc
-            stop_requested.set()
-
-            # External cancellation is the first wave for the currently-owned
-            # phase. The controller keeps waiting so cleanup and permit release
-            # can settle within the same hard deadline.
-            if state.generation != observed_generation:
-                observed_generation = state.generation
-                phase_cancellation_waves = 0
-            if (
-                phase_cancellation_waves < ERROR_LOG_MAX_PHASE_CANCEL_WAVES
-                and not lifecycle.done()
-            ):
-                lifecycle.cancel()
-                phase_cancellation_waves += 1
-                next_phase_cancellation = loop.time() + phase_grace
+        signals: set[asyncio.Future] = {lifecycle}
+        if state.phase_changed is not None:
+            signals.add(state.phase_changed)
+        await _wait_for_signals(
+            signals,
+            deadline=hard_deadline,
+            return_on_external_cancel=True,
+        )
 
     if lifecycle.done():
         try:
