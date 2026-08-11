@@ -9,9 +9,20 @@ test.describe('Public invoice access', () => {
     ).toBeVisible({ timeout: 10000 })
   })
 
-  test('invoice page is publicly accessible (no login required)', async ({ page }) => {
-    const response = await page.goto('/invoice/some-token')
-    // Page should load (200) — it's a public route
-    expect(response?.status()).toBe(200)
+  test('invalid token reaches the invoice API without browser credentials', async ({ page }) => {
+    const resolveResponse = page.waitForResponse((response) =>
+      response.url().endsWith('/api/v1/invoice-access/resolve')
+      && response.request().method() === 'POST'
+    )
+
+    await page.goto('/invoice/some-token')
+
+    const response = await resolveResponse
+    const requestHeaders = response.request().headers()
+    expect(requestHeaders.authorization).toBeUndefined()
+    expect(requestHeaders.cookie).toBeUndefined()
+    expect(response.status()).toBe(400)
+    const responseBody = await response.json()
+    expect(responseBody.detail).toBe('Invalid or expired invoice link.')
   })
 })
