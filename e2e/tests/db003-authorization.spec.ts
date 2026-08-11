@@ -66,6 +66,28 @@ async function fulfillJson(route: Route, status: number, body: unknown) {
   })
 }
 
+function captureStrictRuntimeIssues(page: Page) {
+  const issues: string[] = []
+
+  page.on('pageerror', (error) => {
+    issues.push(`pageerror: ${error.message}`)
+  })
+  page.on('console', (message) => {
+    if (message.type() === 'error') issues.push(`console.error: ${message.text()}`)
+  })
+  page.on('requestfailed', (request) => {
+    issues.push(`requestfailed: ${request.method()} ${request.url()} ${request.failure()?.errorText || ''}`.trim())
+  })
+  page.on('response', (response) => {
+    const pathname = new URL(response.url()).pathname
+    if (pathname.startsWith('/api/v1/') && response.status() >= 400) {
+      issues.push(`api ${response.status()}: ${response.request().method()} ${pathname}`)
+    }
+  })
+
+  return issues
+}
+
 const staffOrder = {
   id: 'order-db003-staff',
   tenant_id: 'tenant-db003',
@@ -163,7 +185,43 @@ const staffPriceBuild = {
 
 async function mockStaffAuthorizationWorkspace(page: Page, mode: 'initial' | 'additional' = 'initial') {
   let currentQuote: typeof staffDraftQuote | null = mode === 'additional' ? staffApprovedQuote : null
+  let quoteRevisions: typeof staffDraftQuote[] = currentQuote ? [currentQuote] : []
+  const authorizationEvents: Array<Record<string, unknown>> = mode === 'additional'
+    ? [
+      {
+        id: 'event-db003-approved-published',
+        event_type: 'authorization_published',
+        label: 'Estimate published',
+        detail: JSON.stringify({ revision: 1, authorization_type: 'initial_estimate', resulting_total: '80.00' }),
+        entity_id: staffApprovedQuote.id,
+        actor_name: 'Olivia Owner',
+        created_at: '2026-08-11T12:55:00Z',
+      },
+      {
+        id: 'event-db003-approved-customer',
+        event_type: 'authorization_customer_approved',
+        label: 'Estimate approved',
+        detail: JSON.stringify({ revision: 1, authorization_type: 'initial_estimate', resulting_total: '80.00' }),
+        entity_id: staffApprovedQuote.id,
+        actor_name: 'Casey Customer',
+        created_at: '2026-08-11T13:00:00Z',
+      },
+    ]
+    : []
   let sendCount = 0
+  const runtimeIssues = captureStrictRuntimeIssues(page)
+  const projectedOrder = () => ({
+    ...staffOrder,
+    status: mode === 'additional' ? 'approved' : staffOrder.status,
+    quote_sent: !!currentQuote?.sent_to_customer,
+    quote_approved: !!currentQuote?.is_approved,
+  })
+  const projectedDetail = () => ({
+    ...projectedOrder(),
+    parts_usage: [],
+    labor_items: staffPriceBuild.lines,
+    history_events: authorizationEvents,
+  })
 
   await page.addInitScript(() => {
     window.localStorage.setItem('auth-storage', JSON.stringify({
@@ -192,6 +250,9 @@ async function mockStaffAuthorizationWorkspace(page: Page, mode: 'initial' | 'ad
 
   await page.route('https://fonts.googleapis.com/**', route => route.fulfill({ status: 200, contentType: 'text/css', body: '' }))
   await page.route('https://fonts.gstatic.com/**', route => route.fulfill({ status: 204, body: '' }))
+  await page.route('https://cdn.jsdelivr.net/npm/geist@1.3.1/dist/fonts/geist-sans/style.min.css', route => (
+    route.fulfill({ status: 200, contentType: 'text/css', body: '' })
+  ))
   await page.route('**/api/v1/**', async route => {
     const request = route.request()
     const url = new URL(request.url())
@@ -200,31 +261,58 @@ async function mockStaffAuthorizationWorkspace(page: Page, mode: 'initial' | 'ad
     if (path === '/auth/tenant-branding') return fulfillJson(route, 200, { name: 'DieselBridge Test Shop', slug: 'db003-test', logo_url: null, state: 'NC' })
     if (path === '/auth/platform-contact') return fulfillJson(route, 200, { support_name: 'DieselBridge Support', support_email: null, support_phone: null })
     if (path === '/messages/unread-summary') return fulfillJson(route, 200, { unread_count_staff: 0 })
+    if (path === '/dashboard/mechanics/options') return fulfillJson(route, 200, [])
     if (path === '/repair-orders' && request.method() === 'GET') {
-      return fulfillJson(route, 200, { items: [staffOrder], total: 1, has_more: false })
+      return fulfillJson(route, 200, { items: [projectedOrder()], total: 1, has_more: false })
     }
-    if (path === `/repair-orders/${staffOrder.id}/workspace`) return fulfillJson(route, 200, staffOrder)
+    if (path === `/repair-orders/${staffOrder.id}/workspace`) return fulfillJson(route, 200, projectedOrder())
+    if (path === `/repair-orders/${staffOrder.id}/detail`) return fulfillJson(route, 200, projectedDetail())
     if (path === `/repair-orders/${staffOrder.id}/price-build`) return fulfillJson(route, 200, staffPriceBuild)
+    if (path === `/repair-orders/${staffOrder.id}/recommended-services`) return fulfillJson(route, 200, [])
+    if (path === `/repair-orders/${staffOrder.id}/photos`) return fulfillJson(route, 200, [])
     if (path === '/admin/tax-fee-settings') return fulfillJson(route, 200, { labor_rate: 100 })
     if (path === '/quotes' && request.method() === 'GET') return fulfillJson(route, 200, currentQuote)
+    if (path === `/quotes/repair-order/${staffOrder.id}/history` && request.method() === 'GET') {
+      return fulfillJson(route, 200, { revisions: quoteRevisions, events: authorizationEvents })
+    }
     if (path === '/quotes' && request.method() === 'POST') {
       currentQuote = mode === 'additional' ? staffAdditionalDraftQuote : staffDraftQuote
+      quoteRevisions = [...quoteRevisions.filter((revision) => revision.id !== currentQuote?.id), currentQuote]
       return fulfillJson(route, 200, currentQuote)
     }
     if (currentQuote && path === `/quotes/${currentQuote.id}` && request.method() === 'PUT') {
+      quoteRevisions = quoteRevisions.map((revision) => revision.id === currentQuote?.id ? currentQuote : revision)
       return fulfillJson(route, 200, currentQuote)
     }
     if (currentQuote && path === `/quotes/${currentQuote.id}/send` && request.method() === 'POST') {
       sendCount += 1
       currentQuote = { ...currentQuote, sent_to_customer: true, sent_at: '2026-08-11T14:00:00Z' }
+      quoteRevisions = quoteRevisions.map((revision) => revision.id === currentQuote?.id ? currentQuote : revision)
+      authorizationEvents.push({
+        id: `event-${currentQuote.id}-published`,
+        event_type: 'authorization_published',
+        label: currentQuote.authorization_type === 'additional_work' ? 'Additional work published' : 'Estimate published',
+        detail: JSON.stringify({
+          revision: currentQuote.revision,
+          authorization_type: currentQuote.authorization_type,
+          previous_amount: currentQuote.previously_authorized_amount,
+          delta_amount: currentQuote.delta_amount,
+          resulting_total: currentQuote.total_amount,
+        }),
+        entity_id: currentQuote.id,
+        actor_name: 'Olivia Owner',
+        created_at: currentQuote.sent_at,
+      })
       return fulfillJson(route, 200, currentQuote)
     }
 
+    runtimeIssues.push(`unhandled fixture request: ${request.method()} ${path}`)
     return fulfillJson(route, 404, { detail: `Unhandled DB-003 staff fixture route: ${path}` })
   })
 
   return {
     get sendCount() { return sendCount },
+    get runtimeIssues() { return [...runtimeIssues] },
   }
 }
 
@@ -494,6 +582,14 @@ for (const scenario of [
     await page.keyboard.press('Enter')
     await expect(dialog).toBeHidden()
     expect(fixture.sendCount).toBe(1)
+
+    await page.getByRole('button', { name: 'History', exact: true }).click()
+    await page.getByRole('button', { name: /Repair order history/ }).click()
+    await expect(page.getByText(
+      scenario.mode === 'additional' ? 'Additional work published' : 'Estimate published',
+      { exact: true },
+    )).toBeVisible()
+    expect(fixture.runtimeIssues, fixture.runtimeIssues.join('\n')).toEqual([])
   })
 }
 
