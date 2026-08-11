@@ -13,7 +13,7 @@ from app.db.models.customer import Customer
 from app.db.models.invoice import Invoice, InvoiceStatus
 from app.db.models.repair_order import RepairOrder, RepairOrderStatus
 from app.db.models.tenant import Tenant
-from app.db.models.provider_outbox import ProviderOutboxEvent
+from app.db.models.provider_outbox import ProviderOutboxEvent, ProviderOutboxStatus
 from app.services.paid_invoice_webhook_service import (
     PAID_INVOICE_WEBHOOK_EVENT,
     _deliver,
@@ -150,6 +150,69 @@ async def test_conversion_delivery_retries_with_backoff(_db_engine, monkeypatch)
         assert event.status == "pending"
         assert event.attempt_count == 1
         assert event.available_at > event.last_attempt_at
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("response_code", "expected_status", "result_key"),
+    [
+        (400, ProviderOutboxStatus.DEAD.value, "dead"),
+        (503, ProviderOutboxStatus.PENDING.value, "retried"),
+    ],
+)
+async def test_worker_persists_failed_http_response_code_after_detached_delivery(
+    _db_engine, monkeypatch, response_code, expected_status, result_key
+):
+    monkeypatch.setattr(
+        "app.core.config.settings.PAID_INVOICE_WEBHOOK_ENCRYPTION_KEY",
+        Fernet.generate_key().decode(),
+    )
+    monkeypatch.setattr("app.core.config.settings.PROVIDER_OUTBOX_MAX_ATTEMPTS", 3)
+    factory = async_sessionmaker(_db_engine, expire_on_commit=False)
+    async with factory() as db:
+        tenant = Tenant(
+            name=f"HTTP {response_code}", slug=f"http-{response_code}-{uuid4().hex}",
+            paid_invoice_webhook_enabled=True,
+            paid_invoice_webhook_url="https://hooks.example.com/conversions",
+            paid_invoice_webhook_secret_encrypted=encrypt_paid_invoice_webhook_secret("secret"),
+        )
+        event = ProviderOutboxEvent(
+            tenant=tenant, event_type=PAID_INVOICE_WEBHOOK_EVENT,
+            aggregate_type="invoice", aggregate_id=uuid4(), payload={},
+            idempotency_key=f"http-{response_code}-{uuid4().hex}",
+            status=ProviderOutboxStatus.PENDING.value,
+            available_at=datetime.now(timezone.utc),
+        )
+        db.add_all([tenant, event]); await db.commit(); event_id = event.id
+
+    async def public_destination(url, **_kwargs):
+        return ResolvedWebhookDestination(
+            url, "hooks.example.com", "hooks.example.com", ("93.184.216.34",)
+        )
+
+    class Response:
+        status_code = response_code
+        headers = {}
+
+    class Client:
+        async def __aenter__(self): return self
+        async def __aexit__(self, *_args): return None
+        async def request(self, *_args, **_kwargs): return Response()
+
+    monkeypatch.setattr(
+        "app.services.paid_invoice_webhook_service.resolve_webhook_destination",
+        public_destination,
+    )
+    monkeypatch.setattr(
+        "app.services.paid_invoice_webhook_service.httpx.AsyncClient",
+        lambda **_kwargs: Client(),
+    )
+    result = await process_due_paid_invoice_webhooks(session_factory=factory)
+    assert result[result_key] == 1
+    async with factory() as db:
+        event = await db.get(ProviderOutboxEvent, event_id)
+        assert event.status == expected_status
+        assert event.last_response_code == response_code
 
 
 @pytest.mark.asyncio

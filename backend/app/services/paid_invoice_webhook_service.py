@@ -242,9 +242,17 @@ async def _deliver_within_budget(tenant: Tenant, event: ProviderOutboxEvent) -> 
             if response is None:
                 raise ProviderDeliveryError("Webhook connection failed for all vetted addresses", retryable=True) from last_connect_error
         if 300 <= response.status_code < 400:
-            raise ProviderDeliveryError("Webhook redirects are not accepted", retryable=False)
+            raise ProviderDeliveryError(
+                "Webhook redirects are not accepted",
+                retryable=False,
+                response_code=response.status_code,
+            )
         if response.status_code >= 400:
-            raise ProviderDeliveryError(f"Webhook returned HTTP {response.status_code}", retryable=response.status_code == 429 or response.status_code >= 500)
+            raise ProviderDeliveryError(
+                f"Webhook returned HTTP {response.status_code}",
+                retryable=response.status_code == 429 or response.status_code >= 500,
+                response_code=response.status_code,
+            )
         return response.headers.get("X-Request-Id"), response.status_code
     except ProviderDeliveryError:
         raise
@@ -347,6 +355,8 @@ async def process_due_paid_invoice_webhooks(*, session_factory: async_sessionmak
                 result["configuration_blocked"] += 1
             except Exception as exc:
                 retryable = not isinstance(exc, ProviderDeliveryError) or exc.retryable
+                if isinstance(exc, ProviderDeliveryError) and exc.response_code is not None:
+                    event.last_response_code = exc.response_code
                 event.last_error = f"{type(exc).__name__}: {str(exc)[:500]}"
                 if retryable and event.attempt_count < settings.PROVIDER_OUTBOX_MAX_ATTEMPTS:
                     event.status, event.available_at = ProviderOutboxStatus.PENDING.value, _now() + _retry_delay(event.attempt_count)

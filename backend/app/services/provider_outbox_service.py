@@ -27,9 +27,16 @@ EMAIL_NOTIFICATION_EVENT = "email.notification.v1"
 
 
 class ProviderDeliveryError(RuntimeError):
-    def __init__(self, message: str, *, retryable: bool):
+    def __init__(
+        self,
+        message: str,
+        *,
+        retryable: bool,
+        response_code: Optional[int] = None,
+    ):
         super().__init__(message)
         self.retryable = retryable
+        self.response_code = response_code
 
 
 @dataclass(frozen=True)
