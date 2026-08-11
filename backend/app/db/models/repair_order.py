@@ -46,6 +46,20 @@ class RepairOrder(BaseModel):
     internal_notes = Column(Text, nullable=True)
     po_number = Column(String(100), nullable=True)
     source = Column(String(50), nullable=True, index=True)  # e.g. easy_truck_shop_import
+    # Structured marketing attribution. These never reuse/overwrite ``source``
+    # or notes and remain attached to the repair order after invoicing/payment.
+    lead_source_channel = Column(String(64), nullable=True, index=True)
+    external_lead_id = Column(String(255), nullable=True, index=True)
+    callrail_call_id = Column(String(255), nullable=True, index=True)
+    google_click_id = Column(String(255), nullable=True, index=True)
+    gbraid = Column(String(255), nullable=True)
+    wbraid = Column(String(255), nullable=True)
+    landing_page_url = Column(String(2048), nullable=True)
+    utm_source = Column(String(255), nullable=True)
+    utm_medium = Column(String(255), nullable=True)
+    utm_campaign = Column(String(255), nullable=True)
+    utm_term = Column(String(255), nullable=True)
+    utm_content = Column(String(255), nullable=True)
     mileage_in = Column(Integer, nullable=True)
     mileage_out = Column(Integer, nullable=True)
     

@@ -52,7 +52,7 @@ export interface User {
   core_hours_target_minutes_override?: number | null
   shift_start_local_override?: string | null
   shift_end_local_override?: string | null
-  // Settings grants for garage admins (payments/taxes_fees/workforce)
+  // Settings grants for garage admins (including conversion_exports)
   permissions?: Record<string, boolean>
 }
 

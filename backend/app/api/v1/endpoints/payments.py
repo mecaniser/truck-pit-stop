@@ -29,6 +29,7 @@ from app.services.payment_number_service import allocate_next_payment_number
 from app.services.stripe_payment_finalization import finalize_stripe_invoice_payment
 from app.services.stripe_customer_service import ensure_connected_stripe_customer
 from app.services.stripe_platform_fee import platform_fee_amount_cents, platform_fee_percent_for
+from app.services.paid_invoice_webhook_service import enqueue_paid_invoice_webhook
 
 logger = get_logger(__name__)
 
@@ -709,6 +710,13 @@ async def record_manual_payment(
         recorded_by_user_id=current_user.id,
     )
     db.add(payment)
+    await enqueue_paid_invoice_webhook(
+        db,
+        tenant=tenant,
+        invoice=invoice,
+        order=invoice.repair_order,
+        customer=customer,
+    )
     
     await db.commit()
     await db.refresh(invoice)

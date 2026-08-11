@@ -20,6 +20,7 @@ from app.db.models.vehicle import Vehicle
 from app.services.invoice_notification_service import send_invoice_payment_confirmation_email
 from app.services.payment_number_service import allocate_next_payment_number
 from app.services.quickbooks_payments_service import QuickBooksCharge
+from app.services.paid_invoice_webhook_service import enqueue_paid_invoice_webhook
 
 
 async def find_quickbooks_payment(db: AsyncSession, idempotency_key: str) -> Optional[Payment]:
@@ -65,6 +66,13 @@ async def finalize_quickbooks_invoice_payment(
         notes="Payment made by customer portal through QuickBooks Payments.",
     )
     db.add(payment)
+    await enqueue_paid_invoice_webhook(
+        db,
+        tenant=tenant,
+        invoice=invoice,
+        order=order,
+        customer=customer,
+    )
     try:
         await db.commit()
     except IntegrityError:

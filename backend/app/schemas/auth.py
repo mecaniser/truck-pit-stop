@@ -53,7 +53,7 @@ class UserResponse(BaseModel):
     role: UserRole
     is_active: bool
     can_access_messaging: bool = False
-    # Settings grants for garage admins (payments/taxes_fees/workforce)
+    # Settings grants for garage admins (including conversion_exports)
     permissions: Dict[str, bool] = {}
     # Shop-wide switch for the Messages feature; defaults on. The frontend ANDs
     # this with role/grant access to decide whether to show Messaging.

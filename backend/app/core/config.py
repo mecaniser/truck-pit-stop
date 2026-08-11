@@ -184,6 +184,19 @@ class Settings(BaseSettings):
     PROVIDER_OUTBOX_RETRY_BASE_SECONDS: int = Field(default=30, ge=1, le=3600)
     PROVIDER_OUTBOX_RETRY_MAX_SECONDS: int = Field(default=900, ge=1, le=86400)
     PROVIDER_OUTBOX_EMAIL_TIMEOUT_SECONDS: float = Field(default=20.0, gt=0, le=60)
+    PAID_INVOICE_WEBHOOK_TIMEOUT_SECONDS: float = Field(default=10.0, gt=0, le=30)
+    PAID_INVOICE_WEBHOOK_DNS_TIMEOUT_SECONDS: float = Field(default=3.0, gt=0, le=10)
+    # This is a wall-clock budget for DNS plus every vetted-address attempt. It
+    # must remain below the Celery task's 45-second soft limit.
+    PAID_INVOICE_WEBHOOK_TOTAL_TIMEOUT_SECONDS: float = Field(default=35.0, gt=0, le=40)
+    # Fernet key used only for customer-configured outbound webhook secrets.
+    PAID_INVOICE_WEBHOOK_ENCRYPTION_KEY: str = ""
+    # JSON object of version -> Fernet key. The active version is used for new
+    # ciphertext while older versions remain available during rotation.
+    PAID_INVOICE_WEBHOOK_ENCRYPTION_KEYS: str = ""
+    PAID_INVOICE_WEBHOOK_ACTIVE_KEY_VERSION: str = "v1"
+    PAID_INVOICE_WEBHOOK_SIGNATURE_TOLERANCE_SECONDS: int = Field(default=300, ge=60, le=3600)
+    CONVERSION_OUTBOX_PII_RETENTION_DAYS: int = Field(default=30, ge=1, le=365)
     
     # Cloudinary (for work photos)
     CLOUDINARY_CLOUD_NAME: str = ""

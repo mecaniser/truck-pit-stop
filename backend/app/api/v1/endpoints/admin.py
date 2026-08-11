@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, and_, or_
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, HttpUrl
 from twilio.base.exceptions import TwilioRestException
 from twilio.rest import Client
 
@@ -35,7 +35,13 @@ from app.services.quickbooks_service import (
     is_quickbooks_configured,
 )
 from app.services.google_reviews_service import is_configured as is_google_reviews_configured
+from app.services.conversion_export_audit_service import record_conversion_audit
 from app.core.logging import get_logger
+from app.core.paid_invoice_webhook_crypto import (
+    PaidInvoiceWebhookCryptoError,
+    encrypt_paid_invoice_webhook_secret,
+)
+from app.core.webhook_destination import WebhookDestinationError, validate_webhook_destination
 
 router = APIRouter()
 SMS_PROVISION_COOLDOWN_SECONDS = 15
@@ -956,6 +962,28 @@ class TenantSettingsUpdateRequest(BaseModel):
     messaging_enabled: bool
 
 
+class PaidInvoiceWebhookResponse(BaseModel):
+    enabled: bool
+    url: Optional[str] = None
+    signing_secret_configured: bool = False
+    event_type: str = "repair_order.paid"
+
+
+class PaidInvoiceWebhookUpdateRequest(BaseModel):
+    enabled: bool
+    url: Optional[HttpUrl] = Field(None, max_length=2048)
+    # Write-only: clients may rotate the secret, but can never retrieve it.
+    signing_secret: Optional[str] = Field(None, min_length=16, max_length=512)
+
+
+def _paid_invoice_webhook_response(tenant: Tenant) -> PaidInvoiceWebhookResponse:
+    return PaidInvoiceWebhookResponse(
+        enabled=tenant.paid_invoice_webhook_enabled,
+        url=tenant.paid_invoice_webhook_url,
+        signing_secret_configured=bool(tenant.paid_invoice_webhook_secret_encrypted),
+    )
+
+
 class TaxFeeSettingsRequest(BaseModel):
     sales_tax_rate: float  # Percentage, e.g., 8.25 for 8.25%
     shop_supplies_rate: float  # Percentage of labor
@@ -1165,6 +1193,65 @@ async def update_tenant_settings(
     await db.refresh(tenant)
 
     return TenantSettingsResponse(messaging_enabled=tenant.messaging_enabled)
+
+
+@router.get("/integrations/paid-invoice-webhook", response_model=PaidInvoiceWebhookResponse)
+async def get_paid_invoice_webhook(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission("conversion_exports")),
+):
+    """Return the tenant's attribution-webhook status without exposing its secret."""
+    tenant = await db.get(Tenant, current_user.tenant_id)
+    if not tenant:
+        raise HTTPException(status_code=404, detail="Tenant not found")
+    record_conversion_audit(db, tenant_id=tenant.id, actor_user_id=current_user.id, action="webhook_settings.viewed", target_type="tenant", target_id=tenant.id)
+    await db.commit()
+    return _paid_invoice_webhook_response(tenant)
+
+
+@router.put("/integrations/paid-invoice-webhook", response_model=PaidInvoiceWebhookResponse)
+async def update_paid_invoice_webhook(
+    body: PaidInvoiceWebhookUpdateRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission("conversion_exports")),
+):
+    """Configure signed repair-order conversion events for attribution tooling."""
+    tenant = await db.get(Tenant, current_user.tenant_id)
+    if not tenant:
+        raise HTTPException(status_code=404, detail="Tenant not found")
+    if body.enabled and (not (body.url or tenant.paid_invoice_webhook_url) or not (body.signing_secret or tenant.paid_invoice_webhook_secret_encrypted)):
+        raise HTTPException(status_code=422, detail="An HTTPS URL and signing secret are required when enabling the webhook")
+    if body.url and body.url.scheme != "https":
+        raise HTTPException(status_code=422, detail="Paid-invoice webhook URLs must use HTTPS")
+    if body.url:
+        try:
+            await validate_webhook_destination(str(body.url))
+        except WebhookDestinationError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    if body.url:
+        tenant.paid_invoice_webhook_url = str(body.url)
+    if body.signing_secret:
+        try:
+            tenant.paid_invoice_webhook_secret_encrypted = encrypt_paid_invoice_webhook_secret(body.signing_secret)
+        except PaidInvoiceWebhookCryptoError as exc:
+            raise HTTPException(status_code=503, detail="Webhook secret encryption is not configured") from exc
+    tenant.paid_invoice_webhook_enabled = body.enabled
+    record_conversion_audit(
+        db,
+        tenant_id=tenant.id,
+        actor_user_id=current_user.id,
+        action="webhook_settings.updated",
+        target_type="tenant",
+        target_id=tenant.id,
+        metadata={
+            "enabled": body.enabled,
+            "url_changed": body.url is not None,
+            "secret_rotated": body.signing_secret is not None,
+        },
+    )
+    await db.commit()
+    return _paid_invoice_webhook_response(tenant)
 
 
 @router.post("/garage-profile/import-logo", response_model=GarageProfileResponse)
@@ -2130,7 +2217,7 @@ class StaffUpdate(BaseModel):
     email: Optional[EmailStr] = None
     phone: Optional[str] = None
     password: Optional[str] = None  # owner/admin sets a new password (reset)
-    # Settings grants (payments/taxes_fees/workforce); owner-only, admins-only targets
+    # Settings grants (including conversion_exports); owner-only, admins-only targets
     permissions: Optional[Dict[str, bool]] = None
 
 
@@ -2262,7 +2349,7 @@ async def update_staff(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Permission grants only apply to shop admins",
             )
-        allowed_keys = {"payments", "taxes_fees", "workforce"}
+        allowed_keys = {"payments", "taxes_fees", "workforce", "conversion_exports"}
         unknown = set(body.permissions) - allowed_keys
         if unknown:
             raise HTTPException(

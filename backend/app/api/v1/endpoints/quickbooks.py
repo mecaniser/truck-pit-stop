@@ -54,6 +54,7 @@ from app.services.quickbooks_payment_finalization import (
     finalize_quickbooks_invoice_payment,
     find_quickbooks_payment,
 )
+from app.services.paid_invoice_webhook_service import enqueue_conversion_event
 from app.services.quickbooks_payments_service import (
     QuickBooksPaymentError,
     create_charge,
@@ -579,6 +580,13 @@ async def refund_quickbooks_payment(
     db.add(refund_record)
     payment.quickbooks_refunded_amount = already_refunded + amount
     payment.quickbooks_charge_status = "REFUNDED" if amount == remaining else "PARTIALLY_REFUNDED"
+    await db.flush()
+    tenant = await db.get(Tenant, payment.tenant_id)
+    await enqueue_conversion_event(
+        db, tenant=tenant, invoice=invoice, order=invoice.repair_order, customer=customer,
+        event_type="repair_order.payment_refunded",
+        idempotency_key=f"repair-order-refund:{refund_record.id}", total_amount=-amount,
+    )
     invoice.status = InvoiceStatus.SENT
     invoice.paid_at = None
     invoice.repair_order.status = RepairOrderStatus.INVOICED

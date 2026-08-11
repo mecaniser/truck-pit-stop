@@ -1582,8 +1582,16 @@ async def update_repair_order(
                     pu.inventory_item.stock_quantity = (pu.inventory_item.stock_quantity or 0) + _stock_packages_reserved(pu)
                 await db.delete(pu)
 
-    # Update fields
     update_data = order_data.model_dump(exclude_unset=True)
+    attribution_fields = {
+        "lead_source_channel", "external_lead_id", "callrail_call_id", "google_click_id",
+        "gbraid", "wbraid", "landing_page_url", "utm_source", "utm_medium",
+        "utm_campaign", "utm_term", "utm_content",
+    }
+    if attribution_fields.intersection(update_data) and order.status in (RepairOrderStatus.INVOICED, RepairOrderStatus.PAID):
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Attribution is locked after invoice finalization")
+
+    # Update fields
     for field, value in update_data.items():
         setattr(order, field, value)
 
