@@ -176,6 +176,9 @@ async function installSafePortalFixture(page: Page) {
       return json({ available: false, token_url: null, message: 'Unavailable in safe fixture' })
     }
     if (path === '/quotes') return json(null)
+    if (path.startsWith('/quotes/repair-order/') && path.endsWith('/history')) {
+      return json({ revisions: [], events: [] })
+    }
     if (path === '/auth/platform-contact') return json({ support_name: 'Diesel Bridge Support', support_email: 'support@example.test', support_phone: null })
 
     return route.fulfill({ status: 404, contentType: 'application/json', body: JSON.stringify({ detail: `Unhandled safe fixture route: ${path}` }) })
