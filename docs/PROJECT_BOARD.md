@@ -19,6 +19,7 @@ reviewed, merged, and released. Reconcile this board whenever newer evidence exi
 
 | ID | Priority | State | Outcome | Owner | Evidence now | Next gate |
 |---|---|---|---|---|---|---|
+| DB-029 | P1 | Review | Rebuild the homepage product preview as a premium interactive DieselBridge tour | Release & Reliability | Frontend implementation is complete on `codex/homepage-event-orchestration`; source-grounded implementation `16bb399`, finish corrections through `f6c5f52`, and final interaction correction `ac18a2a`. Architecture approved the presentation-only contract and measured route fix. Independent functional QA returned GO on `ac18a2a`: focused 27/27, full frontend 143/143, production build, changed-file ESLint, diff check, and dedicated Playwright 3/3 passed; live routes had 0px endpoint delta and no 8px-inflated obstacle collisions; rapid retargeting, keyboard tabs, disclosure semantics, compact layouts, 44px targets, 11px mobile metadata, live-region behavior, and runtime error capture passed. Independent Impeccable/Emil returned GO with no P0–P2 findings. No API, auth, tenant, payment, backend, worker, dependency, or migration impact. | Release & Reliability opens one focused PR, proves all required CI contexts, merges one production-impacting outcome, confirms both Railway web deployments match the merge SHA and pass health/canary acceptance, and records that the worker deployment remained unchanged. |
 | DB-003 | P1 | Discovery | Finish versioned additional-work authorizations | Backend & Integrations | PR #196 merged at `e20fa1a` with implementation commit `a51f2af`; immutable revisions/finalization guard exist, but task validation found the portal action still depends on the staff-send flow | Architecture decides automatic vs staff-reviewed publication and any threshold policy; then run mechanic addition → customer prompt → approve/decline → invoice Playwright acceptance, Security GO, QA GO |
 | DB-004 | P1 | QA/Security | Reconcile customer portal redesign and active-repair workflow | Frontend & UX | PRs #189 and #194 are merged and included in current production | Run and record one mobile customer portal acceptance journey; then move to Done |
 
@@ -81,6 +82,72 @@ Copy this row into Inbox before implementation:
 
 For every active item, add links or identifiers for its branch/PR and record the
 last passing automated and runtime evidence in the item or associated issue.
+
+## DB-029 acceptance criteria
+
+- Remove the visible “Illustrative sample” and “Fictional repair-order data”
+  disclaimer. Keep the example internally safe without adding visible legalistic
+  copy, customer claims, testimonials, performance claims, or real PII.
+- The curated rail order, labels, and Lucide icons are exactly Repair Orders /
+  `ClipboardList`, Customers / `Users`, Shop Work / `Wrench`, Invoices /
+  `FileText`, and Vehicle History / `History`. These are keyboard-operable tabs;
+  selection replaces the entire miniature and is exposed semantically.
+- Each miniature is faithful to its current product source rather than an
+  invented generic dashboard: Repair Orders uses the repair-order workspace,
+  invoice, work/labor, total, and history anatomy; Customers uses the real list,
+  detail, Overview, and History patterns; Shop Work uses Shop Cockpit, Work Queue,
+  Queue/Activity, and its three lanes; Invoices uses the embedded invoice-card
+  states; Vehicle History uses vehicle details and Repair History rows.
+- There is no global Intake/Estimate/Approval/Invoice/Payment stage rail and no
+  module-by-stage Cartesian state. Each miniature exposes only authentic local
+  controls: repair-order history/invoice/work evidence, customer Overview/History,
+  Shop Work Queue/Activity and order cards, invoice selection/expansion, and
+  vehicle-history row selection/expansion. Per-module local state is preserved.
+- Fixtures are typed, deeply frozen, locally imported, internally reconciled,
+  and use masked/safe values. Preview interaction performs no network request,
+  auth/tenant read, WebSocket, storage write, or mutation and never mounts the
+  authenticated production pages or their data hooks.
+- The module route begins at the selected rail control and terminates at the
+  context sheet. An event route appears only for an authentic selected row, card,
+  disclosure, or history event and terminates at its evidence sheet. Routes and
+  nodes never cross text, controls, or card interiors. Geometry comes from live
+  rendered anchors, inflates obstacles by at least 8px, remeasures after resize,
+  fonts, expansion, or content change, and suppresses any invalid route.
+- The authored focal motion is the selected event travelling through its route
+  into a capability-based morphing evidence sheet. Module-screen morph, glass
+  depth, pointer-down feedback, focus, and CTA material motion stay subordinate,
+  interruptible, and latest-selection-safe; there is no ambient loop or repeated
+  generic rise. The CTA uses layered DieselBridge copper/orange material rather
+  than a flat generic orange rectangle.
+- Context and optional event sheets use functional Apple-style glass with clear
+  edge, depth, translucency, hierarchy, and restrained specular response. If a
+  module has no authentic secondary selection, the event sheet collapses rather
+  than inventing evidence.
+- Desktop keeps the product and its external evidence legible as one composition.
+  At widths below 1200px routes are absent and evidence stacks in semantic order.
+  At 390/320 the rail becomes a wrapping grid and authentic tables become compact
+  rows/cards. The page has no horizontal overflow at 1440, 1366, 1280, 1120, 960,
+  390, or 320 CSS pixels; visible interactive targets are at least 44px.
+- Keyboard operation, focus visibility, reduced motion, reduced transparency,
+  contrast, coarse-pointer behavior, 200% zoom, rapid retargeting, empty/optional
+  data, late fonts, missing observers, and rotation/resize are verified without
+  stale selection, focus, sheet, or route state.
+- Dynamic replacement uses one visually hidden `role="status"` live region with
+  polite, atomic announcements. A module change announces the selected module and
+  screen; an authentic local selection announces its module, selected control or
+  record, and evidence title. Initial render, focus-only movement, resize, and
+  geometry/motion changes do not announce. A cancelable 120ms trailing update,
+  guarded by the latest transition epoch, ensures rapid input announces only the
+  final committed state with no stale or repeated intermediate message.
+- Scope is frontend presentation only. No API, auth, tenant, payment, backend
+  data, WebSocket, worker, route, or migration change is part of this outcome.
+- Focused unit tests, full frontend tests, production build, lint/diff checks,
+  source-fidelity and fixture invariants, responsive Playwright geometry and
+  interaction coverage, independent QA, and an independent Impeccable/Emil
+  finish review must pass before release.
+- Release evidence must record the focused PR/merge SHA, required CI contexts,
+  both Railway web deployment IDs and health gates, changed homepage canary, and
+  proof that the worker deployment remained unchanged.
 
 ## DB-HC001 acceptance criteria
 

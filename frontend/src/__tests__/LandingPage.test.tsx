@@ -97,37 +97,58 @@ describe('LandingPage shop workflow', () => {
     renderPage()
 
     expect(screen.getByRole('heading', { name: 'Every repair, moving in one clear flow.' })).toBeInTheDocument()
-    expect(screen.getAllByRole('link', { name: /apply for founding shop access/i }).length).toBeGreaterThan(0)
-    expect(screen.getByText('Illustrative sample')).toBeInTheDocument()
-    expect(screen.getByText('Fictional repair-order data')).toBeInTheDocument()
-    expect(screen.getByText('RO-2025-0417')).toBeInTheDocument()
+    const primaryCtas = screen.getAllByRole('link', { name: /bring dieselbridge to my shop/i })
+    expect(primaryCtas.length).toBe(2)
+    expect(primaryCtas.every((link) => link.getAttribute('href') === '/enroll')).toBe(true)
+    expect(screen.queryByText(/illustrative|fictional/i)).not.toBeInTheDocument()
+    expect(screen.queryByText('One repair order. Five connected outcomes.')).not.toBeInTheDocument()
+    expect(screen.getAllByText('RO-2025-0417').length).toBeGreaterThan(0)
     expect(screen.getAllByText('NorthStar Logistics').length).toBeGreaterThan(0)
-    expect(screen.getByText('412,358 mi')).toBeInTheDocument()
+    expect(screen.getByText(/412,358 mi/)).toBeInTheDocument()
     const taxableSubtotal = 1250 + 2875.42 + 85
     const calculatedTax = Number((taxableSubtotal * 0.0675).toFixed(2))
     expect(calculatedTax).toBe(284.2)
     expect(taxableSubtotal + calculatedTax).toBeCloseTo(4494.62, 2)
-    expect(screen.getByText('Tax (6.75%)').parentElement).toHaveTextContent('$284.20')
     expect(screen.getAllByText('$4,494.62').length).toBeGreaterThan(0)
-    expect(screen.getByText(/INV-2025-0417 is ready to send/i)).toBeInTheDocument()
-    expect(screen.getByText('ACH •••• 5521')).toBeInTheDocument()
+    expect(screen.getAllByRole('complementary')).toHaveLength(2)
+    expect(screen.getByRole('tab', { name: 'Repair Orders' })).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getAllByRole('heading', { name: 'RO-2025-0417' }).length).toBeGreaterThan(0)
+    expect(screen.getByText('Work Requested')).toBeInTheDocument()
+    expect(screen.getByText('Work & Labor')).toBeInTheDocument()
     expect((await screen.findAllByText(/truck sparking hub application/i)).length).toBeGreaterThan(0)
     expect((await screen.findAllByText(/mcdiesel/i)).length).toBeGreaterThan(0)
     expect(await screen.findByText('Roadside repair, diagnostics')).toBeInTheDocument()
     expect(await screen.findByText('Fleet PM, in-shop repair')).toBeInTheDocument()
   })
 
-  it('keeps product-stage changes interactive and explicit', async () => {
+  it('replaces the miniature by module, preserves local state, and keeps keyboard selection current', async () => {
     renderPage()
 
-    fireEvent.click(screen.getByRole('button', { name: 'Invoice' }))
+    fireEvent.click(screen.getByRole('tab', { name: 'Customers' }))
+    expect(screen.getByRole('heading', { name: 'Customers' })).toBeInTheDocument()
+    expect(screen.queryByText('Work Requested')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Riverbend Freight' }))
+    fireEvent.click(screen.getByRole('tab', { name: 'History' }))
+    expect(screen.getAllByText('Invoice awaiting payment · INV-2025-0412').length).toBeGreaterThan(0)
 
-    expect(screen.getByRole('button', { name: 'Invoice' })).toHaveAttribute('aria-pressed', 'true')
-    expect(screen.getByRole('heading', { name: 'Carry completed work into the invoice.' })).toBeInTheDocument()
-    expect(screen.getByText('Next action')).toBeInTheDocument()
-    expect(screen.getByText('Invoice ready to send')).toBeInTheDocument()
-    expect(document.querySelector('.landing-context-sheet--invoice')).toHaveClass('is-active')
-    expect(document.querySelector('.landing-connector--invoice')).toHaveClass('is-active')
+    fireEvent.click(screen.getByRole('tab', { name: 'Shop Work' }))
+    expect(screen.getAllByText('Shop Cockpit').length).toBeGreaterThan(0)
+    expect(screen.getByText('Needs Action')).toBeInTheDocument()
+    expect(screen.getAllByText('On the Floor').length).toBeGreaterThan(0)
+    expect(screen.getByText('Ready to Close')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Customers' }))
+    expect(screen.getByRole('tab', { name: 'History' })).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getAllByRole('heading', { name: 'Riverbend Freight' }).length).toBeGreaterThan(0)
+
+    fireEvent.keyDown(screen.getByRole('tab', { name: 'Customers' }), { key: 'End' })
+    expect(screen.getByRole('tab', { name: 'Vehicle History' })).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getByText('Repair History')).toBeInTheDocument()
+
+    ;['Repair Orders', 'Customers', 'Shop Work', 'Invoices', 'Vehicle History', 'Repair Orders', 'Customers', 'Shop Work', 'Invoices', 'Vehicle History']
+      .forEach((name) => fireEvent.click(screen.getByRole('tab', { name })))
+    expect(screen.getByRole('tab', { name: 'Vehicle History' })).toHaveAttribute('aria-selected', 'true')
+    expect(document.querySelector('.repair-preview')).toHaveAttribute('data-transition-epoch', '16')
   })
 
   it('distinguishes partner loading failure and offers recovery', async () => {
@@ -158,7 +179,7 @@ describe('LandingPage shop workflow', () => {
     })
 
     renderPage()
-    expect(screen.getByRole('status')).toHaveTextContent('Loading approved shops…')
+    expect(screen.getByText('Loading approved shops…')).toBeInTheDocument()
 
     releasePartners?.({ data: [] })
     expect(await screen.findByText('Approved shop profiles will appear here as they go live.')).toBeInTheDocument()
