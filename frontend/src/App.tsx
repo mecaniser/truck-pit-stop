@@ -25,7 +25,11 @@ const InvoiceAccessPage = lazy(() => import('./features/invoice-access/InvoiceAc
 
 type FaviconAssetSet = {
   svg: string
-  png: string
+  png?: string
+}
+
+const HOME_FAVICON: FaviconAssetSet = {
+  svg: '/dieselbridge-mark.svg',
 }
 
 const PUBLIC_FAVICON: FaviconAssetSet = {
@@ -124,6 +128,7 @@ function ProductAnalyticsTracker() {
 }
 
 function resolveFavicon(pathname: string): FaviconAssetSet {
+  if (pathname === '/') return HOME_FAVICON
   return ADMIN_FAVICON_PATHS.some((pattern) => pattern.test(pathname)) ? ADMIN_FAVICON : PUBLIC_FAVICON
 }
 
@@ -171,8 +176,12 @@ function RouteFaviconManager() {
   useEffect(() => {
     const icon = resolveFavicon(location.pathname)
     upsertFaviconLink('icon', 'image/svg+xml').setAttribute('href', icon.svg)
-    upsertFaviconLink('icon', 'image/png').setAttribute('href', icon.png)
-    upsertFaviconLink('shortcut icon', 'image/png').setAttribute('href', icon.png)
+    if (icon.png) {
+      upsertFaviconLink('icon', 'image/png').setAttribute('href', icon.png)
+      upsertFaviconLink('shortcut icon', 'image/png').setAttribute('href', icon.png)
+    } else {
+      document.querySelectorAll('link[type="image/png"][rel="icon"], link[type="image/png"][rel="shortcut icon"]').forEach((link) => link.remove())
+    }
   }, [location.pathname])
 
   return null
