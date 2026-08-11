@@ -132,6 +132,13 @@ last passing automated and runtime evidence in the item or associated issue.
   contrast, coarse-pointer behavior, 200% zoom, rapid retargeting, empty/optional
   data, late fonts, missing observers, and rotation/resize are verified without
   stale selection, focus, sheet, or route state.
+- Dynamic replacement uses one visually hidden `role="status"` live region with
+  polite, atomic announcements. A module change announces the selected module and
+  screen; an authentic local selection announces its module, selected control or
+  record, and evidence title. Initial render, focus-only movement, resize, and
+  geometry/motion changes do not announce. A cancelable 120ms trailing update,
+  guarded by the latest transition epoch, ensures rapid input announces only the
+  final committed state with no stale or repeated intermediate message.
 - Scope is frontend presentation only. No API, auth, tenant, payment, backend
   data, WebSocket, worker, route, or migration change is part of this outcome.
 - Focused unit tests, full frontend tests, production build, lint/diff checks,
