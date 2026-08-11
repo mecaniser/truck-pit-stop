@@ -45,6 +45,7 @@ from app.services.price_build_service import (
     PriceBuildValidationError,
     validate_mechanic_labor_hours,
 )
+from app.services.repair_order_access import tenant_repair_order_statement
 from app.services.pricing import apply_canonical_order_totals, get_order_total
 from app.services.internal_fleet import fleet_labor_uses_customer_rate, uses_internal_fleet_pricing
 from app.services.vehicle_identity import ensure_vehicle_relationship
@@ -3703,7 +3704,7 @@ async def list_repair_order_parts(
     current_user: User = Depends(get_current_active_user),
 ):
     result = await db.execute(
-        select(RepairOrder).where(RepairOrder.id == order_id, RepairOrder.deleted_at.is_(None))
+        tenant_repair_order_statement(order_id, current_user)
     )
     order = result.scalar_one_or_none()
     if not order:
@@ -3739,9 +3740,9 @@ async def get_repair_order_part_suggestions(
     services already on this order elsewhere in the shop's history, plus the
     tenant's overall most-frequently-used in-stock parts as a fallback."""
     result = await db.execute(
-        select(RepairOrder)
-        .where(RepairOrder.id == order_id, RepairOrder.deleted_at.is_(None))
-        .options(selectinload(RepairOrder.labor_items))
+        tenant_repair_order_statement(order_id, current_user).options(
+            selectinload(RepairOrder.labor_items)
+        )
     )
     order = result.scalar_one_or_none()
     if not order:
@@ -4168,7 +4169,7 @@ async def list_repair_order_labor(
     current_user: User = Depends(get_current_active_user),
 ):
     result = await db.execute(
-        select(RepairOrder).where(RepairOrder.id == order_id, RepairOrder.deleted_at.is_(None))
+        tenant_repair_order_statement(order_id, current_user)
     )
     order = result.scalar_one_or_none()
     if not order:

@@ -52,6 +52,7 @@ from app.services.quote_access_service import (
     QUOTE_PORTAL_ENROLLMENT_TOKEN_TTL_SECONDS,
     generate_quote_portal_enrollment_token,
 )
+from app.services.repair_order_access import tenant_repair_order_statement
 
 router = APIRouter()
 
@@ -891,9 +892,9 @@ async def get_authorization_history(
     current_user: User = Depends(get_current_active_user),
 ):
     result = await db.execute(
-        select(RepairOrder).where(
-            RepairOrder.id == repair_order_id,
-            RepairOrder.deleted_at.is_(None),
+        tenant_repair_order_statement(
+            repair_order_id,
+            current_user,
             RepairOrder.is_internal.is_(False),
         )
     )
