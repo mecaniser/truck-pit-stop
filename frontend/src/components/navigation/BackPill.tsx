@@ -23,7 +23,7 @@ export default function BackPill({
         }
         navigate(fallbackTo, { replace: true })
       }}
-      className="inline-flex h-9 items-center gap-1 rounded-full border border-[#272d3d] bg-[#191d2a] px-3.5 text-[13px] font-bold text-[#c9cdd8] hover:border-[#3a4257] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#8b7cf7] focus-visible:ring-offset-2 focus-visible:ring-offset-[#10131c]"
+      className="inline-flex min-h-[44px] items-center gap-1 rounded-full border border-[#272d3d] bg-[#191d2a] px-3.5 text-[13px] font-bold text-[#c9cdd8] hover:border-[#3a4257] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#8b7cf7] focus-visible:ring-offset-2 focus-visible:ring-offset-[#10131c]"
       aria-label={`Back to ${destination}`}
     >
       <ChevronLeft className="h-4 w-4" aria-hidden="true" />
