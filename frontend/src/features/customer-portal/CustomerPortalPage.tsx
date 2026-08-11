@@ -28,6 +28,7 @@ import useTenantBranding from '@/hooks/useTenantBranding'
 import CustomerZellePaymentPanel from './ZellePaymentPanel'
 import QuickBooksPaymentPanel from './QuickBooksPaymentPanel'
 import { DateBlock, formatMoney, isActiveRepair, Money, PaidBadge, Pill, repairStatusLabel } from './portal-ui'
+import PortalDocumentTitle from './PortalDocumentTitle'
 
 const STATUS_BADGE_COLORS: Record<string, string> = {
   draft: 'border border-white/10 bg-white/5 text-gray-300',
@@ -984,7 +985,7 @@ function CustomerRepairs() {
               setShowPayment(false)
               setStripeOptions(null)
             }}
-            className="inline-flex h-9 items-center gap-1 rounded-full border border-[#272d3d] bg-[#191d2a] px-3.5 text-[13px] font-bold text-[#c9cdd8] hover:border-[#343b52]"
+            className="inline-flex min-h-[44px] items-center gap-1 rounded-full border border-[#272d3d] bg-[#191d2a] px-3.5 text-[13px] font-bold text-[#c9cdd8] hover:border-[#343b52]"
           >
             <ArrowLeft className="h-4 w-4" />
             {isActiveRepairsView ? 'Repairs' : 'History'}
@@ -1365,7 +1366,7 @@ function CustomerRepairs() {
               {invoice && (
                 <button
                   onClick={handleDownloadPdf}
-                  className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 bg-green-700/40 hover:bg-green-700/60 text-green-200 text-sm font-medium rounded-lg transition-colors"
+                  className="flex min-h-[44px] shrink-0 items-center gap-1.5 rounded-lg bg-green-700/40 px-3 py-1.5 text-sm font-medium text-green-200 transition-colors hover:bg-green-700/60"
                 >
                   <Download className="w-4 h-4" />
                   Receipt
@@ -1398,7 +1399,7 @@ function CustomerRepairs() {
           </div>
           <Link
             to="/portal/repairs"
-            className="inline-flex h-10 items-center justify-center rounded-[10px] border border-[#272d3d] bg-[#191d2a] px-4 text-xs font-bold text-[#c9cdd8] hover:border-[#343b52]"
+            className="inline-flex min-h-[44px] items-center justify-center rounded-[10px] border border-[#272d3d] bg-[#191d2a] px-4 text-xs font-bold text-[#c9cdd8] hover:border-[#343b52]"
           >
             View repair history
           </Link>
@@ -1462,7 +1463,7 @@ function CustomerRepairs() {
             <p className="mt-1 text-sm text-[#8b92a5]">New repair work will appear here as soon as it is checked in.</p>
             <Link
               to="/portal/services"
-              className="mt-5 inline-flex h-10 items-center justify-center rounded-[10px] bg-[#8b7cf7] px-4 text-xs font-extrabold text-[#0e1118]"
+              className="mt-5 inline-flex min-h-[44px] items-center justify-center rounded-[10px] bg-[#8b7cf7] px-4 text-xs font-extrabold text-[#0e1118]"
             >
               Book a service
             </Link>
@@ -1529,7 +1530,7 @@ function CustomerRepairs() {
           </p>
         </div>
         {historyOrders.length > 12 && (
-          <button type="button" onClick={downloadHistoryCsv} className="h-10 rounded-[10px] border border-[#272d3d] bg-[#191d2a] px-4 text-xs font-bold text-[#c9cdd8]">
+          <button type="button" onClick={downloadHistoryCsv} className="min-h-[44px] rounded-[10px] border border-[#272d3d] bg-[#191d2a] px-4 text-xs font-bold text-[#c9cdd8]">
             Download all (CSV)
           </button>
         )}
@@ -1597,7 +1598,7 @@ function CustomerRepairs() {
                             href={`/api/v1/invoices/${invoiceForOrder.id}/pdf`}
                             download
                             onClick={event => event.stopPropagation()}
-                            className="col-start-3 text-right text-xs font-bold text-[#a78bfa] hover:text-[#c4b1ff] sm:col-start-auto"
+                            className="col-start-3 inline-flex min-h-[44px] min-w-[44px] items-center justify-end text-right text-xs font-bold text-[#a78bfa] hover:text-[#c4b1ff] sm:col-start-auto"
                           >
                             Invoice ↓
                           </a>
@@ -1722,16 +1723,17 @@ export default function CustomerPortalPage() {
   }
 
   return (
-    <div className="fixed inset-0 grid min-h-0 grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden bg-[#0d1018] font-['Helvetica_Neue',Helvetica,Arial,sans-serif] text-[#eceef4]">
+    <div className="fixed inset-0 grid min-h-0 min-w-0 grid-cols-[minmax(0,1fr)] grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden bg-[#0d1018] font-['Helvetica_Neue',Helvetica,Arial,sans-serif] text-[#eceef4]">
+      <PortalDocumentTitle portalBrandName={portalBrandName} />
       <nav
-        className="relative z-50 shrink-0 border-b border-[#1e2432] bg-[#0a0d14]"
+        className="relative z-50 min-w-0 shrink-0 border-b border-[#1e2432] bg-[#0a0d14]"
         style={{ paddingTop: 'env(safe-area-inset-top)' }}
       >
-        <div className="mx-auto max-w-7xl px-4 sm:px-6">
+        <div className="mx-auto min-w-0 max-w-7xl px-4 sm:px-6">
           <div className="flex h-14 items-center justify-between">
             <Link
               to="/portal"
-              className="inline-flex min-w-0 items-center py-1"
+              className="inline-flex min-h-[44px] min-w-[44px] items-center py-1"
               aria-label={`${portalBrandName} customer portal`}
             >
               <TenantBrandLogo
@@ -1775,7 +1777,7 @@ export default function CustomerPortalPage() {
 
       <main
         ref={portalScrollRef}
-        className={`min-h-0 w-full flex-1 overflow-x-hidden overflow-y-auto overscroll-none ${
+        className={`min-h-0 min-w-0 w-full flex-1 overflow-x-hidden overflow-y-auto overscroll-none ${
           isInvoicePage ? 'max-w-none p-0' : 'mx-auto max-w-7xl px-4 pb-7 pt-5 sm:px-6 sm:pb-8 sm:pt-[22px]'
         }`}
         style={{
@@ -1804,9 +1806,9 @@ export default function CustomerPortalPage() {
         </Routes>
       </main>
 
-      <div className={`relative z-50 shrink-0 md:hidden ${isInvoicePage ? 'hidden' : ''}`}>
+      <div className={`relative z-50 min-w-0 shrink-0 md:hidden ${isInvoicePage ? 'hidden' : ''}`}>
         <div
-          className="overflow-hidden border-t border-[#232939] bg-[#0a0d14]/95 pt-1.5 shadow-[0_-12px_32px_rgba(0,0,0,0.28)] backdrop-blur-xl"
+          className="min-w-0 overflow-hidden border-t border-[#232939] bg-[#0a0d14]/95 pt-1.5 shadow-[0_-12px_32px_rgba(0,0,0,0.28)] backdrop-blur-xl"
           style={{
             paddingBottom: 'max(0.5rem, env(safe-area-inset-bottom))',
             paddingLeft: 'max(0.25rem, env(safe-area-inset-left))',
@@ -1831,7 +1833,7 @@ export default function CustomerPortalPage() {
                     key={link.to}
                     to={link.to}
                     tabIndex={mobileNavPage === 'primary' ? 0 : -1}
-                    className={`flex min-h-12 min-w-0 flex-1 flex-col items-center justify-center gap-0.5 rounded-xl px-1 text-[10px] font-bold transition-colors ${
+                    className={`flex min-h-[44px] min-w-0 flex-1 flex-col items-center justify-center gap-0.5 rounded-xl px-1 text-[10px] font-bold transition-colors ${
                       isLinkActive
                         ? 'bg-[#8b7cf7]/10 text-[#c9bfff]'
                         : 'text-[#737b8f] hover:text-[#c9cdd8]'
@@ -1848,7 +1850,7 @@ export default function CustomerPortalPage() {
                 tabIndex={mobileNavPage === 'primary' ? 0 : -1}
                 aria-expanded={mobileNavPage === 'secondary'}
                 aria-controls="portal-mobile-secondary-navigation"
-                className={`flex min-h-12 min-w-0 flex-1 flex-col items-center justify-center gap-0.5 rounded-xl px-1 text-[10px] font-bold transition-colors ${
+                className={`flex min-h-[44px] min-w-0 flex-1 flex-col items-center justify-center gap-0.5 rounded-xl px-1 text-[10px] font-bold transition-colors ${
                   isMobileMoreActive
                     ? 'bg-[#8b7cf7]/10 text-[#c9bfff]'
                     : 'text-[#737b8f] hover:text-[#c9cdd8]'
@@ -1868,7 +1870,7 @@ export default function CustomerPortalPage() {
                 type="button"
                 onClick={() => setMobileNavPage('primary')}
                 tabIndex={mobileNavPage === 'secondary' ? 0 : -1}
-                className="flex min-h-12 min-w-0 flex-1 flex-col items-center justify-center gap-0.5 rounded-xl px-1 text-[10px] font-bold text-[#737b8f] transition-colors hover:text-[#c9cdd8]"
+                className="flex min-h-[44px] min-w-0 flex-1 flex-col items-center justify-center gap-0.5 rounded-xl px-1 text-[10px] font-bold text-[#737b8f] transition-colors hover:text-[#c9cdd8]"
                 aria-label="Back to primary navigation"
               >
                 <ChevronLeft className="h-5 w-5" />
@@ -1877,7 +1879,7 @@ export default function CustomerPortalPage() {
               <Link
                 to="/portal/repairs?view=active"
                 tabIndex={mobileNavPage === 'secondary' ? 0 : -1}
-                className={`flex min-h-12 min-w-0 flex-1 flex-col items-center justify-center gap-0.5 rounded-xl px-1 text-[10px] font-bold transition-colors ${
+                className={`flex min-h-[44px] min-w-0 flex-1 flex-col items-center justify-center gap-0.5 rounded-xl px-1 text-[10px] font-bold transition-colors ${
                   location.pathname === '/portal/repairs' && isActiveRepairsSearch(location.search)
                     ? 'bg-[#8b7cf7]/10 text-[#c9bfff]'
                     : 'text-[#737b8f] hover:text-[#c9cdd8]'
@@ -1889,7 +1891,7 @@ export default function CustomerPortalPage() {
               <Link
                 to="/portal/repairs"
                 tabIndex={mobileNavPage === 'secondary' ? 0 : -1}
-                className={`flex min-h-12 min-w-0 flex-1 flex-col items-center justify-center gap-0.5 rounded-xl px-1 text-[10px] font-bold transition-colors ${
+                className={`flex min-h-[44px] min-w-0 flex-1 flex-col items-center justify-center gap-0.5 rounded-xl px-1 text-[10px] font-bold transition-colors ${
                   location.pathname === '/portal/repairs' && !isActiveRepairsSearch(location.search)
                     ? 'bg-[#8b7cf7]/10 text-[#c9bfff]'
                     : 'text-[#737b8f] hover:text-[#c9cdd8]'
@@ -1901,7 +1903,7 @@ export default function CustomerPortalPage() {
               <Link
                 to="/portal/settings"
                 tabIndex={mobileNavPage === 'secondary' ? 0 : -1}
-                className={`flex min-h-12 min-w-0 flex-1 flex-col items-center justify-center gap-0.5 rounded-xl px-1 text-[10px] font-bold transition-colors ${
+                className={`flex min-h-[44px] min-w-0 flex-1 flex-col items-center justify-center gap-0.5 rounded-xl px-1 text-[10px] font-bold transition-colors ${
                   location.pathname === '/portal/settings'
                     ? 'bg-[#8b7cf7]/10 text-[#c9bfff]'
                     : 'text-[#737b8f] hover:text-[#c9cdd8]'

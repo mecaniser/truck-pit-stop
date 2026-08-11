@@ -120,7 +120,7 @@ export function Pill({
     <button
       type="button"
       onClick={onClick}
-      className={`h-[34px] shrink-0 rounded-full border px-3.5 text-xs font-bold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#8b7cf7] ${
+      className={`min-h-[44px] min-w-[44px] shrink-0 rounded-full border px-3.5 text-xs font-bold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#8b7cf7] ${
         active
           ? 'border-[#8b7cf7] bg-[#8b7cf7]/10 text-[#c9bfff]'
           : 'border-[#272d3d] bg-[#161a26] text-[#9aa1b3] hover:border-[#343b52] hover:text-white'

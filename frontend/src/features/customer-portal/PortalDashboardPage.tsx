@@ -295,7 +295,7 @@ export default function PortalDashboardPage() {
               <SectionLabel className="truncate text-[#eceef4]">Active repairs</SectionLabel>
               <span className="text-xs font-extrabold text-[#a78bfa]">{activeRepairs.length}</span>
             </div>
-            <Link to="/portal/repairs?view=active" className="inline-flex items-center text-xs font-bold text-[#a78bfa] hover:text-[#c4b1ff]">
+            <Link to="/portal/repairs?view=active" className="inline-flex min-h-[44px] items-center text-xs font-bold text-[#a78bfa] hover:text-[#c4b1ff]">
               View all <ChevronRight className="h-3.5 w-3.5" />
             </Link>
           </div>
@@ -416,7 +416,7 @@ export default function PortalDashboardPage() {
         <Card className="overflow-hidden">
           <div className="flex items-center justify-between border-b border-[#1e2432] px-[18px] py-[15px]">
             <SectionLabel className="text-[#eceef4]">Recently paid</SectionLabel>
-            <Link to="/portal/repairs" className="inline-flex items-center text-xs font-bold text-[#a78bfa] hover:text-[#c4b1ff]">
+            <Link to="/portal/repairs" className="inline-flex min-h-[44px] items-center text-xs font-bold text-[#a78bfa] hover:text-[#c4b1ff]">
               View all history <ChevronRight className="h-3.5 w-3.5" />
             </Link>
           </div>

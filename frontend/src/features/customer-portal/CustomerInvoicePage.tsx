@@ -364,7 +364,7 @@ export default function CustomerInvoicePage() {
             <a
               href={`/api/v1/invoices/${invoice.id}/pdf`}
               download
-              className="mt-4 inline-flex items-center gap-2 text-sm font-bold text-[#c4b1ff] hover:text-white"
+              className="mt-4 inline-flex min-h-[44px] items-center gap-2 text-sm font-bold text-[#c4b1ff] hover:text-white"
             >
               <Download className="h-4 w-4" />
               Receipt

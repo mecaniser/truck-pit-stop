@@ -20,7 +20,7 @@ reviewed, merged, and released. Reconcile this board whenever newer evidence exi
 | ID | Priority | State | Outcome | Owner | Evidence now | Next gate |
 |---|---|---|---|---|---|---|
 | DB-003 | P1 | Discovery | Finish versioned additional-work authorizations | Backend & Integrations | PR #196 merged at `e20fa1a` with implementation commit `a51f2af`; immutable revisions/finalization guard exist, but task validation found the portal action still depends on the staff-send flow | Architecture decides automatic vs staff-reviewed publication and any threshold policy; then run mechanic addition → customer prompt → approve/decline → invoice Playwright acceptance, Security GO, QA GO |
-| DB-004 | P1 | QA/Security | Reconcile customer portal redesign and active-repair workflow | Frontend & UX | PRs #189 and #194 are merged and included in current production | Run and record one mobile customer portal acceptance journey; then move to Done |
+| DB-004 | P1 | Review | Reconcile customer portal redesign and active-repair workflow | Release & Reliability | PRs #189 and #194 are merged and included in current production. Frontend fixed the remaining mobile defects at `552f594` on `codex/db004-mobile-targets`. Fresh independent QA returned GO on 2026-08-11: real auth/tenant boundaries remained green; committed Playwright passed the 390/320 dashboard → active repair/detail → history/paid-detail journey 2/2 with exact viewport containment, every visible target at least 44×44, correct portal titles, and no page/console errors; focused tests 16/16, full frontend 145/145, build, changed lint, and diff check passed. | Release opens the focused PR, requires CI, merges one production-impacting outcome, verifies Railway deployment SHA/health, reruns the changed mobile portal journey, monitors alerts, records rollback evidence, and then moves DB-004 to Done. |
 
 ## Blocked
 
@@ -82,6 +82,23 @@ Copy this row into Inbox before implementation:
 
 For every active item, add links or identifiers for its branch/PR and record the
 last passing automated and runtime evidence in the item or associated issue.
+
+## DB-004 acceptance criteria
+
+- Authenticated customer portal dashboard, active repair, repair detail, estimate
+  action, history list, and paid history detail render without clipping or hidden
+  horizontal overflow at both 390px and 320px.
+- The portal brand/home link, repair-detail back control, every history filter,
+  and every other visible interactive target measure at least 44 by 44 CSS pixels
+  at both required mobile widths.
+- Portal routes expose an accurate customer-portal document title and never retain
+  the staff-login title after authentication or client-side navigation.
+- Customer login, active-repair/action-required state, detail/history navigation,
+  keyboard focus and activation, unauthenticated denial, other-customer denial,
+  and cross-tenant customer/order denial remain green.
+- Focused portal tests, production build, changed-file lint/diff, and a real
+  390/320 browser journey pass with no console, page, or failed-request errors.
+  Independent QA must return GO before the focused PR can merge and release.
 
 ## DB-029 acceptance criteria
 
