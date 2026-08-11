@@ -9,6 +9,8 @@
   --landing-orange: #c74700;
   --landing-orange-hover: #a93b00;
   --landing-success: #067454;
+  --landing-ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --landing-ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
   min-height: 100vh;
   overflow: hidden;
   color: var(--landing-ink);
@@ -74,6 +76,7 @@
 
 .landing-wordmark {
   display: inline-flex;
+  position: relative;
   align-items: center;
   gap: 0.55rem;
   color: var(--landing-ink);
@@ -83,8 +86,37 @@
   white-space: nowrap;
 }
 
-.landing-wordmark > span > span { color: #ff7a36; }
-.landing-wordmark svg { width: 1.8rem; height: 1.35rem; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; }
+.landing-wordmark__bridge { width: 1.8rem; height: 1.35rem; flex: 0 0 auto; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; }
+.landing-wordmark__name,
+.landing-wordmark__letters,
+.landing-wordmark__letter { display: inline-block; }
+.landing-wordmark__letter--bridge { color: #ff7a36; }
+
+.landing-wordmark--animated .landing-wordmark__bridge path {
+  transform-box: fill-box;
+  will-change: transform, opacity;
+}
+
+.landing-wordmark--animated .landing-wordmark__bridge-base {
+  transform-origin: left center;
+  animation: landing-wordmark-bridge-base 420ms var(--landing-ease-out) 80ms both;
+}
+
+.landing-wordmark--animated .landing-wordmark__bridge-pillars {
+  transform-origin: center bottom;
+  animation: landing-wordmark-bridge-pillars 430ms var(--landing-ease-out) 330ms both;
+}
+
+.landing-wordmark--animated .landing-wordmark__bridge-arch {
+  transform-origin: center bottom;
+  animation: landing-wordmark-bridge-arch 560ms var(--landing-ease-out) 620ms both;
+}
+
+.landing-wordmark--animated .landing-wordmark__letter {
+  animation: landing-wordmark-letter-drop 820ms var(--landing-ease-out) both;
+  animation-delay: var(--letter-drop-delay);
+  will-change: transform, opacity;
+}
 
 .landing-nav-links,
 .landing-nav-actions,
@@ -257,6 +289,35 @@
 
 @keyframes landing-spin { to { transform: rotate(360deg); } }
 
+@keyframes landing-wordmark-bridge-base {
+  from { opacity: 0; transform: scaleX(0.08); }
+  to { opacity: 1; transform: scaleX(1); }
+}
+
+@keyframes landing-wordmark-bridge-pillars {
+  from { opacity: 0; transform: translateY(0.16rem) scaleY(0.16); }
+  to { opacity: 1; transform: translateY(0) scaleY(1); }
+}
+
+@keyframes landing-wordmark-bridge-arch {
+  from { opacity: 0; transform: translateY(0.1rem) scale(0.14, 0.78); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@keyframes landing-wordmark-letter-drop {
+  from {
+    opacity: 0;
+    transform: translate3d(0, var(--letter-drop-y), 0) scale(0.96);
+  }
+  18% { opacity: 1; }
+  to { opacity: 1; transform: translate3d(0, 0, 0) scale(1); }
+}
+
+@keyframes landing-wordmark-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
 @media (max-width: 960px) {
   .landing-nav-links { display: none; }
   .landing-partner-list { grid-template-columns: 1fr 1fr; }
@@ -283,6 +344,21 @@
     animation-duration: 1ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 1ms !important;
+  }
+
+  .landing-wordmark--animated .landing-wordmark__name {
+    animation: landing-wordmark-fade 120ms var(--landing-ease-out) both !important;
+  }
+
+  .landing-wordmark--animated .landing-wordmark__bridge {
+    animation: landing-wordmark-fade 120ms var(--landing-ease-out) both !important;
+  }
+
+  .landing-wordmark--animated .landing-wordmark__bridge path,
+  .landing-wordmark--animated .landing-wordmark__letter {
+    animation: none !important;
+    transform: none !important;
+    will-change: auto;
   }
 }
 

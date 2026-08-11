@@ -21,6 +21,7 @@ reviewed, merged, and released. Reconcile this board whenever newer evidence exi
 |---|---|---|---|---|---|---|
 | DB-003 | P1 | Discovery | Finish versioned additional-work authorizations | Backend & Integrations | PR #196 merged at `e20fa1a` with implementation commit `a51f2af`; immutable revisions/finalization guard exist, but task validation found the portal action still depends on the staff-send flow | Architecture decides automatic vs staff-reviewed publication and any threshold policy; then run mechanic addition → customer prompt → approve/decline → invoice Playwright acceptance, Security GO, QA GO |
 | DB-015 | P0 | Frontend release authorized | Remediate WebSocket token logging | Security & Identity | Backend PR #259 merged as `277146526dd9b7f95d4ae6fe09dd683d558eb304` after all six protected CI contexts passed. Railway production web `b6881963-0864-43b2-9e7c-2f5c8396943a`, performance web `aa9052b9-649d-446d-afac-965125cf00f0`, and worker `5c73e3f2-02e0-462a-9597-334ccf019455` reached healthy state with repeated 200 probes and no 5xx, worker traceback, task failure, or credential value in the correlated application logs. Independent real-browser QA proved a legacy HttpOnly-cookie login and old `?token` client open/ping-pong against the new backend with the query value absent from logs. The only authorized production tab was a token-null WorkOS session: its 2026-08-11 reload remained authenticated, refreshed, loaded data, and produced zero console/log credential leaks, but the old frontend intentionally did not attempt WebSocket without a client token. Product explicitly accepted that production legacy-session limitation as covered by the exact pre-production compatibility gate; it was not run in production and must not be reported otherwise. | Ship the protected queryless frontend PR. After deployment, require the existing WorkOS session to produce a queryless staff WebSocket connection and ping/pong, bounded refresh/logout behavior, zero console/network/edge/application credential leakage, healthy web services, and unchanged worker deployment `5c73e3f2-02e0-462a-9597-334ccf019455`; roll back the frontend if any post-deploy gate fails. |
+| DB-032 | P2 | Ready to Release — independent QA GO | Animate the public DieselBridge wordmark on first page load | Frontend & UX | On `codex/db032-logo-motion`, exact application candidate `ee2b6e2698a60c9965ac9afd2d15c0541431253a` makes the bridge construct deck → pillars → arch across 1.18s while the twelve fixed-slot letters settle over 0.82s with deterministic 0.34–0.68s delays. The SVG box never moves, the footer remains static, and reduced motion uses a 120ms no-travel fade. Evidence: focused landing tests `27/27`, full frontend `173/173`, production build, exact changed-source ESLint, and diff-check passed; dedicated DB-032 Playwright `7/7` passed with natural-load sampling across 32 frames at 1366/390/320, zero clipped or colliding letters, fixed bridge bounds, all three ordered path animations, static footer, and no browser/runtime failures. Current midpoint captures are under `e2e/test-results/db032-natural-letter-drop-frame-{1366,390,320}.png`. Product received a fresh independent QA GO on exact `ee2b6e2`. No API, auth, tenant, data, backend, dependency, worker, or migration change. | PR #263 must carry this exact candidate plus the focused QA handoff, pass every protected CI context, and remain unmerged until Product gives new explicit release authority for the superseding motion change. No deployment is authorized. |
 
 ## Blocked
 
@@ -84,6 +85,32 @@ Copy this row into Inbox before implementation:
 
 For every active item, add links or identifiers for its branch/PR and record the
 last passing automated and runtime evidence in the item or associated issue.
+
+## DB-032 acceptance criteria
+
+- On the public landing page's first render, the header bridge constructs in a
+  deterministic sequence—deck, pillars, then arch—while all twelve
+  `DieselBridge` letters drop independently from varied heights and delays and
+  settle at their existing final positions without layout shift.
+- Every transformed letter box remains inside the header's vertical safe region
+  and inside its reserved horizontal slot throughout the entrance, with no
+  visible in-flight overlap at desktop or mobile widths.
+- The motion is a one-time explanatory brand moment. It uses compositor-safe
+  transform and opacity animation, an intentional ease-out movement curve,
+  and no ambient loop, bounce, or repeated animation after data updates.
+- Bridge construction is scoped to the animated header mark. The SVG box stays
+  fixed while its paths animate; the footer wordmark, authenticated application
+  logos, tenant logos, and all other brand surfaces remain static and unchanged.
+- The accessible name remains `Diesel Bridge Network`; the animation introduces
+  no duplicate announcement, focus change, interaction delay, or hidden content.
+- Reduced-motion users receive at most a brief opacity transition with no
+  positional travel. The final mark remains fully legible if CSS animation is
+  unsupported or interrupted.
+- Desktop and 390/320 mobile layouts retain their current dimensions, touch
+  targets, and zero horizontal overflow. No API, auth, tenant, data, backend,
+  dependency, worker, or migration change is introduced.
+- Focused tests, full frontend tests, production build, changed-file lint/diff,
+  and live browser inspection pass before independent QA.
 
 ## DB-015 acceptance criteria
 
