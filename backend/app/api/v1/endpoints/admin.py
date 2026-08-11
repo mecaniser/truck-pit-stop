@@ -35,6 +35,7 @@ from app.services.quickbooks_service import (
     is_quickbooks_configured,
 )
 from app.services.google_reviews_service import is_configured as is_google_reviews_configured
+from app.services.conversion_export_audit_service import record_conversion_audit
 from app.core.logging import get_logger
 from app.core.paid_invoice_webhook_crypto import (
     PaidInvoiceWebhookCryptoError,
@@ -970,9 +971,17 @@ class PaidInvoiceWebhookResponse(BaseModel):
 
 class PaidInvoiceWebhookUpdateRequest(BaseModel):
     enabled: bool
-    url: Optional[HttpUrl] = None
+    url: Optional[HttpUrl] = Field(None, max_length=2048)
     # Write-only: clients may rotate the secret, but can never retrieve it.
     signing_secret: Optional[str] = Field(None, min_length=16, max_length=512)
+
+
+def _paid_invoice_webhook_response(tenant: Tenant) -> PaidInvoiceWebhookResponse:
+    return PaidInvoiceWebhookResponse(
+        enabled=tenant.paid_invoice_webhook_enabled,
+        url=tenant.paid_invoice_webhook_url,
+        signing_secret_configured=bool(tenant.paid_invoice_webhook_secret_encrypted),
+    )
 
 
 class TaxFeeSettingsRequest(BaseModel):
@@ -1189,24 +1198,22 @@ async def update_tenant_settings(
 @router.get("/integrations/paid-invoice-webhook", response_model=PaidInvoiceWebhookResponse)
 async def get_paid_invoice_webhook(
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_garage_owner()),
+    current_user: User = Depends(require_permission("conversion_exports")),
 ):
     """Return the tenant's attribution-webhook status without exposing its secret."""
     tenant = await db.get(Tenant, current_user.tenant_id)
     if not tenant:
         raise HTTPException(status_code=404, detail="Tenant not found")
-    return PaidInvoiceWebhookResponse(
-        enabled=tenant.paid_invoice_webhook_enabled,
-        url=tenant.paid_invoice_webhook_url,
-        signing_secret_configured=bool(tenant.paid_invoice_webhook_secret_encrypted),
-    )
+    record_conversion_audit(db, tenant_id=tenant.id, actor_user_id=current_user.id, action="webhook_settings.viewed", target_type="tenant", target_id=tenant.id)
+    await db.commit()
+    return _paid_invoice_webhook_response(tenant)
 
 
 @router.put("/integrations/paid-invoice-webhook", response_model=PaidInvoiceWebhookResponse)
 async def update_paid_invoice_webhook(
     body: PaidInvoiceWebhookUpdateRequest,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_garage_owner()),
+    current_user: User = Depends(require_permission("conversion_exports")),
 ):
     """Configure signed repair-order conversion events for attribution tooling."""
     tenant = await db.get(Tenant, current_user.tenant_id)
@@ -1230,8 +1237,21 @@ async def update_paid_invoice_webhook(
         except PaidInvoiceWebhookCryptoError as exc:
             raise HTTPException(status_code=503, detail="Webhook secret encryption is not configured") from exc
     tenant.paid_invoice_webhook_enabled = body.enabled
+    record_conversion_audit(
+        db,
+        tenant_id=tenant.id,
+        actor_user_id=current_user.id,
+        action="webhook_settings.updated",
+        target_type="tenant",
+        target_id=tenant.id,
+        metadata={
+            "enabled": body.enabled,
+            "url_changed": body.url is not None,
+            "secret_rotated": body.signing_secret is not None,
+        },
+    )
     await db.commit()
-    return await get_paid_invoice_webhook(db=db, current_user=current_user)
+    return _paid_invoice_webhook_response(tenant)
 
 
 @router.post("/garage-profile/import-logo", response_model=GarageProfileResponse)
@@ -2197,7 +2217,7 @@ class StaffUpdate(BaseModel):
     email: Optional[EmailStr] = None
     phone: Optional[str] = None
     password: Optional[str] = None  # owner/admin sets a new password (reset)
-    # Settings grants (payments/taxes_fees/workforce); owner-only, admins-only targets
+    # Settings grants (including conversion_exports); owner-only, admins-only targets
     permissions: Optional[Dict[str, bool]] = None
 
 
@@ -2329,7 +2349,7 @@ async def update_staff(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Permission grants only apply to shop admins",
             )
-        allowed_keys = {"payments", "taxes_fees", "workforce"}
+        allowed_keys = {"payments", "taxes_fees", "workforce", "conversion_exports"}
         unknown = set(body.permissions) - allowed_keys
         if unknown:
             raise HTTPException(

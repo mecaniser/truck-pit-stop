@@ -4,8 +4,10 @@ from uuid import uuid4
 import hashlib
 
 import pytest
+from sqlalchemy import select
 
 from app.db.models.conversion_api_key import ConversionApiKey
+from app.db.models.conversion_export_audit import ConversionExportAudit
 from app.db.models.customer import Customer
 from app.db.models.invoice import Invoice, InvoiceStatus
 from app.db.models.repair_order import RepairOrder, RepairOrderStatus
@@ -34,6 +36,10 @@ async def test_export_api_is_tenant_isolated_and_contains_attribution(client, db
     assert body["total"] == 1
     assert body["items"][0]["attribution"]["utm_campaign"] == "campaign-one"
     assert body["items"][0]["customer"]["phone"] == "+15555550000"
+    audit = (await db_session.execute(select(ConversionExportAudit))).scalar_one()
+    assert audit.action == "paid_repair_orders.exported"
+    assert audit.actor_api_key_id is not None
+    assert "customer" not in audit.metadata_json
 
 
 @pytest.mark.asyncio

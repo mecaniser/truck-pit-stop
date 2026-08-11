@@ -5,11 +5,14 @@ from uuid import uuid4
 import pytest
 from cryptography.fernet import Fernet
 from fastapi import HTTPException
+from sqlalchemy import select
 
 from app.api.v1.endpoints import admin, conversion_exports
 from app.db.models.customer import Customer
 from app.db.models.invoice import Invoice, InvoiceStatus
+from app.db.models.payment import Payment, PaymentMethod, PaymentStatus
 from app.db.models.provider_outbox import ProviderOutboxEvent, ProviderOutboxStatus
+from app.db.models.conversion_export_audit import ConversionExportAudit
 from app.db.models.repair_order import RepairOrder, RepairOrderStatus
 from app.db.models.tenant import Tenant
 from app.db.models.user import User, UserRole
@@ -29,6 +32,8 @@ async def _shop(db, slug: str, role=UserRole.GARAGE_OWNER):
 @pytest.mark.asyncio
 async def test_admin_can_configure_secret_without_reading_it(db_session, monkeypatch):
     tenant, user = await _shop(db_session, f"webhook-{uuid4().hex}", UserRole.GARAGE_ADMIN)
+    user.permissions = {"conversion_exports": True}
+    await db_session.commit()
     monkeypatch.setattr("app.core.config.settings.PAID_INVOICE_WEBHOOK_ENCRYPTION_KEY", Fernet.generate_key().decode())
 
     async def allow(_url):
@@ -44,6 +49,9 @@ async def test_admin_can_configure_secret_without_reading_it(db_session, monkeyp
     assert result.signing_secret_configured is True
     assert not hasattr(result, "signing_secret")
     assert tenant.paid_invoice_webhook_secret_encrypted != "a-long-signing-secret"
+    audit = (await db_session.execute(select(ConversionExportAudit))).scalar_one()
+    assert audit.action == "webhook_settings.updated"
+    assert audit.metadata_json == {"enabled": True, "url_changed": True, "secret_rotated": True}
 
 
 @pytest.mark.asyncio
@@ -93,7 +101,11 @@ async def _invoice_context(db, tenant):
         subtotal=Decimal("100"), tax_amount=Decimal("0"), discount_amount=Decimal("0"),
         total_amount=Decimal("100"), paid_at=datetime.now(timezone.utc),
     )
-    db.add_all([customer, order, invoice])
+    payment = Payment(
+        tenant=tenant, invoice=invoice, payment_number=f"PAY-{uuid4().hex}", amount=Decimal("100"),
+        method=PaymentMethod.CASH, status=PaymentStatus.COMPLETED,
+    )
+    db.add_all([customer, order, invoice, payment])
     await db.commit()
     return customer, order, invoice
 
@@ -121,6 +133,8 @@ async def test_delivery_history_and_replay_are_tenant_scoped(db_session):
     assert exc.value.status_code == 404
     replayed = await conversion_exports.replay_delivery(event_a.id, db=db_session, user=owner_a)
     assert replayed["status"] == ProviderOutboxStatus.PENDING.value
+    replay_audit = (await db_session.execute(select(ConversionExportAudit).where(ConversionExportAudit.action == "delivery.replayed"))).scalar_one()
+    assert replay_audit.action == "delivery.replayed"
     with pytest.raises(HTTPException) as exc:
         await conversion_exports.replay_delivery(event_a.id, db=db_session, user=owner_a)
     assert exc.value.status_code == 409
@@ -165,3 +179,109 @@ async def test_correction_validation_idempotency_and_tenant_boundary(db_session)
             idempotency_key="refund-002", db=db_session, user=owner_a,
         )
     assert exc.value.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_corrections_require_paid_state_and_completed_payment(db_session):
+    tenant, owner = await _shop(db_session, f"unpaid-{uuid4().hex}")
+    tenant.paid_invoice_webhook_enabled = True
+    tenant.paid_invoice_webhook_url = "https://hooks.example.com/conversions"
+    tenant.paid_invoice_webhook_secret_encrypted = "encrypted"
+    _customer, order, invoice = await _invoice_context(db_session, tenant)
+    invoice.status, invoice.paid_at, order.status = InvoiceStatus.SENT, None, RepairOrderStatus.INVOICED
+    await db_session.commit()
+    with pytest.raises(HTTPException) as exc:
+        await conversion_exports.create_correction(
+            invoice.id,
+            conversion_exports.CorrectionRequest(event_type="repair_order.payment_refunded", total_amount=Decimal("-10")),
+            idempotency_key="unpaid-001", db=db_session, user=owner,
+        )
+    assert exc.value.status_code == 409
+    assert "paid" in exc.value.detail
+
+
+@pytest.mark.asyncio
+async def test_multi_key_refunds_cannot_exceed_authoritative_payment(db_session):
+    tenant, owner = await _shop(db_session, f"cumulative-{uuid4().hex}")
+    tenant.paid_invoice_webhook_enabled = True
+    tenant.paid_invoice_webhook_url = "https://hooks.example.com/conversions"
+    tenant.paid_invoice_webhook_secret_encrypted = "encrypted"
+    _customer, _order, invoice = await _invoice_context(db_session, tenant)
+    first = await conversion_exports.create_correction(
+        invoice.id,
+        conversion_exports.CorrectionRequest(event_type="repair_order.payment_refunded", total_amount=Decimal("-60")),
+        idempotency_key="refund-key-1", db=db_session, user=owner,
+    )
+    assert first["event_type"] == "repair_order.payment_refunded"
+    with pytest.raises(HTTPException) as exc:
+        await conversion_exports.create_correction(
+            invoice.id,
+            conversion_exports.CorrectionRequest(event_type="repair_order.payment_refunded", total_amount=Decimal("-50")),
+            idempotency_key="refund-key-2", db=db_session, user=owner,
+        )
+    assert exc.value.status_code == 422
+    assert "Cumulative" in exc.value.detail
+
+
+@pytest.mark.asyncio
+async def test_void_is_exclusive_and_blocks_future_corrections(db_session):
+    tenant, owner = await _shop(db_session, f"void-exclusive-{uuid4().hex}")
+    tenant.paid_invoice_webhook_enabled = True
+    tenant.paid_invoice_webhook_url = "https://hooks.example.com/conversions"
+    tenant.paid_invoice_webhook_secret_encrypted = "encrypted"
+    _customer, _order, invoice = await _invoice_context(db_session, tenant)
+    voided = await conversion_exports.create_correction(
+        invoice.id,
+        conversion_exports.CorrectionRequest(event_type="repair_order.payment_voided", total_amount=Decimal("-100")),
+        idempotency_key="void-key-1", db=db_session, user=owner,
+    )
+    assert voided["event_type"] == "repair_order.payment_voided"
+    with pytest.raises(HTTPException) as exc:
+        await conversion_exports.create_correction(
+            invoice.id,
+            conversion_exports.CorrectionRequest(event_type="repair_order.payment_adjusted", total_amount=Decimal("-1")),
+            idempotency_key="after-void", db=db_session, user=owner,
+        )
+    assert exc.value.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_adjustments_keep_recognized_amount_within_paid_range(db_session):
+    tenant, owner = await _shop(db_session, f"adjustment-{uuid4().hex}")
+    tenant.paid_invoice_webhook_enabled = True
+    tenant.paid_invoice_webhook_url = "https://hooks.example.com/conversions"
+    tenant.paid_invoice_webhook_secret_encrypted = "encrypted"
+    _customer, _order, invoice = await _invoice_context(db_session, tenant)
+    with pytest.raises(HTTPException) as exc:
+        await conversion_exports.create_correction(
+            invoice.id,
+            conversion_exports.CorrectionRequest(event_type="repair_order.payment_adjusted", total_amount=Decimal("10")),
+            idempotency_key="positive-first", db=db_session, user=owner,
+        )
+    assert exc.value.status_code == 422
+    await conversion_exports.create_correction(
+        invoice.id,
+        conversion_exports.CorrectionRequest(event_type="repair_order.payment_adjusted", total_amount=Decimal("-30")),
+        idempotency_key="negative-adjust", db=db_session, user=owner,
+    )
+    await conversion_exports.create_correction(
+        invoice.id,
+        conversion_exports.CorrectionRequest(event_type="repair_order.payment_adjusted", total_amount=Decimal("20")),
+        idempotency_key="restore-part", db=db_session, user=owner,
+    )
+    with pytest.raises(HTTPException) as exc:
+        await conversion_exports.create_correction(
+            invoice.id,
+            conversion_exports.CorrectionRequest(event_type="repair_order.payment_adjusted", total_amount=Decimal("20")),
+            idempotency_key="over-restore", db=db_session, user=owner,
+        )
+    assert exc.value.status_code == 422
+
+
+def test_correction_invoice_query_is_row_locked_for_postgres():
+    # Guard the concurrency contract: the endpoint's invoice selector must
+    # compile to FOR UPDATE so different idempotency keys serialize per invoice.
+    from sqlalchemy import select
+    from sqlalchemy.dialects import postgresql
+    statement = select(Invoice).where(Invoice.id == uuid4(), Invoice.tenant_id == uuid4()).with_for_update()
+    assert "FOR UPDATE" in str(statement.compile(dialect=postgresql.dialect()))

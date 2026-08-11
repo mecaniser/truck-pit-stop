@@ -14,8 +14,8 @@ from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.config import settings
-from app.core.paid_invoice_webhook_crypto import decrypt_paid_invoice_webhook_secret
-from app.core.webhook_destination import WebhookDestinationError, validate_webhook_destination
+from app.core.paid_invoice_webhook_crypto import PaidInvoiceWebhookCryptoError, decrypt_paid_invoice_webhook_secret
+from app.core.webhook_destination import WebhookDestinationError, resolve_webhook_destination
 from app.db.models.customer import Customer
 from app.db.models.invoice import Invoice, InvoiceStatus
 from app.db.models.provider_outbox import ProviderOutboxEvent, ProviderOutboxStatus
@@ -41,6 +41,25 @@ def _now() -> datetime:
 
 def _money(value) -> float:
     return float(Decimal(value or 0).quantize(Decimal("0.01")))
+
+
+def conversion_signature(secret: str, timestamp: str, body: bytes) -> str:
+    signed = timestamp.encode("ascii") + b"." + body
+    return hmac.new(secret.encode(), signed, hashlib.sha256).hexdigest()
+
+
+def verify_conversion_signature(*, secret: str, timestamp: str, body: bytes, signature: str, now: Optional[datetime] = None, tolerance_seconds: Optional[int] = None) -> bool:
+    try:
+        sent_at = int(timestamp)
+    except (TypeError, ValueError):
+        return False
+    current = int((now or _now()).timestamp())
+    tolerance = tolerance_seconds or settings.PAID_INVOICE_WEBHOOK_SIGNATURE_TOLERANCE_SECONDS
+    if abs(current - sent_at) > tolerance:
+        return False
+    supplied = signature.removeprefix("sha256=")
+    expected = conversion_signature(secret, timestamp, body)
+    return hmac.compare_digest(supplied, expected)
 
 
 def service_lines(invoice: Invoice) -> list[dict]:
@@ -140,20 +159,48 @@ def _retry_delay(attempt: int) -> timedelta:
 async def _deliver(tenant: Tenant, event: ProviderOutboxEvent) -> tuple[Optional[str], int]:
     if not tenant.paid_invoice_webhook_enabled or not tenant.paid_invoice_webhook_url or not tenant.paid_invoice_webhook_secret_encrypted:
         raise ProviderDeliveryError("Conversion webhook is disabled or incomplete", retryable=False)
+    body = json.dumps(event.payload, separators=(",", ":"), sort_keys=True).encode()
+    # Validate keyring/decryption before any network work. Operator crypto
+    # failures are classified separately by the worker and never charged to a
+    # receiver's retry budget.
+    secret = decrypt_paid_invoice_webhook_secret(tenant.paid_invoice_webhook_secret_encrypted)
     try:
-        await validate_webhook_destination(tenant.paid_invoice_webhook_url)
+        destination = await resolve_webhook_destination(tenant.paid_invoice_webhook_url)
     except WebhookDestinationError as exc:
         raise ProviderDeliveryError(str(exc), retryable=False) from exc
-    body = json.dumps(event.payload, separators=(",", ":"), sort_keys=True).encode()
-    secret = decrypt_paid_invoice_webhook_secret(tenant.paid_invoice_webhook_secret_encrypted)
-    signature = hmac.new(secret.encode(), body, hashlib.sha256).hexdigest()
+    timestamp = str(int(_now().timestamp()))
+    signature = conversion_signature(secret, timestamp, body)
     try:
         async with httpx.AsyncClient(
             timeout=httpx.Timeout(settings.PAID_INVOICE_WEBHOOK_TIMEOUT_SECONDS),
             follow_redirects=False,
             trust_env=False,
         ) as client:
-            response = await client.post(tenant.paid_invoice_webhook_url, content=body, headers={"Content-Type": "application/json", "User-Agent": "dieselbridge-conversion-webhook/1.0", "Idempotency-Key": event.idempotency_key, "X-DieselBridge-Event": event.event_type, "X-DieselBridge-Signature": f"sha256={signature}"})
+            response = None
+            last_connect_error = None
+            for address in destination.addresses:
+                pinned_url = httpx.URL(destination.original_url).copy_with(host=address)
+                try:
+                    response = await client.request(
+                        "POST",
+                        pinned_url,
+                        content=body,
+                        headers={
+                            "Host": destination.host_header,
+                            "Content-Type": "application/json",
+                            "User-Agent": "dieselbridge-conversion-webhook/1.0",
+                            "Idempotency-Key": event.idempotency_key,
+                            "X-DieselBridge-Event": event.event_type,
+                            "X-DieselBridge-Timestamp": timestamp,
+                            "X-DieselBridge-Signature": f"sha256={signature}",
+                        },
+                        extensions={"sni_hostname": destination.tls_hostname},
+                    )
+                    break
+                except (httpx.ConnectError, httpx.ConnectTimeout) as exc:
+                    last_connect_error = exc
+            if response is None:
+                raise ProviderDeliveryError("Webhook connection failed for all vetted addresses", retryable=True) from last_connect_error
         event.last_response_code = response.status_code
         if 300 <= response.status_code < 400:
             raise ProviderDeliveryError("Webhook redirects are not accepted", retryable=False)
@@ -179,7 +226,7 @@ async def _disable_and_notify(db: AsyncSession, tenant: Tenant, event: ProviderO
 async def process_due_paid_invoice_webhooks(*, session_factory: async_sessionmaker[AsyncSession] = AsyncSessionLocal, batch_size: Optional[int] = None) -> dict[str, int]:
     async with session_factory() as db:
         claims = await _claim(db, batch_size or settings.PROVIDER_OUTBOX_BATCH_SIZE)
-    result = {"claimed": len(claims), "succeeded": 0, "retried": 0, "dead": 0}
+    result = {"claimed": len(claims), "succeeded": 0, "retried": 0, "dead": 0, "configuration_blocked": 0}
     for event_id, token in claims:
         async with session_factory() as db:
             event = await db.get(ProviderOutboxEvent, event_id)
@@ -191,6 +238,15 @@ async def process_due_paid_invoice_webhooks(*, session_factory: async_sessionmak
                 event.status, event.completed_at, event.provider_message_id, event.last_response_code = ProviderOutboxStatus.SUCCEEDED.value, _now(), provider_id, code
                 event.last_error = None
                 result["succeeded"] += 1
+            except PaidInvoiceWebhookCryptoError:
+                # Operator/keyring failures are not receiver failures. Leave the
+                # event pending without consuming its delivery retry budget or
+                # disabling the tenant integration.
+                event.attempt_count = max(0, event.attempt_count - 1)
+                event.status = ProviderOutboxStatus.PENDING.value
+                event.available_at = _now() + timedelta(hours=1)
+                event.last_error = "Webhook secret configuration is unavailable"
+                result["configuration_blocked"] += 1
             except Exception as exc:
                 retryable = not isinstance(exc, ProviderDeliveryError) or exc.retryable
                 event.last_error = f"{type(exc).__name__}: {str(exc)[:500]}"

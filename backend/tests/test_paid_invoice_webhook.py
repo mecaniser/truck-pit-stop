@@ -21,6 +21,7 @@ from app.services.paid_invoice_webhook_service import (
     process_due_paid_invoice_webhooks,
 )
 from app.services.provider_outbox_service import ProviderDeliveryError
+from app.core.webhook_destination import ResolvedWebhookDestination
 
 
 @pytest.mark.asyncio
@@ -53,8 +54,8 @@ async def test_paid_invoice_event_is_signed(monkeypatch):
     sent = {}
     monkeypatch.setattr("app.core.config.settings.PAID_INVOICE_WEBHOOK_ENCRYPTION_KEY", Fernet.generate_key().decode())
 
-    async def allow_destination(_url):
-        return None
+    async def allow_destination(url):
+        return ResolvedWebhookDestination(url, "example.test", "example.test", ("93.184.216.34",))
 
     class Response:
         status_code = 202
@@ -63,8 +64,8 @@ async def test_paid_invoice_event_is_signed(monkeypatch):
     class Client:
         async def __aenter__(self): return self
         async def __aexit__(self, *_args): return None
-        async def post(self, url, *, content, headers):
-            sent.update(url=url, content=content, headers=headers)
+        async def request(self, method, url, *, content, headers, extensions):
+            sent.update(method=method, url=url, content=content, headers=headers, extensions=extensions)
             return Response()
 
     client_options = {}
@@ -73,7 +74,7 @@ async def test_paid_invoice_event_is_signed(monkeypatch):
         client_options.update(kwargs)
         return Client()
 
-    monkeypatch.setattr("app.services.paid_invoice_webhook_service.validate_webhook_destination", allow_destination)
+    monkeypatch.setattr("app.services.paid_invoice_webhook_service.resolve_webhook_destination", allow_destination)
     monkeypatch.setattr("app.services.paid_invoice_webhook_service.httpx.AsyncClient", client_factory)
     tenant = Tenant(name="Webhook Garage", slug=f"webhook-{uuid4().hex}", paid_invoice_webhook_enabled=True, paid_invoice_webhook_url="https://example.test/hook")
     tenant.paid_invoice_webhook_secret_encrypted = encrypt_paid_invoice_webhook_secret("webhook-test-secret")
@@ -82,6 +83,10 @@ async def test_paid_invoice_event_is_signed(monkeypatch):
 
     assert await _deliver(tenant, event) == ("receiver-123", 202)
     assert sent["headers"]["X-DieselBridge-Event"] == PAID_INVOICE_WEBHOOK_EVENT
+    assert sent["headers"]["X-DieselBridge-Timestamp"].isdigit()
+    assert sent["headers"]["Host"] == "example.test"
+    assert sent["extensions"]["sni_hostname"] == "example.test"
+    assert sent["url"].host == "93.184.216.34"
     assert sent["headers"]["X-DieselBridge-Signature"].startswith("sha256=")
     assert sent["headers"]["Idempotency-Key"] == "paid-invoice:test"
     assert client_options["follow_redirects"] is False
@@ -196,8 +201,8 @@ async def test_cross_tenant_resources_cannot_enter_conversion_outbox(_db_engine,
 async def test_webhook_redirect_is_rejected_without_following(monkeypatch):
     monkeypatch.setattr("app.core.config.settings.PAID_INVOICE_WEBHOOK_ENCRYPTION_KEY", Fernet.generate_key().decode())
 
-    async def allow_destination(_url):
-        return None
+    async def allow_destination(url):
+        return ResolvedWebhookDestination(url, "hooks.example.com", "hooks.example.com", ("93.184.216.34",))
 
     class Response:
         status_code = 302
@@ -206,9 +211,9 @@ async def test_webhook_redirect_is_rejected_without_following(monkeypatch):
     class Client:
         async def __aenter__(self): return self
         async def __aexit__(self, *_args): return None
-        async def post(self, *_args, **_kwargs): return Response()
+        async def request(self, *_args, **_kwargs): return Response()
 
-    monkeypatch.setattr("app.services.paid_invoice_webhook_service.validate_webhook_destination", allow_destination)
+    monkeypatch.setattr("app.services.paid_invoice_webhook_service.resolve_webhook_destination", allow_destination)
     monkeypatch.setattr("app.services.paid_invoice_webhook_service.httpx.AsyncClient", lambda **_kwargs: Client())
     tenant = Tenant(
         name="Redirect Target", slug=f"redirect-{uuid4().hex}", paid_invoice_webhook_enabled=True,

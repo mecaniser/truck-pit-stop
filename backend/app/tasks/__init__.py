@@ -58,6 +58,10 @@ celery_app.conf.update(
             "task": "process_paid_invoice_webhooks",
             "schedule": timedelta(seconds=10),
         },
+        "process-conversion-pii-retention-daily": {
+            "task": "process_conversion_pii_retention",
+            "schedule": crontab(hour=3, minute=15),
+        },
         "process-quickbooks-invoice-sync": {
             "task": "process_quickbooks_invoice_sync",
             "schedule": timedelta(seconds=30),

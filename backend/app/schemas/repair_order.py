@@ -1,4 +1,4 @@
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, Field, field_validator
 from typing import Optional, List
 from datetime import datetime
 from uuid import UUID
@@ -159,18 +159,18 @@ class RepairOrderBase(BaseModel):
     internal_notes: Optional[str] = None
     po_number: Optional[str] = None
     mileage_in: Optional[int] = None
-    lead_source_channel: Optional[str] = None
-    external_lead_id: Optional[str] = None
-    callrail_call_id: Optional[str] = None
-    google_click_id: Optional[str] = None
-    gbraid: Optional[str] = None
-    wbraid: Optional[str] = None
-    landing_page_url: Optional[str] = None
-    utm_source: Optional[str] = None
-    utm_medium: Optional[str] = None
-    utm_campaign: Optional[str] = None
-    utm_term: Optional[str] = None
-    utm_content: Optional[str] = None
+    lead_source_channel: Optional[str] = Field(None, max_length=64)
+    external_lead_id: Optional[str] = Field(None, max_length=255)
+    callrail_call_id: Optional[str] = Field(None, max_length=255)
+    google_click_id: Optional[str] = Field(None, max_length=255)
+    gbraid: Optional[str] = Field(None, max_length=255)
+    wbraid: Optional[str] = Field(None, max_length=255)
+    landing_page_url: Optional[str] = Field(None, max_length=2048)
+    utm_source: Optional[str] = Field(None, max_length=255)
+    utm_medium: Optional[str] = Field(None, max_length=255)
+    utm_campaign: Optional[str] = Field(None, max_length=255)
+    utm_term: Optional[str] = Field(None, max_length=255)
+    utm_content: Optional[str] = Field(None, max_length=255)
 
 
 class RepairOrderCreate(RepairOrderBase):
@@ -192,18 +192,18 @@ class RepairOrderUpdate(BaseModel):
     mileage_out: Optional[int] = None
     parent_repair_order_id: Optional[UUID] = None
     is_warranty_repair: Optional[bool] = None
-    lead_source_channel: Optional[str] = None
-    external_lead_id: Optional[str] = None
-    callrail_call_id: Optional[str] = None
-    google_click_id: Optional[str] = None
-    gbraid: Optional[str] = None
-    wbraid: Optional[str] = None
-    landing_page_url: Optional[str] = None
-    utm_source: Optional[str] = None
-    utm_medium: Optional[str] = None
-    utm_campaign: Optional[str] = None
-    utm_term: Optional[str] = None
-    utm_content: Optional[str] = None
+    lead_source_channel: Optional[str] = Field(None, max_length=64)
+    external_lead_id: Optional[str] = Field(None, max_length=255)
+    callrail_call_id: Optional[str] = Field(None, max_length=255)
+    google_click_id: Optional[str] = Field(None, max_length=255)
+    gbraid: Optional[str] = Field(None, max_length=255)
+    wbraid: Optional[str] = Field(None, max_length=255)
+    landing_page_url: Optional[str] = Field(None, max_length=2048)
+    utm_source: Optional[str] = Field(None, max_length=255)
+    utm_medium: Optional[str] = Field(None, max_length=255)
+    utm_campaign: Optional[str] = Field(None, max_length=255)
+    utm_term: Optional[str] = Field(None, max_length=255)
+    utm_content: Optional[str] = Field(None, max_length=255)
 
 
 class RepairOrderResponse(RepairOrderBase):

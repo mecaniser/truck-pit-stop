@@ -148,7 +148,7 @@ async def get_current_active_user(
 
 def user_has_permission(user: User, key: str) -> bool:
     """True if the user can access a gated settings surface (payments,
-    taxes_fees, workforce). Owners and super admins always pass; garage
+    taxes_fees, workforce, conversion_exports). Owners and super admins always pass; garage
     admins need an explicit grant in user.permissions; everyone else fails.
     """
     if user.role in (UserRole.SUPER_ADMIN, UserRole.GARAGE_OWNER):

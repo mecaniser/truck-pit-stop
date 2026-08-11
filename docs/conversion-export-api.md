@@ -14,12 +14,17 @@ notes. Attribution is locked when an order becomes invoiced or paid.
 
 ## Webhook configuration
 
-Owners/admins configure the HTTPS destination using
+Shop owners, and only admins explicitly granted the `conversion_exports`
+permission, configure the HTTPS destination using
 `PUT /api/v1/admin/integrations/paid-invoice-webhook`. The `signing_secret` is
 write-only and encrypted using `PAID_INVOICE_WEBHOOK_ENCRYPTION_KEY`.
 Destinations must resolve only to public Internet addresses. Credentials,
 localhost/private/link-local destinations, and redirects are rejected. The
 destination is checked both when it is saved and immediately before delivery.
+Delivery resolves once, rejects the full DNS answer if any address is
+non-public, then connects only to a vetted literal address while retaining the
+original TLS SNI/certificate hostname and HTTP `Host` authority. HTTPX/httpcore
+are pinned because that transport contract is security-sensitive.
 
 Paid invoices over $0 produce `repair_order.paid`. Deleted, unpaid, draft,
 completed-only, and $0 orders do not. Correction event types are
@@ -30,7 +35,13 @@ Every delivery includes:
 
 - `Idempotency-Key`, stable per financial transition
 - `X-DieselBridge-Event`
-- `X-DieselBridge-Signature: sha256=<HMAC-SHA256(raw body)>`
+- `X-DieselBridge-Timestamp`, Unix seconds
+- `X-DieselBridge-Signature: sha256=<HMAC-SHA256(timestamp + "." + raw body)>`
+
+Receivers must reject timestamps more than five minutes from their trusted
+clock, verify the signature before parsing the body, and deduplicate the event.
+This timestamp window prevents a captured signed request from being replayed
+indefinitely.
 
 Delivery is at-least-once with exponential retry. Consumers must deduplicate on
 `event_id` or `Idempotency-Key`. After the configured maximum failures, the
@@ -46,11 +57,21 @@ Correction requests require an `Idempotency-Key` header; retries with the same
 key return the original correction event instead of creating another reversal.
 The key is tenant-wide for corrections and cannot be reused with a different
 invoice, event type, or amount. Refund and void amounts are negative; a void
-must reverse the full invoice total and a refund cannot exceed that total.
+must exclusively reverse the authoritative completed-payment amount. The
+invoice and repair order must still be paid, cumulative refunds cannot exceed
+completed positive payments, no correction may follow a void, and adjustments
+must keep recognized payment between zero and the authoritative paid amount.
+The invoice row is locked while all existing correction keys are evaluated, so
+concurrent keys cannot independently exceed those bounds.
 
 This release intentionally exposes webhook settings and conversion API-key
 administration through the API only. A settings screen is outside DB-002 and
 must be tracked as a separate product/UI outcome rather than implied here.
+
+Webhook configuration, API-key creation/revocation, conversion exports,
+delivery replay, and correction creation are recorded in the append-only
+`conversion_export_audits` table. Audit metadata excludes customer contact,
+webhook bodies, raw API keys, and signing secrets.
 
 Delivery history records status, creation/completion/last-attempt timestamps,
 HTTP response code, retry count, and a bounded non-PII error message.
@@ -75,15 +96,32 @@ it is authorized to use, disclose marketing/measurement processing in its
 privacy notice, honor opt-out/deletion obligations applicable to it, restrict
 destination access, and set an appropriate retention period. DieselBridge logs
 delivery metadata and bounded errors—not webhook bodies or customer contact.
+Completed/dead outbox payloads are automatically reduced to non-contact event
+metadata after `CONVERSION_OUTBOX_PII_RETENTION_DAYS` (30 by default). The
+customer-erasure service removes contact, attribution URLs, and free-form
+service lines immediately for a tenant/customer privacy request. Operators
+dry-run `python -m app.commands.erase_conversion_event_pii --tenant-id ...
+--customer-id ...` and repeat with `--apply` after verifying the exact scope.
+Redacted dead-letter events remain visible as delivery metadata but cannot be
+replayed because their original signed payload no longer exists.
 
 ## Deployment gate
 
-Before enabling the first shop webhook, store one generated Fernet key as
-`PAID_INVOICE_WEBHOOK_ENCRYPTION_KEY` on every backend/worker environment that
-encrypts or decrypts webhook secrets. Losing or rotating that key without a
-re-encryption plan makes stored signing secrets unreadable. Confirm the Celery
+Before enabling the first shop webhook, store a JSON versioned Fernet keyring
+as `PAID_INVOICE_WEBHOOK_ENCRYPTION_KEYS` and name the write key with
+`PAID_INVOICE_WEBHOOK_ACTIVE_KEY_VERSION` on every backend/worker environment.
+The single `PAID_INVOICE_WEBHOOK_ENCRYPTION_KEY` remains a legacy bootstrap
+fallback only. Losing an old key before re-encryption makes its stored signing
+secrets unreadable.
+
+Rotation order: deploy the old+new keyring everywhere, switch the active
+version, dry-run `python -m app.commands.rotate_conversion_webhook_secrets`,
+then apply with `--apply`. Remove an old key only after the apply run and a
+delivery canary succeed. Crypto/keyring failures leave events pending without
+consuming receiver retries or disabling the shop. Confirm the Celery
 worker registers `process_paid_invoice_webhooks`, Celery beat schedules
-`process-paid-invoice-webhooks`, and a non-production signed delivery reaches a
-public test receiver. Application validation blocks non-public destinations and
-redirects; the production network should also deny backend egress to private,
+`process-paid-invoice-webhooks` and daily `process_conversion_pii_retention`,
+and a non-production signed delivery reaches a public test receiver.
+Application validation and connection pinning block non-public destinations
+and redirects; the production network must also deny backend egress to private,
 link-local, and metadata address ranges as defense in depth.

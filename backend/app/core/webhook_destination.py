@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import ipaddress
 import socket
+from dataclasses import dataclass
 from urllib.parse import urlsplit
 
 import anyio
@@ -10,6 +11,14 @@ import anyio
 
 class WebhookDestinationError(ValueError):
     """Raised when a webhook destination could reach a non-public network."""
+
+
+@dataclass(frozen=True)
+class ResolvedWebhookDestination:
+    original_url: str
+    tls_hostname: str
+    host_header: str
+    addresses: tuple[str, ...]
 
 
 def _resolve_public_addresses(hostname: str, port: int) -> set[str]:
@@ -31,7 +40,7 @@ def _resolve_public_addresses(hostname: str, port: int) -> set[str]:
     return addresses
 
 
-async def validate_webhook_destination(url: str) -> None:
+async def resolve_webhook_destination(url: str) -> ResolvedWebhookDestination:
     """Require HTTPS and reject credentials, local names, and non-public DNS results.
 
     This validation is repeated immediately before every request so a destination
@@ -62,4 +71,20 @@ async def validate_webhook_destination(url: str) -> None:
         port = parsed.port or 443
     except ValueError as exc:
         raise WebhookDestinationError("Webhook destination has an invalid port") from exc
-    await anyio.to_thread.run_sync(_resolve_public_addresses, hostname, port)
+    addresses = await anyio.to_thread.run_sync(_resolve_public_addresses, hostname, port)
+    tls_hostname = hostname.encode("idna").decode("ascii")
+    if literal and literal.version == 6:
+        authority_host = f"[{hostname}]"
+    else:
+        authority_host = tls_hostname
+    host_header = authority_host if port == 443 else f"{authority_host}:{port}"
+    return ResolvedWebhookDestination(
+        original_url=url,
+        tls_hostname=tls_hostname,
+        host_header=host_header,
+        addresses=tuple(sorted(addresses)),
+    )
+
+
+async def validate_webhook_destination(url: str) -> None:
+    await resolve_webhook_destination(url)
