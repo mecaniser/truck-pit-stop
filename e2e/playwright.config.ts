@@ -1,8 +1,8 @@
 import { defineConfig, devices } from '@playwright/test'
 
-const backendCommand = process.env.CI
-  ? 'cd ../backend && python -m uvicorn app.main:app --host 127.0.0.1 --port 8000'
-  : 'cd ../backend && venv/bin/python -m uvicorn app.main:app --host 127.0.0.1 --port 8000'
+const backendPython = process.env.CI ? 'python' : 'venv/bin/python'
+const backendCommand = `mkdir -p test-results && cd ../backend && exec ${backendPython} -m uvicorn app.main:app --host 127.0.0.1 --port 8000 > ../e2e/test-results/backend-server.log 2>&1`
+const frontendCommand = 'mkdir -p test-results && cd ../frontend && exec npm run dev -- --host 127.0.0.1 > ../e2e/test-results/frontend-server.log 2>&1'
 
 export default defineConfig({
   testDir: './tests',
@@ -31,7 +31,7 @@ export default defineConfig({
       reuseExistingServer: !process.env.CI,
     },
     {
-      command: 'cd ../frontend && npm run dev -- --host 127.0.0.1',
+      command: frontendCommand,
       port: 5173,
       timeout: 30_000,
       reuseExistingServer: !process.env.CI,

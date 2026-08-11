@@ -140,8 +140,18 @@ jobs:
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
     env:
       DATABASE_URL: postgresql+asyncpg://postgres:postgres@127.0.0.1:5432/playwright_ci
+      REDIS_URL: redis://127.0.0.1:6379/0
       SECRET_KEY: playwright-ci-only-secret-key-0000000000000000
       ENVIRONMENT: test
       WORKOS_AUTH_ENABLED: 'false'
@@ -151,7 +161,9 @@ jobs:
         with:
           python-version: '3.11'
           cache: pip
-          cache-dependency-path: backend/requirements-dev.txt
+          cache-dependency-path: |
+            backend/requirements-dev.txt
+            backend/constraints-test.txt
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
@@ -162,7 +174,7 @@ jobs:
       - name: Install backend dependencies
         run: |
           python -m pip install --upgrade pip
-          python -m pip install -r backend/requirements-dev.txt
+          python -m pip install -r backend/requirements-dev.txt -c backend/constraints-test.txt
       - name: Install frontend dependencies
         working-directory: frontend
         run: npm ci
@@ -177,11 +189,13 @@ jobs:
       - name: Run Playwright smoke suite
         working-directory: e2e
         run: npm run test:smoke
-      - name: Upload Playwright report on failure
+      - name: Upload Playwright diagnostics on failure
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: playwright-smoke-report
-          path: e2e/playwright-report/
+          name: playwright-smoke-diagnostics
+          path: |
+            e2e/playwright-report/
+            e2e/test-results/
           if-no-files-found: ignore
           retention-days: 7
