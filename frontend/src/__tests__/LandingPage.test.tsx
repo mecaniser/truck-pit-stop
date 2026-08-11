@@ -98,6 +98,19 @@ describe('LandingPage shop workflow', () => {
 
     expect(screen.getByRole('heading', { name: 'Every repair, moving in one clear flow.' })).toBeInTheDocument()
     expect(screen.getAllByRole('link', { name: /apply for founding shop access/i }).length).toBeGreaterThan(0)
+    expect(screen.getByText('Illustrative sample')).toBeInTheDocument()
+    expect(screen.getByText('Fictional repair-order data')).toBeInTheDocument()
+    expect(screen.getByText('RO-2025-0417')).toBeInTheDocument()
+    expect(screen.getAllByText('NorthStar Logistics').length).toBeGreaterThan(0)
+    expect(screen.getByText('412,358 mi')).toBeInTheDocument()
+    const taxableSubtotal = 1250 + 2875.42 + 85
+    const calculatedTax = Number((taxableSubtotal * 0.0675).toFixed(2))
+    expect(calculatedTax).toBe(284.2)
+    expect(taxableSubtotal + calculatedTax).toBeCloseTo(4494.62, 2)
+    expect(screen.getByText('Tax (6.75%)').parentElement).toHaveTextContent('$284.20')
+    expect(screen.getAllByText('$4,494.62').length).toBeGreaterThan(0)
+    expect(screen.getByText(/INV-2025-0417 is ready to send/i)).toBeInTheDocument()
+    expect(screen.getByText('ACH •••• 5521')).toBeInTheDocument()
     expect((await screen.findAllByText(/truck sparking hub application/i)).length).toBeGreaterThan(0)
     expect((await screen.findAllByText(/mcdiesel/i)).length).toBeGreaterThan(0)
     expect(await screen.findByText('Roadside repair, diagnostics')).toBeInTheDocument()
@@ -112,7 +125,9 @@ describe('LandingPage shop workflow', () => {
     expect(screen.getByRole('button', { name: 'Invoice' })).toHaveAttribute('aria-pressed', 'true')
     expect(screen.getByRole('heading', { name: 'Carry completed work into the invoice.' })).toBeInTheDocument()
     expect(screen.getByText('Next action')).toBeInTheDocument()
-    expect(screen.getByText('Create invoice')).toBeInTheDocument()
+    expect(screen.getByText('Invoice ready to send')).toBeInTheDocument()
+    expect(document.querySelector('.landing-context-sheet--invoice')).toHaveClass('is-active')
+    expect(document.querySelector('.landing-connector--invoice')).toHaveClass('is-active')
   })
 
   it('distinguishes partner loading failure and offers recovery', async () => {
