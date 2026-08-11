@@ -344,7 +344,7 @@ export default function PortalDashboardPage() {
                 <Link
                   to={`/portal/invoices/${selected[0].invoice.id}`}
                   state={{ paymentOrigin: 'Dashboard', invoiceQueue: selected.map(item => item.invoice.id) }}
-                  className="inline-flex h-[34px] items-center rounded-lg bg-[#8b7cf7] px-3.5 text-xs font-extrabold text-[#0e1118]"
+                  className="inline-flex h-[44px] items-center rounded-lg bg-[#8b7cf7] px-3.5 text-xs font-extrabold text-[#0e1118] sm:h-[34px]"
                 >
                   Pay {selected.length} · {formatMoney(selectedTotal)}
                 </Link>
@@ -355,7 +355,7 @@ export default function PortalDashboardPage() {
                   setSelecting(current => !current)
                   setSelectedIds([])
                 }}
-                className="h-[34px] rounded-lg border border-[#8b7cf7] bg-[#8b7cf7]/10 px-3.5 text-xs font-extrabold text-[#c9bfff]"
+                className="h-[44px] rounded-lg border border-[#8b7cf7] bg-[#8b7cf7]/10 px-3.5 text-xs font-extrabold text-[#c9bfff] sm:h-[34px]"
               >
                 {selecting ? 'Done' : 'Select & pay'}
               </button>
@@ -399,7 +399,7 @@ export default function PortalDashboardPage() {
                       <Link
                         to={`/portal/invoices/${invoice.id}`}
                         state={{ paymentOrigin: 'Dashboard' }}
-                        className="flex h-[34px] items-center justify-center rounded-lg bg-[#8b7cf7] px-4 text-xs font-extrabold text-[#0e1118]"
+                        className="flex h-[44px] items-center justify-center rounded-lg bg-[#8b7cf7] px-4 text-xs font-extrabold text-[#0e1118] sm:h-[34px]"
                       >
                         Pay
                       </Link>
