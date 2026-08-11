@@ -92,7 +92,8 @@ class ConnectionManager:
         async with self._lock:
             # Check rate limit
             if not self._check_rate_limit(user_id):
-                await websocket.close(code=4029, reason="Too many connection attempts")
+                await websocket.accept()
+                await websocket.close(code=4029, reason="Try again later")
                 return False
             
             # Initialize tenant dict if needed
@@ -107,7 +108,7 @@ class ConnectionManager:
                 # Close oldest connection to make room
                 oldest = current_connections.pop(0)
                 try:
-                    await oldest.close(code=4008, reason="Connection replaced by new session")
+                    await oldest.close(code=4008, reason="Connection policy")
                 except Exception:
                     pass
                 logger.info(f"Closed oldest connection for user {user_id} (limit reached)")
@@ -131,7 +132,8 @@ class ConnectionManager:
         async with self._lock:
             # Check rate limit
             if not self._check_rate_limit(f"customer:{customer_id}"):
-                await websocket.close(code=4029, reason="Too many connection attempts")
+                await websocket.accept()
+                await websocket.close(code=4029, reason="Try again later")
                 return False
             
             # Check connection limit
@@ -140,7 +142,7 @@ class ConnectionManager:
                 # Close oldest connection to make room
                 oldest = current_connections.pop(0)
                 try:
-                    await oldest.close(code=4008, reason="Connection replaced by new session")
+                    await oldest.close(code=4008, reason="Connection policy")
                 except Exception:
                     pass
                 logger.info(f"Closed oldest connection for customer {customer_id} (limit reached)")

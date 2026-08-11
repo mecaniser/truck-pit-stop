@@ -24,6 +24,7 @@ from app.core.redis import (
     delete_password_reset_token,
 )
 from app.core.config import settings
+from app.core.correlation import normalize_correlation_id
 from app.core.rate_limit import limiter
 from app.core.metrics import record_login, record_logout
 from app.core.phone import normalize_phone
@@ -321,7 +322,9 @@ async def workos_callback(request: Request, code: str, state: Optional[str] = No
         # Persist only the fail-closed review marker/audit written by the
         # resolver. No local identity, DriverProfile, or session is activated.
         await db.commit()
-        correlation_id = getattr(request.state, "correlation_id", "unknown")
+        correlation_id = normalize_correlation_id(
+            getattr(request.state, "correlation_id", None)
+        )
         logger.warning(
             "workos_identity_review_required",
             invitation_id=str(exc.invitation_id),

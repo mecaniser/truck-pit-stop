@@ -10,8 +10,18 @@ from app.core.dependencies import get_db, get_token_from_request
 from app.core.redis import get_auth_token_state
 from app.core.security import decode_token
 from app.db.models.tenant import Tenant
-from app.db.models.user import User
+from app.db.models.user import User, UserRole
 from app.db.models.identity import ExternalIdentity, IdentityPrincipal, TenantMembership
+
+
+WORKOS_ROLE_TO_USER_ROLE = {
+    "garage_owner": UserRole.GARAGE_OWNER,
+    "garage_admin": UserRole.GARAGE_ADMIN,
+    "fleet_manager": UserRole.FLEET_MANAGER,
+    "mechanic": UserRole.MECHANIC,
+    "receptionist": UserRole.RECEPTIONIST,
+    "driver": UserRole.DRIVER,
+}
 
 
 @dataclass(frozen=True)
@@ -69,21 +79,31 @@ async def get_current_principal(
     external = (await db.execute(select(ExternalIdentity).where(
         ExternalIdentity.provider == "workos",
         ExternalIdentity.provider_subject == workos_user_id,
+        ExternalIdentity.status == "active",
         ExternalIdentity.deleted_at.is_(None),
     ))).scalar_one_or_none()
-    if external:
-        membership = (await db.execute(
-            select(TenantMembership)
-            .join(IdentityPrincipal, IdentityPrincipal.id == TenantMembership.principal_id)
-            .where(
-                TenantMembership.principal_id == external.principal_id,
-                TenantMembership.tenant_id == tenant.id,
-                TenantMembership.status == "active",
-                TenantMembership.deleted_at.is_(None),
-                IdentityPrincipal.user_id == user.id,
-                IdentityPrincipal.status == "active",
-            )
-        )).scalar_one_or_none()
-        if not membership:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="WorkOS membership is inactive")
+    if not external:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="WorkOS membership is inactive")
+    membership = (await db.execute(
+        select(TenantMembership)
+        .join(IdentityPrincipal, IdentityPrincipal.id == TenantMembership.principal_id)
+        .where(
+            TenantMembership.principal_id == external.principal_id,
+            TenantMembership.tenant_id == tenant.id,
+            TenantMembership.provider == "workos",
+            TenantMembership.status == "active",
+            TenantMembership.deleted_at.is_(None),
+            IdentityPrincipal.user_id == user.id,
+            IdentityPrincipal.status == "active",
+            IdentityPrincipal.deleted_at.is_(None),
+        )
+    )).scalar_one_or_none()
+    if not membership:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="WorkOS membership is inactive")
+    mapped_role = WORKOS_ROLE_TO_USER_ROLE.get(membership.role_slug)
+    if mapped_role is None or user.role != mapped_role:
+        # A provider role update and its local projection are not atomic. Deny
+        # the session during any divergence rather than granting either side's
+        # broader authority. Live WebSocket revalidation uses this same path.
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="WorkOS membership role is inconsistent")
     return CurrentPrincipal(user.id, workos_user_id, workos_org_id, tenant.id, frozenset(permissions))

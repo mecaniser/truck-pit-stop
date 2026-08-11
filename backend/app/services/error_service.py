@@ -15,7 +15,9 @@ from sqlalchemy import select, func, desc, and_, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
+from app.core.correlation import normalize_optional_correlation_id
 from app.core.logging import get_logger
+from app.core.redaction import redact_sensitive, redact_text
 from app.db.models.error_log import ErrorLog, ErrorCategory, ErrorSeverity
 from app.db.session import AsyncSessionLocal
 
@@ -39,34 +41,11 @@ def _persistence_semaphore() -> asyncio.BoundedSemaphore:
     return semaphore
 
 
-# Sensitive fields to strip from request context
-SENSITIVE_FIELDS = {
-    "password", "token", "secret", "api_key", "apikey", "authorization",
-    "cookie", "session", "credit_card", "card_number", "cvv", "ssn",
-    "hashed_password", "access_token", "refresh_token"
-}
-
-
 def sanitize_context(data: dict) -> dict:
-    """Remove sensitive fields from request context."""
+    """Recursively remove sensitive fields and URL-embedded credentials."""
     if not data:
         return {}
-    
-    sanitized = {}
-    for key, value in data.items():
-        key_lower = key.lower()
-        if any(sensitive in key_lower for sensitive in SENSITIVE_FIELDS):
-            sanitized[key] = "[REDACTED]"
-        elif isinstance(value, dict):
-            sanitized[key] = sanitize_context(value)
-        elif isinstance(value, list):
-            sanitized[key] = [
-                sanitize_context(item) if isinstance(item, dict) else item
-                for item in value
-            ]
-        else:
-            sanitized[key] = value
-    return sanitized
+    return redact_sensitive(data)
 
 
 async def log_error(
@@ -97,17 +76,25 @@ async def log_error(
     async def _persist() -> ErrorLog:
         async with _persistence_semaphore():
             error_log = ErrorLog(
-                error_type=error_type,
-                message=message[:10000] if message else "No message",  # Truncate very long messages
+                error_type=redact_text(error_type),
+                message=(
+                    redact_text(message)[:10000]
+                    if message
+                    else "No message"
+                ),
                 error_category=category.value if hasattr(category, 'value') else category,
                 severity=severity.value if hasattr(severity, 'value') else severity,
-                correlation_id=correlation_id,
-                endpoint=endpoint,
-                method=method,
+                correlation_id=normalize_optional_correlation_id(correlation_id),
+                endpoint=redact_text(endpoint) if endpoint else None,
+                method=redact_text(method) if method else None,
                 status_code=status_code,
                 user_id=user_id,
                 tenant_id=tenant_id,
-                stack_trace=stack_trace[:50000] if stack_trace else None,  # Truncate very long traces
+                stack_trace=(
+                    redact_text(stack_trace)[:50000]
+                    if stack_trace
+                    else None
+                ),
                 request_context=sanitize_context(request_context) if request_context else None,
             )
 
@@ -134,8 +121,8 @@ async def log_error(
         # Don't let error logging failures break the app
         logger.error(
             "failed_to_persist_error",
-            error_type=error_type,
-            persistence_error=str(exc),
+            error_type=redact_text(error_type),
+            persistence_error=redact_text(str(exc)),
         )
         return None
     finally:

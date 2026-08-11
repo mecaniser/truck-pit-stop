@@ -6,6 +6,7 @@ from contextlib import suppress
 from fastapi.responses import JSONResponse
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
+from app.core.correlation import normalize_correlation_id
 from app.core.logging import get_logger
 
 logger = get_logger(__name__)
@@ -36,8 +37,8 @@ class TimeoutMiddleware:
         if isinstance(state, dict):
             correlation_id = state.get("correlation_id")
             if correlation_id:
-                return str(correlation_id)
-        return "unknown"
+                return normalize_correlation_id(correlation_id)
+        return normalize_correlation_id(None)
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         if not self._should_apply(scope):
