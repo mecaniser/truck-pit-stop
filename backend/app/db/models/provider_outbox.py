@@ -55,3 +55,5 @@ class ProviderOutboxEvent(BaseModel):
     completed_at = Column(DateTime(timezone=True), nullable=True)
     provider_message_id = Column(String(255), nullable=True)
     last_error = Column(Text, nullable=True)
+    last_attempt_at = Column(DateTime(timezone=True), nullable=True)
+    last_response_code = Column(Integer, nullable=True)

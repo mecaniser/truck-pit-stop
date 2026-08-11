@@ -78,6 +78,7 @@ from app.db.models.fleet import (
 )
 from app.db.models.description_library import DescriptionLibraryEntry
 from app.db.models.provider_outbox import ProviderOutboxEvent, ProviderOutboxStatus
+from app.db.models.conversion_api_key import ConversionApiKey
 from app.db.models.repair_order_history import RepairOrderHistoryEvent
 from app.db.models.quickbooks_connection import QuickBooksConnection, QuickBooksOAuthState, QuickBooksWebhookEvent
 from app.db.models.stripe_oauth import StripeOAuthState
@@ -167,6 +168,7 @@ __all__ = [
     "DescriptionLibraryEntry",
     "ProviderOutboxEvent",
     "ProviderOutboxStatus",
+    "ConversionApiKey",
     "RepairOrderHistoryEvent",
     "QuickBooksConnection",
     "QuickBooksOAuthState",

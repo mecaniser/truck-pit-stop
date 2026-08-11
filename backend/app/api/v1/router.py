@@ -1,5 +1,5 @@
 from fastapi import APIRouter
-from app.api.v1.endpoints import auth, workos_lifecycle, customers, vehicles, repair_orders, inventory, dashboard, services, appointments, payments, mechanics, suppliers, quotes, invoices, stripe_connect, stripe_webhooks, quickbooks, google_reviews, admin, platform_payments, websocket, invoice_access, messages, twilio_webhooks, fleet, driver_accountability, labor_book_time, activity, reports
+from app.api.v1.endpoints import auth, workos_lifecycle, customers, vehicles, repair_orders, inventory, dashboard, services, appointments, payments, mechanics, suppliers, quotes, invoices, stripe_connect, stripe_webhooks, quickbooks, google_reviews, admin, platform_payments, websocket, invoice_access, messages, twilio_webhooks, fleet, driver_accountability, labor_book_time, activity, reports, conversion_exports
 
 api_router = APIRouter()
 
@@ -17,6 +17,7 @@ api_router.include_router(invoice_access.router, prefix="/invoice-access", tags=
 api_router.include_router(inventory.router, prefix="/inventory", tags=["inventory"])
 api_router.include_router(dashboard.router, prefix="/dashboard", tags=["dashboard"])
 api_router.include_router(reports.router, prefix="/reports", tags=["reports"])
+api_router.include_router(conversion_exports.router, prefix="/conversion-exports", tags=["conversion-exports"])
 api_router.include_router(activity.router, prefix="/activity", tags=["activity"])
 api_router.include_router(services.router, prefix="/services", tags=["services"])
 api_router.include_router(labor_book_time.router, prefix="/labor-book-time", tags=["labor-book-time"])

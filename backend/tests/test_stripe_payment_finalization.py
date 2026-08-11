@@ -12,6 +12,7 @@ from app.db.models.invoice import Invoice, InvoiceStatus
 from app.db.models.payment import Payment, PaymentMethod, PaymentStatus
 from app.db.models.repair_order import RepairOrder, RepairOrderStatus
 from app.db.models.tenant import Tenant
+from app.db.models.provider_outbox import ProviderOutboxEvent
 from app.services import stripe_payment_finalization as svc
 
 
@@ -117,6 +118,9 @@ def _entities():
 @pytest.mark.asyncio
 async def test_finalize_stripe_invoice_payment_creates_payment_and_marks_paid(monkeypatch):
     tenant, customer, order, invoice = _entities()
+    tenant.paid_invoice_webhook_enabled = True
+    tenant.paid_invoice_webhook_url = "https://example.test/conversions"
+    tenant.paid_invoice_webhook_secret_encrypted = "encrypted-test-secret"
     fake_db = _FinalizeSession()
     broadcasts: list[tuple[str, dict]] = []
     emails: list[dict] = []
@@ -175,11 +179,18 @@ async def test_finalize_stripe_invoice_payment_creates_payment_and_marks_paid(mo
     assert payment.stripe_platform_fee_amount == Decimal("1.55")
     assert len(broadcasts) == 2
     assert len(emails) == 1
+    events = [obj for obj in fake_db.added if isinstance(obj, ProviderOutboxEvent)]
+    assert len(events) == 1
+    assert events[0].event_type == "repair_order.paid"
+    assert events[0].payload["repair_order_id"] == "RO-STRIPE"
 
 
 @pytest.mark.asyncio
 async def test_finalize_stripe_invoice_payment_is_idempotent_for_existing_intent(monkeypatch):
     tenant, customer, order, invoice = _entities()
+    tenant.paid_invoice_webhook_enabled = True
+    tenant.paid_invoice_webhook_url = "https://example.test/conversions"
+    tenant.paid_invoice_webhook_secret_encrypted = "encrypted-test-secret"
     invoice.status = InvoiceStatus.PAID
     existing = Payment(
         tenant_id=invoice.tenant_id,

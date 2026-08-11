@@ -54,6 +54,10 @@ celery_app.conf.update(
             "task": "process_provider_outbox",
             "schedule": timedelta(seconds=10),
         },
+        "process-paid-invoice-webhooks": {
+            "task": "process_paid_invoice_webhooks",
+            "schedule": timedelta(seconds=10),
+        },
         "process-quickbooks-invoice-sync": {
             "task": "process_quickbooks_invoice_sync",
             "schedule": timedelta(seconds=30),

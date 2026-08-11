@@ -184,6 +184,9 @@ class Settings(BaseSettings):
     PROVIDER_OUTBOX_RETRY_BASE_SECONDS: int = Field(default=30, ge=1, le=3600)
     PROVIDER_OUTBOX_RETRY_MAX_SECONDS: int = Field(default=900, ge=1, le=86400)
     PROVIDER_OUTBOX_EMAIL_TIMEOUT_SECONDS: float = Field(default=20.0, gt=0, le=60)
+    PAID_INVOICE_WEBHOOK_TIMEOUT_SECONDS: float = Field(default=10.0, gt=0, le=30)
+    # Fernet key used only for customer-configured outbound webhook secrets.
+    PAID_INVOICE_WEBHOOK_ENCRYPTION_KEY: str = ""
     
     # Cloudinary (for work photos)
     CLOUDINARY_CLOUD_NAME: str = ""

@@ -21,6 +21,7 @@ from app.db.models.tenant import Tenant
 from app.db.models.vehicle import Vehicle
 from app.services.invoice_notification_service import send_invoice_payment_confirmation_email
 from app.services.payment_number_service import allocate_next_payment_number
+from app.services.paid_invoice_webhook_service import enqueue_paid_invoice_webhook
 
 logger = get_logger(__name__)
 
@@ -160,6 +161,13 @@ async def finalize_stripe_invoice_payment(
         notes=payment_note,
     )
     db.add(payment)
+    await enqueue_paid_invoice_webhook(
+        db,
+        tenant=tenant,
+        invoice=invoice,
+        order=order,
+        customer=customer,
+    )
 
     try:
         await db.commit()
