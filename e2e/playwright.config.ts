@@ -1,5 +1,9 @@
 import { defineConfig, devices } from '@playwright/test'
 
+const backendCommand = process.env.CI
+  ? 'cd ../backend && python -m uvicorn app.main:app --host 127.0.0.1 --port 8000'
+  : 'cd ../backend && venv/bin/python -m uvicorn app.main:app --host 127.0.0.1 --port 8000'
+
 export default defineConfig({
   testDir: './tests',
   fullyParallel: true,
@@ -21,7 +25,7 @@ export default defineConfig({
   ],
   webServer: [
     {
-      command: 'cd ../backend && venv/bin/python -m uvicorn app.main:app --host 127.0.0.1 --port 8000',
+      command: backendCommand,
       port: 8000,
       timeout: 30_000,
       reuseExistingServer: !process.env.CI,
