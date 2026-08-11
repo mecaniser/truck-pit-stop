@@ -92,10 +92,14 @@
 .landing-wordmark__letter { display: inline-block; }
 .landing-wordmark__letter--bridge { color: #ff7a36; }
 
+.landing-wordmark--animated .landing-wordmark__name {
+  animation: landing-wordmark-drive-over-bridge 960ms var(--landing-ease-in-out) both;
+}
+
 .landing-wordmark--animated .landing-wordmark__letter {
-  animation: landing-wordmark-letter-wave 620ms var(--landing-ease-in-out) both;
-  animation-delay: calc(var(--letter-index) * 28ms);
-  will-change: transform, opacity;
+  animation: landing-wordmark-letter-wave 420ms var(--landing-ease-in-out) both;
+  animation-delay: calc(var(--letter-wave-order) * 28ms);
+  will-change: transform;
 }
 
 .landing-nav-links,
@@ -269,12 +273,17 @@
 
 @keyframes landing-spin { to { transform: rotate(360deg); } }
 
+@keyframes landing-wordmark-drive-over-bridge {
+  from { opacity: 0; transform: translate3d(-10rem, 0, 0) scale(0.98); }
+  12% { opacity: 1; }
+  to { opacity: 1; transform: translate3d(0, 0, 0) scale(1); }
+}
+
 @keyframes landing-wordmark-letter-wave {
-  from { opacity: 0; transform: translate3d(var(--letter-start-x), 0.16rem, 0) scale(0.96) rotate(-1deg); }
-  14% { opacity: 1; }
-  48% { opacity: 1; transform: translate3d(var(--letter-mid-x), -0.4rem, 0) scale(1) rotate(-0.4deg); }
-  76% { opacity: 1; transform: translate3d(var(--letter-late-x), -0.1rem, 0) scale(1) rotate(0); }
-  to { opacity: 1; transform: translate3d(0, 0, 0) scale(1) rotate(0); }
+  from { transform: translate3d(0, 0.08rem, 0) rotate(-0.5deg); }
+  46% { transform: translate3d(0, -0.38rem, 0) rotate(-0.35deg); }
+  74% { transform: translate3d(0, -0.1rem, 0) rotate(0); }
+  to { transform: translate3d(0, 0, 0) rotate(0); }
 }
 
 @keyframes landing-wordmark-fade {

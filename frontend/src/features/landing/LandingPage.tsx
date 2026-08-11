@@ -59,9 +59,7 @@ function LandingWordmark({ animated = false }: { animated?: boolean }) {
               className={`landing-wordmark__letter${index >= 6 ? ' landing-wordmark__letter--bridge' : ''}`}
               style={{
                 '--letter-index': index,
-                '--letter-start-x': `${-3.25 - index * 0.5}rem`,
-                '--letter-mid-x': `${-1.1 - index * 0.17}rem`,
-                '--letter-late-x': `${-0.28 - index * 0.045}rem`,
+                '--letter-wave-order': WORDMARK_LETTERS.length - 1 - index,
               } as CSSProperties}
             >
               {letter}

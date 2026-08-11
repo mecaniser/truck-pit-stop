@@ -84,27 +84,39 @@ test.describe('Public repair-shop homepage', () => {
 
     await expect(headerWordmark).toHaveAccessibleName('Diesel Bridge Network')
     await expect(footerWordmark).not.toHaveClass(/landing-wordmark--animated/)
-    await expect(name).toHaveCSS('animation-name', 'none')
+    await expect(name).toHaveCSS('animation-name', 'landing-wordmark-drive-over-bridge')
+    await expect(name).toHaveCSS('animation-duration', '0.96s')
     await expect(letters).toHaveCount(12)
     await expect(letters.first()).toHaveCSS('animation-name', 'landing-wordmark-letter-wave')
-    await expect(letters.first()).toHaveCSS('animation-duration', '0.62s')
-    await expect(letters.last()).toHaveCSS('animation-delay', '0.308s')
+    await expect(letters.first()).toHaveCSS('animation-duration', '0.42s')
+    await expect(letters.first()).toHaveCSS('animation-delay', '0.308s')
+    await expect(letters.last()).toHaveCSS('animation-delay', '0s')
+
+    await name.evaluate((element) => {
+      element.getAnimations().forEach((animation) => {
+        animation.pause()
+        animation.currentTime = 480
+      })
+    })
 
     await letters.evaluateAll((elements) => {
       elements.forEach((element) => {
         element.getAnimations().forEach((animation) => {
           animation.pause()
-          animation.currentTime = 360
+          animation.currentTime = 480
         })
       })
     })
     const crossingFrame = await headerWordmark.evaluate((element) => {
+      const movingName = element.querySelector<HTMLElement>('.landing-wordmark__name')
       const movingLetters = [...element.querySelectorAll<HTMLElement>('.landing-wordmark__letter')]
       return {
+        nameTransform: movingName ? getComputedStyle(movingName).transform : 'none',
         letterTransforms: movingLetters.map((letter) => getComputedStyle(letter).transform),
         letterOpacities: movingLetters.map((letter) => getComputedStyle(letter).opacity),
       }
     })
+    expect(crossingFrame.nameTransform).not.toBe('none')
     expect(new Set(crossingFrame.letterTransforms).size).toBeGreaterThan(1)
     expect(crossingFrame.letterOpacities.some((opacity) => Number(opacity) > 0)).toBe(true)
     await page.screenshot({ path: 'test-results/db032-wordmark-crossing-1366.png' })
