@@ -2,7 +2,7 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { Quote } from '@/types'
+import type { Quote, RepairOrderHistoryEvent } from '@/types'
 
 const apiMocks = vi.hoisted(() => ({
   get: vi.fn(),
@@ -19,12 +19,28 @@ vi.mock('react-hot-toast', () => ({ default: toastMocks }))
 vi.mock('@/hooks/useWebSocket', () => ({ useWebSocket: vi.fn() }))
 vi.mock('@/contexts/ThemeContext', () => ({ useTheme: () => ({ accentColors: { 500: '#f59e0b' } }) }))
 vi.mock('../PriceBuilderPanel', () => ({
-  default: (props: { canEdit?: boolean; quoteActionLabel?: string; onQuoteAction?: () => void }) => (
+  default: (props: {
+    canEdit?: boolean
+    historyEvents?: Array<{ id: string; label: string; detail?: string; actor?: string }>
+    onHistoryOpen?: () => void
+    quoteActionLabel?: string
+    onQuoteAction?: () => void
+  }) => (
     <div>
       <span>{props.canEdit ? 'Price editing enabled' : 'Price editing unavailable'}</span>
       {props.onQuoteAction
         ? <button type="button" onClick={props.onQuoteAction}>{props.quoteActionLabel}</button>
         : <span>Publication unavailable</span>}
+      <button type="button" onClick={props.onHistoryOpen}>Open history</button>
+      <output aria-label="History count">History count: {props.historyEvents?.length ?? 0}</output>
+      <ol>
+        {props.historyEvents?.map((event) => (
+          <li key={event.id}>
+            {event.label}
+            {(event.actor || event.detail) && ` · ${event.actor || ''}${event.actor && event.detail ? ' · ' : ''}${event.detail || ''}`}
+          </li>
+        ))}
+      </ol>
     </div>
   ),
 }))
@@ -55,6 +71,9 @@ const owner = {
   role: 'garage_owner' as const, is_active: true, tenant_id: 'tenant-1', customer_id: null,
 }
 
+let detailHistoryEvents: RepairOrderHistoryEvent[] = []
+let authorizationHistoryEvents: RepairOrderHistoryEvent[] = []
+
 const renderPage = () => {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
   return render(
@@ -69,14 +88,19 @@ const renderPage = () => {
 describe('RepairOrdersPage authorization publication', () => {
   beforeEach(() => {
     Object.defineProperty(window, 'scrollTo', { value: vi.fn(), configurable: true })
+    detailHistoryEvents = []
+    authorizationHistoryEvents = []
     useAuthStore.setState({ user: owner, isAuthenticated: true })
     apiMocks.get.mockImplementation((url: string) => {
       if (url === '/repair-orders') return Promise.resolve({ data: { items: [], total: 0, has_more: false } })
       if (url === '/repair-orders/order-1/workspace') return Promise.resolve({ data: order })
       if (url === '/repair-orders/order-1/detail') {
-        return Promise.resolve({ data: { ...order, parts_usage: [], labor_items: [], history_events: [] } })
+        return Promise.resolve({ data: { ...order, parts_usage: [], labor_items: [], history_events: detailHistoryEvents } })
       }
       if (url === '/quotes?repair_order_id=order-1') return Promise.resolve({ data: draft })
+      if (url === '/quotes/repair-order/order-1/history') {
+        return Promise.resolve({ data: { revisions: [draft], events: authorizationHistoryEvents } })
+      }
       if (url === '/dashboard/stats') return Promise.resolve({ data: { mechanic_workload: [] } })
       if (url === '/dashboard/mechanics/options') return Promise.resolve({ data: [] })
       if (url === '/repair-orders/order-1/recommended-services') return Promise.resolve({ data: [] })
@@ -108,6 +132,19 @@ describe('RepairOrdersPage authorization publication', () => {
     await waitFor(() => expect(apiMocks.post).toHaveBeenCalledWith('/quotes/quote-1/send'))
   })
 
+  it('keeps the loading search input controlled when the order workspace opens', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    try {
+      const view = renderPage()
+      expect(await screen.findByText('Price editing enabled')).toBeInTheDocument()
+      await waitFor(() => expect(screen.getByRole('button', { name: 'Send estimate' })).toBeEnabled())
+      view.unmount()
+      expect(consoleError).not.toHaveBeenCalled()
+    } finally {
+      consoleError.mockRestore()
+    }
+  })
+
   it('does not expose publication when the current role is not a publisher', async () => {
     useAuthStore.setState({ user: { ...owner, id: 'mechanic-1', role: 'mechanic' } })
     renderPage()
@@ -133,5 +170,49 @@ describe('RepairOrdersPage authorization publication', () => {
     await waitFor(() => expect(toastMocks.error).toHaveBeenCalledWith(expect.stringMatching(/refreshed.*review.*publishing/i)))
     expect(screen.queryByRole('heading', { name: 'Send estimate carefully' })).not.toBeInTheDocument()
     expect(apiMocks.post).toHaveBeenCalledTimes(1)
+  })
+
+  it('renders one formatted semantic event across duplicate history projections', async () => {
+    const detail = JSON.stringify({
+      revision: 2,
+      authorization_type: 'additional_work',
+      previous_amount: '1000.00',
+      delta_amount: '450.00',
+      resulting_total: '1450.00',
+      source: 'staff_publication',
+    })
+    const published: RepairOrderHistoryEvent = {
+      id: 'published-detail',
+      event_type: 'authorization_published',
+      label: 'Additional work published',
+      detail,
+      entity_id: 'quote-2',
+      actor_name: null,
+      created_at: '2026-08-11T14:00:00Z',
+    }
+    const declined: RepairOrderHistoryEvent = {
+      id: 'declined-shared',
+      event_type: 'authorization_customer_declined',
+      label: 'Additional work declined',
+      detail: detail.replace('staff_publication', 'customer_portal'),
+      entity_id: 'quote-2',
+      actor_name: null,
+      created_at: '2026-08-11T14:05:00Z',
+    }
+    detailHistoryEvents = [published, published, declined]
+    authorizationHistoryEvents = [
+      { ...published, id: 'published-projection', actor_name: 'Olivia Owner' },
+      { ...declined, actor_name: 'Casey Customer' },
+    ]
+
+    renderPage()
+    fireEvent.click(await screen.findByRole('button', { name: 'Open history' }))
+
+    expect(await screen.findByText('History count: 4')).toBeInTheDocument()
+    expect(screen.getAllByText(/Additional work published/)).toHaveLength(1)
+    expect(screen.getAllByText(/Additional work declined/)).toHaveLength(1)
+    expect(screen.getByText(/Olivia Owner.*Revision 2.*Previously authorized \$1,000\.00.*Change \$450\.00.*Resulting total \$1,450\.00.*Staff publication/)).toBeInTheDocument()
+    expect(screen.getByText(/Casey Customer.*Revision 2.*Customer portal/)).toBeInTheDocument()
+    expect(document.body.textContent).not.toContain('"revision"')
   })
 })

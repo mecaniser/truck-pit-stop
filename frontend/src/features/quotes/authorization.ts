@@ -51,6 +51,20 @@ const money = (value: unknown): string => {
     : '—'
 }
 
+const parseAuthorizationEventDetail = (
+  detail?: string | null,
+): Record<string, unknown> | null => {
+  if (!detail) return null
+  try {
+    const parsed: unknown = JSON.parse(detail)
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+      ? parsed as Record<string, unknown>
+      : null
+  } catch {
+    return null
+  }
+}
+
 const sourceLabel = (source: unknown): string | null => {
   if (typeof source !== 'string' || !source) return null
   const labels: Record<string, string> = {
@@ -66,21 +80,77 @@ export const formatAuthorizationEventDetail = (
   detail?: string | null,
 ): string | undefined => {
   if (!detail) return undefined
-  try {
-    const parsed = JSON.parse(detail) as Record<string, unknown>
-    const revision = Number(parsed.revision)
-    const previous = money(parsed.previous_amount)
-    const delta = money(parsed.delta_amount)
-    const resulting = money(parsed.resulting_total)
-    const source = sourceLabel(parsed.source)
-    return [
-      Number.isFinite(revision) ? `Revision ${revision}` : null,
-      `Previously authorized ${previous}`,
-      `Change ${delta}`,
-      `Resulting total ${resulting}`,
-      source,
-    ].filter(Boolean).join(' · ')
-  } catch {
-    return detail
+  const parsed = parseAuthorizationEventDetail(detail)
+  if (!parsed) {
+    // Authorization details are persisted as structured JSON. Never leak a
+    // malformed serialized object into the operator-facing history timeline.
+    const trimmed = detail.trim()
+    return trimmed.startsWith('{') || trimmed.startsWith('[') ? undefined : detail
   }
+  const revision = Number(parsed.revision)
+  const source = sourceLabel(parsed.source)
+  const parts = [
+    Number.isFinite(revision) ? `Revision ${revision}` : null,
+    parsed.previous_amount != null ? `Previously authorized ${money(parsed.previous_amount)}` : null,
+    parsed.delta_amount != null ? `Change ${money(parsed.delta_amount)}` : null,
+    parsed.resulting_total != null ? `Resulting total ${money(parsed.resulting_total)}` : null,
+    source,
+  ].filter((part): part is string => Boolean(part))
+  return parts.length ? parts.join(' · ') : undefined
+}
+
+const authorizationEventSemanticKey = (event: RepairOrderHistoryEvent): string => {
+  const detail = parseAuthorizationEventDetail(event.detail)
+  const revision = Number(detail?.revision)
+  if (Number.isFinite(revision)) {
+    return `${event.event_type}|revision:${revision}`
+  }
+  if (event.entity_id) {
+    return `${event.event_type}|entity:${event.entity_id}`
+  }
+  return [event.event_type, event.created_at, event.label.trim()].join('|')
+}
+
+const authorizationEventPreference = (
+  event: RepairOrderHistoryEvent,
+  preferredSource: boolean,
+): number => (
+  (preferredSource ? 4 : 0)
+  + (parseAuthorizationEventDetail(event.detail) ? 2 : 0)
+  + (event.actor_name ? 1 : 0)
+)
+
+/**
+ * Merge the same persisted authorization rows exposed by the repair-order
+ * detail and authorization-history endpoints. IDs are authoritative when they
+ * match; action + revision (or action + quote entity) protects the timeline if
+ * two projections ever serialize the same semantic row under different IDs.
+ */
+export const canonicalizeAuthorizationHistoryEvents = (
+  repairOrderEvents: RepairOrderHistoryEvent[],
+  authorizationEvents: RepairOrderHistoryEvent[],
+): RepairOrderHistoryEvent[] => {
+  const bySemanticKey = new Map<string, { event: RepairOrderHistoryEvent; preference: number }>()
+  const semanticKeyById = new Map<string, string>()
+
+  const collect = (event: RepairOrderHistoryEvent, preferredSource: boolean) => {
+    if (!event.event_type.startsWith('authorization_')) return
+    const semanticKey = semanticKeyById.get(event.id) || authorizationEventSemanticKey(event)
+    const preference = authorizationEventPreference(event, preferredSource)
+    const existing = bySemanticKey.get(semanticKey)
+    if (!existing || preference > existing.preference) {
+      bySemanticKey.set(semanticKey, { event, preference })
+    }
+    semanticKeyById.set(event.id, semanticKey)
+  }
+
+  authorizationEvents.forEach((event) => collect(event, true))
+  repairOrderEvents.forEach((event) => collect(event, false))
+
+  return [...bySemanticKey.values()]
+    .map(({ event }) => event)
+    .sort((left, right) => (
+      new Date(left.created_at).getTime() - new Date(right.created_at).getTime()
+      || left.id.localeCompare(right.id)
+    ))
 }

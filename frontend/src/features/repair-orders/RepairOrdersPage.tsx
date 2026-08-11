@@ -35,6 +35,7 @@ import {
   AUTHORIZATION_CONFLICT_MESSAGE,
   type AuthorizationHistory,
   canPublishAuthorization,
+  canonicalizeAuthorizationHistoryEvents,
   formatAuthorizationEventDetail,
   isAuthorizationConflict,
 } from '@/features/quotes/authorization'
@@ -1921,6 +1922,8 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
               </svg>
               <input
                 type="text"
+                value={searchQuery}
+                readOnly
                 placeholder="Search by order # or description..."
                 disabled
                 className="w-full h-10 pl-10 pr-4 bg-white rounded-lg text-gray-900 placeholder-gray-400 focus:outline-none disabled:opacity-60"
@@ -2088,11 +2091,18 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
     const assignedTechnician = order.assigned_mechanic_id
       ? mechanicLookup.get(order.assigned_mechanic_id) || 'Assigned technician'
       : undefined
-    const persistedHistoryById = new Map(
-      [...(orderDetail?.history_events ?? []), ...(authorizationHistory?.events ?? [])]
-        .map((event) => [event.id, event]),
+    const orderHistoryEvents = orderDetail?.history_events ?? []
+    const nonAuthorizationHistoryEvents = orderHistoryEvents.filter(
+      (event) => !event.event_type.startsWith('authorization_'),
     )
-    const persistedHistoryEvents = [...persistedHistoryById.values()]
+    const canonicalAuthorizationEvents = canonicalizeAuthorizationHistoryEvents(
+      orderHistoryEvents,
+      authorizationHistory?.events ?? [],
+    )
+    const persistedHistoryEvents = [
+      ...nonAuthorizationHistoryEvents,
+      ...canonicalAuthorizationEvents,
+    ]
     const persistedHistoryEventTypes = new Set(persistedHistoryEvents.map((event) => event.event_type))
 
     push({
@@ -2102,9 +2112,8 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
       detail: order.order_number,
       actor: customerActor,
     })
-    events.push(...buildPartHistoryEvents(orderDetail?.parts_usage ?? [], orderDetail?.history_events ?? []))
-    events.push(...persistedHistoryEvents
-      .filter((event) => event.event_type.startsWith('authorization_'))
+    events.push(...buildPartHistoryEvents(orderDetail?.parts_usage ?? [], nonAuthorizationHistoryEvents))
+    events.push(...canonicalAuthorizationEvents
       .map((event) => ({
         id: event.id,
         label: event.label,
