@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import inspect
 import json
 import logging
 
@@ -7,6 +8,8 @@ import pytest
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 from fastapi.testclient import TestClient
+from sqlalchemy import inspect as inspect_orm, select
+from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from app.core.metrics import normalize_endpoint_label
 from app.core.rate_limit import limiter
@@ -16,10 +19,11 @@ from app.core.redaction import (
     redact_text,
     sanitize_request_path,
 )
-from app.db.models.error_log import ErrorCategory, ErrorSeverity
+from app.db.models.error_log import ErrorCategory, ErrorLog, ErrorSeverity
 from app.middleware.idempotency import IdempotencyMiddleware
 from app.middleware.observability import ObservabilityMiddleware
 from app.middleware.throttling import ThrottlingMiddleware
+from app.services import error_service as error_service_module
 from app.services.error_service import log_error
 
 
@@ -192,7 +196,24 @@ async def test_magic_link_throttling_member_and_429_log_use_placeholder(
 
 
 @pytest.mark.asyncio
-async def test_magic_link_path_absent_from_persisted_error_fields(db_session):
+async def test_magic_link_path_absent_from_persisted_error_fields(
+    _db_engine, db_session, monkeypatch
+):
+    owned_session_factory = async_sessionmaker(_db_engine, expire_on_commit=False)
+    owned_sessions = []
+
+    def tracked_owned_session():
+        session = owned_session_factory()
+        owned_sessions.append(session)
+        return session
+
+    monkeypatch.setattr(
+        error_service_module,
+        "AsyncSessionLocal",
+        tracked_owned_session,
+    )
+    request_session_had_transaction = db_session.in_transaction()
+
     error = await log_error(
         error_type="QuoteApprovalError",
         message=f"failed at {API_PATH_A}",
@@ -206,15 +227,34 @@ async def test_magic_link_path_absent_from_persisted_error_fields(db_session):
             "url": f"https://api.example.test{API_PATH_A}",
             "scope": {"path": API_PATH_A, "raw_path": API_PATH_A.encode("ascii")},
         },
-        db=db_session,
     )
 
+    assert error is not None
+    assert "db" not in inspect.signature(log_error).parameters
+    assert len(owned_sessions) == 1
+    assert owned_sessions[0] is not db_session
+    assert db_session.in_transaction() is request_session_had_transaction
+    assert inspect_orm(error).detached is True
+
+    async with owned_session_factory() as verification_session:
+        persisted_errors = list(
+            (
+                await verification_session.scalars(
+                    select(ErrorLog).where(ErrorLog.id == error.id)
+                )
+            ).all()
+        )
+
+    assert len(persisted_errors) == 1
+    persisted_error = persisted_errors[0]
     evidence = _serialized(
         {
-            "message": error.message,
-            "endpoint": error.endpoint,
-            "stack_trace": error.stack_trace,
-            "request_context": error.request_context,
+            "error_type": persisted_error.error_type,
+            "message": persisted_error.message,
+            "correlation_id": persisted_error.correlation_id,
+            "endpoint": persisted_error.endpoint,
+            "stack_trace": persisted_error.stack_trace,
+            "request_context": persisted_error.request_context,
         }
     )
     assert TOKEN_A not in evidence
