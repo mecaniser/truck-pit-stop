@@ -10,10 +10,34 @@
 import { useEffect, useRef, useCallback, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { useAuthStore } from '../stores/authStore'
-import { requestTokenRefresh } from '../lib/authRefresh'
-import { isTokenExpiredOrNearExpiry } from '../lib/authTokens'
+import { requestTokenRefresh, requestWorkOSSessionRefresh } from '../lib/authRefresh'
 import type { NotificationEvent } from './useNotificationManager'
 import type { RepairOrder, RepairOrderDetail } from '../types'
+
+const BASE_RECONNECT_DELAY_MS = 1000
+const MAX_RECONNECT_DELAY_MS = 30000
+const TERMINAL_CLOSE_CODES = new Set([1000, 1008, 1009, 4002, 4003, 4008])
+
+function getReconnectDelay(attempt: number): number {
+  const exponentialDelay = Math.min(
+    MAX_RECONNECT_DELAY_MS,
+    BASE_RECONNECT_DELAY_MS * (2 ** Math.max(0, attempt))
+  )
+  const jitter = 0.75 + (Math.random() * 0.5)
+  return Math.min(MAX_RECONNECT_DELAY_MS, Math.round(exponentialDelay * jitter))
+}
+
+function getWebSocketUrl(): string {
+  const apiUrl = String(import.meta.env.VITE_API_URL || '/api/v1').replace(/\/+$/, '')
+  const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+
+  if (/^https?:\/\//.test(apiUrl)) {
+    return `${apiUrl.replace(/^http/, 'ws')}/ws`
+  }
+
+  const apiPath = apiUrl.startsWith('/') ? apiUrl : '/api/v1'
+  return `${wsProtocol}//${window.location.host}${apiPath}/ws`
+}
 
 // Event types from backend
 export type WSEventType = 
@@ -77,9 +101,10 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
   const reconnectTimeout = useRef<ReturnType<typeof setTimeout> | null>(null)
   const pingInterval = useRef<ReturnType<typeof setInterval> | null>(null)
   const authRecoveryAttempted = useRef(false)
+  const reconnectAttempt = useRef(0)
   const onNotificationRef = useRef(onNotification)
   const queryClient = useQueryClient()
-  const { token, isAuthenticated } = useAuthStore()
+  const isAuthenticated = useAuthStore((state) => state.isAuthenticated)
   const [isConnected, setIsConnected] = useState(false)
   
   // Track if we should reconnect (false when intentionally disconnecting)
@@ -95,23 +120,32 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
     }
   }, [debug])
 
-  const refreshAccessToken = useCallback(async (): Promise<string | null> => {
+  const refreshSession = useCallback(async (): Promise<boolean> => {
     const state = useAuthStore.getState()
     try {
+      if (state.authProvider === 'workos') {
+        await requestWorkOSSessionRefresh()
+        return true
+      }
+
+      if (state.authProvider !== 'legacy' && !state.refreshToken) {
+        log('Session refresh is unavailable')
+        return false
+      }
+
       const { access_token, refresh_token } = await requestTokenRefresh(state.refreshToken)
       useAuthStore.getState().setTokens(access_token, refresh_token)
-      return access_token
-    } catch (error) {
-      log('Token refresh failed for WebSocket connection')
-      void useAuthStore.getState().logout()
-      return null
+      return true
+    } catch {
+      log('Session refresh failed')
+      return false
     }
   }, [log])
   
   const handleMessage = useCallback((event: MessageEvent) => {
     try {
       const data: WSMessage = JSON.parse(event.data)
-      log('Received message:', data)
+      log('Received message', data.type)
       
       // Invalidate relevant queries based on event type
       // Note: Backend sends both specific events AND repair_order_update for most actions.
@@ -282,15 +316,15 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
           queryClient.invalidateQueries({ queryKey: ['mechanic-board-detail'] })
           break
       }
-    } catch (err) {
-      log('Failed to parse message:', err)
+    } catch {
+      log('Failed to parse message')
     }
   }, [queryClient, log])
   
-  const connect = useCallback(async () => {
+  const connect = useCallback(() => {
     const state = useAuthStore.getState()
-    if (!state.token || !state.isAuthenticated) {
-      log('No token or not authenticated, skipping connection')
+    if (!state.isAuthenticated || !shouldReconnect.current) {
+      log('No authenticated session, skipping connection')
       return
     }
 
@@ -307,52 +341,31 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
       reconnectTimeout.current = null
     }
 
-    let activeToken = state.token
-    if (isTokenExpiredOrNearExpiry(activeToken)) {
-      log('Access token expired/near expiry, refreshing before WebSocket connect')
-      const refreshedToken = await refreshAccessToken()
-      if (!refreshedToken) {
-        log('Unable to refresh token for WebSocket connection')
-        return
-      }
-      activeToken = refreshedToken
+    const scheduleReconnect = (code: number, minimumDelay = 0) => {
+      if (!shouldReconnect.current || reconnectTimeout.current) return
+      const delay = Math.max(getReconnectDelay(reconnectAttempt.current), minimumDelay)
+      reconnectAttempt.current += 1
+      log(`Connection closed (${code}); retrying in ${delay}ms`)
+      reconnectTimeout.current = setTimeout(() => {
+        reconnectTimeout.current = null
+        connect()
+      }, delay)
     }
 
-    // Another caller may have opened a connection while token refresh ran.
-    if (ws.current && (
-      ws.current.readyState === WebSocket.OPEN
-      || ws.current.readyState === WebSocket.CONNECTING
-    )) {
-      return
-    }
-    
-    // Build WebSocket URL
-    const apiUrl = import.meta.env.VITE_API_URL || ''
-    const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-    
-    let wsUrl: string
-    if (apiUrl.startsWith('http')) {
-      // Full URL provided - convert to WebSocket
-      wsUrl = apiUrl.replace(/^http/, 'ws') + `/ws?token=${encodeURIComponent(activeToken)}`
-    } else if (apiUrl.startsWith('/')) {
-      // Relative path - use current host
-      wsUrl = `${wsProtocol}//${window.location.host}${apiUrl}/ws?token=${encodeURIComponent(activeToken)}`
-    } else {
-      // No API URL - use current host with /api/v1
-      wsUrl = `${wsProtocol}//${window.location.host}/api/v1/ws?token=${encodeURIComponent(activeToken)}`
-    }
-    
-    log('Connecting to:', wsUrl.replace(encodeURIComponent(activeToken), '[TOKEN]'))
+    log('Connecting')
     
     try {
-      const socket = new WebSocket(wsUrl)
+      const socket = new WebSocket(getWebSocketUrl())
+      let hasOpened = false
       ws.current = socket
 
       socket.onopen = () => {
         if (ws.current !== socket) return
+        hasOpened = true
         log('Connected')
         setIsConnected(true)
         authRecoveryAttempted.current = false
+        reconnectAttempt.current = 0
         
         // Start ping interval to keep connection alive
         if (pingInterval.current) {
@@ -373,7 +386,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
         // A deliberately replaced socket must not schedule a second reconnect.
         if (ws.current !== socket) return
         ws.current = null
-        log('Disconnected:', event.code, event.reason)
+        log(`Disconnected (${event.code})`)
         setIsConnected(false)
         
         // Clear ping interval
@@ -382,55 +395,81 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
           pingInterval.current = null
         }
         
-        // If auth failed, attempt one refresh + reconnect before giving up.
-        if (shouldReconnect.current && event.code === 4001 && !authRecoveryAttempted.current) {
+        if (!shouldReconnect.current) return
+
+        // A connection gets one provider-aware refresh recovery. If the
+        // recovered connection cannot authenticate before opening, stop.
+        if (event.code === 4001 && !authRecoveryAttempted.current) {
           authRecoveryAttempted.current = true
           void (async () => {
-            const refreshedToken = await refreshAccessToken()
-            if (refreshedToken && shouldReconnect.current) {
-              reconnectTimeout.current = setTimeout(() => {
-                void connect()
-              }, 500)
+            const refreshed = await refreshSession()
+            if (
+              refreshed
+              && shouldReconnect.current
+              && useAuthStore.getState().isAuthenticated
+            ) {
+              connect()
+              return
             }
+            shouldReconnect.current = false
+            useAuthStore.getState().clearSession()
           })()
           return
         }
 
-        // Reconnect after delay if not intentionally closed and not auth failure.
-        if (shouldReconnect.current && event.code !== 4001) {
-          const delay = event.code === 1006 ? 5000 : 3000 // Longer delay for abnormal closure
-          log(`Reconnecting in ${delay}ms...`)
-          reconnectTimeout.current = setTimeout(() => {
-            void connect()
-          }, delay)
+        if (event.code === 4001) {
+          shouldReconnect.current = false
+          useAuthStore.getState().clearSession()
+          return
         }
+
+        if (TERMINAL_CLOSE_CODES.has(event.code)) {
+          shouldReconnect.current = false
+          return
+        }
+
+        // A browser can report a rejected pre-upgrade Origin as 1006 instead
+        // of exposing the server's 4003. Slow-start that ambiguous path so an
+        // origin/configuration error cannot create an immediate retry storm.
+        scheduleReconnect(event.code, event.code === 1006 && !hasOpened ? 5000 : 0)
       }
       
-      socket.onerror = (error) => {
-        log('Error:', error)
+      socket.onerror = () => {
+        // ErrorEvent can include the attempted URL. The close code controls
+        // recovery, so never forward the raw browser event to a logger.
+        log('Connection error')
       }
-    } catch (err) {
-      log('Failed to create WebSocket:', err)
+    } catch {
+      log('Connection could not be created')
+      scheduleReconnect(1006, 5000)
     }
-  }, [handleMessage, log, isTokenExpiredOrNearExpiry, refreshAccessToken])
+  }, [handleMessage, log, refreshSession])
   
   const reconnect = useCallback(() => {
+    if (!useAuthStore.getState().isAuthenticated) return
     shouldReconnect.current = true
+    authRecoveryAttempted.current = false
+    reconnectAttempt.current = 0
     if (reconnectTimeout.current) {
       clearTimeout(reconnectTimeout.current)
       reconnectTimeout.current = null
     }
+    if (pingInterval.current) {
+      clearInterval(pingInterval.current)
+      pingInterval.current = null
+    }
     const socket = ws.current
     ws.current = null
     socket?.close()
-    void connect()
+    setIsConnected(false)
+    connect()
   }, [connect])
   
   // Connect when authenticated
   useEffect(() => {
-    if (isAuthenticated && token) {
+    if (isAuthenticated) {
       shouldReconnect.current = true
-      void connect()
+      connect()
     }
     
     return () => {
@@ -438,22 +477,25 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
       
       if (reconnectTimeout.current) {
         clearTimeout(reconnectTimeout.current)
+        reconnectTimeout.current = null
       }
       if (pingInterval.current) {
         clearInterval(pingInterval.current)
+        pingInterval.current = null
       }
       const socket = ws.current
       ws.current = null
       socket?.close()
+      setIsConnected(false)
     }
-  }, [isAuthenticated, token, connect])
+  }, [isAuthenticated, connect])
   
   // Handle visibility change - reconnect when tab becomes visible
   useEffect(() => {
     const handleVisibilityChange = () => {
       if (!document.hidden && isAuthenticated && !isConnected) {
         log('Tab visible, reconnecting...')
-        reconnect()
+        connect()
       }
     }
     
@@ -461,7 +503,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
     return () => {
       document.removeEventListener('visibilitychange', handleVisibilityChange)
     }
-  }, [isAuthenticated, isConnected, reconnect, log])
+  }, [isAuthenticated, isConnected, connect, log])
   
   return { isConnected, reconnect }
 }
