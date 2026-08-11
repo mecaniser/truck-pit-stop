@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { Dialog, DialogBackdrop, DialogPanel, DialogTitle } from '@headlessui/react'
 import { Spinner, LoadingLine } from '@/components/ui'
 import { useMutation, useQuery, useQueryClient, keepPreviousData } from '@tanstack/react-query'
 import { useDebouncedValue } from '@/hooks/useDebouncedValue'
@@ -1831,6 +1832,18 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
 
   const [quoteSent, setQuoteSent] = useState(false)
   const [quoteToConfirm, setQuoteToConfirm] = useState<Quote | null>(null)
+  const keepEditingButtonRef = useRef<HTMLButtonElement>(null)
+  const quoteConfirmationTriggerRef = useRef<HTMLButtonElement | null>(null)
+
+  const closeQuoteConfirmation = () => {
+    setQuoteToConfirm(null)
+    const trigger = quoteConfirmationTriggerRef.current
+    window.requestAnimationFrame(() => {
+      if (trigger?.isConnected && !trigger.disabled) {
+        trigger.focus({ preventScroll: true })
+      }
+    })
+  }
 
   // Status filter and search are applied server-side now, so the rendered list
   // is simply the current page returned by the API.
@@ -2218,13 +2231,14 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
 
     return events.sort((a, b) => new Date(a.at).getTime() - new Date(b.at).getTime())
   })()
-  const handlePriceBuilderQuoteAction = async () => {
+  const handlePriceBuilderQuoteAction = async (trigger?: HTMLButtonElement) => {
     if (
       !canPublishCustomerAuthorization
       || !selectedOrder?.id
       || quoteActionPending
       || quoteActionDisabled
     ) return
+    if (trigger) quoteConfirmationTriggerRef.current = trigger
     if (!quoteForOrder) {
       createQuoteMutation.mutate(selectedOrder.id)
       return
@@ -3833,7 +3847,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                           {canPublishCustomerAuthorization && hasQuote && !isApproved && (!isSent || effectiveQuoteNeedsUpdate) ? (
                             <button
                               type="button"
-                              onClick={handlePriceBuilderQuoteAction}
+                              onClick={() => handlePriceBuilderQuoteAction()}
                               disabled={sendQuoteMutation.isPending || updateQuoteMutation.isPending}
                               className={`shrink-0 px-2 py-1 text-xs font-medium rounded-md ${
                                 isSent
@@ -5434,71 +5448,83 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
 
       {/* Sending an authorization is a financial checkpoint. Make the
           consequence explicit before the shop creates a customer baseline. */}
-      {quoteToConfirm && (
-        <div className="fixed inset-0 z-[70] overflow-y-auto">
+      <Dialog
+        open={!!quoteToConfirm}
+        onClose={() => closeQuoteConfirmation()}
+        initialFocus={keepEditingButtonRef}
+        className="fixed inset-0 z-[70]"
+      >
+        <DialogBackdrop className="fixed inset-0 bg-black/60 backdrop-blur-sm" />
+        <div className="fixed inset-0 overflow-y-auto">
           <div className="flex min-h-full items-center justify-center p-4">
-            <button
-              type="button"
-              aria-label="Close authorization confirmation"
-              className="fixed inset-0 bg-black/60 backdrop-blur-sm"
-              onClick={() => setQuoteToConfirm(null)}
-            />
-            <div className="relative w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl">
-              <div className="mb-4 flex items-start gap-3">
-                <div className="rounded-full bg-amber-100 p-3">
-                  <FileText className="h-6 w-6 text-amber-700" />
+            {quoteToConfirm && (
+              <DialogPanel
+                className="relative w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl"
+                onKeyDown={(event) => {
+                  if (event.key === 'Escape') {
+                    event.preventDefault()
+                    closeQuoteConfirmation()
+                  }
+                  event.stopPropagation()
+                }}
+              >
+                <div className="mb-4 flex items-start gap-3">
+                  <div className="rounded-full bg-amber-100 p-3">
+                    <FileText className="h-6 w-6 text-amber-700" />
+                  </div>
+                  <div>
+                    <DialogTitle className="text-lg font-semibold text-gray-900">
+                      {quoteToConfirm.authorization_type === 'additional_work'
+                        ? 'Send additional work?'
+                        : 'Send estimate carefully'}
+                    </DialogTitle>
+                    <p className="mt-1 text-sm text-gray-500">{quoteToConfirm.quote_number}</p>
+                  </div>
                 </div>
-                <div>
-                  <h3 className="text-lg font-semibold text-gray-900">
-                    {quoteToConfirm.authorization_type === 'additional_work'
-                      ? 'Send additional work?'
-                      : 'Send estimate carefully'}
-                  </h3>
-                  <p className="mt-1 text-sm text-gray-500">{quoteToConfirm.quote_number}</p>
+                {quoteToConfirm.authorization_type === 'additional_work' ? (
+                  <div className="mb-6 space-y-3">
+                    <p className="text-sm text-gray-700">
+                      The customer's original approval remains valid. This request asks them to authorize only the added amount.
+                    </p>
+                    <AuthorizationSummary quote={quoteToConfirm} theme="light" />
+                  </div>
+                ) : (
+                  <div className="mb-6 space-y-3">
+                    <p className="text-sm leading-6 text-gray-700">
+                      Once authorized, this estimate becomes the customer's approved baseline. Any later increase in parts, labor, or services will require a separate additional-work authorization.
+                    </p>
+                    <AuthorizationSummary quote={quoteToConfirm} theme="light" />
+                  </div>
+                )}
+                <div className="flex gap-3">
+                  <button
+                    ref={keepEditingButtonRef}
+                    type="button"
+                    onClick={() => closeQuoteConfirmation()}
+                    className="flex-1 rounded-lg border border-gray-300 px-4 py-3 font-semibold text-gray-700 hover:bg-gray-50"
+                  >
+                    Keep editing
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      sendQuoteMutation.mutate(quoteToConfirm.id)
+                    }}
+                    disabled={sendQuoteMutation.isPending}
+                    className="flex-1 rounded-lg bg-emerald-600 px-4 py-3 font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
+                  >
+                    {sendQuoteMutation.isPending
+                      ? 'Sending…'
+                      : quoteToConfirm.authorization_type === 'additional_work'
+                        ? 'Send authorization'
+                        : 'Send estimate'}
+                  </button>
                 </div>
-              </div>
-              {quoteToConfirm.authorization_type === 'additional_work' ? (
-                <div className="mb-6 space-y-3">
-                  <p className="text-sm text-gray-700">
-                    The customer's original approval remains valid. This request asks them to authorize only the added amount.
-                  </p>
-                  <AuthorizationSummary quote={quoteToConfirm} theme="light" />
-                </div>
-              ) : (
-                <div className="mb-6 space-y-3">
-                  <p className="text-sm leading-6 text-gray-700">
-                    Once authorized, this estimate becomes the customer's approved baseline. Any later increase in parts, labor, or services will require a separate additional-work authorization.
-                  </p>
-                  <AuthorizationSummary quote={quoteToConfirm} theme="light" />
-                </div>
-              )}
-              <div className="flex gap-3">
-                <button
-                  type="button"
-                  onClick={() => setQuoteToConfirm(null)}
-                  className="flex-1 rounded-lg border border-gray-300 px-4 py-3 font-semibold text-gray-700 hover:bg-gray-50"
-                >
-                  Keep editing
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    sendQuoteMutation.mutate(quoteToConfirm.id)
-                  }}
-                  disabled={sendQuoteMutation.isPending}
-                  className="flex-1 rounded-lg bg-emerald-600 px-4 py-3 font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
-                >
-                  {sendQuoteMutation.isPending
-                    ? 'Sending…'
-                    : quoteToConfirm.authorization_type === 'additional_work'
-                      ? 'Send authorization'
-                      : 'Send estimate'}
-                </button>
-              </div>
-            </div>
+              </DialogPanel>
+            )}
           </div>
         </div>
-      )}
+      </Dialog>
 
       {/* Delete Confirmation Modal */}
       {showDeleteConfirm && selectedOrder && (

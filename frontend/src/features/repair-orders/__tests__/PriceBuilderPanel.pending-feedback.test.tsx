@@ -45,11 +45,22 @@ function renderPanel(props: Partial<ComponentProps<typeof PriceBuilderPanel>> = 
     },
   })
 
-  return render(
+  const view = render(
     <QueryClientProvider client={queryClient}>
       <PriceBuilderPanel orderId="order-1" orderStatus="draft" canEdit {...props} />
     </QueryClientProvider>,
   )
+
+  return {
+    ...view,
+    rerenderPanel(nextProps: Partial<ComponentProps<typeof PriceBuilderPanel>>) {
+      view.rerender(
+        <QueryClientProvider client={queryClient}>
+          <PriceBuilderPanel orderId="order-1" orderStatus="draft" canEdit {...nextProps} />
+        </QueryClientProvider>,
+      )
+    },
+  }
 }
 
 describe('PriceBuilderPanel pending feedback', () => {
@@ -139,6 +150,12 @@ describe('PriceBuilderPanel pending feedback', () => {
     mobileAction?.focus()
     await user.keyboard('{Enter}')
     expect(onQuoteAction).toHaveBeenCalledTimes(1)
+
+    view.rerenderPanel({ onQuoteAction, quoteActionLabel: 'Create estimate', quoteActionPending: true })
+    view.rerenderPanel({ onQuoteAction, quoteActionLabel: 'Send estimate', quoteActionPending: false })
+    await waitFor(() => {
+      expect(view.container.querySelector('button[data-authorization-quote-action="true"]:focus')).toHaveTextContent('Send estimate')
+    })
   })
 
   it('keeps the selected operation visibly pending while its request is still in flight', async () => {

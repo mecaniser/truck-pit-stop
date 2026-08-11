@@ -107,6 +107,28 @@ const staffDraftQuote = {
   }),
 }
 
+const staffApprovedQuote = {
+  ...staffDraftQuote,
+  id: 'quote-db003-approved',
+  quote_number: 'Q-DB003-APPROVED',
+  total_amount: '80.00',
+  is_approved: true,
+  sent_to_customer: true,
+  sent_at: '2026-08-11T13:00:00Z',
+  previously_authorized_amount: '80.00',
+  delta_amount: '0.00',
+}
+
+const staffAdditionalDraftQuote = {
+  ...staffDraftQuote,
+  id: 'quote-db003-additional',
+  quote_number: 'Q-DB003-ADDITIONAL',
+  revision: 2,
+  authorization_type: 'additional_work',
+  previously_authorized_amount: '80.00',
+  delta_amount: '20.00',
+}
+
 const staffPriceBuild = {
   order_id: staffOrder.id,
   labor_total: '100.00',
@@ -139,8 +161,9 @@ const staffPriceBuild = {
   warnings: [],
 }
 
-async function mockStaffAuthorizationWorkspace(page: Page) {
-  let currentQuote: typeof staffDraftQuote | null = null
+async function mockStaffAuthorizationWorkspace(page: Page, mode: 'initial' | 'additional' = 'initial') {
+  let currentQuote: typeof staffDraftQuote | null = mode === 'additional' ? staffApprovedQuote : null
+  let sendCount = 0
 
   await page.addInitScript(() => {
     window.localStorage.setItem('auth-storage', JSON.stringify({
@@ -185,18 +208,31 @@ async function mockStaffAuthorizationWorkspace(page: Page) {
     if (path === '/admin/tax-fee-settings') return fulfillJson(route, 200, { labor_rate: 100 })
     if (path === '/quotes' && request.method() === 'GET') return fulfillJson(route, 200, currentQuote)
     if (path === '/quotes' && request.method() === 'POST') {
-      currentQuote = staffDraftQuote
+      currentQuote = mode === 'additional' ? staffAdditionalDraftQuote : staffDraftQuote
       return fulfillJson(route, 200, currentQuote)
     }
-    if (path === `/quotes/${staffDraftQuote.id}` && request.method() === 'PUT') {
-      return fulfillJson(route, 200, currentQuote || staffDraftQuote)
+    if (currentQuote && path === `/quotes/${currentQuote.id}` && request.method() === 'PUT') {
+      return fulfillJson(route, 200, currentQuote)
+    }
+    if (currentQuote && path === `/quotes/${currentQuote.id}/send` && request.method() === 'POST') {
+      sendCount += 1
+      currentQuote = { ...currentQuote, sent_to_customer: true, sent_at: '2026-08-11T14:00:00Z' }
+      return fulfillJson(route, 200, currentQuote)
     }
 
     return fulfillJson(route, 404, { detail: `Unhandled DB-003 staff fixture route: ${path}` })
   })
+
+  return {
+    get sendCount() { return sendCount },
+  }
 }
 
-async function expectMobileQuoteAction(page: Page, label: 'Create estimate' | 'Send estimate', viewportHeight: number) {
+async function expectMobileQuoteAction(
+  page: Page,
+  label: 'Create estimate' | 'Send estimate' | 'Authorize +$20.00' | 'Send additional work',
+  viewportHeight: number,
+) {
   const action = page.getByRole('button', { name: label })
   await expect(action).toBeVisible()
   const box = await action.boundingBox()
@@ -390,24 +426,65 @@ test('403 is surfaced without retrying or implying a staff decision', async ({ p
   expect(requests.decisionCount).toBe(1)
 })
 
-for (const width of [390, 320]) {
-  test(`staff estimate action stays initially visible, 44px, and keyboard operable at ${width}px`, async ({ page }) => {
+for (const scenario of [
+  {
+    width: 320,
+    mode: 'initial' as const,
+    firstAction: 'Create estimate' as const,
+    sendAction: 'Send estimate' as const,
+    dialogTitle: 'Send estimate carefully',
+    publishAction: 'Send estimate',
+  },
+  {
+    width: 390,
+    mode: 'additional' as const,
+    firstAction: 'Authorize +$20.00' as const,
+    sendAction: 'Send additional work' as const,
+    dialogTitle: 'Send additional work?',
+    publishAction: 'Send authorization',
+  },
+]) {
+  test(`staff ${scenario.mode} authorization keeps focus through the ${scenario.width}px confirmation flow`, async ({ page }) => {
     const viewportHeight = 780
-    await page.setViewportSize({ width, height: viewportHeight })
-    await mockStaffAuthorizationWorkspace(page)
+    await page.setViewportSize({ width: scenario.width, height: viewportHeight })
+    const fixture = await mockStaffAuthorizationWorkspace(page, scenario.mode)
 
     await page.goto(`/dashboard/repair-orders?selected=${staffOrder.id}`)
-    const createAction = await expectMobileQuoteAction(page, 'Create estimate', viewportHeight)
-    await createAction.focus()
-    await expect(createAction).toBeFocused()
+    const firstAction = await expectMobileQuoteAction(page, scenario.firstAction, viewportHeight)
+    await firstAction.focus()
+    await expect(firstAction).toBeFocused()
     await page.keyboard.press('Enter')
 
-    const sendAction = await expectMobileQuoteAction(page, 'Send estimate', viewportHeight)
-    await sendAction.focus()
+    const sendAction = await expectMobileQuoteAction(page, scenario.sendAction, viewportHeight)
     await expect(sendAction).toBeFocused()
     await page.keyboard.press('Enter')
 
-    await expect(page.getByRole('heading', { name: 'Send estimate carefully' })).toBeVisible()
+    const dialog = page.getByRole('dialog', { name: scenario.dialogTitle })
+    await expect(dialog).toBeVisible()
+    await expect(dialog).toHaveAttribute('aria-modal', 'true')
+    const keepEditing = dialog.getByRole('button', { name: 'Keep editing' })
+    const publishAction = dialog.getByRole('button', { name: scenario.publishAction })
+    await expect(keepEditing).toBeFocused()
+
+    await page.keyboard.press('Shift+Tab')
+    await expect(publishAction).toBeFocused()
+    await page.keyboard.press('Tab')
+    await expect(keepEditing).toBeFocused()
+
+    await page.keyboard.press('Escape')
+    await expect(dialog).toBeHidden()
+    await expect(page).toHaveURL(new RegExp(`/dashboard/repair-orders\\?selected=${staffOrder.id}$`))
+    await expect(page.getByText('Initial electrical inspection').first()).toBeVisible()
+    await expect(sendAction).toBeFocused()
+
+    await page.keyboard.press('Enter')
+    await expect(dialog).toBeVisible()
+    await expect(keepEditing).toBeFocused()
+    await page.keyboard.press('Tab')
+    await expect(publishAction).toBeFocused()
+    await page.keyboard.press('Enter')
+    await expect(dialog).toBeHidden()
+    expect(fixture.sendCount).toBe(1)
   })
 }
 

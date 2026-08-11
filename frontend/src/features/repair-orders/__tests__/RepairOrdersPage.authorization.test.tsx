@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -24,12 +25,23 @@ vi.mock('../PriceBuilderPanel', () => ({
     historyEvents?: Array<{ id: string; label: string; detail?: string; actor?: string }>
     onHistoryOpen?: () => void
     quoteActionLabel?: string
-    onQuoteAction?: () => void
+    quoteActionPending?: boolean
+    quoteActionDisabled?: boolean
+    onQuoteAction?: (trigger?: HTMLButtonElement) => void
   }) => (
     <div>
       <span>{props.canEdit ? 'Price editing enabled' : 'Price editing unavailable'}</span>
       {props.onQuoteAction
-        ? <button type="button" onClick={props.onQuoteAction}>{props.quoteActionLabel}</button>
+        ? (
+          <button
+            type="button"
+            data-authorization-quote-action="true"
+            disabled={props.quoteActionPending || props.quoteActionDisabled}
+            onClick={(event) => props.onQuoteAction?.(event.currentTarget)}
+          >
+            {props.quoteActionLabel}
+          </button>
+        )
         : <span>Publication unavailable</span>}
       <button type="button" onClick={props.onHistoryOpen}>Open history</button>
       <output aria-label="History count">History count: {props.historyEvents?.length ?? 0}</output>
@@ -129,6 +141,41 @@ describe('RepairOrdersPage authorization publication', () => {
     expect(heading).toBeInTheDocument()
 
     fireEvent.click(within(heading.closest('.relative') as HTMLElement).getByRole('button', { name: 'Send estimate' }))
+    await waitFor(() => expect(apiMocks.post).toHaveBeenCalledWith('/quotes/quote-1/send'))
+  })
+
+  it('traps confirmation focus and returns Escape dismissal to the publishing trigger', async () => {
+    const user = userEvent.setup()
+    renderPage()
+    const trigger = await screen.findByRole('button', { name: 'Send estimate' })
+
+    trigger.focus()
+    await user.keyboard('{Enter}')
+
+    const dialog = await screen.findByRole('dialog', { name: 'Send estimate carefully' })
+    expect(dialog).toHaveAttribute('aria-modal', 'true')
+    const keepEditing = within(dialog).getByRole('button', { name: 'Keep editing' })
+    const publish = within(dialog).getByRole('button', { name: 'Send estimate' })
+    await waitFor(() => expect(keepEditing).toHaveFocus())
+
+    await user.tab({ shift: true })
+    expect(publish).toHaveFocus()
+    await user.tab()
+    expect(keepEditing).toHaveFocus()
+
+    await user.keyboard('{Escape}')
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Send estimate carefully' })).not.toBeInTheDocument())
+    expect(await screen.findByText('Price editing enabled')).toBeInTheDocument()
+    await waitFor(() => expect(trigger).toHaveFocus())
+
+    await user.keyboard('{Enter}')
+    const reopenedDialog = await screen.findByRole('dialog', { name: 'Send estimate carefully' })
+    const reopenedKeepEditing = within(reopenedDialog).getByRole('button', { name: 'Keep editing' })
+    await waitFor(() => expect(reopenedKeepEditing).toHaveFocus())
+    await user.tab()
+    const reopenedPublish = within(reopenedDialog).getByRole('button', { name: 'Send estimate' })
+    expect(reopenedPublish).toHaveFocus()
+    await user.keyboard('{Enter}')
     await waitFor(() => expect(apiMocks.post).toHaveBeenCalledWith('/quotes/quote-1/send'))
   })
 
