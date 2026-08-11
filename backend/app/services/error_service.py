@@ -221,6 +221,7 @@ def build_error_persistence_envelope(
 _persistence_semaphores: weakref.WeakKeyDictionary[
     asyncio.AbstractEventLoop, asyncio.BoundedSemaphore
 ] = weakref.WeakKeyDictionary()
+_PERSISTENCE_GENERATION_ATTRIBUTE = "_dieselbridge_persistence_generation"
 
 
 def _persistence_semaphore() -> asyncio.BoundedSemaphore:
@@ -230,6 +231,21 @@ def _persistence_semaphore() -> asyncio.BoundedSemaphore:
         semaphore = asyncio.BoundedSemaphore(settings.ERROR_LOG_PERSIST_MAX_CONCURRENCY)
         _persistence_semaphores[loop] = semaphore
     return semaphore
+
+
+def _persistence_generation(semaphore: asyncio.BoundedSemaphore) -> int:
+    generation = getattr(semaphore, _PERSISTENCE_GENERATION_ATTRIBUTE, 0)
+    return generation if type(generation) is int else 0
+
+
+def _advance_persistence_generation(semaphore: asyncio.BoundedSemaphore) -> None:
+    """Fence waiters admitted before a failed owner settled its cleanup."""
+
+    setattr(
+        semaphore,
+        _PERSISTENCE_GENERATION_ATTRIBUTE,
+        _persistence_generation(semaphore) + 1,
+    )
 
 
 class _UnsafeErrorContext(ValueError):
@@ -409,6 +425,7 @@ async def _owned_error_lifecycle(
     """Own the permit, session, write, and cleanup as one indivisible lifecycle."""
 
     semaphore = _persistence_semaphore()
+    admission_generation = _persistence_generation(semaphore)
     permit_acquired = False
     session: Any = None
     commit_started = False
@@ -429,7 +446,10 @@ async def _owned_error_lifecycle(
         except asyncio.CancelledError as exc:
             cancellation = exc
 
-        if permit_acquired and cancellation is None:
+        admission_is_current = (
+            admission_generation == _persistence_generation(semaphore)
+        )
+        if permit_acquired and cancellation is None and admission_is_current:
             try:
                 if not stop_requested.is_set():
                     state.begin("session", cleanup=False)
@@ -544,9 +564,19 @@ async def _owned_error_lifecycle(
             return None
         return error_log
     finally:
+        # A failed/cancelled owner fences every lifecycle that was already
+        # queued for its permit generation. The fence advances only after that
+        # exact session's close/invalidate has settled and before its permit is
+        # released, so a stale waiter can never replace failed cohort work.
+        if session is not None and (
+            cancellation is not None
+            or not operation_succeeded
+            or not cleanup_succeeded
+        ):
+            _advance_persistence_generation(semaphore)
+        state.begin("settled", cleanup=False)
         if permit_acquired:
             semaphore.release()
-        state.begin("settled", cleanup=False)
 
 
 async def log_error(

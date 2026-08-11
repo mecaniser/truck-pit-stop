@@ -496,6 +496,84 @@ async def test_error_logging_keeps_concurrency_permit_through_hanging_close(monk
     semaphore.release()
     semaphore.release()
 
+    healthy_session = _ControlledSession()
+    monkeypatch.setattr(
+        error_service,
+        "AsyncSessionLocal",
+        lambda: healthy_session,
+    )
+    healthy_result = await _persist_test_error()
+    assert healthy_result is healthy_session.added
+    assert healthy_session.calls == ["add", "commit", "refresh", "close"]
+
+
+@pytest.mark.asyncio
+async def test_failed_cleanup_generation_fences_preexisting_waiters(monkeypatch):
+    close_started = [asyncio.Event(), asyncio.Event()]
+    sessions: list[_ControlledSession] = []
+
+    def _session_factory():
+        index = len(sessions)
+        session = _ControlledSession(
+            hang_at="close" if index < 2 else None,
+            started={"close": close_started[index]} if index < 2 else None,
+        )
+        sessions.append(session)
+        return session
+
+    monkeypatch.setattr(error_service, "AsyncSessionLocal", _session_factory)
+    monkeypatch.setattr(settings, "ERROR_LOG_PERSIST_MAX_CONCURRENCY", 2)
+    error_service._persistence_semaphores.clear()
+
+    stop_requests = [asyncio.Event() for _ in range(5)]
+    states = [error_service._PersistenceLifecycleState() for _ in range(5)]
+    lifecycles = [
+        asyncio.create_task(
+            error_service._owned_error_lifecycle(
+                error_service.ErrorLog(
+                    error_type="OperationalError",
+                    message="database unavailable",
+                    error_category="unhandled",
+                    severity="error",
+                ),
+                stop_requested=stop_requests[index],
+                state=states[index],
+            )
+        )
+        for index in range(5)
+    ]
+
+    await asyncio.wait_for(
+        asyncio.gather(*(started.wait() for started in close_started)),
+        timeout=0.05,
+    )
+    assert len(sessions) == 2
+    semaphore = error_service._persistence_semaphore()
+    assert semaphore._value == 0
+
+    lifecycles[0].cancel()
+    lifecycles[1].cancel()
+    results = await asyncio.wait_for(
+        asyncio.gather(*lifecycles, return_exceptions=True),
+        timeout=0.1,
+    )
+
+    assert len(sessions) == 2
+    assert sum(isinstance(result, asyncio.CancelledError) for result in results) == 2
+    assert error_service._persistence_generation(semaphore) == 2
+    assert semaphore._value == 2
+    assert all(session.active_steps == set() for session in sessions)
+
+    healthy_session = _ControlledSession()
+    monkeypatch.setattr(
+        error_service,
+        "AsyncSessionLocal",
+        lambda: healthy_session,
+    )
+    healthy_result = await _persist_test_error()
+    assert healthy_result is healthy_session.added
+    assert healthy_session.calls == ["add", "commit", "refresh", "close"]
+
 
 @pytest.mark.asyncio
 async def test_external_cancel_twice_resistant_commit_reclaims_permit_late(monkeypatch):
