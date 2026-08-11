@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field, field_validator
+from pydantic import AnyHttpUrl, BaseModel, Field, TypeAdapter, field_validator
 from typing import Optional, List
 from datetime import datetime
 from uuid import UUID
@@ -6,6 +6,22 @@ from decimal import Decimal
 from app.db.models.repair_order import RepairOrderStatus
 from app.db.models.labor import LaborLineType
 from app.db.models.recommended_service import RecommendedServicePriority
+
+
+_http_url_adapter = TypeAdapter(AnyHttpUrl)
+
+
+def _normalize_landing_page_url(value: Optional[str]) -> Optional[str]:
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise ValueError("landing_page_url must be an HTTP(S) URL")
+    if any(ord(character) < 32 or ord(character) == 127 for character in value):
+        raise ValueError("landing_page_url must not contain control characters")
+    try:
+        return str(_http_url_adapter.validate_python(value))
+    except ValueError as exc:
+        raise ValueError("landing_page_url must be an HTTP(S) URL") from exc
 
 
 # --- Parts and labor line items ---
@@ -172,6 +188,11 @@ class RepairOrderBase(BaseModel):
     utm_term: Optional[str] = Field(None, max_length=255)
     utm_content: Optional[str] = Field(None, max_length=255)
 
+    @field_validator("landing_page_url", mode="before")
+    @classmethod
+    def normalize_landing_page_url(cls, value):
+        return _normalize_landing_page_url(value)
+
 
 class RepairOrderCreate(RepairOrderBase):
     customer_id: UUID
@@ -204,6 +225,11 @@ class RepairOrderUpdate(BaseModel):
     utm_campaign: Optional[str] = Field(None, max_length=255)
     utm_term: Optional[str] = Field(None, max_length=255)
     utm_content: Optional[str] = Field(None, max_length=255)
+
+    @field_validator("landing_page_url", mode="before")
+    @classmethod
+    def normalize_landing_page_url(cls, value):
+        return _normalize_landing_page_url(value)
 
 
 class RepairOrderResponse(RepairOrderBase):

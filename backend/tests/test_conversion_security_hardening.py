@@ -3,6 +3,7 @@ import os
 import socket
 import ssl
 import asyncio
+import time
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from uuid import uuid4
@@ -24,7 +25,11 @@ from app.core.paid_invoice_webhook_crypto import (
     encrypt_paid_invoice_webhook_secret,
     reencrypt_paid_invoice_webhook_secret,
 )
-from app.core.webhook_destination import resolve_webhook_destination
+from app.core.webhook_destination import (
+    MAX_VETTED_WEBHOOK_ADDRESSES,
+    WebhookDestinationResolutionTimeout,
+    resolve_webhook_destination,
+)
 from app.db.models.conversion_export_audit import ConversionExportAudit
 from app.db.models.customer import Customer
 from app.db.models.invoice import Invoice, InvoiceStatus
@@ -71,6 +76,30 @@ async def test_mixed_public_private_dns_answer_is_rejected(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_oversized_dns_snapshot_is_deterministically_capped(monkeypatch):
+    answers = [f"93.184.216.{number}" for number in range(40, 30, -1)]
+    monkeypatch.setattr(socket, "getaddrinfo", lambda *_args, **_kwargs: _dns(answers))
+    destination = await resolve_webhook_destination("https://hooks.example.com/path")
+    assert destination.addresses == tuple(sorted(answers))[:MAX_VETTED_WEBHOOK_ADDRESSES]
+    assert len(destination.addresses) == 4
+
+
+@pytest.mark.asyncio
+async def test_dns_resolution_has_a_deadline(monkeypatch):
+    def slow_dns(*_args, **_kwargs):
+        time.sleep(0.2)
+        return _dns(["93.184.216.34"])
+
+    monkeypatch.setattr(socket, "getaddrinfo", slow_dns)
+    started = time.monotonic()
+    with pytest.raises(WebhookDestinationResolutionTimeout, match="timed out"):
+        await resolve_webhook_destination(
+            "https://hooks.example.com/path", dns_timeout_seconds=0.02
+        )
+    assert time.monotonic() - started < 0.15
+
+
+@pytest.mark.asyncio
 async def test_delivery_uses_one_dns_snapshot_and_pinned_ip(monkeypatch):
     calls = 0
 
@@ -84,7 +113,7 @@ async def test_delivery_uses_one_dns_snapshot_and_pinned_ip(monkeypatch):
     monkeypatch.setattr(socket, "getaddrinfo", first_dns)
     destination = await resolve_webhook_destination("https://hooks.example.com/a/path?q=1")
 
-    async def fixed_destination(_url):
+    async def fixed_destination(_url, **_kwargs):
         return destination
 
     captured = {}
@@ -119,7 +148,7 @@ async def test_only_connect_failure_tries_next_vetted_ip(monkeypatch):
     from app.core.webhook_destination import ResolvedWebhookDestination
     destination = ResolvedWebhookDestination("https://hooks.example.com/path", "hooks.example.com", "hooks.example.com", ("93.184.216.34", "93.184.216.35"))
 
-    async def fixed(_url): return destination
+    async def fixed(_url, **_kwargs): return destination
     attempts = []
 
     class Response:
@@ -149,7 +178,7 @@ async def test_read_failure_does_not_try_second_ip(monkeypatch):
     from app.core.webhook_destination import ResolvedWebhookDestination
     destination = ResolvedWebhookDestination("https://hooks.example.com/path", "hooks.example.com", "hooks.example.com", ("93.184.216.34", "93.184.216.35"))
 
-    async def fixed(_url): return destination
+    async def fixed(_url, **_kwargs): return destination
     attempts = []
 
     class Client:
@@ -167,6 +196,39 @@ async def test_read_failure_does_not_try_second_ip(monkeypatch):
     with pytest.raises(ProviderDeliveryError):
         await _deliver(tenant, event)
     assert attempts == ["93.184.216.34"]
+
+
+@pytest.mark.asyncio
+async def test_multiple_addresses_share_one_total_delivery_budget(monkeypatch):
+    from app.core.webhook_destination import ResolvedWebhookDestination
+    destination = ResolvedWebhookDestination(
+        "https://hooks.example.com/path", "hooks.example.com", "hooks.example.com",
+        ("93.184.216.34", "93.184.216.35", "93.184.216.36", "93.184.216.37"),
+    )
+
+    async def fixed(_url, **_kwargs): return destination
+    attempts = []
+
+    class Client:
+        async def __aenter__(self): return self
+        async def __aexit__(self, *_args): return None
+        async def request(self, _method, url, **_kwargs):
+            attempts.append(url.host)
+            await asyncio.sleep(0.04)
+            raise httpx.ConnectTimeout("connect failed", request=httpx.Request("POST", url))
+
+    monkeypatch.setattr("app.services.paid_invoice_webhook_service.resolve_webhook_destination", fixed)
+    monkeypatch.setattr("app.services.paid_invoice_webhook_service.httpx.AsyncClient", lambda **_kwargs: Client())
+    monkeypatch.setattr("app.core.config.settings.PAID_INVOICE_WEBHOOK_TOTAL_TIMEOUT_SECONDS", 0.07)
+    monkeypatch.setattr("app.core.config.settings.PAID_INVOICE_WEBHOOK_ENCRYPTION_KEY", Fernet.generate_key().decode())
+    tenant = Tenant(name="Budget", slug=f"budget-{uuid4().hex}", paid_invoice_webhook_enabled=True, paid_invoice_webhook_url=destination.original_url, paid_invoice_webhook_secret_encrypted=encrypt_paid_invoice_webhook_secret("secret-value"))
+    event = ProviderOutboxEvent(tenant_id=uuid4(), event_type="repair_order.paid", aggregate_type="invoice", aggregate_id=uuid4(), payload={}, idempotency_key="budget-delivery")
+    started = time.monotonic()
+    with pytest.raises(ProviderDeliveryError, match="total time budget") as exc:
+        await _deliver(tenant, event)
+    assert exc.value.retryable is True
+    assert time.monotonic() - started < 0.15
+    assert attempts == ["93.184.216.34", "93.184.216.35"]
 
 
 @pytest.mark.asyncio
@@ -218,7 +280,7 @@ async def test_pinned_tls_connection_preserves_sni_certificate_and_host(tmp_path
     original_url = f"https://{hostname}:{port}/conversion"
     destination = ResolvedWebhookDestination(original_url, hostname, f"{hostname}:{port}", ("127.0.0.1",))
 
-    async def fixed(_url): return destination
+    async def fixed(_url, **_kwargs): return destination
     real_client = httpx.AsyncClient
     monkeypatch.setattr("app.services.paid_invoice_webhook_service.resolve_webhook_destination", fixed)
     monkeypatch.setattr("app.services.paid_invoice_webhook_service.httpx.AsyncClient", lambda **kwargs: real_client(verify=str(ca_path), **kwargs))
@@ -266,7 +328,7 @@ async def test_crypto_configuration_failure_does_not_consume_retry_or_disable(_d
         event = ProviderOutboxEvent(tenant=tenant, event_type="repair_order.paid", aggregate_type="invoice", aggregate_id=uuid4(), payload={}, idempotency_key="broken-key", status=ProviderOutboxStatus.PENDING.value, available_at=datetime.now(timezone.utc))
         db.add_all([tenant, event]); await db.commit(); tenant_id, event_id = tenant.id, event.id
 
-    async def public(_url):
+    async def public(_url, **_kwargs):
         from app.core.webhook_destination import ResolvedWebhookDestination
         return ResolvedWebhookDestination("https://hooks.example.com/path", "hooks.example.com", "hooks.example.com", ("93.184.216.34",))
     monkeypatch.setattr("app.services.paid_invoice_webhook_service.resolve_webhook_destination", public)
@@ -305,7 +367,7 @@ async def test_retention_and_customer_erasure_remove_payload_pii(_db_engine, mon
         order = RepairOrder(tenant=tenant, customer=customer, vehicle_id=uuid4(), order_number=f"RO-{uuid4().hex}", status=RepairOrderStatus.PAID)
         invoice = Invoice(tenant=tenant, repair_order=order, invoice_number=f"INV-{uuid4().hex}", status=InvoiceStatus.PAID, subtotal=Decimal("10"), tax_amount=Decimal("0"), discount_amount=Decimal("0"), total_amount=Decimal("10"), paid_at=now)
         db.add_all([tenant, customer, order, invoice]); await db.flush()
-        old = ProviderOutboxEvent(tenant=tenant, event_type="repair_order.paid", aggregate_type="invoice", aggregate_id=invoice.id, payload={"event_id": str(uuid4()), "customer": {"email": "private@example.com"}, "attribution": {"landing_page_url": "https://x/?email=private@example.com"}, "service_lines": [{"name": "Private Person repair"}]}, idempotency_key="old", status=ProviderOutboxStatus.SUCCEEDED.value, available_at=now, completed_at=now - timedelta(days=31))
+        old = ProviderOutboxEvent(tenant=tenant, event_type="repair_order.paid", aggregate_type="invoice", aggregate_id=invoice.id, payload={"event_id": str(uuid4()), "customer": {"email": "private@example.com"}, "attribution": {"landing_page_url": "https://x/?email=private@example.com"}, "service_lines": [{"name": "Private Person repair"}]}, idempotency_key="old", status=ProviderOutboxStatus.SUCCEEDED.value, available_at=now, completed_at=now - timedelta(days=31), created_at=now - timedelta(days=31))
         current = ProviderOutboxEvent(tenant=tenant, event_type="repair_order.paid", aggregate_type="invoice", aggregate_id=invoice.id, payload={"event_id": str(uuid4()), "customer": {"email": "private@example.com"}}, idempotency_key="current", status=ProviderOutboxStatus.SUCCEEDED.value, available_at=now, completed_at=now)
         db.add_all([old, current]); await db.commit(); ids=(tenant.id, customer.id, old.id, current.id)
     assert await purge_expired_conversion_event_pii(session_factory=factory, now=now) == 1
@@ -315,6 +377,64 @@ async def test_retention_and_customer_erasure_remove_payload_pii(_db_engine, mon
         assert "customer" in current.payload
         assert await erase_customer_conversion_event_pii(db, tenant_id=ids[0], customer_id=ids[1], apply=True) == 1
         await db.refresh(current); assert "customer" not in current.payload
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("status", "last_error"),
+    [
+        (ProviderOutboxStatus.PENDING.value, None),
+        (ProviderOutboxStatus.PROCESSING.value, None),
+        (ProviderOutboxStatus.PENDING.value, "Webhook secret configuration is unavailable"),
+    ],
+)
+async def test_retention_expires_every_old_nonterminal_state(
+    _db_engine, monkeypatch, status, last_error
+):
+    monkeypatch.setattr("app.core.config.settings.CONVERSION_OUTBOX_PII_RETENTION_DAYS", 30)
+    factory = async_sessionmaker(_db_engine, expire_on_commit=False)
+    now = datetime.now(timezone.utc)
+    async with factory() as db:
+        tenant = Tenant(name="Absolute retention", slug=f"retention-{uuid4().hex}")
+        owner = User(
+            tenant=tenant, email=f"retention-{uuid4().hex}@example.com",
+            hashed_password="x", first_name="Retention", last_name="Owner",
+            role=UserRole.GARAGE_OWNER, is_active=True, is_verified=True,
+        )
+        event = ProviderOutboxEvent(
+            tenant=tenant, event_type="repair_order.paid", aggregate_type="invoice",
+            aggregate_id=uuid4(),
+            payload={
+                "event_id": str(uuid4()), "shop_id": str(uuid4()), "total_amount": 125.0,
+                "customer": {"email": "private@example.com"},
+                "attribution": {"landing_page_url": "https://example.com/private"},
+                "service_lines": [{"name": "Sensitive service"}],
+            },
+            idempotency_key=f"retention-{uuid4().hex}", status=status,
+            available_at=now - timedelta(days=31), created_at=now - timedelta(days=31),
+            locked_at=now if status == ProviderOutboxStatus.PROCESSING.value else None,
+            locked_until=now + timedelta(minutes=1) if status == ProviderOutboxStatus.PROCESSING.value else None,
+            lock_token="leased" if status == ProviderOutboxStatus.PROCESSING.value else None,
+            last_error=last_error,
+        )
+        db.add_all([tenant, owner, event]); await db.commit(); event_id, owner_id = event.id, owner.id
+
+    assert await purge_expired_conversion_event_pii(session_factory=factory, now=now) == 1
+    async with factory() as db:
+        event = await db.get(ProviderOutboxEvent, event_id)
+        assert event.status == ProviderOutboxStatus.EXPIRED.value
+        assert event.completed_at is not None
+        assert event.lock_token is None and event.locked_until is None
+        assert event.last_error == "Delivery expired under the conversion PII retention policy"
+        assert "customer" not in event.payload
+        assert "attribution" not in event.payload
+        assert "service_lines" not in event.payload
+        assert event.payload["total_amount"] == 125.0
+        assert event.payload["pii_redacted_at"]
+        owner = await db.get(User, owner_id)
+        with pytest.raises(HTTPException) as exc:
+            await conversion_exports.replay_delivery(event.id, db=db, user=owner)
+        assert exc.value.status_code == 410
 
 
 @pytest.mark.asyncio
@@ -348,6 +468,25 @@ def test_attribution_schema_lengths_match_database():
         RepairOrderUpdate(utm_campaign="x" * 256)
     with pytest.raises(ValidationError):
         RepairOrderUpdate(landing_page_url="x" * 2049)
+
+
+def test_landing_page_url_is_http_normalized_and_rejects_unsafe_values():
+    from pydantic import ValidationError
+    from app.schemas.repair_order import RepairOrderCreate, RepairOrderUpdate
+
+    assert RepairOrderUpdate(
+        landing_page_url="HTTP://Example.COM/campaign?gclid=abc"
+    ).landing_page_url == "http://example.com/campaign?gclid=abc"
+    assert RepairOrderCreate(
+        customer_id=uuid4(), vehicle_id=uuid4(), landing_page_url="https://EXAMPLE.com"
+    ).landing_page_url == "https://example.com/"
+    for value in (
+        "not a url", "javascript:alert(1)", "file:///etc/passwd",
+        "ftp://example.com/file", "https://example.com/path\nInjected: value",
+        "https://example.com/\x00private",
+    ):
+        with pytest.raises(ValidationError):
+            RepairOrderUpdate(landing_page_url=value)
 
 
 @pytest.mark.asyncio

@@ -8,9 +8,15 @@ from urllib.parse import urlsplit
 
 import anyio
 
+MAX_VETTED_WEBHOOK_ADDRESSES = 4
+
 
 class WebhookDestinationError(ValueError):
     """Raised when a webhook destination could reach a non-public network."""
+
+
+class WebhookDestinationResolutionTimeout(WebhookDestinationError):
+    """Raised when destination DNS exceeds its bounded resolution budget."""
 
 
 @dataclass(frozen=True)
@@ -21,7 +27,7 @@ class ResolvedWebhookDestination:
     addresses: tuple[str, ...]
 
 
-def _resolve_public_addresses(hostname: str, port: int) -> set[str]:
+def _resolve_public_addresses(hostname: str, port: int) -> tuple[str, ...]:
     try:
         records = socket.getaddrinfo(hostname, port, type=socket.SOCK_STREAM)
     except socket.gaierror as exc:
@@ -37,10 +43,17 @@ def _resolve_public_addresses(hostname: str, port: int) -> set[str]:
             raise WebhookDestinationError("Webhook hostname resolved to an invalid address") from exc
         if not parsed.is_global:
             raise WebhookDestinationError("Webhook destination must resolve only to public addresses")
-    return addresses
+    # Validate every answer before truncating so a private answer can never be
+    # hidden beyond the connection-attempt ceiling. Sorting makes the selected
+    # snapshot stable regardless of resolver response order.
+    return tuple(sorted(addresses))[:MAX_VETTED_WEBHOOK_ADDRESSES]
 
 
-async def resolve_webhook_destination(url: str) -> ResolvedWebhookDestination:
+async def resolve_webhook_destination(
+    url: str,
+    *,
+    dns_timeout_seconds: float = 3.0,
+) -> ResolvedWebhookDestination:
     """Require HTTPS and reject credentials, local names, and non-public DNS results.
 
     This validation is repeated immediately before every request so a destination
@@ -71,7 +84,18 @@ async def resolve_webhook_destination(url: str) -> ResolvedWebhookDestination:
         port = parsed.port or 443
     except ValueError as exc:
         raise WebhookDestinationError("Webhook destination has an invalid port") from exc
-    addresses = await anyio.to_thread.run_sync(_resolve_public_addresses, hostname, port)
+    try:
+        with anyio.fail_after(dns_timeout_seconds):
+            addresses = await anyio.to_thread.run_sync(
+                _resolve_public_addresses,
+                hostname,
+                port,
+                cancellable=True,
+            )
+    except TimeoutError as exc:
+        raise WebhookDestinationResolutionTimeout(
+            "Webhook hostname resolution timed out"
+        ) from exc
     tls_hostname = hostname.encode("idna").decode("ascii")
     if literal and literal.version == 6:
         authority_host = f"[{hostname}]"
@@ -82,7 +106,7 @@ async def resolve_webhook_destination(url: str) -> ResolvedWebhookDestination:
         original_url=url,
         tls_hostname=tls_hostname,
         host_header=host_header,
-        addresses=tuple(sorted(addresses)),
+        addresses=addresses,
     )
 
 

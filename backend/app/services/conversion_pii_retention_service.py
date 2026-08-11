@@ -38,15 +38,34 @@ async def purge_expired_conversion_event_pii(
     async with session_factory() as db:
         rows = (await db.execute(select(ProviderOutboxEvent).where(
             ProviderOutboxEvent.event_type.in_(CONVERSION_EVENT_TYPES),
-            ProviderOutboxEvent.status.in_((ProviderOutboxStatus.SUCCEEDED.value, ProviderOutboxStatus.DEAD.value)),
-            ProviderOutboxEvent.completed_at.is_not(None),
-            ProviderOutboxEvent.completed_at <= cutoff,
-        ).with_for_update(skip_locked=True))).scalars().all()
-        redacted = [event for event in rows if SENSITIVE_FIELDS.intersection(event.payload or {})]
-        for event in redacted:
+            # Retention is an absolute ceiling measured from creation, not
+            # completion. It therefore includes queued, leased, and
+            # configuration-blocked events.
+            ProviderOutboxEvent.created_at <= cutoff,
+        ).with_for_update())).scalars().all()
+        affected = []
+        terminal = {
+            ProviderOutboxStatus.SUCCEEDED.value,
+            ProviderOutboxStatus.DEAD.value,
+            ProviderOutboxStatus.EXPIRED.value,
+        }
+        for event in rows:
+            has_pii = bool(SENSITIVE_FIELDS.intersection(event.payload or {}))
+            is_nonterminal = event.status not in terminal
+            if not has_pii and not is_nonterminal:
+                continue
             redact_conversion_payload(event, redacted_at=current)
+            if is_nonterminal:
+                event.status = ProviderOutboxStatus.EXPIRED.value
+                event.completed_at = current
+                event.available_at = current
+                event.lock_token = None
+                event.locked_at = None
+                event.locked_until = None
+                event.last_error = "Delivery expired under the conversion PII retention policy"
+            affected.append(event)
         await db.commit()
-        return len(redacted)
+        return len(affected)
 
 
 async def erase_customer_conversion_event_pii(db: AsyncSession, *, tenant_id: UUID, customer_id: UUID, apply: bool = False) -> int:

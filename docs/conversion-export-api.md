@@ -10,7 +10,9 @@ Repair-order create/update APIs and the normal repair-order UI support optional
 `lead_source_channel`, `external_lead_id`, `callrail_call_id`,
 `google_click_id`, `gbraid`, `wbraid`, `landing_page_url`, and all five UTM
 fields. They do not modify the legacy `source`, customer notes, or internal
-notes. Attribution is locked when an order becomes invoiced or paid.
+notes. `landing_page_url` is normalized and accepts only valid HTTP(S) URLs;
+other schemes and control characters are rejected. Attribution is locked when
+an order becomes invoiced or paid.
 
 ## Webhook configuration
 
@@ -24,7 +26,13 @@ destination is checked both when it is saved and immediately before delivery.
 Delivery resolves once, rejects the full DNS answer if any address is
 non-public, then connects only to a vetted literal address while retaining the
 original TLS SNI/certificate hostname and HTTP `Host` authority. HTTPX/httpcore
-are pinned because that transport contract is security-sensitive.
+are pinned because that transport contract is security-sensitive. Every DNS
+answer is validated, after which at most four deterministically sorted public
+addresses may be attempted. DNS has its own three-second deadline, and DNS plus
+all address attempts share a 35-second wall-clock budget, below the worker's
+45-second soft limit. Operators may lower these with
+`PAID_INVOICE_WEBHOOK_DNS_TIMEOUT_SECONDS` and
+`PAID_INVOICE_WEBHOOK_TOTAL_TIMEOUT_SECONDS`.
 
 Paid invoices over $0 produce `repair_order.paid`. Deleted, unpaid, draft,
 completed-only, and $0 orders do not. Correction event types are
@@ -96,14 +104,18 @@ it is authorized to use, disclose marketing/measurement processing in its
 privacy notice, honor opt-out/deletion obligations applicable to it, restrict
 destination access, and set an appropriate retention period. DieselBridge logs
 delivery metadata and bounded errors—not webhook bodies or customer contact.
-Completed/dead outbox payloads are automatically reduced to non-contact event
-metadata after `CONVERSION_OUTBOX_PII_RETENTION_DAYS` (30 by default). The
+All outbox payloads are automatically reduced to non-contact event metadata at
+the absolute `created_at + CONVERSION_OUTBOX_PII_RETENTION_DAYS` ceiling (30
+days by default), regardless of whether they are pending, processing,
+configuration-blocked, succeeded, or dead. Old nonterminal events atomically
+become terminal `expired` records, have leases cleared, and cannot be delivered
+or replayed. The
 customer-erasure service removes contact, attribution URLs, and free-form
 service lines immediately for a tenant/customer privacy request. Operators
 dry-run `python -m app.commands.erase_conversion_event_pii --tenant-id ...
 --customer-id ...` and repeat with `--apply` after verifying the exact scope.
-Redacted dead-letter events remain visible as delivery metadata but cannot be
-replayed because their original signed payload no longer exists.
+Redacted dead-letter and expired events remain visible as delivery metadata but
+cannot be replayed because their original signed payload no longer exists.
 
 ## Deployment gate
 

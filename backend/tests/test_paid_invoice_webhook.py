@@ -54,7 +54,7 @@ async def test_paid_invoice_event_is_signed(monkeypatch):
     sent = {}
     monkeypatch.setattr("app.core.config.settings.PAID_INVOICE_WEBHOOK_ENCRYPTION_KEY", Fernet.generate_key().decode())
 
-    async def allow_destination(url):
+    async def allow_destination(url, **_kwargs):
         return ResolvedWebhookDestination(url, "example.test", "example.test", ("93.184.216.34",))
 
     class Response:
@@ -201,7 +201,7 @@ async def test_cross_tenant_resources_cannot_enter_conversion_outbox(_db_engine,
 async def test_webhook_redirect_is_rejected_without_following(monkeypatch):
     monkeypatch.setattr("app.core.config.settings.PAID_INVOICE_WEBHOOK_ENCRYPTION_KEY", Fernet.generate_key().decode())
 
-    async def allow_destination(url):
+    async def allow_destination(url, **_kwargs):
         return ResolvedWebhookDestination(url, "hooks.example.com", "hooks.example.com", ("93.184.216.34",))
 
     class Response:

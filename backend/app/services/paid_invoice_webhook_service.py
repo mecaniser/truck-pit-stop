@@ -9,13 +9,18 @@ from decimal import Decimal
 from typing import Optional
 from uuid import UUID, uuid4
 
+import anyio
 import httpx
 from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.config import settings
 from app.core.paid_invoice_webhook_crypto import PaidInvoiceWebhookCryptoError, decrypt_paid_invoice_webhook_secret
-from app.core.webhook_destination import WebhookDestinationError, resolve_webhook_destination
+from app.core.webhook_destination import (
+    WebhookDestinationError,
+    WebhookDestinationResolutionTimeout,
+    resolve_webhook_destination,
+)
 from app.db.models.customer import Customer
 from app.db.models.invoice import Invoice, InvoiceStatus
 from app.db.models.provider_outbox import ProviderOutboxEvent, ProviderOutboxStatus
@@ -157,6 +162,16 @@ def _retry_delay(attempt: int) -> timedelta:
 
 
 async def _deliver(tenant: Tenant, event: ProviderOutboxEvent) -> tuple[Optional[str], int]:
+    try:
+        with anyio.fail_after(settings.PAID_INVOICE_WEBHOOK_TOTAL_TIMEOUT_SECONDS):
+            return await _deliver_within_budget(tenant, event)
+    except TimeoutError as exc:
+        raise ProviderDeliveryError(
+            "Webhook delivery exceeded its total time budget", retryable=True
+        ) from exc
+
+
+async def _deliver_within_budget(tenant: Tenant, event: ProviderOutboxEvent) -> tuple[Optional[str], int]:
     if not tenant.paid_invoice_webhook_enabled or not tenant.paid_invoice_webhook_url or not tenant.paid_invoice_webhook_secret_encrypted:
         raise ProviderDeliveryError("Conversion webhook is disabled or incomplete", retryable=False)
     body = json.dumps(event.payload, separators=(",", ":"), sort_keys=True).encode()
@@ -165,7 +180,12 @@ async def _deliver(tenant: Tenant, event: ProviderOutboxEvent) -> tuple[Optional
     # receiver's retry budget.
     secret = decrypt_paid_invoice_webhook_secret(tenant.paid_invoice_webhook_secret_encrypted)
     try:
-        destination = await resolve_webhook_destination(tenant.paid_invoice_webhook_url)
+        destination = await resolve_webhook_destination(
+            tenant.paid_invoice_webhook_url,
+            dns_timeout_seconds=settings.PAID_INVOICE_WEBHOOK_DNS_TIMEOUT_SECONDS,
+        )
+    except WebhookDestinationResolutionTimeout as exc:
+        raise ProviderDeliveryError(str(exc), retryable=True) from exc
     except WebhookDestinationError as exc:
         raise ProviderDeliveryError(str(exc), retryable=False) from exc
     timestamp = str(int(_now().timestamp()))

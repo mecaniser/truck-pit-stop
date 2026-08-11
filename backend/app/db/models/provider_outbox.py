@@ -20,6 +20,9 @@ class ProviderOutboxStatus(str, enum.Enum):
     PROCESSING = "processing"
     SUCCEEDED = "succeeded"
     DEAD = "dead"
+    # Terminal privacy-policy state. Provider outbox status is intentionally a
+    # string column, so this additive value requires no database migration.
+    EXPIRED = "expired"
 
 
 class ProviderOutboxEvent(BaseModel):
