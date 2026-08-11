@@ -221,10 +221,10 @@ async def test_update_tenant_user_wrong_tenant_404(db_session):
 from app.api.v1.endpoints.messages import require_staff_user
 
 
-async def _messaging_allowed(user: User) -> bool:
+async def _messaging_allowed(user: User, db_session) -> bool:
     checker = require_staff_user()
     try:
-        await checker(current_user=user)
+        await checker(current_user=user, db=db_session)
         return True
     except HTTPException:
         return False
@@ -244,7 +244,7 @@ async def test_fleet_manager_messaging_off_by_default(db_session):
     row = (await db_session.execute(
         sqlalchemy.select(User).where(User.id == created.id)
     )).scalar_one()
-    assert await _messaging_allowed(row) is False
+    assert await _messaging_allowed(row, db_session) is False
 
 
 @pytest.mark.asyncio
@@ -262,7 +262,7 @@ async def test_fleet_manager_messaging_granted_on_create(db_session):
     row = (await db_session.execute(
         sqlalchemy.select(User).where(User.id == created.id)
     )).scalar_one()
-    assert await _messaging_allowed(row) is True
+    assert await _messaging_allowed(row, db_session) is True
 
 
 @pytest.mark.asyncio
@@ -301,4 +301,4 @@ async def test_receptionist_messaging_allowed_by_role(db_session):
         sqlalchemy.select(User).where(User.id == created.id)
     )).scalar_one()
     # Receptionists have messaging by role even though the flag defaults False.
-    assert await _messaging_allowed(row) is True
+    assert await _messaging_allowed(row, db_session) is True

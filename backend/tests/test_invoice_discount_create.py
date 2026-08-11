@@ -8,6 +8,7 @@ import pytest
 from fastapi import HTTPException
 
 from app.api.v1.endpoints import invoices
+from app.db.models.customer import Customer
 from app.db.models.repair_order import RepairOrder, RepairOrderStatus
 from app.db.models.tenant import Tenant
 from app.db.models.user import User, UserRole
@@ -74,6 +75,14 @@ def _build_context():
     vehicle_id = uuid4()
     user_id = uuid4()
 
+    customer = Customer(
+        id=customer_id,
+        tenant_id=tenant_id,
+        first_name="Test",
+        last_name="Customer",
+        email="customer@example.com",
+        phone="15555550100",
+    )
     order = RepairOrder(
         id=order_id,
         tenant_id=tenant_id,
@@ -87,6 +96,7 @@ def _build_context():
         total_parts_cost=Decimal("100.00"),
         total_labor_cost=Decimal("50.00"),
         total_cost=Decimal("150.00"),
+        customer=customer,
     )
     tenant = Tenant(
         id=tenant_id,
