@@ -19,7 +19,7 @@ reviewed, merged, and released. Reconcile this board whenever newer evidence exi
 
 | ID | Priority | State | Outcome | Owner | Evidence now | Next gate |
 |---|---|---|---|---|---|---|
-| DB-029 | P1 | In progress | Rebuild the homepage repair-order preview as a premium interactive event system | Frontend & UX | Product-owner rejection of DB-028 recorded on 2026-08-11. Architecture & API Contracts returned a presentation-only contract: one typed repair story; independent module/stage tab systems; exactly two morphing evidence sheets; live DOM-measured, obstacle-checked routes in reserved rails; compact static fallbacks; interruptible latest-selection motion; no API, auth, tenant, payment, backend, worker, or migration impact. Corrective branch: `codex/homepage-event-orchestration`; intake commit `dfb9d88`. | Frontend & UX implements the approved contract with focused automated/runtime evidence; then independent QA Gatekeeper and an independent Impeccable/Emil finish reviewer must return GO before Release & Reliability opens the production gate. |
+| DB-029 | P1 | In progress | Rebuild the homepage product preview as a premium interactive DieselBridge tour | Frontend & UX | Product-owner rejection of DB-028 recorded on 2026-08-11. The revised Architecture contract is code-grounded in the authenticated product: a curated five-item rail replaces the entire miniature with faithful Repair Orders, Customers, Shop Cockpit/Work Queue, embedded Invoice, or embedded Vehicle History surfaces. The former global five-stage/25-state model is superseded. Typed static fixtures, authentic local controls, live obstacle-checked routes, compact fallbacks, and interruptible motion remain presentation-only; no API, auth, tenant, payment, backend, worker, or migration impact. Corrective branch: `codex/homepage-event-orchestration`; intake `dfb9d88`; first handoff `6cf67a7`. | Frontend & UX refactors the preserved implementation to the revised source map and returns focused automated/runtime evidence; then independent QA Gatekeeper and an independent Impeccable/Emil finish reviewer must return GO before Release & Reliability opens the production gate. |
 | DB-003 | P1 | Discovery | Finish versioned additional-work authorizations | Backend & Integrations | PR #196 merged at `e20fa1a` with implementation commit `a51f2af`; immutable revisions/finalization guard exist, but task validation found the portal action still depends on the staff-send flow | Architecture decides automatic vs staff-reviewed publication and any threshold policy; then run mechanic addition → customer prompt → approve/decline → invoice Playwright acceptance, Security GO, QA GO |
 | DB-004 | P1 | QA/Security | Reconcile customer portal redesign and active-repair workflow | Frontend & UX | PRs #189 and #194 are merged and included in current production | Run and record one mobile customer portal acceptance journey; then move to Done |
 
@@ -88,37 +88,56 @@ last passing automated and runtime evidence in the item or associated issue.
 - Remove the visible “Illustrative sample” and “Fictional repair-order data”
   disclaimer. Keep the example internally safe without adding visible legalistic
   copy, customer claims, testimonials, performance claims, or real PII.
-- Repair orders, Customers, Shop work, Invoices, and Vehicle history are real
-  keyboard-operable controls. Selecting each one reveals coherent information
-  from the same repair story and exposes the selected state semantically.
-- Intake, Estimate, Approval, Invoice, and Payment & history are real controls.
-  Selecting each one updates the internal workspace story and a relevant external
-  event sheet; rapid selection interrupts and retargets without stale content.
-- Every animated signal route begins at the selected control and terminates at
-  its associated evidence sheet. Routes and nodes never cross text, controls, or
-  card interiors. Geometry is derived from rendered elements rather than fixed
-  screenshot coordinates and remains correct after resize and content changes.
+- The curated rail order, labels, and Lucide icons are exactly Repair Orders /
+  `ClipboardList`, Customers / `Users`, Shop Work / `Wrench`, Invoices /
+  `FileText`, and Vehicle History / `History`. These are keyboard-operable tabs;
+  selection replaces the entire miniature and is exposed semantically.
+- Each miniature is faithful to its current product source rather than an
+  invented generic dashboard: Repair Orders uses the repair-order workspace,
+  invoice, work/labor, total, and history anatomy; Customers uses the real list,
+  detail, Overview, and History patterns; Shop Work uses Shop Cockpit, Work Queue,
+  Queue/Activity, and its three lanes; Invoices uses the embedded invoice-card
+  states; Vehicle History uses vehicle details and Repair History rows.
+- There is no global Intake/Estimate/Approval/Invoice/Payment stage rail and no
+  module-by-stage Cartesian state. Each miniature exposes only authentic local
+  controls: repair-order history/invoice/work evidence, customer Overview/History,
+  Shop Work Queue/Activity and order cards, invoice selection/expansion, and
+  vehicle-history row selection/expansion. Per-module local state is preserved.
+- Fixtures are typed, deeply frozen, locally imported, internally reconciled,
+  and use masked/safe values. Preview interaction performs no network request,
+  auth/tenant read, WebSocket, storage write, or mutation and never mounts the
+  authenticated production pages or their data hooks.
+- The module route begins at the selected rail control and terminates at the
+  context sheet. An event route appears only for an authentic selected row, card,
+  disclosure, or history event and terminates at its evidence sheet. Routes and
+  nodes never cross text, controls, or card interiors. Geometry comes from live
+  rendered anchors, inflates obstacles by at least 8px, remeasures after resize,
+  fonts, expansion, or content change, and suppresses any invalid route.
 - The authored focal motion is the selected event travelling through its route
-  into a morphing evidence sheet. Supporting module selection, glass depth,
-  pointer-down feedback, focus, and CTA material motion stay subordinate and
-  purposeful; there is no decorative background loop or repeated generic rise.
-- External evidence sheets use functional Apple-style glass with clear edge,
-  depth, translucency, hierarchy, and restrained specular response. The primary
-  CTA uses a distinctive layered DieselBridge copper/orange material, not a flat
-  generic orange rectangle.
+  into a capability-based morphing evidence sheet. Module-screen morph, glass
+  depth, pointer-down feedback, focus, and CTA material motion stay subordinate,
+  interruptible, and latest-selection-safe; there is no ambient loop or repeated
+  generic rise. The CTA uses layered DieselBridge copper/orange material rather
+  than a flat generic orange rectangle.
+- Context and optional event sheets use functional Apple-style glass with clear
+  edge, depth, translucency, hierarchy, and restrained specular response. If a
+  module has no authentic secondary selection, the event sheet collapses rather
+  than inventing evidence.
 - Desktop keeps the product and its external evidence legible as one composition.
-  At the compact breakpoint, routes collapse safely and evidence stacks in
-  reading order. The page has no horizontal overflow at 1440, 1366, 1280, 1120,
-  960, 390, or 320 CSS pixels; visible interactive targets are at least 44px.
+  At widths below 1200px routes are absent and evidence stacks in semantic order.
+  At 390/320 the rail becomes a wrapping grid and authentic tables become compact
+  rows/cards. The page has no horizontal overflow at 1440, 1366, 1280, 1120, 960,
+  390, or 320 CSS pixels; visible interactive targets are at least 44px.
 - Keyboard operation, focus visibility, reduced motion, reduced transparency,
-  contrast, and coarse-pointer behavior are verified. Keyboard-triggered changes
-  do not depend on spatial animation to communicate state.
-- Scope is frontend presentation only unless Architecture explicitly returns a
-  contract change. No API, auth, tenant, payment, backend data, or migration
-  change is implied by this outcome.
+  contrast, coarse-pointer behavior, 200% zoom, rapid retargeting, empty/optional
+  data, late fonts, missing observers, and rotation/resize are verified without
+  stale selection, focus, sheet, or route state.
+- Scope is frontend presentation only. No API, auth, tenant, payment, backend
+  data, WebSocket, worker, route, or migration change is part of this outcome.
 - Focused unit tests, full frontend tests, production build, lint/diff checks,
-  responsive Playwright geometry and interaction coverage, independent QA, and
-  an independent Impeccable/Emil finish review must pass before release.
+  source-fidelity and fixture invariants, responsive Playwright geometry and
+  interaction coverage, independent QA, and an independent Impeccable/Emil
+  finish review must pass before release.
 - Release evidence must record the focused PR/merge SHA, required CI contexts,
   both Railway web deployment IDs and health gates, changed homepage canary, and
   proof that the worker deployment remained unchanged.
