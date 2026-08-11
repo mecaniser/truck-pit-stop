@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" role="img" aria-labelledby="title">
+  <title id="title">DieselBridge</title>
+  <rect width="48" height="48" rx="12" fill="#13233d"/>
+  <path d="M8 32c4-18 28-18 32 0M12 32h24M17 32v-9m7 9V19m7 13v-9" fill="none" stroke="#f9fafb" stroke-width="3" stroke-linecap="round"/>
+  <circle cx="24" cy="19" r="2.5" fill="#f97316"/>
+</svg>

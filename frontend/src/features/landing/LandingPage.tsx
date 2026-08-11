@@ -1,33 +1,28 @@
-import { useEffect } from 'react'
-import { Spinner } from '@/components/ui'
+import { useEffect, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
-import { ArrowRight, CheckCircle, ClipboardList, Globe, MapPin, MapPinned, Wrench } from 'lucide-react'
+import {
+  ArrowRight,
+  Building2,
+  Check,
+  ClipboardCheck,
+  ExternalLink,
+  FileCheck2,
+  History,
+  Receipt,
+  RefreshCw,
+  Wrench,
+} from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
-import { useTheme } from '../../contexts/ThemeContext'
-import BrandLogo from '../../components/brand/BrandLogo'
+
 import { usePlatformContact } from '../../hooks/usePlatformContact'
 import { applySeo, removeStructuredData } from '../../lib/seo'
 import api from '../../lib/api'
+import './LandingPage.css'
 
 const BRAND = {
   platformName: 'Diesel Bridge Network',
-  networkName: 'Diesel Bridge',
-  heroLine: 'Get from breakdown request to active repair in one shared flow.',
-  supportLine: 'One request thread for dispatch, drivers, and shop teams.',
-  networkLine: 'Cut handoff delays and keep every update in one place.',
-}
-
-interface UserGoal {
-  label: string
-  detail: string
-}
-
-interface FlowStep {
-  step: string
-  title: string
-  detail: string
-  icon: LucideIcon
+  shortName: 'DieselBridge',
 }
 
 interface LandingPartner {
@@ -41,43 +36,57 @@ interface LandingPartner {
   partner_services: string | null
 }
 
-const TOP_USER_GOALS: UserGoal[] = [
-  {
-    label: 'Reduce downtime across every repair handoff',
-    detail: 'Dispatch, drivers, and shops stay aligned from first request to final closeout.',
-  },
-  {
-    label: 'Give every stakeholder the same live status',
-    detail: 'No separate call chains or disconnected updates when jobs are moving fast.',
-  },
-  {
-    label: 'Move from request to active repair with less friction',
-    detail: 'The workflow is built to keep trucks progressing instead of waiting between teams.',
-  },
-]
+interface WorkflowStage {
+  id: 'intake' | 'estimate' | 'approval' | 'invoice' | 'history'
+  label: string
+  title: string
+  detail: string
+  action: string
+  icon: LucideIcon
+}
 
-const FLOW_STEPS: FlowStep[] = [
+const WORKFLOW_STAGES: WorkflowStage[] = [
   {
-    step: '01',
-    title: 'Request service once',
-    detail: 'Dispatch shares truck, location, and issue details in one clear intake.',
-    icon: MapPinned,
+    id: 'intake',
+    label: 'Intake',
+    title: 'Capture the write-up once.',
+    detail: 'Keep the customer, unit, issue, meter reading, and attachments together from the start.',
+    action: 'Create repair order',
+    icon: ClipboardCheck,
   },
   {
-    step: '02',
-    title: 'Run repair with shared visibility',
-    detail: 'Shop teams diagnose and update progress while everyone follows the same status.',
+    id: 'estimate',
+    label: 'Estimate',
+    title: 'Build the price from the work.',
+    detail: 'Organize parts, labor, fees, and recommended work inside the repair order.',
+    action: 'Review estimate',
     icon: Wrench,
   },
   {
-    step: '03',
-    title: 'Close out with confidence',
-    detail: 'Approvals, invoices, and history stay in one record for faster final handoff.',
-    icon: ClipboardList,
+    id: 'approval',
+    label: 'Approval',
+    title: 'Keep authorization beside the estimate.',
+    detail: 'Share the work for customer review and keep the decision attached to the job.',
+    action: 'Share for approval',
+    icon: Check,
+  },
+  {
+    id: 'invoice',
+    label: 'Invoice',
+    title: 'Carry completed work into the invoice.',
+    detail: 'Move the repair forward without rebuilding its parts, labor, and service record.',
+    action: 'Create invoice',
+    icon: Receipt,
+  },
+  {
+    id: 'history',
+    label: 'Payment & history',
+    title: 'Close the balance. Keep the record.',
+    detail: 'Record payment and preserve the completed repair for the next visit.',
+    action: 'View vehicle history',
+    icon: History,
   },
 ]
-
-const PARTNER_SUMMARY_FALLBACK = 'Approved Diesel Bridge repair partner.'
 
 const getPartnerMonogram = (name: string) =>
   name
@@ -87,21 +96,118 @@ const getPartnerMonogram = (name: string) =>
     .map((part) => part[0]?.toUpperCase() || '')
     .join('') || 'DB'
 
-const getPartnerWebsiteLabel = (website: string | null) => {
-  if (!website) return null
-  try {
-    return new URL(website).hostname.replace(/^www\./, '')
-  } catch {
-    return website
-  }
+function LandingWordmark() {
+  return (
+    <span className="landing-wordmark" aria-label={BRAND.platformName}>
+      <svg viewBox="0 0 42 30" role="img" aria-hidden="true">
+        <path d="M4 22C8 7 34 7 38 22" />
+        <path d="M8 22h26" />
+        <path d="M13 22v-7m8 7V11m8 11v-7" />
+      </svg>
+      <span>Diesel<span>Bridge</span></span>
+    </span>
+  )
+}
+
+function ProductWorkspace() {
+  const [activeStageId, setActiveStageId] = useState<WorkflowStage['id']>('approval')
+  const activeStage = WORKFLOW_STAGES.find((stage) => stage.id === activeStageId) ?? WORKFLOW_STAGES[2]
+
+  return (
+    <div className="landing-product-scene" aria-label="Interactive DieselBridge repair-order workflow preview">
+      <aside className={`landing-context-sheet landing-context-sheet--approval ${activeStageId === 'approval' ? 'is-active' : ''}`}>
+        <span className="landing-context-icon landing-context-icon--success"><Check aria-hidden="true" /></span>
+        <div>
+          <strong>Customer approval</strong>
+          <span>Decision stays with the repair order.</span>
+        </div>
+      </aside>
+
+      <div className="landing-workspace-frame">
+        <aside className="landing-workspace-nav" aria-label="Product preview navigation">
+          <LandingWordmark />
+          <span className="is-current"><ClipboardCheck aria-hidden="true" /> Repair orders</span>
+          <span><Building2 aria-hidden="true" /> Customers</span>
+          <span><Wrench aria-hidden="true" /> Shop work</span>
+          <span><Receipt aria-hidden="true" /> Invoices</span>
+          <span><History aria-hidden="true" /> Vehicle history</span>
+        </aside>
+
+        <div className="landing-workspace-main">
+          <div className="landing-workspace-toolbar">
+            <div>
+              <span className="landing-workspace-back">Repair orders</span>
+              <strong>Repair order workspace</strong>
+            </div>
+            <span className="landing-status">In progress</span>
+          </div>
+
+          <dl className="landing-workspace-summary">
+            <div><dt>Customer</dt><dd>Customer account</dd></div>
+            <div><dt>Unit</dt><dd>Truck or trailer</dd></div>
+            <div><dt>Vehicle details</dt><dd>VIN · meter · history</dd></div>
+          </dl>
+
+          <div className="landing-stage-tabs" aria-label="Repair workflow stages">
+            {WORKFLOW_STAGES.map((stage) => (
+              <button
+                key={stage.id}
+                type="button"
+                aria-pressed={stage.id === activeStageId}
+                onClick={() => setActiveStageId(stage.id)}
+              >
+                {stage.label}
+              </button>
+            ))}
+          </div>
+
+          <div className="landing-workspace-content" key={activeStage.id}>
+            <section>
+              <span className="landing-content-label">{activeStage.label}</span>
+              <h2>{activeStage.title}</h2>
+              <p>{activeStage.detail}</p>
+              <span className="landing-preview-guidance">
+                <strong>Next action</strong>
+                {activeStage.action}
+              </span>
+            </section>
+            <div className="landing-work-list" aria-label="Repair order contents">
+              <span><Check aria-hidden="true" /> Customer and unit details</span>
+              <span><Check aria-hidden="true" /> Work, parts, and labor</span>
+              <span><Check aria-hidden="true" /> Notes and attachments</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <aside className={`landing-context-sheet landing-context-sheet--invoice ${activeStageId === 'invoice' ? 'is-active' : ''}`}>
+        <span className="landing-context-icon"><FileCheck2 aria-hidden="true" /></span>
+        <div>
+          <strong>Invoice ready</strong>
+          <span>Completed work carries forward.</span>
+        </div>
+      </aside>
+
+      <aside className={`landing-context-sheet landing-context-sheet--history ${activeStageId === 'history' ? 'is-active' : ''}`}>
+        <span className="landing-context-icon landing-context-icon--success"><History aria-hidden="true" /></span>
+        <div>
+          <strong>Paid history</strong>
+          <span>The completed repair remains searchable.</span>
+        </div>
+      </aside>
+    </div>
+  )
 }
 
 export default function LandingPage() {
-  const { accentColors } = useTheme()
   const { mailtoHref } = usePlatformContact()
-  const accent400 = accentColors[400]
-  const accent500 = accentColors[500]
-  const { data: partners = [], isLoading: partnersLoading } = useQuery<LandingPartner[]>({
+  const {
+    data: partners = [],
+    isLoading: partnersLoading,
+    isError: partnersError,
+    isFetching: partnersFetching,
+    refetch: refetchPartners,
+  } = useQuery<LandingPartner[]>({
     queryKey: ['landing-partners'],
     queryFn: async () => {
       const response = await api.get('/auth/landing-partners')
@@ -110,11 +216,10 @@ export default function LandingPage() {
     staleTime: 5 * 60 * 1000,
     retry: 1,
   })
-  const partnerRail = partners.length > 0 ? [...partners, ...partners] : []
 
   useEffect(() => {
-    const pageTitle = 'Diesel Bridge Network | 3-Step Breakdown-to-Repair Flow'
-    const pageDescription = 'Diesel Bridge Network helps dispatch, drivers, and shops coordinate repairs in a clear three-step workflow that reduces downtime.'
+    const pageTitle = 'DieselBridge | Repair Shop Workflow From Intake to Paid History'
+    const pageDescription = 'DieselBridge gives heavy-duty repair shops one workflow for intake, estimates, approvals, invoices, payments, and vehicle history.'
     const siteOrigin = (import.meta.env.VITE_SITE_URL || window.location.origin).replace(/\/+$/, '')
     const canonicalUrl = `${siteOrigin}/`
     const ogImage = `${siteOrigin}/DB_bridge_logo_favi_figma_public_B.png`
@@ -134,300 +239,140 @@ export default function LandingPage() {
         data: {
           '@context': 'https://schema.org',
           '@graph': [
-            {
-              '@type': 'Organization',
-              '@id': `${siteOrigin}/#organization`,
-              name: BRAND.platformName,
-              url: siteOrigin,
-              logo: ogImage,
-            },
-            {
-              '@type': 'WebSite',
-              '@id': `${siteOrigin}/#website`,
-              url: siteOrigin,
-              name: BRAND.platformName,
-              publisher: {
-                '@id': `${siteOrigin}/#organization`,
-              },
-            },
-            {
-              '@type': 'WebPage',
-              '@id': `${canonicalUrl}#webpage`,
-              url: canonicalUrl,
-              name: pageTitle,
-              description: pageDescription,
-              isPartOf: {
-                '@id': `${siteOrigin}/#website`,
-              },
-            },
+            { '@type': 'Organization', '@id': `${siteOrigin}/#organization`, name: BRAND.platformName, url: siteOrigin, logo: ogImage },
+            { '@type': 'WebSite', '@id': `${siteOrigin}/#website`, url: siteOrigin, name: BRAND.platformName, publisher: { '@id': `${siteOrigin}/#organization` } },
+            { '@type': 'WebPage', '@id': `${canonicalUrl}#webpage`, url: canonicalUrl, name: pageTitle, description: pageDescription, isPartOf: { '@id': `${siteOrigin}/#website` } },
           ],
         },
       },
     })
 
-    return () => {
-      removeStructuredData(structuredDataId)
-    }
+    return () => removeStructuredData(structuredDataId)
   }, [])
 
   return (
-    <div className="min-h-screen" style={{ background: 'linear-gradient(to top left, #162338 0%, #0f172a 50%, #111827 100%)' }}>
-      <a
-        href="#main-content"
-        className="sr-only focus:not-sr-only focus:absolute focus:top-3 focus:left-3 focus:z-[60] focus:px-4 focus:py-2 focus:rounded-md focus:bg-white focus:text-slate-950"
-      >
-        Skip to main content
-      </a>
+    <div className="landing-shell">
+      <a className="landing-skip" href="#main-content">Skip to main content</a>
 
-      <header className="sticky top-0 z-50 border-b border-gray-800 bg-gray-900/95 backdrop-blur-sm">
-        <nav className="mx-auto flex h-16 max-w-6xl items-center justify-between px-4 sm:px-6" aria-label="Primary">
-          <div className="flex items-center">
-            <img
-              src="/DB_bridge_logo_favi_figma_public_B.svg"
-              alt={BRAND.platformName}
-              className="h-[52px] sm:h-[56px] w-auto"
-            />
+      <header className="landing-header">
+        <nav className="landing-nav" aria-label="Primary navigation">
+          <a className="landing-brand-link" href="#main-content"><LandingWordmark /></a>
+          <div className="landing-nav-links">
+            <a href="#workflow">How it works</a>
+            <a href="#approved-shops">Approved shops</a>
           </div>
-          <Link
-            to="/login"
-            className="rounded-md px-3 py-2 text-sm text-gray-300 transition-colors hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70"
-          >
-            Sign in
-          </Link>
+          <div className="landing-nav-actions">
+            <Link to="/login" className="landing-sign-in">Sign in</Link>
+            <Link to="/enroll" className="landing-nav-cta">Apply for shop access</Link>
+          </div>
         </nav>
       </header>
 
       <main id="main-content">
-        <section className="px-4 pb-16 pt-14 sm:px-6 sm:pt-20">
-          <div className="mx-auto max-w-6xl">
-            <div>
-              <p className="mb-5 inline-flex items-center rounded-full border border-white/20 bg-white/10 px-4 py-1 text-sm font-semibold text-gray-200">
-                {BRAND.networkName} | Founding Access
-              </p>
-              <h1 className="mb-5 text-4xl font-bold leading-tight text-white md:text-5xl lg:text-6xl">
-                {BRAND.heroLine}
-              </h1>
-              <p className="mb-7 max-w-2xl text-lg text-gray-300">
-                {BRAND.supportLine} {BRAND.networkLine}
-              </p>
-
-              <ul className="mb-8 space-y-3">
-                {TOP_USER_GOALS.map((goal) => (
-                  <li key={goal.label} className="flex items-start gap-3">
-                    <CheckCircle className="mt-0.5 h-5 w-5 flex-shrink-0" style={{ color: accent400 }} aria-hidden="true" />
-                    <div>
-                      <p className="font-semibold text-white">{goal.label}</p>
-                      <p className="text-sm text-gray-400">{goal.detail}</p>
-                    </div>
-                  </li>
-                ))}
-              </ul>
-
-              <Link
-                to="/enroll"
-                aria-label="Apply for founding shop access"
-                className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg px-7 py-3 text-base font-semibold text-white transition-all hover:opacity-95 hover:shadow-[0_0_24px_var(--accent-500)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/80"
-                style={{ backgroundColor: accent500 }}
-              >
-                Apply for Founding Shop Access
-                <ArrowRight className="h-5 w-5" aria-hidden="true" />
-              </Link>
-            </div>
+        <section className="landing-hero" aria-labelledby="landing-title">
+          <div className="landing-hero-copy">
+            <h1 id="landing-title">Every repair, moving in one clear flow.</h1>
+            <p>DieselBridge gives repair shops one workspace for intake, estimates, approvals, invoices, payments, and vehicle history.</p>
+            <Link to="/enroll" className="landing-primary-cta">
+              Apply for Founding Shop Access
+              <ArrowRight aria-hidden="true" />
+            </Link>
           </div>
+          <ProductWorkspace />
         </section>
 
-        <section id="partners" className="border-t border-gray-800 bg-gray-950/35 px-4 py-16 sm:px-6">
-          <div className="mx-auto max-w-6xl">
-            <div className="mb-10 max-w-3xl">
-              <p className="text-sm font-semibold uppercase tracking-[0.18em] text-gray-400">Approved Network Partners</p>
-              <h2 className="mt-3 text-3xl font-bold text-white md:text-4xl">Shops already active in Diesel Bridge</h2>
-              <p className="mt-3 text-gray-300">
-                Approved shops and service partners go live here as they join the network.
-              </p>
+        <section id="workflow" className="landing-workflow" aria-labelledby="workflow-title">
+          <div className="landing-section-heading">
+            <h2 id="workflow-title">One repair order. Five connected outcomes.</h2>
+            <p>Each step keeps the shop’s work moving without splitting the record across separate tools.</p>
+          </div>
+          <ol className="landing-workflow-list">
+            {WORKFLOW_STAGES.map((stage) => {
+              const StageIcon = stage.icon
+              return (
+                <li key={stage.id}>
+                  <span><StageIcon aria-hidden="true" /></span>
+                  <div><strong>{stage.label}</strong><p>{stage.detail}</p></div>
+                </li>
+              )
+            })}
+          </ol>
+        </section>
+
+        <section id="approved-shops" className="landing-partners" aria-labelledby="partners-title">
+          <div className="landing-section-heading">
+            <h2 id="partners-title">Built with working repair shops in view.</h2>
+            <p>Approved Diesel Bridge shops appear here as their public partner profiles go live.</p>
+          </div>
+
+          {partnersLoading ? (
+            <div className="landing-partner-state" role="status">
+              <span className="landing-state-spinner" aria-hidden="true" />
+              Loading approved shops…
             </div>
-
-            <div className="partner-marquee-shell overflow-hidden rounded-lg border border-gray-800 bg-gray-950/50">
-              {partnersLoading ? (
-                <div className="flex items-center gap-3 px-4 py-4 text-sm text-gray-400">
-                  <Spinner size="xs" />
-                  Loading approved partners...
-                </div>
-              ) : partnerRail.length > 0 ? (
-                <div className="partner-marquee-track px-3 py-3">
-                  {partnerRail.map((partner, index) => {
-                    const websiteLabel = getPartnerWebsiteLabel(partner.website)
-                    const tileContent = (
-                      <>
-                        {partner.logo_url ? (
-                          <img
-                            src={partner.logo_url}
-                            alt={`${partner.name} logo`}
-                            className="h-10 w-10 rounded-lg bg-white p-1 object-contain"
-                            referrerPolicy="no-referrer"
-                          />
-                        ) : (
-                          <div
-                            className="flex h-10 w-10 items-center justify-center rounded-lg border border-white/10 text-sm font-semibold text-white"
-                            style={{ backgroundColor: `${accent500}22` }}
-                            aria-hidden="true"
-                          >
-                            {getPartnerMonogram(partner.name)}
-                          </div>
-                        )}
-                        <div className="min-w-0">
-                          <p className="truncate text-sm font-semibold text-white">{partner.name}</p>
-                          <p className="truncate text-xs text-gray-400">{websiteLabel || partner.slug}</p>
-                        </div>
-                      </>
-                    )
-
-                    const tileClassName =
-                      'flex min-w-[220px] shrink-0 items-center gap-3 rounded-lg border border-white/10 bg-white/[0.03] px-4 py-3 transition-colors hover:border-white/20 hover:bg-white/[0.05]'
-
-                    if (partner.website) {
-                      return (
-                        <a
-                          key={`${partner.id}-${index}`}
-                          href={partner.website}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className={tileClassName}
-                        >
-                          {tileContent}
-                        </a>
-                      )
-                    }
-
-                    return (
-                      <div key={`${partner.id}-${index}`} className={tileClassName}>
-                        {tileContent}
-                      </div>
-                    )
-                  })}
-                </div>
-              ) : (
-                <div className="px-4 py-4 text-sm text-gray-400">
-                  Approved businesses appear here as they go live.
-                </div>
-              )}
-            </div>
-
-            {partners.length > 0 && (
-              <div className="mt-8 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-                {partners.map((partner) => {
-                  const websiteLabel = getPartnerWebsiteLabel(partner.website)
-                  return (
-                    <article key={partner.id} className="rounded-lg border border-gray-800 bg-gray-900/55 p-5">
-                      <div className="flex items-start gap-3">
-                        {partner.logo_url ? (
-                          <img
-                            src={partner.logo_url}
-                            alt={`${partner.name} logo`}
-                            className="h-12 w-12 rounded-lg bg-white p-1 object-contain"
-                            referrerPolicy="no-referrer"
-                          />
-                        ) : (
-                          <div
-                            className="flex h-12 w-12 items-center justify-center rounded-lg border border-white/10 text-sm font-semibold text-white"
-                            style={{ backgroundColor: `${accent500}22` }}
-                            aria-hidden="true"
-                          >
-                            {getPartnerMonogram(partner.name)}
-                          </div>
-                        )}
-
-                        <div className="min-w-0 flex-1">
-                          <h3 className="text-lg font-semibold text-white">{partner.name}</h3>
-                          {partner.partner_services ? (
-                            <p className="mt-1 text-xs font-semibold uppercase tracking-[0.16em] text-gray-400">
-                              {partner.partner_services}
-                            </p>
-                          ) : null}
-                        </div>
-                      </div>
-
-                      <p className="mt-4 text-sm leading-6 text-gray-300">
-                        {partner.partner_summary || PARTNER_SUMMARY_FALLBACK}
-                      </p>
-
-                      <div className="mt-5 space-y-3 text-sm text-gray-400">
-                        {partner.address ? (
-                          <div className="flex items-start gap-2">
-                            <MapPin className="mt-0.5 h-4 w-4 flex-shrink-0" aria-hidden="true" />
-                            <span>{partner.address}</span>
-                          </div>
-                        ) : null}
-
-                        {partner.website ? (
-                          <div className="flex items-center gap-2">
-                            <Globe className="h-4 w-4 flex-shrink-0" aria-hidden="true" />
-                            <a
-                              href={partner.website}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="truncate text-gray-200 underline decoration-white/20 underline-offset-4 hover:text-white"
-                            >
-                              {websiteLabel || partner.website}
-                            </a>
-                          </div>
-                        ) : null}
-                      </div>
-                    </article>
-                  )
-                })}
+          ) : partnersError ? (
+            <div className="landing-partner-state landing-partner-state--error" role="alert">
+              <div>
+                <strong>Approved shops could not be loaded.</strong>
+                <span>The product overview is still available. Try the shop list again.</span>
               </div>
-            )}
-          </div>
-        </section>
-
-        <section id="flow" className="border-y border-gray-800 bg-gray-900/40 px-4 py-16 sm:px-6">
-          <div className="mx-auto max-w-6xl">
-            <div className="mb-10 max-w-3xl">
-              <h2 className="text-3xl font-bold text-white md:text-4xl">How Diesel Bridge works in 3 steps</h2>
-              <p className="mt-3 text-gray-300">
-                Capture the request, keep everyone aligned during repair, and close with clear records.
-              </p>
+              <button type="button" onClick={() => refetchPartners()} disabled={partnersFetching}>
+                <RefreshCw aria-hidden="true" />
+                {partnersFetching ? 'Trying again…' : 'Try again'}
+              </button>
             </div>
+          ) : partners.length === 0 ? (
+            <div className="landing-partner-state">
+              <Building2 aria-hidden="true" />
+              Approved shop profiles will appear here as they go live.
+            </div>
+          ) : (
+            <div className="landing-partner-list">
+              {partners.map((partner) => {
+                const content = (
+                  <>
+                    {partner.logo_url ? (
+                      <img src={partner.logo_url} alt="" referrerPolicy="no-referrer" />
+                    ) : (
+                      <span className="landing-partner-monogram" aria-hidden="true">{getPartnerMonogram(partner.name)}</span>
+                    )}
+                    <span className="landing-partner-copy">
+                      <strong>{partner.name}</strong>
+                      <span>{partner.partner_services || partner.address || 'Approved repair shop'}</span>
+                    </span>
+                    {partner.website ? <ExternalLink aria-hidden="true" /> : null}
+                  </>
+                )
 
-            <div className="grid gap-5 md:grid-cols-3">
-              {FLOW_STEPS.map((stepItem) => {
-                const StepIcon = stepItem.icon
-                return (
-                  <article key={stepItem.step} className="rounded-xl border border-gray-700 bg-gray-900/55 p-5">
-                    <div className="mb-4 flex items-center justify-between">
-                      <span className="text-sm font-semibold tracking-wide text-gray-400">{stepItem.step}</span>
-                      <div
-                        className="flex h-10 w-10 items-center justify-center rounded-lg"
-                        style={{ backgroundColor: `${accent500}1f` }}
-                      >
-                        <StepIcon className="h-5 w-5" style={{ color: accent400 }} aria-hidden="true" />
-                      </div>
-                    </div>
-                    <h3 className="text-lg font-semibold text-white">{stepItem.title}</h3>
-                    <p className="mt-2 text-sm leading-6 text-gray-300">{stepItem.detail}</p>
-                  </article>
+                return partner.website ? (
+                  <a key={partner.id} href={partner.website} target="_blank" rel="noopener noreferrer" aria-label={`Visit ${partner.name} website`}>
+                    {content}
+                  </a>
+                ) : (
+                  <article key={partner.id}>{content}</article>
                 )
               })}
             </div>
-          </div>
+          )}
         </section>
 
+        <section className="landing-final-cta" aria-labelledby="final-cta-title">
+          <h2 id="final-cta-title">Give the shop one place to run the repair.</h2>
+          <p>Bring intake, work, approval, invoicing, payment, and vehicle history into one operating flow.</p>
+          <Link to="/enroll" className="landing-primary-cta">
+            Apply for Founding Shop Access
+            <ArrowRight aria-hidden="true" />
+          </Link>
+        </section>
       </main>
 
-      <footer className="border-t border-gray-800 bg-gray-900 px-4 py-10 sm:px-6">
-        <div className="mx-auto flex max-w-6xl flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-center">
-            <BrandLogo alt={BRAND.platformName} variant="landing" className="h-7 sm:h-8 w-auto" />
-          </div>
-          <p className="text-sm text-gray-400">
-            © {new Date().getFullYear()} {BRAND.platformName}. All rights reserved.
-          </p>
-          <div className="flex items-center gap-4 text-sm text-gray-400">
-            <Link to="/privacy" className="hover:text-white">Privacy Policy</Link>
-            <Link to="/terms" className="hover:text-white">Terms of Service</Link>
-            <Link to="/login" className="hover:text-white">Sign in</Link>
-            <a href={mailtoHref || 'mailto:support@dieselbridge.network'} className="hover:text-white">Contact</a>
-          </div>
+      <footer className="landing-footer">
+        <LandingWordmark />
+        <p>© {new Date().getFullYear()} {BRAND.platformName}</p>
+        <div>
+          <Link to="/privacy">Privacy</Link>
+          <Link to="/terms">Terms</Link>
+          <a href={mailtoHref || 'mailto:support@dieselbridge.network'}>Contact</a>
         </div>
       </footer>
     </div>
