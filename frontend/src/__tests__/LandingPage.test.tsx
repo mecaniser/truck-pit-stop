@@ -102,6 +102,10 @@ describe('LandingPage shop workflow', () => {
     expect(headerBrand.querySelector('.landing-wordmark__letters')).toHaveTextContent('DieselBridge')
     expect(headerBrand.querySelectorAll('.landing-wordmark__letter')).toHaveLength(12)
     expect(headerBrand.querySelectorAll('.landing-wordmark__letter--bridge')).toHaveLength(6)
+    const animatedLetters = [...headerBrand.querySelectorAll<HTMLElement>('.landing-wordmark__letter')]
+    expect(new Set(animatedLetters.map((letter) => letter.style.getPropertyValue('--letter-drop-y'))).size).toBeGreaterThan(4)
+    expect(new Set(animatedLetters.map((letter) => letter.style.getPropertyValue('--letter-drop-delay'))).size).toBe(12)
+    expect(animatedLetters.every((letter) => !letter.style.getPropertyValue('--letter-drop-x'))).toBe(true)
     expect(document.querySelectorAll('.landing-wordmark--animated')).toHaveLength(1)
     expect(document.querySelector('.landing-footer .landing-wordmark')).not.toHaveClass('landing-wordmark--animated')
     expect(screen.getByRole('heading', { name: 'Every repair, moving in one clear flow.' })).toBeInTheDocument()

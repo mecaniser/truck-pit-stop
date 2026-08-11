@@ -93,7 +93,7 @@
 .landing-wordmark__letter--bridge { color: #ff7a36; }
 
 .landing-wordmark--animated .landing-wordmark__letter {
-  animation: landing-wordmark-letter-drop 560ms var(--landing-ease-out) both;
+  animation: landing-wordmark-letter-drop 480ms var(--landing-ease-out) both;
   animation-delay: var(--letter-drop-delay);
   will-change: transform, opacity;
 }
@@ -272,10 +272,10 @@
 @keyframes landing-wordmark-letter-drop {
   from {
     opacity: 0;
-    transform: translate3d(var(--letter-drop-x), var(--letter-drop-y), 0) scale(0.96) rotate(var(--letter-drop-rotate));
+    transform: translate3d(0, var(--letter-drop-y), 0) scale(0.96);
   }
   18% { opacity: 1; }
-  to { opacity: 1; transform: translate3d(0, 0, 0) scale(1) rotate(0); }
+  to { opacity: 1; transform: translate3d(0, 0, 0) scale(1); }
 }
 
 @keyframes landing-wordmark-fade {

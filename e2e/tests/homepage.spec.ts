@@ -60,6 +60,34 @@ async function layoutEvidence(page: Page) {
   })
 }
 
+async function wordmarkMotionEvidence(page: Page) {
+  return page.evaluate(() => {
+    const nav = document.querySelector<HTMLElement>('.landing-nav')?.getBoundingClientRect()
+    const rects = [...document.querySelectorAll<HTMLElement>('.landing-brand-link .landing-wordmark__letter')]
+      .map((letter, index) => ({ index, rect: letter.getBoundingClientRect() }))
+    const outsideHeader = !nav ? rects.map(({ index }) => index) : rects
+      .filter(({ rect }) => rect.top < nav.top - 0.25 || rect.bottom > nav.bottom + 0.25)
+      .map(({ index }) => index)
+    const overlaps: string[] = []
+    for (let index = 0; index < rects.length - 1; index += 1) {
+      const current = rects[index]
+      const next = rects[index + 1]
+      const horizontalOverlap = Math.min(current.rect.right, next.rect.right) - Math.max(current.rect.left, next.rect.left)
+      const verticalOverlap = Math.min(current.rect.bottom, next.rect.bottom) - Math.max(current.rect.top, next.rect.top)
+      if (horizontalOverlap > 0.25 && verticalOverlap > 0.25) overlaps.push(`${current.index}-${next.index}`)
+    }
+    const bridgeElement = document.querySelector<HTMLElement>('.landing-brand-link .landing-wordmark__bridge')
+    const bridge = bridgeElement?.getBoundingClientRect()
+    return {
+      outsideHeader,
+      overlaps,
+      bridge: bridge ? { x: bridge.x, y: bridge.y, width: bridge.width, height: bridge.height } : null,
+      bridgeAnimationCount: bridgeElement?.getAnimations().length ?? -1,
+      footerAnimationCount: document.querySelector('.landing-footer .landing-wordmark')?.getAnimations({ subtree: true }).length ?? -1,
+    }
+  })
+}
+
 test.describe('Public repair-shop homepage', () => {
   test.beforeEach(({ page }) => {
     runtimeFailuresByPage.set(page, observeRuntimeFailures(page))
@@ -87,18 +115,14 @@ test.describe('Public repair-shop homepage', () => {
     await expect(name).toHaveCSS('animation-name', 'none')
     await expect(letters).toHaveCount(12)
     await expect(letters.first()).toHaveCSS('animation-name', 'landing-wordmark-letter-drop')
-    await expect(letters.first()).toHaveCSS('animation-duration', '0.56s')
+    await expect(letters.first()).toHaveCSS('animation-duration', '0.48s')
     await expect(letters.first()).toHaveCSS('animation-delay', '0.112s')
     await expect(letters.last()).toHaveCSS('animation-delay', '0.072s')
 
-    await letters.evaluateAll((elements) => {
-      elements.forEach((element) => {
-        element.getAnimations().forEach((animation) => {
-          animation.pause()
-          animation.currentTime = 280
-        })
-      })
-    })
+    await letters.evaluateAll((elements) => elements.forEach((element) => element.getAnimations().forEach((animation) => {
+      animation.pause()
+      animation.currentTime = 240
+    })))
     const crossingFrame = await headerWordmark.evaluate((element) => {
       const movingLetters = [...element.querySelectorAll<HTMLElement>('.landing-wordmark__letter')]
       return {
@@ -109,6 +133,30 @@ test.describe('Public repair-shop homepage', () => {
     expect(new Set(crossingFrame.letterTransforms).size).toBeGreaterThan(1)
     expect(crossingFrame.letterOpacities.some((opacity) => Number(opacity) > 0)).toBe(true)
     await page.screenshot({ path: 'test-results/db032-wordmark-letter-drop-1366.png' })
+
+    for (const width of [1366, 390, 320]) {
+      await page.setViewportSize({ width, height: 900 })
+      await page.reload({ waitUntil: 'domcontentloaded' })
+      const sampledLetters = page.locator('.landing-brand-link .landing-wordmark__letter')
+      await expect(sampledLetters).toHaveCount(12)
+
+      for (const currentTime of [0, 40, 80, 120, 180, 240, 320, 440, 560, 680]) {
+        await sampledLetters.evaluateAll((elements, time) => elements.forEach((element) => element.getAnimations().forEach((animation) => {
+          animation.pause()
+          animation.currentTime = time
+        })), currentTime)
+
+        const geometry = await wordmarkMotionEvidence(page)
+
+        expect(geometry.outsideHeader, `letter outside header at ${width}px/${currentTime}ms`).toEqual([])
+        expect(geometry.overlaps, `letter collision at ${width}px/${currentTime}ms`).toEqual([])
+      }
+
+      await sampledLetters.evaluateAll((elements) => elements.forEach((element) => element.getAnimations().forEach((animation) => {
+        animation.currentTime = 240
+      })))
+      await page.screenshot({ path: `test-results/db032-wordmark-safe-drop-${width}.png` })
+    }
 
     await page.emulateMedia({ reducedMotion: 'reduce' })
     await page.reload()
@@ -309,4 +357,43 @@ test.describe('Public repair-shop homepage', () => {
     await expect(page.locator('link[rel="icon"][type="image/svg+xml"]')).toHaveAttribute('href', '/dieselbridge-mark.svg')
     await expect(page.locator('link[type="image/png"]')).toHaveCount(0)
   })
+})
+
+test.describe('DB-032 natural-load motion evidence', () => {
+  test.beforeEach(({ page }) => {
+    runtimeFailuresByPage.set(page, observeRuntimeFailures(page))
+  })
+
+  test.afterEach(({ page }) => {
+    const failures = runtimeFailuresByPage.get(page)
+    expect(failures?.consoleErrors ?? [], 'browser console errors').toEqual([])
+    expect(failures?.pageErrors ?? [], 'uncaught page errors').toEqual([])
+    expect(failures?.requestFailures ?? [], 'failed browser requests').toEqual([])
+  })
+
+  for (const width of [1366, 390, 320]) {
+    test(`keeps the natural letter drop inside non-overlapping header slots at ${width}px`, async ({ page }) => {
+      await stubPublicHomepage(page)
+      await page.setViewportSize({ width, height: 900 })
+      await page.goto(homepageUrl)
+      await expect(page.locator('.landing-nav')).toHaveCSS('min-height', width > 640 ? '64px' : '50.4px')
+      await page.waitForTimeout(800)
+      await page.reload({ waitUntil: 'domcontentloaded' })
+      await expect(page.locator('.landing-brand-link .landing-wordmark__letter')).toHaveCount(12)
+      await expect(page.locator('.landing-nav')).toHaveCSS('min-height', width > 640 ? '64px' : '50.4px')
+
+      const samples = []
+      for (let frame = 0; frame < 18; frame += 1) {
+        samples.push(await wordmarkMotionEvidence(page))
+        if (frame === 2) await page.screenshot({ path: `test-results/db032-natural-letter-drop-frame-${width}.png` })
+        await page.waitForTimeout(40)
+      }
+
+      expect(samples.flatMap(({ outsideHeader }, frame) => outsideHeader.map((index) => ({ frame, index })))).toEqual([])
+      expect(samples.flatMap(({ overlaps }, frame) => overlaps.map((pair) => ({ frame, pair })))).toEqual([])
+      expect(samples.every(({ bridgeAnimationCount }) => bridgeAnimationCount === 0), 'bridge must remain unanimated').toBe(true)
+      expect(samples.every(({ footerAnimationCount }) => footerAnimationCount === 0), 'footer wordmark must remain static').toBe(true)
+      await page.screenshot({ path: `test-results/db032-natural-letter-drop-${width}.png` })
+    })
+  }
 })
