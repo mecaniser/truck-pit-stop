@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_, func, or_
 from sqlalchemy.orm import selectinload
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from decimal import Decimal
 
 from app.core.dependencies import get_db, get_current_active_user
@@ -20,6 +20,7 @@ from app.db.models.description_library import DescriptionLibraryEntry
 from app.core.config import settings
 from app.schemas.typeahead import ServiceTypeaheadResponse
 from app.tasks.description_library_refresh import process_on_demand_library_regenerate
+from app.core.work_value_validation import validate_part_quantity
 
 router = APIRouter()
 
@@ -80,9 +81,19 @@ class ServicePartCreate(BaseModel):
     # service) can be entered fractionally.
     quantity: Decimal = Decimal("1")
 
+    @field_validator("quantity")
+    @classmethod
+    def validate_quantity(cls, value: Decimal) -> Decimal:
+        return validate_part_quantity(value)
+
 
 class ServicePartUpdate(BaseModel):
     quantity: Decimal
+
+    @field_validator("quantity")
+    @classmethod
+    def validate_quantity(cls, value: Decimal) -> Decimal:
+        return validate_part_quantity(value)
 
 
 class ServicePartResponse(BaseModel):
@@ -704,8 +715,10 @@ async def add_service_part(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_admin()),
 ):
-    if data.quantity <= 0:
-        raise HTTPException(status_code=400, detail="Quantity must be greater than zero")
+    try:
+        validate_part_quantity(data.quantity)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
     if not current_user.tenant_id:
         raise HTTPException(status_code=400, detail="User must be associated with a tenant")
@@ -767,8 +780,10 @@ async def update_service_part(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_admin()),
 ):
-    if data.quantity <= 0:
-        raise HTTPException(status_code=400, detail="Quantity must be greater than zero")
+    try:
+        validate_part_quantity(data.quantity)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     if not current_user.tenant_id:
         raise HTTPException(status_code=400, detail="User must be associated with a tenant")
 

@@ -8,6 +8,7 @@ from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from app.core.correlation import normalize_correlation_id
 from app.core.logging import get_logger
+from app.core.redaction import sanitize_request_path
 
 logger = get_logger(__name__)
 
@@ -62,7 +63,7 @@ class TimeoutMiddleware:
                 await task
 
             correlation_id = self._extract_correlation_id(scope)
-            path = scope.get("path", "")
+            path = sanitize_request_path(scope.get("path", ""))
             method = scope.get("method", "GET")
             logger.warning(
                 "request_timeout",

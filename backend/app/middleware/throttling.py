@@ -12,6 +12,7 @@ from app.core.correlation import normalize_correlation_id
 from app.core.logging import get_logger
 from app.core.rate_limit import rate_limit_key
 from app.core.redis import get_redis
+from app.core.redaction import sanitize_request_path
 
 logger = get_logger(__name__)
 
@@ -68,7 +69,7 @@ class ThrottlingMiddleware:
         # Ensure unique ZSET member per request. Avoid id(request) because it is
         # process-local and can be reused after GC.
         method = scope.get("method", "GET")
-        path = scope.get("path", "")
+        path = sanitize_request_path(scope.get("path", ""))
         member = f"{now_ms}:{secrets.token_hex(4)}:{method}:{path}"
 
         try:

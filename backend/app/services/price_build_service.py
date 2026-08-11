@@ -4,7 +4,7 @@ import math
 import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from decimal import Decimal, ROUND_HALF_UP
+from decimal import Decimal
 from time import perf_counter
 from typing import Optional
 from uuid import UUID
@@ -32,6 +32,7 @@ from app.services.repair_operation_library import (
 )
 from app.services.internal_fleet import fleet_labor_uses_customer_rate
 from app.services.pricing import compute_canonical_order_totals
+from app.core.work_value_validation import validate_labor_hours, validate_part_quantity
 
 
 class PriceBuildError(Exception):
@@ -79,29 +80,19 @@ INTERNAL_FROZEN_STATUSES = {
 }
 FINALIZED_STATUSES = {RepairOrderStatus.INVOICED, RepairOrderStatus.PAID}
 logger = get_logger(__name__)
-LABOR_HOURS_MIN = Decimal("0.01")
-LABOR_HOURS_MAX = Decimal("999.99")
-
-
 def validate_mechanic_labor_hours(value: Decimal) -> Decimal:
-    """Return database-safe positive hours or reject the additive operation."""
+    """Return exact database-safe hours or reject the additive operation."""
     try:
-        hours = Decimal(str(value))
-        rounded = hours.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
-    except Exception as exc:
-        raise PriceBuildInputError(
-            "Labor hours must be a finite value from 0.01 through 999.99"
-        ) from exc
-    if (
-        not hours.is_finite()
-        or hours < LABOR_HOURS_MIN
-        or hours > LABOR_HOURS_MAX
-        or rounded < LABOR_HOURS_MIN
-    ):
-        raise PriceBuildInputError(
-            "Labor hours must be a finite value from 0.01 through 999.99"
-        )
-    return rounded
+        return validate_labor_hours(value)
+    except ValueError as exc:
+        raise PriceBuildInputError(str(exc)) from exc
+
+
+def _validate_price_build_part_quantity(value: Decimal) -> Decimal:
+    try:
+        return validate_part_quantity(value)
+    except ValueError as exc:
+        raise PriceBuildInputError(str(exc)) from exc
 
 
 @dataclass
@@ -261,6 +252,7 @@ class PriceBuildService:
         order_id: UUID,
         *,
         for_update: bool = False,
+        tenant_id: Optional[UUID] = None,
     ) -> RepairOrder:
         statement = (
             select(RepairOrder)
@@ -272,6 +264,8 @@ class PriceBuildService:
             )
             .execution_options(populate_existing=True)
         )
+        if tenant_id is not None:
+            statement = statement.where(RepairOrder.tenant_id == tenant_id)
         if for_update:
             statement = statement.with_for_update()
         result = await db.execute(statement)
@@ -289,10 +283,8 @@ class PriceBuildService:
         quantity: int = 1,
         mechanic_additive_only: bool = False,
     ) -> PriceBuildResult:
-        order = await self.load_order(db, order.id, for_update=True)
-        self._assert_editable(order)
         if quantity < 1:
-            raise PriceBuildValidationError("quantity must be >= 1")
+            raise PriceBuildInputError("quantity must be >= 1")
 
         svc_result = await db.execute(
             select(Service)
@@ -300,6 +292,8 @@ class PriceBuildService:
                 and_(
                     Service.id == service_id,
                     Service.tenant_id == order.tenant_id,
+                    Service.is_active.is_(True),
+                    Service.deleted_at.is_(None),
                 )
             )
             .options(
@@ -308,7 +302,25 @@ class PriceBuildService:
         )
         service = svc_result.scalar_one_or_none()
         if not service:
-            raise PriceBuildNotFoundError("Service not found")
+            raise PriceBuildNotFoundError("Source reference not found")
+
+        # Validate every generated numeric value before the repair order or
+        # inventory rows are locked and before any existing bundle is reset.
+        hours_per_unit = Decimal(service.duration_minutes) / Decimal(60)
+        total_hours = validate_mechanic_labor_hours(
+            hours_per_unit * Decimal(quantity)
+        )
+        required_quantities = {
+            sp.id: _validate_price_build_part_quantity(
+                Decimal(str(sp.quantity)) * Decimal(quantity)
+            )
+            for sp in service.service_parts
+        }
+
+        order = await self.load_order(
+            db, order.id, for_update=True, tenant_id=order.tenant_id
+        )
+        self._assert_editable(order)
 
         existing_line = next(
             (
@@ -327,11 +339,6 @@ class PriceBuildService:
         hourly_rate = _labor_rate_for(order, tenant)
         # Labor hours come from the service's duration, scaled by quantity (how many
         # times this service is being performed). A 60-minute service × quantity 2 = 2 hours.
-        hours_per_unit = (Decimal(service.duration_minutes) / Decimal(60))
-        total_hours = hours_per_unit * Decimal(quantity)
-        if mechanic_additive_only:
-            total_hours = validate_mechanic_labor_hours(total_hours)
-
         if existing_line:
             line = existing_line
             line.description = service.name
@@ -391,7 +398,7 @@ class PriceBuildService:
             inv = locked_inventory.get(sp.inventory_item.id) if sp.inventory_item else None
             if not inv or inv.deleted_at is not None:
                 continue
-            required_qty = sp.quantity * quantity
+            required_qty = required_quantities[sp.id]
             packages_needed = _packages_consumed(required_qty)
             if (inv.stock_quantity or 0) < packages_needed:
                 warnings.append(
@@ -442,6 +449,7 @@ class PriceBuildService:
                 and_(
                     Service.tenant_id == order.tenant_id,
                     Service.is_active.is_(True),
+                    Service.deleted_at.is_(None),
                     Service.name.ilike(f"%{query}%"),
                 )
             ).limit(8)
@@ -511,9 +519,6 @@ class PriceBuildService:
         auto_recalc_enabled: bool = True,
         mechanic_additive_only: bool = False,
     ) -> PriceBuildResult:
-        order = await self.load_order(db, order.id, for_update=True)
-        self._assert_editable(order)
-
         # Service-catalog candidates (operation_id="service:<uuid>") carry their own
         # parts bundle and pricing — route to the existing flat-service path instead
         # of creating a bare labor line, so PM/kingpin-style packages still attach
@@ -528,7 +533,6 @@ class PriceBuildService:
                 mechanic_additive_only=mechanic_additive_only,
             )
 
-        tenant = await self._get_tenant(db, order.tenant_id)
         warnings: list[OperationWarning] = []
 
         est_hours = estimated_hours
@@ -542,8 +546,13 @@ class PriceBuildService:
             est_description = description or estimate.description
             warnings.extend(estimate.warnings)
             resolved_provider = provider or estimate.provider
-        if mechanic_additive_only:
-            est_hours = validate_mechanic_labor_hours(est_hours)
+        est_hours = validate_mechanic_labor_hours(est_hours)
+
+        order = await self.load_order(
+            db, order.id, for_update=True, tenant_id=order.tenant_id
+        )
+        self._assert_editable(order)
+        tenant = await self._get_tenant(db, order.tenant_id)
 
         hourly_rate = _labor_rate_for(order, tenant)
         line = Labor(
@@ -585,7 +594,12 @@ class PriceBuildService:
         hourly_rate: Optional[Decimal] = None,
         auto_recalc_enabled: Optional[bool] = None,
     ) -> PriceBuildResult:
-        order = await self.load_order(db, order.id, for_update=True)
+        if hours is not None:
+            hours = validate_mechanic_labor_hours(hours)
+
+        order = await self.load_order(
+            db, order.id, for_update=True, tenant_id=order.tenant_id
+        )
         self._assert_editable(order)
 
         line_result = await db.execute(

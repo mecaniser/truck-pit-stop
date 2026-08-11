@@ -516,8 +516,8 @@ async def test_mechanic_rejections_leave_pricing_history_and_stock_unchanged():
             inventory = await db.get(Inventory, context["inventory_id"])
             service = Service(
                 tenant_id=mechanic.tenant_id,
-                name="Twenty-minute inspection",
-                duration_minutes=20,
+                name="Thirty-minute inspection",
+                duration_minutes=30,
                 is_active=True,
             )
             db.add(service)
@@ -589,10 +589,19 @@ async def test_mechanic_rejections_leave_pricing_history_and_stock_unchanged():
             async def _run(db, actor):
                 return await repair_orders.add_labor_to_repair_order(
                     order_id=context["order_id"],
-                    body=LaborCreate(
+                    body=LaborCreate.model_construct(
                         description="Invalid mechanic labor",
                         hours=Decimal(value),
                         hourly_rate=Decimal("100.00"),
+                        mechanic_id=None,
+                        service_code=None,
+                        line_type=LaborLineType.MANUAL,
+                        provider=None,
+                        provider_operation_id=None,
+                        auto_recalc_enabled=True,
+                        source_service_id=None,
+                        vendor_name=None,
+                        vendor_cost=None,
                     ),
                     db=db,
                     current_user=actor,
@@ -600,7 +609,7 @@ async def test_mechanic_rejections_leave_pricing_history_and_stock_unchanged():
 
             return _run
 
-        for value in ("-0.50", "0.00", "1000.00"):
+        for value in ("-0.50", "0.00", "1000.00", "9999.99", "1.001"):
             await _expect_status(
                 context["mechanic_id"],
                 await _invalid_labor(value),
@@ -610,7 +619,7 @@ async def test_mechanic_rejections_leave_pricing_history_and_stock_unchanged():
         async def _negative_operation(db, actor):
             return await repair_orders.apply_price_build_repair_operation(
                 order_id=context["order_id"],
-                body=PriceBuildRepairOpsApplyRequest(
+                body=PriceBuildRepairOpsApplyRequest.model_construct(
                     operation_id="custom:negative-operation",
                     name="Invalid negative operation",
                     estimated_hours=Decimal("-0.25"),
@@ -621,6 +630,25 @@ async def test_mechanic_rejections_leave_pricing_history_and_stock_unchanged():
             )
 
         await _expect_status(context["mechanic_id"], _negative_operation, 422)
+
+        async def _extreme_part_with_override(db, actor):
+            return await repair_orders.add_parts_to_repair_order(
+                order_id=context["order_id"],
+                body=PartsUsageCreate.model_construct(
+                    inventory_id=context["inventory_id"],
+                    quantity=Decimal("9999.99"),
+                    unit_price=None,
+                    source_service_id=None,
+                    source_line_id=None,
+                    allow_stock_shortage=True,
+                ),
+                db=db,
+                current_user=actor,
+            )
+
+        await _expect_status(
+            context["mechanic_id"], _extreme_part_with_override, 422
+        )
 
         async def _duplicate_flat_service(db, actor):
             return await repair_orders.add_price_build_flat_service(
@@ -640,8 +668,58 @@ async def test_mechanic_rejections_leave_pricing_history_and_stock_unchanged():
 
         await _expect_status(context["mechanic_id"], _duplicate_flat_service, 409)
         await _expect_status(context["mechanic_id"], _duplicate_via_operation, 409)
-        await _expect_status(unassigned.id, await _invalid_labor("-0.50"), 403)
-        await _expect_status(cross_tenant.id, await _invalid_labor("-0.50"), 403)
+        async def _valid_labor(db, actor):
+            return await repair_orders.add_labor_to_repair_order(
+                order_id=context["order_id"],
+                body=LaborCreate(
+                    description="Authorization boundary labor",
+                    hours=Decimal("1.00"),
+                    hourly_rate=Decimal("100.00"),
+                ),
+                db=db,
+                current_user=actor,
+            )
+
+        async def _cross_tenant_part(db, actor):
+            return await repair_orders.add_parts_to_repair_order(
+                order_id=context["order_id"],
+                body=PartsUsageCreate(
+                    inventory_id=context["inventory_id"],
+                    quantity=Decimal("1.00"),
+                ),
+                db=db,
+                current_user=actor,
+            )
+
+        async def _cross_tenant_flat_service(db, actor):
+            return await repair_orders.add_price_build_flat_service(
+                order_id=context["order_id"],
+                body=PriceBuildFlatServiceRequest(service_id=service.id),
+                db=db,
+                current_user=actor,
+            )
+
+        async def _cross_tenant_repair_operation(db, actor):
+            return await repair_orders.apply_price_build_repair_operation(
+                order_id=context["order_id"],
+                body=PriceBuildRepairOpsApplyRequest(
+                    operation_id="custom:cross-tenant",
+                    name="Cross tenant operation",
+                    estimated_hours=Decimal("1.00"),
+                    auto_recalc_enabled=False,
+                ),
+                db=db,
+                current_user=actor,
+            )
+
+        await _expect_status(unassigned.id, _valid_labor, 403)
+        for operation in (
+            _valid_labor,
+            _cross_tenant_part,
+            _cross_tenant_flat_service,
+            _cross_tenant_repair_operation,
+        ):
+            await _expect_status(cross_tenant.id, operation, 404)
 
         async with factory() as db:
             order = await db.get(RepairOrder, context["order_id"])
@@ -660,15 +738,15 @@ async def test_mechanic_rejections_leave_pricing_history_and_stock_unchanged():
             ).scalars().all()
             assert len(labor_rows) == 2
             service_line = next(line for line in labor_rows if line.source_service_id == service.id)
-            assert service_line.hours == Decimal("0.33")
-            assert service_line.total_cost == Decimal("33.00")
+            assert service_line.hours == Decimal("0.50")
+            assert service_line.total_cost == Decimal("50.00")
             assert len(part_rows) == 1
             assert part_rows[0].unit_price == Decimal("50.00")
             assert part_rows[0].total_price == Decimal("50.00")
             assert inventory.stock_quantity == 4
-            assert order.total_labor_cost == Decimal("133.00")
+            assert order.total_labor_cost == Decimal("150.00")
             assert order.total_parts_cost == Decimal("50.00")
-            assert order.total_cost == Decimal("183.00")
+            assert order.total_cost == Decimal("200.00")
             assert await db.scalar(
                 select(func.count(RepairOrderHistoryEvent.id)).where(
                     RepairOrderHistoryEvent.repair_order_id == context["order_id"]

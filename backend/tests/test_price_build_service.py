@@ -8,14 +8,18 @@ import pytest
 from sqlalchemy import select
 
 from app.db.models.customer import Customer
-from app.db.models.inventory import Inventory
+from app.db.models.inventory import Inventory, PartsUsage
 from app.db.models.labor import Labor, LaborLineType
 from app.db.models.labor_operation_memory import LaborOperationMemory
 from app.db.models.repair_order import RepairOrder, RepairOrderStatus
 from app.db.models.service import Service, ServicePart
 from app.db.models.tenant import Tenant
 from app.db.models.vehicle import Vehicle
-from app.services.price_build_service import PriceBuildService
+from app.services.price_build_service import (
+    PriceBuildInputError,
+    PriceBuildNotFoundError,
+    PriceBuildService,
+)
 
 
 async def _seed_context(db_session):
@@ -138,6 +142,33 @@ async def test_add_flat_service_line_recomputes_totals(db_session):
 
 
 @pytest.mark.asyncio
+async def test_flat_service_source_must_be_active_and_not_deleted_before_mutation(db_session):
+    _, _, _, order, service = await _seed_context(db_session)
+    order_id = order.id
+    service_id = service.id
+    svc = PriceBuildService()
+
+    service.is_active = False
+    await db_session.commit()
+    loaded = await svc.load_order(db_session, order_id)
+    with pytest.raises(PriceBuildNotFoundError, match="Source reference not found"):
+        await svc.add_flat_service_line(db_session, loaded, service_id)
+
+    service = await db_session.get(Service, service_id)
+    service.is_active = True
+    service.deleted_at = datetime.now(timezone.utc)
+    await db_session.commit()
+    loaded = await svc.load_order(db_session, order_id)
+    with pytest.raises(PriceBuildNotFoundError, match="Source reference not found"):
+        await svc.add_flat_service_line(db_session, loaded, service_id)
+
+    refreshed = await svc.load_order(db_session, order_id)
+    assert refreshed.labor_items == []
+    assert refreshed.parts_usage == []
+    assert refreshed.total_cost == Decimal("0.00")
+
+
+@pytest.mark.asyncio
 async def test_add_flat_service_line_keeps_service_when_bundled_part_stock_is_short(db_session):
     tenant, _, _, order, service = await _seed_context(db_session)
     inventory = Inventory(
@@ -173,6 +204,75 @@ async def test_add_flat_service_line_keeps_service_when_bundled_part_stock_is_sh
     assert result.warnings[0].code == "service_part_stock_shortage"
     assert result.warnings[0].line_id == line.id
     assert "Used Tire" in result.warnings[0].message
+
+
+@pytest.mark.asyncio
+async def test_generated_bundle_rejects_extreme_part_quantity_before_mutation(db_session):
+    tenant, _, _, order, service = await _seed_context(db_session)
+    inventory = Inventory(
+        id=uuid4(),
+        tenant_id=tenant.id,
+        sku="EXTREME-PART",
+        name="Extreme bundled part",
+        stock_quantity=10,
+        cost=Decimal("10.00"),
+        selling_price=Decimal("20.00"),
+    )
+    db_session.add_all(
+        [
+            inventory,
+            ServicePart(
+                id=uuid4(),
+                tenant_id=tenant.id,
+                service_id=service.id,
+                inventory_id=inventory.id,
+                quantity=Decimal("9999.99"),
+            ),
+        ]
+    )
+    await db_session.commit()
+    order_id = order.id
+    service_id = service.id
+
+    svc = PriceBuildService()
+    loaded = await svc.load_order(db_session, order_id)
+    with pytest.raises(PriceBuildInputError):
+        await svc.add_flat_service_line(db_session, loaded, service_id)
+    await db_session.rollback()
+
+    refreshed_order = await svc.load_order(db_session, order_id)
+    await db_session.refresh(inventory)
+    assert refreshed_order.labor_items == []
+    assert refreshed_order.parts_usage == []
+    assert refreshed_order.total_labor_cost == Decimal("0.00")
+    assert refreshed_order.total_parts_cost == Decimal("0.00")
+    assert refreshed_order.total_cost == Decimal("0.00")
+    assert inventory.stock_quantity == 10
+    assert not (
+        await db_session.execute(
+            select(PartsUsage).where(PartsUsage.repair_order_id == order_id)
+        )
+    ).scalars().all()
+
+
+@pytest.mark.asyncio
+async def test_generated_service_hours_reject_database_rounding_before_mutation(db_session):
+    _, _, _, order, service = await _seed_context(db_session)
+    service.duration_minutes = 20
+    await db_session.commit()
+    order_id = order.id
+    service_id = service.id
+
+    svc = PriceBuildService()
+    loaded = await svc.load_order(db_session, order_id)
+    with pytest.raises(PriceBuildInputError):
+        await svc.add_flat_service_line(db_session, loaded, service_id)
+    await db_session.rollback()
+
+    refreshed_order = await svc.load_order(db_session, order_id)
+    assert refreshed_order.labor_items == []
+    assert refreshed_order.parts_usage == []
+    assert refreshed_order.total_cost == Decimal("0.00")
 
 
 @pytest.mark.asyncio
@@ -261,17 +361,15 @@ async def test_custom_operation_is_not_learned_until_hours_are_entered(db_sessio
     svc = PriceBuildService()
     loaded = await svc.load_order(db_session, order.id)
 
-    created = await svc.add_repair_operation_line(
-        db_session,
-        loaded,
-        operation_id="custom:tire-replacement",
-        name="Tire Replacement",
-        description="New custom repair operation. Save hours once and the system will reuse them next time.",
-        estimated_hours=Decimal("0.00"),
-    )
-
-    first_line = next(li for li in created.order.labor_items if li.provider_operation_id == "custom:tire-replacement")
-    assert Decimal(str(first_line.hours)) == Decimal("0.00")
+    with pytest.raises(PriceBuildInputError):
+        await svc.add_repair_operation_line(
+            db_session,
+            loaded,
+            operation_id="custom:tire-replacement",
+            name="Tire Replacement",
+            description="New custom repair operation. Save hours once and the system will reuse them next time.",
+            estimated_hours=Decimal("0.00"),
+        )
 
     memory_rows = await db_session.execute(select(LaborOperationMemory))
     assert memory_rows.scalars().all() == []
@@ -285,12 +383,20 @@ async def test_custom_operation_is_not_learned_until_hours_are_entered(db_sessio
     assert warnings
     assert warnings[0].code == "no_saved_match"
 
-    await svc.update_line(
+    created = await svc.add_repair_operation_line(
         db_session,
-        created.order,
-        line_id=first_line.id,
-        hours=Decimal("2.50"),
+        loaded,
+        operation_id="custom:tire-replacement",
+        name="Tire Replacement",
+        description="New custom repair operation with entered hours.",
+        estimated_hours=Decimal("2.50"),
     )
+    first_line = next(
+        li
+        for li in created.order.labor_items
+        if li.provider_operation_id == "custom:tire-replacement"
+    )
+    assert Decimal(str(first_line.hours)) == Decimal("2.50")
 
     stored_rows = await db_session.execute(select(LaborOperationMemory))
     stored = stored_rows.scalars().all()

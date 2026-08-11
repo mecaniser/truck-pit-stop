@@ -25,6 +25,7 @@ from app.db.models.invoice import Invoice, InvoiceStatus
 from app.db.models.tenant import Tenant
 from app.db.models.inventory import Inventory, PartsUsage
 from app.db.models.labor import Labor, LaborLineType
+from app.db.models.service import Service
 from app.db.models.recommended_service import RecommendedService, RecommendedServicePriority
 from app.db.models.quote import Quote
 from app.db.models.mechanic_points import MechanicPoints, MechanicPointsBalance, PointsTransactionType
@@ -50,6 +51,7 @@ from app.core.config import settings
 from app.core.metrics import record_repair_order_created
 from app.core.logging import get_logger
 from app.core.phone import normalize_phone
+from app.core.work_value_validation import validate_labor_hours, validate_part_quantity
 from app.core.websocket import broadcast_repair_order_update
 from app.core.websocket import broadcast_mechanic_timer_update
 from app.core.websocket import broadcast_mechanic_attendance_update
@@ -254,6 +256,26 @@ def _packages_consumed(quantity: Decimal) -> int:
     additional package. We deliberately don't track partial-jug remainders.
     """
     return max(1, math.ceil(quantity)) if quantity > 0 else 0
+
+
+def _require_valid_part_quantity(value: Decimal) -> Decimal:
+    try:
+        return validate_part_quantity(value)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        ) from exc
+
+
+def _require_valid_labor_hours(value: Decimal) -> Decimal:
+    try:
+        return validate_labor_hours(value)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        ) from exc
 
 
 def _stock_packages_reserved(part: "PartsUsage") -> int:
@@ -3189,8 +3211,10 @@ def _require_editable_ro(order: RepairOrder) -> None:
 async def _load_pricing_order_for_update(
     db: AsyncSession,
     order_id: UUID,
+    *,
+    tenant_id: Optional[UUID] = None,
 ) -> Optional[RepairOrder]:
-    result = await db.execute(
+    statement = (
         select(RepairOrder)
         .where(RepairOrder.id == order_id, RepairOrder.deleted_at.is_(None))
         .options(
@@ -3200,7 +3224,63 @@ async def _load_pricing_order_for_update(
         .execution_options(populate_existing=True)
         .with_for_update()
     )
+    if tenant_id is not None:
+        statement = statement.where(RepairOrder.tenant_id == tenant_id)
+    result = await db.execute(statement)
     return result.scalar_one_or_none()
+
+
+async def _validate_source_references(
+    db: AsyncSession,
+    *,
+    tenant_id: UUID,
+    order_id: UUID,
+    source_service_id: Optional[UUID],
+    source_line_id: Optional[UUID] = None,
+) -> None:
+    """Validate optional provenance without exposing another tenant's rows."""
+    service: Optional[Service] = None
+    line: Optional[Labor] = None
+
+    if source_service_id is not None:
+        service = (
+            await db.execute(
+                select(Service).where(
+                    Service.id == source_service_id,
+                    Service.tenant_id == tenant_id,
+                    Service.is_active.is_(True),
+                    Service.deleted_at.is_(None),
+                )
+            )
+        ).scalar_one_or_none()
+        if service is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Source reference not found",
+            )
+
+    if source_line_id is not None:
+        line = (
+            await db.execute(
+                select(Labor).where(
+                    Labor.id == source_line_id,
+                    Labor.tenant_id == tenant_id,
+                    Labor.repair_order_id == order_id,
+                    Labor.deleted_at.is_(None),
+                )
+            )
+        ).scalar_one_or_none()
+        if line is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Source reference not found",
+            )
+
+    if service is not None and line is not None and line.source_service_id != service.id:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Source references do not match",
+        )
 
 
 async def _refresh_repair_order_totals(
@@ -3279,7 +3359,14 @@ async def add_price_build_flat_service(
     current_user: User = Depends(require_role(*PRICE_BUILD_ADD_ROLES)),
 ):
     try:
-        order = await price_build_service.load_order(db, order_id, for_update=True)
+        if not current_user.tenant_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="User must be associated with a tenant",
+            )
+        order = await price_build_service.load_order(
+            db, order_id, tenant_id=current_user.tenant_id
+        )
         _check_mechanic_order_assignment(current_user, order)
         result = await price_build_service.add_flat_service_line(
             db,
@@ -3332,7 +3419,14 @@ async def apply_price_build_repair_operation(
     current_user: User = Depends(require_role(*PRICE_BUILD_ADD_ROLES)),
 ):
     try:
-        order = await price_build_service.load_order(db, order_id, for_update=True)
+        if not current_user.tenant_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="User must be associated with a tenant",
+            )
+        order = await price_build_service.load_order(
+            db, order_id, tenant_id=current_user.tenant_id
+        )
         _check_mechanic_order_assignment(current_user, order)
         result = await price_build_service.add_repair_operation_line(
             db,
@@ -3467,15 +3561,25 @@ async def add_parts_to_repair_order(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role(*PRICE_BUILD_ADD_ROLES)),
 ):
+    _require_valid_part_quantity(body.quantity)
     if not current_user.tenant_id:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="User must be associated with a tenant")
-    order = await _load_pricing_order_for_update(db, order_id)
+    order = await _load_pricing_order_for_update(
+        db, order_id, tenant_id=current_user.tenant_id
+    )
     if not order:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repair order not found")
     _check_mechanic_order_assignment(current_user, order)
     _require_editable_ro(order)
     if order.tenant_id != current_user.tenant_id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+    await _validate_source_references(
+        db,
+        tenant_id=current_user.tenant_id,
+        order_id=order_id,
+        source_service_id=body.source_service_id,
+        source_line_id=body.source_line_id,
+    )
     result = await db.execute(
         select(Inventory).where(
             and_(
@@ -3489,18 +3593,6 @@ async def add_parts_to_repair_order(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Inventory item not found")
     if body.quantity <= 0:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Quantity must be greater than zero")
-    if body.source_line_id is not None:
-        line_result = await db.execute(
-            select(Labor.id).where(
-                and_(
-                    Labor.id == body.source_line_id,
-                    Labor.repair_order_id == order_id,
-                    Labor.tenant_id == current_user.tenant_id,
-                )
-            )
-        )
-        if line_result.scalar_one_or_none() is None:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Labor line not found on this order")
     packages_needed = _packages_consumed(body.quantity)
     available_packages = max(0, inv.stock_quantity or 0)
     if available_packages < packages_needed and not body.allow_stock_shortage:
@@ -3698,13 +3790,17 @@ async def update_parts_quantity(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role(*PRICE_BUILD_EDIT_ROLES)),
 ):
+    if body.quantity is not None:
+        _require_valid_part_quantity(body.quantity)
     if body.quantity is None and body.unit_price is None:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Nothing to update")
     if body.quantity is not None and body.quantity <= 0:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Quantity must be greater than zero")
     if not current_user.tenant_id:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="User must be associated with a tenant")
-    order = await _load_pricing_order_for_update(db, order_id)
+    order = await _load_pricing_order_for_update(
+        db, order_id, tenant_id=current_user.tenant_id
+    )
     if not order:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repair order not found")
     _check_ro_access(current_user, order)
@@ -3962,15 +4058,24 @@ async def add_labor_to_repair_order(
         *PRICE_BUILD_ADD_ROLES,
     )),
 ):
+    _require_valid_labor_hours(body.hours)
     if not current_user.tenant_id:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="User must be associated with a tenant")
-    order = await _load_pricing_order_for_update(db, order_id)
+    order = await _load_pricing_order_for_update(
+        db, order_id, tenant_id=current_user.tenant_id
+    )
     if not order:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repair order not found")
     _check_mechanic_order_assignment(current_user, order)
     _require_editable_ro(order)
     if order.tenant_id != current_user.tenant_id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+    await _validate_source_references(
+        db,
+        tenant_id=current_user.tenant_id,
+        order_id=order_id,
+        source_service_id=body.source_service_id,
+    )
     hourly_rate = body.hourly_rate
     hours = body.hours
     mechanic_id = body.mechanic_id
@@ -4056,6 +4161,8 @@ async def update_repair_order_labor(
         *PRICE_BUILD_EDIT_ROLES,
     )),
 ):
+    if body.hours is not None:
+        _require_valid_labor_hours(body.hours)
     if not current_user.tenant_id:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="User must be associated with a tenant")
     order = await _load_pricing_order_for_update(db, order_id)
@@ -4076,6 +4183,14 @@ async def update_repair_order_labor(
     if not labor:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Labor item not found")
     update_data = body.model_dump(exclude_unset=True)
+    await _validate_source_references(
+        db,
+        tenant_id=current_user.tenant_id,
+        order_id=order_id,
+        source_service_id=update_data.get(
+            "source_service_id", labor.source_service_id
+        ),
+    )
     for field, value in update_data.items():
         setattr(labor, field, value)
     if "hours" in update_data or "hourly_rate" in update_data:

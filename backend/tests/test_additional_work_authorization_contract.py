@@ -11,7 +11,7 @@ from uuid import uuid4
 import pytest
 from fastapi import HTTPException
 from pydantic import ValidationError
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from starlette.requests import Request
 
@@ -22,6 +22,7 @@ from app.db.models.labor import Labor, LaborLineType
 from app.db.models.quote import Quote
 from app.db.models.repair_order import RepairOrder, RepairOrderStatus
 from app.db.models.repair_order_history import RepairOrderHistoryEvent
+from app.db.models.service import Service
 from app.db.models.tenant import Tenant
 from app.db.models.user import User, UserRole
 from app.db.models.user_customer_link import UserCustomerLink
@@ -29,6 +30,7 @@ from app.db.models.vehicle import Vehicle
 from app.db.base import Base
 from app.schemas.repair_order import (
     LaborCreate,
+    LaborUpdate,
     PartsUsageCreate,
     PriceBuildRepairOpsApplyRequest,
 )
@@ -391,7 +393,8 @@ async def test_mechanic_pricing_requires_assignment_and_tenant_match(db_session)
             db=db_session,
             current_user=other_mechanic,
         )
-    assert cross_tenant_labor.value.status_code == 403
+    assert cross_tenant_labor.value.status_code == 404
+    assert cross_tenant_labor.value.detail == "Repair order not found"
     await db_session.rollback()
     other_mechanic = await db_session.get(User, other_mechanic_id)
 
@@ -412,6 +415,88 @@ async def test_mechanic_pricing_requires_assignment_and_tenant_match(db_session)
         )
     ).scalars().all()
     assert added_lines == []
+
+
+@pytest.mark.asyncio
+async def test_labor_source_reference_rejections_precede_payload_mutation(db_session):
+    context = await _seed_authorization(db_session)
+    other = await _seed_authorization(db_session)
+    order_id = context["order"].id
+    tenant_id = context["tenant"].id
+    admin = context["roles"]["admin"]
+    admin_id = admin.id
+    baseline_line = (
+        await db_session.execute(
+            select(Labor).where(Labor.repair_order_id == order_id)
+        )
+    ).scalar_one()
+    baseline_line_id = baseline_line.id
+    baseline_description = baseline_line.description
+    inactive = Service(
+        tenant_id=tenant_id,
+        name="Inactive source",
+        duration_minutes=60,
+        is_active=False,
+    )
+    cross_tenant = Service(
+        tenant_id=other["tenant"].id,
+        name="Cross-tenant source",
+        duration_minutes=60,
+        is_active=True,
+    )
+    db_session.add_all([inactive, cross_tenant])
+    await db_session.commit()
+    rejected_ids = (uuid4(), inactive.id, cross_tenant.id)
+
+    for source_service_id in rejected_ids:
+        with pytest.raises(HTTPException) as create_error:
+            await repair_orders.add_labor_to_repair_order(
+                order_id=order_id,
+                body=LaborCreate(
+                    description="Must not persist",
+                    hours=Decimal("1.00"),
+                    hourly_rate=Decimal("100.00"),
+                    source_service_id=source_service_id,
+                ),
+                db=db_session,
+                current_user=admin,
+            )
+        assert create_error.value.status_code == 404
+        assert create_error.value.detail == "Source reference not found"
+        await db_session.rollback()
+        admin = await db_session.get(User, admin_id)
+
+    with pytest.raises(HTTPException) as update_error:
+        await repair_orders.update_repair_order_labor(
+            order_id=order_id,
+            labor_id=baseline_line_id,
+            body=LaborUpdate(
+                description="Must not replace the description",
+                source_service_id=uuid4(),
+            ),
+            db=db_session,
+            current_user=admin,
+        )
+    assert update_error.value.status_code == 404
+    assert update_error.value.detail == "Source reference not found"
+    await db_session.rollback()
+
+    baseline_line = await db_session.get(Labor, baseline_line_id)
+    order = await db_session.get(RepairOrder, order_id)
+    assert baseline_line.description == baseline_description
+    assert await db_session.scalar(
+        select(func.count(Labor.id)).where(Labor.repair_order_id == order_id)
+    ) == 1
+    assert order.total_labor_cost == Decimal("100.00")
+    assert order.total_cost == Decimal("100.00")
+    assert await db_session.scalar(
+        select(func.count(RepairOrderHistoryEvent.id)).where(
+            RepairOrderHistoryEvent.repair_order_id == order_id
+        )
+    ) == 0
+    assert await db_session.scalar(
+        select(func.count(Quote.id)).where(Quote.repair_order_id == order_id)
+    ) == 1
 
 
 @pytest.mark.asyncio

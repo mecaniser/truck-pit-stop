@@ -11,6 +11,7 @@ from prometheus_client import Counter, Histogram, Gauge
 from fastapi import FastAPI
 
 from app.core.config import settings
+from app.core.redaction import sanitize_request_path
 
 # Custom business metrics
 AUTH_LOGIN_TOTAL = Counter(
@@ -110,7 +111,7 @@ def normalize_endpoint_label(endpoint: Optional[str]) -> str:
     this preserves the same safety for custom error metrics until a route
     template is available at every exception boundary.
     """
-    path = (endpoint or "unknown").split("?", 1)[0]
+    path = sanitize_request_path((endpoint or "unknown").split("?", 1)[0])
     return _UUID_PATH_SEGMENT.sub(":id", path)
 
 
