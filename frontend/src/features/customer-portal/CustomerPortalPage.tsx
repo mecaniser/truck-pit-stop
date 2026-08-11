@@ -1203,9 +1203,11 @@ function CustomerRepairs() {
                 <p className="text-sm text-gray-400">Ready for payment</p>
               </div>
               <button
+                type="button"
                 onClick={handleDownloadPdf}
                 title="Download Invoice PDF"
-                className="shrink-0 p-2 text-purple-300 hover:text-white transition-colors"
+                aria-label="Download PDF"
+                className="flex h-[44px] w-[44px] shrink-0 items-center justify-center rounded-lg text-purple-300 transition-colors hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-purple-300 sm:h-9 sm:w-9"
               >
                 <Download className="w-5 h-5" />
               </button>
@@ -1243,7 +1245,7 @@ function CustomerRepairs() {
             <Link
               to={`/portal/invoices/${invoice.id}`}
               state={{ paymentOrigin: 'History' }}
-              className="flex w-full items-center justify-center gap-2 rounded-xl bg-[#8b7cf7] px-4 py-3.5 text-sm font-extrabold text-[#0e1118] hover:brightness-110"
+              className="flex min-h-[44px] w-full items-center justify-center gap-2 rounded-xl bg-[#8b7cf7] px-4 py-3.5 text-sm font-extrabold text-[#0e1118] hover:brightness-110"
             >
               Review payment options
             </Link>

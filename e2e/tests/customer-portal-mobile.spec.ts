@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test'
+import { expect, test, type Locator, type Page } from '@playwright/test'
 
 const customer = {
   id: 'customer-safe-1',
@@ -65,6 +65,16 @@ const orders = [
   },
   {
     ...baseOrder,
+    id: 'order-invoiced-1',
+    order_number: 'RO-2026-0813',
+    status: 'invoiced',
+    description: 'Air system repair ready for payment',
+    quote_sent: true,
+    quote_approved: true,
+    invoice_created_at: '2026-08-11T10:15:00Z',
+  },
+  {
+    ...baseOrder,
     id: 'order-paid-1',
     order_number: 'RO-2026-0804',
     status: 'paid',
@@ -75,25 +85,46 @@ const orders = [
   },
 ]
 
-const invoices = [{
-  id: 'invoice-safe-1',
-  repair_order_id: 'order-paid-1',
-  invoice_number: 'INV-2026-0804',
-  status: 'paid',
-  subtotal: '4210.42',
-  tax_amount: '284.20',
-  service_fee_amount: '0.00',
-  discount_amount: '0.00',
-  total_amount: '4494.62',
-  amount_paid: '4494.62',
-  due_date: '2026-08-11',
-  paid_at: '2026-08-11T10:32:00Z',
-  created_at: '2026-08-11T10:15:00Z',
-  updated_at: '2026-08-11T10:32:00Z',
-}]
+const invoices = [
+  {
+    id: 'invoice-unpaid-1',
+    repair_order_id: 'order-invoiced-1',
+    invoice_number: 'INV-2026-0813',
+    status: 'sent',
+    subtotal: '4210.42',
+    shop_supplies_amount: '85.00',
+    tax_amount: '284.20',
+    service_fee_amount: '0.00',
+    discount_amount: '0.00',
+    total_amount: '4494.62',
+    amount_paid: '0.00',
+    due_date: '2026-08-11',
+    paid_at: null,
+    created_at: '2026-08-11T10:15:00Z',
+    updated_at: '2026-08-11T10:15:00Z',
+  },
+  {
+    id: 'invoice-safe-1',
+    repair_order_id: 'order-paid-1',
+    invoice_number: 'INV-2026-0804',
+    status: 'paid',
+    subtotal: '4210.42',
+    shop_supplies_amount: '85.00',
+    tax_amount: '284.20',
+    service_fee_amount: '0.00',
+    discount_amount: '0.00',
+    total_amount: '4494.62',
+    amount_paid: '4494.62',
+    due_date: '2026-08-11',
+    paid_at: '2026-08-11T10:32:00Z',
+    created_at: '2026-08-11T10:15:00Z',
+    updated_at: '2026-08-11T10:32:00Z',
+  },
+]
 
 async function installSafePortalFixture(page: Page) {
   await page.addInitScript(({ fixtureCustomer }) => {
+    window.localStorage.setItem('theme-font-size', 'compact')
     window.localStorage.setItem('auth-storage', JSON.stringify({
       state: {
         user: {
@@ -134,9 +165,16 @@ async function installSafePortalFixture(page: Page) {
       const repairOrderId = url.searchParams.get('repair_order_id')
       return json(repairOrderId ? invoices.filter(item => item.repair_order_id === repairOrderId) : invoices)
     }
-    if (path === '/repair-orders/order-paid-1/detail') return json({ ...orders[2], parts_usage: [] })
-    if (path === '/repair-orders/order-active-1/detail') return json({ ...orders[0], parts_usage: [] })
-    if (path === '/repair-orders/order-paid-1/photos') return json([])
+    if (path === '/repair-orders/order-paid-1/detail') return json({ ...orders.find(order => order.id === 'order-paid-1'), parts_usage: [] })
+    if (path === '/repair-orders/order-active-1/detail') return json({ ...orders.find(order => order.id === 'order-active-1'), parts_usage: [] })
+    if (path === '/repair-orders/order-invoiced-1/detail') return json({ ...orders.find(order => order.id === 'order-invoiced-1'), parts_usage: [] })
+    if (path === '/repair-orders/order-paid-1/photos' || path === '/repair-orders/order-invoiced-1/photos') return json([])
+    if (path === '/payments/zelle-info/invoice-unpaid-1') {
+      return json({ zelle_email: null, zelle_phone: null, zelle_qr_image: null, garage_name: 'NorthStar Shop', stripe_payments_available: false })
+    }
+    if (path === '/quickbooks/payments/availability/invoice-unpaid-1') {
+      return json({ available: false, token_url: null, message: 'Unavailable in safe fixture' })
+    }
     if (path === '/quotes') return json(null)
     if (path === '/auth/platform-contact') return json({ support_name: 'Diesel Bridge Support', support_email: 'support@example.test', support_phone: null })
 
@@ -197,6 +235,36 @@ async function expectVisibleTargetsAtLeast44(page: Page) {
   expect(undersized).toEqual([])
 }
 
+async function expectTargetAtLeast44(target: Locator, label: string) {
+  await target.scrollIntoViewIfNeeded()
+  await expect(target, `${label} should be visible`).toBeVisible()
+  const box = await target.boundingBox()
+  expect(box, `${label} should have a rendered box`).not.toBeNull()
+  expect(box!.width, `${label} width`).toBeGreaterThanOrEqual(44)
+  expect(box!.height, `${label} height`).toBeGreaterThanOrEqual(44)
+}
+
+async function expectFullPortalSurfaceTargetsAtLeast44(page: Page) {
+  const main = page.locator('main')
+  const dimensions = await main.evaluate(element => ({
+    clientHeight: element.clientHeight,
+    scrollHeight: element.scrollHeight,
+  }))
+  const lastTop = Math.max(0, dimensions.scrollHeight - dimensions.clientHeight)
+  const step = Math.max(1, Math.floor(dimensions.clientHeight * 0.75))
+  const stops = Array.from(
+    { length: Math.ceil(lastTop / step) + 1 },
+    (_, index) => Math.min(lastTop, index * step),
+  )
+  if (stops.at(-1) !== lastTop) stops.push(lastTop)
+
+  for (const top of stops) {
+    await main.evaluate((element, scrollTop) => { element.scrollTop = scrollTop }, top)
+    await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => resolve())))
+    await expectVisibleTargetsAtLeast44(page)
+  }
+}
+
 for (const width of [390, 320]) {
   test(`customer portal contains mobile geometry and touch targets at ${width}px`, async ({ page }) => {
     await page.setViewportSize({ width, height: 780 })
@@ -212,7 +280,9 @@ for (const width of [390, 320]) {
     await expect(page.getByText('Action required')).toBeVisible()
     await expect(page).toHaveTitle('Dashboard | NorthStar Shop Customer Portal')
     await expectContainedPortalGeometry(page, width)
-    await expectVisibleTargetsAtLeast44(page)
+    await expectTargetAtLeast44(page.getByRole('button', { name: 'Select & pay' }), 'Select & pay')
+    await expectTargetAtLeast44(page.getByRole('link', { name: 'Pay', exact: true }), 'Pay')
+    await expectFullPortalSurfaceTargetsAtLeast44(page)
 
     await page.getByRole('button', { name: 'More' }).click()
     await page.getByRole('link', { name: 'Repairs', exact: true }).click()
@@ -221,6 +291,14 @@ for (const width of [390, 320]) {
     await expect(page.getByRole('heading', { name: 'Active repairs' })).toBeVisible()
     await expectContainedPortalGeometry(page, width)
     await expectVisibleTargetsAtLeast44(page)
+
+    await page.getByRole('button', { name: /Air system repair ready for payment/ }).click()
+    await expect(page.getByRole('heading', { name: 'RO-2026-0813' })).toBeVisible()
+    await expectTargetAtLeast44(page.getByRole('button', { name: 'Download PDF' }), 'Download PDF')
+    await expectTargetAtLeast44(page.getByRole('link', { name: 'Review payment options' }), 'Review payment options')
+    await expectContainedPortalGeometry(page, width)
+    await expectFullPortalSurfaceTargetsAtLeast44(page)
+    await page.getByRole('button', { name: 'Repairs', exact: true }).click()
 
     await page.getByRole('button', { name: /DEF dosing system diagnosis/ }).click()
     await expect(page.getByRole('button', { name: 'Repairs', exact: true })).toBeVisible()

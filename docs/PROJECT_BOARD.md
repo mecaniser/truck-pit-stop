@@ -20,6 +20,7 @@ reviewed, merged, and released. Reconcile this board whenever newer evidence exi
 | ID | Priority | State | Outcome | Owner | Evidence now | Next gate |
 |---|---|---|---|---|---|---|
 | DB-003 | P1 | Discovery | Finish versioned additional-work authorizations | Backend & Integrations | PR #196 merged at `e20fa1a` with implementation commit `a51f2af`; immutable revisions/finalization guard exist, but task validation found the portal action still depends on the staff-send flow | Architecture decides automatic vs staff-reviewed publication and any threshold policy; then run mechanic addition → customer prompt → approve/decline → invoice Playwright acceptance, Security GO, QA GO |
+| DB-030 | P1 | Review | Restore mobile customer-portal touch targets | Frontend & UX | `codex/portal-touch-targets` gives the four reported controls literal 44px mobile dimensions while retaining the 34/36px desktop treatment. Portal/route tests 16/16, full frontend 145/145, production build, exact changed-scope lint, diff check, and the expanded compact-font DB-004 Playwright journey 2/2 passed at 390/320 with full-surface target sweeps and no overflow/browser errors. | Fresh independent QA verifies the focused diff and repeats the committed 390/320 runtime gate; no merge or release before QA GO |
 
 ## Blocked
 
@@ -99,6 +100,19 @@ last passing automated and runtime evidence in the item or associated issue.
 - Focused portal tests, production build, changed-file lint/diff, and a real
   390/320 browser journey pass with no console, page, or failed-request errors.
   Independent QA must return GO before the focused PR can merge and release.
+
+## DB-030 acceptance criteria
+
+- At 390px and 320px, dashboard `Select & pay` and `Pay`, invoice-detail
+  `Download PDF`, and `Review payment options` each measure at least 44 by 44
+  CSS pixels; committed Playwright scrolls the full dashboard and invoice detail
+  and measures every named control.
+- Literal CSS pixel minimums remain effective under the compact portal root font,
+  while desktop layout, visible labels, keyboard/focus behavior, payment behavior,
+  authorization boundaries, and API/data contracts remain unchanged.
+- Neither viewport has horizontal page overflow. Focused and full frontend tests,
+  production build, exact/changed-file lint and diff checks, DB-004 mobile
+  regressions, and independent QA must pass before merge or release.
 
 ## DB-029 acceptance criteria
 
