@@ -8,6 +8,7 @@ from fastapi import Request
 from fastapi.responses import JSONResponse
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
+from app.core.correlation import normalize_correlation_id
 from app.core.logging import get_logger
 from app.core.rate_limit import rate_limit_key
 from app.core.redis import get_redis
@@ -91,9 +92,11 @@ class ThrottlingMiddleware:
 
         if request_count > HARD_THRESHOLD:
             state = scope.get("state")
-            correlation_id = "unknown"
+            correlation_id = normalize_correlation_id(None)
             if isinstance(state, dict):
-                correlation_id = str(state.get("correlation_id", "unknown"))
+                correlation_id = normalize_correlation_id(
+                    state.get("correlation_id")
+                )
             logger.warning(
                 "request_throttled",
                 key=principal,

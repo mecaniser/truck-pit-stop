@@ -24,6 +24,7 @@ from pydantic import ValidationError
 import stripe
 
 from app.core.config import settings
+from app.core.correlation import normalize_correlation_id
 from app.core.logging import setup_logging, get_logger
 from app.core.metrics import setup_metrics, record_error, record_payment_error, record_unhandled_exception
 from app.core.rate_limit import limiter
@@ -153,6 +154,15 @@ def _get_request_context(request: Request) -> dict:
     return context
 
 
+def _get_correlation_id(request: Request) -> str:
+    """Return only a bounded safe request correlation identifier."""
+    correlation_id = normalize_correlation_id(
+        getattr(request.state, "correlation_id", None)
+    )
+    request.state.correlation_id = correlation_id
+    return correlation_id
+
+
 async def _log_error_async(
     error_type: str,
     message: str,
@@ -164,7 +174,7 @@ async def _log_error_async(
 ):
     """Log error to database asynchronously (fire and forget)."""
     try:
-        correlation_id = getattr(request.state, "correlation_id", None)
+        correlation_id = _get_correlation_id(request)
         user_id, tenant_id = _get_user_context(request)
         request_context = _get_request_context(request)
         
@@ -197,7 +207,7 @@ async def http_exception_handler(request: Request, exc: HTTPException):
     - 4xx: Log as warning (client errors)
     - 5xx: Log as error and persist to database
     """
-    correlation_id = getattr(request.state, "correlation_id", "unknown")
+    correlation_id = _get_correlation_id(request)
     
     # Determine severity and category based on status code
     if exc.status_code >= 500:
@@ -266,7 +276,7 @@ async def http_exception_handler(request: Request, exc: HTTPException):
 @app.exception_handler(ValidationError)
 async def validation_exception_handler(request: Request, exc: ValidationError):
     """Handle Pydantic validation errors."""
-    correlation_id = getattr(request.state, "correlation_id", "unknown")
+    correlation_id = _get_correlation_id(request)
     
     logger.warning(
         "validation_error",
@@ -302,7 +312,7 @@ async def sqlalchemy_exception_handler(request: Request, exc: SQLAlchemyError):
     - Returns generic message to client
     - Persists to error log
     """
-    correlation_id = getattr(request.state, "correlation_id", "unknown")
+    correlation_id = _get_correlation_id(request)
     error_type = type(exc).__name__
     
     # A SQLAlchemy timeout at this boundary is pool checkout exhaustion. It is
@@ -383,7 +393,7 @@ async def stripe_exception_handler(request: Request, exc: stripe.error.StripeErr
     - RateLimitError: 503, retry later
     - APIConnectionError: 503, retry later
     """
-    correlation_id = getattr(request.state, "correlation_id", "unknown")
+    correlation_id = _get_correlation_id(request)
     error_type = type(exc).__name__
     
     # Determine status code and message based on error type
@@ -467,7 +477,7 @@ async def global_exception_handler(request: Request, exc: Exception):
     - Includes correlation ID for debugging
     - Persists to error log database
     """
-    correlation_id = getattr(request.state, "correlation_id", "unknown")
+    correlation_id = _get_correlation_id(request)
     error_type = type(exc).__name__
     
     # Log full error details

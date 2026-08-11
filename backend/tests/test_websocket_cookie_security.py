@@ -4,17 +4,19 @@ from __future__ import annotations
 import io
 import json
 import logging
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
 import pytest
-from fastapi import FastAPI
+from fastapi import FastAPI, Request, Response
 from fastapi.testclient import TestClient
+from sqlalchemy import select
 from starlette.websockets import WebSocketDisconnect
 
 from app.api.v1.endpoints import websocket as websocket_endpoint
 from app.core import dependencies, workos_auth
 from app.core.config import settings
+from app.core.correlation import is_safe_correlation_id
 from app.core.redaction import (
     SensitiveDataFilter,
     install_sensitive_data_filters,
@@ -24,7 +26,7 @@ from app.core.redaction import (
 from app.core.security import create_access_token, create_refresh_token, decode_token
 from app.core.websocket import ConnectionManager
 from app.db.models.customer import Customer
-from app.db.models.error_log import ErrorCategory, ErrorSeverity
+from app.db.models.error_log import ErrorCategory, ErrorLog, ErrorSeverity
 from app.db.models.identity import ExternalIdentity, IdentityPrincipal, TenantMembership
 from app.db.models.tenant import Tenant
 from app.db.models.user import User, UserRole
@@ -181,6 +183,97 @@ async def test_workos_cookie_revalidates_exact_active_membership(
     assert denied.close_code == websocket_endpoint.WS_CLOSE_AUTHORIZATION
 
 
+async def _workos_authority_fixture(db_session):
+    organization_id = f"org_{uuid4().hex}"
+    workos_user_id = f"wu_{uuid4().hex}"
+    tenant = Tenant(
+        name="WorkOS Authority",
+        slug=f"workos-authority-{uuid4().hex}",
+        workos_organization_id=organization_id,
+    )
+    user = _user(role=UserRole.DRIVER, workos_user_id=workos_user_id)
+    db_session.add_all([tenant, user])
+    await db_session.flush()
+    principal = IdentityPrincipal(user_id=user.id, status="active")
+    db_session.add(principal)
+    await db_session.flush()
+    identity = ExternalIdentity(
+        principal_id=principal.id,
+        provider="workos",
+        provider_subject=workos_user_id,
+        status="active",
+    )
+    membership = TenantMembership(
+        principal_id=principal.id,
+        tenant_id=tenant.id,
+        provider="workos",
+        role_slug="driver",
+        status="active",
+        permissions=["driver_portal:use"],
+        resource_scope={},
+    )
+    db_session.add_all([identity, membership])
+    await db_session.commit()
+    token = create_access_token(
+        {
+            "sub": str(user.id),
+            "auth_provider": "workos",
+            "workos_user_id": workos_user_id,
+            "workos_org_id": organization_id,
+            "permissions": ["driver_portal:use"],
+        },
+        tenant_id=str(tenant.id),
+    )
+    return token, identity, membership
+
+
+async def _apply_workos_authority_gap(
+    db_session, authority_gap, identity, membership
+):
+    if authority_gap == "identity_missing":
+        await db_session.delete(identity)
+    elif authority_gap == "identity_deleted":
+        identity.deleted_at = datetime.now(timezone.utc)
+    elif authority_gap == "identity_inactive":
+        identity.status = "inactive"
+    elif authority_gap == "membership_missing":
+        await db_session.delete(membership)
+    elif authority_gap == "membership_deleted":
+        membership.deleted_at = datetime.now(timezone.utc)
+    elif authority_gap == "membership_inactive":
+        membership.status = "inactive"
+    else:
+        membership.provider = "legacy"
+    await db_session.commit()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "authority_gap",
+    [
+        "identity_missing",
+        "identity_deleted",
+        "identity_inactive",
+        "membership_missing",
+        "membership_deleted",
+        "membership_inactive",
+        "membership_legacy_provider",
+    ],
+)
+async def test_workos_cookie_fails_closed_for_every_identity_authority_gap(
+    authority_gap, db_session, websocket_auth_state
+):
+    token, identity, membership = await _workos_authority_fixture(db_session)
+    await _apply_workos_authority_gap(
+        db_session, authority_gap, identity, membership
+    )
+
+    denied = await websocket_endpoint.resolve_websocket_principal(token, db_session)
+
+    assert denied.principal is None
+    assert denied.close_code == websocket_endpoint.WS_CLOSE_AUTHORIZATION
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize("token_kind", ["malformed", "expired", "refresh"])
 async def test_cookie_rejects_non_access_token_shapes(
@@ -311,6 +404,50 @@ def _staff_principal():
         customer_id=None,
         role=UserRole.GARAGE_ADMIN.value,
     )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "authority_gap",
+    [
+        "identity_missing",
+        "identity_deleted",
+        "identity_inactive",
+        "membership_missing",
+        "membership_deleted",
+        "membership_inactive",
+        "membership_legacy_provider",
+    ],
+)
+async def test_live_workos_revalidation_closes_after_authority_is_revoked(
+    authority_gap,
+    db_session,
+    websocket_auth_state,
+    monkeypatch,
+):
+    token, identity, membership = await _workos_authority_fixture(db_session)
+    initial = await websocket_endpoint.resolve_websocket_principal(token, db_session)
+    assert initial.principal is not None
+
+    async def validate(current_token):
+        return await websocket_endpoint.resolve_websocket_principal(
+            current_token, db_session
+        )
+
+    monkeypatch.setattr(websocket_endpoint, "validate_websocket_token", validate)
+    await _apply_workos_authority_gap(
+        db_session, authority_gap, identity, membership
+    )
+    socket = FakeWebSocket(origin="https://app.example.test")
+
+    authorized = await websocket_endpoint._connection_is_still_authorized(
+        socket, token, initial.principal
+    )
+
+    assert authorized is False
+    assert socket.closed == [
+        (websocket_endpoint.WS_CLOSE_AUTHORIZATION, "Not authorized")
+    ]
 
 
 @pytest.mark.asyncio
@@ -615,6 +752,7 @@ async def test_persistent_error_fields_never_store_secret_marker(db_session):
         message=f"failed /api/v1/ws?token={SECRET_MARKER}",
         category=ErrorCategory.AUTH,
         severity=ErrorSeverity.ERROR,
+        correlation_id=f"token={SECRET_MARKER}\r\nCookie: access_token=leak",
         endpoint=f"/api/v1/ws?access_token={SECRET_MARKER}",
         method="GET",
         stack_trace=f"trace Authorization: Bearer {SECRET_MARKER}",
@@ -629,6 +767,7 @@ async def test_persistent_error_fields_never_store_secret_marker(db_session):
     persisted = json.dumps(
         {
             "message": error.message,
+            "correlation_id": error.correlation_id,
             "endpoint": error.endpoint,
             "stack_trace": error.stack_trace,
             "request_context": error.request_context,
@@ -636,3 +775,84 @@ async def test_persistent_error_fields_never_store_secret_marker(db_session):
     )
     assert SECRET_MARKER not in persisted
     assert "[REDACTED]" in persisted
+    assert is_safe_correlation_id(error.correlation_id)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "untrusted_correlation_id",
+    [
+        f"token={SECRET_MARKER}",
+        f"eyJhbGciOiJIUzI1NiJ9.{SECRET_MARKER}.signature",
+        f"Cookie=access_token={SECRET_MARKER}",
+        f"trace\r\nCookie: access_token={SECRET_MARKER}",
+        "x" * 65,
+    ],
+)
+async def test_untrusted_correlation_id_is_replaced_before_logs_and_error_persistence(
+    untrusted_correlation_id, db_session, monkeypatch
+):
+    from app import main as main_module
+    from app.middleware.observability import ObservabilityMiddleware
+
+    persisted_errors = []
+
+    async def persist_with_test_session(**kwargs):
+        persisted = await log_error(**kwargs, db=db_session)
+        persisted_errors.append(persisted)
+        return persisted
+
+    monkeypatch.setattr(
+        main_module.error_service, "log_error", persist_with_test_session
+    )
+
+    async def unused_app(_scope, _receive, _send):
+        raise AssertionError("dispatch should use call_next")
+
+    middleware = ObservabilityMiddleware(unused_app)
+    scope = {
+        "type": "http",
+        "asgi": {"version": "3.0"},
+        "http_version": "1.1",
+        "method": "GET",
+        "scheme": "https",
+        "path": "/api/v1/failure",
+        "raw_path": b"/api/v1/failure",
+        "query_string": b"",
+        "headers": [
+            (b"host", b"api.example.test"),
+            (b"x-correlation-id", untrusted_correlation_id.encode("latin1")),
+        ],
+        "client": ("127.0.0.1", 43100),
+        "server": ("api.example.test", 443),
+    }
+    request = Request(scope)
+
+    async def call_next(observed_request):
+        await main_module._log_error_async(
+            error_type="CorrelationBoundaryError",
+            message="safe failure",
+            category=ErrorCategory.UNHANDLED,
+            severity=ErrorSeverity.ERROR,
+            request=observed_request,
+            status_code=500,
+        )
+        return Response("failed", status_code=500)
+
+    response = await middleware.dispatch(request, call_next)
+    response_correlation_id = response.headers["X-Correlation-ID"]
+    stored = (
+        await db_session.execute(
+            select(ErrorLog).where(
+                ErrorLog.id == persisted_errors[0].id
+            )
+        )
+    ).scalar_one()
+
+    assert is_safe_correlation_id(response_correlation_id)
+    assert stored.correlation_id == response_correlation_id
+    assert SECRET_MARKER not in stored.correlation_id
+    assert "token=" not in stored.correlation_id.lower()
+    assert "cookie" not in stored.correlation_id.lower()
+    assert "\r" not in stored.correlation_id
+    assert "\n" not in stored.correlation_id

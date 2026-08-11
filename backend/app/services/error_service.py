@@ -15,6 +15,7 @@ from sqlalchemy import select, func, desc, and_, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
+from app.core.correlation import normalize_optional_correlation_id
 from app.core.logging import get_logger
 from app.core.redaction import redact_sensitive, redact_text
 from app.db.models.error_log import ErrorLog, ErrorCategory, ErrorSeverity
@@ -83,7 +84,7 @@ async def log_error(
                 ),
                 error_category=category.value if hasattr(category, 'value') else category,
                 severity=severity.value if hasattr(severity, 'value') else severity,
-                correlation_id=correlation_id,
+                correlation_id=normalize_optional_correlation_id(correlation_id),
                 endpoint=redact_text(endpoint) if endpoint else None,
                 method=redact_text(method) if method else None,
                 status_code=status_code,

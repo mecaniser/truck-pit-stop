@@ -3,6 +3,8 @@ from __future__ import annotations
 from fastapi.responses import JSONResponse
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
+from app.core.correlation import normalize_correlation_id
+
 
 class RequestBodyTooLargeError(Exception):
     """Raised when request body size exceeds configured max bytes."""
@@ -37,8 +39,8 @@ class RequestBodyLimitMiddleware:
         if isinstance(state, dict):
             correlation_id = state.get("correlation_id")
             if correlation_id:
-                return str(correlation_id)
-        return headers.get("x-correlation-id", "unknown")
+                return normalize_correlation_id(correlation_id)
+        return normalize_correlation_id(headers.get("x-correlation-id"))
 
     async def _send_413(self, send: Send, correlation_id: str) -> None:
         response = JSONResponse(

@@ -5,7 +5,6 @@ Provides request tracing with correlation IDs, request/response logging,
 and timing metrics for all HTTP requests.
 """
 import time
-import uuid
 from typing import Callable
 
 from fastapi import Request, Response
@@ -13,6 +12,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.types import ASGIApp
 
 from app.core.logging import get_logger, bind_contextvars, clear_contextvars
+from app.core.correlation import normalize_correlation_id
 from app.core.metrics import normalize_endpoint_label, record_endpoint_duration
 from app.core.redaction import redact_sensitive, redact_text
 from app.core.request_performance import (
@@ -42,7 +42,9 @@ class ObservabilityMiddleware(BaseHTTPMiddleware):
     
     async def dispatch(self, request: Request, call_next: Callable) -> Response:
         # Generate or use existing correlation ID
-        correlation_id = request.headers.get(CORRELATION_ID_HEADER) or str(uuid.uuid4())
+        correlation_id = normalize_correlation_id(
+            request.headers.get(CORRELATION_ID_HEADER)
+        )
         
         # Store in request state for access in endpoints
         request.state.correlation_id = correlation_id
@@ -168,4 +170,6 @@ def get_correlation_id(request: Request) -> str:
         async def example(request: Request):
             correlation_id = get_correlation_id(request)
     """
-    return getattr(request.state, "correlation_id", "unknown")
+    return normalize_correlation_id(
+        getattr(request.state, "correlation_id", None)
+    )

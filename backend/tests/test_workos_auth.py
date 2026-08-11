@@ -9,6 +9,7 @@ from app.core.config import settings
 from app.core.security import decode_token
 from app.db.models.user import User, UserRole
 from app.db.models.tenant import Tenant
+from app.db.models.identity import ExternalIdentity, IdentityPrincipal, TenantMembership
 from app.core.workos_auth import CurrentPrincipal, get_current_principal, require_permission
 from app.core import workos_auth
 from app.services import workos_provider, workos_session
@@ -395,11 +396,36 @@ def _workos_token(user_id, workos_user_id="wu_1", org_id="org_1", permissions=No
     return create_access_token({"sub": str(user_id), "auth_provider": "workos", "workos_user_id": workos_user_id, "workos_org_id": org_id, "permissions": permissions or ["fleet:view"]})
 
 
+async def _seed_active_workos_authority(db_session, user, tenant):
+    identity = IdentityPrincipal(user_id=user.id, status="active")
+    db_session.add(identity)
+    await db_session.flush()
+    db_session.add_all([
+        ExternalIdentity(
+            principal_id=identity.id,
+            provider="workos",
+            provider_subject=user.workos_user_id,
+            status="active",
+        ),
+        TenantMembership(
+            principal_id=identity.id,
+            tenant_id=tenant.id,
+            provider="workos",
+            role_slug="garage_admin",
+            status="active",
+            permissions=[],
+            resource_scope={},
+        ),
+    ])
+    await db_session.commit()
+
+
 @pytest.mark.asyncio
 async def test_current_principal_validates_mapping_and_active_state(db_session):
     tenant = Tenant(name="Principal", slug="principal", workos_organization_id="org_1")
     user = User(email="principal@example.test", hashed_password="x", first_name="P", last_name="U", role=UserRole.GARAGE_ADMIN, workos_user_id="wu_1")
-    db_session.add_all([tenant, user]); await db_session.commit()
+    db_session.add_all([tenant, user]); await db_session.flush()
+    await _seed_active_workos_authority(db_session, user, tenant)
     principal = await get_current_principal(_workos_token(user.id, permissions=["fleet:view", "fleet:assign"]), db_session)
     assert principal == CurrentPrincipal(user.id, "wu_1", "org_1", tenant.id, frozenset({"fleet:view", "fleet:assign"}))
     for token in [

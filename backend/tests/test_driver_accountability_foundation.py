@@ -21,6 +21,7 @@ from app.db.models.fleet import (
     IncidentStatus,
     InspectionItemResult,
 )
+from app.db.models.identity import ExternalIdentity, IdentityPrincipal, TenantMembership
 from app.db.models.tenant import Tenant
 from app.db.models.user import User, UserRole
 from app.db.models.vehicle import Vehicle
@@ -93,6 +94,47 @@ async def _seed_fleet(db_session):
     )
     db_session.add_all([employer, other_employer, manager, driver_user])
     await db_session.flush()
+
+    manager_principal = IdentityPrincipal(user_id=manager.id, status="active")
+    driver_principal = IdentityPrincipal(user_id=driver_user.id, status="active")
+    db_session.add_all([manager_principal, driver_principal])
+    await db_session.flush()
+    db_session.add_all([
+        ExternalIdentity(
+            principal_id=manager_principal.id,
+            provider="workos",
+            provider_subject=manager.workos_user_id,
+            status="active",
+        ),
+        TenantMembership(
+            principal_id=manager_principal.id,
+            tenant_id=tenant.id,
+            provider="workos",
+            role_slug="fleet_manager",
+            status="active",
+            permissions=["fleet:view", "fleet:assign"],
+            resource_scope={},
+        ),
+        ExternalIdentity(
+            principal_id=driver_principal.id,
+            provider="workos",
+            provider_subject=driver_user.workos_user_id,
+            status="active",
+        ),
+        TenantMembership(
+            principal_id=driver_principal.id,
+            tenant_id=tenant.id,
+            provider="workos",
+            role_slug="driver",
+            status="active",
+            permissions=[
+                "driver_portal:use",
+                "inspections:perform",
+                "incidents:report",
+            ],
+            resource_scope={},
+        ),
+    ])
 
     truck = Vehicle(
         tenant_id=tenant.id,
