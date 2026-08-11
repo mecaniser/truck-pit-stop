@@ -11,6 +11,7 @@ import pytest
 from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.testclient import TestClient
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import async_sessionmaker
 from starlette.websockets import WebSocketDisconnect
 
 from app.api.v1.endpoints import websocket as websocket_endpoint
@@ -32,6 +33,7 @@ from app.db.models.tenant import Tenant
 from app.db.models.user import User, UserRole
 from app.db.models.user_customer_link import UserCustomerLink
 from app.services.error_service import log_error
+from app.services import error_service as error_service_module
 
 
 SECRET_MARKER = "DB015_SECRET_MARKER"
@@ -1192,7 +1194,17 @@ def test_installed_filter_removes_secret_from_captured_uvicorn_log():
 
 
 @pytest.mark.asyncio
-async def test_persistent_error_fields_never_store_secret_marker(db_session):
+async def test_persistent_error_fields_never_store_secret_marker(
+    _db_engine,
+    db_session,
+    monkeypatch,
+):
+    owned_session_factory = async_sessionmaker(_db_engine, expire_on_commit=False)
+    monkeypatch.setattr(
+        error_service_module,
+        "AsyncSessionLocal",
+        owned_session_factory,
+    )
     error = await log_error(
         error_type="WebSocketError",
         message=f"failed /api/v1/ws?token={SECRET_MARKER}",
@@ -1207,7 +1219,6 @@ async def test_persistent_error_fields_never_store_secret_marker(db_session):
             "query_params": {"token": SECRET_MARKER},
             "nested": [{"cookie": f"access_token={SECRET_MARKER}"}],
         },
-        db=db_session,
     )
 
     persisted = json.dumps(
@@ -1236,15 +1247,21 @@ async def test_persistent_error_fields_never_store_secret_marker(db_session):
     ],
 )
 async def test_untrusted_correlation_id_is_replaced_before_logs_and_error_persistence(
-    untrusted_correlation_id, db_session, monkeypatch
+    untrusted_correlation_id, _db_engine, db_session, monkeypatch
 ):
     from app import main as main_module
     from app.middleware.observability import ObservabilityMiddleware
 
     persisted_errors = []
+    owned_session_factory = async_sessionmaker(_db_engine, expire_on_commit=False)
+    monkeypatch.setattr(
+        error_service_module,
+        "AsyncSessionLocal",
+        owned_session_factory,
+    )
 
     async def persist_with_test_session(**kwargs):
-        persisted = await log_error(**kwargs, db=db_session)
+        persisted = await log_error(**kwargs)
         persisted_errors.append(persisted)
         return persisted
 
@@ -1275,14 +1292,16 @@ async def test_untrusted_correlation_id_is_replaced_before_logs_and_error_persis
     request = Request(scope)
 
     async def call_next(observed_request):
-        await main_module._log_error_async(
+        envelope = main_module._snapshot_error(
+            observed_request,
             error_type="CorrelationBoundaryError",
             message="safe failure",
             category=ErrorCategory.UNHANDLED,
             severity=ErrorSeverity.ERROR,
-            request=observed_request,
+            correlation_id=observed_request.state.correlation_id,
             status_code=500,
         )
+        await main_module._log_error_async(envelope)
         return Response("failed", status_code=500)
 
     response = await middleware.dispatch(request, call_next)
