@@ -12,6 +12,10 @@ import structlog
 from structlog.types import Processor
 
 from app.core.config import settings
+from app.core.redaction import (
+    install_sensitive_data_filters,
+    redact_structlog_event,
+)
 
 
 def get_log_level() -> int:
@@ -42,6 +46,7 @@ def setup_logging() -> None:
         structlog.processors.TimeStamper(fmt="iso"),
         structlog.processors.StackInfoRenderer(),
         structlog.processors.UnicodeDecoder(),
+        redact_structlog_event,
     ]
     
     if settings.LOG_FORMAT == "json":
@@ -80,6 +85,7 @@ def setup_logging() -> None:
     # Suppress noisy loggers
     logging.getLogger("uvicorn.access").setLevel(logging.WARNING)
     logging.getLogger("sqlalchemy.engine").setLevel(logging.WARNING)
+    install_sensitive_data_filters()
 
 
 def get_logger(name: str = __name__) -> structlog.stdlib.BoundLogger:

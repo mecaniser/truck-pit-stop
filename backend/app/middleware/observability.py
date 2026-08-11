@@ -14,6 +14,7 @@ from starlette.types import ASGIApp
 
 from app.core.logging import get_logger, bind_contextvars, clear_contextvars
 from app.core.metrics import normalize_endpoint_label, record_endpoint_duration
+from app.core.redaction import redact_sensitive, redact_text
 from app.core.request_performance import (
     begin_request_database_stats,
     end_request_database_stats,
@@ -65,7 +66,11 @@ class ObservabilityMiddleware(BaseHTTPMiddleware):
         # Log request start (debug level to avoid noise)
         logger.debug(
             "request_started",
-            query_params=str(request.query_params) if request.query_params else None,
+            query_params=(
+                redact_sensitive(dict(request.query_params))
+                if request.query_params
+                else None
+            ),
             user_agent=request.headers.get("user-agent"),
         )
         
@@ -113,7 +118,7 @@ class ObservabilityMiddleware(BaseHTTPMiddleware):
                 "request_failed",
                 duration_ms=round(duration_ms, 2),
                 error_type=type(exc).__name__,
-                error_message=str(exc),
+                error_message=redact_text(str(exc)),
                 **self._database_log_fields(database_stats),
             )
             raise

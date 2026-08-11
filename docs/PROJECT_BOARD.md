@@ -20,7 +20,7 @@ reviewed, merged, and released. Reconcile this board whenever newer evidence exi
 | ID | Priority | State | Outcome | Owner | Evidence now | Next gate |
 |---|---|---|---|---|---|---|
 | DB-003 | P1 | Discovery | Finish versioned additional-work authorizations | Backend & Integrations | PR #196 merged at `e20fa1a` with implementation commit `a51f2af`; immutable revisions/finalization guard exist, but task validation found the portal action still depends on the staff-send flow | Architecture decides automatic vs staff-reviewed publication and any threshold policy; then run mechanic addition → customer prompt → approve/decline → invoice Playwright acceptance, Security GO, QA GO |
-| DB-030 | P1 | Review | Restore mobile customer-portal touch targets | Frontend & UX | `codex/portal-touch-targets` gives the four reported controls literal 44px mobile dimensions while retaining the 34/36px desktop treatment. Portal/route tests 16/16, full frontend 145/145, production build, exact changed-scope lint, diff check, and the expanded compact-font DB-004 Playwright journey 2/2 passed at 390/320 with full-surface target sweeps and no overflow/browser errors. | Fresh independent QA verifies the focused diff and repeats the committed 390/320 runtime gate; no merge or release before QA GO |
+| DB-015 | P0 | In progress | Remediate WebSocket token logging | Security & Identity | Architecture approved a backend-first, cookie-only `/ws` contract. Backend implementation on `codex/db015-websocket-cookie-auth` now has focused 23/23, adjacent auth/identity 89/89, protected-critical plus DB-015 64/64, and full backend 658 passed / 4 skipped; compile, diff check, and the single Alembic head 117 are green. No migration, ticket store, or new secret is required. | Integrate the queryless frontend client only after backend acceptance; then require a fresh Architecture security gate, independent QA/runtime log capture, focused PR/CI, deployment, and canary before closure. |
 
 ## Blocked
 
@@ -38,7 +38,6 @@ reviewed, merged, and released. Reconcile this board whenever newer evidence exi
 | DB-011 | P2 | Ready | Connect the board to Linear | Product & Delivery Lead | Connected workspace/team, statuses matching this board, ownership/priority/acceptance fields, and import without duplicate issues |
 | DB-013 | P1 | Ready | Create an isolated staging environment | Release & Reliability | Production-like configuration with isolated data; migrations, acceptance suite, rollback rehearsal, and promotion record |
 | DB-014 | P1 | Ready | Fix local seed idempotency | Backend & Integrations | Seed works with existing multi-tenant data without `MultipleResultsFound`, does not duplicate records, and supports a clean first run |
-| DB-015 | P0 | Ready | Remediate WebSocket token logging | Security & Identity | No bearer/session token appears in client, API, proxy, or observability logs; regression coverage proves redaction |
 | DB-016 | P1 | Ready | Add repair-order concurrency and audit hardening | Architecture & API Contracts | `lock_version` conflict behavior, before/after audit for financial/workflow changes, user-visible history, and simultaneous-edit tests |
 | DB-017 | P0 | Ready | Verify canonical work-first repair workflow end to end | QA Gatekeeper | Execute `FLOW_VERIFICATION.md`, including internal fleet, payment methods, void/revise, worker/outbox email, and immutable invoice behavior |
 | DB-020 | P1 | Ready | Fix production apex-domain availability | Release & Reliability | Verify DNS/TLS/redirect ownership and make apex reliably redirect or serve without affecting `www` |
@@ -55,6 +54,7 @@ Rows that lack an explicit production record remain implementation evidence only
 
 | Outcome | Evidence |
 |---|---|
+| DB-030 — Customer portal touch-target repair | PR #257 merged as `7797e608f2cf0bf89486ea8b8a49864d2df2a9f6`; all six protected CI contexts passed. Candidate `a2ab564b834513e82ef5bfb60afebadfc3d2af98` received independent QA GO: the four reported controls measured at least 44×44 at 390px and 320px, focused portal/title/route tests passed 16/16, full frontend passed 145/145, production build, changed-file lint and diff checks passed, and the mobile Playwright journey passed 2/2 with containment, keyboard, payment/PDF behavior, and no browser errors. Railway production deployment `a788d9f3-93ee-4781-90ee-e24fa5c02084` and performance deployment `a69e962e-10d7-4268-8c62-c3d3f2124f44` succeeded on the merge SHA and passed `/health`; worker deployment `2066ffd9-8d61-4326-8c1b-e03833cd99e3` remained unchanged. The deployed non-mutating safe-fixture portal journey passed 2/2 at 390px and 320px in 5.0 seconds. Five initial probes plus 20 observation rounds over ten minutes returned HTTP 200 for the homepage, production API health, and performance health, with no Railway HTTP 5xx entries. Rollback target was `4c2362cede901ad4768a9685b89a5f2abe00919e`; no rollback trigger fired. No backend, API, auth, tenant, payment behavior, dependency, worker, data, or migration change. |
 | Mobile repair-order scrolling and finalized-photo behavior | PR #195, commit `222ba23`, focused mobile/runtime checks reported |
 | Mobile platform performance layout | PR #161, commit `7789b0e`, 320px no-overflow/build evidence reported |
 | Customer portal visual redesign | PR #189, commit `d9daf91`, build and portal/logo tests reported |
@@ -83,6 +83,35 @@ Copy this row into Inbox before implementation:
 
 For every active item, add links or identifiers for its branch/PR and record the
 last passing automated and runtime evidence in the item or associated issue.
+
+## DB-015 acceptance criteria
+
+- `/api/v1/ws` authenticates only from the existing HttpOnly `access_token`
+  cookie. A query credential alone is rejected, and a query value can never
+  override the cookie. No bearer/session token appears in the WebSocket URL.
+- Browser handshakes require an exact match in the configured Origin allowlist.
+  Authentication and authorization reuse the HTTPS legacy, selected customer-
+  link, active-tenant, and WorkOS principal/membership authorities.
+- JWT expiry, blacklist, token version, user/tenant activity, customer link, and
+  WorkOS membership remain valid for the life of the connection. Revocation,
+  expiry, or a changed tenant context closes the socket with a generic reason.
+- Existing server event payloads and `ping`/`pong` remain compatible. Client
+  input is notification-only, size-bounded, and rejects unknown messages;
+  connection limits and rate limiting remain enforced with generic close copy.
+- Recursive redaction removes credential-shaped fields and query/URL values from
+  structured application logs, observability context, persistent error records,
+  exceptions, and repo-controlled Uvicorn access/error logging.
+- The frontend opens a queryless socket without reading the access token from
+  JavaScript. `4001` may perform one HTTPS refresh recovery; authorization,
+  origin, replacement, unsupported, and oversized closes are terminal, while
+  rate limiting uses bounded backoff without a reconnect storm.
+- No schema migration, ticket store, new secret, production data mutation, or
+  event-contract change is introduced. Backend deploys before the queryless
+  frontend to avoid a compatibility gap; rollback restores both halves together.
+- Focused and full backend/frontend tests, compile/build, lint/diff, one Alembic
+  head, authenticated browser coverage, secret-marker capture across console,
+  API/proxy/observability logs, cross-tenant delivery denial, a fresh independent
+  Architecture security GO, independent QA GO, CI, deploy, and canary are required.
 
 ## DB-004 acceptance criteria
 

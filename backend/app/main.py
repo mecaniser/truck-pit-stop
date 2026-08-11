@@ -36,6 +36,7 @@ from app.middleware.request_size import RequestBodyLimitMiddleware
 from app.api.v1.router import api_router
 from app.db.session import engine
 from app.core.redis import close_redis, get_redis
+from app.core.redaction import redact_sensitive, redact_text
 from app.db.models.error_log import ErrorCategory, ErrorSeverity
 from app.services import error_service
 
@@ -140,14 +141,14 @@ def _get_user_context(request: Request) -> tuple[Optional[UUID], Optional[UUID]]
 def _get_request_context(request: Request) -> dict:
     """Build sanitized request context for error logging."""
     context = {
-        "url": str(request.url),
+        "url": redact_text(str(request.url)),
         "client_ip": request.client.host if request.client else None,
         "user_agent": request.headers.get("user-agent"),
     }
     
     # Add query params (sanitized by error_service)
     if request.query_params:
-        context["query_params"] = dict(request.query_params)
+        context["query_params"] = redact_sensitive(dict(request.query_params))
     
     return context
 
@@ -183,7 +184,7 @@ async def _log_error_async(
         )
     except Exception as e:
         # Don't let error logging failures break the response
-        logger.error("failed_to_log_error_to_db", error=str(e))
+        logger.error("failed_to_log_error_to_db", error=redact_text(str(e)))
 
 
 # ============ Global Exception Handlers ============
