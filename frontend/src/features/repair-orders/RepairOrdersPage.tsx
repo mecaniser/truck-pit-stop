@@ -30,6 +30,14 @@ import SuggestingTextarea from '@/components/SuggestingTextarea'
 import { buildPartHistoryEvents } from './repairOrderHistory'
 import { REPAIR_ORDERS_QUEUE_LABEL } from './repairOrdersPresentation'
 import type { ActionQueueOrder } from '../dashboard/ShopCockpitActionLedger'
+import { AuthorizationSummary } from '@/features/quotes/AuthorizationSummary'
+import {
+  AUTHORIZATION_CONFLICT_MESSAGE,
+  type AuthorizationHistory,
+  canPublishAuthorization,
+  formatAuthorizationEventDetail,
+  isAuthorizationConflict,
+} from '@/features/quotes/authorization'
 
 interface NewCustomerForm {
   first_name: string
@@ -762,6 +770,20 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
     enabled: !!(selectedOrder?.id && isDetailOpen),
   })
 
+  const { data: authorizationHistory, refetch: refetchAuthorizationHistory } = useQuery<AuthorizationHistory>({
+    queryKey: ['authorization-history', selectedOrder?.id],
+    queryFn: async ({ signal }) => {
+      const response = await api.get(`/quotes/repair-order/${selectedOrder!.id}/history`, { signal })
+      return response.data as AuthorizationHistory
+    },
+    enabled: !!(
+      selectedOrder?.id
+      && isDetailOpen
+      && workspaceHistoryRequested
+      && !selectedOrder.is_internal
+    ),
+  })
+
   const { data: invoiceForOrder } = useQuery<Invoice | null>({
     queryKey: ['invoice-for-order', selectedOrder?.id],
     queryFn: async ({ signal }) => {
@@ -1079,7 +1101,8 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
       hasError ? 'border-red-400' : 'border-gray-300'
     }`
 
-  const canEditPriceBuilderByRole = ['garage_owner', 'garage_admin', 'receptionist'].includes(currentUser?.role || '')
+  const canEditPriceBuilderByRole = ['garage_owner', 'garage_admin', 'receptionist', 'mechanic'].includes(currentUser?.role || '')
+  const canPublishCustomerAuthorization = canPublishAuthorization(currentUser?.role)
   const canVoidInvoices = ['garage_owner', 'garage_admin'].includes(currentUser?.role || '')
   const showLegacyPriceEditor = false
   const detailStatus = (orderDetail ?? selectedOrder)?.status ?? null
@@ -1706,6 +1729,19 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
     },
   })
 
+  const refreshAuthorizationState = async () => {
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ['repair-orders'] }),
+      queryClient.invalidateQueries({ queryKey: ['customerRepairOrders'] }),
+      queryClient.invalidateQueries({ queryKey: ['quote', selectedOrder?.id] }),
+      queryClient.invalidateQueries({ queryKey: ['repair-order-detail', selectedOrder?.id] }),
+      queryClient.invalidateQueries({ queryKey: ['authorization-history', selectedOrder?.id] }),
+      refetchQuote(),
+      refetchOrderDetail(),
+      workspaceHistoryRequested ? refetchAuthorizationHistory() : Promise.resolve(),
+    ])
+  }
+
   const createQuoteMutation = useMutation({
     mutationFn: async (repair_order_id: string) => {
       const response = await api.post('/quotes', { repair_order_id })
@@ -1747,6 +1783,12 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
       toast.success(`Estimate ${quote.quote_number} updated — $${parseFloat(quote.total_amount).toLocaleString('en-US', { minimumFractionDigits: 2 })}`)
     },
     onError: (error: unknown) => {
+      if (isAuthorizationConflict(error)) {
+        setQuoteToConfirm(null)
+        void refreshAuthorizationState()
+        toast.error(AUTHORIZATION_CONFLICT_MESSAGE)
+        return
+      }
       toast.error(getErrorDetail(error, 'Failed to update estimate'))
     },
   })
@@ -1756,21 +1798,32 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
       const response = await api.post(`/quotes/${quoteId}/send`)
       return response.data as Quote
     },
-    onSuccess: () => {
+    onSuccess: (sentQuote) => {
       queryClient.invalidateQueries({ queryKey: ['repair-orders'] })
       queryClient.invalidateQueries({ queryKey: ['customerRepairOrders'] })
+      queryClient.invalidateQueries({ queryKey: ['authorization-history'] })
       if (selectedOrder?.id) {
         queryClient.invalidateQueries({ queryKey: ['quote', selectedOrder.id] })
         refetchQuote()
       }
       setQuoteSent(true)
+      setQuoteToConfirm(null)
       toast.success(
-        selectedOrder && quoteForOrder?.authorization_type === 'additional_work'
+        sentQuote.authorization_type === 'additional_work'
           ? 'Additional work sent — awaiting customer authorization'
-          : 'Estimate sent — awaiting customer authorization'
+          : sentQuote.is_approved
+            ? 'Initial estimate published and authorized under the customer threshold'
+            : 'Estimate sent — awaiting customer authorization'
       )
     },
     onError: (error: unknown) => {
+      if (isAuthorizationConflict(error)) {
+        setQuoteSent(false)
+        setQuoteToConfirm(null)
+        void refreshAuthorizationState()
+        toast.error(AUTHORIZATION_CONFLICT_MESSAGE)
+        return
+      }
       toast.error(getErrorDetail(error, 'Failed to send estimate'))
     },
   })
@@ -2035,7 +2088,12 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
     const assignedTechnician = order.assigned_mechanic_id
       ? mechanicLookup.get(order.assigned_mechanic_id) || 'Assigned technician'
       : undefined
-    const persistedHistoryEventTypes = new Set((orderDetail?.history_events ?? []).map((event) => event.event_type))
+    const persistedHistoryById = new Map(
+      [...(orderDetail?.history_events ?? []), ...(authorizationHistory?.events ?? [])]
+        .map((event) => [event.id, event]),
+    )
+    const persistedHistoryEvents = [...persistedHistoryById.values()]
+    const persistedHistoryEventTypes = new Set(persistedHistoryEvents.map((event) => event.event_type))
 
     push({
       id: 'created',
@@ -2045,26 +2103,48 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
       actor: customerActor,
     })
     events.push(...buildPartHistoryEvents(orderDetail?.parts_usage ?? [], orderDetail?.history_events ?? []))
+    events.push(...persistedHistoryEvents
+      .filter((event) => event.event_type.startsWith('authorization_'))
+      .map((event) => ({
+        id: event.id,
+        label: event.label,
+        at: event.created_at,
+        detail: formatAuthorizationEventDetail(event.detail),
+        actor: event.actor_name || undefined,
+      })))
     push({
       id: 'quote-created',
-      label: 'Estimate draft created',
+      label: quoteForOrder?.authorization_type === 'additional_work'
+        ? 'Additional-work draft created'
+        : 'Estimate draft created',
       at: quoteForOrder?.created_at,
       detail: quoteForOrder?.quote_number,
     })
-    push({
-      id: 'quote-sent',
-      label: 'Estimate sent to customer',
-      at: quoteForOrder?.sent_at,
-      detail: quoteForOrder?.quote_number,
-      actor: customerActor,
-    })
-    push({
-      id: 'quote-approved',
-      label: 'Estimate authorized',
-      at: quoteForOrder?.is_approved ? quoteForOrder.updated_at : null,
-      detail: quoteForOrder?.quote_number,
-      actor: customerActor,
-    })
+    if (!persistedHistoryEventTypes.has('authorization_published')) {
+      push({
+        id: 'quote-sent',
+        label: quoteForOrder?.authorization_type === 'additional_work'
+          ? 'Additional work sent to customer'
+          : 'Estimate sent to customer',
+        at: quoteForOrder?.sent_at,
+        detail: quoteForOrder?.quote_number,
+        actor: customerActor,
+      })
+    }
+    if (
+      !persistedHistoryEventTypes.has('authorization_customer_approved')
+      && !persistedHistoryEventTypes.has('authorization_threshold_approved')
+    ) {
+      push({
+        id: 'quote-approved',
+        label: quoteForOrder?.authorization_type === 'additional_work'
+          ? 'Additional work authorized'
+          : 'Estimate authorized',
+        at: quoteForOrder?.is_approved ? quoteForOrder.updated_at : null,
+        detail: quoteForOrder?.quote_number,
+        actor: customerActor,
+      })
+    }
     push({
       id: 'assigned',
       label: 'Technician assigned',
@@ -2130,7 +2210,12 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
     return events.sort((a, b) => new Date(a.at).getTime() - new Date(b.at).getTime())
   })()
   const handlePriceBuilderQuoteAction = async () => {
-    if (!selectedOrder?.id || quoteActionPending || quoteActionDisabled) return
+    if (
+      !canPublishCustomerAuthorization
+      || !selectedOrder?.id
+      || quoteActionPending
+      || quoteActionDisabled
+    ) return
     if (!quoteForOrder) {
       createQuoteMutation.mutate(selectedOrder.id)
       return
@@ -2140,16 +2225,15 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
       return
     }
     try {
-      if (effectiveQuoteNeedsUpdate) {
-        if (quoteIsSent) {
-          createQuoteMutation.mutate(selectedOrder.id)
-          return
-        }
-        const updatedQuote = await updateQuoteMutation.mutateAsync(quoteForOrder.id)
-        setQuoteToConfirm(updatedQuote)
+      if (quoteIsSent) {
+        createQuoteMutation.mutate(selectedOrder.id)
         return
       }
-      setQuoteToConfirm(quoteForOrder)
+      // Publication is deliberate and always follows a fresh server-side
+      // recalculation. The send endpoint revalidates again and returns 409 if
+      // another edit or publication wins the race.
+      const refreshedQuote = await updateQuoteMutation.mutateAsync(quoteForOrder.id)
+      setQuoteToConfirm(refreshedQuote)
     } catch {
       // Mutation handlers surface the error toast; keep the click handler from throwing.
     }
@@ -3737,21 +3821,10 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                           <ArrowRight className={`w-3 h-3 shrink-0 ${hasQuote ? 'text-amber-500' : 'text-gray-300'}`} />
 
                           {/* Step 2: Send to Customer */}
-                          {hasQuote && !isApproved && (!isSent || effectiveQuoteNeedsUpdate) ? (
+                          {canPublishCustomerAuthorization && hasQuote && !isApproved && (!isSent || effectiveQuoteNeedsUpdate) ? (
                             <button
                               type="button"
-                              onClick={async () => {
-                                if (quoteForOrder) {
-                                  try {
-                                    const quoteToSend = effectiveQuoteNeedsUpdate
-                                      ? await updateQuoteMutation.mutateAsync(quoteForOrder.id)
-                                      : quoteForOrder
-                                    await sendQuoteMutation.mutateAsync(quoteToSend.id)
-                                  } catch {
-                                    // Mutation handlers surface the error toast; keep the click handler from throwing.
-                                  }
-                                }
-                              }}
+                              onClick={handlePriceBuilderQuoteAction}
                               disabled={sendQuoteMutation.isPending || updateQuoteMutation.isPending}
                               className={`shrink-0 px-2 py-1 text-xs font-medium rounded-md ${
                                 isSent
@@ -3759,11 +3832,11 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                                   : 'bg-amber-500 hover:bg-amber-600 text-white'
                               }`}
                             >
-                              {quoteActionPending ? 'Working...' : (isSent ? '⏳ Resend' : 'Send')}
+                              {quoteActionPending ? 'Working...' : (isSent ? 'Prepare revision' : 'Review & publish')}
                             </button>
                           ) : (
                             <span className={`shrink-0 px-2 py-1 text-xs font-medium rounded-md ${workflowPillClass(isApproved ? 'success' : 'neutral')}`}>
-                              {isApproved ? '✓ Sent' : isSent ? 'Awaiting approval' : 'Send'}
+                              {isApproved ? '✓ Sent' : isSent ? 'Awaiting approval' : canPublishCustomerAuthorization ? 'Publish' : 'Staff publication required'}
                             </span>
                           )}
 
@@ -4083,7 +4156,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                     quoteActionPending={quoteActionPending}
                     quoteActionDisabled={quoteActionDisabled}
                     quoteDisabledReason={quoteDisabledReason}
-                    onQuoteAction={handlePriceBuilderQuoteAction}
+                    onQuoteAction={canPublishCustomerAuthorization ? handlePriceBuilderQuoteAction : undefined}
                     assignedTechnicianName={
                       selectedOrder.assigned_mechanic_id
                         ? mechanicLookup.get(selectedOrder.assigned_mechanic_id) || 'Assigned technician'
@@ -5380,21 +5453,15 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                   <p className="text-sm text-gray-700">
                     The customer's original approval remains valid. This request asks them to authorize only the added amount.
                   </p>
-                  <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
-                    <div className="flex justify-between text-sm text-gray-600">
-                      <span>Previously authorized</span>
-                      <span>${parseFloat(quoteToConfirm.previously_authorized_amount).toFixed(2)}</span>
-                    </div>
-                    <div className="mt-2 flex justify-between font-semibold text-amber-900">
-                      <span>Additional authorization</span>
-                      <span>+${parseFloat(quoteToConfirm.delta_amount).toFixed(2)}</span>
-                    </div>
-                  </div>
+                  <AuthorizationSummary quote={quoteToConfirm} theme="light" />
                 </div>
               ) : (
-                <p className="mb-6 text-sm leading-6 text-gray-700">
-                  Once authorized, this estimate becomes the customer's approved baseline. Any later increase in parts, labor, or services will require a separate additional-work authorization.
-                </p>
+                <div className="mb-6 space-y-3">
+                  <p className="text-sm leading-6 text-gray-700">
+                    Once authorized, this estimate becomes the customer's approved baseline. Any later increase in parts, labor, or services will require a separate additional-work authorization.
+                  </p>
+                  <AuthorizationSummary quote={quoteToConfirm} theme="light" />
+                </div>
               )}
               <div className="flex gap-3">
                 <button
@@ -5408,7 +5475,6 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                   type="button"
                   onClick={() => {
                     sendQuoteMutation.mutate(quoteToConfirm.id)
-                    setQuoteSent(true)
                   }}
                   disabled={sendQuoteMutation.isPending}
                   className="flex-1 rounded-lg bg-emerald-600 px-4 py-3 font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"

@@ -32,7 +32,7 @@ export function isActiveRepair(order: RepairOrder) {
 export function repairStatusLabel(status: RepairOrder['status']) {
   const labels: Partial<Record<RepairOrder['status'], string>> = {
     draft: 'Checked in',
-    quoted: 'Estimate ready',
+    quoted: 'Authorization ready',
     approved: 'Approved',
     assigned: 'Assigned',
     acknowledged: 'Acknowledged',

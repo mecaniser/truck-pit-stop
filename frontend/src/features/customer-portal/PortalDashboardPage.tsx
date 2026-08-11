@@ -254,12 +254,12 @@ export default function PortalDashboardPage() {
                 className="grid grid-cols-[1fr_auto] items-center gap-3 rounded-xl border border-[#f0b959]/20 bg-[#f0b959]/5 px-3.5 py-3 hover:border-[#f0b959]/40 sm:grid-cols-[210px_1fr_auto]"
               >
                 <div className="min-w-0">
-                  <p className="truncate text-[13px] font-extrabold">Estimate awaiting approval</p>
+                  <p className="truncate text-[13px] font-extrabold">Authorization awaiting review</p>
                   <p className="mt-0.5 truncate text-[11px] text-[#8b92a5]">{order.order_number} · {orderVehicleLabel(order)}</p>
                 </div>
-                <span className="hidden truncate text-xs text-[#9aa1b3] sm:block">{order.description || 'Repair estimate is ready for review'}</span>
+                <span className="hidden truncate text-xs text-[#9aa1b3] sm:block">{order.description || 'Repair authorization is ready for review'}</span>
                 <span className="inline-flex h-[34px] items-center justify-center rounded-lg bg-[#8b7cf7] px-3.5 text-xs font-extrabold text-[#0e1118]">
-                  Review estimate
+                  Review authorization
                 </span>
               </Link>
             ))}

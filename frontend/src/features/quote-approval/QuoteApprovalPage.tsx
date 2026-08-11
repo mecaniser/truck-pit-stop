@@ -11,17 +11,15 @@ import { getPasswordValidationError } from '../../lib/passwordPolicy'
 import TenantBrandLogo from '../../components/brand/TenantBrandLogo'
 import { usePlatformContact } from '../../hooks/usePlatformContact'
 import { formatUSPhone } from '../../utils/phone'
+import type { Quote } from '@/types'
+import { AuthorizationSummary } from '@/features/quotes/AuthorizationSummary'
+import {
+  CUSTOMER_AUTHORIZATION_CONFLICT_MESSAGE,
+  isAuthorizationConflict,
+} from '@/features/quotes/authorization'
 
 interface QuoteDetail {
-  quote: {
-    id: string
-    quote_number: string
-    total_amount: string
-    is_approved: boolean
-    is_declined: boolean
-    decline_notes: string | null
-    created_at: string
-  }
+  quote: Quote
   order_number: string
   order_description: string | null
   vehicle_year: number | null
@@ -141,6 +139,14 @@ export default function QuoteApprovalPage() {
     onSuccess: () => {
       refetch()
     },
+    onError: (error: unknown) => {
+      if (isAuthorizationConflict(error)) {
+        toast.error(CUSTOMER_AUTHORIZATION_CONFLICT_MESSAGE)
+        void refetch()
+        return
+      }
+      toast.error(getErrorDetail(error, 'Unable to authorize this revision.'))
+    },
   })
 
   const declineMutation = useMutation({
@@ -151,6 +157,14 @@ export default function QuoteApprovalPage() {
     onSuccess: () => {
       refetch()
       setShowDeclineForm(false)
+    },
+    onError: (error: unknown) => {
+      if (isAuthorizationConflict(error)) {
+        toast.error(CUSTOMER_AUTHORIZATION_CONFLICT_MESSAGE)
+        void refetch()
+        return
+      }
+      toast.error(getErrorDetail(error, 'Unable to decline this revision.'))
     },
   })
 
@@ -372,9 +386,11 @@ export default function QuoteApprovalPage() {
           <div className="w-20 h-20 bg-red-500/20 rounded-full flex items-center justify-center mx-auto mb-6">
             <XCircle className="w-10 h-10 text-red-400" />
           </div>
-          <h1 className="text-2xl font-bold text-white mb-2">Quote Declined</h1>
+          <h1 className="text-2xl font-bold text-white mb-2">
+            {isAdditionalWork ? 'Additional Work Declined' : 'Estimate Declined'}
+          </h1>
           <p className="text-gray-400 mb-4">
-            You've declined quote <strong className="text-white">{quote.quote_number}</strong>.
+            You've declined authorization revision <strong className="text-white">{quote.quote_number}</strong>.
           </p>
           {quote.decline_notes && (
             <div className="bg-white/5 rounded-lg p-4 mb-4 text-left">
@@ -383,16 +399,11 @@ export default function QuoteApprovalPage() {
             </div>
           )}
           <p className="text-gray-500 text-sm mb-6">
-            We'll review your feedback and may reach out with a revised quote.
+            {isAdditionalWork
+              ? 'Your earlier approved amount remains valid. The shop can remove, defer, or revise the added work.'
+              : 'The shop will review your feedback and can prepare a new revision.'}
           </p>
           <div className="flex flex-col gap-3">
-            <button
-              onClick={() => approveMutation.mutate()}
-              disabled={approveMutation.isPending}
-              className="px-6 py-3 bg-green-600 hover:bg-green-700 disabled:bg-gray-600 text-white font-medium rounded-lg transition-colors"
-            >
-              {approveMutation.isPending ? 'Processing...' : 'Changed my mind - Approve Quote'}
-            </button>
             <Link
               to="/portal"
               className="px-6 py-3 bg-white/10 hover:bg-white/20 text-white font-medium rounded-lg transition-colors text-center"
@@ -559,30 +570,8 @@ export default function QuoteApprovalPage() {
               )}
             </div>
 
-            {/* Authorization total */}
-            {isAdditionalWork ? (
-              <div className="bg-amber-500/10 rounded-xl p-5 border border-amber-500/30 space-y-2">
-                <div className="flex justify-between text-sm text-gray-300">
-                  <span>Previously authorized</span>
-                  <span>${parseFloat(data.previously_authorized_amount).toFixed(2)}</span>
-                </div>
-                <div className="flex justify-between text-lg font-semibold text-amber-300">
-                  <span>Additional work to authorize</span>
-                  <span>+${parseFloat(data.additional_amount).toFixed(2)}</span>
-                </div>
-                <div className="flex justify-between border-t border-amber-500/30 pt-3 font-bold text-white">
-                  <span>New estimated repair total</span>
-                  <span>${parseFloat(data.resulting_authorized_amount).toFixed(2)}</span>
-                </div>
-              </div>
-            ) : (
-              <div className="bg-amber-500/10 rounded-xl p-6 text-center border border-amber-500/30">
-                <p className="text-sm text-amber-400 mb-1">Repair total</p>
-                <p className="text-4xl font-bold text-white">
-                  ${parseFloat(quote.total_amount).toLocaleString('en-US', { minimumFractionDigits: 2 })}
-                </p>
-              </div>
-            )}
+            {/* Immutable authorization snapshot */}
+            <AuthorizationSummary quote={quote} />
 
             <div className="bg-white/5 rounded-xl p-4 border border-white/10">
               <div className="mb-3 flex items-center justify-between gap-3">
@@ -688,7 +677,7 @@ export default function QuoteApprovalPage() {
                   ) : (
                     <>
                       <CheckCircle className="w-5 h-5" />
-                      {isAdditionalWork ? 'Approve Additional Work' : 'Approve Estimate'}
+                      {isAdditionalWork ? 'Authorize Additional Work' : 'Authorize Estimate'}
                     </>
                   )}
                 </button>
