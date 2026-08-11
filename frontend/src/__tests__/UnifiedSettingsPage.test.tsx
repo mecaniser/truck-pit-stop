@@ -95,12 +95,11 @@ describe('UnifiedSettingsPage garage logo import', () => {
     const user = userEvent.setup()
     renderPage()
 
-    const garageProfileButtons = screen.getAllByRole('button', { name: /garage profile/i })
-    await user.click(garageProfileButtons[0])
+    await user.click(screen.getByRole('button', { name: 'Shop Profile' }))
 
     expect(apiMocks.get).toHaveBeenCalledWith('/admin/garage-profile')
 
-    const editButton = await screen.findByRole('button', { name: /edit garage profile/i })
+    const editButton = await screen.findByRole('button', { name: 'Edit Shop Profile' })
     await user.click(editButton)
 
     const importButton = await screen.findByRole('button', { name: /import from website/i })
