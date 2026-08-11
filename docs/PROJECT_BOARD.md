@@ -19,6 +19,7 @@ reviewed, merged, and released. Reconcile this board whenever newer evidence exi
 
 | ID | Priority | State | Outcome | Owner | Evidence now | Next gate |
 |---|---|---|---|---|---|---|
+| DB-027 | P1 | Discovery | Audit and elevate the public DieselBridge home page into a persuasive, trustworthy entry point | Frontend & UX | Impeccable audit recorded in `docs/design/homepage-impeccable-audit-2026-08-11.md`: 10/20; 4 P1, 5 P2, 1 P3; desktop/mobile/narrow browser evidence; detector 0 deterministic findings; focused test and production build pass; no API, data, auth, tenant, or migration contract change | Product selects the shape direction; then clarify → harden/optimize → typeset/colorize → adapt/distill/animate → polish → independent QA and re-audit |
 | DB-003 | P1 | Discovery | Finish versioned additional-work authorizations | Backend & Integrations | PR #196 merged at `e20fa1a` with implementation commit `a51f2af`; immutable revisions/finalization guard exist, but task validation found the portal action still depends on the staff-send flow | Architecture decides automatic vs staff-reviewed publication and any threshold policy; then run mechanic addition → customer prompt → approve/decline → invoice Playwright acceptance, Security GO, QA GO |
 | DB-004 | P1 | QA/Security | Reconcile customer portal redesign and active-repair workflow | Frontend & UX | PRs #189 and #194 are merged and included in current production | Run and record one mobile customer portal acceptance journey; then move to Done |
 
