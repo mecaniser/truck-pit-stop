@@ -20,7 +20,7 @@ reviewed, merged, and released. Reconcile this board whenever newer evidence exi
 | ID | Priority | State | Outcome | Owner | Evidence now | Next gate |
 |---|---|---|---|---|---|---|
 | DB-003 | P1 | Discovery | Finish versioned additional-work authorizations | Backend & Integrations | PR #196 merged at `e20fa1a` with implementation commit `a51f2af`; immutable revisions/finalization guard exist, but task validation found the portal action still depends on the staff-send flow | Architecture decides automatic vs staff-reviewed publication and any threshold policy; then run mechanic addition → customer prompt → approve/decline → invoice Playwright acceptance, Security GO, QA GO |
-| DB-015 | P0 | In progress | Remediate WebSocket token logging | Security & Identity | Architecture approved a backend-first, cookie-only `/ws` contract. Independent Security returned NO-GO at `681d37d` because WorkOS identity/membership authority was not fully fail-closed and inbound correlation IDs were trusted. The remediation on `codex/db015-websocket-cookie-auth` now requires active provider-exact WorkOS identity and membership records initially and throughout the socket, and replaces unsafe correlation IDs before logs, responses, or persistence. Focused DB-015 plus WorkOS is 64/64, adjacent auth/identity 68/68, protected-critical plus DB-015 83/83, the affected driver-authority file is 11/11, and full backend is 677 passed / 4 skipped; compile, diff check, and the single Alembic head 117 are green. No migration, ticket store, or new secret is required. | Return the remediation to fresh independent Security. Integrate the queryless frontend client only after backend acceptance; then require independent QA/runtime log capture, focused PR/CI, deployment, and canary before closure. |
+| DB-015 | P0 | In progress | Remediate WebSocket token logging | Security & Identity | Architecture approved a backend-first, cookie-only `/ws` contract. Independent Security returned NO-GO at `681d37d`; the identity/correlation remediation at `96ba6b6` subsequently received combined code Security GO. Runtime QA then returned NO-GO because a valid WorkOS DRIVER was registered on the unfiltered tenant staff channel and received a tenant-wide repair-order event. The current remediation on `codex/db015-websocket-cookie-auth` permits only owner, garage-admin, receptionist, and mechanic roles on that channel; driver, fleet, platform, unknown, and incomplete or mismatched customer contexts fail before registration. Customers require an exact active tenant/customer link and register only on their own customer channel. Focused WebSocket security is 68/68, combined auth/identity authority is 136/136, protected-critical plus DB-015 is 109/109, and full backend is 703 passed / 4 skipped; compile, diff check, and the single Alembic head 117 are green. No migration, ticket store, or new secret is required. | Return this remediation to fresh independent Security and runtime QA. Require both GO, authenticated event-isolation capture, focused PR/CI, backend-first deployment, and canary before closure. |
 
 ## Blocked
 
@@ -95,6 +95,12 @@ last passing automated and runtime evidence in the item or associated issue.
   active, non-deleted `ExternalIdentity(provider="workos")`, an active linked
   principal, and an active, non-deleted
   `TenantMembership(provider="workos")` for the selected tenant.
+- Tenant-wide repair, invoice, payment, mechanic, and messaging events are
+  available only to the explicit shop-staff roles `garage_owner`,
+  `garage_admin`, `receptionist`, and `mechanic`. Driver, fleet-manager,
+  platform, customer, and unknown roles never inherit that channel merely by
+  being non-customer. A customer requires an exact active
+  user/tenant/customer link and can register only on that customer channel.
 - JWT expiry, blacklist, token version, user/tenant activity, customer link, and
   WorkOS membership remain valid for the life of the connection. Revocation,
   expiry, or a changed tenant context closes the socket with a generic reason.

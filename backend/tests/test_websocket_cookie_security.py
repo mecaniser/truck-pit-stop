@@ -90,6 +90,64 @@ async def test_legacy_cookie_principal_uses_https_tenant_authority(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "role",
+    [
+        UserRole.GARAGE_OWNER,
+        UserRole.GARAGE_ADMIN,
+        UserRole.RECEPTIONIST,
+        UserRole.MECHANIC,
+    ],
+)
+async def test_only_explicit_shop_staff_roles_resolve_tenant_channel(
+    role, db_session, websocket_auth_state
+):
+    tenant = Tenant(
+        name=f"Allowed {role.value}",
+        slug=f"allowed-{role.value}-{uuid4().hex}",
+    )
+    db_session.add(tenant)
+    await db_session.flush()
+    user = _user(role=role, tenant_id=tenant.id)
+    db_session.add(user)
+    await db_session.commit()
+
+    result = await websocket_endpoint.resolve_websocket_principal(
+        create_access_token({"sub": str(user.id)}), db_session
+    )
+
+    assert result.principal is not None
+    assert result.principal.role == role.value
+    assert result.principal.tenant_id == str(tenant.id)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "role",
+    [UserRole.DRIVER, UserRole.FLEET_MANAGER, UserRole.SUPER_ADMIN],
+)
+async def test_non_shop_roles_never_resolve_tenant_wide_channel(
+    role, db_session, websocket_auth_state
+):
+    tenant = Tenant(
+        name=f"Denied {role.value}",
+        slug=f"denied-{role.value}-{uuid4().hex}",
+    )
+    db_session.add(tenant)
+    await db_session.flush()
+    user = _user(role=role, tenant_id=tenant.id)
+    db_session.add(user)
+    await db_session.commit()
+
+    result = await websocket_endpoint.resolve_websocket_principal(
+        create_access_token({"sub": str(user.id)}), db_session
+    )
+
+    assert result.principal is None
+    assert result.close_code == websocket_endpoint.WS_CLOSE_AUTHORIZATION
+
+
+@pytest.mark.asyncio
 async def test_customer_cookie_requires_exact_active_customer_link(
     db_session, websocket_auth_state
 ):
@@ -129,6 +187,73 @@ async def test_customer_cookie_requires_exact_active_customer_link(
 
 
 @pytest.mark.asyncio
+async def test_customer_cookie_without_exact_link_never_falls_through_to_staff(
+    db_session, websocket_auth_state
+):
+    tenant = Tenant(name="Missing link", slug=f"missing-link-{uuid4().hex}")
+    db_session.add(tenant)
+    await db_session.flush()
+    customer = Customer(
+        tenant_id=tenant.id,
+        first_name="Missing",
+        last_name="Link",
+        email=f"missing-link-{uuid4().hex}@example.test",
+    )
+    user = _user(
+        role=UserRole.CUSTOMER,
+        tenant_id=tenant.id,
+    )
+    db_session.add_all([customer, user])
+    await db_session.flush()
+    user.customer_id = customer.id
+    await db_session.commit()
+
+    result = await websocket_endpoint.resolve_websocket_principal(
+        create_access_token({"sub": str(user.id)}), db_session
+    )
+
+    assert result.principal is None
+    assert result.close_code == websocket_endpoint.WS_CLOSE_AUTHORIZATION
+
+
+@pytest.mark.asyncio
+async def test_customer_cookie_rejects_link_to_customer_in_another_tenant(
+    db_session, websocket_auth_state
+):
+    tenant = Tenant(name="Selected shop", slug=f"selected-{uuid4().hex}")
+    other_tenant = Tenant(name="Other shop", slug=f"other-{uuid4().hex}")
+    db_session.add_all([tenant, other_tenant])
+    await db_session.flush()
+    other_customer = Customer(
+        tenant_id=other_tenant.id,
+        first_name="Other",
+        last_name="Customer",
+        email=f"other-customer-{uuid4().hex}@example.test",
+    )
+    user = _user(role=UserRole.CUSTOMER)
+    db_session.add_all([other_customer, user])
+    await db_session.flush()
+    db_session.add(
+        UserCustomerLink(
+            user_id=user.id,
+            customer_id=other_customer.id,
+            tenant_id=tenant.id,
+        )
+    )
+    await db_session.commit()
+
+    result = await websocket_endpoint.resolve_websocket_principal(
+        create_access_token(
+            {"sub": str(user.id)}, tenant_id=str(tenant.id)
+        ),
+        db_session,
+    )
+
+    assert result.principal is None
+    assert result.close_code == websocket_endpoint.WS_CLOSE_AUTHORIZATION
+
+
+@pytest.mark.asyncio
 async def test_workos_cookie_revalidates_exact_active_membership(
     db_session, websocket_auth_state
 ):
@@ -139,7 +264,7 @@ async def test_workos_cookie_revalidates_exact_active_membership(
         slug=f"workos-ws-{uuid4().hex}",
         workos_organization_id=organization_id,
     )
-    user = _user(role=UserRole.DRIVER, workos_user_id=workos_user_id)
+    user = _user(role=UserRole.GARAGE_ADMIN, workos_user_id=workos_user_id)
     db_session.add_all([tenant, user])
     await db_session.flush()
     principal = IdentityPrincipal(user_id=user.id, status="active")
@@ -155,9 +280,9 @@ async def test_workos_cookie_revalidates_exact_active_membership(
         principal_id=principal.id,
         tenant_id=tenant.id,
         provider="workos",
-        role_slug="driver",
+        role_slug="garage_admin",
         status="active",
-        permissions=["driver_portal:use"],
+        permissions=["repair_orders:work"],
     )
     db_session.add_all([identity, membership])
     await db_session.commit()
@@ -168,7 +293,7 @@ async def test_workos_cookie_revalidates_exact_active_membership(
             "auth_provider": "workos",
             "workos_user_id": workos_user_id,
             "workos_org_id": organization_id,
-            "permissions": ["driver_portal:use"],
+            "permissions": ["repair_orders:work"],
         },
         tenant_id=str(tenant.id),
     )
@@ -183,7 +308,25 @@ async def test_workos_cookie_revalidates_exact_active_membership(
     assert denied.close_code == websocket_endpoint.WS_CLOSE_AUTHORIZATION
 
 
-async def _workos_authority_fixture(db_session):
+@pytest.mark.asyncio
+async def test_workos_driver_authority_does_not_grant_shop_staff_channel(
+    db_session, websocket_auth_state
+):
+    token, _, _ = await _workos_authority_fixture(
+        db_session, role=UserRole.DRIVER
+    )
+
+    denied = await websocket_endpoint.resolve_websocket_principal(
+        token, db_session
+    )
+
+    assert denied.principal is None
+    assert denied.close_code == websocket_endpoint.WS_CLOSE_AUTHORIZATION
+
+
+async def _workos_authority_fixture(
+    db_session, *, role=UserRole.GARAGE_ADMIN
+):
     organization_id = f"org_{uuid4().hex}"
     workos_user_id = f"wu_{uuid4().hex}"
     tenant = Tenant(
@@ -191,7 +334,7 @@ async def _workos_authority_fixture(db_session):
         slug=f"workos-authority-{uuid4().hex}",
         workos_organization_id=organization_id,
     )
-    user = _user(role=UserRole.DRIVER, workos_user_id=workos_user_id)
+    user = _user(role=role, workos_user_id=workos_user_id)
     db_session.add_all([tenant, user])
     await db_session.flush()
     principal = IdentityPrincipal(user_id=user.id, status="active")
@@ -203,13 +346,18 @@ async def _workos_authority_fixture(db_session):
         provider_subject=workos_user_id,
         status="active",
     )
+    permissions = (
+        ["driver_portal:use"]
+        if role == UserRole.DRIVER
+        else ["repair_orders:work"]
+    )
     membership = TenantMembership(
         principal_id=principal.id,
         tenant_id=tenant.id,
         provider="workos",
-        role_slug="driver",
+        role_slug=role.value,
         status="active",
-        permissions=["driver_portal:use"],
+        permissions=permissions,
         resource_scope={},
     )
     db_session.add_all([identity, membership])
@@ -220,7 +368,7 @@ async def _workos_authority_fixture(db_session):
             "auth_provider": "workos",
             "workos_user_id": workos_user_id,
             "workos_org_id": organization_id,
-            "permissions": ["driver_portal:use"],
+            "permissions": permissions,
         },
         tenant_id=str(tenant.id),
     )
@@ -397,6 +545,22 @@ class ASGIConnectionManager(FakeConnectionManager):
         return True
 
 
+class ASGIEventConnectionManager(ASGIConnectionManager):
+    def __init__(self, event):
+        super().__init__()
+        self.event = event
+
+    async def connect_staff(self, websocket, tenant_id, user_id):
+        connected = await super().connect_staff(websocket, tenant_id, user_id)
+        await websocket.send_json(self.event)
+        return connected
+
+    async def connect_customer(self, websocket, customer_id):
+        connected = await super().connect_customer(websocket, customer_id)
+        await websocket.send_json(self.event)
+        return connected
+
+
 def _staff_principal():
     return websocket_endpoint.WebSocketPrincipal(
         user_id=str(uuid4()),
@@ -508,6 +672,158 @@ def test_real_asgi_handshake_uses_cookie_and_never_query_token(monkeypatch):
     assert manager.connected == [
         ("staff", principal.tenant_id, principal.user_id)
     ]
+
+
+@pytest.mark.parametrize(
+    "role", [UserRole.DRIVER.value, UserRole.FLEET_MANAGER.value, "unknown"]
+)
+@pytest.mark.parametrize(
+    "sensitive_event",
+    [
+        {"type": "repair_order_update", "order_id": "sensitive-order"},
+        {"type": "invoice_created", "invoice_id": "sensitive-invoice"},
+        {"type": "sms_message_created", "body": "sensitive-message"},
+    ],
+)
+def test_real_asgi_non_shop_roles_cannot_join_sensitive_tenant_channel(
+    role, sensitive_event, monkeypatch
+):
+    monkeypatch.setattr(settings, "CORS_ORIGINS_STR", "https://app.example.test")
+    tenant_id = str(uuid4())
+    principal = websocket_endpoint.WebSocketPrincipal(
+        user_id=str(uuid4()),
+        tenant_id=tenant_id,
+        customer_id=None,
+        role=role,
+    )
+
+    async def validate(_token):
+        return websocket_endpoint.WebSocketAuthResult(principal)
+
+    manager = ASGIEventConnectionManager(sensitive_event)
+    monkeypatch.setattr(websocket_endpoint, "validate_websocket_token", validate)
+    monkeypatch.setattr(websocket_endpoint, "manager", manager)
+    app = FastAPI()
+    app.include_router(websocket_endpoint.router, prefix="/api/v1")
+
+    with TestClient(app) as client:
+        client.cookies.set("access_token", "http-only-cookie")
+        with pytest.raises(WebSocketDisconnect) as closed:
+            with client.websocket_connect(
+                "/api/v1/ws",
+                headers={"origin": "https://app.example.test"},
+            ) as socket:
+                socket.receive_json()
+
+    assert closed.value.code == websocket_endpoint.WS_CLOSE_AUTHORIZATION
+    assert closed.value.reason == "Not authorized"
+    assert manager.connected == []
+
+
+@pytest.mark.parametrize(
+    "role",
+    [
+        UserRole.GARAGE_OWNER.value,
+        UserRole.GARAGE_ADMIN.value,
+        UserRole.RECEPTIONIST.value,
+        UserRole.MECHANIC.value,
+    ],
+)
+def test_real_asgi_explicit_shop_staff_receives_tenant_event(role, monkeypatch):
+    monkeypatch.setattr(settings, "CORS_ORIGINS_STR", "https://app.example.test")
+    event = {"type": "repair_order_update", "order_id": str(uuid4())}
+    principal = websocket_endpoint.WebSocketPrincipal(
+        user_id=str(uuid4()),
+        tenant_id=str(uuid4()),
+        customer_id=None,
+        role=role,
+    )
+
+    async def validate(_token):
+        return websocket_endpoint.WebSocketAuthResult(principal)
+
+    manager = ASGIEventConnectionManager(event)
+    monkeypatch.setattr(websocket_endpoint, "validate_websocket_token", validate)
+    monkeypatch.setattr(websocket_endpoint, "manager", manager)
+    app = FastAPI()
+    app.include_router(websocket_endpoint.router, prefix="/api/v1")
+
+    with TestClient(app) as client:
+        client.cookies.set("access_token", "http-only-cookie")
+        with client.websocket_connect(
+            "/api/v1/ws", headers={"origin": "https://app.example.test"}
+        ) as socket:
+            assert socket.receive_json() == event
+
+    assert manager.connected == [
+        ("staff", principal.tenant_id, principal.user_id)
+    ]
+
+
+def test_real_asgi_customer_receives_only_own_customer_channel(monkeypatch):
+    monkeypatch.setattr(settings, "CORS_ORIGINS_STR", "https://app.example.test")
+    event = {"type": "invoice_created", "invoice_id": str(uuid4())}
+    principal = websocket_endpoint.WebSocketPrincipal(
+        user_id=str(uuid4()),
+        tenant_id=str(uuid4()),
+        customer_id=str(uuid4()),
+        role=UserRole.CUSTOMER.value,
+    )
+
+    async def validate(_token):
+        return websocket_endpoint.WebSocketAuthResult(principal)
+
+    manager = ASGIEventConnectionManager(event)
+    monkeypatch.setattr(websocket_endpoint, "validate_websocket_token", validate)
+    monkeypatch.setattr(websocket_endpoint, "manager", manager)
+    app = FastAPI()
+    app.include_router(websocket_endpoint.router, prefix="/api/v1")
+
+    with TestClient(app) as client:
+        client.cookies.set("access_token", "http-only-cookie")
+        with client.websocket_connect(
+            "/api/v1/ws", headers={"origin": "https://app.example.test"}
+        ) as socket:
+            assert socket.receive_json() == event
+
+    assert manager.connected == [("customer", principal.customer_id)]
+
+
+@pytest.mark.parametrize(
+    ("tenant_id", "customer_id"),
+    [(str(uuid4()), None), (None, str(uuid4()))],
+)
+def test_real_asgi_incomplete_customer_context_never_falls_through_to_staff(
+    tenant_id, customer_id, monkeypatch
+):
+    monkeypatch.setattr(settings, "CORS_ORIGINS_STR", "https://app.example.test")
+    principal = websocket_endpoint.WebSocketPrincipal(
+        user_id=str(uuid4()),
+        tenant_id=tenant_id,
+        customer_id=customer_id,
+        role=UserRole.CUSTOMER.value,
+    )
+
+    async def validate(_token):
+        return websocket_endpoint.WebSocketAuthResult(principal)
+
+    manager = ASGIConnectionManager()
+    monkeypatch.setattr(websocket_endpoint, "validate_websocket_token", validate)
+    monkeypatch.setattr(websocket_endpoint, "manager", manager)
+    app = FastAPI()
+    app.include_router(websocket_endpoint.router, prefix="/api/v1")
+
+    with TestClient(app) as client:
+        client.cookies.set("access_token", "http-only-cookie")
+        with pytest.raises(WebSocketDisconnect) as closed:
+            with client.websocket_connect(
+                "/api/v1/ws",
+                headers={"origin": "https://app.example.test"},
+            ) as socket:
+                socket.receive_json()
+
+    assert closed.value.code == websocket_endpoint.WS_CLOSE_AUTHORIZATION
+    assert manager.connected == []
 
 
 def test_real_asgi_query_only_handshake_returns_generic_auth_close(monkeypatch):

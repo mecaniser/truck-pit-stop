@@ -20,7 +20,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, WebSocket, status
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import and_, select
 
 from app.core.config import settings
 from app.core.dependencies import get_current_active_user, get_current_user
@@ -28,7 +28,9 @@ from app.core.security import decode_token
 from app.core.websocket import manager
 from app.core.workos_auth import get_current_principal
 from app.db.session import AsyncSessionLocal
+from app.db.models.customer import Customer
 from app.db.models.user import User, UserRole
+from app.db.models.user_customer_link import UserCustomerLink
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -46,6 +48,18 @@ WS_CLOSE_INTERNAL_ERROR = 1011
 
 WS_AUTH_REVALIDATE_SECONDS = 30.0
 WS_MAX_CLIENT_MESSAGE_BYTES = 64
+
+# Only roles that operate the shop repair workspace may join the tenant-wide
+# event channel. Fleet, driver, customer, platform, and unknown roles require
+# narrower channels and must never inherit staff access by being "not customer".
+SHOP_STAFF_WEBSOCKET_ROLES = frozenset(
+    {
+        UserRole.GARAGE_OWNER.value,
+        UserRole.GARAGE_ADMIN.value,
+        UserRole.RECEPTIONIST.value,
+        UserRole.MECHANIC.value,
+    }
+)
 
 _CLOSE_REASONS = {
     WS_CLOSE_AUTHENTICATION: "Authentication required",
@@ -89,6 +103,63 @@ def _principal_from_user(user: User, *, tenant_id: Optional[str] = None) -> WebS
     )
 
 
+async def _resolve_channel_principal(
+    user: User,
+    db: AsyncSession,
+    *,
+    tenant_id: Optional[str] = None,
+) -> WebSocketPrincipal:
+    """Authorize the exact notification channel before any registration."""
+    role = user.role.value if isinstance(user.role, UserRole) else str(user.role)
+    effective_tenant_id = tenant_id or (
+        str(user.tenant_id) if user.tenant_id else None
+    )
+
+    if role in SHOP_STAFF_WEBSOCKET_ROLES:
+        if not effective_tenant_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="WebSocket channel is unavailable",
+            )
+        return _principal_from_user(user, tenant_id=effective_tenant_id)
+
+    if role != UserRole.CUSTOMER.value:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="WebSocket channel is unavailable",
+        )
+
+    if not effective_tenant_id or not user.customer_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Customer WebSocket channel is unavailable",
+        )
+
+    association = (
+        await db.execute(
+            select(UserCustomerLink.id)
+            .join(Customer, Customer.id == UserCustomerLink.customer_id)
+            .where(
+                and_(
+                    UserCustomerLink.user_id == user.id,
+                    UserCustomerLink.tenant_id == effective_tenant_id,
+                    UserCustomerLink.customer_id == user.customer_id,
+                    UserCustomerLink.deleted_at.is_(None),
+                    Customer.id == user.customer_id,
+                    Customer.tenant_id == effective_tenant_id,
+                    Customer.deleted_at.is_(None),
+                )
+            )
+        )
+    ).scalar_one_or_none()
+    if not association:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Customer WebSocket channel is unavailable",
+        )
+    return _principal_from_user(user, tenant_id=effective_tenant_id)
+
+
 async def resolve_websocket_principal(
     token: str,
     db: AsyncSession,
@@ -113,11 +184,15 @@ async def resolve_websocket_principal(
             if not user or not user.is_active:
                 return WebSocketAuthResult(None, WS_CLOSE_AUTHORIZATION)
             return WebSocketAuthResult(
-                _principal_from_user(user, tenant_id=str(principal.tenant_id))
+                await _resolve_channel_principal(
+                    user, db, tenant_id=str(principal.tenant_id)
+                )
             )
 
         user = await get_current_user(token=token, db=db)
-        return WebSocketAuthResult(_principal_from_user(user))
+        return WebSocketAuthResult(
+            await _resolve_channel_principal(user, db)
+        )
     except HTTPException as exc:
         close_code = (
             WS_CLOSE_AUTHENTICATION
@@ -214,16 +289,17 @@ async def websocket_endpoint(
     customer_id = principal.customer_id
     role = principal.role
     
-    # Connect based on user type
+    # Register only on the channel authorized during principal resolution.
     is_customer = role == "customer"
+    is_shop_staff = role in SHOP_STAFF_WEBSOCKET_ROLES
     connected = False
     
     try:
-        if is_customer and customer_id:
+        if is_customer and customer_id and tenant_id:
             connected = await manager.connect_customer(websocket, customer_id)
             if connected:
                 logger.info(f"Customer WebSocket connected: {customer_id}")
-        elif tenant_id:
+        elif is_shop_staff and tenant_id and not customer_id:
             connected = await manager.connect_staff(websocket, tenant_id, user_id)
             if connected:
                 logger.info(f"Staff WebSocket connected: tenant={tenant_id}, user={user_id}")
