@@ -73,6 +73,7 @@ QUOTE_PUBLISHER_ROLES = {
     UserRole.GARAGE_ADMIN,
     UserRole.RECEPTIONIST,
 }
+QUOTE_READER_ROLES = QUOTE_PUBLISHER_ROLES | {UserRole.MECHANIC}
 
 
 def _money(value: object) -> Decimal:
@@ -306,12 +307,7 @@ def _cookie_domain() -> Optional[str]:
 
 
 def _require_staff(current_user: User) -> None:
-    if current_user.role not in (
-        UserRole.GARAGE_OWNER,
-        UserRole.GARAGE_ADMIN,
-        UserRole.RECEPTIONIST,
-        UserRole.MECHANIC,
-    ):
+    if current_user.role not in QUOTE_READER_ROLES:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Insufficient permissions",
@@ -840,46 +836,22 @@ async def get_quote_by_repair_order(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
-    quote_filters = [
-        Quote.repair_order_id == RepairOrder.id,
-        Quote.tenant_id == RepairOrder.tenant_id,
-        Quote.deleted_at.is_(None),
-    ]
-    if current_user.role == UserRole.CUSTOMER:
-        quote_filters.append(Quote.sent_to_customer.is_(True))
-    latest_quote_id = (
-        select(Quote.id)
-        .where(*quote_filters)
-        .order_by(Quote.revision.desc(), Quote.created_at.desc())
-        .limit(1)
-        .correlate(RepairOrder)
-        .scalar_subquery()
-    )
+    _require_staff(current_user)
     result = await db.execute(
-        select(RepairOrder, Quote)
-        .outerjoin(Quote, Quote.id == latest_quote_id)
-        .where(
-            RepairOrder.id == repair_order_id,
-            RepairOrder.deleted_at.is_(None),
+        tenant_repair_order_statement(
+            repair_order_id,
+            current_user,
             RepairOrder.is_internal.is_(False),
         )
     )
-    row = result.one_or_none()
-    if not row:
+    order = result.scalar_one_or_none()
+    if not order:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Repair order not found",
         )
-    order, quote = row
-    if current_user.role == UserRole.CUSTOMER:
-        await _require_linked_customer(db, current_user=current_user, order=order)
-    elif current_user.tenant_id != order.tenant_id:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Repair order not found",
-        )
-    else:
-        _require_mechanic_assignment(current_user, order)
+    _require_mechanic_assignment(current_user, order)
+    quote = await _latest_quote_for_order(db, order.id, order.tenant_id)
     if not quote:
         return None
     return QuoteResponse.model_validate(quote)

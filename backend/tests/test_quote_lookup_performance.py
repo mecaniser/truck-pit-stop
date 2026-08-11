@@ -1,4 +1,4 @@
-"""Workspace quote lookup keeps order access and quote retrieval to one read."""
+"""Workspace quote lookup authorizes the order before reading draft pricing."""
 from __future__ import annotations
 
 from decimal import Decimal
@@ -58,7 +58,7 @@ async def _seed_quote_context(db):
 
 
 @pytest.mark.asyncio
-async def test_workspace_quote_lookup_uses_one_query(db_session):
+async def test_workspace_quote_lookup_authorizes_before_quote_query(db_session):
     owner, order, quote = await _seed_quote_context(db_session)
     query_count = 0
 
@@ -79,4 +79,4 @@ async def test_workspace_quote_lookup_uses_one_query(db_session):
 
     assert response is not None
     assert response.id == quote.id
-    assert query_count == 1
+    assert query_count == 2
