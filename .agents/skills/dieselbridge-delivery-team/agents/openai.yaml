@@ -1,0 +1,4 @@
+interface:
+  display_name: "DieselBridge Delivery Team"
+  short_description: "Route DieselBridge work through delivery gates"
+  default_prompt: "Use $dieselbridge-delivery-team to intake, route, implement, verify, and release this DieselBridge task."
