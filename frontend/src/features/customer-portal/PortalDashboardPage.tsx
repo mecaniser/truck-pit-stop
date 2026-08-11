@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useQueries, useQuery } from '@tanstack/react-query'
 import { AlertTriangle, Check, ChevronRight, CircleDollarSign, Clock3, Wrench } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { format } from 'date-fns'
@@ -7,7 +7,7 @@ import { format } from 'date-fns'
 import { Spinner } from '@/components/ui'
 import api from '@/lib/api'
 import { useAuthStore } from '@/stores/authStore'
-import type { Customer, Invoice, RepairOrder, Vehicle } from '@/types'
+import type { Customer, Invoice, Quote, RepairOrder, RepairOrderStatus, Vehicle } from '@/types'
 
 import {
   Card,
@@ -39,6 +39,27 @@ async function getAll<T>(url: string) {
     if (!payload.has_more || payload.items.length === 0) return all
     skip = payload.skip + payload.limit
   }
+}
+
+const AUTHORIZATION_ACTION_CLOSED_STATUSES = new Set<RepairOrderStatus>([
+  'completed',
+  'invoiced',
+  'paid',
+  'cancelled',
+  'declined',
+])
+
+function canLoadAuthorizationAction(order: RepairOrder) {
+  return order.quote_sent === true
+    && order.quote_approved !== true
+    && !AUTHORIZATION_ACTION_CLOSED_STATUSES.has(order.status)
+}
+
+function isAuthorizationActionable(order: RepairOrder, quote: Quote | null | undefined) {
+  return canLoadAuthorizationAction(order)
+    && quote?.sent_to_customer === true
+    && quote.is_approved !== true
+    && quote.is_declined !== true
 }
 
 export default function PortalDashboardPage() {
@@ -101,7 +122,19 @@ export default function PortalDashboardPage() {
   const activeRepairs = orders
     .filter(isActiveRepair)
     .sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime())
-  const quoteActions = activeRepairs.filter(order => order.quote_sent === true && order.quote_approved !== true)
+  const authorizationCandidates = activeRepairs.filter(canLoadAuthorizationAction)
+  const latestAuthorizationQueries = useQueries({
+    queries: authorizationCandidates.map(order => ({
+      queryKey: ['quote', order.id],
+      queryFn: async () => {
+        const response = await api.get(`/quotes?repair_order_id=${order.id}`)
+        return response.data as Quote | null
+      },
+    })),
+  })
+  const quoteActions = authorizationCandidates.filter((order, index) => (
+    isAuthorizationActionable(order, latestAuthorizationQueries[index]?.data)
+  ))
   const actionCount = quoteActions.length + unpaid.length
   const balance = unpaid.reduce((sum, item) => sum + Number(item.invoice.total_amount || 0), 0)
   const paidYtd = paidThisYear.reduce((sum, invoice) => sum + Number(invoice.total_amount || 0), 0)

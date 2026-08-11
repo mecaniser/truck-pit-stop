@@ -66,6 +66,215 @@ async function fulfillJson(route: Route, status: number, body: unknown) {
   })
 }
 
+const staffOrder = {
+  id: 'order-db003-staff',
+  tenant_id: 'tenant-db003',
+  customer_id: 'customer-db003',
+  vehicle_id: 'vehicle-db003',
+  vehicle_make: 'Freightliner',
+  vehicle_model: 'Cascadia',
+  vehicle_year: 2022,
+  vehicle_unit_number: 'DB-1047',
+  vehicle_vin: '•••••••••••••1234',
+  order_number: 'RO-DB003-STAFF',
+  status: 'draft',
+  description: 'Initial electrical inspection',
+  customer_notes: null,
+  internal_notes: null,
+  assigned_mechanic_id: null,
+  total_parts_cost: '0.00',
+  total_labor_cost: '100.00',
+  total_cost: '100.00',
+  created_at: '2026-08-11T12:00:00Z',
+  updated_at: '2026-08-11T12:00:00Z',
+  quote_sent: false,
+  quote_approved: false,
+  is_internal: false,
+}
+
+const staffDraftQuote = {
+  ...quote({
+    id: 'quote-db003-staff',
+    repair_order_id: staffOrder.id,
+    quote_number: 'Q-DB003-STAFF',
+    total_amount: '100.00',
+    sent_to_customer: false,
+    sent_at: null,
+    revision: 1,
+    authorization_type: 'initial_estimate',
+    previously_authorized_amount: '0.00',
+    delta_amount: '100.00',
+  }),
+}
+
+const staffPriceBuild = {
+  order_id: staffOrder.id,
+  labor_total: '100.00',
+  parts_total: '0.00',
+  total_cost: '100.00',
+  pricing_locked: false,
+  can_edit_work: true,
+  can_assign_technician: true,
+  can_start_work: false,
+  can_finalize: false,
+  lines: [{
+    id: 'labor-db003',
+    repair_order_id: staffOrder.id,
+    description: 'Initial electrical inspection',
+    hours: '1.00',
+    hourly_rate: '100.00',
+    total_cost: '100.00',
+    mechanic_id: null,
+    service_code: null,
+    line_type: 'manual',
+    provider: null,
+    provider_operation_id: null,
+    auto_recalc_enabled: false,
+    source_service_id: null,
+    vendor_name: null,
+    vendor_cost: null,
+    created_at: '2026-08-11T12:00:00Z',
+  }],
+  parts: [],
+  warnings: [],
+}
+
+async function mockStaffAuthorizationWorkspace(page: Page) {
+  let currentQuote: typeof staffDraftQuote | null = null
+
+  await page.addInitScript(() => {
+    window.localStorage.setItem('auth-storage', JSON.stringify({
+      state: {
+        user: {
+          id: 'owner-db003',
+          email: 'owner@example.test',
+          first_name: 'Olivia',
+          last_name: 'Owner',
+          role: 'garage_owner',
+          is_active: true,
+          tenant_id: 'tenant-db003',
+          tenant_name: 'DieselBridge Test Shop',
+          tenant_slug: 'db003-test',
+          tenant_logo_url: null,
+          customer_id: null,
+        },
+        token: null,
+        refreshToken: null,
+        isAuthenticated: true,
+        authProvider: 'legacy',
+      },
+      version: 0,
+    }))
+  })
+
+  await page.route('https://fonts.googleapis.com/**', route => route.fulfill({ status: 200, contentType: 'text/css', body: '' }))
+  await page.route('https://fonts.gstatic.com/**', route => route.fulfill({ status: 204, body: '' }))
+  await page.route('**/api/v1/**', async route => {
+    const request = route.request()
+    const url = new URL(request.url())
+    const path = url.pathname.replace(/^\/api\/v1/, '')
+
+    if (path === '/auth/tenant-branding') return fulfillJson(route, 200, { name: 'DieselBridge Test Shop', slug: 'db003-test', logo_url: null, state: 'NC' })
+    if (path === '/auth/platform-contact') return fulfillJson(route, 200, { support_name: 'DieselBridge Support', support_email: null, support_phone: null })
+    if (path === '/messages/unread-summary') return fulfillJson(route, 200, { unread_count_staff: 0 })
+    if (path === '/repair-orders' && request.method() === 'GET') {
+      return fulfillJson(route, 200, { items: [staffOrder], total: 1, has_more: false })
+    }
+    if (path === `/repair-orders/${staffOrder.id}/workspace`) return fulfillJson(route, 200, staffOrder)
+    if (path === `/repair-orders/${staffOrder.id}/price-build`) return fulfillJson(route, 200, staffPriceBuild)
+    if (path === '/admin/tax-fee-settings') return fulfillJson(route, 200, { labor_rate: 100 })
+    if (path === '/quotes' && request.method() === 'GET') return fulfillJson(route, 200, currentQuote)
+    if (path === '/quotes' && request.method() === 'POST') {
+      currentQuote = staffDraftQuote
+      return fulfillJson(route, 200, currentQuote)
+    }
+    if (path === `/quotes/${staffDraftQuote.id}` && request.method() === 'PUT') {
+      return fulfillJson(route, 200, currentQuote || staffDraftQuote)
+    }
+
+    return fulfillJson(route, 404, { detail: `Unhandled DB-003 staff fixture route: ${path}` })
+  })
+}
+
+async function expectMobileQuoteAction(page: Page, label: 'Create estimate' | 'Send estimate', viewportHeight: number) {
+  const action = page.getByRole('button', { name: label })
+  await expect(action).toBeVisible()
+  const box = await action.boundingBox()
+  expect(box?.height).toBeGreaterThanOrEqual(44)
+  expect(box?.y).toBeGreaterThanOrEqual(0)
+  expect((box?.y || 0) + (box?.height || 0)).toBeLessThanOrEqual(viewportHeight)
+  return action
+}
+
+async function mockFinalizedDeclinePortal(page: Page) {
+  const customerId = 'customer-db003-declined'
+  const orderId = 'order-db003-declined'
+  const finalizedOrder = {
+    ...staffOrder,
+    id: orderId,
+    customer_id: customerId,
+    order_number: 'RO-DB003-DECLINED',
+    status: 'invoiced',
+    description: 'Finalized additional work repair',
+    total_labor_cost: '1000.00',
+    total_cost: '1000.00',
+    quote_sent: true,
+    quote_approved: false,
+    updated_at: '2026-08-11T15:00:00Z',
+  }
+  const declinedQuote = quote({
+    id: 'quote-db003-declined',
+    repair_order_id: orderId,
+    is_declined: true,
+    decline_notes: 'Please defer this work.',
+  })
+
+  await page.addInitScript(({ fixtureCustomerId }) => {
+    window.localStorage.setItem('auth-storage', JSON.stringify({
+      state: {
+        user: {
+          id: 'customer-user-db003',
+          email: 'casey@example.test',
+          first_name: 'Casey',
+          last_name: 'Customer',
+          role: 'customer',
+          is_active: true,
+          tenant_id: 'tenant-db003',
+          tenant_name: 'DieselBridge Test Shop',
+          tenant_slug: 'db003-test',
+          tenant_logo_url: null,
+          customer_id: fixtureCustomerId,
+        },
+        token: null,
+        refreshToken: null,
+        isAuthenticated: true,
+        authProvider: 'legacy',
+      },
+      version: 0,
+    }))
+  }, { fixtureCustomerId: customerId })
+
+  await page.route('https://fonts.googleapis.com/**', route => route.fulfill({ status: 200, contentType: 'text/css', body: '' }))
+  await page.route('https://fonts.gstatic.com/**', route => route.fulfill({ status: 204, body: '' }))
+  await page.route('**/api/v1/**', async route => {
+    const url = new URL(route.request().url())
+    const path = url.pathname.replace(/^\/api\/v1/, '')
+    if (path === '/auth/tenant-branding') return fulfillJson(route, 200, { name: 'DieselBridge Test Shop', slug: 'db003-test', logo_url: null, state: 'NC' })
+    if (path === '/auth/platform-contact') return fulfillJson(route, 200, { support_name: 'DieselBridge Support', support_email: null, support_phone: null })
+    if (path === `/customers/${customerId}`) return fulfillJson(route, 200, { id: customerId, first_name: 'Casey', last_name: 'Customer' })
+    if (path === '/vehicles') return fulfillJson(route, 200, { items: [], has_more: false, skip: 0, limit: 100 })
+    if (path === '/repair-orders') return fulfillJson(route, 200, { items: [finalizedOrder], has_more: false, skip: 0, limit: 100 })
+    if (path === `/repair-orders/${orderId}/detail`) return fulfillJson(route, 200, { ...finalizedOrder, parts_usage: [], labor_items: [], history_events: [] })
+    if (path === `/repair-orders/${orderId}/photos`) return fulfillJson(route, 200, [])
+    if (path === '/invoices') return fulfillJson(route, 200, [])
+    if (path === '/quotes') return fulfillJson(route, 200, declinedQuote)
+    if (path === `/quotes/repair-order/${orderId}/history`) {
+      return fulfillJson(route, 200, { revisions: [declinedQuote], events: [] })
+    }
+    return fulfillJson(route, 404, { detail: `Unhandled DB-003 declined fixture route: ${path}` })
+  })
+}
+
 async function mockAuthorization(page: Page, token: string, mode: DecisionMode) {
   let decisionCount = 0
   let decided: 'approved' | 'declined' | null = null
@@ -179,4 +388,40 @@ test('403 is surfaced without retrying or implying a staff decision', async ({ p
   await expect(page.getByText('This customer cannot decide this authorization.')).toBeVisible()
   await page.waitForTimeout(250)
   expect(requests.decisionCount).toBe(1)
+})
+
+for (const width of [390, 320]) {
+  test(`staff estimate action stays initially visible, 44px, and keyboard operable at ${width}px`, async ({ page }) => {
+    const viewportHeight = 780
+    await page.setViewportSize({ width, height: viewportHeight })
+    await mockStaffAuthorizationWorkspace(page)
+
+    await page.goto(`/dashboard/repair-orders?selected=${staffOrder.id}`)
+    const createAction = await expectMobileQuoteAction(page, 'Create estimate', viewportHeight)
+    await createAction.focus()
+    await expect(createAction).toBeFocused()
+    await page.keyboard.press('Enter')
+
+    const sendAction = await expectMobileQuoteAction(page, 'Send estimate', viewportHeight)
+    await sendAction.focus()
+    await expect(sendAction).toBeFocused()
+    await page.keyboard.press('Enter')
+
+    await expect(page.getByRole('heading', { name: 'Send estimate carefully' })).toBeVisible()
+  })
+}
+
+test('declined additional work stays non-actionable after removal and finalization', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  await mockFinalizedDeclinePortal(page)
+
+  await page.goto('/portal')
+  await expect(page.getByText('All paid up')).toBeVisible()
+  await expect(page.getByText('Action required')).toHaveCount(0)
+  await expect(page.getByText('Review authorization')).toHaveCount(0)
+
+  await page.getByRole('link', { name: /Finalized additional work repair/ }).click()
+  await expect(page.getByRole('heading', { name: 'Additional work declined' })).toBeVisible()
+  await expect(page.getByRole('button', { name: /Authorize/ })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Decline this revision' })).toHaveCount(0)
 })

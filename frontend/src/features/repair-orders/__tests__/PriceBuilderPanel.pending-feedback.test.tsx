@@ -87,6 +87,60 @@ describe('PriceBuilderPanel pending feedback', () => {
     expect(screen.queryByRole('button', { name: /Return to/ })).not.toBeInTheDocument()
   })
 
+  it('keeps the mobile estimate action outside the workflow scroller and keyboard operable', async () => {
+    const onQuoteAction = vi.fn()
+    apiMocks.get.mockImplementation((url: string) => {
+      if (url === '/repair-orders/order-1/price-build') {
+        return Promise.resolve({
+          data: {
+            ...emptySummary,
+            labor_total: '100.00',
+            total_cost: '100.00',
+            lines: [{
+              id: 'labor-1',
+              repair_order_id: 'order-1',
+              description: 'Initial inspection',
+              hours: '1.00',
+              hourly_rate: '100.00',
+              total_cost: '100.00',
+              mechanic_id: null,
+              service_code: null,
+              line_type: 'manual',
+              provider: null,
+              provider_operation_id: null,
+              auto_recalc_enabled: false,
+              source_service_id: null,
+              vendor_name: null,
+              vendor_cost: null,
+              created_at: '2026-08-11T12:00:00Z',
+            }],
+          },
+        })
+      }
+      return Promise.resolve({ data: [] })
+    })
+
+    const user = userEvent.setup()
+    const view = renderPanel({ onQuoteAction, quoteActionLabel: 'Create estimate' })
+
+    let actions: HTMLButtonElement[] = []
+    await waitFor(() => {
+      actions = [...view.container.querySelectorAll('button')]
+        .filter((action) => action.textContent?.trim() === 'Create estimate')
+      expect(actions).toHaveLength(2)
+    })
+    const mobileAction = actions.find((action) => action.parentElement?.classList.contains('sm:hidden'))
+    const desktopAction = actions.find((action) => action.classList.contains('sm:inline-flex'))
+    expect(mobileAction).toHaveClass('min-h-[44px]', 'w-full')
+    expect(mobileAction?.parentElement).toHaveClass('sm:hidden')
+    expect(desktopAction).toHaveClass('hidden', 'h-8', 'sm:inline-flex')
+
+    await waitFor(() => expect(mobileAction).toBeEnabled())
+    mobileAction?.focus()
+    await user.keyboard('{Enter}')
+    expect(onQuoteAction).toHaveBeenCalledTimes(1)
+  })
+
   it('keeps the selected operation visibly pending while its request is still in flight', async () => {
     let resolveApply: (() => void) | undefined
     const pendingApply = new Promise<{ data: unknown }>((resolve) => {

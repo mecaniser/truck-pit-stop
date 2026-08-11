@@ -175,7 +175,29 @@ async function installSafePortalFixture(page: Page) {
     if (path === '/quickbooks/payments/availability/invoice-unpaid-1') {
       return json({ available: false, token_url: null, message: 'Unavailable in safe fixture' })
     }
-    if (path === '/quotes') return json(null)
+    if (path === '/quotes') {
+      const repairOrderId = url.searchParams.get('repair_order_id')
+      return json(repairOrderId === 'order-active-1' ? {
+        id: 'quote-safe-active-1',
+        tenant_id: 'tenant-safe-1',
+        repair_order_id: 'order-active-1',
+        quote_number: 'Q-2026-0811',
+        total_amount: '4494.62',
+        notes: null,
+        expires_at: null,
+        is_approved: false,
+        is_declined: false,
+        decline_notes: null,
+        sent_to_customer: true,
+        sent_at: '2026-08-11T09:47:00Z',
+        created_at: '2026-08-11T09:40:00Z',
+        updated_at: '2026-08-11T09:47:00Z',
+        revision: 1,
+        authorization_type: 'initial_estimate',
+        previously_authorized_amount: '0.00',
+        delta_amount: '4494.62',
+      } : null)
+    }
     if (path.startsWith('/quotes/repair-order/') && path.endsWith('/history')) {
       return json({ revisions: [], events: [] })
     }

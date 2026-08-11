@@ -103,7 +103,7 @@ export default function CustomerAuthorizationCard({
             type="button"
             onClick={onApprove}
             disabled={approvePending || declinePending}
-            className="flex min-h-11 flex-1 items-center justify-center gap-2 rounded-xl bg-violet-600 px-4 py-3 font-medium text-white transition-colors hover:bg-violet-500 disabled:bg-gray-500"
+            className="flex min-h-[44px] flex-1 items-center justify-center gap-2 rounded-xl bg-violet-600 px-4 py-3 font-medium text-white transition-colors hover:bg-violet-500 disabled:bg-gray-500"
           >
             <CheckCircle className="h-5 w-5" />
             {approvePending ? 'Authorizing…' : authorizationDecisionLabel(quote)}
@@ -112,7 +112,7 @@ export default function CustomerAuthorizationCard({
             type="button"
             onClick={onShowDecline}
             disabled={approvePending || declinePending}
-            className="min-h-11 flex-1 rounded-xl border border-white/20 bg-white/10 px-4 py-3 font-medium text-white transition-colors hover:bg-white/20 disabled:opacity-50"
+            className="min-h-[44px] flex-1 rounded-xl border border-white/20 bg-white/10 px-4 py-3 font-medium text-white transition-colors hover:bg-white/20 disabled:opacity-50"
           >
             Decline this revision
           </button>
@@ -135,7 +135,7 @@ export default function CustomerAuthorizationCard({
               type="button"
               onClick={onDecline}
               disabled={declinePending || approvePending}
-              className="min-h-11 flex-1 rounded-xl bg-violet-600 px-4 py-3 font-medium text-white transition-colors hover:bg-violet-500 disabled:bg-gray-500"
+              className="min-h-[44px] flex-1 rounded-xl bg-violet-600 px-4 py-3 font-medium text-white transition-colors hover:bg-violet-500 disabled:bg-gray-500"
             >
               {declinePending ? 'Sending…' : 'Confirm decline'}
             </button>
@@ -143,7 +143,7 @@ export default function CustomerAuthorizationCard({
               type="button"
               onClick={onCancelDecline}
               disabled={declinePending}
-              className="min-h-11 rounded-xl bg-white/10 px-4 py-3 font-medium text-white transition-colors hover:bg-white/20 disabled:opacity-50"
+              className="min-h-[44px] rounded-xl bg-white/10 px-4 py-3 font-medium text-white transition-colors hover:bg-white/20 disabled:opacity-50"
             >
               Keep reviewing
             </button>
