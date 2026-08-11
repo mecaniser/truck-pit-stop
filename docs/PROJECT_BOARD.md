@@ -26,27 +26,27 @@ primary worktree is clean. Reconcile this board whenever newer evidence exists.
 
 ## Blocked
 
-| ID | Priority | State | Outcome | Owner | Blocker | Unblock evidence |
-|---|---|---|---|---|---|---|
-| DB-006 | P0 | Blocked | Prove driver portal custody-only equipment isolation | QA Gatekeeper | Requires an authenticated WorkOS driver session for the exact linked driver; prior manager/invitation checks passed but driver isolation remained NO-GO | Positive current-custody view plus denial of released, unrelated, fleet-wide, and cross-tenant equipment |
-| DB-007 | P1 | Blocked | Enable Google Business Profile review integration | Backend & Integrations | Google Basic API Access case `1-9174000041216` remained in progress with quota 0 in the latest task evidence | Vendor approval and non-zero quota, then location-selection and tenant-isolation acceptance |
-| DB-008 | P1 | Blocked | Complete QuickBooks production readiness | Product & Delivery Lead | External Intuit questionnaire/production approval and test-account steps are not conclusively closed in task evidence | Approved credentials, documented environment setup, sandbox-to-production acceptance |
+| ID | Priority | State | Outcome | Owner | Blocker | Resolver / next safe action | Unblock evidence |
+|---|---|---|---|---|---|---|---|
+| DB-006 | P0 | Blocked | Prove driver portal custody-only equipment isolation | QA Gatekeeper | Requires an authenticated WorkOS driver session for the exact linked driver; prior manager/invitation checks passed but driver isolation remained NO-GO | Product owner completes exact linked-driver MFA; QA then runs read-only isolation checks | Positive current-custody view plus denial of released, unrelated, fleet-wide, and cross-tenant equipment |
+| DB-007 | P1 | Blocked | Enable Google Business Profile review integration | Backend & Integrations | Google Basic API Access case `1-9174000041216` remained in progress with quota 0 in the latest task evidence | Google approves the existing case; Backend rechecks quota without resubmitting | Vendor approval and non-zero quota, then location-selection and tenant-isolation acceptance |
+| DB-008 | P1 | Blocked | Complete QuickBooks production readiness | Product & Delivery Lead | External Intuit questionnaire/production approval and test-account steps are not conclusively closed in task evidence | Product owner/Intuit completes approval or credential step; Backend performs sandbox-to-production verification | Approved credentials, documented environment setup, sandbox-to-production acceptance |
 
 ## Ready / backlog
 
-| ID | Outcome | Owner | Acceptance target |
-|---|---|---|---|
-| DB-010 | Add Sentry error monitoring | Release & Reliability | Backend/frontend SDKs configured without secrets in git; releases/environment tags; source maps; alert ownership; verified test event and privacy filtering |
-| DB-011 | Connect the board to Linear | Product & Delivery Lead | Connected workspace/team, statuses matching this board, ownership/priority/acceptance fields, and import without duplicate issues |
-| DB-012 | Promote trustworthy CI checks to required | Release & Reliability | Full backend/frontend baselines green; Playwright smoke stable; migration graph, backend, frontend, and acceptance gates protected on `main` |
-| DB-013 | Create an isolated staging environment | Release & Reliability | Production-like configuration with isolated data; migrations, acceptance suite, rollback rehearsal, and promotion record |
-| DB-014 | Fix local seed idempotency | Backend & Integrations | Seed works with existing multi-tenant data without `MultipleResultsFound`, does not duplicate records, and supports a clean first run |
-| DB-015 | Remediate WebSocket token logging | Security & Identity | No bearer/session token appears in client, API, proxy, or observability logs; regression coverage proves redaction |
-| DB-016 | Add repair-order concurrency and audit hardening | Architecture & API Contracts | `lock_version` conflict behavior, before/after audit for financial/workflow changes, user-visible history, and simultaneous-edit tests |
-| DB-017 | Verify canonical work-first repair workflow end to end | QA Gatekeeper | Execute `FLOW_VERIFICATION.md`, including internal fleet, payment methods, void/revise, worker/outbox email, and immutable invoice behavior |
-| DB-018 | Restore a trustworthy green full-suite baseline | Release & Reliability | Current GitHub required gates pass, but informational CI reports frontend 2 failed/115 passed and backend 32 failed/536 passed/3 skipped | Classify and repair every failure, then make full suites required |
-| DB-019 | Protect `main` with enforced delivery gates | Release & Reliability | GitHub currently has no branch protection or ruleset | After stable checks exist, require PRs, migration/backend/frontend/Playwright gates, resolved conversations, and block force push/deletion |
-| DB-020 | Fix production apex-domain availability | Release & Reliability | `www.dieselbridge.com` and API return 200; bare `dieselbridge.com` timed out during 2026-08-10 release audit | Verify DNS/TLS/redirect ownership and make apex reliably redirect or serve without affecting `www` |
+| ID | Priority | State | Outcome | Owner | Acceptance target |
+|---|---|---|---|---|---|
+| DB-010 | P1 | Ready | Add Sentry error monitoring | Release & Reliability | Backend/frontend SDKs configured without secrets in git; releases/environment tags; source maps; alert ownership; verified test event and privacy filtering |
+| DB-011 | P2 | Ready | Connect the board to Linear | Product & Delivery Lead | Connected workspace/team, statuses matching this board, ownership/priority/acceptance fields, and import without duplicate issues |
+| DB-012 | P0 | Ready | Promote trustworthy CI checks to required | Release & Reliability | Full backend/frontend baselines green; Playwright smoke stable; migration graph, backend, frontend, and acceptance gates protected on `main` |
+| DB-013 | P1 | Ready | Create an isolated staging environment | Release & Reliability | Production-like configuration with isolated data; migrations, acceptance suite, rollback rehearsal, and promotion record |
+| DB-014 | P1 | Ready | Fix local seed idempotency | Backend & Integrations | Seed works with existing multi-tenant data without `MultipleResultsFound`, does not duplicate records, and supports a clean first run |
+| DB-015 | P0 | Ready | Remediate WebSocket token logging | Security & Identity | No bearer/session token appears in client, API, proxy, or observability logs; regression coverage proves redaction |
+| DB-016 | P1 | Ready | Add repair-order concurrency and audit hardening | Architecture & API Contracts | `lock_version` conflict behavior, before/after audit for financial/workflow changes, user-visible history, and simultaneous-edit tests |
+| DB-017 | P0 | Ready | Verify canonical work-first repair workflow end to end | QA Gatekeeper | Execute `FLOW_VERIFICATION.md`, including internal fleet, payment methods, void/revise, worker/outbox email, and immutable invoice behavior |
+| DB-018 | P0 | Ready | Restore a trustworthy green full-suite baseline | Release & Reliability | Current GitHub required gates pass, but informational CI reports frontend 2 failed/115 passed and backend 32 failed/536 passed/3 skipped; classify and repair every failure, then make full suites required |
+| DB-019 | P0 | Ready | Protect `main` with enforced delivery gates | Release & Reliability | After stable checks exist, require PRs, migration/backend/frontend/Playwright gates, resolved conversations, and block force push/deletion |
+| DB-020 | P1 | Ready | Fix production apex-domain availability | Release & Reliability | Verify DNS/TLS/redirect ownership and make apex reliably redirect or serve without affecting `www` |
 
 ## Completed with evidence to retain
 
@@ -60,7 +60,6 @@ not be treated as proof of current production state without a release record.
 | Customer portal visual redesign | PR #189, commit `d9daf91`, build and portal/logo tests reported |
 | Customer portal active repairs/action-required restoration | PR #194, commit `37e5e9a`, build and targeted tests reported |
 | Local Docker database alignment | Commit `12dbbe1`, `truckpitstop` database configuration |
-| Core delivery team operating model | Seven role tasks pinned; governance artifacts are in Review on `codex/house-cleanup`. Skill validator passed with the primary backend virtual environment; completion waits for PR/CI/merge |
 | WorkOS identity and authorization rollout | PRs #225–#240 are merged; production matches #240 at `04c4be79…`; API health 200. Final runtime/security acceptance remains recorded under DB-HC001 before archival |
 | Fleet performance optimization | PR #193 is merged and included in current production; no PR retry is required |
 
