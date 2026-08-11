@@ -3701,7 +3701,7 @@ async def list_repair_order_parts(
     limit: int = Query(100, ge=1, le=100),
     paginated: bool = Query(False),
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_role(*PRICE_BUILD_ADD_ROLES)),
 ):
     result = await db.execute(
         tenant_repair_order_statement(order_id, current_user)
@@ -3709,7 +3709,7 @@ async def list_repair_order_parts(
     order = result.scalar_one_or_none()
     if not order:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repair order not found")
-    _check_ro_access(current_user, order)
+    _check_mechanic_order_assignment(current_user, order)
 
     total_result = await db.execute(
         select(func.count(PartsUsage.id)).where(PartsUsage.repair_order_id == order_id)
@@ -3734,7 +3734,7 @@ async def list_repair_order_parts(
 async def get_repair_order_part_suggestions(
     order_id: UUID,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_role(*PRICE_BUILD_ADD_ROLES)),
 ):
     """Part-tab empty-state suggestions: parts that paired with the operations/
     services already on this order elsewhere in the shop's history, plus the
@@ -3747,7 +3747,7 @@ async def get_repair_order_part_suggestions(
     order = result.scalar_one_or_none()
     if not order:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repair order not found")
-    _check_ro_access(current_user, order)
+    _check_mechanic_order_assignment(current_user, order)
 
     already_added_result = await db.execute(
         select(PartsUsage.inventory_id).where(PartsUsage.repair_order_id == order_id)
@@ -4166,7 +4166,7 @@ async def list_repair_order_labor(
     limit: int = Query(100, ge=1, le=100),
     paginated: bool = Query(False),
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_role(*PRICE_BUILD_ADD_ROLES)),
 ):
     result = await db.execute(
         tenant_repair_order_statement(order_id, current_user)
@@ -4174,7 +4174,7 @@ async def list_repair_order_labor(
     order = result.scalar_one_or_none()
     if not order:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repair order not found")
-    _check_ro_access(current_user, order)
+    _check_mechanic_order_assignment(current_user, order)
 
     total_result = await db.execute(
         select(func.count(Labor.id)).where(Labor.repair_order_id == order_id)
