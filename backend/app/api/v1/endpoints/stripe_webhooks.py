@@ -276,7 +276,6 @@ async def _handle_payment_failed(db: AsyncSession, payment_intent: dict):
             "error_code": error_code,
             "decline_code": decline_code,
         },
-        db=db,
     )
 
 
@@ -313,7 +312,6 @@ async def _handle_charge_failed(db: AsyncSession, charge: dict):
             "payment_intent_id": payment_intent_id,
             "failure_code": failure_code,
         },
-        db=db,
     )
 
 
@@ -356,7 +354,6 @@ async def _handle_dispute_created(db: AsyncSession, dispute: dict):
             "reason": reason,
             "status": status,
         },
-        db=db,
     )
 
 
