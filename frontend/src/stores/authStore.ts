@@ -45,12 +45,19 @@ export function getAuthenticatedSessionIdentity(
     'isAuthenticated' | 'logoutInProgress' | 'authSessionEpoch' | 'authProvider' | 'user'
   >
 ): string | null {
-  if (!state.isAuthenticated || state.logoutInProgress || !state.user) return null
+  if (
+    !state.isAuthenticated
+    || state.logoutInProgress
+    || !state.user
+    || !state.user.is_active
+  ) return null
   return JSON.stringify([
     state.authSessionEpoch,
     state.authProvider,
     state.user.id,
     state.user.tenant_id,
+    state.user.role,
+    state.user.customer_id,
   ])
 }
 
@@ -176,6 +183,9 @@ export const useAuthStore = create<AuthState>()(
       setUser: (user) => set((state) => {
         const identityChanged = state.user?.id !== user.id
           || state.user?.tenant_id !== user.tenant_id
+          || state.user?.role !== user.role
+          || state.user?.customer_id !== user.customer_id
+          || state.user?.is_active !== user.is_active
         return {
           user,
           authSessionEpoch: identityChanged

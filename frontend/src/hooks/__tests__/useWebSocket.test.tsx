@@ -325,6 +325,58 @@ describe('useWebSocket cookie-session transport', () => {
     expect(MockWebSocket.instances).toHaveLength(2)
   })
 
+  it('closes and replaces the socket when the customer authority link changes', () => {
+    authenticateWithWorkOS()
+    renderWebSocket()
+    const original = MockWebSocket.instances[0]
+    act(() => original.emitOpen())
+
+    act(() => useAuthStore.getState().setUser({
+      ...user,
+      customer_id: 'customer-2',
+    }))
+
+    expect(original.close).toHaveBeenCalledTimes(1)
+    expect(MockWebSocket.instances).toHaveLength(2)
+  })
+
+  it('closes and replaces the socket when the authenticated role changes', () => {
+    authenticateWithWorkOS()
+    renderWebSocket()
+    const original = MockWebSocket.instances[0]
+    act(() => original.emitOpen())
+
+    act(() => useAuthStore.getState().setUser({
+      ...user,
+      role: 'garage_admin',
+    }))
+
+    expect(original.close).toHaveBeenCalledTimes(1)
+    expect(MockWebSocket.instances).toHaveLength(2)
+  })
+
+  it('closes and fails closed when the authenticated user becomes inactive', () => {
+    authenticateWithWorkOS()
+    renderWebSocket()
+    const original = MockWebSocket.instances[0]
+    act(() => original.emitOpen())
+
+    act(() => useAuthStore.getState().setUser({
+      ...user,
+      is_active: false,
+    }))
+
+    expect(original.close).toHaveBeenCalledTimes(1)
+    expect(MockWebSocket.instances).toHaveLength(1)
+    act(() => {
+      original.emitClose(1011)
+      document.dispatchEvent(new Event('visibilitychange'))
+      vi.advanceTimersByTime(60000)
+    })
+    expect(MockWebSocket.instances).toHaveLength(1)
+    expect(refreshMocks.workos).not.toHaveBeenCalled()
+  })
+
   it('cancels stale async recovery when authenticated identity changes', async () => {
     let resolveRefresh: (() => void) | undefined
     let recoverySignal: AbortSignal | undefined
