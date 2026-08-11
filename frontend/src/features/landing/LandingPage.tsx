@@ -42,6 +42,7 @@ interface WorkflowStage {
   title: string
   detail: string
   action: string
+  facts: Array<{ label: string; value: string }>
   icon: LucideIcon
 }
 
@@ -52,6 +53,11 @@ const WORKFLOW_STAGES: WorkflowStage[] = [
     title: 'Capture the write-up once.',
     detail: 'Keep the customer, unit, issue, meter reading, and attachments together from the start.',
     action: 'Create repair order',
+    facts: [
+      { label: 'Concern', value: 'Loss of power under load' },
+      { label: 'Received', value: 'May 14 · 8:52 AM' },
+      { label: 'Written by', value: 'Jason Miller' },
+    ],
     icon: ClipboardCheck,
   },
   {
@@ -60,6 +66,11 @@ const WORKFLOW_STAGES: WorkflowStage[] = [
     title: 'Build the price from the work.',
     detail: 'Organize parts, labor, fees, and recommended work inside the repair order.',
     action: 'Review estimate',
+    facts: [
+      { label: 'Estimate total', value: '$4,494.62' },
+      { label: 'Line items', value: '7 priced items' },
+      { label: 'Prepared', value: 'May 14 · 9:31 AM' },
+    ],
     icon: Wrench,
   },
   {
@@ -67,7 +78,12 @@ const WORKFLOW_STAGES: WorkflowStage[] = [
     label: 'Approval',
     title: 'Keep authorization beside the estimate.',
     detail: 'Share the work for customer review and keep the decision attached to the job.',
-    action: 'Share for approval',
+    action: 'Approval recorded',
+    facts: [
+      { label: 'Status', value: 'Approved' },
+      { label: 'Approved', value: 'May 14 · 9:47 AM' },
+      { label: 'Approved by', value: 'Sarah Johnson' },
+    ],
     icon: Check,
   },
   {
@@ -75,7 +91,12 @@ const WORKFLOW_STAGES: WorkflowStage[] = [
     label: 'Invoice',
     title: 'Carry completed work into the invoice.',
     detail: 'Move the repair forward without rebuilding its parts, labor, and service record.',
-    action: 'Create invoice',
+    action: 'Invoice ready to send',
+    facts: [
+      { label: 'Invoice', value: 'INV-2025-0417' },
+      { label: 'Balance', value: '$4,494.62' },
+      { label: 'Created', value: 'May 14 · 10:15 AM' },
+    ],
     icon: Receipt,
   },
   {
@@ -84,6 +105,11 @@ const WORKFLOW_STAGES: WorkflowStage[] = [
     title: 'Close the balance. Keep the record.',
     detail: 'Record payment and preserve the completed repair for the next visit.',
     action: 'View vehicle history',
+    facts: [
+      { label: 'Payment', value: '$4,494.62' },
+      { label: 'Method', value: 'ACH •••• 5521' },
+      { label: 'Recorded', value: 'May 14 · 10:32 AM' },
+    ],
     icon: History,
   },
 ]
@@ -115,11 +141,38 @@ function ProductWorkspace() {
 
   return (
     <div className="landing-product-scene" aria-label="Interactive DieselBridge repair-order workflow preview">
+      <div className="landing-sample-label">
+        <span>Illustrative sample</span>
+        <span>Fictional repair-order data</span>
+      </div>
+
+      <svg className="landing-workflow-connectors" viewBox="0 0 1440 590" preserveAspectRatio="none" aria-hidden="true">
+        <g className={`landing-connector landing-connector--approval ${activeStageId === 'approval' ? 'is-active' : ''}`}>
+          <path d="M 206 318 H 302 Q 326 318 344 300 H 455" />
+          <circle className="landing-connector-node" cx="206" cy="318" r="4" />
+          <circle className="landing-connector-node landing-connector-node--source" cx="455" cy="300" r="5" />
+        </g>
+        <g className={`landing-connector landing-connector--invoice ${activeStageId === 'invoice' ? 'is-active' : ''}`}>
+          <path d="M 882 300 H 1112 Q 1140 300 1152 272 L 1190 220 H 1230" />
+          <circle className="landing-connector-node landing-connector-node--source" cx="882" cy="300" r="5" />
+          <circle className="landing-connector-node" cx="1230" cy="220" r="4" />
+        </g>
+        <g className={`landing-connector landing-connector--history ${activeStageId === 'history' ? 'is-active' : ''}`}>
+          <path d="M 1055 300 H 1134 Q 1160 300 1160 328 V 438 H 1230" />
+          <circle className="landing-connector-node landing-connector-node--source" cx="1055" cy="300" r="5" />
+          <circle className="landing-connector-node" cx="1230" cy="438" r="4" />
+        </g>
+      </svg>
+
       <aside className={`landing-context-sheet landing-context-sheet--approval ${activeStageId === 'approval' ? 'is-active' : ''}`}>
         <span className="landing-context-icon landing-context-icon--success"><Check aria-hidden="true" /></span>
         <div>
           <strong>Customer approval</strong>
-          <span>Decision stays with the repair order.</span>
+          <span>NorthStar Logistics approved the estimate.</span>
+          <dl>
+            <div><dt>Approved</dt><dd>May 14, 2025 · 9:47 AM</dd></div>
+            <div><dt>Approved by</dt><dd>Sarah Johnson</dd></div>
+          </dl>
         </div>
       </aside>
 
@@ -136,16 +189,31 @@ function ProductWorkspace() {
         <div className="landing-workspace-main">
           <div className="landing-workspace-toolbar">
             <div>
-              <span className="landing-workspace-back">Repair orders</span>
-              <strong>Repair order workspace</strong>
+              <span className="landing-workspace-back">← Repair orders</span>
+              <strong>RO-2025-0417</strong>
             </div>
             <span className="landing-status">In progress</span>
           </div>
 
           <dl className="landing-workspace-summary">
-            <div><dt>Customer</dt><dd>Customer account</dd></div>
-            <div><dt>Unit</dt><dd>Truck or trailer</dd></div>
-            <div><dt>Vehicle details</dt><dd>VIN · meter · history</dd></div>
+            <div>
+              <dt>Customer</dt>
+              <dd>NorthStar Logistics</dd>
+              <span>dispatch@northstar.example</span>
+              <span>(614) 555-0187</span>
+            </div>
+            <div>
+              <dt>Vehicle</dt>
+              <dd>2021 Freightliner Cascadia 126</dd>
+              <span>VIN: 3AKJHHDR5MSMR1234</span>
+              <span>Unit: NSL-1047</span>
+            </div>
+            <div>
+              <dt>Meter</dt>
+              <dd>412,358 mi</dd>
+              <span>Engine hours: 8,742 hrs</span>
+              <span>Last service: 398,102 mi</span>
+            </div>
           </dl>
 
           <div className="landing-stage-tabs" aria-label="Repair workflow stages">
@@ -161,21 +229,43 @@ function ProductWorkspace() {
             ))}
           </div>
 
-          <div className="landing-workspace-content" key={activeStage.id}>
-            <section>
-              <span className="landing-content-label">{activeStage.label}</span>
-              <h2>{activeStage.title}</h2>
-              <p>{activeStage.detail}</p>
+          <div className="landing-workspace-content">
+            <section className="landing-estimate-summary" aria-labelledby="estimate-summary-title">
+              <div className="landing-panel-heading">
+                <h2 id="estimate-summary-title">Estimate summary</h2>
+                <span>Approved</span>
+              </div>
+              <dl className="landing-money-list">
+                <div><dt>Labor</dt><dd>$1,250.00</dd></div>
+                <div><dt>Parts</dt><dd>$2,875.42</dd></div>
+                <div><dt>Shop supplies</dt><dd>$85.00</dd></div>
+                <div><dt>Tax (6.75%)</dt><dd>$284.20</dd></div>
+                <div className="landing-money-total"><dt>Estimated total</dt><dd>$4,494.62</dd></div>
+              </dl>
+            </section>
+
+            <section className="landing-recommended-work" aria-labelledby="recommended-work-title">
+              <h2 id="recommended-work-title">Recommended work</h2>
+              <ul>
+                <li><span>Replace DEF dosing unit</span><strong>$1,125.00</strong></li>
+                <li><span>Turbocharger inspection</span><strong>$650.00</strong></li>
+                <li><span>EGR valve cleaning</span><strong>$475.00</strong></li>
+              </ul>
+            </section>
+
+            <section className="landing-stage-panel" key={activeStage.id} aria-labelledby="active-stage-title">
+              <span className="landing-content-label">{activeStage.label} status</span>
+              <h2 id="active-stage-title">{activeStage.title}</h2>
+              <dl>
+                {activeStage.facts.map((fact) => (
+                  <div key={fact.label}><dt>{fact.label}</dt><dd>{fact.value}</dd></div>
+                ))}
+              </dl>
               <span className="landing-preview-guidance">
                 <strong>Next action</strong>
                 {activeStage.action}
               </span>
             </section>
-            <div className="landing-work-list" aria-label="Repair order contents">
-              <span><Check aria-hidden="true" /> Customer and unit details</span>
-              <span><Check aria-hidden="true" /> Work, parts, and labor</span>
-              <span><Check aria-hidden="true" /> Notes and attachments</span>
-            </div>
           </div>
         </div>
       </div>
@@ -184,7 +274,11 @@ function ProductWorkspace() {
         <span className="landing-context-icon"><FileCheck2 aria-hidden="true" /></span>
         <div>
           <strong>Invoice ready</strong>
-          <span>Completed work carries forward.</span>
+          <span>Invoice INV-2025-0417 is ready to send.</span>
+          <dl>
+            <div><dt>Total</dt><dd>$4,494.62</dd></div>
+            <div><dt>Created</dt><dd>May 14, 2025 · 10:15 AM</dd></div>
+          </dl>
         </div>
       </aside>
 
@@ -192,7 +286,11 @@ function ProductWorkspace() {
         <span className="landing-context-icon landing-context-icon--success"><History aria-hidden="true" /></span>
         <div>
           <strong>Paid history</strong>
-          <span>The completed repair remains searchable.</span>
+          <span>Payment of $4,494.62 was recorded.</span>
+          <dl>
+            <div><dt>Recorded</dt><dd>May 14, 2025 · 10:32 AM</dd></div>
+            <div><dt>Method</dt><dd>ACH •••• 5521</dd></div>
+          </dl>
         </div>
       </aside>
     </div>

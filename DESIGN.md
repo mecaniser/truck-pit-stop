@@ -16,7 +16,7 @@ colors:
 typography:
   display:
     fontFamily: "ui-sans-serif, -apple-system, BlinkMacSystemFont, SF Pro Text, Segoe UI, sans-serif"
-    fontSize: "clamp(2.65rem, 6.8vw, 5.65rem)"
+    fontSize: "clamp(2.65rem, 5vw, 4.6rem)"
     fontWeight: 700
     lineHeight: 0.98
     letterSpacing: "-0.04em"
@@ -161,11 +161,11 @@ The palette behaves like a night shop around an illuminated operating surface: n
 
 ## Layout
 
-The homepage uses a centered `72rem` content rail, with the hero widening to `80rem` so the product scene can dominate the first viewport. Horizontal padding is fluid from `1rem` to `2rem`; major sections breathe on a fluid vertical rhythm. The floating navigation, centered promise, primary action, and repair-order workspace form one axial composition.
+The homepage uses a centered `72rem` content rail, with the hero widening to `96rem` so the product scene can dominate the first viewport. Horizontal padding is fluid from `1rem` to `2rem`; major sections breathe on a fluid vertical rhythm. The floating navigation, centered promise, primary action, and repair-order workspace form one axial composition.
 
-The desktop workspace is a two-column product shell: a narrow navy product rail and a flexible road-white main area. Summary facts appear in three equal cells, five stage controls share one horizontally scrollable row, and the selected-stage content pairs a primary narrative card with a compact work checklist. Three contextual glass sheets overlap the frame and connect back to their source with one-pixel rules.
+The desktop workspace is a two-column product shell: a narrow navy product rail and a flexible road-white main area. A visible `Illustrative sample` label establishes that the coherent customer, vehicle, meter, estimate, approval, invoice, and payment record is fictional product demonstration data. Summary facts appear in three equal cells, five stage controls share one horizontally scrollable row, and the selected-stage content sits beside estimate totals and recommended work. Three contextual glass sheets remain fully outside the frame and connect back to their source through routed signal-orange lines and circular nodes.
 
-At `960px` and below, the product rail disappears, the workspace becomes a single column, and contextual sheets leave the overlap plane to stack beneath the frame in approval, invoice, and history order. Workflow steps become a two-column list. At `640px` and below, the navigation reduces to brand plus sign-in, the hero action becomes full width, nonessential workspace facts and the checklist are removed, workflow steps become a single vertical sequence, and partner/error surfaces stack. Stage tabs remain horizontally scrollable so their semantic order survives narrow screens without shrinking to illegibility. Desktop stage controls are explicitly `44px` high and increase to `48px` on mobile. Runtime regression checks at `320px` and `390px` lock both target sizing and the absence of horizontal page overflow.
+At `1280px` and below, routed lines leave the overlap plane and contextual sheets stack beneath the frame in approval, invoice, and history order with a short orange source stem. At `960px` and below, the product rail disappears, the workspace becomes a single column, and workflow steps become a two-column list. At `640px` and below, the navigation reduces to brand plus sign-in, the hero action becomes full width, every illustrative fact remains available in a stacked reading order, workflow steps become a single vertical sequence, and partner/error surfaces stack. Stage tabs remain horizontally scrollable so their semantic order survives narrow screens without shrinking to illegibility. Desktop stage controls are explicitly `44px` high and increase to `48px` on mobile. Runtime regression checks at `320px` and `390px` lock both target sizing and the absence of horizontal page overflow.
 
 **The One Repair Spine Rule.** Every section must reinforce the same intake-to-history sequence; do not split the story into unrelated capability islands.
 
@@ -205,7 +205,7 @@ On the `/` route, the favicon manager selects only the lightweight authored `/di
 
 - **Workspace Frame:** Road-white, deeply elevated, and the largest light object on the page.
 - **Content Card:** Paper white with a quiet cool shadow inside the workspace.
-- **Context Sheet:** Translucent navy glass with an icon tile, strong title, compact explanation, and a line anchored toward the relevant workspace source on desktop.
+- **Context Sheet:** Translucent navy glass with an icon tile, strong title, compact factual evidence, and an orange routed line anchored toward the relevant workspace source on desktop. The three sheets remain outside the product frame so approval, invoice, and paid history read as consequences of the same repair order rather than product chrome.
 - **Partner Card:** A low-contrast navy tile for API-returned shop identity; it may render the runtime logo or a generated text monogram when no logo exists.
 
 ### Navigation
@@ -229,6 +229,8 @@ Motion gives immediate press response and uses critically damped `0.3–0.4s` sw
 - **Loaded:** Only API-returned partner records may render. Use the runtime `logo_url` when supplied, otherwise derive a text monogram; never bake partner logos, endorsements, or fabricated shops into the public artifact.
 
 The regression contract covers loading, empty, error, successful retry, loaded partners, and stage selection at the unit level. Homepage browser coverage locks `320px` and `390px` target sizing, no-overflow behavior, and the route-specific lightweight favicon contract.
+
+**The Illustrative Data Rule.** Product-proof values must form one internally coherent fictional record and remain visibly labeled as illustrative. Reserved example domains and fictional identifiers are allowed; real customer information, testimonials, revenue claims, or fabricated partner endorsements are not.
 
 ## Do's and Don'ts
 
