@@ -1,35 +1,36 @@
 # DieselBridge Delivery Board
 
 Last consolidated: 2026-08-10. This board was reconstructed from DieselBridge
-task histories, the repository, recent commits, known PRs, and the current dirty
-working tree. Reconcile it whenever newer GitHub or deployment evidence exists.
+task histories, the repository, recent commits, known PRs, and production state.
+The former dirty tree is preserved on `codex/house-cleanup-preservation` and the
+primary worktree is clean. Reconcile this board whenever newer evidence exists.
 
 ## Operating rules
 
 - One item has one accountable owner, even when several roles contribute.
 - `Done` requires merge/release and acceptance evidence; “implemented in a task”
   is not sufficient.
-- Preserve the current uncommitted backend/payment/conversion work until its
-  owner separates and verifies it.
+- Preserve backend/payment/conversion commit `2bdc53c` until its owner rebuilds
+  and verifies that work on current `main`.
 - New requests enter Inbox through Product & Delivery Lead.
 
 ## In progress
 
-| ID | Outcome | Owner | Evidence now | Next gate |
-|---|---|---|---|---|
-| DB-HC001 | House Cleanup: finish and release all intentional in-progress work, preserve or explicitly defer everything else, and return the project to a clean trusted baseline | Product & Delivery Lead; release owner: Release & Reliability | Repository has a dirty mixed backend/integration/tooling tree and multiple historical branches/PRs requiring authoritative reconciliation | Read-only team audit → scoped completion/fixes → Architecture/Security/QA GO → focused commit/PR/CI → merge/deploy/canary → clean worktree |
-| DB-002 | Ship the supported paid repair-order conversion export | Backend & Integrations | Migration/UI landed earlier in #209; backend API/model/service/task/payment integration remains local. Audit: 28 focused/adjacent tests pass and Alembic has one head, but SSRF, tenant/key/admin, correction validation, worker runtime, secret operations, Postgres migration, and browser acceptance gates are incomplete | Reconstruct on current `main`; close Architecture/Security/test/runtime gaps; focused PR/CI; Railway deploy and canary |
-| DB-003 | Finish versioned additional-work authorizations | Backend & Integrations | PR #196 merged at `e20fa1a` with implementation commit `a51f2af`; immutable revisions/finalization guard exist, but task validation found the portal action still depends on the staff-send flow | Architecture decides automatic vs staff-reviewed publication and any threshold policy; then run mechanic addition → customer prompt → approve/decline → invoice Playwright acceptance, Security GO, QA GO |
-| DB-004 | Reconcile customer portal redesign and active-repair workflow | Frontend & UX | PRs #189 and #194 are merged and included in current production | Run and record one mobile customer portal acceptance journey; then move to Done |
-| DB-009 | Make Playwright the regression safety net | QA Gatekeeper | Existing Playwright runtime retained; package commands added; 5/5 staff-login/public-invoice smoke tests passed locally on 2026-08-10 | Add repair order, estimate authorization, payment, customer portal, driver custody, and tenant-isolation journeys; then add a stable CI gate |
+| ID | Priority | State | Outcome | Owner | Evidence now | Next gate |
+|---|---|---|---|---|---|---|
+| DB-HC001 | P0 | Review | House Cleanup: finish and release all intentional in-progress work, preserve or explicitly defer everything else, and return the project to a clean trusted baseline | Product & Delivery Lead; release owner: Release & Reliability | Read-only team audit complete; preservation commits `2bdc53c`, `444c92d`, and `d1040c8`; primary tree clean; governance is in independent review on `codex/house-cleanup` | Governance re-review → focused PR/CI/merge → DB-002 completion → QA tooling → production verification → clean baseline |
+| DB-002 | P0 | In Progress | Ship the supported paid repair-order conversion export | Backend & Integrations | Migration/UI landed earlier in #209; backend preserved at `2bdc53c`. Audit: 28 focused/adjacent tests pass and Alembic has one head, but SSRF, tenant/key/admin, correction validation, worker runtime, secret operations, Postgres migration, and browser acceptance gates are incomplete | Reconstruct on current `main`; close Architecture/Security/test/runtime gaps; focused PR/CI; Railway deploy and canary |
+| DB-003 | P1 | Discovery | Finish versioned additional-work authorizations | Backend & Integrations | PR #196 merged at `e20fa1a` with implementation commit `a51f2af`; immutable revisions/finalization guard exist, but task validation found the portal action still depends on the staff-send flow | Architecture decides automatic vs staff-reviewed publication and any threshold policy; then run mechanic addition → customer prompt → approve/decline → invoice Playwright acceptance, Security GO, QA GO |
+| DB-004 | P1 | QA/Security | Reconcile customer portal redesign and active-repair workflow | Frontend & UX | PRs #189 and #194 are merged and included in current production | Run and record one mobile customer portal acceptance journey; then move to Done |
+| DB-009 | P1 | In Progress | Make Playwright the regression safety net | QA Gatekeeper | Commands preserved at `d1040c8`; 5/5 staff-login/public-invoice smoke tests passed locally on 2026-08-10 | Add repair order, estimate authorization, payment, customer portal, driver custody, and tenant-isolation journeys; then add a stable CI gate |
 
 ## Blocked
 
-| ID | Outcome | Owner | Blocker | Unblock evidence |
-|---|---|---|---|---|
-| DB-006 | Prove driver portal custody-only equipment isolation | QA Gatekeeper | Requires an authenticated WorkOS driver session for the exact linked driver; prior manager/invitation checks passed but driver isolation remained NO-GO | Positive current-custody view plus denial of released, unrelated, fleet-wide, and cross-tenant equipment |
-| DB-007 | Enable Google Business Profile review integration | Backend & Integrations | Google Basic API Access case `1-9174000041216` remained in progress with quota 0 in the latest task evidence | Vendor approval and non-zero quota, then location-selection and tenant-isolation acceptance |
-| DB-008 | Complete QuickBooks production readiness | Product & Delivery Lead | External Intuit questionnaire/production approval and test-account steps are not conclusively closed in task evidence | Approved credentials, documented environment setup, sandbox-to-production acceptance |
+| ID | Priority | State | Outcome | Owner | Blocker | Unblock evidence |
+|---|---|---|---|---|---|---|
+| DB-006 | P0 | Blocked | Prove driver portal custody-only equipment isolation | QA Gatekeeper | Requires an authenticated WorkOS driver session for the exact linked driver; prior manager/invitation checks passed but driver isolation remained NO-GO | Positive current-custody view plus denial of released, unrelated, fleet-wide, and cross-tenant equipment |
+| DB-007 | P1 | Blocked | Enable Google Business Profile review integration | Backend & Integrations | Google Basic API Access case `1-9174000041216` remained in progress with quota 0 in the latest task evidence | Vendor approval and non-zero quota, then location-selection and tenant-isolation acceptance |
+| DB-008 | P1 | Blocked | Complete QuickBooks production readiness | Product & Delivery Lead | External Intuit questionnaire/production approval and test-account steps are not conclusively closed in task evidence | Approved credentials, documented environment setup, sandbox-to-production acceptance |
 
 ## Ready / backlog
 
@@ -59,7 +60,7 @@ not be treated as proof of current production state without a release record.
 | Customer portal visual redesign | PR #189, commit `d9daf91`, build and portal/logo tests reported |
 | Customer portal active repairs/action-required restoration | PR #194, commit `37e5e9a`, build and targeted tests reported |
 | Local Docker database alignment | Commit `12dbbe1`, `truckpitstop` database configuration |
-| Core delivery team operating model | Seven role tasks pinned; `AGENTS.md`, delivery charter, board, and validated `dieselbridge-delivery-team` skill created |
+| Core delivery team operating model | Seven role tasks pinned; governance artifacts are in Review on `codex/house-cleanup`. Skill validator passed with the primary backend virtual environment; completion waits for PR/CI/merge |
 | WorkOS identity and authorization rollout | PRs #225–#240 are merged; production matches #240 at `04c4be79…`; API health 200. Final runtime/security acceptance remains recorded under DB-HC001 before archival |
 | Fleet performance optimization | PR #193 is merged and included in current production; no PR retry is required |
 

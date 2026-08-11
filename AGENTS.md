@@ -18,7 +18,10 @@ implementation, verification, and release work.
    isolation cases when applicable.
 3. Assign API and data contracts to Architecture & API Contracts before parallel
    frontend/backend work begins.
-4. Do not let the implementing owner approve its own QA or security gate.
+4. Do not let an implementing agent approve its own QA or security gate. If the
+   accountable role is QA or Security, Product & Delivery Lead assigns a fresh
+   independent reviewer with no implementation participation. Architecture is
+   the fallback security gate; Release & Reliability is the fallback QA gate.
 5. Do not mark work Done until implementation, automated checks, runtime
    acceptance, PR/merge state, and release evidence required by the item exist.
 6. When a gate fails, return the item to the owner with reproduction evidence;

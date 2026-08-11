@@ -23,9 +23,12 @@ acting. Read `references/handoff-contract.md` when handing work between roles.
    auth and tenant boundary, errors, idempotency, compatibility, and fixtures.
 4. **Implement.** Preserve unrelated changes. Use a focused branch/PR. Add the
    narrowest tests that prove the acceptance criteria and important failures.
-5. **Gate.** Require independent QA for user-visible behavior and Security for
-   identity, tenant, payment, secret, or sensitive-data changes. A gate failure
-   returns to the responsible owner with reproduction evidence.
+5. **Gate.** Require independent QA for user-visible behavior and an independent
+   Security gate for identity, tenant, payment, secret, or sensitive-data
+   changes. Check the handoff record: a gatekeeper must not have implemented or
+   directed the change. Use the fallback assignments in `docs/DELIVERY_TEAM.md`
+   when QA or Security is the implementing owner. A gate failure returns to the
+   responsible owner with reproduction evidence.
 6. **Release.** Require the repository quality gates, migration declaration,
    runtime acceptance, rollback signal, and post-deploy observation appropriate
    to risk. Use Playwright for changed critical journeys.
