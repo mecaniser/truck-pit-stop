@@ -45,6 +45,7 @@ from app.services.conversion_pii_retention_service import (
 )
 from app.services.paid_invoice_webhook_key_rotation import rotate_paid_invoice_webhook_secrets
 from app.services.paid_invoice_webhook_service import (
+    ConversionEventPrivacyExpired,
     _deliver,
     conversion_signature,
     enqueue_paid_invoice_webhook,
@@ -435,6 +436,173 @@ async def test_retention_expires_every_old_nonterminal_state(
         with pytest.raises(HTTPException) as exc:
             await conversion_exports.replay_delivery(event.id, db=db, user=owner)
         assert exc.value.status_code == 410
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("event_case", ["overdue_config_restored", "redacted", "near_deadline"])
+async def test_claim_privacy_gate_expires_without_delivery(
+    _db_engine, monkeypatch, event_case
+):
+    monkeypatch.setattr("app.core.config.settings.CONVERSION_OUTBOX_PII_RETENTION_DAYS", 30)
+    monkeypatch.setattr("app.core.config.settings.PAID_INVOICE_WEBHOOK_TOTAL_TIMEOUT_SECONDS", 35.0)
+    factory = async_sessionmaker(_db_engine, expire_on_commit=False)
+    now = datetime.now(timezone.utc)
+    created_at = now
+    payload = {"customer": {"email": "private@example.com"}}
+    last_error = None
+    if event_case == "overdue_config_restored":
+        created_at = now - timedelta(days=31)
+        last_error = "Webhook secret configuration is unavailable"
+    elif event_case == "redacted":
+        payload = {"event_id": str(uuid4()), "pii_redacted_at": now.isoformat()}
+    else:
+        created_at = now - timedelta(days=30) + timedelta(seconds=20)
+
+    async with factory() as db:
+        tenant = Tenant(
+            name="Claim privacy", slug=f"claim-{uuid4().hex}",
+            paid_invoice_webhook_enabled=True,
+            paid_invoice_webhook_url="https://hooks.example.com/path",
+            paid_invoice_webhook_secret_encrypted="configured-again",
+        )
+        event = ProviderOutboxEvent(
+            tenant=tenant, event_type="repair_order.paid", aggregate_type="invoice",
+            aggregate_id=uuid4(), payload=payload,
+            idempotency_key=f"claim-{uuid4().hex}",
+            status=ProviderOutboxStatus.PENDING.value, available_at=now,
+            created_at=created_at, last_error=last_error,
+        )
+        db.add_all([tenant, event]); await db.commit(); event_id = event.id
+
+    delivery_calls = 0
+
+    async def forbidden_delivery(_tenant, _event):
+        nonlocal delivery_calls
+        delivery_calls += 1
+        return None, 204
+
+    monkeypatch.setattr("app.services.paid_invoice_webhook_service._deliver", forbidden_delivery)
+    result = await process_due_paid_invoice_webhooks(session_factory=factory)
+    assert result["claimed"] == 0
+    assert result["expired"] == 1
+    assert delivery_calls == 0
+    async with factory() as db:
+        event = await db.get(ProviderOutboxEvent, event_id)
+        assert event.status == ProviderOutboxStatus.EXPIRED.value
+        assert event.payload.get("pii_redacted_at")
+        assert event.lock_token is None
+
+
+@pytest.mark.asyncio
+async def test_direct_redacted_delivery_refuses_before_dns(monkeypatch):
+    dns_calls = 0
+
+    async def forbidden_dns(*_args, **_kwargs):
+        nonlocal dns_calls
+        dns_calls += 1
+        raise AssertionError("DNS must not run for a redacted event")
+
+    monkeypatch.setattr("app.services.paid_invoice_webhook_service.resolve_webhook_destination", forbidden_dns)
+    tenant = Tenant(
+        name="Redacted", slug=f"redacted-{uuid4().hex}",
+        paid_invoice_webhook_enabled=True,
+        paid_invoice_webhook_url="https://hooks.example.com/path",
+        paid_invoice_webhook_secret_encrypted="unused",
+    )
+    event = ProviderOutboxEvent(
+        tenant_id=uuid4(), event_type="repair_order.paid", aggregate_type="invoice",
+        aggregate_id=uuid4(), payload={"pii_redacted_at": datetime.now(timezone.utc).isoformat()},
+        idempotency_key="redacted-direct", status=ProviderOutboxStatus.PENDING.value,
+    )
+    with pytest.raises(ConversionEventPrivacyExpired):
+        await _deliver(tenant, event)
+    assert dns_calls == 0
+
+
+@pytest.mark.asyncio
+async def test_inflight_retention_cannot_be_overwritten_by_completion(
+    _db_engine, monkeypatch
+):
+    monkeypatch.setattr("app.core.config.settings.CONVERSION_OUTBOX_PII_RETENTION_DAYS", 30)
+    factory = async_sessionmaker(_db_engine, expire_on_commit=False)
+    now = datetime.now(timezone.utc)
+    async with factory() as db:
+        tenant = Tenant(
+            name="Inflight retention", slug=f"inflight-{uuid4().hex}",
+            paid_invoice_webhook_enabled=True,
+            paid_invoice_webhook_url="https://hooks.example.com/path",
+            paid_invoice_webhook_secret_encrypted="configured",
+        )
+        event = ProviderOutboxEvent(
+            tenant=tenant, event_type="repair_order.paid", aggregate_type="invoice",
+            aggregate_id=uuid4(), payload={"customer": {"email": "private@example.com"}},
+            idempotency_key=f"inflight-{uuid4().hex}",
+            status=ProviderOutboxStatus.PENDING.value, available_at=now, created_at=now,
+        )
+        db.add_all([tenant, event]); await db.commit(); event_id = event.id
+
+    async def expire_while_inflight(_tenant, _event):
+        assert await purge_expired_conversion_event_pii(
+            session_factory=factory, now=now + timedelta(days=31)
+        ) == 1
+        return "provider-success", 202
+
+    monkeypatch.setattr("app.services.paid_invoice_webhook_service._deliver", expire_while_inflight)
+    result = await process_due_paid_invoice_webhooks(session_factory=factory)
+    assert result["claimed"] == 1
+    assert result["succeeded"] == 0
+    async with factory() as db:
+        event = await db.get(ProviderOutboxEvent, event_id)
+        assert event.status == ProviderOutboxStatus.EXPIRED.value
+        assert event.provider_message_id is None
+        assert event.last_response_code is None
+        assert event.payload.get("pii_redacted_at")
+
+
+@pytest.mark.asyncio
+async def test_customer_erasure_expires_pending_event_and_prevents_delivery(
+    _db_engine, monkeypatch
+):
+    factory = async_sessionmaker(_db_engine, expire_on_commit=False)
+    now = datetime.now(timezone.utc)
+    async with factory() as db:
+        tenant = Tenant(
+            name="Customer erase", slug=f"erase-{uuid4().hex}",
+            paid_invoice_webhook_enabled=True,
+            paid_invoice_webhook_url="https://hooks.example.com/path",
+            paid_invoice_webhook_secret_encrypted="configured",
+        )
+        customer = Customer(tenant=tenant, first_name="Erase", last_name="Me", email="erase@example.com")
+        order = RepairOrder(tenant=tenant, customer=customer, vehicle_id=uuid4(), order_number=f"RO-{uuid4().hex}", status=RepairOrderStatus.PAID)
+        invoice = Invoice(tenant=tenant, repair_order=order, invoice_number=f"INV-{uuid4().hex}", status=InvoiceStatus.PAID, subtotal=Decimal("10"), tax_amount=Decimal("0"), discount_amount=Decimal("0"), total_amount=Decimal("10"), paid_at=now)
+        db.add_all([tenant, customer, order, invoice]); await db.flush()
+        event = ProviderOutboxEvent(
+            tenant=tenant, event_type="repair_order.paid", aggregate_type="invoice",
+            aggregate_id=invoice.id, payload={"customer": {"email": customer.email}},
+            idempotency_key=f"erase-{uuid4().hex}", status=ProviderOutboxStatus.PENDING.value,
+            available_at=now, created_at=now,
+        )
+        db.add(event); await db.commit()
+        tenant_id, customer_id, event_id = tenant.id, customer.id, event.id
+        assert await erase_customer_conversion_event_pii(
+            db, tenant_id=tenant_id, customer_id=customer_id, apply=True
+        ) == 1
+
+    delivery_calls = 0
+
+    async def forbidden_delivery(_tenant, _event):
+        nonlocal delivery_calls
+        delivery_calls += 1
+        return None, 204
+
+    monkeypatch.setattr("app.services.paid_invoice_webhook_service._deliver", forbidden_delivery)
+    result = await process_due_paid_invoice_webhooks(session_factory=factory)
+    assert result["claimed"] == 0
+    assert delivery_calls == 0
+    async with factory() as db:
+        event = await db.get(ProviderOutboxEvent, event_id)
+        assert event.status == ProviderOutboxStatus.EXPIRED.value
+        assert event.payload.get("pii_redacted_at")
 
 
 @pytest.mark.asyncio

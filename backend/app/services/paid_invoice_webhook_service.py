@@ -28,16 +28,19 @@ from app.db.models.repair_order import RepairOrder, RepairOrderStatus
 from app.db.models.tenant import Tenant
 from app.db.models.user import User, UserRole
 from app.db.session import AsyncSessionLocal
+from app.services.conversion_pii_retention_service import (
+    CONVERSION_EVENT_TYPES,
+    conversion_event_must_expire,
+    expire_conversion_event,
+)
 from app.services.provider_outbox_service import ProviderDeliveryError, enqueue_email_notification
 
 
-CONVERSION_EVENT_TYPES = {
-    "repair_order.paid",
-    "repair_order.payment_refunded",
-    "repair_order.payment_voided",
-    "repair_order.payment_adjusted",
-}
 PAID_INVOICE_WEBHOOK_EVENT = "repair_order.paid"  # compatibility export
+
+
+class ConversionEventPrivacyExpired(Exception):
+    """Raised when privacy expiry forbids starting or finishing delivery."""
 
 
 def _now() -> datetime:
@@ -139,7 +142,7 @@ async def enqueue_paid_invoice_webhook(db: AsyncSession, *, tenant: Optional[Ten
     return await enqueue_conversion_event(db, tenant=tenant, invoice=invoice, order=order, customer=customer, event_type="repair_order.paid", idempotency_key=f"repair-order-paid:{invoice.id}")
 
 
-async def _claim(db: AsyncSession, limit: int) -> list[tuple[UUID, str]]:
+async def _claim(db: AsyncSession, limit: int) -> tuple[list[tuple[UUID, str]], int]:
     now = _now()
     due = or_(
         and_(ProviderOutboxEvent.status == ProviderOutboxStatus.PENDING.value, ProviderOutboxEvent.available_at <= now),
@@ -147,14 +150,23 @@ async def _claim(db: AsyncSession, limit: int) -> list[tuple[UUID, str]]:
     )
     rows = (await db.execute(select(ProviderOutboxEvent).where(ProviderOutboxEvent.event_type.in_(CONVERSION_EVENT_TYPES), due).order_by(ProviderOutboxEvent.available_at).limit(limit).with_for_update(skip_locked=True))).scalars()
     claims = []
+    expired = 0
     for event in rows:
+        if conversion_event_must_expire(
+            event,
+            current=now,
+            safety_margin_seconds=settings.PAID_INVOICE_WEBHOOK_TOTAL_TIMEOUT_SECONDS,
+        ):
+            expire_conversion_event(event, expired_at=now)
+            expired += 1
+            continue
         token = uuid4().hex
         event.status, event.lock_token, event.locked_at = ProviderOutboxStatus.PROCESSING.value, token, now
         event.locked_until, event.last_attempt_at = now + timedelta(seconds=settings.PROVIDER_OUTBOX_LEASE_SECONDS), now
         event.attempt_count += 1
         claims.append((event.id, token))
     await db.commit()
-    return claims
+    return claims, expired
 
 
 def _retry_delay(attempt: int) -> timedelta:
@@ -162,6 +174,14 @@ def _retry_delay(attempt: int) -> timedelta:
 
 
 async def _deliver(tenant: Tenant, event: ProviderOutboxEvent) -> tuple[Optional[str], int]:
+    if conversion_event_must_expire(
+        event,
+        current=_now(),
+        safety_margin_seconds=settings.PAID_INVOICE_WEBHOOK_TOTAL_TIMEOUT_SECONDS,
+    ):
+        raise ConversionEventPrivacyExpired(
+            "Conversion payload is expired or redacted"
+        )
     try:
         with anyio.fail_after(settings.PAID_INVOICE_WEBHOOK_TOTAL_TIMEOUT_SECONDS):
             return await _deliver_within_budget(tenant, event)
@@ -221,7 +241,6 @@ async def _deliver_within_budget(tenant: Tenant, event: ProviderOutboxEvent) -> 
                     last_connect_error = exc
             if response is None:
                 raise ProviderDeliveryError("Webhook connection failed for all vetted addresses", retryable=True) from last_connect_error
-        event.last_response_code = response.status_code
         if 300 <= response.status_code < 400:
             raise ProviderDeliveryError("Webhook redirects are not accepted", retryable=False)
         if response.status_code >= 400:
@@ -245,16 +264,75 @@ async def _disable_and_notify(db: AsyncSession, tenant: Tenant, event: ProviderO
 
 async def process_due_paid_invoice_webhooks(*, session_factory: async_sessionmaker[AsyncSession] = AsyncSessionLocal, batch_size: Optional[int] = None) -> dict[str, int]:
     async with session_factory() as db:
-        claims = await _claim(db, batch_size or settings.PROVIDER_OUTBOX_BATCH_SIZE)
-    result = {"claimed": len(claims), "succeeded": 0, "retried": 0, "dead": 0, "configuration_blocked": 0}
+        claims, expired_at_claim = await _claim(
+            db, batch_size or settings.PROVIDER_OUTBOX_BATCH_SIZE
+        )
+    result = {"claimed": len(claims), "succeeded": 0, "retried": 0, "dead": 0, "configuration_blocked": 0, "expired": expired_at_claim}
     for event_id, token in claims:
+        # Preflight under the row lock, then release the transaction before
+        # external I/O. Retention or erasure may still win while the request is
+        # in flight; the token-conditioned completion below will respect it.
         async with session_factory() as db:
-            event = await db.get(ProviderOutboxEvent, event_id)
+            event = (await db.execute(
+                select(ProviderOutboxEvent)
+                .where(ProviderOutboxEvent.id == event_id)
+                .with_for_update()
+            )).scalar_one_or_none()
             tenant = await db.get(Tenant, event.tenant_id) if event else None
-            if not event or not tenant or event.lock_token != token:
+            if (
+                not event
+                or not tenant
+                or event.lock_token != token
+                or event.status != ProviderOutboxStatus.PROCESSING.value
+            ):
+                continue
+            if conversion_event_must_expire(
+                event,
+                current=_now(),
+                safety_margin_seconds=settings.PAID_INVOICE_WEBHOOK_TOTAL_TIMEOUT_SECONDS,
+            ):
+                expire_conversion_event(event)
+                await db.commit()
+                result["expired"] += 1
+                continue
+            db.expunge(event)
+            db.expunge(tenant)
+            await db.rollback()
+
+        outcome = None
+        failure = None
+        try:
+            outcome = await _deliver(tenant, event)
+        except Exception as exc:
+            failure = exc
+
+        async with session_factory() as db:
+            event = (await db.execute(
+                select(ProviderOutboxEvent)
+                .where(
+                    ProviderOutboxEvent.id == event_id,
+                    ProviderOutboxEvent.status == ProviderOutboxStatus.PROCESSING.value,
+                    ProviderOutboxEvent.lock_token == token,
+                )
+                .with_for_update()
+            )).scalar_one_or_none()
+            if not event:
+                # Retention or erasure already terminalized this attempt.
+                continue
+            tenant = await db.get(Tenant, event.tenant_id)
+            if conversion_event_must_expire(
+                event,
+                current=_now(),
+                safety_margin_seconds=settings.PAID_INVOICE_WEBHOOK_TOTAL_TIMEOUT_SECONDS,
+            ) or isinstance(failure, ConversionEventPrivacyExpired):
+                expire_conversion_event(event)
+                await db.commit()
+                result["expired"] += 1
                 continue
             try:
-                provider_id, code = await _deliver(tenant, event)
+                if failure:
+                    raise failure
+                provider_id, code = outcome
                 event.status, event.completed_at, event.provider_message_id, event.last_response_code = ProviderOutboxStatus.SUCCEEDED.value, _now(), provider_id, code
                 event.last_error = None
                 result["succeeded"] += 1

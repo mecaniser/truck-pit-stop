@@ -109,9 +109,14 @@ the absolute `created_at + CONVERSION_OUTBOX_PII_RETENTION_DAYS` ceiling (30
 days by default), regardless of whether they are pending, processing,
 configuration-blocked, succeeded, or dead. Old nonterminal events atomically
 become terminal `expired` records, have leases cleared, and cannot be delivered
-or replayed. The
+or replayed. Claiming applies the full delivery-time budget as a safety margin,
+so an event that could cross its retention deadline during an attempt is
+redacted and expired instead of sent. Delivery preflight rejects already
+redacted/expired rows, and completion is conditioned on the same processing
+lease token so concurrent retention or erasure cannot be overwritten. The
 customer-erasure service removes contact, attribution URLs, and free-form
-service lines immediately for a tenant/customer privacy request. Operators
+service lines immediately for a tenant/customer privacy request; queued or
+processing events for that customer become terminal `expired` records. Operators
 dry-run `python -m app.commands.erase_conversion_event_pii --tenant-id ...
 --customer-id ...` and repeat with `--apply` after verifying the exact scope.
 Redacted dead-letter and expired events remain visible as delivery metadata but
