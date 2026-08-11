@@ -8,7 +8,7 @@ from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
 import pytest
-from fastapi import FastAPI, Request, Response
+from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 from starlette.websockets import WebSocketDisconnect
@@ -309,11 +309,12 @@ async def test_workos_cookie_revalidates_exact_active_membership(
 
 
 @pytest.mark.asyncio
-async def test_workos_driver_authority_does_not_grant_shop_staff_channel(
-    db_session, websocket_auth_state
+@pytest.mark.parametrize("role", [UserRole.DRIVER, UserRole.FLEET_MANAGER])
+async def test_consistent_workos_driver_and_fleet_roles_do_not_grant_staff_channel(
+    role, db_session, websocket_auth_state
 ):
-    token, _, _ = await _workos_authority_fixture(
-        db_session, role=UserRole.DRIVER
+    token, _, _, _ = await _workos_authority_fixture(
+        db_session, role=role
     )
 
     denied = await websocket_endpoint.resolve_websocket_principal(
@@ -372,7 +373,97 @@ async def _workos_authority_fixture(
         },
         tenant_id=str(tenant.id),
     )
-    return token, identity, membership
+    return token, user, identity, membership
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "role",
+    [
+        UserRole.GARAGE_OWNER,
+        UserRole.GARAGE_ADMIN,
+        UserRole.RECEPTIONIST,
+        UserRole.MECHANIC,
+    ],
+)
+async def test_consistent_workos_shop_roles_resolve_staff_channel(
+    role, db_session, websocket_auth_state
+):
+    token, _, _, _ = await _workos_authority_fixture(db_session, role=role)
+
+    allowed = await websocket_endpoint.resolve_websocket_principal(
+        token, db_session
+    )
+
+    assert allowed.principal is not None
+    assert allowed.principal.role == role.value
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("local_role", "membership_role"),
+    [
+        (UserRole.GARAGE_ADMIN, "driver"),
+        (UserRole.DRIVER, "garage_admin"),
+        (UserRole.GARAGE_ADMIN, "unknown_provider_role"),
+    ],
+)
+async def test_workos_local_and_membership_role_divergence_fails_closed(
+    local_role,
+    membership_role,
+    db_session,
+    websocket_auth_state,
+):
+    token, _, _, membership = await _workos_authority_fixture(
+        db_session, role=local_role
+    )
+    membership.role_slug = membership_role
+    await db_session.commit()
+
+    with pytest.raises(HTTPException) as denied:
+        await workos_auth.get_current_principal(token=token, db=db_session)
+
+    assert denied.value.status_code == 403
+    result = await websocket_endpoint.resolve_websocket_principal(
+        token, db_session
+    )
+    assert result.principal is None
+    assert result.close_code == websocket_endpoint.WS_CLOSE_AUTHORIZATION
+
+
+@pytest.mark.asyncio
+async def test_provider_role_change_new_session_cannot_retain_old_staff_channel(
+    db_session, websocket_auth_state
+):
+    token, user, _, membership = await _workos_authority_fixture(
+        db_session, role=UserRole.GARAGE_ADMIN
+    )
+    assert (
+        await websocket_endpoint.resolve_websocket_principal(token, db_session)
+    ).principal is not None
+
+    membership.role_slug = "driver"
+    membership.permissions = ["driver_portal:use"]
+    user.role = UserRole.DRIVER
+    await db_session.commit()
+    claims = decode_token(token)
+    fresh_driver_token = create_access_token(
+        {
+            "sub": str(user.id),
+            "auth_provider": "workos",
+            "workos_user_id": user.workos_user_id,
+            "workos_org_id": claims["workos_org_id"],
+            "permissions": ["driver_portal:use"],
+        },
+        tenant_id=claims["tid"],
+    )
+
+    denied = await websocket_endpoint.resolve_websocket_principal(
+        fresh_driver_token, db_session
+    )
+
+    assert denied.principal is None
+    assert denied.close_code == websocket_endpoint.WS_CLOSE_AUTHORIZATION
 
 
 async def _apply_workos_authority_gap(
@@ -411,7 +502,7 @@ async def _apply_workos_authority_gap(
 async def test_workos_cookie_fails_closed_for_every_identity_authority_gap(
     authority_gap, db_session, websocket_auth_state
 ):
-    token, identity, membership = await _workos_authority_fixture(db_session)
+    token, _, identity, membership = await _workos_authority_fixture(db_session)
     await _apply_workos_authority_gap(
         db_session, authority_gap, identity, membership
     )
@@ -589,7 +680,7 @@ async def test_live_workos_revalidation_closes_after_authority_is_revoked(
     websocket_auth_state,
     monkeypatch,
 ):
-    token, identity, membership = await _workos_authority_fixture(db_session)
+    token, _, identity, membership = await _workos_authority_fixture(db_session)
     initial = await websocket_endpoint.resolve_websocket_principal(token, db_session)
     assert initial.principal is not None
 
@@ -602,6 +693,45 @@ async def test_live_workos_revalidation_closes_after_authority_is_revoked(
     await _apply_workos_authority_gap(
         db_session, authority_gap, identity, membership
     )
+    socket = FakeWebSocket(origin="https://app.example.test")
+
+    authorized = await websocket_endpoint._connection_is_still_authorized(
+        socket, token, initial.principal
+    )
+
+    assert authorized is False
+    assert socket.closed == [
+        (websocket_endpoint.WS_CLOSE_AUTHORIZATION, "Not authorized")
+    ]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("projection_synchronized", [False, True])
+async def test_live_workos_socket_closes_when_membership_role_changes(
+    projection_synchronized,
+    db_session,
+    websocket_auth_state,
+    monkeypatch,
+):
+    token, user, _, membership = await _workos_authority_fixture(
+        db_session, role=UserRole.GARAGE_ADMIN
+    )
+    initial = await websocket_endpoint.resolve_websocket_principal(
+        token, db_session
+    )
+    assert initial.principal is not None
+
+    async def validate(current_token):
+        return await websocket_endpoint.resolve_websocket_principal(
+            current_token, db_session
+        )
+
+    monkeypatch.setattr(websocket_endpoint, "validate_websocket_token", validate)
+    membership.role_slug = "driver"
+    membership.permissions = ["driver_portal:use"]
+    if projection_synchronized:
+        user.role = UserRole.DRIVER
+    await db_session.commit()
     socket = FakeWebSocket(origin="https://app.example.test")
 
     authorized = await websocket_endpoint._connection_is_still_authorized(
