@@ -56,6 +56,7 @@
 
 .repair-preview__module-list { display: flex; flex-direction: column; gap: 0.32rem; }
 .repair-preview button { font: inherit; }
+.repair-preview [hidden] { display: none !important; }
 .repair-preview__module-list button,
 .preview-evidence-control,
 .mini-local-tabs button,
@@ -70,6 +71,7 @@
 .repair-preview__module-list button {
   position: relative;
   display: inline-flex;
+  min-height: 46px;
   align-items: center;
   gap: 0.62rem;
   border-radius: 0.74rem;
@@ -262,13 +264,14 @@
 .mini-vehicle-grid strong { margin-block-start: 0.12rem; overflow-wrap: anywhere; font-size: 0.62rem; }
 .mini-vehicle .mini-section-title { margin-block-start: 0.55rem; }
 .mini-vehicle-history { border-block: 1px solid #dfe5ec; }
+.mini-repair-record { min-width: 0; }
 .mini-repair-row { display: grid; width: 100%; grid-template-columns: minmax(0, 1.3fr) minmax(7rem, 0.7fr) auto auto; align-items: center; gap: 0.55rem; border-block-end: 1px solid #e3e8ef; background: transparent; color: #17263b; padding: 0.48rem 0.3rem; text-align: start; }
 .mini-repair-row > span:not(.mini-pill, .mini-repair-detail) { display: flex; min-width: 0; flex-direction: column; }
 .mini-repair-row > span:nth-child(2) { align-items: flex-end; }
 .mini-repair-row strong { font-size: 0.63rem; }
 .mini-repair-row small { margin-block-start: 0.12rem; overflow-wrap: anywhere; color: #718095; font-size: 0.55rem; }
 .mini-repair-row > svg { width: 0.85rem; color: #758599; transition: transform 180ms ease-out; }
-.mini-repair-detail { grid-column: 1 / -1; border-block-start: 1px solid #e2e7ee; color: #627287; padding-block-start: 0.42rem; font-size: 0.57rem; line-height: 1.4; }
+.mini-repair-detail:not([hidden]) { display: block; margin-inline: 0.3rem; border-block-start: 1px solid #e2e7ee; color: #627287; padding-block: 0.42rem 0.5rem; font-size: 0.57rem; line-height: 1.4; }
 
 .repair-preview__sheet {
   position: relative;

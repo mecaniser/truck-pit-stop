@@ -65,6 +65,51 @@ describe('ProductWorkspace', () => {
     expect(status).toHaveTextContent(/Vehicle History preview selected/)
   })
 
+  it('automatically activates horizontal customer and shop tabs with roving keyboard focus', () => {
+    render(<ProductWorkspace />)
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Customers' }), { detail: 1 })
+    const overview = screen.getByRole('tab', { name: 'Overview' })
+    const history = screen.getByRole('tab', { name: 'History' })
+    expect(screen.getByRole('tablist', { name: 'Customer detail sections' })).toHaveAttribute('aria-orientation', 'horizontal')
+    expect(overview).toHaveAttribute('tabindex', '0')
+    expect(history).toHaveAttribute('tabindex', '-1')
+    expect(overview).toHaveAttribute('aria-controls', 'repair-preview-customer-detail-panel')
+
+    overview.focus()
+    fireEvent.keyDown(overview, { key: 'ArrowRight' })
+    expect(history).toHaveFocus()
+    expect(history).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getByRole('tabpanel', { name: 'History' })).toHaveAttribute('id', 'repair-preview-customer-detail-panel')
+    expect(history).toHaveAttribute('tabindex', '0')
+    expect(overview).toHaveAttribute('tabindex', '-1')
+
+    fireEvent.keyDown(history, { key: 'Home' })
+    expect(overview).toHaveFocus()
+    expect(overview).toHaveAttribute('aria-selected', 'true')
+    history.focus()
+    fireEvent.keyDown(history, { key: 'Enter' })
+    expect(history).toHaveFocus()
+    expect(history).toHaveAttribute('aria-selected', 'true')
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Shop Work' }), { detail: 1 })
+    const queue = screen.getByRole('tab', { name: 'Queue' })
+    const activity = screen.getByRole('tab', { name: 'Activity' })
+    expect(screen.getByRole('tablist', { name: 'Shop Cockpit sections' })).toHaveAttribute('aria-orientation', 'horizontal')
+    queue.focus()
+    fireEvent.keyDown(queue, { key: 'End' })
+    expect(activity).toHaveFocus()
+    expect(activity).toHaveAttribute('aria-selected', 'true')
+    expect(activity).toHaveAttribute('tabindex', '0')
+    fireEvent.keyDown(activity, { key: 'ArrowLeft' })
+    expect(queue).toHaveFocus()
+    expect(queue).toHaveAttribute('aria-selected', 'true')
+    activity.focus()
+    fireEvent.keyDown(activity, { key: ' ' })
+    expect(activity).toHaveFocus()
+    expect(activity).toHaveAttribute('aria-selected', 'true')
+  })
+
   it('preserves authentic local selections and announces only the latest rapid change', () => {
     render(<ProductWorkspace />)
 
@@ -124,6 +169,66 @@ describe('ProductWorkspace', () => {
     fireEvent.click(screen.getByRole('button', { name: /RO-2025-0417/i }), { detail: 1 })
     expect(screen.getAllByRole('complementary')).toHaveLength(2)
     expect(screen.getByLabelText(/Selected evidence: RO-2025-0417/)).toBeInTheDocument()
+  })
+
+  it('keeps invoice and vehicle disclosure state tied to stable controlled panels', () => {
+    render(<ProductWorkspace />)
+
+    const repairInvoice = screen.getByRole('button', { name: /Invoice INV-2025-0417/i })
+    expect(repairInvoice).toHaveAttribute('aria-expanded', 'true')
+    expect(repairInvoice).toHaveAttribute('aria-controls', 'repair-preview-ro-invoice-details')
+    expect(document.getElementById('repair-preview-ro-invoice-details')).toBeInTheDocument()
+    fireEvent.click(repairInvoice)
+    expect(repairInvoice).toHaveAttribute('aria-expanded', 'false')
+    expect(document.getElementById('repair-preview-ro-invoice-details')).not.toBeVisible()
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Invoices' }), { detail: 1 })
+    const invoice = screen.getByRole('button', { name: /Invoice INV-2025-0417/i })
+    expect(invoice).toHaveAttribute('aria-expanded', 'true')
+    expect(invoice).toHaveAttribute('aria-controls', 'repair-preview-invoice-0417-details')
+    expect(document.getElementById('repair-preview-invoice-0417-details')).toBeInTheDocument()
+    fireEvent.click(invoice)
+    expect(invoice).toHaveAttribute('aria-expanded', 'false')
+    expect(document.getElementById('repair-preview-invoice-0417-details')).not.toBeVisible()
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Vehicle History' }), { detail: 1 })
+    const repair = screen.getByRole('button', { name: /RO-2025-0417/i })
+    expect(repair).toHaveAttribute('aria-expanded', 'false')
+    expect(repair).toHaveAttribute('aria-controls', 'repair-preview-repair-0417-details')
+    expect(document.getElementById('repair-preview-repair-0417-details')).not.toBeVisible()
+    fireEvent.click(repair)
+    expect(repair).toHaveAttribute('aria-expanded', 'true')
+    expect(document.getElementById('repair-preview-repair-0417-details')).toBeInTheDocument()
+  })
+
+  it('normalizes every module control after rapid pointer animation interruption', () => {
+    const originalAnimate = Element.prototype.animate
+    const commitStyles = vi.fn()
+    const cancel = vi.fn()
+    const animate = vi.fn(function (this: HTMLElement) {
+      return {
+        cancel,
+        commitStyles,
+      }
+    })
+    Object.defineProperty(Element.prototype, 'animate', { configurable: true, value: animate })
+
+    try {
+      render(<ProductWorkspace />)
+      for (let iteration = 0; iteration < 5; iteration += 1) {
+        fireEvent.click(screen.getByRole('tab', { name: 'Invoices' }), { detail: 1 })
+        fireEvent.click(screen.getByRole('tab', { name: 'Repair Orders' }), { detail: 1 })
+      }
+
+      MODULES.forEach(([label]) => {
+        expect(screen.getByRole('tab', { name: label }).style.transform).toBe('')
+      })
+      expect(cancel).toHaveBeenCalled()
+      expect(commitStyles).not.toHaveBeenCalled()
+      expect(screen.getByRole('tab', { name: 'Repair Orders' })).toHaveAttribute('aria-selected', 'true')
+    } finally {
+      Object.defineProperty(Element.prototype, 'animate', { configurable: true, value: originalAnimate })
+    }
   })
 
   it('commits keyboard selections without spatial WAAPI while pointer selections remain animated', () => {

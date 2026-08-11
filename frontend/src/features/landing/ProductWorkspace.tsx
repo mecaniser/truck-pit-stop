@@ -51,6 +51,9 @@ const MODULE_ICONS = {
   'vehicle-history': History,
 } satisfies Record<ModuleId, typeof ClipboardList>
 
+const CUSTOMER_DETAIL_TABS = ['overview', 'history'] as const
+const SHOP_WORK_TABS = ['queue', 'activity'] as const
+
 const INITIAL_STATE: PreviewState = {
   activeModule: 'repair-orders',
   inputMode: 'programmatic',
@@ -125,12 +128,16 @@ function EvidenceButton({
   children,
   className = '',
   label,
+  expanded,
+  controls,
 }: {
   selected: boolean
   onClick: () => void
   children: ReactNode
   className?: string
   label?: string
+  expanded?: boolean
+  controls?: string
 }) {
   return (
     <button
@@ -138,12 +145,41 @@ function EvidenceButton({
       className={`preview-evidence-control ${className}`}
       aria-pressed={selected}
       aria-label={label}
+      aria-expanded={expanded}
+      aria-controls={controls}
       data-event-selected={selected || undefined}
       onClick={onClick}
     >
       {children}
     </button>
   )
+}
+
+function handleHorizontalTabKeys<T extends string>(
+  event: KeyboardEvent<HTMLButtonElement>,
+  tabs: readonly T[],
+  index: number,
+  activate: (tab: T) => void,
+) {
+  if (event.key === 'Enter' || event.key === ' ') {
+    event.preventDefault()
+    activate(tabs[index])
+    event.currentTarget.focus()
+    return
+  }
+
+  let nextIndex: number | null = null
+  if (event.key === 'ArrowRight') nextIndex = (index + 1) % tabs.length
+  if (event.key === 'ArrowLeft') nextIndex = (index - 1 + tabs.length) % tabs.length
+  if (event.key === 'Home') nextIndex = 0
+  if (event.key === 'End') nextIndex = tabs.length - 1
+  if (nextIndex === null) return
+
+  event.preventDefault()
+  activate(tabs[nextIndex])
+  event.currentTarget.parentElement
+    ?.querySelectorAll<HTMLButtonElement>('[role="tab"]')[nextIndex]
+    ?.focus()
 }
 
 function RepairOrdersSurface({ local, update }: {
@@ -177,35 +213,45 @@ function RepairOrdersSurface({ local, update }: {
             selected={invoiceSelected}
             onClick={() => select('invoice', { invoiceExpanded: !local.invoiceExpanded }, `Invoice ${REPAIR_STORY.invoice.number}`)}
             className="mini-invoice-card"
+            expanded={local.invoiceExpanded}
+            controls="repair-preview-ro-invoice-details"
           >
             <span className="mini-invoice-top"><span><FileText aria-hidden="true" /> Invoice {REPAIR_STORY.invoice.number}</span><span>{REPAIR_STORY.invoice.state}</span></span>
             <span className="mini-invoice-total">{formatStoryCurrency(REPAIR_STORY.invoice.totalCents)}</span>
             <span className="mini-invoice-meta">Created {REPAIR_STORY.invoice.created.short} · Balance {formatStoryCurrency(REPAIR_STORY.payment.balanceCents)}</span>
             <ChevronDown className={local.invoiceExpanded ? 'is-open' : ''} aria-hidden="true" />
           </EvidenceButton>
-          {local.invoiceExpanded ? (
-            <dl className="mini-invoice-breakdown" data-route-obstacle>
-              <div><dt>Repair subtotal</dt><dd>{formatStoryCurrency(REPAIR_STORY.money.laborCents + REPAIR_STORY.money.partsCents)}</dd></div>
-              <div><dt>Shop supplies</dt><dd>{formatStoryCurrency(REPAIR_STORY.money.shopSuppliesCents)}</dd></div>
-              <div><dt>Tax</dt><dd>{formatStoryCurrency(REPAIR_STORY.money.taxCents)}</dd></div>
-              <div><dt>Invoice total</dt><dd>{formatStoryCurrency(REPAIR_STORY.money.totalCents)}</dd></div>
-            </dl>
-          ) : null}
+          <dl
+            id="repair-preview-ro-invoice-details"
+            className="mini-invoice-breakdown"
+            data-route-obstacle={local.invoiceExpanded || undefined}
+            hidden={!local.invoiceExpanded}
+          >
+            <div><dt>Repair subtotal</dt><dd>{formatStoryCurrency(REPAIR_STORY.money.laborCents + REPAIR_STORY.money.partsCents)}</dd></div>
+            <div><dt>Shop supplies</dt><dd>{formatStoryCurrency(REPAIR_STORY.money.shopSuppliesCents)}</dd></div>
+            <div><dt>Tax</dt><dd>{formatStoryCurrency(REPAIR_STORY.money.taxCents)}</dd></div>
+            <div><dt>Invoice total</dt><dd>{formatStoryCurrency(REPAIR_STORY.money.totalCents)}</dd></div>
+          </dl>
           <EvidenceButton
             selected={historySelected}
             onClick={() => select('history', { historyExpanded: !local.historyExpanded }, 'Repair order history')}
             className="mini-disclosure"
+            expanded={local.historyExpanded}
+            controls="repair-preview-ro-history-details"
           >
             <span><History aria-hidden="true" /><span><strong>Repair order history</strong><small>6 events retained with this order</small></span></span>
             <ChevronDown className={local.historyExpanded ? 'is-open' : ''} aria-hidden="true" />
           </EvidenceButton>
-          {local.historyExpanded ? (
-            <ol className="mini-history-list" data-route-obstacle>
-              <li><time>{REPAIR_STORY.payment.recorded.short}</time><span>Payment recorded · {REPAIR_STORY.payment.method}</span></li>
-              <li><time>{REPAIR_STORY.invoice.created.short}</time><span>Invoice finalized · {REPAIR_STORY.invoice.number}</span></li>
-              <li><time>{REPAIR_STORY.repairOrder.approvalRecorded.short}</time><span>Estimate approved · {REPAIR_STORY.customer.authorizationContact}</span></li>
-            </ol>
-          ) : null}
+          <ol
+            id="repair-preview-ro-history-details"
+            className="mini-history-list"
+            data-route-obstacle={local.historyExpanded || undefined}
+            hidden={!local.historyExpanded}
+          >
+            <li><time>{REPAIR_STORY.payment.recorded.short}</time><span>Payment recorded · {REPAIR_STORY.payment.method}</span></li>
+            <li><time>{REPAIR_STORY.invoice.created.short}</time><span>Invoice finalized · {REPAIR_STORY.invoice.number}</span></li>
+            <li><time>{REPAIR_STORY.repairOrder.approvalRecorded.short}</time><span>Estimate approved · {REPAIR_STORY.customer.authorizationContact}</span></li>
+          </ol>
         </div>
         <div className="mini-work-lines">
           <div className="mini-section-title"><span>Work &amp; Labor</span><small>2 lines</small></div>
@@ -265,10 +311,30 @@ function CustomersSurface({ local, update }: {
         </div>
         <article className="mini-customer-detail" data-route-obstacle>
           <header><div className="mini-avatar">{customer.company.split(' ').map((word) => word[0]).join('').slice(0, 2)}</div><div><span>Customer detail</span><h3>{customer.company}</h3></div></header>
-          <div className="mini-local-tabs" role="tablist" aria-label="Customer detail sections">
-            {(['overview', 'history'] as const).map((tab) => <button key={tab} type="button" role="tab" aria-selected={local.detailTab === tab} onClick={() => switchTab(tab)} data-event-selected={local.detailTab === tab && tab === 'history' || undefined}>{tab === 'overview' ? 'Overview' : 'History'}</button>)}
+          <div className="mini-local-tabs" role="tablist" aria-label="Customer detail sections" aria-orientation="horizontal">
+            {CUSTOMER_DETAIL_TABS.map((tab, index) => {
+              const selected = local.detailTab === tab
+              return <button
+                key={tab}
+                id={`repair-preview-customer-tab-${tab}`}
+                type="button"
+                role="tab"
+                aria-selected={selected}
+                aria-controls="repair-preview-customer-detail-panel"
+                tabIndex={selected ? 0 : -1}
+                onClick={() => switchTab(tab)}
+                onKeyDown={(event) => handleHorizontalTabKeys(event, CUSTOMER_DETAIL_TABS, index, switchTab)}
+                data-event-selected={selected && tab === 'history' || undefined}
+              >{tab === 'overview' ? 'Overview' : 'History'}</button>
+            })}
           </div>
-          {local.detailTab === 'overview' ? <dl className="mini-detail-grid"><div><dt>Contact</dt><dd>{customer.contact}</dd></div><div><dt>Phone</dt><dd>{customer.phone}</dd></div><div><dt>Vehicles</dt><dd>{customer.vehicleCount}</dd></div><div><dt>Balance</dt><dd>{formatStoryCurrency(customer.balanceCents)}</dd></div></dl> : <div className="mini-customer-history"><div className="mini-history-metrics"><span>Completed ROs<strong>{customer.history.length}</strong></span><span>Lifetime spend<strong>{formatStoryCurrency(customer.history.reduce((sum, event) => sum + event.amountCents, 0))}</strong></span></div>{customer.history.map((event) => <div key={event.id}><span>{event.label}</span><small>{event.at} · {formatStoryCurrency(event.amountCents)}</small></div>)}</div>}
+          <div
+            id="repair-preview-customer-detail-panel"
+            role="tabpanel"
+            aria-labelledby={`repair-preview-customer-tab-${local.detailTab}`}
+          >
+            {local.detailTab === 'overview' ? <dl className="mini-detail-grid"><div><dt>Contact</dt><dd>{customer.contact}</dd></div><div><dt>Phone</dt><dd>{customer.phone}</dd></div><div><dt>Vehicles</dt><dd>{customer.vehicleCount}</dd></div><div><dt>Balance</dt><dd>{formatStoryCurrency(customer.balanceCents)}</dd></div></dl> : <div className="mini-customer-history"><div className="mini-history-metrics"><span>Completed ROs<strong>{customer.history.length}</strong></span><span>Lifetime spend<strong>{formatStoryCurrency(customer.history.reduce((sum, event) => sum + event.amountCents, 0))}</strong></span></div>{customer.history.map((event) => <div key={event.id}><span>{event.label}</span><small>{event.at} · {formatStoryCurrency(event.amountCents)}</small></div>)}</div>}
+          </div>
         </article>
       </div>
     </section>
@@ -285,10 +351,29 @@ function ShopWorkSurface({ local, update }: {
   return (
     <section className="mini-surface mini-shop" aria-label="Shop Cockpit work queue preview">
       <header className="mini-header"><div><span>Shop Cockpit</span><h2>Work Queue</h2></div><span className="mini-count">{SHOP_ORDERS.length} active</span></header>
-      <div className="mini-local-tabs" role="tablist" aria-label="Shop Cockpit sections">
-        {(['queue', 'activity'] as const).map((tab) => <button key={tab} type="button" role="tab" aria-selected={local.activeTab === tab} onClick={() => switchTab(tab)}>{tab === 'queue' ? 'Queue' : 'Activity'}</button>)}
+      <div className="mini-local-tabs" role="tablist" aria-label="Shop Cockpit sections" aria-orientation="horizontal">
+        {SHOP_WORK_TABS.map((tab, index) => {
+          const selected = local.activeTab === tab
+          return <button
+            key={tab}
+            id={`repair-preview-shop-tab-${tab}`}
+            type="button"
+            role="tab"
+            aria-selected={selected}
+            aria-controls="repair-preview-shop-panel"
+            tabIndex={selected ? 0 : -1}
+            onClick={() => switchTab(tab)}
+            onKeyDown={(event) => handleHorizontalTabKeys(event, SHOP_WORK_TABS, index, switchTab)}
+          >{tab === 'queue' ? 'Queue' : 'Activity'}</button>
+        })}
       </div>
-      {local.activeTab === 'queue' ? <div className="mini-lanes">{lanes.map((lane) => <section key={lane} className="mini-lane" data-route-obstacle><header><span>{lane}</span><small>{SHOP_ORDERS.filter((order) => order.lane === lane).length}</small></header>{SHOP_ORDERS.filter((order) => order.lane === lane).map((order) => <EvidenceButton key={order.id} selected={order.id === selected.id} onClick={() => update({ selectedOrderId: order.id }, order.orderNumber)} className="mini-order-card"><span className="mini-order-card__top"><strong>{order.orderNumber}</strong><small>{order.status}</small></span><span>{order.customer} · {order.vehicle}</span><span>{order.summary}</span><span className="mini-order-card__bottom"><small>{order.technician}</small><strong>{formatStoryCurrency(order.totalCents)}</strong></span></EvidenceButton>)}</section>)}</div> : <div className="mini-activity-list">{SHOP_ORDERS.map((order) => <EvidenceButton key={order.id} selected={order.id === selected.id} onClick={() => update({ selectedOrderId: order.id }, order.orderNumber)} className="mini-activity-row"><span>{order.orderNumber}</span><strong>{order.activity}</strong><small>{order.status}</small></EvidenceButton>)}</div>}
+      <div
+        id="repair-preview-shop-panel"
+        role="tabpanel"
+        aria-labelledby={`repair-preview-shop-tab-${local.activeTab}`}
+      >
+        {local.activeTab === 'queue' ? <div className="mini-lanes">{lanes.map((lane) => <section key={lane} className="mini-lane" data-route-obstacle><header><span>{lane}</span><small>{SHOP_ORDERS.filter((order) => order.lane === lane).length}</small></header>{SHOP_ORDERS.filter((order) => order.lane === lane).map((order) => <EvidenceButton key={order.id} selected={order.id === selected.id} onClick={() => update({ selectedOrderId: order.id }, order.orderNumber)} className="mini-order-card"><span className="mini-order-card__top"><strong>{order.orderNumber}</strong><small>{order.status}</small></span><span>{order.customer} · {order.vehicle}</span><span>{order.summary}</span><span className="mini-order-card__bottom"><small>{order.technician}</small><strong>{formatStoryCurrency(order.totalCents)}</strong></span></EvidenceButton>)}</section>)}</div> : <div className="mini-activity-list">{SHOP_ORDERS.map((order) => <EvidenceButton key={order.id} selected={order.id === selected.id} onClick={() => update({ selectedOrderId: order.id }, order.orderNumber)} className="mini-activity-row"><span>{order.orderNumber}</span><strong>{order.activity}</strong><small>{order.status}</small></EvidenceButton>)}</div>}
+      </div>
     </section>
   )
 }
@@ -304,13 +389,19 @@ function InvoicesSurface({ local, update }: {
         const selected = invoice.id === local.selectedInvoiceId
         const expanded = invoice.id === local.expandedInvoiceId
         return <article key={invoice.id} className="mini-invoice-record" data-selected={selected || undefined}>
-          <EvidenceButton selected={selected} onClick={() => update({ selectedInvoiceId: invoice.id, expandedInvoiceId: expanded ? null : invoice.id }, invoice.number)} className="mini-invoice-card">
+          <EvidenceButton
+            selected={selected}
+            onClick={() => update({ selectedInvoiceId: invoice.id, expandedInvoiceId: expanded ? null : invoice.id }, invoice.number)}
+            className="mini-invoice-card"
+            expanded={expanded}
+            controls={`repair-preview-${invoice.id}-details`}
+          >
             <span className="mini-invoice-top"><span><FileText aria-hidden="true" /> Invoice {invoice.number}</span><span>{invoice.state}</span></span>
             <span className="mini-invoice-total">{formatStoryCurrency(invoice.totalCents)}</span>
             <span className="mini-invoice-meta">{invoice.customer} · {invoice.orderNumber}</span>
             <ChevronDown className={expanded ? 'is-open' : ''} aria-hidden="true" />
           </EvidenceButton>
-          {expanded ? <dl className="mini-invoice-breakdown"><div><dt>Repair subtotal</dt><dd>{formatStoryCurrency(invoice.totalCents - (invoice.state === 'Paid' ? REPAIR_STORY.money.taxCents : 5_900))}</dd></div><div><dt>Tax</dt><dd>{formatStoryCurrency(invoice.state === 'Paid' ? REPAIR_STORY.money.taxCents : 5_900)}</dd></div><div><dt>Invoice total</dt><dd>{formatStoryCurrency(invoice.totalCents)}</dd></div><div><dt>Balance</dt><dd>{formatStoryCurrency(invoice.balanceCents)}</dd></div></dl> : null}
+          <dl id={`repair-preview-${invoice.id}-details`} className="mini-invoice-breakdown" hidden={!expanded}><div><dt>Repair subtotal</dt><dd>{formatStoryCurrency(invoice.totalCents - (invoice.state === 'Paid' ? REPAIR_STORY.money.taxCents : 5_900))}</dd></div><div><dt>Tax</dt><dd>{formatStoryCurrency(invoice.state === 'Paid' ? REPAIR_STORY.money.taxCents : 5_900)}</dd></div><div><dt>Invoice total</dt><dd>{formatStoryCurrency(invoice.totalCents)}</dd></div><div><dt>Balance</dt><dd>{formatStoryCurrency(invoice.balanceCents)}</dd></div></dl>
         </article>
       })}</div>
     </section>
@@ -331,7 +422,16 @@ function VehicleHistorySurface({ local, update }: {
       <div className="mini-section-title"><span>Repair History</span><small>{vehicle.repairs.length}</small></div>
       <div className="mini-vehicle-history">{vehicle.repairs.map((repair) => {
         const expanded = local.expandedRepairId === repair.id
-        return <EvidenceButton key={repair.id} selected={expanded} onClick={() => update({ expandedRepairId: expanded ? null : repair.id }, repair.orderNumber)} className="mini-repair-row"><span><strong>{repair.orderNumber}</strong><small>{repair.title}</small></span><span><small>{repair.date}</small><strong>{formatStoryCurrency(repair.amountCents)}</strong></span><span className="mini-pill mini-pill--success">{repair.status}</span><ChevronDown className={expanded ? 'is-open' : ''} aria-hidden="true" />{expanded ? <span className="mini-repair-detail">Completed service remains attached to this vehicle, its meter, and the original repair order.</span> : null}</EvidenceButton>
+        return <div key={repair.id} className="mini-repair-record">
+          <EvidenceButton
+            selected={expanded}
+            onClick={() => update({ expandedRepairId: expanded ? null : repair.id }, repair.orderNumber)}
+            className="mini-repair-row"
+            expanded={expanded}
+            controls={`repair-preview-${repair.id}-details`}
+          ><span><strong>{repair.orderNumber}</strong><small>{repair.title}</small></span><span><small>{repair.date}</small><strong>{formatStoryCurrency(repair.amountCents)}</strong></span><span className="mini-pill mini-pill--success">{repair.status}</span><ChevronDown className={expanded ? 'is-open' : ''} aria-hidden="true" /></EvidenceButton>
+          <span id={`repair-preview-${repair.id}-details`} className="mini-repair-detail" hidden={!expanded}>Completed service remains attached to this vehicle, its meter, and the original repair order.</span>
+        </div>
       })}</div>
     </section>
   )
@@ -364,7 +464,6 @@ export default function ProductWorkspace() {
 
   const cancelAnimations = useCallback(() => {
     animationRefs.current.forEach((animation) => {
-      try { if (typeof animation.commitStyles === 'function') animation.commitStyles() } catch { /* detached Safari node */ }
       animation.cancel()
     })
     animationRefs.current = []

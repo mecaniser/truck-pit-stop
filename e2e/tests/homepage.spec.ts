@@ -98,18 +98,61 @@ test.describe('Public repair-shop homepage', () => {
     await page.getByRole('tab', { name: 'Customers' }).click()
     await expect(page.getByRole('heading', { name: 'Customers' })).toBeVisible()
     await expect(page.getByRole('columnheader', { name: 'DOT / MC' })).toBeVisible()
+    const overviewTab = page.getByRole('tab', { name: 'Overview' })
+    const historyTab = page.getByRole('tab', { name: 'History', exact: true })
+    await expect(overviewTab).toHaveAttribute('tabindex', '0')
+    await expect(historyTab).toHaveAttribute('tabindex', '-1')
+    await overviewTab.focus()
+    await overviewTab.press('ArrowRight')
+    await expect(historyTab).toBeFocused()
+    await expect(historyTab).toHaveAttribute('aria-selected', 'true')
+    await historyTab.press('Home')
+    await expect(overviewTab).toBeFocused()
+    await expect(overviewTab).toHaveAttribute('aria-selected', 'true')
     await page.getByRole('button', { name: 'Riverbend Freight' }).click()
-    await page.getByRole('tab', { name: 'History', exact: true }).click()
+    await historyTab.focus()
+    await historyTab.press('Enter')
+    await expect(historyTab).toBeFocused()
+    await expect(historyTab).toHaveAttribute('tabindex', '0')
     await expect(page.getByText('Invoice awaiting payment · INV-2025-0412').first()).toBeVisible()
 
     await page.getByRole('tab', { name: 'Shop Work' }).click()
     await expect(page.getByText('Shop Cockpit').first()).toBeVisible()
     await expect(page.getByText('Needs Action')).toBeVisible()
     await expect(page.getByText('Ready to Close')).toBeVisible()
+    const queueTab = page.getByRole('tab', { name: 'Queue' })
+    const activityTab = page.getByRole('tab', { name: 'Activity' })
+    await queueTab.focus()
+    await queueTab.press('End')
+    await expect(activityTab).toBeFocused()
+    await expect(activityTab).toHaveAttribute('aria-selected', 'true')
+    await activityTab.press('Home')
+    await expect(queueTab).toBeFocused()
+    await activityTab.focus()
+    await activityTab.press('Space')
+    await expect(activityTab).toBeFocused()
+    await expect(activityTab).toHaveAttribute('tabindex', '0')
 
     await page.getByRole('tab', { name: 'Invoices' }).click()
     await expect(page.getByText('Pending Zelle confirmation').first()).toBeVisible()
     await expect(page.getByText('Awaiting payment').first()).toBeVisible()
+    const invoiceDisclosure = page.getByRole('button', { name: /Invoice INV-2025-0417/i })
+    await expect(invoiceDisclosure).toHaveAttribute('aria-expanded', 'true')
+    await expect(invoiceDisclosure).toHaveAttribute('aria-controls', 'repair-preview-invoice-0417-details')
+    await expect(page.locator('#repair-preview-invoice-0417-details')).toBeVisible()
+    const invoiceControlIds = await page.locator('.mini-invoice-record .preview-evidence-control').evaluateAll((buttons) =>
+      buttons.map((button) => button.getAttribute('aria-controls')),
+    )
+    expect(new Set(invoiceControlIds).size).toBe(invoiceControlIds.length)
+    for (const controlId of invoiceControlIds) {
+      expect(controlId).not.toBeNull()
+      await expect(page.locator(`#${controlId}`)).toHaveCount(1)
+    }
+    await invoiceDisclosure.click()
+    await expect(invoiceDisclosure).toHaveAttribute('aria-expanded', 'false')
+    await expect(page.locator('#repair-preview-invoice-0417-details')).toBeHidden()
+    await invoiceDisclosure.click()
+    await expect(invoiceDisclosure).toHaveAttribute('aria-expanded', 'true')
     await expect(page.locator('[data-route-valid="event"]')).toHaveCount(1)
 
     await page.getByRole('tab', { name: 'Vehicle History' }).click()
@@ -119,7 +162,14 @@ test.describe('Public repair-shop homepage', () => {
     await expect(page.getByText('Repair History', { exact: true })).toBeVisible()
     await expect(page.locator('[data-sheet-kind="event"]')).toHaveCount(0)
     await expect(page.locator('[data-route-valid="event"]')).toHaveCount(0)
-    await page.getByRole('button', { name: /RO-2025-0417/i }).click()
+    const vehicleRepairDisclosure = page.getByRole('button', { name: /RO-2025-0417/i })
+    await expect(vehicleRepairDisclosure).toHaveAttribute('aria-expanded', 'false')
+    await expect(vehicleRepairDisclosure).toHaveAttribute('aria-controls', 'repair-preview-repair-0417-details')
+    await expect(page.locator('#repair-preview-repair-0417-details')).toHaveCount(1)
+    await expect(page.locator('#repair-preview-repair-0417-details')).toBeHidden()
+    await vehicleRepairDisclosure.click()
+    await expect(vehicleRepairDisclosure).toHaveAttribute('aria-expanded', 'true')
+    await expect(page.locator('#repair-preview-repair-0417-details')).toBeVisible()
     await expect(page.locator('[data-sheet-kind="event"]')).toHaveCount(1)
 
     await page.getByRole('tab', { name: 'Customers' }).click()
@@ -137,9 +187,10 @@ test.describe('Public repair-shop homepage', () => {
     await stubPublicHomepage(page)
     await page.goto(homepageUrl)
 
-    for (const width of [1440, 1366, 1280, 1120, 960, 390, 320]) {
+    const widths = [1440, 1366, 1280, 1120, 960, 390, 320]
+    for (const [index, width] of widths.entries()) {
       await page.setViewportSize({ width, height: width <= 390 ? 844 : 1000 })
-      await page.getByRole('tab', { name: width % 2 ? 'Customers' : 'Repair Orders' }).click()
+      await page.getByRole('tab', { name: index % 2 === 0 ? 'Repair Orders' : 'Customers' }).click()
       const layout = await layoutEvidence(page)
       expect(layout.scrollWidth, `body overflow at ${width}px`).toBe(layout.clientWidth)
       expect(layout.undersized, `touch targets at ${width}px`).toEqual([])
@@ -170,6 +221,23 @@ test.describe('Public repair-shop homepage', () => {
         await page.screenshot({ path: `test-results/db029-homepage-${width}.png`, fullPage: true })
       }
     }
+
+    await page.setViewportSize({ width: 1120, height: 1000 })
+    for (let iteration = 0; iteration < 5; iteration += 1) {
+      await page.getByRole('tab', { name: 'Invoices' }).click()
+      await page.getByRole('tab', { name: 'Repair Orders' }).click()
+    }
+    await page.waitForTimeout(800)
+    const settledModules = await page.getByRole('tablist', { name: 'Product areas' }).getByRole('tab').evaluateAll((tabs) =>
+      tabs.map((tab) => ({
+        label: tab.textContent?.trim(),
+        height: tab.getBoundingClientRect().height,
+        transform: getComputedStyle(tab).transform,
+      })),
+    )
+    expect(settledModules.filter(({ height }) => height < 44), 'rapid retarget module heights').toEqual([])
+    expect(settledModules.filter(({ transform }) => transform !== 'none'), 'rapid retarget module transforms').toEqual([])
+    await expect(page.getByRole('tab', { name: 'Repair Orders' })).toHaveAttribute('aria-selected', 'true')
   })
 
   test('keeps reduced-motion and touch interaction fully functional', async ({ page }) => {
