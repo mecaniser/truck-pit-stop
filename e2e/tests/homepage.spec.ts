@@ -2,6 +2,32 @@ import { expect, test } from '@playwright/test'
 import type { Page } from '@playwright/test'
 
 const homepageUrl = process.env.DB029_BASE_URL || process.env.DB028_BASE_URL || process.env.DB027_BASE_URL || '/'
+const knownOrbBlockedFontStylesheet = 'https://cdn.jsdelivr.net/npm/geist@1.3.1/dist/fonts/geist-sans/style.min.css'
+
+interface RuntimeFailures {
+  consoleErrors: string[]
+  pageErrors: string[]
+  requestFailures: string[]
+}
+
+const runtimeFailuresByPage = new WeakMap<Page, RuntimeFailures>()
+
+function observeRuntimeFailures(page: Page): RuntimeFailures {
+  const failures: RuntimeFailures = { consoleErrors: [], pageErrors: [], requestFailures: [] }
+  page.on('console', (message) => {
+    if (message.type() === 'error') failures.consoleErrors.push(message.text())
+  })
+  page.on('pageerror', (error) => failures.pageErrors.push(error.stack || error.message))
+  page.on('requestfailed', (request) => {
+    const errorText = request.failure()?.errorText || 'unknown failure'
+    // Chromium's local harness blocks this exact external font stylesheet via ORB.
+    if (request.url() === knownOrbBlockedFontStylesheet && errorText === 'net::ERR_BLOCKED_BY_ORB') return
+    failures.requestFailures.push(
+      `${request.method()} ${request.url()}: ${errorText}`,
+    )
+  })
+  return failures
+}
 
 async function stubPublicHomepage(page: Page) {
   await page.route('**/api/v1/auth/landing-partners', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }))
@@ -35,6 +61,17 @@ async function layoutEvidence(page: Page) {
 }
 
 test.describe('Public repair-shop homepage', () => {
+  test.beforeEach(({ page }) => {
+    runtimeFailuresByPage.set(page, observeRuntimeFailures(page))
+  })
+
+  test.afterEach(({ page }) => {
+    const failures = runtimeFailuresByPage.get(page)
+    expect(failures?.consoleErrors ?? [], 'browser console errors').toEqual([])
+    expect(failures?.pageErrors ?? [], 'uncaught page errors').toEqual([])
+    expect(failures?.requestFailures ?? [], 'failed browser requests').toEqual([])
+  })
+
   test('operates five source-grounded product previews without side effects', async ({ page }) => {
     await stubPublicHomepage(page)
     const previewRequests: Array<{ method: string; url: string }> = []
