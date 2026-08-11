@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import type { Quote } from '@/types'
 import {
   AUTHORIZATION_CONFLICT_MESSAGE,
   authorizationDecisionLabel,
@@ -7,7 +8,30 @@ import {
   canonicalizeAuthorizationHistoryEvents,
   formatAuthorizationEventDetail,
   isAuthorizationConflict,
+  latestCustomerVisibleAuthorization,
 } from '../authorization'
+
+const quote = (overrides: Partial<Quote> = {}): Quote => ({
+  id: 'quote-1',
+  tenant_id: 'tenant-1',
+  repair_order_id: 'order-1',
+  quote_number: 'Q-000001',
+  total_amount: '100.00',
+  notes: null,
+  expires_at: null,
+  is_approved: false,
+  is_declined: false,
+  decline_notes: null,
+  sent_to_customer: true,
+  sent_at: '2026-08-11T12:00:00Z',
+  created_at: '2026-08-11T11:55:00Z',
+  updated_at: '2026-08-11T12:00:00Z',
+  revision: 1,
+  authorization_type: 'initial_estimate',
+  previously_authorized_amount: '0.00',
+  delta_amount: '100.00',
+  ...overrides,
+})
 
 describe('authorization UI contract', () => {
   it('limits publication to the three staff publisher roles', () => {
@@ -84,5 +108,26 @@ describe('authorization UI contract', () => {
     expect(formatAuthorizationEventDetail('{not-valid-json')).toBeUndefined()
     expect(formatAuthorizationEventDetail(JSON.stringify({ unknown: true }))).toBeUndefined()
     expect(formatAuthorizationEventDetail('Customer called the shop')).toBe('Customer called the shop')
+  })
+
+  it('selects the highest sent immutable revision regardless of response order', () => {
+    const first = quote()
+    const latestSent = quote({ id: 'quote-2', revision: 2, quote_number: 'Q-000002' })
+
+    expect(latestCustomerVisibleAuthorization([latestSent, first])).toEqual(latestSent)
+  })
+
+  it('never replaces the latest sent revision with a newer unsent draft', () => {
+    const latestSent = quote({ id: 'quote-2', revision: 2, quote_number: 'Q-000002' })
+    const newerDraft = quote({
+      id: 'quote-3',
+      revision: 3,
+      quote_number: 'Q-000003',
+      sent_to_customer: false,
+      sent_at: null,
+    })
+
+    expect(latestCustomerVisibleAuthorization([latestSent, newerDraft])).toEqual(latestSent)
+    expect(latestCustomerVisibleAuthorization([newerDraft])).toBeNull()
   })
 })

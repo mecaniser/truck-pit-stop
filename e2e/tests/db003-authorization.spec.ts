@@ -386,6 +386,9 @@ async function expectMobileQuoteAction(
 }
 
 async function mockFinalizedDeclinePortal(page: Page) {
+  let draftQuoteRequests = 0
+  const runtimeIssues: string[] = []
+  const webSocketRegistrations: Array<{ pathname: string; hasQuery: boolean }> = []
   const customerId = 'customer-db003-declined'
   const orderId = 'order-db003-declined'
   const finalizedOrder = {
@@ -406,6 +409,30 @@ async function mockFinalizedDeclinePortal(page: Page) {
     repair_order_id: orderId,
     is_declined: true,
     decline_notes: 'Please defer this work.',
+  })
+  const newerUnsentDraft = quote({
+    id: 'quote-db003-unsent-draft',
+    repair_order_id: orderId,
+    revision: declinedQuote.revision + 1,
+    sent_to_customer: false,
+    sent_at: null,
+    is_declined: false,
+    decline_notes: null,
+  })
+
+  page.on('pageerror', error => runtimeIssues.push(`page: ${error.message}`))
+  page.on('console', message => {
+    if (message.type() === 'error') runtimeIssues.push(`console: ${message.text()}`)
+  })
+  await page.routeWebSocket(/\/api\/v1\/ws(?:$|\?)/, socket => {
+    const socketUrl = new URL(socket.url())
+    webSocketRegistrations.push({
+      pathname: socketUrl.pathname,
+      hasQuery: socketUrl.search.length > 0,
+    })
+    socket.onMessage(message => {
+      if (message === 'ping') socket.send('pong')
+    })
   })
 
   await page.addInitScript(({ fixtureCustomerId }) => {
@@ -446,12 +473,22 @@ async function mockFinalizedDeclinePortal(page: Page) {
     if (path === `/repair-orders/${orderId}/detail`) return fulfillJson(route, 200, { ...finalizedOrder, parts_usage: [], labor_items: [], history_events: [] })
     if (path === `/repair-orders/${orderId}/photos`) return fulfillJson(route, 200, [])
     if (path === '/invoices') return fulfillJson(route, 200, [])
-    if (path === '/quotes') return fulfillJson(route, 200, declinedQuote)
-    if (path === `/quotes/repair-order/${orderId}/history`) {
-      return fulfillJson(route, 200, { revisions: [declinedQuote], events: [] })
+    if (path === '/quotes') {
+      draftQuoteRequests += 1
+      return fulfillJson(route, 403, { detail: 'Insufficient permissions' })
     }
+    if (path === `/quotes/repair-order/${orderId}/history`) {
+      return fulfillJson(route, 200, { revisions: [declinedQuote, newerUnsentDraft], events: [] })
+    }
+    runtimeIssues.push(`unhandled fixture request: ${route.request().method()} ${path}`)
     return fulfillJson(route, 404, { detail: `Unhandled DB-003 declined fixture route: ${path}` })
   })
+
+  return {
+    get draftQuoteRequests() { return draftQuoteRequests },
+    get runtimeIssues() { return [...runtimeIssues] },
+    get webSocketRegistrations() { return [...webSocketRegistrations] },
+  }
 }
 
 async function mockAuthorization(page: Page, token: string, mode: DecisionMode) {
@@ -694,7 +731,7 @@ for (const width of [390, 320]) {
 
 test('declined additional work stays non-actionable after removal and finalization', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 })
-  await mockFinalizedDeclinePortal(page)
+  const fixture = await mockFinalizedDeclinePortal(page)
 
   await page.goto('/portal')
   await expect(page.getByText('All paid up')).toBeVisible()
@@ -705,4 +742,11 @@ test('declined additional work stays non-actionable after removal and finalizati
   await expect(page.getByRole('heading', { name: 'Additional work declined' })).toBeVisible()
   await expect(page.getByRole('button', { name: /Authorize/ })).toHaveCount(0)
   await expect(page.getByRole('button', { name: 'Decline this revision' })).toHaveCount(0)
+  expect(fixture.draftQuoteRequests).toBe(0)
+  expect(fixture.webSocketRegistrations.length).toBeGreaterThanOrEqual(1)
+  expect(fixture.webSocketRegistrations.length).toBeLessThanOrEqual(2)
+  expect(fixture.webSocketRegistrations.every(registration => (
+    registration.pathname === '/api/v1/ws' && registration.hasQuery === false
+  ))).toBe(true)
+  expect(fixture.runtimeIssues).toEqual([])
 })

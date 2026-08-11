@@ -20,6 +20,27 @@ export const isAdditionalWorkAuthorization = (
   quote: Pick<Quote, 'authorization_type'>,
 ): boolean => quote.authorization_type === 'additional_work'
 
+/**
+ * Customer surfaces must derive their current authorization state only from
+ * immutable revisions that have actually been sent. The history contract is
+ * ordered oldest-first, but selecting here keeps the consumer safe if a fixture
+ * or compatible server response is not already canonical.
+ */
+export const latestCustomerVisibleAuthorization = (
+  revisions?: Quote[] | null,
+): Quote | null => revisions
+  ?.filter((quote) => quote.sent_to_customer === true)
+  .reduce<Quote | null>((latest, quote) => {
+    if (!latest) return quote
+    if (quote.revision !== latest.revision) {
+      return quote.revision > latest.revision ? quote : latest
+    }
+    const quoteTime = new Date(quote.created_at).getTime()
+    const latestTime = new Date(latest.created_at).getTime()
+    if (quoteTime !== latestTime) return quoteTime > latestTime ? quote : latest
+    return quote.id.localeCompare(latest.id) > 0 ? quote : latest
+  }, null) ?? null
+
 export const authorizationTitle = (
   quote: Pick<Quote, 'authorization_type'>,
 ): string => isAdditionalWorkAuthorization(quote)

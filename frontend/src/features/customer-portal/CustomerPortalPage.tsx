@@ -35,6 +35,7 @@ import {
   type AuthorizationHistory,
   isAdditionalWorkAuthorization,
   isAuthorizationConflict,
+  latestCustomerVisibleAuthorization,
 } from '@/features/quotes/authorization'
 
 const STATUS_BADGE_COLORS: Record<string, string> = {
@@ -834,16 +835,6 @@ function CustomerRepairs() {
     }
   }
 
-  // Fetch quote for selected order if it's quoted
-  const { data: selectedQuote } = useQuery<Quote | null>({
-    queryKey: ['quote', selectedOrder?.id],
-    queryFn: async () => {
-      const response = await api.get(`/quotes?repair_order_id=${selectedOrder?.id}`)
-      return response.data as Quote | null
-    },
-    enabled: !!selectedOrder && selectedOrder.quote_sent === true,
-  })
-
   const { data: authorizationHistory } = useQuery<AuthorizationHistory>({
     queryKey: ['authorization-history', selectedOrder?.id],
     queryFn: async () => {
@@ -852,6 +843,7 @@ function CustomerRepairs() {
     },
     enabled: !!selectedOrder?.id && selectedOrder.quote_sent === true,
   })
+  const selectedQuote = latestCustomerVisibleAuthorization(authorizationHistory?.revisions)
 
   useEffect(() => {
     setShowDeclineForm(false)
@@ -861,7 +853,6 @@ function CustomerRepairs() {
   const handleAuthorizationDecisionError = (error: unknown) => {
     void Promise.all([
       queryClient.invalidateQueries({ queryKey: ['repair-orders'] }),
-      queryClient.invalidateQueries({ queryKey: ['quote', selectedOrder?.id] }),
       queryClient.invalidateQueries({ queryKey: ['authorization-history', selectedOrder?.id] }),
     ])
     if (isAuthorizationConflict(error)) {
@@ -879,7 +870,6 @@ function CustomerRepairs() {
     },
     onSuccess: (quote) => {
       queryClient.invalidateQueries({ queryKey: ['repair-orders'] })
-      queryClient.invalidateQueries({ queryKey: ['quote'] })
       queryClient.invalidateQueries({ queryKey: ['authorization-history'] })
       toast.success(
         isAdditionalWorkAuthorization(quote)
@@ -898,7 +888,6 @@ function CustomerRepairs() {
     },
     onSuccess: (quote) => {
       queryClient.invalidateQueries({ queryKey: ['repair-orders'] })
-      queryClient.invalidateQueries({ queryKey: ['quote'] })
       queryClient.invalidateQueries({ queryKey: ['authorization-history'] })
       toast.success(
         isAdditionalWorkAuthorization(quote)

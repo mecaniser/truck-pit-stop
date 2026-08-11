@@ -8,6 +8,10 @@ import { Spinner } from '@/components/ui'
 import api from '@/lib/api'
 import { useAuthStore } from '@/stores/authStore'
 import type { Customer, Invoice, Quote, RepairOrder, RepairOrderStatus, Vehicle } from '@/types'
+import {
+  type AuthorizationHistory,
+  latestCustomerVisibleAuthorization,
+} from '@/features/quotes/authorization'
 
 import {
   Card,
@@ -123,17 +127,20 @@ export default function PortalDashboardPage() {
     .filter(isActiveRepair)
     .sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime())
   const authorizationCandidates = activeRepairs.filter(canLoadAuthorizationAction)
-  const latestAuthorizationQueries = useQueries({
+  const authorizationHistoryQueries = useQueries({
     queries: authorizationCandidates.map(order => ({
-      queryKey: ['quote', order.id],
+      queryKey: ['authorization-history', order.id],
       queryFn: async () => {
-        const response = await api.get(`/quotes?repair_order_id=${order.id}`)
-        return response.data as Quote | null
+        const response = await api.get(`/quotes/repair-order/${order.id}/history`)
+        return response.data as AuthorizationHistory
       },
     })),
   })
   const quoteActions = authorizationCandidates.filter((order, index) => (
-    isAuthorizationActionable(order, latestAuthorizationQueries[index]?.data)
+    isAuthorizationActionable(
+      order,
+      latestCustomerVisibleAuthorization(authorizationHistoryQueries[index]?.data?.revisions),
+    )
   ))
   const actionCount = quoteActions.length + unpaid.length
   const balance = unpaid.reduce((sum, item) => sum + Number(item.invoice.total_amount || 0), 0)

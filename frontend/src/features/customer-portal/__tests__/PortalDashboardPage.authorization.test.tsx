@@ -62,7 +62,7 @@ const quote = (overrides: Partial<Quote> = {}): Quote => ({
   ...overrides,
 })
 
-function renderDashboard(repairOrders: RepairOrder[], latestQuote: Quote | null) {
+function renderDashboard(repairOrders: RepairOrder[], revisions: Quote[], historyStatus = 200) {
   apiMocks.get.mockImplementation((url: string) => {
     if (url === '/customers/customer-1') {
       return Promise.resolve({ data: { id: 'customer-1', first_name: 'Casey', last_name: 'Customer' } })
@@ -74,7 +74,14 @@ function renderDashboard(repairOrders: RepairOrder[], latestQuote: Quote | null)
       return Promise.resolve({ data: { items: repairOrders, has_more: false, skip: 0, limit: 100 } })
     }
     if (url === '/invoices') return Promise.resolve({ data: [] })
-    if (url.startsWith('/quotes?repair_order_id=')) return Promise.resolve({ data: latestQuote })
+    if (url.startsWith('/quotes?repair_order_id=')) {
+      return Promise.reject({ response: { status: 403 } })
+    }
+    if (url === '/quotes/repair-order/order-1/history') {
+      return historyStatus === 200
+        ? Promise.resolve({ data: { revisions, events: [] } })
+        : Promise.reject({ response: { status: historyStatus } })
+    }
     return Promise.reject(new Error(`Unhandled test request: ${url}`))
   })
 
@@ -109,17 +116,23 @@ describe('PortalDashboardPage authorization actions', () => {
     })
   })
 
-  it('shows review only for the latest published undecided authorization', async () => {
-    renderDashboard([order()], quote())
+  it.each([
+    ['direct', 'customer-user-direct'],
+    ['linked', 'customer-user-linked'],
+  ])('shows review for the latest sent authorization for a %s customer', async (_identity, userId) => {
+    useAuthStore.setState(state => ({ user: state.user ? { ...state.user, id: userId } : null }))
+    renderDashboard([order()], [quote()])
 
     expect(await screen.findByText('Authorization awaiting review')).toBeInTheDocument()
     expect(screen.getByText('Review authorization')).toBeInTheDocument()
+    expect(apiMocks.get).toHaveBeenCalledWith('/quotes/repair-order/order-1/history')
+    expect(apiMocks.get).not.toHaveBeenCalledWith('/quotes?repair_order_id=order-1')
   })
 
   it('does not resurrect a declined authorization after work removal and finalization', async () => {
     renderDashboard(
       [order({ status: 'invoiced', total_cost: '1000.00', updated_at: '2026-08-11T15:00:00Z' })],
-      quote({ is_declined: true, decline_notes: 'Please defer this work.' }),
+      [quote({ is_declined: true, decline_notes: 'Please defer this work.' })],
     )
 
     expect(await screen.findByText('All paid up')).toBeInTheDocument()
@@ -132,10 +145,28 @@ describe('PortalDashboardPage authorization actions', () => {
   })
 
   it('uses the canonical latest decision to exclude a declined active revision', async () => {
-    renderDashboard([order()], quote({ is_declined: true }))
+    renderDashboard([order()], [quote({ is_declined: true })])
 
-    await waitFor(() => expect(apiMocks.get).toHaveBeenCalledWith('/quotes?repair_order_id=order-1'))
+    await waitFor(() => expect(apiMocks.get).toHaveBeenCalledWith('/quotes/repair-order/order-1/history'))
     expect(screen.queryByText('Authorization awaiting review')).not.toBeInTheDocument()
     expect(screen.queryByText('Review authorization')).not.toBeInTheDocument()
+  })
+
+  it('uses the latest sent revision and ignores a newer unsent draft', async () => {
+    renderDashboard([order()], [
+      quote({ id: 'quote-2', revision: 2 }),
+      quote({ id: 'quote-3', revision: 3, sent_to_customer: false, sent_at: null, is_declined: true }),
+    ])
+
+    expect(await screen.findByText('Authorization awaiting review')).toBeInTheDocument()
+    expect(apiMocks.get).not.toHaveBeenCalledWith('/quotes?repair_order_id=order-1')
+  })
+
+  it('does not fall back to the forbidden draft route when history is denied', async () => {
+    renderDashboard([order()], [], 403)
+
+    await waitFor(() => expect(apiMocks.get).toHaveBeenCalledWith('/quotes/repair-order/order-1/history'))
+    expect(screen.queryByText('Authorization awaiting review')).not.toBeInTheDocument()
+    expect(apiMocks.get).not.toHaveBeenCalledWith('/quotes?repair_order_id=order-1')
   })
 })

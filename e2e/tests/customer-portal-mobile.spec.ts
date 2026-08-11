@@ -122,8 +122,30 @@ const invoices = [
   },
 ]
 
+const activeAuthorization = {
+  id: 'quote-safe-active-1',
+  tenant_id: 'tenant-safe-1',
+  repair_order_id: 'order-active-1',
+  quote_number: 'Q-2026-0811',
+  total_amount: '4494.62',
+  notes: null,
+  expires_at: null,
+  is_approved: false,
+  is_declined: false,
+  decline_notes: null,
+  sent_to_customer: true,
+  sent_at: '2026-08-11T09:47:00Z',
+  created_at: '2026-08-11T09:40:00Z',
+  updated_at: '2026-08-11T09:47:00Z',
+  revision: 1,
+  authorization_type: 'initial_estimate',
+  previously_authorized_amount: '0.00',
+  delta_amount: '4494.62',
+}
+
 async function installSafePortalFixture(page: Page) {
   const webSocketRegistrations: Array<{ pathname: string; hasQuery: boolean }> = []
+  let draftQuoteRequests = 0
 
   await page.routeWebSocket(/\/api\/v1\/ws(?:$|\?)/, socket => {
     const socketUrl = new URL(socket.url())
@@ -189,30 +211,15 @@ async function installSafePortalFixture(page: Page) {
       return json({ available: false, token_url: null, message: 'Unavailable in safe fixture' })
     }
     if (path === '/quotes') {
-      const repairOrderId = url.searchParams.get('repair_order_id')
-      return json(repairOrderId === 'order-active-1' ? {
-        id: 'quote-safe-active-1',
-        tenant_id: 'tenant-safe-1',
-        repair_order_id: 'order-active-1',
-        quote_number: 'Q-2026-0811',
-        total_amount: '4494.62',
-        notes: null,
-        expires_at: null,
-        is_approved: false,
-        is_declined: false,
-        decline_notes: null,
-        sent_to_customer: true,
-        sent_at: '2026-08-11T09:47:00Z',
-        created_at: '2026-08-11T09:40:00Z',
-        updated_at: '2026-08-11T09:47:00Z',
-        revision: 1,
-        authorization_type: 'initial_estimate',
-        previously_authorized_amount: '0.00',
-        delta_amount: '4494.62',
-      } : null)
+      draftQuoteRequests += 1
+      return route.fulfill({ status: 403, contentType: 'application/json', body: JSON.stringify({ detail: 'Insufficient permissions' }) })
     }
     if (path.startsWith('/quotes/repair-order/') && path.endsWith('/history')) {
-      return json({ revisions: [], events: [] })
+      const repairOrderId = path.split('/')[3]
+      return json({
+        revisions: repairOrderId === activeAuthorization.repair_order_id ? [activeAuthorization] : [],
+        events: [],
+      })
     }
     if (path === '/auth/platform-contact') return json({ support_name: 'Diesel Bridge Support', support_email: 'support@example.test', support_phone: null })
 
@@ -221,6 +228,7 @@ async function installSafePortalFixture(page: Page) {
 
   return {
     get webSocketRegistrations() { return [...webSocketRegistrations] },
+    get draftQuoteRequests() { return draftQuoteRequests },
   }
 }
 
@@ -365,6 +373,7 @@ for (const width of [390, 320]) {
     expect(fixture.webSocketRegistrations.every(registration => (
       registration.pathname === '/api/v1/ws' && registration.hasQuery === false
     ))).toBe(true)
+    expect(fixture.draftQuoteRequests).toBe(0)
     expect(browserErrors).toEqual([])
   })
 }
