@@ -59,7 +59,7 @@ test.describe('Public repair-shop homepage', () => {
     await expect(page.getByRole('heading', { name: 'Customers' })).toBeVisible()
     await expect(page.getByRole('columnheader', { name: 'DOT / MC' })).toBeVisible()
     await page.getByRole('button', { name: 'Riverbend Freight' }).click()
-    await page.getByRole('tab', { name: 'History' }).click()
+    await page.getByRole('tab', { name: 'History', exact: true }).click()
     await expect(page.getByText('Invoice awaiting payment · INV-2025-0412').first()).toBeVisible()
 
     await page.getByRole('tab', { name: 'Shop Work' }).click()
@@ -75,10 +75,10 @@ test.describe('Public repair-shop homepage', () => {
     await expect(page.getByText('Owner').first()).toBeVisible()
     await expect(page.getByText('Key Details')).toBeVisible()
     await expect(page.getByText('…1234').first()).toBeVisible()
-    await expect(page.getByText('Repair History')).toBeVisible()
+    await expect(page.getByText('Repair History', { exact: true })).toBeVisible()
 
     await page.getByRole('tab', { name: 'Customers' }).click()
-    await expect(page.getByRole('tab', { name: 'History' })).toHaveAttribute('aria-selected', 'true')
+    await expect(page.getByRole('tab', { name: 'History', exact: true })).toHaveAttribute('aria-selected', 'true')
     await expect(page.getByRole('heading', { name: 'Riverbend Freight' }).first()).toBeVisible()
 
     const unexpected = previewRequests.filter(({ method, url }) =>
