@@ -19,6 +19,7 @@ reviewed, merged, and released. Reconcile this board whenever newer evidence exi
 
 | ID | Priority | State | Outcome | Owner | Evidence now | Next gate |
 |---|---|---|---|---|---|---|
+| DB-029 | P1 | Discovery | Rebuild the homepage repair-order preview as a premium interactive event system | Frontend & UX | Product-owner rejection of DB-028 recorded on 2026-08-11: the visible fictional-data disclaimer is unnecessary; sidebar modules are inert; routed lines cross content; stage consequences are not anchored to the selected source; glass, motion, and CTA treatment do not yet meet the approved Apple/Emil craft direction. Corrective branch: `codex/homepage-event-orchestration`; no implementation evidence yet. | Architecture & API Contracts defines the state, spatial, connector, and responsive interaction contract; Frontend & UX implements it; independent QA Gatekeeper and Impeccable/Emil finish review must return GO before Release & Reliability opens the production gate. |
 | DB-003 | P1 | Discovery | Finish versioned additional-work authorizations | Backend & Integrations | PR #196 merged at `e20fa1a` with implementation commit `a51f2af`; immutable revisions/finalization guard exist, but task validation found the portal action still depends on the staff-send flow | Architecture decides automatic vs staff-reviewed publication and any threshold policy; then run mechanic addition → customer prompt → approve/decline → invoice Playwright acceptance, Security GO, QA GO |
 | DB-004 | P1 | QA/Security | Reconcile customer portal redesign and active-repair workflow | Frontend & UX | PRs #189 and #194 are merged and included in current production | Run and record one mobile customer portal acceptance journey; then move to Done |
 
@@ -81,6 +82,46 @@ Copy this row into Inbox before implementation:
 
 For every active item, add links or identifiers for its branch/PR and record the
 last passing automated and runtime evidence in the item or associated issue.
+
+## DB-029 acceptance criteria
+
+- Remove the visible “Illustrative sample” and “Fictional repair-order data”
+  disclaimer. Keep the example internally safe without adding visible legalistic
+  copy, customer claims, testimonials, performance claims, or real PII.
+- Repair orders, Customers, Shop work, Invoices, and Vehicle history are real
+  keyboard-operable controls. Selecting each one reveals coherent information
+  from the same repair story and exposes the selected state semantically.
+- Intake, Estimate, Approval, Invoice, and Payment & history are real controls.
+  Selecting each one updates the internal workspace story and a relevant external
+  event sheet; rapid selection interrupts and retargets without stale content.
+- Every animated signal route begins at the selected control and terminates at
+  its associated evidence sheet. Routes and nodes never cross text, controls, or
+  card interiors. Geometry is derived from rendered elements rather than fixed
+  screenshot coordinates and remains correct after resize and content changes.
+- The authored focal motion is the selected event travelling through its route
+  into a morphing evidence sheet. Supporting module selection, glass depth,
+  pointer-down feedback, focus, and CTA material motion stay subordinate and
+  purposeful; there is no decorative background loop or repeated generic rise.
+- External evidence sheets use functional Apple-style glass with clear edge,
+  depth, translucency, hierarchy, and restrained specular response. The primary
+  CTA uses a distinctive layered DieselBridge copper/orange material, not a flat
+  generic orange rectangle.
+- Desktop keeps the product and its external evidence legible as one composition.
+  At the compact breakpoint, routes collapse safely and evidence stacks in
+  reading order. The page has no horizontal overflow at 1440, 1366, 1280, 1120,
+  960, 390, or 320 CSS pixels; visible interactive targets are at least 44px.
+- Keyboard operation, focus visibility, reduced motion, reduced transparency,
+  contrast, and coarse-pointer behavior are verified. Keyboard-triggered changes
+  do not depend on spatial animation to communicate state.
+- Scope is frontend presentation only unless Architecture explicitly returns a
+  contract change. No API, auth, tenant, payment, backend data, or migration
+  change is implied by this outcome.
+- Focused unit tests, full frontend tests, production build, lint/diff checks,
+  responsive Playwright geometry and interaction coverage, independent QA, and
+  an independent Impeccable/Emil finish review must pass before release.
+- Release evidence must record the focused PR/merge SHA, required CI contexts,
+  both Railway web deployment IDs and health gates, changed homepage canary, and
+  proof that the worker deployment remained unchanged.
 
 ## DB-HC001 acceptance criteria
 
