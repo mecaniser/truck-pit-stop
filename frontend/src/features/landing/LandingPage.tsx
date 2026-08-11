@@ -20,6 +20,20 @@ const BRAND = {
 }
 
 const WORDMARK_LETTERS = Array.from(BRAND.shortName)
+const WORDMARK_DROP_MOTION = [
+  { x: '-0.18rem', y: '-3.4rem', rotate: '-7deg', delay: '112ms' },
+  { x: '0.12rem', y: '-5.1rem', rotate: '5deg', delay: '24ms' },
+  { x: '-0.08rem', y: '-2.8rem', rotate: '-4deg', delay: '148ms' },
+  { x: '0.2rem', y: '-4.5rem', rotate: '8deg', delay: '64ms' },
+  { x: '-0.16rem', y: '-3.1rem', rotate: '-6deg', delay: '8ms' },
+  { x: '0.06rem', y: '-5.4rem', rotate: '3deg', delay: '132ms' },
+  { x: '0.14rem', y: '-3.8rem', rotate: '7deg', delay: '48ms' },
+  { x: '-0.12rem', y: '-4.9rem', rotate: '-5deg', delay: '176ms' },
+  { x: '0.18rem', y: '-2.6rem', rotate: '6deg', delay: '88ms' },
+  { x: '-0.04rem', y: '-5.7rem', rotate: '-3deg', delay: '16ms' },
+  { x: '0.1rem', y: '-3.6rem', rotate: '4deg', delay: '156ms' },
+  { x: '-0.2rem', y: '-4.2rem', rotate: '-8deg', delay: '72ms' },
+] as const
 
 interface LandingPartner {
   id: string
@@ -58,8 +72,10 @@ function LandingWordmark({ animated = false }: { animated?: boolean }) {
               key={`${letter}-${index}`}
               className={`landing-wordmark__letter${index >= 6 ? ' landing-wordmark__letter--bridge' : ''}`}
               style={{
-                '--letter-index': index,
-                '--letter-wave-order': WORDMARK_LETTERS.length - 1 - index,
+                '--letter-drop-x': WORDMARK_DROP_MOTION[index].x,
+                '--letter-drop-y': WORDMARK_DROP_MOTION[index].y,
+                '--letter-drop-rotate': WORDMARK_DROP_MOTION[index].rotate,
+                '--letter-drop-delay': WORDMARK_DROP_MOTION[index].delay,
               } as CSSProperties}
             >
               {letter}

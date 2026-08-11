@@ -92,14 +92,10 @@
 .landing-wordmark__letter { display: inline-block; }
 .landing-wordmark__letter--bridge { color: #ff7a36; }
 
-.landing-wordmark--animated .landing-wordmark__name {
-  animation: landing-wordmark-drive-over-bridge 960ms var(--landing-ease-in-out) both;
-}
-
 .landing-wordmark--animated .landing-wordmark__letter {
-  animation: landing-wordmark-letter-wave 420ms var(--landing-ease-in-out) both;
-  animation-delay: calc(var(--letter-wave-order) * 28ms);
-  will-change: transform;
+  animation: landing-wordmark-letter-drop 560ms var(--landing-ease-out) both;
+  animation-delay: var(--letter-drop-delay);
+  will-change: transform, opacity;
 }
 
 .landing-nav-links,
@@ -273,17 +269,13 @@
 
 @keyframes landing-spin { to { transform: rotate(360deg); } }
 
-@keyframes landing-wordmark-drive-over-bridge {
-  from { opacity: 0; transform: translate3d(-10rem, 0, 0) scale(0.98); }
-  12% { opacity: 1; }
-  to { opacity: 1; transform: translate3d(0, 0, 0) scale(1); }
-}
-
-@keyframes landing-wordmark-letter-wave {
-  from { transform: translate3d(0, 0.08rem, 0) rotate(-0.5deg); }
-  46% { transform: translate3d(0, -0.38rem, 0) rotate(-0.35deg); }
-  74% { transform: translate3d(0, -0.1rem, 0) rotate(0); }
-  to { transform: translate3d(0, 0, 0) rotate(0); }
+@keyframes landing-wordmark-letter-drop {
+  from {
+    opacity: 0;
+    transform: translate3d(var(--letter-drop-x), var(--letter-drop-y), 0) scale(0.96) rotate(var(--letter-drop-rotate));
+  }
+  18% { opacity: 1; }
+  to { opacity: 1; transform: translate3d(0, 0, 0) scale(1) rotate(0); }
 }
 
 @keyframes landing-wordmark-fade {
