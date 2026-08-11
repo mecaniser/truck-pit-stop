@@ -27,6 +27,7 @@ vi.mock('../PriceBuilderPanel', () => ({
     quoteActionLabel?: string
     quoteActionPending?: boolean
     quoteActionDisabled?: boolean
+    quoteDisabledReason?: string
     onQuoteAction?: (trigger?: HTMLButtonElement) => void
   }) => (
     <div>
@@ -43,6 +44,7 @@ vi.mock('../PriceBuilderPanel', () => ({
           </button>
         )
         : <span>Publication unavailable</span>}
+      <output aria-label="Quote disabled reason">{props.quoteDisabledReason || ''}</output>
       <button type="button" onClick={props.onHistoryOpen}>Open history</button>
       <output aria-label="History count">History count: {props.historyEvents?.length ?? 0}</output>
       <ol>
@@ -85,6 +87,7 @@ const owner = {
 
 let detailHistoryEvents: RepairOrderHistoryEvent[] = []
 let authorizationHistoryEvents: RepairOrderHistoryEvent[] = []
+let quoteForOrderFixture: Quote = draft
 
 const renderPage = () => {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
@@ -102,6 +105,7 @@ describe('RepairOrdersPage authorization publication', () => {
     Object.defineProperty(window, 'scrollTo', { value: vi.fn(), configurable: true })
     detailHistoryEvents = []
     authorizationHistoryEvents = []
+    quoteForOrderFixture = draft
     useAuthStore.setState({ user: owner, isAuthenticated: true })
     apiMocks.get.mockImplementation((url: string) => {
       if (url === '/repair-orders') return Promise.resolve({ data: { items: [], total: 0, has_more: false } })
@@ -109,9 +113,9 @@ describe('RepairOrdersPage authorization publication', () => {
       if (url === '/repair-orders/order-1/detail') {
         return Promise.resolve({ data: { ...order, parts_usage: [], labor_items: [], history_events: detailHistoryEvents } })
       }
-      if (url === '/quotes?repair_order_id=order-1') return Promise.resolve({ data: draft })
+      if (url === '/quotes?repair_order_id=order-1') return Promise.resolve({ data: quoteForOrderFixture })
       if (url === '/quotes/repair-order/order-1/history') {
-        return Promise.resolve({ data: { revisions: [draft], events: authorizationHistoryEvents } })
+        return Promise.resolve({ data: { revisions: [quoteForOrderFixture], events: authorizationHistoryEvents } })
       }
       if (url === '/dashboard/stats') return Promise.resolve({ data: { mechanic_workload: [] } })
       if (url === '/dashboard/mechanics/options') return Promise.resolve({ data: [] })
@@ -142,6 +146,114 @@ describe('RepairOrdersPage authorization publication', () => {
 
     fireEvent.click(within(heading.closest('.relative') as HTMLElement).getByRole('button', { name: 'Send estimate' }))
     await waitFor(() => expect(apiMocks.post).toHaveBeenCalledWith('/quotes/quote-1/send'))
+  })
+
+  it('creates and publishes a replacement revision after additional work is declined', async () => {
+    const user = userEvent.setup()
+    const declinedQuote: Quote = {
+      ...draft,
+      id: 'quote-2',
+      quote_number: 'Q-000002',
+      revision: 2,
+      authorization_type: 'additional_work',
+      previously_authorized_amount: '1000.00',
+      delta_amount: '450.00',
+      is_declined: true,
+      decline_notes: 'Please revise the added work.',
+      sent_to_customer: true,
+      sent_at: '2026-08-11T14:00:00Z',
+    }
+    const revisedQuote: Quote = {
+      ...declinedQuote,
+      id: 'quote-3',
+      quote_number: 'Q-000003',
+      revision: 3,
+      is_declined: false,
+      decline_notes: null,
+      sent_to_customer: false,
+      sent_at: null,
+    }
+    quoteForOrderFixture = declinedQuote
+    apiMocks.post.mockImplementation((url: string) => {
+      if (url === '/quotes') {
+        quoteForOrderFixture = revisedQuote
+        return Promise.resolve({ data: revisedQuote })
+      }
+      if (url === '/quotes/quote-3/send') {
+        return Promise.resolve({
+          data: { ...revisedQuote, sent_to_customer: true, sent_at: '2026-08-11T15:00:00Z' },
+        })
+      }
+      return Promise.reject(new Error(`Unexpected POST ${url}`))
+    })
+    apiMocks.put.mockImplementation((url: string) => {
+      if (url === '/quotes/quote-3') return Promise.resolve({ data: revisedQuote })
+      return Promise.reject(new Error(`Unexpected PUT ${url}`))
+    })
+
+    renderPage()
+    const createRevision = await screen.findByRole('button', { name: 'Create revised authorization' })
+    expect(createRevision).toBeEnabled()
+    createRevision.focus()
+    await user.keyboard('{Enter}')
+
+    await waitFor(() => expect(apiMocks.post).toHaveBeenCalledWith('/quotes', { repair_order_id: 'order-1' }))
+    const sendRevision = await screen.findByRole('button', { name: 'Send additional work' })
+    await waitFor(() => expect(sendRevision).toHaveFocus())
+    await user.keyboard('{Enter}')
+
+    await waitFor(() => expect(apiMocks.put).toHaveBeenCalledWith('/quotes/quote-3'))
+    const dialog = await screen.findByRole('dialog', { name: 'Send additional work?' })
+    expect(dialog).toHaveAttribute('aria-modal', 'true')
+    const keepEditing = within(dialog).getByRole('button', { name: 'Keep editing' })
+    const publish = within(dialog).getByRole('button', { name: 'Send authorization' })
+    await waitFor(() => expect(keepEditing).toHaveFocus())
+    await user.tab({ shift: true })
+    expect(publish).toHaveFocus()
+    await user.keyboard('{Enter}')
+
+    await waitFor(() => expect(apiMocks.post).toHaveBeenCalledWith('/quotes/quote-3/send'))
+  })
+
+  it('keeps an undecided sent revision blocked', async () => {
+    quoteForOrderFixture = {
+      ...draft,
+      revision: 2,
+      authorization_type: 'additional_work',
+      previously_authorized_amount: '1000.00',
+      delta_amount: '450.00',
+      sent_to_customer: true,
+      sent_at: '2026-08-11T14:00:00Z',
+    }
+
+    renderPage()
+
+    const pending = await screen.findByRole('button', { name: 'Awaiting authorization' })
+    expect(pending).toBeDisabled()
+    fireEvent.click(pending)
+    expect(apiMocks.post).not.toHaveBeenCalledWith('/quotes', expect.anything())
+  })
+
+  it('does not create another revision when a decline leaves no positive delta', async () => {
+    quoteForOrderFixture = {
+      ...draft,
+      revision: 2,
+      authorization_type: 'additional_work',
+      previously_authorized_amount: '1450.00',
+      delta_amount: '0.00',
+      is_declined: true,
+      decline_notes: 'No additional amount approved.',
+      sent_to_customer: true,
+      sent_at: '2026-08-11T14:00:00Z',
+    }
+
+    renderPage()
+
+    const closed = await screen.findByRole('button', { name: 'Awaiting authorization' })
+    expect(closed).toBeDisabled()
+    expect(screen.getByLabelText('Quote disabled reason')).toHaveTextContent(/declined revision is closed/i)
+    fireEvent.click(closed)
+    expect(apiMocks.post).not.toHaveBeenCalledWith('/quotes', expect.anything())
   })
 
   it('traps confirmation focus and returns Escape dismissal to the publishing trigger', async () => {

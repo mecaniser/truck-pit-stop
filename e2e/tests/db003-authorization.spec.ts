@@ -151,6 +151,23 @@ const staffAdditionalDraftQuote = {
   delta_amount: '20.00',
 }
 
+const staffDeclinedAdditionalQuote = {
+  ...staffAdditionalDraftQuote,
+  id: 'quote-db003-declined-additional',
+  quote_number: 'Q-DB003-DECLINED',
+  is_declined: true,
+  decline_notes: 'Please revise the added work.',
+  sent_to_customer: true,
+  sent_at: '2026-08-11T14:00:00Z',
+}
+
+const staffRevisedAdditionalDraftQuote = {
+  ...staffAdditionalDraftQuote,
+  id: 'quote-db003-revised-additional',
+  quote_number: 'Q-DB003-REVISED',
+  revision: 3,
+}
+
 const staffPriceBuild = {
   order_id: staffOrder.id,
   labor_total: '100.00',
@@ -183,10 +200,14 @@ const staffPriceBuild = {
   warnings: [],
 }
 
-async function mockStaffAuthorizationWorkspace(page: Page, mode: 'initial' | 'additional' = 'initial') {
-  let currentQuote: typeof staffDraftQuote | null = mode === 'additional' ? staffApprovedQuote : null
+async function mockStaffAuthorizationWorkspace(page: Page, mode: 'initial' | 'additional' | 'declined' = 'initial') {
+  let currentQuote: typeof staffDraftQuote | typeof staffDeclinedAdditionalQuote | null = mode === 'initial'
+    ? null
+    : mode === 'declined'
+      ? staffDeclinedAdditionalQuote
+      : staffApprovedQuote
   let quoteRevisions: typeof staffDraftQuote[] = currentQuote ? [currentQuote] : []
-  const authorizationEvents: Array<Record<string, unknown>> = mode === 'additional'
+  const authorizationEvents: Array<Record<string, unknown>> = mode !== 'initial'
     ? [
       {
         id: 'event-db003-approved-published',
@@ -208,12 +229,25 @@ async function mockStaffAuthorizationWorkspace(page: Page, mode: 'initial' | 'ad
       },
     ]
     : []
+  if (mode === 'declined') {
+    authorizationEvents.push({
+      id: 'event-db003-declined-customer',
+      event_type: 'authorization_customer_declined',
+      label: 'Additional work declined',
+      detail: JSON.stringify({ revision: 2, authorization_type: 'additional_work', resulting_total: '100.00' }),
+      entity_id: staffDeclinedAdditionalQuote.id,
+      actor_name: 'Casey Customer',
+      created_at: '2026-08-11T14:05:00Z',
+    })
+  }
+  let createCount = 0
+  let updateCount = 0
   let sendCount = 0
   const webSocketRegistrations: Array<{ pathname: string; hasQuery: boolean }> = []
   const runtimeIssues = captureStrictRuntimeIssues(page)
   const projectedOrder = () => ({
     ...staffOrder,
-    status: mode === 'additional' ? 'approved' : staffOrder.status,
+    status: mode === 'initial' ? staffOrder.status : 'approved',
     quote_sent: !!currentQuote?.sent_to_customer,
     quote_approved: !!currentQuote?.is_approved,
   })
@@ -288,11 +322,17 @@ async function mockStaffAuthorizationWorkspace(page: Page, mode: 'initial' | 'ad
       return fulfillJson(route, 200, { revisions: quoteRevisions, events: authorizationEvents })
     }
     if (path === '/quotes' && request.method() === 'POST') {
-      currentQuote = mode === 'additional' ? staffAdditionalDraftQuote : staffDraftQuote
+      createCount += 1
+      currentQuote = mode === 'initial'
+        ? staffDraftQuote
+        : mode === 'declined'
+          ? staffRevisedAdditionalDraftQuote
+          : staffAdditionalDraftQuote
       quoteRevisions = [...quoteRevisions.filter((revision) => revision.id !== currentQuote?.id), currentQuote]
       return fulfillJson(route, 200, currentQuote)
     }
     if (currentQuote && path === `/quotes/${currentQuote.id}` && request.method() === 'PUT') {
+      updateCount += 1
       quoteRevisions = quoteRevisions.map((revision) => revision.id === currentQuote?.id ? currentQuote : revision)
       return fulfillJson(route, 200, currentQuote)
     }
@@ -323,6 +363,8 @@ async function mockStaffAuthorizationWorkspace(page: Page, mode: 'initial' | 'ad
   })
 
   return {
+    get createCount() { return createCount },
+    get updateCount() { return updateCount },
     get sendCount() { return sendCount },
     get webSocketRegistrations() { return [...webSocketRegistrations] },
     get runtimeIssues() { return [...runtimeIssues] },
@@ -331,7 +373,7 @@ async function mockStaffAuthorizationWorkspace(page: Page, mode: 'initial' | 'ad
 
 async function expectMobileQuoteAction(
   page: Page,
-  label: 'Create estimate' | 'Send estimate' | 'Authorize +$20.00' | 'Send additional work',
+  label: 'Create estimate' | 'Send estimate' | 'Authorize +$20.00' | 'Create revised authorization' | 'Send additional work',
   viewportHeight: number,
 ) {
   const action = page.getByRole('button', { name: label })
@@ -602,6 +644,45 @@ for (const scenario of [
       scenario.mode === 'additional' ? 'Additional work published' : 'Estimate published',
       { exact: true },
     )).toBeVisible()
+    expect(fixture.webSocketRegistrations.length).toBeGreaterThanOrEqual(1)
+    expect(fixture.webSocketRegistrations.length).toBeLessThanOrEqual(2)
+    expect(fixture.webSocketRegistrations.every(registration => (
+      registration.pathname === '/api/v1/ws' && registration.hasQuery === false
+    ))).toBe(true)
+    expect(fixture.runtimeIssues, fixture.runtimeIssues.join('\n')).toEqual([])
+  })
+}
+
+for (const width of [390, 320]) {
+  test(`publisher creates a replacement after a declined unchanged revision at ${width}px`, async ({ page }) => {
+    const viewportHeight = 780
+    await page.setViewportSize({ width, height: viewportHeight })
+    const fixture = await mockStaffAuthorizationWorkspace(page, 'declined')
+
+    await page.goto(`/dashboard/repair-orders?selected=${staffOrder.id}`)
+    await expect(page.getByRole('button', { name: 'Awaiting authorization' })).toHaveCount(0)
+    const createRevision = await expectMobileQuoteAction(page, 'Create revised authorization', viewportHeight)
+    await createRevision.focus()
+    await page.keyboard.press('Enter')
+
+    const sendRevision = await expectMobileQuoteAction(page, 'Send additional work', viewportHeight)
+    await expect(sendRevision).toBeFocused()
+    expect(fixture.createCount).toBe(1)
+    await page.keyboard.press('Enter')
+
+    const dialog = page.getByRole('dialog', { name: 'Send additional work?' })
+    await expect(dialog).toBeVisible()
+    await expect(dialog).toHaveAttribute('aria-modal', 'true')
+    const keepEditing = dialog.getByRole('button', { name: 'Keep editing' })
+    const publish = dialog.getByRole('button', { name: 'Send authorization' })
+    await expect(keepEditing).toBeFocused()
+    await page.keyboard.press('Shift+Tab')
+    await expect(publish).toBeFocused()
+    await page.keyboard.press('Enter')
+
+    await expect(dialog).toBeHidden()
+    expect(fixture.updateCount).toBe(1)
+    expect(fixture.sendCount).toBe(1)
     expect(fixture.webSocketRegistrations.length).toBeGreaterThanOrEqual(1)
     expect(fixture.webSocketRegistrations.length).toBeLessThanOrEqual(2)
     expect(fixture.webSocketRegistrations.every(registration => (

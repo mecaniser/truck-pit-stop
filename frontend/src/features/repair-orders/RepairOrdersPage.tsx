@@ -2054,6 +2054,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
   const quoteOrder = orderDetail ?? selectedOrder
   const quoteOrderStatus = quoteOrder?.status
   const quoteIsApproved = !!quoteForOrder?.is_approved
+  const quoteIsDeclined = !!quoteForOrder?.is_declined
   const quoteIsSent = !!(quoteForOrder?.sent_to_customer || quoteSent)
   const quoteCanChange = !!quoteOrderStatus && !['completed', 'invoiced', 'paid', 'cancelled'].includes(quoteOrderStatus)
   const quoteTotalDelta = quoteForOrder && quoteOrder
@@ -2064,7 +2065,20 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
   )
   const effectiveQuoteNeedsUpdate = !!quoteForOrder && !quoteIsApproved && quoteTotalMismatch
   const additionalAuthorizationRequired = quoteIsApproved && quoteTotalDelta > 0.005
-  const quoteActionLabel = additionalAuthorizationRequired
+  // A declined additional-work revision is closed. It must not block a new
+  // revision when the live total still exceeds the last amount the customer
+  // actually approved. Compare against that preserved baseline, not against
+  // the declined revision's unchanged total.
+  const declinedAuthorizationDelta = quoteForOrder && quoteOrder && quoteIsDeclined
+    ? (parseFloat(quoteOrder.total_cost || '0') || 0) - (parseFloat(quoteForOrder.previously_authorized_amount || '0') || 0)
+    : 0
+  const declinedAdditionalAuthorizationRequired = !!quoteForOrder
+    && quoteForOrder.authorization_type === 'additional_work'
+    && quoteIsDeclined
+    && declinedAuthorizationDelta > 0.005
+  const quoteActionLabel = declinedAdditionalAuthorizationRequired
+    ? 'Create revised authorization'
+    : additionalAuthorizationRequired
     ? `Authorize +$${quoteTotalDelta.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
     : quoteIsApproved
     ? (quoteForOrder?.authorization_type === 'additional_work' ? 'Additional work authorized' : 'Estimate authorized')
@@ -2077,11 +2091,15 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
         )
         : (quoteForOrder.authorization_type === 'additional_work' ? 'Send additional work' : 'Send estimate')
         : 'Create estimate'
-  const quoteActionDisabled = (quoteIsApproved && !additionalAuthorizationRequired) || !quoteCanChange || (quoteIsSent && !effectiveQuoteNeedsUpdate && !quoteIsApproved)
+  const quoteActionDisabled = (quoteIsApproved && !additionalAuthorizationRequired)
+    || !quoteCanChange
+    || (quoteIsSent && !effectiveQuoteNeedsUpdate && !quoteIsApproved && !declinedAdditionalAuthorizationRequired)
   const quoteDisabledReason = quoteIsApproved && !additionalAuthorizationRequired
     ? 'This estimate is authorized. The live repair order remains editable until finalization.'
     : !quoteCanChange
       ? 'Estimates are unavailable after the repair order is finalized.'
+      : quoteIsDeclined && !declinedAdditionalAuthorizationRequired
+        ? 'This declined revision is closed. Add more work before creating another authorization.'
       : quoteIsSent && !effectiveQuoteNeedsUpdate
         ? 'The estimate has been sent. It can be resent if its amount changes.'
         : undefined
@@ -2232,6 +2250,10 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
       || quoteActionDisabled
     ) return
     if (!quoteForOrder) {
+      createQuoteMutation.mutate(selectedOrder.id)
+      return
+    }
+    if (declinedAdditionalAuthorizationRequired) {
       createQuoteMutation.mutate(selectedOrder.id)
       return
     }
