@@ -547,6 +547,79 @@ async def test_linked_customer_can_approve_and_view_ordered_history(db_session, 
 
 
 @pytest.mark.asyncio
+async def test_authorization_history_is_canonical_across_detail_and_history_responses(
+    db_session,
+    monkeypatch,
+):
+    context = await _seed_authorization(db_session)
+    _silence_delivery(monkeypatch)
+    await quotes.send_quote_to_customer(
+        quote_id=context["quote"].id,
+        db=db_session,
+        current_user=context["roles"]["admin"],
+    )
+    first_decline = await quotes.decline_quote(
+        quote_id=context["quote"].id,
+        body=quotes.DeclineQuoteRequest(notes="Defer this work"),
+        db=db_session,
+        current_user=context["customer_user"],
+    )
+    repeated_decline = await quotes.decline_quote(
+        quote_id=context["quote"].id,
+        body=quotes.DeclineQuoteRequest(notes="A retry must not add another event"),
+        db=db_session,
+        current_user=context["customer_user"],
+    )
+
+    detail = await repair_orders.get_repair_order_detail(
+        order_id=context["order"].id,
+        db=db_session,
+        current_user=context["roles"]["admin"],
+    )
+    authorization_history = await quotes.get_authorization_history(
+        repair_order_id=context["order"].id,
+        db=db_session,
+        current_user=context["roles"]["admin"],
+    )
+    detail_authorization_events = [
+        event
+        for event in detail.history_events
+        if event.event_type.startswith("authorization_")
+    ]
+
+    assert first_decline.is_declined is True
+    assert repeated_decline.is_declined is True
+    assert [event.id for event in detail_authorization_events] == [
+        event.id for event in authorization_history.events
+    ]
+    assert [event.event_type for event in authorization_history.events] == [
+        "authorization_published",
+        "authorization_customer_declined",
+    ]
+    assert [event.entity_id for event in authorization_history.events] == [
+        context["quote"].id,
+        context["quote"].id,
+    ]
+    assert [event.created_at for event in authorization_history.events] == sorted(
+        event.created_at for event in authorization_history.events
+    )
+    assert len(
+        {
+            (event.event_type, event.entity_id)
+            for event in authorization_history.events
+        }
+    ) == len(authorization_history.events)
+    assert all(
+        event.model_dump() == matching.model_dump()
+        for event, matching in zip(
+            detail_authorization_events,
+            authorization_history.events,
+            strict=True,
+        )
+    )
+
+
+@pytest.mark.asyncio
 async def test_initial_threshold_never_auto_approves_additional_work(db_session, monkeypatch):
     context = await _seed_authorization(
         db_session,
