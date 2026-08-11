@@ -7,10 +7,14 @@ const refreshMocks = vi.hoisted(() => ({
   legacy: vi.fn(),
   workos: vi.fn(),
 }))
+const apiMocks = vi.hoisted(() => ({ post: vi.fn() }))
 
 vi.mock('../../lib/authRefresh', () => ({
   requestTokenRefresh: refreshMocks.legacy,
   requestWorkOSSessionRefresh: refreshMocks.workos,
+}))
+vi.mock('../../lib/api', () => ({
+  default: { post: apiMocks.post },
 }))
 
 import { useWebSocket } from '../useWebSocket'
@@ -77,23 +81,11 @@ const user = {
 }
 
 function authenticateWithWorkOS() {
-  useAuthStore.setState({
-    user,
-    token: null,
-    refreshToken: null,
-    isAuthenticated: true,
-    authProvider: 'workos',
-  })
+  useAuthStore.getState().establishCookieSession(user)
 }
 
 function authenticateWithLegacyTokens() {
-  useAuthStore.setState({
-    user,
-    token: 'legacy-access-secret',
-    refreshToken: 'legacy-refresh-secret',
-    isAuthenticated: true,
-    authProvider: 'legacy',
-  })
+  useAuthStore.getState().login('legacy-access-secret', 'legacy-refresh-secret', user)
 }
 
 function renderWebSocket(options: Parameters<typeof useWebSocket>[0] = {}) {
@@ -116,6 +108,8 @@ describe('useWebSocket cookie-session transport', () => {
     MockWebSocket.instances = []
     refreshMocks.legacy.mockReset()
     refreshMocks.workos.mockReset()
+    apiMocks.post.mockReset()
+    apiMocks.post.mockResolvedValue({})
     refreshMocks.workos.mockResolvedValue(undefined)
     refreshMocks.legacy.mockResolvedValue({
       access_token: 'rotated-access-secret',
@@ -128,6 +122,9 @@ describe('useWebSocket cookie-session transport', () => {
       refreshToken: null,
       isAuthenticated: false,
       authProvider: null,
+      authSessionEpoch: 0,
+      logoutInProgress: false,
+      webSocketRecoverySessionKey: null,
     })
   })
 
@@ -174,7 +171,7 @@ describe('useWebSocket cookie-session transport', () => {
     expect(logged).toContain('Connection error')
   })
 
-  it('uses one WorkOS HTTPS refresh and one reconnect for close 4001', async () => {
+  it('uses one WorkOS HTTPS refresh, then clears on a recovered-open second 4001', async () => {
     authenticateWithWorkOS()
     renderWebSocket()
 
@@ -187,10 +184,55 @@ describe('useWebSocket cookie-session transport', () => {
     expect(refreshMocks.legacy).not.toHaveBeenCalled()
     expect(MockWebSocket.instances).toHaveLength(2)
 
+    act(() => MockWebSocket.instances[1].emitOpen())
     act(() => MockWebSocket.instances[1].emitClose(4001))
     await act(async () => Promise.resolve())
+    act(() => {
+      document.dispatchEvent(new Event('visibilitychange'))
+      vi.advanceTimersByTime(60000)
+    })
     expect(refreshMocks.workos).toHaveBeenCalledTimes(1)
     expect(MockWebSocket.instances).toHaveLength(2)
+    expect(useAuthStore.getState().isAuthenticated).toBe(false)
+  })
+
+  it('keeps the single-recovery latch across a manual reconnect', async () => {
+    authenticateWithWorkOS()
+    const { result } = renderWebSocket()
+
+    await act(async () => {
+      MockWebSocket.instances[0].emitClose(4001)
+      await Promise.resolve()
+    })
+    act(() => MockWebSocket.instances[1].emitOpen())
+    act(() => result.current.reconnect())
+    expect(MockWebSocket.instances).toHaveLength(3)
+
+    act(() => MockWebSocket.instances[2].emitClose(4001))
+    await act(async () => Promise.resolve())
+    expect(refreshMocks.workos).toHaveBeenCalledTimes(1)
+    expect(MockWebSocket.instances).toHaveLength(3)
+    expect(useAuthStore.getState().isAuthenticated).toBe(false)
+  })
+
+  it('keeps the single-recovery latch across hook remounts in the same session', async () => {
+    authenticateWithWorkOS()
+    const firstHook = renderWebSocket()
+
+    await act(async () => {
+      MockWebSocket.instances[0].emitClose(4001)
+      await Promise.resolve()
+    })
+    act(() => MockWebSocket.instances[1].emitOpen())
+    firstHook.unmount()
+
+    renderWebSocket()
+    expect(MockWebSocket.instances).toHaveLength(3)
+    act(() => MockWebSocket.instances[2].emitClose(4001))
+    await act(async () => Promise.resolve())
+
+    expect(refreshMocks.workos).toHaveBeenCalledTimes(1)
+    expect(MockWebSocket.instances).toHaveLength(3)
     expect(useAuthStore.getState().isAuthenticated).toBe(false)
   })
 
@@ -204,7 +246,10 @@ describe('useWebSocket cookie-session transport', () => {
     })
 
     expect(refreshMocks.legacy).toHaveBeenCalledTimes(1)
-    expect(refreshMocks.legacy).toHaveBeenCalledWith('legacy-refresh-secret')
+    expect(refreshMocks.legacy).toHaveBeenCalledWith(
+      'legacy-refresh-secret',
+      expect.any(AbortSignal)
+    )
     expect(refreshMocks.workos).not.toHaveBeenCalled()
     expect(useAuthStore.getState()).toMatchObject({
       token: 'rotated-access-secret',
@@ -250,6 +295,90 @@ describe('useWebSocket cookie-session transport', () => {
 
     expect(refreshMocks.workos).toHaveBeenCalledTimes(1)
     expect(MockWebSocket.instances).toHaveLength(1)
+  })
+
+  it('replaces the socket immediately when user or tenant identity changes in place', () => {
+    authenticateWithWorkOS()
+    renderWebSocket()
+    const original = MockWebSocket.instances[0]
+    act(() => original.emitOpen())
+
+    const replacementUser = {
+      ...user,
+      id: 'user-2',
+      tenant_id: 'tenant-2',
+      email: 'other-owner@example.test',
+    }
+    act(() => useAuthStore.getState().setUser(replacementUser))
+
+    expect(original.close).toHaveBeenCalledTimes(1)
+    expect(MockWebSocket.instances).toHaveLength(2)
+
+    act(() => original.emitClose(1011))
+    act(() => vi.advanceTimersByTime(60000))
+    expect(MockWebSocket.instances).toHaveLength(2)
+
+    act(() => useAuthStore.getState().setUser({
+      ...replacementUser,
+      first_name: 'Updated display name',
+    }))
+    expect(MockWebSocket.instances).toHaveLength(2)
+  })
+
+  it('cancels stale async recovery when authenticated identity changes', async () => {
+    let resolveRefresh: (() => void) | undefined
+    let recoverySignal: AbortSignal | undefined
+    refreshMocks.workos.mockImplementationOnce((signal: AbortSignal) => new Promise<void>((resolve) => {
+      recoverySignal = signal
+      resolveRefresh = resolve
+    }))
+    authenticateWithWorkOS()
+    renderWebSocket()
+
+    act(() => MockWebSocket.instances[0].emitClose(4001))
+    act(() => useAuthStore.getState().setUser({
+      ...user,
+      id: 'user-2',
+      tenant_id: 'tenant-2',
+    }))
+    expect(MockWebSocket.instances).toHaveLength(2)
+    expect(recoverySignal?.aborted).toBe(true)
+
+    await act(async () => {
+      resolveRefresh?.()
+      await Promise.resolve()
+    })
+    expect(MockWebSocket.instances).toHaveLength(2)
+    expect(useAuthStore.getState().isAuthenticated).toBe(true)
+    expect(useAuthStore.getState().user?.id).toBe('user-2')
+  })
+
+  it('closes immediately when logout starts even if the logout request hangs', async () => {
+    let resolveLogout: (() => void) | undefined
+    apiMocks.post.mockImplementationOnce(() => new Promise<void>((resolve) => {
+      resolveLogout = resolve
+    }))
+    authenticateWithWorkOS()
+    renderWebSocket()
+    const socket = MockWebSocket.instances[0]
+    act(() => socket.emitOpen())
+
+    let logoutPromise: Promise<void> | undefined
+    act(() => {
+      logoutPromise = useAuthStore.getState().logout()
+    })
+
+    expect(useAuthStore.getState().logoutInProgress).toBe(true)
+    expect(socket.close).toHaveBeenCalledTimes(1)
+    act(() => vi.advanceTimersByTime(60000))
+    expect(MockWebSocket.instances).toHaveLength(1)
+
+    await act(async () => {
+      resolveLogout?.()
+      await logoutPromise
+    })
+    expect(useAuthStore.getState().isAuthenticated).toBe(false)
+    expect(useAuthStore.getState().logoutInProgress).toBe(false)
   })
 
   it.each([1000, 1008, 1009, 4002, 4003, 4008])(

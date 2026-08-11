@@ -30,6 +30,9 @@ describe('authStore', () => {
       refreshToken: null,
       isAuthenticated: false,
       authProvider: null,
+      authSessionEpoch: 0,
+      logoutInProgress: false,
+      webSocketRecoverySessionKey: null,
     })
     vi.mocked(api.post).mockClear()
   })
@@ -80,5 +83,43 @@ describe('authStore', () => {
     expect(useAuthStore.getState().token).toBe('new-tok')
     expect(useAuthStore.getState().refreshToken).toBe('new-ref')
     expect(useAuthStore.getState().user?.email).toBe('test@example.com')
+  })
+
+  it('allows one WebSocket auth recovery per authenticated session epoch', () => {
+    useAuthStore.getState().login('access-tok', 'refresh-tok', fakeUser)
+    const firstEpoch = useAuthStore.getState().authSessionEpoch
+
+    expect(useAuthStore.getState().claimWebSocketAuthRecovery()).toBe(true)
+    expect(useAuthStore.getState().claimWebSocketAuthRecovery()).toBe(false)
+    useAuthStore.getState().setTokens('rotated-access', 'rotated-refresh')
+    expect(useAuthStore.getState().authSessionEpoch).toBe(firstEpoch)
+    expect(useAuthStore.getState().claimWebSocketAuthRecovery()).toBe(false)
+
+    useAuthStore.getState().login('new-access', 'new-refresh', fakeUser)
+    expect(useAuthStore.getState().authSessionEpoch).toBe(firstEpoch + 1)
+    expect(useAuthStore.getState().claimWebSocketAuthRecovery()).toBe(true)
+  })
+
+  it('publishes logout start and does not let a slow logout clear a newer session', async () => {
+    let resolveLogout: (() => void) | undefined
+    vi.mocked(api.post).mockImplementationOnce(() => new Promise((resolve) => {
+      resolveLogout = () => resolve({})
+    }))
+    useAuthStore.getState().login('old-access', 'old-refresh', fakeUser)
+
+    const logoutPromise = useAuthStore.getState().logout()
+    expect(useAuthStore.getState().logoutInProgress).toBe(true)
+
+    const replacementUser = { ...fakeUser, id: 'u-2', email: 'new@example.com' }
+    useAuthStore.getState().establishCookieSession(replacementUser)
+    resolveLogout?.()
+    await logoutPromise
+
+    expect(useAuthStore.getState()).toMatchObject({
+      isAuthenticated: true,
+      logoutInProgress: false,
+      authProvider: 'workos',
+      user: replacementUser,
+    })
   })
 })

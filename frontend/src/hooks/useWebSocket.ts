@@ -7,9 +7,9 @@
  * Notifications are routed through the onNotification callback for
  * centralized handling via useNotificationManager.
  */
-import { useEffect, useRef, useCallback, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useCallback, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
-import { useAuthStore } from '../stores/authStore'
+import { getAuthenticatedSessionIdentity, useAuthStore } from '../stores/authStore'
 import { requestTokenRefresh, requestWorkOSSessionRefresh } from '../lib/authRefresh'
 import type { NotificationEvent } from './useNotificationManager'
 import type { RepairOrder, RepairOrderDetail } from '../types'
@@ -100,15 +100,17 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
   const ws = useRef<WebSocket | null>(null)
   const reconnectTimeout = useRef<ReturnType<typeof setTimeout> | null>(null)
   const pingInterval = useRef<ReturnType<typeof setInterval> | null>(null)
-  const authRecoveryAttempted = useRef(false)
   const reconnectAttempt = useRef(0)
+  const lifecycleEpoch = useRef(0)
+  const activeSessionKey = useRef<string | null>(null)
+  const recoveryAbortController = useRef<AbortController | null>(null)
   const onNotificationRef = useRef(onNotification)
   const queryClient = useQueryClient()
-  const isAuthenticated = useAuthStore((state) => state.isAuthenticated)
+  const sessionKey = useAuthStore(getAuthenticatedSessionIdentity)
   const [isConnected, setIsConnected] = useState(false)
   
   // Track if we should reconnect (false when intentionally disconnecting)
-  const shouldReconnect = useRef(true)
+  const shouldReconnect = useRef(false)
 
   // Notification handlers can legitimately change as a page rerenders. Keep the
   // current callback without making the socket lifecycle depend on its identity.
@@ -120,12 +122,34 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
     }
   }, [debug])
 
-  const refreshSession = useCallback(async (): Promise<boolean> => {
+  const cancelConnectionWork = useCallback(() => {
+    recoveryAbortController.current?.abort()
+    recoveryAbortController.current = null
+    if (reconnectTimeout.current) {
+      clearTimeout(reconnectTimeout.current)
+      reconnectTimeout.current = null
+    }
+    if (pingInterval.current) {
+      clearInterval(pingInterval.current)
+      pingInterval.current = null
+    }
+    const socket = ws.current
+    ws.current = null
+    socket?.close()
+    setIsConnected(false)
+  }, [])
+
+  const refreshSession = useCallback(async (
+    expectedSessionKey: string,
+    signal: AbortSignal
+  ): Promise<boolean> => {
     const state = useAuthStore.getState()
+    if (signal.aborted || getAuthenticatedSessionIdentity(state) !== expectedSessionKey) return false
     try {
       if (state.authProvider === 'workos') {
-        await requestWorkOSSessionRefresh()
-        return true
+        await requestWorkOSSessionRefresh(signal)
+        return !signal.aborted
+          && getAuthenticatedSessionIdentity(useAuthStore.getState()) === expectedSessionKey
       }
 
       if (state.authProvider !== 'legacy' && !state.refreshToken) {
@@ -133,10 +157,15 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
         return false
       }
 
-      const { access_token, refresh_token } = await requestTokenRefresh(state.refreshToken)
+      const { access_token, refresh_token } = await requestTokenRefresh(state.refreshToken, signal)
+      if (
+        signal.aborted
+        || getAuthenticatedSessionIdentity(useAuthStore.getState()) !== expectedSessionKey
+      ) return false
       useAuthStore.getState().setTokens(access_token, refresh_token)
-      return true
+      return getAuthenticatedSessionIdentity(useAuthStore.getState()) === expectedSessionKey
     } catch {
+      if (signal.aborted) return false
       log('Session refresh failed')
       return false
     }
@@ -321,10 +350,16 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
     }
   }, [queryClient, log])
   
-  const connect = useCallback(() => {
-    const state = useAuthStore.getState()
-    if (!state.isAuthenticated || !shouldReconnect.current) {
-      log('No authenticated session, skipping connection')
+  const connect = useCallback((expectedSessionKey: string, expectedLifecycle: number) => {
+    const isCurrentSession = () => (
+      shouldReconnect.current
+      && lifecycleEpoch.current === expectedLifecycle
+      && activeSessionKey.current === expectedSessionKey
+      && getAuthenticatedSessionIdentity(useAuthStore.getState()) === expectedSessionKey
+    )
+
+    if (!isCurrentSession()) {
+      log('No current authenticated session, skipping connection')
       return
     }
 
@@ -342,13 +377,13 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
     }
 
     const scheduleReconnect = (code: number, minimumDelay = 0) => {
-      if (!shouldReconnect.current || reconnectTimeout.current) return
+      if (!isCurrentSession() || reconnectTimeout.current) return
       const delay = Math.max(getReconnectDelay(reconnectAttempt.current), minimumDelay)
       reconnectAttempt.current += 1
       log(`Connection closed (${code}); retrying in ${delay}ms`)
       reconnectTimeout.current = setTimeout(() => {
         reconnectTimeout.current = null
-        connect()
+        connect(expectedSessionKey, expectedLifecycle)
       }, delay)
     }
 
@@ -360,11 +395,10 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
       ws.current = socket
 
       socket.onopen = () => {
-        if (ws.current !== socket) return
+        if (ws.current !== socket || !isCurrentSession()) return
         hasOpened = true
         log('Connected')
         setIsConnected(true)
-        authRecoveryAttempted.current = false
         reconnectAttempt.current = 0
         
         // Start ping interval to keep connection alive
@@ -372,19 +406,23 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
           clearInterval(pingInterval.current)
         }
         pingInterval.current = setInterval(() => {
-          if (ws.current === socket && socket.readyState === WebSocket.OPEN) {
+          if (
+            ws.current === socket
+            && socket.readyState === WebSocket.OPEN
+            && isCurrentSession()
+          ) {
             socket.send('ping')
           }
         }, 30000) // Ping every 30 seconds
       }
 
       socket.onmessage = (event) => {
-        if (ws.current === socket) handleMessage(event)
+        if (ws.current === socket && isCurrentSession()) handleMessage(event)
       }
 
       socket.onclose = (event) => {
         // A deliberately replaced socket must not schedule a second reconnect.
-        if (ws.current !== socket) return
+        if (ws.current !== socket || !isCurrentSession()) return
         ws.current = null
         log(`Disconnected (${event.code})`)
         setIsConnected(false)
@@ -395,31 +433,34 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
           pingInterval.current = null
         }
         
-        if (!shouldReconnect.current) return
+        if (event.code === 4001) {
+          const claimedRecovery = useAuthStore.getState().claimWebSocketAuthRecovery()
+          if (!claimedRecovery) {
+            shouldReconnect.current = false
+            useAuthStore.getState().clearSession()
+            return
+          }
 
-        // A connection gets one provider-aware refresh recovery. If the
-        // recovered connection cannot authenticate before opening, stop.
-        if (event.code === 4001 && !authRecoveryAttempted.current) {
-          authRecoveryAttempted.current = true
+          const recoveryController = new AbortController()
+          recoveryAbortController.current?.abort()
+          recoveryAbortController.current = recoveryController
           void (async () => {
-            const refreshed = await refreshSession()
-            if (
-              refreshed
-              && shouldReconnect.current
-              && useAuthStore.getState().isAuthenticated
-            ) {
-              connect()
+            const refreshed = await refreshSession(
+              expectedSessionKey,
+              recoveryController.signal
+            )
+            if (recoveryAbortController.current === recoveryController) {
+              recoveryAbortController.current = null
+            }
+            if (recoveryController.signal.aborted) return
+            if (!isCurrentSession()) return
+            if (refreshed) {
+              connect(expectedSessionKey, expectedLifecycle)
               return
             }
             shouldReconnect.current = false
             useAuthStore.getState().clearSession()
           })()
-          return
-        }
-
-        if (event.code === 4001) {
-          shouldReconnect.current = false
-          useAuthStore.getState().clearSession()
           return
         }
 
@@ -446,56 +487,57 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
   }, [handleMessage, log, refreshSession])
   
   const reconnect = useCallback(() => {
-    if (!useAuthStore.getState().isAuthenticated) return
+    const currentSessionKey = getAuthenticatedSessionIdentity(useAuthStore.getState())
+    if (!currentSessionKey || activeSessionKey.current !== currentSessionKey) return
     shouldReconnect.current = true
-    authRecoveryAttempted.current = false
     reconnectAttempt.current = 0
-    if (reconnectTimeout.current) {
-      clearTimeout(reconnectTimeout.current)
-      reconnectTimeout.current = null
-    }
-    if (pingInterval.current) {
-      clearInterval(pingInterval.current)
-      pingInterval.current = null
-    }
-    const socket = ws.current
-    ws.current = null
-    socket?.close()
-    setIsConnected(false)
-    connect()
-  }, [connect])
+    const nextLifecycle = lifecycleEpoch.current + 1
+    lifecycleEpoch.current = nextLifecycle
+    cancelConnectionWork()
+    connect(currentSessionKey, nextLifecycle)
+  }, [cancelConnectionWork, connect])
   
-  // Connect when authenticated
-  useEffect(() => {
-    if (isAuthenticated) {
-      shouldReconnect.current = true
-      connect()
+  // Zustand subscriptions fire synchronously. Tear down the old channel before
+  // React commits an in-place provider/user/tenant change or waits on logout.
+  useLayoutEffect(() => useAuthStore.subscribe((state) => {
+    const nextSessionKey = getAuthenticatedSessionIdentity(state)
+    if (activeSessionKey.current && activeSessionKey.current !== nextSessionKey) {
+      shouldReconnect.current = false
+      lifecycleEpoch.current += 1
+      activeSessionKey.current = null
+      cancelConnectionWork()
     }
-    
+  }), [cancelConnectionWork])
+
+  // Connect only for the exact authenticated session identity. Every cleanup
+  // invalidates pending refresh/reconnect work captured by the prior epoch.
+  useLayoutEffect(() => {
+    const currentLifecycle = lifecycleEpoch.current + 1
+    lifecycleEpoch.current = currentLifecycle
+    activeSessionKey.current = sessionKey
+    reconnectAttempt.current = 0
+    shouldReconnect.current = Boolean(sessionKey)
+
+    if (sessionKey) {
+      connect(sessionKey, currentLifecycle)
+    } else {
+      cancelConnectionWork()
+    }
+
     return () => {
       shouldReconnect.current = false
-      
-      if (reconnectTimeout.current) {
-        clearTimeout(reconnectTimeout.current)
-        reconnectTimeout.current = null
-      }
-      if (pingInterval.current) {
-        clearInterval(pingInterval.current)
-        pingInterval.current = null
-      }
-      const socket = ws.current
-      ws.current = null
-      socket?.close()
-      setIsConnected(false)
+      lifecycleEpoch.current += 1
+      if (activeSessionKey.current === sessionKey) activeSessionKey.current = null
+      cancelConnectionWork()
     }
-  }, [isAuthenticated, connect])
+  }, [cancelConnectionWork, connect, sessionKey])
   
   // Handle visibility change - reconnect when tab becomes visible
   useEffect(() => {
     const handleVisibilityChange = () => {
-      if (!document.hidden && isAuthenticated && !isConnected) {
+      if (!document.hidden && sessionKey && !isConnected) {
         log('Tab visible, reconnecting...')
-        connect()
+        connect(sessionKey, lifecycleEpoch.current)
       }
     }
     
@@ -503,7 +545,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
     return () => {
       document.removeEventListener('visibilitychange', handleVisibilityChange)
     }
-  }, [isAuthenticated, isConnected, connect, log])
+  }, [sessionKey, isConnected, connect, log])
   
   return { isConnected, reconnect }
 }

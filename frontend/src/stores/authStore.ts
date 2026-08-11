@@ -27,40 +27,66 @@ interface AuthState {
   refreshToken: string | null
   isAuthenticated: boolean
   authProvider: 'legacy' | 'workos' | null
+  authSessionEpoch: number
+  logoutInProgress: boolean
+  webSocketRecoverySessionKey: string | null
   login: (token: string, refreshToken: string, user: User) => void
   establishCookieSession: (user: User) => void
-  logout: () => void
+  logout: () => Promise<void>
   clearSession: () => void
   setUser: (user: User) => void
   setTokens: (token: string, refreshToken: string) => void
+  claimWebSocketAuthRecovery: () => boolean
+}
+
+export function getAuthenticatedSessionIdentity(
+  state: Pick<
+    AuthState,
+    'isAuthenticated' | 'logoutInProgress' | 'authSessionEpoch' | 'authProvider' | 'user'
+  >
+): string | null {
+  if (!state.isAuthenticated || state.logoutInProgress || !state.user) return null
+  return JSON.stringify([
+    state.authSessionEpoch,
+    state.authProvider,
+    state.user.id,
+    state.user.tenant_id,
+  ])
 }
 
 function sanitizePersistedAuthState(state: Partial<AuthState>): Partial<AuthState> {
-  if (state.authProvider === 'workos') {
+  const sanitized = {
+    ...state,
+    // These fields coordinate live resources and must never resume from disk.
+    authSessionEpoch: 0,
+    logoutInProgress: false,
+    webSocketRecoverySessionKey: null,
+  }
+  if (sanitized.authProvider === 'workos') {
     // The HttpOnly WorkOS session is revalidated by /auth/me on page load.
     // Never trust a persisted browser flag after the short provider session expires.
-    return { ...state, user: null, token: null, refreshToken: null, isAuthenticated: false }
+    return { ...sanitized, user: null, token: null, refreshToken: null, isAuthenticated: false }
   }
-  if (!state.token) {
-    return state
+  if (!sanitized.token) {
+    return sanitized
   }
-  if (!isTokenExpired(state.token)) {
-    return state
+  if (!isTokenExpired(sanitized.token)) {
+    return sanitized
   }
   const hasValidRefreshToken = Boolean(
-    state.refreshToken && !isTokenExpired(state.refreshToken)
+    sanitized.refreshToken && !isTokenExpired(sanitized.refreshToken)
   )
   if (hasValidRefreshToken) {
     // Access token is short-lived; keep a valid refresh token so the app can
     // recover session via /auth/refresh on the next protected API call.
     return {
-      ...state,
+      ...sanitized,
       token: null,
       isAuthenticated: true,
     }
   }
   return {
-    ...state,
+    ...sanitized,
     user: null,
     token: null,
     refreshToken: null,
@@ -76,37 +102,104 @@ export const useAuthStore = create<AuthState>()(
       refreshToken: null,
       isAuthenticated: false,
       authProvider: null,
+      authSessionEpoch: 0,
+      logoutInProgress: false,
+      webSocketRecoverySessionKey: null,
       login: (token, refreshToken, user) =>
-        set({
+        set((state) => ({
           token,
           refreshToken,
           user,
           isAuthenticated: true,
           authProvider: 'legacy',
-        }),
+          authSessionEpoch: state.authSessionEpoch + 1,
+          logoutInProgress: false,
+          webSocketRecoverySessionKey: null,
+        })),
       establishCookieSession: (user) =>
-        set({ user, token: null, refreshToken: null, isAuthenticated: true, authProvider: 'workos' }),
+        set((state) => ({
+          user,
+          token: null,
+          refreshToken: null,
+          isAuthenticated: true,
+          authProvider: 'workos',
+          authSessionEpoch: state.authSessionEpoch + 1,
+          logoutInProgress: false,
+          webSocketRecoverySessionKey: null,
+        })),
       logout: async () => {
+        const session = get()
+        if (session.logoutInProgress) return
+
+        const logoutEpoch = session.authSessionEpoch + 1
+        const endpoint = session.isAuthenticated
+          ? (session.authProvider === 'workos' ? '/auth/workos/logout' : '/auth/logout')
+          : null
+
+        // Publish logout intent before waiting on the network so live resources
+        // cannot remain attached to the session during a slow provider logout.
+        set({ authSessionEpoch: logoutEpoch, logoutInProgress: true })
+
         // Call backend to blacklist token and clear cookies
         try {
-          if (get().isAuthenticated) {
-            const endpoint = get().authProvider === 'workos' ? '/auth/workos/logout' : '/auth/logout'
+          if (endpoint) {
             await api.post(endpoint)
           }
         } catch {
           // Ignore errors - we're logging out anyway
         }
-        set({
-          user: null,
-          token: null,
-          refreshToken: null,
-          isAuthenticated: false,
-          authProvider: null,
+
+        set((current) => {
+          // A new session may have started while the logout request was slow.
+          if (current.authSessionEpoch !== logoutEpoch || !current.logoutInProgress) return {}
+          return {
+            user: null,
+            token: null,
+            refreshToken: null,
+            isAuthenticated: false,
+            authProvider: null,
+            logoutInProgress: false,
+            webSocketRecoverySessionKey: null,
+          }
         })
       },
-      clearSession: () => set({ user: null, token: null, refreshToken: null, isAuthenticated: false, authProvider: null }),
-      setUser: (user) => set({ user }),
+      clearSession: () => set((state) => ({
+        user: null,
+        token: null,
+        refreshToken: null,
+        isAuthenticated: false,
+        authProvider: null,
+        authSessionEpoch: state.authSessionEpoch + 1,
+        logoutInProgress: false,
+        webSocketRecoverySessionKey: null,
+      })),
+      setUser: (user) => set((state) => {
+        const identityChanged = state.user?.id !== user.id
+          || state.user?.tenant_id !== user.tenant_id
+        return {
+          user,
+          authSessionEpoch: identityChanged
+            ? state.authSessionEpoch + 1
+            : state.authSessionEpoch,
+          webSocketRecoverySessionKey: identityChanged
+            ? null
+            : state.webSocketRecoverySessionKey,
+        }
+      }),
       setTokens: (token, refreshToken) => set({ token, refreshToken }),
+      claimWebSocketAuthRecovery: () => {
+        let claimed = false
+        set((state) => {
+          const sessionKey = getAuthenticatedSessionIdentity(state)
+          if (
+            !sessionKey
+            || state.webSocketRecoverySessionKey === sessionKey
+          ) return {}
+          claimed = true
+          return { webSocketRecoverySessionKey: sessionKey }
+        })
+        return claimed
+      },
     }),
     {
       name: 'auth-storage',
