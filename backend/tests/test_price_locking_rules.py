@@ -178,6 +178,11 @@ async def test_quote_send_does_not_lock_live_order_pricing(db_session, monkeypat
     svc = PriceBuildService()
     loaded = await svc.load_order(db_session, order.id)
     await svc.add_flat_service_line(db_session, loaded, service.id, quantity=1)
+    await quotes_endpoint.update_quote(
+        quote_id=quote.id,
+        db=db_session,
+        current_user=staff_user,
+    )
 
     async def _noop_email(**_kwargs):
         return None
@@ -242,7 +247,7 @@ async def test_approved_estimate_creates_incremental_authorization_revision(db_s
 
 
 @pytest.mark.asyncio
-async def test_quote_send_rolls_back_failed_price_refresh(db_session, monkeypatch):
+async def test_quote_send_rejects_stale_draft_without_rewriting(db_session):
     staff_user, _order, _service, quote = await _seed_quote_context(db_session)
     # Order needs a work line so the send passes the empty-order guard.
     db_session.add(Labor(
@@ -256,41 +261,20 @@ async def test_quote_send_rolls_back_failed_price_refresh(db_session, monkeypatc
         line_type=LaborLineType.MANUAL,
     ))
     await db_session.commit()
-    rolled_back = False
-    original_rollback = db_session.rollback
+    quote_id = quote.id
+    with pytest.raises(HTTPException) as exc_info:
+        await quotes_endpoint.send_quote_to_customer(
+            quote_id=quote_id,
+            db=db_session,
+            current_user=staff_user,
+        )
 
-    async def _failed_recalculate(*_args, **_kwargs):
-        raise RuntimeError("price refresh failed")
-
-    async def _spy_rollback():
-        nonlocal rolled_back
-        rolled_back = True
-        await original_rollback()
-
-    async def _noop_email(**_kwargs):
-        return None
-
-    async def _noop_sms(*_args, **_kwargs):
-        return None
-
-    async def _noop_broadcast(*_args, **_kwargs):
-        return None
-
-    monkeypatch.setattr(quotes_endpoint.price_build_service, "recalculate_order", _failed_recalculate)
-    monkeypatch.setattr(db_session, "rollback", _spy_rollback)
-    monkeypatch.setattr(quotes_endpoint, "send_email", _noop_email)
-    monkeypatch.setattr(quotes_endpoint, "send_sms", _noop_sms)
-    monkeypatch.setattr(quotes_endpoint, "broadcast_quote_event", _noop_broadcast)
-    monkeypatch.setattr(quotes_endpoint, "broadcast_repair_order_update", _noop_broadcast)
-
-    response = await quotes_endpoint.send_quote_to_customer(
-        quote_id=quote.id,
-        db=db_session,
-        current_user=staff_user,
-    )
-
-    assert rolled_back is True
-    assert response.sent_to_customer is True
+    assert exc_info.value.status_code == 409
+    await db_session.rollback()
+    persisted = await db_session.get(Quote, quote_id)
+    assert persisted.sent_to_customer is False
+    assert persisted.approval_token is None
+    assert persisted.total_amount == Decimal("120.00")
 
 
 @pytest.mark.asyncio
@@ -319,6 +303,11 @@ async def test_quote_send_uses_discounted_order_total(db_session, monkeypatch):
     refreshed_order = (await db_session.execute(select(RepairOrder).where(RepairOrder.id == order.id))).scalar_one()
     refreshed_order.labor_discount_amount = Decimal("20.00")
     await db_session.commit()
+    await quotes_endpoint.update_quote(
+        quote_id=quote.id,
+        db=db_session,
+        current_user=staff_user,
+    )
 
     async def _noop_email(**_kwargs):
         return None
@@ -350,6 +339,11 @@ async def test_quote_send_email_uses_tenant_branding(db_session, monkeypatch):
     svc = PriceBuildService()
     loaded = await svc.load_order(db_session, order.id)
     await svc.add_flat_service_line(db_session, loaded, service.id, quantity=1)
+    await quotes_endpoint.update_quote(
+        quote_id=quote.id,
+        db=db_session,
+        current_user=staff_user,
+    )
 
     sent_email = {}
 
@@ -389,6 +383,11 @@ async def test_quote_send_queues_email_without_calling_resend(db_session, monkey
     svc = PriceBuildService()
     loaded = await svc.load_order(db_session, order.id)
     await svc.add_flat_service_line(db_session, loaded, service.id, quantity=1)
+    await quotes_endpoint.update_quote(
+        quote_id=quote.id,
+        db=db_session,
+        current_user=staff_user,
+    )
 
     async def _must_not_send_email(**_kwargs):
         raise AssertionError("Resend must not be called from the quote request")
@@ -430,6 +429,9 @@ async def test_quote_send_queues_email_without_calling_resend(db_session, monkey
 async def test_quote_decline_sms_uses_tenant_shop_name(db_session, monkeypatch):
     staff_user, _order, _service, quote = await _seed_quote_context(db_session)
     staff_user.phone = "5558675309"
+    quote.sent_to_customer = True
+    quote.sent_at = datetime.now(timezone.utc)
+    quote.approval_token = f"decline-{uuid4().hex}"
     await db_session.commit()
     sent_sms = []
 
@@ -443,11 +445,11 @@ async def test_quote_decline_sms_uses_tenant_shop_name(db_session, monkeypatch):
     monkeypatch.setattr(quotes_endpoint, "broadcast_quote_event", _noop_broadcast)
     monkeypatch.setattr(quotes_endpoint, "broadcast_repair_order_update", _noop_broadcast)
 
-    await quotes_endpoint.decline_quote(
-        quote_id=quote.id,
+    await quotes_endpoint.decline_quote_by_token(
+        request=_fake_request(),
+        token=quote.approval_token,
         body=quotes_endpoint.DeclineQuoteRequest(notes="Need approval"),
         db=db_session,
-        current_user=staff_user,
     )
 
     assert sent_sms
@@ -490,6 +492,11 @@ async def test_quote_send_email_includes_customer_savings(db_session, monkeypatc
     refreshed_order.order_discount_amount = Decimal("10.00")
     db_session.add_all([inventory, part])
     await db_session.commit()
+    await quotes_endpoint.update_quote(
+        quote_id=quote.id,
+        db=db_session,
+        current_user=staff_user,
+    )
 
     sent_email = {}
 
@@ -725,6 +732,8 @@ async def test_approved_quote_existing_portal_user_relinks_duplicate_customer(db
 async def test_quote_approval_api_creates_portal_account(client, db_session):
     _, order, _, quote = await _seed_quote_context(db_session)
     quote.approval_token = "quote-approval-token"
+    quote.sent_to_customer = True
+    quote.sent_at = datetime.now(timezone.utc)
     await db_session.commit()
 
     approve_response = await client.post("/api/v1/quotes/token/quote-approval-token/approve")

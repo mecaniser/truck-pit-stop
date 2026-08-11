@@ -1,5 +1,4 @@
 import json
-import logging
 import secrets
 from html import escape
 from datetime import datetime, timedelta, timezone
@@ -7,8 +6,8 @@ from typing import Optional
 from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Response, status, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, and_, desc
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy import select, func, and_, desc, update
+from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.orm import selectinload
 from pydantic import BaseModel
 from decimal import Decimal
@@ -35,6 +34,8 @@ from app.db.models.tenant import Tenant
 from app.db.models.vehicle import Vehicle
 from app.db.models.inventory import PartsUsage
 from app.db.models.labor import Labor
+from app.db.models.repair_order_history import RepairOrderHistoryEvent
+from app.schemas.repair_order import RepairOrderHistoryEventResponse
 from app.services.email_service import send_email
 from app.services.provider_outbox_service import enqueue_email_notification
 from app.services.tenant_branding import build_tenant_contact_html, get_tenant_display_name
@@ -45,11 +46,6 @@ from app.services.pricing import (
     get_order_parts_total,
     get_order_total,
 )
-from app.services.price_build_service import (
-    PriceBuildLockedError,
-    PriceBuildService,
-    PriceBuildValidationError,
-)
 from app.core.websocket import broadcast_quote_event, broadcast_repair_order_update, WSEventType
 from app.services.quote_access_service import (
     QUOTE_PORTAL_ENROLLMENT_TOKEN_TTL_SECONDS,
@@ -57,8 +53,6 @@ from app.services.quote_access_service import (
 )
 
 router = APIRouter()
-price_build_service = PriceBuildService()
-logger = logging.getLogger(__name__)
 
 QUOTE_ALLOWED_RO_STATUSES = {
     RepairOrderStatus.DRAFT,
@@ -71,9 +65,28 @@ QUOTE_ALLOWED_RO_STATUSES = {
     RepairOrderStatus.PENDING_REVIEW,
 }
 
+AUTHORIZATION_DELTA_EPSILON = Decimal("0.005")
+QUOTE_PUBLISHER_ROLES = {
+    UserRole.GARAGE_OWNER,
+    UserRole.GARAGE_ADMIN,
+    UserRole.RECEPTIONIST,
+}
+
 
 def _money(value: object) -> Decimal:
     return Decimal(str(value or 0)).quantize(Decimal("0.01"))
+
+
+def _decimal(value: object) -> Decimal:
+    return Decimal(str(value or 0))
+
+
+def _is_publication_concurrency_error(exc: OperationalError) -> bool:
+    sqlstate = getattr(exc.orig, "sqlstate", None) or getattr(exc.orig, "pgcode", None)
+    if sqlstate in {"40001", "40P01", "55P03"}:
+        return True
+    message = str(exc).lower()
+    return "database is locked" in message or "database table is locked" in message
 
 
 def _format_money(value: object) -> str:
@@ -221,6 +234,11 @@ class QuoteResponse(BaseModel):
         from_attributes = True
 
 
+class AuthorizationHistoryResponse(BaseModel):
+    revisions: list[QuoteResponse]
+    events: list[RepairOrderHistoryEventResponse]
+
+
 class DeclineQuoteRequest(BaseModel):
     notes: Optional[str] = None
 
@@ -298,6 +316,85 @@ def _require_staff(current_user: User) -> None:
         )
 
 
+def _require_quote_publisher(current_user: User) -> None:
+    if current_user.role not in QUOTE_PUBLISHER_ROLES:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only an owner, admin, or receptionist may publish customer authorization requests",
+        )
+
+
+def _actor_name(current_user: User) -> str:
+    return f"{current_user.first_name} {current_user.last_name}".strip() or current_user.email
+
+
+def _record_authorization_history_event(
+    db: AsyncSession,
+    *,
+    order: RepairOrder,
+    quote: Quote,
+    event_type: str,
+    label: str,
+    actor_name: str,
+    source: str,
+) -> None:
+    occurred_at = datetime.now(timezone.utc)
+    detail = json.dumps(
+        {
+            "revision": quote.revision,
+            "authorization_type": quote.authorization_type,
+            "previous_amount": str(_money(quote.previously_authorized_amount)),
+            "delta_amount": str(_money(quote.delta_amount)),
+            "resulting_total": str(_money(quote.total_amount)),
+            "source": source,
+            "occurred_at": occurred_at.isoformat(),
+        },
+        separators=(",", ":"),
+        sort_keys=True,
+    )
+    db.add(
+        RepairOrderHistoryEvent(
+            tenant_id=order.tenant_id,
+            repair_order_id=order.id,
+            created_at=occurred_at,
+            event_type=event_type,
+            label=label,
+            detail=detail,
+            entity_id=quote.id,
+            actor_name=actor_name,
+        )
+    )
+
+
+async def _require_linked_customer(
+    db: AsyncSession,
+    *,
+    current_user: User,
+    order: RepairOrder,
+) -> None:
+    if current_user.role != UserRole.CUSTOMER:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only the linked customer may approve or decline an authorization",
+        )
+
+    if current_user.customer_id == order.customer_id and current_user.tenant_id == order.tenant_id:
+        return
+
+    link = (
+        await db.execute(
+            select(UserCustomerLink).where(
+                UserCustomerLink.user_id == current_user.id,
+                UserCustomerLink.customer_id == order.customer_id,
+                UserCustomerLink.tenant_id == order.tenant_id,
+                UserCustomerLink.deleted_at.is_(None),
+            )
+        )
+    ).scalar_one_or_none()
+    if not link:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Quote not found")
+
+
 def _set_auth_cookies(response: Response, access_token: str, refresh_token: str):
     response.set_cookie(
         key="access_token",
@@ -330,10 +427,15 @@ def _quote_token_reference_time(quote: Quote) -> datetime:
 
 def _validate_quote_token_not_expired_or_400(quote: Quote) -> None:
     expires_at = _quote_token_reference_time(quote) + timedelta(days=7)
+    if quote.expires_at:
+        explicit_expiry = quote.expires_at
+        if explicit_expiry.tzinfo is None:
+            explicit_expiry = explicit_expiry.replace(tzinfo=timezone.utc)
+        expires_at = min(expires_at, explicit_expiry)
     if datetime.now(timezone.utc) > expires_at:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Quote link expired. Please contact the shop for a new quote link.",
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Quote not found or link expired",
         )
 
 
@@ -343,7 +445,13 @@ async def _load_quote_context_by_token_or_400(
     *,
     include_parts: bool = False,
 ) -> tuple[Quote, RepairOrder]:
-    result = await db.execute(select(Quote).where(Quote.approval_token == token))
+    result = await db.execute(
+        select(Quote).where(
+            Quote.approval_token == token,
+            Quote.sent_to_customer.is_(True),
+            Quote.deleted_at.is_(None),
+        ).with_for_update()
+    )
     quote = result.scalar_one_or_none()
     if not quote:
         raise HTTPException(
@@ -355,7 +463,12 @@ async def _load_quote_context_by_token_or_400(
 
     order_query = (
         select(RepairOrder)
-        .where(RepairOrder.id == quote.repair_order_id)
+        .where(
+            RepairOrder.id == quote.repair_order_id,
+            RepairOrder.tenant_id == quote.tenant_id,
+            RepairOrder.deleted_at.is_(None),
+            RepairOrder.is_internal.is_(False),
+        )
         .options(
             selectinload(RepairOrder.customer),
             selectinload(RepairOrder.vehicle),
@@ -365,12 +478,20 @@ async def _load_quote_context_by_token_or_400(
         order_query = order_query.options(
             selectinload(RepairOrder.parts_usage).selectinload(PartsUsage.inventory_item),
         )
+    order_query = order_query.with_for_update()
     result = await db.execute(order_query)
     order = result.scalar_one_or_none()
     if not order:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Repair order not found",
+        )
+
+    latest_quote = await _latest_quote_for_order(db, order.id, order.tenant_id)
+    if not latest_quote or latest_quote.id != quote.id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Quote not found or link expired",
         )
     return quote, order
 
@@ -487,14 +608,82 @@ async def generate_quote_number(db: AsyncSession, tenant_id: UUID) -> str:
     )
 
 
-async def _latest_quote_for_order(db: AsyncSession, order_id: UUID) -> Optional[Quote]:
+async def _latest_quote_for_order(
+    db: AsyncSession,
+    order_id: UUID,
+    tenant_id: UUID,
+) -> Optional[Quote]:
     result = await db.execute(
         select(Quote)
-        .where(Quote.repair_order_id == order_id)
+        .where(
+            Quote.repair_order_id == order_id,
+            Quote.tenant_id == tenant_id,
+            Quote.deleted_at.is_(None),
+        )
         .order_by(desc(Quote.revision), desc(Quote.created_at))
         .limit(1)
     )
     return result.scalar_one_or_none()
+
+
+async def _latest_approved_quote_for_order(
+    db: AsyncSession,
+    order_id: UUID,
+    tenant_id: UUID,
+) -> Optional[Quote]:
+    result = await db.execute(
+        select(Quote)
+        .where(
+            Quote.repair_order_id == order_id,
+            Quote.tenant_id == tenant_id,
+            Quote.is_approved.is_(True),
+            Quote.deleted_at.is_(None),
+        )
+        .order_by(desc(Quote.revision), desc(Quote.created_at))
+        .limit(1)
+    )
+    return result.scalar_one_or_none()
+
+
+async def _load_customer_decision_context(
+    db: AsyncSession,
+    *,
+    quote_id: UUID,
+    current_user: User,
+    include_customer_vehicle: bool = False,
+) -> tuple[Quote, RepairOrder]:
+    filters = [
+        Quote.id == quote_id,
+        Quote.deleted_at.is_(None),
+        Quote.sent_to_customer.is_(True),
+        RepairOrder.deleted_at.is_(None),
+        RepairOrder.is_internal.is_(False),
+        RepairOrder.tenant_id == Quote.tenant_id,
+    ]
+    if current_user.role != UserRole.CUSTOMER:
+        filters.append(RepairOrder.tenant_id == current_user.tenant_id)
+
+    query = (
+        select(Quote, RepairOrder)
+        .join(RepairOrder, RepairOrder.id == Quote.repair_order_id)
+        .where(*filters)
+        .with_for_update()
+    )
+    if include_customer_vehicle:
+        query = query.options(
+            selectinload(RepairOrder.customer),
+            selectinload(RepairOrder.vehicle),
+        )
+    row = (await db.execute(query)).one_or_none()
+    if not row:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Quote not found")
+
+    quote, order = row
+    await _require_linked_customer(db, current_user=current_user, order=order)
+    latest_quote = await _latest_quote_for_order(db, order.id, order.tenant_id)
+    if not latest_quote or latest_quote.id != quote.id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Quote not found")
+    return quote, order
 
 
 def _quote_snapshot(
@@ -547,18 +736,19 @@ async def create_quote(
             detail="User must be associated with a tenant",
         )
     result = await db.execute(
-        select(RepairOrder).where(RepairOrder.id == body.repair_order_id)
+        select(RepairOrder)
+        .where(
+            RepairOrder.id == body.repair_order_id,
+            RepairOrder.tenant_id == current_user.tenant_id,
+            RepairOrder.deleted_at.is_(None),
+        )
+        .with_for_update()
     )
     order = result.scalar_one_or_none()
     if not order:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Repair order not found",
-        )
-    if order.tenant_id != current_user.tenant_id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Access denied",
         )
     if order.is_internal:
         raise HTTPException(
@@ -570,7 +760,7 @@ async def create_quote(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="An estimate can't be created after the repair order is finalized",
         )
-    existing = await _latest_quote_for_order(db, body.repair_order_id)
+    existing = await _latest_quote_for_order(db, body.repair_order_id, order.tenant_id)
     if existing and not existing.is_approved and not existing.sent_to_customer:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -578,14 +768,16 @@ async def create_quote(
         )
     
     # Quote total is the customer-facing net total after manager discounts.
-    total_amount = get_order_total(order)
-    previous_authorized = (
-        _money(existing.total_amount)
-        if existing and existing.is_approved
-        else _money(existing.previously_authorized_amount) if existing else Decimal("0.00")
+    total_amount = _money(get_order_total(order))
+    latest_approved = await _latest_approved_quote_for_order(
+        db,
+        body.repair_order_id,
+        order.tenant_id,
     )
-    delta_amount = _money(total_amount - previous_authorized)
-    if existing and delta_amount <= 0:
+    previous_authorized = _money(latest_approved.total_amount) if latest_approved else Decimal("0.00")
+    raw_delta = _decimal(total_amount) - _decimal(previous_authorized)
+    delta_amount = _money(raw_delta)
+    if latest_approved and raw_delta <= AUTHORIZATION_DELTA_EPSILON:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="No additional customer authorization is required unless the repair total increases",
@@ -606,8 +798,8 @@ async def create_quote(
             revision=(existing.revision + 1) if existing else 1,
             authorization_type=(
                 "additional_work"
-                if existing and existing.is_approved
-                else existing.authorization_type if existing else "initial_estimate"
+                if latest_approved
+                else "initial_estimate"
             ),
             previously_authorized_amount=previous_authorized,
             delta_amount=delta_amount,
@@ -637,9 +829,16 @@ async def get_quote_by_repair_order(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
+    quote_filters = [
+        Quote.repair_order_id == RepairOrder.id,
+        Quote.tenant_id == RepairOrder.tenant_id,
+        Quote.deleted_at.is_(None),
+    ]
+    if current_user.role == UserRole.CUSTOMER:
+        quote_filters.append(Quote.sent_to_customer.is_(True))
     latest_quote_id = (
         select(Quote.id)
-        .where(Quote.repair_order_id == RepairOrder.id)
+        .where(*quote_filters)
         .order_by(Quote.revision.desc(), Quote.created_at.desc())
         .limit(1)
         .correlate(RepairOrder)
@@ -648,7 +847,11 @@ async def get_quote_by_repair_order(
     result = await db.execute(
         select(RepairOrder, Quote)
         .outerjoin(Quote, Quote.id == latest_quote_id)
-        .where(RepairOrder.id == repair_order_id)
+        .where(
+            RepairOrder.id == repair_order_id,
+            RepairOrder.deleted_at.is_(None),
+            RepairOrder.is_internal.is_(False),
+        )
     )
     row = result.one_or_none()
     if not row:
@@ -658,19 +861,81 @@ async def get_quote_by_repair_order(
         )
     order, quote = row
     if current_user.role == UserRole.CUSTOMER:
-        if not current_user.customer_id or current_user.customer_id != order.customer_id:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Access denied",
-            )
+        await _require_linked_customer(db, current_user=current_user, order=order)
     elif current_user.tenant_id != order.tenant_id:
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Access denied",
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Repair order not found",
         )
     if not quote:
         return None
     return QuoteResponse.model_validate(quote)
+
+
+@router.get("/repair-order/{repair_order_id}/history", response_model=AuthorizationHistoryResponse)
+async def get_authorization_history(
+    repair_order_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    result = await db.execute(
+        select(RepairOrder).where(
+            RepairOrder.id == repair_order_id,
+            RepairOrder.deleted_at.is_(None),
+            RepairOrder.is_internal.is_(False),
+        )
+    )
+    order = result.scalar_one_or_none()
+    if not order:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repair order not found")
+
+    if current_user.role == UserRole.CUSTOMER:
+        await _require_linked_customer(db, current_user=current_user, order=order)
+        revision_filters = (Quote.sent_to_customer.is_(True),)
+    else:
+        _require_staff(current_user)
+        if current_user.tenant_id != order.tenant_id:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repair order not found")
+        revision_filters = ()
+
+    revisions = (
+        await db.execute(
+            select(Quote)
+            .where(
+                Quote.repair_order_id == order.id,
+                Quote.tenant_id == order.tenant_id,
+                Quote.deleted_at.is_(None),
+                *revision_filters,
+            )
+            .order_by(Quote.revision.asc(), Quote.created_at.asc(), Quote.id.asc())
+        )
+    ).scalars().all()
+    events = (
+        await db.execute(
+            select(RepairOrderHistoryEvent)
+            .where(
+                RepairOrderHistoryEvent.repair_order_id == order.id,
+                RepairOrderHistoryEvent.tenant_id == order.tenant_id,
+                RepairOrderHistoryEvent.event_type.in_(
+                    (
+                        "authorization_published",
+                        "authorization_threshold_approved",
+                        "authorization_customer_approved",
+                        "authorization_customer_declined",
+                    )
+                ),
+                RepairOrderHistoryEvent.deleted_at.is_(None),
+            )
+            .order_by(
+                RepairOrderHistoryEvent.created_at.asc(),
+                RepairOrderHistoryEvent.id.asc(),
+            )
+        )
+    ).scalars().all()
+    return AuthorizationHistoryResponse(
+        revisions=[QuoteResponse.model_validate(quote) for quote in revisions],
+        events=[RepairOrderHistoryEventResponse.model_validate(event) for event in events],
+    )
 
 
 @router.put("/{quote_id}", response_model=QuoteResponse)
@@ -683,7 +948,11 @@ async def update_quote(
     _require_staff(current_user)
     
     result = await db.execute(
-        select(Quote).where(Quote.id == quote_id)
+        select(Quote).where(
+            Quote.id == quote_id,
+            Quote.tenant_id == current_user.tenant_id,
+            Quote.deleted_at.is_(None),
+        )
     )
     quote = result.scalar_one_or_none()
     if not quote:
@@ -693,7 +962,11 @@ async def update_quote(
         )
     
     result = await db.execute(
-        select(RepairOrder).where(RepairOrder.id == quote.repair_order_id)
+        select(RepairOrder).where(
+            RepairOrder.id == quote.repair_order_id,
+            RepairOrder.tenant_id == current_user.tenant_id,
+            RepairOrder.deleted_at.is_(None),
+        )
     )
     order = result.scalar_one_or_none()
     if not order:
@@ -702,12 +975,6 @@ async def update_quote(
             detail="Repair order not found",
         )
     
-    if current_user.tenant_id != order.tenant_id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Access denied",
-        )
-
     if quote.is_approved:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -717,7 +984,7 @@ async def update_quote(
     # Recalculate only an unsent draft. Once sent, its scope is immutable.
     if quote.sent_to_customer:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
+            status_code=status.HTTP_409_CONFLICT,
             detail="A sent authorization cannot be changed; create a new additional-work authorization instead",
         )
     quote.total_amount = get_order_total(order)
@@ -737,7 +1004,11 @@ async def delete_quote(
     _require_staff(current_user)
 
     result = await db.execute(
-        select(Quote).where(Quote.id == quote_id)
+        select(Quote).where(
+            Quote.id == quote_id,
+            Quote.tenant_id == current_user.tenant_id,
+            Quote.deleted_at.is_(None),
+        )
     )
     quote = result.scalar_one_or_none()
     if not quote:
@@ -747,7 +1018,11 @@ async def delete_quote(
         )
 
     result = await db.execute(
-        select(RepairOrder).where(RepairOrder.id == quote.repair_order_id)
+        select(RepairOrder).where(
+            RepairOrder.id == quote.repair_order_id,
+            RepairOrder.tenant_id == current_user.tenant_id,
+            RepairOrder.deleted_at.is_(None),
+        )
     )
     order = result.scalar_one_or_none()
     if not order:
@@ -756,16 +1031,16 @@ async def delete_quote(
             detail="Repair order not found",
         )
 
-    if current_user.tenant_id != order.tenant_id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Access denied",
-        )
-
     if quote.is_approved:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Cannot delete an approved quote",
+        )
+
+    if quote.sent_to_customer:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="A sent authorization cannot be deleted",
         )
 
     # Estimates are optional authorization records. Deleting an unapproved
@@ -791,40 +1066,55 @@ async def send_quote_to_customer(
     current_user: User = Depends(get_current_active_user),
 ):
     """Send quote to customer via email for approval"""
-    _require_staff(current_user)
+    _require_quote_publisher(current_user)
     current_user_id = current_user.id
     current_tenant_id = current_user.tenant_id
+    if not current_tenant_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Quote not found")
     
     result = await db.execute(
-        select(Quote).where(Quote.id == quote_id)
-    )
-    quote = result.scalar_one_or_none()
-    if not quote:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Quote not found",
+        select(RepairOrder, Quote)
+        .join(Quote, Quote.repair_order_id == RepairOrder.id)
+        .where(
+            Quote.id == quote_id,
+            Quote.tenant_id == current_tenant_id,
+            Quote.deleted_at.is_(None),
+            RepairOrder.tenant_id == current_tenant_id,
+            RepairOrder.deleted_at.is_(None),
+            RepairOrder.is_internal.is_(False),
         )
-    
-    result = await db.execute(
-        select(RepairOrder)
-        .where(RepairOrder.id == quote.repair_order_id)
         .options(
             selectinload(RepairOrder.customer),
             selectinload(RepairOrder.vehicle),
             selectinload(RepairOrder.parts_usage).selectinload(PartsUsage.inventory_item),
+            selectinload(RepairOrder.labor_items),
         )
+        .execution_options(populate_existing=True)
+        .with_for_update()
     )
-    order = result.scalar_one_or_none()
-    if not order:
+    row = result.one_or_none()
+    if not row:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Repair order not found",
+            detail="Quote not found",
         )
-    
-    if current_tenant_id != order.tenant_id:
+    order, quote = row
+
+    latest_quote = await _latest_quote_for_order(db, order.id, order.tenant_id)
+    if latest_quote is None or latest_quote.id != quote.id:
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Access denied",
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Authorization revision is stale; create or publish the latest revision",
+        )
+    if quote.sent_to_customer:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Authorization revision has already been published",
+        )
+    if quote.is_approved or quote.is_declined:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="A decided authorization revision cannot be published again",
         )
 
     # An empty order has nothing to quote — refuse to send it (the UI disables the
@@ -842,68 +1132,28 @@ async def send_quote_to_customer(
     tenant = tenant_result.scalar_one_or_none()
     shop_name = tenant.name if tenant and tenant.name else "Your repair shop"
 
-    # Force customer-facing send to use current totals from the price builder,
-    # even if the quote draft was created before later edits.
-    try:
-        pb_order = await price_build_service.load_order(db, order.id)
-        if pb_order.pricing_locked_at is None or pb_order.pricing_lock_reason == "quote_sent":
-            try:
-                await price_build_service.recalculate_order(db, pb_order)
-            except (PriceBuildValidationError, PriceBuildLockedError):
-                # Keep flow non-blocking: quote can still be sent with current values.
-                pass
-        refreshed_result = await db.execute(
-            select(RepairOrder)
-            .where(RepairOrder.id == order.id)
-            .options(
-                selectinload(RepairOrder.customer),
-                selectinload(RepairOrder.vehicle),
-                selectinload(RepairOrder.parts_usage).selectinload(PartsUsage.inventory_item),
-            )
+    # Publication is the financial boundary. The draft is never silently
+    # rewritten here: the locked order total, latest approved baseline, and
+    # revision must still match the staff-reviewed draft.
+    latest_total = _money(get_order_total(order))
+    latest_approved = await _latest_approved_quote_for_order(db, order.id, order.tenant_id)
+    expected_previous = _money(latest_approved.total_amount) if latest_approved else Decimal("0.00")
+    expected_type = "additional_work" if latest_approved else "initial_estimate"
+    raw_delta = _decimal(latest_total) - _decimal(expected_previous)
+    expected_delta = _money(raw_delta)
+    stale_amount = abs(_decimal(latest_total) - _decimal(quote.total_amount)) > AUTHORIZATION_DELTA_EPSILON
+    stale_baseline = abs(_decimal(expected_previous) - _decimal(quote.previously_authorized_amount)) > AUTHORIZATION_DELTA_EPSILON
+    stale_delta = abs(_decimal(expected_delta) - _decimal(quote.delta_amount)) > AUTHORIZATION_DELTA_EPSILON
+    if stale_amount or stale_baseline or stale_delta or quote.authorization_type != expected_type:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Authorization draft is stale; recalculate it before publication",
         )
-        refreshed_order = refreshed_result.scalar_one_or_none()
-        if refreshed_order:
-            order = refreshed_order
-    except Exception as exc:
-        # A database error during the optional price refresh leaves PostgreSQL
-        # transactions aborted until rollback. Quote sending should continue
-        # from the last persisted totals if the refresh cannot complete.
-        logger.warning(
-            "quote_price_refresh_failed",
-            extra={"quote_id": str(quote_id), "repair_order_id": str(order.id), "error": str(exc)},
+    if expected_type == "additional_work" and raw_delta <= AUTHORIZATION_DELTA_EPSILON:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="No additional customer authorization is required at the current total",
         )
-        await db.rollback()
-        refreshed_quote_result = await db.execute(select(Quote).where(Quote.id == quote_id))
-        refreshed_quote = refreshed_quote_result.scalar_one_or_none()
-        if not refreshed_quote:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Quote not found",
-            )
-        refreshed_order_result = await db.execute(
-            select(RepairOrder)
-            .where(RepairOrder.id == refreshed_quote.repair_order_id)
-            .options(
-                selectinload(RepairOrder.customer),
-                selectinload(RepairOrder.vehicle),
-                selectinload(RepairOrder.parts_usage).selectinload(PartsUsage.inventory_item),
-            )
-        )
-        refreshed_order = refreshed_order_result.scalar_one_or_none()
-        if not refreshed_order:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Repair order not found",
-            )
-        quote = refreshed_quote
-        order = refreshed_order
-        tenant_result = await db.execute(select(Tenant).where(Tenant.id == order.tenant_id))
-        tenant = tenant_result.scalar_one_or_none()
-        shop_name = tenant.name if tenant and tenant.name else "Your repair shop"
-    latest_total = get_order_total(order)
-    if not quote.sent_to_customer and quote.total_amount != latest_total:
-        quote.total_amount = latest_total
-        quote.delta_amount = _money(latest_total - quote.previously_authorized_amount)
     
     customer = order.customer
     if not customer or not customer.email:
@@ -912,9 +1162,8 @@ async def send_quote_to_customer(
             detail="Customer email not found",
         )
     
-    # Generate magic link token
-    if not quote.approval_token:
-        quote.approval_token = secrets.token_urlsafe(48)
+    # A token exists only for a successfully validated publication attempt.
+    approval_token = secrets.token_urlsafe(48)
     
     # Parse services and parts for email
     services_html = ""
@@ -933,12 +1182,11 @@ async def send_quote_to_customer(
             services_html += f'<li style="margin: 5px 0;">{svc_name} - ${svc_price:,.2f}</li>'
         services_html += '</ul></div>'
 
-    if not quote.sent_to_customer:
-        quote.line_items_snapshot = _quote_snapshot(
-            order=order,
-            tenant=tenant,
-            services=selected_services,
-        )
+    line_items_snapshot = _quote_snapshot(
+        order=order,
+        tenant=tenant,
+        services=selected_services,
+    )
 
     parts_html = ""
     if order.parts_usage:
@@ -965,9 +1213,16 @@ async def send_quote_to_customer(
             vehicle_info += f" (VIN: {vehicle.vin[-6:]})"
     
     # Build magic link URL
-    approval_url = f"{settings.FRONTEND_URL}/quote/{quote.approval_token}"
+    approval_url = f"{settings.FRONTEND_URL}/quote/{approval_token}"
     
     is_additional = quote.authorization_type == "additional_work"
+    threshold = getattr(customer, "auto_approval_threshold", None)
+    approval_amount = quote.total_amount
+    auto_approved = bool(
+        not is_additional
+        and threshold is not None
+        and approval_amount <= threshold
+    )
     authorization_heading = "Additional Work Ready for Your Approval" if is_additional else "Estimate Ready for Your Approval"
     authorization_intro = (
         f"We found additional work on repair order <strong>{order.order_number}</strong>. "
@@ -1030,24 +1285,69 @@ async def send_quote_to_customer(
     </html>
     """
     
-    # Mark as sent and reset declined status if resending
-    quote.sent_to_customer = True
-    quote.sent_at = datetime.now(timezone.utc)
-    quote.sent_by_user_id = current_user_id
-    if quote.is_declined:
-        quote.is_declined = False
-        quote.decline_notes = None
+    # Compare-and-swap the publication claim so even a competing worker that
+    # reaches this point cannot publish or enqueue the same revision twice.
+    published_at = datetime.now(timezone.utc)
+    try:
+        claim = await db.execute(
+            update(Quote)
+            .where(
+                Quote.id == quote.id,
+                Quote.tenant_id == current_tenant_id,
+                Quote.revision == quote.revision,
+                Quote.sent_to_customer.is_(False),
+                Quote.is_approved.is_(False),
+                Quote.is_declined.is_(False),
+            )
+            .values(
+                sent_to_customer=True,
+                sent_at=published_at,
+                sent_by_user_id=current_user_id,
+                approval_token=approval_token,
+                line_items_snapshot=line_items_snapshot,
+                is_approved=auto_approved,
+                decision_at=published_at if auto_approved else None,
+            )
+            .execution_options(synchronize_session=False)
+        )
+    except OperationalError as exc:
+        if not _is_publication_concurrency_error(exc):
+            raise
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Authorization revision is being published by another request",
+        ) from exc
+    if claim.rowcount != 1:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Authorization revision was published by another request",
+        )
+    await db.refresh(quote)
+    _record_authorization_history_event(
+        db,
+        order=order,
+        quote=quote,
+        event_type="authorization_published",
+        label=(
+            f"Additional-work authorization revision {quote.revision} published"
+            if is_additional
+            else f"Initial estimate revision {quote.revision} published"
+        ),
+        actor_name=_actor_name(current_user),
+        source="staff_publication",
+    )
     
-    # Auto-approval authorizes this estimate only; it never changes the shop's
-    # operational repair-order state or locks the live work record.
-    threshold = getattr(customer, 'auto_approval_threshold', None)
-    approval_amount = quote.delta_amount if is_additional else quote.total_amount
-    auto_approved = False
-    if threshold is not None and approval_amount <= threshold:
-        quote.is_approved = True
-        quote.is_declined = False
-        quote.decision_at = datetime.now(timezone.utc)
-        auto_approved = True
+    # Auto-approval authorizes only a deliberately published initial estimate.
+    if auto_approved:
+        _record_authorization_history_event(
+            db,
+            order=order,
+            quote=quote,
+            event_type="authorization_threshold_approved",
+            label=f"Initial estimate revision {quote.revision} approved by customer threshold",
+            actor_name="System",
+            source="auto_approval_threshold",
+        )
     
     if auto_approved:
         email_subject = f"{'Additional work' if is_additional else 'Estimate'} {quote.quote_number} Auto-Approved - {shop_name}"
@@ -1116,6 +1416,8 @@ async def send_quote_to_customer(
         vi = vehicle_display_label(vehicle.year, vehicle.make, vehicle.model, vehicle.unit_number) if vehicle else "your vehicle"
         if auto_approved:
             sms_body = f"Your repair for {vi} (${quote.total_amount:,.2f}) has been auto-approved. Work will begin shortly. Order #{order.order_number} - {shop_name}"
+        elif is_additional:
+            sms_body = f"Additional work for {vi}: +${quote.delta_amount:,.2f}, new total ${quote.total_amount:,.2f}. Tap to approve: {approval_url} - {shop_name}"
         else:
             sms_body = f"Repair estimate for {vi}: ${quote.total_amount:,.2f}. Tap to approve: {approval_url} - {shop_name}"
         try:
@@ -1152,43 +1454,32 @@ async def approve_quote(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
-    """Approve a quote - typically called by customer from portal"""
-    result = await db.execute(
-        select(Quote).where(Quote.id == quote_id).options()
+    """Approve a published authorization as its linked customer."""
+    quote, order = await _load_customer_decision_context(
+        db,
+        quote_id=quote_id,
+        current_user=current_user,
     )
-    quote = result.scalar_one_or_none()
-    if not quote:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Quote not found",
-        )
-    result = await db.execute(
-        select(RepairOrder).where(RepairOrder.id == quote.repair_order_id)
-    )
-    order = result.scalar_one_or_none()
-    if not order:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Repair order not found",
-        )
-    if current_user.role == UserRole.CUSTOMER:
-        if not current_user.customer_id or current_user.customer_id != order.customer_id:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Access denied",
-            )
-    else:
-        if current_user.tenant_id != order.tenant_id:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Access denied",
-            )
     if quote.is_approved:
         return QuoteResponse.model_validate(quote)
+    if quote.is_declined:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="A declined authorization cannot be approved; request a new revision",
+        )
     quote.is_approved = True
     quote.is_declined = False
     quote.decline_notes = None
     quote.decision_at = datetime.now(timezone.utc)
+    _record_authorization_history_event(
+        db,
+        order=order,
+        quote=quote,
+        event_type="authorization_customer_approved",
+        label=f"Authorization revision {quote.revision} approved by customer",
+        actor_name=_actor_name(current_user),
+        source="customer_portal",
+    )
     await db.commit()
     await db.refresh(quote)
     await db.refresh(order)
@@ -1222,49 +1513,34 @@ async def decline_quote(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
-    """Decline a quote with optional notes"""
-    result = await db.execute(
-        select(Quote).where(Quote.id == quote_id)
+    """Decline a published authorization as its linked customer."""
+    quote, order = await _load_customer_decision_context(
+        db,
+        quote_id=quote_id,
+        current_user=current_user,
+        include_customer_vehicle=True,
     )
-    quote = result.scalar_one_or_none()
-    if not quote:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Quote not found",
-        )
-    result = await db.execute(
-        select(RepairOrder).where(RepairOrder.id == quote.repair_order_id)
-            .options(selectinload(RepairOrder.customer), selectinload(RepairOrder.vehicle))
-    )
-    order = result.scalar_one_or_none()
-    if not order:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Repair order not found",
-        )
-    # Check access
-    if current_user.role == UserRole.CUSTOMER:
-        if not current_user.customer_id or current_user.customer_id != order.customer_id:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Access denied",
-            )
-    else:
-        if current_user.tenant_id != order.tenant_id:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Access denied",
-            )
     
     if quote.is_approved:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
+            status_code=status.HTTP_409_CONFLICT,
             detail="Cannot decline an already approved quote",
         )
+    if quote.is_declined:
+        return QuoteResponse.model_validate(quote)
     
     quote.is_declined = True
     quote.decline_notes = body.notes
     quote.decision_at = datetime.now(timezone.utc)
+    _record_authorization_history_event(
+        db,
+        order=order,
+        quote=quote,
+        event_type="authorization_customer_declined",
+        label=f"Authorization revision {quote.revision} declined by customer",
+        actor_name=_actor_name(current_user),
+        source="customer_portal",
+    )
     await db.commit()
     await db.refresh(quote)
     await db.refresh(order)
@@ -1437,8 +1713,8 @@ async def approve_quote_by_token(
     
     if quote.is_declined:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="This quote was declined. Please contact us for a revised quote.",
+            status_code=status.HTTP_409_CONFLICT,
+            detail="This authorization was declined. Please contact the shop for a new revision.",
         )
     
     if quote.is_approved:
@@ -1447,6 +1723,15 @@ async def approve_quote_by_token(
     quote.is_approved = True
     quote.is_declined = False
     quote.decision_at = datetime.now(timezone.utc)
+    _record_authorization_history_event(
+        db,
+        order=order,
+        quote=quote,
+        event_type="authorization_customer_approved",
+        label=f"Authorization revision {quote.revision} approved by customer",
+        actor_name="Customer",
+        source="magic_link",
+    )
     # Keep token valid so customer can view their approved quote status
     await db.commit()
     await db.refresh(quote)
@@ -1659,14 +1944,25 @@ async def decline_quote_by_token(
     
     if quote.is_approved:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
+            status_code=status.HTTP_409_CONFLICT,
             detail="Cannot decline an already approved quote",
         )
+    if quote.is_declined:
+        return QuoteResponse.model_validate(quote)
     
     quote.is_declined = True
     quote.decline_notes = body.notes
     quote.decision_at = datetime.now(timezone.utc)
-    # Keep token valid so customer can change their mind
+    _record_authorization_history_event(
+        db,
+        order=order,
+        quote=quote,
+        event_type="authorization_customer_declined",
+        label=f"Authorization revision {quote.revision} declined by customer",
+        actor_name="Customer",
+        source="magic_link",
+    )
+    # Keep the token viewable as a record of the customer's decision.
     await db.commit()
     await db.refresh(quote)
     await db.refresh(order)

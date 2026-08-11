@@ -1639,7 +1639,11 @@ async def override_start_work_without_mechanic(
     """Owner/admin: start active customer work without assigning a mechanic."""
     result = await db.execute(
         select(RepairOrder)
-        .where(RepairOrder.id == order_id, RepairOrder.deleted_at.is_(None))
+        .where(
+            RepairOrder.id == order_id,
+            RepairOrder.tenant_id == current_user.tenant_id,
+            RepairOrder.deleted_at.is_(None),
+        )
         .options(selectinload(RepairOrder.customer), selectinload(RepairOrder.vehicle))
     )
     order = result.scalar_one_or_none()
@@ -2643,7 +2647,11 @@ async def approve_completion(
     """Finalize reviewed work, lock pricing, create the invoice, and notify the customer."""
     result = await db.execute(
         select(RepairOrder)
-        .where(RepairOrder.id == order_id, RepairOrder.deleted_at.is_(None))
+        .where(
+            RepairOrder.id == order_id,
+            RepairOrder.tenant_id == current_user.tenant_id,
+            RepairOrder.deleted_at.is_(None),
+        )
         .options(selectinload(RepairOrder.customer), selectinload(RepairOrder.vehicle))
         .with_for_update()
     )
@@ -2651,9 +2659,6 @@ async def approve_completion(
     
     if not order:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repair order not found")
-    
-    if current_user.tenant_id != order.tenant_id:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
     
     if order.status != RepairOrderStatus.PENDING_REVIEW:
         raise HTTPException(
@@ -2670,7 +2675,9 @@ async def approve_completion(
             select(Quote)
             .where(
                 Quote.repair_order_id == order.id,
+                Quote.tenant_id == order.tenant_id,
                 Quote.sent_to_customer.is_(True),
+                Quote.deleted_at.is_(None),
             )
             .order_by(Quote.revision.desc())
             .limit(1)
@@ -2680,7 +2687,9 @@ async def approve_completion(
             select(Quote)
             .where(
                 Quote.repair_order_id == order.id,
+                Quote.tenant_id == order.tenant_id,
                 Quote.is_approved.is_(True),
+                Quote.deleted_at.is_(None),
             )
             .order_by(Quote.revision.desc())
             .limit(1)
