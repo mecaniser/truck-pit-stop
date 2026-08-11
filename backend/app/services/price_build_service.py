@@ -51,6 +51,10 @@ class PriceBuildConflictError(PriceBuildError):
     pass
 
 
+class PriceBuildForbiddenError(PriceBuildError):
+    pass
+
+
 class PriceBuildInputError(PriceBuildError):
     pass
 
@@ -282,6 +286,7 @@ class PriceBuildService:
         *,
         quantity: int = 1,
         mechanic_additive_only: bool = False,
+        mechanic_id: Optional[UUID] = None,
     ) -> PriceBuildResult:
         if quantity < 1:
             raise PriceBuildInputError("quantity must be >= 1")
@@ -319,6 +324,11 @@ class PriceBuildService:
 
         order = await self.load_order(
             db, order.id, for_update=True, tenant_id=order.tenant_id
+        )
+        self._assert_locked_mechanic_assignment(
+            order,
+            mechanic_additive_only=mechanic_additive_only,
+            mechanic_id=mechanic_id,
         )
         self._assert_editable(order)
 
@@ -518,6 +528,7 @@ class PriceBuildService:
         provider: Optional[str] = None,
         auto_recalc_enabled: bool = True,
         mechanic_additive_only: bool = False,
+        mechanic_id: Optional[UUID] = None,
     ) -> PriceBuildResult:
         # Service-catalog candidates (operation_id="service:<uuid>") carry their own
         # parts bundle and pricing — route to the existing flat-service path instead
@@ -531,6 +542,7 @@ class PriceBuildService:
                 service_id,
                 quantity=1,
                 mechanic_additive_only=mechanic_additive_only,
+                mechanic_id=mechanic_id,
             )
 
         warnings: list[OperationWarning] = []
@@ -550,6 +562,11 @@ class PriceBuildService:
 
         order = await self.load_order(
             db, order.id, for_update=True, tenant_id=order.tenant_id
+        )
+        self._assert_locked_mechanic_assignment(
+            order,
+            mechanic_additive_only=mechanic_additive_only,
+            mechanic_id=mechanic_id,
         )
         self._assert_editable(order)
         tenant = await self._get_tenant(db, order.tenant_id)
@@ -744,6 +761,28 @@ class PriceBuildService:
             return PriceBuildResult(order=order, warnings=warnings)
 
         tenant = await self._get_tenant(db, order.tenant_id)
+        generated_estimates: dict[UUID, tuple[OperationEstimate, Decimal]] = {}
+        for line in order.labor_items:
+            if (
+                line.auto_recalc_enabled
+                and not line.source_service_id
+                and line.line_type == LaborLineType.REPAIR_OPERATION
+                and line.provider_operation_id
+            ):
+                estimate = await self._get_operation_estimate(
+                    db,
+                    order,
+                    line.provider_operation_id,
+                    name=line.description,
+                )
+                # Validate the complete generated set before changing the first
+                # line. One invalid provider/library value rejects the entire
+                # recalculation instead of committing a partial or zeroed total.
+                generated_estimates[line.id] = (
+                    estimate,
+                    validate_mechanic_labor_hours(estimate.estimated_hours),
+                )
+
         for line in order.labor_items:
             if not line.auto_recalc_enabled:
                 continue
@@ -766,13 +805,8 @@ class PriceBuildService:
                 line.hourly_rate = _labor_rate_for(order, tenant)
                 line.total_cost = _money(Decimal(str(line.hours)) * Decimal(str(line.hourly_rate)))
             elif line.line_type == LaborLineType.REPAIR_OPERATION and line.provider_operation_id:
-                estimate = await self._get_operation_estimate(
-                    db,
-                    order,
-                    line.provider_operation_id,
-                    name=line.description,
-                )
-                line.hours = estimate.estimated_hours
+                estimate, estimated_hours = generated_estimates[line.id]
+                line.hours = estimated_hours
                 line.hourly_rate = _labor_rate_for(order, tenant)
                 line.total_cost = _money(Decimal(str(line.hours)) * Decimal(str(line.hourly_rate)))
                 warnings.extend(estimate.warnings)
@@ -815,6 +849,19 @@ class PriceBuildService:
 
     def compute_totals(self, order: RepairOrder) -> dict[str, Decimal]:
         return self._compute_totals(order)
+
+    @staticmethod
+    def _assert_locked_mechanic_assignment(
+        order: RepairOrder,
+        *,
+        mechanic_additive_only: bool,
+        mechanic_id: Optional[UUID],
+    ) -> None:
+        """Fail closed when assignment changed before the serialized write."""
+        if mechanic_additive_only and (
+            mechanic_id is None or order.assigned_mechanic_id != mechanic_id
+        ):
+            raise PriceBuildForbiddenError("Access denied")
 
     def _assert_editable(self, order: RepairOrder) -> None:
         if _is_locked(order):

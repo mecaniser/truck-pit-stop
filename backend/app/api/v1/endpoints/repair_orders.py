@@ -37,6 +37,7 @@ from app.services.tenant_branding import build_tenant_contact_html, get_tenant_d
 from app.services.twilio_service import send_sms
 from app.services.price_build_service import (
     PriceBuildConflictError,
+    PriceBuildForbiddenError,
     PriceBuildInputError,
     PriceBuildLockedError,
     PriceBuildNotFoundError,
@@ -434,6 +435,8 @@ def _map_price_build_error(exc: Exception) -> HTTPException:
         return HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc))
     if isinstance(exc, PriceBuildConflictError):
         return HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc))
+    if isinstance(exc, PriceBuildForbiddenError):
+        return HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc))
     if isinstance(exc, PriceBuildInputError):
         return HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc))
     if isinstance(exc, PriceBuildValidationError):
@@ -3374,6 +3377,9 @@ async def add_price_build_flat_service(
             body.service_id,
             quantity=body.quantity,
             mechanic_additive_only=current_user.role == UserRole.MECHANIC,
+            mechanic_id=(
+                current_user.id if current_user.role == UserRole.MECHANIC else None
+            ),
         )
         return _to_price_build_summary(
             result.order,
@@ -3438,6 +3444,9 @@ async def apply_price_build_repair_operation(
             provider=body.provider,
             auto_recalc_enabled=body.auto_recalc_enabled,
             mechanic_additive_only=current_user.role == UserRole.MECHANIC,
+            mechanic_id=(
+                current_user.id if current_user.role == UserRole.MECHANIC else None
+            ),
         )
         return _to_price_build_summary(
             result.order,

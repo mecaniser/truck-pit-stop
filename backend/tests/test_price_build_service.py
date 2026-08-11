@@ -20,6 +20,7 @@ from app.services.price_build_service import (
     PriceBuildNotFoundError,
     PriceBuildService,
 )
+from app.services.repair_operation_library import OperationEstimate
 
 
 async def _seed_context(db_session):
@@ -273,6 +274,109 @@ async def test_generated_service_hours_reject_database_rounding_before_mutation(
     assert refreshed_order.labor_items == []
     assert refreshed_order.parts_usage == []
     assert refreshed_order.total_cost == Decimal("0.00")
+
+
+@pytest.mark.parametrize(
+    "invalid_hours",
+    [Decimal("0.00"), Decimal("NaN"), Decimal("1.001"), Decimal("1000.00")],
+)
+@pytest.mark.asyncio
+async def test_recalculate_rejects_invalid_generated_hours_without_partial_mutation(
+    db_session,
+    monkeypatch,
+    invalid_hours,
+):
+    tenant, _, _, order, _ = await _seed_context(db_session)
+    line = Labor(
+        tenant_id=tenant.id,
+        repair_order_id=order.id,
+        description="Generated operation",
+        hours=Decimal("1.00"),
+        hourly_rate=Decimal("100.00"),
+        total_cost=Decimal("100.00"),
+        line_type=LaborLineType.REPAIR_OPERATION,
+        provider="test_provider",
+        provider_operation_id="generated-operation",
+        auto_recalc_enabled=True,
+    )
+    order.total_labor_cost = Decimal("100.00")
+    order.total_cost = Decimal("100.00")
+    db_session.add(line)
+    await db_session.commit()
+    order_id = order.id
+    line_id = line.id
+
+    svc = PriceBuildService()
+
+    async def _invalid_estimate(*_args, **_kwargs):
+        return OperationEstimate(
+            operation_id="generated-operation",
+            name="Generated operation",
+            description="Invalid generated hours",
+            estimated_hours=invalid_hours,
+            warnings=[],
+            provider="test_provider",
+        )
+
+    monkeypatch.setattr(svc, "_get_operation_estimate", _invalid_estimate)
+    loaded = await svc.load_order(db_session, order_id)
+    with pytest.raises(PriceBuildInputError):
+        await svc.recalculate_order(db_session, loaded)
+    await db_session.rollback()
+
+    stored_order = await db_session.get(RepairOrder, order_id)
+    stored_line = await db_session.get(Labor, line_id)
+    assert stored_line.hours == Decimal("1.00")
+    assert stored_line.hourly_rate == Decimal("100.00")
+    assert stored_line.total_cost == Decimal("100.00")
+    assert stored_order.total_labor_cost == Decimal("100.00")
+    assert stored_order.total_parts_cost == Decimal("0.00")
+    assert stored_order.total_cost == Decimal("100.00")
+
+
+@pytest.mark.asyncio
+async def test_recalculate_accepts_valid_generated_hours_atomically(
+    db_session,
+    monkeypatch,
+):
+    tenant, _, _, order, _ = await _seed_context(db_session)
+    line = Labor(
+        tenant_id=tenant.id,
+        repair_order_id=order.id,
+        description="Generated operation",
+        hours=Decimal("1.00"),
+        hourly_rate=Decimal("100.00"),
+        total_cost=Decimal("100.00"),
+        line_type=LaborLineType.REPAIR_OPERATION,
+        provider="test_provider",
+        provider_operation_id="generated-operation",
+        auto_recalc_enabled=True,
+    )
+    order.total_labor_cost = Decimal("100.00")
+    order.total_cost = Decimal("100.00")
+    db_session.add(line)
+    await db_session.commit()
+
+    svc = PriceBuildService()
+
+    async def _valid_estimate(*_args, **_kwargs):
+        return OperationEstimate(
+            operation_id="generated-operation",
+            name="Generated operation",
+            description="Valid generated hours",
+            estimated_hours=Decimal("2.50"),
+            warnings=[],
+            provider="test_provider",
+        )
+
+    monkeypatch.setattr(svc, "_get_operation_estimate", _valid_estimate)
+    loaded = await svc.load_order(db_session, order.id)
+    result = await svc.recalculate_order(db_session, loaded)
+    stored_line = next(item for item in result.order.labor_items if item.id == line.id)
+    assert stored_line.hours == Decimal("2.50")
+    assert stored_line.total_cost == Decimal("250.00")
+    assert result.order.total_labor_cost == Decimal("250.00")
+    assert result.order.total_cost == Decimal("250.00")
 
 
 @pytest.mark.asyncio

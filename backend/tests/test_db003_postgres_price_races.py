@@ -20,6 +20,7 @@ from app.db.models.quote import Quote
 from app.db.models.repair_order import RepairOrder, RepairOrderStatus
 from app.db.models.repair_order_history import RepairOrderHistoryEvent
 from app.db.models.repair_order_read_model import RepairOrderReadModel
+from app.db.models.provider_outbox import ProviderOutboxEvent
 from app.db.models.service import Service, ServicePart
 from app.db.models.tenant import Tenant
 from app.db.models.user import User, UserRole
@@ -30,6 +31,7 @@ from app.schemas.repair_order import (
     PriceBuildFlatServiceRequest,
     PriceBuildRepairOpsApplyRequest,
 )
+from app.services.repair_operation_library import OperationEstimate
 
 
 async def _seed_race_context(factory, *, status: RepairOrderStatus, with_quote: bool):
@@ -755,5 +757,320 @@ async def test_mechanic_rejections_leave_pricing_history_and_stock_unchanged():
             assert await db.scalar(
                 select(func.count(Quote.id)).where(Quote.repair_order_id == context["order_id"])
             ) == 0
+    finally:
+        await engine.dispose()
+
+
+async def _run_mechanic_reassignment_race(monkeypatch, *, operation: str) -> None:
+    engine = create_async_engine(os.environ["DB003_POSTGRES_URL"])
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    context = await _seed_race_context(
+        factory,
+        status=RepairOrderStatus.QUOTED,
+        with_quote=False,
+    )
+    entered_locked_reload = asyncio.Event()
+    release_locked_reload = asyncio.Event()
+    original_load_order = repair_orders.price_build_service.load_order
+
+    async def _pause_before_locked_reload(
+        db,
+        order_id,
+        *,
+        for_update=False,
+        tenant_id=None,
+    ):
+        if for_update:
+            entered_locked_reload.set()
+            await release_locked_reload.wait()
+        return await original_load_order(
+            db,
+            order_id,
+            for_update=for_update,
+            tenant_id=tenant_id,
+        )
+
+    monkeypatch.setattr(
+        repair_orders.price_build_service,
+        "load_order",
+        _pause_before_locked_reload,
+    )
+
+    try:
+        async with factory() as db:
+            mechanic = await db.get(User, context["mechanic_id"])
+            inventory = await db.get(Inventory, context["inventory_id"])
+            replacement = User(
+                tenant_id=mechanic.tenant_id,
+                email=f"replacement-{uuid4().hex}@example.com",
+                hashed_password="hashed-password",
+                first_name="Replacement",
+                last_name="Mechanic",
+                role=UserRole.MECHANIC,
+                is_active=True,
+                is_verified=True,
+            )
+            service = Service(
+                tenant_id=mechanic.tenant_id,
+                name="Race service",
+                duration_minutes=30,
+                is_active=True,
+            )
+            db.add_all([replacement, service])
+            await db.flush()
+            db.add(
+                ServicePart(
+                    tenant_id=mechanic.tenant_id,
+                    service_id=service.id,
+                    inventory_id=inventory.id,
+                    quantity=Decimal("1.00"),
+                )
+            )
+            await db.commit()
+            replacement_id = replacement.id
+            service_id = service.id
+
+        async def _attempt_as_original_mechanic():
+            async with factory() as db:
+                mechanic = await db.get(User, context["mechanic_id"])
+                try:
+                    if operation == "flat_service":
+                        return await repair_orders.add_price_build_flat_service(
+                            order_id=context["order_id"],
+                            body=PriceBuildFlatServiceRequest(service_id=service_id),
+                            db=db,
+                            current_user=mechanic,
+                        )
+                    return await repair_orders.apply_price_build_repair_operation(
+                        order_id=context["order_id"],
+                        body=PriceBuildRepairOpsApplyRequest(
+                            operation_id="custom:reassignment-race",
+                            name="Reassignment race operation",
+                            estimated_hours=Decimal("1.00"),
+                            auto_recalc_enabled=False,
+                        ),
+                        db=db,
+                        current_user=mechanic,
+                    )
+                except HTTPException as exc:
+                    await db.rollback()
+                    return exc
+
+        attempt = asyncio.create_task(_attempt_as_original_mechanic())
+        await asyncio.wait_for(entered_locked_reload.wait(), timeout=5)
+
+        async with factory() as db:
+            order = (
+                await db.execute(
+                    select(RepairOrder)
+                    .where(RepairOrder.id == context["order_id"])
+                    .with_for_update()
+                )
+            ).scalar_one()
+            order.assigned_mechanic_id = replacement_id
+            await db.commit()
+
+        release_locked_reload.set()
+        rejected = await asyncio.wait_for(attempt, timeout=8)
+        assert isinstance(rejected, HTTPException)
+        assert rejected.status_code == 403
+        assert rejected.detail == "Access denied"
+
+        async with factory() as db:
+            order = await db.get(RepairOrder, context["order_id"])
+            inventory = await db.get(Inventory, context["inventory_id"])
+            assert order.assigned_mechanic_id == replacement_id
+            assert order.total_labor_cost == Decimal("100.00")
+            assert order.total_parts_cost == Decimal("0.00")
+            assert order.total_cost == Decimal("100.00")
+            assert inventory.stock_quantity == 5
+            assert await db.scalar(
+                select(func.count(Labor.id)).where(
+                    Labor.repair_order_id == context["order_id"]
+                )
+            ) == 1
+            assert await db.scalar(
+                select(func.count(PartsUsage.id)).where(
+                    PartsUsage.repair_order_id == context["order_id"]
+                )
+            ) == 0
+            assert await db.scalar(
+                select(func.count(RepairOrderHistoryEvent.id)).where(
+                    RepairOrderHistoryEvent.repair_order_id == context["order_id"]
+                )
+            ) == 0
+            assert await db.scalar(
+                select(func.count(Quote.id)).where(
+                    Quote.repair_order_id == context["order_id"]
+                )
+            ) == 0
+            assert await db.scalar(
+                select(func.count(ProviderOutboxEvent.id)).where(
+                    ProviderOutboxEvent.aggregate_id == context["order_id"]
+                )
+            ) == 0
+    finally:
+        release_locked_reload.set()
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+@pytest.mark.skipif(
+    not os.environ.get("DB003_POSTGRES_URL"),
+    reason="requires isolated PostgreSQL 15",
+)
+async def test_flat_service_rechecks_mechanic_assignment_under_lock(monkeypatch):
+    await _run_mechanic_reassignment_race(monkeypatch, operation="flat_service")
+
+
+@pytest.mark.asyncio
+@pytest.mark.skipif(
+    not os.environ.get("DB003_POSTGRES_URL"),
+    reason="requires isolated PostgreSQL 15",
+)
+async def test_repair_operation_rechecks_mechanic_assignment_under_lock(monkeypatch):
+    await _run_mechanic_reassignment_race(monkeypatch, operation="repair_operation")
+
+
+async def _seed_generated_recalculation(factory):
+    context = await _seed_race_context(
+        factory,
+        status=RepairOrderStatus.QUOTED,
+        with_quote=False,
+    )
+    async with factory() as db:
+        line = (
+            await db.execute(
+                select(Labor).where(
+                    Labor.repair_order_id == context["order_id"]
+                )
+            )
+        ).scalar_one()
+        line.line_type = LaborLineType.REPAIR_OPERATION
+        line.provider = "test_provider"
+        line.provider_operation_id = "generated-recalculation"
+        line.auto_recalc_enabled = True
+        await db.commit()
+        context["line_id"] = line.id
+    return context
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "invalid_hours",
+    [Decimal("0.00"), Decimal("NaN"), Decimal("1.001"), Decimal("1000.00")],
+)
+@pytest.mark.skipif(
+    not os.environ.get("DB003_POSTGRES_URL"),
+    reason="requires isolated PostgreSQL 15",
+)
+async def test_generated_recalculation_rejects_invalid_hours_atomically(
+    monkeypatch,
+    invalid_hours,
+):
+    engine = create_async_engine(os.environ["DB003_POSTGRES_URL"])
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    context = await _seed_generated_recalculation(factory)
+
+    async def _invalid_estimate(*_args, **_kwargs):
+        return OperationEstimate(
+            operation_id="generated-recalculation",
+            name="Generated recalculation",
+            description="Invalid generated estimate",
+            estimated_hours=invalid_hours,
+            warnings=[],
+            provider="test_provider",
+        )
+
+    monkeypatch.setattr(
+        repair_orders.price_build_service,
+        "_get_operation_estimate",
+        _invalid_estimate,
+    )
+    try:
+        async with factory() as db:
+            admin = await db.get(User, context["admin_id"])
+            with pytest.raises(HTTPException) as exc_info:
+                await repair_orders.recalculate_price_build(
+                    order_id=context["order_id"],
+                    db=db,
+                    current_user=admin,
+                )
+            assert exc_info.value.status_code == 422
+            assert exc_info.value.detail == (
+                "Labor hours must be finite from 0.01 through 999.99 "
+                "with at most two decimal places"
+            )
+            await db.rollback()
+
+        async with factory() as db:
+            order = await db.get(RepairOrder, context["order_id"])
+            line = await db.get(Labor, context["line_id"])
+            assert line.hours == Decimal("1.00")
+            assert line.hourly_rate == Decimal("100.00")
+            assert line.total_cost == Decimal("100.00")
+            assert order.total_labor_cost == Decimal("100.00")
+            assert order.total_parts_cost == Decimal("0.00")
+            assert order.total_cost == Decimal("100.00")
+            assert await db.scalar(
+                select(func.count(RepairOrderHistoryEvent.id)).where(
+                    RepairOrderHistoryEvent.repair_order_id == context["order_id"]
+                )
+            ) == 0
+            assert await db.scalar(
+                select(func.count(Quote.id)).where(
+                    Quote.repair_order_id == context["order_id"]
+                )
+            ) == 0
+            assert await db.scalar(
+                select(func.count(ProviderOutboxEvent.id)).where(
+                    ProviderOutboxEvent.aggregate_id == context["order_id"]
+                )
+            ) == 0
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+@pytest.mark.skipif(
+    not os.environ.get("DB003_POSTGRES_URL"),
+    reason="requires isolated PostgreSQL 15",
+)
+async def test_generated_recalculation_accepts_valid_hours(monkeypatch):
+    engine = create_async_engine(os.environ["DB003_POSTGRES_URL"])
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    context = await _seed_generated_recalculation(factory)
+
+    async def _valid_estimate(*_args, **_kwargs):
+        return OperationEstimate(
+            operation_id="generated-recalculation",
+            name="Generated recalculation",
+            description="Valid generated estimate",
+            estimated_hours=Decimal("2.50"),
+            warnings=[],
+            provider="test_provider",
+        )
+
+    monkeypatch.setattr(
+        repair_orders.price_build_service,
+        "_get_operation_estimate",
+        _valid_estimate,
+    )
+    try:
+        async with factory() as db:
+            order = await repair_orders.price_build_service.load_order(
+                db, context["order_id"]
+            )
+            result = await repair_orders.price_build_service.recalculate_order(
+                db, order
+            )
+            line = next(
+                item for item in result.order.labor_items
+                if item.id == context["line_id"]
+            )
+            assert line.hours == Decimal("2.50")
+            assert line.total_cost == Decimal("250.00")
+            assert result.order.total_labor_cost == Decimal("250.00")
+            assert result.order.total_cost == Decimal("250.00")
     finally:
         await engine.dispose()
