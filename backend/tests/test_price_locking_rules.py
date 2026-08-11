@@ -419,7 +419,8 @@ async def test_quote_send_queues_email_without_calling_resend(db_session, monkey
 
     assert response.sent_to_customer is True
     assert event.status == ProviderOutboxStatus.PENDING.value
-    assert event.idempotency_key.endswith(str(quote.approval_token))
+    assert event.idempotency_key == f"quote-email:{quote.id}:revision:{quote.revision}"
+    assert quote.approval_token not in event.idempotency_key
     assert notification.status == NotificationStatus.PENDING
     assert notification.recipient_email == order.customer.email
     assert notification.subject.endswith(" - Lock Test Garage")

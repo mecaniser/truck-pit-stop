@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import inspect
 import json
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
@@ -15,6 +16,7 @@ from starlette.requests import Request
 
 from app.api.v1.endpoints import quotes, repair_orders
 from app.db.models.customer import Customer
+from app.db.models.inventory import Inventory
 from app.db.models.labor import Labor, LaborLineType
 from app.db.models.quote import Quote
 from app.db.models.repair_order import RepairOrder, RepairOrderStatus
@@ -24,6 +26,7 @@ from app.db.models.user import User, UserRole
 from app.db.models.user_customer_link import UserCustomerLink
 from app.db.models.vehicle import Vehicle
 from app.db.base import Base
+from app.schemas.repair_order import LaborCreate, PartsUsageCreate
 
 
 def _request(path: str = "/api/v1/quotes/token/test") -> Request:
@@ -194,6 +197,201 @@ async def _set_order_total(db, context, total: Decimal) -> None:
     labor.hourly_rate = total
     labor.total_cost = total
     await db.commit()
+
+
+async def _run_role_dependency(endpoint, current_user: User):
+    dependency = inspect.signature(endpoint).parameters["current_user"].default.dependency
+    return await dependency(current_user=current_user)
+
+
+@pytest.mark.asyncio
+async def test_mechanic_role_is_additive_only_at_the_api_boundary(db_session):
+    context = await _seed_authorization(db_session)
+    mechanic = context["roles"]["mechanic"]
+
+    for endpoint in (
+        repair_orders.add_price_build_flat_service,
+        repair_orders.apply_price_build_repair_operation,
+        repair_orders.add_parts_to_repair_order,
+        repair_orders.add_labor_to_repair_order,
+    ):
+        assert await _run_role_dependency(endpoint, mechanic) is mechanic
+
+    for endpoint in (
+        repair_orders.update_price_build_line,
+        repair_orders.delete_price_build_line,
+        repair_orders.recalculate_price_build,
+        repair_orders.add_sublet_to_price_build,
+        repair_orders.update_parts_quantity,
+        repair_orders.set_parts_pricing_mode,
+        repair_orders.update_repair_order_discounts,
+        repair_orders.remove_parts_from_repair_order,
+        repair_orders.update_repair_order_labor,
+        repair_orders.remove_labor_from_repair_order,
+        repair_orders.approve_completion,
+    ):
+        with pytest.raises(HTTPException) as exc_info:
+            await _run_role_dependency(endpoint, mechanic)
+        assert exc_info.value.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_assigned_mechanic_adds_shop_priced_delta_for_staff_publication(
+    db_session,
+    monkeypatch,
+):
+    context = await _seed_authorization(db_session)
+    mechanic = context["roles"]["mechanic"]
+    context["tenant"].labor_rate = Decimal("100.00")
+    context["order"].assigned_mechanic_id = mechanic.id
+    context["order"].status = RepairOrderStatus.IN_PROGRESS
+    context["quote"].sent_to_customer = True
+    context["quote"].sent_at = datetime.now(timezone.utc)
+    context["quote"].is_approved = True
+    context["quote"].authorization_type = "initial_estimate"
+    context["quote"].previously_authorized_amount = Decimal("0.00")
+    context["quote"].delta_amount = Decimal("100.00")
+    inventory = Inventory(
+        tenant_id=context["tenant"].id,
+        sku=f"DB003-{uuid4().hex[:8]}",
+        name="DEF pressure sensor",
+        stock_quantity=3,
+        on_order_quantity=0,
+        reorder_level=0,
+        cost=Decimal("25.00"),
+        selling_price=Decimal("50.00"),
+    )
+    db_session.add(inventory)
+    await db_session.commit()
+
+    labor = await repair_orders.add_labor_to_repair_order(
+        order_id=context["order"].id,
+        body=LaborCreate(
+            description="Trace DEF pressure fault",
+            hours=Decimal("0.50"),
+            hourly_rate=Decimal("999.00"),
+        ),
+        db=db_session,
+        current_user=mechanic,
+    )
+    part = await repair_orders.add_parts_to_repair_order(
+        order_id=context["order"].id,
+        body=PartsUsageCreate(inventory_id=inventory.id, quantity=Decimal("1.00")),
+        db=db_session,
+        current_user=mechanic,
+    )
+    revision = await quotes.create_quote(
+        body=quotes.QuoteCreate(repair_order_id=context["order"].id),
+        db=db_session,
+        current_user=mechanic,
+    )
+
+    assert labor.mechanic_id == mechanic.id
+    assert labor.hourly_rate == Decimal("100.00")
+    assert labor.total_cost == Decimal("50.00")
+    assert part.unit_price == Decimal("50.00")
+    assert revision.authorization_type == "additional_work"
+    assert revision.previously_authorized_amount == Decimal("100.00")
+    assert revision.delta_amount == Decimal("100.00")
+    assert revision.total_amount == Decimal("200.00")
+
+    with pytest.raises(HTTPException) as publish_error:
+        await quotes.send_quote_to_customer(
+            quote_id=revision.id,
+            db=db_session,
+            current_user=mechanic,
+        )
+    assert publish_error.value.status_code == 403
+
+    with pytest.raises(HTTPException) as decision_error:
+        await quotes.approve_quote(
+            quote_id=revision.id,
+            db=db_session,
+            current_user=mechanic,
+        )
+    assert decision_error.value.status_code == 404
+
+    _silence_delivery(monkeypatch)
+    published = await quotes.send_quote_to_customer(
+        quote_id=revision.id,
+        db=db_session,
+        current_user=context["roles"]["admin"],
+    )
+    assert published.sent_to_customer is True
+    persisted_revision = await db_session.get(Quote, revision.id)
+    assert persisted_revision.line_items_snapshot["labor_total"] == "150.00"
+    assert persisted_revision.line_items_snapshot["parts_total"] == "50.00"
+    assert persisted_revision.line_items_snapshot["repair_total"] == "200.00"
+
+
+@pytest.mark.asyncio
+async def test_mechanic_pricing_requires_assignment_and_tenant_match(db_session):
+    context = await _seed_authorization(db_session)
+    other = await _seed_authorization(db_session)
+    mechanic = context["roles"]["mechanic"]
+    order_id = context["order"].id
+    mechanic_id = mechanic.id
+    other_mechanic_id = other["roles"]["mechanic"].id
+    context["order"].assigned_mechanic_id = uuid4()
+    await db_session.commit()
+
+    with pytest.raises(HTTPException) as unassigned_labor:
+        await repair_orders.add_labor_to_repair_order(
+            order_id=order_id,
+            body=LaborCreate(
+                description="Unauthorized line",
+                hours=Decimal("1.00"),
+                hourly_rate=Decimal("100.00"),
+            ),
+            db=db_session,
+            current_user=mechanic,
+        )
+    assert unassigned_labor.value.status_code == 403
+    await db_session.rollback()
+    mechanic = await db_session.get(User, mechanic_id)
+
+    with pytest.raises(HTTPException) as unassigned_quote:
+        await quotes.create_quote(
+            body=quotes.QuoteCreate(repair_order_id=order_id),
+            db=db_session,
+            current_user=mechanic,
+        )
+    assert unassigned_quote.value.status_code == 403
+    await db_session.rollback()
+    other_mechanic = await db_session.get(User, other_mechanic_id)
+
+    with pytest.raises(HTTPException) as cross_tenant_labor:
+        await repair_orders.add_labor_to_repair_order(
+            order_id=order_id,
+            body=LaborCreate(
+                description="Cross-tenant line",
+                hours=Decimal("1.00"),
+                hourly_rate=Decimal("100.00"),
+            ),
+            db=db_session,
+            current_user=other_mechanic,
+        )
+    assert cross_tenant_labor.value.status_code == 403
+    await db_session.rollback()
+    other_mechanic = await db_session.get(User, other_mechanic_id)
+
+    with pytest.raises(HTTPException) as cross_tenant_quote:
+        await quotes.create_quote(
+            body=quotes.QuoteCreate(repair_order_id=order_id),
+            db=db_session,
+            current_user=other_mechanic,
+        )
+    assert cross_tenant_quote.value.status_code == 404
+
+    added_lines = (
+        await db_session.execute(
+            select(Labor).where(
+                Labor.repair_order_id == order_id,
+                Labor.description.in_(("Unauthorized line", "Cross-tenant line")),
+            )
+        )
+    ).scalars().all()
+    assert added_lines == []
 
 
 @pytest.mark.asyncio

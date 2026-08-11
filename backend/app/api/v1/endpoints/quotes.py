@@ -41,6 +41,7 @@ from app.services.provider_outbox_service import enqueue_email_notification
 from app.services.tenant_branding import build_tenant_contact_html, get_tenant_display_name
 from app.services.twilio_service import send_sms
 from app.services.pricing import (
+    apply_canonical_order_totals,
     get_order_checkout_breakdown,
     get_order_labor_total,
     get_order_parts_total,
@@ -322,6 +323,14 @@ def _require_quote_publisher(current_user: User) -> None:
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only an owner, admin, or receptionist may publish customer authorization requests",
         )
+
+
+def _require_mechanic_assignment(current_user: User, order: RepairOrder) -> None:
+    if (
+        current_user.role == UserRole.MECHANIC
+        and order.assigned_mechanic_id != current_user.id
+    ):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
 
 
 def _actor_name(current_user: User) -> str:
@@ -750,6 +759,7 @@ async def create_quote(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Repair order not found",
         )
+    _require_mechanic_assignment(current_user, order)
     if order.is_internal:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -867,6 +877,8 @@ async def get_quote_by_repair_order(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Repair order not found",
         )
+    else:
+        _require_mechanic_assignment(current_user, order)
     if not quote:
         return None
     return QuoteResponse.model_validate(quote)
@@ -896,6 +908,7 @@ async def get_authorization_history(
         _require_staff(current_user)
         if current_user.tenant_id != order.tenant_id:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repair order not found")
+        _require_mechanic_assignment(current_user, order)
         revision_filters = ()
 
     revisions = (
@@ -962,11 +975,18 @@ async def update_quote(
         )
     
     result = await db.execute(
-        select(RepairOrder).where(
+        select(RepairOrder)
+        .where(
             RepairOrder.id == quote.repair_order_id,
             RepairOrder.tenant_id == current_user.tenant_id,
             RepairOrder.deleted_at.is_(None),
         )
+        .options(
+            selectinload(RepairOrder.parts_usage).selectinload(PartsUsage.inventory_item),
+            selectinload(RepairOrder.labor_items),
+        )
+        .execution_options(populate_existing=True)
+        .with_for_update()
     )
     order = result.scalar_one_or_none()
     if not order:
@@ -974,6 +994,7 @@ async def update_quote(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Repair order not found",
         )
+    _require_mechanic_assignment(current_user, order)
     
     if quote.is_approved:
         raise HTTPException(
@@ -987,6 +1008,7 @@ async def update_quote(
             status_code=status.HTTP_409_CONFLICT,
             detail="A sent authorization cannot be changed; create a new additional-work authorization instead",
         )
+    apply_canonical_order_totals(order)
     quote.total_amount = get_order_total(order)
     quote.delta_amount = _money(quote.total_amount - quote.previously_authorized_amount)
     await db.commit()
@@ -1030,6 +1052,7 @@ async def delete_quote(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Repair order not found",
         )
+    _require_mechanic_assignment(current_user, order)
 
     if quote.is_approved:
         raise HTTPException(
@@ -1099,6 +1122,12 @@ async def send_quote_to_customer(
             detail="Quote not found",
         )
     order, quote = row
+
+    # The repair-order row lock serializes this publication with every price
+    # mutation. Rebuild persisted totals from the locked canonical children
+    # before validating the draft or producing its immutable snapshot.
+    apply_canonical_order_totals(order)
+    await db.flush()
 
     latest_quote = await _latest_quote_for_order(db, order.id, order.tenant_id)
     if latest_quote is None or latest_quote.id != quote.id:
@@ -1384,7 +1413,7 @@ async def send_quote_to_customer(
             tenant_id=current_tenant_id,
             aggregate_type="quote",
             aggregate_id=quote.id,
-            idempotency_key=f"quote-email:{quote.id}:{quote.approval_token}",
+            idempotency_key=f"quote-email:{quote.id}:revision:{quote.revision}",
             recipient=customer.email,
             subject=email_subject,
             body=email_body,

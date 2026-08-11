@@ -47,6 +47,49 @@ def get_order_total(order: Any) -> Decimal:
     return max(Decimal("0.00"), parts_total + labor_net - order_discount)
 
 
+def compute_canonical_order_totals(order: Any) -> dict[str, Decimal]:
+    """Compute persisted repair totals from the current structured line items.
+
+    Callers must load ``parts_usage`` and ``labor_items`` before invoking this
+    helper. Financial publication/finalization paths use it while holding the
+    repair-order row lock so a snapshot can never combine stale totals with
+    newer children.
+    """
+    parts_total = sum(
+        (_to_decimal(getattr(part, "total_price", 0)) for part in order.parts_usage),
+        Decimal("0.00"),
+    ).quantize(Decimal("0.01"))
+    labor_total = sum(
+        (_to_decimal(getattr(line, "total_cost", 0)) for line in order.labor_items),
+        Decimal("0.00"),
+    ).quantize(Decimal("0.01"))
+    labor_discount = _to_decimal(getattr(order, "labor_discount_amount", 0)).quantize(
+        Decimal("0.01")
+    )
+    order_discount = _to_decimal(getattr(order, "order_discount_amount", 0)).quantize(
+        Decimal("0.01")
+    )
+    labor_net = max(Decimal("0.00"), labor_total - labor_discount)
+    total_cost = max(
+        Decimal("0.00"),
+        (parts_total + labor_net - order_discount).quantize(Decimal("0.01")),
+    )
+    return {
+        "parts_total": parts_total,
+        "labor_total": labor_total,
+        "total_cost": total_cost,
+    }
+
+
+def apply_canonical_order_totals(order: Any) -> dict[str, Decimal]:
+    """Persist-ready companion to :func:`compute_canonical_order_totals`."""
+    totals = compute_canonical_order_totals(order)
+    order.total_parts_cost = totals["parts_total"]
+    order.total_labor_cost = totals["labor_total"]
+    order.total_cost = totals["total_cost"]
+    return totals
+
+
 def get_order_checkout_breakdown(order: Any, tenant: Any) -> dict[str, Decimal]:
     """Return customer-facing checkout estimates using the same repair net total.
 

@@ -2305,6 +2305,15 @@ async def complete_work_order(
 ):
     """Approve fleet work and atomically create its billable customer invoice."""
     ro = await _load_fleet_ro_or_404(db, current_user.tenant_id, ro_id, for_update=True)
+    from app.api.v1.endpoints.repair_orders import _refresh_repair_order_totals
+
+    # Rebuild the invoice source values from the locked canonical children.
+    # Price mutations use the same repair-order lock, so completion either
+    # precedes the entire mutation or observes all of it.
+    ro = await _refresh_repair_order_totals(db, ro_id)
+    if ro is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Work order not found")
+    await db.refresh(ro, attribute_names=["customer", "vehicle"])
     if ro.status not in (RepairOrderStatus.IN_PROGRESS, RepairOrderStatus.PENDING_REVIEW):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Cannot complete a work order in '{ro.status.value}' status")
 
@@ -2747,17 +2756,24 @@ async def set_wo_pm_services(
 ):
     """Adjust a PM work order's services and re-seed its cost lines. Only allowed
     while the work order is still a draft (before work starts)."""
-    ro = await _load_fleet_ro_or_404(db, current_user.tenant_id, ro_id)
+    await _load_fleet_ro_or_404(db, current_user.tenant_id, ro_id)
+    from app.api.v1.endpoints.repair_orders import (
+        _load_pricing_order_for_update,
+        _refresh_repair_order_totals,
+    )
+
+    ro = await _load_pricing_order_for_update(db, ro_id)
+    if ro is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Work order not found")
     if ro.status != RepairOrderStatus.DRAFT:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="PM services can only be changed while the work order is a draft.",
         )
-    from app.api.v1.endpoints.repair_orders import _recompute_repair_order_totals
     services = await _load_pm_services(db, current_user.tenant_id, body.service_ids)
     await _apply_pm_services_to_ro(db, current_user.tenant_id, ro, services)
+    await _refresh_repair_order_totals(db, ro.id)
     await db.commit()
-    await _recompute_repair_order_totals(db, ro.id)
     return _pm_service_entries(services)
 
 
@@ -2790,9 +2806,15 @@ async def add_service_to_work_order(
     internal cost — the same costing PM services use. PM work orders are scoped
     through their service picker instead, so this is rejected for them."""
     from decimal import Decimal
-    from app.api.v1.endpoints.repair_orders import _recompute_repair_order_totals
+    from app.api.v1.endpoints.repair_orders import (
+        _load_pricing_order_for_update,
+        _refresh_repair_order_totals,
+    )
 
-    ro = await _load_fleet_ro_or_404(db, current_user.tenant_id, ro_id)
+    await _load_fleet_ro_or_404(db, current_user.tenant_id, ro_id)
+    ro = await _load_pricing_order_for_update(db, ro_id)
+    if ro is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Work order not found")
     if ro.is_pm:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -2845,8 +2867,8 @@ async def add_service_to_work_order(
             source_service_id=service.id,
         ))
 
+    await _refresh_repair_order_totals(db, ro.id)
     await db.commit()
-    await _recompute_repair_order_totals(db, ro.id)
     ro = await _load_fleet_ro_or_404(db, current_user.tenant_id, ro_id)
     return _board_work_order(ro)
 
@@ -2991,7 +3013,7 @@ async def new_work_order(
             select(Inventory).where(and_(
                 Inventory.id.in_(requested_part_ids),
                 Inventory.tenant_id == current_user.tenant_id,
-            ))
+            )).with_for_update()
         )
         inventory_by_id = {item.id: item for item in inventory_result.scalars().all()}
         if set(inventory_by_id) != requested_part_ids:
@@ -3056,9 +3078,10 @@ async def new_work_order(
         ))
         item.stock_quantity = (item.stock_quantity or 0) - packages
 
+    from app.api.v1.endpoints.repair_orders import _refresh_repair_order_totals
+
+    await _refresh_repair_order_totals(db, ro.id)
     await db.commit()
-    from app.api.v1.endpoints.repair_orders import _recompute_repair_order_totals
-    await _recompute_repair_order_totals(db, ro.id)
     await db.refresh(ro)
 
     open_list = (await _open_ros_by_vehicle(db, [vehicle.id])).get(vehicle.id, [])
@@ -3107,17 +3130,19 @@ async def schedule_pm(
         await _set_vehicle_pm_services(db, current_user.tenant_id, vehicle.id, services)
 
     if body.create_work_order:
-        # _spawn_internal_ro commits (and persists the schedule changes above).
+        # Persist the schedule, work order, service lines, and totals together.
         ro = await _spawn_internal_ro(
             db, current_user.tenant_id, vehicle, is_pm=True,
             description=f"Preventive maintenance — Service interval {vehicle.pm_interval_miles or 25000:,} mi",
             bill_to_customer_id=body.bill_to_customer_id,
+            commit=False,
         )
         if services:
-            from app.api.v1.endpoints.repair_orders import _recompute_repair_order_totals
             await _apply_pm_services_to_ro(db, current_user.tenant_id, ro, services)
-            await db.commit()
-            await _recompute_repair_order_totals(db, ro.id)
+            from app.api.v1.endpoints.repair_orders import _refresh_repair_order_totals
+
+            await _refresh_repair_order_totals(db, ro.id)
+        await db.commit()
     else:
         await db.commit()
 

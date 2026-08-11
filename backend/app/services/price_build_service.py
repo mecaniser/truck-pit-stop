@@ -31,6 +31,7 @@ from app.services.repair_operation_library import (
     search_operation_library,
 )
 from app.services.internal_fleet import fleet_labor_uses_customer_rate
+from app.services.pricing import compute_canonical_order_totals
 
 
 class PriceBuildError(Exception):
@@ -223,8 +224,14 @@ def _memory_operation_key(
 
 
 class PriceBuildService:
-    async def load_order(self, db: AsyncSession, order_id: UUID) -> RepairOrder:
-        result = await db.execute(
+    async def load_order(
+        self,
+        db: AsyncSession,
+        order_id: UUID,
+        *,
+        for_update: bool = False,
+    ) -> RepairOrder:
+        statement = (
             select(RepairOrder)
             .where(RepairOrder.id == order_id, RepairOrder.deleted_at.is_(None))
             .options(
@@ -234,6 +241,9 @@ class PriceBuildService:
             )
             .execution_options(populate_existing=True)
         )
+        if for_update:
+            statement = statement.with_for_update()
+        result = await db.execute(statement)
         order = result.scalar_one_or_none()
         if not order:
             raise PriceBuildNotFoundError("Repair order not found")
@@ -247,6 +257,7 @@ class PriceBuildService:
         *,
         quantity: int = 1,
     ) -> PriceBuildResult:
+        order = await self.load_order(db, order.id, for_update=True)
         self._assert_editable(order)
         if quantity < 1:
             raise PriceBuildValidationError("quantity must be >= 1")
@@ -310,12 +321,35 @@ class PriceBuildService:
             db.add(line)
             await db.flush()
 
+        inventory_ids = sorted(
+            {
+                sp.inventory_item.id
+                for sp in service.service_parts
+                if sp.inventory_item and sp.inventory_item.deleted_at is None
+            },
+            key=str,
+        )
+        locked_inventory: dict[UUID, Inventory] = {}
+        if inventory_ids:
+            inventory_result = await db.execute(
+                select(Inventory)
+                .where(
+                    Inventory.tenant_id == order.tenant_id,
+                    Inventory.id.in_(inventory_ids),
+                )
+                .order_by(Inventory.id)
+                .with_for_update()
+            )
+            locked_inventory = {
+                inventory.id: inventory for inventory in inventory_result.scalars().all()
+            }
+
         # Auto-attach parts bundled with this service. Skip inventory items whose
         # stock would go negative and return an inline warning on the service labor
         # line. Operators can add/override that part explicitly from the operation.
         warnings: list[OperationWarning] = []
         for sp in service.service_parts:
-            inv = sp.inventory_item
+            inv = locked_inventory.get(sp.inventory_item.id) if sp.inventory_item else None
             if not inv or inv.deleted_at is not None:
                 continue
             required_qty = sp.quantity * quantity
@@ -350,8 +384,6 @@ class PriceBuildService:
             )
             inv.stock_quantity = (inv.stock_quantity or 0) - packages_needed
 
-        await db.commit()
-        order = await self.load_order(db, order.id)
         result = await self.recalculate_order(db, order)
         result.warnings.extend(warnings)
         return result
@@ -439,6 +471,7 @@ class PriceBuildService:
         provider: Optional[str] = None,
         auto_recalc_enabled: bool = True,
     ) -> PriceBuildResult:
+        order = await self.load_order(db, order.id, for_update=True)
         self._assert_editable(order)
 
         # Service-catalog candidates (operation_id="service:<uuid>") carry their own
@@ -489,8 +522,6 @@ class PriceBuildService:
             hours=Decimal(str(est_hours)),
             source_provider=resolved_provider,
         )
-        await db.commit()
-        order = await self.load_order(db, order.id)
         result = await self.recalculate_order(db, order)
         result.warnings.extend(warnings)
         return result
@@ -506,6 +537,7 @@ class PriceBuildService:
         hourly_rate: Optional[Decimal] = None,
         auto_recalc_enabled: Optional[bool] = None,
     ) -> PriceBuildResult:
+        order = await self.load_order(db, order.id, for_update=True)
         self._assert_editable(order)
 
         line_result = await db.execute(
@@ -549,8 +581,6 @@ class PriceBuildService:
                 source_provider=line.provider or "internal_memory",
             )
 
-        await db.commit()
-        order = await self.load_order(db, order.id)
         return await self.recalculate_order(db, order)
 
     async def remove_line(
@@ -560,6 +590,7 @@ class PriceBuildService:
         *,
         line_id: UUID,
     ) -> PriceBuildResult:
+        order = await self.load_order(db, order.id, for_update=True)
         self._assert_editable(order)
         line_result = await db.execute(
             select(Labor).where(
@@ -586,8 +617,6 @@ class PriceBuildService:
             .values(source_line_id=None)
         )
         await db.delete(line)
-        await db.commit()
-        order = await self.load_order(db, order.id)
         return await self.recalculate_order(db, order)
 
     async def _restore_service_parts(
@@ -605,17 +634,35 @@ class PriceBuildService:
                 )
             )
         )
-        for pu in pu_result.scalars().all():
+        parts = pu_result.scalars().all()
+        inventory_ids = sorted({pu.inventory_id for pu in parts}, key=str)
+        locked_inventory: dict[UUID, Inventory] = {}
+        if inventory_ids:
             inv_result = await db.execute(
-                select(Inventory).where(Inventory.id == pu.inventory_id)
+                select(Inventory)
+                .where(
+                    Inventory.tenant_id == order.tenant_id,
+                    Inventory.id.in_(inventory_ids),
+                )
+                .order_by(Inventory.id)
+                .with_for_update()
             )
-            inv = inv_result.scalar_one_or_none()
+            locked_inventory = {
+                inventory.id: inventory for inventory in inv_result.scalars().all()
+            }
+        for pu in parts:
+            inv = locked_inventory.get(pu.inventory_id)
             if inv:
                 inv.stock_quantity = (inv.stock_quantity or 0) + _packages_consumed(pu.quantity)
             await db.delete(pu)
 
     async def recalculate_order(self, db: AsyncSession, order: RepairOrder) -> PriceBuildResult:
         started = perf_counter()
+        # Flush pending child mutations, then refresh canonical children while
+        # retaining the same repair-order row lock. The eventual commit owns the
+        # child/stock changes and their derived totals together.
+        await db.flush()
+        order = await self.load_order(db, order.id, for_update=True)
         self._assert_editable(order)
         warnings: list[OperationWarning] = []
 
@@ -691,7 +738,7 @@ class PriceBuildService:
         *,
         reason: str = "quote_sent",
     ) -> RepairOrder:
-        order = await self.load_order(db, order_id)
+        order = await self.load_order(db, order_id, for_update=True)
         if order.pricing_locked_at is None:
             order.pricing_locked_at = datetime.now(timezone.utc)
         order.pricing_lock_reason = reason
@@ -724,18 +771,7 @@ class PriceBuildService:
             )
 
     def _compute_totals(self, order: RepairOrder) -> dict[str, Decimal]:
-        parts_total = _money(sum(Decimal(str(p.total_price)) for p in order.parts_usage))
-        labor_total = _money(sum(Decimal(str(l.total_cost)) for l in order.labor_items))
-        # Manager discounts: labor discount reduces labor, order discount reduces the total.
-        labor_discount = _money(Decimal(str(order.labor_discount_amount or 0)))
-        order_discount = _money(Decimal(str(order.order_discount_amount or 0)))
-        labor_net = max(Decimal("0.00"), labor_total - labor_discount)
-        total_cost = max(Decimal("0.00"), _money(parts_total + labor_net - order_discount))
-        return {
-            "parts_total": parts_total,   # gross parts
-            "labor_total": labor_total,   # gross labor (before discount)
-            "total_cost": total_cost,     # net of both discounts
-        }
+        return compute_canonical_order_totals(order)
 
     async def _get_tenant(self, db: AsyncSession, tenant_id: UUID) -> Tenant:
         result = await db.execute(select(Tenant).where(Tenant.id == tenant_id))
