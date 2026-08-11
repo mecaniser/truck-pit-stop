@@ -58,6 +58,8 @@ def _build_order_and_mechanic(*, on_hold: bool) -> tuple[RepairOrder, User]:
         order_number="RO-HOLD-1001",
         status=RepairOrderStatus.IN_PROGRESS,
         is_internal=False,
+        is_fleet_work=False,
+        bill_labor_at_customer_rate=False,
         is_warranty_repair=False,
         is_pm=False,
         assigned_mechanic_id=mechanic_id,

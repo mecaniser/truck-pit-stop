@@ -1220,6 +1220,8 @@ async def import_garage_profile_logo(
         logo_url=tenant.logo_url,
         partner_summary=tenant.partner_summary,
         partner_services=tenant.partner_services,
+        order_number_prefix=tenant.order_number_prefix,
+        effective_order_number_prefix=tenant.order_number_prefix or derive_order_number_prefix(tenant.name),
     )
 
 

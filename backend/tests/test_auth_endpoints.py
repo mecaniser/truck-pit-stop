@@ -40,7 +40,7 @@ async def test_register_duplicate_email_fails(client):
     await client.post(REGISTER_URL, json=VALID_USER)
     r = await client.post(REGISTER_URL, json=VALID_USER)
     assert r.status_code == 400
-    assert "already registered" in r.json()["detail"]
+    assert r.json()["detail"] == "A shop is required to link your existing account to a new shop."
 
 
 @pytest.mark.asyncio
@@ -165,6 +165,7 @@ async def test_tenant_branding_returns_current_tenant_logo(client, db_session):
         "name": "Truck Pit Stop",
         "slug": "truck-pit-stop",
         "logo_url": "https://cdn.example.com/tenant-logo.png",
+        "state": None,
     }
 
 

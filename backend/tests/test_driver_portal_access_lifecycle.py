@@ -143,8 +143,12 @@ async def test_legacy_manager_capability_fails_closed_until_explicit_workos_link
 
 
 @pytest.mark.asyncio
-async def test_workos_manager_capability_requires_authoritative_permission(db_session, fake_redis, monkeypatch):
+async def test_workos_manager_capability_requires_authoritative_permission(db_session, monkeypatch):
     monkeypatch.setattr(settings, "WORKOS_AUTH_ENABLED", True)
+    async def _active_token_state(_jti, _user_id):
+        return False, 0
+
+    monkeypatch.setattr("app.core.workos_auth.get_auth_token_state", _active_token_state)
     tenant, manager, _ = await _manager_context(db_session)
     identity = IdentityPrincipal(user_id=manager.id, status="active")
     db_session.add(identity)

@@ -113,6 +113,8 @@ def _build_context(mechanic_phone: str | None):
         order_number="RO-2001",
         status=RepairOrderStatus.APPROVED,
         is_internal=False,
+        is_fleet_work=False,
+        bill_labor_at_customer_rate=False,
         is_warranty_repair=False,
         is_pm=False,
         total_parts_cost=Decimal("0.00"),
