@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter } from 'react-router-dom'
@@ -168,6 +168,25 @@ describe('RepairOrdersPage authorization publication', () => {
     expect(await screen.findByText('Price editing enabled')).toBeInTheDocument()
     await waitFor(() => expect(trigger).toHaveFocus())
 
+    for (let attempt = 0; attempt < 10; attempt += 1) {
+      fireEvent.click(trigger)
+      const reopenedDialog = await screen.findByRole('dialog', { name: 'Send estimate carefully' })
+      const reopenedKeepEditing = within(reopenedDialog).getByRole('button', { name: 'Keep editing' })
+      await waitFor(() => expect(reopenedKeepEditing).toHaveFocus())
+
+      fireEvent.click(reopenedKeepEditing)
+      fireEvent.click(trigger)
+      const rapidlyReopenedDialog = await screen.findByRole('dialog', { name: 'Send estimate carefully' })
+      const rapidlyReopenedKeepEditing = within(rapidlyReopenedDialog).getByRole('button', { name: 'Keep editing' })
+      await act(async () => {
+        await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()))
+      })
+      expect(rapidlyReopenedKeepEditing).toHaveFocus()
+      fireEvent.click(rapidlyReopenedKeepEditing)
+      await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Send estimate carefully' })).not.toBeInTheDocument())
+    }
+
+    trigger.focus()
     await user.keyboard('{Enter}')
     const reopenedDialog = await screen.findByRole('dialog', { name: 'Send estimate carefully' })
     const reopenedKeepEditing = within(reopenedDialog).getByRole('button', { name: 'Keep editing' })

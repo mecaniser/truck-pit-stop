@@ -1833,16 +1833,9 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
   const [quoteSent, setQuoteSent] = useState(false)
   const [quoteToConfirm, setQuoteToConfirm] = useState<Quote | null>(null)
   const keepEditingButtonRef = useRef<HTMLButtonElement>(null)
-  const quoteConfirmationTriggerRef = useRef<HTMLButtonElement | null>(null)
 
   const closeQuoteConfirmation = () => {
     setQuoteToConfirm(null)
-    const trigger = quoteConfirmationTriggerRef.current
-    window.requestAnimationFrame(() => {
-      if (trigger?.isConnected && !trigger.disabled) {
-        trigger.focus({ preventScroll: true })
-      }
-    })
   }
 
   // Status filter and search are applied server-side now, so the rendered list
@@ -2231,14 +2224,13 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
 
     return events.sort((a, b) => new Date(a.at).getTime() - new Date(b.at).getTime())
   })()
-  const handlePriceBuilderQuoteAction = async (trigger?: HTMLButtonElement) => {
+  const handlePriceBuilderQuoteAction = async () => {
     if (
       !canPublishCustomerAuthorization
       || !selectedOrder?.id
       || quoteActionPending
       || quoteActionDisabled
     ) return
-    if (trigger) quoteConfirmationTriggerRef.current = trigger
     if (!quoteForOrder) {
       createQuoteMutation.mutate(selectedOrder.id)
       return

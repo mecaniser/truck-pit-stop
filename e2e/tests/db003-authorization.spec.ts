@@ -480,6 +480,15 @@ for (const scenario of [
     await page.keyboard.press('Enter')
     await expect(dialog).toBeVisible()
     await expect(keepEditing).toBeFocused()
+
+    for (let attempt = 0; attempt < 20; attempt += 1) {
+      await keepEditing.click()
+      await sendAction.click()
+      await expect(dialog).toBeVisible()
+      await page.evaluate(() => new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve())))
+      await expect(keepEditing).toBeFocused()
+    }
+
     await page.keyboard.press('Tab')
     await expect(publishAction).toBeFocused()
     await page.keyboard.press('Enter')
