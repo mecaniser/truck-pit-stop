@@ -23,7 +23,7 @@ primary worktree is clean. Reconcile this board whenever newer evidence exists.
 | DB-003 | P1 | Discovery | Finish versioned additional-work authorizations | Backend & Integrations | PR #196 merged at `e20fa1a` with implementation commit `a51f2af`; immutable revisions/finalization guard exist, but task validation found the portal action still depends on the staff-send flow | Architecture decides automatic vs staff-reviewed publication and any threshold policy; then run mechanic addition → customer prompt → approve/decline → invoice Playwright acceptance, Security GO, QA GO |
 | DB-004 | P1 | QA/Security | Reconcile customer portal redesign and active-repair workflow | Frontend & UX | PRs #189 and #194 are merged and included in current production | Run and record one mobile customer portal acceptance journey; then move to Done |
 | DB-009 | P1 | In Progress | Make Playwright the regression safety net | QA Gatekeeper | Commands preserved at `d1040c8`; first independent gate returned NO-GO for missing Redis readiness, weak API evidence, floating Python test tools, and incomplete failure artifacts; `codex/playwright-ci` now addresses those findings for the existing 5 staff-login/public-invoice tests | Fresh independent Release & Reliability QA of the smoke gate; then add repair order, estimate authorization, payment, customer portal, driver custody, and tenant-isolation journeys before treating Playwright as the full regression gate |
-| DB-021 | P0 | Review | Prevent Railway from routing production API traffic before Uvicorn is accepting requests | Release & Reliability | Deployment `f9a81d2` was marked successful and became the only active instance before Uvicorn listened, causing HTTP 502 connection refusals from approximately 03:17:09Z through 03:17:15Z; `codex/railway-healthcheck` adds the `/health` gate and 300-second timeout; focused regression 1 passed, Railway schema validation passed, full backend suite 569 passed/3 skipped | Independent review → focused PR/CI → deploy → verify Railway health-gated cutover and no connection-refused responses |
+| DB-021 | P0 | Review | Prevent Railway from routing production API traffic before Uvicorn is accepting requests | Release & Reliability | Commit `f9a81d2` was redeployed as Railway deployment `f56d0b2e-42a3-4fee-b2db-1d1aa15fb69b`, which became the only active instance before Uvicorn listened and caused HTTP 502 connection refusals from approximately 03:17:09Z through 03:17:15Z; `codex/railway-healthcheck` adds the `/health` gate and 300-second timeout; the required Migration graph job now enforces the config and published Railway schema; pre-fix regression proof fails, current config/schema/migration checks pass, and there is no net `backend/**` diff | Independent re-review → focused PR/CI → deploy both web services using root `railway.json` → verify health-gated cutover and no connection-refused responses; worker remains untouched |
 
 ## Blocked
 
@@ -93,14 +93,17 @@ last passing automated and runtime evidence in the item or associated issue.
 
 ## DB-021 acceptance criteria
 
-- The Railway API service waits for HTTP `200` from `/health` before a new
-  deployment becomes active and receives production traffic.
+- Both Railway web services using root `railway.json` (`diesel-bridge-network`
+  and performance `truck-pit-stop`) wait for HTTP `200` from `/health` before a
+  new deployment becomes active and receives production traffic.
 - A new instance has up to 300 seconds to complete legitimate startup; failure
   to become healthy in that window fails the deployment instead of replacing
   the last healthy instance.
 - Automated coverage fails if the API health-check path or timeout is removed or
   changed, and `railway.json` validates against Railway's published JSON schema.
 - There is no application behavior, API/data contract, migration, frontend, or
-  worker deployment change in this item.
-- Release evidence records the deployment ID/SHA, a successful Railway health
-  gate, API health, and absence of connection-refused responses during cutover.
+  worker deployment change in this item. Regression enforcement stays outside
+  `backend/**` so the worker watch pattern is not triggered.
+- Release evidence records both web deployment IDs/SHAs, successful Railway
+  health gates, API health, and absence of connection-refused responses during
+  each cutover; the worker is not redeployed.
