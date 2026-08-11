@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, type CSSProperties } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import {
@@ -18,6 +18,8 @@ const BRAND = {
   platformName: 'Diesel Bridge Network',
   shortName: 'DieselBridge',
 }
+
+const WORDMARK_LETTERS = Array.from(BRAND.shortName)
 
 interface LandingPartner {
   id: string
@@ -50,7 +52,22 @@ function LandingWordmark({ animated = false }: { animated?: boolean }) {
         <path d="M13 22v-7m8 7V11m8 11v-7" />
       </svg>
       <span className="landing-wordmark__name">
-        <span className="landing-wordmark__ride">Diesel<span>Bridge</span></span>
+        <span className="landing-wordmark__letters" aria-hidden="true">
+          {WORDMARK_LETTERS.map((letter, index) => (
+            <span
+              key={`${letter}-${index}`}
+              className={`landing-wordmark__letter${index >= 6 ? ' landing-wordmark__letter--bridge' : ''}`}
+              style={{
+                '--letter-index': index,
+                '--letter-start-x': `${-3.25 - index * 0.5}rem`,
+                '--letter-mid-x': `${-1.1 - index * 0.17}rem`,
+                '--letter-late-x': `${-0.28 - index * 0.045}rem`,
+              } as CSSProperties}
+            >
+              {letter}
+            </span>
+          ))}
+        </span>
       </span>
     </span>
   )

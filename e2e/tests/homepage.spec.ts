@@ -79,46 +79,41 @@ test.describe('Public repair-shop homepage', () => {
 
     const headerWordmark = page.locator('.landing-brand-link .landing-wordmark--animated')
     const name = headerWordmark.locator('.landing-wordmark__name')
-    const ride = headerWordmark.locator('.landing-wordmark__ride')
+    const letters = headerWordmark.locator('.landing-wordmark__letter')
     const footerWordmark = page.locator('.landing-footer .landing-wordmark')
 
     await expect(headerWordmark).toHaveAccessibleName('Diesel Bridge Network')
     await expect(footerWordmark).not.toHaveClass(/landing-wordmark--animated/)
-    await expect(name).toHaveCSS('animation-name', 'landing-wordmark-drive-x')
-    await expect(name).toHaveCSS('animation-duration', '0.72s')
-    await expect(ride).toHaveCSS('animation-name', 'landing-wordmark-cross-bridge')
+    await expect(name).toHaveCSS('animation-name', 'none')
+    await expect(letters).toHaveCount(12)
+    await expect(letters.first()).toHaveCSS('animation-name', 'landing-wordmark-letter-wave')
+    await expect(letters.first()).toHaveCSS('animation-duration', '0.62s')
+    await expect(letters.last()).toHaveCSS('animation-delay', '0.308s')
 
-    await name.evaluate((element) => {
-      element.getAnimations().forEach((animation) => {
-        animation.pause()
-        animation.currentTime = 360
-      })
-    })
-    await ride.evaluate((element) => {
-      element.getAnimations().forEach((animation) => {
-        animation.pause()
-        animation.currentTime = 360
+    await letters.evaluateAll((elements) => {
+      elements.forEach((element) => {
+        element.getAnimations().forEach((animation) => {
+          animation.pause()
+          animation.currentTime = 360
+        })
       })
     })
     const crossingFrame = await headerWordmark.evaluate((element) => {
-      const movingName = element.querySelector<HTMLElement>('.landing-wordmark__name')
-      const movingRide = element.querySelector<HTMLElement>('.landing-wordmark__ride')
+      const movingLetters = [...element.querySelectorAll<HTMLElement>('.landing-wordmark__letter')]
       return {
-        nameTransform: movingName ? getComputedStyle(movingName).transform : 'none',
-        rideTransform: movingRide ? getComputedStyle(movingRide).transform : 'none',
-        opacity: movingName ? getComputedStyle(movingName).opacity : '0',
+        letterTransforms: movingLetters.map((letter) => getComputedStyle(letter).transform),
+        letterOpacities: movingLetters.map((letter) => getComputedStyle(letter).opacity),
       }
     })
-    expect(crossingFrame.nameTransform).not.toBe('none')
-    expect(crossingFrame.rideTransform).not.toBe('none')
-    expect(Number(crossingFrame.opacity)).toBeGreaterThan(0)
+    expect(new Set(crossingFrame.letterTransforms).size).toBeGreaterThan(1)
+    expect(crossingFrame.letterOpacities.some((opacity) => Number(opacity) > 0)).toBe(true)
     await page.screenshot({ path: 'test-results/db032-wordmark-crossing-1366.png' })
 
     await page.emulateMedia({ reducedMotion: 'reduce' })
     await page.reload()
     await expect(name).toHaveCSS('animation-name', 'landing-wordmark-fade')
     await expect(name).toHaveCSS('animation-duration', '0.12s')
-    await expect(ride).toHaveCSS('animation-name', 'none')
+    await expect(letters.first()).toHaveCSS('animation-name', 'none')
 
     for (const width of [390, 320]) {
       await page.setViewportSize({ width, height: 844 })
