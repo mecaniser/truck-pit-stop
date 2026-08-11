@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.config import settings
 from app.core.paid_invoice_webhook_crypto import decrypt_paid_invoice_webhook_secret
+from app.core.webhook_destination import WebhookDestinationError, validate_webhook_destination
 from app.db.models.customer import Customer
 from app.db.models.invoice import Invoice, InvoiceStatus
 from app.db.models.provider_outbox import ProviderOutboxEvent, ProviderOutboxStatus
@@ -92,6 +93,10 @@ async def enqueue_conversion_event(db: AsyncSession, *, tenant: Optional[Tenant]
         raise ValueError("Unsupported conversion event type")
     if not tenant or not tenant.paid_invoice_webhook_enabled or not tenant.paid_invoice_webhook_url or not tenant.paid_invoice_webhook_secret_encrypted:
         return None
+    if invoice.tenant_id != tenant.id or order.tenant_id != tenant.id or (customer and customer.tenant_id != tenant.id):
+        raise ValueError("Conversion event resources must belong to the same shop")
+    if invoice.repair_order_id != order.id:
+        raise ValueError("Conversion event invoice does not belong to the repair order")
     if not order.id or not order.order_number or order.deleted_at is not None:
         return None
     if event_type == "repair_order.paid" and (invoice.status != InvoiceStatus.PAID or order.status != RepairOrderStatus.PAID or Decimal(invoice.total_amount or 0) <= 0):
@@ -135,13 +140,23 @@ def _retry_delay(attempt: int) -> timedelta:
 async def _deliver(tenant: Tenant, event: ProviderOutboxEvent) -> tuple[Optional[str], int]:
     if not tenant.paid_invoice_webhook_enabled or not tenant.paid_invoice_webhook_url or not tenant.paid_invoice_webhook_secret_encrypted:
         raise ProviderDeliveryError("Conversion webhook is disabled or incomplete", retryable=False)
+    try:
+        await validate_webhook_destination(tenant.paid_invoice_webhook_url)
+    except WebhookDestinationError as exc:
+        raise ProviderDeliveryError(str(exc), retryable=False) from exc
     body = json.dumps(event.payload, separators=(",", ":"), sort_keys=True).encode()
     secret = decrypt_paid_invoice_webhook_secret(tenant.paid_invoice_webhook_secret_encrypted)
     signature = hmac.new(secret.encode(), body, hashlib.sha256).hexdigest()
     try:
-        async with httpx.AsyncClient(timeout=httpx.Timeout(settings.PAID_INVOICE_WEBHOOK_TIMEOUT_SECONDS)) as client:
+        async with httpx.AsyncClient(
+            timeout=httpx.Timeout(settings.PAID_INVOICE_WEBHOOK_TIMEOUT_SECONDS),
+            follow_redirects=False,
+            trust_env=False,
+        ) as client:
             response = await client.post(tenant.paid_invoice_webhook_url, content=body, headers={"Content-Type": "application/json", "User-Agent": "dieselbridge-conversion-webhook/1.0", "Idempotency-Key": event.idempotency_key, "X-DieselBridge-Event": event.event_type, "X-DieselBridge-Signature": f"sha256={signature}"})
         event.last_response_code = response.status_code
+        if 300 <= response.status_code < 400:
+            raise ProviderDeliveryError("Webhook redirects are not accepted", retryable=False)
         if response.status_code >= 400:
             raise ProviderDeliveryError(f"Webhook returned HTTP {response.status_code}", retryable=response.status_code == 429 or response.status_code >= 500)
         return response.headers.get("X-Request-Id"), response.status_code

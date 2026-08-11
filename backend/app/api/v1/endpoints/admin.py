@@ -40,6 +40,7 @@ from app.core.paid_invoice_webhook_crypto import (
     PaidInvoiceWebhookCryptoError,
     encrypt_paid_invoice_webhook_secret,
 )
+from app.core.webhook_destination import WebhookDestinationError, validate_webhook_destination
 
 router = APIRouter()
 SMS_PROVISION_COOLDOWN_SECONDS = 15
@@ -1215,6 +1216,11 @@ async def update_paid_invoice_webhook(
         raise HTTPException(status_code=422, detail="An HTTPS URL and signing secret are required when enabling the webhook")
     if body.url and body.url.scheme != "https":
         raise HTTPException(status_code=422, detail="Paid-invoice webhook URLs must use HTTPS")
+    if body.url:
+        try:
+            await validate_webhook_destination(str(body.url))
+        except WebhookDestinationError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
 
     if body.url:
         tenant.paid_invoice_webhook_url = str(body.url)

@@ -53,6 +53,9 @@ async def test_paid_invoice_event_is_signed(monkeypatch):
     sent = {}
     monkeypatch.setattr("app.core.config.settings.PAID_INVOICE_WEBHOOK_ENCRYPTION_KEY", Fernet.generate_key().decode())
 
+    async def allow_destination(_url):
+        return None
+
     class Response:
         status_code = 202
         headers = {"X-Request-Id": "receiver-123"}
@@ -64,7 +67,14 @@ async def test_paid_invoice_event_is_signed(monkeypatch):
             sent.update(url=url, content=content, headers=headers)
             return Response()
 
-    monkeypatch.setattr("app.services.paid_invoice_webhook_service.httpx.AsyncClient", lambda **_kwargs: Client())
+    client_options = {}
+
+    def client_factory(**kwargs):
+        client_options.update(kwargs)
+        return Client()
+
+    monkeypatch.setattr("app.services.paid_invoice_webhook_service.validate_webhook_destination", allow_destination)
+    monkeypatch.setattr("app.services.paid_invoice_webhook_service.httpx.AsyncClient", client_factory)
     tenant = Tenant(name="Webhook Garage", slug=f"webhook-{uuid4().hex}", paid_invoice_webhook_enabled=True, paid_invoice_webhook_url="https://example.test/hook")
     tenant.paid_invoice_webhook_secret_encrypted = encrypt_paid_invoice_webhook_secret("webhook-test-secret")
     from app.db.models.provider_outbox import ProviderOutboxEvent
@@ -74,6 +84,8 @@ async def test_paid_invoice_event_is_signed(monkeypatch):
     assert sent["headers"]["X-DieselBridge-Event"] == PAID_INVOICE_WEBHOOK_EVENT
     assert sent["headers"]["X-DieselBridge-Signature"].startswith("sha256=")
     assert sent["headers"]["Idempotency-Key"] == "paid-invoice:test"
+    assert client_options["follow_redirects"] is False
+    assert client_options["trust_env"] is False
 
 
 @pytest.mark.asyncio
@@ -133,3 +145,81 @@ async def test_conversion_delivery_retries_with_backoff(_db_engine, monkeypatch)
         assert event.status == "pending"
         assert event.attempt_count == 1
         assert event.available_at > event.last_attempt_at
+
+
+@pytest.mark.asyncio
+async def test_private_destination_is_a_nonretryable_delivery_failure(monkeypatch):
+    monkeypatch.setattr("app.core.config.settings.PAID_INVOICE_WEBHOOK_ENCRYPTION_KEY", Fernet.generate_key().decode())
+    tenant = Tenant(
+        name="Private Target", slug=f"private-{uuid4().hex}", paid_invoice_webhook_enabled=True,
+        paid_invoice_webhook_url="https://127.0.0.1/conversions",
+        paid_invoice_webhook_secret_encrypted=encrypt_paid_invoice_webhook_secret("webhook-test-secret"),
+    )
+    event = ProviderOutboxEvent(
+        tenant_id=uuid4(), event_type=PAID_INVOICE_WEBHOOK_EVENT, aggregate_type="invoice",
+        aggregate_id=uuid4(), payload={}, idempotency_key="paid-invoice:private",
+    )
+    with pytest.raises(ProviderDeliveryError) as exc:
+        await _deliver(tenant, event)
+    assert exc.value.retryable is False
+    assert "public" in str(exc.value)
+
+
+@pytest.mark.asyncio
+async def test_cross_tenant_resources_cannot_enter_conversion_outbox(_db_engine, monkeypatch):
+    monkeypatch.setattr("app.core.config.settings.PAID_INVOICE_WEBHOOK_ENCRYPTION_KEY", Fernet.generate_key().decode())
+    factory = async_sessionmaker(_db_engine, expire_on_commit=False)
+    async with factory() as db:
+        tenant = Tenant(
+            name="Right Shop", slug=f"right-{uuid4().hex}", paid_invoice_webhook_enabled=True,
+            paid_invoice_webhook_url="https://hooks.example.com/conversions",
+            paid_invoice_webhook_secret_encrypted=encrypt_paid_invoice_webhook_secret("webhook-test-secret"),
+        )
+        other = Tenant(name="Other Shop", slug=f"other-{uuid4().hex}")
+        customer = Customer(tenant=other, first_name="A", last_name="B", email="a@example.com")
+        order = RepairOrder(
+            tenant=other, customer=customer, vehicle_id=uuid4(), order_number=f"RO-{uuid4().hex}",
+            status=RepairOrderStatus.PAID,
+        )
+        invoice = Invoice(
+            tenant=other, repair_order=order, invoice_number=f"INV-{uuid4().hex}", status=InvoiceStatus.PAID,
+            subtotal=Decimal("10"), tax_amount=Decimal("0"), discount_amount=Decimal("0"),
+            total_amount=Decimal("10"), paid_at=datetime.now(timezone.utc),
+        )
+        db.add_all([tenant, other, customer, order, invoice])
+        await db.flush()
+        with pytest.raises(ValueError, match="same shop"):
+            await enqueue_paid_invoice_webhook(db, tenant=tenant, invoice=invoice, order=order, customer=customer)
+
+
+@pytest.mark.asyncio
+async def test_webhook_redirect_is_rejected_without_following(monkeypatch):
+    monkeypatch.setattr("app.core.config.settings.PAID_INVOICE_WEBHOOK_ENCRYPTION_KEY", Fernet.generate_key().decode())
+
+    async def allow_destination(_url):
+        return None
+
+    class Response:
+        status_code = 302
+        headers = {"Location": "https://127.0.0.1/internal"}
+
+    class Client:
+        async def __aenter__(self): return self
+        async def __aexit__(self, *_args): return None
+        async def post(self, *_args, **_kwargs): return Response()
+
+    monkeypatch.setattr("app.services.paid_invoice_webhook_service.validate_webhook_destination", allow_destination)
+    monkeypatch.setattr("app.services.paid_invoice_webhook_service.httpx.AsyncClient", lambda **_kwargs: Client())
+    tenant = Tenant(
+        name="Redirect Target", slug=f"redirect-{uuid4().hex}", paid_invoice_webhook_enabled=True,
+        paid_invoice_webhook_url="https://hooks.example.com/conversions",
+        paid_invoice_webhook_secret_encrypted=encrypt_paid_invoice_webhook_secret("webhook-test-secret"),
+    )
+    event = ProviderOutboxEvent(
+        tenant_id=uuid4(), event_type=PAID_INVOICE_WEBHOOK_EVENT, aggregate_type="invoice",
+        aggregate_id=uuid4(), payload={}, idempotency_key="paid-invoice:redirect",
+    )
+    with pytest.raises(ProviderDeliveryError) as exc:
+        await _deliver(tenant, event)
+    assert exc.value.retryable is False
+    assert "redirect" in str(exc.value).lower()

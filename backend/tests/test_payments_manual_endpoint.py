@@ -152,11 +152,18 @@ async def test_record_manual_payment_returns_warning_when_sender_email_conflicts
     async def _noop_async(**_kwargs):
         return None
 
+    enqueued = []
+
+    async def _capture_webhook(_db, **kwargs):
+        enqueued.append(kwargs)
+        return None
+
     monkeypatch.setattr(payments, "allocate_next_payment_number", _fake_allocate_next_payment_number)
     monkeypatch.setattr(payments, "broadcast_payment_received", _noop_async)
     monkeypatch.setattr(payments, "broadcast_repair_order_update", _noop_async)
     monkeypatch.setattr(payments, "send_invoice_payment_confirmation_email", _noop_async)
     monkeypatch.setattr(payments, "record_payment", lambda **_kwargs: None)
+    monkeypatch.setattr(payments, "enqueue_paid_invoice_webhook", _capture_webhook)
 
     app = FastAPI()
     app.include_router(payments.router, prefix="/api/v1/payments")
@@ -195,3 +202,7 @@ async def test_record_manual_payment_returns_warning_when_sender_email_conflicts
     assert len([obj for obj in fake_db.added if isinstance(obj, Payment)]) == 1
     payment = next(obj for obj in fake_db.added if isinstance(obj, Payment))
     assert payment.method == PaymentMethod.ZELLE
+    assert len(enqueued) == 1
+    assert enqueued[0]["invoice"] is invoice
+    assert enqueued[0]["order"] is order
+    assert enqueued[0]["customer"] is walkin_customer

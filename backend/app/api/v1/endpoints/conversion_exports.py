@@ -144,13 +144,29 @@ class CorrectionRequest(BaseModel):
 async def create_correction(invoice_id: UUID, body: CorrectionRequest, idempotency_key: str = Header(..., alias="Idempotency-Key", min_length=8, max_length=255), db: AsyncSession = Depends(get_db), user: User = Depends(get_current_active_user)):
     tenant_id = _require_admin(user)
     if body.event_type not in CONVERSION_EVENT_TYPES - {"repair_order.paid"}: raise HTTPException(status_code=422, detail="Invalid correction event type")
+    if body.total_amount == 0:
+        raise HTTPException(status_code=422, detail="Correction amount must be non-zero")
+    if body.event_type in {"repair_order.payment_refunded", "repair_order.payment_voided"} and body.total_amount > 0:
+        raise HTTPException(status_code=422, detail="Refund and void correction amounts must be negative")
+    # Serialize correction creation per tenant. This prevents two concurrent
+    # requests from assigning one idempotency key to different event payloads.
+    tenant = (await db.execute(select(Tenant).where(Tenant.id == tenant_id).with_for_update())).scalar_one_or_none()
+    if not tenant:
+        raise HTTPException(status_code=404, detail="Shop not found")
     stable_key = f"correction:{idempotency_key}"
     existing = (await db.execute(select(ProviderOutboxEvent).where(ProviderOutboxEvent.tenant_id == tenant_id, ProviderOutboxEvent.idempotency_key == stable_key))).scalar_one_or_none()
     if existing:
+        existing_amount = Decimal(str(existing.payload.get("total_amount", "0")))
+        if existing.aggregate_id != invoice_id or existing.event_type != body.event_type or existing_amount != body.total_amount:
+            raise HTTPException(status_code=409, detail="Idempotency-Key was already used for a different correction")
         return {"event_id": existing.id, "event_type": existing.event_type}
     invoice = (await db.execute(select(Invoice).options(selectinload(Invoice.repair_order).selectinload(RepairOrder.customer)).where(Invoice.id == invoice_id, Invoice.tenant_id == tenant_id))).scalar_one_or_none()
     if not invoice: raise HTTPException(status_code=404, detail="Invoice not found")
-    tenant = await db.get(Tenant, tenant_id); order = invoice.repair_order
+    if body.event_type == "repair_order.payment_voided" and body.total_amount != -Decimal(invoice.total_amount):
+        raise HTTPException(status_code=422, detail="Void correction amount must reverse the full invoice total")
+    if body.event_type == "repair_order.payment_refunded" and abs(body.total_amount) > Decimal(invoice.total_amount):
+        raise HTTPException(status_code=422, detail="Refund correction exceeds the invoice total")
+    order = invoice.repair_order
     event = await enqueue_conversion_event(db, tenant=tenant, invoice=invoice, order=order, customer=order.customer, event_type=body.event_type, idempotency_key=stable_key, total_amount=body.total_amount)
     if not event: raise HTTPException(status_code=409, detail="Conversion webhook is not enabled")
     await db.commit(); return {"event_id": event.id, "event_type": event.event_type}

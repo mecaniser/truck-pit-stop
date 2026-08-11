@@ -17,6 +17,9 @@ notes. Attribution is locked when an order becomes invoiced or paid.
 Owners/admins configure the HTTPS destination using
 `PUT /api/v1/admin/integrations/paid-invoice-webhook`. The `signing_secret` is
 write-only and encrypted using `PAID_INVOICE_WEBHOOK_ENCRYPTION_KEY`.
+Destinations must resolve only to public Internet addresses. Credentials,
+localhost/private/link-local destinations, and redirects are rejected. The
+destination is checked both when it is saved and immediately before delivery.
 
 Paid invoices over $0 produce `repair_order.paid`. Deleted, unpaid, draft,
 completed-only, and $0 orders do not. Correction event types are
@@ -41,6 +44,13 @@ Admins inspect and replay deliveries through:
 
 Correction requests require an `Idempotency-Key` header; retries with the same
 key return the original correction event instead of creating another reversal.
+The key is tenant-wide for corrections and cannot be reused with a different
+invoice, event type, or amount. Refund and void amounts are negative; a void
+must reverse the full invoice total and a refund cannot exceed that total.
+
+This release intentionally exposes webhook settings and conversion API-key
+administration through the API only. A settings screen is outside DB-002 and
+must be tracked as a separate product/UI outcome rather than implied here.
 
 Delivery history records status, creation/completion/last-attempt timestamps,
 HTTP response code, retry count, and a bounded non-PII error message.
@@ -65,3 +75,15 @@ it is authorized to use, disclose marketing/measurement processing in its
 privacy notice, honor opt-out/deletion obligations applicable to it, restrict
 destination access, and set an appropriate retention period. DieselBridge logs
 delivery metadata and bounded errors—not webhook bodies or customer contact.
+
+## Deployment gate
+
+Before enabling the first shop webhook, store one generated Fernet key as
+`PAID_INVOICE_WEBHOOK_ENCRYPTION_KEY` on every backend/worker environment that
+encrypts or decrypts webhook secrets. Losing or rotating that key without a
+re-encryption plan makes stored signing secrets unreadable. Confirm the Celery
+worker registers `process_paid_invoice_webhooks`, Celery beat schedules
+`process-paid-invoice-webhooks`, and a non-production signed delivery reaches a
+public test receiver. Application validation blocks non-public destinations and
+redirects; the production network should also deny backend egress to private,
+link-local, and metadata address ranges as defense in depth.

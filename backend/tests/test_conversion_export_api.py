@@ -44,3 +44,25 @@ async def test_revoked_api_key_is_rejected(client, db_session):
     now = datetime.now(timezone.utc)
     response = await client.get("/api/v1/conversion-exports/paid-repair-orders", headers={"X-API-Key": raw_key}, params={"paid_from": (now - timedelta(days=1)).isoformat(), "paid_to": now.isoformat()})
     assert response.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_export_csv_is_tenant_scoped_and_has_expected_columns(client, db_session):
+    raw_key = "dbce_csv_tenant_secret"
+    await _seed(db_session, slug=f"csv-{uuid4().hex}", raw_key=raw_key, campaign="csv-campaign")
+    await _seed(db_session, slug=f"hidden-{uuid4().hex}", raw_key="dbce_hidden_secret", campaign="must-not-leak")
+    now = datetime.now(timezone.utc)
+    response = await client.get(
+        "/api/v1/conversion-exports/paid-repair-orders",
+        headers={"X-API-Key": raw_key},
+        params={
+            "paid_from": (now - timedelta(days=1)).isoformat(),
+            "paid_to": (now + timedelta(days=1)).isoformat(),
+            "format": "csv",
+        },
+    )
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/csv")
+    assert "repair_order_id,invoice_id,paid_at,total_amount,currency" in response.text
+    assert "csv-campaign" in response.text
+    assert "must-not-leak" not in response.text

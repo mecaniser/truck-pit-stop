@@ -192,6 +192,8 @@ TWILIO_PHONE_NUMBER=+1234567890
 RESEND_API_KEY=re_...
 QUICKBOOKS_ACCOUNTING_ENVIRONMENT=sandbox
 QUICKBOOKS_PAYMENTS_ENVIRONMENT=sandbox
+# Dedicated Fernet key for tenant-owned conversion webhook signing secrets.
+PAID_INVOICE_WEBHOOK_ENCRYPTION_KEY=...
 # Enable only when the Celery worker from railway.worker.json is deployed.
 PROVIDER_OUTBOX_ENABLED=false
 FRONTEND_URL=http://localhost:5173
@@ -229,9 +231,14 @@ VITE_SITE_URL=https://www.dieselbridge.com
 2. Create Redis service in Railway
 3. Deploy backend service (point to Railway PostgreSQL/Redis)
 4. Deploy the Celery worker using `railway.worker.json`
-5. Set `PROVIDER_OUTBOX_ENABLED=true` on the backend after the worker is healthy
-6. Deploy frontend service (set VITE_API_URL to backend URL)
-7. Set environment variables in Railway dashboard
+5. Set the same `PAID_INVOICE_WEBHOOK_ENCRYPTION_KEY` on every backend process
+   that configures or delivers conversion webhooks; generate it once with
+   `Fernet.generate_key().decode()` and retain it in Railway's secret store
+6. Verify the worker registers `process_paid_invoice_webhooks` and beat contains
+   `process-paid-invoice-webhooks` before enabling a shop webhook
+7. Set `PROVIDER_OUTBOX_ENABLED=true` on the backend after the worker is healthy
+8. Deploy frontend service (set VITE_API_URL to backend URL)
+9. Set environment variables in Railway dashboard
 
 ## Next Steps
 
