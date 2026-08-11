@@ -4305,7 +4305,9 @@ async def add_recommended_service(
 ):
     if not current_user.tenant_id:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="User must be associated with a tenant")
-    result = await db.execute(select(RepairOrder).where(RepairOrder.id == order_id, RepairOrder.deleted_at.is_(None)))
+    result = await db.execute(
+        tenant_repair_order_statement(order_id, current_user)
+    )
     order = result.scalar_one_or_none()
     if not order:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repair order not found")
@@ -4332,7 +4334,9 @@ async def list_recommended_services(
 ):
     if not current_user.tenant_id:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="User must be associated with a tenant")
-    result = await db.execute(select(RepairOrder).where(RepairOrder.id == order_id, RepairOrder.deleted_at.is_(None)))
+    result = await db.execute(
+        tenant_repair_order_statement(order_id, current_user)
+    )
     order = result.scalar_one_or_none()
     if not order:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repair order not found")
@@ -4359,7 +4363,9 @@ async def update_recommended_service(
 ):
     if not current_user.tenant_id:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="User must be associated with a tenant")
-    result = await db.execute(select(RepairOrder).where(RepairOrder.id == order_id, RepairOrder.deleted_at.is_(None)))
+    result = await db.execute(
+        tenant_repair_order_statement(order_id, current_user)
+    )
     order = result.scalar_one_or_none()
     if not order:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repair order not found")
@@ -4393,7 +4399,9 @@ async def delete_recommended_service(
 ):
     if not current_user.tenant_id:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="User must be associated with a tenant")
-    result = await db.execute(select(RepairOrder).where(RepairOrder.id == order_id, RepairOrder.deleted_at.is_(None)))
+    result = await db.execute(
+        tenant_repair_order_statement(order_id, current_user)
+    )
     order = result.scalar_one_or_none()
     if not order:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repair order not found")
