@@ -111,6 +111,23 @@ test.describe('Public repair-shop homepage', () => {
         expect(layout.readingOrder[0]).toBeLessThanOrEqual(layout.readingOrder[1])
         expect(layout.readingOrder[1]).toBeLessThanOrEqual(layout.readingOrder[2])
       }
+      if (width === 390) {
+        const mobileSheetMetadata = await page.locator('.repair-preview__sheet').evaluateAll((sheets) =>
+          sheets.map((sheet) => ({
+            kind: sheet.getAttribute('data-sheet-kind'),
+            sizes: [...sheet.querySelectorAll<HTMLElement>('.repair-preview__eyebrow, p, dt, dd, .repair-preview__sheet-status')]
+              .map((element) => Number.parseFloat(getComputedStyle(element).fontSize)),
+          })),
+        )
+        expect(mobileSheetMetadata.map(({ kind }) => kind)).toEqual(['context', 'event'])
+        expect(
+          mobileSheetMetadata.flatMap(({ kind, sizes }) =>
+            sizes.filter((size) => size < 11).map((size) => ({ kind, size })),
+          ),
+          'mobile sheet supporting metadata must stay at or above 11px',
+        ).toEqual([])
+        expect(layout.scrollWidth, 'mobile typography must not introduce page overflow').toBe(layout.clientWidth)
+      }
       if (width <= 390) expect(layout.moduleRows).toBeGreaterThan(1)
       if (width === 1280 || width === 390 || width === 320) {
         await page.screenshot({ path: `test-results/db029-homepage-${width}.png`, fullPage: true })

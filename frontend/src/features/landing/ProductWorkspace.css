@@ -372,6 +372,11 @@
   .mini-repair-row > span:nth-child(2) { align-items: flex-start; }
   .mini-repair-row > .mini-pill, .mini-repair-row > svg { display: none; }
   .repair-preview__sheet { min-height: 0; border-radius: 1rem; }
+  .repair-preview__sheet .repair-preview__eyebrow,
+  .repair-preview__sheet p,
+  .repair-preview__sheet dt,
+  .repair-preview__sheet dd,
+  .repair-preview__sheet .repair-preview__sheet-status { font-size: 0.6875rem; }
   .mini-surface :where(
     small,
     dt,
