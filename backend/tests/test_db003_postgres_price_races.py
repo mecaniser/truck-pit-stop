@@ -8,21 +8,28 @@ from uuid import UUID, uuid4
 
 import pytest
 from fastapi import HTTPException
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from app.api.v1.endpoints import invoices, quotes, repair_orders
 from app.db.models.customer import Customer
 from app.db.models.inventory import Inventory, PartsUsage
-from app.db.models.invoice import Invoice
+from app.db.models.invoice import Invoice, InvoiceStatus
 from app.db.models.labor import Labor, LaborLineType
 from app.db.models.quote import Quote
 from app.db.models.repair_order import RepairOrder, RepairOrderStatus
 from app.db.models.repair_order_history import RepairOrderHistoryEvent
+from app.db.models.repair_order_read_model import RepairOrderReadModel
+from app.db.models.service import Service, ServicePart
 from app.db.models.tenant import Tenant
 from app.db.models.user import User, UserRole
 from app.db.models.vehicle import Vehicle
-from app.schemas.repair_order import PartsUsageCreate
+from app.schemas.repair_order import (
+    LaborCreate,
+    PartsUsageCreate,
+    PriceBuildFlatServiceRequest,
+    PriceBuildRepairOpsApplyRequest,
+)
 
 
 async def _seed_race_context(factory, *, status: RepairOrderStatus, with_quote: bool):
@@ -306,4 +313,369 @@ async def test_price_mutation_serializes_with_invoice_finalization(monkeypatch):
         assert part_count == 1
     finally:
         release.set()
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+@pytest.mark.skipif(
+    not os.environ.get("DB003_POSTGRES_URL"),
+    reason="requires isolated PostgreSQL 15",
+)
+async def test_projection_selects_one_latest_tenant_consistent_quote_and_invoice():
+    engine = create_async_engine(os.environ["DB003_POSTGRES_URL"])
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    suffix = uuid4().hex
+    active_invoice_created_at = datetime(2026, 1, 2, 12, 0, tzinfo=timezone.utc)
+    try:
+        async with factory() as db:
+            tenant = Tenant(
+                name="Projection Shop",
+                slug=f"projection-{suffix}",
+                email=f"projection-{suffix}@example.com",
+            )
+            other_tenant = Tenant(
+                name="Other Projection Shop",
+                slug=f"projection-other-{suffix}",
+                email=f"projection-other-{suffix}@example.com",
+            )
+            db.add_all([tenant, other_tenant])
+            await db.flush()
+            customer = Customer(
+                tenant_id=tenant.id,
+                first_name="Projection",
+                last_name="Customer",
+                email=f"projection-customer-{suffix}@example.com",
+            )
+            db.add(customer)
+            await db.flush()
+            vehicle = Vehicle(
+                tenant_id=tenant.id,
+                customer_id=customer.id,
+                make="Volvo",
+                model="VNL",
+                year=2024,
+            )
+            mechanic = User(
+                tenant_id=tenant.id,
+                email=f"projection-mechanic-{suffix}@example.com",
+                hashed_password="hashed-password",
+                first_name="Projection",
+                last_name="Mechanic",
+                role=UserRole.MECHANIC,
+                is_active=True,
+                is_verified=True,
+            )
+            db.add_all([vehicle, mechanic])
+            await db.flush()
+            order = RepairOrder(
+                tenant_id=tenant.id,
+                customer_id=customer.id,
+                vehicle_id=vehicle.id,
+                assigned_mechanic_id=mechanic.id,
+                order_number=f"RO-PROJ-{suffix[:8]}",
+                status=RepairOrderStatus.QUOTED,
+                description="Projection cardinality",
+                total_parts_cost=Decimal("0.00"),
+                total_labor_cost=Decimal("150.00"),
+                total_cost=Decimal("150.00"),
+            )
+            db.add(order)
+            await db.commit()
+
+            quote_one = Quote(
+                tenant_id=tenant.id,
+                repair_order_id=order.id,
+                quote_number=f"Q-PROJ-1-{suffix[:8]}",
+                total_amount=Decimal("100.00"),
+                revision=1,
+                authorization_type="initial_estimate",
+                previously_authorized_amount=Decimal("0.00"),
+                delta_amount=Decimal("100.00"),
+                sent_to_customer=True,
+                is_approved=True,
+                is_declined=False,
+                sent_at=datetime(2026, 1, 1, 12, 0, tzinfo=timezone.utc),
+            )
+            db.add(quote_one)
+            await db.commit()
+            created_revision = await quotes.create_quote(
+                body=quotes.QuoteCreate(repair_order_id=order.id),
+                db=db,
+                current_user=mechanic,
+            )
+            assert created_revision.revision == 2
+            assert created_revision.authorization_type == "additional_work"
+            assert created_revision.previously_authorized_amount == Decimal("100.00")
+            assert created_revision.delta_amount == Decimal("50.00")
+            quote_two = await db.get(Quote, created_revision.id)
+
+            # A higher revision carrying another tenant must never win.
+            db.add(
+                Quote(
+                    tenant_id=other_tenant.id,
+                    repair_order_id=order.id,
+                    quote_number=f"Q-PROJ-X-{suffix[:8]}",
+                    total_amount=Decimal("999.00"),
+                    revision=99,
+                    authorization_type="additional_work",
+                    previously_authorized_amount=Decimal("0.00"),
+                    delta_amount=Decimal("999.00"),
+                    sent_to_customer=True,
+                    is_approved=True,
+                    is_declined=False,
+                )
+            )
+            active_invoice = Invoice(
+                tenant_id=tenant.id,
+                repair_order_id=order.id,
+                invoice_number=f"INV-PROJ-A-{suffix[:8]}",
+                status=InvoiceStatus.PAID,
+                subtotal=Decimal("150.00"),
+                total_amount=Decimal("150.00"),
+                created_at=active_invoice_created_at,
+            )
+            cancelled_invoice = Invoice(
+                tenant_id=tenant.id,
+                repair_order_id=order.id,
+                invoice_number=f"INV-PROJ-C-{suffix[:8]}",
+                status=InvoiceStatus.CANCELLED,
+                subtotal=Decimal("175.00"),
+                total_amount=Decimal("175.00"),
+                created_at=datetime(2026, 2, 1, 12, 0, tzinfo=timezone.utc),
+            )
+            db.add_all([active_invoice, cancelled_invoice])
+            await db.commit()
+
+            projection = await db.get(RepairOrderReadModel, order.id)
+            assert projection.payload["quote_sent"] is False
+            assert projection.payload["quote_approved"] is False
+            assert projection.payload["invoice_created_at"].startswith("2026-01-02T12:00:00")
+            assert projection.payload["pending_zelle_confirmation"] is False
+            assert await db.scalar(
+                select(func.count(RepairOrderReadModel.repair_order_id)).where(
+                    RepairOrderReadModel.repair_order_id == order.id
+                )
+            ) == 1
+            legacy_items = await repair_orders._list_repair_orders_legacy(
+                customer_id=None,
+                vehicle_id=None,
+                status=None,
+                search=None,
+                deleted=False,
+                skip=0,
+                limit=100,
+                paginated=False,
+                db=db,
+                current_user=mechanic,
+            )
+            legacy_item = next(item for item in legacy_items if item.id == order.id)
+            assert legacy_item.quote_sent is False
+            assert legacy_item.quote_approved is False
+            assert legacy_item.invoice_created_at == active_invoice_created_at
+
+            quote_two.deleted_at = datetime.now(timezone.utc)
+            await db.commit()
+            await db.refresh(projection)
+            assert projection.payload["quote_sent"] is True
+            assert projection.payload["quote_approved"] is True
+
+            active_invoice.status = InvoiceStatus.CANCELLED
+            await db.commit()
+            await db.refresh(projection)
+            assert projection.payload["invoice_created_at"] is None
+            assert projection.payload["invoice_due_date"] is None
+            assert projection.payload["pending_zelle_confirmation"] is False
+
+            await db.execute(text("SELECT refresh_repair_order_read_model(:order_id)"), {"order_id": order.id})
+            await db.commit()
+            assert await db.scalar(
+                select(func.count(RepairOrderReadModel.repair_order_id)).where(
+                    RepairOrderReadModel.repair_order_id == order.id
+                )
+            ) == 1
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+@pytest.mark.skipif(
+    not os.environ.get("DB003_POSTGRES_URL"),
+    reason="requires isolated PostgreSQL 15",
+)
+async def test_mechanic_rejections_leave_pricing_history_and_stock_unchanged():
+    engine = create_async_engine(os.environ["DB003_POSTGRES_URL"])
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    context = await _seed_race_context(
+        factory,
+        status=RepairOrderStatus.QUOTED,
+        with_quote=False,
+    )
+    try:
+        async with factory() as db:
+            mechanic = await db.get(User, context["mechanic_id"])
+            inventory = await db.get(Inventory, context["inventory_id"])
+            service = Service(
+                tenant_id=mechanic.tenant_id,
+                name="Twenty-minute inspection",
+                duration_minutes=20,
+                is_active=True,
+            )
+            db.add(service)
+            await db.flush()
+            db.add(
+                ServicePart(
+                    tenant_id=mechanic.tenant_id,
+                    service_id=service.id,
+                    inventory_id=inventory.id,
+                    quantity=Decimal("1.00"),
+                )
+            )
+            unassigned = User(
+                tenant_id=mechanic.tenant_id,
+                email=f"unassigned-{uuid4().hex}@example.com",
+                hashed_password="hashed-password",
+                first_name="Unassigned",
+                last_name="Mechanic",
+                role=UserRole.MECHANIC,
+                is_active=True,
+                is_verified=True,
+            )
+            other_tenant = Tenant(
+                name="Cross Tenant",
+                slug=f"cross-{uuid4().hex}",
+                email=f"cross-{uuid4().hex}@example.com",
+            )
+            db.add_all([unassigned, other_tenant])
+            await db.flush()
+            cross_tenant = User(
+                tenant_id=other_tenant.id,
+                email=f"cross-mechanic-{uuid4().hex}@example.com",
+                hashed_password="hashed-password",
+                first_name="Cross",
+                last_name="Mechanic",
+                role=UserRole.MECHANIC,
+                is_active=True,
+                is_verified=True,
+            )
+            db.add(cross_tenant)
+            await db.commit()
+
+            await repair_orders.add_price_build_flat_service(
+                order_id=context["order_id"],
+                body=PriceBuildFlatServiceRequest(service_id=service.id),
+                db=db,
+                current_user=mechanic,
+            )
+
+        async with factory() as db:
+            service = await db.get(Service, service.id)
+            inventory = await db.get(Inventory, context["inventory_id"])
+            service.duration_minutes = 120
+            inventory.selling_price = Decimal("75.00")
+            await db.commit()
+
+        async def _expect_status(actor_id, operation, expected_status):
+            async with factory() as db:
+                actor = await db.get(User, actor_id)
+                try:
+                    await operation(db, actor)
+                except HTTPException as exc:
+                    assert exc.status_code == expected_status
+                    await db.rollback()
+                    return
+                raise AssertionError(f"Expected HTTP {expected_status}")
+
+        async def _invalid_labor(value):
+            async def _run(db, actor):
+                return await repair_orders.add_labor_to_repair_order(
+                    order_id=context["order_id"],
+                    body=LaborCreate(
+                        description="Invalid mechanic labor",
+                        hours=Decimal(value),
+                        hourly_rate=Decimal("100.00"),
+                    ),
+                    db=db,
+                    current_user=actor,
+                )
+
+            return _run
+
+        for value in ("-0.50", "0.00", "1000.00"):
+            await _expect_status(
+                context["mechanic_id"],
+                await _invalid_labor(value),
+                422,
+            )
+
+        async def _negative_operation(db, actor):
+            return await repair_orders.apply_price_build_repair_operation(
+                order_id=context["order_id"],
+                body=PriceBuildRepairOpsApplyRequest(
+                    operation_id="custom:negative-operation",
+                    name="Invalid negative operation",
+                    estimated_hours=Decimal("-0.25"),
+                    auto_recalc_enabled=False,
+                ),
+                db=db,
+                current_user=actor,
+            )
+
+        await _expect_status(context["mechanic_id"], _negative_operation, 422)
+
+        async def _duplicate_flat_service(db, actor):
+            return await repair_orders.add_price_build_flat_service(
+                order_id=context["order_id"],
+                body=PriceBuildFlatServiceRequest(service_id=service.id),
+                db=db,
+                current_user=actor,
+            )
+
+        async def _duplicate_via_operation(db, actor):
+            return await repair_orders.apply_price_build_repair_operation(
+                order_id=context["order_id"],
+                body=PriceBuildRepairOpsApplyRequest(operation_id=f"service:{service.id}"),
+                db=db,
+                current_user=actor,
+            )
+
+        await _expect_status(context["mechanic_id"], _duplicate_flat_service, 409)
+        await _expect_status(context["mechanic_id"], _duplicate_via_operation, 409)
+        await _expect_status(unassigned.id, await _invalid_labor("-0.50"), 403)
+        await _expect_status(cross_tenant.id, await _invalid_labor("-0.50"), 403)
+
+        async with factory() as db:
+            order = await db.get(RepairOrder, context["order_id"])
+            inventory = await db.get(Inventory, context["inventory_id"])
+            labor_rows = (
+                await db.execute(
+                    select(Labor)
+                    .where(Labor.repair_order_id == context["order_id"])
+                    .order_by(Labor.created_at, Labor.id)
+                )
+            ).scalars().all()
+            part_rows = (
+                await db.execute(
+                    select(PartsUsage).where(PartsUsage.repair_order_id == context["order_id"])
+                )
+            ).scalars().all()
+            assert len(labor_rows) == 2
+            service_line = next(line for line in labor_rows if line.source_service_id == service.id)
+            assert service_line.hours == Decimal("0.33")
+            assert service_line.total_cost == Decimal("33.00")
+            assert len(part_rows) == 1
+            assert part_rows[0].unit_price == Decimal("50.00")
+            assert part_rows[0].total_price == Decimal("50.00")
+            assert inventory.stock_quantity == 4
+            assert order.total_labor_cost == Decimal("133.00")
+            assert order.total_parts_cost == Decimal("50.00")
+            assert order.total_cost == Decimal("183.00")
+            assert await db.scalar(
+                select(func.count(RepairOrderHistoryEvent.id)).where(
+                    RepairOrderHistoryEvent.repair_order_id == context["order_id"]
+                )
+            ) == 0
+            assert await db.scalar(
+                select(func.count(Quote.id)).where(Quote.repair_order_id == context["order_id"])
+            ) == 0
+    finally:
         await engine.dispose()

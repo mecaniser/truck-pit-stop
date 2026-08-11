@@ -4,7 +4,7 @@ import math
 import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 from time import perf_counter
 from typing import Optional
 from uuid import UUID
@@ -46,6 +46,14 @@ class PriceBuildLockedError(PriceBuildError):
     pass
 
 
+class PriceBuildConflictError(PriceBuildError):
+    pass
+
+
+class PriceBuildInputError(PriceBuildError):
+    pass
+
+
 class PriceBuildValidationError(PriceBuildError):
     pass
 
@@ -71,6 +79,29 @@ INTERNAL_FROZEN_STATUSES = {
 }
 FINALIZED_STATUSES = {RepairOrderStatus.INVOICED, RepairOrderStatus.PAID}
 logger = get_logger(__name__)
+LABOR_HOURS_MIN = Decimal("0.01")
+LABOR_HOURS_MAX = Decimal("999.99")
+
+
+def validate_mechanic_labor_hours(value: Decimal) -> Decimal:
+    """Return database-safe positive hours or reject the additive operation."""
+    try:
+        hours = Decimal(str(value))
+        rounded = hours.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    except Exception as exc:
+        raise PriceBuildInputError(
+            "Labor hours must be a finite value from 0.01 through 999.99"
+        ) from exc
+    if (
+        not hours.is_finite()
+        or hours < LABOR_HOURS_MIN
+        or hours > LABOR_HOURS_MAX
+        or rounded < LABOR_HOURS_MIN
+    ):
+        raise PriceBuildInputError(
+            "Labor hours must be a finite value from 0.01 through 999.99"
+        )
+    return rounded
 
 
 @dataclass
@@ -256,6 +287,7 @@ class PriceBuildService:
         service_id: UUID,
         *,
         quantity: int = 1,
+        mechanic_additive_only: bool = False,
     ) -> PriceBuildResult:
         order = await self.load_order(db, order.id, for_update=True)
         self._assert_editable(order)
@@ -278,13 +310,6 @@ class PriceBuildService:
         if not service:
             raise PriceBuildNotFoundError("Service not found")
 
-        tenant = await self._get_tenant(db, order.tenant_id)
-        hourly_rate = _labor_rate_for(order, tenant)
-        # Labor hours come from the service's duration, scaled by quantity (how many
-        # times this service is being performed). A 60-minute service × quantity 2 = 2 hours.
-        hours_per_unit = (Decimal(service.duration_minutes) / Decimal(60))
-        total_hours = hours_per_unit * Decimal(quantity)
-
         existing_line = next(
             (
                 li
@@ -293,6 +318,20 @@ class PriceBuildService:
             ),
             None,
         )
+        if existing_line and mechanic_additive_only:
+            raise PriceBuildConflictError(
+                "Mechanics may only add new service lines; an existing service requires staff review"
+            )
+
+        tenant = await self._get_tenant(db, order.tenant_id)
+        hourly_rate = _labor_rate_for(order, tenant)
+        # Labor hours come from the service's duration, scaled by quantity (how many
+        # times this service is being performed). A 60-minute service × quantity 2 = 2 hours.
+        hours_per_unit = (Decimal(service.duration_minutes) / Decimal(60))
+        total_hours = hours_per_unit * Decimal(quantity)
+        if mechanic_additive_only:
+            total_hours = validate_mechanic_labor_hours(total_hours)
+
         if existing_line:
             line = existing_line
             line.description = service.name
@@ -470,6 +509,7 @@ class PriceBuildService:
         estimated_hours: Optional[Decimal] = None,
         provider: Optional[str] = None,
         auto_recalc_enabled: bool = True,
+        mechanic_additive_only: bool = False,
     ) -> PriceBuildResult:
         order = await self.load_order(db, order.id, for_update=True)
         self._assert_editable(order)
@@ -480,7 +520,13 @@ class PriceBuildService:
         # their parts automatically when picked from the unified operation search.
         if operation_id.startswith("service:"):
             service_id = UUID(operation_id[len("service:"):])
-            return await self.add_flat_service_line(db, order, service_id, quantity=1)
+            return await self.add_flat_service_line(
+                db,
+                order,
+                service_id,
+                quantity=1,
+                mechanic_additive_only=mechanic_additive_only,
+            )
 
         tenant = await self._get_tenant(db, order.tenant_id)
         warnings: list[OperationWarning] = []
@@ -496,6 +542,8 @@ class PriceBuildService:
             est_description = description or estimate.description
             warnings.extend(estimate.warnings)
             resolved_provider = provider or estimate.provider
+        if mechanic_additive_only:
+            est_hours = validate_mechanic_labor_hours(est_hours)
 
         hourly_rate = _labor_rate_for(order, tenant)
         line = Labor(

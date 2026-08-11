@@ -35,10 +35,13 @@ from app.services.email_service import send_email
 from app.services.tenant_branding import build_tenant_contact_html, get_tenant_display_name
 from app.services.twilio_service import send_sms
 from app.services.price_build_service import (
+    PriceBuildConflictError,
+    PriceBuildInputError,
     PriceBuildLockedError,
     PriceBuildNotFoundError,
     PriceBuildService,
     PriceBuildValidationError,
+    validate_mechanic_labor_hours,
 )
 from app.services.pricing import apply_canonical_order_totals, get_order_total
 from app.services.internal_fleet import fleet_labor_uses_customer_rate, uses_internal_fleet_pricing
@@ -407,6 +410,10 @@ def _map_price_build_error(exc: Exception) -> HTTPException:
         return HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
     if isinstance(exc, PriceBuildLockedError):
         return HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc))
+    if isinstance(exc, PriceBuildConflictError):
+        return HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc))
+    if isinstance(exc, PriceBuildInputError):
+        return HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc))
     if isinstance(exc, PriceBuildValidationError):
         return HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
     return HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Price build operation failed")
@@ -1030,8 +1037,23 @@ async def _list_repair_orders_legacy(
     if order_ids:
         quote_result = await db.execute(
             select(Quote.repair_order_id, Quote.sent_to_customer, Quote.sent_at, Quote.is_approved)
-            .where(Quote.repair_order_id.in_(order_ids))
-            .order_by(Quote.revision.asc())
+            .join(
+                RepairOrder,
+                and_(
+                    RepairOrder.id == Quote.repair_order_id,
+                    RepairOrder.tenant_id == Quote.tenant_id,
+                ),
+            )
+            .where(
+                Quote.repair_order_id.in_(order_ids),
+                Quote.deleted_at.is_(None),
+            )
+            .order_by(
+                Quote.repair_order_id,
+                Quote.revision.asc(),
+                Quote.created_at.asc(),
+                Quote.id.asc(),
+            )
         )
         quote_rows = quote_result.fetchall()
         quote_sent_map = {row[0]: row[1] for row in quote_rows}
@@ -1046,9 +1068,22 @@ async def _list_repair_orders_legacy(
                 Invoice.created_at,
                 Invoice.due_date,
             )
+            .join(
+                RepairOrder,
+                and_(
+                    RepairOrder.id == Invoice.repair_order_id,
+                    RepairOrder.tenant_id == Invoice.tenant_id,
+                ),
+            )
             .where(
                 Invoice.repair_order_id.in_(order_ids),
                 Invoice.status != InvoiceStatus.CANCELLED,
+                Invoice.deleted_at.is_(None),
+            )
+            .order_by(
+                Invoice.repair_order_id,
+                Invoice.created_at.asc(),
+                Invoice.id.asc(),
             )
         )
         invoice_rows = invoice_result.fetchall()
@@ -3251,6 +3286,7 @@ async def add_price_build_flat_service(
             order,
             body.service_id,
             quantity=body.quantity,
+            mechanic_additive_only=current_user.role == UserRole.MECHANIC,
         )
         return _to_price_build_summary(
             result.order,
@@ -3307,6 +3343,7 @@ async def apply_price_build_repair_operation(
             estimated_hours=body.estimated_hours,
             provider=body.provider,
             auto_recalc_enabled=body.auto_recalc_enabled,
+            mechanic_additive_only=current_user.role == UserRole.MECHANIC,
         )
         return _to_price_build_summary(
             result.order,
@@ -3935,10 +3972,15 @@ async def add_labor_to_repair_order(
     if order.tenant_id != current_user.tenant_id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
     hourly_rate = body.hourly_rate
+    hours = body.hours
     mechanic_id = body.mechanic_id
     if current_user.role == UserRole.MECHANIC:
         if body.mechanic_id is not None and body.mechanic_id != current_user.id:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+        try:
+            hours = validate_mechanic_labor_hours(body.hours)
+        except PriceBuildInputError as exc:
+            raise _map_price_build_error(exc)
         tenant = (await db.execute(select(Tenant).where(Tenant.id == order.tenant_id))).scalar_one()
         hourly_rate = tenant.labor_rate
         mechanic_id = current_user.id
@@ -3947,12 +3989,12 @@ async def add_labor_to_repair_order(
         hourly_rate = (
             tenant.labor_rate if fleet_labor_uses_customer_rate(order) else tenant.internal_labor_rate
         )
-    total_cost = body.hours * hourly_rate
+    total_cost = hours * hourly_rate
     labor = Labor(
         tenant_id=current_user.tenant_id,
         repair_order_id=order_id,
         description=body.description or "",
-        hours=body.hours,
+        hours=hours,
         hourly_rate=hourly_rate,
         total_cost=total_cost,
         mechanic_id=mechanic_id,

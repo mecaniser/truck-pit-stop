@@ -10,6 +10,7 @@ from uuid import uuid4
 
 import pytest
 from fastapi import HTTPException
+from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from starlette.requests import Request
@@ -26,7 +27,11 @@ from app.db.models.user import User, UserRole
 from app.db.models.user_customer_link import UserCustomerLink
 from app.db.models.vehicle import Vehicle
 from app.db.base import Base
-from app.schemas.repair_order import LaborCreate, PartsUsageCreate
+from app.schemas.repair_order import (
+    LaborCreate,
+    PartsUsageCreate,
+    PriceBuildRepairOpsApplyRequest,
+)
 
 
 def _request(path: str = "/api/v1/quotes/token/test") -> Request:
@@ -202,6 +207,21 @@ async def _set_order_total(db, context, total: Decimal) -> None:
 async def _run_role_dependency(endpoint, current_user: User):
     dependency = inspect.signature(endpoint).parameters["current_user"].default.dependency
     return await dependency(current_user=current_user)
+
+
+@pytest.mark.parametrize("invalid_hours", ("NaN", "Infinity", "-Infinity"))
+def test_nonfinite_mechanic_add_hours_are_framework_422_inputs(invalid_hours):
+    with pytest.raises(ValidationError):
+        LaborCreate(
+            description="Invalid labor",
+            hours=invalid_hours,
+            hourly_rate=Decimal("100.00"),
+        )
+    with pytest.raises(ValidationError):
+        PriceBuildRepairOpsApplyRequest(
+            operation_id="custom:invalid",
+            estimated_hours=invalid_hours,
+        )
 
 
 @pytest.mark.asyncio
