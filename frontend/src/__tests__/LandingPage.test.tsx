@@ -101,6 +101,7 @@ describe('LandingPage shop workflow', () => {
     expect(primaryCtas.length).toBe(2)
     expect(primaryCtas.every((link) => link.getAttribute('href') === '/enroll')).toBe(true)
     expect(screen.queryByText(/illustrative|fictional/i)).not.toBeInTheDocument()
+    expect(screen.queryByText('One repair order. Five connected outcomes.')).not.toBeInTheDocument()
     expect(screen.getAllByText('RO-2025-0417').length).toBeGreaterThan(0)
     expect(screen.getAllByText('NorthStar Logistics').length).toBeGreaterThan(0)
     expect(screen.getByText(/412,358 mi/)).toBeInTheDocument()

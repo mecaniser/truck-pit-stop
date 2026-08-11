@@ -4,14 +4,9 @@ import { Link } from 'react-router-dom'
 import {
   ArrowRight,
   Building2,
-  ClipboardCheck,
   ExternalLink,
-  History,
-  Receipt,
   RefreshCw,
-  Wrench,
 } from 'lucide-react'
-import type { LucideIcon } from 'lucide-react'
 
 import { usePlatformContact } from '../../hooks/usePlatformContact'
 import { applySeo, removeStructuredData } from '../../lib/seo'
@@ -34,46 +29,6 @@ interface LandingPartner {
   partner_summary: string | null
   partner_services: string | null
 }
-
-interface WorkflowStage {
-  id: 'intake' | 'estimate' | 'approval' | 'invoice' | 'payment-history'
-  label: string
-  detail: string
-  icon: LucideIcon
-}
-
-const WORKFLOW_STAGES: WorkflowStage[] = [
-  {
-    id: 'intake',
-    label: 'Intake',
-    detail: 'Keep the customer, unit, issue, meter reading, and attachments together from the start.',
-    icon: ClipboardCheck,
-  },
-  {
-    id: 'estimate',
-    label: 'Estimate',
-    detail: 'Organize parts, labor, fees, and recommended work inside the repair order.',
-    icon: Wrench,
-  },
-  {
-    id: 'approval',
-    label: 'Approval',
-    detail: 'Share the work for customer review and keep the decision attached to the job.',
-    icon: ClipboardCheck,
-  },
-  {
-    id: 'invoice',
-    label: 'Invoice',
-    detail: 'Move the repair forward without rebuilding its parts, labor, and service record.',
-    icon: Receipt,
-  },
-  {
-    id: 'payment-history',
-    label: 'Payment & history',
-    detail: 'Record payment and preserve the completed repair for the next visit.',
-    icon: History,
-  },
-]
 
 const getPartnerMonogram = (name: string) =>
   name
@@ -155,7 +110,7 @@ export default function LandingPage() {
         <nav className="landing-nav" aria-label="Primary navigation">
           <a className="landing-brand-link" href="#main-content"><LandingWordmark /></a>
           <div className="landing-nav-links">
-            <a href="#workflow">How it works</a>
+            <a href="#product-preview">Product tour</a>
             <a href="#approved-shops">Approved shops</a>
           </div>
           <div className="landing-nav-actions">
@@ -166,7 +121,7 @@ export default function LandingPage() {
       </header>
 
       <main id="main-content">
-        <section className="landing-hero" aria-labelledby="landing-title">
+        <section id="product-preview" className="landing-hero" aria-labelledby="landing-title">
           <div className="landing-hero-copy">
             <h1 id="landing-title">Every repair, moving in one clear flow.</h1>
             <p>DieselBridge gives repair shops one workspace for intake, estimates, approvals, invoices, payments, and vehicle history.</p>
@@ -176,24 +131,6 @@ export default function LandingPage() {
             </Link>
           </div>
           <ProductWorkspace />
-        </section>
-
-        <section id="workflow" className="landing-workflow" aria-labelledby="workflow-title">
-          <div className="landing-section-heading">
-            <h2 id="workflow-title">One repair order. Five connected outcomes.</h2>
-            <p>Each step keeps the shop’s work moving without splitting the record across separate tools.</p>
-          </div>
-          <ol className="landing-workflow-list">
-            {WORKFLOW_STAGES.map((stage) => {
-              const StageIcon = stage.icon
-              return (
-                <li key={stage.id}>
-                  <span><StageIcon aria-hidden="true" /></span>
-                  <div><strong>{stage.label}</strong><p>{stage.detail}</p></div>
-                </li>
-              )
-            })}
-          </ol>
         </section>
 
         <section id="approved-shops" className="landing-partners" aria-labelledby="partners-title">

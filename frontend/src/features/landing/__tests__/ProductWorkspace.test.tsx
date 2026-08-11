@@ -112,4 +112,47 @@ describe('ProductWorkspace', () => {
     expect(storageSpy).not.toHaveBeenCalled()
     expect(WebSocketSpy).not.toHaveBeenCalled()
   })
+
+  it('omits unselected vehicle evidence and restores it only after a repair is opened', () => {
+    render(<ProductWorkspace />)
+
+    expect(screen.getAllByRole('complementary')).toHaveLength(2)
+    fireEvent.click(screen.getByRole('tab', { name: 'Vehicle History' }), { detail: 1 })
+    expect(screen.getAllByRole('complementary')).toHaveLength(1)
+    expect(screen.queryByLabelText(/^Selected evidence:/)).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: /RO-2025-0417/i }), { detail: 1 })
+    expect(screen.getAllByRole('complementary')).toHaveLength(2)
+    expect(screen.getByLabelText(/Selected evidence: RO-2025-0417/)).toBeInTheDocument()
+  })
+
+  it('commits keyboard selections without spatial WAAPI while pointer selections remain animated', () => {
+    const animate = vi.fn(() => ({
+      cancel: vi.fn(),
+      commitStyles: vi.fn(),
+    }))
+    const originalAnimate = Element.prototype.animate
+    Object.defineProperty(Element.prototype, 'animate', { configurable: true, value: animate })
+
+    try {
+      render(<ProductWorkspace />)
+      fireEvent.click(screen.getByRole('tab', { name: 'Customers' }), { detail: 1 })
+      animate.mockClear()
+
+      const history = screen.getByRole('tab', { name: 'History' })
+      history.focus()
+      fireEvent.click(history, { detail: 0 })
+      expect(history).toHaveFocus()
+      expect(history).toHaveAttribute('aria-selected', 'true')
+      expect(animate).not.toHaveBeenCalled()
+
+      act(() => { vi.advanceTimersByTime(120) })
+      expect(screen.getByRole('status')).toHaveTextContent(/Customers: NorthStar Logistics history selected/)
+
+      fireEvent.click(screen.getByRole('button', { name: 'Riverbend Freight' }), { detail: 1 })
+      expect(animate).toHaveBeenCalled()
+    } finally {
+      Object.defineProperty(Element.prototype, 'animate', { configurable: true, value: originalAnimate })
+    }
+  })
 })

@@ -45,6 +45,7 @@ test.describe('Public repair-shop homepage', () => {
     await page.goto(homepageUrl)
 
     await expect(page.getByText(/illustrative|fictional/i)).toHaveCount(0)
+    await expect(page.getByText('One repair order. Five connected outcomes.')).toHaveCount(0)
     const ctas = page.getByRole('link', { name: 'Bring DieselBridge to my shop' })
     await expect(ctas).toHaveCount(2)
     await expect(ctas.first()).toHaveAttribute('href', '/enroll')
@@ -54,6 +55,8 @@ test.describe('Public repair-shop homepage', () => {
     await expect(page.getByText('Work Requested')).toBeVisible()
     await expect(page.getByText('Work & Labor')).toBeVisible()
     await expect(page.getByText('$4,494.62').first()).toBeVisible()
+    await expect(page.locator('[data-route-valid="module"]')).toHaveCount(1)
+    await expect(page.locator('[data-route-valid="event"]')).toHaveCount(1)
 
     await page.getByRole('tab', { name: 'Customers' }).click()
     await expect(page.getByRole('heading', { name: 'Customers' })).toBeVisible()
@@ -70,12 +73,17 @@ test.describe('Public repair-shop homepage', () => {
     await page.getByRole('tab', { name: 'Invoices' }).click()
     await expect(page.getByText('Pending Zelle confirmation').first()).toBeVisible()
     await expect(page.getByText('Awaiting payment').first()).toBeVisible()
+    await expect(page.locator('[data-route-valid="event"]')).toHaveCount(1)
 
     await page.getByRole('tab', { name: 'Vehicle History' }).click()
     await expect(page.getByText('Owner').first()).toBeVisible()
     await expect(page.getByText('Key Details')).toBeVisible()
     await expect(page.getByText('…1234').first()).toBeVisible()
     await expect(page.getByText('Repair History', { exact: true })).toBeVisible()
+    await expect(page.locator('[data-sheet-kind="event"]')).toHaveCount(0)
+    await expect(page.locator('[data-route-valid="event"]')).toHaveCount(0)
+    await page.getByRole('button', { name: /RO-2025-0417/i }).click()
+    await expect(page.locator('[data-sheet-kind="event"]')).toHaveCount(1)
 
     await page.getByRole('tab', { name: 'Customers' }).click()
     await expect(page.getByRole('tab', { name: 'History', exact: true })).toHaveAttribute('aria-selected', 'true')

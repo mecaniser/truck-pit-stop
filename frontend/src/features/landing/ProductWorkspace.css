@@ -20,7 +20,6 @@
   z-index: 2;
   display: grid;
   min-width: 0;
-  min-height: 39rem;
   grid-area: workspace;
   grid-template-columns: 10.5rem minmax(0, 1fr);
   overflow: hidden;
@@ -349,7 +348,7 @@
 }
 
 @media (max-width: 560px) {
-  .repair-preview__workspace { min-height: 0; border-radius: 1rem; }
+  .repair-preview__workspace { border-radius: 1rem; }
   .repair-preview__modules { padding: 0.58rem; }
   .repair-preview__module-list { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .repair-preview__module-list button { min-height: 48px; justify-content: flex-start; text-align: start; }
@@ -369,6 +368,21 @@
   .mini-repair-row > span:nth-child(2) { align-items: flex-start; }
   .mini-repair-row > .mini-pill, .mini-repair-row > svg { display: none; }
   .repair-preview__sheet { min-height: 0; border-radius: 1rem; }
+  .mini-surface :where(
+    small,
+    dt,
+    .mini-label,
+    .mini-pill,
+    .mini-count,
+    .mini-header span:not(.mini-pill),
+    .mini-invoice-top,
+    .mini-invoice-meta,
+    .mini-section-title,
+    .mini-table,
+    .mini-table button,
+    .mini-local-tabs button,
+    .mini-repair-detail
+  ) { font-size: 0.6875rem !important; }
 }
 
 @media (prefers-reduced-motion: reduce) {

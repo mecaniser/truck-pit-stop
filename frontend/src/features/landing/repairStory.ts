@@ -320,7 +320,7 @@ export const INITIAL_LOCAL_STATE = deepFreeze({
   customers: { selectedCustomerId: REPAIR_STORY.customer.id, detailTab: 'overview' },
   shopWork: { activeTab: 'queue', selectedOrderId: 'shop-order-on-floor' },
   invoices: { selectedInvoiceId: REPAIR_STORY.invoice.id, expandedInvoiceId: REPAIR_STORY.invoice.id },
-  vehicleHistory: { selectedVehicleId: REPAIR_STORY.vehicle.id, expandedRepairId: 'repair-0417' },
+  vehicleHistory: { selectedVehicleId: REPAIR_STORY.vehicle.id, expandedRepairId: null },
 } as const satisfies PreviewLocalState)
 
 export const formatStoryCurrency = (cents: number) => new Intl.NumberFormat('en-US', {

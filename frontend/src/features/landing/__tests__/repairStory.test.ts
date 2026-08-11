@@ -63,15 +63,25 @@ describe('source-grounded landing preview fixtures', () => {
     expect(Object.isFrozen(INITIAL_LOCAL_STATE.repairOrders)).toBe(true)
   })
 
-  it('derives non-empty context and authentic-selection evidence for every module', () => {
+  it('derives non-empty context and authentic-selection evidence without inventing collapsed history evidence', () => {
     MODULES.forEach((module) => {
       const context = getContextSheet(module.id)
       const evidence = getEventSheet(module.id, INITIAL_LOCAL_STATE)
       expect(context.title).not.toHaveLength(0)
       expect(context.summary).not.toHaveLength(0)
       expect(context.facts.length).toBeGreaterThan(0)
-      expect(evidence?.title).not.toHaveLength(0)
-      expect(evidence?.facts.length).toBeGreaterThan(0)
+      if (module.id === 'vehicle-history') {
+        expect(evidence).toBeNull()
+      } else {
+        expect(evidence?.title).not.toHaveLength(0)
+        expect(evidence?.facts.length).toBeGreaterThan(0)
+      }
     })
+
+    const expandedVehicle = {
+      ...INITIAL_LOCAL_STATE,
+      vehicleHistory: { ...INITIAL_LOCAL_STATE.vehicleHistory, expandedRepairId: 'repair-0417' },
+    }
+    expect(getEventSheet('vehicle-history', expandedVehicle)?.title).toBe('RO-2025-0417')
   })
 })

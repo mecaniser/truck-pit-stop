@@ -357,9 +357,10 @@ export default function ProductWorkspace() {
   const latestEpochRef = useRef(0)
   const lastSpokenRef = useRef('')
   const lastSelectionRef = useRef<'module' | 'event'>('module')
+  const inputModeRef = useRef<InputMode>('programmatic')
 
   const contextSheet = useMemo(() => getContextSheet(preview.activeModule), [preview.activeModule])
-  const eventSheet = useMemo(() => getEventSheet(preview.activeModule, local) ?? getContextSheet(preview.activeModule), [preview.activeModule, local])
+  const eventSheet = useMemo(() => getEventSheet(preview.activeModule, local), [preview.activeModule, local])
 
   const cancelAnimations = useCallback(() => {
     animationRefs.current.forEach((animation) => {
@@ -380,7 +381,7 @@ export default function ProductWorkspace() {
     const event = eventSheetRef.current
     const moduleControl = moduleRefs.current.get(preview.activeModule)
     const eventControl = scene?.querySelector<HTMLElement>('[data-event-selected="true"]')
-    if (!scene || !workspace || !context || !event || !moduleControl || !eventControl) {
+    if (!scene || !workspace || !context || !moduleControl) {
       setRoutes(EMPTY_ROUTES)
       return
     }
@@ -392,24 +393,28 @@ export default function ProductWorkspace() {
     }
     const workspaceBox = workspace.getBoundingClientRect()
     const contextBox = context.getBoundingClientRect()
-    const eventBox = event.getBoundingClientRect()
     const moduleBox = moduleControl.getBoundingClientRect()
-    const eventBoxSource = eventControl.getBoundingClientRect()
     const obstacles = [...scene.querySelectorAll<HTMLElement>('[data-route-obstacle]')]
       .filter((element) => element !== eventControl && element !== context && element !== event)
       .map((element) => toLocalRect(element.getBoundingClientRect(), root))
     const moduleSource = { x: moduleBox.left - root.left, y: moduleBox.top - root.top + moduleBox.height / 2 }
     const moduleTarget = { x: contextBox.right - root.left, y: contextBox.top - root.top + contextBox.height / 2 }
-    const eventSource = { x: eventBoxSource.left - root.left + eventBoxSource.width / 2, y: eventBoxSource.top - root.top }
-    const eventTarget = { x: eventBox.left - root.left, y: eventBox.top - root.top + eventBox.height / 2 }
     const leftRailX = (contextBox.right + workspaceBox.left) / 2 - root.left
-    const rightRailX = (workspaceBox.right + eventBox.left) / 2 - root.left
-    const eventRailY = workspaceBox.top - root.top + 14
+    let eventRoute: OrthogonalRoute | null = null
+    if (event && eventControl) {
+      const eventBox = event.getBoundingClientRect()
+      const eventBoxSource = eventControl.getBoundingClientRect()
+      const eventSource = { x: eventBoxSource.left - root.left + eventBoxSource.width / 2, y: eventBoxSource.top - root.top }
+      const eventTarget = { x: eventBox.left - root.left, y: eventBox.top - root.top + eventBox.height / 2 }
+      const rightRailX = (workspaceBox.right + eventBox.left) / 2 - root.left
+      const eventRailY = workspaceBox.top - root.top + 14
+      eventRoute = buildEventRoute({ source: eventSource, target: eventTarget, eventRailY, rightRailX, obstacles, obstaclePadding: 8 })
+    }
     setRoutes({
       width: root.width,
       height: root.height,
       module: buildModuleRoute({ source: moduleSource, target: moduleTarget, leftRailX, obstacles, obstaclePadding: 8 }),
-      event: buildEventRoute({ source: eventSource, target: eventTarget, eventRailY, rightRailX, obstacles, obstaclePadding: 8 }),
+      event: eventRoute,
     })
   }, [preview.activeModule])
 
@@ -452,7 +457,10 @@ export default function ProductWorkspace() {
   }, [preview.transitionEpoch])
 
   useEffect(() => {
-    if (preview.transitionEpoch === 0 || prefers('(prefers-reduced-motion: reduce)')) return
+    if (preview.transitionEpoch === 0 || preview.inputMode === 'keyboard' || prefers('(prefers-reduced-motion: reduce)')) {
+      cancelAnimations()
+      return
+    }
     cancelAnimations()
     const source = lastSelectionRef.current === 'module'
       ? moduleRefs.current.get(preview.activeModule)
@@ -465,7 +473,7 @@ export default function ProductWorkspace() {
     if (destination?.animate) animationRefs.current.push(destination.animate([{ opacity: 0.74, transform: 'translateY(8px)', clipPath: 'inset(0 0 10% 0 round 18px)' }, { opacity: 1, transform: 'translateY(0)', clipPath: 'inset(0 0 0 0 round 18px)' }], { duration: lastSelectionRef.current === 'module' ? 360 : 480, delay: 80, easing: 'cubic-bezier(.16,1,.3,1)' }))
     if (routePath?.animate && route) animationRefs.current.push(routePath.animate([{ opacity: 0, strokeDashoffset: routeLength(route) }, { opacity: 1, strokeDashoffset: 0 }], { duration: 360, delay: 80, easing: 'cubic-bezier(.16,1,.3,1)' }))
     return cancelAnimations
-  }, [cancelAnimations, preview.transitionEpoch, preview.activeModule, routes.module, routes.event])
+  }, [cancelAnimations, preview.transitionEpoch, preview.inputMode, preview.activeModule, routes.module, routes.event])
 
   const selectModule = (moduleId: ModuleId, inputMode: InputMode) => {
     const current = latestPreviewRef.current
@@ -494,7 +502,7 @@ export default function ProductWorkspace() {
     const event = getEventSheet(currentPreview.activeModule, nextLocal)
     const module = MODULES.find((item) => item.id === currentPreview.activeModule)
     const epoch = currentPreview.transitionEpoch + 1
-    const nextPreview = { ...currentPreview, inputMode: 'pointer' as const, transitionEpoch: epoch }
+    const nextPreview = { ...currentPreview, inputMode: inputModeRef.current, transitionEpoch: epoch }
     latestLocalRef.current = nextLocal
     latestPreviewRef.current = nextPreview
     setLocal(nextLocal)
@@ -526,7 +534,17 @@ export default function ProductWorkspace() {
   }
 
   return (
-    <div ref={sceneRef} className="repair-preview" aria-label="Interactive DieselBridge product preview" data-transition-epoch={preview.transitionEpoch}>
+    <div
+      ref={sceneRef}
+      className="repair-preview"
+      aria-label="Interactive DieselBridge product preview"
+      data-transition-epoch={preview.transitionEpoch}
+      onKeyDownCapture={() => { inputModeRef.current = 'keyboard' }}
+      onPointerDownCapture={() => { inputModeRef.current = 'pointer' }}
+      onClickCapture={(event) => {
+        inputModeRef.current = event.detail === 0 ? 'keyboard' : 'pointer'
+      }}
+    >
       <div ref={workspaceRef} className="repair-preview__workspace">
         <nav className="repair-preview__modules" aria-label="DieselBridge product areas">
           <span className="repair-preview__mark" aria-hidden="true">DB</span>
@@ -546,7 +564,7 @@ export default function ProductWorkspace() {
                 onPointerDown={notePointer}
                 onPointerUp={(event) => { delete event.currentTarget.dataset.pressed }}
                 onPointerCancel={(event) => { delete event.currentTarget.dataset.pressed }}
-                onClick={() => selectModule(module.id, 'pointer')}
+                onClick={(event) => selectModule(module.id, event.detail === 0 ? 'keyboard' : 'pointer')}
                 onKeyDown={(event) => handleModuleKeys(event, index)}
               ><Icon aria-hidden="true" /><span>{module.label}</span></button>
             })}
@@ -564,7 +582,7 @@ export default function ProductWorkspace() {
       </div>
 
       <Sheet model={contextSheet} kind="context" sheetRef={contextSheetRef} />
-      <Sheet model={eventSheet} kind="event" sheetRef={eventSheetRef} />
+      {eventSheet ? <Sheet model={eventSheet} kind="event" sheetRef={eventSheetRef} /> : null}
 
       <svg className="repair-preview__routes" viewBox={`0 0 ${routes.width} ${routes.height}`} preserveAspectRatio="none" aria-hidden="true">
         {routes.module ? <g data-route-valid="module"><path data-route-path="module" d={routes.module.path} pathLength={routeLength(routes.module)} style={{ strokeDasharray: routeLength(routes.module) }} /><circle r="4" cx={routes.module.points[routes.module.points.length - 1]?.x} cy={routes.module.points[routes.module.points.length - 1]?.y} /></g> : null}
