@@ -76,13 +76,16 @@ async function wordmarkMotionEvidence(page: Page) {
       const verticalOverlap = Math.min(current.rect.bottom, next.rect.bottom) - Math.max(current.rect.top, next.rect.top)
       if (horizontalOverlap > 0.25 && verticalOverlap > 0.25) overlaps.push(`${current.index}-${next.index}`)
     }
-    const bridgeElement = document.querySelector<HTMLElement>('.landing-brand-link .landing-wordmark__bridge')
+    const bridgeElement = document.querySelector<SVGElement>('.landing-brand-link .landing-wordmark__bridge')
+    const bridgePaths = [...(bridgeElement?.querySelectorAll<SVGPathElement>('path') ?? [])]
     const bridge = bridgeElement?.getBoundingClientRect()
     return {
       outsideHeader,
       overlaps,
       bridge: bridge ? { x: bridge.x, y: bridge.y, width: bridge.width, height: bridge.height } : null,
       bridgeAnimationCount: bridgeElement?.getAnimations().length ?? -1,
+      bridgePathAnimationCount: bridgePaths.reduce((total, path) => total + path.getAnimations().length, 0),
+      bridgePathAnimationNames: bridgePaths.map((path) => getComputedStyle(path).animationName),
       footerAnimationCount: document.querySelector('.landing-footer .landing-wordmark')?.getAnimations({ subtree: true }).length ?? -1,
     }
   })
@@ -100,7 +103,7 @@ test.describe('Public repair-shop homepage', () => {
     expect(failures?.requestFailures ?? [], 'failed browser requests').toEqual([])
   })
 
-  test('drops the header wordmark letters independently and respects reduced motion', async ({ page }) => {
+  test('builds the bridge while dropping the header letters and respects reduced motion', async ({ page }) => {
     await stubPublicHomepage(page)
     await page.setViewportSize({ width: 1366, height: 900 })
     await page.goto(homepageUrl)
@@ -108,6 +111,10 @@ test.describe('Public repair-shop homepage', () => {
     const headerWordmark = page.locator('.landing-brand-link .landing-wordmark--animated')
     const name = headerWordmark.locator('.landing-wordmark__name')
     const letters = headerWordmark.locator('.landing-wordmark__letter')
+    const bridge = headerWordmark.locator('.landing-wordmark__bridge')
+    const bridgeBase = bridge.locator('.landing-wordmark__bridge-base')
+    const bridgePillars = bridge.locator('.landing-wordmark__bridge-pillars')
+    const bridgeArch = bridge.locator('.landing-wordmark__bridge-arch')
     const footerWordmark = page.locator('.landing-footer .landing-wordmark')
 
     await expect(headerWordmark).toHaveAccessibleName('Diesel Bridge Network')
@@ -115,13 +122,19 @@ test.describe('Public repair-shop homepage', () => {
     await expect(name).toHaveCSS('animation-name', 'none')
     await expect(letters).toHaveCount(12)
     await expect(letters.first()).toHaveCSS('animation-name', 'landing-wordmark-letter-drop')
-    await expect(letters.first()).toHaveCSS('animation-duration', '0.48s')
-    await expect(letters.first()).toHaveCSS('animation-delay', '0.112s')
-    await expect(letters.last()).toHaveCSS('animation-delay', '0.072s')
+    await expect(letters.first()).toHaveCSS('animation-duration', '0.82s')
+    await expect(letters.first()).toHaveCSS('animation-delay', '0.52s')
+    await expect(letters.last()).toHaveCSS('animation-delay', '0.48s')
+    await expect(bridgeBase).toHaveCSS('animation-name', 'landing-wordmark-bridge-base')
+    await expect(bridgeBase).toHaveCSS('animation-delay', '0.08s')
+    await expect(bridgePillars).toHaveCSS('animation-name', 'landing-wordmark-bridge-pillars')
+    await expect(bridgePillars).toHaveCSS('animation-delay', '0.33s')
+    await expect(bridgeArch).toHaveCSS('animation-name', 'landing-wordmark-bridge-arch')
+    await expect(bridgeArch).toHaveCSS('animation-delay', '0.62s')
 
     await letters.evaluateAll((elements) => elements.forEach((element) => element.getAnimations().forEach((animation) => {
       animation.pause()
-      animation.currentTime = 240
+      animation.currentTime = 900
     })))
     const crossingFrame = await headerWordmark.evaluate((element) => {
       const movingLetters = [...element.querySelectorAll<HTMLElement>('.landing-wordmark__letter')]
@@ -140,8 +153,12 @@ test.describe('Public repair-shop homepage', () => {
       const sampledLetters = page.locator('.landing-brand-link .landing-wordmark__letter')
       await expect(sampledLetters).toHaveCount(12)
 
-      for (const currentTime of [0, 40, 80, 120, 180, 240, 320, 440, 560, 680]) {
+      for (const currentTime of [0, 120, 240, 360, 480, 600, 760, 920, 1080, 1240, 1400, 1520]) {
         await sampledLetters.evaluateAll((elements, time) => elements.forEach((element) => element.getAnimations().forEach((animation) => {
+          animation.pause()
+          animation.currentTime = time
+        })), currentTime)
+        await page.locator('.landing-brand-link .landing-wordmark__bridge path').evaluateAll((elements, time) => elements.forEach((element) => element.getAnimations().forEach((animation) => {
           animation.pause()
           animation.currentTime = time
         })), currentTime)
@@ -153,7 +170,7 @@ test.describe('Public repair-shop homepage', () => {
       }
 
       await sampledLetters.evaluateAll((elements) => elements.forEach((element) => element.getAnimations().forEach((animation) => {
-        animation.currentTime = 240
+        animation.currentTime = 900
       })))
       await page.screenshot({ path: `test-results/db032-wordmark-safe-drop-${width}.png` })
     }
@@ -162,6 +179,11 @@ test.describe('Public repair-shop homepage', () => {
     await page.reload()
     await expect(name).toHaveCSS('animation-name', 'landing-wordmark-fade')
     await expect(name).toHaveCSS('animation-duration', '0.12s')
+    await expect(bridge).toHaveCSS('animation-name', 'landing-wordmark-fade')
+    await expect(bridge).toHaveCSS('animation-duration', '0.12s')
+    await expect(bridgeBase).toHaveCSS('animation-name', 'none')
+    await expect(bridgePillars).toHaveCSS('animation-name', 'none')
+    await expect(bridgeArch).toHaveCSS('animation-name', 'none')
     await expect(letters.first()).toHaveCSS('animation-name', 'none')
 
     for (const width of [390, 320]) {
@@ -372,26 +394,33 @@ test.describe('DB-032 natural-load motion evidence', () => {
   })
 
   for (const width of [1366, 390, 320]) {
-    test(`keeps the natural letter drop inside non-overlapping header slots at ${width}px`, async ({ page }) => {
+    test(`builds the bridge and keeps the natural letter drop inside header slots at ${width}px`, async ({ page }) => {
       await stubPublicHomepage(page)
       await page.setViewportSize({ width, height: 900 })
       await page.goto(homepageUrl)
       await expect(page.locator('.landing-nav')).toHaveCSS('min-height', width > 640 ? '64px' : '50.4px')
-      await page.waitForTimeout(800)
+      await page.waitForTimeout(1800)
       await page.reload({ waitUntil: 'domcontentloaded' })
       await expect(page.locator('.landing-brand-link .landing-wordmark__letter')).toHaveCount(12)
       await expect(page.locator('.landing-nav')).toHaveCSS('min-height', width > 640 ? '64px' : '50.4px')
 
       const samples = []
-      for (let frame = 0; frame < 18; frame += 1) {
+      for (let frame = 0; frame < 32; frame += 1) {
         samples.push(await wordmarkMotionEvidence(page))
-        if (frame === 2) await page.screenshot({ path: `test-results/db032-natural-letter-drop-frame-${width}.png` })
-        await page.waitForTimeout(40)
+        if (frame === 10) await page.screenshot({ path: `test-results/db032-natural-letter-drop-frame-${width}.png` })
+        await page.waitForTimeout(50)
       }
 
       expect(samples.flatMap(({ outsideHeader }, frame) => outsideHeader.map((index) => ({ frame, index })))).toEqual([])
       expect(samples.flatMap(({ overlaps }, frame) => overlaps.map((pair) => ({ frame, pair })))).toEqual([])
-      expect(samples.every(({ bridgeAnimationCount }) => bridgeAnimationCount === 0), 'bridge must remain unanimated').toBe(true)
+      expect(samples.every(({ bridgeAnimationCount }) => bridgeAnimationCount === 0), 'bridge box must remain static').toBe(true)
+      expect(samples.every(({ bridgePathAnimationCount }) => bridgePathAnimationCount === 3), 'all three bridge paths must build').toBe(true)
+      expect(samples.every(({ bridgePathAnimationNames }) => bridgePathAnimationNames.join('|') === [
+        'landing-wordmark-bridge-base',
+        'landing-wordmark-bridge-pillars',
+        'landing-wordmark-bridge-arch',
+      ].join('|')), 'bridge construction order must remain explicit').toBe(true)
+      expect(new Set(samples.map(({ bridge }) => JSON.stringify(bridge))).size, 'bridge box must not shift').toBe(1)
       expect(samples.every(({ footerAnimationCount }) => footerAnimationCount === 0), 'footer wordmark must remain static').toBe(true)
       await page.screenshot({ path: `test-results/db032-natural-letter-drop-${width}.png` })
     })

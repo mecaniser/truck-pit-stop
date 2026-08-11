@@ -102,6 +102,9 @@ describe('LandingPage shop workflow', () => {
     expect(headerBrand.querySelector('.landing-wordmark__letters')).toHaveTextContent('DieselBridge')
     expect(headerBrand.querySelectorAll('.landing-wordmark__letter')).toHaveLength(12)
     expect(headerBrand.querySelectorAll('.landing-wordmark__letter--bridge')).toHaveLength(6)
+    expect(headerBrand.querySelectorAll('.landing-wordmark__bridge-base')).toHaveLength(1)
+    expect(headerBrand.querySelectorAll('.landing-wordmark__bridge-pillars')).toHaveLength(1)
+    expect(headerBrand.querySelectorAll('.landing-wordmark__bridge-arch')).toHaveLength(1)
     const animatedLetters = [...headerBrand.querySelectorAll<HTMLElement>('.landing-wordmark__letter')]
     expect(new Set(animatedLetters.map((letter) => letter.style.getPropertyValue('--letter-drop-y'))).size).toBeGreaterThan(4)
     expect(new Set(animatedLetters.map((letter) => letter.style.getPropertyValue('--letter-drop-delay'))).size).toBe(12)
