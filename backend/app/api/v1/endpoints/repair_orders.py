@@ -3340,6 +3340,27 @@ def _apply_repair_order_totals(
 # --- Price Builder ---
 
 
+async def _load_tenant_price_build_order(
+    db: AsyncSession,
+    order_id: UUID,
+    current_user: User,
+    *,
+    for_update: bool = False,
+) -> RepairOrder:
+    """Load an endpoint target without revealing another tenant's order."""
+    if not current_user.tenant_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="User must be associated with a tenant",
+        )
+    return await price_build_service.load_order(
+        db,
+        order_id,
+        for_update=for_update,
+        tenant_id=current_user.tenant_id,
+    )
+
+
 @router.get("/{order_id}/price-build", response_model=PriceBuildSummaryResponse)
 async def get_price_build_summary(
     order_id: UUID,
@@ -3347,7 +3368,7 @@ async def get_price_build_summary(
     current_user: User = Depends(require_role(*RO_MANAGE_ROLES)),
 ):
     try:
-        order = await price_build_service.load_order(db, order_id)
+        order = await _load_tenant_price_build_order(db, order_id, current_user)
         _check_ro_access(current_user, order)
         return _to_price_build_summary(order)
     except Exception as exc:
@@ -3397,7 +3418,7 @@ async def search_price_build_repair_operations(
     current_user: User = Depends(require_role(*RO_MANAGE_ROLES)),
 ):
     try:
-        order = await price_build_service.load_order(db, order_id)
+        order = await _load_tenant_price_build_order(db, order_id, current_user)
         _check_ro_access(current_user, order)
         candidates, warnings = await price_build_service.search_repair_operations(db, order, body.query)
         return PriceBuildSearchResponse(
@@ -3465,7 +3486,7 @@ async def update_price_build_line(
     current_user: User = Depends(require_role(*PRICE_BUILD_EDIT_ROLES)),
 ):
     try:
-        order = await price_build_service.load_order(db, order_id)
+        order = await _load_tenant_price_build_order(db, order_id, current_user)
         _check_ro_access(current_user, order)
         result = await price_build_service.update_line(
             db,
@@ -3492,7 +3513,7 @@ async def delete_price_build_line(
     current_user: User = Depends(require_role(*PRICE_BUILD_EDIT_ROLES)),
 ):
     try:
-        order = await price_build_service.load_order(db, order_id)
+        order = await _load_tenant_price_build_order(db, order_id, current_user)
         _check_ro_access(current_user, order)
         result = await price_build_service.remove_line(db, order, line_id=line_id)
         return _to_price_build_summary(
@@ -3510,7 +3531,7 @@ async def recalculate_price_build(
     current_user: User = Depends(require_role(*PRICE_BUILD_EDIT_ROLES)),
 ):
     try:
-        order = await price_build_service.load_order(db, order_id)
+        order = await _load_tenant_price_build_order(db, order_id, current_user)
         _check_ro_access(current_user, order)
         result = await price_build_service.recalculate_order(db, order)
         return _to_price_build_summary(
@@ -3529,7 +3550,12 @@ async def add_sublet_to_price_build(
     current_user: User = Depends(require_role(*PRICE_BUILD_EDIT_ROLES)),
 ):
     try:
-        order = await price_build_service.load_order(db, order_id, for_update=True)
+        order = await _load_tenant_price_build_order(
+            db,
+            order_id,
+            current_user,
+            for_update=True,
+        )
         _check_ro_access(current_user, order)
         if not current_user.tenant_id:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="User must be associated with a tenant")
@@ -3552,7 +3578,7 @@ async def add_sublet_to_price_build(
         await db.commit()
         if order is None:
             raise PriceBuildNotFoundError("Repair order not found")
-        order = await price_build_service.load_order(db, order_id)
+        order = await _load_tenant_price_build_order(db, order_id, current_user)
         return _to_price_build_summary(order)
     except HTTPException:
         raise
@@ -3931,7 +3957,9 @@ async def set_parts_pricing_mode(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="mode must be 'stock' or 'list'")
     if not current_user.tenant_id:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="User must be associated with a tenant")
-    order = await _load_pricing_order_for_update(db, order_id)
+    order = await _load_pricing_order_for_update(
+        db, order_id, tenant_id=current_user.tenant_id
+    )
     if not order:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repair order not found")
     _check_ro_access(current_user, order)
@@ -3964,7 +3992,9 @@ async def update_repair_order_discounts(
     """Set a dollar discount on labor and/or the order total (owner dashboard)."""
     if not current_user.tenant_id:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="User must be associated with a tenant")
-    order = await _load_pricing_order_for_update(db, order_id)
+    order = await _load_pricing_order_for_update(
+        db, order_id, tenant_id=current_user.tenant_id
+    )
     if not order:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repair order not found")
     _check_ro_access(current_user, order)
@@ -4005,7 +4035,9 @@ async def remove_parts_from_repair_order(
 ):
     if not current_user.tenant_id:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="User must be associated with a tenant")
-    order = await _load_pricing_order_for_update(db, order_id)
+    order = await _load_pricing_order_for_update(
+        db, order_id, tenant_id=current_user.tenant_id
+    )
     if not order:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repair order not found")
     _check_ro_access(current_user, order)
@@ -4174,7 +4206,9 @@ async def update_repair_order_labor(
         _require_valid_labor_hours(body.hours)
     if not current_user.tenant_id:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="User must be associated with a tenant")
-    order = await _load_pricing_order_for_update(db, order_id)
+    order = await _load_pricing_order_for_update(
+        db, order_id, tenant_id=current_user.tenant_id
+    )
     if not order:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repair order not found")
     _check_ro_access(current_user, order)
@@ -4221,7 +4255,9 @@ async def remove_labor_from_repair_order(
 ):
     if not current_user.tenant_id:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="User must be associated with a tenant")
-    order = await _load_pricing_order_for_update(db, order_id)
+    order = await _load_pricing_order_for_update(
+        db, order_id, tenant_id=current_user.tenant_id
+    )
     if not order:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repair order not found")
     _check_ro_access(current_user, order)
