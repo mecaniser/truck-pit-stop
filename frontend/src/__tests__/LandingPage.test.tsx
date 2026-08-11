@@ -96,6 +96,12 @@ describe('LandingPage shop workflow', () => {
   it('presents the shop-first workflow and concise approved-shop proof', async () => {
     renderPage()
 
+    const headerBrand = screen.getByRole('link', { name: 'Diesel Bridge Network' })
+    expect(headerBrand.querySelector('.landing-wordmark--animated')).toBeInTheDocument()
+    expect(headerBrand.querySelector('.landing-wordmark__name')).toBeInTheDocument()
+    expect(headerBrand.querySelector('.landing-wordmark__ride')).toHaveTextContent('DieselBridge')
+    expect(document.querySelectorAll('.landing-wordmark--animated')).toHaveLength(1)
+    expect(document.querySelector('.landing-footer .landing-wordmark')).not.toHaveClass('landing-wordmark--animated')
     expect(screen.getByRole('heading', { name: 'Every repair, moving in one clear flow.' })).toBeInTheDocument()
     const primaryCtas = screen.getAllByRole('link', { name: /bring dieselbridge to my shop/i })
     expect(primaryCtas.length).toBe(2)

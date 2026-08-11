@@ -72,6 +72,64 @@ test.describe('Public repair-shop homepage', () => {
     expect(failures?.requestFailures ?? [], 'failed browser requests').toEqual([])
   })
 
+  test('drives the header wordmark over the bridge once and respects reduced motion', async ({ page }) => {
+    await stubPublicHomepage(page)
+    await page.setViewportSize({ width: 1366, height: 900 })
+    await page.goto(homepageUrl)
+
+    const headerWordmark = page.locator('.landing-brand-link .landing-wordmark--animated')
+    const name = headerWordmark.locator('.landing-wordmark__name')
+    const ride = headerWordmark.locator('.landing-wordmark__ride')
+    const footerWordmark = page.locator('.landing-footer .landing-wordmark')
+
+    await expect(headerWordmark).toHaveAccessibleName('Diesel Bridge Network')
+    await expect(footerWordmark).not.toHaveClass(/landing-wordmark--animated/)
+    await expect(name).toHaveCSS('animation-name', 'landing-wordmark-drive-x')
+    await expect(name).toHaveCSS('animation-duration', '0.72s')
+    await expect(ride).toHaveCSS('animation-name', 'landing-wordmark-cross-bridge')
+
+    await name.evaluate((element) => {
+      element.getAnimations().forEach((animation) => {
+        animation.pause()
+        animation.currentTime = 360
+      })
+    })
+    await ride.evaluate((element) => {
+      element.getAnimations().forEach((animation) => {
+        animation.pause()
+        animation.currentTime = 360
+      })
+    })
+    const crossingFrame = await headerWordmark.evaluate((element) => {
+      const movingName = element.querySelector<HTMLElement>('.landing-wordmark__name')
+      const movingRide = element.querySelector<HTMLElement>('.landing-wordmark__ride')
+      return {
+        nameTransform: movingName ? getComputedStyle(movingName).transform : 'none',
+        rideTransform: movingRide ? getComputedStyle(movingRide).transform : 'none',
+        opacity: movingName ? getComputedStyle(movingName).opacity : '0',
+      }
+    })
+    expect(crossingFrame.nameTransform).not.toBe('none')
+    expect(crossingFrame.rideTransform).not.toBe('none')
+    expect(Number(crossingFrame.opacity)).toBeGreaterThan(0)
+    await page.screenshot({ path: 'test-results/db032-wordmark-crossing-1366.png' })
+
+    await page.emulateMedia({ reducedMotion: 'reduce' })
+    await page.reload()
+    await expect(name).toHaveCSS('animation-name', 'landing-wordmark-fade')
+    await expect(name).toHaveCSS('animation-duration', '0.12s')
+    await expect(ride).toHaveCSS('animation-name', 'none')
+
+    for (const width of [390, 320]) {
+      await page.setViewportSize({ width, height: 844 })
+      const geometry = await page.evaluate(() => ({
+        clientWidth: document.documentElement.clientWidth,
+        scrollWidth: document.documentElement.scrollWidth,
+      }))
+      expect(geometry.scrollWidth, `wordmark overflow at ${width}px`).toBe(geometry.clientWidth)
+    }
+  })
+
   test('operates five source-grounded product previews without side effects', async ({ page }) => {
     await stubPublicHomepage(page)
     const previewRequests: Array<{ method: string; url: string }> = []

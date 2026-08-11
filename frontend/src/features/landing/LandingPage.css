@@ -9,6 +9,8 @@
   --landing-orange: #c74700;
   --landing-orange-hover: #a93b00;
   --landing-success: #067454;
+  --landing-ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --landing-ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
   min-height: 100vh;
   overflow: hidden;
   color: var(--landing-ink);
@@ -74,6 +76,7 @@
 
 .landing-wordmark {
   display: inline-flex;
+  position: relative;
   align-items: center;
   gap: 0.55rem;
   color: var(--landing-ink);
@@ -83,8 +86,18 @@
   white-space: nowrap;
 }
 
-.landing-wordmark > span > span { color: #ff7a36; }
-.landing-wordmark svg { width: 1.8rem; height: 1.35rem; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; }
+.landing-wordmark__bridge { width: 1.8rem; height: 1.35rem; flex: 0 0 auto; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; }
+.landing-wordmark__name,
+.landing-wordmark__ride { display: inline-block; }
+.landing-wordmark__ride > span { color: #ff7a36; }
+
+.landing-wordmark--animated .landing-wordmark__name {
+  animation: landing-wordmark-drive-x 720ms var(--landing-ease-in-out) both;
+}
+
+.landing-wordmark--animated .landing-wordmark__ride {
+  animation: landing-wordmark-cross-bridge 720ms var(--landing-ease-in-out) both;
+}
 
 .landing-nav-links,
 .landing-nav-actions,
@@ -257,6 +270,23 @@
 
 @keyframes landing-spin { to { transform: rotate(360deg); } }
 
+@keyframes landing-wordmark-drive-x {
+  from { opacity: 0; transform: translate3d(-4.5rem, 0, 0) scale(0.97); }
+  24% { opacity: 1; }
+  to { opacity: 1; transform: translate3d(0, 0, 0) scale(1); }
+}
+
+@keyframes landing-wordmark-cross-bridge {
+  from { transform: translate3d(0, 0.38rem, 0) rotate(-1deg); }
+  52% { transform: translate3d(0, -0.5rem, 0) rotate(-0.5deg); }
+  to { transform: translate3d(0, 0, 0) rotate(0); }
+}
+
+@keyframes landing-wordmark-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
 @media (max-width: 960px) {
   .landing-nav-links { display: none; }
   .landing-partner-list { grid-template-columns: 1fr 1fr; }
@@ -283,6 +313,14 @@
     animation-duration: 1ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 1ms !important;
+  }
+
+  .landing-wordmark--animated .landing-wordmark__name {
+    animation: landing-wordmark-fade 120ms var(--landing-ease-out) both !important;
+  }
+
+  .landing-wordmark--animated .landing-wordmark__ride {
+    animation: none !important;
   }
 }
 

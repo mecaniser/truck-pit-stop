@@ -38,15 +38,20 @@ const getPartnerMonogram = (name: string) =>
     .map((part) => part[0]?.toUpperCase() || '')
     .join('') || 'DB'
 
-function LandingWordmark() {
+function LandingWordmark({ animated = false }: { animated?: boolean }) {
   return (
-    <span className="landing-wordmark" aria-label={BRAND.platformName}>
-      <svg viewBox="0 0 42 30" role="img" aria-hidden="true">
+    <span
+      className={`landing-wordmark${animated ? ' landing-wordmark--animated' : ''}`}
+      aria-label={BRAND.platformName}
+    >
+      <svg className="landing-wordmark__bridge" viewBox="0 0 42 30" role="img" aria-hidden="true">
         <path d="M4 22C8 7 34 7 38 22" />
         <path d="M8 22h26" />
         <path d="M13 22v-7m8 7V11m8 11v-7" />
       </svg>
-      <span>Diesel<span>Bridge</span></span>
+      <span className="landing-wordmark__name">
+        <span className="landing-wordmark__ride">Diesel<span>Bridge</span></span>
+      </span>
     </span>
   )
 }
@@ -108,7 +113,7 @@ export default function LandingPage() {
 
       <header className="landing-header">
         <nav className="landing-nav" aria-label="Primary navigation">
-          <a className="landing-brand-link" href="#main-content"><LandingWordmark /></a>
+          <a className="landing-brand-link" href="#main-content"><LandingWordmark animated /></a>
           <div className="landing-nav-links">
             <a href="#product-preview">Product tour</a>
             <a href="#approved-shops">Approved shops</a>

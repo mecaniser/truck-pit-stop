@@ -21,6 +21,7 @@ reviewed, merged, and released. Reconcile this board whenever newer evidence exi
 |---|---|---|---|---|---|---|
 | DB-003 | P1 | Discovery | Finish versioned additional-work authorizations | Backend & Integrations | PR #196 merged at `e20fa1a` with implementation commit `a51f2af`; immutable revisions/finalization guard exist, but task validation found the portal action still depends on the staff-send flow | Architecture decides automatic vs staff-reviewed publication and any threshold policy; then run mechanic addition → customer prompt → approve/decline → invoice Playwright acceptance, Security GO, QA GO |
 | DB-015 | P0 | Frontend release authorized | Remediate WebSocket token logging | Security & Identity | Backend PR #259 merged as `277146526dd9b7f95d4ae6fe09dd683d558eb304` after all six protected CI contexts passed. Railway production web `b6881963-0864-43b2-9e7c-2f5c8396943a`, performance web `aa9052b9-649d-446d-afac-965125cf00f0`, and worker `5c73e3f2-02e0-462a-9597-334ccf019455` reached healthy state with repeated 200 probes and no 5xx, worker traceback, task failure, or credential value in the correlated application logs. Independent real-browser QA proved a legacy HttpOnly-cookie login and old `?token` client open/ping-pong against the new backend with the query value absent from logs. The only authorized production tab was a token-null WorkOS session: its 2026-08-11 reload remained authenticated, refreshed, loaded data, and produced zero console/log credential leaks, but the old frontend intentionally did not attempt WebSocket without a client token. Product explicitly accepted that production legacy-session limitation as covered by the exact pre-production compatibility gate; it was not run in production and must not be reported otherwise. | Ship the protected queryless frontend PR. After deployment, require the existing WorkOS session to produce a queryless staff WebSocket connection and ping/pong, bounded refresh/logout behavior, zero console/network/edge/application credential leakage, healthy web services, and unchanged worker deployment `5c73e3f2-02e0-462a-9597-334ccf019455`; roll back the frontend if any post-deploy gate fails. |
+| DB-032 | P2 | Review — implementation verified | Animate the public DieselBridge wordmark as a vehicle crossing its bridge mark on first page load | Frontend & UX | Isolated branch `codex/db032-logo-motion` implements a 720ms transform/opacity bridge-crossing arc only on the public header, plus a 120ms no-travel reduced-motion fade. Focused landing tests passed `5/5`; full frontend passed `173/173`; production build and exact changed-file lint/diff passed; homepage Playwright passed `4/4` with a sampled crossing frame, no browser errors, reduced-motion behavior, and zero overflow at 390/320. No API, auth, tenant, data, backend, dependency, worker, or migration change. | Product assigns fresh independent QA for motion feel, first-load behavior, reduced motion, and desktop/mobile layout before release. The implementing Frontend owner must not self-approve. |
 
 ## Blocked
 
@@ -84,6 +85,27 @@ Copy this row into Inbox before implementation:
 
 For every active item, add links or identifiers for its branch/PR and record the
 last passing automated and runtime evidence in the item or associated issue.
+
+## DB-032 acceptance criteria
+
+- On the public landing page's first render, only the header `DieselBridge`
+  wordmark enters from the left, travels on a shallow arc over the stationary
+  bridge mark, and settles at its existing final position without layout shift.
+- The motion is a one-time explanatory brand moment. It uses compositor-safe
+  transform and opacity animation, an intentional ease-in-out movement curve,
+  and no ambient loop, bounce, or repeated animation after data updates.
+- The footer wordmark, authenticated application logos, tenant logos, and all
+  other brand surfaces remain static and unchanged.
+- The accessible name remains `Diesel Bridge Network`; the animation introduces
+  no duplicate announcement, focus change, interaction delay, or hidden content.
+- Reduced-motion users receive at most a brief opacity transition with no
+  positional travel. The final mark remains fully legible if CSS animation is
+  unsupported or interrupted.
+- Desktop and 390/320 mobile layouts retain their current dimensions, touch
+  targets, and zero horizontal overflow. No API, auth, tenant, data, backend,
+  dependency, worker, or migration change is introduced.
+- Focused tests, full frontend tests, production build, changed-file lint/diff,
+  and live browser inspection pass before independent QA.
 
 ## DB-015 acceptance criteria
 
