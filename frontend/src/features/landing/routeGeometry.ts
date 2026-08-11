@@ -36,6 +36,16 @@ const ROUTE_PADDING = 8
 const MIN_RAIL_CLEARANCE = 16
 const EPSILON = 0.001
 
+export const resolveEventRailY = ({
+  sourceY,
+  workspaceTop,
+  usesLocalRunway,
+}: {
+  sourceY: number
+  workspaceTop: number
+  usesLocalRunway: boolean
+}) => usesLocalRunway ? sourceY - 20 : workspaceTop + 14
+
 const isFiniteNumber = (value: number) => Number.isFinite(value)
 
 const isValidAnchor = (point: Point) =>

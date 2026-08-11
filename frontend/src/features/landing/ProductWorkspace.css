@@ -126,7 +126,7 @@
 }
 .mini-work-requested strong { font-size: 0.75rem; }
 .mini-work-requested small, .mini-disclosure small, .mini-work-line small { color: #738399; font-size: 0.61rem; line-height: 1.35; }
-.mini-ro-grid { display: grid; min-width: 0; margin-block-start: 0.7rem; grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr); gap: 0.75rem; }
+.mini-ro-grid { display: grid; min-width: 0; margin-block-start: 2rem; grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr); gap: 0.75rem; }
 .mini-ro-primary, .mini-work-lines { min-width: 0; }
 
 .preview-evidence-control { position: relative; transition: transform 80ms ease-out, border-color 180ms ease-out, box-shadow 180ms ease-out, background-color 180ms ease-out; }
@@ -248,7 +248,7 @@
 .mini-activity-row strong { font-size: 0.61rem; }
 .mini-activity-row small { color: #758498; font-size: 0.55rem; }
 
-.mini-invoice-list { display: grid; margin-block-start: 0.65rem; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.62rem; align-items: start; }
+.mini-invoice-list { display: grid; margin-block-start: 2rem; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.62rem; align-items: start; }
 .mini-invoice-record { min-width: 0; }
 .mini-invoice-record .mini-invoice-card { min-height: 8.1rem; align-content: start; }
 .mini-invoice-record[data-selected="true"] .mini-invoice-card { background: linear-gradient(145deg, #473593, #28225c); }
@@ -315,6 +315,10 @@
 @media (hover: hover) and (pointer: fine) {
   .repair-preview__module-list button:hover { background: rgba(255, 255, 255, 0.075); color: #fff; }
   .preview-evidence-control:hover, .mini-local-tabs button:hover { filter: brightness(0.985); }
+}
+
+@media (min-width: 1200px) {
+  .repair-preview { grid-template-columns: minmax(190px, 210px) minmax(18px, 24px) minmax(0, 1fr) 32px minmax(190px, 210px); }
 }
 
 @media (max-width: 1199px) {

@@ -5,6 +5,7 @@ import {
   inflateRect,
   isOrthogonalRoute,
   pointsToPath,
+  resolveEventRailY,
   routeIntersectsObstacles,
   type OrthogonalRoute,
 } from '../routeGeometry'
@@ -46,6 +47,48 @@ describe('landing preview route geometry', () => {
     expect(route?.points[0]).toEqual({ x: 820, y: 310 })
     expect(route?.points[route.points.length - 1]).toEqual({ x: 1190, y: 220 })
     expect(isOrthogonalRoute(route?.points ?? [])).toBe(true)
+  })
+
+  it.each([
+    {
+      surface: 'Repair Orders',
+      source: { x: 560.203, y: 220.422 },
+      target: { x: 1092, y: 217.938 },
+      nearestContentBottom: 188.422,
+      obstacles: [{ x: 422.109, y: 119.047, width: 625.782, height: 69.375 }],
+    },
+    {
+      surface: 'Invoices',
+      source: { x: 523.102, y: 110.849 },
+      target: { x: 1092, y: 217.938 },
+      nearestContentBottom: 78.849,
+      obstacles: [],
+    },
+  ])('keeps the measured $surface local runway clear', ({
+    source,
+    target,
+    nearestContentBottom,
+    obstacles,
+  }) => {
+    const rightRailX = 1076
+    const eventRailY = resolveEventRailY({ sourceY: source.y, workspaceTop: 0, usesLocalRunway: true })
+    const route = buildEventRoute({
+      source,
+      target,
+      eventRailY,
+      rightRailX,
+      obstacles,
+      obstaclePadding: 8,
+    })
+
+    expect(eventRailY).toBe(source.y - 20)
+    expect(source.y - eventRailY).toBeGreaterThanOrEqual(16)
+    expect(target.x - rightRailX).toBeGreaterThanOrEqual(16)
+    expect(eventRailY - nearestContentBottom).toBeGreaterThanOrEqual(8)
+    expect(route).not.toBeNull()
+    expect(route?.points[0]).toEqual(source)
+    expect(route?.points[route.points.length - 1]).toEqual(target)
+    expect(routeIntersectsObstacles(route!, obstacles, 8)).toBe(false)
   })
 
   it('inflates route obstacles by the required eight pixels', () => {

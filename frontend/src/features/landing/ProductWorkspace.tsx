@@ -39,7 +39,7 @@ import type {
   SheetModel,
   ShopWorkTab,
 } from './repairStory'
-import { buildEventRoute, buildModuleRoute } from './routeGeometry'
+import { buildEventRoute, buildModuleRoute, resolveEventRailY } from './routeGeometry'
 import type { OrthogonalRoute, Rect } from './routeGeometry'
 import './ProductWorkspace.css'
 
@@ -407,7 +407,12 @@ export default function ProductWorkspace() {
       const eventSource = { x: eventBoxSource.left - root.left + eventBoxSource.width / 2, y: eventBoxSource.top - root.top }
       const eventTarget = { x: eventBox.left - root.left, y: eventBox.top - root.top + eventBox.height / 2 }
       const rightRailX = (workspaceBox.right + eventBox.left) / 2 - root.left
-      const eventRailY = workspaceBox.top - root.top + 14
+      const usesLocalRunway = Boolean(eventControl.closest('.mini-ro-grid, .mini-invoice-list'))
+      const eventRailY = resolveEventRailY({
+        sourceY: eventSource.y,
+        workspaceTop: workspaceBox.top - root.top,
+        usesLocalRunway,
+      })
       eventRoute = buildEventRoute({ source: eventSource, target: eventTarget, eventRailY, rightRailX, obstacles, obstaclePadding: 8 })
     }
     setRoutes({
