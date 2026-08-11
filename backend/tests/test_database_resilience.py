@@ -125,11 +125,12 @@ async def test_lifespan_disposes_database_engine_when_redis_shutdown_fails(monke
 async def test_pool_checkout_timeout_returns_retryable_response(monkeypatch):
     from app import main
 
-    def _discard(coroutine):
-        coroutine.close()
-        return None
+    persistence_finished = asyncio.Event()
 
-    monkeypatch.setattr(main.asyncio, "create_task", _discard)
+    async def _capture_persistence(**_kwargs):
+        persistence_finished.set()
+
+    monkeypatch.setattr(main, "_log_error_async", _capture_persistence)
     request = Request(
         {
             "type": "http",
@@ -149,6 +150,10 @@ async def test_pool_checkout_timeout_returns_retryable_response(monkeypatch):
 
     assert response.status_code == 503
     assert response.headers["Retry-After"] == "1"
+    assert persistence_finished.is_set() is False
+    assert response.background is not None
+    await response.background()
+    assert persistence_finished.is_set() is True
     assert json.loads(response.body) == {
         "detail": "Database temporarily unavailable. Please try again.",
         "error": "Database temporarily unavailable",

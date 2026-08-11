@@ -1,6 +1,5 @@
 import time
 import traceback
-import asyncio
 import secrets
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -11,6 +10,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse
+from starlette.background import BackgroundTask
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from sqlalchemy import text
@@ -172,7 +172,7 @@ async def _log_error_async(
     status_code: int,
     stack_trace: Optional[str] = None,
 ):
-    """Log error to database asynchronously (fire and forget)."""
+    """Persist an error with the dedicated bounded error-log session."""
     try:
         correlation_id = _get_correlation_id(request)
         user_id, tenant_id = _get_user_context(request)
@@ -195,6 +195,16 @@ async def _log_error_async(
     except Exception as e:
         # Don't let error logging failures break the response
         logger.error("failed_to_log_error_to_db", error=redact_text(str(e)))
+
+
+def _error_log_background(**kwargs) -> BackgroundTask:
+    """Run persistence after the response body without orphaning a task.
+
+    Starlette awaits response background work before the request scope exits,
+    so tests, shutdown, and database disposal cannot race a fire-and-forget
+    error-log commit.
+    """
+    return BackgroundTask(_log_error_async, **kwargs)
 
 
 # ============ Global Exception Handlers ============
@@ -249,16 +259,17 @@ async def http_exception_handler(request: Request, exc: HTTPException):
         endpoint=request.url.path,
     )
     
-    # Persist 5xx errors to database
+    # Persist 5xx errors after the response body, within the request scope.
+    background = None
     if exc.status_code >= 500:
-        asyncio.create_task(_log_error_async(
+        background = _error_log_background(
             error_type="HTTPException",
             message=str(exc.detail),
             category=category,
             severity=severity,
             request=request,
             status_code=exc.status_code,
-        ))
+        )
     
     # Include both 'detail' (FastAPI standard) and 'error' for backward compatibility
     detail_msg = exc.detail if exc.status_code < 500 else "Internal server error"
@@ -270,6 +281,7 @@ async def http_exception_handler(request: Request, exc: HTTPException):
             "correlation_id": correlation_id,
         },
         headers=exc.headers,
+        background=background,
     )
 
 
@@ -347,9 +359,10 @@ async def sqlalchemy_exception_handler(request: Request, exc: SQLAlchemyError):
     )
     record_unhandled_exception(error_type)
     
-    # Persist to database (use a separate connection since current may be broken)
+    # Persist after the response body using a separate connection since the
+    # request session may be broken.
     status_code = 503 if is_pool_timeout else 500
-    asyncio.create_task(_log_error_async(
+    background = _error_log_background(
         error_type=error_type,
         message=str(exc),
         category=ErrorCategory.DATABASE,
@@ -357,7 +370,7 @@ async def sqlalchemy_exception_handler(request: Request, exc: SQLAlchemyError):
         request=request,
         status_code=status_code,
         stack_trace=traceback.format_exc(),
-    ))
+    )
 
     if is_pool_timeout:
         return JSONResponse(
@@ -368,6 +381,7 @@ async def sqlalchemy_exception_handler(request: Request, exc: SQLAlchemyError):
                 "correlation_id": correlation_id,
             },
             headers={"Retry-After": "1"},
+            background=background,
         )
     
     return JSONResponse(
@@ -378,6 +392,7 @@ async def sqlalchemy_exception_handler(request: Request, exc: SQLAlchemyError):
             "correlation_id": correlation_id,
             "message": f"A database error occurred. Reference: {correlation_id}",
         },
+        background=background,
     )
 
 
@@ -444,8 +459,8 @@ async def stripe_exception_handler(request: Request, exc: stripe.error.StripeErr
     )
     record_payment_error(error_type=error_type, provider="stripe")
     
-    # Persist to database
-    asyncio.create_task(_log_error_async(
+    # Persist after the response body without leaving an orphan task.
+    background = _error_log_background(
         error_type=error_type,
         message=str(exc),
         category=ErrorCategory.PAYMENT,
@@ -453,7 +468,7 @@ async def stripe_exception_handler(request: Request, exc: stripe.error.StripeErr
         request=request,
         status_code=status_code,
         stack_trace=traceback.format_exc(),
-    ))
+    )
     
     return JSONResponse(
         status_code=status_code,
@@ -464,6 +479,7 @@ async def stripe_exception_handler(request: Request, exc: stripe.error.StripeErr
             "message": user_message,
             "code": getattr(exc, "code", None),
         },
+        background=background,
     )
 
 
@@ -499,8 +515,8 @@ async def global_exception_handler(request: Request, exc: Exception):
     )
     record_unhandled_exception(error_type)
     
-    # Persist to database
-    asyncio.create_task(_log_error_async(
+    # Persist after the response body without leaving an orphan task.
+    background = _error_log_background(
         error_type=error_type,
         message=str(exc),
         category=ErrorCategory.UNHANDLED,
@@ -508,7 +524,7 @@ async def global_exception_handler(request: Request, exc: Exception):
         request=request,
         status_code=500,
         stack_trace=traceback.format_exc(),
-    ))
+    )
     
     # Return sanitized response
     return JSONResponse(
@@ -519,6 +535,7 @@ async def global_exception_handler(request: Request, exc: Exception):
             "correlation_id": correlation_id,
             "message": f"An unexpected error occurred. Reference: {correlation_id}",
         },
+        background=background,
     )
 
 
