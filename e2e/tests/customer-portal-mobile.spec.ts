@@ -123,6 +123,19 @@ const invoices = [
 ]
 
 async function installSafePortalFixture(page: Page) {
+  const webSocketRegistrations: Array<{ pathname: string; hasQuery: boolean }> = []
+
+  await page.routeWebSocket(/\/api\/v1\/ws(?:$|\?)/, socket => {
+    const socketUrl = new URL(socket.url())
+    webSocketRegistrations.push({
+      pathname: socketUrl.pathname,
+      hasQuery: socketUrl.search.length > 0,
+    })
+    socket.onMessage(message => {
+      if (message === 'ping') socket.send('pong')
+    })
+  })
+
   await page.addInitScript(({ fixtureCustomer }) => {
     window.localStorage.setItem('theme-font-size', 'compact')
     window.localStorage.setItem('auth-storage', JSON.stringify({
@@ -205,6 +218,10 @@ async function installSafePortalFixture(page: Page) {
 
     return route.fulfill({ status: 404, contentType: 'application/json', body: JSON.stringify({ detail: `Unhandled safe fixture route: ${path}` }) })
   })
+
+  return {
+    get webSocketRegistrations() { return [...webSocketRegistrations] },
+  }
 }
 
 async function expectContainedPortalGeometry(page: Page, viewportWidth: number) {
@@ -293,7 +310,7 @@ async function expectFullPortalSurfaceTargetsAtLeast44(page: Page) {
 for (const width of [390, 320]) {
   test(`customer portal contains mobile geometry and touch targets at ${width}px`, async ({ page }) => {
     await page.setViewportSize({ width, height: 780 })
-    await installSafePortalFixture(page)
+    const fixture = await installSafePortalFixture(page)
 
     const browserErrors: string[] = []
     page.on('pageerror', error => browserErrors.push(`page: ${error.message}`))
@@ -343,6 +360,11 @@ for (const width of [390, 320]) {
     await expectContainedPortalGeometry(page, width)
     await expectVisibleTargetsAtLeast44(page)
 
+    expect(fixture.webSocketRegistrations.length).toBeGreaterThanOrEqual(1)
+    expect(fixture.webSocketRegistrations.length).toBeLessThanOrEqual(2)
+    expect(fixture.webSocketRegistrations.every(registration => (
+      registration.pathname === '/api/v1/ws' && registration.hasQuery === false
+    ))).toBe(true)
     expect(browserErrors).toEqual([])
   })
 }

@@ -209,6 +209,7 @@ async function mockStaffAuthorizationWorkspace(page: Page, mode: 'initial' | 'ad
     ]
     : []
   let sendCount = 0
+  const webSocketRegistrations: Array<{ pathname: string; hasQuery: boolean }> = []
   const runtimeIssues = captureStrictRuntimeIssues(page)
   const projectedOrder = () => ({
     ...staffOrder,
@@ -221,6 +222,17 @@ async function mockStaffAuthorizationWorkspace(page: Page, mode: 'initial' | 'ad
     parts_usage: [],
     labor_items: staffPriceBuild.lines,
     history_events: authorizationEvents,
+  })
+
+  await page.routeWebSocket(/\/api\/v1\/ws(?:$|\?)/, socket => {
+    const socketUrl = new URL(socket.url())
+    webSocketRegistrations.push({
+      pathname: socketUrl.pathname,
+      hasQuery: socketUrl.search.length > 0,
+    })
+    socket.onMessage(message => {
+      if (message === 'ping') socket.send('pong')
+    })
   })
 
   await page.addInitScript(() => {
@@ -312,6 +324,7 @@ async function mockStaffAuthorizationWorkspace(page: Page, mode: 'initial' | 'ad
 
   return {
     get sendCount() { return sendCount },
+    get webSocketRegistrations() { return [...webSocketRegistrations] },
     get runtimeIssues() { return [...runtimeIssues] },
   }
 }
@@ -589,6 +602,11 @@ for (const scenario of [
       scenario.mode === 'additional' ? 'Additional work published' : 'Estimate published',
       { exact: true },
     )).toBeVisible()
+    expect(fixture.webSocketRegistrations.length).toBeGreaterThanOrEqual(1)
+    expect(fixture.webSocketRegistrations.length).toBeLessThanOrEqual(2)
+    expect(fixture.webSocketRegistrations.every(registration => (
+      registration.pathname === '/api/v1/ws' && registration.hasQuery === false
+    ))).toBe(true)
     expect(fixture.runtimeIssues, fixture.runtimeIssues.join('\n')).toEqual([])
   })
 }
