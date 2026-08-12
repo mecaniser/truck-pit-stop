@@ -917,7 +917,7 @@ html::-webkit-scrollbar-thumb:hover {
   }
   .db-presentation-new.db-staff-shell[data-rail-expanded='true'] .db-staff-nav__inner { padding: 18px 12px; }
   .db-presentation-new.db-staff-shell[data-rail-expanded='true'] .db-staff-nav__brand-row { min-height: 184px; align-items: flex-start; justify-content: center; padding: 0 8px 16px; }
-  .db-presentation-new.db-staff-shell[data-rail-expanded='true'] .db-product-brand { width: auto; justify-content: flex-start; }
+  .db-presentation-new.db-staff-shell[data-rail-expanded='true'] .db-product-brand { width: 100%; justify-content: center; }
   .db-presentation-new.db-staff-shell[data-rail-expanded='true'] .db-product-brand .db-wordmark { display: inline-flex; max-width: none; font-size: 17px; }
   .db-presentation-new.db-staff-shell[data-rail-expanded='true'] .db-product-brand__compact-mark { display: none; }
   .db-presentation-new.db-staff-shell[data-rail-expanded='true'] .db-workspace-context { width: 100%; justify-content: center; gap: 6px; }
