@@ -538,7 +538,7 @@ export default function ServicesManagementPage() {
   const displayedPrice = (svc: Service) => Number(svc.computed_total_price)
 
   return (
-    <div className="space-y-6 lg:flex lg:h-full lg:min-h-0 lg:flex-col lg:gap-4 lg:space-y-0">
+    <div className="db-services-workspace space-y-6 lg:flex lg:h-full lg:min-h-0 lg:flex-col lg:gap-4 lg:space-y-0">
       {/* Header */}
       <div className="mb-4 flex flex-row items-center gap-3 lg:mb-0 lg:flex-shrink-0">
         <div className="flex-1 min-w-0">
@@ -618,7 +618,7 @@ export default function ServicesManagementPage() {
       </div>
 
       {/* Services Table / Cards */}
-      <div className="overflow-hidden rounded-xl border border-white/10 bg-white/5 lg:flex lg:min-h-0 lg:flex-1 lg:flex-col">
+      <div className="db-services-workspace__ledger overflow-hidden rounded-xl border border-white/10 bg-white/5 lg:flex lg:min-h-0 lg:flex-1 lg:flex-col">
         <div className="hidden items-center justify-start border-b border-white/10 px-4 py-3 sm:flex lg:flex-shrink-0">
           <ViewToggle value={activeViewMode} onChange={setViewMode} disabled={isMobile} />
         </div>
@@ -740,7 +740,9 @@ export default function ServicesManagementPage() {
                       </div>
                       <span
                         className={`px-2 py-1 rounded-full text-xs font-semibold ${
-                          service.is_active ? 'bg-green-500/20 text-green-300' : 'bg-gray-500/20 text-gray-300'
+                          service.is_active
+                            ? 'bg-green-500/20 text-green-700'
+                            : 'bg-gray-500/20 text-slate-700'
                         }`}
                       >
                         {service.is_active ? 'Active' : 'Inactive'}
@@ -836,7 +838,13 @@ export default function ServicesManagementPage() {
                 <button
                   type="button"
                   onClick={cancelEdit}
-                  className="p-2 text-gray-500 hover:text-amber-600 rounded-full hover:bg-amber-50"
+                  className={[
+                    'p-2',
+                    'text-gray-500',
+                    'hover:text-amber-700',
+                    'rounded-full',
+                    'hover:bg-amber-50',
+                  ].join(' ')}
                   aria-label="Close service form"
                 >
                   <X className="w-5 h-5" />

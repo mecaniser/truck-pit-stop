@@ -775,6 +775,40 @@ html::-webkit-scrollbar-thumb:hover {
   }
 }
 
+/* Service catalog entries are authoritative shop records. In the new shell,
+   their legacy dark-surface utilities must resolve through the active palette. */
+.db-presentation-new .db-services-workspace {
+  color: var(--workspace-text);
+}
+
+.db-presentation-new .db-services-workspace :is(.bg-white\/5, .bg-white\/10, .bg-\[\#1a2030\]) {
+  border-color: var(--workspace-border) !important;
+  background-color: var(--surface-raised) !important;
+}
+
+.db-presentation-new .db-services-workspace__ledger {
+  border-color: var(--workspace-border) !important;
+  background: var(--surface-overlay) !important;
+}
+
+.db-presentation-new .db-services-workspace :is(.border-white\/10, .border-white\/15) {
+  border-color: var(--workspace-border) !important;
+}
+
+.db-presentation-new .db-services-workspace :is(.text-white, .text-gray-100, .text-gray-200, .text-gray-300) {
+  color: var(--workspace-text) !important;
+}
+
+.db-presentation-new .db-services-workspace :is(.text-gray-400, .text-gray-500, .text-gray-600) {
+  color: var(--workspace-muted) !important;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .db-presentation-new .db-services-workspace__ledger tbody tr:hover {
+    background: var(--surface-raised) !important;
+  }
+}
+
 /* Retained settings navigation inherits legacy zinc utilities. New presentation
    keeps its active, hover, and keyboard focus states in the current accent ramp. */
 .db-presentation-new .db-settings-nav-item[data-active='true'] {
