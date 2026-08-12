@@ -567,3 +567,138 @@ typography, density, motion, and finish. Release & Reliability owns cohort
 rollout, observability, rollback exercise, compatibility evidence, and release.
 
 No implementing owner may self-approve its independent gate.
+
+## 14. Product reshape correction
+
+DB-035 is not satisfied by a rail, token, or CSS reskin. Structural change is
+authorized when it improves the real garage cockpit: hierarchy, navigation
+shell, workspace composition, contextual panels, cross-surface continuity,
+responsive layout, and task priority may change. Routes, permissions, mutations,
+source entities, status vocabulary, business logic, and operational consequences
+remain canonical.
+
+Every structural element must cite an existing component, route, API response,
+or persisted field. No invented queue, selected-record state, workflow, metric,
+status, or marketing-style substitute is permitted. The connected product story
+is the existing record graph:
+
+```text
+repair order ↔ customer ↔ vehicle ↔ labor/parts/work
+             ↔ authorization/history ↔ invoice/payment
+```
+
+Navigation between those records must retain real context through existing route
+parameters and canonical selections. Presentation-only context may organize a
+loaded record, but cannot create a second source of selection or domain truth.
+
+## 15. Source-grounded information architecture
+
+| Surface | Before | After | Primary task and preserved reality |
+|---|---|---|---|
+| Dashboard / Shop Cockpit | Header, quick order actions, three real work-queue lanes, activity, shop/team status | Cockpit hierarchy led by urgent real work, then active floor work, closeout/payment, and team capacity; existing queue cards retain deep links | Decide what needs action next. Preserve `orders_needing_action`, `orders_on_floor`, `orders_ready_to_close`, activity mode, refresh, quick/create order, mechanic capacity, existing statuses and queue query parameters. No replacement lanes or local selected-order workspace. |
+| Repair Orders | Queue-selected workspace containing customer/vehicle, labor, parts, photos, recommendations, history, authorization, invoice and payment actions | Stable master/workspace composition: queue/list context remains visible when space permits; the selected real order owns the central workspace; related record context and canonical next action are adjacent, not duplicated | Progress one real order. Preserve create/edit, assignment, acknowledge/start/hold/resume/complete/reopen, labor/parts/pricing, photos, recommendations, history, estimate/additional authorization, invoice, resend/void and payment recording controls with existing role/status gates. |
+| Customers | Search/sort/list plus customer detail, contacts, vehicles, relationships and service history | Customer account workspace with identity/account summary, vehicles and relationship authority, contacts, balances and chronological service context; opening a related order uses the existing repair-order route | Understand and act for the customer/vehicle. Preserve add/edit/merge/delete, contacts, vehicle add/link/merge, relationship type, history, balances and existing queries/mutations. |
+| Messages | Inbox/archive thread list, compose, selected conversation and reply | Communications workspace retaining thread list and conversation while showing only source-backed customer/phone context and links to existing customer/order surfaces where identifiers already exist | Continue a real customer conversation. Preserve unread state, inbox/archive, load older, compose, reply, archive/unarchive/delete, customer selection and existing messaging permission/tenant switch. Do not infer an order association absent from source data. |
+| My Shop | Nested mechanics, services, labor book time, inventory, suppliers, reviews and analytics | Shop configuration workspace with persistent local section navigation, section summary, and the existing management screen as the content authority | Configure how the shop operates. Preserve every nested route, permission, query, mutation and entity. Do not synthesize shop health or analytics. |
+| Profile / Settings | Large settings surface spanning profile, security, appearance, integrations, garage profile, payments, notifications, fees, fleet and workforce | Account/settings IA split into personal, shop, communications, money/integrations and workforce groups while existing permission-filtered panels remain authoritative | Change an authorized setting safely. Preserve profile/security, Appearance apply/cancel/reset, garage branding, Stripe/Zelle/QuickBooks, reminders, taxes/fees, fleet and workforce controls and their current permission checks. |
+
+### 15.1 Context continuity
+
+- Dashboard queue cards continue to open
+  `/dashboard/repair-orders?selected={id}&queue={canonical_queue}`.
+- Repair Orders is the only owner of selected repair-order workspace state.
+- Customer/vehicle context links to existing customer detail/history and repair
+  order routes; it does not copy editable customer, vehicle, order, or invoice
+  state into the shell.
+- Invoice/payment context appears only when the canonical repair-order response
+  and permissions expose it.
+- Back/breadcrumb behavior returns to the originating real list/queue when that
+  origin is represented in existing route state; otherwise it uses the normal
+  route hierarchy.
+- Cross-surface panels may summarize source fields and deep-link to their owner;
+  they cannot mutate through new presentation-specific handlers.
+
+### 15.2 Responsive composition
+
+| Width | Contract |
+|---|---|
+| Desktop 1280+ | Persistent product navigation may coexist with list/workspace/context columns. Context panels are visible only when sourced and space-safe. |
+| Compact desktop/iPad 960–1279 | Navigation compacts; list/workspace becomes two-pane or an explicit in-surface transition; secondary context is a disclosure/drawer without losing the selected route record. |
+| Mobile 390/320 | One task layer at a time: list → real record workspace → contextual disclosure. Existing back semantics restore list position/filter. Primary actions remain visible, keyboard reachable, and at least 44px. No squeezed desktop rail, hidden footer action, or horizontal page overflow. |
+
+## 16. Required staged delivery
+
+Frontend may not continue from prose directly into production code.
+
+1. **Shape:** Submit source-annotated wireframes and an interaction model for all
+   six surfaces at desktop, iPad, and mobile. Each region names its current
+   component, route, endpoint/field, action owner, empty/loading/error state, and
+   responsive transition. Product must explicitly approve Shape.
+2. **Harden:** Recompose approved structures using the canonical domain hooks and
+   handlers. Prove permissions, mutations, status vocabulary, focus, errors,
+   loading, and old/new parity; remove invented state.
+3. **Adapt:** Complete 1280/1120/960/390/320, 200% zoom, keyboard, coarse pointer,
+   reduced-motion/transparency, high-contrast and forced-colors behavior.
+4. **Optimize:** Reduce duplicated layout work, unnecessary requests/renders,
+   context loss, action distance and notification obstruction. Preserve request
+   and business-state parity.
+5. **Polish:** Apply the approved material, typography and bounded motion system;
+   independent Impeccable/Emil review gates finish, not product structure.
+
+Each stage returns to its owner on failure. Later-stage visual finish cannot be
+used as evidence that Shape or source fidelity passed.
+
+## 17. Current Frontend change disposition
+
+The uncommitted Frontend tree remains untouched by this contract correction.
+
+### Retain as compatible foundation, subject to normal review
+
+- Versioned presentation/Appearance types, Theme/Presentation provider,
+  identity-scoped bootstrap cache, localStorage migration, apply/cancel/reset,
+  curated tokens and semantic-token separation.
+- Auth bootstrap wiring for the already-recorded API contract.
+- DieselBridge-primary and tenant-subordinate identity.
+- Presentation/surface hooks and class boundaries that do not create behavior.
+- Import-safe DB-035 fixtures and test harness foundations.
+- Responsive, reduced-motion, forced-color and notification-placement utilities
+  that remain valid under approved wireframes.
+
+### Reject or hold until Shape approval
+
+- A permanent rail or CSS-only restyle presented as the product reshape.
+- The new Dashboard `OperationalWorkstation`, its local
+  `selectedOrderId`/`WorkstationItem` model, and its invented “attention / active /
+  closeout” selected-record detail. The canonical dashboard already owns three
+  server-backed queues and deep-links to Repair Orders.
+- Any selected repair, customer, invoice, message association, metric, queue,
+  status label or “next action” not supplied by existing source data and rules.
+- Surface-level class additions claimed as completion without an approved
+  before→after structure and responsive interaction model.
+
+Retaining a foundation means it may survive Shape review; it is not acceptance
+of its current visual composition.
+
+## 18. Shape acceptance and exact Frontend return
+
+Frontend & UX returns one source-annotated Shape package containing:
+
+- Six before→after wireframes at desktop, iPad and mobile.
+- Navigation shell and product/tenant identity hierarchy.
+- Dashboard using the three real queues, activity, quick/create actions and team
+  capacity without a fabricated selected-record workstation.
+- Repair-order master/workspace/context model using its existing selected order,
+  history, authorization, invoice and payment controls.
+- Customer, Messages, My Shop and Settings structures mapped to their current
+  routes/components/actions.
+- Click/keyboard/back/focus behavior and loading/empty/error states.
+- A source ledger for every visible region: component, route, API/field, mutation
+  owner, permission and status vocabulary.
+- A disposition list for every current uncommitted DB-035 Frontend file: retain,
+  revise, or remove, with the contract clause supporting the decision.
+
+Shape fails if any visible region lacks a source mapping, if presentation owns a
+new domain selection or mutation, if mobile is merely collapsed desktop, or if
+the landing promise is represented by marketing copy rather than connected real
+records. No Harden/Adapt/Optimize/Polish implementation proceeds until Product
+records explicit Shape approval on DB-035.
