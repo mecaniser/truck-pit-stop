@@ -1,5 +1,5 @@
 import { NavLink, Routes, Route, Navigate, useLocation } from 'react-router-dom'
-import { BarChart3, Boxes, ChevronRight, ClipboardList, Clock3, PackageSearch, Settings2, Star, Truck, User, Wrench, type LucideIcon } from 'lucide-react'
+import { BarChart3, Boxes, ChevronRight, ClipboardList, Clock3, PackageSearch, Settings2, Star, Truck, Wrench, type LucideIcon } from 'lucide-react'
 import ServicesManagementPage from '@/features/dashboard/ServicesManagementPage'
 import InventoryPage from '@/features/inventory/InventoryPage'
 import MechanicsPage from '@/features/mechanics/MechanicsPage'
@@ -59,18 +59,6 @@ function MobileGarageNav({ sections }: { sections: GarageSection[] }) {
             </NavLink>
           ))}
         </nav>
-        <div className="mt-3 border-t border-zinc-800/60 px-1 pt-3">
-          <NavLink
-            to="/dashboard/settings"
-            className="flex w-full items-center justify-between rounded-xl border border-zinc-700/50 bg-zinc-800/50 px-3 py-3 text-sm font-medium text-zinc-300 transition-all hover:border-zinc-600 hover:bg-zinc-800 hover:text-zinc-100"
-          >
-            <span className="flex items-center gap-3">
-              <User className="h-4 w-4" />
-              Profile & Settings
-            </span>
-            <ChevronRight className="h-4 w-4" />
-          </NavLink>
-        </div>
       </div>
     </div>
   )
@@ -109,19 +97,6 @@ function DesktopGarageNav({ sections }: { sections: GarageSection[] }) {
               </NavLink>
             ))}
           </nav>
-        </div>
-        <div className="mt-6 border-t border-zinc-800/60 pt-6">
-          <p className="mb-3 text-[11px] font-bold uppercase tracking-[0.2em] text-zinc-500">
-            Account
-          </p>
-          <NavLink
-            to="/dashboard/settings"
-            className="flex w-full items-center gap-3 rounded-xl border border-zinc-700/50 bg-zinc-800/50 px-3 py-3 text-sm font-medium text-zinc-300 transition-all hover:border-zinc-600 hover:bg-zinc-800 hover:text-zinc-100"
-          >
-            <User className="h-4 w-4" />
-            Profile & Settings
-            <ChevronRight className="ml-auto h-4 w-4" />
-          </NavLink>
         </div>
       </div>
     </div>
