@@ -2511,7 +2511,7 @@ export default function CustomersPage() {
                   && relationship.relationship_type === relationshipType)
                 const roleLocked = isCurrentlyAssigned
                 return (
-                  <label key={relationshipType} className={`flex items-start gap-3 rounded-lg border p-3 text-sm text-gray-700 ${vehicleRelationshipTypes.includes(relationshipType) ? 'border-amber-300 bg-amber-50/60' : 'border-gray-200 bg-white'}`}>
+                  <label key={relationshipType} className={`flex items-start gap-3 rounded-lg border p-3 text-sm ${vehicleRelationshipTypes.includes(relationshipType) ? 'border-amber-300 bg-amber-50/60 text-amber-950' : 'border-gray-200 bg-white text-blueNoir-800'}`}>
                     <input
                       type="checkbox"
                       checked={vehicleRelationshipTypes.includes(relationshipType)}
@@ -3905,14 +3905,14 @@ export default function CustomersPage() {
                                 <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
                                   <button
                                     onClick={() => openEditContactModal(contact)}
-                                    className="p-1.5 text-gray-500 hover:text-amber-600 hover:bg-amber-50 rounded transition-colors"
+                                    className="rounded p-1.5 text-blueNoir-800 transition-colors hover:bg-amber-50 hover:text-amber-700"
                                     title="Edit"
                                   >
                                     <Pencil className="w-3.5 h-3.5" />
                                   </button>
                                   <button
                                     onClick={() => handleDeleteContactClick(contact)}
-                                    className="p-1.5 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
+                                    className="rounded p-1.5 text-blueNoir-800 transition-colors hover:bg-red-50 hover:text-red-700"
                                     title="Delete"
                                   >
                                     <Trash2 className="w-3.5 h-3.5" />
@@ -4253,7 +4253,7 @@ export default function CustomersPage() {
                                       openEditVehicleModal(vehicle)
                                     }}
                                     aria-label={`Edit ${cardTitle}`}
-                                    className="flex h-11 w-11 items-center justify-center rounded-lg bg-white text-gray-500 shadow-sm ring-1 ring-gray-200 transition-colors hover:bg-amber-50 hover:text-amber-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-500"
+                                    className="flex h-11 w-11 items-center justify-center rounded-lg bg-white text-blueNoir-800 shadow-sm ring-1 ring-gray-200 transition-colors hover:bg-amber-50 hover:text-amber-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-500"
                                     title="Edit"
                                   >
                                     <Pencil className="h-4 w-4" />
@@ -4264,7 +4264,7 @@ export default function CustomersPage() {
                                       handleDeleteVehicleClick(vehicle)
                                     }}
                                     aria-label={`Delete ${cardTitle}`}
-                                    className="flex h-11 w-11 items-center justify-center rounded-lg bg-white text-gray-500 shadow-sm ring-1 ring-gray-200 transition-colors hover:bg-red-50 hover:text-red-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-500"
+                                    className="flex h-11 w-11 items-center justify-center rounded-lg bg-white text-blueNoir-800 shadow-sm ring-1 ring-gray-200 transition-colors hover:bg-red-50 hover:text-red-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-500"
                                     title="Delete"
                                   >
                                     <Trash2 className="h-4 w-4" />
