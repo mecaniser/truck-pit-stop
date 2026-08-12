@@ -46,6 +46,11 @@ from app.schemas.auth import (
     ResetPasswordRequest,
     ResetPasswordResponse,
 )
+from app.schemas.presentation import (
+    AppearanceResetRequest,
+    AppearanceUpdateRequest,
+    PresentationResponse,
+)
 from pydantic import BaseModel, Field, EmailStr
 from typing import Optional, List, Union
 from uuid import UUID
@@ -55,6 +60,12 @@ import re
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 from app.services import workos_provider, workos_session
 from app.services.identity_lifecycle import IdentityReviewRequired, resolve_authenticated_identity
+from app.services.presentation_service import (
+    get_appearance,
+    reset_appearance,
+    resolve_presentation,
+    update_appearance,
+)
 from app.services.workos_provider import WorkOSProviderError
 from app.services.email_service import (
     send_password_reset_email,
@@ -379,6 +390,12 @@ async def _build_user_response(user: User, db: AsyncSession) -> UserResponse:
             response.tenant_slug = tenant.slug
             response.tenant_logo_url = tenant.logo_url
             response.messaging_enabled = tenant.messaging_enabled
+
+    if user.role not in (UserRole.CUSTOMER, UserRole.DRIVER):
+        try:
+            response.presentation = await resolve_presentation(db, user)
+        except HTTPException:
+            response.presentation = None
 
     return response
 
@@ -933,6 +950,38 @@ async def get_current_user_info(
     db: AsyncSession = Depends(get_db),
 ):
     return await _build_user_response(current_user, db)
+
+
+@router.get("/me/appearance", response_model=PresentationResponse)
+async def get_current_appearance(
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db),
+):
+    return await get_appearance(db, current_user)
+
+
+@router.put("/me/appearance", response_model=PresentationResponse)
+async def put_current_appearance(
+    body: AppearanceUpdateRequest,
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db),
+):
+    return await update_appearance(
+        db,
+        current_user,
+        base_revision=body.base_revision,
+        appearance=body.appearance,
+        migration_source=body.migration_source,
+    )
+
+
+@router.delete("/me/appearance", response_model=PresentationResponse)
+async def delete_current_appearance(
+    body: AppearanceResetRequest,
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db),
+):
+    return await reset_appearance(db, current_user, base_revision=body.base_revision)
 
 
 @router.get("/my-shops", response_model=List[ShopOption])

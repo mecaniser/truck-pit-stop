@@ -2,6 +2,7 @@ from pydantic import BaseModel, EmailStr, field_serializer
 from typing import Dict, Optional, List
 from uuid import UUID
 from app.db.models.user import UserRole
+from app.schemas.presentation import PresentationResponse
 
 
 class ShopOption(BaseModel):
@@ -66,6 +67,7 @@ class UserResponse(BaseModel):
     core_hours_target_minutes_override: Optional[int] = None
     shift_start_local_override: Optional[str] = None
     shift_end_local_override: Optional[str] = None
+    presentation: Optional[PresentationResponse] = None
 
     model_config = {"from_attributes": True}
 

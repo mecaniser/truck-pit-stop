@@ -24,6 +24,11 @@ class Tenant(BaseModel):
     # Shop-wide switch for the customer Messages feature. Default on so existing
     # shops are unaffected; owners can turn it off while the feature is unfinished.
     messaging_enabled = Column(Boolean, default=True, nullable=False)
+    # Authenticated staff presentation rollout. This changes presentation only;
+    # it never changes routes, permissions, or domain behavior.
+    staff_presentation_default = Column(
+        String(16), default="legacy", server_default="legacy", nullable=False
+    )
 
     # Marketing-attribution webhook. The endpoint is tenant-owned; its signing
     # secret is encrypted at rest and is never returned by the settings API.

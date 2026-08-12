@@ -43,6 +43,7 @@ from app.services.identity_lifecycle import (
 )
 from app.services import workos_provider, workos_session, workos_webhooks
 from app.services.workos_provider import WorkOSProviderError
+from app.services.presentation_service import resolve_presentation
 
 
 router = APIRouter()
@@ -330,6 +331,8 @@ async def get_workos_session_user(
     result.tenant_slug = tenant.slug
     result.tenant_logo_url = tenant.logo_url
     result.messaging_enabled = tenant.messaging_enabled
+    if user.role not in (UserRole.CUSTOMER, UserRole.DRIVER):
+        result.presentation = await resolve_presentation(db, user, tenant_id=principal.tenant_id)
     return result
 
 
