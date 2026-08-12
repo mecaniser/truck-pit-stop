@@ -786,7 +786,6 @@ html::-webkit-scrollbar-thumb:hover {
     grid-template-columns: 84px minmax(0, 1fr);
     grid-template-rows: minmax(0, 1fr);
     overflow: hidden;
-    transition: grid-template-columns 220ms cubic-bezier(.16, 1, .3, 1);
   }
   .db-presentation-new .db-staff-nav {
     grid-column: 1;
@@ -918,24 +917,36 @@ html::-webkit-scrollbar-thumb:hover {
     grid-template-columns: 224px minmax(0, 1fr);
   }
   .db-presentation-new.db-staff-shell[data-rail-expanded='true'] .db-staff-nav__inner { padding: 18px 12px; }
-  .db-presentation-new.db-staff-shell[data-rail-expanded='true'] .db-staff-nav__brand-row { min-height: 144px; align-items: flex-start; justify-content: center; padding: 0 8px 16px; }
+  .db-presentation-new.db-staff-shell[data-rail-expanded='true'] .db-staff-nav__brand-row { min-height: 164px; align-items: flex-start; justify-content: center; padding: 0 8px 16px; }
   .db-presentation-new.db-staff-shell[data-rail-expanded='true'] .db-product-brand { width: auto; justify-content: flex-start; }
   .db-presentation-new.db-staff-shell[data-rail-expanded='true'] .db-product-brand .db-wordmark { display: inline-flex; max-width: none; font-size: 17px; }
   .db-presentation-new.db-staff-shell[data-rail-expanded='true'] .db-product-brand__compact-mark { display: none; }
-  .db-presentation-new.db-staff-shell[data-rail-expanded='true'] .db-workspace-context { justify-content: flex-start; }
-  .db-presentation-new.db-staff-shell[data-rail-expanded='true'] .db-workspace-context__logo { max-width: 72px; }
-  .db-presentation-new.db-staff-shell[data-rail-expanded='true'] .db-workspace-context__name { max-width: 18ch; display: block; font-size: 11px; text-align: left; }
+  .db-presentation-new.db-staff-shell[data-rail-expanded='true'] .db-workspace-context { width: 100%; justify-content: flex-start; gap: 8px; }
+  .db-presentation-new.db-staff-shell[data-rail-expanded='true'] .db-workspace-context__logo { width: 56px; max-width: 56px; flex: 0 0 56px; }
+  .db-presentation-new.db-staff-shell[data-rail-expanded='true'] .db-workspace-context__name {
+    display: block;
+    flex: 1 1 0;
+    min-width: 0;
+    max-width: none;
+    overflow: visible;
+    overflow-wrap: anywhere;
+    font-size: 11px;
+    line-height: 1.25;
+    text-align: left;
+    text-overflow: clip;
+    white-space: normal;
+  }
   .db-presentation-new.db-staff-shell[data-rail-expanded='true'] .db-staff-primary-nav > a { justify-content: flex-start; padding-inline: 13px; }
   .db-presentation-new.db-staff-shell[data-rail-expanded='true'] .db-staff-primary-nav > a > span { gap: 10px; }
   .db-presentation-new.db-staff-shell[data-rail-expanded='true'] .db-staff-primary-nav__label { position: static; width: auto; height: auto; overflow: visible; clip: auto; white-space: normal; }
   .db-presentation-new.db-staff-shell[data-rail-expanded='true'] .db-staff-nav__profile { justify-content: flex-start; padding-inline: 6px; }
   .db-presentation-new.db-staff-shell[data-rail-expanded='true'] .db-staff-nav__account-controls { flex-direction: row; gap: 6px; }
-  .db-presentation-new.db-staff-shell[data-rail-expanded='true'] .db-staff-nav__account-controls > a { min-width: 0; width: auto; flex: 1 1 auto; justify-content: flex-start; gap: 10px; padding: 3px; }
+  .db-presentation-new.db-staff-shell[data-rail-expanded='true'] .db-staff-nav__account-controls > a { min-width: 0; width: auto; flex: 1 1 auto; justify-content: flex-start; gap: 10px; padding: 6px 8px; }
   /* The monogram is the compact account cue. Expanded mode gives the account
      card back to the owner's readable identity instead of repeating initials. */
   .db-presentation-new.db-staff-shell[data-rail-expanded='true'] .db-staff-nav__profile-monogram { display: none; }
-  .db-presentation-new.db-staff-shell[data-rail-expanded='true'] .db-staff-nav__profile-copy { min-width: 0; display: flex; flex-direction: column; text-align: left; }
-  .db-presentation-new.db-staff-shell[data-rail-expanded='true'] .db-staff-nav__profile-copy strong { max-width: 16ch; overflow: hidden; color: var(--shell-text); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+  .db-presentation-new.db-staff-shell[data-rail-expanded='true'] .db-staff-nav__profile-copy { display: flex; min-width: 0; flex: 1 1 0; flex-direction: column; text-align: left; }
+  .db-presentation-new.db-staff-shell[data-rail-expanded='true'] .db-staff-nav__profile-copy strong { max-width: none; overflow-wrap: anywhere; color: var(--shell-text); font-size: 11px; line-height: 1.2; text-overflow: clip; white-space: normal; }
   .db-presentation-new.db-staff-shell[data-rail-expanded='true'] .db-staff-nav__profile-copy small { color: var(--shell-muted); font-size: 9px; }
   .db-presentation-new.db-staff-shell[data-rail-expanded='true'] .db-staff-nav__rail-toggle { width: 44px; flex: 0 0 44px; }
 }

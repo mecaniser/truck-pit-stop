@@ -78,6 +78,25 @@ describe('DB-035 authenticated staff shell', () => {
     expect(screen.getByRole('button', { name: 'Collapse navigation rail' })).toBeInTheDocument()
   })
 
+  it('keeps the full owner identity available in the expanded account area', () => {
+    window.localStorage.setItem('db-staff-rail-expanded', '1')
+    useAuthStore.setState({
+      user: {
+        ...garageOwnerSession,
+        first_name: 'Maximilian',
+        last_name: 'Montgomery-Fields',
+      } as never,
+    })
+
+    renderShell()
+
+    const account = screen.getByLabelText('Account')
+    expect(within(account).getByRole('link', {
+      name: 'Open profile settings for Maximilian Montgomery-Fields',
+    })).toBeInTheDocument()
+    expect(within(account).getByText('Maximilian Montgomery-Fields')).toBeInTheDocument()
+  })
+
   it('renders DieselBridge first and keeps tenant identity subordinate in the new shell', () => {
     renderShell()
 
