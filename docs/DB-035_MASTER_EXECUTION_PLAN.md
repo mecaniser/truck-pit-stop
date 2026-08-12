@@ -1,6 +1,6 @@
 # DB-035 Controlled Product Redesign Plan
 
-Status: **Product recovery — prototype selection gate**
+Status: **Stage 2 authorized — shared authenticated shell**
 
 Accountable owner: Product & Delivery Lead
 
@@ -126,7 +126,9 @@ Exit: one clean baseline, one service pair, one Product plan. **Complete.**
 - Confirm selected-context boundary and transition into Repair Orders.
 - Product compares the revised prototype directly with the public product tour.
 
-Exit: explicit Product visual acceptance. No production code.
+Exit: explicit Product visual acceptance. No production code. **Complete:
+Product approved the corrected landing-derived Action Ledger prototype on
+2026-08-12.**
 
 ### Stage 2 — Shared authenticated shell
 
@@ -213,8 +215,10 @@ actions before implementation.
 
 **Selected:** Action Ledger + compact connected-record strip.
 
-**Not accepted:** the current all-dark prototype styling.
+**Visual direction accepted:** the corrected landing-derived prototype using a
+navy product field, road-white operating workspace, compact record anatomy,
+sparse copper actions and semantic service green.
 
-**Next gate:** a revised prototype must visibly translate the public
-ProductWorkspace into authenticated operating depth at 1440, 960, 390 and 320.
-After Product accepts that comparison, Stage 2 begins under the controls above.
+**Next gate:** Stage 2 implements only the shared authenticated shell behind the
+existing presentation flag. Product reviews the shell at 1440, 960, 390 and 320
+before Shop Cockpit implementation begins.
