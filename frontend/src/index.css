@@ -444,7 +444,7 @@ html::-webkit-scrollbar-thumb:hover {
   white-space: nowrap;
 }
 .db-shop-work-new__lane-tabs button[aria-selected='true'] { border-color: #c4ced9; background: #fff; color: #16273e; box-shadow: 0 2px 7px rgba(16,36,59,.08); }
-.db-shop-work-new__lane-tabs button > span { display: inline-grid; min-width: 22px; height: 22px; margin-left: 4px; place-items: center; border-radius: 999px; background: #e3e9f0; color: #475a70; font-size: 12px; }
+.db-shop-work-new__lane-tabs button > span { display: inline-grid; min-width: 30px; height: 22px; margin-left: 4px; padding: 0 6px; place-items: center; border-radius: 999px; background: #e3e9f0; color: #475a70; font-size: 12px; }
 .db-shop-work-new__search { position: relative; width: min(310px, 31vw); flex: 0 1 310px; }
 .db-shop-work-new__search svg { position: absolute; left: 12px; top: 50%; width: 16px; height: 16px; color: #607287; transform: translateY(-50%); pointer-events: none; }
 .db-shop-work-new__search input { width: 100%; height: 44px; padding: 0 12px 0 37px; border: 1px solid #bec9d5 !important; border-radius: 10px; background: #fff !important; color: #17283f !important; }
