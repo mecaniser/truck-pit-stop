@@ -33,6 +33,7 @@ import AlertsBanner from '../../components/AlertsBanner'
 import SectionInfoTooltip from '@/components/SectionInfoTooltip'
 import SuggestingInput from '@/components/SuggestingInput'
 import RecentActivityFeed from './RecentActivityFeed'
+import ShopCockpitActionLedger, { type ActionQueueLane } from './ShopCockpitActionLedger'
 
 interface StatusCount {
   status: string
@@ -369,7 +370,7 @@ function OrderCard({
 
 export default function DashboardHome() {
   const { user } = useAuthStore()
-  const { accentColors, fontSize } = useTheme()
+  const { accentColors, fontSize, presentationVariant } = useTheme()
   const navigate = useNavigate()
   const queryClient = useQueryClient()
 
@@ -669,14 +670,100 @@ export default function DashboardHome() {
       setQuickTouched(false)
       setShowQuickForm(false)
       handleManualRefresh()
-    } catch (err: any) {
-      toast.error(err.response?.data?.detail || 'Failed to create order')
+    } catch (err: unknown) {
+      const detail = isAxiosError<{ detail?: string }>(err) ? err.response?.data?.detail : undefined
+      toast.error(detail || 'Failed to create order')
     } finally {
       setQuickSubmitting(false)
     }
   }
 
+  const newQuickOrderForm = isManager && showQuickForm ? (
+    <form className="db-shop-work-new__quick-form" onSubmit={handleQuickOrder}>
+      <div className="db-shop-work-new__quick-form-heading">
+        <div>
+          <strong>Lightning Order</strong>
+          <span>Walk-in or phone call</span>
+        </div>
+        <button type="button" onClick={() => setShowQuickForm(false)} aria-label="Close Lightning Order">
+          <X aria-hidden="true" />
+        </button>
+      </div>
+      <div className="db-shop-work-new__quick-form-fields">
+        <label>
+          <span>Customer phone</span>
+          <div className="db-shop-work-new__field">
+            <Phone aria-hidden="true" />
+            <input
+              type="tel"
+              value={quickPhone}
+              onChange={(event) => {
+                setQuickPhone(formatUSPhone(event.target.value))
+                if (quickTouched) {
+                  const digits = event.target.value.replace(/\D/g, '')
+                  setQuickErrors((current) => ({
+                    ...current,
+                    phone: digits.length >= 10 ? undefined : 'Valid phone required',
+                  }))
+                }
+              }}
+              placeholder="(555) 123-4567"
+              aria-invalid={Boolean(quickTouched && quickErrors.phone)}
+              aria-describedby={quickTouched && quickErrors.phone ? 'new-quick-phone-error' : undefined}
+            />
+          </div>
+          {quickTouched && quickErrors.phone && <small id="new-quick-phone-error">{quickErrors.phone}</small>}
+        </label>
+        <label className="db-shop-work-new__quick-issue">
+          <span>Issue</span>
+          <SuggestingInput
+            value={quickComplaint}
+            onChange={(value) => {
+              setQuickComplaint(value)
+              if (quickTouched) {
+                setQuickErrors((current) => ({
+                  ...current,
+                  complaint: value.trim() ? undefined : 'Description required',
+                }))
+              }
+            }}
+            suggestUrl="/repair-orders/description-suggestions"
+            placeholder="Engine overheating"
+            aria-invalid={Boolean(quickTouched && quickErrors.complaint)}
+            aria-describedby={quickTouched && quickErrors.complaint ? 'new-quick-issue-error' : undefined}
+          />
+          {quickTouched && quickErrors.complaint && <small id="new-quick-issue-error">{quickErrors.complaint}</small>}
+        </label>
+        <label>
+          <span>Truck <em>optional</em></span>
+          <div className="db-shop-work-new__field">
+            <Truck aria-hidden="true" />
+            <input
+              type="text"
+              value={quickTruck}
+              onChange={(event) => setQuickTruck(event.target.value)}
+              placeholder="Unit or vehicle"
+            />
+          </div>
+        </label>
+        <button type="submit" disabled={quickSubmitting} className="db-shop-work-new__create-action">
+          {quickSubmitting ? <Spinner size="sm" /> : <Send aria-hidden="true" />}
+          Create order
+        </button>
+      </div>
+    </form>
+  ) : null
+
   if (loading) {
+    if (presentationVariant === 'new') {
+      return (
+        <section className="db-shop-work-new db-shop-work-new--state" aria-busy="true" aria-label="Loading Shop Work">
+          <Spinner size="xl" />
+          <strong>Loading Shop Work</strong>
+          <span>Retrieving the three canonical queues.</span>
+        </section>
+      )
+    }
     return (
       <div className="flex items-center justify-center py-20">
         <Spinner size="xl" />
@@ -685,6 +772,19 @@ export default function DashboardHome() {
   }
 
   if (error) {
+    if (presentationVariant === 'new') {
+      return (
+        <section className="db-shop-work-new db-shop-work-new--state" role="alert">
+          <AlertTriangle aria-hidden="true" />
+          <strong>{error}</strong>
+          <span>The current queue could not be retrieved. Existing repair orders remain in Repair Orders.</span>
+          <button type="button" onClick={handleManualRefresh} disabled={isRefreshing}>
+            <RefreshCw aria-hidden="true" className={isRefreshing ? 'animate-spin' : ''} />
+            {isRefreshing ? 'Retrying…' : 'Try again'}
+          </button>
+        </section>
+      )
+    }
     return (
       <div className="text-center py-12">
         <p className="text-red-400">{error}</p>
@@ -698,6 +798,53 @@ export default function DashboardHome() {
           {isRefreshing ? 'Retrying…' : 'Try again'}
         </button>
       </div>
+    )
+  }
+
+  if (presentationVariant === 'new') {
+    const projection = {
+      orders_needing_action: stats?.orders_needing_action ?? [],
+      orders_needing_action_has_more: stats?.orders_needing_action_has_more ?? false,
+      orders_on_floor: stats?.orders_on_floor ?? [],
+      orders_on_floor_has_more: stats?.orders_on_floor_has_more ?? false,
+      orders_ready_to_close: stats?.orders_ready_to_close ?? [],
+      orders_ready_to_close_has_more: stats?.orders_ready_to_close_has_more ?? false,
+    }
+    const openRecord = (id: string, lane: ActionQueueLane) => {
+      navigate(`/dashboard/repair-orders?selected=${id}&queue=${lane}`)
+    }
+
+    return (
+      <ShopCockpitActionLedger
+        projection={projection}
+        isManager={isManager}
+        canViewActivity={canViewActivity}
+        queueView={queueView}
+        activityCount={activityCount}
+        isRefreshing={isRefreshing}
+        lastUpdatedLabel={formatLastUpdated() ? `Updated ${formatLastUpdated()}` : 'Updated recently'}
+        quickOrderExpanded={showQuickForm}
+        notificationRegion={(
+          <NotificationBanner
+            banners={banners}
+            onDismiss={dismissBanner}
+            onDismissAll={clearBanners}
+            autoDismissMs={10000}
+          />
+        )}
+        quickOrderForm={newQuickOrderForm}
+        activityFeed={(
+          <RecentActivityFeed
+            className="db-shop-work-new__activity-feed"
+            onCountChange={setActivityCount}
+          />
+        )}
+        onQueueViewChange={setQueueView}
+        onToggleQuickOrder={() => setShowQuickForm((current) => !current)}
+        onFullOrder={() => navigate('/dashboard/repair-orders?new=true')}
+        onRefresh={handleManualRefresh}
+        onOpenRecord={openRecord}
+      />
     )
   }
 

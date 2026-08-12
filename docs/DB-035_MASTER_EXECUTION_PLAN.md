@@ -1,6 +1,6 @@
 # DB-035 Controlled Product Redesign Plan
 
-Status: **Stage 2 authorized — shared authenticated shell**
+Status: **Product review — Stage 3 Shop Cockpit candidate**
 
 Accountable owner: Product & Delivery Lead
 
@@ -139,7 +139,9 @@ Product approved the corrected landing-derived Action Ledger prototype on
 - Verify desktop rail, iPad compact navigation and existing mobile navigation.
 
 Exit: focused component tests and one bounded browser pass. Do not run the full
-suite repeatedly at this intermediate stage.
+suite repeatedly at this intermediate stage. **Complete: Product accepted the
+corrected shared shell at `1bc1cb28d035e8b17a26eccd95a78add69a3b077` on
+2026-08-12.**
 
 ### Stage 3 — Shop Cockpit
 
@@ -152,7 +154,8 @@ suite repeatedly at this intermediate stage.
 - Cover loading, empty, failure, long values, rapid selection and role states.
 
 Exit: Product visual acceptance plus focused/runtime evidence at 1440, 960, 390
-and 320.
+and 320. **Implementation and bounded evidence are complete locally; Product
+visual/interaction acceptance remains pending.**
 
 ### Stage 4 — Repair Orders workspace
 
@@ -219,6 +222,7 @@ actions before implementation.
 navy product field, road-white operating workspace, compact record anatomy,
 sparse copper actions and semantic service green.
 
-**Next gate:** Stage 2 implements only the shared authenticated shell behind the
-existing presentation flag. Product reviews the shell at 1440, 960, 390 and 320
-before Shop Cockpit implementation begins.
+**Next gate:** Product reviews the Stage 3 Shop Cockpit at 1440, 960, 390 and
+320, including keyboard selection and the projection-only connected-record
+handoff. Stage 4 Repair Orders implementation is not authorized until Product
+accepts this visual and interaction outcome.
