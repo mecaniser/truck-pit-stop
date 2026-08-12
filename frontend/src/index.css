@@ -582,6 +582,70 @@ html::-webkit-scrollbar-thumb:hover {
   }
 }
 
+/* Analytics retains its established reports and charts, while its former
+   dark-only surfaces now resolve through the selected operating appearance. */
+.db-presentation-new .db-garage-analytics {
+  color: var(--workspace-text);
+}
+
+.db-presentation-new .db-garage-analytics :is(.text-white, [class*='text-white/85'], [class*='text-white/90'], [class*='text-gray-200']) {
+  color: var(--workspace-text) !important;
+}
+
+.db-presentation-new .db-garage-analytics :is([class*='text-white/'], [class~='text-gray-400']) {
+  color: var(--workspace-muted) !important;
+}
+
+.db-presentation-new .db-analytics-quiet-action {
+  border: 1px solid var(--workspace-border) !important;
+  background: var(--surface-overlay) !important;
+  color: var(--workspace-text) !important;
+}
+
+.db-presentation-new .db-analytics-range-menu,
+.db-presentation-new .db-analytics-detail-table {
+  border-color: var(--workspace-border) !important;
+  background: var(--surface-overlay) !important;
+}
+
+.db-presentation-new .db-analytics-hero {
+  border-color: var(--workspace-border) !important;
+  background: var(--surface-raised) !important;
+}
+
+.db-presentation-new .db-analytics-hero__insight {
+  background: color-mix(in srgb, var(--surface-overlay) 84%, var(--surface-raised)) !important;
+  color: var(--workspace-muted) !important;
+}
+
+.db-presentation-new .db-analytics-stat-strip {
+  border-color: var(--workspace-border) !important;
+  background: var(--workspace-border) !important;
+}
+
+.db-presentation-new .db-analytics-stat-strip__cell,
+.db-presentation-new .db-analytics-chart-card {
+  border-color: var(--workspace-border) !important;
+  background: var(--surface-overlay) !important;
+}
+
+.db-presentation-new .db-analytics-tabs {
+  border-color: var(--workspace-border) !important;
+}
+
+.db-presentation-new .db-analytics-detail-table :is(thead[class*='bg-'], tr:hover) {
+  background: var(--surface-raised) !important;
+}
+
+.db-presentation-new .db-garage-analytics .recharts-cartesian-axis-tick-value {
+  fill: var(--workspace-muted) !important;
+}
+
+.db-presentation-new .db-garage-analytics .recharts-cartesian-grid line {
+  stroke: var(--workspace-border) !important;
+  stroke-opacity: 0.72;
+}
+
 /* Retained settings navigation inherits legacy zinc utilities. New presentation
    keeps its active, hover, and keyboard focus states in the current accent ramp. */
 .db-presentation-new .db-settings-nav-item[data-active='true'] {

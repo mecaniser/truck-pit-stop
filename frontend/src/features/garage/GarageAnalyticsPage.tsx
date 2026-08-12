@@ -225,14 +225,14 @@ function DateRangePicker({
       <button
         type="button"
         onClick={() => setIsOpen((o) => !o)}
-        className="flex items-center gap-2 h-10 px-4 rounded-lg bg-white/10 text-white text-sm font-medium hover:bg-white/15 transition-colors"
+        className="db-analytics-quiet-action flex items-center gap-2 h-10 px-4 rounded-lg bg-white/10 text-white text-sm font-medium hover:bg-white/15 transition-colors"
       >
         {RANGE_LABELS[value]}
       </button>
       {isOpen && (
         <>
           <div className="fixed inset-0 z-40" onClick={() => setIsOpen(false)} />
-          <div className="absolute z-50 mt-1 w-44 rounded-lg bg-gray-900 border border-white/20 shadow-xl py-1">
+          <div className="db-analytics-range-menu absolute z-50 mt-1 w-44 rounded-lg bg-gray-900 border border-white/20 shadow-xl py-1">
             {options.map((opt) => (
               <button
                 key={opt}
@@ -270,7 +270,7 @@ function ExportButton({ onClick }: { onClick: () => void }) {
     <button
       type="button"
       onClick={onClick}
-      className="flex items-center gap-2 h-10 px-4 rounded-lg bg-white/10 text-white text-sm font-medium hover:bg-white/15 transition-colors"
+      className="db-analytics-quiet-action flex items-center gap-2 h-10 px-4 rounded-lg bg-white/10 text-white text-sm font-medium hover:bg-white/15 transition-colors"
     >
       <Download className="w-4 h-4" />
       Export
@@ -289,20 +289,20 @@ function Hero({ label, value, sub, accent, insight, children }: {
 }) {
   return (
     <div
-      className="relative rounded-2xl p-6 overflow-hidden"
+      className="db-analytics-hero relative rounded-2xl p-6 overflow-hidden"
       style={{ background: 'linear-gradient(135deg, rgba(255,255,255,0.07), rgba(255,255,255,0.02))', border: '1px solid rgba(255,255,255,0.12)' }}
     >
       <div className="absolute top-0 left-0 right-0 h-[3px]" style={{ background: accent }} />
       <div className="flex items-start justify-between flex-wrap gap-3 mb-1">
         <div className="min-w-0">
           <p className="text-xs font-bold uppercase tracking-widest mb-1" style={{ color: accent }}>{label}</p>
-          <p className="text-4xl font-bold text-white leading-none truncate">{value}</p>
+          <p className="db-analytics-hero__value text-4xl font-bold text-white leading-none truncate">{value}</p>
           {sub && <p className="text-sm text-white/50 mt-2">{sub}</p>}
         </div>
       </div>
       {children && <div className="mt-5">{children}</div>}
       {insight && (
-        <div className="flex items-start gap-2.5 bg-black/20 rounded-lg p-3 mt-5 text-[12.5px] text-white/80 leading-relaxed">
+        <div className="db-analytics-hero__insight flex items-start gap-2.5 bg-black/20 rounded-lg p-3 mt-5 text-[12.5px] text-white/80 leading-relaxed">
           <Lightbulb className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" style={{ color: accent }} />
           <div>{insight}</div>
         </div>
@@ -313,9 +313,9 @@ function Hero({ label, value, sub, accent, insight, children }: {
 
 function StatStrip({ stats }: { stats: { label: string; value: string }[] }) {
   return (
-    <div className="grid grid-cols-2 sm:grid-cols-4 gap-px bg-white/[0.06] rounded-xl overflow-hidden border border-white/[0.06]">
+    <div className="db-analytics-stat-strip grid grid-cols-2 sm:grid-cols-4 gap-px bg-white/[0.06] rounded-xl overflow-hidden border border-white/[0.06]">
       {stats.map((s, i) => (
-        <div key={i} className="bg-[#141a24] px-4 py-3.5">
+        <div key={i} className="db-analytics-stat-strip__cell bg-[#141a24] px-4 py-3.5">
           <p className="text-[10.5px] font-semibold uppercase tracking-wider text-white/40">{s.label}</p>
           <p className="text-lg font-semibold text-white/90 mt-0.5">{s.value}</p>
         </div>
@@ -333,7 +333,7 @@ function DetailTable({ title, count, onExport, children }: {
         <span className="text-[11px] font-semibold uppercase tracking-wider text-white/35">{title}{count != null && ' · ' + count}</span>
         {onExport && <ExportButton onClick={onExport} />}
       </div>
-      <div className="bg-white/[0.025] border border-white/[0.06] rounded-xl overflow-hidden">
+      <div className="db-analytics-detail-table bg-white/[0.025] border border-white/[0.06] rounded-xl overflow-hidden">
         {children}
       </div>
     </div>
@@ -1084,7 +1084,7 @@ export default function GarageAnalyticsPage() {
   const [range, setRange] = useState<DateRangePreset>('this_month')
 
   return (
-    <div className="flex flex-col h-full min-h-0">
+    <div className="db-garage-analytics flex flex-col h-full min-h-0">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-4 sm:mb-6 flex-shrink-0 gap-3">
         <div>
           <h1 className="text-xl sm:text-2xl font-bold text-white">Shop Analytics</h1>
@@ -1093,7 +1093,7 @@ export default function GarageAnalyticsPage() {
         {DATE_FILTERED_TABS.includes(activeTab) && <DateRangePicker value={range} onChange={setRange} />}
       </div>
 
-      <div className="mb-4 flex-shrink-0 flex gap-1 overflow-x-auto scrollbar-hide border-b border-white/10">
+      <div className="db-analytics-tabs mb-4 flex-shrink-0 flex gap-1 overflow-x-auto scrollbar-hide border-b border-white/10">
         {TABS.map((tab) => (
           <button
             key={tab.id}
