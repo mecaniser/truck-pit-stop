@@ -291,10 +291,23 @@ html::-webkit-scrollbar-thumb:hover {
 }
 
 .db-presentation-new .db-staff-content :is(input, textarea, select) {
-  color: var(--text-primary);
+  color: var(--workspace-text);
   font-size: max(16px, var(--font-size-body));
-  border-color: var(--border-subtle) !important;
-  background: color-mix(in srgb, var(--surface-overlay) 90%, transparent) !important;
+  border-color: var(--workspace-border) !important;
+  background: var(--product-road-white) !important;
+  caret-color: var(--workspace-text);
+  color-scheme: light;
+}
+
+.db-presentation-new .db-staff-content :is(input, textarea)::placeholder {
+  color: var(--workspace-muted);
+  opacity: 1;
+}
+
+.db-presentation-new .db-staff-content :is(input, textarea, select):focus-visible {
+  outline: 2px solid var(--product-copper-400);
+  outline-offset: 2px;
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--product-copper-400) 22%, transparent);
 }
 
 .db-presentation-new .db-staff-content :is(table tbody tr, [role='row']) {
