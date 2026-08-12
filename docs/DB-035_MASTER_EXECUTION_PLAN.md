@@ -61,9 +61,41 @@ listeners and stops only confirmed DieselBridge Vite/Uvicorn processes on the
 canonical and historical DB-035 ports. Frontend and backend must run from the
 same candidate commit. Ports `5174–5178` and `8001` are not DB-035 fallbacks.
 
-## 5. Selected planning candidates
+## 5. Product selection and visual continuity contract
 
-The isolated prototype packet supplies two source-grounded choices:
+Product selects **Action Ledger** as the Shop Cockpit topology, with one compact
+connected-record strip borrowed from Record Atlas. Record Atlas remains rejected
+as the default high-frequency cockpit.
+
+This selection approves interaction structure only. The current all-dark Action
+Ledger prototype is not the approved authenticated visual language. Before
+production implementation, it must be revised into a direct authenticated
+extension of the real public `ProductWorkspace`:
+
+- deep navy remains the product/shell field;
+- the active operational workspace is road white, not another dark admin panel;
+- the product rail uses the same DieselBridge identity, icon grammar, compact
+  labels and selected-state treatment as the public preview, expanded only for
+  canonical authenticated destinations;
+- copper remains scarce and meaningful: current product context, primary action,
+  focus and connected handoff—not generic decoration;
+- success/paid uses service green and semantic warning/destructive/financial
+  colors remain outside user accent personalization;
+- queue rows reuse the compact identity, status, customer, vehicle and amount
+  anatomy visible in the public repair-order and Shop Work samples;
+- the compact connected-record strip uses the landing evidence vocabulary for
+  customer/vehicle, work, authorization/history and invoice/payment while
+  remaining read-only on Dashboard;
+- Repair Orders expands the same road-white record anatomy into real workspace,
+  history, invoice and payment controls instead of switching to an unrelated UI;
+- authenticated depth adds real tenant data, permissions, loading/error states,
+  stable URLs and mutations; it does not copy the public miniature's floating
+  marketing sheets or decorative connector geometry;
+- desktop, iPad, 390 and 320 must remain recognizably one product even though the
+  authenticated shell uses persistent/compact/mobile navigation appropriate to
+  operation.
+
+The isolated prototype packet originally supplied two source-grounded choices:
 
 1. **Action Ledger (recommended):** a fast queue ledger preserving canonical
    queue labels, with read-only connected context and one explicit handoff to
@@ -71,12 +103,9 @@ The isolated prototype packet supplies two source-grounded choices:
 2. **Record Atlas:** a relationship-first view that teaches the connected record
    model but is slower for high-volume shop supervision.
 
-Product's proposed direction is **Action Ledger with one compact connected-record
-strip borrowed from Record Atlas**. It must retain visibly distinct canonical
-queue identity and never become a Dashboard repair workspace.
-
-No production implementation begins until Product explicitly confirms this
-direction or selects Record Atlas.
+No production implementation begins until Product sees and accepts the revised
+landing-derived Action Ledger at desktop and mobile. It must retain visibly
+distinct canonical queue identity and never become a Dashboard repair workspace.
 
 ## 6. Execution sequence and gates
 
@@ -89,15 +118,15 @@ direction or selects Record Atlas.
 
 Exit: one clean baseline, one service pair, one Product plan. **Complete.**
 
-### Stage 1 — Prototype decision
+### Stage 1 — Selected prototype correction
 
-- Product inspects desktop and mobile Action Ledger and Record Atlas.
-- Confirm cockpit topology, selected-context boundary and transition into Repair
-  Orders.
-- Record the selected direction and the exact bounded element, if any, borrowed
-  from the other direction.
+- Action Ledger topology and the compact Record Atlas context strip are selected.
+- Revise their visual/material system against the actual public ProductWorkspace
+  at desktop and mobile.
+- Confirm selected-context boundary and transition into Repair Orders.
+- Product compares the revised prototype directly with the public product tour.
 
-Exit: explicit Product decision. No production code.
+Exit: explicit Product visual acceptance. No production code.
 
 ### Stage 2 — Shared authenticated shell
 
@@ -182,9 +211,10 @@ actions before implementation.
 
 ## 8. Current decision
 
-Product must confirm either:
+**Selected:** Action Ledger + compact connected-record strip.
 
-- **A — Action Ledger + compact connected-record strip (recommended)**, or
-- **B — Record Atlas**.
+**Not accepted:** the current all-dark prototype styling.
 
-After that single decision, Stage 2 begins under the controls above.
+**Next gate:** a revised prototype must visibly translate the public
+ProductWorkspace into authenticated operating depth at 1440, 960, 390 and 320.
+After Product accepts that comparison, Stage 2 begins under the controls above.
