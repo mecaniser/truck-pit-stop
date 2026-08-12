@@ -1,24 +1,10 @@
 import { Routes, Route, Link, Navigate, useLocation } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { type MouseEvent as ReactMouseEvent, type TouchEvent, useEffect, useRef, useState } from 'react'
+import { lazy, Suspense, type MouseEvent as ReactMouseEvent, type TouchEvent, useEffect, useRef, useState } from 'react'
 import { useAuthStore } from '../../stores/authStore'
 import { Home, Users, ClipboardList, Building2, User, LayoutGrid, BarChart3, UserCheck, Crown, MessageSquare, CreditCard, MoreHorizontal, ChevronLeft, ChevronsLeft, ChevronsRight } from 'lucide-react'
 import { useTheme } from '../../contexts/ThemeContext'
 import api from '@/lib/api'
-import CustomersPage from '@/features/customers/CustomersPage'
-import RepairOrdersPage from '@/features/repair-orders/RepairOrdersPage'
-import MyGaragePage from '@/features/garage/MyGaragePage'
-import DashboardHome from '@/features/dashboard/DashboardHome'
-import UnifiedSettingsPage from '@/features/dashboard/UnifiedSettingsPage'
-import PlatformDashboard from '@/features/platform-admin/PlatformDashboard'
-import GaragesPage from '@/features/platform-admin/GaragesPage'
-import GarageAnalyticsPage from '@/features/platform-admin/GarageAnalyticsPage'
-import PlatformAnalyticsPage from '@/features/platform-admin/PlatformAnalyticsPage'
-import PendingEnrollmentsPage from '@/features/platform-admin/PendingEnrollmentsPage'
-import PaymentControlCenter from '@/features/platform-admin/PaymentControlCenter'
-import MessagesInboxPage from '@/features/messages/MessagesInboxPage'
-import MechanicsBoardPage from '@/features/dashboard/MechanicsBoardPage'
-import MechanicBoardDetailPage from '@/features/dashboard/MechanicBoardDetailPage'
 import type { MessagesUnreadSummary } from '@/types'
 import BrandLogo from '../brand/BrandLogo'
 import DieselBridgeWordmark from '../brand/DieselBridgeWordmark'
@@ -26,6 +12,20 @@ import TenantBrandLogo from '../brand/TenantBrandLogo'
 import useTenantBranding from '@/hooks/useTenantBranding'
 
 const STAFF_RAIL_STORAGE_KEY = 'db-staff-rail-expanded'
+const CustomersPage = lazy(() => import('@/features/customers/CustomersPage'))
+const RepairOrdersPage = lazy(() => import('@/features/repair-orders/RepairOrdersPage'))
+const MyGaragePage = lazy(() => import('@/features/garage/MyGaragePage'))
+const DashboardHome = lazy(() => import('@/features/dashboard/DashboardHome'))
+const UnifiedSettingsPage = lazy(() => import('@/features/dashboard/UnifiedSettingsPage'))
+const PlatformDashboard = lazy(() => import('@/features/platform-admin/PlatformDashboard'))
+const GaragesPage = lazy(() => import('@/features/platform-admin/GaragesPage'))
+const GarageAnalyticsPage = lazy(() => import('@/features/platform-admin/GarageAnalyticsPage'))
+const PlatformAnalyticsPage = lazy(() => import('@/features/platform-admin/PlatformAnalyticsPage'))
+const PendingEnrollmentsPage = lazy(() => import('@/features/platform-admin/PendingEnrollmentsPage'))
+const PaymentControlCenter = lazy(() => import('@/features/platform-admin/PaymentControlCenter'))
+const MessagesInboxPage = lazy(() => import('@/features/messages/MessagesInboxPage'))
+const MechanicsBoardPage = lazy(() => import('@/features/dashboard/MechanicsBoardPage'))
+const MechanicBoardDetailPage = lazy(() => import('@/features/dashboard/MechanicBoardDetailPage'))
 
 function getInitialStaffRailExpanded() {
   const storedPreference = window.localStorage.getItem(STAFF_RAIL_STORAGE_KEY)
@@ -389,6 +389,7 @@ export default function DashboardLayout() {
             isGarageWorkspaceRoute ? 'overflow-y-auto lg:overflow-hidden' : 'overflow-y-auto'
           }`}
         >
+          <Suspense fallback={<div className="min-h-24" role="status" aria-live="polite">Loading workspace…</div>}>
           <Routes>
             {/* Platform Admin Routes (SUPER_ADMIN only) */}
             {user?.role === 'super_admin' ? (
@@ -421,6 +422,7 @@ export default function DashboardLayout() {
               </>
             )}
           </Routes>
+          </Suspense>
           {/* Spacer so content clears the fixed bottom nav on mobile */}
           <div
             className="db-mobile-nav-spacer md:hidden flex-shrink-0"

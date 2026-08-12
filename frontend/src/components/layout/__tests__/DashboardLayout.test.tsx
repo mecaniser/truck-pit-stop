@@ -56,7 +56,7 @@ describe('DB-035 authenticated staff shell', () => {
     })
   })
 
-  it('expands and collapses the staff rail with accessible persisted controls', () => {
+  it('expands and collapses the staff rail with accessible persisted controls', async () => {
     const { unmount } = renderShell()
 
     const shell = document.querySelector('.db-staff-shell') as HTMLElement
@@ -74,11 +74,12 @@ describe('DB-035 authenticated staff shell', () => {
 
     unmount()
     renderShell()
+    await screen.findByText('Dashboard surface')
     expect(document.querySelector('.db-staff-shell')).toHaveAttribute('data-rail-expanded', 'true')
     expect(screen.getByRole('button', { name: 'Collapse navigation rail' })).toBeInTheDocument()
   })
 
-  it('keeps the full owner identity available in the expanded account area', () => {
+  it('keeps the full owner identity available in the expanded account area', async () => {
     window.localStorage.setItem('db-staff-rail-expanded', '1')
     useAuthStore.setState({
       user: {
@@ -89,6 +90,7 @@ describe('DB-035 authenticated staff shell', () => {
     })
 
     renderShell()
+    await screen.findByText('Dashboard surface')
 
     const account = screen.getByLabelText('Account')
     expect(within(account).getByRole('link', {
@@ -97,8 +99,9 @@ describe('DB-035 authenticated staff shell', () => {
     expect(within(account).getByText('Maximilian Montgomery-Fields')).toBeInTheDocument()
   })
 
-  it('renders DieselBridge first and keeps tenant identity subordinate in the new shell', () => {
+  it('renders DieselBridge first and keeps tenant identity subordinate in the new shell', async () => {
     renderShell()
+    await screen.findByText('Dashboard surface')
 
     const shell = document.querySelector('.db-staff-shell')
     expect(shell).toHaveClass('db-presentation-new')
@@ -127,8 +130,9 @@ describe('DB-035 authenticated staff shell', () => {
     expect(screen.getByText('Dashboard surface')).toBeInTheDocument()
   })
 
-  it('uses Shop Work for every new-presentation navigation form while preserving /dashboard', () => {
+  it('uses Shop Work for every new-presentation navigation form while preserving /dashboard', async () => {
     renderShell('/dashboard/repair-orders')
+    await screen.findByText('Repair Orders surface')
 
     const desktop = document.querySelector('.db-staff-primary-nav') as HTMLElement
     const links = within(desktop).getAllByRole('link')
@@ -150,9 +154,10 @@ describe('DB-035 authenticated staff shell', () => {
     expect(screen.getByText('Repair Orders surface')).toBeInTheDocument()
   })
 
-  it('preserves the legacy shell as the immediate presentation rollback', () => {
+  it('preserves the legacy shell as the immediate presentation rollback', async () => {
     shellState.presentationVariant = 'legacy'
     renderShell('/dashboard/repair-orders')
+    await screen.findByText('Repair Orders surface')
 
     const shell = document.querySelector('.db-staff-shell')
     expect(shell).toHaveClass('db-presentation-legacy')
