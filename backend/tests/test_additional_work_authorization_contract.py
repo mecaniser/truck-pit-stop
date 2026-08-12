@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from starlette.requests import Request
 
 from app.api.v1.endpoints import quotes, repair_orders
+from app.core.dependencies import RequestUserPrincipal
 from app.db.models.customer import Customer
 from app.db.models.inventory import Inventory
 from app.db.models.labor import Labor, LaborLineType
@@ -184,10 +185,15 @@ async def _seed_authorization(
     )
     db.add(quote)
     await db.commit()
+    customer_principal = RequestUserPrincipal(
+        identity=customer_user,
+        tenant_id=tenant.id,
+        customer_id=customer.id,
+    )
     return {
         "tenant": tenant,
         "customer": customer,
-        "customer_user": customer_user,
+        "customer_user": customer_principal,
         "vehicle": vehicle,
         "roles": roles,
         "order": order,

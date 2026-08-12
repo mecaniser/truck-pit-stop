@@ -10,6 +10,7 @@ from app.core.security import decode_token
 from app.core.redis import get_auth_token_state
 from app.db.models.user import User, UserRole
 from app.db.models.user_customer_link import UserCustomerLink
+from app.db.models.customer import Customer
 from app.db.models.tenant import Tenant
 
 security = HTTPBearer(auto_error=False)
@@ -129,11 +130,15 @@ async def get_current_user(
     # changing the session-attached provider-neutral User identity.
     if user.role == UserRole.CUSTOMER and tenant_id_claim:
         link_result = await db.execute(
-            select(UserCustomerLink).where(
+            select(UserCustomerLink)
+            .join(Customer, Customer.id == UserCustomerLink.customer_id)
+            .where(
                 and_(
                     UserCustomerLink.user_id == user.id,
                     UserCustomerLink.tenant_id == tenant_id_claim,
                     UserCustomerLink.deleted_at.is_(None),
+                    Customer.tenant_id == UserCustomerLink.tenant_id,
+                    Customer.deleted_at.is_(None),
                 )
             )
         )

@@ -92,9 +92,9 @@ async def _add_order(
     return order, customer
 
 
-def _headers(user_id: UUID) -> dict[str, str]:
+def _headers(user_id: UUID, *, tenant_id: UUID | None = None) -> dict[str, str]:
     return {
-        "Authorization": f"Bearer {create_access_token({'sub': str(user_id)})}"
+        "Authorization": f"Bearer {create_access_token({'sub': str(user_id)}, tenant_id=str(tenant_id) if tenant_id else None)}"
     }
 
 
@@ -261,6 +261,7 @@ async def test_draft_quote_read_enforces_complete_role_and_tenant_matrix(
     )
     await db_session.commit()
 
+    tenant_id = tenant.id
     order_id = order.id
     foreign_order_id = foreign_order.id
     deleted_order_id = deleted_order.id
@@ -315,8 +316,14 @@ async def test_draft_quote_read_enforces_complete_role_and_tenant_matrix(
         assert "private" not in response.text.lower()
 
     history_url = f"/api/v1/quotes/repair-order/{order_id}/history"
-    for customer_id in (direct_customer_id, linked_customer_id):
-        response = await client.get(history_url, headers=_headers(customer_id))
+    for customer_id, selected_tenant_id in (
+        (direct_customer_id, None),
+        (linked_customer_id, tenant_id),
+    ):
+        response = await client.get(
+            history_url,
+            headers=_headers(customer_id, tenant_id=selected_tenant_id),
+        )
         assert response.status_code == 200
         revisions = response.json()["revisions"]
         assert [revision["id"] for revision in revisions] == [str(sent_quote_id)]

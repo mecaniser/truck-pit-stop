@@ -8,7 +8,7 @@ from uuid import uuid4
 
 import httpx
 import pytest
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from app.core.security import create_access_token
@@ -16,6 +16,8 @@ from app.core.dependencies import RequestUserPrincipal
 from app.db.models.customer import Customer
 from app.db.models.quote import Quote
 from app.db.models.repair_order import RepairOrder, RepairOrderStatus
+from app.db.models.repair_order_history import RepairOrderHistoryEvent
+from app.db.models.provider_outbox import ProviderOutboxEvent
 from app.db.models.tenant import Tenant
 from app.db.models.user import User, UserRole
 from app.db.models.user_customer_link import UserCustomerLink
@@ -136,6 +138,7 @@ async def test_linked_customer_context_never_persists_through_authorization_comm
     factory = async_sessionmaker(engine, expire_on_commit=False)
     original_override = app.dependency_overrides.get(get_db)
     websocket_events: list[dict] = []
+    linked_customer_gate_orders: list[object] = []
 
     async def _postgres_db():
         async with factory() as db:
@@ -143,6 +146,16 @@ async def test_linked_customer_context_never_persists_through_authorization_comm
 
     async def _capture_websocket(**event):
         websocket_events.append(event)
+
+    original_require_linked_customer = quotes._require_linked_customer
+
+    async def _capture_linked_customer_gate(db, *, current_user, order):
+        linked_customer_gate_orders.append(order.id)
+        return await original_require_linked_customer(
+            db,
+            current_user=current_user,
+            order=order,
+        )
 
     fake_redis = FakeRedis()
 
@@ -157,6 +170,11 @@ async def test_linked_customer_context_never_persists_through_authorization_comm
         quotes,
         "broadcast_repair_order_update",
         _capture_websocket,
+    )
+    monkeypatch.setattr(
+        quotes,
+        "_require_linked_customer",
+        _capture_linked_customer_gate,
     )
     monkeypatch.setattr(
         dependencies_module,
@@ -271,6 +289,11 @@ async def test_linked_customer_context_never_persists_through_authorization_comm
                         tenant_id=tenant_a.id,
                     ),
                     UserCustomerLink(
+                        user_id=linked_approve.id,
+                        customer_id=foreign_customer.id,
+                        tenant_id=tenant_b.id,
+                    ),
+                    UserCustomerLink(
                         user_id=linked_collision.id,
                         customer_id=collision_customer.id,
                         tenant_id=tenant_a.id,
@@ -286,6 +309,7 @@ async def test_linked_customer_context_never_persists_through_authorization_comm
 
             ids = {
                 "tenant_a": tenant_a.id,
+                "tenant_b": tenant_b.id,
                 "linked_approve": linked_approve.id,
                 "linked_collision": linked_collision.id,
                 "direct_collision": direct_collision.id,
@@ -305,6 +329,29 @@ async def test_linked_customer_context_never_persists_through_authorization_comm
         approve_headers = _headers(ids["linked_approve"], ids["tenant_a"])
         collision_headers = _headers(ids["linked_collision"], ids["tenant_a"])
         decline_headers = _headers(ids["linked_decline"], ids["tenant_a"])
+
+        async with factory() as db:
+            foreign_quote_before = await db.get(Quote, ids["foreign_quote"])
+            foreign_order_before = await db.get(RepairOrder, ids["foreign_order"])
+            assert foreign_quote_before is not None
+            assert foreign_order_before is not None
+            foreign_effects_before = {
+                "quote_approved": foreign_quote_before.is_approved,
+                "quote_declined": foreign_quote_before.is_declined,
+                "quote_total": foreign_quote_before.total_amount,
+                "order_total": foreign_order_before.total_cost,
+                "history": (
+                    await db.execute(
+                        select(func.count(RepairOrderHistoryEvent.id)).where(
+                            RepairOrderHistoryEvent.repair_order_id
+                            == ids["foreign_order"]
+                        )
+                    )
+                ).scalar_one(),
+                "outbox": (
+                    await db.execute(select(func.count(ProviderOutboxEvent.id)))
+                ).scalar_one(),
+            }
 
         transport = httpx.ASGITransport(app=app)
         async with httpx.AsyncClient(
@@ -351,6 +398,124 @@ async def test_linked_customer_context_never_persists_through_authorization_comm
             assert cross_tenant.status_code == 404
             assert "foreign" not in cross_tenant.text.lower()
             assert len(websocket_events) == successful_event_count
+            assert ids["foreign_order"] not in linked_customer_gate_orders
+
+            foreign_history = await client.get(
+                f"/api/v1/quotes/repair-order/{ids['foreign_order']}/history",
+                headers=approve_headers,
+            )
+            assert foreign_history.status_code == 404
+            assert foreign_history.json()["detail"] == "Repair order not found"
+            assert ids["foreign_order"] not in linked_customer_gate_orders
+
+            async with factory() as db:
+                denied_quote = await db.get(Quote, ids["foreign_quote"])
+                denied_order = await db.get(RepairOrder, ids["foreign_order"])
+                assert denied_quote is not None
+                assert denied_order is not None
+                assert {
+                    "quote_approved": denied_quote.is_approved,
+                    "quote_declined": denied_quote.is_declined,
+                    "quote_total": denied_quote.total_amount,
+                    "order_total": denied_order.total_cost,
+                    "history": (
+                        await db.execute(
+                            select(func.count(RepairOrderHistoryEvent.id)).where(
+                                RepairOrderHistoryEvent.repair_order_id
+                                == ids["foreign_order"]
+                            )
+                        )
+                    ).scalar_one(),
+                    "outbox": (
+                        await db.execute(select(func.count(ProviderOutboxEvent.id)))
+                    ).scalar_one(),
+                } == foreign_effects_before
+            assert len(websocket_events) == successful_event_count
+
+            selected_b_headers = _headers(ids["linked_approve"], ids["tenant_b"])
+            selected_b_history = await client.get(
+                f"/api/v1/quotes/repair-order/{ids['foreign_order']}/history",
+                headers=selected_b_headers,
+            )
+            assert selected_b_history.status_code == 200
+            assert [item["id"] for item in selected_b_history.json()["revisions"]] == [
+                str(ids["foreign_quote"])
+            ]
+
+            selected_b_approved = await client.post(
+                f"/api/v1/quotes/{ids['foreign_quote']}/approve",
+                headers=selected_b_headers,
+            )
+            assert selected_b_approved.status_code == 200
+            assert selected_b_approved.json()["is_approved"] is True
+
+            selected_b_target_a = await client.get(
+                f"/api/v1/quotes/repair-order/{ids['approve_order']}/history",
+                headers=selected_b_headers,
+            )
+            assert selected_b_target_a.status_code == 404
+            assert selected_b_target_a.json()["detail"] == "Repair order not found"
+
+            async with factory() as db:
+                selected_b_link = (
+                    await db.execute(
+                        select(UserCustomerLink).where(
+                            UserCustomerLink.user_id == ids["linked_approve"],
+                            UserCustomerLink.tenant_id == ids["tenant_b"],
+                        )
+                    )
+                ).scalar_one()
+                selected_b_link.deleted_at = datetime.now(timezone.utc)
+                await db.commit()
+
+            deleted_link = await client.get(
+                f"/api/v1/quotes/repair-order/{ids['foreign_order']}/history",
+                headers=selected_b_headers,
+            )
+            assert deleted_link.status_code == 403
+            assert deleted_link.json()["detail"] == "Shop access denied"
+
+            async with factory() as db:
+                selected_b_link = (
+                    await db.execute(
+                        select(UserCustomerLink).where(
+                            UserCustomerLink.user_id == ids["linked_approve"],
+                            UserCustomerLink.tenant_id == ids["tenant_b"],
+                        )
+                    )
+                ).scalar_one()
+                selected_b_link.deleted_at = None
+                selected_b_link.customer_id = ids["approve_customer"]
+                await db.commit()
+
+            mismatched_link = await client.get(
+                f"/api/v1/quotes/repair-order/{ids['foreign_order']}/history",
+                headers=selected_b_headers,
+            )
+            assert mismatched_link.status_code == 403
+            assert mismatched_link.json()["detail"] == "Shop access denied"
+
+            async with factory() as db:
+                selected_b_link = (
+                    await db.execute(
+                        select(UserCustomerLink).where(
+                            UserCustomerLink.user_id == ids["linked_approve"],
+                            UserCustomerLink.tenant_id == ids["tenant_b"],
+                        )
+                    )
+                ).scalar_one()
+                selected_b_link.customer_id = ids["foreign_customer"]
+                selected_b_customer = await db.get(Customer, ids["foreign_customer"])
+                assert selected_b_customer is not None
+                selected_b_customer.deleted_at = datetime.now(timezone.utc)
+                await db.commit()
+
+            deleted_customer = await client.get(
+                f"/api/v1/quotes/repair-order/{ids['foreign_order']}/history",
+                headers=selected_b_headers,
+            )
+            assert deleted_customer.status_code == 403
+            assert deleted_customer.json()["detail"] == "Shop access denied"
 
             current_identity = await client.get(
                 "/api/v1/auth/me",
@@ -401,11 +566,25 @@ async def test_linked_customer_context_never_persists_through_authorization_comm
             assert direct.customer_id == ids["collision_customer"]
             persisted_foreign = await db.get(Quote, ids["foreign_quote"])
             assert persisted_foreign is not None
-            assert persisted_foreign.is_approved is False
+            assert persisted_foreign.is_approved is True
             persisted_approved = await db.get(Quote, ids["approve_quote"])
             assert persisted_approved is not None
             assert persisted_approved.is_approved is True
             assert persisted_approved.is_declined is False
+
+            # Both successful selected contexts committed without projecting
+            # either shop/customer pair onto the provider-neutral User row.
+            selected_identity = await db.get(User, ids["linked_approve"])
+            assert selected_identity is not None
+            assert selected_identity.tenant_id is None
+            assert selected_identity.customer_id is None
+            await db.rollback()
+
+        async with factory() as fresh_db:
+            fresh_identity = await fresh_db.get(User, ids["linked_approve"])
+            assert fresh_identity is not None
+            assert fresh_identity.tenant_id is None
+            assert fresh_identity.customer_id is None
 
         assert websocket_events
     finally:

@@ -52,7 +52,10 @@ from app.services.quote_access_service import (
     QUOTE_PORTAL_ENROLLMENT_TOKEN_TTL_SECONDS,
     generate_quote_portal_enrollment_token,
 )
-from app.services.repair_order_access import tenant_repair_order_statement
+from app.services.repair_order_access import (
+    selected_customer_repair_order_scope,
+    tenant_repair_order_statement,
+)
 
 router = APIRouter()
 
@@ -384,21 +387,15 @@ async def _require_linked_customer(
             detail="Only the linked customer may approve or decline an authorization",
         )
 
-    if current_user.customer_id == order.customer_id and current_user.tenant_id == order.tenant_id:
+    # Authentication already proves that a linked request principal's selected
+    # pair has an active, non-deleted link. Authorization must use only that
+    # pair: another active shop link must never widen the current request.
+    if (
+        current_user.customer_id == order.customer_id
+        and current_user.tenant_id == order.tenant_id
+    ):
         return
-
-    link = (
-        await db.execute(
-            select(UserCustomerLink).where(
-                UserCustomerLink.user_id == current_user.id,
-                UserCustomerLink.customer_id == order.customer_id,
-                UserCustomerLink.tenant_id == order.tenant_id,
-                UserCustomerLink.deleted_at.is_(None),
-            )
-        )
-    ).scalar_one_or_none()
-    if not link:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Quote not found")
+    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Quote not found")
 
 
 def _set_auth_cookies(response: Response, access_token: str, refresh_token: str):
@@ -668,6 +665,10 @@ async def _load_customer_decision_context(
     ]
     if current_user.role != UserRole.CUSTOMER:
         filters.append(RepairOrder.tenant_id == current_user.tenant_id)
+    else:
+        # Apply the selected principal before materializing Quote/RepairOrder;
+        # the post-load gate remains defense in depth for direct callers.
+        filters.append(selected_customer_repair_order_scope(current_user))
 
     query = (
         select(Quote, RepairOrder)
