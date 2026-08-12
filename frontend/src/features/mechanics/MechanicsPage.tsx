@@ -457,7 +457,7 @@ export default function MechanicsPage() {
 
   return (
     <>
-    <div className="space-y-6">
+    <div className="db-team-workspace space-y-6">
       {user?.role !== 'garage_owner' && user?.role !== 'garage_admin' ? (
         <div className="bg-white/5 rounded-xl p-6 border border-white/10">
           <h1 className="text-lg font-semibold text-white mb-2">Team</h1>
@@ -869,7 +869,13 @@ export default function MechanicsPage() {
                 <button
                   type="button"
                   onClick={handleCloseDrawer}
-                  className="p-2 text-gray-500 hover:text-amber-600 rounded-full hover:bg-amber-50"
+                  className={[
+                    'p-2',
+                    'text-gray-500',
+                    'hover:text-amber-700',
+                    'rounded-full',
+                    'hover:bg-amber-50',
+                  ].join(' ')}
                 >
                   <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />

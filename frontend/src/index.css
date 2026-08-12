@@ -809,6 +809,35 @@ html::-webkit-scrollbar-thumb:hover {
   }
 }
 
+/* Team records keep their real management and work actions, while their
+   legacy dark surfaces inherit the selected authenticated appearance. */
+.db-presentation-new .db-team-workspace {
+  color: var(--workspace-text);
+}
+
+.db-presentation-new .db-team-workspace :is(.bg-white\/5, .bg-white\/10) {
+  border-color: var(--workspace-border) !important;
+  background-color: var(--surface-raised) !important;
+}
+
+.db-presentation-new .db-team-workspace :is(.border-white\/10, .border-white\/15, .border-white\/20) {
+  border-color: var(--workspace-border) !important;
+}
+
+.db-presentation-new .db-team-workspace :is(.text-white, .text-gray-100, .text-gray-200, .text-gray-300) {
+  color: var(--workspace-text) !important;
+}
+
+.db-presentation-new .db-team-workspace :is(.text-gray-400, .text-gray-500, .text-gray-600) {
+  color: var(--workspace-muted) !important;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .db-presentation-new .db-team-workspace tbody tr:hover {
+    background-color: var(--surface-raised);
+  }
+}
+
 /* Retained settings navigation inherits legacy zinc utilities. New presentation
    keeps its active, hover, and keyboard focus states in the current accent ramp. */
 .db-presentation-new .db-settings-nav-item[data-active='true'] {
