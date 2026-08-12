@@ -215,7 +215,7 @@ export default function SuppliersPage() {
   const isSaving = createMutation.isPending || updateMutation.isPending
 
   return (
-    <div className="space-y-5">
+    <div className="db-suppliers-workspace space-y-5">
       <div className="space-y-3">
         <SearchAddBar
           value={search}
@@ -234,7 +234,7 @@ export default function SuppliersPage() {
           </div>
         )}
 
-          <div className="bg-white/5 border border-white/10 rounded-xl overflow-hidden">
+          <div className="db-suppliers-workspace__ledger bg-white/5 border border-white/10 rounded-xl overflow-hidden">
             <div className="hidden sm:flex items-center justify-start px-4 py-3 border-b border-white/10">
               <ViewToggle value={activeViewMode} onChange={setViewMode} />
             </div>
@@ -354,7 +354,7 @@ export default function SuppliersPage() {
                             <td className="px-4 py-3 font-semibold text-white">{supplier.name}</td>
                             <td className="px-4 py-3 text-gray-200">
                               {(supplier.contact_name || supplier.phone) ? (
-                                <div className="inline-flex flex-wrap items-center gap-2 px-3 py-2 rounded-lg bg-white/10 border border-white/10 text-xs min-w-[150px]">
+                                <div className="db-suppliers-workspace__contact inline-flex flex-wrap items-center gap-2 px-3 py-2 rounded-lg bg-white/10 border border-white/10 text-xs min-w-[150px]">
                                   <span className="inline-flex items-center gap-1">
                                     <UserRound className="w-3.5 h-3.5" />
                                     {supplier.contact_name || 'Contact not set'}

@@ -646,6 +646,45 @@ html::-webkit-scrollbar-thumb:hover {
   stroke-opacity: 0.72;
 }
 
+/* Suppliers is a canonical CRUD ledger. Keep its searchable list and actions,
+   but resolve every retained dark utility to the active operating surface. */
+.db-presentation-new .db-suppliers-workspace {
+  color: var(--workspace-text);
+}
+
+.db-presentation-new .db-suppliers-workspace__ledger {
+  border-color: var(--workspace-border) !important;
+  background: var(--surface-overlay) !important;
+}
+
+.db-presentation-new .db-suppliers-workspace__ledger :is(thead, tr[class*='bg-']) {
+  background: var(--surface-raised) !important;
+}
+
+.db-presentation-new .db-suppliers-workspace__ledger :is(.divide-white\/10, .divide-white\/5) > :not([hidden]) ~ :not([hidden]),
+.db-presentation-new .db-suppliers-workspace__ledger :is(.border-white\/10, .border-white\/15) {
+  border-color: var(--workspace-border) !important;
+}
+
+.db-presentation-new .db-suppliers-workspace :is(.text-white, .text-gray-100, .text-gray-200, .text-gray-300) {
+  color: var(--workspace-text) !important;
+}
+
+.db-presentation-new .db-suppliers-workspace :is(.text-gray-400, .text-gray-500, [class*='text-white/']) {
+  color: var(--workspace-muted) !important;
+}
+
+.db-presentation-new .db-suppliers-workspace__contact {
+  border-color: var(--workspace-border) !important;
+  background: var(--surface-overlay) !important;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .db-presentation-new .db-suppliers-workspace__ledger tbody > tr:hover {
+    background: var(--surface-raised) !important;
+  }
+}
+
 /* Retained settings navigation inherits legacy zinc utilities. New presentation
    keeps its active, hover, and keyboard focus states in the current accent ramp. */
 .db-presentation-new .db-settings-nav-item[data-active='true'] {
