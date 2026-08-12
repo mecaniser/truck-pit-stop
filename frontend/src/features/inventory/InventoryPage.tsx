@@ -1134,7 +1134,9 @@ export default function InventoryPage() {
             <div className="inline-flex items-center bg-white/10 border border-white/15 rounded-lg p-0.5">
               <button
                 onClick={() => setStockSort('none')}
-                className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors whitespace-nowrap ${
+                className={`db-inventory-stock-sort px-2.5 py-1 rounded-md text-xs font-medium transition-colors whitespace-nowrap ${
+                  stockSort === 'none' ? 'db-inventory-stock-sort--selected' : ''
+                } ${
                   stockSort === 'none' ? 'text-white' : 'text-white hover:bg-white/20'
                 }`}
                 style={stockSort === 'none' ? { backgroundColor: accentColors[500] } : undefined}
@@ -1143,7 +1145,9 @@ export default function InventoryPage() {
               </button>
               <button
                 onClick={() => setStockSort('low-high')}
-                className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors whitespace-nowrap ${
+                className={`db-inventory-stock-sort px-2.5 py-1 rounded-md text-xs font-medium transition-colors whitespace-nowrap ${
+                  stockSort === 'low-high' ? 'db-inventory-stock-sort--selected' : ''
+                } ${
                   stockSort === 'low-high' ? 'text-white' : 'text-white hover:bg-white/20'
                 }`}
                 style={stockSort === 'low-high' ? { backgroundColor: accentColors[500] } : undefined}
@@ -1152,7 +1156,9 @@ export default function InventoryPage() {
               </button>
               <button
                 onClick={() => setStockSort('high-low')}
-                className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors whitespace-nowrap ${
+                className={`db-inventory-stock-sort px-2.5 py-1 rounded-md text-xs font-medium transition-colors whitespace-nowrap ${
+                  stockSort === 'high-low' ? 'db-inventory-stock-sort--selected' : ''
+                } ${
                   stockSort === 'high-low' ? 'text-white' : 'text-white hover:bg-white/20'
                 }`}
                 style={stockSort === 'high-low' ? { backgroundColor: accentColors[500] } : undefined}

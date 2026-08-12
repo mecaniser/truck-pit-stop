@@ -725,6 +725,13 @@ html::-webkit-scrollbar-thumb:hover {
   color: var(--workspace-text) !important;
 }
 
+/* A selected stock-sort option carries the tenant accent. Keep its foreground
+   anchored to the semantic on-accent color rather than the road-white ledger
+   foreground above. */
+.db-presentation-new .db-staff-content .db-inventory-workspace .db-inventory-stock-sort--selected {
+  color: #fff !important;
+}
+
 .db-presentation-new .db-inventory-workspace :is(.text-gray-400, .text-gray-500, [class*='text-white/']) {
   color: var(--workspace-muted) !important;
 }
