@@ -925,6 +925,9 @@ html::-webkit-scrollbar-thumb:hover {
   .db-presentation-new.db-staff-shell[data-rail-expanded='true'] .db-workspace-context { justify-content: flex-start; }
   .db-presentation-new.db-staff-shell[data-rail-expanded='true'] .db-workspace-context__logo { max-width: 72px; }
   .db-presentation-new.db-staff-shell[data-rail-expanded='true'] .db-workspace-context__name { max-width: 18ch; display: block; font-size: 11px; text-align: left; }
+  /* The state abbreviation belongs to the compact scan state. Once the rail
+     expands, the full tenant name is the single human-readable identity. */
+  .db-presentation-new.db-staff-shell[data-rail-expanded='true'] .db-workspace-context__state { display: none; }
   .db-presentation-new.db-staff-shell[data-rail-expanded='true'] .db-staff-primary-nav > a { justify-content: flex-start; padding-inline: 13px; }
   .db-presentation-new.db-staff-shell[data-rail-expanded='true'] .db-staff-primary-nav > a > span { gap: 10px; }
   .db-presentation-new.db-staff-shell[data-rail-expanded='true'] .db-staff-primary-nav__label { position: static; width: auto; height: auto; overflow: visible; clip: auto; white-space: normal; }
