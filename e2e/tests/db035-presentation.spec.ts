@@ -101,10 +101,17 @@ test('Harden preserves the canonical Shop Cockpit queues and repair-order deep l
     await installSession(page, variant)
     await page.goto('/dashboard')
 
-    await expect(page.getByText('Work Queue', { exact: true })).toBeVisible()
-    await expect(page.getByRole('heading', { name: 'Needs Action' })).toBeVisible()
-    await expect(page.getByRole('heading', { name: 'On the Floor' })).toBeVisible()
-    await expect(page.getByRole('heading', { name: 'Ready to Close' })).toBeVisible()
+    if (variant === 'new') {
+      await expect(page.getByRole('heading', { name: 'Action Ledger' })).toBeVisible()
+      await expect(page.getByRole('tab', { name: /Needs Action 1/ })).toBeVisible()
+      await expect(page.getByRole('tab', { name: /On the Floor 1/ })).toBeVisible()
+      await expect(page.getByRole('tab', { name: /Ready to Close 1/ })).toBeVisible()
+    } else {
+      await expect(page.getByText('Work Queue', { exact: true })).toBeVisible()
+      await expect(page.getByRole('heading', { name: 'Needs Action' })).toBeVisible()
+      await expect(page.getByRole('heading', { name: 'On the Floor' })).toBeVisible()
+      await expect(page.getByRole('heading', { name: 'Ready to Close' })).toBeVisible()
+    }
     await expect(page.getByText('Today’s work', { exact: true })).toHaveCount(0)
     await expect(page.getByText('Follow-through', { exact: true })).toHaveCount(0)
     await expect(page.getByRole('button', { name: 'Lightning Order' })).toBeVisible()
@@ -125,7 +132,7 @@ async function openAppearance(page: Page, variant: 'legacy' | 'new') {
 test('new staff presentation preserves product/shop hierarchy and responsive appearance controls', async ({ page }) => {
   await openAppearance(page, 'new')
   await expect(page.locator('.db-staff-shell')).toHaveAttribute('data-presentation', 'new')
-  await expect(page.getByLabel('DieselBridge dashboard')).toBeVisible()
+  await expect(page.getByLabel('DieselBridge Shop Work')).toBeVisible()
   await expect(page.getByLabel('Active shop: Truck Pit Stop Wisconsin')).toBeVisible()
   await expect(page.getByRole('heading', { name: 'Appearance' })).toBeVisible()
   await expect(page.getByText('Ready to close')).toHaveCSS('color', 'rgb(16, 185, 129)')
@@ -157,12 +164,13 @@ test('new shell uses a full desktop rail, compact iPad rail, and source-grounded
   await installSession(page, 'new')
   await page.goto('/dashboard')
 
-  for (const [width, expectedRail] of [[1280, 224], [1024, 176]] as const) {
+  for (const [width, expectedRail] of [[1280, 224], [1024, 84]] as const) {
     await page.setViewportSize({ width, height: 900 })
     const rail = await page.locator('.db-staff-nav').boundingBox()
     expect(rail?.width ?? 0).toBeGreaterThanOrEqual(expectedRail - 1)
     expect(rail?.width ?? 0).toBeLessThanOrEqual(expectedRail + 1)
     await expect(page.locator('.db-mobile-nav')).toBeHidden()
+    if (width < 1280) await expect(page.getByRole('button', { name: /navigation rail/i })).toHaveCount(0)
     await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true)
   }
 
@@ -198,7 +206,7 @@ test('legacy and new resolve from bootstrap without changing the staff route', a
       await page.screenshot({ path: '/tmp/db035-legacy-appearance-1366.png', fullPage: true })
     }
     else {
-      await expect(page.getByLabel('DieselBridge dashboard')).toBeVisible()
+      await expect(page.getByLabel('DieselBridge Shop Work')).toBeVisible()
       await expect(page.getByRole('heading', { name: 'Appearance' })).toBeVisible()
     }
     results.push({ variant, path: new URL(page.url()).pathname, requests: [...new Set(requests)].sort() })

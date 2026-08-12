@@ -34,11 +34,16 @@ function getInitialStaffRailExpanded() {
   return typeof window.matchMedia === 'function' && window.matchMedia('(min-width: 1280px)').matches
 }
 
+function getStaffRailCanExpand() {
+  return typeof window.matchMedia === 'function' && window.matchMedia('(min-width: 1280px)').matches
+}
+
 export default function DashboardLayout() {
   const { user } = useAuthStore()
   const location = useLocation()
   const [mobileNavPage, setMobileNavPage] = useState<'primary' | 'secondary'>('primary')
   const [staffRailExpanded, setStaffRailExpanded] = useState(getInitialStaffRailExpanded)
+  const [staffRailCanExpand, setStaffRailCanExpand] = useState(getStaffRailCanExpand)
   const mobileNavTouchStart = useRef<{ x: number; y: number } | null>(null)
   const suppressMobileNavClick = useRef(false)
   const { accentColors, presentationVariant } = useTheme()
@@ -195,6 +200,16 @@ export default function DashboardLayout() {
   // Garage users get BlueNoir theme
   const isGarageUser = !isSuperAdmin
   const showStaffRailToggle = presentationVariant === 'new' && isGarageUser
+  const isStaffRailExpanded = showStaffRailToggle && staffRailCanExpand && staffRailExpanded
+
+  useEffect(() => {
+    if (typeof window.matchMedia !== 'function') return
+    const query = window.matchMedia('(min-width: 1280px)')
+    const updateRailCapability = () => setStaffRailCanExpand(query.matches)
+    updateRailCapability()
+    query.addEventListener?.('change', updateRailCapability)
+    return () => query.removeEventListener?.('change', updateRailCapability)
+  }, [])
 
   const toggleStaffRail = () => {
     setStaffRailExpanded((expanded) => {
@@ -209,7 +224,7 @@ export default function DashboardLayout() {
       className={`db-staff-shell db-presentation-${presentationVariant} h-screen overflow-hidden ${isGarageUser ? 'bg-blueNoir-900' : ''}`}
       data-presentation={presentationVariant}
       data-surface={getCurrentPageLabel().toLowerCase().replace(/\s+/g, '-') || 'dashboard'}
-      data-rail-expanded={showStaffRailToggle ? String(staffRailExpanded) : undefined}
+      data-rail-expanded={showStaffRailToggle ? String(isStaffRailExpanded) : undefined}
     >
       <nav className={`db-staff-nav sticky top-0 z-50 ${
         isSuperAdmin 
@@ -335,17 +350,17 @@ export default function DashboardLayout() {
                       style={{ backgroundColor: '#34d399', borderColor: isSuperAdmin ? '#0a0b0d' : '#10151f' }}
                     />
                   </Link>
-                  {showStaffRailToggle && (
+                  {showStaffRailToggle && staffRailCanExpand && (
                     <button
                       type="button"
                       className="db-staff-nav__rail-toggle"
                       onClick={toggleStaffRail}
-                      aria-expanded={staffRailExpanded}
+                      aria-expanded={isStaffRailExpanded}
                       aria-controls="db-staff-primary-navigation"
-                      aria-label={staffRailExpanded ? 'Collapse navigation rail' : 'Expand navigation rail'}
-                      title={staffRailExpanded ? 'Collapse navigation rail' : 'Expand navigation rail'}
+                      aria-label={isStaffRailExpanded ? 'Collapse navigation rail' : 'Expand navigation rail'}
+                      title={isStaffRailExpanded ? 'Collapse navigation rail' : 'Expand navigation rail'}
                     >
-                      {staffRailExpanded ? (
+                      {isStaffRailExpanded ? (
                         <ChevronsLeft className="h-4 w-4" aria-hidden="true" />
                       ) : (
                         <ChevronsRight className="h-4 w-4" aria-hidden="true" />

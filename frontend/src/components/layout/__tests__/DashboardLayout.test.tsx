@@ -46,6 +46,14 @@ function renderShell(path = '/dashboard') {
 describe('DB-035 authenticated staff shell', () => {
   beforeEach(() => {
     window.localStorage.clear()
+    Object.defineProperty(window, 'matchMedia', {
+      configurable: true,
+      value: vi.fn().mockImplementation(() => ({
+        matches: true,
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+      })),
+    })
     shellState.presentationVariant = 'new'
     useAuthStore.setState({
       user: { ...garageOwnerSession, messaging_enabled: true } as never,
@@ -57,6 +65,7 @@ describe('DB-035 authenticated staff shell', () => {
   })
 
   it('expands and collapses the staff rail with accessible persisted controls', async () => {
+    window.localStorage.setItem('db-staff-rail-expanded', '0')
     const { unmount } = renderShell()
 
     const shell = document.querySelector('.db-staff-shell') as HTMLElement
@@ -97,6 +106,24 @@ describe('DB-035 authenticated staff shell', () => {
       name: 'Open profile settings for Maximilian Montgomery-Fields',
     })).toBeInTheDocument()
     expect(within(account).getByText('Maximilian Montgomery-Fields')).toBeInTheDocument()
+  })
+
+  it('uses the compact rail at iPad widths while preserving the desktop preference', () => {
+    Object.defineProperty(window, 'matchMedia', {
+      configurable: true,
+      value: vi.fn().mockImplementation(() => ({
+        matches: false,
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+      })),
+    })
+    window.localStorage.setItem('db-staff-rail-expanded', '1')
+
+    renderShell()
+
+    expect(document.querySelector('.db-staff-shell')).toHaveAttribute('data-rail-expanded', 'false')
+    expect(screen.queryByRole('button', { name: /navigation rail/i })).not.toBeInTheDocument()
+    expect(window.localStorage.getItem('db-staff-rail-expanded')).toBe('1')
   })
 
   it('renders DieselBridge first and keeps tenant identity subordinate in the new shell', async () => {
