@@ -98,6 +98,7 @@ export default function ShopCockpitActionLedger({
   onFullOrder,
   onRefresh,
   onOpenRecord,
+  initialLaneFilter = 'all',
 }: {
   projection: ActionQueueProjection
   isManager: boolean
@@ -115,6 +116,7 @@ export default function ShopCockpitActionLedger({
   onFullOrder: () => void
   onRefresh: () => void
   onOpenRecord: (id: string, lane: ActionQueueLane) => void
+  initialLaneFilter?: ActionQueueFilter
 }) {
   const lanes = useMemo<LaneDefinition[]>(() => [
     {
@@ -140,10 +142,12 @@ export default function ShopCockpitActionLedger({
     () => lanes.flatMap((lane) => lane.orders.map((order) => ({ order, lane: lane.key }))),
     [lanes],
   )
-  const [laneFilter, setLaneFilter] = useState<ActionQueueFilter>('all')
+  const [laneFilter, setLaneFilter] = useState<ActionQueueFilter>(initialLaneFilter)
   const [searchQuery, setSearchQuery] = useState('')
   const [selected, setSelected] = useState<{ id: string; lane: ActionQueueLane } | null>(() => {
-    const first = allRows[0]
+    const first = initialLaneFilter === 'all'
+      ? allRows[0]
+      : allRows.find(({ lane }) => lane === initialLaneFilter)
     return first ? { id: first.order.id, lane: first.lane } : null
   })
 

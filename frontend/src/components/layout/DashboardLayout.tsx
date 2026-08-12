@@ -21,6 +21,7 @@ import MechanicsBoardPage from '@/features/dashboard/MechanicsBoardPage'
 import MechanicBoardDetailPage from '@/features/dashboard/MechanicBoardDetailPage'
 import type { MessagesUnreadSummary } from '@/types'
 import BrandLogo from '../brand/BrandLogo'
+import DieselBridgeWordmark from '../brand/DieselBridgeWordmark'
 import TenantBrandLogo from '../brand/TenantBrandLogo'
 import useTenantBranding from '@/hooks/useTenantBranding'
 
@@ -204,8 +205,8 @@ export default function DashboardLayout() {
                   <BrandLogo alt="Diesel Bridge Network" variant="admin" className="h-8 sm:h-10 w-auto" />
                 ) : presentationVariant === 'new' ? (
                   <>
-                    <BrandLogo alt="" variant="admin" className="db-product-brand__mark h-8 sm:h-9 w-auto" />
-                    <span className="db-product-brand__name" aria-hidden="true">Diesel<span>Bridge</span></span>
+                    <DieselBridgeWordmark animated showBridge={false} />
+                    <BrandLogo alt="" variant="admin" className="db-product-brand__compact-mark" />
                   </>
                 ) : (
                   <TenantBrandLogo
@@ -231,7 +232,7 @@ export default function DashboardLayout() {
                 </div>
               )}
               {!isSuperAdmin && tenantBranding?.state && (
-                <span className="inline-flex items-center px-2 py-0.5 rounded-full border border-white/10 bg-white/5 text-[11px] font-medium tracking-wide text-gray-300">
+                <span className="db-workspace-context__state inline-flex items-center px-2 py-0.5 rounded-full border border-white/10 bg-white/5 text-[11px] font-medium tracking-wide text-gray-300">
                   {tenantBranding.state}
                 </span>
               )}
@@ -273,7 +274,7 @@ export default function DashboardLayout() {
                   </span>
                 </Link>
               ))}
-              <div className="db-staff-nav__profile">
+              <div className="db-staff-nav__profile" aria-label="Account">
                 <Link
                   to="/dashboard/settings"
                   aria-current={location.pathname === '/dashboard/settings' ? 'page' : undefined}

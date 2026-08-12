@@ -73,6 +73,13 @@ describe('DB-035 authenticated staff shell', () => {
     expect(screen.queryByRole('link', { name: 'Dashboard' })).not.toBeInTheDocument()
     expect(screen.queryByRole('link', { name: 'Home' })).not.toBeInTheDocument()
     expect(screen.getByLabelText('Active shop: Truck Pit Stop Wisconsin')).toHaveTextContent('Truck Pit Stop Wisconsin')
+    const productBrand = screen.getByRole('link', { name: 'DieselBridge Shop Work' })
+    expect(productBrand.querySelector('.db-wordmark--animated.db-wordmark--type-only')).toHaveTextContent('DieselBridge')
+    expect(productBrand.querySelector('.db-wordmark__bridge')).not.toBeInTheDocument()
+    expect(productBrand.querySelector('.db-product-brand__compact-mark')).toBeInTheDocument()
+    expect(document.querySelector('.db-workspace-context__state')).toHaveTextContent('WI')
+    const accountArea = screen.getByLabelText('Account')
+    expect(within(accountArea).getByRole('link', { name: 'Open profile settings for Alex Rivera' })).toHaveAttribute('href', '/dashboard/settings')
     expect(screen.getByText('Dashboard surface')).toBeInTheDocument()
   })
 

@@ -24,6 +24,8 @@ import { useTheme } from '../../contexts/ThemeContext'
 import { useWebSocket } from '../../hooks/useWebSocket'
 import { useAuthStore } from '@/stores/authStore'
 import PriceBuilderPanel from './PriceBuilderPanel'
+import RepairOrdersLedger, { type RepairOrdersLedgerRow } from './RepairOrdersLedger'
+import RepairOrderContextHeader from './RepairOrderContextHeader'
 import SectionInfoTooltip from '@/components/SectionInfoTooltip'
 import SuggestingTextarea from '@/components/SuggestingTextarea'
 import { buildPartHistoryEvents } from './repairOrderHistory'
@@ -245,7 +247,7 @@ function RepairOrderLaborBreakdown({
 
 export default function RepairOrdersPage() {
   const currentUser = useAuthStore((s) => s.user)
-  const { accentColors } = useTheme()
+  const { accentColors, presentationVariant } = useTheme()
   const [searchParams, setSearchParams] = useSearchParams()
   const navigate = useNavigate()
   const location = useLocation()
@@ -429,7 +431,7 @@ export default function RepairOrdersPage() {
     })
     return response.data as { items: RepairOrder[]; total: number; has_more: boolean }
   }
-  const { data: orderPage, isLoading, isPlaceholderData, isFetching } = useQuery({
+  const { data: orderPage, isLoading, isPlaceholderData, isFetching, error: orderPageError } = useQuery({
     queryKey: orderPageKey(page),
     queryFn: ({ signal }) => fetchOrderPage(page, signal),
     placeholderData: keepPreviousData,
@@ -538,6 +540,12 @@ export default function RepairOrdersPage() {
     } else {
       setSearchParams({}, { replace: true })
     }
+  }
+
+  const returnToShopWork = () => {
+    navigate('/dashboard', {
+      state: workQueueLane ? { shopWorkQueue: workQueueLane } : undefined,
+    })
   }
 
   // The ?selected= URL param is the source of truth for the detail panel: it
@@ -1766,6 +1774,32 @@ export default function RepairOrdersPage() {
   }, [pendingPageNav, orders, isPlaceholderData])
 
   if (isLoading) {
+    if (presentationVariant === 'new') {
+      return (
+        <RepairOrdersLedger
+          rows={[]}
+          totalOrders={0}
+          searchQuery={searchQuery}
+          statusFilter={statusFilter}
+          statusOptions={[{ value: 'all', label: 'All' }]}
+          selectedId={searchParams.get('selected')}
+          queueOrigin={workQueueLane}
+          isFetching
+          page={page}
+          pageSize={RO_PAGE_SIZE}
+          hasMore={false}
+          isPlaceholder={false}
+          canGoPrevious={false}
+          onSearchChange={setSearchQuery}
+          onStatusChange={setStatusFilter}
+          onOpenOrder={() => undefined}
+          onCreateOrder={() => undefined}
+          onReturnToShopWork={returnToShopWork}
+          onPreviousPage={() => undefined}
+          onNextPage={() => undefined}
+        />
+      )
+    }
     return (
       <div className="flex flex-col h-full">
         <h1 className="text-xl sm:text-2xl font-bold text-white mb-4 flex-shrink-0">Repair Orders</h1>
@@ -2373,8 +2407,116 @@ export default function RepairOrdersPage() {
     }
   }
 
+  const newPresentationRows: RepairOrdersLedgerRow[] = (filteredOrders ?? []).map((order) => {
+    const display = resolveOrderDisplayStatus(order)
+    const parsedServices = parseServiceNotes(order.internal_notes)
+    const serviceTotal = parsedServices?.reduce(
+      (sum, service) => sum + (parseFloat(service.base_price || '0') || 0),
+      0,
+    ) || 0
+    const partsTotal = parseFloat(order.total_parts_cost ?? '0') || 0
+    const laborTotal = serviceTotal > 0 ? serviceTotal : (parseFloat(order.total_labor_cost ?? '0') || 0)
+    const customer = customerLookup.get(order.customer_id)
+    const vehicle = vehicleLookup.get(order.vehicle_id)
+    const statusTone: RepairOrdersLedgerRow['statusTone'] = order.status === 'paid'
+      ? 'success'
+      : ['invoiced', 'completed'].includes(order.status)
+        ? 'success'
+        : ['pending_review', 'declined'].includes(order.status)
+          ? 'warning'
+          : ['assigned', 'acknowledged', 'in_progress'].includes(order.status)
+            ? 'active'
+            : ['cancelled'].includes(order.status) || Boolean(order.deleted_at)
+              ? 'danger'
+              : 'neutral'
+
+    return {
+      id: order.id,
+      orderNumber: order.order_number,
+      status: display.label,
+      statusTone,
+      description: order.description || 'No work description recorded',
+      customer: orderCustomerName(order, customer),
+      vehicle: vehicle ? vehicleDisplayLabel(vehicle) : [order.vehicle_year, order.vehicle_make, order.vehicle_model].filter(Boolean).join(' ') || 'Vehicle not available',
+      total: `$${(partsTotal + laborTotal).toLocaleString('en-US', { minimumFractionDigits: 2 })}`,
+      updated: format(new Date(order.updated_at), 'MMM d, h:mm a'),
+      internal: Boolean(order.is_internal),
+    }
+  })
+
+  const newPresentationContext = presentationVariant === 'new' && selectedOrder
+    ? (() => {
+        const detailOrder = orderDetail ?? selectedOrder
+        const display = resolveOrderDisplayStatus({
+          ...detailOrder,
+          quote_sent: quoteForOrder?.sent_to_customer || quoteSent || detailOrder.quote_sent,
+          quote_approved: quoteForOrder?.is_approved || detailOrder.quote_approved,
+        })
+        const quoteState = quoteForOrder?.is_approved || detailOrder.quote_approved
+          ? 'Customer authorized'
+          : quoteForOrder?.sent_to_customer || quoteSent || detailOrder.quote_sent
+            ? 'Awaiting customer authorization'
+            : quoteForOrder
+              ? 'Estimate draft ready'
+              : 'No estimate sent'
+        const invoiceState = detailOrder.status === 'paid'
+          ? 'Paid'
+          : invoiceForOrder
+            ? `Invoice ${invoiceForOrder.invoice_number}`
+            : detailOrder.status === 'completed'
+              ? 'Ready to invoice'
+              : 'Invoice not created'
+
+        return (
+          <RepairOrderContextHeader
+            orderNumber={detailOrder.order_number}
+            status={display.label}
+            customer={customerDisplayName}
+            vehicle={selectedOrderVehicle ? vehicleDisplayLabel(selectedOrderVehicle) : [detailOrder.vehicle_year, detailOrder.vehicle_make, detailOrder.vehicle_model].filter(Boolean).join(' ') || 'Vehicle unavailable'}
+            description={detailOrder.description || 'No work description recorded'}
+            laborTotal={formatMoney(detailOrder.total_labor_cost)}
+            partsTotal={formatMoney(detailOrder.total_parts_cost)}
+            quoteState={quoteState}
+            invoiceState={invoiceState}
+            queueOrigin={workQueueLane}
+            onReturnToShopWork={returnToShopWork}
+            onRequestHistory={() => setWorkspaceHistoryRequested(true)}
+          />
+        )
+      })()
+    : null
+
   return (
     <div className="db-repair-orders-workspace flex flex-col h-full">
+      {presentationVariant === 'new' ? (
+        <RepairOrdersLedger
+          rows={newPresentationRows}
+          totalOrders={totalOrders}
+          searchQuery={searchQuery}
+          statusFilter={statusFilter}
+          statusOptions={statusOptions}
+          selectedId={selectedOrder?.id ?? searchParams.get('selected')}
+          queueOrigin={workQueueLane}
+          isFetching={isFetching}
+          errorMessage={orderPageError ? 'Check the connection and try again.' : null}
+          page={page}
+          pageSize={RO_PAGE_SIZE}
+          hasMore={Boolean(orderPage?.has_more)}
+          isPlaceholder={isPlaceholderData}
+          canGoPrevious={page > 0}
+          onSearchChange={setSearchQuery}
+          onStatusChange={setStatusFilter}
+          onOpenOrder={(id) => {
+            const order = filteredOrders?.find((candidate) => candidate.id === id)
+            if (order) openDetail(order)
+          }}
+          onCreateOrder={openModal}
+          onReturnToShopWork={returnToShopWork}
+          onPreviousPage={() => setPage((current) => Math.max(0, current - 1))}
+          onNextPage={() => setPage((current) => orderPage?.has_more ? current + 1 : current)}
+        />
+      ) : (
+        <>
       <h1 className="text-xl sm:text-2xl font-bold text-white mb-4 flex-shrink-0">Repair Orders</h1>
 
       {/* Search + Filters */}
@@ -2721,6 +2863,8 @@ export default function RepairOrdersPage() {
         <div className="text-center py-12 text-white/70">
           No repair orders found. Create your first repair order to get started.
         </div>
+      )}
+        </>
       )}
 
       {/* New Repair Order Modal */}
@@ -3294,7 +3438,9 @@ export default function RepairOrdersPage() {
         onClose={closeDetail}
         title={selectedOrder ? `#${selectedOrder.order_number}` : ''}
         subtitle="Repair Order"
-        width="max-w-full sm:max-w-[90vw] xl:max-w-[72vw] 2xl:max-w-[1400px]"
+        headerVariant={presentationVariant === 'new' ? 'minimal' : 'amber'}
+        width={presentationVariant === 'new' ? 'max-w-full md:max-w-[84vw] xl:max-w-[76vw] 2xl:max-w-[1400px]' : 'max-w-full sm:max-w-[90vw] xl:max-w-[72vw] 2xl:max-w-[1400px]'}
+        panelClassName={presentationVariant === 'new' ? 'db-repair-order-detail-new' : ''}
         hideHeader={priceBuilderOwnsShell}
         onPrev={showNavigation || hasPrev ? goToPrevOrder : undefined}
         onNext={showNavigation || hasNext ? goToNextOrder : undefined}
@@ -3416,7 +3562,11 @@ export default function RepairOrdersPage() {
           </div>
         )}
         {selectedOrder && (!isOrderDetailLoading || !!orderDetail || priceBuilderOwnsShell) && (
-          <div className={priceBuilderOwnsShell ? 'h-full min-h-0' : 'p-6 space-y-6'}>
+          <div className={priceBuilderOwnsShell
+            ? `h-full min-h-0 ${presentationVariant === 'new' ? 'db-repair-order-price-shell-new' : ''}`
+            : `p-6 space-y-6 ${presentationVariant === 'new' ? 'db-repair-order-detail-new__body' : ''}`}>
+
+                {newPresentationContext}
 
                 {!priceBuilderOwnsShell && (
                   <details className="rounded-xl border border-gray-200 bg-gray-50 p-4">

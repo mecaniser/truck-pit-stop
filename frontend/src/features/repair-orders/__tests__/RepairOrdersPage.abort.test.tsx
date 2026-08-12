@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 const apiMocks = vi.hoisted(() => ({
   get: vi.fn(),
 }))
+const themeState = vi.hoisted(() => ({ presentationVariant: 'legacy' as 'legacy' | 'new' }))
 
 vi.mock('@/lib/api', () => ({
   default: {
@@ -18,7 +19,10 @@ vi.mock('@/hooks/useWebSocket', () => ({
 }))
 
 vi.mock('@/contexts/ThemeContext', () => ({
-  useTheme: () => ({ accentColors: { primary: '#2563eb' } }),
+  useTheme: () => ({
+    accentColors: { 400: '#f59e0b', 500: '#d97706', 600: '#b45309', primary: '#2563eb' },
+    presentationVariant: themeState.presentationVariant,
+  }),
 }))
 
 vi.mock('../PriceBuilderPanel', () => ({
@@ -49,6 +53,35 @@ function renderPage(initialEntries: string[] = ['/']) {
 describe('RepairOrdersPage request cancellation', () => {
   afterEach(() => {
     apiMocks.get.mockReset()
+    themeState.presentationVariant = 'legacy'
+  })
+
+  it('switches only the Repair Orders presentation while preserving the same page API', async () => {
+    const order = {
+      id: 'order-presentation', tenant_id: 'tenant-1', customer_id: 'customer-1', vehicle_id: 'vehicle-1',
+      vehicle_make: 'Freightliner', vehicle_model: 'Cascadia', vehicle_year: 2022, vehicle_unit_number: '218', vehicle_vin: 'VIN218',
+      customer_company_name: 'Northline Logistics', order_number: 'RO-1017', status: 'in_progress',
+      description: 'Diagnose intermittent no-start', customer_notes: null, internal_notes: null,
+      assigned_mechanic_id: null, total_parts_cost: '2780.50', total_labor_cost: '1500.00', total_cost: '4280.50',
+      created_at: '2026-08-12T12:00:00Z', updated_at: '2026-08-12T15:00:00Z',
+    }
+    apiMocks.get.mockImplementation((url: string) => {
+      if (url === '/repair-orders') return Promise.resolve({ data: { items: [order], total: 1, has_more: false } })
+      return Promise.resolve({ data: {} })
+    })
+
+    themeState.presentationVariant = 'new'
+    const { unmount } = renderPage()
+    expect(await screen.findByRole('region', { name: 'Repair order ledger' })).toBeInTheDocument()
+    expect(await screen.findByRole('button', { name: /RO-1017/ })).toBeInTheDocument()
+    expect(document.querySelector('.db-repair-orders-new')).toBeInTheDocument()
+    unmount()
+
+    themeState.presentationVariant = 'legacy'
+    renderPage()
+    expect(await screen.findByRole('heading', { name: 'Repair Orders' })).toHaveClass('text-white')
+    expect(screen.queryByRole('region', { name: 'Repair order ledger' })).not.toBeInTheDocument()
+    expect(document.querySelector('.db-repair-orders-new')).not.toBeInTheDocument()
   })
 
   it('aborts an in-flight repair-order page request when the page unmounts', async () => {

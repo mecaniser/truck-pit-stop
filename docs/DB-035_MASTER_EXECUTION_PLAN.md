@@ -1,6 +1,6 @@
 # DB-035 Controlled Product Redesign Plan
 
-Status: **Product review — Stage 3 Shop Cockpit candidate**
+Status: **Stage 4 implementation complete — canonical browser evidence blocked**
 
 Accountable owner: Product & Delivery Lead
 
@@ -154,8 +154,8 @@ corrected shared shell at `1bc1cb28d035e8b17a26eccd95a78add69a3b077` on
 - Cover loading, empty, failure, long values, rapid selection and role states.
 
 Exit: Product visual acceptance plus focused/runtime evidence at 1440, 960, 390
-and 320. **Implementation and bounded evidence are complete locally; Product
-visual/interaction acceptance remains pending.**
+and 320. **Complete: Product accepted the Shop Cockpit at
+`ab79e7e56076d26c0b6231ccc7730042df2020a9` on 2026-08-12.**
 
 ### Stage 4 — Repair Orders workspace
 
@@ -167,7 +167,14 @@ visual/interaction acceptance remains pending.**
   and selection context.
 
 Exit: focused tests, browser flow and Product acceptance of the complete
-Shop Work → Repair Orders experience.
+Shop Work → Repair Orders experience. **Implementation, focused component
+evidence and the fixture-routed 1440/960/390/320 browser flow are complete
+locally. The canonical service pair is running from the recovery worktree. The
+backend now targets the prepared `truckpitstop_db035` local recovery database,
+whose tenant/user identities and repair-order projection match the populated
+database and whose Alembic head is `118_authenticated_presentation`; the
+original populated database remains unchanged. Product must still complete the
+real WorkOS login and visual/interaction review before Stage 4 is accepted.**
 
 ### Stage 5 — Remaining authenticated surfaces
 
@@ -222,7 +229,6 @@ actions before implementation.
 navy product field, road-white operating workspace, compact record anatomy,
 sparse copper actions and semantic service green.
 
-**Next gate:** Product reviews the Stage 3 Shop Cockpit at 1440, 960, 390 and
-320, including keyboard selection and the projection-only connected-record
-handoff. Stage 4 Repair Orders implementation is not authorized until Product
-accepts this visual and interaction outcome.
+**Next gate:** Product completes a real WorkOS login against the restored
+canonical service pair, then performs visual/interaction acceptance of Stage 4.
+Stage 5 remains unauthorized.

@@ -18,7 +18,7 @@ import {
   Zap,
   X,
 } from 'lucide-react'
-import { useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { isAxiosError } from 'axios'
 import toast from 'react-hot-toast'
@@ -372,6 +372,7 @@ export default function DashboardHome() {
   const { user } = useAuthStore()
   const { accentColors, fontSize, presentationVariant } = useTheme()
   const navigate = useNavigate()
+  const location = useLocation()
   const queryClient = useQueryClient()
 
   // Quick order form
@@ -802,6 +803,7 @@ export default function DashboardHome() {
   }
 
   if (presentationVariant === 'new') {
+    const returnedQueue = (location.state as { shopWorkQueue?: ActionQueueLane } | null)?.shopWorkQueue
     const projection = {
       orders_needing_action: stats?.orders_needing_action ?? [],
       orders_needing_action_has_more: stats?.orders_needing_action_has_more ?? false,
@@ -844,6 +846,7 @@ export default function DashboardHome() {
         onFullOrder={() => navigate('/dashboard/repair-orders?new=true')}
         onRefresh={handleManualRefresh}
         onOpenRecord={openRecord}
+        initialLaneFilter={returnedQueue || 'all'}
       />
     )
   }

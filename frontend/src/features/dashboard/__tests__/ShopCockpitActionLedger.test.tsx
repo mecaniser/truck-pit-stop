@@ -110,6 +110,14 @@ describe('DB-035 Stage 3 Action Ledger', () => {
     expect(onOpenRecord).toHaveBeenCalledWith('ro-floor', 'on_floor')
   })
 
+  it('restores the originating canonical lane when Repair Orders returns to Shop Work', () => {
+    renderLedger({ initialLaneFilter: 'on_floor' })
+
+    expect(screen.getByRole('tab', { name: 'On the Floor 1' })).toHaveAttribute('aria-selected', 'true')
+    expect(document.querySelector('[data-order-id="ro-floor"]')).toHaveAttribute('aria-pressed', 'true')
+    expect(document.querySelector('[data-order-id="ro-needs"]')).not.toBeInTheDocument()
+  })
+
   it('supports canonical filtering, search, empty state and the authentic Activity alternate', async () => {
     const user = userEvent.setup()
     const { rerender, props } = renderLedger()

@@ -1,0 +1,96 @@
+.db-wordmark {
+  --db-wordmark-ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  display: inline-flex;
+  position: relative;
+  align-items: center;
+  gap: 0.55rem;
+  color: currentColor;
+  font-size: 1rem;
+  font-weight: 760;
+  letter-spacing: -0.025em;
+  white-space: nowrap;
+}
+
+.db-wordmark__bridge {
+  width: 1.8rem;
+  height: 1.35rem;
+  flex: 0 0 auto;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.2;
+  stroke-linecap: round;
+}
+
+.db-wordmark__name,
+.db-wordmark__letters,
+.db-wordmark__letter { display: inline-block; }
+.db-wordmark__letter--bridge { color: #ff7a36; }
+
+.db-wordmark--animated .db-wordmark__bridge path {
+  transform-box: fill-box;
+  will-change: transform, opacity;
+}
+
+.db-wordmark--animated .db-wordmark__bridge-base {
+  transform-origin: left center;
+  animation: db-wordmark-bridge-base 420ms var(--db-wordmark-ease-out) 80ms both;
+}
+
+.db-wordmark--animated .db-wordmark__bridge-pillars {
+  transform-origin: center bottom;
+  animation: db-wordmark-bridge-pillars 430ms var(--db-wordmark-ease-out) 330ms both;
+}
+
+.db-wordmark--animated .db-wordmark__bridge-arch {
+  transform-origin: center bottom;
+  animation: db-wordmark-bridge-arch 560ms var(--db-wordmark-ease-out) 620ms both;
+}
+
+.db-wordmark--animated .db-wordmark__letter {
+  animation: db-wordmark-letter-drop 820ms var(--db-wordmark-ease-out) both;
+  animation-delay: var(--letter-drop-delay);
+  will-change: transform, opacity;
+}
+
+@keyframes db-wordmark-bridge-base {
+  from { opacity: 0; transform: scaleX(0.08); }
+  to { opacity: 1; transform: scaleX(1); }
+}
+
+@keyframes db-wordmark-bridge-pillars {
+  from { opacity: 0; transform: translateY(0.16rem) scaleY(0.16); }
+  to { opacity: 1; transform: translateY(0) scaleY(1); }
+}
+
+@keyframes db-wordmark-bridge-arch {
+  from { opacity: 0; transform: translateY(0.1rem) scale(0.14, 0.78); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@keyframes db-wordmark-letter-drop {
+  from {
+    opacity: 0;
+    transform: translate3d(0, var(--letter-drop-y), 0) scale(0.96);
+  }
+  18% { opacity: 1; }
+  to { opacity: 1; transform: translate3d(0, 0, 0) scale(1); }
+}
+
+@keyframes db-wordmark-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .db-wordmark--animated .db-wordmark__name,
+  .db-wordmark--animated .db-wordmark__bridge {
+    animation: db-wordmark-fade 120ms var(--db-wordmark-ease-out) both !important;
+  }
+
+  .db-wordmark--animated .db-wordmark__bridge path,
+  .db-wordmark--animated .db-wordmark__letter {
+    animation: none !important;
+    transform: none !important;
+    will-change: auto;
+  }
+}

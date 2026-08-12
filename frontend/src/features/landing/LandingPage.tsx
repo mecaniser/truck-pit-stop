@@ -1,4 +1,4 @@
-import { useEffect, type CSSProperties } from 'react'
+import { useEffect } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import {
@@ -12,28 +12,13 @@ import { usePlatformContact } from '../../hooks/usePlatformContact'
 import { applySeo, removeStructuredData } from '../../lib/seo'
 import api from '../../lib/api'
 import ProductWorkspace from './ProductWorkspace'
+import DieselBridgeWordmark from '../../components/brand/DieselBridgeWordmark'
 import './LandingPage.css'
 
 const BRAND = {
   platformName: 'Diesel Bridge Network',
   shortName: 'DieselBridge',
 }
-
-const WORDMARK_LETTERS = Array.from(BRAND.shortName)
-const WORDMARK_DROP_MOTION = [
-  { y: '-0.42rem', delay: '520ms' },
-  { y: '-0.54rem', delay: '380ms' },
-  { y: '-0.34rem', delay: '640ms' },
-  { y: '-0.49rem', delay: '460ms' },
-  { y: '-0.38rem', delay: '340ms' },
-  { y: '-0.55rem', delay: '600ms' },
-  { y: '-0.44rem', delay: '420ms' },
-  { y: '-0.52rem', delay: '680ms' },
-  { y: '-0.32rem', delay: '500ms' },
-  { y: '-0.5rem', delay: '360ms' },
-  { y: '-0.4rem', delay: '660ms' },
-  { y: '-0.47rem', delay: '480ms' },
-] as const
 
 interface LandingPartner {
   id: string
@@ -53,37 +38,6 @@ const getPartnerMonogram = (name: string) =>
     .slice(0, 2)
     .map((part) => part[0]?.toUpperCase() || '')
     .join('') || 'DB'
-
-function LandingWordmark({ animated = false }: { animated?: boolean }) {
-  return (
-    <span
-      className={`landing-wordmark${animated ? ' landing-wordmark--animated' : ''}`}
-      aria-label={BRAND.platformName}
-    >
-      <svg className="landing-wordmark__bridge" viewBox="0 0 42 30" role="img" aria-hidden="true">
-        <path className="landing-wordmark__bridge-base" d="M8 22h26" />
-        <path className="landing-wordmark__bridge-pillars" d="M13 22v-7m8 7V11m8 11v-7" />
-        <path className="landing-wordmark__bridge-arch" d="M4 22C8 7 34 7 38 22" />
-      </svg>
-      <span className="landing-wordmark__name">
-        <span className="landing-wordmark__letters" aria-hidden="true">
-          {WORDMARK_LETTERS.map((letter, index) => (
-            <span
-              key={`${letter}-${index}`}
-              className={`landing-wordmark__letter${index >= 6 ? ' landing-wordmark__letter--bridge' : ''}`}
-              style={{
-                '--letter-drop-y': WORDMARK_DROP_MOTION[index].y,
-                '--letter-drop-delay': WORDMARK_DROP_MOTION[index].delay,
-              } as CSSProperties}
-            >
-              {letter}
-            </span>
-          ))}
-        </span>
-      </span>
-    </span>
-  )
-}
 
 export default function LandingPage() {
   const { mailtoHref } = usePlatformContact()
@@ -142,7 +96,7 @@ export default function LandingPage() {
 
       <header className="landing-header">
         <nav className="landing-nav" aria-label="Primary navigation">
-          <a className="landing-brand-link" href="#main-content"><LandingWordmark animated /></a>
+          <a className="landing-brand-link" href="#main-content"><DieselBridgeWordmark animated /></a>
           <div className="landing-nav-links">
             <a href="#product-preview">Product tour</a>
             <a href="#approved-shops">Approved shops</a>
@@ -235,7 +189,7 @@ export default function LandingPage() {
       </main>
 
       <footer className="landing-footer">
-        <LandingWordmark />
+        <DieselBridgeWordmark />
         <p>© {new Date().getFullYear()} {BRAND.platformName}</p>
         <div>
           <Link to="/privacy">Privacy</Link>
