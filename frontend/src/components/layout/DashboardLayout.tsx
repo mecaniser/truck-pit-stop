@@ -2,7 +2,7 @@ import { Routes, Route, Link, Navigate, useLocation } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { type MouseEvent as ReactMouseEvent, type TouchEvent, useEffect, useRef, useState } from 'react'
 import { useAuthStore } from '../../stores/authStore'
-import { Home, Users, ClipboardList, Building2, User, LayoutGrid, BarChart3, UserCheck, Crown, MessageSquare, CreditCard, MoreHorizontal, ChevronLeft, Warehouse } from 'lucide-react'
+import { Home, Users, ClipboardList, Building2, User, LayoutGrid, BarChart3, UserCheck, Crown, MessageSquare, CreditCard, MoreHorizontal, ChevronLeft, Warehouse, ChevronsLeft, ChevronsRight } from 'lucide-react'
 import { useTheme } from '../../contexts/ThemeContext'
 import api from '@/lib/api'
 import CustomersPage from '@/features/customers/CustomersPage'
@@ -25,10 +25,20 @@ import DieselBridgeWordmark from '../brand/DieselBridgeWordmark'
 import TenantBrandLogo from '../brand/TenantBrandLogo'
 import useTenantBranding from '@/hooks/useTenantBranding'
 
+const STAFF_RAIL_STORAGE_KEY = 'db-staff-rail-expanded'
+
+function getInitialStaffRailExpanded() {
+  const storedPreference = window.localStorage.getItem(STAFF_RAIL_STORAGE_KEY)
+  if (storedPreference === '1') return true
+  if (storedPreference === '0') return false
+  return typeof window.matchMedia === 'function' && window.matchMedia('(min-width: 1280px)').matches
+}
+
 export default function DashboardLayout() {
   const { user } = useAuthStore()
   const location = useLocation()
   const [mobileNavPage, setMobileNavPage] = useState<'primary' | 'secondary'>('primary')
+  const [staffRailExpanded, setStaffRailExpanded] = useState(getInitialStaffRailExpanded)
   const mobileNavTouchStart = useRef<{ x: number; y: number } | null>(null)
   const suppressMobileNavClick = useRef(false)
   const { accentColors, presentationVariant } = useTheme()
@@ -184,12 +194,22 @@ export default function DashboardLayout() {
 
   // Garage users get BlueNoir theme
   const isGarageUser = !isSuperAdmin
+  const showStaffRailToggle = presentationVariant === 'new' && isGarageUser
+
+  const toggleStaffRail = () => {
+    setStaffRailExpanded((expanded) => {
+      const nextExpanded = !expanded
+      window.localStorage.setItem(STAFF_RAIL_STORAGE_KEY, nextExpanded ? '1' : '0')
+      return nextExpanded
+    })
+  }
 
   return (
     <div
       className={`db-staff-shell db-presentation-${presentationVariant} h-screen overflow-hidden ${isGarageUser ? 'bg-blueNoir-900' : ''}`}
       data-presentation={presentationVariant}
       data-surface={getCurrentPageLabel().toLowerCase().replace(/\s+/g, '-') || 'dashboard'}
+      data-rail-expanded={showStaffRailToggle ? String(staffRailExpanded) : undefined}
     >
       <nav className={`db-staff-nav sticky top-0 z-50 ${
         isSuperAdmin 
@@ -245,7 +265,7 @@ export default function DashboardLayout() {
             </div>
 
             {/* Desktop nav */}
-            <div className="db-staff-primary-nav hidden md:flex md:items-center md:space-x-6">
+            <div id="db-staff-primary-navigation" className="db-staff-primary-nav hidden md:flex md:items-center md:space-x-6">
               {navLinks.map((link) => (
                 <Link
                   key={link.to}
@@ -275,46 +295,65 @@ export default function DashboardLayout() {
                 </Link>
               ))}
               <div className="db-staff-nav__profile" aria-label="Account">
-                <Link
-                  to="/dashboard/settings"
-                  aria-current={location.pathname === '/dashboard/settings' ? 'page' : undefined}
-                  aria-label={`Open profile settings for ${profileDisplayName}`}
-                  className={`group relative flex h-11 w-11 items-center justify-center rounded-2xl border bg-white/[0.03] transition-all ${
-                  location.pathname === '/dashboard/settings'
-                    ? isSuperAdmin
-                      ? 'border-gold-500/40 bg-gold-500/10 text-gold-300'
-                      : 'bg-white/[0.08] text-white'
-                    : isSuperAdmin
-                      ? 'border-white/10 text-gray-400 hover:border-gold-500/30 hover:bg-gold-500/10 hover:text-gold-300'
-                      : 'border-white/10 text-gray-400 hover:border-white/20 hover:bg-white/[0.06] hover:text-white'
-                }`}
-                style={presentationVariant === 'legacy' ? {
-                  color: !isSuperAdmin && location.pathname === '/dashboard/settings' ? accentHex : undefined,
-                  borderColor: !isSuperAdmin && location.pathname === '/dashboard/settings' ? profileTileBorder : undefined,
-                  boxShadow: `0 10px 24px ${profileTileGlow}`,
-                } : undefined}
-                title={profileDisplayName}
-                >
-                  <div
-                    className="absolute inset-[3px] rounded-[14px] border border-white/5"
-                    style={{ background: profileTileInset }}
-                  />
-                  <div className="db-staff-nav__profile-monogram relative flex h-full w-full items-center justify-center rounded-[14px]">
-                    <span className="text-[11px] font-semibold tracking-[0.18em]">
-                      {profileMonogram}
-                    </span>
-                  </div>
-                  {presentationVariant === 'new' && (
-                    <span className="db-staff-nav__profile-copy" aria-hidden="true">
-                      <strong>{profileDisplayName}</strong>
-                      <small>Profile &amp; settings</small>
-                    </span>
+                <div className="db-staff-nav__account-controls">
+                  <Link
+                    to="/dashboard/settings"
+                    aria-current={location.pathname === '/dashboard/settings' ? 'page' : undefined}
+                    aria-label={`Open profile settings for ${profileDisplayName}`}
+                    className={`group relative flex h-11 w-11 items-center justify-center rounded-2xl border bg-white/[0.03] transition-all ${
+                    location.pathname === '/dashboard/settings'
+                      ? isSuperAdmin
+                        ? 'border-gold-500/40 bg-gold-500/10 text-gold-300'
+                        : 'bg-white/[0.08] text-white'
+                      : isSuperAdmin
+                        ? 'border-white/10 text-gray-400 hover:border-gold-500/30 hover:bg-gold-500/10 hover:text-gold-300'
+                        : 'border-white/10 text-gray-400 hover:border-white/20 hover:bg-white/[0.06] hover:text-white'
+                  }`}
+                  style={presentationVariant === 'legacy' ? {
+                    color: !isSuperAdmin && location.pathname === '/dashboard/settings' ? accentHex : undefined,
+                    borderColor: !isSuperAdmin && location.pathname === '/dashboard/settings' ? profileTileBorder : undefined,
+                    boxShadow: `0 10px 24px ${profileTileGlow}`,
+                  } : undefined}
+                  title={profileDisplayName}
+                  >
+                    <div
+                      className="absolute inset-[3px] rounded-[14px] border border-white/5"
+                      style={{ background: profileTileInset }}
+                    />
+                    <div className="db-staff-nav__profile-monogram relative flex h-full w-full items-center justify-center rounded-[14px]">
+                      <span className="text-[11px] font-semibold tracking-[0.18em]">
+                        {profileMonogram}
+                      </span>
+                    </div>
+                    {presentationVariant === 'new' && (
+                      <span className="db-staff-nav__profile-copy" aria-hidden="true">
+                        <strong>{profileDisplayName}</strong>
+                        <small>Profile &amp; settings</small>
+                      </span>
+                    )}
+                    <span
+                      className="absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full border-2 shadow-[0_0_10px_rgba(52,211,153,0.6)]"
+                      style={{ backgroundColor: '#34d399', borderColor: isSuperAdmin ? '#0a0b0d' : '#10151f' }}
+                    />
+                  </Link>
+                  {showStaffRailToggle && (
+                    <button
+                      type="button"
+                      className="db-staff-nav__rail-toggle"
+                      onClick={toggleStaffRail}
+                      aria-expanded={staffRailExpanded}
+                      aria-controls="db-staff-primary-navigation"
+                      aria-label={staffRailExpanded ? 'Collapse navigation rail' : 'Expand navigation rail'}
+                      title={staffRailExpanded ? 'Collapse navigation rail' : 'Expand navigation rail'}
+                    >
+                      {staffRailExpanded ? (
+                        <ChevronsLeft className="h-4 w-4" aria-hidden="true" />
+                      ) : (
+                        <ChevronsRight className="h-4 w-4" aria-hidden="true" />
+                      )}
+                    </button>
                   )}
-                  <span
-                    className="absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full border-2 shadow-[0_0_10px_rgba(52,211,153,0.6)]"
-                    style={{ backgroundColor: '#34d399', borderColor: isSuperAdmin ? '#0a0b0d' : '#10151f' }}
-                  />
-                </Link>
+                </div>
               </div>
             </div>
 

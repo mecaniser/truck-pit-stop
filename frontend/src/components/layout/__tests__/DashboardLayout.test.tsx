@@ -1,4 +1,4 @@
-import { render, screen, within } from '@testing-library/react'
+import { fireEvent, render, screen, within } from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -45,6 +45,7 @@ function renderShell(path = '/dashboard') {
 
 describe('DB-035 authenticated staff shell', () => {
   beforeEach(() => {
+    window.localStorage.clear()
     shellState.presentationVariant = 'new'
     useAuthStore.setState({
       user: { ...garageOwnerSession, messaging_enabled: true } as never,
@@ -53,6 +54,28 @@ describe('DB-035 authenticated staff shell', () => {
       authSessionEpoch: 4,
       logoutInProgress: false,
     })
+  })
+
+  it('expands and collapses the staff rail with accessible persisted controls', () => {
+    const { unmount } = renderShell()
+
+    const shell = document.querySelector('.db-staff-shell') as HTMLElement
+    const expandRail = screen.getByRole('button', { name: 'Expand navigation rail' })
+    expect(shell).toHaveAttribute('data-rail-expanded', 'false')
+    expect(expandRail).toHaveAttribute('aria-expanded', 'false')
+    expect(expandRail).toHaveAttribute('aria-controls', 'db-staff-primary-navigation')
+
+    fireEvent.click(expandRail)
+
+    const collapseRail = screen.getByRole('button', { name: 'Collapse navigation rail' })
+    expect(shell).toHaveAttribute('data-rail-expanded', 'true')
+    expect(collapseRail).toHaveAttribute('aria-expanded', 'true')
+    expect(window.localStorage.getItem('db-staff-rail-expanded')).toBe('1')
+
+    unmount()
+    renderShell()
+    expect(document.querySelector('.db-staff-shell')).toHaveAttribute('data-rail-expanded', 'true')
+    expect(screen.getByRole('button', { name: 'Collapse navigation rail' })).toBeInTheDocument()
   })
 
   it('renders DieselBridge first and keeps tenant identity subordinate in the new shell', () => {
@@ -120,5 +143,6 @@ describe('DB-035 authenticated staff shell', () => {
     expect(screen.getByText('Dashboard', { selector: '.db-breadcrumb a' })).toBeInTheDocument()
     expect(screen.getByRole('img', { name: 'Diesel Bridge Network' })).toBeInTheDocument()
     expect(screen.queryByText('DieselBridge', { selector: '.db-product-brand__name' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /navigation rail/i })).not.toBeInTheDocument()
   })
 })
