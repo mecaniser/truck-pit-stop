@@ -61,6 +61,8 @@ export default function DashboardLayout() {
   const accentHex = accentColors[500]
 
   const isSuperAdmin = user?.role === 'super_admin'
+  const dashboardLabel = presentationVariant === 'new' && !isSuperAdmin ? 'Shop Work' : 'Dashboard'
+  const dashboardMobileLabel = presentationVariant === 'new' && !isSuperAdmin ? 'Shop Work' : 'Home'
 
   // Different navigation for SUPER_ADMIN (platform management) vs garage staff
   const navLinks = user?.role === 'super_admin'
@@ -72,7 +74,7 @@ export default function DashboardLayout() {
         { to: '/dashboard/payments', label: 'Payments', mobileLabel: 'Pay', icon: CreditCard },
       ]
     : [
-        { to: '/dashboard', label: 'Dashboard', mobileLabel: 'Home', exact: true, icon: Home },
+        { to: '/dashboard', label: dashboardLabel, mobileLabel: dashboardMobileLabel, exact: true, icon: Home },
         { to: '/dashboard/customers', label: 'Customers', mobileLabel: 'Customers', icon: Users },
         { to: '/dashboard/repair-orders', label: 'Repair Orders', mobileLabel: 'Orders', icon: ClipboardList },
         ...(canAccessMessaging ? [messagesNavLink] : []),
@@ -158,7 +160,9 @@ export default function DashboardLayout() {
     ? 'Diesel Bridge Network'
     : tenantBranding?.name || user?.tenant_name || 'Diesel Bridge Network'
   const dashboardAriaLabel = presentationVariant === 'new'
-    ? 'DieselBridge dashboard'
+    ? isSuperAdmin
+      ? 'DieselBridge dashboard'
+      : 'DieselBridge Shop Work'
     : isSuperAdmin
       ? 'Diesel Bridge Network dashboard'
       : `${dashboardLogoAlt} dashboard`
@@ -330,7 +334,7 @@ export default function DashboardLayout() {
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
               </svg>
-              Dashboard
+              {dashboardLabel}
             </Link>
             <span className="text-gray-600">/</span>
             <span

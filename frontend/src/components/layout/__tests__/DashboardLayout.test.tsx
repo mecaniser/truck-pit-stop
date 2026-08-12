@@ -61,22 +61,39 @@ describe('DB-035 authenticated staff shell', () => {
     const shell = document.querySelector('.db-staff-shell')
     expect(shell).toHaveClass('db-presentation-new')
     expect(shell).toHaveAttribute('data-presentation', 'new')
-    expect(screen.getByRole('link', { name: 'DieselBridge dashboard' })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'DieselBridge Shop Work' })).toHaveAttribute('href', '/dashboard')
+    const desktopShopWork = within(document.querySelector('.db-staff-primary-nav') as HTMLElement)
+      .getByRole('link', { name: 'Shop Work' })
+    const mobileShopWork = within(screen.getByLabelText('Mobile navigation'))
+      .getByRole('link', { name: 'Shop Work' })
+    expect(desktopShopWork).toHaveAttribute('href', '/dashboard')
+    expect(desktopShopWork).toHaveAttribute('aria-current', 'page')
+    expect(mobileShopWork).toHaveAttribute('href', '/dashboard')
+    expect(mobileShopWork).toHaveAttribute('aria-current', 'page')
+    expect(screen.queryByRole('link', { name: 'Dashboard' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'Home' })).not.toBeInTheDocument()
     expect(screen.getByLabelText('Active shop: Truck Pit Stop Wisconsin')).toHaveTextContent('Truck Pit Stop Wisconsin')
     expect(screen.getByText('Dashboard surface')).toBeInTheDocument()
   })
 
-  it('keeps canonical labels, routes, current-page semantics and settings access', () => {
+  it('uses Shop Work for every new-presentation navigation form while preserving /dashboard', () => {
     renderShell('/dashboard/repair-orders')
 
     const desktop = document.querySelector('.db-staff-primary-nav') as HTMLElement
     const links = within(desktop).getAllByRole('link')
     expect(links.slice(0, 5).map(link => link.textContent?.trim())).toEqual([
-      'Dashboard', 'Customers', 'Repair Orders', 'Messages', 'My Shop',
+      'Shop Work', 'Customers', 'Repair Orders', 'Messages', 'My Shop',
     ])
+    expect(within(desktop).getByRole('link', { name: 'Shop Work' })).toHaveAttribute('href', '/dashboard')
     expect(within(desktop).getByRole('link', { name: 'Repair Orders' })).toHaveAttribute('href', '/dashboard/repair-orders')
     expect(within(desktop).getByRole('link', { name: 'Repair Orders' })).toHaveAttribute('aria-current', 'page')
     expect(within(desktop).getByRole('link', { name: /Open profile settings/ })).toHaveAttribute('href', '/dashboard/settings')
+    const mobile = screen.getByLabelText('Mobile navigation')
+    expect(within(mobile).getByRole('link', { name: 'Shop Work' })).toHaveAttribute('href', '/dashboard')
+    expect(screen.getByText('Shop Work', { selector: '.db-breadcrumb a' })).toBeInTheDocument()
+    const dashboardLinks = Array.from(document.querySelectorAll<HTMLAnchorElement>('a[href="/dashboard"]'))
+    expect(dashboardLinks).toHaveLength(4)
+    expect(dashboardLinks.every(link => !['Dashboard', 'Home'].includes(link.textContent?.trim() || ''))).toBe(true)
     expect(screen.queryByRole('link', { name: 'Invoices' })).not.toBeInTheDocument()
     expect(screen.queryByRole('link', { name: 'Vehicle History' })).not.toBeInTheDocument()
     expect(screen.getByText('Repair Orders surface')).toBeInTheDocument()
@@ -84,12 +101,16 @@ describe('DB-035 authenticated staff shell', () => {
 
   it('preserves the legacy shell as the immediate presentation rollback', () => {
     shellState.presentationVariant = 'legacy'
-    renderShell()
+    renderShell('/dashboard/repair-orders')
 
     const shell = document.querySelector('.db-staff-shell')
     expect(shell).toHaveClass('db-presentation-legacy')
     expect(shell).toHaveAttribute('data-presentation', 'legacy')
     expect(screen.getByRole('link', { name: 'Truck Pit Stop Wisconsin dashboard' })).toBeInTheDocument()
+    const desktop = document.querySelector('.db-staff-primary-nav') as HTMLElement
+    expect(within(desktop).getByRole('link', { name: 'Dashboard' })).toHaveAttribute('href', '/dashboard')
+    expect(within(screen.getByLabelText('Mobile navigation')).getByRole('link', { name: 'Home' })).toHaveAttribute('href', '/dashboard')
+    expect(screen.getByText('Dashboard', { selector: '.db-breadcrumb a' })).toBeInTheDocument()
     expect(screen.getByRole('img', { name: 'Diesel Bridge Network' })).toBeInTheDocument()
     expect(screen.queryByText('DieselBridge', { selector: '.db-product-brand__name' })).not.toBeInTheDocument()
   })
