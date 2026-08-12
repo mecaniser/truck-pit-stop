@@ -351,6 +351,45 @@ html::-webkit-scrollbar-thumb:hover {
   min-width: 0;
 }
 
+/* Customers remains a canonical legacy surface until its Stage 5 composition.
+   In the new road-white shell, keep its dense ledger readable rather than
+   inheriting the old dark-surface foreground utilities. */
+.db-presentation-new .db-customers-workspace__ledger {
+  background: var(--product-road-white) !important;
+  border-color: var(--workspace-border) !important;
+}
+
+.db-presentation-new .db-customers-workspace__ledger table thead {
+  background: #edf2f7 !important;
+  color: var(--workspace-muted) !important;
+}
+
+.db-presentation-new .db-customers-workspace__ledger table tbody {
+  --tw-divide-opacity: 1;
+  border-color: #dbe3eb !important;
+}
+
+.db-presentation-new .db-customers-workspace__ledger table tbody tr:hover {
+  background: #f4f7fa !important;
+}
+
+.db-presentation-new .db-customers-workspace__ledger table tbody .text-white {
+  color: var(--workspace-text) !important;
+}
+
+.db-presentation-new .db-customers-workspace__ledger table tbody [class*='text-white/'] {
+  color: var(--workspace-muted) !important;
+}
+
+.db-presentation-new .db-customers-workspace__pagination {
+  border-color: var(--workspace-border) !important;
+  color: var(--workspace-muted) !important;
+}
+
+.db-presentation-new .db-customers-workspace__pagination button {
+  border-color: var(--workspace-border) !important;
+}
+
 /* DB-035 Stage 3: landing-derived Action Ledger. Dashboard continues to own
    only the server-backed queue projection and hands every deeper action to the
    canonical Repair Orders route. */
