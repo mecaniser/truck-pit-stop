@@ -1236,7 +1236,7 @@ html::-webkit-scrollbar-thumb:hover {
 .db-appearance-preview__body strong { display: block; font: 700 1.25rem/1.1 var(--font-display); }
 .db-appearance-preview__body > div > span { display: block; margin-top: 7px; color: var(--text-secondary); }
 .db-appearance-preview__action { min-height: var(--density-control-min); display: inline-flex; align-items: center; justify-content: center; padding: 0 20px; border-radius: 12px; background: var(--personal-accent-500); color: #fff; font-weight: 700; }
-.db-appearance-preview__states { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 8px; padding-top: 14px; border-top: 1px solid var(--border-subtle); }
+.db-appearance-preview__states { grid-column: 1 / -1; display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; padding-top: 14px; border-top: 1px solid var(--border-subtle); }
 .db-appearance-preview__states span { min-height: 32px; display: inline-flex; align-items: center; justify-content: center; padding: 0 10px; border-radius: 8px; font-size: .78rem; font-weight: 700; }
 .db-appearance-preview__states .is-success { color: var(--semantic-success-500); background: color-mix(in srgb, var(--semantic-success-500) 12%, transparent); }
 .db-appearance-preview__states .is-warning { color: var(--semantic-warning-500); background: color-mix(in srgb, var(--semantic-warning-500) 12%, transparent); }
