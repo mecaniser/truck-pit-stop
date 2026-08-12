@@ -248,9 +248,6 @@ export default function DashboardLayout() {
                   ) : (
                     <span className="db-workspace-context__fallback">{dashboardLogoAlt}</span>
                   )}
-                  {tenantBranding?.logo_url && (
-                    <span className="db-workspace-context__name">{dashboardLogoAlt}</span>
-                  )}
                   {tenantBranding?.state && (
                     <span className="db-workspace-context__state inline-flex items-center px-2 py-0.5 rounded-full border border-white/10 bg-white/5 text-[11px] font-medium tracking-wide text-gray-300">
                       {tenantBranding.state}

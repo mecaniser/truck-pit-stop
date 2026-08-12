@@ -116,6 +116,7 @@ describe('DB-035 authenticated staff shell', () => {
     expect(screen.queryByRole('link', { name: 'Home' })).not.toBeInTheDocument()
     expect(screen.getByLabelText('Active shop: Truck Pit Stop Wisconsin')).toHaveTextContent('Truck Pit Stop Wisconsin')
     expect(screen.getByText('Truck Pit Stop Wisconsin', { selector: '.db-workspace-context__fallback' })).toBeInTheDocument()
+    expect(document.querySelector('.db-workspace-context__name')).not.toBeInTheDocument()
     const productBrand = screen.getByRole('link', { name: 'DieselBridge Shop Work' })
     expect(productBrand.querySelector('.db-wordmark--animated.db-wordmark--type-only')).toHaveTextContent('DieselBridge')
     expect(productBrand.querySelector('.db-wordmark__bridge')).not.toBeInTheDocument()
