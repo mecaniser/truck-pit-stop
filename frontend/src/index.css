@@ -326,6 +326,15 @@ html::-webkit-scrollbar-thumb:hover {
   gap: var(--density-section-gap);
 }
 
+/* The operating canvas owns the right edge at desktop widths. This keeps the
+   route scrollbars at that edge and returns the former right gutter to the
+   canonical workspaces (Customers, Repair Orders, and My Shop). */
+@media (min-width: 1024px) {
+  .db-presentation-new .db-staff-main {
+    padding-right: 0 !important;
+  }
+}
+
 .db-presentation-new .db-staff-content h1,
 .db-presentation-new .db-staff-content h2,
 .db-presentation-new .db-staff-content h3 {
