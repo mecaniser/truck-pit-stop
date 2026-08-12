@@ -827,8 +827,9 @@ html::-webkit-scrollbar-thumb:hover {
   .db-presentation-new .db-workspace-context {
     display: flex;
     flex-basis: auto;
+    flex-direction: column;
     justify-content: center;
-    gap: 5px;
+    gap: 4px;
     padding-left: 0;
   }
   .db-presentation-new .db-workspace-context__logo { display: block; max-width: 42px; max-height: 24px; }
