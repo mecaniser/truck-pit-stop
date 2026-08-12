@@ -47,7 +47,7 @@ function MobileGarageNav({ sections }: { sections: GarageSection[] }) {
               to={section.to}
               style={staggeredReveal(index)}
               className={({ isActive }) =>
-                `flex shrink-0 items-center justify-center gap-2 rounded-xl border px-4 py-2.5 text-xs font-medium transition-all animate-[fadeIn_0.3s_ease-out_forwards] opacity-0 ${
+                `db-my-shop-nav-item flex shrink-0 items-center justify-center gap-2 rounded-xl border px-4 py-2.5 text-xs font-medium transition-all animate-[fadeIn_0.3s_ease-out_forwards] opacity-0 ${
                   isActive
                     ? 'border-[var(--accent-400)]/50 bg-[var(--accent-600)] text-white shadow-lg shadow-[var(--accent-500)]/20'
                     : 'border-zinc-700/50 bg-zinc-800/60 text-zinc-500 hover:border-zinc-600 hover:text-zinc-300'
@@ -80,7 +80,7 @@ function DesktopGarageNav({ sections }: { sections: GarageSection[] }) {
                 to={section.to}
                 style={staggeredReveal(index)}
                 className={({ isActive }) =>
-                  `flex w-full items-center gap-3 rounded-xl px-3 py-3 text-sm font-medium transition-all animate-[fadeIn_0.3s_ease-out_forwards] opacity-0 ${
+                  `db-my-shop-nav-item flex w-full items-center gap-3 rounded-xl px-3 py-3 text-sm font-medium transition-all animate-[fadeIn_0.3s_ease-out_forwards] opacity-0 ${
                     isActive
                       ? 'border border-[var(--accent-500)]/30 bg-[var(--accent-500)]/10 text-[var(--accent-400)]'
                       : 'border border-transparent text-zinc-500 hover:bg-zinc-800/60 hover:text-zinc-300'

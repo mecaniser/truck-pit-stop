@@ -851,6 +851,21 @@ html::-webkit-scrollbar-thumb:hover {
   outline-offset: 2px;
 }
 
+/* My Shop's category rail is navigation, not a neutral dark-list remnant.
+   Inactive categories preview the selected appearance accent on hover. */
+.db-presentation-new .db-my-shop-workspace .db-my-shop-nav-item:focus-visible {
+  outline: 2px solid var(--personal-accent-400);
+  outline-offset: 2px;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .db-presentation-new .db-my-shop-workspace .db-my-shop-nav-item:not([aria-current='page']):hover {
+    color: var(--personal-accent-500) !important;
+    border-color: color-mix(in srgb, var(--personal-accent-500) 34%, var(--border-subtle)) !important;
+    background-color: color-mix(in srgb, var(--personal-accent-500) 8%, var(--surface-raised)) !important;
+  }
+}
+
 @media (hover: hover) and (pointer: fine) {
   .db-presentation-new .db-settings-nav-item:not([data-active='true']):hover {
     color: var(--personal-accent-500) !important;
