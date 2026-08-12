@@ -438,6 +438,27 @@ html::-webkit-scrollbar-thumb:hover {
   border-color: var(--workspace-border) !important;
 }
 
+/* Retained settings navigation inherits legacy zinc utilities. New presentation
+   keeps its active, hover, and keyboard focus states in the current accent ramp. */
+.db-presentation-new .db-settings-nav-item[data-active='true'] {
+  color: var(--personal-accent-400) !important;
+  border-color: color-mix(in srgb, var(--personal-accent-500) 35%, var(--border-subtle)) !important;
+  background-color: color-mix(in srgb, var(--personal-accent-500) 10%, var(--surface-raised)) !important;
+}
+
+.db-presentation-new .db-settings-nav-item:focus-visible {
+  outline: 2px solid var(--personal-accent-400);
+  outline-offset: 2px;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .db-presentation-new .db-settings-nav-item:not([data-active='true']):hover {
+    color: var(--personal-accent-500) !important;
+    border-color: color-mix(in srgb, var(--personal-accent-500) 34%, var(--border-subtle)) !important;
+    background-color: color-mix(in srgb, var(--personal-accent-500) 8%, var(--surface-raised)) !important;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .db-presentation-new .db-settings-workspace [class*='animate-'],
   .db-presentation-new .db-settings-workspace [class*='transition-'] {

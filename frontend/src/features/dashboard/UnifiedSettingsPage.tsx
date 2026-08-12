@@ -3267,7 +3267,8 @@ function SidebarLayout({ activeSection, setActiveSection, isGarageUser, isSuperA
               <button
                 key={section.id}
                 onClick={() => setActiveSection(section.id)}
-                className={`flex items-center justify-center gap-2 px-4 py-2.5 text-xs font-medium transition-colors flex-shrink-0 rounded-xl border ${
+                data-active={activeSection === section.id}
+                className={`db-settings-nav-item flex items-center justify-center gap-2 px-4 py-2.5 text-xs font-medium transition-colors flex-shrink-0 rounded-xl border ${
                   activeSection === section.id
                     ? 'bg-[var(--accent-600)] border-[var(--accent-400)]/50 text-white shadow-lg shadow-[var(--accent-500)]/20'
                     : 'bg-zinc-800/60 border-zinc-700/50 text-zinc-500 hover:text-zinc-300 hover:border-zinc-600'
@@ -3295,7 +3296,8 @@ function SidebarLayout({ activeSection, setActiveSection, isGarageUser, isSuperA
                 <button
                   key={section.id}
                   onClick={() => setActiveSection(section.id)}
-                  className={`w-full flex items-center gap-3 px-3 py-3 text-sm font-medium transition-colors rounded-xl ${
+                  data-active={activeSection === section.id}
+                  className={`db-settings-nav-item w-full flex items-center gap-3 px-3 py-3 text-sm font-medium transition-colors rounded-xl ${
                     activeSection === section.id
                       ? 'bg-[var(--accent-500)]/10 text-[var(--accent-400)] border border-[var(--accent-500)]/30'
                       : 'border border-transparent text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/60'
@@ -3323,7 +3325,8 @@ function SidebarLayout({ activeSection, setActiveSection, isGarageUser, isSuperA
                   <button
                     key={section.id}
                     onClick={() => setActiveSection(section.id)}
-                    className={`w-full flex items-center gap-3 px-3 py-3 text-sm font-medium transition-colors rounded-xl ${
+                    data-active={activeSection === section.id}
+                    className={`db-settings-nav-item w-full flex items-center gap-3 px-3 py-3 text-sm font-medium transition-colors rounded-xl ${
                       activeSection === section.id
                         ? 'bg-[var(--accent-500)]/10 text-[var(--accent-400)] border border-[var(--accent-500)]/30'
                         : 'border border-transparent text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/60'
@@ -3352,7 +3355,8 @@ function SidebarLayout({ activeSection, setActiveSection, isGarageUser, isSuperA
                   <button
                     key={section.id}
                     onClick={() => setActiveSection(section.id)}
-                    className={`w-full flex items-center gap-3 px-3 py-3 text-sm font-medium transition-colors rounded-xl ${
+                    data-active={activeSection === section.id}
+                    className={`db-settings-nav-item w-full flex items-center gap-3 px-3 py-3 text-sm font-medium transition-colors rounded-xl ${
                       activeSection === section.id
                         ? 'bg-[var(--accent-500)]/10 text-[var(--accent-400)] border border-[var(--accent-500)]/30'
                         : 'border border-transparent text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/60'
