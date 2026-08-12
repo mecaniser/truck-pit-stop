@@ -3223,7 +3223,7 @@ function AppearanceSection() {
 const PROFILE_SECTIONS = [
   { id: 'profile' as const, label: 'Profile', shortLabel: 'Profile', icon: User },
   { id: 'security' as const, label: 'Security', shortLabel: 'Security', icon: Lock },
-  { id: 'appearance' as const, label: 'Appearance', shortLabel: 'Theme', icon: Palette },
+  { id: 'appearance' as const, label: 'Appearance', shortLabel: 'Appearance', icon: Palette },
 ]
 
 const PLATFORM_SECTIONS = [
@@ -3258,7 +3258,7 @@ function SidebarLayout({ activeSection, setActiveSection, isGarageUser, isSuperA
   ]
 
   return (
-    <div className="flex flex-col lg:flex-row gap-6 w-full max-w-[1200px] mx-auto">
+    <div className="db-settings-workspace flex flex-col lg:flex-row gap-6 w-full max-w-[1200px] mx-auto">
       {/* Mobile: Horizontal scrolling nav */}
       <div className="lg:hidden">
         <div className="bg-zinc-900/80 backdrop-blur-sm border border-zinc-700/50 rounded-2xl p-2">

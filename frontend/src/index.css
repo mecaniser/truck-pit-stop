@@ -390,6 +390,37 @@ html::-webkit-scrollbar-thumb:hover {
   border-color: var(--workspace-border) !important;
 }
 
+/* The Settings route is retained from the legacy dark workstation. Day shop
+   must map those classes to the operating canvas instead of leaving pale
+   dark-mode foregrounds on road-white content. */
+:is(.db-presentation-new[data-appearance-mode='light'], .db-presentation-new:not([data-appearance-mode])) .db-settings-workspace :is(.text-zinc-100, .text-zinc-300) {
+  color: var(--workspace-text) !important;
+}
+
+:is(.db-presentation-new[data-appearance-mode='light'], .db-presentation-new:not([data-appearance-mode])) .db-settings-workspace :is(.text-zinc-400, .text-zinc-500, .text-zinc-600) {
+  color: var(--workspace-muted) !important;
+}
+
+:is(.db-presentation-new[data-appearance-mode='light'], .db-presentation-new:not([data-appearance-mode])) .db-settings-workspace :is(.bg-zinc-900\/80, .bg-zinc-800\/80, .bg-zinc-800\/60, .bg-zinc-800\/40, .bg-zinc-950\/20) {
+  background-color: var(--product-road-white) !important;
+}
+
+:is(.db-presentation-new[data-appearance-mode='light'], .db-presentation-new:not([data-appearance-mode])) .db-settings-workspace :is(.border-zinc-950\/20, .border-zinc-800\/50, .border-zinc-700\/50, .border-zinc-600\/50) {
+  border-color: var(--workspace-border) !important;
+}
+
+:is(.db-presentation-new[data-appearance-mode='light'], .db-presentation-new:not([data-appearance-mode])) .db-settings-workspace .divide-zinc-800\/50 > :not([hidden]) ~ :not([hidden]) {
+  border-color: var(--workspace-border) !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .db-presentation-new .db-settings-workspace [class*='animate-'],
+  .db-presentation-new .db-settings-workspace [class*='transition-'] {
+    animation: none !important;
+    transition: none !important;
+  }
+}
+
 /* DB-035 Stage 3: landing-derived Action Ledger. Dashboard continues to own
    only the server-backed queue projection and hands every deeper action to the
    canonical Repair Orders route. */
