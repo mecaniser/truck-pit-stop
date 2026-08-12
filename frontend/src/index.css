@@ -685,6 +685,57 @@ html::-webkit-scrollbar-thumb:hover {
   }
 }
 
+/* Inventory remains the authoritative parts ledger. Its retained dark table
+   becomes a road-white operating surface under the new presentation only. */
+.db-presentation-new .db-inventory-workspace {
+  color: var(--workspace-text);
+}
+
+.db-presentation-new .db-inventory-workspace__ledger {
+  border-color: var(--workspace-border) !important;
+  background: var(--surface-overlay) !important;
+}
+
+.db-presentation-new .db-inventory-workspace :is(.bg-white\/5, .bg-white\/10, .bg-white\/20) {
+  border-color: var(--workspace-border) !important;
+  background-color: var(--surface-raised) !important;
+}
+
+.db-presentation-new .db-inventory-workspace :is(.border-white\/10, .border-white\/15, .border-white\/20, .divide-white\/5, .divide-white\/10) {
+  border-color: var(--workspace-border) !important;
+}
+
+.db-presentation-new .db-inventory-workspace :is(.text-white, .text-gray-100, .text-gray-200, .text-gray-300) {
+  color: var(--workspace-text) !important;
+}
+
+.db-presentation-new .db-inventory-workspace :is(.text-gray-400, .text-gray-500, [class*='text-white/']) {
+  color: var(--workspace-muted) !important;
+}
+
+.inventory-price-mode--selected {
+  background: #f59e0b;
+  color: #fff;
+}
+
+.inventory-price-mode--idle {
+  background: #fff;
+  color: #475569;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .inventory-price-mode--idle:hover {
+    background: #f8fafc;
+  }
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .db-presentation-new .db-inventory-workspace tbody > tr:hover,
+  .db-presentation-new .db-inventory-workspace [class*='hover\\:bg-white']:hover {
+    background: var(--surface-raised) !important;
+  }
+}
+
 /* Retained settings navigation inherits legacy zinc utilities. New presentation
    keeps its active, hover, and keyboard focus states in the current accent ramp. */
 .db-presentation-new .db-settings-nav-item[data-active='true'] {

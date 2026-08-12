@@ -104,9 +104,7 @@ function SellingPriceField({
                 e.preventDefault()
                 switchMode(m)
               }}
-              className={`flex items-center px-2 text-[10px] font-semibold leading-none whitespace-nowrap transition-colors ${
-                mode === m ? 'bg-amber-500 text-white' : 'bg-white text-gray-500 hover:bg-gray-50'
-              }`}
+              className={`inventory-price-mode flex items-center px-2 text-[10px] font-semibold leading-none whitespace-nowrap transition-colors ${mode === m ? 'inventory-price-mode--selected' : 'inventory-price-mode--idle'}`}
               aria-pressed={mode === m}
               aria-label={m === '$' ? 'Enter selling price in dollars' : 'Enter selling price as % markup over cost'}
             >
@@ -808,7 +806,7 @@ export default function InventoryPage() {
   }
 
   return (
-    <div className="flex flex-col gap-3 lg:h-full lg:min-h-0">
+    <div className="db-inventory-workspace flex flex-col gap-3 lg:h-full lg:min-h-0">
       {syncStatus?.ets_last_synced_at && (
         <div className="text-xs text-gray-400 px-1">
           Last synced from Easy Truck Shop: {new Date(syncStatus.ets_last_synced_at).toLocaleString()}
@@ -1128,7 +1126,7 @@ export default function InventoryPage() {
         })}
       </div>
 
-      <div className="hidden lg:flex min-h-0 flex-1 flex-col rounded-xl border border-white/10 bg-white/5 overflow-hidden">
+      <div className="db-inventory-workspace__ledger hidden lg:flex min-h-0 flex-1 flex-col rounded-xl border border-white/10 bg-white/5 overflow-hidden">
         <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 border-b border-white/10">
           <ViewToggle value={viewMode} onChange={setViewMode} />
           <div className="flex items-center gap-2">
