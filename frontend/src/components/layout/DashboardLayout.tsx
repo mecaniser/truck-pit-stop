@@ -2,7 +2,7 @@ import { Routes, Route, Link, Navigate, useLocation } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { type MouseEvent as ReactMouseEvent, type TouchEvent, useEffect, useRef, useState } from 'react'
 import { useAuthStore } from '../../stores/authStore'
-import { Home, Users, ClipboardList, Building2, User, LayoutGrid, BarChart3, UserCheck, Crown, MessageSquare, CreditCard, MoreHorizontal, ChevronLeft, Warehouse, ChevronsLeft, ChevronsRight } from 'lucide-react'
+import { Home, Users, ClipboardList, Building2, User, LayoutGrid, BarChart3, UserCheck, Crown, MessageSquare, CreditCard, MoreHorizontal, ChevronLeft, ChevronsLeft, ChevronsRight } from 'lucide-react'
 import { useTheme } from '../../contexts/ThemeContext'
 import api from '@/lib/api'
 import CustomersPage from '@/features/customers/CustomersPage'
@@ -246,15 +246,17 @@ export default function DashboardLayout() {
                       className="db-workspace-context__logo h-7 w-auto object-contain"
                     />
                   ) : (
-                    <span className="db-workspace-context__fallback" aria-hidden="true"><Warehouse /></span>
+                    <span className="db-workspace-context__fallback">{dashboardLogoAlt}</span>
                   )}
-                  <span className="db-workspace-context__name">{dashboardLogoAlt}</span>
+                  {tenantBranding?.logo_url && (
+                    <span className="db-workspace-context__name">{dashboardLogoAlt}</span>
+                  )}
+                  {tenantBranding?.state && (
+                    <span className="db-workspace-context__state inline-flex items-center px-2 py-0.5 rounded-full border border-white/10 bg-white/5 text-[11px] font-medium tracking-wide text-gray-300">
+                      {tenantBranding.state}
+                    </span>
+                  )}
                 </div>
-              )}
-              {!isSuperAdmin && tenantBranding?.state && (
-                <span className="db-workspace-context__state inline-flex items-center px-2 py-0.5 rounded-full border border-white/10 bg-white/5 text-[11px] font-medium tracking-wide text-gray-300">
-                  {tenantBranding.state}
-                </span>
               )}
               {isSuperAdmin && (
                 <span className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 bg-gold-500/10 border border-gold-500/30 rounded-full text-gold-400 text-xs font-medium">
