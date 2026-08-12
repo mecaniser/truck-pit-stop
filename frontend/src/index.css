@@ -518,6 +518,70 @@ html::-webkit-scrollbar-thumb:hover {
   color: var(--workspace-muted) !important;
 }
 
+/* Settings switches retain a 44px touch target without stretching the visual
+   control. The track and thumb are fixed so inherited control sizing cannot
+   distort their geometry. */
+.db-presentation-new .db-staff-content .db-settings-switch {
+  width: 56px !important;
+  min-width: 56px;
+  height: 44px !important;
+  min-height: 44px !important;
+  border: 0 !important;
+  background: transparent !important;
+  isolation: isolate;
+}
+
+.db-presentation-new .db-settings-switch::before {
+  position: absolute;
+  z-index: -1;
+  top: 8px;
+  left: 2px;
+  width: 52px;
+  height: 28px;
+  content: '';
+  border: 1px solid var(--workspace-border);
+  border-radius: 999px;
+  background: var(--surface-overlay);
+  transition: background-color 140ms ease-out, border-color 140ms ease-out;
+}
+
+.db-presentation-new .db-settings-switch[aria-checked='true']::before {
+  border-color: var(--semantic-success-500);
+  background: var(--semantic-success-500);
+}
+
+.db-presentation-new .db-settings-switch > span {
+  top: 12px !important;
+  left: 6px !important;
+  width: 20px !important;
+  height: 20px !important;
+  background: var(--surface-overlay) !important;
+  box-shadow: 0 1px 3px rgba(16, 36, 59, 0.24) !important;
+}
+
+.db-presentation-new .db-settings-switch[aria-checked='true'] > span {
+  left: 30px !important;
+}
+
+.db-presentation-new .db-settings-switch:disabled::before {
+  opacity: 0.58;
+}
+
+@media (forced-colors: active) {
+  .db-presentation-new .db-settings-switch::before {
+    border-color: ButtonText;
+    background: ButtonFace;
+  }
+
+  .db-presentation-new .db-settings-switch[aria-checked='true']::before {
+    background: Highlight;
+  }
+
+  .db-presentation-new .db-settings-switch > span {
+    background: Canvas !important;
+  }
+}
+
 /* Retained settings navigation inherits legacy zinc utilities. New presentation
    keeps its active, hover, and keyboard focus states in the current accent ramp. */
 .db-presentation-new .db-settings-nav-item[data-active='true'] {

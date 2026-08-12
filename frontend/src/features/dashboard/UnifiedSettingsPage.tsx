@@ -2167,14 +2167,16 @@ function NotificationsSection() {
           <button
             onClick={() => messagingMutation.mutate(!messagingEnabled)}
             disabled={messagingMutation.isPending}
-            aria-pressed={messagingEnabled}
-            className={`relative w-14 h-8 rounded-full border transition-colors flex-shrink-0 disabled:opacity-60 ${
+            role="switch"
+            aria-checked={messagingEnabled}
+            aria-label="Enable customer messaging"
+            className={`db-settings-switch relative w-14 h-8 rounded-full border transition-colors flex-shrink-0 disabled:opacity-60 ${
               messagingEnabled
                 ? 'bg-[var(--accent-600)] border-[var(--accent-400)]/50'
                 : 'bg-zinc-800 border-zinc-600/50'
             }`}
           >
-            <span className={`absolute top-1 w-5 h-5 bg-white rounded-full transition-transform shadow-md ${
+            <span aria-hidden="true" className={`absolute top-1 w-5 h-5 bg-white rounded-full transition-transform shadow-md ${
               messagingEnabled ? 'left-7' : 'left-1'
             }`} />
           </button>
@@ -2196,13 +2198,16 @@ function NotificationsSection() {
             </div>
             <button
               onClick={() => { setRemindersEnabled(!remindersEnabled); setIsEditing(true) }}
-              className={`relative w-14 h-8 rounded-full border transition-colors ${
+              role="switch"
+              aria-checked={remindersEnabled}
+              aria-label="Enable invoice reminders"
+              className={`db-settings-switch relative w-14 h-8 rounded-full border transition-colors ${
                 remindersEnabled 
                   ? 'bg-[var(--accent-600)] border-[var(--accent-400)]/50' 
                   : 'bg-zinc-800 border-zinc-600/50'
               }`}
             >
-              <span className={`absolute top-1 w-5 h-5 bg-white rounded-full transition-transform shadow-md ${
+              <span aria-hidden="true" className={`absolute top-1 w-5 h-5 bg-white rounded-full transition-transform shadow-md ${
                 remindersEnabled ? 'left-7' : 'left-1'
               }`} />
             </button>
