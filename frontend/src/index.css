@@ -124,18 +124,27 @@ html::-webkit-scrollbar-thumb:hover {
    staff-shell boundary so public, customer, driver, fleet and mechanic apps
    keep their own visual systems. */
 .db-presentation-new {
-  --surface-canvas: #07101d;
-  --surface-raised: #0d1a2a;
-  --surface-glass: rgba(19, 35, 61, 0.82);
-  --surface-overlay: #111f33;
-  --text-primary: #f6f8fb;
-  --text-secondary: #9fb0c5;
-  --border-subtle: rgba(148, 163, 184, 0.2);
-  background: var(--surface-canvas) !important;
+  --shell-field: #0b1b2e;
+  --shell-field-raised: #142a44;
+  --shell-text: #f7f9fc;
+  --shell-muted: #aebdcd;
+  --shell-border: #2b435d;
+  --workspace-canvas: #f4f7fa;
+  --workspace-text: #14243a;
+  --workspace-muted: #5b6d82;
+  --workspace-border: #cbd5df;
+  --surface-canvas: #e8edf4;
+  --surface-raised: #f6f8fb;
+  --surface-glass: rgba(246, 248, 251, 0.92);
+  --surface-overlay: #ffffff;
+  --text-primary: #101827;
+  --text-secondary: #526176;
+  --border-subtle: rgba(19, 35, 61, 0.17);
+  background: var(--shell-field) !important;
   color: var(--text-primary);
   font-family: var(--font-body);
   font-size: var(--font-size-body);
-  color-scheme: dark;
+  color-scheme: light;
 }
 
 .db-staff-shell {
@@ -154,6 +163,17 @@ html::-webkit-scrollbar-thumb:hover {
   color-scheme: light;
 }
 
+.db-presentation-new[data-appearance-mode='dark'] {
+  --surface-canvas: #07101d;
+  --surface-raised: #0d1a2a;
+  --surface-glass: rgba(19, 35, 61, 0.82);
+  --surface-overlay: #111f33;
+  --text-primary: #f6f8fb;
+  --text-secondary: #9fb0c5;
+  --border-subtle: rgba(148, 163, 184, 0.2);
+  color-scheme: dark;
+}
+
 .db-presentation-new[data-appearance-mode='high_contrast'] {
   --surface-canvas: #000;
   --surface-raised: #080808;
@@ -166,10 +186,12 @@ html::-webkit-scrollbar-thumb:hover {
 }
 
 .db-presentation-new .db-staff-nav {
-  min-height: 76px;
-  border-bottom: 1px solid var(--border-subtle) !important;
-  background: color-mix(in srgb, var(--surface-canvas) 94%, transparent) !important;
-  box-shadow: 0 18px 42px rgba(1, 7, 15, 0.18) !important;
+  min-height: 64px;
+  color: var(--shell-text);
+  border-bottom: 1px solid var(--shell-border) !important;
+  background: var(--shell-field) !important;
+  box-shadow: none !important;
+  color-scheme: dark;
 }
 
 .db-presentation-new .db-staff-nav__inner {
@@ -179,16 +201,24 @@ html::-webkit-scrollbar-thumb:hover {
 
 .db-presentation-new .db-product-brand {
   min-height: 44px;
+  min-width: 44px;
+  gap: 9px;
   padding-inline-end: clamp(12px, 1.4vw, 24px);
-  border-inline-end: 1px solid var(--border-subtle);
+  color: var(--shell-text);
+  border-inline-end: 1px solid var(--shell-border);
+  text-decoration: none;
 }
+
+.db-presentation-new .db-product-brand__mark { width: 34px; height: 34px; object-fit: contain; }
+.db-presentation-new .db-product-brand__name { font-size: 15px; font-weight: 820; letter-spacing: -.035em; }
+.db-presentation-new .db-product-brand__name span { color: var(--product-copper-400); }
 
 .db-workspace-context {
   display: flex;
   min-width: 0;
   align-items: center;
   gap: 10px;
-  color: var(--text-secondary);
+  color: var(--shell-muted);
 }
 
 .db-workspace-context__logo { max-width: 88px; }
@@ -198,9 +228,9 @@ html::-webkit-scrollbar-thumb:hover {
   display: grid;
   flex: 0 0 auto;
   place-items: center;
-  border: 1px solid var(--border-subtle);
+  border: 1px solid var(--shell-border);
   border-radius: 8px;
-  color: var(--text-secondary);
+  color: var(--shell-muted);
 }
 .db-workspace-context__fallback svg { width: 15px; height: 15px; }
 .db-workspace-context__name {
@@ -220,14 +250,20 @@ html::-webkit-scrollbar-thumb:hover {
 }
 
 .db-presentation-new .db-staff-main {
-  height: calc(100vh - 76px);
+  height: calc(100vh - 64px);
   padding: clamp(16px, 2vw, 30px) clamp(16px, 2.3vw, 40px);
+  background: var(--workspace-canvas);
+  color: var(--workspace-text);
+  color-scheme: light;
 }
 
 .db-presentation-new .db-breadcrumb {
   min-height: 32px;
   margin-bottom: 12px;
+  color: var(--workspace-muted);
 }
+.db-presentation-new .db-breadcrumb a { color: var(--workspace-muted) !important; }
+.db-presentation-new .db-breadcrumb > span:last-child { color: var(--product-copper-500) !important; }
 
 .db-presentation-new .db-staff-content {
   gap: var(--density-section-gap);
@@ -248,10 +284,11 @@ html::-webkit-scrollbar-thumb:hover {
 }
 
 .db-presentation-new .db-staff-content :is(button, a):focus-visible,
-.db-presentation-new .db-staff-nav :is(button, a):focus-visible {
-  outline: 2px solid CanvasText;
+.db-presentation-new .db-staff-nav :is(button, a):focus-visible,
+.db-presentation-new .db-mobile-nav :is(button, a):focus-visible {
+  outline: 2px solid currentColor;
   outline-offset: 3px;
-  box-shadow: 0 0 0 5px color-mix(in srgb, var(--personal-accent-400) 42%, transparent);
+  box-shadow: 0 0 0 5px color-mix(in srgb, var(--product-copper-400) 42%, transparent);
 }
 
 .db-presentation-new .db-staff-content :is(input, textarea, select) {
@@ -276,12 +313,13 @@ html::-webkit-scrollbar-thumb:hover {
   letter-spacing: 0.08em;
 }
 
-.db-presentation-new .db-staff-content :is(.bg-zinc-900\/80, .bg-zinc-900, .bg-zinc-800\/40, .bg-white\/5) {
+.db-presentation-new .db-staff-content :is(.bg-zinc-900\/80, .bg-zinc-900, .bg-zinc-800\/40, .bg-white\/5, .bg-white\/10) {
   background-color: var(--surface-raised) !important;
   border-color: var(--border-subtle) !important;
+  color: var(--text-primary) !important;
 }
 
-.db-presentation-new .db-staff-content :is(.text-zinc-500, .text-gray-500, .text-gray-400, .text-zinc-400) {
+.db-presentation-new .db-staff-content :is(.text-zinc-500, .text-gray-500, .text-gray-400, .text-zinc-400, .text-gray-300, .text-zinc-300) {
   color: var(--text-secondary) !important;
 }
 
@@ -301,12 +339,11 @@ html::-webkit-scrollbar-thumb:hover {
   min-width: 0;
 }
 
-/* The accepted shell uses the same router and links at every width. The rail
-   compacts on iPad-sized workspaces and reaches full width only at 1280px. */
+/* One route table, rendered through full, compact and mobile product navigation. */
 @media (min-width: 960px) {
   .db-presentation-new.db-staff-shell {
     display: grid;
-    grid-template-columns: 176px minmax(0, 1fr);
+    grid-template-columns: 84px minmax(0, 1fr);
     grid-template-rows: minmax(0, 1fr);
     overflow: hidden;
   }
@@ -316,13 +353,13 @@ html::-webkit-scrollbar-thumb:hover {
     position: relative;
     height: 100dvh;
     min-height: 0;
-    border-right: 1px solid var(--border-subtle) !important;
+    border-right: 0 !important;
     border-bottom: 0 !important;
     box-shadow: none !important;
   }
   .db-presentation-new .db-staff-nav__inner {
     height: 100%;
-    padding: 20px 14px;
+    padding: 16px 10px;
   }
   .db-presentation-new .db-staff-nav__layout {
     height: 100%;
@@ -331,30 +368,32 @@ html::-webkit-scrollbar-thumb:hover {
     justify-content: flex-start;
   }
   .db-presentation-new .db-staff-nav__brand-row {
-    min-height: 56px;
+    min-height: 84px;
     flex-wrap: wrap;
-    padding: 0 6px 18px;
-    border-bottom: 1px solid var(--border-subtle);
+    justify-content: center;
+    padding: 0 2px 14px;
+    border-bottom: 1px solid var(--shell-border);
   }
   .db-presentation-new .db-product-brand {
     min-height: 40px;
     padding-inline-end: 0;
     border-inline-end: 0;
   }
+  .db-presentation-new .db-product-brand__name { display: none; }
   .db-presentation-new .db-workspace-context {
     display: flex;
     flex-basis: 100%;
-    gap: 6px;
-    padding-left: 2px;
+    justify-content: center;
+    gap: 5px;
+    padding-left: 0;
   }
-  .db-presentation-new .db-workspace-context__logo,
-  .db-presentation-new .db-workspace-context__fallback {
-    display: none;
-  }
+  .db-presentation-new .db-workspace-context__logo { display: block; max-width: 42px; max-height: 24px; }
+  .db-presentation-new .db-workspace-context__fallback { display: grid; width: 26px; height: 26px; }
   .db-presentation-new .db-workspace-context__name {
-    max-width: 22ch;
-    font-size: 11px;
+    max-width: 8ch;
+    font-size: 9px;
     font-weight: 650;
+    text-align: center;
   }
   .db-presentation-new .db-staff-primary-nav {
     display: flex;
@@ -362,34 +401,47 @@ html::-webkit-scrollbar-thumb:hover {
     flex-direction: column;
     align-items: stretch;
     gap: 4px;
-    margin: 24px 0;
+    margin: 18px 0;
   }
+  .db-presentation-new .db-staff-primary-nav > * { margin-inline-start: 0 !important; }
   .db-presentation-new .db-staff-primary-nav > a {
     min-height: 46px;
     width: 100%;
-    padding: 0 12px;
+    justify-content: center;
+    padding: 0 10px;
     border: 0 !important;
     border-radius: 10px;
-    color: var(--text-secondary);
+    color: var(--shell-muted);
   }
+  .db-presentation-new .db-staff-primary-nav > a > span { gap: 0; }
+  .db-presentation-new .db-staff-primary-nav__label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
   .db-presentation-new .db-staff-primary-nav > a:hover {
-    color: var(--text-primary);
-    background: color-mix(in srgb, var(--surface-overlay) 72%, transparent);
+    color: var(--shell-text);
+    background: rgba(255, 255, 255, .07);
   }
-  .db-presentation-new .db-staff-primary-nav > a[style] {
-    background: color-mix(in srgb, var(--personal-accent-500) 12%, var(--surface-overlay));
+  .db-presentation-new .db-staff-primary-nav > a[aria-current='page'] {
+    color: var(--shell-text);
+    background: #30455f;
+    box-shadow: inset 3px 0 var(--product-copper-400);
   }
   .db-presentation-new .db-staff-nav__profile {
     display: flex;
-    justify-content: flex-start;
-    padding: 14px 6px 0;
-    border-top: 1px solid var(--border-subtle);
+    justify-content: center;
+    padding: 14px 2px 0;
+    border-top: 1px solid var(--shell-border);
   }
+  .db-presentation-new .db-staff-nav__profile > a { width: 46px; border-color: var(--shell-border); color: var(--shell-text); box-shadow: none; }
+  .db-presentation-new .db-staff-nav__profile > a[aria-current='page'] { border-color: var(--product-copper-400); box-shadow: inset 0 -2px var(--product-copper-400); }
+  .db-presentation-new .db-staff-nav__profile-copy { display: none; }
   .db-presentation-new .db-staff-main {
     grid-column: 2;
     grid-row: 1;
-    height: 100dvh;
+    height: calc(100dvh - 24px);
+    margin: 12px 12px 12px 0;
     padding: clamp(20px, 2.2vw, 38px);
+    border: 1px solid var(--workspace-border);
+    border-radius: 18px;
+    overflow: hidden;
   }
 }
 
@@ -397,15 +449,41 @@ html::-webkit-scrollbar-thumb:hover {
   .db-presentation-new.db-staff-shell {
     grid-template-columns: 224px minmax(0, 1fr);
   }
+  .db-presentation-new .db-staff-nav__inner { padding: 18px 12px; }
+  .db-presentation-new .db-staff-nav__brand-row { min-height: 92px; justify-content: flex-start; padding: 0 8px 16px; }
+  .db-presentation-new .db-product-brand__name { display: inline; }
+  .db-presentation-new .db-workspace-context { justify-content: flex-start; }
+  .db-presentation-new .db-workspace-context__logo { max-width: 72px; }
+  .db-presentation-new .db-workspace-context__name { max-width: 18ch; font-size: 11px; text-align: left; }
+  .db-presentation-new .db-staff-primary-nav > a { justify-content: flex-start; padding-inline: 13px; }
+  .db-presentation-new .db-staff-primary-nav > a > span { gap: 10px; }
+  .db-presentation-new .db-staff-primary-nav__label { position: static; width: auto; height: auto; overflow: visible; clip: auto; white-space: normal; }
+  .db-presentation-new .db-staff-nav__profile { justify-content: flex-start; padding-inline: 6px; }
+  .db-presentation-new .db-staff-nav__profile > a { width: 100%; justify-content: flex-start; gap: 10px; padding: 3px; }
+  .db-presentation-new .db-staff-nav__profile-monogram { width: 38px; flex: 0 0 38px; }
+  .db-presentation-new .db-staff-nav__profile-copy { min-width: 0; display: flex; flex-direction: column; text-align: left; }
+  .db-presentation-new .db-staff-nav__profile-copy strong { max-width: 14ch; overflow: hidden; color: var(--shell-text); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+  .db-presentation-new .db-staff-nav__profile-copy small { color: var(--shell-muted); font-size: 9px; }
 }
 
-@media (min-width: 768px) and (max-width: 959px) {
+@media (max-width: 959px) {
   .db-presentation-new .db-staff-primary-nav { display: none !important; }
   .db-presentation-new .db-mobile-nav { display: block !important; }
   .db-presentation-new .db-mobile-nav-spacer { display: block !important; }
+  .db-presentation-new .db-staff-nav__layout { height: 64px; }
+  .db-presentation-new .db-staff-nav__brand-row { min-width: 0; }
   .db-presentation-new .db-staff-main {
-    height: calc(100vh - 64px);
+    height: calc(100dvh - 64px);
     padding-bottom: calc(14px + 4rem + env(safe-area-inset-bottom));
+  }
+  .db-presentation-new .db-mobile-nav > div { border-color: var(--shell-border) !important; background: var(--shell-field) !important; backdrop-filter: none !important; }
+  .db-presentation-new .db-mobile-nav :is(a, button) { color: var(--shell-muted); }
+  .db-presentation-new .db-mobile-nav :is(a[aria-current='page'], button[aria-expanded='true']) { color: var(--shell-text); box-shadow: inset 0 3px var(--product-copper-400); }
+}
+
+@media (min-width: 768px) and (max-width: 959px) {
+  .db-presentation-new .db-staff-main {
+    padding-inline: 22px;
   }
 }
 
@@ -417,8 +495,9 @@ html::-webkit-scrollbar-thumb:hover {
 
 @media (max-width: 767px) {
   .db-presentation-new .db-staff-nav { min-height: 60px; }
-  .db-presentation-new .db-staff-main { height: calc(100vh - 60px); padding: 14px; }
-  .db-workspace-context__name { display: none; }
+  .db-presentation-new .db-staff-nav__layout { height: 60px; }
+  .db-presentation-new .db-staff-main { height: calc(100dvh - 60px); padding: 14px 14px calc(14px + 4rem + env(safe-area-inset-bottom)); }
+  .db-presentation-new .db-workspace-context__name { display: block; max-width: 8ch; font-size: 10px; }
   .db-workspace-context__logo { max-width: 52px; }
   .db-presentation-new .db-product-brand { padding-inline-end: 10px; }
 }
@@ -428,8 +507,17 @@ html::-webkit-scrollbar-thumb:hover {
   .db-presentation-new .db-staff-nav { --surface-glass: var(--surface-raised); backdrop-filter: none !important; }
 }
 
+@media (prefers-reduced-motion: reduce) {
+  .db-staff-shell .db-mobile-nav * { transition: none !important; }
+}
+
 @media (forced-colors: active) {
   .db-presentation-new { --border-subtle: CanvasText; }
+  .db-presentation-new .db-staff-nav,
+  .db-presentation-new .db-mobile-nav > div,
+  .db-presentation-new .db-staff-main { border-color: CanvasText !important; }
+  .db-presentation-new .db-staff-primary-nav > a[aria-current='page'],
+  .db-presentation-new .db-mobile-nav :is(a[aria-current='page'], button[aria-expanded='true']) { outline: 2px solid Highlight; box-shadow: none; }
   .db-presentation-new .db-staff-content :is(button, a, input, select, textarea) { border: 1px solid ButtonText !important; }
 }
 

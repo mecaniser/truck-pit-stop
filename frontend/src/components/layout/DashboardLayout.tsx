@@ -199,7 +199,10 @@ export default function DashboardLayout() {
                 {isSuperAdmin ? (
                   <BrandLogo alt="Diesel Bridge Network" variant="admin" className="h-8 sm:h-10 w-auto" />
                 ) : presentationVariant === 'new' ? (
-                  <BrandLogo alt="DieselBridge" variant="admin" className="h-8 sm:h-9 w-auto" />
+                  <>
+                    <BrandLogo alt="" variant="admin" className="db-product-brand__mark h-8 sm:h-9 w-auto" />
+                    <span className="db-product-brand__name" aria-hidden="true">Diesel<span>Bridge</span></span>
+                  </>
                 ) : (
                   <TenantBrandLogo
                     tenantLogoUrl={tenantBranding?.logo_url}
@@ -242,6 +245,8 @@ export default function DashboardLayout() {
                 <Link
                   key={link.to}
                   to={link.to}
+                  aria-current={isActive(link.to, link.exact) ? 'page' : undefined}
+                  title={presentationVariant === 'new' ? link.label : undefined}
                   className={`text-sm font-medium transition-colors ${
                     isActive(link.to, link.exact)
                       ? isSuperAdmin 
@@ -251,11 +256,11 @@ export default function DashboardLayout() {
                         ? 'text-gray-400 hover:text-gold-400'
                         : 'text-gray-400 hover:text-white'
                   }`}
-                  style={!isSuperAdmin && isActive(link.to, link.exact) ? { color: accentHex, borderColor: accentHex } : undefined}
+                  style={!isSuperAdmin && presentationVariant === 'legacy' && isActive(link.to, link.exact) ? { color: accentHex, borderColor: accentHex } : undefined}
                 >
                   <span className="inline-flex items-center gap-2">
                     {presentationVariant === 'new' && <link.icon className="h-4 w-4" aria-hidden="true" />}
-                    {link.label}
+                    <span className="db-staff-primary-nav__label">{link.label}</span>
                     {link.to === '/dashboard/messages' && unreadCount > 0 && (
                       <span className="inline-flex min-w-[1.25rem] h-5 items-center justify-center rounded-full bg-red-500 px-1.5 text-[11px] font-semibold leading-none text-white">
                         {unreadBadge}
@@ -267,6 +272,7 @@ export default function DashboardLayout() {
               <div className="db-staff-nav__profile">
                 <Link
                   to="/dashboard/settings"
+                  aria-current={location.pathname === '/dashboard/settings' ? 'page' : undefined}
                   aria-label={`Open profile settings for ${profileDisplayName}`}
                   className={`group relative flex h-11 w-11 items-center justify-center rounded-2xl border bg-white/[0.03] transition-all ${
                   location.pathname === '/dashboard/settings'
@@ -277,22 +283,28 @@ export default function DashboardLayout() {
                       ? 'border-white/10 text-gray-400 hover:border-gold-500/30 hover:bg-gold-500/10 hover:text-gold-300'
                       : 'border-white/10 text-gray-400 hover:border-white/20 hover:bg-white/[0.06] hover:text-white'
                 }`}
-                style={{
+                style={presentationVariant === 'legacy' ? {
                   color: !isSuperAdmin && location.pathname === '/dashboard/settings' ? accentHex : undefined,
                   borderColor: !isSuperAdmin && location.pathname === '/dashboard/settings' ? profileTileBorder : undefined,
                   boxShadow: `0 10px 24px ${profileTileGlow}`,
-                }}
+                } : undefined}
                 title={profileDisplayName}
                 >
                   <div
                     className="absolute inset-[3px] rounded-[14px] border border-white/5"
                     style={{ background: profileTileInset }}
                   />
-                  <div className="relative flex h-full w-full items-center justify-center rounded-[14px]">
+                  <div className="db-staff-nav__profile-monogram relative flex h-full w-full items-center justify-center rounded-[14px]">
                     <span className="text-[11px] font-semibold tracking-[0.18em]">
                       {profileMonogram}
                     </span>
                   </div>
+                  {presentationVariant === 'new' && (
+                    <span className="db-staff-nav__profile-copy" aria-hidden="true">
+                      <strong>{profileDisplayName}</strong>
+                      <small>Profile &amp; settings</small>
+                    </span>
+                  )}
                   <span
                     className="absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full border-2 shadow-[0_0_10px_rgba(52,211,153,0.6)]"
                     style={{ backgroundColor: '#34d399', borderColor: isSuperAdmin ? '#0a0b0d' : '#10151f' }}
@@ -400,13 +412,14 @@ export default function DashboardLayout() {
                   <Link
                     key={link.to}
                     to={link.to}
+                    aria-current={isLinkActive ? 'page' : undefined}
                     tabIndex={mobileNavPage === 'primary' ? 0 : -1}
                     className={`flex min-h-11 min-w-0 flex-1 flex-col items-center justify-center gap-0.5 px-1 ${
                       isLinkActive
                         ? isSuperAdmin ? 'text-gold-400' : ''
                         : isSuperAdmin ? 'text-gray-500 hover:text-gold-400' : 'text-gray-500 hover:text-white'
                     }`}
-                    style={!isSuperAdmin && isLinkActive ? { color: accentHex } : undefined}
+                    style={!isSuperAdmin && presentationVariant === 'legacy' && isLinkActive ? { color: accentHex } : undefined}
                   >
                     <div className="relative">
                       <Icon className="h-5 w-5" />
@@ -431,7 +444,7 @@ export default function DashboardLayout() {
                     ? isSuperAdmin ? 'text-gold-400' : ''
                     : isSuperAdmin ? 'text-gray-500 hover:text-gold-400' : 'text-gray-500 hover:text-white'
                 }`}
-                style={!isSuperAdmin && isMobileMoreActive ? { color: accentHex } : undefined}
+                style={!isSuperAdmin && presentationVariant === 'legacy' && isMobileMoreActive ? { color: accentHex } : undefined}
               >
                 <MoreHorizontal className="h-5 w-5" />
                 <span className="text-[10px] font-medium">More</span>
@@ -462,13 +475,14 @@ export default function DashboardLayout() {
                   <Link
                     key={link.to}
                     to={link.to}
+                    aria-current={isLinkActive ? 'page' : undefined}
                     tabIndex={mobileNavPage === 'secondary' ? 0 : -1}
                     className={`flex min-h-11 min-w-0 flex-1 flex-col items-center justify-center gap-0.5 px-1 ${
                       isLinkActive
                         ? isSuperAdmin ? 'text-gold-400' : ''
                         : isSuperAdmin ? 'text-gray-500 hover:text-gold-400' : 'text-gray-500 hover:text-white'
                     }`}
-                    style={!isSuperAdmin && isLinkActive ? { color: accentHex } : undefined}
+                    style={!isSuperAdmin && presentationVariant === 'legacy' && isLinkActive ? { color: accentHex } : undefined}
                   >
                     <Icon className="h-5 w-5" />
                     <span className="text-[10px] font-medium">{link.mobileLabel}</span>
@@ -477,13 +491,14 @@ export default function DashboardLayout() {
               })}
               <Link
                 to="/dashboard/settings"
+                aria-current={location.pathname === '/dashboard/settings' ? 'page' : undefined}
                 tabIndex={mobileNavPage === 'secondary' ? 0 : -1}
                 className={`flex min-h-11 min-w-0 flex-1 flex-col items-center justify-center gap-0.5 px-1 ${
                   location.pathname === '/dashboard/settings'
                     ? isSuperAdmin ? 'text-gold-400' : ''
                     : isSuperAdmin ? 'text-gray-500 hover:text-gold-400' : 'text-gray-500 hover:text-white'
                 }`}
-                style={!isSuperAdmin && location.pathname === '/dashboard/settings' ? { color: accentHex } : undefined}
+                style={!isSuperAdmin && presentationVariant === 'legacy' && location.pathname === '/dashboard/settings' ? { color: accentHex } : undefined}
               >
                 <User className="h-5 w-5" />
                 <span className="text-[10px] font-medium">Profile</span>
