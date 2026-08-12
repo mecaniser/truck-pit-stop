@@ -920,7 +920,7 @@ html::-webkit-scrollbar-thumb:hover {
   .db-presentation-new.db-staff-shell[data-rail-expanded='true'] .db-product-brand { width: auto; justify-content: flex-start; }
   .db-presentation-new.db-staff-shell[data-rail-expanded='true'] .db-product-brand .db-wordmark { display: inline-flex; max-width: none; font-size: 17px; }
   .db-presentation-new.db-staff-shell[data-rail-expanded='true'] .db-product-brand__compact-mark { display: none; }
-  .db-presentation-new.db-staff-shell[data-rail-expanded='true'] .db-workspace-context { width: 100%; justify-content: flex-start; gap: 6px; }
+  .db-presentation-new.db-staff-shell[data-rail-expanded='true'] .db-workspace-context { width: 100%; justify-content: center; gap: 6px; }
   .db-presentation-new.db-staff-shell[data-rail-expanded='true'] .db-workspace-context__logo { width: 46px; max-width: 46px; flex: 0 0 46px; }
   .db-presentation-new.db-staff-shell[data-rail-expanded='true'] :is(.db-workspace-context__name, .db-workspace-context__fallback) {
     display: block;
