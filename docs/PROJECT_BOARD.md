@@ -22,6 +22,7 @@ reviewed, merged, and released. Reconcile this board whenever newer evidence exi
 | DB-003 | P1 | Discovery | Finish versioned additional-work authorizations | Backend & Integrations | PR #196 merged at `e20fa1a` with implementation commit `a51f2af`; immutable revisions/finalization guard exist, but task validation found the portal action still depends on the staff-send flow | Architecture decides automatic vs staff-reviewed publication and any threshold policy; then run mechanic addition → customer prompt → approve/decline → invoice Playwright acceptance, Security GO, QA GO |
 | DB-015 | P0 | Frontend release authorized | Remediate WebSocket token logging | Security & Identity | Backend PR #259 merged as `277146526dd9b7f95d4ae6fe09dd683d558eb304` after all six protected CI contexts passed. Railway production web `b6881963-0864-43b2-9e7c-2f5c8396943a`, performance web `aa9052b9-649d-446d-afac-965125cf00f0`, and worker `5c73e3f2-02e0-462a-9597-334ccf019455` reached healthy state with repeated 200 probes and no 5xx, worker traceback, task failure, or credential value in the correlated application logs. Independent real-browser QA proved a legacy HttpOnly-cookie login and old `?token` client open/ping-pong against the new backend with the query value absent from logs. The only authorized production tab was a token-null WorkOS session: its 2026-08-11 reload remained authenticated, refreshed, loaded data, and produced zero console/log credential leaks, but the old frontend intentionally did not attempt WebSocket without a client token. Product explicitly accepted that production legacy-session limitation as covered by the exact pre-production compatibility gate; it was not run in production and must not be reported otherwise. | Ship the protected queryless frontend PR. After deployment, require the existing WorkOS session to produce a queryless staff WebSocket connection and ping/pong, bounded refresh/logout behavior, zero console/network/edge/application credential leakage, healthy web services, and unchanged worker deployment `5c73e3f2-02e0-462a-9597-334ccf019455`; roll back the frontend if any post-deploy gate fails. |
 | DB-032 | P2 | Ready to Release — independent QA GO | Animate the public DieselBridge wordmark on first page load | Frontend & UX | On `codex/db032-logo-motion`, exact application candidate `ee2b6e2698a60c9965ac9afd2d15c0541431253a` makes the bridge construct deck → pillars → arch across 1.18s while the twelve fixed-slot letters settle over 0.82s with deterministic 0.34–0.68s delays. The SVG box never moves, the footer remains static, and reduced motion uses a 120ms no-travel fade. Evidence: focused landing tests `27/27`, full frontend `173/173`, production build, exact changed-source ESLint, and diff-check passed; dedicated DB-032 Playwright `7/7` passed with natural-load sampling across 32 frames at 1366/390/320, zero clipped or colliding letters, fixed bridge bounds, all three ordered path animations, static footer, and no browser/runtime failures. Current midpoint captures are under `e2e/test-results/db032-natural-letter-drop-frame-{1366,390,320}.png`. Product received a fresh independent QA GO on exact `ee2b6e2`. No API, auth, tenant, data, backend, dependency, worker, or migration change. | PR #263 must carry this exact candidate plus the focused QA handoff, pass every protected CI context, and remain unmerged until Product gives new explicit release authority for the superseding motion change. No deployment is authorized. |
+| DB-035 | P1 | Discovery — shape confirmed; Architecture contract pending | Translate the source-grounded landing design language into the authenticated staff app with controlled old/new presentation rollout | Architecture & API Contracts | Product confirmed the Impeccable shape across Dashboard, Customers, Repair Orders, Messages, My Shop, and Profile/Settings, including an Appearance system for curated accent themes, type/density, theme/mode, notification placement, live preview, reset, persistence, and legacy migration. This is presentation-only: one shared router, routes, APIs, permissions, mutations, auth, tenant boundaries, business logic, and operational/financial semantics remain unchanged. Work is isolated on `codex/db035-authenticated-presentation`; no DB-003 checkout or implementation file is touched. | Architecture records the versioned feature-flag and user-preference contract, compatibility/migration plan, token boundaries, fixtures, and complete appearance/viewport/accessibility acceptance matrix before Frontend implementation begins. |
 
 ## Blocked
 
@@ -251,6 +252,80 @@ last passing automated and runtime evidence in the item or associated issue.
 - Release evidence must record the focused PR/merge SHA, required CI contexts,
   both Railway web deployment IDs and health gates, changed homepage canary, and
   proof that the worker deployment remained unchanged.
+
+## DB-035 architecture contract and acceptance
+
+- Scope covers the authenticated staff Dashboard, Customers, Repair Orders,
+  Messages, My Shop, and Profile/Settings surfaces. The source-grounded public
+  landing language informs hierarchy, typography, material, spacing, product
+  identity, and motion; authenticated workflows remain source-faithful rather
+  than becoming marketing replicas.
+- Rollout is controlled by a tenant/user-scoped old/new presentation flag with
+  explicit precedence and instant rollback. Both modes use one router and the
+  same routes, APIs, permissions, mutations, auth, tenant boundaries, business
+  logic, WebSocket behavior, data, and operational/financial semantics. The flag
+  may select presentation components or tokens only and must not fork domain
+  state or introduce duplicate navigation trees.
+- Architecture defines the flag owner, response shape, bootstrap behavior,
+  caching, stale/offline fallback, tenant default versus user override,
+  observability, compatibility window, and removal plan. Missing, malformed, or
+  unavailable flag data fails safely to the current legacy presentation.
+- DieselBridge remains the product identity in the authenticated shell. A tenant
+  logo is subordinate shop context and cannot displace the product wordmark,
+  navigation identity, accessible name, or browser/document identity.
+- Appearance separates immutable brand/semantic tokens from personalization.
+  User accent choices never recolor success, warning, destructive, financial,
+  authorization, payment, or operational-risk states. Architecture publishes
+  the token ownership map and prohibits component-local semantic overrides.
+- Accent and theme choices come from a curated accessible set, not arbitrary
+  colors. Every supported light/dark/high-contrast combination preserves text,
+  icon, border, focus-ring, selected, disabled, and interactive-state contrast;
+  forced-colors mode remains usable without relying on authored color alone.
+- Appearance revisits accent, font family, font size, density, notification
+  placement, theme/mode, live preview, reset, and persistence. Font choices are
+  bounded, product-safe families. Compact, default, comfortable, and large are
+  explicit type-and-density contracts with documented token values—not global
+  transforms or browser-scale tricks.
+- Every font/density combination preserves financial column alignment, table and
+  work-queue comprehension, truncation/wrapping, 200% zoom, iPad/mobile layouts,
+  and at least 44px visible interactive targets. Large type cannot shrink the
+  available hit area or create horizontal page overflow.
+- Appearance preference ownership is user-scoped server state for cross-device
+  sync, with a small local bootstrap/cache for first paint. Architecture defines
+  request/response fields, authorization, tenant isolation, validation/errors,
+  concurrency or last-write semantics, cache versioning, hydration order, and
+  failure behavior. No preference may be read from or written to another user or
+  tenant.
+- The compatibility plan inventories current localStorage appearance keys,
+  defines a one-time validated migration into the server preference, prevents
+  repeated overwrites, supports old clients during rollout, and removes obsolete
+  keys only after the compatibility window. Reset restores the effective product
+  or tenant default on every device and updates preview, cache, and server state
+  consistently.
+- Live preview is reversible and does not persist until the user applies it.
+  Cancel restores the last committed appearance; reset and apply have explicit
+  pending, success, error, and retry behavior. Notifications do not cover focal
+  controls, move focus unexpectedly, or expose private preference payloads.
+- The old and new presentations preserve semantic landmarks, headings, tab and
+  disclosure behavior, labels, focus order, keyboard operation, live-region
+  behavior, reduced motion, reduced transparency, high contrast, forced colors,
+  coarse pointer support, and stable focus across flag or appearance changes.
+- Acceptance covers every supported appearance combination on Dashboard,
+  Customers, Repair Orders, Messages, My Shop, and Settings at desktop, iPad,
+  390px, and 320px, plus 200% zoom, reduced motion, high contrast, and forced
+  colors. The matrix verifies no overflow, overlap, hidden actions, undersized
+  targets, broken tables, misaligned money, unreadable statuses, stale theme
+  flashes, or notification obstruction.
+- Representative Playwright journeys run in both old and new presentation modes
+  against identical fixtures and assert identical routes, requests, permissions,
+  mutations, and resulting business state. Appearance persistence is verified
+  across reload, new tab, device/session bootstrap, user switch, tenant switch,
+  offline/cache fallback, reset, and rollback.
+- No implementation begins until Architecture records the versioned flag and
+  preference contract, token map, localStorage migration inventory, fixtures,
+  compatibility/removal plan, and work split. Frontend then implements in an
+  isolated branch; independent Security reviews preference and tenant isolation,
+  and independent QA plus Impeccable/Emil finish review gate the rollout.
 
 ## DB-HC001 acceptance criteria
 
