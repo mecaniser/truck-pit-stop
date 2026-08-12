@@ -646,6 +646,110 @@ html::-webkit-scrollbar-thumb:hover {
 .db-shop-work-new--state > svg { width: 24px; height: 24px; color: var(--semantic-warning-500); }
 .db-shop-work-new--state button { margin-top: 6px; border: 1px solid #b7450b; background: #e75a13; color: #fff; }
 
+/* Night shop and high contrast are complete operating environments, not only
+   shell paints. Keep the Action Ledger's scanning hierarchy while resolving
+   its material through the active surface mode. */
+.db-presentation-new[data-appearance-mode='dark'] .db-shop-work-new {
+  --shop-work-surface: #0d1a2a;
+  --shop-work-raised: #13233d;
+  --shop-work-border: #40536c;
+  --shop-work-ink: #f6f8fb;
+  --shop-work-muted: #b8c5d5;
+  --shop-work-lane-action: #f3a55c;
+  --shop-work-lane-floor: #75b8f0;
+  --shop-work-lane-close: #66d3ad;
+}
+
+.db-presentation-new[data-appearance-mode='high_contrast'] .db-shop-work-new {
+  --shop-work-surface: #000;
+  --shop-work-raised: #000;
+  --shop-work-border: #fff;
+  --shop-work-ink: #fff;
+  --shop-work-muted: #e5e7eb;
+  --shop-work-lane-action: #ffcc66;
+  --shop-work-lane-floor: #8ac4ff;
+  --shop-work-lane-close: #73e6bb;
+}
+
+.db-presentation-new:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) .db-shop-work-new__header h1,
+.db-presentation-new:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) .db-action-ledger > header h2,
+.db-presentation-new:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) .db-action-ledger__number,
+.db-presentation-new:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) .db-action-ledger__identity strong,
+.db-presentation-new:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) .db-action-ledger__amount,
+.db-presentation-new:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) .db-connected-record > header h2,
+.db-presentation-new:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) .db-connected-record__cell strong,
+.db-presentation-new:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) .db-connected-record--empty strong,
+.db-presentation-new:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) .db-shop-work-new--state > strong {
+  color: var(--shop-work-ink);
+}
+
+.db-presentation-new:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) .db-shop-work-new__header p,
+.db-presentation-new:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) .db-action-ledger > header span,
+.db-presentation-new:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) :is(.db-action-ledger__identity span, .db-action-ledger__status span, .db-connected-record > header span, .db-connected-record__cell > span, .db-connected-record__cell small, .db-connected-record__handoff p, .db-connected-record--empty, .db-shop-work-new--state) {
+  color: var(--shop-work-muted);
+}
+
+.db-presentation-new:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) :is(.db-action-ledger, .db-connected-record, .db-shop-work-new__activity, .db-shop-work-new--state) {
+  border-color: var(--shop-work-border);
+  background: var(--shop-work-surface);
+  box-shadow: none;
+}
+
+.db-presentation-new:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) .db-action-ledger > header,
+.db-presentation-new:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) .db-action-ledger__row,
+.db-presentation-new:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) :is(.db-connected-record > header, .db-connected-record__cell) {
+  border-color: var(--shop-work-border);
+  background: var(--shop-work-surface);
+}
+
+.db-presentation-new:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) .db-action-ledger__row {
+  color: var(--shop-work-ink);
+}
+
+.db-presentation-new:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) .db-action-ledger__row:hover,
+.db-presentation-new:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) .db-connected-record__handoff {
+  background: var(--shop-work-raised);
+}
+
+.db-presentation-new:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) .db-action-ledger__row[aria-pressed='true'] {
+  background: color-mix(in srgb, var(--product-copper-400) 15%, var(--shop-work-surface));
+  box-shadow: inset 0 0 0 2px var(--product-copper-400);
+}
+
+.db-presentation-new:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) .db-shop-work-new__quiet-action,
+.db-presentation-new:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) .db-shop-work-new__quick-action,
+.db-presentation-new:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) .db-shop-work-new__view-switch,
+.db-presentation-new:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) .db-shop-work-new__lane-tabs button[aria-selected='true'] {
+  border-color: var(--shop-work-border);
+  background: var(--shop-work-raised);
+  color: var(--shop-work-ink);
+  box-shadow: none;
+}
+
+.db-presentation-new:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) :is(.db-shop-work-new__view-switch button, .db-shop-work-new__lane-tabs button) {
+  color: var(--shop-work-muted);
+}
+
+.db-presentation-new:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) :is(.db-shop-work-new__view-switch button > span, .db-shop-work-new__lane-tabs button > span) {
+  background: var(--shop-work-raised);
+  color: var(--shop-work-ink);
+}
+
+.db-presentation-new:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) .db-shop-work-new__search input,
+.db-presentation-new:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) .db-shop-work-new__activity-feed :is(select,input) {
+  border-color: var(--shop-work-border) !important;
+  background: var(--shop-work-surface) !important;
+  color: var(--shop-work-ink) !important;
+}
+
+.db-presentation-new:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) .db-shop-work-new__search :is(svg, input::placeholder) {
+  color: var(--shop-work-muted);
+}
+
+.db-presentation-new:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) .db-action-ledger__lane--needs_action { color: var(--shop-work-lane-action); }
+.db-presentation-new:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) .db-action-ledger__lane--on_floor { color: var(--shop-work-lane-floor); }
+.db-presentation-new:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) .db-action-ledger__lane--ready_to_close { color: var(--shop-work-lane-close); }
+
 @media (max-width: 1279px) {
   .db-connected-record { grid-template-columns: 170px minmax(210px, 1.2fr) minmax(180px, 1fr); }
   .db-connected-record > :nth-child(3) { border-right: 0; }
