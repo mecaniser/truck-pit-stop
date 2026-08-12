@@ -1185,16 +1185,16 @@ export default function InventoryPage() {
           </button>
         </div>
         {viewMode === 'cards' ? (
-          <div className="min-h-0 flex-1 overflow-y-auto p-4">
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+          <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden p-4">
+            <div className="db-inventory-card-grid grid min-w-0 grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
               {filteredInventory?.map((item) => {
                 const stockStatus = getStockStatus(item)
                 return (
             <div
                     key={item.id}
-                    className="bg-white/10 border border-white/15 rounded-xl p-4 sm:p-5 space-y-3 hover:border-amber-400/40 hover:bg-white/10 transition-colors"
+                    className="min-w-0 overflow-hidden bg-white/10 border border-white/15 rounded-xl p-4 sm:p-5 space-y-3 hover:border-amber-400/40 hover:bg-white/10 transition-colors"
                   >
-                    <div className="flex items-start justify-between gap-3">
+                    <div className="grid grid-cols-[3.5rem_minmax(0,1fr)] items-start gap-3">
                       {item.image_url || fallbackPartImageUrl ? (
                         <button
                           type="button"
@@ -1213,11 +1213,11 @@ export default function InventoryPage() {
                           <ImageOff className="w-5 h-5" />
                         </div>
                       )}
-                      <div className="flex flex-col items-end gap-1.5">
-                        <span className={`whitespace-nowrap px-3 py-1 rounded-full text-xs font-semibold text-center min-w-[88px] ${stockStatus.bg} ${stockStatus.text}`}>
+                      <div className="flex min-w-0 flex-col items-end gap-1.5">
+                        <span className={`max-w-full whitespace-nowrap px-3 py-1 rounded-full text-xs font-semibold text-center ${stockStatus.bg} ${stockStatus.text}`}>
                           {item.stock_quantity > 0 ? `${stockStatus.label} · ${item.stock_quantity}` : stockStatus.label}
                         </span>
-                        <span className="whitespace-nowrap text-xs font-mono text-gray-200 bg-white/10 px-2 py-0.5 rounded border border-white/20">
+                        <span className="block max-w-full overflow-hidden text-ellipsis whitespace-nowrap text-xs font-mono text-gray-200 bg-white/10 px-2 py-0.5 rounded border border-white/20">
                           {item.sku}
                         </span>
                       </div>
