@@ -17,6 +17,7 @@ import {
   ChevronRight, ChevronDown, Zap, Shield, Settings2, Truck, MessageSquare, Landmark, ShieldCheck, X
 } from 'lucide-react'
 import { useTheme, ACCENT_OPTIONS, FONT_FAMILY_OPTIONS, FONT_SIZE_OPTIONS, NOTIFICATION_POSITION_OPTIONS } from '../../contexts/ThemeContext'
+import AppearanceSettingsPanel from './AppearanceSettingsPanel'
 
 // ============ HYBRID DESIGN SYSTEM (Industrial + Organic) ============
 const industrialStyles = {
@@ -2994,7 +2995,7 @@ function WorkforceSection() {
   )
 }
 
-function AppearanceSection() {
+export function LegacyAppearanceSection() {
   const {
     accent,
     setAccent,
@@ -3212,6 +3213,11 @@ function AppearanceSection() {
   )
 }
 
+function AppearanceSection() {
+  const { presentationVariant } = useTheme()
+  return presentationVariant === 'new' ? <AppearanceSettingsPanel /> : <LegacyAppearanceSection />
+}
+
 // ============ LAYOUT COMPONENTS ============
 
 const PROFILE_SECTIONS = [
@@ -3257,12 +3263,11 @@ function SidebarLayout({ activeSection, setActiveSection, isGarageUser, isSuperA
       <div className="lg:hidden">
         <div className="bg-zinc-900/80 backdrop-blur-sm border border-zinc-700/50 rounded-2xl p-2">
           <nav className="flex gap-2 overflow-x-auto scrollbar-hide" style={{ WebkitOverflowScrolling: 'touch' }}>
-            {allSections.map((section, i) => (
+            {allSections.map((section) => (
               <button
                 key={section.id}
                 onClick={() => setActiveSection(section.id)}
-                style={staggeredReveal(i)}
-                className={`flex items-center justify-center gap-2 px-4 py-2.5 text-xs font-medium transition-all flex-shrink-0 rounded-xl border animate-[fadeIn_0.3s_ease-out_forwards] opacity-0 ${
+                className={`flex items-center justify-center gap-2 px-4 py-2.5 text-xs font-medium transition-colors flex-shrink-0 rounded-xl border ${
                   activeSection === section.id
                     ? 'bg-[var(--accent-600)] border-[var(--accent-400)]/50 text-white shadow-lg shadow-[var(--accent-500)]/20'
                     : 'bg-zinc-800/60 border-zinc-700/50 text-zinc-500 hover:text-zinc-300 hover:border-zinc-600'
@@ -3286,12 +3291,11 @@ function SidebarLayout({ activeSection, setActiveSection, isGarageUser, isSuperA
               Account
             </h3>
             <nav className="space-y-1">
-              {PROFILE_SECTIONS.map((section, i) => (
+              {PROFILE_SECTIONS.map((section) => (
                 <button
                   key={section.id}
                   onClick={() => setActiveSection(section.id)}
-                  style={staggeredReveal(i)}
-                  className={`w-full flex items-center gap-3 px-3 py-3 text-sm font-medium transition-all rounded-xl animate-[fadeIn_0.3s_ease-out_forwards] opacity-0 ${
+                  className={`w-full flex items-center gap-3 px-3 py-3 text-sm font-medium transition-colors rounded-xl ${
                     activeSection === section.id
                       ? 'bg-[var(--accent-500)]/10 text-[var(--accent-400)] border border-[var(--accent-500)]/30'
                       : 'border border-transparent text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/60'
@@ -3315,12 +3319,11 @@ function SidebarLayout({ activeSection, setActiveSection, isGarageUser, isSuperA
                 Platform
               </h3>
               <nav className="space-y-1">
-                {PLATFORM_SECTIONS.map((section, i) => (
+                {PLATFORM_SECTIONS.map((section) => (
                   <button
                     key={section.id}
                     onClick={() => setActiveSection(section.id)}
-                    style={staggeredReveal(i + PROFILE_SECTIONS.length)}
-                    className={`w-full flex items-center gap-3 px-3 py-3 text-sm font-medium transition-all rounded-xl animate-[fadeIn_0.3s_ease-out_forwards] opacity-0 ${
+                    className={`w-full flex items-center gap-3 px-3 py-3 text-sm font-medium transition-colors rounded-xl ${
                       activeSection === section.id
                         ? 'bg-[var(--accent-500)]/10 text-[var(--accent-400)] border border-[var(--accent-500)]/30'
                         : 'border border-transparent text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/60'
@@ -3345,12 +3348,11 @@ function SidebarLayout({ activeSection, setActiveSection, isGarageUser, isSuperA
                 Shop
               </h3>
               <nav className="space-y-1">
-                {garageSections.map((section, i) => (
+                {garageSections.map((section) => (
                   <button
                     key={section.id}
                     onClick={() => setActiveSection(section.id)}
-                    style={staggeredReveal(i + PROFILE_SECTIONS.length + (isSuperAdmin ? PLATFORM_SECTIONS.length : 0))}
-                    className={`w-full flex items-center gap-3 px-3 py-3 text-sm font-medium transition-all rounded-xl animate-[fadeIn_0.3s_ease-out_forwards] opacity-0 ${
+                    className={`w-full flex items-center gap-3 px-3 py-3 text-sm font-medium transition-colors rounded-xl ${
                       activeSection === section.id
                         ? 'bg-[var(--accent-500)]/10 text-[var(--accent-400)] border border-[var(--accent-500)]/30'
                         : 'border border-transparent text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/60'
@@ -3395,6 +3397,11 @@ export default function UnifiedSettingsPage() {
 
   const isGarageUser = user?.role === 'garage_owner' || user?.role === 'garage_admin'
   const isSuperAdmin = user?.role === 'super_admin'
+
+  useEffect(() => {
+    const scrollOwner = document.querySelector<HTMLElement>('.db-staff-content')
+    scrollOwner?.scrollTo({ top: 0, behavior: 'auto' })
+  }, [activeSection])
 
   useEffect(() => {
     if (settingsSearchParams.has('quickbooks') && isGarageUser) {

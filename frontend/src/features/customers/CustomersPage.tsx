@@ -3008,7 +3008,7 @@ export default function CustomersPage() {
   }
 
   return (
-    <div className="flex flex-col h-full min-h-0">
+    <div className="db-customers-workspace flex flex-col h-full min-h-0">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-4 sm:mb-6 flex-shrink-0">
         <h1 className="text-xl sm:text-2xl font-bold text-white">Customers</h1>
         <button

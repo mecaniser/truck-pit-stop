@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import { persist, createJSONStorage } from 'zustand/middleware'
 import api from '../lib/api'
 import { isTokenExpired } from '../lib/authTokens'
+import type { PresentationBootstrap } from '../types/presentation'
 
 interface User {
   id: string
@@ -19,6 +20,7 @@ interface User {
   tenant_slug?: string | null
   tenant_logo_url?: string | null
   customer_id: string | null
+  presentation?: PresentationBootstrap
 }
 
 interface AuthState {

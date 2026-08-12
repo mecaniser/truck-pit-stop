@@ -727,7 +727,7 @@ export default function MessagesInboxPage() {
   )
 
   return (
-    <div className="flex h-full w-full min-w-0 flex-col overflow-hidden" style={{ minHeight: 0 }}>
+    <div className="db-messages-workspace flex h-full w-full min-w-0 flex-col overflow-hidden" style={{ minHeight: 0 }}>
 
       {/* Desktop header — hidden on mobile (mobile header is inside threadListPanel) */}
       <div className="hidden lg:flex items-center justify-between mb-4">

@@ -2,7 +2,7 @@ import { Routes, Route, Link, Navigate, useLocation } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { type MouseEvent as ReactMouseEvent, type TouchEvent, useEffect, useRef, useState } from 'react'
 import { useAuthStore } from '../../stores/authStore'
-import { Home, Users, ClipboardList, Building2, User, LayoutGrid, BarChart3, UserCheck, Crown, MessageSquare, CreditCard, MoreHorizontal, ChevronLeft } from 'lucide-react'
+import { Home, Users, ClipboardList, Building2, User, LayoutGrid, BarChart3, UserCheck, Crown, MessageSquare, CreditCard, MoreHorizontal, ChevronLeft, Warehouse } from 'lucide-react'
 import { useTheme } from '../../contexts/ThemeContext'
 import api from '@/lib/api'
 import CustomersPage from '@/features/customers/CustomersPage'
@@ -30,7 +30,7 @@ export default function DashboardLayout() {
   const [mobileNavPage, setMobileNavPage] = useState<'primary' | 'secondary'>('primary')
   const mobileNavTouchStart = useRef<{ x: number; y: number } | null>(null)
   const suppressMobileNavClick = useRef(false)
-  const { accentColors } = useTheme()
+  const { accentColors, presentationVariant } = useTheme()
   // Owner/admin/receptionist/mechanic have messaging by role; other roles
   // (notably fleet managers) need the can_access_messaging grant. Either way,
   // the shop-wide messaging_enabled switch can turn the whole feature off
@@ -140,6 +140,10 @@ export default function DashboardLayout() {
     if (location.pathname === '/dashboard/settings') return 'Profile Settings'
     if (location.pathname === '/dashboard/mechanics') return 'Technician Board'
     if (location.pathname.startsWith('/dashboard/mechanics/')) return 'Technician Detail'
+    if (location.pathname === '/dashboard/customers' || location.pathname.startsWith('/dashboard/customers/')) return 'Customers'
+    if (location.pathname === '/dashboard/repair-orders') return 'Repair Orders'
+    if (location.pathname === '/dashboard/messages') return 'Messages'
+    if (location.pathname === '/dashboard/garage' || location.pathname.startsWith('/dashboard/garage/')) return 'My Shop'
     const current = navLinks.find(link => location.pathname === link.to)
     return current?.label || ''
   }
@@ -153,9 +157,11 @@ export default function DashboardLayout() {
   const dashboardLogoAlt = isSuperAdmin
     ? 'Diesel Bridge Network'
     : tenantBranding?.name || user?.tenant_name || 'Diesel Bridge Network'
-  const dashboardAriaLabel = isSuperAdmin
-    ? 'Diesel Bridge Network dashboard'
-    : `${dashboardLogoAlt} dashboard`
+  const dashboardAriaLabel = presentationVariant === 'new'
+    ? 'DieselBridge dashboard'
+    : isSuperAdmin
+      ? 'Diesel Bridge Network dashboard'
+      : `${dashboardLogoAlt} dashboard`
   const profileNameParts = [user?.first_name, user?.last_name].filter(
     (part): part is string => Boolean(part?.trim()),
   )
@@ -175,19 +181,25 @@ export default function DashboardLayout() {
   const isGarageUser = !isSuperAdmin
 
   return (
-    <div className={`h-screen overflow-hidden ${isGarageUser ? 'bg-blueNoir-900' : ''}`}>
-      <nav className={`sticky top-0 z-50 ${
+    <div
+      className={`db-staff-shell db-presentation-${presentationVariant} h-screen overflow-hidden ${isGarageUser ? 'bg-blueNoir-900' : ''}`}
+      data-presentation={presentationVariant}
+      data-surface={getCurrentPageLabel().toLowerCase().replace(/\s+/g, '-') || 'dashboard'}
+    >
+      <nav className={`db-staff-nav sticky top-0 z-50 ${
         isSuperAdmin 
           ? 'bg-noir-900/95 backdrop-blur-xl border-b border-gold-500/20 shadow-lg shadow-gold-500/5' 
           : 'bg-blueNoir-800/95 backdrop-blur-xl border-b border-white/10 shadow-lg'
       }`}>
-        <div className="max-w-7xl mx-auto px-4">
-          <div className="flex justify-between h-14 sm:h-16">
+        <div className="db-staff-nav__inner max-w-7xl mx-auto px-4">
+          <div className="db-staff-nav__layout flex justify-between h-14 sm:h-16">
             {/* Logo */}
-            <div className="flex items-center gap-3">
-              <Link to="/dashboard" className="inline-flex items-center py-1" aria-label={dashboardAriaLabel}>
+            <div className="db-staff-nav__brand-row flex items-center gap-3">
+              <Link to="/dashboard" className="db-product-brand inline-flex items-center py-1" aria-label={dashboardAriaLabel}>
                 {isSuperAdmin ? (
                   <BrandLogo alt="Diesel Bridge Network" variant="admin" className="h-8 sm:h-10 w-auto" />
+                ) : presentationVariant === 'new' ? (
+                  <BrandLogo alt="DieselBridge" variant="admin" className="h-8 sm:h-9 w-auto" />
                 ) : (
                   <TenantBrandLogo
                     tenantLogoUrl={tenantBranding?.logo_url}
@@ -197,6 +209,20 @@ export default function DashboardLayout() {
                   />
                 )}
               </Link>
+              {!isSuperAdmin && presentationVariant === 'new' && (
+                <div className="db-workspace-context" aria-label={`Active shop: ${dashboardLogoAlt}`}>
+                  {tenantBranding?.logo_url ? (
+                    <img
+                      src={tenantBranding.logo_url}
+                      alt=""
+                      className="db-workspace-context__logo h-7 w-auto object-contain"
+                    />
+                  ) : (
+                    <span className="db-workspace-context__fallback" aria-hidden="true"><Warehouse /></span>
+                  )}
+                  <span className="db-workspace-context__name">{dashboardLogoAlt}</span>
+                </div>
+              )}
               {!isSuperAdmin && tenantBranding?.state && (
                 <span className="inline-flex items-center px-2 py-0.5 rounded-full border border-white/10 bg-white/5 text-[11px] font-medium tracking-wide text-gray-300">
                   {tenantBranding.state}
@@ -211,7 +237,7 @@ export default function DashboardLayout() {
             </div>
 
             {/* Desktop nav */}
-            <div className="hidden md:flex md:items-center md:space-x-6">
+            <div className="db-staff-primary-nav hidden md:flex md:items-center md:space-x-6">
               {navLinks.map((link) => (
                 <Link
                   key={link.to}
@@ -228,6 +254,7 @@ export default function DashboardLayout() {
                   style={!isSuperAdmin && isActive(link.to, link.exact) ? { color: accentHex, borderColor: accentHex } : undefined}
                 >
                   <span className="inline-flex items-center gap-2">
+                    {presentationVariant === 'new' && <link.icon className="h-4 w-4" aria-hidden="true" />}
                     {link.label}
                     {link.to === '/dashboard/messages' && unreadCount > 0 && (
                       <span className="inline-flex min-w-[1.25rem] h-5 items-center justify-center rounded-full bg-red-500 px-1.5 text-[11px] font-semibold leading-none text-white">
@@ -237,10 +264,11 @@ export default function DashboardLayout() {
                   </span>
                 </Link>
               ))}
-              <Link
-                to="/dashboard/settings"
-                aria-label={`Open profile settings for ${profileDisplayName}`}
-                className={`group relative flex h-11 w-11 items-center justify-center rounded-2xl border bg-white/[0.03] transition-all ${
+              <div className="db-staff-nav__profile">
+                <Link
+                  to="/dashboard/settings"
+                  aria-label={`Open profile settings for ${profileDisplayName}`}
+                  className={`group relative flex h-11 w-11 items-center justify-center rounded-2xl border bg-white/[0.03] transition-all ${
                   location.pathname === '/dashboard/settings'
                     ? isSuperAdmin
                       ? 'border-gold-500/40 bg-gold-500/10 text-gold-300'
@@ -255,21 +283,22 @@ export default function DashboardLayout() {
                   boxShadow: `0 10px 24px ${profileTileGlow}`,
                 }}
                 title={profileDisplayName}
-              >
-                <div
-                  className="absolute inset-[3px] rounded-[14px] border border-white/5"
-                  style={{ background: profileTileInset }}
-                />
-                <div className="relative flex h-full w-full items-center justify-center rounded-[14px]">
-                  <span className="text-[11px] font-semibold tracking-[0.18em]">
-                    {profileMonogram}
-                  </span>
-                </div>
-                <span
-                  className="absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full border-2 shadow-[0_0_10px_rgba(52,211,153,0.6)]"
-                  style={{ backgroundColor: '#34d399', borderColor: isSuperAdmin ? '#0a0b0d' : '#10151f' }}
-                />
-              </Link>
+                >
+                  <div
+                    className="absolute inset-[3px] rounded-[14px] border border-white/5"
+                    style={{ background: profileTileInset }}
+                  />
+                  <div className="relative flex h-full w-full items-center justify-center rounded-[14px]">
+                    <span className="text-[11px] font-semibold tracking-[0.18em]">
+                      {profileMonogram}
+                    </span>
+                  </div>
+                  <span
+                    className="absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full border-2 shadow-[0_0_10px_rgba(52,211,153,0.6)]"
+                    style={{ backgroundColor: '#34d399', borderColor: isSuperAdmin ? '#0a0b0d' : '#10151f' }}
+                  />
+                </Link>
+              </div>
             </div>
 
           </div>
@@ -277,11 +306,11 @@ export default function DashboardLayout() {
       </nav>
 
       <main
-        className="px-4 sm:px-6 lg:px-8 py-4 sm:py-6 flex flex-col h-[calc(100vh-3.5rem)] sm:h-[calc(100vh-4rem)] overflow-hidden"
+        className="db-staff-main px-4 sm:px-6 lg:px-8 py-4 sm:py-6 flex flex-col h-[calc(100vh-3.5rem)] sm:h-[calc(100vh-4rem)] overflow-hidden"
       >
         {/* Breadcrumb - only show on sub-pages */}
         {isOnSubPage && (
-          <div className="mb-4 flex-shrink-0 flex items-center gap-2 text-sm">
+          <div className="db-breadcrumb mb-4 flex-shrink-0 flex items-center gap-2 text-sm">
             <Link
               to="/dashboard"
               className="transition-colors flex items-center gap-1 text-gray-400 hover:text-white"
@@ -301,7 +330,7 @@ export default function DashboardLayout() {
           </div>
         )}
         <div
-          className={`flex-1 min-h-0 flex flex-col scrollbar-dark ${
+          className={`db-staff-content flex-1 min-h-0 flex flex-col scrollbar-dark ${
             isGarageWorkspaceRoute ? 'overflow-y-auto lg:overflow-hidden' : 'overflow-y-auto'
           }`}
         >
@@ -339,14 +368,14 @@ export default function DashboardLayout() {
           </Routes>
           {/* Spacer so content clears the fixed bottom nav on mobile */}
           <div
-            className="md:hidden flex-shrink-0"
+            className="db-mobile-nav-spacer md:hidden flex-shrink-0"
             style={{ height: 'calc(4rem + env(safe-area-inset-bottom))' }}
           />
         </div>
       </main>
 
       {/* Mobile Bottom Navigation */}
-      <div className="fixed bottom-0 left-0 right-0 z-50 md:hidden">
+      <div className="db-mobile-nav fixed bottom-0 left-0 right-0 z-50 md:hidden">
         <div className={`overflow-hidden pt-2 ${
           isSuperAdmin
             ? 'bg-noir-900/95 backdrop-blur-xl border-t border-gold-500/20'

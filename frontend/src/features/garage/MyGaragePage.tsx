@@ -138,7 +138,7 @@ export default function MyGaragePage() {
     location.pathname.startsWith('/dashboard/garage/inventory')
 
   return (
-    <div className="flex w-full flex-1 flex-col gap-6 lg:h-[calc(100vh-9.25rem)] lg:min-h-0 lg:flex-none lg:flex-row lg:items-stretch lg:overflow-hidden">
+    <div className="db-my-shop-workspace flex w-full flex-1 flex-col gap-6 lg:h-[calc(100vh-9.25rem)] lg:min-h-0 lg:flex-none lg:flex-row lg:items-stretch lg:overflow-hidden">
       <MobileGarageNav sections={garageSections} />
       <DesktopGarageNav sections={garageSections} />
 

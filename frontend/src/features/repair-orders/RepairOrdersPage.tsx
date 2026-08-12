@@ -2374,7 +2374,7 @@ export default function RepairOrdersPage() {
   }
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="db-repair-orders-workspace flex flex-col h-full">
       <h1 className="text-xl sm:text-2xl font-bold text-white mb-4 flex-shrink-0">Repair Orders</h1>
 
       {/* Search + Filters */}

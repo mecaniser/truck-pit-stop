@@ -153,7 +153,7 @@ const TOAST_POSITION_MAP: Record<NotificationPosition, 'top-right' | 'bottom-rig
 
 const TOAST_CONTAINER_STYLE_MAP: Record<NotificationPosition, React.CSSProperties> = {
   top: { top: 16, right: 16 },
-  bottom: { bottom: 16, right: 16 },
+  bottom: { right: 16 },
   'center-top': { top: 16, left: '50%', transform: 'translateX(-50%)' },
 }
 
@@ -188,19 +188,25 @@ function RouteFaviconManager() {
 }
 
 function AppToaster() {
-  const { notificationPosition } = useTheme()
+  const { notificationPosition, presentationVariant } = useTheme()
 
   return (
     <Toaster
       position={TOAST_POSITION_MAP[notificationPosition]}
-      containerStyle={TOAST_CONTAINER_STYLE_MAP[notificationPosition]}
+      containerStyle={{
+        ...TOAST_CONTAINER_STYLE_MAP[notificationPosition],
+        ...(notificationPosition === 'bottom'
+          ? { bottom: presentationVariant === 'new' ? 'calc(env(safe-area-inset-bottom, 0px) + 88px)' : 16 }
+          : {}),
+      }}
+      containerClassName={`db-toaster db-toaster--${presentationVariant}`}
       toastOptions={{
         duration: 4000,
         style: {
           background: '#1f2937',
           color: '#fff',
           borderRadius: '0.75rem',
-          maxWidth: '480px',
+          maxWidth: 'min(480px, calc(100vw - 32px))',
           width: 'auto',
           padding: '12px 16px',
         },
@@ -217,13 +223,13 @@ function AppToaster() {
           {({ icon, message }) => (
             <>
               {icon}
-              <span className="whitespace-nowrap">{message}</span>
+              <span className="min-w-0 whitespace-normal break-words">{message}</span>
               {t.type !== 'loading' && (
                 <button
                   type="button"
                   onClick={() => toast.dismiss(t.id)}
                   aria-label="Dismiss notification"
-                  className="ml-2 -mr-1 flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-white/60 hover:text-white hover:bg-white/10 transition-colors"
+                  className="ml-2 -mr-1 flex h-11 w-11 shrink-0 items-center justify-center rounded-md text-white/60 hover:text-white hover:bg-white/10 transition-colors"
                 >
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
