@@ -183,4 +183,11 @@ describe('DB-035 presentation provider', () => {
     }
     expect(count).toBe(12_960)
   })
+
+  it('uses surface-specific accent ramps while preserving the curated accent identifiers', () => {
+    const base = { ...garageOwnerSession.presentation.appearance, accent: 'cyan' as const }
+    expect(appearanceTokenRecord({ ...base, mode: 'light' })['--personal-accent-500']).toBe('#0f766e')
+    expect(appearanceTokenRecord({ ...base, mode: 'dark' })['--personal-accent-500']).toBe('#22d3ee')
+    expect(appearanceTokenRecord({ ...base, mode: 'high_contrast' })['--personal-accent-500']).toBe('#22d3ee')
+  })
 })

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type CSSProperties } from 'react'
 import { Bell, Check, Palette, RotateCcw, Save, Type, X } from 'lucide-react'
 import toast from 'react-hot-toast'
 import {
@@ -9,6 +9,7 @@ import {
   NOTIFICATION_POSITION_OPTIONS,
   useTheme,
 } from '../../contexts/ThemeContext'
+import { accentRampsFor } from '../../contexts/appearanceTokens'
 
 const choice = (selected: boolean) => `db-appearance-choice ${selected ? 'is-selected' : ''}`
 
@@ -34,6 +35,7 @@ export default function AppearanceSettingsPanel() {
     resetToDefaults,
   } = useTheme()
   const [confirmReset, setConfirmReset] = useState(false)
+  const accentRamps = accentRampsFor(mode)
   const resetTriggerRef = useRef<HTMLButtonElement>(null)
   const keepCurrentRef = useRef<HTMLButtonElement>(null)
   const confirmResetRef = useRef<HTMLButtonElement>(null)
@@ -117,11 +119,11 @@ export default function AppearanceSettingsPanel() {
       <div className="db-appearance-sections">
         <fieldset className="db-appearance-section">
           <legend><Palette aria-hidden="true" /> Accent</legend>
-          <p>Used for neutral selection, links, and focus enhancement—not operational meaning.</p>
+          <p>{mode === 'dark' ? 'Night shop palette: brighter signals tuned for the navy field.' : mode === 'light' ? 'Day shop palette: deeper action colors tuned for road-white surfaces.' : 'High contrast palette: opaque, high-separation accents for the selected surface.'}</p>
           <div className="db-appearance-grid db-appearance-grid--accent">
             {ACCENT_OPTIONS.map(option => (
               <button key={option.id} type="button" aria-pressed={accent === option.id} className={choice(accent === option.id)} onClick={() => setAccent(option.id)}>
-                <span className="db-appearance-swatch" style={{ backgroundColor: option.colors[500] }}>{accent === option.id && <Check aria-hidden="true" />}</span>
+                <span className="db-appearance-swatch" style={{ backgroundColor: accentRamps[option.id][500], '--db-appearance-swatch-foreground': accentRamps[option.id].swatchForeground } as CSSProperties}>{accent === option.id && <Check aria-hidden="true" />}</span>
                 <span>{option.label}</span>
               </button>
             ))}

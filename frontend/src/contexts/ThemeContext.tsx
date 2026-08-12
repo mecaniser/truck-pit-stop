@@ -15,7 +15,7 @@ import {
   type PresentationBootstrap,
   type PresentationVariant,
 } from '../types/presentation'
-import { appearanceTokenRecord } from './appearanceTokens'
+import { accentRampFor, appearanceTokenRecord } from './appearanceTokens'
 export { appearanceTokenRecord } from './appearanceTokens'
 
 export type { AccentColor, FontFamily }
@@ -443,7 +443,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
 
   const fontSize = legacyFontSize(draft)
   const notificationPosition = toLegacyPosition(draft.notification_position)
-  const accentColors = ACCENT_OPTIONS.find(option => option.id === draft.accent)?.colors ?? ACCENT_OPTIONS[0].colors
+  const accentColors = accentRampFor(draft.accent, draft.mode)
   const value = useMemo<ThemeContextValue>(() => ({
     accent: draft.accent,
     fontFamily: draft.font_family,

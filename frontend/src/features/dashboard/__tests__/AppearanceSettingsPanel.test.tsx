@@ -46,3 +46,20 @@ it('keeps large type selected independently from workspace density', async () =>
   expect(largeType).toHaveAttribute('aria-pressed', 'true')
   expect(screen.getByRole('button', { name: /Balanced density/i })).toHaveAttribute('aria-pressed', 'true')
 })
+
+it('renders a contrast-safe accent ramp for the selected operating surface', async () => {
+  const user = userEvent.setup()
+  render(<ThemeProvider><AppearanceSettingsPanel /></ThemeProvider>)
+
+  expect(screen.getByText('Night shop palette: brighter signals tuned for the navy field.')).toBeInTheDocument()
+  const cyan = screen.getByRole('button', { name: 'Cyan' })
+  expect(cyan.querySelector('.db-appearance-swatch')).toHaveStyle({ backgroundColor: '#22d3ee' })
+
+  await user.click(screen.getByRole('button', { name: /Day shop/ }))
+  expect(screen.getByText('Day shop palette: deeper action colors tuned for road-white surfaces.')).toBeInTheDocument()
+  expect(cyan.querySelector('.db-appearance-swatch')).toHaveStyle({ backgroundColor: '#0f766e' })
+
+  await user.click(screen.getByRole('button', { name: /High contrast/ }))
+  expect(screen.getByText('High contrast palette: opaque, high-separation accents for the selected surface.')).toBeInTheDocument()
+  expect(cyan.querySelector('.db-appearance-swatch')).toHaveStyle({ backgroundColor: '#22d3ee' })
+})
