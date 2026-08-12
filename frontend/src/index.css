@@ -483,6 +483,26 @@ html::-webkit-scrollbar-thumb:hover {
   border-color: var(--workspace-border) !important;
 }
 
+/* Shop Profile retains its canonical content, but its old zinc panels need
+   semantic surface roles so all three appearance modes render as one system. */
+.db-presentation-new .db-settings-shop-profile__panel {
+  background: var(--surface-raised) !important;
+  border-color: var(--workspace-border) !important;
+}
+
+.db-presentation-new .db-settings-shop-profile__logo-canvas {
+  background: var(--surface-overlay) !important;
+  border-color: var(--workspace-border) !important;
+}
+
+.db-presentation-new .db-settings-shop-profile__panel :is(.text-zinc-100, .text-zinc-300) {
+  color: var(--workspace-text) !important;
+}
+
+.db-presentation-new .db-settings-shop-profile__panel :is(.text-zinc-400, .text-zinc-500, .text-zinc-600) {
+  color: var(--workspace-muted) !important;
+}
+
 /* Retained settings navigation inherits legacy zinc utilities. New presentation
    keeps its active, hover, and keyboard focus states in the current accent ramp. */
 .db-presentation-new .db-settings-nav-item[data-active='true'] {

@@ -100,6 +100,9 @@ describe('UnifiedSettingsPage garage logo import', () => {
     expect(apiMocks.get).toHaveBeenCalledWith('/admin/garage-profile')
 
     const editButton = await screen.findByRole('button', { name: 'Edit Shop Profile' })
+    expect(editButton.closest('.db-settings-shop-profile')).toBeInTheDocument()
+    expect(screen.getByText('Shop Logo').closest('.db-settings-shop-profile__panel')).toBeInTheDocument()
+    expect(screen.getByText(/use the website importer/i).closest('.db-settings-shop-profile__logo-canvas')).toBeInTheDocument()
     await user.click(editButton)
 
     const importButton = await screen.findByRole('button', { name: /import from website/i })

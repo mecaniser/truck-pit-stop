@@ -792,7 +792,7 @@ function GarageProfileSection() {
   }
 
   return (
-    <div className="space-y-8 animate-[fadeIn_0.4s_ease-out]">
+    <div className="db-settings-shop-profile space-y-8 animate-[fadeIn_0.4s_ease-out]">
       <IndustrialCard className="p-6 sm:p-8">
         <div className={industrialStyles.sectionHeader}>
           <Building2 className="w-4 h-4 text-[var(--accent-400)]" />
@@ -801,7 +801,7 @@ function GarageProfileSection() {
 
         {!isEditing ? (
           <div className="space-y-6">
-            <div className="rounded-2xl border border-zinc-700/50 bg-zinc-950/50 p-5">
+            <div className="db-settings-shop-profile__panel rounded-2xl border border-zinc-700/50 bg-zinc-950/50 p-5">
               <div className="flex items-start justify-between gap-4">
                 <div>
                   <label className={industrialStyles.label}>Shop Logo</label>
@@ -819,7 +819,7 @@ function GarageProfileSection() {
                 )}
               </div>
 
-              <div className="mt-4 flex min-h-[160px] items-center justify-center rounded-2xl border border-dashed border-zinc-700/60 bg-zinc-900/50 p-6">
+              <div className="db-settings-shop-profile__logo-canvas mt-4 flex min-h-[160px] items-center justify-center rounded-2xl border border-dashed border-zinc-700/60 bg-zinc-900/50 p-6">
                 {garageProfile?.logo_url ? (
                   <img
                     src={garageProfile.logo_url}
@@ -859,7 +859,7 @@ function GarageProfileSection() {
               ))}
             </div>
 
-            <div className="rounded-2xl border border-zinc-700/50 bg-zinc-950/50 p-5">
+            <div className="db-settings-shop-profile__panel rounded-2xl border border-zinc-700/50 bg-zinc-950/50 p-5">
               <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                 <div>
                   <label className={industrialStyles.label}>Landing Page Partner Profile</label>
@@ -987,9 +987,9 @@ function GarageProfileSection() {
                 </div>
               </div>
 
-              <div className="rounded-2xl border border-zinc-700/50 bg-zinc-950/50 p-4">
+              <div className="db-settings-shop-profile__panel rounded-2xl border border-zinc-700/50 bg-zinc-950/50 p-4">
                 <label className={industrialStyles.label}>Logo Preview</label>
-                <div className="flex min-h-[180px] items-center justify-center rounded-2xl border border-dashed border-zinc-700/60 bg-zinc-900/50 p-5">
+                <div className="db-settings-shop-profile__logo-canvas flex min-h-[180px] items-center justify-center rounded-2xl border border-dashed border-zinc-700/60 bg-zinc-900/50 p-5">
                   {logoUrlValue ? (
                     <img
                       src={logoUrlValue}
