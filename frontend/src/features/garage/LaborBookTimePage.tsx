@@ -324,7 +324,7 @@ export default function LaborBookTimePage() {
   }
 
   return (
-    <div className="flex min-h-full flex-col gap-5 text-zinc-100">
+    <div className="db-labor-book-time flex min-h-full flex-col gap-5 text-zinc-100">
       <div className="rounded-2xl border border-zinc-700/50 bg-zinc-900/80 p-5 shadow-xl shadow-black/20">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div>
@@ -572,7 +572,7 @@ export default function LaborBookTimePage() {
         </div>
       ) : null}
 
-      <div className="overflow-hidden rounded-2xl border border-zinc-700/50 bg-zinc-900/80 shadow-xl shadow-black/20">
+      <div className="db-labor-book-time__ledger overflow-hidden rounded-2xl border border-zinc-700/50 bg-zinc-900/80 shadow-xl shadow-black/20">
         <div className="grid grid-cols-[minmax(0,1.5fr)_120px_minmax(140px,0.8fr)_120px_112px] gap-3 border-b border-zinc-800 bg-zinc-950/60 px-5 py-3 text-[11px] font-bold uppercase tracking-[0.18em] text-zinc-500 max-lg:hidden">
           <span>Labor</span>
           <span>Book hours</span>

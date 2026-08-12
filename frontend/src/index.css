@@ -736,6 +736,45 @@ html::-webkit-scrollbar-thumb:hover {
   }
 }
 
+/* Labor Book Time is a real price-builder-derived library. Its content and
+   actions remain intact while retained zinc surfaces follow appearance mode. */
+.db-presentation-new .db-labor-book-time {
+  color: var(--workspace-text);
+}
+
+.db-presentation-new .db-labor-book-time :is(.bg-zinc-900\/80, .bg-zinc-900\/90, .bg-zinc-950\/50, .bg-zinc-950\/60, .bg-zinc-950\/70, .bg-zinc-950\/80) {
+  border-color: var(--workspace-border) !important;
+  background-color: var(--surface-raised) !important;
+}
+
+.db-presentation-new .db-labor-book-time__ledger {
+  border-color: var(--workspace-border) !important;
+  background: var(--surface-overlay) !important;
+}
+
+.db-presentation-new .db-labor-book-time__ledger > div:first-child {
+  border-color: var(--workspace-border) !important;
+  background: var(--surface-raised) !important;
+}
+
+.db-presentation-new .db-labor-book-time :is(.border-zinc-700, .border-zinc-700\/50, .border-zinc-700\/70, .border-zinc-800, .border-zinc-800\/80) {
+  border-color: var(--workspace-border) !important;
+}
+
+.db-presentation-new .db-labor-book-time :is(.text-white, .text-zinc-100, .text-zinc-200, .text-zinc-300) {
+  color: var(--workspace-text) !important;
+}
+
+.db-presentation-new .db-labor-book-time :is(.text-zinc-400, .text-zinc-500, .text-zinc-600) {
+  color: var(--workspace-muted) !important;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .db-presentation-new .db-labor-book-time__ledger > div:not(:first-child):hover {
+    background: var(--surface-raised) !important;
+  }
+}
+
 /* Retained settings navigation inherits legacy zinc utilities. New presentation
    keeps its active, hover, and keyboard focus states in the current accent ramp. */
 .db-presentation-new .db-settings-nav-item[data-active='true'] {
