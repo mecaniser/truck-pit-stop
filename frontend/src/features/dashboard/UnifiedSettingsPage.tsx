@@ -2727,7 +2727,7 @@ function FleetSection() {
       </IndustrialCard>
 
       {/* Live fleet summary — managers and trucks, pulled from the fleet board. */}
-      <IndustrialCard className="p-6 sm:p-8">
+      <IndustrialCard className="db-settings-fleet-overview p-6 sm:p-8">
         <div className="flex items-center justify-between mb-4">
           <div className={industrialStyles.sectionHeader} style={{ marginBottom: 0 }}>
             <Truck className="w-4 h-4 text-[var(--accent-400)]" />
@@ -2749,7 +2749,7 @@ function FleetSection() {
           ) : (
             <div className="mt-2 space-y-1">
               {fleetSettings?.fleet_managers.map((m) => (
-                <div key={m.id} className="flex items-center justify-between p-2 bg-zinc-800/30 border border-zinc-700/40 rounded-lg">
+                <div key={m.id} className="db-settings-fleet-overview__row flex items-center justify-between p-2 bg-zinc-800/30 border border-zinc-700/40 rounded-lg">
                   <span className="text-sm text-zinc-100">{m.name}</span>
                   <span className="text-xs text-zinc-500">{m.email}</span>
                 </div>
@@ -2766,7 +2766,7 @@ function FleetSection() {
           ) : (
             <div className="mt-2 max-h-72 overflow-y-auto space-y-1">
               {trucks.map((t) => (
-                <div key={t.id} className="flex items-start justify-between gap-3 p-2 bg-zinc-800/30 border border-zinc-700/40 rounded-lg">
+                <div key={t.id} className="db-settings-fleet-overview__row flex items-start justify-between gap-3 p-2 bg-zinc-800/30 border border-zinc-700/40 rounded-lg">
                   <div className="min-w-0">
                     <p className="text-sm text-zinc-100 truncate">
                       {t.unit_number ? `${t.unit_number} · ` : ''}

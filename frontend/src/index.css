@@ -503,6 +503,21 @@ html::-webkit-scrollbar-thumb:hover {
   color: var(--workspace-muted) !important;
 }
 
+/* Fleet Overview is a read-only handoff to the canonical Fleet board. Its
+   retained rows use the same appearance surfaces without changing that flow. */
+.db-presentation-new .db-settings-fleet-overview__row {
+  background: var(--surface-overlay) !important;
+  border-color: var(--workspace-border) !important;
+}
+
+.db-presentation-new .db-settings-fleet-overview__row .text-zinc-100 {
+  color: var(--workspace-text) !important;
+}
+
+.db-presentation-new .db-settings-fleet-overview__row .text-zinc-500 {
+  color: var(--workspace-muted) !important;
+}
+
 /* Retained settings navigation inherits legacy zinc utilities. New presentation
    keeps its active, hover, and keyboard focus states in the current accent ramp. */
 .db-presentation-new .db-settings-nav-item[data-active='true'] {
