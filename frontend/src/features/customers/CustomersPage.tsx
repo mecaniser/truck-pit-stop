@@ -151,6 +151,8 @@ interface VehicleAccountRelationship {
   customer_company_name?: string | null
 }
 
+const EMPTY_VEHICLE_RELATIONSHIPS: VehicleAccountRelationship[] = []
+
 interface FleetCompanyOption {
   id: string
   company_name: string
@@ -581,7 +583,7 @@ export default function CustomersPage() {
   // review, unlink, and relink them instead of becoming a one-way operation.
   const availableVehicleLinkCandidates = vehicleLinkCandidates
 
-  const { data: vehicleRelationships = [], isFetching: isFetchingVehicleRelationships } = useQuery<VehicleAccountRelationship[]>({
+  const { data: vehicleRelationships = EMPTY_VEHICLE_RELATIONSHIPS, isFetching: isFetchingVehicleRelationships } = useQuery<VehicleAccountRelationship[]>({
     queryKey: ['vehicle-account-relationships', selectedLinkVehicle?.id],
     queryFn: async () => (await api.get(`/vehicles/${selectedLinkVehicle!.id}/relationships`)).data,
     enabled: isVehicleModalOpen && vehicleModalMode === 'existing' && !!selectedLinkVehicle,
