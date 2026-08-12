@@ -141,12 +141,49 @@ html::-webkit-scrollbar-thumb:hover {
   --text-primary: #101827;
   --text-secondary: #526176;
   --border-subtle: rgba(19, 35, 61, 0.17);
+  --db-type-xs: 0.75rem;
+  --db-type-sm: 0.875rem;
+  --db-type-base: 1rem;
+  --db-type-lg: 1.125rem;
+  --db-type-xl: 1.25rem;
+  --db-type-2xl: 1.5rem;
+  --db-type-3xl: 1.875rem;
   background: var(--shell-field) !important;
   color: var(--text-primary);
   font-family: var(--font-body);
   font-size: var(--font-size-body);
   color-scheme: light;
 }
+
+.db-presentation-new[data-appearance-font-size='small'] {
+  --db-type-xs: 0.65625rem;
+  --db-type-sm: 0.765625rem;
+  --db-type-base: 0.875rem;
+  --db-type-lg: 0.984375rem;
+  --db-type-xl: 1.09375rem;
+  --db-type-2xl: 1.3125rem;
+  --db-type-3xl: 1.640625rem;
+}
+
+.db-presentation-new[data-appearance-font-size='large'] {
+  --db-type-xs: 0.84375rem;
+  --db-type-sm: 0.984375rem;
+  --db-type-base: 1.125rem;
+  --db-type-lg: 1.265625rem;
+  --db-type-xl: 1.40625rem;
+  --db-type-2xl: 1.6875rem;
+  --db-type-3xl: 2.109375rem;
+}
+
+/* Retained authenticated surfaces use Tailwind's fixed rem utilities. Scope
+   their scale to the selected appearance size without changing document zoom. */
+.db-presentation-new .text-xs { font-size: var(--db-type-xs) !important; }
+.db-presentation-new .text-sm { font-size: var(--db-type-sm) !important; }
+.db-presentation-new .text-base { font-size: var(--db-type-base) !important; }
+.db-presentation-new .text-lg { font-size: var(--db-type-lg) !important; }
+.db-presentation-new .text-xl { font-size: var(--db-type-xl) !important; }
+.db-presentation-new .text-2xl { font-size: var(--db-type-2xl) !important; }
+.db-presentation-new .text-3xl { font-size: var(--db-type-3xl) !important; }
 
 .db-staff-shell {
   font-family: var(--theme-font-family);
