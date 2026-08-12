@@ -377,6 +377,13 @@ html::-webkit-scrollbar-thumb:hover {
   box-shadow: 0 0 0 4px color-mix(in srgb, var(--product-copper-400) 22%, transparent);
 }
 
+/* The shared catalog/team primary action deliberately keeps white foreground
+   on the tenant's semantic accent, even inside a scoped light workspace. */
+.db-presentation-new .db-staff-content .db-search-add-bar .db-search-add-bar__primary-action,
+.db-presentation-new .db-staff-content .db-search-add-bar .db-search-add-bar__primary-action svg {
+  color: #fff !important;
+}
+
 .db-presentation-new:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) .db-staff-content :is(input, textarea, select) {
   background: var(--surface-overlay) !important;
   color: var(--workspace-text);
