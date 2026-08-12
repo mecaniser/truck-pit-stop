@@ -807,12 +807,12 @@ html::-webkit-scrollbar-thumb:hover {
     justify-content: flex-start;
   }
   .db-presentation-new .db-staff-nav__brand-row {
-    min-height: 144px;
+    min-height: 128px;
     flex-direction: column;
     flex-wrap: nowrap;
     justify-content: center;
     gap: 8px;
-    padding: 0 2px 14px;
+    padding: 0 2px 12px;
     border-bottom: 1px solid var(--shell-border);
   }
   .db-presentation-new .db-product-brand {
@@ -917,7 +917,7 @@ html::-webkit-scrollbar-thumb:hover {
     grid-template-columns: 224px minmax(0, 1fr);
   }
   .db-presentation-new.db-staff-shell[data-rail-expanded='true'] .db-staff-nav__inner { padding: 18px 12px; }
-  .db-presentation-new.db-staff-shell[data-rail-expanded='true'] .db-staff-nav__brand-row { min-height: 184px; align-items: flex-start; justify-content: center; padding: 0 8px 16px; }
+  .db-presentation-new.db-staff-shell[data-rail-expanded='true'] .db-staff-nav__brand-row { min-height: 142px; align-items: flex-start; justify-content: center; padding: 0 8px 12px; }
   .db-presentation-new.db-staff-shell[data-rail-expanded='true'] .db-product-brand { width: 100%; justify-content: center; }
   .db-presentation-new.db-staff-shell[data-rail-expanded='true'] .db-product-brand .db-wordmark { display: inline-flex; max-width: none; font-size: 17px; }
   .db-presentation-new.db-staff-shell[data-rail-expanded='true'] .db-product-brand__compact-mark { display: none; }
