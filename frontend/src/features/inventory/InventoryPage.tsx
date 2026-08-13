@@ -104,7 +104,7 @@ function SellingPriceField({
                 e.preventDefault()
                 switchMode(m)
               }}
-              className={`inventory-price-mode flex items-center px-2 text-[10px] font-semibold leading-none whitespace-nowrap transition-colors ${mode === m ? 'inventory-price-mode--selected' : 'inventory-price-mode--idle'}`}
+              className={`inventory-price-mode flex min-w-7 items-center justify-center px-2 text-xs font-bold leading-none whitespace-nowrap transition-colors ${mode === m ? 'inventory-price-mode--selected' : 'inventory-price-mode--idle'}`}
               aria-pressed={mode === m}
               aria-label={m === '$' ? 'Enter selling price in dollars' : 'Enter selling price as % markup over cost'}
             >

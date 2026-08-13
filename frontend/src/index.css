@@ -395,16 +395,18 @@ html::-webkit-scrollbar-thumb:hover {
 }
 
 .db-presentation-new .db-search-add-bar__field:focus-within {
-  box-shadow: 0 0 0 4px color-mix(in srgb, var(--product-copper-400) 22%, transparent);
+  outline: 2px solid var(--product-copper-400);
+  outline-offset: 2px;
+  box-shadow: none;
 }
 
 .db-presentation-new .db-search-add-bar__field:focus-within input {
   border-color: var(--product-copper-400) !important;
 }
 
-.db-presentation-new .db-search-add-bar__field input:focus-visible {
+.db-presentation-new .db-search-add-bar__field input:focus {
   outline: none;
-  box-shadow: none;
+  box-shadow: none !important;
 }
 
 /* The shared catalog/team primary action deliberately keeps white foreground
@@ -912,10 +914,12 @@ html::-webkit-scrollbar-thumb:hover {
 
 .inventory-price-mode--selected {
   background: #f59e0b;
-  color: #fff;
+  color: #fff !important;
+  text-shadow: 0 1px 1px rgb(0 0 0 / 18%);
 }
 
-.db-presentation-new .db-inventory-workspace .inventory-price-mode--selected {
+.db-presentation-new .inventory-price-mode--selected,
+.db-presentation-new .inventory-price-mode--selected * {
   color: #fff !important;
 }
 
