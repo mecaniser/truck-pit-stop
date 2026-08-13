@@ -64,10 +64,10 @@ export default function RepairOrdersLedger({
 
   return (
     <section className="db-repair-orders-new" aria-labelledby="repair-orders-title" aria-busy={isFetching}>
-      <header className="db-repair-orders-new__header">
+      <header className="db-repair-orders-new__header db-operating-page-header">
         <div>
           <h1 id="repair-orders-title">Repair Orders</h1>
-          <p>One canonical record from check-in through paid invoice.</p>
+          <p>Review and update repair work from check-in through payment.</p>
         </div>
         <button type="button" className="db-repair-orders-new__create" onClick={onCreateOrder} disabled={isFetching && rows.length === 0}>
           <Plus aria-hidden="true" />

@@ -412,7 +412,7 @@ const MEXICO_STATES = [
 ]
 
 export default function CustomersPage() {
-  const { accentColors } = useTheme()
+  const { accentColors, presentationVariant } = useTheme()
   const currentUser = useAuthStore((state) => state.user)
   const navigate = useNavigate()
   const [searchQuery, setSearchQuery] = useState('')
@@ -2932,8 +2932,11 @@ export default function CustomersPage() {
   if (isLoading) {
     return (
       <div className="flex flex-col h-full min-h-0">
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-4 sm:mb-6 flex-shrink-0">
-          <h1 className="text-xl sm:text-2xl font-bold text-white">Customers</h1>
+        <div className={`flex flex-col sm:flex-row sm:items-center sm:justify-between mb-4 sm:mb-6 flex-shrink-0${presentationVariant === 'new' ? ' db-operating-page-header' : ''}`}>
+          <div>
+            <h1 className="text-xl sm:text-2xl font-bold text-white">Customers</h1>
+            {presentationVariant === 'new' && <p>Find customers, their vehicles, and service history.</p>}
+          </div>
           <button
             disabled
             className="mt-3 sm:mt-0 px-4 py-2 text-white font-medium rounded-lg opacity-60"
@@ -3011,8 +3014,11 @@ export default function CustomersPage() {
 
   return (
     <div className="db-customers-workspace flex flex-col h-full min-h-0">
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-4 sm:mb-6 flex-shrink-0">
-        <h1 className="text-xl sm:text-2xl font-bold text-white">Customers</h1>
+      <div className={`flex flex-col sm:flex-row sm:items-center sm:justify-between mb-4 sm:mb-6 flex-shrink-0${presentationVariant === 'new' ? ' db-operating-page-header' : ''}`}>
+        <div>
+          <h1 className="text-xl sm:text-2xl font-bold text-white">Customers</h1>
+          {presentationVariant === 'new' && <p>Find customers, their vehicles, and service history.</p>}
+        </div>
         <button
           onClick={openCreateModal}
           className="mt-3 sm:mt-0 px-4 py-2 text-white font-medium rounded-lg transition-colors"

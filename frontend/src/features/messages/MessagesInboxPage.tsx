@@ -81,7 +81,7 @@ function DeliveryIcon({ status }: { status: string }) {
 }
 
 export default function MessagesInboxPage() {
-  const { accentColors } = useTheme()
+  const { accentColors, presentationVariant } = useTheme()
   const queryClient = useQueryClient()
   const { user } = useAuthStore()
   useWebSocket()
@@ -468,10 +468,13 @@ export default function MessagesInboxPage() {
   const threadListPanel = (
     <div className="db-messages-thread-list flex min-w-0 flex-col flex-1 min-h-0">
       {/* Mobile header */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-white/10 lg:hidden">
+      <div className={`flex items-center justify-between px-4 py-3 border-b border-white/10 lg:hidden${presentationVariant === 'new' ? ' db-operating-page-header' : ''}`}>
         <div className="flex items-center gap-2">
           <MessageSquare className="w-4 h-4" style={{ color: accentColors[400] }} />
-          <h1 className="text-base font-semibold text-white">Messages</h1>
+          <div>
+            <h1 className="text-base font-semibold text-white">Messages</h1>
+            {presentationVariant === 'new' && <p className="hidden sm:block">Manage customer conversations and service updates.</p>}
+          </div>
         </div>
         <button
           onClick={() => setShowCompose((v) => !v)}
@@ -732,10 +735,13 @@ export default function MessagesInboxPage() {
     <div className="db-messages-workspace flex h-full w-full min-w-0 flex-col overflow-hidden" style={{ minHeight: 0 }}>
 
       {/* Desktop header — hidden on mobile (mobile header is inside threadListPanel) */}
-      <div className="hidden lg:flex items-center justify-between mb-4">
+      <div className={`hidden lg:flex items-center justify-between mb-4${presentationVariant === 'new' ? ' db-operating-page-header' : ''}`}>
         <div className="flex items-center gap-2">
           <MessageSquare className="w-5 h-5" style={{ color: accentColors[400] }} />
-          <h1 className="text-xl font-semibold text-white">Messages</h1>
+          <div>
+            <h1 className="text-xl font-semibold text-white">Messages</h1>
+            {presentationVariant === 'new' && <p>Manage customer conversations and service updates.</p>}
+          </div>
         </div>
         <button
           onClick={() => setShowCompose((v) => !v)}

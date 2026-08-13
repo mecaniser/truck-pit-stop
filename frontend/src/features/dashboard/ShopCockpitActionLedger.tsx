@@ -186,7 +186,7 @@ export default function ShopCockpitActionLedger({
 
   return (
     <section className="db-shop-work-new" aria-labelledby="shop-work-title">
-      <header className="db-shop-work-new__header">
+      <header className="db-shop-work-new__header db-operating-page-header">
         <div>
           <h1 id="shop-work-title">Shop Work</h1>
           <p>Review work that needs attention, is on the floor, or is ready to close.</p>

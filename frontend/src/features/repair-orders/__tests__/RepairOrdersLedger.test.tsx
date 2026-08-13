@@ -52,6 +52,8 @@ describe('DB-035 Stage 4 Repair Orders presentation', () => {
     renderLedger()
 
     expect(screen.getByRole('heading', { name: 'Repair Orders' })).toBeInTheDocument()
+    expect(screen.getByText('Review and update repair work from check-in through payment.')).toBeInTheDocument()
+    expect(screen.queryByText('One canonical record from check-in through paid invoice.')).not.toBeInTheDocument()
     expect(screen.getByText('Shop Work handoff')).toBeInTheDocument()
     expect(screen.getByText('On the Floor')).toBeInTheDocument()
     expect(screen.getByText('Queue origin is navigation context, not repair-order state.')).toBeInTheDocument()
