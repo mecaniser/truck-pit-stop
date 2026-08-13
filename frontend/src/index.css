@@ -437,6 +437,58 @@ html::-webkit-scrollbar-thumb:hover {
   min-width: 0;
 }
 
+/* Messages is a canonical conversation surface. The legacy navy layers become
+   a deliberately tiered road-white thread workspace in the new presentation;
+   outbound messages retain their semantic tenant-accent foreground. */
+.db-presentation-new .db-messages-workspace {
+  color: var(--workspace-text);
+}
+
+.db-presentation-new .db-messages-panel {
+  border-color: var(--workspace-border) !important;
+  background: var(--surface-overlay);
+}
+
+.db-presentation-new .db-messages-rail {
+  border-color: var(--workspace-border) !important;
+  background: var(--surface-raised) !important;
+}
+
+.db-presentation-new .db-messages-thread-list {
+  border-color: var(--workspace-border) !important;
+  background: var(--surface-raised);
+}
+
+.db-presentation-new .db-messages-conversation {
+  background: var(--surface-overlay);
+}
+
+.db-presentation-new .db-messages-workspace :is(.border-white\/5, .border-white\/10, .border-white\/15, .border-white\/20) {
+  border-color: var(--workspace-border) !important;
+}
+
+.db-presentation-new .db-messages-workspace :is(.bg-black\/10, .bg-black\/20, .bg-white\/5) {
+  background-color: var(--surface-raised) !important;
+}
+
+.db-presentation-new .db-messages-workspace :is(.text-white, .text-gray-100, .text-gray-200, .text-gray-300) {
+  color: var(--workspace-text) !important;
+}
+
+.db-presentation-new .db-messages-workspace :is(.text-gray-400, .text-gray-500) {
+  color: var(--workspace-muted) !important;
+}
+
+.db-presentation-new .db-messages-workspace .db-message-bubble--inbound {
+  background: var(--surface-raised) !important;
+  color: var(--workspace-text) !important;
+}
+
+.db-presentation-new .db-messages-workspace .db-message-bubble--outbound,
+.db-presentation-new .db-messages-workspace .db-message-bubble--outbound * {
+  color: #fff !important;
+}
+
 /* Customers remains a canonical legacy surface until its Stage 5 composition.
    In the new road-white shell, keep its dense ledger readable rather than
    inheriting the old dark-surface foreground utilities. */

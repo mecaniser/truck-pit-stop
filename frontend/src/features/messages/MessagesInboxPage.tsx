@@ -466,7 +466,7 @@ export default function MessagesInboxPage() {
   )
 
   const threadListPanel = (
-    <div className="flex min-w-0 flex-col flex-1 min-h-0">
+    <div className="db-messages-thread-list flex min-w-0 flex-col flex-1 min-h-0">
       {/* Mobile header */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-white/10 lg:hidden">
         <div className="flex items-center gap-2">
@@ -560,7 +560,7 @@ export default function MessagesInboxPage() {
   )
 
   const conversationPanel = (
-    <div className="flex flex-col flex-1 min-h-0 min-w-0">
+    <div className="db-messages-conversation flex flex-col flex-1 min-h-0 min-w-0">
       {!selectedThread ? (
         <div className="hidden lg:flex flex-col items-center justify-center h-full gap-3 text-gray-500">
           <MessageSquare className="w-10 h-10 opacity-20" />
@@ -668,7 +668,9 @@ export default function MessagesInboxPage() {
                   )}
                   <div className={`flex w-full min-w-0 ${isOutbound ? 'justify-end' : 'justify-start'} mb-0.5`}>
                     <div
-                      className={`min-w-0 max-w-[88%] overflow-hidden rounded-2xl px-3.5 py-2 text-sm sm:max-w-[72%] ${
+                      className={`db-message-bubble min-w-0 max-w-[88%] overflow-hidden rounded-2xl px-3.5 py-2 text-sm sm:max-w-[72%] ${
+                        isOutbound ? 'db-message-bubble--outbound' : 'db-message-bubble--inbound'
+                      } ${
                         isOutbound ? 'rounded-tr-sm text-white' : 'rounded-tl-sm bg-white/10 text-gray-100'
                       }`}
                       style={isOutbound ? { backgroundColor: accentColors[600] } : undefined}
@@ -754,7 +756,7 @@ export default function MessagesInboxPage() {
 
       {/* Main panel */}
       <div
-        className="flex w-full min-w-0 flex-1 rounded-xl border border-white/10 overflow-hidden"
+        className="db-messages-panel flex w-full min-w-0 flex-1 rounded-xl border border-white/10 overflow-hidden"
         style={{ minHeight: 0, height: 'calc(100vh - 13rem)' }}
       >
         {/* Mobile: single panel navigation */}
@@ -765,7 +767,7 @@ export default function MessagesInboxPage() {
         {/* Desktop: sidebar + thread list + conversation side by side */}
         <div className="hidden lg:flex flex-1 min-h-0 min-w-0">
           {/* Vertical sidebar */}
-          <div className="flex flex-col items-center gap-1 border-r border-white/10 bg-black/20 py-3 px-1.5 w-14 flex-shrink-0">
+          <div className="db-messages-rail flex flex-col items-center gap-1 border-r border-white/10 bg-black/20 py-3 px-1.5 w-14 flex-shrink-0">
             <button
               onClick={() => { setActiveTab('inbox'); setSelectedThreadId(null); setMessages([]) }}
               title="Inbox"
@@ -797,7 +799,7 @@ export default function MessagesInboxPage() {
           </div>
 
           {/* Thread list — desktop */}
-          <div className="flex flex-col border-r border-white/10 bg-black/10 w-72 flex-shrink-0">
+          <div className="db-messages-thread-list flex flex-col border-r border-white/10 bg-black/10 w-72 flex-shrink-0">
             <div className="flex items-center justify-between px-3 py-2.5 border-b border-white/10">
               <span className="text-xs font-semibold text-gray-400 uppercase tracking-wide">
                 {activeTab === 'inbox' ? 'Inbox' : 'Archived'}
