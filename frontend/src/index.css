@@ -958,6 +958,13 @@ html::-webkit-scrollbar-thumb:hover {
   color: #fff !important;
 }
 
+/* The desktop catalog action sits outside SearchAddBar. Keep its enabled
+   foreground on-accent after the inventory workspace's legacy text remapping. */
+.db-presentation-new .db-inventory-workspace .db-inventory-workspace__primary-action,
+.db-presentation-new .db-inventory-workspace .db-inventory-workspace__primary-action * {
+  color: #fff !important;
+}
+
 /* Labor Book Time is a real price-builder-derived library. Its content and
    actions remain intact while retained zinc surfaces follow appearance mode. */
 .db-presentation-new .db-labor-book-time {

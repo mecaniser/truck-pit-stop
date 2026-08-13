@@ -911,7 +911,7 @@ export default function InventoryPage() {
         <button
           type="button"
           onClick={openAddPart}
-          className="inline-flex h-[42px] shrink-0 items-center gap-2 rounded-lg px-4 text-sm font-semibold text-white transition-colors"
+          className="db-inventory-workspace__primary-action inline-flex h-[42px] shrink-0 items-center gap-2 rounded-lg px-4 text-sm font-semibold text-white transition-colors"
           style={{ backgroundColor: accentColors[600] }}
         >
           <Plus className="w-4 h-4" />
