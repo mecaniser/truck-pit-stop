@@ -325,7 +325,7 @@ export default function LaborBookTimePage() {
 
   return (
     <div className="db-labor-book-time flex min-h-full flex-col gap-5 text-zinc-100">
-      <div className="rounded-2xl border border-zinc-700/50 bg-zinc-900/80 p-5 shadow-xl shadow-black/20">
+      <div className="db-labor-book-time__summary rounded-2xl border border-zinc-700/50 bg-zinc-900/80 p-5 shadow-xl shadow-black/20">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div>
             <div className="mb-2 flex items-center gap-2 text-xs font-bold uppercase tracking-[0.22em] text-[var(--accent-400)]">
@@ -356,7 +356,7 @@ export default function LaborBookTimePage() {
             <button
               type="button"
               onClick={() => setIsCreating((value) => !value)}
-              className="flex w-full items-center justify-center gap-2 rounded-xl border border-[var(--accent-500)]/40 bg-[var(--accent-500)] px-4 py-3 text-sm font-bold text-white transition hover:bg-[var(--accent-600)]"
+              className="db-labor-book-time__primary-action flex w-full items-center justify-center gap-2 rounded-xl border border-[var(--accent-500)]/40 bg-[var(--accent-500)] px-4 py-3 text-sm font-bold text-white transition hover:bg-[var(--accent-600)]"
             >
               {isCreating ? <X className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
               {isCreating ? 'Close form' : 'New book time'}

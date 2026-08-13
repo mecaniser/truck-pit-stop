@@ -921,6 +921,18 @@ html::-webkit-scrollbar-thumb:hover {
   color: var(--workspace-muted) !important;
 }
 
+/* The summary panel needs enough runway for its existing elevation to read
+   before the dense ledger begins. Its primary action keeps a semantic
+   on-accent foreground instead of inheriting road-white workspace ink. */
+.db-presentation-new .db-labor-book-time__summary {
+  margin-bottom: 12px;
+}
+
+.db-presentation-new .db-labor-book-time .db-labor-book-time__primary-action,
+.db-presentation-new .db-labor-book-time .db-labor-book-time__primary-action * {
+  color: #fff !important;
+}
+
 @media (hover: hover) and (pointer: fine) {
   .db-presentation-new .db-labor-book-time__ledger > div:not(:first-child):hover {
     background: var(--surface-raised) !important;
