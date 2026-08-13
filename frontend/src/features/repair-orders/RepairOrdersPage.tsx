@@ -25,10 +25,10 @@ import { useWebSocket } from '../../hooks/useWebSocket'
 import { useAuthStore } from '@/stores/authStore'
 import PriceBuilderPanel from './PriceBuilderPanel'
 import RepairOrdersLedger, { type RepairOrdersLedgerRow } from './RepairOrdersLedger'
-import RepairOrderContextHeader from './RepairOrderContextHeader'
 import SectionInfoTooltip from '@/components/SectionInfoTooltip'
 import SuggestingTextarea from '@/components/SuggestingTextarea'
 import { buildPartHistoryEvents } from './repairOrderHistory'
+import type { ActionQueueOrder } from '../dashboard/ShopCockpitActionLedger'
 
 interface NewCustomerForm {
   first_name: string
@@ -105,11 +105,11 @@ type EvidencePaymentMethod = 'check' | 'ach' | 'fleet_payment'
 type WorkQueueLane = 'needs_action' | 'on_floor' | 'ready_to_close'
 
 type WorkQueue = {
-  orders_needing_action: Array<{ id: string }>
+  orders_needing_action: ActionQueueOrder[]
   orders_needing_action_has_more: boolean
-  orders_on_floor: Array<{ id: string }>
+  orders_on_floor: ActionQueueOrder[]
   orders_on_floor_has_more: boolean
-  orders_ready_to_close: Array<{ id: string }>
+  orders_ready_to_close: ActionQueueOrder[]
   orders_ready_to_close_has_more: boolean
 }
 
@@ -285,6 +285,7 @@ export default function RepairOrdersPage() {
   const [selectedServiceOptions, setSelectedServiceOptions] = useState<ServiceTypeaheadItem[]>([])
   const [isDetailOpen, setIsDetailOpen] = useState(false)
   const [selectedOrder, setSelectedOrder] = useState<RepairOrder | null>(null)
+  const [workspaceFocusRequest, setWorkspaceFocusRequest] = useState(0)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [initialPriceBuildWarningsByOrder, setInitialPriceBuildWarningsByOrder] = useState<Record<string, PriceBuildWarning[]>>({})
   const [showDangerActions, setShowDangerActions] = useState(false)
@@ -400,7 +401,7 @@ export default function RepairOrdersPage() {
 
   // Dashboard cards identify their originating lane in the URL. The focused
   // queue contract keeps workspace navigation from loading dashboard KPIs.
-  const { data: workQueueStats } = useQuery<WorkQueue>({
+  const { data: workQueueStats, error: workQueueError } = useQuery<WorkQueue>({
     queryKey: ['dashboard-action-queue'],
     queryFn: async () => (await api.get('/dashboard/action-queue')).data,
     enabled: !!workQueueLane,
@@ -409,7 +410,9 @@ export default function RepairOrdersPage() {
   const workQueueOrderIds = workQueueLane
     ? (workQueueStats?.[WORK_QUEUE_FIELD[workQueueLane]] ?? []).map((order) => order.id)
     : []
-
+  const workQueueOrders = workQueueLane
+    ? (workQueueStats?.[WORK_QUEUE_FIELD[workQueueLane]] ?? [])
+    : []
   // Server-side pagination: one page at a time, with search + status pushed to
   // the API instead of loading every order and filtering in the browser.
   const orderPageKey = (p: number) =>
@@ -436,6 +439,7 @@ export default function RepairOrdersPage() {
     queryFn: ({ signal }) => fetchOrderPage(page, signal),
     placeholderData: keepPreviousData,
     staleTime: 30_000,
+    enabled: !workQueueLane,
   })
   const orders = orderPage?.items
   const totalOrders = orderPage?.total ?? 0
@@ -489,7 +493,7 @@ export default function RepairOrdersPage() {
     queryClient.cancelQueries({ queryKey: ['recommended-services', orderId] })
   }
 
-  const openDetail = (order: RepairOrder) => {
+  const openDetail = (order: RepairOrder, options?: { focusWorkspace?: boolean }) => {
     // Rapid prev/next through the work queue (e.g. paging through 20+ orders
     // in a few seconds) was leaving every previous order's detail/price-build/
     // parts/quotes/invoices requests retrying in the background, each holding
@@ -501,17 +505,25 @@ export default function RepairOrdersPage() {
       cancelOrderQueries(selectedOrder.id)
     }
     applyDetailState(order)
+    if (options?.focusWorkspace) setWorkspaceFocusRequest((request) => request + 1)
+    // Keep the active Shop Work lane while an operator moves through its
+    // workset. The explicit "All orders" control is the only way to drop this
+    // navigation context; a ledger click must not silently turn a lane review
+    // into the unrelated global list.
+    const nextSearchParams: Record<string, string> = { selected: order.id }
+    if (workQueueLane) nextSearchParams.queue = workQueueLane
     // Fresh open pushes ?selected= so Back/close return to the view underneath;
     // switching orders while open (prev/next, arrow keys) replaces the entry so
     // Back still exits to the origin instead of replaying every order viewed.
-    setSearchParams({ selected: order.id }, { replace: isDetailOpen })
+    setSearchParams(nextSearchParams, { replace: isDetailOpen })
   }
 
-  const openWorkQueueOrder = (orderId: string) => {
+  const openWorkQueueOrder = (orderId: string, options?: { focusWorkspace?: boolean }) => {
     if (!workQueueLane) return
     if (selectedOrder?.id && selectedOrder.id !== orderId) {
       cancelOrderQueries(selectedOrder.id)
     }
+    if (options?.focusWorkspace) setWorkspaceFocusRequest((request) => request + 1)
     setSearchParams({ selected: orderId, queue: workQueueLane }, { replace: true })
   }
 
@@ -542,10 +554,9 @@ export default function RepairOrdersPage() {
     }
   }
 
-  const returnToShopWork = () => {
-    navigate('/dashboard', {
-      state: workQueueLane ? { shopWorkQueue: workQueueLane } : undefined,
-    })
+  const showAllOrders = () => {
+    const selectedId = searchParams.get('selected')
+    setSearchParams(selectedId ? { selected: selectedId } : {}, { replace: true })
   }
 
   // The ?selected= URL param is the source of truth for the detail panel: it
@@ -1794,7 +1805,7 @@ export default function RepairOrdersPage() {
           onStatusChange={setStatusFilter}
           onOpenOrder={() => undefined}
           onCreateOrder={() => undefined}
-          onReturnToShopWork={returnToShopWork}
+          onShowAllOrders={showAllOrders}
           onPreviousPage={() => undefined}
           onNextPage={() => undefined}
         />
@@ -2444,74 +2455,84 @@ export default function RepairOrdersPage() {
     }
   })
 
-  const newPresentationContext = presentationVariant === 'new' && selectedOrder
-    ? (() => {
-        const detailOrder = orderDetail ?? selectedOrder
-        const display = resolveOrderDisplayStatus({
-          ...detailOrder,
-          quote_sent: quoteForOrder?.sent_to_customer || quoteSent || detailOrder.quote_sent,
-          quote_approved: quoteForOrder?.is_approved || detailOrder.quote_approved,
-        })
-        const quoteState = quoteForOrder?.is_approved || detailOrder.quote_approved
-          ? 'Customer authorized'
-          : quoteForOrder?.sent_to_customer || quoteSent || detailOrder.quote_sent
-            ? 'Awaiting customer authorization'
-            : quoteForOrder
-              ? 'Estimate draft ready'
-              : 'No estimate sent'
-        const invoiceState = detailOrder.status === 'paid'
-          ? 'Paid'
-          : invoiceForOrder
-            ? `Invoice ${invoiceForOrder.invoice_number}`
-            : detailOrder.status === 'completed'
-              ? 'Ready to invoice'
-              : 'Invoice not created'
+  // A Shop Work lane is a server-backed context, not a decorative label above
+  // the global repair-order ledger. Reuse only its compact projection fields;
+  // selecting a row still opens the canonical Repair Orders workspace and its
+  // existing detail/mutation ownership.
+  const workQueueRows: RepairOrdersLedgerRow[] = workQueueOrders
+    .filter((order) => {
+      const needle = searchQuery.trim().toLowerCase()
+      const matchesSearch = !needle || [
+        order.order_number,
+        order.description,
+        order.customer_name,
+        order.vehicle_info,
+        order.mechanic_name,
+      ].some((value) => value?.toLowerCase().includes(needle))
+      const matchesStatus = statusFilter === 'all' || order.status === statusFilter
+      return matchesSearch && matchesStatus
+    })
+    .map((order) => {
+      const statusTone: RepairOrdersLedgerRow['statusTone'] = order.status === 'paid'
+        ? 'success'
+        : ['invoiced', 'completed'].includes(order.status)
+          ? 'success'
+          : ['pending_review'].includes(order.status)
+            ? 'warning'
+            : ['assigned', 'acknowledged', 'in_progress'].includes(order.status)
+              ? 'active'
+              : 'neutral'
 
-        return (
-          <RepairOrderContextHeader
-            orderNumber={detailOrder.order_number}
-            status={display.label}
-            customer={customerDisplayName}
-            vehicle={selectedOrderVehicle ? vehicleDisplayLabel(selectedOrderVehicle) : [detailOrder.vehicle_year, detailOrder.vehicle_make, detailOrder.vehicle_model].filter(Boolean).join(' ') || 'Vehicle unavailable'}
-            description={detailOrder.description || 'No work description recorded'}
-            laborTotal={formatMoney(detailOrder.total_labor_cost)}
-            partsTotal={formatMoney(detailOrder.total_parts_cost)}
-            quoteState={quoteState}
-            invoiceState={invoiceState}
-            queueOrigin={workQueueLane}
-            onReturnToShopWork={returnToShopWork}
-            onRequestHistory={() => setWorkspaceHistoryRequested(true)}
-          />
-        )
-      })()
-    : null
+      return {
+        id: order.id,
+        orderNumber: order.order_number,
+        status: order.status === 'draft'
+          ? 'Checked In'
+          : order.status.replace(/_/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase()),
+        statusTone,
+        description: order.description || 'No work description recorded',
+        customer: order.customer_name,
+        vehicle: order.vehicle_info || 'Vehicle not available',
+        total: order.total_cost,
+        updated: format(new Date(order.updated_at), 'MMM d, h:mm a'),
+        internal: false,
+      }
+    })
 
+  const isQueueWorkset = Boolean(workQueueLane)
+  const displayedLedgerRows = isQueueWorkset ? workQueueRows : newPresentationRows
+  const displayedLedgerTotal = isQueueWorkset ? workQueueOrders.length : totalOrders
   return (
-    <div className="db-repair-orders-workspace flex flex-col h-full">
+    <div className={`db-repair-orders-workspace flex flex-col h-full ${presentationVariant === 'new' ? 'db-repair-orders-workspace--new' : ''} ${presentationVariant === 'new' && isDetailOpen && selectedOrder ? 'db-repair-orders-workspace--detail-open' : ''}`}>
       {presentationVariant === 'new' ? (
         <RepairOrdersLedger
-          rows={newPresentationRows}
-          totalOrders={totalOrders}
+          rows={displayedLedgerRows}
+          totalOrders={displayedLedgerTotal}
           searchQuery={searchQuery}
           statusFilter={statusFilter}
           statusOptions={statusOptions}
           selectedId={selectedOrder?.id ?? searchParams.get('selected')}
           queueOrigin={workQueueLane}
           isFetching={isFetching}
-          errorMessage={orderPageError ? 'Check the connection and try again.' : null}
+          errorMessage={(isQueueWorkset ? workQueueError : orderPageError) ? 'Check the connection and try again.' : null}
           page={page}
           pageSize={RO_PAGE_SIZE}
-          hasMore={Boolean(orderPage?.has_more)}
+          hasMore={isQueueWorkset ? false : Boolean(orderPage?.has_more)}
           isPlaceholder={isPlaceholderData}
-          canGoPrevious={page > 0}
+          canGoPrevious={!isQueueWorkset && page > 0}
+          showPagination={!isQueueWorkset}
           onSearchChange={setSearchQuery}
           onStatusChange={setStatusFilter}
-          onOpenOrder={(id) => {
+          onOpenOrder={(id, options) => {
+            if (isQueueWorkset) {
+              openWorkQueueOrder(id, options)
+              return
+            }
             const order = filteredOrders?.find((candidate) => candidate.id === id)
-            if (order) openDetail(order)
+            if (order) openDetail(order, options)
           }}
           onCreateOrder={openModal}
-          onReturnToShopWork={returnToShopWork}
+          onShowAllOrders={showAllOrders}
           onPreviousPage={() => setPage((current) => Math.max(0, current - 1))}
           onNextPage={() => setPage((current) => orderPage?.has_more ? current + 1 : current)}
         />
@@ -3435,6 +3456,8 @@ export default function RepairOrdersPage() {
       {/* Repair Order Detail Panel */}
       <SlidePanel
         isOpen={isDetailOpen && !!selectedOrder}
+        layout={presentationVariant === 'new' ? 'workspace' : 'drawer'}
+        workspaceFocusRequest={presentationVariant === 'new' && workspaceFocusRequest > 0 ? workspaceFocusRequest : undefined}
         onClose={closeDetail}
         title={selectedOrder ? `#${selectedOrder.order_number}` : ''}
         subtitle="Repair Order"
@@ -3566,8 +3589,6 @@ export default function RepairOrdersPage() {
             ? `h-full min-h-0 ${presentationVariant === 'new' ? 'db-repair-order-price-shell-new' : ''}`
             : `p-6 space-y-6 ${presentationVariant === 'new' ? 'db-repair-order-detail-new__body' : ''}`}>
 
-                {newPresentationContext}
-
                 {!priceBuilderOwnsShell && (
                   <details className="rounded-xl border border-gray-200 bg-gray-50 p-4">
                     <summary className="cursor-pointer text-sm font-semibold text-gray-700">Marketing attribution</summary>
@@ -3601,6 +3622,12 @@ export default function RepairOrdersPage() {
                   const canAssignTechnicianInline = isApproved && !hasMechanic && (
                     (orderDetail ?? selectedOrder).status === 'approved' || assignmentBypassedInDrawer
                   )
+                  const workflowPillClass = (tone: 'success' | 'neutral' | 'warning' | 'action') => ({
+                    success: 'bg-emerald-100 text-emerald-800',
+                    neutral: 'bg-slate-100 text-slate-700',
+                    warning: 'bg-amber-100 text-amber-700',
+                    action: 'bg-amber-500 text-white',
+                  })[tone]
 
                   return (
                     <div>
@@ -3629,11 +3656,7 @@ export default function RepairOrdersPage() {
                               {updateQuoteMutation.isPending ? 'Updating...' : 'Update'}
                             </button>
                           ) : (
-                            <span className={`shrink-0 px-2 py-1 text-xs font-medium rounded-md ${
-                              hasQuote
-                                ? 'bg-green-100 text-green-700'
-                                : 'bg-amber-500 text-white'
-                            }`}>
+                            <span className={`shrink-0 px-2 py-1 text-xs font-medium rounded-md ${workflowPillClass(hasQuote ? 'success' : 'action')}`}>
                               {hasQuote ? (
                                 <span className="flex items-center gap-0.5">✓ Draft Ready</span>
                               ) : (
@@ -3677,9 +3700,7 @@ export default function RepairOrdersPage() {
                               {quoteActionPending ? 'Working...' : (isSent ? '⏳ Resend' : 'Send')}
                             </button>
                           ) : (
-                            <span className={`shrink-0 px-2 py-1 text-xs font-medium rounded-md ${
-                              isApproved ? 'bg-green-100 text-green-700' : 'bg-gray-200 text-gray-400'
-                            }`}>
+                            <span className={`shrink-0 px-2 py-1 text-xs font-medium rounded-md ${workflowPillClass(isApproved ? 'success' : 'neutral')}`}>
                               {isApproved ? '✓ Sent' : isSent ? 'Awaiting approval' : 'Send'}
                             </span>
                           )}
@@ -3687,26 +3708,14 @@ export default function RepairOrdersPage() {
                           <ArrowRight className={`w-3 h-3 shrink-0 ${isApproved ? 'text-amber-500' : 'text-gray-300'}`} />
 
                           {/* Step 3: Customer Approved */}
-                          <span className={`shrink-0 px-2 py-1 text-xs font-medium rounded-md ${
-                            isApproved
-                              ? 'bg-green-100 text-green-700'
-                              : isSent
-                                ? 'bg-amber-100 text-amber-700 animate-pulse'
-                                : 'bg-gray-200 text-gray-400'
-                          }`}>
+                          <span className={`shrink-0 px-2 py-1 text-xs font-medium rounded-md ${workflowPillClass(isApproved ? 'success' : isSent ? 'warning' : 'neutral')} ${isSent && !isApproved ? 'animate-pulse' : ''}`}>
                             {isApproved ? '✓ Approved' : isSent ? 'Awaiting…' : 'Approved'}
                           </span>
 
                           <ArrowRight className={`w-3 h-3 shrink-0 ${hasMechanic ? 'text-amber-500' : 'text-gray-300'}`} />
 
                           {/* Step 4: Mechanic Assigned */}
-                          <span className={`shrink-0 px-2 py-1 text-xs font-medium rounded-md ${
-                            hasMechanic || assignmentBypassedInDrawer
-                              ? 'bg-green-100 text-green-700'
-                              : isApproved
-                                ? 'bg-amber-100 text-amber-700'
-                                : 'bg-gray-200 text-gray-400'
-                          }`}>
+                          <span className={`shrink-0 px-2 py-1 text-xs font-medium rounded-md ${workflowPillClass(hasMechanic || assignmentBypassedInDrawer ? 'success' : isApproved ? 'warning' : 'neutral')}`}>
                             {hasMechanic ? `✓ ${mechanicName}` : assignmentBypassedInDrawer ? '✓ In progress' : isApproved ? 'Assign ↓' : 'Technician'}
                           </span>
                         </div>

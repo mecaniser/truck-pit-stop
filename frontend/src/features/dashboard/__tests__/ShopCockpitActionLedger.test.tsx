@@ -75,11 +75,11 @@ describe('DB-035 Stage 3 Action Ledger', () => {
   it('uses operator-facing guidance instead of implementation terminology', () => {
     renderLedger()
 
-    expect(screen.getByText('Review work that needs attention, is on the floor, or is ready to close.')).toBeInTheDocument()
+    expect(screen.getByText('Open a repair order to review work, approvals, history, and payment.')).toBeInTheDocument()
     expect(screen.queryByText('Three canonical queues. One connected repair record.')).not.toBeInTheDocument()
   })
 
-  it('renders the three canonical lanes, projected fields and honest connected availability', () => {
+  it('renders the three canonical lanes and projected scanning fields without a Dashboard detail imitation', () => {
     renderLedger()
 
     const tabs = screen.getByRole('tablist', { name: 'Work queues' })
@@ -87,33 +87,32 @@ describe('DB-035 Stage 3 Action Ledger', () => {
     expect(within(tabs).getByRole('tab', { name: 'On the Floor 1' })).toBeInTheDocument()
     expect(within(tabs).getByRole('tab', { name: 'Ready to Close 1' })).toBeInTheDocument()
     expect(document.querySelector('[data-order-id="ro-needs"]')).toHaveAttribute('data-lane', 'needs_action')
-    expect(screen.getByText('Quote sent')).toBeInTheDocument()
-    expect(screen.getByText('History is available in Repair Orders')).toBeInTheDocument()
-    expect(screen.getByText('Financial detail is available in Repair Orders')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Open RO-2026-0101 in Repair Orders' })).toBeInTheDocument()
+    expect(screen.queryByText('Selected repair record · read only')).not.toBeInTheDocument()
+    expect(screen.queryByText('Not included in Shop Work')).not.toBeInTheDocument()
   })
 
-  it('keeps keyboard and rapid selection on the latest requested projected record', async () => {
-    const user = userEvent.setup()
-    renderLedger()
-
-    const floorRow = screen.getByRole('button', { name: /RO-2026-0102/ })
-    floorRow.focus()
-    await user.keyboard('{Enter}')
-    expect(screen.getByRole('heading', { name: 'RO-2026-0102' })).toBeInTheDocument()
-
-    await user.click(screen.getByRole('button', { name: /RO-2026-0101/ }))
-    await user.click(screen.getByRole('button', { name: /RO-2026-0103/ }))
-    expect(screen.getByRole('heading', { name: 'RO-2026-0103' })).toBeInTheDocument()
-    expect(screen.getByRole('status')).toHaveTextContent('Selected RO-2026-0103 from Ready to Close')
-  })
-
-  it('hands the exact selected order ID and canonical lane to Repair Orders', async () => {
+  it('opens the latest requested projected record from keyboard and rapid pointer input', async () => {
     const user = userEvent.setup()
     const onOpenRecord = vi.fn()
     renderLedger({ onOpenRecord })
 
-    await user.click(screen.getByRole('button', { name: /RO-2026-0102/ }))
-    await user.click(screen.getByRole('button', { name: 'Open RO-2026-0102' }))
+    const floorRow = screen.getByRole('button', { name: 'Open RO-2026-0102 in Repair Orders' })
+    floorRow.focus()
+    await user.keyboard('{Enter}')
+    expect(onOpenRecord).toHaveBeenLastCalledWith('ro-floor', 'on_floor')
+
+    await user.click(screen.getByRole('button', { name: 'Open RO-2026-0101 in Repair Orders' }))
+    await user.click(screen.getByRole('button', { name: 'Open RO-2026-0103 in Repair Orders' }))
+    expect(onOpenRecord).toHaveBeenLastCalledWith('ro-close', 'ready_to_close')
+  })
+
+  it('hands the exact order ID and canonical lane to Repair Orders in one action', async () => {
+    const user = userEvent.setup()
+    const onOpenRecord = vi.fn()
+    renderLedger({ onOpenRecord })
+
+    await user.click(screen.getByRole('button', { name: 'Open RO-2026-0102 in Repair Orders' }))
     expect(onOpenRecord).toHaveBeenCalledWith('ro-floor', 'on_floor')
   })
 
@@ -121,8 +120,20 @@ describe('DB-035 Stage 3 Action Ledger', () => {
     renderLedger({ initialLaneFilter: 'on_floor' })
 
     expect(screen.getByRole('tab', { name: 'On the Floor 1' })).toHaveAttribute('aria-selected', 'true')
-    expect(document.querySelector('[data-order-id="ro-floor"]')).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByRole('button', { name: 'Open RO-2026-0102 in Repair Orders' })).toBeInTheDocument()
     expect(document.querySelector('[data-order-id="ro-needs"]')).not.toBeInTheDocument()
+  })
+
+  it('adopts a returned lane after the cockpit has already mounted', () => {
+    const { rerender, props } = renderLedger()
+
+    expect(screen.getByRole('tab', { name: 'All work 3' })).toHaveAttribute('aria-selected', 'true')
+
+    rerender(<ShopCockpitActionLedger {...props} initialLaneFilter="on_floor" />)
+
+    expect(screen.getByRole('tab', { name: 'On the Floor 1' })).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getByRole('tab', { name: 'All work 3' })).toHaveAttribute('aria-selected', 'false')
+    expect(screen.getByRole('button', { name: 'Open RO-2026-0102 in Repair Orders' })).toBeInTheDocument()
   })
 
   it('supports canonical filtering, search, empty state and the authentic Activity alternate', async () => {
@@ -143,7 +154,7 @@ describe('DB-035 Stage 3 Action Ledger', () => {
     }
     rerender(<ShopCockpitActionLedger {...props} projection={emptyProjection} />)
     expect(screen.getByText('No work is waiting')).toBeInTheDocument()
-    expect(screen.getByText('Select a repair order when work arrives')).toBeInTheDocument()
+    expect(screen.queryByLabelText('Connected repair record')).not.toBeInTheDocument()
 
     rerender(<ShopCockpitActionLedger {...props} queueView="activity" />)
     expect(screen.getByText('Authentic activity feed')).toBeInTheDocument()

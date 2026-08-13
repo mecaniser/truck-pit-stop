@@ -1,5 +1,5 @@
 import { fireEvent, render, screen, within } from '@testing-library/react'
-import { MemoryRouter, Route, Routes } from 'react-router-dom'
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import DashboardLayout from '../DashboardLayout'
@@ -39,8 +39,14 @@ function renderShell(path = '/dashboard') {
       <Routes>
         <Route path="/dashboard/*" element={<DashboardLayout />} />
       </Routes>
+      <LocationStateProbe />
     </MemoryRouter>,
   )
+}
+
+function LocationStateProbe() {
+  const location = useLocation()
+  return <output data-testid="dashboard-location-state">{JSON.stringify({ pathname: location.pathname, search: location.search, state: location.state })}</output>
 }
 
 describe('DB-035 authenticated staff shell', () => {
@@ -133,7 +139,7 @@ describe('DB-035 authenticated staff shell', () => {
     const shell = document.querySelector('.db-staff-shell')
     expect(shell).toHaveClass('db-presentation-new')
     expect(shell).toHaveAttribute('data-presentation', 'new')
-    expect(screen.getByRole('link', { name: 'DieselBridge Shop Work' })).toHaveAttribute('href', '/dashboard')
+    expect(screen.getByRole('link', { name: 'Powered by DieselBridge — Shop Work' })).toHaveAttribute('href', '/dashboard')
     const desktopShopWork = within(document.querySelector('.db-staff-primary-nav') as HTMLElement)
       .getByRole('link', { name: 'Shop Work' })
     const mobileShopWork = within(screen.getByLabelText('Mobile navigation'))
@@ -147,7 +153,18 @@ describe('DB-035 authenticated staff shell', () => {
     expect(screen.getByLabelText('Active shop: Truck Pit Stop Wisconsin')).toHaveTextContent('Truck Pit Stop Wisconsin')
     expect(screen.getByText('Truck Pit Stop Wisconsin', { selector: '.db-workspace-context__fallback' })).toBeInTheDocument()
     expect(document.querySelector('.db-workspace-context__name')).not.toBeInTheDocument()
-    const productBrand = screen.getByRole('link', { name: 'DieselBridge Shop Work' })
+    const productBrand = screen.getByRole('link', { name: 'Powered by DieselBridge — Shop Work' })
+    const brandLockup = productBrand.closest('.db-brand-lockup')
+    expect(brandLockup).toContainElement(screen.getByLabelText('Active shop: Truck Pit Stop Wisconsin'))
+    const endorsementRow = brandLockup?.querySelector('.db-brand-endorsement-row')
+    expect(endorsementRow).toContainElement(within(screen.getByLabelText('Active shop: Truck Pit Stop Wisconsin')).getByText('WI'))
+    expect(endorsementRow).toContainElement(productBrand)
+    expect(within(endorsementRow as HTMLElement).getByText('Powered by')).toBeInTheDocument()
+    expect(screen.getByText('Truck Pit Stop Wisconsin', { selector: '.db-workspace-context__fallback' }))
+      .toHaveClass('db-compact-identity-step--tenant')
+    expect(within(endorsementRow as HTMLElement).getByText('WI'))
+      .toHaveClass('db-compact-identity-step--state')
+    expect(endorsementRow?.querySelector('.db-compact-identity-step--endorsement')).toContainElement(productBrand)
     expect(productBrand.querySelector('.db-wordmark--animated.db-wordmark--type-only')).toHaveTextContent('DieselBridge')
     expect(productBrand.querySelector('.db-wordmark__bridge')).not.toBeInTheDocument()
     expect(productBrand.querySelector('.db-product-brand__compact-mark')).toBeInTheDocument()
@@ -179,6 +196,16 @@ describe('DB-035 authenticated staff shell', () => {
     expect(screen.queryByRole('link', { name: 'Invoices' })).not.toBeInTheDocument()
     expect(screen.queryByRole('link', { name: 'Vehicle History' })).not.toBeInTheDocument()
     expect(screen.getByText('Repair Orders surface')).toBeInTheDocument()
+  })
+
+  it('returns a Repair Orders queue launch to Shop Work with the canonical lane context', async () => {
+    renderShell('/dashboard/repair-orders?selected=real-order-id&queue=needs_action')
+    await screen.findByText('Repair Orders surface')
+
+    fireEvent.click(screen.getByText('Shop Work', { selector: '.db-breadcrumb a' }))
+
+    expect(screen.getByTestId('dashboard-location-state')).toHaveTextContent('"pathname":"/dashboard"')
+    expect(screen.getByTestId('dashboard-location-state')).toHaveTextContent('"shopWorkQueue":"needs_action"')
   })
 
   it('preserves the legacy shell as the immediate presentation rollback', async () => {

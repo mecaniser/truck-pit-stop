@@ -1,4 +1,5 @@
-import { ArrowLeft, ChevronLeft, ChevronRight, Plus, Search } from 'lucide-react'
+import { useEffect, useId, useRef, useState } from 'react'
+import { ChevronDown, ChevronLeft, ChevronRight, Plus, Search } from 'lucide-react'
 import { REPAIR_ORDERS_QUEUE_LABEL, type RepairOrdersQueueOrigin } from './repairOrdersPresentation'
 
 export type RepairOrdersLedgerRow = {
@@ -29,11 +30,12 @@ export default function RepairOrdersLedger({
   hasMore,
   isPlaceholder,
   canGoPrevious,
+  showPagination = true,
   onSearchChange,
   onStatusChange,
   onOpenOrder,
   onCreateOrder,
-  onReturnToShopWork,
+  onShowAllOrders,
   onPreviousPage,
   onNextPage,
 }: {
@@ -51,16 +53,42 @@ export default function RepairOrdersLedger({
   hasMore: boolean
   isPlaceholder: boolean
   canGoPrevious: boolean
+  showPagination?: boolean
   onSearchChange: (value: string) => void
   onStatusChange: (value: string) => void
-  onOpenOrder: (id: string) => void
+  onOpenOrder: (id: string, options?: { focusWorkspace?: boolean }) => void
   onCreateOrder: () => void
-  onReturnToShopWork: () => void
+  onShowAllOrders: () => void
   onPreviousPage: () => void
   onNextPage: () => void
 }) {
   const queueLabel = queueOrigin ? REPAIR_ORDERS_QUEUE_LABEL[queueOrigin] : null
   const filtered = Boolean(searchQuery || statusFilter !== 'all')
+  const [scopeMenuOpen, setScopeMenuOpen] = useState(false)
+  const scopeControlRef = useRef<HTMLDivElement>(null)
+  const scopeTriggerRef = useRef<HTMLButtonElement>(null)
+  const scopeMenuId = useId()
+  const scopeCount = queueLabel ? `${totalOrders} ${totalOrders === 1 ? 'order' : 'orders'}` : null
+
+  useEffect(() => {
+    if (!scopeMenuOpen) return
+
+    const closeOnOutsidePointer = (event: PointerEvent) => {
+      if (!scopeControlRef.current?.contains(event.target as Node)) setScopeMenuOpen(false)
+    }
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return
+      setScopeMenuOpen(false)
+      scopeTriggerRef.current?.focus()
+    }
+
+    document.addEventListener('pointerdown', closeOnOutsidePointer)
+    document.addEventListener('keydown', closeOnEscape)
+    return () => {
+      document.removeEventListener('pointerdown', closeOnOutsidePointer)
+      document.removeEventListener('keydown', closeOnEscape)
+    }
+  }, [scopeMenuOpen])
 
   return (
     <section className="db-repair-orders-new" aria-labelledby="repair-orders-title" aria-busy={isFetching}>
@@ -75,20 +103,6 @@ export default function RepairOrdersLedger({
         </button>
       </header>
 
-      {queueLabel && (
-        <div className="db-repair-orders-origin" role="status">
-          <div>
-            <span>Shop Work handoff</span>
-            <strong>{queueLabel}</strong>
-            <small>Queue origin is navigation context, not repair-order state.</small>
-          </div>
-          <button type="button" onClick={onReturnToShopWork}>
-            <ArrowLeft aria-hidden="true" />
-            Return to {queueLabel}
-          </button>
-        </div>
-      )}
-
       <div className="db-repair-orders-new__toolbar">
         <label className="db-repair-orders-new__search">
           <span className="sr-only">Search repair orders</span>
@@ -101,12 +115,13 @@ export default function RepairOrdersLedger({
           />
         </label>
         <label className="db-repair-orders-new__status-select">
-          <span>Order status</span>
+          <span className="sr-only">Order status</span>
           <select value={statusFilter} onChange={(event) => onStatusChange(event.target.value)}>
             {statusOptions.map((option) => (
               <option key={option.value} value={option.value}>{option.label}</option>
             ))}
           </select>
+          <ChevronDown aria-hidden="true" />
         </label>
         <div className="db-repair-orders-new__status-tabs" role="group" aria-label="Filter repair orders by status">
           {statusOptions.map((option) => (
@@ -126,9 +141,42 @@ export default function RepairOrdersLedger({
         <header>
           <div>
             <h2>Order ledger</h2>
-            <span>{filtered ? `${totalOrders} matching` : `${totalOrders} total`}</span>
+            {!queueLabel && <span>{filtered ? `${totalOrders} matching` : `${totalOrders} total`}</span>}
           </div>
-          {isFetching && <span className="db-repair-orders-ledger__sync" role="status">Updating…</span>}
+          <div className="db-repair-orders-ledger__header-actions">
+            {queueLabel && (
+              <div ref={scopeControlRef} className="db-repair-orders-ledger__scope-control">
+                <button
+                  ref={scopeTriggerRef}
+                  type="button"
+                  aria-haspopup="menu"
+                  aria-expanded={scopeMenuOpen}
+                  aria-controls={scopeMenuId}
+                  aria-label={`Repair Orders scope: ${queueLabel}${scopeCount ? `, ${scopeCount}` : ''}`}
+                  onClick={() => setScopeMenuOpen((open) => !open)}
+                >
+                  <span>{queueLabel}</span>
+                  {scopeCount && <span aria-hidden="true">· {scopeCount}</span>}
+                  <ChevronDown aria-hidden="true" />
+                </button>
+                {scopeMenuOpen && (
+                  <div id={scopeMenuId} role="menu" aria-label="Repair Orders scope" className="db-repair-orders-ledger__scope-menu">
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={() => {
+                        setScopeMenuOpen(false)
+                        onShowAllOrders()
+                      }}
+                    >
+                      All repair orders
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+            {isFetching && <span className="db-repair-orders-ledger__sync" role="status">Updating…</span>}
+          </div>
         </header>
 
         {errorMessage ? (
@@ -149,7 +197,20 @@ export default function RepairOrdersLedger({
                 key={row.id}
                 className="db-repair-orders-ledger__row"
                 aria-pressed={selectedId === row.id}
-                onClick={() => onOpenOrder(row.id)}
+                onKeyDown={(event) => {
+                  if (event.key !== 'Enter' && event.key !== ' ') return
+                  // Handle keyboard activation ourselves so the browser's
+                  // synthetic click cannot restore focus to this row after the
+                  // selected workspace has asked to receive it.
+                  event.preventDefault()
+                  onOpenOrder(row.id, { focusWorkspace: true })
+                }}
+                onClick={() => {
+                  // Pointer selection keeps the operator in the ledger. The
+                  // keyboard path above deliberately advances into the named
+                  // workspace so the next Tab reaches real repair controls.
+                  onOpenOrder(row.id)
+                }}
                 data-order-id={row.id}
               >
                 <span className="db-repair-orders-ledger__order">
@@ -171,7 +232,7 @@ export default function RepairOrdersLedger({
           </div>
         )}
 
-        {totalOrders > 0 && (
+        {showPagination && totalOrders > 0 && (
           <footer>
             <span>{page * pageSize + 1}–{Math.min((page + 1) * pageSize, totalOrders)} of {totalOrders}</span>
             <div>

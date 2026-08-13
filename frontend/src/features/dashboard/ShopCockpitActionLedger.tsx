@@ -1,7 +1,5 @@
 import { type ReactNode, useEffect, useMemo, useState } from 'react'
 import {
-  ArrowRight,
-  Clock3,
   History,
   LayoutList,
   Plus,
@@ -144,22 +142,14 @@ export default function ShopCockpitActionLedger({
   )
   const [laneFilter, setLaneFilter] = useState<ActionQueueFilter>(initialLaneFilter)
   const [searchQuery, setSearchQuery] = useState('')
-  const [selected, setSelected] = useState<{ id: string; lane: ActionQueueLane } | null>(() => {
-    const first = initialLaneFilter === 'all'
-      ? allRows[0]
-      : allRows.find(({ lane }) => lane === initialLaneFilter)
-    return first ? { id: first.order.id, lane: first.lane } : null
-  })
 
+  // A return from Repair Orders carries only a transient navigation state. The
+  // cockpit instance stays mounted under the authenticated shell, so sync that
+  // state whenever the user returns instead of treating it as construction-time
+  // default data.
   useEffect(() => {
-    if (selected && allRows.some(({ order, lane }) => order.id === selected.id && lane === selected.lane)) return
-    const first = allRows[0]
-    setSelected(first ? { id: first.order.id, lane: first.lane } : null)
-  }, [allRows, selected])
-
-  const selectedRow = selected
-    ? allRows.find(({ order, lane }) => order.id === selected.id && lane === selected.lane) ?? null
-    : null
+    setLaneFilter(initialLaneFilter)
+  }, [initialLaneFilter])
   const normalizedSearch = searchQuery.trim().toLocaleLowerCase()
   const visibleRows = allRows.filter(({ order, lane }) => {
     if (laneFilter !== 'all' && lane !== laneFilter) return false
@@ -171,17 +161,6 @@ export default function ShopCockpitActionLedger({
 
   const selectLane = (filter: ActionQueueFilter) => {
     setLaneFilter(filter)
-    if (filter === 'all') return
-    const first = lanes.find((lane) => lane.key === filter)?.orders[0]
-    if (first) setSelected({ id: first.id, lane: filter })
-  }
-
-  const invoicePaymentState = (order: ActionQueueOrder) => {
-    if (order.pending_zelle_confirmation) return 'Payment confirmation pending'
-    if (order.status === 'paid') return 'Paid'
-    if (order.status === 'invoiced') return 'Payment due'
-    if (order.status === 'completed') return 'Invoice action available'
-    return 'Not included in Shop Work'
   }
 
   return (
@@ -189,7 +168,7 @@ export default function ShopCockpitActionLedger({
       <header className="db-shop-work-new__header db-operating-page-header">
         <div>
           <h1 id="shop-work-title">Shop Work</h1>
-          <p>Review work that needs attention, is on the floor, or is ready to close.</p>
+          <p>Open a repair order to review work, approvals, history, and payment.</p>
         </div>
         <div className="db-shop-work-new__header-actions">
           <button
@@ -298,14 +277,13 @@ export default function ShopCockpitActionLedger({
                   <span>{totalCount === 0 ? 'New repair orders will appear in their canonical queue.' : 'Choose another queue or clear the search.'}</span>
                 </div>
               ) : visibleRows.map(({ order, lane }) => {
-                const isSelected = selected?.id === order.id && selected.lane === lane
                 return (
                   <button
                     type="button"
                     key={`${lane}-${order.id}`}
                     className="db-action-ledger__row"
-                    aria-pressed={isSelected}
-                    onClick={() => setSelected({ id: order.id, lane })}
+                    aria-label={`Open ${order.order_number} in Repair Orders`}
+                    onClick={() => onOpenRecord(order.id, lane)}
                     data-order-id={order.id}
                     data-lane={lane}
                   >
@@ -319,71 +297,15 @@ export default function ShopCockpitActionLedger({
                       <strong>{statusLabel(order)}</strong>
                       <span>{order.mechanic_name || updatedLabel(order.updated_at)}</span>
                     </span>
-                    <strong className="db-action-ledger__amount">{currency(order.total_cost)}</strong>
+                    <span className="db-action-ledger__amount">
+                      <strong>{currency(order.total_cost)}</strong>
+                      <span aria-hidden="true">Open</span>
+                    </span>
                   </button>
                 )
               })}
             </div>
           </section>
-
-          {selectedRow && (
-            <aside className="db-connected-record" aria-labelledby="connected-record-title">
-              <header>
-                <div>
-                  <span>Selected repair record · read only</span>
-                  <h2 id="connected-record-title">{selectedRow.order.order_number}</h2>
-                </div>
-                <strong className={`db-connected-record__lane db-connected-record__lane--${selectedRow.lane}`}>
-                  {LANE_LABEL[selectedRow.lane]}
-                </strong>
-              </header>
-              <div className="db-connected-record__cell">
-                <span>Customer / vehicle</span>
-                <strong>{selectedRow.order.customer_name}</strong>
-                <small>{selectedRow.order.vehicle_info}</small>
-              </div>
-              <div className="db-connected-record__cell">
-                <span>Work</span>
-                <strong>{selectedRow.order.description || 'Work scope available in Repair Orders'}</strong>
-                <small>{selectedRow.order.hold_reason ? `Hold: ${selectedRow.order.hold_reason.replace(/_/g, ' ')}` : selectedRow.order.mechanic_name || 'Technician not included'}</small>
-              </div>
-              <div className="db-connected-record__cell">
-                <span>Authorization / history</span>
-                <strong>{selectedRow.order.quote_sent === true ? 'Quote sent' : selectedRow.order.quote_sent === false ? 'Quote not sent' : 'Not included in Shop Work'}</strong>
-                <small>History is available in Repair Orders</small>
-              </div>
-              <div className="db-connected-record__cell">
-                <span>Invoice / payment</span>
-                <strong className={selectedRow.order.status === 'paid' ? 'db-connected-record__success' : undefined}>
-                  {invoicePaymentState(selectedRow.order)}
-                </strong>
-                <small>Financial detail is available in Repair Orders</small>
-              </div>
-              <div className="db-connected-record__handoff">
-                <p>Repair Orders owns detail, history and every mutation.</p>
-                <button
-                  type="button"
-                  onClick={() => onOpenRecord(selectedRow.order.id, selectedRow.lane)}
-                >
-                  Open {selectedRow.order.order_number}
-                  <ArrowRight aria-hidden="true" />
-                </button>
-              </div>
-              <span className="sr-only" role="status" aria-live="polite" aria-atomic="true">
-                Selected {selectedRow.order.order_number} from {LANE_LABEL[selectedRow.lane]}
-              </span>
-            </aside>
-          )}
-
-          {!selectedRow && totalCount === 0 && (
-            <aside className="db-connected-record db-connected-record--empty" aria-label="Connected repair record">
-              <Clock3 aria-hidden="true" />
-              <div>
-                <strong>Select a repair order when work arrives</strong>
-                <span>Customer, vehicle and canonical Repair Orders handoff will appear here.</span>
-              </div>
-            </aside>
-          )}
         </>
       )}
     </section>

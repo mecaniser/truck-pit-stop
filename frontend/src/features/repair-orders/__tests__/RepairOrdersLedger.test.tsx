@@ -2,7 +2,6 @@ import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 
-import RepairOrderContextHeader from '../RepairOrderContextHeader'
 import RepairOrdersLedger, { type RepairOrdersLedgerRow } from '../RepairOrdersLedger'
 
 const rows: RepairOrdersLedgerRow[] = [
@@ -20,13 +19,25 @@ const rows: RepairOrdersLedgerRow[] = [
   },
 ]
 
+const statusOptions = [
+  { value: 'all', label: 'All' },
+  { value: 'checked_in', label: 'Checked In' },
+  { value: 'assigned', label: 'Assigned' },
+  { value: 'in_progress', label: 'In Progress' },
+  { value: 'quality_review', label: 'Quality Review' },
+  { value: 'completed', label: 'Completed' },
+  { value: 'invoiced', label: 'Invoiced' },
+  { value: 'paid', label: 'Paid' },
+  { value: 'deleted', label: 'Deleted' },
+]
+
 const renderLedger = (overrides: Partial<React.ComponentProps<typeof RepairOrdersLedger>> = {}) => {
   const props: React.ComponentProps<typeof RepairOrdersLedger> = {
     rows,
     totalOrders: 1,
     searchQuery: '',
     statusFilter: 'all',
-    statusOptions: [{ value: 'all', label: 'All' }, { value: 'in_progress', label: 'In Progress' }],
+    statusOptions,
     selectedId: null,
     queueOrigin: 'on_floor',
     isFetching: false,
@@ -39,7 +50,7 @@ const renderLedger = (overrides: Partial<React.ComponentProps<typeof RepairOrder
     onStatusChange: vi.fn(),
     onOpenOrder: vi.fn(),
     onCreateOrder: vi.fn(),
-    onReturnToShopWork: vi.fn(),
+    onShowAllOrders: vi.fn(),
     onPreviousPage: vi.fn(),
     onNextPage: vi.fn(),
     ...overrides,
@@ -54,9 +65,8 @@ describe('DB-035 Stage 4 Repair Orders presentation', () => {
     expect(screen.getByRole('heading', { name: 'Repair Orders' })).toBeInTheDocument()
     expect(screen.getByText('Review and update repair work from check-in through payment.')).toBeInTheDocument()
     expect(screen.queryByText('One canonical record from check-in through paid invoice.')).not.toBeInTheDocument()
-    expect(screen.getByText('Shop Work handoff')).toBeInTheDocument()
-    expect(screen.getByText('On the Floor')).toBeInTheDocument()
-    expect(screen.getByText('Queue origin is navigation context, not repair-order state.')).toBeInTheDocument()
+    expect(screen.queryByText('Shop Work handoff')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Repair Orders scope: On the Floor, 1 order' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /RO-1017/ })).toHaveAttribute('data-order-id', 'ro-real-17')
   })
 
@@ -67,11 +77,10 @@ describe('DB-035 Stage 4 Repair Orders presentation', () => {
   ] as const)('preserves the %s queue origin without converting it into order state', (queueOrigin, label) => {
     renderLedger({ queueOrigin })
 
-    expect(screen.getByRole('button', { name: `Return to ${label}` })).toBeInTheDocument()
-    expect(screen.getByText('Queue origin is navigation context, not repair-order state.')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: `Repair Orders scope: ${label}, 1 order` })).toBeInTheDocument()
   })
 
-  it('preserves search, status, selection, create, paging and return callbacks', async () => {
+  it('preserves search, status, selection, create, paging and the deliberate scope change', async () => {
     const user = userEvent.setup()
     const { props } = renderLedger({ hasMore: true, totalOrders: 30 })
 
@@ -79,14 +88,43 @@ describe('DB-035 Stage 4 Repair Orders presentation', () => {
     expect(props.onSearchChange).toHaveBeenLastCalledWith('7')
     await user.click(screen.getByRole('button', { name: 'In Progress' }))
     expect(props.onStatusChange).toHaveBeenCalledWith('in_progress')
+    await user.selectOptions(screen.getByLabelText('Order status'), 'in_progress')
+    expect(props.onStatusChange).toHaveBeenLastCalledWith('in_progress')
     await user.click(screen.getByRole('button', { name: /RO-1017/ }))
     expect(props.onOpenOrder).toHaveBeenCalledWith('ro-real-17')
     await user.click(screen.getByRole('button', { name: 'New repair order' }))
     expect(props.onCreateOrder).toHaveBeenCalledOnce()
-    await user.click(screen.getByRole('button', { name: 'Return to On the Floor' }))
-    expect(props.onReturnToShopWork).toHaveBeenCalledOnce()
+    await user.click(screen.getByRole('button', { name: 'Repair Orders scope: On the Floor, 30 orders' }))
+    expect(screen.getByRole('menu', { name: 'Repair Orders scope' })).toBeInTheDocument()
+    await user.click(screen.getByRole('menuitem', { name: 'All repair orders' }))
+    expect(props.onShowAllOrders).toHaveBeenCalledOnce()
     await user.click(screen.getByRole('button', { name: 'Next repair-order page' }))
     expect(props.onNextPage).toHaveBeenCalledOnce()
+  })
+
+  it('keeps pointer selection in the ledger and moves keyboard selection into the workspace', async () => {
+    const user = userEvent.setup()
+    const { props } = renderLedger()
+    const row = screen.getByRole('button', { name: /RO-1017/ })
+
+    await user.click(row)
+    expect(props.onOpenOrder).toHaveBeenLastCalledWith('ro-real-17')
+
+    row.focus()
+    await user.keyboard('{Enter}')
+    expect(props.onOpenOrder).toHaveBeenLastCalledWith('ro-real-17', { focusWorkspace: true })
+  })
+
+  it('keeps every canonical status filter reachable in both the quick-filter row and compact select', () => {
+    renderLedger()
+
+    const quickFilterGroup = screen.getByRole('group', { name: 'Filter repair orders by status' })
+    const select = screen.getByRole('combobox', { name: 'Order status' })
+
+    for (const option of statusOptions) {
+      expect(quickFilterGroup).toContainElement(screen.getByRole('button', { name: option.label }))
+      expect(select).toHaveTextContent(option.label)
+    }
   })
 
   it('covers loading/error, filtered empty and no-selection states without invented records', () => {
@@ -101,33 +139,4 @@ describe('DB-035 Stage 4 Repair Orders presentation', () => {
     expect(screen.getByRole('alert')).toHaveTextContent('Repair orders could not be loaded')
   })
 
-  it('anchors real connected detail and keeps history/return actions explicit', async () => {
-    const user = userEvent.setup()
-    const onHistory = vi.fn()
-    const onReturn = vi.fn()
-    render(
-      <RepairOrderContextHeader
-        orderNumber="RO-1017"
-        status="In Progress"
-        customer="Northline Logistics"
-        vehicle="2022 Freightliner Cascadia · Unit 218"
-        description="Diagnose intermittent no-start"
-        laborTotal="$1,500.00"
-        partsTotal="$2,780.50"
-        quoteState="Customer authorized"
-        invoiceState="Invoice not created"
-        queueOrigin="on_floor"
-        onRequestHistory={onHistory}
-        onReturnToShopWork={onReturn}
-      />,
-    )
-
-    expect(screen.getByText('Labor $1,500.00 · Parts $2,780.50')).toBeInTheDocument()
-    expect(screen.getByText('Customer authorized')).toBeInTheDocument()
-    expect(screen.getByText('Invoice not created')).toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: 'Load order history' }))
-    expect(onHistory).toHaveBeenCalledOnce()
-    await user.click(screen.getByRole('button', { name: 'Return to On the Floor' }))
-    expect(onReturn).toHaveBeenCalledOnce()
-  })
 })

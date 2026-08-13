@@ -71,6 +71,22 @@ describe('PriceBuilderPanel pending feedback', () => {
     vi.unstubAllGlobals()
   })
 
+  it('keeps one selected-order header without duplicating Shop Work return controls', async () => {
+    apiMocks.get.mockResolvedValue({ data: emptySummary })
+
+    renderPanel({
+      orderNumber: 'RO-1017',
+      customerName: 'Northline Logistics',
+    })
+
+    const orderNumber = screen.getByText('#RO-1017')
+    expect(orderNumber).toBeInTheDocument()
+    expect(orderNumber).toHaveClass('!text-white')
+    expect(screen.getByText('Northline Logistics')).toBeInTheDocument()
+    expect(screen.queryByText('Selected repair order')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Return to/ })).not.toBeInTheDocument()
+  })
+
   it('keeps the selected operation visibly pending while its request is still in flight', async () => {
     let resolveApply: (() => void) | undefined
     const pendingApply = new Promise<{ data: unknown }>((resolve) => {

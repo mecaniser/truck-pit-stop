@@ -658,7 +658,7 @@ function OrderNumberHeader({ value }: { value: string }) {
         ref={h3Ref}
         title={truncated ? value : undefined}
         onClick={truncated ? toggle : undefined}
-        className={`truncate font-['Barlow_Condensed',sans-serif] text-3xl font-extrabold leading-none tracking-wide${
+        className={`truncate font-['Barlow_Condensed',sans-serif] !text-white text-3xl font-extrabold leading-none tracking-wide${
           truncated ? ' cursor-pointer' : ''
         }`}
       >
@@ -2126,7 +2126,7 @@ export default function PriceBuilderPanel({
               </p>
             )}
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center justify-end gap-2">
             {onPrev && (
               <button
                 type="button"

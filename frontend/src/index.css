@@ -257,9 +257,7 @@ html::-webkit-scrollbar-thumb:hover {
   min-height: 44px;
   min-width: 44px;
   gap: 9px;
-  padding-inline-end: clamp(12px, 1.4vw, 24px);
   color: var(--shell-text);
-  border-inline-end: 1px solid var(--shell-border);
   text-decoration: none;
 }
 
@@ -267,15 +265,53 @@ html::-webkit-scrollbar-thumb:hover {
 .db-presentation-new .db-product-brand .db-wordmark__letter--bridge { color: var(--product-copper-400); }
 .db-presentation-new .db-product-brand__compact-mark { display: none; width: 34px; height: 34px; object-fit: contain; }
 
+/* Tenant identity leads this compact rail lockup. Its state and the platform
+   endorsement share one metadata row, avoiding a second decorative separator. */
+.db-presentation-new .db-brand-lockup {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: center;
+}
+
+.db-presentation-new .db-brand-attribution {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+}
+
+.db-presentation-new .db-brand-attribution__label {
+  color: var(--shell-muted);
+  font-size: 0.625rem;
+  font-weight: 650;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
 .db-workspace-context {
   display: flex;
   min-width: 0;
   align-items: center;
-  gap: 10px;
   color: var(--shell-muted);
 }
 
-.db-workspace-context__logo { max-width: 88px; }
+.db-workspace-context__tenant {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  align-items: center;
+  gap: 7px;
+}
+.db-workspace-context__logo { max-width: 112px; }
+.db-brand-endorsement-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-width: 0;
+}
 .db-workspace-context__fallback {
   min-width: 0;
   max-width: 18ch;
@@ -286,6 +322,51 @@ html::-webkit-scrollbar-thumb:hover {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* Compact and expanded rails reveal the tenant → state → platform story in
+   order. The collapsed desktop rail intentionally keeps the tenant mark and state. */
+@keyframes db-compact-identity-reveal {
+  from {
+    opacity: 0;
+    transform: translateY(-0.35rem) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes db-compact-endorsement-reveal {
+  from {
+    opacity: 0;
+    clip-path: inset(0 100% 0 0);
+    transform: translateX(-0.35rem);
+  }
+  to {
+    opacity: 1;
+    clip-path: inset(0 0 0 0);
+    transform: translateX(0);
+  }
+}
+
+@media (max-width: 959px) and (prefers-reduced-motion: no-preference) {
+  .db-presentation-new .db-compact-identity-step--tenant {
+    animation: db-compact-identity-reveal 680ms var(--db-wordmark-ease-out, cubic-bezier(.16, 1, .3, 1)) 80ms both;
+  }
+
+  .db-presentation-new .db-compact-identity-step--state {
+    animation: db-compact-identity-reveal 360ms var(--db-wordmark-ease-out, cubic-bezier(.16, 1, .3, 1)) 720ms both;
+  }
+
+  .db-presentation-new .db-compact-identity-step--endorsement {
+    animation: db-compact-endorsement-reveal 420ms var(--db-wordmark-ease-out, cubic-bezier(.16, 1, .3, 1)) 1060ms both;
+  }
+
+  .db-presentation-new .db-compact-identity-step--endorsement .db-wordmark__letter {
+    animation-delay: calc(var(--letter-drop-delay) + 1120ms);
+  }
+}
+
 .db-workspace-context__name {
   max-width: 18ch;
   overflow: hidden;
@@ -299,7 +380,6 @@ html::-webkit-scrollbar-thumb:hover {
   min-height: var(--density-control-min);
   display: inline-flex;
   align-items: center;
-  border-bottom-width: 1px;
 }
 
 .db-presentation-new .db-staff-main {
@@ -665,7 +745,7 @@ html::-webkit-scrollbar-thumb:hover {
 /* The Settings route is retained from the legacy dark workstation. Day shop
    must map those classes to the operating canvas instead of leaving pale
    dark-mode foregrounds on road-white content. */
-:is(.db-presentation-new[data-appearance-mode='light'], .db-presentation-new:not([data-appearance-mode])) .db-settings-workspace :is(.text-zinc-100, .text-zinc-300) {
+:is(.db-presentation-new[data-appearance-mode='light'], .db-presentation-new:not([data-appearance-mode])) .db-settings-workspace :is(.text-zinc-100, .text-zinc-200, .text-zinc-300) {
   color: var(--workspace-text) !important;
 }
 
@@ -685,11 +765,80 @@ html::-webkit-scrollbar-thumb:hover {
   border-color: var(--workspace-border) !important;
 }
 
+/* Legacy settings cards use the old 20px utility shadow. The new operating
+   workspace keeps the same lifted relationship with a contained two-layer
+   shadow, so medium-width cards do not end in a visible rectangular band. */
+.db-presentation-new .db-settings-workspace :is(.db-settings-floating-card, .db-appearance-preview) {
+  box-shadow:
+    0 3px 8px -4px color-mix(in srgb, var(--product-navy-900) 12%, transparent),
+    0 14px 28px -12px color-mix(in srgb, var(--product-navy-900) 28%, transparent) !important;
+}
+
+/* Match My Shop's full-height navigation frame on desktop. Settings remains
+   one operating surface, with its optional service area at the base of the
+   same rail instead of a short floating menu beside a long workspace. */
+@media (min-width: 1024px) {
+  .db-presentation-new .db-settings-workspace {
+    min-height: calc(100dvh - 9.25rem);
+    align-items: stretch;
+  }
+
+  .db-presentation-new .db-settings-workspace .db-settings-sidebar,
+  .db-presentation-new .db-settings-workspace .db-settings-sidebar__panel {
+    min-height: 100%;
+  }
+
+  .db-presentation-new .db-settings-workspace .db-settings-sidebar__panel {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    position: static;
+  }
+
+  .db-presentation-new .db-settings-workspace .db-settings-sidebar__additional {
+    margin-top: auto;
+  }
+}
+
+/* The Settings rail uses headings and whitespace to group account/shop work.
+   A rule is reserved for the optional-services boundary at the bottom, where
+   it communicates a real change in scope rather than repeating under every
+   label. */
+.db-presentation-new .db-settings-sidebar__group > h3,
+.db-presentation-new .db-settings-sidebar__additional > h3 {
+  margin-bottom: 0.65rem !important;
+  padding-bottom: 0 !important;
+  border-bottom: 0 !important;
+}
+
+.db-presentation-new .db-settings-sidebar__additional {
+  border-top: 1px solid var(--workspace-border);
+}
+
+.db-presentation-new[data-appearance-mode='high_contrast'] .db-settings-workspace :is(.db-settings-floating-card, .db-appearance-preview) {
+  box-shadow: none !important;
+}
+
+/* Below the desktop split view, Settings scrolls inside the shell. Reserve a
+   small runway inside that scroll owner so floating-card elevation is visible
+   instead of being cut at the horizontal boundary. */
+@media (max-width: 1023px) {
+  .db-presentation-new .db-settings-workspace :is(.db-settings-floating-card, .db-appearance-preview) {
+    margin-inline: clamp(10px, 2vw, 16px);
+  }
+}
+
 /* Payments & Accounting keeps its real connection state, but legacy
    night-mode utility fills cannot sit over the road-white operating canvas.
    These surfaces resolve through appearance tokens in every selected mode. */
 .db-presentation-new .db-settings-payments :is(.bg-zinc-950\/40, .bg-zinc-950\/35) {
   background-color: color-mix(in srgb, var(--product-navy-800) 3%, var(--surface-overlay)) !important;
+}
+
+/* Payment integrations retain the shared contained elevation while their
+   utility fill resolves through the selected appearance surface. */
+.db-presentation-new .db-settings-payments .db-settings-payment-card {
+  background-color: var(--surface-raised) !important;
 }
 
 .db-presentation-new .db-settings-payments :is(.border-zinc-800, .border-zinc-800\/70, .border-zinc-800\/50) {
@@ -740,18 +889,129 @@ html::-webkit-scrollbar-thumb:hover {
 }
 
 /* Fleet Overview is a read-only handoff to the canonical Fleet board. Its
-   retained rows use the same appearance surfaces without changing that flow. */
-.db-presentation-new .db-settings-fleet-overview__row {
-  background: var(--surface-overlay) !important;
-  border-color: var(--workspace-border) !important;
+   data uses one compact table rather than a pile of bordered mini-cards. */
+.db-presentation-new .db-settings-fleet-overview__section + .db-settings-fleet-overview__section {
+  margin-top: 1.5rem;
 }
 
-.db-presentation-new .db-settings-fleet-overview__row .text-zinc-100 {
+.db-presentation-new .db-settings-fleet-overview__manager-list {
+  display: grid;
+  gap: 0.3rem;
+}
+
+.db-presentation-new .db-settings-fleet-overview__manager {
+  min-height: 2.5rem;
+  padding: 0 0.65rem;
+  border-radius: 0.5rem;
+  background: color-mix(in srgb, var(--surface-raised) 78%, transparent);
+}
+
+.db-presentation-new .db-settings-fleet-overview__table {
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+.db-presentation-new .db-settings-fleet-overview__table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 0.5rem 0.65rem;
+  border-bottom: 1px solid var(--workspace-border);
+  background: var(--surface-raised);
+  color: var(--workspace-muted);
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.db-presentation-new .db-settings-fleet-overview__table th:first-child,
+.db-presentation-new .db-settings-fleet-overview__table td:first-child {
+  width: 4.5rem;
+}
+
+.db-presentation-new .db-settings-fleet-overview__table th:last-child,
+.db-presentation-new .db-settings-fleet-overview__table td:last-child {
+  width: 5rem;
+  text-align: right;
+}
+
+.db-presentation-new .db-settings-fleet-overview__table td {
+  padding: 0.7rem 0.65rem;
+  vertical-align: middle;
+}
+
+.db-presentation-new .db-settings-fleet-overview__table tbody tr + tr td {
+  border-top: 1px solid color-mix(in srgb, var(--workspace-border) 72%, transparent);
+}
+
+.db-presentation-new .db-settings-fleet-overview :is(.text-zinc-100, .text-zinc-300) {
   color: var(--workspace-text) !important;
 }
 
-.db-presentation-new .db-settings-fleet-overview__row .text-zinc-500 {
+.db-presentation-new .db-settings-fleet-overview :is(.text-zinc-400, .text-zinc-500, .text-zinc-600) {
   color: var(--workspace-muted) !important;
+}
+
+@media (max-width: 639px) {
+  .db-presentation-new .db-settings-fleet-overview__manager {
+    align-items: flex-start;
+    flex-direction: column;
+    justify-content: center;
+    gap: 0.1rem;
+    padding-block: 0.5rem;
+  }
+}
+
+/* Fleet configuration is a short, password-gated setup surface. Keep its
+   source fields intact as one card with internal dividers, not a stack of
+   nested panels. */
+.db-presentation-new .db-settings-fleet-config__summary,
+.db-presentation-new .db-settings-fleet-config__unlock {
+  background: transparent;
+}
+
+.db-presentation-new .db-settings-fleet-config__summary {
+  padding: 0.2rem 0;
+}
+
+.db-presentation-new .db-settings-fleet-config__unlock {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem 1rem;
+  padding: 0.85rem 0 0;
+  border-top: 1px solid var(--workspace-border);
+}
+
+@media (min-width: 640px) {
+  .db-presentation-new .db-settings-fleet-config__summary:first-child {
+    padding-right: 1rem;
+    border-right: 1px solid var(--workspace-border);
+  }
+
+  .db-presentation-new .db-settings-fleet-config__summary:last-child {
+    padding-left: 1rem;
+  }
+}
+
+.db-presentation-new .db-settings-fleet-config :is(.text-zinc-100, .text-zinc-300) {
+  color: var(--workspace-text) !important;
+}
+
+.db-presentation-new .db-settings-fleet-config :is(.text-zinc-400, .text-zinc-500, .text-zinc-600) {
+  color: var(--workspace-muted) !important;
+}
+
+@media (max-width: 639px) {
+  .db-presentation-new .db-settings-fleet-config__unlock {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .db-presentation-new .db-settings-fleet-config__unlock > div {
+    width: 100%;
+  }
 }
 
 /* Settings switches retain a 44px touch target without stretching the visual
@@ -945,10 +1205,14 @@ html::-webkit-scrollbar-thumb:hover {
   color: var(--workspace-text) !important;
 }
 
-/* A selected stock-sort option carries the tenant accent. Keep its foreground
-   anchored to the semantic on-accent color rather than the road-white ledger
-   foreground above. */
-.db-presentation-new .db-staff-content .db-inventory-workspace .db-inventory-stock-sort--selected {
+/* Sort controls use the operating-surface foreground until selected; an accent
+   fill always uses the semantic on-accent foreground. This covers both the
+   desktop ledger and the compact top-row control. */
+.db-presentation-new .db-inventory-workspace .db-inventory-stock-sort {
+  color: var(--workspace-text) !important;
+}
+
+.db-presentation-new .db-inventory-workspace .db-inventory-stock-sort--selected {
   color: #fff !important;
 }
 
@@ -1228,8 +1492,134 @@ html::-webkit-scrollbar-thumb:hover {
   outline-offset: 2px;
 }
 
+/* New-presentation Settings uses a single compact context control below the
+   desktop sidebar breakpoint. It preserves every section and permission gate
+   without forcing a row of tabs to scroll horizontally. */
+.db-settings-mobile-section-selector {
+  display: none;
+}
+
+@media (max-width: 1023px) {
+  .db-presentation-new .db-settings-workspace .db-settings-mobile-section-selector {
+    display: block !important;
+  }
+
+  .db-presentation-new .db-settings-workspace .db-settings-mobile-legacy-nav {
+    display: none !important;
+  }
+
+  .db-presentation-new .db-settings-workspace .db-settings-mobile-section-selector {
+    position: relative;
+    z-index: 20;
+  }
+
+  .db-presentation-new .db-settings-workspace .db-settings-mobile-section-selector__trigger {
+    display: flex;
+    width: 100%;
+    min-height: var(--density-control-min);
+    align-items: center;
+    gap: 10px;
+    padding: 0 14px;
+    border: 1px solid var(--workspace-border);
+    border-radius: 14px;
+    background: var(--surface-raised);
+    color: var(--workspace-text);
+    font: inherit;
+    font-weight: 650;
+  }
+
+  .db-presentation-new .db-settings-workspace .db-settings-mobile-section-selector__trigger:hover {
+    border-color: color-mix(in srgb, var(--personal-accent-400) 36%, var(--workspace-border));
+  }
+
+  .db-presentation-new .db-settings-workspace .db-settings-mobile-section-selector__trigger:focus-visible {
+    border-color: var(--personal-accent-400);
+    outline: 2px solid color-mix(in srgb, var(--personal-accent-400) 62%, transparent);
+    outline-offset: 2px;
+  }
+
+  .db-presentation-new .db-settings-workspace .db-settings-mobile-section-selector__menu {
+    position: absolute;
+    top: calc(100% + 8px);
+    left: 0;
+    width: 100%;
+    max-height: min(60dvh, 420px);
+    overflow-y: auto;
+    padding: 10px;
+    border: 1px solid var(--workspace-border);
+    border-radius: 14px;
+    background: var(--surface-raised);
+    box-shadow:
+      0 3px 8px -4px color-mix(in srgb, var(--product-navy-900) 12%, transparent),
+      0 14px 28px -12px color-mix(in srgb, var(--product-navy-900) 32%, transparent);
+  }
+
+  .db-presentation-new .db-settings-workspace .db-settings-mobile-section-selector__group + .db-settings-mobile-section-selector__group {
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px solid var(--workspace-border);
+  }
+
+  .db-presentation-new .db-settings-workspace .db-settings-mobile-section-selector__group-label {
+    margin: 0 0 4px;
+    padding: 0 8px;
+    color: var(--workspace-muted);
+    font-size: 0.6875rem;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+  }
+
+  .db-presentation-new .db-settings-workspace .db-settings-mobile-section-selector__option {
+    display: flex;
+    width: 100%;
+    min-height: var(--density-control-min);
+    align-items: center;
+    gap: 10px;
+    padding: 0 10px;
+    border: 1px solid transparent;
+    border-radius: 10px;
+    background: transparent;
+    color: var(--workspace-text);
+    font: inherit;
+    font-size: 0.9375rem;
+    font-weight: 600;
+  }
+
+  .db-presentation-new .db-settings-workspace .db-settings-mobile-section-selector__option[data-active='true'] {
+    border-color: color-mix(in srgb, var(--personal-accent-500) 35%, var(--workspace-border));
+    background: color-mix(in srgb, var(--personal-accent-500) 10%, var(--surface-raised));
+    color: var(--personal-accent-500);
+  }
+
+  @media (hover: hover) and (pointer: fine) {
+    .db-presentation-new .db-settings-workspace .db-settings-mobile-section-selector__option:not([data-active='true']):hover {
+      background: color-mix(in srgb, var(--personal-accent-500) 7%, var(--surface-raised));
+    }
+  }
+
+  .db-presentation-new .db-settings-workspace .db-settings-mobile-section-selector__option:focus-visible {
+    outline: 2px solid var(--personal-accent-400);
+    outline-offset: -2px;
+  }
+}
+
 /* My Shop's category rail is navigation, not a neutral dark-list remnant.
-   Inactive categories preview the selected appearance accent on hover. */
+   Keep its resting and selected states inside the current operating palette;
+   inactive categories preview the selected appearance accent on hover. */
+.db-presentation-new .db-my-shop-workspace .db-my-shop-nav-item {
+  color: var(--workspace-muted) !important;
+  border-color: var(--workspace-border) !important;
+  background-color: var(--surface-raised) !important;
+}
+
+.db-presentation-new .db-my-shop-workspace .db-my-shop-nav-item[aria-current='page'] {
+  color: #fff !important;
+  border-color: color-mix(in srgb, var(--personal-accent-400) 62%, var(--workspace-border)) !important;
+  background-color: var(--personal-accent-600) !important;
+  box-shadow: 0 5px 12px -8px color-mix(in srgb, var(--personal-accent-900, var(--product-navy-900)) 68%, transparent) !important;
+}
+
 .db-presentation-new .db-my-shop-workspace .db-my-shop-nav-item:focus-visible {
   outline: 2px solid var(--personal-accent-400);
   outline-offset: 2px;
@@ -1299,7 +1689,6 @@ html::-webkit-scrollbar-thumb:hover {
 .db-shop-work-new__header-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
 .db-shop-work-new__header-actions button,
 .db-shop-work-new__create-action,
-.db-connected-record__handoff button,
 .db-shop-work-new--state button {
   display: inline-flex;
   min-height: 44px;
@@ -1312,21 +1701,18 @@ html::-webkit-scrollbar-thumb:hover {
 }
 .db-shop-work-new__header-actions svg,
 .db-shop-work-new__create-action svg,
-.db-connected-record__handoff svg,
 .db-shop-work-new--state svg { width: 17px; height: 17px; }
 .db-shop-work-new__quiet-action { border: 1px solid #bcc8d5; background: #fff; color: #2a3d55; }
 .db-shop-work-new__quick-action { border: 1px solid #9eb0c2; background: #eaf0f5; color: #233a55; }
 .db-shop-work-new__primary-action,
-.db-shop-work-new__create-action,
-.db-connected-record__handoff button {
+.db-shop-work-new__create-action {
   border: 1px solid #b7450b;
   background: #e75a13;
   color: #fff;
   box-shadow: inset 0 1px rgba(255,255,255,.5), 0 5px 13px rgba(144,54,10,.18);
 }
 .db-shop-work-new__header-actions button:hover,
-.db-shop-work-new__create-action:hover,
-.db-connected-record__handoff button:hover { filter: brightness(1.04); }
+.db-shop-work-new__create-action:hover { filter: brightness(1.04); }
 .db-shop-work-new__header-actions button:disabled,
 .db-shop-work-new__create-action:disabled { cursor: wait; opacity: .62; }
 
@@ -1374,7 +1760,6 @@ html::-webkit-scrollbar-thumb:hover {
 .db-shop-work-new__search input::placeholder { color: #687b91; opacity: 1; }
 
 .db-action-ledger,
-.db-connected-record,
 .db-shop-work-new__activity {
   min-width: 0;
   overflow: hidden;
@@ -1403,7 +1788,7 @@ html::-webkit-scrollbar-thumb:hover {
 }
 .db-action-ledger__row:last-child { border-bottom: 0; }
 .db-action-ledger__row:hover { background: #f7f9fb; }
-.db-action-ledger__row[aria-pressed='true'] { background: #fff8f3; box-shadow: inset 0 0 0 2px #ff7a2e; }
+.db-action-ledger__row:focus-visible { position: relative; z-index: 1; outline: 2px solid #e75a13; outline-offset: -2px; background: #fff8f3; }
 .db-action-ledger__lane { font-size: 12px; font-weight: 800; }
 .db-action-ledger__lane--needs_action { color: #9a4a00; }
 .db-action-ledger__lane--on_floor { color: #1c5d99; }
@@ -1419,35 +1804,11 @@ html::-webkit-scrollbar-thumb:hover {
 .db-action-ledger__identity span,
 .db-action-ledger__status span { color: #62748a; font-size: 12px; }
 .db-action-ledger__status strong { color: #34506f; font-size: 12px; }
-.db-action-ledger__amount { color: #17283f; text-align: right; font-variant-numeric: tabular-nums; }
+.db-action-ledger__amount { display: inline-flex; align-items: center; justify-content: flex-end; gap: 9px; color: #17283f; text-align: right; font-variant-numeric: tabular-nums; }
+.db-action-ledger__amount > strong { color: inherit; }
+.db-action-ledger__amount > span { color: #a34c12; font-size: 11px; font-weight: 800; }
 .db-action-ledger__empty { min-height: 158px; display: grid; align-content: center; justify-items: center; gap: 5px; padding: 24px; color: #607287; text-align: center; }
 .db-action-ledger__empty strong { color: #253a52; }
-
-.db-connected-record { display: grid; grid-template-columns: 180px minmax(190px, 1.1fr) minmax(180px, 1fr) minmax(185px, 1fr) minmax(185px, 1fr) 218px; margin-top: 12px; }
-.db-connected-record > header,
-.db-connected-record__cell,
-.db-connected-record__handoff { min-width: 0; padding: 13px 14px; border-right: 1px solid #d3dbe4; }
-.db-connected-record > header { display: flex; flex-direction: column; justify-content: center; gap: 7px; }
-.db-connected-record > header span,
-.db-connected-record__cell > span { color: #6a7c91; font-size: 10px; font-weight: 800; letter-spacing: .075em; text-transform: uppercase; }
-.db-connected-record > header h2 { margin: 0; color: #17283f; font-size: 15px; }
-.db-connected-record__lane { align-self: flex-start; padding: 4px 7px; border-radius: 999px; font-size: 11px; }
-.db-connected-record__lane--needs_action { background: #fff0df; color: #8b4300; }
-.db-connected-record__lane--on_floor { background: #eaf3fc; color: #19568d; }
-.db-connected-record__lane--ready_to_close { background: #e2f5ee; color: #087252; }
-.db-connected-record__cell { display: flex; flex-direction: column; justify-content: center; gap: 4px; }
-.db-connected-record__cell strong,
-.db-connected-record__cell small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.db-connected-record__cell strong { color: #1c3049; font-size: 12px; }
-.db-connected-record__cell small { color: #61738a; font-size: 11px; }
-.db-connected-record__success { color: #087252 !important; }
-.db-connected-record__handoff { display: flex; flex-direction: column; justify-content: center; gap: 9px; border-right: 0; background: #f0f4f7; }
-.db-connected-record__handoff p { margin: 0; color: #5d6e82; font-size: 11px; line-height: 1.4; }
-.db-connected-record__handoff button { width: 100%; justify-content: space-between; padding-inline: 12px; }
-.db-connected-record--empty { min-height: 84px; display: flex; align-items: center; gap: 12px; padding: 16px; color: #5e7188; }
-.db-connected-record--empty > svg { width: 22px; height: 22px; }
-.db-connected-record--empty > div { display: flex; flex-direction: column; gap: 3px; }
-.db-connected-record--empty strong { color: #1c3049; }
 
 .db-shop-work-new__quick-form { margin-bottom: 14px; padding: 14px; border: 1px solid #efb993; border-radius: 13px; background: #fff8f3; box-shadow: 0 4px 13px rgba(144,54,10,.07); }
 .db-shop-work-new__quick-form-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 11px; }
@@ -1505,28 +1866,24 @@ html::-webkit-scrollbar-thumb:hover {
 .db-presentation-new:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) .db-action-ledger__number,
 .db-presentation-new:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) .db-action-ledger__identity strong,
 .db-presentation-new:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) .db-action-ledger__amount,
-.db-presentation-new:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) .db-connected-record > header h2,
-.db-presentation-new:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) .db-connected-record__cell strong,
-.db-presentation-new:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) .db-connected-record--empty strong,
 .db-presentation-new:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) .db-shop-work-new--state > strong {
   color: var(--shop-work-ink);
 }
 
 .db-presentation-new:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) .db-shop-work-new__header p,
 .db-presentation-new:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) .db-action-ledger > header span,
-.db-presentation-new:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) :is(.db-action-ledger__identity span, .db-action-ledger__status span, .db-connected-record > header span, .db-connected-record__cell > span, .db-connected-record__cell small, .db-connected-record__handoff p, .db-connected-record--empty, .db-shop-work-new--state) {
+.db-presentation-new:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) :is(.db-action-ledger__identity span, .db-action-ledger__status span, .db-shop-work-new--state) {
   color: var(--shop-work-muted);
 }
 
-.db-presentation-new:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) :is(.db-action-ledger, .db-connected-record, .db-shop-work-new__activity, .db-shop-work-new--state) {
+.db-presentation-new:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) :is(.db-action-ledger, .db-shop-work-new__activity, .db-shop-work-new--state) {
   border-color: var(--shop-work-border);
   background: var(--shop-work-surface);
   box-shadow: none;
 }
 
 .db-presentation-new:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) .db-action-ledger > header,
-.db-presentation-new:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) .db-action-ledger__row,
-.db-presentation-new:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) :is(.db-connected-record > header, .db-connected-record__cell) {
+.db-presentation-new:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) .db-action-ledger__row {
   border-color: var(--shop-work-border);
   background: var(--shop-work-surface);
 }
@@ -1536,13 +1893,8 @@ html::-webkit-scrollbar-thumb:hover {
 }
 
 .db-presentation-new:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) .db-action-ledger__row:hover,
-.db-presentation-new:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) .db-connected-record__handoff {
+.db-presentation-new:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) .db-action-ledger__row:focus-visible {
   background: var(--shop-work-raised);
-}
-
-.db-presentation-new:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) .db-action-ledger__row[aria-pressed='true'] {
-  background: color-mix(in srgb, var(--product-copper-400) 15%, var(--shop-work-surface));
-  box-shadow: inset 0 0 0 2px var(--product-copper-400);
 }
 
 .db-presentation-new:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) .db-shop-work-new__quiet-action,
@@ -1580,10 +1932,6 @@ html::-webkit-scrollbar-thumb:hover {
 .db-presentation-new:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) .db-action-ledger__lane--ready_to_close { color: var(--shop-work-lane-close); }
 
 @media (max-width: 1279px) {
-  .db-connected-record { grid-template-columns: 170px minmax(210px, 1.2fr) minmax(180px, 1fr); }
-  .db-connected-record > :nth-child(3) { border-right: 0; }
-  .db-connected-record > :nth-child(n+4) { border-top: 1px solid #d3dbe4; }
-  .db-connected-record__handoff { grid-column: auto; }
   .db-shop-work-new__quick-form-fields { grid-template-columns: minmax(160px,.8fr) minmax(230px,1.4fr) minmax(180px,.9fr); }
   .db-shop-work-new__create-action { grid-column: 3; justify-self: end; }
 }
@@ -1603,13 +1951,6 @@ html::-webkit-scrollbar-thumb:hover {
   .db-action-ledger__status { grid-column: 1; }
   .db-action-ledger__identity { grid-column: 1 / -1; }
   .db-action-ledger__amount { grid-column: 2; grid-row: 1 / 3; align-self: center; }
-  .db-connected-record { display: block; }
-  .db-connected-record > header,
-  .db-connected-record__cell,
-  .db-connected-record__handoff { min-height: 72px; border-right: 0; border-bottom: 1px solid #d3dbe4; }
-  .db-connected-record__handoff { border-bottom: 0; }
-  .db-connected-record__cell strong,
-  .db-connected-record__cell small { overflow: visible; white-space: normal; }
   .db-shop-work-new__quick-form-fields { display: grid; grid-template-columns: 1fr; }
   .db-shop-work-new__create-action { width: 100%; grid-column: auto; justify-self: stretch; }
 }
@@ -1636,12 +1977,11 @@ html::-webkit-scrollbar-thumb:hover {
 
 @media (forced-colors: active) {
   .db-action-ledger,
-  .db-connected-record,
   .db-shop-work-new__activity,
   .db-action-ledger__row,
   .db-shop-work-new__lane-tabs button,
   .db-shop-work-new__view-switch { border: 1px solid CanvasText; box-shadow: none; }
-  .db-action-ledger__row[aria-pressed='true'],
+  .db-action-ledger__row:focus-visible,
   .db-shop-work-new__lane-tabs button[aria-selected='true'] { outline: 2px solid Highlight; outline-offset: -3px; }
 }
 
@@ -1651,16 +1991,43 @@ html::-webkit-scrollbar-thumb:hover {
 .db-repair-orders-new {
   --text-primary: #12233b;
   --text-secondary: #5b6d82;
+  container-type: inline-size;
   min-width: 0;
   min-height: 100%;
   color: #17283f;
 }
+.db-repair-orders-workspace--new {
+  display: grid;
+  grid-template-columns: minmax(360px, .78fr) minmax(520px, 1.45fr);
+  grid-template-rows: minmax(0, 1fr);
+  gap: 14px;
+  min-height: 0;
+  overflow: visible;
+}
+.db-repair-orders-workspace--new > .db-repair-orders-new {
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
+  overflow: auto;
+  padding-right: 4px;
+}
+.db-repair-orders-workspace--new:not(.db-repair-orders-workspace--detail-open) > .db-repair-orders-new { grid-column: 1 / -1; }
+.db-repair-orders-workspace--new > .db-repair-orders-new .db-repair-orders-ledger { flex: 1 1 auto; }
+.db-slide-panel-workspace {
+  height: 100%;
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid #9eacbb;
+  border-radius: 16px;
+  background: #fff;
+  box-shadow: 0 12px 32px rgba(6, 24, 43, .16);
+}
+.db-slide-panel-workspace:focus-visible { outline: 0; box-shadow: 0 0 0 3px rgba(255,122,46,.72), 0 12px 32px rgba(6,24,43,.16); }
 .db-repair-orders-new__header { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; margin-bottom: 16px; }
 .db-repair-orders-new__header h1 { margin: 0 0 5px; color: #12233b; font-size: 2rem; line-height: 1.15; }
 .db-repair-orders-new__header p { margin: 0; color: #5b6d82; }
 .db-repair-orders-new__create,
-.db-repair-orders-origin button,
-.db-repair-order-context__return {
+.db-repair-orders-ledger__scope-control > button {
   display: inline-flex;
   min-height: 44px;
   align-items: center;
@@ -1673,35 +2040,52 @@ html::-webkit-scrollbar-thumb:hover {
 .db-repair-orders-new__create { border: 1px solid #b7450b; background: #e75a13; color: #fff; box-shadow: inset 0 1px rgba(255,255,255,.45), 0 5px 13px rgba(144,54,10,.18); }
 .db-repair-orders-new__create:disabled { cursor: wait; opacity: .58; }
 .db-repair-orders-new :is(button, input, select) svg,
-.db-repair-order-context :is(button) svg { width: 17px; height: 17px; }
+.db-repair-order-detail-new :is(button) svg { width: 17px; height: 17px; }
 
-.db-repair-orders-origin { display: flex; align-items: center; justify-content: space-between; gap: 18px; margin-bottom: 12px; padding: 11px 13px; border: 1px solid #efb993; border-radius: 12px; background: #fff8f3; }
-.db-repair-orders-origin > div { min-width: 0; display: grid; grid-template-columns: auto auto minmax(0,1fr); align-items: center; gap: 5px 10px; }
-.db-repair-orders-origin span { color: #825032; font-size: 10px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
-.db-repair-orders-origin strong { color: #77340f; }
-.db-repair-orders-origin small { overflow: hidden; color: #6d5b50; text-overflow: ellipsis; white-space: nowrap; }
-.db-repair-orders-origin button { flex: none; border: 1px solid #d8a37e; background: #fff; color: #703714; }
-
-.db-repair-orders-new__toolbar { display: grid; grid-template-columns: minmax(240px, 360px) minmax(0, 1fr); gap: 10px 14px; margin-bottom: 12px; }
-.db-repair-orders-new__search { position: relative; min-width: 0; }
+.db-repair-orders-new__toolbar { display: grid; grid-template-columns: minmax(240px, 360px) minmax(0, 1fr); gap: 10px 14px; margin-bottom: 6px; padding: 3px; }
+.db-repair-orders-new__search { position: relative; min-width: 0; border-radius: 10px; transition: box-shadow 140ms ease-out; }
 .db-repair-orders-new__search svg { position: absolute; left: 12px; top: 50%; color: #607287; transform: translateY(-50%); pointer-events: none; }
 .db-repair-orders-new__search input { width: 100%; height: 44px; padding: 0 12px 0 38px; border: 1px solid #bec9d5 !important; border-radius: 10px; background: #fff !important; color: #17283f !important; }
 .db-repair-orders-new__search input::placeholder { color: #687b91; opacity: 1; }
+.db-repair-orders-new__search:focus-within { z-index: 2; box-shadow: 0 0 0 3px rgba(255, 122, 46, .26); }
+.db-repair-orders-new__search:focus-within input { border-color: #ff7a2e !important; outline: 0; }
 .db-repair-orders-new__status-select { display: none; }
-.db-repair-orders-new__status-tabs { min-width: 0; display: flex; justify-content: flex-end; gap: 3px; overflow-x: auto; scrollbar-width: thin; }
+.db-repair-orders-new__status-tabs { min-width: 0; display: flex; justify-content: flex-end; gap: 3px; overflow-x: auto; overscroll-behavior-x: contain; scrollbar-color: #97a7b8 transparent; scrollbar-width: thin; }
 .db-repair-orders-new__status-tabs button { flex: none; min-height: 44px; border: 1px solid transparent; border-radius: 9px; padding: 8px 10px; background: transparent; color: #53657a; white-space: nowrap; }
 .db-repair-orders-new__status-tabs button[aria-pressed='true'] { border-color: #c4ced9; background: #fff; color: #16273e; box-shadow: 0 2px 7px rgba(16,36,59,.08); }
+.db-repair-orders-new__status-tabs::-webkit-scrollbar { height: 5px; }
+.db-repair-orders-new__status-tabs::-webkit-scrollbar-thumb { border-radius: 999px; background: #97a7b8; }
+
+/* A sidekick or browser zoom can make the working canvas narrower than the
+   viewport. Reflow from the actual repair-order canvas, keeping every real
+   quick filter visible instead of treating it as a clipped horizontal rail. */
+@container (max-width: 1120px) {
+  .db-repair-orders-new__toolbar { grid-template-columns: minmax(0, 1fr); }
+  .db-repair-orders-new__status-tabs { flex-wrap: wrap; justify-content: flex-start; overflow: visible; padding: 1px 0; }
+}
 
 .db-repair-orders-ledger { min-width: 0; overflow: hidden; border: 1px solid #c8d2dd; border-radius: 14px; background: #fff; box-shadow: 0 5px 16px rgba(16,36,59,.065); }
 .db-repair-orders-ledger > header { min-height: 50px; display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 10px 15px; border-bottom: 1px solid #d3dbe4; }
-.db-repair-orders-ledger > header > div { display: flex; align-items: baseline; gap: 9px; }
+.db-repair-orders-ledger > header > div:first-child { display: flex; align-items: baseline; gap: 9px; min-width: 0; }
 .db-repair-orders-ledger > header h2 { margin: 0; color: #17283f; font-size: 15px; }
 .db-repair-orders-ledger > header span { color: #61738a; font-size: 12px; }
+.db-repair-orders-ledger__header-actions { display: flex !important; align-items: center !important; gap: 8px !important; }
+.db-repair-orders-ledger__scope-control { position: relative; }
+.db-repair-orders-ledger__scope-control > button { border: 1px solid #c6d1dc; background: #f8fafc; color: #2a4059; }
+.db-repair-orders-ledger__scope-control > button:hover { border-color: #9faebe; background: #fff; }
+.db-repair-orders-ledger__scope-control > button:focus-visible { outline: 0; box-shadow: 0 0 0 3px rgba(255,122,46,.26); }
+.db-repair-orders-ledger__scope-control > button svg { width: 15px; height: 15px; transition: transform 140ms ease-out; }
+.db-repair-orders-ledger__scope-control > button[aria-expanded='true'] svg { transform: rotate(180deg); }
+.db-repair-orders-ledger__scope-menu { position: absolute; z-index: 4; top: calc(100% + 6px); right: 0; min-width: 184px; overflow: hidden; border: 1px solid #bfcbd8; border-radius: 10px; background: #fff; box-shadow: 0 10px 22px rgba(16,36,59,.16); }
+.db-repair-orders-ledger__scope-menu button { width: 100%; min-height: 42px; border: 0; background: #fff; color: #233952; padding: 9px 12px; text-align: left; font-size: 13px; font-weight: 700; }
+.db-repair-orders-ledger__scope-menu button:hover,
+.db-repair-orders-ledger__scope-menu button:focus-visible { background: #f3f7fa; outline: 0; }
 .db-repair-orders-ledger__sync { color: #8b4300 !important; }
-.db-repair-orders-ledger__row { width: 100%; min-width: 0; min-height: 66px; display: grid; grid-template-columns: 132px 124px minmax(210px,1fr) minmax(170px,.7fr) 122px; align-items: center; gap: 12px; padding: 11px 15px; border: 0; border-bottom: 1px solid #e0e6ec; background: #fff; color: #17283f; text-align: left; }
+.db-repair-orders-ledger__row { position: relative; width: 100%; min-width: 0; min-height: 66px; display: grid; grid-template-columns: 132px 124px minmax(210px,1fr) minmax(170px,.7fr) 122px; align-items: center; gap: 12px; padding: 11px 15px; border: 0; border-bottom: 1px solid #e0e6ec; background: #fff; color: #17283f; text-align: left; }
 .db-repair-orders-ledger__row:last-child { border-bottom: 0; }
 .db-repair-orders-ledger__row:hover { background: #f7f9fb; }
-.db-repair-orders-ledger__row[aria-pressed='true'] { background: #fff8f3; box-shadow: inset 0 0 0 2px #ff7a2e; }
+.db-repair-orders-ledger__row[aria-pressed='true'] { background: #fff8f3; box-shadow: inset 0 -2px 0 #ff7a2e; }
+.db-repair-orders-ledger__row:focus-visible { z-index: 1; outline: 0; border-radius: 10px; box-shadow: inset 0 -2px 0 #ff7a2e, inset 0 0 0 2px #f26322; }
 .db-repair-orders-ledger__order,
 .db-repair-orders-ledger__work,
 .db-repair-orders-ledger__money { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
@@ -1729,54 +2113,54 @@ html::-webkit-scrollbar-thumb:hover {
 .db-repair-orders-ledger > footer button { min-height: 40px; display: inline-flex; align-items: center; gap: 5px; border: 1px solid #c4ced9; border-radius: 8px; padding: 7px 10px; background: #fff; color: #2b4059; }
 .db-repair-orders-ledger > footer button:disabled { opacity: .42; }
 
-.db-repair-order-detail-new { border-left: 1px solid #9eacbb; background: #f4f7fa !important; box-shadow: -20px 0 50px rgba(6,24,43,.22) !important; }
+.db-repair-order-detail-new { border-left: 1px solid #9eacbb; background: #fff !important; box-shadow: -20px 0 50px rgba(6,24,43,.22) !important; }
+.db-slide-panel-workspace.db-repair-order-detail-new { border-left: 1px solid #9eacbb; box-shadow: 0 12px 32px rgba(6,24,43,.16) !important; }
+.db-slide-panel-workspace.db-repair-order-detail-new:focus-visible { box-shadow: 0 0 0 3px rgba(255,122,46,.72), 0 12px 32px rgba(6,24,43,.16) !important; }
 .db-repair-order-detail-new .slide-panel-header { min-height: 70px; border-color: #c8d2dd !important; background: #fff; }
 .db-repair-order-detail-new .slide-panel-content { background: #f4f7fa; }
 .db-repair-order-detail-new .slide-panel-footer { border-color: #c8d2dd !important; background: #fff !important; }
 .db-repair-order-detail-new__body { color: #17283f; }
-.db-repair-order-detail-new__body > :not(.db-repair-order-context) { max-width: 1120px; margin-inline: auto; }
+.db-repair-order-detail-new__body > * { max-width: 1120px; margin-inline: auto; }
 .db-repair-order-detail-new__body :is(.bg-gray-50,.bg-white) { border-color: #d3dbe4 !important; }
-.db-repair-order-price-shell-new { display: flex; flex-direction: column; gap: 10px; padding: 10px; color: #17283f; }
-.db-repair-order-price-shell-new > .db-repair-order-context { width: 100%; flex: none; }
-.db-repair-order-price-shell-new > :last-child { min-height: 0; flex: 1 1 auto; border: 1px solid #c8d2dd; border-radius: 14px; }
+.db-repair-order-price-shell-new { display: flex; flex-direction: column; min-height: 100%; color: #17283f; }
+.db-repair-order-price-shell-new > :last-child { min-height: 0; flex: 1 1 auto; }
 .db-repair-order-price-shell-new > :last-child > :first-child { background: linear-gradient(100deg,#17314f,#0c2037) !important; }
-
-.db-repair-order-context { max-width: 1120px; margin: 0 auto; overflow: hidden; border: 1px solid #bdc9d5; border-radius: 14px; background: #fff; box-shadow: 0 5px 16px rgba(16,36,59,.065); }
-.db-repair-order-context > header { min-height: 68px; display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 12px 15px; border-bottom: 1px solid #d3dbe4; }
-.db-repair-order-context > header span,
-.db-repair-order-context__strip > div > span { color: #6a7c91; font-size: 10px; font-weight: 800; letter-spacing: .075em; text-transform: uppercase; }
-.db-repair-order-context > header h2 { margin: 2px 0 0; color: #17283f; font-size: 20px; }
-.db-repair-order-context > header > strong { padding: 6px 9px; border-radius: 999px; background: #edf1f5; color: #344d67; font-size: 12px; }
-.db-repair-order-context__strip { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); }
-.db-repair-order-context__strip > div { min-width: 0; min-height: 112px; display: flex; flex-direction: column; justify-content: center; gap: 5px; padding: 13px 15px; border-right: 1px solid #d3dbe4; }
-.db-repair-order-context__strip > div:last-child { border-right: 0; }
-.db-repair-order-context__strip strong,
-.db-repair-order-context__strip small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.db-repair-order-context__strip strong { color: #203650; font-size: 13px; }
-.db-repair-order-context__strip small { color: #61738a; font-size: 11px; }
-.db-repair-order-context__strip button { align-self: flex-start; min-height: 36px !important; display: inline-flex; align-items: center; gap: 5px; border: 0; padding: 0; background: transparent; color: #8b4300; font-size: 12px; font-weight: 750; }
-.db-repair-order-context__return { width: 100%; border: 0; border-top: 1px solid #efb993; border-radius: 0; background: #fff8f3; color: #703714; }
 
 @media (max-width: 1279px) {
   .db-repair-orders-new__toolbar { grid-template-columns: 280px minmax(0,1fr); }
   .db-repair-orders-ledger__row { grid-template-columns: 122px 116px minmax(180px,1fr) 116px; }
   .db-repair-orders-ledger__vehicle { display: none; }
-  .db-repair-order-context__strip { grid-template-columns: repeat(2,minmax(0,1fr)); }
-  .db-repair-order-context__strip > div:nth-child(2) { border-right: 0; }
-  .db-repair-order-context__strip > div:nth-child(n+3) { border-top: 1px solid #d3dbe4; }
+}
+
+/* The selected record is an explicit list-to-workspace transition below the
+   side-by-side threshold. The same canonical URL remains selected; closing
+   returns to the filtered ledger instead of leaving an obscured drawer. */
+@media (max-width: 1099px) {
+  .db-repair-orders-workspace--new { display: block; overflow: visible; }
+  .db-repair-orders-workspace--new > .db-repair-orders-new { overflow: visible; padding-right: 0; }
+  .db-repair-orders-workspace--new.db-repair-orders-workspace--detail-open > .db-repair-orders-new { display: none; }
+  .db-repair-orders-workspace--new > .db-slide-panel-workspace { min-height: 100%; }
+}
+
+/* Tablet keeps every real quick filter reachable without a clipped one-line
+   rail. The ledger remains the same filter model; only its control geometry
+   changes for touch and constrained widths. */
+@media (min-width: 781px) and (max-width: 1023px) {
+  .db-repair-orders-new__toolbar { grid-template-columns: minmax(0,1fr); }
+  .db-repair-orders-new__status-tabs { flex-wrap: wrap; justify-content: flex-start; overflow: visible; padding: 1px 0; }
 }
 
 @media (max-width: 780px) {
   .db-repair-orders-new__header { display: block; }
   .db-repair-orders-new__header h1 { font-size: 1.65rem; }
   .db-repair-orders-new__create { width: 100%; margin-top: 13px; }
-  .db-repair-orders-origin { align-items: stretch; flex-direction: column; }
-  .db-repair-orders-origin > div { display: flex; align-items: flex-start; flex-direction: column; gap: 3px; }
-  .db-repair-orders-origin small { white-space: normal; }
   .db-repair-orders-new__toolbar { display: grid; grid-template-columns: minmax(0,1fr) 132px; }
   .db-repair-orders-new__status-tabs { display: none; }
-  .db-repair-orders-new__status-select { display: flex; min-width: 0; flex-direction: column; gap: 3px; color: #61738a; font-size: 10px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; }
-  .db-repair-orders-new__status-select select { width: 100%; height: 44px; border: 1px solid #bec9d5 !important; border-radius: 10px; padding: 0 9px; background: #fff !important; color: #17283f !important; font-size: 14px; }
+  .db-repair-orders-new__status-select { position: relative; display: block; min-width: 0; }
+  .db-repair-orders-new__status-select select { width: 100%; height: 44px; appearance: none; border: 1px solid #bec9d5 !important; border-radius: 10px; padding: 0 34px 0 12px; background: #fff !important; color: #17283f !important; font-size: 14px; }
+  .db-repair-orders-new__status-select svg { position: absolute; top: 50%; right: 10px; width: 16px; height: 16px; color: #53657a; transform: translateY(-50%); pointer-events: none; }
+  .db-repair-orders-new__status-select:focus-within { z-index: 2; border-radius: 10px; box-shadow: 0 0 0 3px rgba(255, 122, 46, .26); }
+  .db-repair-orders-new__status-select:focus-within select { border-color: #ff7a2e !important; outline: 0; }
   .db-repair-orders-ledger__row { min-height: 128px; grid-template-columns: minmax(0,1fr) auto; align-items: start; gap: 6px 10px; padding: 12px; }
   .db-repair-orders-ledger__order,
   .db-repair-orders-ledger__status,
@@ -1790,19 +2174,14 @@ html::-webkit-scrollbar-thumb:hover {
   .db-repair-orders-ledger > footer > div { display: grid; grid-template-columns: 1fr 1fr; }
   .db-repair-orders-ledger > footer button { justify-content: center; }
   .db-repair-order-detail-new { max-width: 100% !important; }
+  .db-slide-panel-workspace { border-radius: 12px; }
   .db-repair-order-detail-new__body { padding: 14px !important; }
-  .db-repair-order-price-shell-new { padding: 8px; }
-  .db-repair-order-context__strip { display: block; }
-  .db-repair-order-context__strip > div { min-height: 88px; border-right: 0; border-bottom: 1px solid #d3dbe4; }
-  .db-repair-order-context__strip > div:last-child { border-bottom: 0; }
-  .db-repair-order-context__strip strong,
-  .db-repair-order-context__strip small { overflow: visible; white-space: normal; }
+  .db-repair-order-price-shell-new { min-height: 100%; }
 }
 
 @media (pointer: coarse) {
   .db-repair-orders-new :is(button,input,select),
-  .db-repair-order-detail-new :is(button,input,select,textarea),
-  .db-repair-order-context :is(button) { min-height: 44px !important; }
+  .db-repair-order-detail-new :is(button,input,select,textarea) { min-height: 44px !important; }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -1812,9 +2191,7 @@ html::-webkit-scrollbar-thumb:hover {
 
 @media (forced-colors: active) {
   .db-repair-orders-ledger,
-  .db-repair-orders-ledger__row,
-  .db-repair-order-context,
-  .db-repair-orders-origin { border: 1px solid CanvasText; box-shadow: none; }
+  .db-repair-orders-ledger__row { border: 1px solid CanvasText; box-shadow: none; }
   .db-repair-orders-ledger__row[aria-pressed='true'],
   .db-repair-orders-new__status-tabs button[aria-pressed='true'] { outline: 2px solid Highlight; outline-offset: -3px; }
 }
@@ -1848,13 +2225,17 @@ html::-webkit-scrollbar-thumb:hover {
     justify-content: flex-start;
   }
   .db-presentation-new .db-staff-nav__brand-row {
-    min-height: 128px;
+    min-height: 92px;
     flex-direction: column;
     flex-wrap: nowrap;
     justify-content: center;
     gap: 8px;
-    padding: 0 2px 12px;
-    border-bottom: 1px solid var(--shell-border);
+    padding: 4px 2px 8px;
+  }
+  .db-presentation-new .db-brand-lockup {
+    width: 100%;
+    justify-content: center;
+    padding: 0 0 12px;
   }
   .db-presentation-new .db-product-brand {
     min-height: 40px;
@@ -1868,15 +2249,15 @@ html::-webkit-scrollbar-thumb:hover {
   .db-presentation-new .db-workspace-context {
     display: flex;
     flex-basis: auto;
-    flex-direction: column;
     justify-content: center;
-    gap: 4px;
     padding-left: 0;
   }
-  .db-presentation-new .db-workspace-context__logo { display: block; max-width: 42px; max-height: 24px; }
+  .db-presentation-new .db-workspace-context__tenant { align-items: center; }
+  .db-presentation-new .db-workspace-context__logo { display: block; max-width: 72px; max-height: 36px; }
   .db-presentation-new .db-workspace-context__fallback { max-width: 42px; font-size: 9px; }
   .db-presentation-new .db-workspace-context__name { display: none; }
   .db-presentation-new .db-workspace-context__state { min-width: 38px; justify-content: center; }
+  .db-presentation-new.db-staff-shell:not([data-rail-expanded='true']) .db-brand-attribution { display: none; }
   .db-presentation-new .db-staff-primary-nav {
     display: flex;
     flex: 1 1 auto;
@@ -1958,12 +2339,33 @@ html::-webkit-scrollbar-thumb:hover {
     grid-template-columns: 224px minmax(0, 1fr);
   }
   .db-presentation-new.db-staff-shell[data-rail-expanded='true'] .db-staff-nav__inner { padding: 18px 12px; }
-  .db-presentation-new.db-staff-shell[data-rail-expanded='true'] .db-staff-nav__brand-row { min-height: 142px; align-items: flex-start; justify-content: center; padding: 0 8px 12px; }
+  .db-presentation-new.db-staff-shell[data-rail-expanded='true'] .db-staff-nav__brand-row { min-height: 156px; align-items: flex-start; justify-content: center; padding: 4px 8px 10px; }
+  .db-presentation-new.db-staff-shell[data-rail-expanded='true'] .db-brand-lockup { width: 100%; align-items: center; padding-bottom: 0; }
   .db-presentation-new.db-staff-shell[data-rail-expanded='true'] .db-product-brand { width: 100%; justify-content: center; }
   .db-presentation-new.db-staff-shell[data-rail-expanded='true'] .db-product-brand .db-wordmark { display: inline-flex; max-width: none; font-size: 17px; }
   .db-presentation-new.db-staff-shell[data-rail-expanded='true'] .db-product-brand__compact-mark { display: none; }
-  .db-presentation-new.db-staff-shell[data-rail-expanded='true'] .db-workspace-context { width: 100%; flex-direction: row; justify-content: center; gap: 6px; }
-  .db-presentation-new.db-staff-shell[data-rail-expanded='true'] .db-workspace-context__logo { width: 46px; max-width: 46px; flex: 0 0 46px; }
+  .db-presentation-new.db-staff-shell[data-rail-expanded='true'] .db-workspace-context { width: 100%; justify-content: center; }
+  .db-presentation-new.db-staff-shell[data-rail-expanded='true'] .db-workspace-context__tenant {
+    display: grid;
+    width: 100%;
+    grid-template-columns: auto auto;
+    align-items: center;
+    justify-content: center;
+    column-gap: 8px;
+    row-gap: 4px;
+  }
+  .db-presentation-new.db-staff-shell[data-rail-expanded='true'] .db-workspace-context__logo {
+    grid-column: 1;
+    grid-row: 1;
+    width: auto !important;
+    max-width: 92px;
+    height: 48px !important;
+    max-height: 48px;
+  }
+  .db-presentation-new.db-staff-shell[data-rail-expanded='true'] .db-workspace-context__fallback { grid-column: 1; grid-row: 1; }
+  .db-presentation-new.db-staff-shell[data-rail-expanded='true'] .db-brand-endorsement-row { display: contents; }
+  .db-presentation-new.db-staff-shell[data-rail-expanded='true'] .db-workspace-context__state { grid-column: 2; grid-row: 1; }
+  .db-presentation-new.db-staff-shell[data-rail-expanded='true'] .db-brand-attribution { grid-column: 1 / -1; grid-row: 2; justify-content: center; }
   .db-presentation-new.db-staff-shell[data-rail-expanded='true'] :is(.db-workspace-context__name, .db-workspace-context__fallback) {
     display: block;
     flex: 1 1 0;
@@ -1993,19 +2395,40 @@ html::-webkit-scrollbar-thumb:hover {
   .db-presentation-new.db-staff-shell[data-rail-expanded='true'] .db-staff-nav__rail-toggle { width: 44px; flex: 0 0 44px; }
 }
 
+@media (min-width: 960px) and (prefers-reduced-motion: no-preference) {
+  .db-presentation-new.db-staff-shell[data-rail-expanded='true'] .db-compact-identity-step--tenant {
+    animation: db-compact-identity-reveal 680ms var(--db-wordmark-ease-out, cubic-bezier(.16, 1, .3, 1)) 80ms both;
+  }
+
+  .db-presentation-new.db-staff-shell[data-rail-expanded='true'] .db-compact-identity-step--state {
+    animation: db-compact-identity-reveal 360ms var(--db-wordmark-ease-out, cubic-bezier(.16, 1, .3, 1)) 720ms both;
+  }
+
+  .db-presentation-new.db-staff-shell[data-rail-expanded='true'] .db-compact-identity-step--endorsement {
+    animation: db-compact-endorsement-reveal 420ms var(--db-wordmark-ease-out, cubic-bezier(.16, 1, .3, 1)) 1060ms both;
+  }
+
+  .db-presentation-new.db-staff-shell[data-rail-expanded='true'] .db-compact-identity-step--endorsement .db-wordmark__letter {
+    animation-delay: calc(var(--letter-drop-delay) + 1120ms);
+  }
+}
+
 @media (max-width: 959px) {
   .db-presentation-new .db-staff-primary-nav { display: none !important; }
   .db-presentation-new .db-mobile-nav { display: block !important; }
   .db-presentation-new .db-mobile-nav-spacer { display: block !important; }
   .db-presentation-new .db-staff-nav__layout { height: 64px; }
   .db-presentation-new .db-staff-nav__brand-row { min-width: 0; }
+  .db-presentation-new .db-workspace-context__tenant { flex-direction: row; gap: 8px; }
+  .db-presentation-new .db-workspace-context__logo { max-height: 36px; }
+  .db-presentation-new .db-brand-endorsement-row { gap: 6px; }
   .db-presentation-new .db-staff-main {
     height: calc(100dvh - 64px);
     padding-bottom: calc(14px + 4rem + env(safe-area-inset-bottom));
   }
   .db-presentation-new .db-mobile-nav > div { border-color: var(--shell-border) !important; background: var(--shell-field) !important; backdrop-filter: none !important; }
   .db-presentation-new .db-mobile-nav :is(a, button) { color: var(--shell-muted); }
-  .db-presentation-new .db-mobile-nav :is(a[aria-current='page'], button[aria-expanded='true']) { color: var(--shell-text); box-shadow: inset 0 3px var(--product-copper-400); }
+  .db-presentation-new .db-mobile-nav :is(a[aria-current='page'], button[aria-expanded='true']) { color: var(--shell-text); box-shadow: inset 0 -3px var(--product-copper-400); }
 }
 
 @media (min-width: 768px) and (max-width: 959px) {
@@ -2025,7 +2448,7 @@ html::-webkit-scrollbar-thumb:hover {
   .db-presentation-new .db-staff-nav__layout { height: 60px; }
   .db-presentation-new .db-staff-main { height: calc(100dvh - 60px); padding: 14px 14px calc(14px + 4rem + env(safe-area-inset-bottom)); }
   .db-presentation-new .db-workspace-context__name { display: block; max-width: 8ch; font-size: 10px; }
-  .db-workspace-context__logo { max-width: 52px; }
+  .db-workspace-context__logo { max-width: 60px; }
   .db-presentation-new .db-product-brand { padding-inline-end: 10px; }
 }
 

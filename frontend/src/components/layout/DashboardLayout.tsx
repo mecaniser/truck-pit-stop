@@ -153,6 +153,13 @@ export default function DashboardLayout() {
   }
 
   const isOnSubPage = location.pathname !== '/dashboard'
+  const repairOrdersQueue = new URLSearchParams(location.search).get('queue')
+  const shopWorkQueue = repairOrdersQueue === 'needs_action' || repairOrdersQueue === 'on_floor' || repairOrdersQueue === 'ready_to_close'
+    ? repairOrdersQueue
+    : null
+  const shopWorkBreadcrumbState = presentationVariant === 'new' && location.pathname === '/dashboard/repair-orders' && shopWorkQueue
+    ? { shopWorkQueue }
+    : undefined
   
   const getCurrentPageLabel = () => {
     if (location.pathname === '/dashboard/settings') return 'Profile Settings'
@@ -178,7 +185,7 @@ export default function DashboardLayout() {
   const dashboardAriaLabel = presentationVariant === 'new'
     ? isSuperAdmin
       ? 'DieselBridge dashboard'
-      : 'DieselBridge Shop Work'
+      : 'Powered by DieselBridge — Shop Work'
     : isSuperAdmin
       ? 'Diesel Bridge Network dashboard'
       : `${dashboardLogoAlt} dashboard`
@@ -235,41 +242,53 @@ export default function DashboardLayout() {
           <div className="db-staff-nav__layout flex justify-between h-14 sm:h-16">
             {/* Logo */}
             <div className="db-staff-nav__brand-row flex items-center gap-3">
-              <Link to="/dashboard" className="db-product-brand inline-flex items-center py-1" aria-label={dashboardAriaLabel}>
-                {isSuperAdmin ? (
-                  <BrandLogo alt="Diesel Bridge Network" variant="admin" className="h-8 sm:h-10 w-auto" />
-                ) : presentationVariant === 'new' ? (
-                  <>
-                    <DieselBridgeWordmark animated showBridge={false} />
-                    <BrandLogo alt="" variant="admin" className="db-product-brand__compact-mark" />
-                  </>
-                ) : (
-                  <TenantBrandLogo
-                    tenantLogoUrl={tenantBranding?.logo_url}
-                    tenantName={tenantBranding?.name || user?.tenant_name}
-                    fallbackVariant="admin"
-                    className="h-8 sm:h-10 w-auto object-contain"
-                  />
-                )}
-              </Link>
+              <div className="db-brand-lockup">
               {!isSuperAdmin && presentationVariant === 'new' && (
                 <div className="db-workspace-context" aria-label={`Active shop: ${dashboardLogoAlt}`}>
-                  {tenantBranding?.logo_url ? (
-                    <img
-                      src={tenantBranding.logo_url}
-                      alt=""
-                      className="db-workspace-context__logo h-7 w-auto object-contain"
-                    />
-                  ) : (
-                    <span className="db-workspace-context__fallback">{dashboardLogoAlt}</span>
-                  )}
-                  {tenantBranding?.state && (
-                    <span className="db-workspace-context__state inline-flex items-center px-2 py-0.5 rounded-full border border-white/10 bg-white/5 text-[11px] font-medium tracking-wide text-gray-300">
-                      {tenantBranding.state}
-                    </span>
-                  )}
+                  <div className="db-workspace-context__tenant">
+                    {tenantBranding?.logo_url ? (
+                      <img
+                        src={tenantBranding.logo_url}
+                        alt=""
+                        className="db-workspace-context__logo db-compact-identity-step db-compact-identity-step--tenant h-9 w-auto object-contain"
+                      />
+                    ) : (
+                      <span className="db-workspace-context__fallback db-compact-identity-step db-compact-identity-step--tenant">{dashboardLogoAlt}</span>
+                    )}
+                    <div className="db-brand-endorsement-row">
+                      {tenantBranding?.state && (
+                        <span className="db-workspace-context__state db-compact-identity-step db-compact-identity-step--state inline-flex items-center px-2 py-0.5 rounded-full border border-white/10 bg-white/5 text-[11px] font-medium tracking-wide text-gray-300">
+                          {tenantBranding.state}
+                        </span>
+                      )}
+                      <div className="db-brand-attribution db-compact-identity-step db-compact-identity-step--endorsement">
+                        <span className="db-brand-attribution__label">Powered by</span>
+                        <Link to="/dashboard" className="db-product-brand inline-flex items-center py-1" aria-label={dashboardAriaLabel}>
+                          <DieselBridgeWordmark animated showBridge={false} />
+                          <BrandLogo alt="" variant="admin" className="db-product-brand__compact-mark" />
+                        </Link>
+                      </div>
+                    </div>
+                  </div>
                 </div>
               )}
+              {(isSuperAdmin || presentationVariant !== 'new') && (
+                <div className="db-brand-attribution">
+                <Link to="/dashboard" className="db-product-brand inline-flex items-center py-1" aria-label={dashboardAriaLabel}>
+                  {isSuperAdmin ? (
+                    <BrandLogo alt="Diesel Bridge Network" variant="admin" className="h-8 sm:h-10 w-auto" />
+                  ) : (
+                    <TenantBrandLogo
+                      tenantLogoUrl={tenantBranding?.logo_url}
+                      tenantName={tenantBranding?.name || user?.tenant_name}
+                      fallbackVariant="admin"
+                      className="h-8 sm:h-10 w-auto object-contain"
+                    />
+                  )}
+                </Link>
+                </div>
+              )}
+              </div>
               {isSuperAdmin && (
                 <span className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 bg-gold-500/10 border border-gold-500/30 rounded-full text-gold-400 text-xs font-medium">
                   <Crown className="w-3 h-3" />
@@ -383,6 +402,7 @@ export default function DashboardLayout() {
           <div className="db-breadcrumb mb-4 flex-shrink-0 flex items-center gap-2 text-sm">
             <Link
               to="/dashboard"
+              state={shopWorkBreadcrumbState}
               className="transition-colors flex items-center gap-1 text-gray-400 hover:text-white"
             >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">

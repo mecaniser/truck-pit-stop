@@ -41,6 +41,17 @@ interface SlidePanelProps {
   width?: string
   /** Product-specific shell classes without forking the panel mechanics. */
   panelClassName?: string
+  /**
+   * `drawer` is the protected, modal Sidekick used by incumbent flows.
+   * `workspace` keeps the same content and controls, but renders them as an
+   * inline region so a selected record can operate beside its master list.
+   */
+  layout?: 'drawer' | 'workspace'
+  /**
+   * A keyboard-originated ledger selection may request focus on the inline
+   * workspace. Pointer selection intentionally leaves focus with the row.
+   */
+  workspaceFocusRequest?: number
   /** Use dark theme for entire panel */
   dark?: boolean
   /** Prev/next navigation for browsing between items */
@@ -67,6 +78,8 @@ export default function SlidePanel({
   footer,
   width = 'max-w-lg',
   panelClassName = '',
+  layout = 'drawer',
+  workspaceFocusRequest,
   dark = false,
   onPrev,
   onNext,
@@ -217,7 +230,7 @@ export default function SlidePanel({
   // use: focus stayed on the page behind it, and every background control
   // remained tabbable underneath.
   useEffect(() => {
-    if (!isOpen) return
+    if (!isOpen || layout === 'workspace') return
     const panel = panelRef.current
     const restoreFocusTo = document.activeElement as HTMLElement | null
 
@@ -256,7 +269,24 @@ export default function SlidePanel({
       document.removeEventListener('keydown', onKeyDown)
       restoreFocusTo?.focus?.()
     }
-  }, [isOpen])
+  }, [isOpen, layout])
+
+  // A workspace is an inline region rather than a modal, so it must never
+  // steal focus from a pointer click or trap the entire page. When a ledger
+  // row is activated from the keyboard, however, move focus to its labelled
+  // region so the operator can continue directly into the repair controls.
+  useEffect(() => {
+    if (!isOpen || layout !== 'workspace' || workspaceFocusRequest === undefined) return
+    // The browser completes the originating button's default focus handling
+    // after its click handler. Deferring one frame preserves pointer focus on
+    // a normal row click while allowing an Enter/Space activation to land in
+    // the newly rendered workspace rather than being immediately overwritten
+    // by the ledger button.
+    const focusFrame = window.requestAnimationFrame(() => {
+      panelRef.current?.focus()
+    })
+    return () => window.cancelAnimationFrame(focusFrame)
+  }, [isOpen, layout, workspaceFocusRequest])
 
   // Layout effect, not effect: pinning the body relayouts the page and drops
   // the scrollbar. Run after paint and that lands one frame into the panel's
@@ -264,7 +294,7 @@ export default function SlidePanel({
   // width every frame — so the animation's origin moves mid-flight and the
   // panel travels sideways before snapping home. Settle the layout first.
   useLayoutEffect(() => {
-    if (!isOpen) return
+    if (!isOpen || layout === 'workspace') return
 
     const body = document.body
     const root = document.documentElement
@@ -298,9 +328,14 @@ export default function SlidePanel({
       body.style.width = previousBodyStyles.width
       body.style.overflow = previousBodyStyles.overflow
       root.style.overflow = previousRootOverflow
-      window.scrollTo(0, scrollY)
+      // JSDOM exposes scrollTo but reports it as an unimplemented browser API.
+      // Keep real-browser restoration while avoiding a false console failure
+      // when the workspace test unmounts an ordinary drawer.
+      if (!/jsdom/i.test(navigator.userAgent)) {
+        window.scrollTo(0, scrollY)
+      }
     }
-  }, [isOpen])
+  }, [isOpen, layout])
 
   // The slide-in used to be a CSS animation from translateX(100%). A percentage
   // transform re-resolves against the element's own width on every frame, so any
@@ -317,7 +352,7 @@ export default function SlidePanel({
   // This effect must stay below the pin: React runs layout effects in order, and
   // measuring first would capture the pre-pin width.
   useLayoutEffect(() => {
-    if (!isOpen) return
+    if (!isOpen || layout === 'workspace') return
     const panel = panelRef.current
     if (!panel || typeof panel.animate !== 'function') return
     if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
@@ -345,12 +380,80 @@ export default function SlidePanel({
       animation.cancel()
       openAnimation.current = null
     }
-  }, [isOpen])
+  }, [isOpen, layout])
 
   if (!isOpen) return null
 
   const isMinimal = headerVariant === 'minimal'
   const isDark = headerVariant === 'dark' || dark
+
+  // The Repair Orders workspace uses the panel's proven content and pointer
+  // mechanics without turning the selected repair record into a modal. It is
+  // deliberately a labelled region, not a dialog: the ledger remains usable
+  // alongside it on desktop and owns normal list-to-record navigation below
+  // that breakpoint.
+  if (layout === 'workspace') {
+    return (
+      <aside
+        ref={panelRef}
+        role="region"
+        aria-label={title}
+        tabIndex={-1}
+        className={`db-slide-panel-workspace min-h-0 flex flex-col ${panelClassName}`}
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerUp}
+        onPointerCancel={handlePointerCancel}
+        onClickCapture={handleClickCapture}
+      >
+        {!hideHeader && (isMinimal ? (
+          <div className="slide-panel-header px-5 py-4 border-b border-gray-200 flex items-center justify-between">
+            <div>
+              {subtitle && <p className="text-xs uppercase text-gray-500 font-semibold">{subtitle}</p>}
+              <p className="text-lg font-semibold text-slate-800">{title}</p>
+            </div>
+            <div className="flex items-center gap-1">
+              {(onPrev !== undefined || onNext !== undefined) && (
+                <div className="flex items-center gap-0.5 mr-1">
+                  <button onClick={onPrev} disabled={prevDisabled} className="p-1.5 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors disabled:opacity-30 disabled:cursor-not-allowed" aria-label="Previous">
+                    <ChevronLeft className="w-4 h-4" />
+                  </button>
+                  {navigationLabel && <span className="text-xs text-gray-400 tabular-nums px-1 min-w-[3rem] text-center select-none">{navigationLabel}</span>}
+                  <button onClick={onNext} disabled={nextDisabled} className="p-1.5 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors disabled:opacity-30 disabled:cursor-not-allowed" aria-label="Next">
+                    <ChevronRight className="w-4 h-4" />
+                  </button>
+                </div>
+              )}
+              <button onClick={onClose} className="inline-flex min-h-11 min-w-11 items-center justify-center p-2 text-gray-500 hover:text-gray-700 rounded-full hover:bg-gray-100" aria-label="Close">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className={`slide-panel-header bg-gradient-to-r ${headerGradients[headerVariant as keyof typeof headerGradients]} px-6 py-8 text-white`}>
+            <div className="flex items-start justify-between">
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-3">
+                  {headerIcon}
+                  <div className="min-w-0">
+                    {subtitle && !headerIcon && <p className="text-xs text-white/70 uppercase tracking-wide">{subtitle}</p>}
+                    <h2 className="text-2xl font-bold truncate">{title}</h2>
+                    {subtitle && headerIcon && <p className="text-white/70 text-sm mt-1 truncate">{subtitle}</p>}
+                  </div>
+                </div>
+                {headerExtra && <div className="mt-4">{headerExtra}</div>}
+              </div>
+              <button onClick={onClose} className="inline-flex min-h-11 min-w-11 items-center justify-center p-2 hover:bg-white/20 rounded-lg transition-colors" aria-label="Close">
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+          </div>
+        ))}
+        <div className="slide-panel-content min-h-0 flex-1 overflow-y-auto overscroll-contain">{children}</div>
+        {footer && <div className="slide-panel-footer border-t border-gray-200 px-6 py-4 bg-gray-50">{footer}</div>}
+      </aside>
+    )
+  }
 
   // Dark theme panel
   if (isDark) {

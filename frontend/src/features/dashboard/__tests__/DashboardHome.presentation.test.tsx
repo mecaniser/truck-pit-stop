@@ -126,15 +126,15 @@ describe('DashboardHome DB-035 presentation boundary', () => {
     }
   })
 
-  it('renders the projection-only Action Ledger and exact canonical handoff in the new presentation', () => {
+  it('renders the projection-only Action Ledger and opens the exact canonical Repair Orders handoff in one action', () => {
     render(<DashboardHome />)
 
     expect(screen.getByRole('heading', { name: 'Shop Work' })).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'Action Ledger' })).toBeInTheDocument()
     expect(screen.queryByRole('heading', { name: 'Shop Cockpit' })).not.toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole('button', { name: /RO-1022/ }))
-    fireEvent.click(screen.getByRole('button', { name: 'Open RO-1022' }))
+    expect(screen.queryByText('Selected repair record · read only')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Open RO-1022 in Repair Orders' }))
 
     expect(testState.navigate).toHaveBeenCalledWith(
       '/dashboard/repair-orders?selected=ro-floor-22&queue=on_floor',
