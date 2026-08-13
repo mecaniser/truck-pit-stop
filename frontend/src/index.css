@@ -482,6 +482,30 @@ html::-webkit-scrollbar-thumb:hover {
   color: var(--workspace-muted) !important;
 }
 
+/* Messages uses the tenant communication accent for its creation action. The
+   destructive control is deliberately solid only when it is available, so it
+   reads as a real action rather than disabled residue. */
+.db-presentation-new .db-messages-workspace .db-messages-compose-action,
+.db-presentation-new .db-messages-workspace .db-messages-compose-action:hover {
+  border-color: color-mix(in srgb, var(--db-messages-accent) 78%, #000) !important;
+  background: var(--db-messages-accent) !important;
+  box-shadow: 0 3px 9px color-mix(in srgb, var(--db-messages-accent) 24%, transparent);
+}
+.db-presentation-new .db-messages-workspace .db-messages-compose-action,
+.db-presentation-new .db-messages-workspace .db-messages-compose-action * {
+  color: #fff !important;
+}
+.db-presentation-new .db-messages-workspace .db-messages-delete-action,
+.db-presentation-new .db-messages-workspace .db-messages-delete-action:hover {
+  border-color: color-mix(in srgb, var(--semantic-danger-500) 78%, #000) !important;
+  background: var(--semantic-danger-500) !important;
+  box-shadow: 0 3px 9px color-mix(in srgb, var(--semantic-danger-500) 22%, transparent);
+}
+.db-presentation-new .db-messages-workspace .db-messages-delete-action,
+.db-presentation-new .db-messages-workspace .db-messages-delete-action * {
+  color: #fff !important;
+}
+
 .db-presentation-new .db-messages-workspace .db-message-accent-mark,
 .db-presentation-new .db-messages-workspace .db-message-accent-mark * {
   color: #fff !important;

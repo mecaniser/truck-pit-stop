@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import { Spinner } from '@/components/ui'
 import { useQueryClient } from '@tanstack/react-query'
 import api from '@/lib/api'
@@ -82,6 +82,7 @@ function DeliveryIcon({ status }: { status: string }) {
 
 export default function MessagesInboxPage() {
   const { accentColors, presentationVariant } = useTheme()
+  const messageActionStyle = { '--db-messages-accent': accentColors[600] } as CSSProperties
   const queryClient = useQueryClient()
   const { user } = useAuthStore()
   useWebSocket()
@@ -478,7 +479,8 @@ export default function MessagesInboxPage() {
         </div>
         <button
           onClick={() => setShowCompose((v) => !v)}
-          className="inline-flex items-center gap-1 rounded-lg border border-white/20 bg-white/10 px-2.5 py-1.5 text-xs text-gray-200 hover:bg-white/15 transition-colors"
+          className="db-messages-compose-action inline-flex items-center gap-1 rounded-lg border border-white/20 bg-white/10 px-2.5 py-1.5 text-xs text-gray-200 hover:bg-white/15 transition-colors"
+          style={messageActionStyle}
         >
           <Pencil className="w-3 h-3" />
           New
@@ -624,7 +626,7 @@ export default function MessagesInboxPage() {
                 <button
                   onClick={deleteSelectedThread}
                   disabled={threadActionBusy}
-                  className="inline-flex items-center gap-1 rounded-md border border-rose-400/30 bg-rose-500/10 px-2 py-1.5 text-xs text-rose-300 hover:bg-rose-500/20 disabled:opacity-50 transition-colors"
+                  className="db-messages-delete-action inline-flex items-center gap-1 rounded-md border border-rose-400/30 bg-rose-500/10 px-2 py-1.5 text-xs text-rose-300 hover:bg-rose-500/20 disabled:opacity-50 transition-colors"
                 >
                   <Trash2 className="w-3.5 h-3.5" />
                   <span className="hidden sm:inline">Delete</span>
@@ -745,7 +747,8 @@ export default function MessagesInboxPage() {
         </div>
         <button
           onClick={() => setShowCompose((v) => !v)}
-          className="inline-flex items-center gap-1.5 rounded-lg border border-white/20 bg-white/10 px-3 py-1.5 text-sm text-gray-200 hover:bg-white/15 transition-colors"
+          className="db-messages-compose-action inline-flex items-center gap-1.5 rounded-lg border border-white/20 bg-white/10 px-3 py-1.5 text-sm text-gray-200 hover:bg-white/15 transition-colors"
+          style={messageActionStyle}
         >
           <Pencil className="w-3.5 h-3.5" />
           New Message
