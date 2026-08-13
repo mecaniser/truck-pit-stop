@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useRef } from 'react'
+import { useState, useMemo, useEffect, useRef, type CSSProperties } from 'react'
 import { LoadingLine } from '@/components/ui'
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query'
 import { useSearchParams } from 'react-router-dom'
@@ -20,6 +20,23 @@ import { useViewPreference } from '@/hooks/useViewPreference'
 import { useTheme } from '../../contexts/ThemeContext'
 import useTenantBranding from '@/hooks/useTenantBranding'
 
+function colorContrast(hex: string, foreground: '#ffffff' | '#0f172a') {
+  const rgb = hex.match(/[\da-f]{2}/gi)?.map(value => parseInt(value, 16))
+  if (!rgb || rgb.length !== 3) return 1
+  const luminance = rgb.map(value => {
+    const channel = value / 255
+    return channel <= 0.03928 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4
+  }).reduce((total, channel, index) => total + channel * [0.2126, 0.7152, 0.0722][index], 0)
+  const foregroundLuminance = foreground === '#ffffff' ? 1 : 0.009
+  return (Math.max(luminance, foregroundLuminance) + 0.05) / (Math.min(luminance, foregroundLuminance) + 0.05)
+}
+
+function preferredForeground(background: string): '#ffffff' | '#0f172a' {
+  return colorContrast(background, '#ffffff') >= colorContrast(background, '#0f172a')
+    ? '#ffffff'
+    : '#0f172a'
+}
+
 // Category ↔ unit linkage: fluid parts are dispensed by volume, so setting one
 // side fills in the other and saves a second click. Only defaults get touched —
 // a category typed as "Fluids" flips the unit to gallons only while it's still
@@ -40,10 +57,9 @@ function fluidLinkPatch(
   return {}
 }
 
-// Selling-price field with a $/% toggle beside its label. '$' types the price
-// directly; '%' types a markup over cost — 15 on a $16.00 cost yields $18.40
-// (cost × 1.15). Form state always holds the resolved dollar amount, so the
-// save path never changes: percent is an input method, not a stored value.
+// Selling-price field with an explicit input-method choice. Price types the
+// resolved unit price; Markup derives it from cost. Form state always keeps
+// that resolved dollar amount, so the save path never changes.
 function SellingPriceField({
   label,
   cost,
@@ -55,7 +71,8 @@ function SellingPriceField({
   value: string
   onChange: (v: string) => void
 }) {
-  const [mode, setMode] = useState<'$' | '%'>('$')
+  const { accentColors } = useTheme()
+  const [mode, setMode] = useState<'price' | 'markup'>('price')
   const [pct, setPct] = useState('')
   const costNum = parseFloat(cost)
   const costValid = Number.isFinite(costNum) && costNum > 0
@@ -68,13 +85,13 @@ function SellingPriceField({
 
   // Cost edits while in % mode keep the markup constant and move the price.
   useEffect(() => {
-    if (mode === '%') applyPct(pct, parseFloat(cost))
+    if (mode === 'markup') applyPct(pct, parseFloat(cost))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cost])
 
-  const switchMode = (m: '$' | '%') => {
+  const switchMode = (m: 'price' | 'markup') => {
     if (m === mode) return
-    if (m === '%') {
+    if (m === 'markup') {
       // Seed the markup from the current cost/price pair so toggling is lossless.
       const s = parseFloat(value)
       if (costValid && Number.isFinite(s)) {
@@ -85,16 +102,23 @@ function SellingPriceField({
   }
 
   const sellingNum = parseFloat(value)
+  const markup = costValid && Number.isFinite(sellingNum)
+    ? ((sellingNum - costNum) / costNum) * 100
+    : null
+  const sellingPriceSummary = Number.isFinite(sellingNum)
+    ? `$${sellingNum.toFixed(2)} / unit`
+    : 'Enter a price'
+  const markupSummary = markup == null
+    ? 'Set a cost first'
+    : `${markup.toFixed(1)}% markup`
+  const selectedModeForeground = preferredForeground(accentColors[600])
 
   return (
-    <label className="text-sm text-gray-700 space-y-1">
-      {/* h-5 pins this row to the height of a plain one-line label (text-sm
-          line-height), so the sibling Cost field's input stays aligned with
-          ours in the two-column grid. The toggle fits inside that 20px. */}
-      <span className="flex h-5 items-center justify-between gap-2">
+    <label className="db-inventory-price-field text-sm text-gray-700 space-y-2">
+      <span className="flex min-h-11 items-center justify-between gap-3">
         <span className="truncate">{label}</span>
-        <span className="inline-flex h-5 overflow-hidden rounded-md border border-gray-200">
-          {(['$', '%'] as const).map((m) => (
+        <span className="db-inventory-price-method inline-flex overflow-hidden rounded-lg border border-gray-200" role="group" aria-label="Set selling price by">
+          {(['price', 'markup'] as const).map((m) => (
             <button
               key={m}
               type="button"
@@ -104,50 +128,42 @@ function SellingPriceField({
                 e.preventDefault()
                 switchMode(m)
               }}
-              className={`inventory-price-mode flex min-w-7 items-center justify-center px-2 text-xs font-bold leading-none whitespace-nowrap transition-colors ${mode === m ? 'inventory-price-mode--selected' : 'inventory-price-mode--idle'}`}
+              className={`inventory-price-mode flex h-11 min-w-[4.5rem] items-center justify-center px-3 text-xs font-bold leading-none whitespace-nowrap transition-colors ${mode === m ? 'inventory-price-mode--selected' : 'inventory-price-mode--idle'}`}
+              style={mode === m ? {
+                '--inventory-price-mode-bg': accentColors[600],
+                '--inventory-price-mode-fg': selectedModeForeground,
+              } as CSSProperties : undefined}
               aria-pressed={mode === m}
-              aria-label={m === '$' ? 'Enter selling price in dollars' : 'Enter selling price as % markup over cost'}
+              aria-label={m === 'price' ? 'Set selling price directly' : 'Set selling price by markup over cost'}
             >
-              {m}
+              {m === 'price' ? 'Price' : 'Markup'}
             </button>
           ))}
         </span>
       </span>
-      {/* Keyed so the $↔% input swap cross-fades instead of hard-flipping. */}
-      <div key={mode} className="animate-status-swap">
-        {mode === '$' ? (
+      <div className="db-inventory-price-field__input">
+        {mode === 'price' ? (
           <CurrencyInput value={value} onChange={onChange} step={1} />
         ) : (
-          <>
-            <CurrencyInput
-              value={pct}
-              onChange={(p) => {
-                setPct(p)
-                applyPct(p, costNum)
-              }}
-              step={1}
-              symbol="%"
-              symbolSuffix
-              decimals={1}
-              placeholder="0"
-              disabled={!costValid}
-            />
-            <p className="mt-1 text-xs">
-              {costValid ? (
-                Number.isFinite(sellingNum) && pct !== '' ? (
-                  <span className="text-gray-500">
-                    = <span className="font-semibold text-gray-700">${sellingNum.toFixed(2)}</span> selling price
-                  </span>
-                ) : (
-                  <span className="text-gray-500">Type a markup % over cost</span>
-                )
-              ) : (
-                <span className="text-amber-600">Set a cost first — % is a markup over cost</span>
-              )}
-            </p>
-          </>
+          <CurrencyInput
+            value={pct}
+            onChange={(p) => {
+              setPct(p)
+              applyPct(p, costNum)
+            }}
+            step={1}
+            symbol="%"
+            symbolSuffix
+            decimals={1}
+            placeholder="0"
+            disabled={!costValid}
+          />
         )}
       </div>
+      <span className="db-inventory-price-field__summary flex min-h-5 items-center justify-between gap-3 text-xs">
+        <span className="text-gray-500">{mode === 'price' ? 'Current markup' : 'Calculated price'}</span>
+        <strong className="text-gray-700">{mode === 'price' ? markupSummary : sellingPriceSummary}</strong>
+      </span>
     </label>
   )
 }

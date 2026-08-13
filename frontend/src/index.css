@@ -923,8 +923,8 @@ html::-webkit-scrollbar-thumb:hover {
 }
 
 .inventory-price-mode--selected {
-  background: #f59e0b;
-  color: #fff !important;
+  background: var(--inventory-price-mode-bg, var(--accent-600, #0f766e));
+  color: var(--inventory-price-mode-fg, #fff) !important;
   text-shadow: 0 1px 1px rgb(0 0 0 / 18%);
 }
 
@@ -934,8 +934,21 @@ html::-webkit-scrollbar-thumb:hover {
 }
 
 .inventory-price-mode--idle {
-  background: #fff;
+  background: var(--surface-overlay, #fff);
   color: #475569;
+}
+
+.db-inventory-price-field__summary {
+  border-top: 1px solid var(--workspace-border);
+  padding-top: 0.375rem;
+}
+
+.db-presentation-new .db-inventory-workspace .db-inventory-price-field__summary {
+  color: var(--workspace-muted);
+}
+
+.db-presentation-new .db-inventory-workspace .db-inventory-price-field__summary strong {
+  color: var(--workspace-text);
 }
 
 @media (hover: hover) and (pointer: fine) {
