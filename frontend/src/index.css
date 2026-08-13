@@ -479,6 +479,11 @@ html::-webkit-scrollbar-thumb:hover {
   color: var(--workspace-muted) !important;
 }
 
+.db-presentation-new .db-messages-workspace .db-message-accent-mark,
+.db-presentation-new .db-messages-workspace .db-message-accent-mark * {
+  color: #fff !important;
+}
+
 .db-presentation-new .db-messages-workspace .db-message-bubble--inbound {
   background: var(--surface-raised) !important;
   color: var(--workspace-text) !important;

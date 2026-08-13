@@ -409,7 +409,7 @@ export default function MessagesInboxPage() {
       <span>{label}</span>
       {!!badge && badge > 0 && (
         <span
-          className="min-w-[18px] h-[18px] rounded-full flex items-center justify-center text-[10px] font-bold text-white px-1"
+          className="db-message-accent-mark min-w-[18px] h-[18px] rounded-full flex items-center justify-center text-[10px] font-bold text-white px-1"
           style={{ backgroundColor: accentColors[500] }}
         >
           {badge > 99 ? '99+' : badge}
@@ -519,7 +519,7 @@ export default function MessagesInboxPage() {
               }`}
             >
               <div
-                className="flex-shrink-0 w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold text-white"
+                className="db-message-accent-mark flex-shrink-0 w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold text-white"
                 style={{ backgroundColor: isSelected ? accentColors[600] : '#374151' }}
               >
                 {initials || '?'}
@@ -537,7 +537,7 @@ export default function MessagesInboxPage() {
               </div>
               {hasUnread && (
                 <span
-                  className="flex-shrink-0 min-w-[18px] h-[18px] rounded-full flex items-center justify-center text-[10px] font-bold text-white px-1 mt-0.5"
+                  className="db-message-accent-mark flex-shrink-0 min-w-[18px] h-[18px] rounded-full flex items-center justify-center text-[10px] font-bold text-white px-1 mt-0.5"
                   style={{ backgroundColor: accentColors[500] }}
                 >
                   {thread.unread_count_staff}
@@ -582,7 +582,7 @@ export default function MessagesInboxPage() {
                 </svg>
               </button>
               <div
-                className="flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold text-white"
+                className="db-message-accent-mark flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold text-white"
                 style={{ backgroundColor: accentColors[600] }}
               >
                 {customerInitials(selectedThread.customer.first_name, selectedThread.customer.last_name)}
@@ -779,7 +779,7 @@ export default function MessagesInboxPage() {
               <span className="text-[9px] font-medium">Inbox</span>
               {inboxUnread > 0 && (
                 <span
-                  className="absolute -top-1 -right-1 min-w-[16px] h-4 rounded-full flex items-center justify-center text-[9px] font-bold text-white px-1"
+                  className="db-message-accent-mark absolute -top-1 -right-1 min-w-[16px] h-4 rounded-full flex items-center justify-center text-[9px] font-bold text-white px-1"
                   style={{ backgroundColor: accentColors[500] }}
                 >
                   {inboxUnread > 99 ? '99+' : inboxUnread}
@@ -826,7 +826,7 @@ export default function MessagesInboxPage() {
                     }`}
                   >
                     <div
-                      className="flex-shrink-0 w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold text-white"
+                      className="db-message-accent-mark flex-shrink-0 w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold text-white"
                       style={{ backgroundColor: isSelected ? accentColors[600] : '#374151' }}
                     >
                       {initials || '?'}
@@ -844,7 +844,7 @@ export default function MessagesInboxPage() {
                     </div>
                     {hasUnread && (
                       <span
-                        className="flex-shrink-0 min-w-[18px] h-[18px] rounded-full flex items-center justify-center text-[10px] font-bold text-white px-1 mt-0.5"
+                        className="db-message-accent-mark flex-shrink-0 min-w-[18px] h-[18px] rounded-full flex items-center justify-center text-[10px] font-bold text-white px-1 mt-0.5"
                         style={{ backgroundColor: accentColors[500] }}
                       >
                         {thread.unread_count_staff}
