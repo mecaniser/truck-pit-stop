@@ -949,6 +949,22 @@ html::-webkit-scrollbar-thumb:hover {
   box-shadow: none;
 }
 
+/* Inline editing is a focused variation of the same ledger, not a fallback
+   dark form. The shared duration stepper retains its standard 15-minute step. */
+.db-presentation-new .db-labor-book-time__ledger-row--editing {
+  background: var(--surface-raised) !important;
+}
+
+.db-presentation-new .db-labor-book-time .db-labor-book-time__edit-input {
+  border-color: var(--workspace-border) !important;
+  background: var(--surface-overlay) !important;
+  color: var(--workspace-text) !important;
+}
+
+.db-presentation-new .db-labor-book-time .db-labor-book-time__edit-input::placeholder {
+  color: var(--workspace-muted) !important;
+}
+
 @media (hover: hover) and (pointer: fine) {
   .db-presentation-new .db-labor-book-time__ledger-row:hover {
     background: color-mix(in srgb, var(--product-navy-800) 4%, var(--surface-overlay)) !important;
