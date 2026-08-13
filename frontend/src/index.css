@@ -380,6 +380,13 @@ html::-webkit-scrollbar-thumb:hover {
   box-shadow: 0 0 0 4px color-mix(in srgb, var(--product-copper-400) 22%, transparent);
 }
 
+/* A SlidePanel save is an enabled primary action. Its semantic accent belongs
+   with a consistently white foreground, never inherited workspace ink. */
+.db-slide-panel-form__submit,
+.db-slide-panel-form__submit * {
+  color: #fff !important;
+}
+
 /* SearchAddBar is a composed search control. Keep focus on its outer boundary
    so the ring is never inset or clipped by the input's own rounded edge. */
 .db-presentation-new .db-search-add-bar__field {
@@ -906,6 +913,13 @@ html::-webkit-scrollbar-thumb:hover {
   .db-presentation-new .db-inventory-workspace [class*='hover\\:bg-white']:hover {
     background: var(--surface-raised) !important;
   }
+}
+
+/* The inventory editor lives beneath the workspace selector above, so pin its
+   enabled save action to the required on-accent foreground after that cascade. */
+.db-presentation-new .db-inventory-workspace .db-slide-panel-form__submit,
+.db-presentation-new .db-inventory-workspace .db-slide-panel-form__submit * {
+  color: #fff !important;
 }
 
 /* Labor Book Time is a real price-builder-derived library. Its content and

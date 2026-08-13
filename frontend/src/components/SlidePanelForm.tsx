@@ -102,7 +102,7 @@ export default function SlidePanelForm({
       <button
         type="submit"
         disabled={isSubmitting || submitDisabled}
-        className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold text-white disabled:opacity-70"
+        className="db-slide-panel-form__submit inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold text-white disabled:opacity-70"
         style={{ backgroundColor: accentColors[500] }}
       >
         {isSubmitting && <Spinner size="xs" />}
