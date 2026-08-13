@@ -897,6 +897,10 @@ html::-webkit-scrollbar-thumb:hover {
   color: #fff;
 }
 
+.db-presentation-new .db-inventory-workspace .inventory-price-mode--selected {
+  color: #fff !important;
+}
+
 .inventory-price-mode--idle {
   background: #fff;
   color: #475569;
