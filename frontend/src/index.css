@@ -395,9 +395,19 @@ html::-webkit-scrollbar-thumb:hover {
 }
 
 .db-presentation-new .db-search-add-bar__field:focus-within {
+  position: relative;
+  z-index: 2;
   outline: 2px solid var(--product-copper-400);
   outline-offset: 2px;
   box-shadow: none;
+}
+
+/* Catalog ledgers follow the toolbar in source order. Raise the toolbar while
+   its search field owns focus so the external focus outline cannot paint below
+   that next surface. */
+.db-presentation-new .db-search-add-bar:focus-within {
+  position: relative;
+  z-index: 1;
 }
 
 .db-presentation-new .db-search-add-bar__field:focus-within input {
