@@ -685,6 +685,40 @@ html::-webkit-scrollbar-thumb:hover {
   border-color: var(--workspace-border) !important;
 }
 
+/* Payments & Accounting keeps its real connection state, but legacy
+   night-mode utility fills cannot sit over the road-white operating canvas.
+   These surfaces resolve through appearance tokens in every selected mode. */
+.db-presentation-new .db-settings-payments :is(.bg-zinc-950\/40, .bg-zinc-950\/35) {
+  background-color: color-mix(in srgb, var(--product-navy-800) 3%, var(--surface-overlay)) !important;
+}
+
+.db-presentation-new .db-settings-payments :is(.border-zinc-800, .border-zinc-800\/70, .border-zinc-800\/50) {
+  border-color: var(--workspace-border) !important;
+}
+
+.db-presentation-new .db-settings-payments .divide-zinc-800 > :not([hidden]) ~ :not([hidden]) {
+  border-color: var(--workspace-border) !important;
+}
+
+.db-presentation-new .db-settings-payments .bg-emerald-950\/80 {
+  border-color: color-mix(in srgb, var(--semantic-success-500) 42%, var(--workspace-border)) !important;
+  background-color: color-mix(in srgb, var(--semantic-success-500) 12%, var(--surface-raised)) !important;
+  color: color-mix(in srgb, var(--semantic-success-500) 45%, var(--workspace-text)) !important;
+}
+
+.db-presentation-new .db-settings-payments .bg-emerald-950\/80 .text-emerald-400 {
+  color: color-mix(in srgb, var(--semantic-success-500) 45%, var(--workspace-text)) !important;
+}
+
+.db-presentation-new .db-settings-payments .bg-amber-950\/30 {
+  border-color: color-mix(in srgb, var(--semantic-warning-500) 44%, var(--workspace-border)) !important;
+  background-color: color-mix(in srgb, var(--semantic-warning-500) 11%, var(--surface-raised)) !important;
+}
+
+.db-presentation-new .db-settings-payments .bg-amber-950\/30 .text-amber-300 {
+  color: color-mix(in srgb, var(--semantic-warning-500) 45%, var(--workspace-text)) !important;
+}
+
 /* Shop Profile retains its canonical content, but its old zinc panels need
    semantic surface roles so all three appearance modes render as one system. */
 .db-presentation-new .db-settings-shop-profile__panel {

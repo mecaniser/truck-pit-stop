@@ -1307,7 +1307,7 @@ function PaymentsSection() {
     : 'Not connected'
 
   return (
-    <div className="space-y-8 animate-[fadeIn_0.4s_ease-out]">
+    <div className="db-settings-payments space-y-8 animate-[fadeIn_0.4s_ease-out]">
       <div className="rounded-xl border border-zinc-800 bg-zinc-950/40 px-4 py-3 text-sm text-zinc-400">
         Manage every invoice settlement method here: Stripe collects online card payments, Zelle is confirmed by shop staff, and QuickBooks synchronizes finalized invoices and Intuit payment settlement.
       </div>
