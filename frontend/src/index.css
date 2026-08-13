@@ -534,6 +534,18 @@ html::-webkit-scrollbar-thumb:hover {
   color: var(--workspace-muted) !important;
 }
 
+/* Sort controls belong to the road-white ledger, not its former dark header.
+   Keep their hover and keyboard states in the readable ink role. */
+.db-presentation-new .db-customers-workspace__ledger .db-customer-sort-control:hover {
+  color: var(--workspace-text) !important;
+}
+
+.db-presentation-new .db-customers-workspace__ledger .db-customer-sort-control:focus-visible {
+  outline: 2px solid var(--product-copper-500);
+  outline-offset: 3px;
+  border-radius: 3px;
+}
+
 .db-presentation-new .db-customers-workspace__ledger table tbody {
   --tw-divide-opacity: 1;
   border-color: #dbe3eb !important;

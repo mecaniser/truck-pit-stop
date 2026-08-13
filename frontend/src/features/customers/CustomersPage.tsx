@@ -3072,7 +3072,7 @@ export default function CustomersPage() {
                     <th className="px-4 py-3 text-left font-medium">
                       <button
                         onClick={() => toggleSort('name')}
-                        className="flex items-center gap-1 hover:text-white transition-colors"
+                        className="db-customer-sort-control flex items-center gap-1 hover:text-white transition-colors"
                       >
                         Customer
                         {sortField === 'name' && (sortDirection === 'asc' ? (
@@ -3088,7 +3088,7 @@ export default function CustomersPage() {
                     <th className="px-4 py-3 text-left font-medium hidden xl:table-cell">
                       <button
                         onClick={() => toggleSort('vehicle_count')}
-                        className="flex items-center gap-1 hover:text-white transition-colors whitespace-nowrap"
+                        className="db-customer-sort-control flex items-center gap-1 hover:text-white transition-colors whitespace-nowrap"
                       >
                         Vehicles
                         {sortField === 'vehicle_count' && (sortDirection === 'asc' ? (
@@ -3101,7 +3101,7 @@ export default function CustomersPage() {
                     <th className="px-4 py-3 text-right font-medium hidden md:table-cell">
                       <button
                         onClick={() => toggleSort('balance')}
-                        className="flex items-center gap-1 ml-auto hover:text-white transition-colors"
+                        className="db-customer-sort-control flex items-center gap-1 ml-auto hover:text-white transition-colors"
                       >
                         Balance
                         {sortField === 'balance' && (sortDirection === 'asc' ? (
