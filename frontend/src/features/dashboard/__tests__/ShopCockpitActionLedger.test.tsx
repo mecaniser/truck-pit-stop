@@ -72,6 +72,13 @@ const renderLedger = (overrides: Partial<ComponentProps<typeof ShopCockpitAction
 }
 
 describe('DB-035 Stage 3 Action Ledger', () => {
+  it('uses operator-facing guidance instead of implementation terminology', () => {
+    renderLedger()
+
+    expect(screen.getByText('Review work that needs attention, is on the floor, or is ready to close.')).toBeInTheDocument()
+    expect(screen.queryByText('Three canonical queues. One connected repair record.')).not.toBeInTheDocument()
+  })
+
   it('renders the three canonical lanes, projected fields and honest connected availability', () => {
     renderLedger()
 

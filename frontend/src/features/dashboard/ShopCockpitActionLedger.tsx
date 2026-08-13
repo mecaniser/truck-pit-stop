@@ -189,7 +189,7 @@ export default function ShopCockpitActionLedger({
       <header className="db-shop-work-new__header">
         <div>
           <h1 id="shop-work-title">Shop Work</h1>
-          <p>Three canonical queues. One connected repair record.</p>
+          <p>Review work that needs attention, is on the floor, or is ready to close.</p>
         </div>
         <div className="db-shop-work-new__header-actions">
           <button
