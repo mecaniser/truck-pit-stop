@@ -1662,7 +1662,7 @@ export default function InventoryPage() {
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <label className="text-sm text-gray-700 space-y-1">
+          <label className="db-inventory-price-field__peer text-sm text-gray-700 space-y-1.5">
             <span>Cost <span className="text-gray-400 font-normal">(per unit)</span></span>
             <CurrencyInput
               value={manageForm.cost}
@@ -1945,7 +1945,7 @@ export default function InventoryPage() {
               />
             </div>
           </label>
-          <label className="text-sm text-gray-700 space-y-1">
+          <label className="db-inventory-price-field__peer text-sm text-gray-700 space-y-1.5">
             <span>Cost <span className="text-gray-400 font-normal">(per unit)</span> *</span>
             <CurrencyInput
               value={addForm.cost}

@@ -930,6 +930,14 @@ html::-webkit-scrollbar-thumb:hover {
   color: var(--workspace-text);
 }
 
+/* The price method trigger occupies the label row. Match that row's height on
+   the adjacent Cost field so both currency steppers meet the same baseline. */
+.db-inventory-price-field__peer > span:first-child {
+  display: flex;
+  min-height: 2.75rem;
+  align-items: center;
+}
+
 .db-inventory-price-method-trigger {
   border-color: var(--workspace-border);
   background: var(--surface-overlay, #fff);
