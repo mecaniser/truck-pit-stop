@@ -950,8 +950,8 @@ html::-webkit-scrollbar-thumb:hover {
 }
 
 @media (hover: hover) and (pointer: fine) {
-  .db-presentation-new .db-labor-book-time__ledger > div:not(:first-child):hover {
-    background: var(--surface-raised) !important;
+  .db-presentation-new .db-labor-book-time__ledger-row:hover {
+    background: color-mix(in srgb, var(--product-navy-800) 4%, var(--surface-overlay)) !important;
   }
 }
 

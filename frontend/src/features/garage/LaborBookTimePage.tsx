@@ -599,7 +599,7 @@ export default function LaborBookTimePage() {
               return (
                 <div
                   key={entry.id}
-                  className="grid gap-3 px-5 py-4 transition hover:bg-zinc-800/30 lg:grid-cols-[minmax(0,1.5fr)_120px_minmax(140px,0.8fr)_120px_112px] lg:items-center"
+                  className="db-labor-book-time__ledger-row grid gap-3 px-5 py-4 transition hover:bg-zinc-800/30 lg:grid-cols-[minmax(0,1.5fr)_120px_minmax(140px,0.8fr)_120px_112px] lg:items-center"
                 >
                   <div className="min-w-0">
                     {isEditing ? (
