@@ -1,8 +1,9 @@
-import { render, screen } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 
 import RepairOrdersLedger, { type RepairOrdersLedgerRow } from '../RepairOrdersLedger'
+import SlidePanel from '../../../components/SlidePanel'
 
 const rows: RepairOrdersLedgerRow[] = [
   {
@@ -113,6 +114,27 @@ describe('DB-035 Stage 4 Repair Orders presentation', () => {
     row.focus()
     await user.keyboard('{Enter}')
     expect(props.onOpenOrder).toHaveBeenLastCalledWith('ro-real-17', { focusWorkspace: true })
+  })
+
+  it('lands a keyboard-selected record on its heading rather than framing the entire workspace', async () => {
+    render(
+      <SlidePanel
+        isOpen
+        layout="workspace"
+        workspaceFocusRequest={1}
+        onClose={vi.fn()}
+        title="#RO-1017"
+        subtitle="Repair Order"
+        headerVariant="minimal"
+      >
+        <button type="button">Start work</button>
+      </SlidePanel>,
+    )
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: '#RO-1017' })).toHaveFocus()
+    })
+    expect(screen.getByRole('region', { name: '#RO-1017' })).not.toHaveFocus()
   })
 
   it('keeps every canonical status filter reachable in both the quick-filter row and compact select', () => {

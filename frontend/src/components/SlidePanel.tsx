@@ -1,4 +1,4 @@
-import { ReactNode, useEffect, useLayoutEffect, useRef } from 'react'
+import { ReactNode, useEffect, useId, useLayoutEffect, useRef } from 'react'
 import { ArrowLeft, ChevronLeft, ChevronRight, X } from 'lucide-react'
 
 type HeaderVariant = 'amber' | 'slate' | 'blue' | 'green' | 'minimal' | 'dark'
@@ -100,6 +100,8 @@ export default function SlidePanel({
   const pendingSwipeOffset = useRef(0)
   const openAnimation = useRef<Animation | null>(null)
   const onCloseRef = useRef(onClose)
+  const workspaceTitleRef = useRef<HTMLHeadingElement>(null)
+  const workspaceTitleId = useId()
 
   useEffect(() => {
     onCloseRef.current = onClose
@@ -273,8 +275,10 @@ export default function SlidePanel({
 
   // A workspace is an inline region rather than a modal, so it must never
   // steal focus from a pointer click or trap the entire page. When a ledger
-  // row is activated from the keyboard, however, move focus to its labelled
-  // region so the operator can continue directly into the repair controls.
+  // row is activated from the keyboard, however, move focus to the selected
+  // record's heading rather than framing the entire workspace. The heading
+  // names the current work context, while the region remains available to
+  // assistive technology without becoming a visually dominant focus target.
   useEffect(() => {
     if (!isOpen || layout !== 'workspace' || workspaceFocusRequest === undefined) return
     // The browser completes the originating button's default focus handling
@@ -283,7 +287,8 @@ export default function SlidePanel({
     // the newly rendered workspace rather than being immediately overwritten
     // by the ledger button.
     const focusFrame = window.requestAnimationFrame(() => {
-      panelRef.current?.focus()
+      const focusTarget = workspaceTitleRef.current ?? panelRef.current
+      focusTarget?.focus()
     })
     return () => window.cancelAnimationFrame(focusFrame)
   }, [isOpen, layout, workspaceFocusRequest])
@@ -397,7 +402,8 @@ export default function SlidePanel({
       <aside
         ref={panelRef}
         role="region"
-        aria-label={title}
+        aria-labelledby={!hideHeader && isMinimal ? workspaceTitleId : undefined}
+        aria-label={hideHeader || !isMinimal ? title : undefined}
         tabIndex={-1}
         className={`db-slide-panel-workspace min-h-0 flex flex-col ${panelClassName}`}
         onPointerDown={handlePointerDown}
@@ -410,7 +416,14 @@ export default function SlidePanel({
           <div className="slide-panel-header px-5 py-4 border-b border-gray-200 flex items-center justify-between">
             <div>
               {subtitle && <p className="text-xs uppercase text-gray-500 font-semibold">{subtitle}</p>}
-              <p className="text-lg font-semibold text-slate-800">{title}</p>
+              <h2
+                ref={workspaceTitleRef}
+                id={workspaceTitleId}
+                tabIndex={-1}
+                className="db-slide-panel-workspace__title text-lg font-semibold text-slate-800"
+              >
+                {title}
+              </h2>
             </div>
             <div className="flex items-center gap-1">
               {(onPrev !== undefined || onNext !== undefined) && (
