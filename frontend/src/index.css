@@ -458,6 +458,24 @@ html::-webkit-scrollbar-thumb:hover {
 .db-presentation-new [class*='text-amber-'],
 .db-presentation-new [class*='text-yellow-'] { color: var(--semantic-warning-500) !important; }
 
+/* The shared currency stepper has neutral resting controls. Directional color
+   appears only on the target being hovered, never on its sibling. */
+:is(.db-currency-stepper__decrease, .db-currency-stepper__increase) {
+  color: #64748b;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .db-currency-stepper__decrease:hover {
+    background: #fef2f2;
+    color: var(--semantic-danger-500) !important;
+  }
+
+  .db-currency-stepper__increase:hover {
+    background: #ecfdf5;
+    color: var(--semantic-success-500) !important;
+  }
+}
+
 .db-presentation-new .rounded-2xl { border-radius: 14px; }
 .db-presentation-new .rounded-xl { border-radius: 12px; }
 
