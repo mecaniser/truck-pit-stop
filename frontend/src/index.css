@@ -380,6 +380,26 @@ html::-webkit-scrollbar-thumb:hover {
   box-shadow: 0 0 0 4px color-mix(in srgb, var(--product-copper-400) 22%, transparent);
 }
 
+/* SearchAddBar is a composed search control. Keep focus on its outer boundary
+   so the ring is never inset or clipped by the input's own rounded edge. */
+.db-presentation-new .db-search-add-bar__field {
+  border-radius: 0.5rem;
+  transition: box-shadow 140ms ease-out;
+}
+
+.db-presentation-new .db-search-add-bar__field:focus-within {
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--product-copper-400) 22%, transparent);
+}
+
+.db-presentation-new .db-search-add-bar__field:focus-within input {
+  border-color: var(--product-copper-400) !important;
+}
+
+.db-presentation-new .db-search-add-bar__field input:focus-visible {
+  outline: none;
+  box-shadow: none;
+}
+
 /* The shared catalog/team primary action deliberately keeps white foreground
    on the tenant's semantic accent, even inside a scoped light workspace. */
 .db-presentation-new .db-staff-content .db-search-add-bar .db-search-add-bar__primary-action,
