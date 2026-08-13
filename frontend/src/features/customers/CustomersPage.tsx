@@ -4320,7 +4320,7 @@ export default function CustomersPage() {
 
       {/* Delete Confirmation Modal */}
       {deleteConfirmCustomer && (
-        <div className="fixed inset-0 z-[60] overflow-y-auto">
+        <div className="fixed inset-0 z-[80] overflow-y-auto">
           <div className="flex min-h-full items-center justify-center p-4">
             {/* Backdrop */}
             <div 
@@ -4370,7 +4370,7 @@ export default function CustomersPage() {
 
       {/* Merge Customer Modal */}
       {isMergeModalOpen && selectedCustomer && (
-        <div className="fixed inset-0 z-[60] overflow-y-auto">
+        <div className="fixed inset-0 z-[80] overflow-y-auto">
           <div className="flex min-h-full items-center justify-center p-4">
             {/* Backdrop */}
             <div
@@ -4496,7 +4496,7 @@ export default function CustomersPage() {
 
       {/* Add/Edit Vehicle Modal */}
       {isVehicleModalOpen && selectedCustomer && (
-        <div className="fixed inset-0 z-[60] overflow-y-auto">
+        <div className="fixed inset-0 z-[80] overflow-y-auto">
           <div className="flex min-h-full items-center justify-center p-4">
             {/* Backdrop */}
             <div 
@@ -4702,7 +4702,7 @@ export default function CustomersPage() {
 
       {/* Delete Vehicle Confirmation Modal */}
       {deleteConfirmVehicle && selectedCustomer && (
-        <div className="fixed inset-0 z-[70] overflow-y-auto">
+        <div className="fixed inset-0 z-[80] overflow-y-auto">
           <div className="flex min-h-full items-center justify-center p-4">
             {/* Backdrop */}
             <div 
@@ -4756,7 +4756,7 @@ export default function CustomersPage() {
 
       {/* Contact Modal (Add/Edit) */}
       {isContactModalOpen && selectedCustomer && (
-        <div className="fixed inset-0 z-[60] overflow-y-auto">
+        <div className="fixed inset-0 z-[80] overflow-y-auto">
           <div className="flex min-h-full items-center justify-center p-4">
             {/* Backdrop */}
             <div
@@ -4795,7 +4795,7 @@ export default function CustomersPage() {
 
       {/* Delete Contact Confirmation Modal */}
       {deleteConfirmContact && selectedCustomer && (
-        <div className="fixed inset-0 z-[70] overflow-y-auto">
+        <div className="fixed inset-0 z-[80] overflow-y-auto">
           <div className="flex min-h-full items-center justify-center p-4">
             {/* Backdrop */}
             <div
