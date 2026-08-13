@@ -364,7 +364,7 @@ export default function LaborBookTimePage() {
           </div>
         </div>
 
-        <div className="mt-5 flex items-center gap-3 rounded-xl border border-zinc-700/70 bg-zinc-950/60 px-3 py-2">
+        <div className="db-labor-book-time__search mt-5 flex items-center gap-3 rounded-xl border border-zinc-700/70 bg-zinc-950/60 px-3 py-2">
           <Search className="h-4 w-4 text-zinc-500" />
           <input
             value={searchQuery}

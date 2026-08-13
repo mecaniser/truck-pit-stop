@@ -933,6 +933,22 @@ html::-webkit-scrollbar-thumb:hover {
   color: #fff !important;
 }
 
+/* The search field is one composed control. Its focus belongs to the outer
+   boundary, not the input's inset text area. */
+.db-presentation-new .db-labor-book-time .db-labor-book-time__search {
+  transition: border-color 140ms ease-out, box-shadow 140ms ease-out;
+}
+
+.db-presentation-new .db-labor-book-time .db-labor-book-time__search:focus-within {
+  border-color: var(--product-copper-400) !important;
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--product-copper-400) 22%, transparent);
+}
+
+.db-presentation-new .db-labor-book-time .db-labor-book-time__search input:focus-visible {
+  outline: none;
+  box-shadow: none;
+}
+
 @media (hover: hover) and (pointer: fine) {
   .db-presentation-new .db-labor-book-time__ledger > div:not(:first-child):hover {
     background: var(--surface-raised) !important;
