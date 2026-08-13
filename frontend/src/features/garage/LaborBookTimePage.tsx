@@ -574,12 +574,12 @@ export default function LaborBookTimePage() {
       ) : null}
 
       <div className="db-labor-book-time__ledger overflow-hidden rounded-2xl border border-zinc-700/50 bg-zinc-900/80 shadow-xl shadow-black/20">
-        <div className="grid grid-cols-[minmax(0,1.5fr)_120px_minmax(140px,0.8fr)_120px_112px] gap-3 border-b border-zinc-800 bg-zinc-950/60 px-5 py-3 text-[11px] font-bold uppercase tracking-[0.18em] text-zinc-500 max-lg:hidden">
-          <span>Labor</span>
-          <span>Book hours</span>
-          <span>Vehicle scope</span>
-          <span>Last used</span>
-          <span className="text-right">Actions</span>
+        <div className="db-labor-book-time__ledger-header grid grid-cols-[minmax(0,1.5fr)_152px_minmax(140px,0.8fr)_120px_112px] gap-3 border-b border-zinc-800 bg-zinc-950/60 px-5 py-3 text-[11px] font-bold uppercase tracking-[0.18em] text-zinc-500 max-lg:hidden">
+          <span className="db-labor-book-time__ledger-labor">Labor</span>
+          <span className="db-labor-book-time__ledger-hours">Book hours</span>
+          <span className="db-labor-book-time__ledger-scope">Vehicle scope</span>
+          <span className="db-labor-book-time__ledger-last-used">Last used</span>
+          <span className="db-labor-book-time__ledger-actions text-right">Actions</span>
         </div>
 
         {isLoading ? (
@@ -600,9 +600,9 @@ export default function LaborBookTimePage() {
               return (
                 <div
                   key={entry.id}
-                  className={`db-labor-book-time__ledger-row grid gap-3 px-5 py-4 transition hover:bg-zinc-800/30 lg:grid-cols-[minmax(0,1.5fr)_120px_minmax(140px,0.8fr)_120px_112px] lg:items-center${isEditing ? ' db-labor-book-time__ledger-row--editing' : ''}`}
+                  className={`db-labor-book-time__ledger-row grid gap-3 px-5 py-4 transition hover:bg-zinc-800/30 lg:grid-cols-[minmax(0,1.5fr)_152px_minmax(140px,0.8fr)_120px_112px] lg:items-center${isEditing ? ' db-labor-book-time__ledger-row--editing' : ''}`}
                 >
-                  <div className="min-w-0">
+                  <div className="db-labor-book-time__ledger-labor min-w-0">
                     {isEditing ? (
                       <div className="space-y-2">
                         <input
@@ -627,7 +627,7 @@ export default function LaborBookTimePage() {
                     )}
                   </div>
 
-                  <div>
+                  <div className="db-labor-book-time__ledger-hours">
                     {isEditing ? (
                       <DurationStepper
                         hours={Number(editState.normalized_hours) || 0.25}
@@ -641,17 +641,17 @@ export default function LaborBookTimePage() {
                     )}
                   </div>
 
-                  <div className="min-w-0 text-xs text-zinc-400">
+                  <div className="db-labor-book-time__ledger-scope min-w-0 text-xs text-zinc-400">
                     <div className="truncate font-medium text-zinc-300">{scope.primary}</div>
                     <div className="mt-1 truncate text-zinc-600">{scope.secondary}</div>
                   </div>
 
-                  <div className="text-xs text-zinc-500">
+                  <div className="db-labor-book-time__ledger-last-used text-xs text-zinc-500">
                     <div>{formatDate(entry.last_used_at)}</div>
                     <div className="mt-1">{entry.usage_count} use{entry.usage_count === 1 ? '' : 's'}</div>
                   </div>
 
-                  <div className="flex items-center justify-end gap-2">
+                  <div className="db-labor-book-time__ledger-actions flex items-center justify-end gap-2">
                     {isEditing ? (
                       <>
                         <button

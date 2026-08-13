@@ -1025,6 +1025,30 @@ html::-webkit-scrollbar-thumb:hover {
   background: var(--surface-raised) !important;
 }
 
+/* At compact shell widths, the ledger—not the browser viewport—determines the
+   available runway. Keep the shared stepper inside Book Hours and move the
+   supporting vehicle metadata onto a second row rather than squeezing Labor
+   inputs underneath adjacent columns. */
+.db-labor-book-time__ledger {
+  container-type: inline-size;
+}
+
+@container (max-width: 860px) {
+  .db-labor-book-time__ledger-header,
+  .db-labor-book-time__ledger-row {
+    grid-template-columns: minmax(0, 1fr) 152px 112px !important;
+    grid-template-areas:
+      'labor hours actions'
+      'scope last-used actions';
+  }
+
+  .db-labor-book-time__ledger-labor { grid-area: labor; }
+  .db-labor-book-time__ledger-hours { grid-area: hours; }
+  .db-labor-book-time__ledger-scope { grid-area: scope; }
+  .db-labor-book-time__ledger-last-used { grid-area: last-used; }
+  .db-labor-book-time__ledger-actions { grid-area: actions; }
+}
+
 .db-presentation-new .db-labor-book-time .db-labor-book-time__edit-input {
   border-color: var(--workspace-border) !important;
   background: var(--surface-overlay) !important;
