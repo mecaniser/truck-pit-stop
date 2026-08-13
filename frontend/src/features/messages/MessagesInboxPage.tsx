@@ -588,7 +588,7 @@ export default function MessagesInboxPage() {
               </button>
               <div
                 className="db-message-accent-mark flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold text-white"
-                style={{ backgroundColor: accentColors[600] }}
+                style={{ backgroundColor: accentColors[600], '--db-messages-accent': accentColors[600] } as CSSProperties}
               >
                 {customerInitials(selectedThread.customer.first_name, selectedThread.customer.last_name)}
               </div>
@@ -719,10 +719,11 @@ export default function MessagesInboxPage() {
                 }}
               />
               <button
-                className="flex-shrink-0 inline-flex items-center justify-center w-10 h-10 rounded-xl text-white disabled:opacity-40 transition-opacity"
+                className="db-messages-send-action flex-shrink-0 inline-flex items-center justify-center w-10 h-10 rounded-xl text-white disabled:opacity-40 transition-opacity"
                 style={{ backgroundColor: accentColors[600] }}
                 onClick={sendReply}
                 disabled={sending || !replyBody.trim()}
+                aria-label="Send reply"
               >
                 {sending ? <Spinner size="xs" /> : <Send className="w-4 h-4" />}
               </button>

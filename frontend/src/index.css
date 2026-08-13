@@ -506,6 +506,32 @@ html::-webkit-scrollbar-thumb:hover {
   color: #fff !important;
 }
 
+/* Reply becomes the same outbound-message action once a body is present.
+   An empty composer remains deliberately quiet because it cannot send. */
+.db-presentation-new .db-messages-workspace .db-messages-send-action:not(:disabled) {
+  border: 1px solid var(--db-messages-accent);
+  box-shadow: 0 3px 9px color-mix(in srgb, var(--db-messages-accent) 24%, transparent);
+  opacity: 1;
+}
+
+.db-presentation-new .db-messages-workspace .db-messages-send-action:not(:disabled),
+.db-presentation-new .db-messages-workspace .db-messages-send-action:not(:disabled) * {
+  color: #fff !important;
+}
+
+.db-presentation-new .db-messages-workspace .db-messages-send-action:disabled {
+  border: 1px solid var(--workspace-border);
+  background: var(--surface-raised) !important;
+  box-shadow: none;
+  color: var(--workspace-muted) !important;
+  opacity: 1;
+}
+
+.db-presentation-new .db-messages-workspace .db-messages-send-action:focus-visible {
+  outline: 2px solid var(--product-copper-500);
+  outline-offset: 3px;
+}
+
 .db-presentation-new .db-messages-workspace .db-message-accent-mark,
 .db-presentation-new .db-messages-workspace .db-message-accent-mark * {
   color: #fff !important;
