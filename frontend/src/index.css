@@ -1039,11 +1039,16 @@ html::-webkit-scrollbar-thumb:hover {
   color: var(--workspace-muted) !important;
 }
 
-/* The summary panel needs enough runway for its existing elevation to read
-   before the dense ledger begins. Its primary action keeps a semantic
-   on-accent foreground instead of inheriting road-white workspace ink. */
+/* The library summary and its ledger are separate operating surfaces. Replace
+   the inherited oversized dark shadow with two restrained elevation levels so
+   the summary's shadow settles before the ledger begins. */
 .db-presentation-new .db-labor-book-time__summary {
-  margin-bottom: 12px;
+  margin-bottom: 16px;
+  box-shadow: 0 12px 24px -22px rgba(16, 36, 59, .58), 0 2px 5px rgba(16, 36, 59, .045) !important;
+}
+
+.db-presentation-new .db-labor-book-time__ledger {
+  box-shadow: 0 8px 18px -18px rgba(16, 36, 59, .5), 0 1px 3px rgba(16, 36, 59, .04) !important;
 }
 
 .db-presentation-new .db-labor-book-time .db-labor-book-time__primary-action,
