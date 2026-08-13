@@ -118,7 +118,7 @@ export default function MyGaragePage() {
       <DesktopGarageNav sections={garageSections} />
 
       <div
-        className={`min-h-[400px] flex-1 scrollbar-dark lg:min-h-0 ${
+        className={`min-h-[400px] flex-1 scrollbar-dark lg:min-h-0 lg:pl-1.5 lg:pt-1.5 ${
           usesInternalDesktopScroll ? 'lg:overflow-hidden' : 'lg:overflow-y-auto'
         }`}
       >
