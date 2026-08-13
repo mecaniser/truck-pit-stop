@@ -922,38 +922,58 @@ html::-webkit-scrollbar-thumb:hover {
   color: var(--workspace-muted) !important;
 }
 
-.inventory-price-mode--selected {
-  background: var(--inventory-price-mode-bg, var(--accent-600, #0f766e));
-  color: var(--inventory-price-mode-fg, #fff) !important;
-  text-shadow: 0 1px 1px rgb(0 0 0 / 18%);
-}
-
-.db-presentation-new .inventory-price-mode--selected,
-.db-presentation-new .inventory-price-mode--selected * {
-  color: #fff !important;
-}
-
-.inventory-price-mode--idle {
-  background: var(--surface-overlay, #fff);
-  color: #475569;
-}
-
 .db-inventory-price-field__summary {
-  border-top: 1px solid var(--workspace-border);
-  padding-top: 0.375rem;
-}
-
-.db-presentation-new .db-inventory-workspace .db-inventory-price-field__summary {
   color: var(--workspace-muted);
 }
 
-.db-presentation-new .db-inventory-workspace .db-inventory-price-field__summary strong {
+.db-inventory-price-field__summary strong {
   color: var(--workspace-text);
 }
 
+.db-inventory-price-method-trigger {
+  border-color: var(--workspace-border);
+  background: var(--surface-overlay, #fff);
+  color: var(--workspace-text);
+}
+
+.db-inventory-price-method-trigger:focus-visible {
+  outline: 2px solid var(--accent-600, #0f766e);
+  outline-offset: 2px;
+}
+
+.db-inventory-price-method-menu {
+  border-color: var(--workspace-border);
+  background: var(--surface-overlay, #fff);
+  color: var(--workspace-text);
+}
+
+.db-inventory-price-method-option {
+  color: var(--workspace-text);
+}
+
+.db-inventory-price-method-option span:last-child,
+.db-inventory-price-method-note {
+  color: var(--workspace-muted);
+}
+
+.db-inventory-price-method-option[aria-checked='true'] {
+  background: color-mix(in srgb, var(--accent-600, #0f766e) 12%, var(--surface-overlay, #fff));
+  color: var(--accent-600, #0f766e);
+}
+
+.db-inventory-price-method-option[aria-checked='true'] span:last-child {
+  color: var(--workspace-muted);
+}
+
+.db-inventory-price-method-option:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
 @media (hover: hover) and (pointer: fine) {
-  .inventory-price-mode--idle:hover {
-    background: #f8fafc;
+  .db-inventory-price-method-trigger:hover,
+  .db-inventory-price-method-option:not(:disabled):hover {
+    background: color-mix(in srgb, var(--accent-600, #0f766e) 7%, var(--surface-overlay, #fff));
   }
 }
 

@@ -1,10 +1,11 @@
-import { useState, useMemo, useEffect, useRef, type CSSProperties } from 'react'
+import { createPortal } from 'react-dom'
+import { useState, useMemo, useEffect, useRef } from 'react'
 import { LoadingLine } from '@/components/ui'
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query'
 import { useSearchParams } from 'react-router-dom'
 import api from '../../lib/api'
 import { InventoryItem, Supplier, UnitType } from '../../types'
-import { ArrowRight, Camera, Download, ImageOff, MapPin, PackageCheck, Pencil, Plus, Settings, Sparkles, Trash2, X } from 'lucide-react'
+import { ArrowRight, Camera, Check, ChevronDown, Download, ImageOff, MapPin, PackageCheck, Pencil, Plus, Settings, Sparkles, Trash2, X } from 'lucide-react'
 import SlidePanelForm from '@/components/SlidePanelForm'
 import Lightbox from '@/components/Lightbox'
 import BaseSelect from '../../components/BaseSelect'
@@ -19,23 +20,6 @@ import { formatUSPhone } from '../../utils/phone'
 import { useViewPreference } from '@/hooks/useViewPreference'
 import { useTheme } from '../../contexts/ThemeContext'
 import useTenantBranding from '@/hooks/useTenantBranding'
-
-function colorContrast(hex: string, foreground: '#ffffff' | '#0f172a') {
-  const rgb = hex.match(/[\da-f]{2}/gi)?.map(value => parseInt(value, 16))
-  if (!rgb || rgb.length !== 3) return 1
-  const luminance = rgb.map(value => {
-    const channel = value / 255
-    return channel <= 0.03928 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4
-  }).reduce((total, channel, index) => total + channel * [0.2126, 0.7152, 0.0722][index], 0)
-  const foregroundLuminance = foreground === '#ffffff' ? 1 : 0.009
-  return (Math.max(luminance, foregroundLuminance) + 0.05) / (Math.min(luminance, foregroundLuminance) + 0.05)
-}
-
-function preferredForeground(background: string): '#ffffff' | '#0f172a' {
-  return colorContrast(background, '#ffffff') >= colorContrast(background, '#0f172a')
-    ? '#ffffff'
-    : '#0f172a'
-}
 
 // Category ↔ unit linkage: fluid parts are dispensed by volume, so setting one
 // side fills in the other and saves a second click. Only defaults get touched —
@@ -71,9 +55,12 @@ function SellingPriceField({
   value: string
   onChange: (v: string) => void
 }) {
-  const { accentColors } = useTheme()
   const [mode, setMode] = useState<'price' | 'markup'>('price')
   const [pct, setPct] = useState('')
+  const [methodOpen, setMethodOpen] = useState(false)
+  const [methodMenuPos, setMethodMenuPos] = useState<{ top: number; left: number; openUp: boolean } | null>(null)
+  const methodButtonRef = useRef<HTMLButtonElement>(null)
+  const methodMenuRef = useRef<HTMLDivElement>(null)
   const costNum = parseFloat(cost)
   const costValid = Number.isFinite(costNum) && costNum > 0
 
@@ -99,6 +86,7 @@ function SellingPriceField({
       }
     }
     setMode(m)
+    setMethodOpen(false)
   }
 
   const sellingNum = parseFloat(value)
@@ -108,38 +96,70 @@ function SellingPriceField({
   const sellingPriceSummary = Number.isFinite(sellingNum)
     ? `$${sellingNum.toFixed(2)} / unit`
     : 'Enter a price'
-  const markupSummary = markup == null
-    ? 'Set a cost first'
-    : `${markup.toFixed(1)}% markup`
-  const selectedModeForeground = preferredForeground(accentColors[600])
+  const markupSummary = markup == null ? 'Set a cost first' : `${markup.toFixed(1)}% markup`
+
+  const toggleMethodMenu = () => {
+    if (methodOpen) {
+      setMethodOpen(false)
+      return
+    }
+    const rect = methodButtonRef.current?.getBoundingClientRect()
+    if (!rect) return
+    const menuWidth = Math.min(288, window.innerWidth - 24)
+    const estimatedMenuHeight = 198
+    const openUp = window.innerHeight - rect.bottom < estimatedMenuHeight && rect.top > estimatedMenuHeight
+    setMethodMenuPos({
+      top: openUp ? rect.top - 8 : rect.bottom + 8,
+      left: Math.max(12, Math.min(rect.right - menuWidth, window.innerWidth - menuWidth - 12)),
+      openUp,
+    })
+    setMethodOpen(true)
+  }
+
+  useEffect(() => {
+    if (!methodOpen) return
+    const closeOnOutsidePointer = (event: PointerEvent) => {
+      const target = event.target as Node
+      if (methodButtonRef.current?.contains(target) || methodMenuRef.current?.contains(target)) return
+      setMethodOpen(false)
+    }
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return
+      setMethodOpen(false)
+      methodButtonRef.current?.focus()
+    }
+    const closeOnViewportChange = () => setMethodOpen(false)
+    document.addEventListener('pointerdown', closeOnOutsidePointer)
+    document.addEventListener('keydown', closeOnEscape)
+    window.addEventListener('resize', closeOnViewportChange)
+    window.addEventListener('scroll', closeOnViewportChange, true)
+    return () => {
+      document.removeEventListener('pointerdown', closeOnOutsidePointer)
+      document.removeEventListener('keydown', closeOnEscape)
+      window.removeEventListener('resize', closeOnViewportChange)
+      window.removeEventListener('scroll', closeOnViewportChange, true)
+    }
+  }, [methodOpen])
 
   return (
-    <label className="db-inventory-price-field text-sm text-gray-700 space-y-2">
-      <span className="flex min-h-11 items-center justify-between gap-3">
+    <label className="db-inventory-price-field text-sm text-gray-700 space-y-1.5">
+      <span className="flex min-h-11 items-center justify-between gap-2">
         <span className="truncate">{label}</span>
-        <span className="db-inventory-price-method inline-flex overflow-hidden rounded-lg border border-gray-200" role="group" aria-label="Set selling price by">
-          {(['price', 'markup'] as const).map((m) => (
-            <button
-              key={m}
-              type="button"
-              // preventDefault: inside a <label>, a plain click would also
-              // activate the label's form control and steal focus.
-              onClick={(e) => {
-                e.preventDefault()
-                switchMode(m)
-              }}
-              className={`inventory-price-mode flex h-11 min-w-[4.5rem] items-center justify-center px-3 text-xs font-bold leading-none whitespace-nowrap transition-colors ${mode === m ? 'inventory-price-mode--selected' : 'inventory-price-mode--idle'}`}
-              style={mode === m ? {
-                '--inventory-price-mode-bg': accentColors[600],
-                '--inventory-price-mode-fg': selectedModeForeground,
-              } as CSSProperties : undefined}
-              aria-pressed={mode === m}
-              aria-label={m === 'price' ? 'Set selling price directly' : 'Set selling price by markup over cost'}
-            >
-              {m === 'price' ? 'Price' : 'Markup'}
-            </button>
-          ))}
-        </span>
+        <button
+          ref={methodButtonRef}
+          type="button"
+          onClick={(event) => {
+            event.preventDefault()
+            toggleMethodMenu()
+          }}
+          aria-haspopup="menu"
+          aria-expanded={methodOpen}
+          aria-controls="inventory-price-method-menu"
+          className="db-inventory-price-method-trigger inline-flex h-11 shrink-0 items-center gap-1.5 rounded-lg border px-3 text-xs font-semibold"
+        >
+          {mode === 'price' ? 'Price' : 'Markup'}
+          <ChevronDown className={`h-3.5 w-3.5 transition-transform ${methodOpen ? 'rotate-180' : ''}`} aria-hidden="true" />
+        </button>
       </span>
       <div className="db-inventory-price-field__input">
         {mode === 'price' ? (
@@ -160,10 +180,61 @@ function SellingPriceField({
           />
         )}
       </div>
-      <span className="db-inventory-price-field__summary flex min-h-5 items-center justify-between gap-3 text-xs">
-        <span className="text-gray-500">{mode === 'price' ? 'Current markup' : 'Calculated price'}</span>
-        <strong className="text-gray-700">{mode === 'price' ? markupSummary : sellingPriceSummary}</strong>
-      </span>
+      {mode === 'markup' && (
+        <span className="db-inventory-price-field__summary flex min-h-5 items-center justify-between gap-2 text-xs">
+          <span>Calculated price</span>
+          <strong>{sellingPriceSummary}</strong>
+        </span>
+      )}
+      {methodOpen && methodMenuPos && createPortal(
+        <div
+          ref={methodMenuRef}
+          id="inventory-price-method-menu"
+          role="menu"
+          aria-label="Selling price input method"
+          style={{
+            position: 'fixed',
+            top: methodMenuPos.top,
+            left: methodMenuPos.left,
+            transform: methodMenuPos.openUp ? 'translateY(-100%)' : undefined,
+            width: 'min(18rem, calc(100vw - 1.5rem))',
+          }}
+          className="db-inventory-price-method-menu z-[80] rounded-xl border p-1.5 shadow-xl"
+        >
+          <p className="px-2.5 pb-1.5 pt-1 text-xs font-semibold">Set selling price by</p>
+          <button
+            type="button"
+            role="menuitemradio"
+            aria-checked={mode === 'price'}
+            onClick={() => switchMode('price')}
+            className="db-inventory-price-method-option flex min-h-12 w-full items-center justify-between gap-3 rounded-lg px-2.5 py-2 text-left"
+          >
+            <span>
+              <span className="block text-sm font-semibold">Price</span>
+              <span className="block text-xs">Enter the selling price per unit.</span>
+            </span>
+            {mode === 'price' && <Check className="h-4 w-4 shrink-0" aria-hidden="true" />}
+          </button>
+          <button
+            type="button"
+            role="menuitemradio"
+            aria-checked={mode === 'markup'}
+            onClick={() => switchMode('markup')}
+            className="db-inventory-price-method-option flex min-h-12 w-full items-center justify-between gap-3 rounded-lg px-2.5 py-2 text-left"
+            disabled={!costValid}
+          >
+            <span>
+              <span className="block text-sm font-semibold">Markup</span>
+              <span className="block text-xs">Calculate price from the unit cost.</span>
+            </span>
+            {mode === 'markup' && <Check className="h-4 w-4 shrink-0" aria-hidden="true" />}
+          </button>
+          <p className="db-inventory-price-method-note px-2.5 pb-1 pt-2 text-xs">
+            {costValid ? `Current markup: ${markupSummary}` : 'Set a unit cost before using markup.'}
+          </p>
+        </div>,
+        document.body,
+      )}
     </label>
   )
 }
