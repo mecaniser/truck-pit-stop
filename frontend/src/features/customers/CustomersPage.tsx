@@ -3117,7 +3117,7 @@ export default function CustomersPage() {
                     >
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-3">
-                          <div className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0" style={{ backgroundColor: accentColors[500] }}>
+                          <div className="db-customer-avatar w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0" style={{ backgroundColor: accentColors[500] }}>
                             <span className="text-white font-bold text-xs">
                               {customer.first_name.charAt(0)}{customer.last_name.charAt(0)}
                             </span>
@@ -3178,7 +3178,7 @@ export default function CustomersPage() {
                 >
                   <div>
                     <div className="mb-3 flex items-start justify-between gap-3">
-                      <div className="w-12 h-12 rounded-full flex items-center justify-center" style={{ backgroundColor: accentColors[500] }}>
+                      <div className="db-customer-avatar w-12 h-12 rounded-full flex items-center justify-center" style={{ backgroundColor: accentColors[500] }}>
                         <span className="text-white font-bold text-lg">
                           {customer.first_name.charAt(0)}{customer.last_name.charAt(0)}
                         </span>

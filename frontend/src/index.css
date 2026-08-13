@@ -515,6 +515,13 @@ html::-webkit-scrollbar-thumb:hover {
   color: var(--workspace-text) !important;
 }
 
+/* Customer initials sit on the tenant accent. Their foreground is semantic
+   on-accent white, not the surrounding road-white ledger ink. */
+.db-presentation-new .db-customers-workspace__ledger table tbody .db-customer-avatar,
+.db-presentation-new .db-customers-workspace__ledger table tbody .db-customer-avatar * {
+  color: #fff !important;
+}
+
 .db-presentation-new .db-customers-workspace__ledger table tbody [class*='text-white/'] {
   color: var(--workspace-muted) !important;
 }
