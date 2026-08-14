@@ -8,8 +8,6 @@ export type RepairOrdersLedgerRow = {
   status: string
   statusTone: 'neutral' | 'warning' | 'active' | 'success' | 'danger'
   description: string
-  customer: string
-  vehicle: string
   total: string
   updated: string
   internal: boolean
@@ -190,7 +188,12 @@ export default function RepairOrdersLedger({
             <span>{filtered ? 'Adjust the search or status filter.' : 'Create the first repair order when a truck checks in.'}</span>
           </div>
         ) : (
-          <div className="db-repair-orders-ledger__rows">
+          <div
+            className="db-repair-orders-ledger__rows"
+            role="region"
+            aria-label="Scrollable repair-order results"
+            tabIndex={0}
+          >
             {rows.map((row) => (
               <button
                 type="button"
@@ -220,9 +223,7 @@ export default function RepairOrdersLedger({
                 <span className={`db-repair-orders-ledger__status db-repair-orders-ledger__status--${row.statusTone}`}>{row.status}</span>
                 <span className="db-repair-orders-ledger__work">
                   <strong>{row.description}</strong>
-                  <small>{row.customer}</small>
                 </span>
-                <span className="db-repair-orders-ledger__vehicle">{row.vehicle}</span>
                 <span className="db-repair-orders-ledger__money">
                   <strong>{row.total}</strong>
                   <small>{row.updated}</small>

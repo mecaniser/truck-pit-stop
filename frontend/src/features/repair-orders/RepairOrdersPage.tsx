@@ -2427,8 +2427,6 @@ export default function RepairOrdersPage() {
     ) || 0
     const partsTotal = parseFloat(order.total_parts_cost ?? '0') || 0
     const laborTotal = serviceTotal > 0 ? serviceTotal : (parseFloat(order.total_labor_cost ?? '0') || 0)
-    const customer = customerLookup.get(order.customer_id)
-    const vehicle = vehicleLookup.get(order.vehicle_id)
     const statusTone: RepairOrdersLedgerRow['statusTone'] = order.status === 'paid'
       ? 'success'
       : ['invoiced', 'completed'].includes(order.status)
@@ -2447,8 +2445,6 @@ export default function RepairOrdersPage() {
       status: display.label,
       statusTone,
       description: order.description || 'No work description recorded',
-      customer: orderCustomerName(order, customer),
-      vehicle: vehicle ? vehicleDisplayLabel(vehicle) : [order.vehicle_year, order.vehicle_make, order.vehicle_model].filter(Boolean).join(' ') || 'Vehicle not available',
       total: `$${(partsTotal + laborTotal).toLocaleString('en-US', { minimumFractionDigits: 2 })}`,
       updated: format(new Date(order.updated_at), 'MMM d, h:mm a'),
       internal: Boolean(order.is_internal),
@@ -2491,8 +2487,6 @@ export default function RepairOrdersPage() {
           : order.status.replace(/_/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase()),
         statusTone,
         description: order.description || 'No work description recorded',
-        customer: order.customer_name,
-        vehicle: order.vehicle_info || 'Vehicle not available',
         total: order.total_cost,
         updated: format(new Date(order.updated_at), 'MMM d, h:mm a'),
         internal: false,

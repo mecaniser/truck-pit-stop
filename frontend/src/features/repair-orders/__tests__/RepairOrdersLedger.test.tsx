@@ -12,8 +12,6 @@ const rows: RepairOrdersLedgerRow[] = [
     status: 'In Progress',
     statusTone: 'active',
     description: 'Diagnose intermittent no-start with a deliberately long source description',
-    customer: 'Northline Logistics',
-    vehicle: '2022 Freightliner Cascadia · Unit 218',
     total: '$4,280.50',
     updated: 'Aug 12, 3:00 PM',
     internal: false,
@@ -114,6 +112,17 @@ describe('DB-035 Stage 4 Repair Orders presentation', () => {
     row.focus()
     await user.keyboard('{Enter}')
     expect(props.onOpenOrder).toHaveBeenLastCalledWith('ro-real-17', { focusWorkspace: true })
+  })
+
+  it('keeps the navigator to scan fields instead of mirroring workspace identity', () => {
+    renderLedger({ selectedId: 'ro-real-17' })
+
+    const row = screen.getByRole('button', { name: /RO-1017/ })
+    expect(row).toHaveAttribute('aria-pressed', 'true')
+    expect(row).toHaveTextContent('Diagnose intermittent no-start')
+    expect(screen.getByRole('region', { name: 'Scrollable repair-order results' })).toHaveAttribute('tabindex', '0')
+    expect(screen.queryByText('Northline Logistics')).not.toBeInTheDocument()
+    expect(screen.queryByText('2022 Freightliner Cascadia · Unit 218')).not.toBeInTheDocument()
   })
 
   it('lands a keyboard-selected record on its heading rather than framing the entire workspace', async () => {
