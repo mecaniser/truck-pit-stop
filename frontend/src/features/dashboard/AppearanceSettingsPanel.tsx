@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type CSSProperties } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react'
 import { Bell, Check, Palette, RotateCcw, Save, Type, X } from 'lucide-react'
 import toast from 'react-hot-toast'
 import {
@@ -41,8 +41,8 @@ export default function AppearanceSettingsPanel() {
   const confirmResetRef = useRef<HTMLButtonElement>(null)
   const cancelPreviewRef = useRef(cancelPreview)
 
-  useEffect(() => { cancelPreviewRef.current = cancelPreview }, [cancelPreview])
-  useEffect(() => () => cancelPreviewRef.current(), [])
+  useLayoutEffect(() => { cancelPreviewRef.current = cancelPreview }, [cancelPreview])
+  useLayoutEffect(() => () => cancelPreviewRef.current(), [])
 
   useEffect(() => {
     if (!confirmReset) return

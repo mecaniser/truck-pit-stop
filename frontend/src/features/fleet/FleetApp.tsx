@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Spinner } from '@/components/ui'
-import { useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
 import {
@@ -24,6 +24,24 @@ import './fleet.css'
 
 type View = 'board' | 'map' | 'detail'
 const STORAGE_KEY = 'tps-fleet-state'
+const FLEET_SETTINGS_RETURN_TO = '/dashboard/settings?section=fleet'
+
+type FleetNavigationState = {
+  returnTo?: unknown
+  returnLabel?: unknown
+}
+
+function getFleetReturnContext(state: unknown) {
+  const navigationState = state as FleetNavigationState | null
+  if (navigationState?.returnTo === FLEET_SETTINGS_RETURN_TO) {
+    return {
+      returnsToSettings: true,
+      label: typeof navigationState.returnLabel === 'string' ? navigationState.returnLabel : 'Profile Settings',
+    }
+  }
+
+  return { returnsToSettings: false, label: 'Shop dashboard' }
+}
 
 interface Persisted { view: View; selId: string | null; filter: any; sort: any }
 function loadState(): Persisted {
@@ -33,7 +51,9 @@ function loadState(): Persisted {
 
 export default function FleetApp() {
   const navigate = useNavigate()
+  const location = useLocation()
   const { user, logout } = useAuthStore()
+  const fleetReturn = getFleetReturnContext(location.state)
   const init = loadState()
   const [view, setView] = useState<View>(init.view === 'detail' && init.selId ? 'detail' : init.view)
   const [selId, setSelId] = useState<string | null>(init.selId)
@@ -119,8 +139,16 @@ export default function FleetApp() {
           <div className="rail-mark"><Truck /></div>
           {canReturnToDashboard && (
             <>
-              <button className="rail-btn rail-btn-dashboard" onClick={() => navigate('/dashboard')}>
-                <Warehouse size={20} /><span className="rail-abbr">SHOP</span><span className="rail-full">Shop</span><span className="rail-tip">Shop dashboard</span>
+              <button
+                type="button"
+                className="rail-btn rail-btn-dashboard"
+                onClick={() => fleetReturn.returnsToSettings ? navigate(-1) : navigate('/dashboard')}
+                aria-label={fleetReturn.returnsToSettings ? `Return to ${fleetReturn.label}` : 'Shop dashboard'}
+              >
+                {fleetReturn.returnsToSettings ? <Settings size={20} /> : <Warehouse size={20} />}
+                <span className="rail-abbr">{fleetReturn.returnsToSettings ? 'SET' : 'SHOP'}</span>
+                <span className="rail-full">{fleetReturn.returnsToSettings ? 'Settings' : 'Shop'}</span>
+                <span className="rail-tip">{fleetReturn.returnsToSettings ? `Return to ${fleetReturn.label}` : 'Shop dashboard'}</span>
               </button>
               <div className="rail-div" />
             </>

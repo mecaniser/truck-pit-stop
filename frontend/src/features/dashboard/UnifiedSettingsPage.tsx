@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useId, useRef } from 'react'
 import { LoadingLine } from '@/components/ui'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useForm } from 'react-hook-form'
@@ -14,10 +14,11 @@ import toast from 'react-hot-toast'
 import { 
   User, Lock, CreditCard, Bell, Percent, QrCode, Globe, Building2,
   AlertCircle, ExternalLink, RefreshCw, Save, Trash2, Palette, Check, RotateCcw, Type,
-  ChevronRight, ChevronDown, Zap, Shield, Settings2, Truck, MessageSquare, Landmark, ShieldCheck, X
+  ChevronRight, ChevronDown, Zap, Shield, Settings2, Star, Truck, MessageSquare, Landmark, ShieldCheck, X
 } from 'lucide-react'
 import { useTheme, ACCENT_OPTIONS, FONT_FAMILY_OPTIONS, FONT_SIZE_OPTIONS, NOTIFICATION_POSITION_OPTIONS } from '../../contexts/ThemeContext'
 import AppearanceSettingsPanel from './AppearanceSettingsPanel'
+import GoogleReviewsPage from '@/features/reviews/GoogleReviewsPage'
 
 // ============ HYBRID DESIGN SYSTEM (Industrial + Organic) ============
 const industrialStyles = {
@@ -167,7 +168,7 @@ type PasswordFormData = z.infer<typeof passwordSchema>
 type GarageProfileFormData = z.infer<typeof garageProfileSchema>
 
 // ============ TYPES ============
-type SettingsSection = 'profile' | 'security' | 'appearance' | 'integrations' | 'garageProfile' | 'payments' | 'notifications' | 'fees' | 'fleet' | 'workforce'
+type SettingsSection = 'profile' | 'security' | 'appearance' | 'integrations' | 'garageProfile' | 'payments' | 'notifications' | 'fees' | 'fleet' | 'googleReviews' | 'workforce'
 
 interface ConnectStatus {
   configured: boolean
@@ -309,7 +310,7 @@ interface GarageProfile {
 
 function IndustrialCard({ children, className = '' }: { children: React.ReactNode; className?: string }) {
   return (
-    <div className={`${industrialStyles.card} ${className}`}>
+    <div className={`${industrialStyles.card} db-settings-floating-card ${className}`}>
       <div className="relative z-10">{children}</div>
     </div>
   )
@@ -356,13 +357,18 @@ function PaymentIntegrationPanel({
   onOpenChange: (nextOpen: boolean) => void
   children: React.ReactNode
 }) {
+  const triggerId = useId()
+  const panelId = useId()
+
   return (
-    <IndustrialCard>
+    <IndustrialCard className="db-settings-payment-card">
       <button
+        id={triggerId}
         type="button"
         onClick={() => onOpenChange(!open)}
         aria-expanded={open}
-        className="flex w-full items-center gap-4 px-6 py-5 text-left transition-colors hover:bg-white/[0.02] sm:px-8"
+        aria-controls={panelId}
+        className="grid w-full grid-cols-[2.5rem_minmax(0,1fr)_1.25rem] items-center gap-x-4 gap-y-3 px-5 py-4 text-left transition-colors hover:bg-white/[0.02] sm:flex sm:gap-4 sm:px-8 sm:py-5"
       >
         <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-zinc-700/50 bg-zinc-800/60 text-[var(--accent-400)]">
           {icon}
@@ -372,14 +378,20 @@ function PaymentIntegrationPanel({
           <span className="mt-1 block text-sm text-zinc-400">{summary}</span>
         </span>
         {status && (
-          <IndustrialBadge variant={status.variant}>
-            <StatusLED status={status.led} />
-            {status.label}
-          </IndustrialBadge>
+          <span className="col-span-2 col-start-2 justify-self-start sm:ml-auto">
+            <IndustrialBadge variant={status.variant}>
+              <StatusLED status={status.led} />
+              {status.label}
+            </IndustrialBadge>
+          </span>
         )}
-        <ChevronDown className={`h-5 w-5 shrink-0 text-zinc-400 transition-transform ${open ? 'rotate-180' : ''}`} />
+        <ChevronDown className={`col-start-3 row-start-1 h-5 w-5 shrink-0 text-zinc-400 transition-transform ${open ? 'rotate-180' : ''}`} />
       </button>
-      {open && <div className="border-t border-zinc-800/70 px-6 py-6 sm:px-8">{children}</div>}
+      {open && (
+        <div id={panelId} role="region" aria-labelledby={triggerId} className="border-t border-zinc-800/70 px-6 py-6 sm:px-8">
+          {children}
+        </div>
+      )}
     </IndustrialCard>
   )
 }
@@ -1308,6 +1320,7 @@ function PaymentsSection() {
 
   return (
     <div className="db-settings-payments space-y-8 animate-[fadeIn_0.4s_ease-out]">
+      <h2 className="sr-only">Payments &amp; Accounting</h2>
       <div className="rounded-xl border border-zinc-800 bg-zinc-950/40 px-4 py-3 text-sm text-zinc-400">
         Manage every invoice settlement method here: Stripe collects online card payments, Zelle is confirmed by shop staff, and QuickBooks synchronizes finalized invoices and Intuit payment settlement.
       </div>
@@ -2624,34 +2637,36 @@ function FleetSection() {
 
   return (
     <div className="space-y-8 animate-[fadeIn_0.4s_ease-out]">
-      <IndustrialCard className="p-6 sm:p-8">
+      <IndustrialCard className="db-settings-fleet-config p-4 sm:p-5">
         <div className={industrialStyles.sectionHeader}>
           <Truck className="w-4 h-4 text-[var(--accent-400)]" />
           <span>Fleet Configuration</span>
         </div>
 
         {!isUnlocked ? (
-          <div className="space-y-6">
-            {/* Locked display */}
-            <div className="p-3 bg-zinc-800/40 border border-zinc-700/50 rounded-xl">
-              <label className={industrialStyles.label}>Fleet Company</label>
-              <p className="text-lg text-zinc-100">{taxFeeSettings?.fleet_company_name || 'Not set'}</p>
-            </div>
-            <div className="p-3 bg-zinc-800/40 border border-zinc-700/50 rounded-xl">
-              <label className={industrialStyles.label}>Default Operating Authority</label>
-              <p className="text-lg text-zinc-100">{taxFeeSettings?.default_fleet_authority_company_name || 'Not set'}</p>
-              <p className="mt-1 text-xs text-zinc-500">Used only when a truck has no operating authority assigned yet.</p>
-            </div>
+          <div className="space-y-4">
+            <dl className="grid gap-3 sm:grid-cols-2">
+              <div className="db-settings-fleet-config__summary">
+                <dt className={industrialStyles.label}>Fleet Company</dt>
+                <dd className="text-base font-medium text-zinc-100">{taxFeeSettings?.fleet_company_name || 'Not set'}</dd>
+              </div>
+              <div className="db-settings-fleet-config__summary">
+                <dt className={industrialStyles.label}>Default Operating Authority</dt>
+                <dd className="text-base font-medium text-zinc-100">{taxFeeSettings?.default_fleet_authority_company_name || 'Not set'}</dd>
+                <p className="mt-1 text-xs text-zinc-500">Used only when a truck has no operating authority assigned yet.</p>
+              </div>
+            </dl>
 
-            {/* Unlock form */}
-            <div className="p-4 bg-zinc-800/40 border border-zinc-700/50 rounded-xl">
-              <p className="text-xs text-zinc-500 mb-3">
-                <Lock className="w-3 h-3 inline mr-2" />
+            <div className="db-settings-fleet-config__unlock">
+              <p className="flex items-center gap-2 text-xs text-zinc-500">
+                <Lock className="w-3 h-3 shrink-0" />
                 Enter password to edit
               </p>
               <div className="flex gap-3 items-start">
                 <div className="flex-1 max-w-xs">
+                  <label htmlFor="fleet-configuration-password" className="sr-only">Password</label>
                   <input
+                    id="fleet-configuration-password"
                     type="password"
                     value={password}
                     onChange={(e) => { setPassword(e.target.value); setPasswordError('') }}
@@ -2732,13 +2747,21 @@ function FleetSection() {
       </IndustrialCard>
 
       {/* Live fleet summary — managers and trucks, pulled from the fleet board. */}
-      <IndustrialCard className="db-settings-fleet-overview p-6 sm:p-8">
+      <IndustrialCard className="db-settings-fleet-overview p-5 sm:p-6">
         <div className="flex items-center justify-between mb-4">
           <div className={industrialStyles.sectionHeader} style={{ marginBottom: 0 }}>
             <Truck className="w-4 h-4 text-[var(--accent-400)]" />
             <span>Fleet Overview</span>
           </div>
-          <button onClick={() => navigate('/fleet')} className={industrialStyles.btnSecondary}>
+          <button
+            onClick={() => navigate('/fleet', {
+              state: {
+                returnTo: '/dashboard/settings?section=fleet',
+                returnLabel: 'Profile Settings',
+              },
+            })}
+            className={industrialStyles.btnSecondary}
+          >
             <span className="flex items-center gap-2">
               Manage on Fleet board
               <ChevronRight className="w-4 h-4" />
@@ -2746,49 +2769,58 @@ function FleetSection() {
           </button>
         </div>
 
-        {/* Fleet managers list */}
-        <div className="mb-6">
-          <label className={industrialStyles.label}>Managers ({fleetSettings?.fleet_managers.length ?? 0})</label>
+        <section className="db-settings-fleet-overview__section">
+          <h3 className={industrialStyles.label}>Managers ({fleetSettings?.fleet_managers.length ?? 0})</h3>
           {(fleetSettings?.fleet_managers.length ?? 0) === 0 ? (
             <p className="text-sm text-zinc-500 mt-1">No fleet managers assigned yet.</p>
           ) : (
-            <div className="mt-2 space-y-1">
+            <div className="db-settings-fleet-overview__manager-list mt-2">
               {fleetSettings?.fleet_managers.map((m) => (
-                <div key={m.id} className="db-settings-fleet-overview__row flex items-center justify-between p-2 bg-zinc-800/30 border border-zinc-700/40 rounded-lg">
+                <div key={m.id} className="db-settings-fleet-overview__manager flex items-center justify-between gap-3">
                   <span className="text-sm text-zinc-100">{m.name}</span>
                   <span className="text-xs text-zinc-500">{m.email}</span>
                 </div>
               ))}
             </div>
           )}
-        </div>
+        </section>
 
-        {/* Trucks list */}
-        <div>
-          <label className={industrialStyles.label}>Trucks ({fleetSettings?.truck_count ?? trucks.length})</label>
+        <section className="db-settings-fleet-overview__section">
+          <h3 className={industrialStyles.label}>Trucks ({fleetSettings?.truck_count ?? trucks.length})</h3>
           {trucks.length === 0 ? (
             <p className="text-sm text-zinc-500 mt-1">No trucks on the fleet yet. Add them from the Fleet board.</p>
           ) : (
-            <div className="mt-2 max-h-72 overflow-y-auto space-y-1">
-              {trucks.map((t) => (
-                <div key={t.id} className="db-settings-fleet-overview__row flex items-start justify-between gap-3 p-2 bg-zinc-800/30 border border-zinc-700/40 rounded-lg">
-                  <div className="min-w-0">
-                    <p className="text-sm text-zinc-100 truncate">
-                      {t.unit_number ? `${t.unit_number} · ` : ''}
-                      {[t.year, t.make, t.model].filter(Boolean).join(' ') || 'Truck'}
-                    </p>
-                    <p className="text-xs text-zinc-500 mt-0.5">
-                      <span className="font-mono">VIN: {t.vin || '—'}</span>
-                      <span className="mx-2">·</span>
-                      {t.odometer != null ? `${t.odometer.toLocaleString()} mi` : '— mi'}
-                    </p>
-                  </div>
-                  <span className="text-xs text-zinc-500 capitalize shrink-0">{t.status}</span>
-                </div>
-              ))}
+            <div className="db-settings-fleet-overview__table-wrap mt-2 max-h-72 overflow-y-auto">
+              <table className="db-settings-fleet-overview__table w-full text-left">
+                <thead>
+                  <tr>
+                    <th scope="col">Unit</th>
+                    <th scope="col">Vehicle</th>
+                    <th scope="col">Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {trucks.map((t) => (
+                    <tr key={t.id}>
+                      <td className="font-medium text-zinc-100">{t.unit_number || '—'}</td>
+                      <td>
+                        <p className="text-sm text-zinc-100 truncate">
+                          {[t.year, t.make, t.model].filter(Boolean).join(' ') || 'Truck'}
+                        </p>
+                        <p className="text-xs text-zinc-500 mt-0.5">
+                          <span className="font-mono">VIN: {t.vin || '—'}</span>
+                          <span className="mx-2">·</span>
+                          {t.odometer != null ? `${t.odometer.toLocaleString()} mi` : '— mi'}
+                        </p>
+                      </td>
+                      <td className="text-xs text-zinc-500 capitalize whitespace-nowrap">{t.status}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           )}
-        </div>
+        </section>
       </IndustrialCard>
     </div>
   )
@@ -3243,8 +3275,12 @@ const GARAGE_SECTIONS = [
   { id: 'payments' as const, label: 'Payments & Accounting', shortLabel: 'Payments', icon: CreditCard, gatedKey: 'payments' as const },
   { id: 'notifications' as const, label: 'Notifications', shortLabel: 'Alerts', icon: Bell, gatedKey: undefined },
   { id: 'fees' as const, label: 'Tax & Fees', shortLabel: 'Fees', icon: Percent, gatedKey: 'taxes_fees' as const },
-  { id: 'fleet' as const, label: 'Fleet', shortLabel: 'Fleet', icon: Truck, gatedKey: undefined },
   { id: 'workforce' as const, label: 'Workforce', shortLabel: 'Workforce', icon: Globe, gatedKey: 'workforce' as const },
+]
+
+const ADDITIONAL_SERVICE_SECTIONS = [
+  { id: 'fleet' as const, label: 'Fleet', shortLabel: 'Fleet', icon: Truck, gatedKey: undefined },
+  { id: 'googleReviews' as const, label: 'Google Reviews', shortLabel: 'Reviews', icon: Star, gatedKey: undefined },
 ]
 
 function canSeeSection(user: UserType | null, gatedKey?: string): boolean {
@@ -3255,17 +3291,102 @@ function canSeeSection(user: UserType | null, gatedKey?: string): boolean {
 }
 
 function SidebarLayout({ activeSection, setActiveSection, isGarageUser, isSuperAdmin, user }: { activeSection: SettingsSection, setActiveSection: (s: SettingsSection) => void, isGarageUser: boolean, isSuperAdmin: boolean, user: UserType | null }) {
+  const mobileSectionMenuId = useId()
+  const mobileSectionSelectorRef = useRef<HTMLDivElement>(null)
+  const [isMobileSectionMenuOpen, setIsMobileSectionMenuOpen] = useState(false)
   const garageSections = GARAGE_SECTIONS.filter((s) => canSeeSection(user, s.gatedKey))
+  const additionalServiceSections = ADDITIONAL_SERVICE_SECTIONS.filter((s) => canSeeSection(user, s.gatedKey))
   const allSections = [
     ...PROFILE_SECTIONS,
     ...(isSuperAdmin ? PLATFORM_SECTIONS : []),
-    ...(isGarageUser ? garageSections : []),
+    ...(isGarageUser ? [...garageSections, ...additionalServiceSections] : []),
   ]
+  const activeSectionMeta = allSections.find((section) => section.id === activeSection) ?? allSections[0]
+  const ActiveSectionIcon = activeSectionMeta.icon
+  const mobileSectionGroups = [
+    { label: 'Account', sections: PROFILE_SECTIONS },
+    ...(isSuperAdmin ? [{ label: 'Platform', sections: PLATFORM_SECTIONS }] : []),
+    ...(isGarageUser ? [{ label: 'Shop', sections: garageSections }] : []),
+    ...(isGarageUser && additionalServiceSections.length > 0 ? [{ label: 'Additional services', sections: additionalServiceSections }] : []),
+  ]
+
+  const selectMobileSection = (section: SettingsSection) => {
+    setActiveSection(section)
+    setIsMobileSectionMenuOpen(false)
+  }
+
+  useEffect(() => {
+    if (!isMobileSectionMenuOpen) return
+
+    const closeWhenPointerLeaves = (event: PointerEvent) => {
+      if (!mobileSectionSelectorRef.current?.contains(event.target as Node)) {
+        setIsMobileSectionMenuOpen(false)
+      }
+    }
+
+    document.addEventListener('pointerdown', closeWhenPointerLeaves)
+    return () => document.removeEventListener('pointerdown', closeWhenPointerLeaves)
+  }, [isMobileSectionMenuOpen])
 
   return (
     <div className="db-settings-workspace flex flex-col lg:flex-row gap-6 w-full max-w-[1200px] mx-auto">
-      {/* Mobile: Horizontal scrolling nav */}
-      <div className="lg:hidden">
+      {/* New presentation: one compact context selector prevents section tabs
+          from becoming an unreadable horizontal scroller on narrow screens. */}
+      <div ref={mobileSectionSelectorRef} className="db-settings-mobile-section-selector lg:hidden">
+        <button
+          type="button"
+          aria-label={`Settings section: ${activeSectionMeta.label}`}
+          aria-expanded={isMobileSectionMenuOpen}
+          aria-controls={mobileSectionMenuId}
+          aria-haspopup="true"
+          onClick={() => setIsMobileSectionMenuOpen((open) => !open)}
+          onKeyDown={(event) => {
+            if (event.key === 'Escape') setIsMobileSectionMenuOpen(false)
+          }}
+          className="db-settings-mobile-section-selector__trigger"
+        >
+          <ActiveSectionIcon className="h-4 w-4 shrink-0" aria-hidden="true" />
+          <span className="min-w-0 flex-1 truncate text-left">{activeSectionMeta.label}</span>
+          <ChevronDown className={`h-4 w-4 shrink-0 transition-transform ${isMobileSectionMenuOpen ? 'rotate-180' : ''}`} aria-hidden="true" />
+        </button>
+        {isMobileSectionMenuOpen && (
+          <div
+            id={mobileSectionMenuId}
+            role="group"
+            aria-label="Settings sections"
+            className="db-settings-mobile-section-selector__menu"
+            onKeyDown={(event) => {
+              if (event.key === 'Escape') setIsMobileSectionMenuOpen(false)
+            }}
+          >
+            {mobileSectionGroups.map((group) => (
+              <div key={group.label} className="db-settings-mobile-section-selector__group">
+                <p className="db-settings-mobile-section-selector__group-label">{group.label}</p>
+                <div className="space-y-1">
+                  {group.sections.map((section) => (
+                    <button
+                      key={section.id}
+                      type="button"
+                      data-active={activeSection === section.id}
+                      aria-current={activeSection === section.id ? 'page' : undefined}
+                      onClick={() => selectMobileSection(section.id)}
+                      className="db-settings-mobile-section-selector__option"
+                    >
+                      <section.icon className="h-4 w-4 shrink-0" aria-hidden="true" />
+                      <span className="min-w-0 flex-1 text-left">{section.label}</span>
+                      {activeSection === section.id && <Check className="h-4 w-4 shrink-0" aria-hidden="true" />}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Legacy mobile presentation keeps the existing horizontal navigation
+          as the immediate rollback path. */}
+      <div className="db-settings-mobile-legacy-nav lg:hidden">
         <div className="bg-zinc-900/80 backdrop-blur-sm border border-zinc-700/50 rounded-2xl p-2">
           <nav className="flex gap-2 overflow-x-auto scrollbar-hide" style={{ WebkitOverflowScrolling: 'touch' }}>
             {allSections.map((section) => (
@@ -3288,10 +3409,10 @@ function SidebarLayout({ activeSection, setActiveSection, isGarageUser, isSuperA
       </div>
 
       {/* Desktop: Vertical sidebar */}
-      <div className="hidden lg:block w-72 flex-shrink-0">
-        <div className="bg-zinc-900/80 backdrop-blur-sm border border-zinc-700/50 rounded-2xl p-4 sticky top-4">
+      <div className="db-settings-sidebar hidden lg:block w-72 flex-shrink-0 self-stretch">
+        <div className="db-settings-sidebar__panel bg-zinc-900/80 backdrop-blur-sm border border-zinc-700/50 rounded-2xl p-4 sticky top-4">
           {/* Account Group */}
-          <div className="mb-6">
+          <div className="db-settings-sidebar__group mb-6">
             <h3 className={industrialStyles.sectionHeader}>
               <User className="w-3 h-3" />
               Account
@@ -3320,7 +3441,7 @@ function SidebarLayout({ activeSection, setActiveSection, isGarageUser, isSuperA
 
           {/* Platform Group */}
           {isSuperAdmin && (
-            <div className="mb-6">
+            <div className="db-settings-sidebar__group mb-6">
               <h3 className={industrialStyles.sectionHeader}>
                 <Settings2 className="w-3 h-3" />
                 Platform
@@ -3350,7 +3471,7 @@ function SidebarLayout({ activeSection, setActiveSection, isGarageUser, isSuperA
 
           {/* Garage Group */}
           {isGarageUser && (
-            <div>
+            <div className="db-settings-sidebar__group mb-6">
               <h3 className={industrialStyles.sectionHeader}>
                 <Settings2 className="w-3 h-3" />
                 Shop
@@ -3377,6 +3498,38 @@ function SidebarLayout({ activeSection, setActiveSection, isGarageUser, isSuperA
               </nav>
             </div>
           )}
+
+          {/* Fleet is an optional tenant capability rather than a second My Shop
+              destination. It stays beside configuration, then hands off to the
+              existing Fleet Board from its own overview. */}
+          {isGarageUser && additionalServiceSections.length > 0 && (
+            <div className="db-settings-sidebar__additional pt-6">
+              <h3 className={industrialStyles.sectionHeader}>
+                <Truck className="w-3 h-3" />
+                Additional services
+              </h3>
+              <nav className="space-y-1" aria-label="Additional services">
+                {additionalServiceSections.map((section) => (
+                  <button
+                    key={section.id}
+                    onClick={() => setActiveSection(section.id)}
+                    data-active={activeSection === section.id}
+                    className={`db-settings-nav-item w-full flex items-center gap-3 px-3 py-3 text-sm font-medium transition-colors rounded-xl ${
+                      activeSection === section.id
+                        ? 'bg-[var(--accent-500)]/10 text-[var(--accent-400)] border border-[var(--accent-500)]/30'
+                        : 'border border-transparent text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/60'
+                    }`}
+                  >
+                    <section.icon className="w-4 h-4 flex-shrink-0" />
+                    <span className="whitespace-nowrap">{section.label}</span>
+                    {activeSection === section.id && (
+                      <ChevronRight className="w-4 h-4 ml-auto mr-1 flex-shrink-0" />
+                    )}
+                  </button>
+                ))}
+              </nav>
+            </div>
+          )}
         </div>
       </div>
 
@@ -3391,6 +3544,7 @@ function SidebarLayout({ activeSection, setActiveSection, isGarageUser, isSuperA
         {activeSection === 'notifications' && <NotificationsSection />}
         {activeSection === 'fees' && <FeesSection />}
         {activeSection === 'fleet' && <FleetSection />}
+        {activeSection === 'googleReviews' && <GoogleReviewsPage />}
         {activeSection === 'workforce' && <WorkforceSection />}
       </div>
     </div>
@@ -3401,8 +3555,11 @@ function SidebarLayout({ activeSection, setActiveSection, isGarageUser, isSuperA
 
 export default function UnifiedSettingsPage() {
   const { user } = useAuthStore()
-  const [settingsSearchParams] = useSearchParams()
-  const [activeSection, setActiveSection] = useState<SettingsSection>('profile')
+  const [settingsSearchParams, setSettingsSearchParams] = useSearchParams()
+  const requestedSection = settingsSearchParams.get('section')
+  const [activeSection, setActiveSection] = useState<SettingsSection>(() => (
+    requestedSection === 'fleet' ? 'fleet' : 'profile'
+  ))
 
   const isGarageUser = user?.role === 'garage_owner' || user?.role === 'garage_admin'
   const isSuperAdmin = user?.role === 'super_admin'
@@ -3418,10 +3575,26 @@ export default function UnifiedSettingsPage() {
     }
   }, [isGarageUser, settingsSearchParams])
 
+  // Fleet is the only Settings surface that hands off to a separate board.
+  // Keep that context in the existing Settings URL so either browser Back or
+  // Fleet's return control restores the originating section after remounting.
+  useEffect(() => {
+    if (activeSection === 'fleet' && requestedSection !== 'fleet') {
+      const nextSearchParams = new URLSearchParams(settingsSearchParams)
+      nextSearchParams.set('section', 'fleet')
+      setSettingsSearchParams(nextSearchParams, { replace: true })
+    }
+    if (activeSection !== 'fleet' && requestedSection === 'fleet') {
+      const nextSearchParams = new URLSearchParams(settingsSearchParams)
+      nextSearchParams.delete('section')
+      setSettingsSearchParams(nextSearchParams, { replace: true })
+    }
+  }, [activeSection, requestedSection, setSettingsSearchParams, settingsSearchParams])
+
   // If the active section becomes inaccessible (e.g. the owner revoked a
   // grant), fall back to the profile section instead of a blank pane.
   useEffect(() => {
-    const gated = GARAGE_SECTIONS.find((s) => s.id === activeSection)
+    const gated = [...GARAGE_SECTIONS, ...ADDITIONAL_SERVICE_SECTIONS].find((s) => s.id === activeSection)
     if (gated && !canSeeSection(user ?? null, gated.gatedKey)) {
       setActiveSection('profile')
     }

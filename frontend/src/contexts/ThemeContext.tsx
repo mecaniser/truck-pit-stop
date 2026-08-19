@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { toast } from 'react-hot-toast'
 import api from '../lib/api'
 import { useAuthStore } from '../stores/authStore'
@@ -207,11 +207,13 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   const previousIdentity = useRef<string | null>(null)
   const migrationAttempt = useRef<{ key: string; requestId: string } | null>(null)
   const draftRef = useRef(initial)
+  const committedRef = useRef(initial)
   const revisionRef = useRef(bootstrap?.revision ?? 0)
   const legacySaveTimer = useRef<number | null>(null)
   const legacySaveSequence = useRef(0)
 
   useEffect(() => { draftRef.current = draft }, [draft])
+  useLayoutEffect(() => { committedRef.current = committed }, [committed])
   useEffect(() => { revisionRef.current = revision }, [revision])
   useEffect(() => () => {
     if (legacySaveTimer.current !== null) window.clearTimeout(legacySaveTimer.current)
@@ -229,6 +231,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     setServerPresentation(nextPresentation)
     const next = nextPresentation?.appearance ?? readLegacyAppearance() ?? DEFAULT_APPEARANCE
     draftRef.current = next
+    committedRef.current = next
     setCommitted(next)
     setDraft(next)
     setRevision(nextPresentation?.revision ?? 0)
@@ -263,6 +266,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
         if (cancelled) return
         if (!isPresentationBootstrap(data)) {
           setServerPresentation(null)
+          committedRef.current = DEFAULT_APPEARANCE
           setCommitted(DEFAULT_APPEARANCE)
           draftRef.current = DEFAULT_APPEARANCE
           setDraft(DEFAULT_APPEARANCE)
@@ -271,6 +275,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
           return
         }
         setServerPresentation(data)
+        committedRef.current = data.appearance
         setCommitted(data.appearance)
         setDraft(current => {
           if (JSON.stringify(current) !== JSON.stringify(committed)) return current
@@ -308,6 +313,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     }, { headers: { 'Idempotency-Key': requestId } }).then(({ data }) => {
       if (!isPresentationBootstrap(data)) return
       setServerPresentation(data)
+      committedRef.current = data.appearance
       setCommitted(data.appearance)
       draftRef.current = data.appearance
       setDraft(data.appearance)
@@ -335,6 +341,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
         revisionRef.current = data.revision
         draftRef.current = data.appearance
         setServerPresentation(data)
+        committedRef.current = data.appearance
         setCommitted(data.appearance)
         setDraft(data.appearance)
         setRevision(data.revision)
@@ -352,6 +359,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     setDraft(next)
     setSaveStatus('idle')
     if (variant === 'legacy') {
+      committedRef.current = next
       setCommitted(next)
       persistLegacyChange(next)
     }
@@ -370,6 +378,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
       }, { headers: { 'Idempotency-Key': requestId } })
       if (!isPresentationBootstrap(data)) throw new Error('Appearance response was invalid')
       setServerPresentation(data)
+      committedRef.current = data.appearance
       setCommitted(data.appearance)
       draftRef.current = data.appearance
       setDraft(data.appearance)
@@ -388,6 +397,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
           const { data } = await api.get<PresentationBootstrap>('/auth/me/appearance')
           if (isPresentationBootstrap(data)) {
             setServerPresentation(data)
+            committedRef.current = data.appearance
             setCommitted(data.appearance)
             setRevision(data.revision)
             setDefaults(data.defaults)
@@ -405,10 +415,12 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   }, [draft, eligibleStaff, revision])
 
   const cancelPreview = useCallback(() => {
-    draftRef.current = committed
-    setDraft(committed)
+    const next = committedRef.current
+    draftRef.current = next
+    if (eligibleStaff) applyTokens(next, variant)
+    setDraft(next)
     setSaveStatus('idle')
-  }, [committed])
+  }, [eligibleStaff, variant])
 
   const previewDefaults = useCallback(() => {
     draftRef.current = defaults
@@ -426,6 +438,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
       })
       if (!isPresentationBootstrap(data)) throw new Error('Appearance response was invalid')
       setServerPresentation(data)
+      committedRef.current = data.appearance
       setCommitted(data.appearance)
       draftRef.current = data.appearance
       setDraft(data.appearance)
