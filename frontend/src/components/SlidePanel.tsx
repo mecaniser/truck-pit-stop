@@ -30,6 +30,8 @@ interface SlidePanelProps {
   headerExtra?: ReactNode
   /** Hide the built-in header when a child component owns the full shell. */
   hideHeader?: boolean
+  /** Hide Close when an inline workspace owns an explicit Back action. */
+  hideClose?: boolean
   /** Back button config for nested views */
   onBack?: () => void
   backLabel?: string
@@ -72,6 +74,7 @@ export default function SlidePanel({
   headerIcon,
   headerExtra,
   hideHeader = false,
+  hideClose = false,
   onBack,
   backLabel,
   children,
@@ -414,7 +417,19 @@ export default function SlidePanel({
       >
         {!hideHeader && (isMinimal ? (
           <div className="slide-panel-header px-5 py-4 border-b border-gray-200 flex items-center justify-between">
-            <div>
+            <div className="flex min-w-0 items-center gap-3">
+              {onBack && (
+                <button
+                  type="button"
+                  onClick={onBack}
+                  className="db-slide-panel-workspace__back inline-flex min-h-11 items-center gap-2 rounded-lg px-3 text-sm font-semibold text-slate-600 transition-colors hover:bg-gray-100 hover:text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-500"
+                  aria-label={backLabel || 'Back'}
+                >
+                  <ArrowLeft className="h-4 w-4" />
+                  <span>{backLabel || 'Back'}</span>
+                </button>
+              )}
+              <div className="min-w-0">
               {subtitle && <p className="text-xs uppercase text-gray-500 font-semibold">{subtitle}</p>}
               <h2
                 ref={workspaceTitleRef}
@@ -424,6 +439,7 @@ export default function SlidePanel({
               >
                 {title}
               </h2>
+              </div>
             </div>
             <div className="flex items-center gap-1">
               {(onPrev !== undefined || onNext !== undefined) && (
@@ -437,9 +453,11 @@ export default function SlidePanel({
                   </button>
                 </div>
               )}
-              <button onClick={onClose} className="inline-flex min-h-11 min-w-11 items-center justify-center p-2 text-gray-500 hover:text-gray-700 rounded-full hover:bg-gray-100" aria-label="Close">
-                <X className="w-5 h-5" />
-              </button>
+              {!hideClose && (
+                <button onClick={onClose} className="inline-flex min-h-11 min-w-11 items-center justify-center p-2 text-gray-500 hover:text-gray-700 rounded-full hover:bg-gray-100" aria-label="Close">
+                  <X className="w-5 h-5" />
+                </button>
+              )}
             </div>
           </div>
         ) : (

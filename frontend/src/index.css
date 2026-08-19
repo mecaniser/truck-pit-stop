@@ -767,6 +767,159 @@ html::-webkit-scrollbar-thumb:hover {
   border-color: var(--workspace-border) !important;
 }
 
+/* DB-035C: Customers owns its selected record in the page. The existing
+   customer queries and mutations are reused inside the shared workspace frame;
+   only the new presentation adopts this navigator/workspace geometry. */
+.db-presentation-new .db-customer-ledger-row[aria-selected='true'] {
+  background: color-mix(in srgb, var(--surface-raised) 72%, var(--product-copper-500) 8%) !important;
+}
+
+.db-presentation-new :is(.db-customer-ledger-row, .db-customer-ledger-card):focus-visible {
+  outline: 2px solid var(--product-copper-500);
+  outline-offset: -3px;
+}
+
+.db-presentation-new .db-customer-detail-workspace {
+  min-width: 0;
+  border-color: var(--workspace-border);
+  background: var(--surface-overlay);
+  color: var(--workspace-text);
+}
+
+.db-presentation-new .db-customer-detail-workspace .slide-panel-header,
+.db-presentation-new .db-customer-detail-workspace .slide-panel-footer {
+  border-color: var(--workspace-border) !important;
+  background: var(--surface-raised) !important;
+}
+
+.db-presentation-new .db-customer-detail-workspace .slide-panel-content {
+  background: var(--surface-overlay);
+}
+
+.db-presentation-new .db-customer-detail-workspace :is(.text-gray-900, .text-slate-800, .text-gray-800, .text-gray-700) {
+  color: var(--workspace-text) !important;
+}
+
+.db-presentation-new .db-customer-detail-workspace :is(.text-gray-400, .text-gray-500, .text-gray-600, .text-slate-500, .text-slate-600) {
+  color: var(--workspace-muted) !important;
+}
+
+.db-presentation-new .db-customer-detail-workspace :is(.bg-white, .bg-gray-50, .bg-gray-100) {
+  border-color: var(--workspace-border) !important;
+  background: var(--surface-raised) !important;
+}
+
+.db-presentation-new .db-customer-detail-workspace :is(.border-gray-100, .border-gray-200, .border-gray-300) {
+  border-color: var(--workspace-border) !important;
+}
+
+.db-presentation-new .db-customer-detail-workspace--unavailable {
+  display: flex;
+  min-height: 280px;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 1px solid var(--workspace-border);
+  border-radius: 14px;
+  padding: 24px;
+  text-align: center;
+}
+
+.db-presentation-new .db-customer-detail-workspace--unavailable h2 {
+  margin: 0;
+  color: var(--workspace-text);
+  font-size: 1.15rem;
+}
+
+.db-presentation-new .db-customer-detail-workspace--unavailable p {
+  margin: 0;
+  color: var(--workspace-muted);
+}
+
+.db-presentation-new .db-customer-detail-workspace--unavailable button {
+  min-height: 44px;
+  margin-top: 8px;
+  border: 1px solid var(--workspace-border);
+  border-radius: 9px;
+  padding: 9px 14px;
+  color: var(--workspace-text);
+}
+
+@media (min-width: 1100px) {
+  .db-presentation-new .db-customers-workspace--detail-open {
+    display: grid;
+    grid-template-columns: minmax(340px, .78fr) minmax(560px, 1.45fr);
+    grid-template-rows: auto auto minmax(0, 1fr);
+    gap: 14px;
+    overflow: visible;
+  }
+
+  .db-presentation-new .db-customers-workspace--detail-open > .db-operating-page-header {
+    grid-column: 1 / -1;
+    margin-bottom: 0;
+  }
+
+  .db-presentation-new .db-customers-workspace--detail-open > .db-customers-workspace__search {
+    grid-column: 1;
+    grid-row: 2;
+    margin-bottom: 0;
+  }
+
+  .db-presentation-new .db-customers-workspace--detail-open > .db-customers-workspace__ledger {
+    grid-column: 1;
+    grid-row: 3;
+  }
+
+  .db-presentation-new .db-customers-workspace--detail-open > .db-customer-detail-workspace {
+    grid-column: 2;
+    grid-row: 2 / 4;
+    height: 100%;
+  }
+}
+
+@media (max-width: 1099px) {
+  .db-presentation-new .db-customers-workspace--detail-open > :is(.db-operating-page-header, .db-customers-workspace__search, .db-customers-workspace__ledger) {
+    display: none !important;
+  }
+
+  .db-presentation-new .db-customers-workspace--detail-open > .db-customer-detail-workspace {
+    min-height: 100%;
+  }
+}
+
+@media (max-width: 639px) {
+  .db-presentation-new .db-customer-detail-workspace {
+    border-radius: 10px;
+  }
+
+  .db-presentation-new .db-customer-detail-workspace .slide-panel-header {
+    padding: 10px 12px;
+  }
+
+  .db-presentation-new .db-customer-detail-workspace .db-slide-panel-workspace__back span {
+    display: inline;
+  }
+
+  .db-presentation-new .db-customer-detail-workspace .slide-panel-content > div {
+    padding: 14px !important;
+  }
+}
+
+@media (forced-colors: active) {
+  .db-presentation-new .db-customer-detail-workspace,
+  .db-presentation-new .db-customer-detail-workspace :is(.slide-panel-header, .slide-panel-content, .slide-panel-footer) {
+    border-color: CanvasText !important;
+    background: Canvas !important;
+    color: CanvasText !important;
+  }
+
+  .db-presentation-new .db-customer-ledger-row[aria-selected='true'] {
+    background: Highlight !important;
+    color: HighlightText !important;
+  }
+}
+
 /* The Settings route is retained from the legacy dark workstation. Day shop
    must map those classes to the operating canvas instead of leaving pale
    dark-mode foregrounds on road-white content. */

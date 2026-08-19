@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react'
 import { Spinner, LoadingLine } from '@/components/ui'
-import { useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
 import api from '../../lib/api'
@@ -415,6 +415,7 @@ export default function CustomersPage() {
   const { accentColors, presentationVariant } = useTheme()
   const currentUser = useAuthStore((state) => state.user)
   const navigate = useNavigate()
+  const location = useLocation()
   const [searchQuery, setSearchQuery] = useState('')
   const debouncedSearch = useDebouncedValue(searchQuery.trim(), 300)
   const PAGE_SIZE = 25
@@ -449,6 +450,13 @@ export default function CustomersPage() {
   const [selectedVehicleInPanel, setSelectedVehicleInPanel] = useState<Vehicle | null>(null)
   const [detailTab, setDetailTab] = useState<'overview' | 'history'>('overview')
   const [expandedHistoryId, setExpandedHistoryId] = useState<string | null>(null)
+  const [workspaceFocusRequest, setWorkspaceFocusRequest] = useState(0)
+  const customerRowRefs = useRef(new Map<string, HTMLElement>())
+  const selectionOriginRef = useRef<string | null>(null)
+  const selectedCustomerId = useMemo(() => {
+    if (presentationVariant !== 'new') return null
+    return new URLSearchParams(location.search).get('selected')
+  }, [location.search, presentationVariant])
 
   // Mechanic lookup for vehicle history
   interface Mechanic {
@@ -526,6 +534,40 @@ export default function CustomersPage() {
   })
   const customers = customerPage?.items
   const totalCustomers = customerPage?.total ?? 0
+
+  const customerOnCurrentPage = useMemo(
+    () => customers?.find((customer) => customer.id === selectedCustomerId) ?? null,
+    [customers, selectedCustomerId]
+  )
+  const {
+    data: selectedCustomerRecord,
+    isFetching: isFetchingSelectedCustomer,
+    isError: isSelectedCustomerUnavailable,
+  } = useQuery<Customer>({
+    queryKey: ['customer', selectedCustomerId],
+    queryFn: async () => (await api.get(`/customers/${selectedCustomerId}`)).data,
+    enabled: presentationVariant === 'new' && !!selectedCustomerId && !customerOnCurrentPage,
+    retry: false,
+  })
+
+  useEffect(() => {
+    if (presentationVariant !== 'new') return
+    if (!selectedCustomerId) {
+      setIsDetailOpen(false)
+      setSelectedCustomer(null)
+      setSelectedVehicleInPanel(null)
+      setIsEditingInPanel(false)
+      return
+    }
+
+    const customer = customerOnCurrentPage ?? selectedCustomerRecord
+    if (!customer) return
+    setSelectedCustomer(customer)
+    setIsDetailOpen(true)
+    setIsEditingInPanel(false)
+    setDetailTab('overview')
+    setSelectedVehicleInPanel(null)
+  }, [customerOnCurrentPage, presentationVariant, selectedCustomerId, selectedCustomerRecord])
 
   // Prefetch the next page once the current one has settled, so paging forward
   // feels instant. Only when a next page exists and we're showing live data.
@@ -1270,16 +1312,30 @@ export default function CustomersPage() {
     resetForm()
   }
 
-  const openDetailPanel = (customer: Customer) => {
+  const updateSelectedCustomerQuery = (customerId: string | null) => {
+    const params = new URLSearchParams(location.search)
+    if (customerId) params.set('selected', customerId)
+    else params.delete('selected')
+    const search = params.toString()
+    navigate({ pathname: location.pathname, search: search ? `?${search}` : '' })
+  }
+
+  const openDetailPanel = (customer: Customer, moveFocus = false) => {
+    selectionOriginRef.current = customer.id
     setSelectedCustomer(customer)
     setIsDetailOpen(true)
     setIsEditingInPanel(false)
     setDetailTab('overview')
     setVehicleRelationshipSearch('')
     setVehicleRelationshipFilter('all')
+    if (presentationVariant === 'new') {
+      updateSelectedCustomerQuery(customer.id)
+      if (moveFocus) setWorkspaceFocusRequest((request) => request + 1)
+    }
   }
 
   const closeDetailPanel = () => {
+    const restoreCustomerId = selectionOriginRef.current ?? selectedCustomer?.id ?? null
     setIsDetailOpen(false)
     setSelectedCustomer(null)
     setIsEditingInPanel(false)
@@ -1289,6 +1345,12 @@ export default function CustomersPage() {
     setVehicleRelationshipSearch('')
     setVehicleRelationshipFilter('all')
     resetForm()
+    if (presentationVariant === 'new') {
+      updateSelectedCustomerQuery(null)
+      window.requestAnimationFrame(() => {
+        if (restoreCustomerId) customerRowRefs.current.get(restoreCustomerId)?.focus()
+      })
+    }
   }
 
   const handleEditFromDetail = () => {
@@ -3013,7 +3075,7 @@ export default function CustomersPage() {
   }
 
   return (
-    <div className="db-customers-workspace flex flex-col h-full min-h-0">
+    <div className={`db-customers-workspace flex flex-col h-full min-h-0${presentationVariant === 'new' && selectedCustomerId ? ' db-customers-workspace--detail-open' : ''}`}>
       <div className={`flex flex-col sm:flex-row sm:items-center sm:justify-between mb-4 sm:mb-6 flex-shrink-0${presentationVariant === 'new' ? ' db-operating-page-header' : ''}`}>
         <div>
           <h1 className="text-xl sm:text-2xl font-bold text-white">Customers</h1>
@@ -3119,7 +3181,18 @@ export default function CustomersPage() {
                     <tr
                       key={customer.id}
                       onClick={() => openDetailPanel(customer)}
-                      className="hover:bg-white/5 cursor-pointer transition-colors"
+                      onKeyDown={(event) => {
+                        if (event.key !== 'Enter' && event.key !== ' ') return
+                        event.preventDefault()
+                        openDetailPanel(customer, true)
+                      }}
+                      ref={(node) => {
+                        if (node) customerRowRefs.current.set(customer.id, node)
+                        else customerRowRefs.current.delete(customer.id)
+                      }}
+                      tabIndex={0}
+                      aria-selected={selectedCustomerId === customer.id}
+                      className="db-customer-ledger-row hover:bg-white/5 cursor-pointer transition-colors"
                     >
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-3">
@@ -3180,7 +3253,19 @@ export default function CustomersPage() {
                 <div
                   key={customer.id}
                   onClick={() => openDetailPanel(customer)}
-                  className="bg-gradient-to-br from-yellow-50 via-amber-100 to-yellow-200 p-4 sm:p-5 rounded-xl shadow-lg flex flex-col gap-3 hover:shadow-xl transition-shadow cursor-pointer"
+                  onKeyDown={(event) => {
+                    if (event.key !== 'Enter' && event.key !== ' ') return
+                    event.preventDefault()
+                    openDetailPanel(customer, true)
+                  }}
+                  ref={(node) => {
+                    if (node) customerRowRefs.current.set(customer.id, node)
+                    else customerRowRefs.current.delete(customer.id)
+                  }}
+                  role="button"
+                  tabIndex={0}
+                  aria-pressed={selectedCustomerId === customer.id}
+                  className="db-customer-ledger-card bg-gradient-to-br from-yellow-50 via-amber-100 to-yellow-200 p-4 sm:p-5 rounded-xl shadow-lg flex flex-col gap-3 hover:shadow-xl transition-shadow cursor-pointer"
                 >
                   <div>
                     <div className="mb-3 flex items-start justify-between gap-3">
@@ -3342,6 +3427,8 @@ export default function CustomersPage() {
       {/* Customer Detail Slide-out Panel */}
       <SlidePanel
         isOpen={isDetailOpen && !!selectedCustomer}
+        layout={presentationVariant === 'new' ? 'workspace' : 'drawer'}
+        workspaceFocusRequest={presentationVariant === 'new' && workspaceFocusRequest > 0 ? workspaceFocusRequest : undefined}
         onClose={closeDetailPanel}
         width="max-w-full xl:max-w-[80vw] 2xl:max-w-[max(50vw,_960px)]"
         title={
@@ -3358,7 +3445,9 @@ export default function CustomersPage() {
             ? `Customer since ${new Date(selectedCustomer.created_at).toLocaleDateString()}`
             : undefined
         }
-        headerVariant={selectedVehicleInPanel ? 'slate' : 'amber'}
+        headerVariant={presentationVariant === 'new' ? 'minimal' : selectedVehicleInPanel ? 'slate' : 'amber'}
+        hideClose={presentationVariant === 'new'}
+        panelClassName={presentationVariant === 'new' ? 'db-customer-detail-workspace' : ''}
         headerIcon={
           selectedVehicleInPanel ? (
             <div className="w-12 h-12 rounded-lg bg-white/20 flex items-center justify-center">
@@ -3386,8 +3475,20 @@ export default function CustomersPage() {
         ) : selectedCustomer?.fleet_enabled ? (
           <FleetMemberBadge variant="header" />
         ) : undefined}
-        onBack={selectedVehicleInPanel ? () => setSelectedVehicleInPanel(null) : undefined}
-        backLabel={selectedVehicleInPanel && selectedCustomer ? `Back to ${selectedCustomer.first_name}` : undefined}
+        onBack={
+          selectedVehicleInPanel
+            ? () => setSelectedVehicleInPanel(null)
+            : presentationVariant === 'new'
+              ? closeDetailPanel
+              : undefined
+        }
+        backLabel={
+          selectedVehicleInPanel && selectedCustomer
+            ? `Back to ${selectedCustomer.first_name}`
+            : presentationVariant === 'new'
+              ? 'Back to Customers'
+              : undefined
+        }
         footer={
           selectedVehicleInPanel ? (
             <div className="flex flex-wrap items-center justify-between gap-2">
@@ -4323,6 +4424,24 @@ export default function CustomersPage() {
                 </div>
               )}
       </SlidePanel>
+
+      {presentationVariant === 'new' && selectedCustomerId && !selectedCustomer && (
+        <section
+          className="db-customer-detail-workspace db-customer-detail-workspace--unavailable"
+          role="region"
+          aria-label="Customer workspace"
+        >
+          {isFetchingSelectedCustomer ? (
+            <LoadingLine>Loading customer workspace…</LoadingLine>
+          ) : isSelectedCustomerUnavailable ? (
+            <>
+              <h2>Customer workspace unavailable</h2>
+              <p>This customer cannot be opened with your current access.</p>
+              <button type="button" onClick={closeDetailPanel}>Back to Customers</button>
+            </>
+          ) : null}
+        </section>
+      )}
 
       {/* Delete Confirmation Modal */}
       {deleteConfirmCustomer && (
