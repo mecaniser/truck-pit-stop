@@ -203,6 +203,11 @@ real WorkOS login and visual/interaction review before Stage 4 is accepted.**
   invoice, payment, and mutation detail. Selecting a record body, or the
   brief's secondary explicit **Open repair order** action, may replace the
   canonical selected record.
+- Repair Orders and Customers share one master/detail activation rule: the
+  collapsed summary surface and its semantic identity action select the
+  canonical workspace exactly once; nested **Details** controls stop summary
+  activation and only toggle inspection; expanded informational disclosure
+  bodies are inert; and only their progressive **Open** action selects.
 
 Exit: Implement the additive source projection and the one-workspace UI behind
 the existing presentation flag. Then require focused tests, bounded visual and

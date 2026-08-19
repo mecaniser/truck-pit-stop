@@ -28,10 +28,19 @@ existing Sidekick unchanged as immediate rollback.
 - Every new-presentation navigator record exposes a **Details** disclosure.
   Inspection is local, read-only navigator state: it never changes `?selected`,
   navigates, replaces the canonical workspace, or starts a parallel query.
+- The navigator is a flat responsive record list rather than a compressed
+  table. A collapsed summary owns only customer/company name, primary phone,
+  and **Details**. Pointer activation of non-interactive summary space and the
+  semantic company-name action both open the canonical customer workspace.
+  Keyboard focus on the summary plus Enter does the same. **Details** is a
+  propagation-protected secondary disclosure and never selects or navigates.
+  It never requires horizontal scrolling.
 - At most one customer is inspected. The inspected customer may differ from the
-  selected customer; explicit record activation or **Open customer** alone
-  changes canonical selection. The flat brief reuses row facts and already
-  cached contact, vehicle, and history results without nested-card styling.
+  selected customer. The disclosure body is inert; only the progressive
+  **Open customer** action revealed at its end changes canonical selection.
+  The flat brief reuses row facts and already
+  cached account, contact, vehicle, relationship, and history results without
+  nested-card styling or repeating collapsed name/phone facts.
 
 ## Source and capability ownership
 
@@ -56,7 +65,8 @@ to DB-035C.
 - Customer rows support pointer and keyboard activation; selection moves focus
   to the customer workspace heading.
 - Details uses `aria-expanded`/`aria-controls`, toggles with native Enter/Space,
-  preserves workspace focus, and restores disclosure focus when closed.
+  stops summary activation across its complete hit area, preserves workspace
+  focus, and restores disclosure focus when closed.
 - Compact targets remain at least 44px with logical focus order.
 - Themes, forced colors, reduced motion, and normal text contrast remain valid.
 
@@ -69,6 +79,8 @@ to DB-035C.
   behavior remains covered without duplicated query state.
 - Selected and inspected customers can differ; one disclosure is open at a
   time, remains flat at compact widths, and causes no URL or request change.
+- Navigator and page `scrollWidth` equal their respective `clientWidth` at
+  1440, 960, 390, and 320; the wide navigator scrolls vertically only.
 - Authenticated checks at 1440, 960, 390, and 320 show no page overflow and a
   usable list-to-workspace hierarchy.
 - Focused/full frontend checks, production build, changed-file lint/diff,
