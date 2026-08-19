@@ -33,6 +33,8 @@ interface SlidePanelFormProps {
   headerAction?: ReactNode
   /** Optional avatar/thumbnail rendered left of the category/title text */
   titleIcon?: ReactNode
+  /** Optional surface hook for a domain-owned panel treatment. */
+  panelClassName?: string
 }
 
 export default function SlidePanelForm({
@@ -52,13 +54,14 @@ export default function SlidePanelForm({
   ariaLabel,
   headerAction,
   titleIcon,
+  panelClassName,
 }: SlidePanelFormProps) {
   const { accentColors } = useTheme()
 
   if (!isOpen) return null
 
   const header = (
-    <div className="px-5 py-4 border-b border-gray-200 flex items-center justify-between gap-2">
+    <div className="db-slide-panel-form__header px-5 py-4 border-b border-gray-200 flex items-center justify-between gap-2">
       <div className="flex items-center gap-3 min-w-0">
         {titleIcon}
         <div className="min-w-0">
@@ -85,13 +88,13 @@ export default function SlidePanelForm({
   )
 
   const content = (
-    <div className="p-5 space-y-4 overflow-y-auto flex-1">
+    <div className="db-slide-panel-form__content p-5 space-y-4 overflow-y-auto flex-1">
       {children}
     </div>
   )
 
   const footer = !hideFooter && (
-    <div className="px-5 py-4 border-t border-gray-200 flex justify-end gap-2">
+    <div className="db-slide-panel-form__footer px-5 py-4 border-t border-gray-200 flex justify-end gap-2">
       <button
         type="button"
         onClick={onClose}
@@ -121,7 +124,7 @@ export default function SlidePanelForm({
 
       {/* Panel */}
       <aside
-        className={`absolute top-0 right-0 h-full w-full ${width} bg-white/95 backdrop-blur border-l border-gray-200 shadow-xl transform transition-transform animate-slide-in-right`}
+        className={`db-slide-panel-form absolute top-0 right-0 h-full w-full ${width} bg-white/95 backdrop-blur border-l border-gray-200 shadow-xl transform transition-transform animate-slide-in-right ${panelClassName || ''}`}
         role="dialog"
         aria-label={ariaLabel || title}
       >

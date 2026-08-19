@@ -1072,8 +1072,8 @@ export default function InventoryPage() {
         <div className="inline-flex items-center bg-white/10 border border-white/15 rounded-lg p-0.5">
           <button
             onClick={() => setStockSort('none')}
-            className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors whitespace-nowrap ${
-              stockSort === 'none' ? 'text-white' : 'text-white'
+            className={`db-inventory-stock-sort px-2.5 py-1 rounded-md text-xs font-medium transition-colors whitespace-nowrap ${
+              stockSort === 'none' ? 'db-inventory-stock-sort--selected' : ''
             }`}
             style={stockSort === 'none' ? { backgroundColor: accentColors[500] } : undefined}
           >
@@ -1081,8 +1081,8 @@ export default function InventoryPage() {
           </button>
           <button
             onClick={() => setStockSort('low-high')}
-            className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors whitespace-nowrap ${
-              stockSort === 'low-high' ? 'text-white' : 'text-white'
+            className={`db-inventory-stock-sort px-2.5 py-1 rounded-md text-xs font-medium transition-colors whitespace-nowrap ${
+              stockSort === 'low-high' ? 'db-inventory-stock-sort--selected' : ''
             }`}
             style={stockSort === 'low-high' ? { backgroundColor: accentColors[500] } : undefined}
           >
@@ -1090,8 +1090,8 @@ export default function InventoryPage() {
           </button>
           <button
             onClick={() => setStockSort('high-low')}
-            className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors whitespace-nowrap ${
-              stockSort === 'high-low' ? 'text-white' : 'text-white'
+            className={`db-inventory-stock-sort px-2.5 py-1 rounded-md text-xs font-medium transition-colors whitespace-nowrap ${
+              stockSort === 'high-low' ? 'db-inventory-stock-sort--selected' : ''
             }`}
             style={stockSort === 'high-low' ? { backgroundColor: accentColors[500] } : undefined}
           >
@@ -1464,6 +1464,7 @@ export default function InventoryPage() {
         isSubmitting={updateMutation.isPending}
         submitDisabled={!selectedItem}
         ariaLabel="Manage inventory"
+        panelClassName="db-inventory-editor-panel"
         titleIcon={
           (selectedItem?.image_url || fallbackPartImageUrl) ? (
             <button
@@ -1488,11 +1489,7 @@ export default function InventoryPage() {
           <button
             type="button"
             onClick={() => setEditingIdentity((v) => !v)}
-            className={`p-2 rounded-full transition-colors ${
-              editingIdentity
-                ? 'bg-amber-100 text-amber-700 hover:bg-amber-200'
-                : 'text-gray-400 hover:text-gray-700 hover:bg-gray-100'
-            }`}
+            className={`db-inventory-editor-panel__identity-trigger ${editingIdentity ? 'is-active' : ''}`}
             aria-label="Edit part details"
             title={editingIdentity ? 'Close part details editor' : 'Edit name, SKU, category, description, and photo'}
           >
@@ -1502,8 +1499,8 @@ export default function InventoryPage() {
       >
         {/* Part details editor — only visible when pencil toggled */}
         {editingIdentity && (
-          <div className="rounded-lg border border-amber-200 bg-amber-50/50 p-3 space-y-2">
-            <p className="text-[11px] uppercase tracking-wide text-amber-800 font-semibold">Edit part details</p>
+          <div className="db-inventory-identity-editor rounded-lg border p-3 space-y-2">
+            <p className="db-inventory-identity-editor__eyebrow text-[11px] uppercase tracking-wide font-semibold">Edit part details</p>
 
             {/* Part photo */}
             <div className="flex items-center gap-3 pb-2">
@@ -1526,13 +1523,13 @@ export default function InventoryPage() {
                 </div>
               )}
               <div className="flex-1 min-w-0 space-y-1.5">
-                <p className="text-sm font-medium text-gray-700">Part photo</p>
+                <p className="db-inventory-identity-editor__label text-sm font-medium">Part photo</p>
                 <div className="flex items-center gap-2 flex-wrap">
                   <button
                     type="button"
                     onClick={() => photoInputRef.current?.click()}
                     disabled={uploadPhotoMutation.isPending}
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold text-amber-700 bg-amber-50 border border-amber-200 hover:bg-amber-100 transition-colors disabled:opacity-50 whitespace-nowrap"
+                    className="db-inventory-identity-editor__photo-action inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold transition-colors disabled:opacity-50 whitespace-nowrap"
                   >
                     <Camera className="w-3.5 h-3.5" />
                     {uploadPhotoMutation.isPending ? 'Uploading…' : selectedItem?.image_url ? 'Replace' : 'Add photo'}
@@ -1542,7 +1539,7 @@ export default function InventoryPage() {
                       type="button"
                       onClick={() => deletePhotoMutation.mutate()}
                       disabled={deletePhotoMutation.isPending}
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold text-gray-600 bg-gray-50 border border-gray-200 hover:bg-gray-100 transition-colors disabled:opacity-50 whitespace-nowrap"
+                      className="db-inventory-identity-editor__secondary-action inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold transition-colors disabled:opacity-50 whitespace-nowrap"
                     >
                       <X className="w-3.5 h-3.5" />
                       Remove
@@ -1563,7 +1560,7 @@ export default function InventoryPage() {
               </div>
             </div>
 
-            <label className="text-sm text-gray-700 space-y-1 block">
+            <label className="db-inventory-identity-editor__label text-sm space-y-1 block">
               <span>Name</span>
               <SuggestingInput
                 value={manageForm.name}
@@ -1573,7 +1570,7 @@ export default function InventoryPage() {
               />
             </label>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-              <label className="text-sm text-gray-700 space-y-1 block">
+              <label className="db-inventory-identity-editor__label text-sm space-y-1 block">
                 <span>SKU</span>
                 <input
                   type="text"
@@ -1582,7 +1579,7 @@ export default function InventoryPage() {
                   className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-amber-500 bg-white"
                 />
               </label>
-              <label className="text-sm text-gray-700 space-y-1 block">
+              <label className="db-inventory-identity-editor__label text-sm space-y-1 block">
                 <span>Category</span>
                 <SuggestingInput
                   value={manageForm.category}
@@ -1593,7 +1590,7 @@ export default function InventoryPage() {
                 />
               </label>
             </div>
-            <label className="text-sm text-gray-700 space-y-1 block">
+            <label className="db-inventory-identity-editor__label text-sm space-y-1 block">
               <span>Warehouse location</span>
               <input
                 type="text"
@@ -1603,7 +1600,7 @@ export default function InventoryPage() {
                 placeholder="e.g. Aisle 3, Shelf B"
               />
             </label>
-            <label className="text-sm text-gray-700 space-y-1 block">
+            <label className="db-inventory-identity-editor__label text-sm space-y-1 block">
               <span>Description</span>
               <SuggestingTextarea
                 value={manageForm.description}

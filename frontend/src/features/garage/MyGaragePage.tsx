@@ -1,5 +1,5 @@
 import { NavLink, Routes, Route, Navigate, useLocation } from 'react-router-dom'
-import { BarChart3, Boxes, ChevronRight, ClipboardList, Clock3, PackageSearch, Settings2, Star, Truck, Wrench, type LucideIcon } from 'lucide-react'
+import { BarChart3, Boxes, ChevronRight, ClipboardList, Clock3, PackageSearch, Settings2, Wrench, type LucideIcon } from 'lucide-react'
 import ServicesManagementPage from '@/features/dashboard/ServicesManagementPage'
 import InventoryPage from '@/features/inventory/InventoryPage'
 import MechanicsPage from '@/features/mechanics/MechanicsPage'
@@ -8,14 +8,12 @@ import GarageAnalyticsPage from './GarageAnalyticsPage'
 import LaborBookTimePage from './LaborBookTimePage'
 import GoogleReviewsPage from '@/features/reviews/GoogleReviewsPage'
 import GoogleReviewsSettingsPage from '@/features/reviews/GoogleReviewsSettingsPage'
-import { useAuthStore } from '@/stores/authStore'
 
 type GarageSection = {
   to: string
   label: string
   shortLabel: string
   icon: LucideIcon
-  ownerOrAdminOnly?: boolean
 }
 
 const GARAGE_SECTIONS: GarageSection[] = [
@@ -24,8 +22,6 @@ const GARAGE_SECTIONS: GarageSection[] = [
   { to: 'labor-book-time', label: 'Labor Book Time', shortLabel: 'Book Time', icon: Clock3 },
   { to: 'inventory', label: 'Inventory', shortLabel: 'Inventory', icon: Boxes },
   { to: 'suppliers', label: 'Suppliers', shortLabel: 'Suppliers', icon: PackageSearch },
-  { to: 'reviews', label: 'Google Reviews', shortLabel: 'Reviews', icon: Star },
-  { to: '/fleet', label: 'Fleet', shortLabel: 'Fleet', icon: Truck, ownerOrAdminOnly: true },
   { to: 'analytics', label: 'Analytics', shortLabel: 'Analytics', icon: BarChart3 },
 ]
 
@@ -105,17 +101,14 @@ function DesktopGarageNav({ sections }: { sections: GarageSection[] }) {
 
 export default function MyGaragePage() {
   const location = useLocation()
-  const { user } = useAuthStore()
-  const canAccessFleet = user?.role === 'garage_owner' || user?.role === 'garage_admin'
-  const garageSections = GARAGE_SECTIONS.filter(section => !section.ownerOrAdminOnly || canAccessFleet)
   const usesInternalDesktopScroll =
     location.pathname.startsWith('/dashboard/garage/services') ||
     location.pathname.startsWith('/dashboard/garage/inventory')
 
   return (
     <div className="db-my-shop-workspace flex w-full flex-1 flex-col gap-6 lg:h-[calc(100vh-9.25rem)] lg:min-h-0 lg:flex-none lg:flex-row lg:items-stretch lg:overflow-hidden">
-      <MobileGarageNav sections={garageSections} />
-      <DesktopGarageNav sections={garageSections} />
+      <MobileGarageNav sections={GARAGE_SECTIONS} />
+      <DesktopGarageNav sections={GARAGE_SECTIONS} />
 
       <div
         className={`min-h-[400px] flex-1 scrollbar-dark lg:min-h-0 lg:pl-1.5 lg:pt-1.5 ${

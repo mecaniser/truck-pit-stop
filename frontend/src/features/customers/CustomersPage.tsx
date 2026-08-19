@@ -2947,7 +2947,7 @@ export default function CustomersPage() {
         </div>
 
         {/* Search Bar */}
-        <div className="mb-6 flex-shrink-0">
+        <div className="db-customers-workspace__search mb-6 flex-shrink-0">
           <div className="relative">
             <svg
               className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400"
@@ -3029,7 +3029,7 @@ export default function CustomersPage() {
       </div>
 
       {/* Search Bar */}
-      <div className="mb-6 flex-shrink-0">
+      <div className="db-customers-workspace__search mb-6 flex-shrink-0">
         <div className="relative">
           <svg
             className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400"
