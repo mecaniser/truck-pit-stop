@@ -1,6 +1,6 @@
 # DB-035 Controlled Product Redesign Plan
 
-Status: **Stage 4 implementation complete — canonical browser evidence blocked**
+Status: **Shared daily-workbench implementation in progress**
 
 Accountable owner: Product & Delivery Lead
 
@@ -29,6 +29,13 @@ consequences.
 - **Repair Orders** owns selected repair work and its canonical workspace.
   Dashboard may select read-only queue context and deep-link by repair-order ID;
   it does not own repair mutations or a parallel workstation.
+- **Shared daily-workbench amendment:** under the new presentation, Shop Work
+  and Repair Orders will become two entry scopes for one selected canonical
+  Repair Orders workspace. Shop Work remains a tenant-scoped daily navigator;
+  Repair Orders remains all-record discovery. This amendment is governed by
+  `docs/DB-035_SHARED_WORKBENCH_CONTRACT_V2.md`; Architecture has selected an
+  additive daily-workset projection so the legacy action-queue contract stays
+  unchanged.
 - **Customers** owns customer, vehicle, relationship, balance and service
   history context.
 - **Invoices** and **Vehicle History** remain authentic embedded surfaces; DB-035
@@ -176,6 +183,31 @@ database and whose Alembic head is `118_authenticated_presentation`; the
 original populated database remains unchanged. Product must still complete the
 real WorkOS login and visual/interaction review before Stage 4 is accepted.**
 
+### Stage 4A — Shared daily workbench (implementation)
+
+- Product has rejected the transition-only Shop Work → Repair Orders topology
+  as the operating model. The selected direction is one persistent canonical
+  Repair Orders workspace with two entry scopes: Shop Work for the current
+  daily workset and Repair Orders for all-record search/direct access.
+- Architecture & API Contracts issued a source-backed GO: `Tenant.timezone`
+  resolves the tenant-local day and canonical payment finalization writes
+  `Invoice.paid_at` with the paid repair-order state. The new presentation uses
+  an additive `GET /dashboard/daily-workset` endpoint; the current three-lane
+  action-queue response remains unchanged.
+- `docs/DB-035_SHARED_WORKBENCH_CONTRACT_V2.md` records the ownership boundary,
+  route compatibility, tenant-local midnight rule, required source fixtures,
+  implementation slices, and independent gates.
+- Product selected a one-at-a-time, source-projected read-only order brief in
+  the navigator for cross-order inspection. **Details** never changes the
+  selected repair order, URL, or history and excludes authorization, history,
+  invoice, payment, and mutation detail. Selecting a record body, or the
+  brief's secondary explicit **Open repair order** action, may replace the
+  canonical selected record.
+
+Exit: Implement the additive source projection and the one-workspace UI behind
+the existing presentation flag. Then require focused tests, bounded visual and
+interaction evidence, and independent QA/Security gates before any release.
+
 ### Stage 5 — Remaining authenticated surfaces
 
 Implement in bounded slices, in this order:
@@ -229,6 +261,11 @@ actions before implementation.
 navy product field, road-white operating workspace, compact record anatomy,
 sparse copper actions and semantic service green.
 
-**Next gate:** Product completes a real WorkOS login against the restored
-canonical service pair, then performs visual/interaction acceptance of Stage 4.
-Stage 5 remains unauthorized.
+**Current amendment:** Product selected the shared daily-workbench topology in
+`docs/DB-035_SHARED_WORKBENCH_CONTRACT_V2.md`: Shop Work is the daily
+navigator, Repair Orders is all-record discovery, and both host one canonical
+selected repair-order workspace. It replaces only the transition-only
+topology; it does not change domain ownership or legacy rollback.
+
+**Current gate:** Stage 4A implementation. Product review, independent QA, and
+Security remain required before any release. Stage 5 remains unauthorized.
