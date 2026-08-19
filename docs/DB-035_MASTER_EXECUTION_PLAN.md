@@ -272,5 +272,9 @@ navigator, Repair Orders is all-record discovery, and both host one canonical
 selected repair-order workspace. It replaces only the transition-only
 topology; it does not change domain ownership or legacy rollback.
 
-**Current gate:** Stage 4A implementation. Product review, independent QA, and
-Security remain required before any release. Stage 5 remains unauthorized.
+**Current gate:** finite completion pass. Product authorized completion of the
+existing DB-035A daily workbench, DB-035B utility inbox, DB-035C customer
+workstation, and the already-contracted Messages, My Shop, and Settings slices.
+Local focused verification is in progress; authenticated responsive acceptance,
+the fixed cross-surface matrix, and fresh independent QA/Security remain required
+before any release. No DB-036, PR, merge, deploy, or self-gate is authorized.
