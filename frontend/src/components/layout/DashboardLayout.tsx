@@ -46,7 +46,7 @@ export default function DashboardLayout() {
   const [staffRailCanExpand, setStaffRailCanExpand] = useState(getStaffRailCanExpand)
   const mobileNavTouchStart = useRef<{ x: number; y: number } | null>(null)
   const suppressMobileNavClick = useRef(false)
-  const { accentColors, presentationVariant } = useTheme()
+  const { accentColors, presentationVariant, appearance } = useTheme()
   // Owner/admin/receptionist/mechanic have messaging by role; other roles
   // (notably fleet managers) need the can_access_messaging grant. Either way,
   // the shop-wide messaging_enabled switch can turn the whole feature off
@@ -56,7 +56,7 @@ export default function DashboardLayout() {
     shopMessagingEnabled &&
     (['garage_owner', 'garage_admin', 'receptionist', 'mechanic'].includes(user?.role || '') ||
       Boolean(user?.can_access_messaging))
-  const messagesNavLink = { to: '/dashboard/messages', label: 'Messages', mobileLabel: 'Messages', icon: MessageSquare }
+  const messagesNavLink = { to: '/dashboard/messages', label: 'Messages', mobileLabel: 'Messages', exact: false, icon: MessageSquare }
   const shouldFetchMessagesUnread = Boolean(user && user.role !== 'super_admin' && canAccessMessaging)
   const { data: unreadSummary } = useQuery({
     queryKey: ['messages-unread-summary'],
@@ -79,37 +79,70 @@ export default function DashboardLayout() {
   const isSuperAdmin = user?.role === 'super_admin'
   const dashboardLabel = presentationVariant === 'new' && !isSuperAdmin ? 'Shop Work' : 'Dashboard'
   const dashboardMobileLabel = presentationVariant === 'new' && !isSuperAdmin ? 'Shop Work' : 'Home'
+  const isNewStaffPresentation = presentationVariant === 'new' && !isSuperAdmin
 
   // Different navigation for SUPER_ADMIN (platform management) vs garage staff
+  const superAdminNavLinks = [
+    { to: '/dashboard', label: 'Dashboard', mobileLabel: 'Home', exact: true, icon: Home },
+    { to: '/dashboard/garages', label: 'Shops', mobileLabel: 'Shops', exact: false, icon: LayoutGrid },
+    { to: '/dashboard/pending-enrollments', label: 'Enrollments', mobileLabel: 'Enroll', exact: false, icon: UserCheck },
+    { to: '/dashboard/analytics', label: 'Analytics', mobileLabel: 'Stats', exact: false, icon: BarChart3 },
+    { to: '/dashboard/payments', label: 'Payments', mobileLabel: 'Pay', exact: false, icon: CreditCard },
+  ]
+  const staffNavLinkByPath = {
+    dashboard: { to: '/dashboard', label: dashboardLabel, mobileLabel: dashboardMobileLabel, exact: true, icon: Home },
+    customers: { to: '/dashboard/customers', label: 'Customers', mobileLabel: 'Customers', exact: false, icon: Users },
+    repairOrders: { to: '/dashboard/repair-orders', label: 'Repair Orders', mobileLabel: 'Orders', exact: false, icon: ClipboardList },
+    myShop: { to: '/dashboard/garage', label: 'My Shop', mobileLabel: 'Shop', exact: false, icon: Building2 },
+  }
+  const legacyStaffNavLinks = [
+    staffNavLinkByPath.dashboard,
+    staffNavLinkByPath.customers,
+    staffNavLinkByPath.repairOrders,
+    ...(canAccessMessaging ? [messagesNavLink] : []),
+    staffNavLinkByPath.myShop,
+  ]
+  const newStaffNavLinks = [
+    staffNavLinkByPath.dashboard,
+    staffNavLinkByPath.repairOrders,
+    staffNavLinkByPath.customers,
+    ...(canAccessMessaging ? [messagesNavLink] : []),
+    staffNavLinkByPath.myShop,
+  ]
   const navLinks = user?.role === 'super_admin'
     ? [
-        { to: '/dashboard', label: 'Dashboard', mobileLabel: 'Home', exact: true, icon: Home },
-        { to: '/dashboard/garages', label: 'Shops', mobileLabel: 'Shops', icon: LayoutGrid },
-        { to: '/dashboard/pending-enrollments', label: 'Enrollments', mobileLabel: 'Enroll', icon: UserCheck },
-        { to: '/dashboard/analytics', label: 'Analytics', mobileLabel: 'Stats', icon: BarChart3 },
-        { to: '/dashboard/payments', label: 'Payments', mobileLabel: 'Pay', icon: CreditCard },
+        ...superAdminNavLinks,
       ]
-    : [
-        { to: '/dashboard', label: dashboardLabel, mobileLabel: dashboardMobileLabel, exact: true, icon: Home },
-        { to: '/dashboard/customers', label: 'Customers', mobileLabel: 'Customers', icon: Users },
-        { to: '/dashboard/repair-orders', label: 'Repair Orders', mobileLabel: 'Orders', icon: ClipboardList },
-        ...(canAccessMessaging ? [messagesNavLink] : []),
-        { to: '/dashboard/garage', label: 'My Shop', mobileLabel: 'Shop', icon: Building2 },
-      ]
+    : isNewStaffPresentation
+      ? newStaffNavLinks
+      : legacyStaffNavLinks
+  const operationalNavLinks = isNewStaffPresentation
+    ? navLinks.filter((link) => ['/dashboard', '/dashboard/repair-orders', '/dashboard/customers'].includes(link.to))
+    : navLinks
+  const managementNavLink = isNewStaffPresentation
+    ? navLinks.find((link) => link.to === '/dashboard/garage')
+    : undefined
+  const utilityMessagesLink = isNewStaffPresentation
+    ? navLinks.find((link) => link.to === '/dashboard/messages')
+    : undefined
 
   const isActive = (path: string, exact?: boolean) => 
     exact ? location.pathname === path : location.pathname.startsWith(path)
 
   const preferredMobilePaths = isSuperAdmin
     ? ['/dashboard', '/dashboard/garages', '/dashboard/pending-enrollments', '/dashboard/analytics']
-    : ['/dashboard', '/dashboard/customers', '/dashboard/repair-orders', '/dashboard/messages']
+    : isNewStaffPresentation
+      ? ['/dashboard', '/dashboard/repair-orders', '/dashboard/customers']
+      : ['/dashboard', '/dashboard/customers', '/dashboard/repair-orders', '/dashboard/messages']
   const preferredMobileLinks = preferredMobilePaths
     .map(path => navLinks.find(link => link.to === path))
     .filter((link): link is (typeof navLinks)[number] => Boolean(link))
-  const mobilePrimaryLinks = [
-    ...preferredMobileLinks,
-    ...navLinks.filter(link => !preferredMobileLinks.some(primary => primary.to === link.to)),
-  ].slice(0, 4)
+  const mobilePrimaryLinks = isNewStaffPresentation
+    ? preferredMobileLinks
+    : [
+        ...preferredMobileLinks,
+        ...navLinks.filter(link => !preferredMobileLinks.some(primary => primary.to === link.to)),
+      ].slice(0, 4)
   const mobileOverflowLinks = navLinks.filter(
     link => !mobilePrimaryLinks.some(primary => primary.to === link.to),
   )
@@ -226,10 +259,45 @@ export default function DashboardLayout() {
     })
   }
 
+  const renderDesktopNavLink = (
+    link: (typeof navLinks)[number],
+    kind: 'operational' | 'management' = 'operational',
+  ) => (
+    <Link
+      key={link.to}
+      to={link.to}
+      aria-current={isActive(link.to, link.exact) ? 'page' : undefined}
+      title={presentationVariant === 'new' ? link.label : undefined}
+      className={`db-staff-primary-nav__link db-staff-primary-nav__link--${kind} text-sm font-medium transition-colors ${
+        isActive(link.to, link.exact)
+          ? isSuperAdmin
+            ? 'text-gold-400 border-b-2 border-gold-500'
+            : 'border-b-2'
+          : isSuperAdmin
+            ? 'text-gray-400 hover:text-gold-400'
+            : 'text-gray-400 hover:text-white'
+      }`}
+      style={!isSuperAdmin && presentationVariant === 'legacy' && isActive(link.to, link.exact) ? { color: accentHex, borderColor: accentHex } : undefined}
+    >
+      <span className="inline-flex items-center gap-2">
+        {presentationVariant === 'new' && <link.icon className="h-4 w-4" aria-hidden="true" />}
+        <span className="db-staff-primary-nav__label">{link.label}</span>
+        {link.to === '/dashboard/messages' && unreadCount > 0 && (
+          <span className="inline-flex min-w-[1.25rem] h-5 items-center justify-center rounded-full bg-red-500 px-1.5 text-[11px] font-semibold leading-none text-white">
+            {unreadBadge}
+          </span>
+        )}
+      </span>
+    </Link>
+  )
+
   return (
     <div
       className={`db-staff-shell db-presentation-${presentationVariant} h-screen overflow-hidden ${isGarageUser ? 'bg-blueNoir-900' : ''}`}
       data-presentation={presentationVariant}
+      data-appearance-mode={appearance.mode}
+      data-appearance-density={appearance.density}
+      data-appearance-font-size={appearance.font_size}
       data-surface={getCurrentPageLabel().toLowerCase().replace(/\s+/g, '-') || 'dashboard'}
       data-rail-expanded={showStaffRailToggle ? String(isStaffRailExpanded) : undefined}
     >
@@ -299,35 +367,37 @@ export default function DashboardLayout() {
 
             {/* Desktop nav */}
             <div id="db-staff-primary-navigation" className="db-staff-primary-nav hidden md:flex md:items-center md:space-x-6">
-              {navLinks.map((link) => (
-                <Link
-                  key={link.to}
-                  to={link.to}
-                  aria-current={isActive(link.to, link.exact) ? 'page' : undefined}
-                  title={presentationVariant === 'new' ? link.label : undefined}
-                  className={`text-sm font-medium transition-colors ${
-                    isActive(link.to, link.exact)
-                      ? isSuperAdmin 
-                        ? 'text-gold-400 border-b-2 border-gold-500'
-                        : 'border-b-2'
-                      : isSuperAdmin
-                        ? 'text-gray-400 hover:text-gold-400'
-                        : 'text-gray-400 hover:text-white'
-                  }`}
-                  style={!isSuperAdmin && presentationVariant === 'legacy' && isActive(link.to, link.exact) ? { color: accentHex, borderColor: accentHex } : undefined}
-                >
-                  <span className="inline-flex items-center gap-2">
-                    {presentationVariant === 'new' && <link.icon className="h-4 w-4" aria-hidden="true" />}
-                    <span className="db-staff-primary-nav__label">{link.label}</span>
-                    {link.to === '/dashboard/messages' && unreadCount > 0 && (
-                      <span className="inline-flex min-w-[1.25rem] h-5 items-center justify-center rounded-full bg-red-500 px-1.5 text-[11px] font-semibold leading-none text-white">
-                        {unreadBadge}
-                      </span>
-                    )}
-                  </span>
-                </Link>
-              ))}
+              {isNewStaffPresentation ? (
+                <>
+                  {operationalNavLinks.map((link) => renderDesktopNavLink(link))}
+                  {managementNavLink && (
+                    <>
+                      <span className="db-staff-primary-nav__section-label" aria-hidden="true">Manage shop</span>
+                      {renderDesktopNavLink(managementNavLink, 'management')}
+                    </>
+                  )}
+                </>
+              ) : (
+                navLinks.map((link) => renderDesktopNavLink(link))
+              )}
               <div className="db-staff-nav__profile" aria-label="Account">
+                {utilityMessagesLink && (
+                  <Link
+                    to={utilityMessagesLink.to}
+                    aria-current={isActive(utilityMessagesLink.to) ? 'page' : undefined}
+                    aria-label={`Open Messages${unreadCount > 0 ? `, ${unreadBadge} unread` : ''}`}
+                    title={unreadCount > 0 ? `Messages — ${unreadBadge} unread` : 'Messages'}
+                    className="db-staff-nav__utility"
+                  >
+                    <span className="relative inline-flex">
+                      <MessageSquare className="h-4 w-4" aria-hidden="true" />
+                      {unreadCount > 0 && (
+                        <span className="db-staff-nav__utility-badge" aria-hidden="true">{unreadBadge}</span>
+                      )}
+                    </span>
+                    <span className="db-staff-nav__utility-label" aria-hidden="true">Messages</span>
+                  </Link>
+                )}
                 <div className="db-staff-nav__account-controls">
                   <Link
                     to="/dashboard/settings"
@@ -564,7 +634,14 @@ export default function DashboardLayout() {
                     }`}
                     style={!isSuperAdmin && presentationVariant === 'legacy' && isLinkActive ? { color: accentHex } : undefined}
                   >
-                    <Icon className="h-5 w-5" />
+                    <div className="relative">
+                      <Icon className="h-5 w-5" />
+                      {link.to === '/dashboard/messages' && unreadCount > 0 && (
+                        <span className="absolute -right-2 -top-2 inline-flex h-4 min-w-[1rem] items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-semibold leading-none text-white">
+                          {unreadBadge}
+                        </span>
+                      )}
+                    </div>
                     <span className="text-[10px] font-medium">{link.mobileLabel}</span>
                   </Link>
                 )

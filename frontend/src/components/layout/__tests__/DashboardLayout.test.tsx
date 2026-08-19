@@ -6,18 +6,32 @@ import DashboardLayout from '../DashboardLayout'
 import { useAuthStore } from '../../../stores/authStore'
 import { garageOwnerSession } from '../../../test-fixtures/db035/staffSession'
 
-const shellState = vi.hoisted(() => ({ presentationVariant: 'new' as 'new' | 'legacy' }))
+const shellState = vi.hoisted(() => ({
+  presentationVariant: 'new' as 'new' | 'legacy',
+  unreadCount: 0,
+  appearance: {
+    accent: 'cyan',
+    font_family: 'geist',
+    font_size: 'small',
+    density: 'default',
+    notification_position: 'bottom_right',
+    mode: 'light',
+  },
+}))
 
 vi.mock('../../../contexts/ThemeContext', () => ({
   useTheme: () => ({
     presentationVariant: shellState.presentationVariant,
     accentColors: { 400: '#22d3ee', 500: '#06b6d4', 600: '#0891b2' },
+    appearance: shellState.appearance,
   }),
 }))
 vi.mock('../../../hooks/useTenantBranding', () => ({
   default: () => ({ data: { name: 'Truck Pit Stop Wisconsin', logo_url: null, state: 'WI' } }),
 }))
-vi.mock('@tanstack/react-query', () => ({ useQuery: () => ({ data: { unread_count_staff: 0 } }) }))
+vi.mock('@tanstack/react-query', () => ({
+  useQuery: () => ({ data: { unread_count_staff: shellState.unreadCount } }),
+}))
 vi.mock('../../../features/customers/CustomersPage', () => ({ default: () => <h1>Customers surface</h1> }))
 vi.mock('../../../features/repair-orders/RepairOrdersPage', () => ({ default: () => <h1>Repair Orders surface</h1> }))
 vi.mock('../../../features/garage/MyGaragePage', () => ({ default: () => <h1>My Shop surface</h1> }))
@@ -61,6 +75,15 @@ describe('DB-035 authenticated staff shell', () => {
       })),
     })
     shellState.presentationVariant = 'new'
+    shellState.unreadCount = 0
+    shellState.appearance = {
+      accent: 'cyan',
+      font_family: 'geist',
+      font_size: 'small',
+      density: 'default',
+      notification_position: 'bottom_right',
+      mode: 'light',
+    }
     useAuthStore.setState({
       user: { ...garageOwnerSession, messaging_enabled: true } as never,
       isAuthenticated: true,
@@ -92,6 +115,34 @@ describe('DB-035 authenticated staff shell', () => {
     await screen.findByText('Dashboard surface')
     expect(document.querySelector('.db-staff-shell')).toHaveAttribute('data-rail-expanded', 'true')
     expect(screen.getByRole('button', { name: 'Collapse navigation rail' })).toBeInTheDocument()
+  })
+
+  it('keeps appearance ownership on the shell across layout rerenders', () => {
+    const { rerender } = renderShell()
+    const shell = document.querySelector('.db-staff-shell') as HTMLElement
+
+    expect(shell).toHaveAttribute('data-appearance-mode', 'light')
+    expect(shell).toHaveAttribute('data-appearance-density', 'default')
+    expect(shell).toHaveAttribute('data-appearance-font-size', 'small')
+
+    shellState.appearance = {
+      ...shellState.appearance,
+      mode: 'dark',
+      density: 'comfortable',
+      font_size: 'large',
+    }
+    rerender(
+      <MemoryRouter initialEntries={['/dashboard']}>
+        <Routes>
+          <Route path="/dashboard/*" element={<DashboardLayout />} />
+        </Routes>
+        <LocationStateProbe />
+      </MemoryRouter>,
+    )
+
+    expect(shell).toHaveAttribute('data-appearance-mode', 'dark')
+    expect(shell).toHaveAttribute('data-appearance-density', 'comfortable')
+    expect(shell).toHaveAttribute('data-appearance-font-size', 'large')
   })
 
   it('keeps the full owner identity available in the expanded account area', async () => {
@@ -179,16 +230,21 @@ describe('DB-035 authenticated staff shell', () => {
     await screen.findByText('Repair Orders surface')
 
     const desktop = document.querySelector('.db-staff-primary-nav') as HTMLElement
-    const links = within(desktop).getAllByRole('link')
-    expect(links.slice(0, 5).map(link => link.textContent?.trim())).toEqual([
-      'Shop Work', 'Customers', 'Repair Orders', 'Messages', 'My Shop',
+    const primaryLinks = Array.from(desktop.querySelectorAll<HTMLAnchorElement>('.db-staff-primary-nav__link'))
+    expect(primaryLinks.map(link => link.textContent?.trim())).toEqual([
+      'Shop Work', 'Repair Orders', 'Customers', 'My Shop',
     ])
     expect(within(desktop).getByRole('link', { name: 'Shop Work' })).toHaveAttribute('href', '/dashboard')
     expect(within(desktop).getByRole('link', { name: 'Repair Orders' })).toHaveAttribute('href', '/dashboard/repair-orders')
     expect(within(desktop).getByRole('link', { name: 'Repair Orders' })).toHaveAttribute('aria-current', 'page')
+    expect(within(desktop).getByText('Manage shop')).toBeInTheDocument()
+    expect(within(desktop).getByRole('link', { name: 'Open Messages' })).toHaveAttribute('href', '/dashboard/messages')
     expect(within(desktop).getByRole('link', { name: /Open profile settings/ })).toHaveAttribute('href', '/dashboard/settings')
     const mobile = screen.getByLabelText('Mobile navigation')
     expect(within(mobile).getByRole('link', { name: 'Shop Work' })).toHaveAttribute('href', '/dashboard')
+    expect(within(mobile).getByRole('link', { name: 'Orders' })).toHaveAttribute('href', '/dashboard/repair-orders')
+    expect(within(mobile).getByRole('link', { name: 'Customers' })).toHaveAttribute('href', '/dashboard/customers')
+    expect(within(mobile).getByRole('button', { name: 'More' })).toBeInTheDocument()
     expect(screen.getByText('Shop Work', { selector: '.db-breadcrumb a' })).toBeInTheDocument()
     const dashboardLinks = Array.from(document.querySelectorAll<HTMLAnchorElement>('a[href="/dashboard"]'))
     expect(dashboardLinks).toHaveLength(4)
@@ -196,6 +252,22 @@ describe('DB-035 authenticated staff shell', () => {
     expect(screen.queryByRole('link', { name: 'Invoices' })).not.toBeInTheDocument()
     expect(screen.queryByRole('link', { name: 'Vehicle History' })).not.toBeInTheDocument()
     expect(screen.getByText('Repair Orders surface')).toBeInTheDocument()
+  })
+
+  it('keeps Messages as the account-adjacent utility and preserves its unread affordance', async () => {
+    shellState.unreadCount = 3
+    renderShell('/dashboard/messages')
+    await screen.findByText('Messages surface')
+
+    const desktop = document.querySelector('.db-staff-primary-nav') as HTMLElement
+    expect(desktop.querySelector('.db-staff-primary-nav__link[href="/dashboard/messages"]')).not.toBeInTheDocument()
+    const utilityInbox = within(desktop).getByRole('link', { name: 'Open Messages, 3 unread' })
+    expect(utilityInbox).toHaveAttribute('href', '/dashboard/messages')
+    expect(utilityInbox).toHaveAttribute('aria-current', 'page')
+    expect(within(utilityInbox).getByText('3')).toBeInTheDocument()
+
+    const mobile = screen.getByLabelText('Mobile navigation')
+    expect(mobile.querySelector('button[aria-controls="mobile-secondary-navigation"]')).toHaveAttribute('aria-expanded', 'true')
   })
 
   it('returns a Repair Orders queue launch to Shop Work with the canonical lane context', async () => {
@@ -224,5 +296,10 @@ describe('DB-035 authenticated staff shell', () => {
     expect(screen.getByRole('img', { name: 'Diesel Bridge Network' })).toBeInTheDocument()
     expect(screen.queryByText('DieselBridge', { selector: '.db-product-brand__name' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /navigation rail/i })).not.toBeInTheDocument()
+    const legacyLinks = Array.from(desktop.querySelectorAll<HTMLAnchorElement>('.db-staff-primary-nav__link'))
+    expect(legacyLinks.map(link => link.textContent?.trim())).toEqual([
+      'Dashboard', 'Customers', 'Repair Orders', 'Messages', 'My Shop',
+    ])
+    expect(desktop.querySelector('.db-staff-nav__utility')).not.toBeInTheDocument()
   })
 })
