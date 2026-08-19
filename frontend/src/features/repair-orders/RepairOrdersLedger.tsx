@@ -11,6 +11,15 @@ export type RepairOrdersLedgerRow = {
   total: string
   updated: string
   internal: boolean
+  customerName?: string | null
+  vehicleYear?: string | number | null
+  vehicleMake?: string | null
+  vehicleModel?: string | null
+  vehicleUnitNumber?: string | null
+  vehicleInfo?: string | null
+  technicianName?: string | null
+  holdReason?: string | null
+  quoteSent?: boolean | null
 }
 
 export default function RepairOrdersLedger({
@@ -36,6 +45,10 @@ export default function RepairOrdersLedger({
   onShowAllOrders,
   onPreviousPage,
   onNextPage,
+  pageTitle = 'Repair Orders',
+  pageDescription = 'Review and update repair work from check-in through payment.',
+  sectionTitle = 'Order ledger',
+  compact = false,
 }: {
   rows: RepairOrdersLedgerRow[]
   totalOrders: number
@@ -59,13 +72,21 @@ export default function RepairOrdersLedger({
   onShowAllOrders: () => void
   onPreviousPage: () => void
   onNextPage: () => void
+  pageTitle?: string
+  pageDescription?: string
+  /** A daily Shop Work navigator intentionally avoids restating the record
+   * identity, status, and financial fields owned by the adjacent workspace. */
+  sectionTitle?: string
+  compact?: boolean
 }) {
-  const queueLabel = queueOrigin ? REPAIR_ORDERS_QUEUE_LABEL[queueOrigin] : null
+  const queueLabel = !compact && queueOrigin ? REPAIR_ORDERS_QUEUE_LABEL[queueOrigin] : null
   const filtered = Boolean(searchQuery || statusFilter !== 'all')
   const [scopeMenuOpen, setScopeMenuOpen] = useState(false)
   const scopeControlRef = useRef<HTMLDivElement>(null)
   const scopeTriggerRef = useRef<HTMLButtonElement>(null)
   const scopeMenuId = useId()
+  const [expandedBriefId, setExpandedBriefId] = useState<string | null>(null)
+  const [lastLedgerInteractionWasPointer, setLastLedgerInteractionWasPointer] = useState(false)
   const scopeCount = queueLabel ? `${totalOrders} ${totalOrders === 1 ? 'order' : 'orders'}` : null
 
   useEffect(() => {
@@ -89,11 +110,11 @@ export default function RepairOrdersLedger({
   }, [scopeMenuOpen])
 
   return (
-    <section className="db-repair-orders-new" aria-labelledby="repair-orders-title" aria-busy={isFetching}>
+    <section className={`db-repair-orders-new${compact ? ' db-repair-orders-new--compact' : ''}`} aria-labelledby="repair-orders-title" aria-busy={isFetching}>
       <header className="db-repair-orders-new__header db-operating-page-header">
         <div>
-          <h1 id="repair-orders-title">Repair Orders</h1>
-          <p>Review and update repair work from check-in through payment.</p>
+          <h1 id="repair-orders-title">{pageTitle}</h1>
+          <p>{pageDescription}</p>
         </div>
         <button type="button" className="db-repair-orders-new__create" onClick={onCreateOrder} disabled={isFetching && rows.length === 0}>
           <Plus aria-hidden="true" />
@@ -112,33 +133,44 @@ export default function RepairOrdersLedger({
             placeholder="Order, work, customer, or vehicle"
           />
         </label>
-        <label className="db-repair-orders-new__status-select">
-          <span className="sr-only">Order status</span>
-          <select value={statusFilter} onChange={(event) => onStatusChange(event.target.value)}>
-            {statusOptions.map((option) => (
-              <option key={option.value} value={option.value}>{option.label}</option>
-            ))}
-          </select>
-          <ChevronDown aria-hidden="true" />
-        </label>
-        <div className="db-repair-orders-new__status-tabs" role="group" aria-label="Filter repair orders by status">
-          {statusOptions.map((option) => (
-            <button
-              type="button"
-              key={option.value}
-              aria-pressed={statusFilter === option.value}
-              onClick={() => onStatusChange(option.value)}
-            >
-              {option.label}
-            </button>
-          ))}
-        </div>
+        {!compact && (
+          <>
+            <label className="db-repair-orders-new__status-select">
+              <span className="sr-only">Order status</span>
+              <select value={statusFilter} onChange={(event) => onStatusChange(event.target.value)}>
+                {statusOptions.map((option) => (
+                  <option key={option.value} value={option.value}>{option.label}</option>
+                ))}
+              </select>
+              <ChevronDown aria-hidden="true" />
+            </label>
+            <div className="db-repair-orders-new__status-tabs" role="group" aria-label="Filter repair orders by status">
+              {statusOptions.map((option) => (
+                <button
+                  type="button"
+                  key={option.value}
+                  aria-pressed={statusFilter === option.value}
+                  onClick={() => onStatusChange(option.value)}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+          </>
+        )}
       </div>
 
-      <section className="db-repair-orders-ledger" aria-label="Repair order ledger">
+      <section
+        className={`db-repair-orders-ledger${compact ? ' db-repair-orders-ledger--compact' : ''}`}
+        aria-label="Repair order ledger"
+        data-has-pagination={(showPagination && totalOrders > 0) || undefined}
+        data-pointer-interaction={lastLedgerInteractionWasPointer || undefined}
+        onPointerDownCapture={() => setLastLedgerInteractionWasPointer(true)}
+        onKeyDownCapture={() => setLastLedgerInteractionWasPointer(false)}
+      >
         <header>
           <div>
-            <h2>Order ledger</h2>
+            <h2>{sectionTitle}</h2>
             {!queueLabel && <span>{filtered ? `${totalOrders} matching` : `${totalOrders} total`}</span>}
           </div>
           <div className="db-repair-orders-ledger__header-actions">
@@ -194,42 +226,124 @@ export default function RepairOrdersLedger({
             aria-label="Scrollable repair-order results"
             tabIndex={0}
           >
-            {rows.map((row) => (
-              <button
-                type="button"
-                key={row.id}
-                className="db-repair-orders-ledger__row"
-                aria-pressed={selectedId === row.id}
-                onKeyDown={(event) => {
-                  if (event.key !== 'Enter' && event.key !== ' ') return
-                  // Handle keyboard activation ourselves so the browser's
-                  // synthetic click cannot restore focus to this row after the
-                  // selected workspace has asked to receive it.
-                  event.preventDefault()
-                  onOpenOrder(row.id, { focusWorkspace: true })
-                }}
-                onClick={() => {
-                  // Pointer selection keeps the operator in the ledger. The
-                  // keyboard path above deliberately advances into the named
-                  // workspace so the next Tab reaches real repair controls.
-                  onOpenOrder(row.id)
-                }}
-                data-order-id={row.id}
-              >
-                <span className="db-repair-orders-ledger__order">
-                  <strong>{row.orderNumber}</strong>
-                  {row.internal && <small>Internal</small>}
-                </span>
-                <span className={`db-repair-orders-ledger__status db-repair-orders-ledger__status--${row.statusTone}`}>{row.status}</span>
-                <span className="db-repair-orders-ledger__work">
-                  <strong>{row.description}</strong>
-                </span>
-                <span className="db-repair-orders-ledger__money">
-                  <strong>{row.total}</strong>
-                  <small>{row.updated}</small>
-                </span>
-              </button>
-            ))}
+            {rows.map((row) => {
+              const briefId = `repair-order-brief-${row.id}`
+              const workRequestId = `${briefId}-work-request`
+              const vehicleGroupId = `${briefId}-vehicle`
+              const isBriefOpen = expandedBriefId === row.id
+              const briefFacts = [
+                row.customerName ? { label: 'Customer', value: row.customerName } : null,
+                row.internal ? { label: 'Order type', value: 'Internal fleet' } : null,
+                row.technicianName ? { label: 'Technician', value: row.technicianName } : null,
+                row.holdReason ? { label: 'Hold', value: row.holdReason } : null,
+                row.quoteSent === true ? { label: 'Estimate', value: 'Sent' } : null,
+                row.quoteSent === false ? { label: 'Estimate', value: 'Not sent' } : null,
+              ].filter((fact): fact is { label: string; value: string } => fact !== null)
+              const vehicleFacts = [
+                row.vehicleYear ? { label: 'Year', value: String(row.vehicleYear) } : null,
+                row.vehicleMake ? { label: 'Make', value: row.vehicleMake } : null,
+                row.vehicleModel ? { label: 'Model', value: row.vehicleModel } : null,
+                row.vehicleUnitNumber ? { label: 'Unit number', value: row.vehicleUnitNumber } : null,
+              ].filter((fact): fact is { label: string; value: string } => fact !== null)
+              const fallbackVehicleInfo = vehicleFacts.length === 0 ? row.vehicleInfo : null
+
+              return (
+                <article
+                  key={row.id}
+                  className="db-repair-orders-ledger__row-shell"
+                  aria-label={`Repair order ${row.orderNumber}`}
+                  data-order-id={row.id}
+                  data-selected={selectedId === row.id}
+                  data-inspected={isBriefOpen || undefined}
+                >
+                  <div className="db-repair-orders-ledger__row">
+                    <button
+                      type="button"
+                      className="db-repair-orders-ledger__record"
+                      aria-label={`Open repair order ${row.orderNumber}`}
+                      onKeyDown={(event) => {
+                        if (event.key !== 'Enter' && event.key !== ' ') return
+                        event.preventDefault()
+                        onOpenOrder(row.id, { focusWorkspace: true })
+                      }}
+                      onClick={() => onOpenOrder(row.id)}
+                    >
+                      <span className="db-repair-orders-ledger__order">
+                        <strong>{row.orderNumber}</strong>
+                        {row.internal && <small>Internal</small>}
+                      </span>
+                      <span className={`db-repair-orders-ledger__status db-repair-orders-ledger__status--${row.statusTone}`}>{row.status}</span>
+                      <span className="db-repair-orders-ledger__money">
+                        <strong>{row.total}</strong>
+                        <small>{row.updated}</small>
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      className="db-repair-orders-ledger__details-toggle"
+                      aria-expanded={isBriefOpen}
+                      aria-controls={briefId}
+                      aria-label={`${isBriefOpen ? 'Hide' : 'Show'} details for ${row.orderNumber}`}
+                      onClick={() => setExpandedBriefId((current) => current === row.id ? null : row.id)}
+                    >
+                      <span aria-hidden="true">Details</span>
+                      <ChevronDown aria-hidden="true" />
+                    </button>
+                  </div>
+                  {isBriefOpen && (
+                    <section id={briefId} className="db-repair-orders-ledger__brief" aria-label={`Order brief for ${row.orderNumber}`}>
+                      <div className="db-repair-orders-ledger__brief-content">
+                        <section className="db-repair-orders-ledger__work-request" aria-labelledby={workRequestId}>
+                          <h3 id={workRequestId}>Work requested</h3>
+                          <p>{row.description}</p>
+                        </section>
+                        {briefFacts.length > 0 && (
+                          <dl className="db-repair-orders-ledger__brief-facts">
+                            {briefFacts.map((fact) => (
+                              <div key={fact.label}>
+                                <dt>{fact.label}</dt>
+                                <dd>{fact.value}</dd>
+                              </div>
+                            ))}
+                          </dl>
+                        )}
+                        {(vehicleFacts.length > 0 || fallbackVehicleInfo) && (
+                          <section className="db-repair-orders-ledger__vehicle-group" aria-labelledby={vehicleGroupId}>
+                            <h3 id={vehicleGroupId}>Vehicle</h3>
+                            {vehicleFacts.length > 0 ? (
+                              <dl>
+                                {vehicleFacts.map((fact) => (
+                                  <div key={fact.label}>
+                                    <dt>{fact.label}</dt>
+                                    <dd>{fact.value}</dd>
+                                  </div>
+                                ))}
+                              </dl>
+                            ) : (
+                              <p className="db-repair-orders-ledger__vehicle-fallback">{fallbackVehicleInfo}</p>
+                            )}
+                          </section>
+                        )}
+                      </div>
+                      <button
+                        type="button"
+                        className="db-repair-orders-ledger__open-workspace"
+                        aria-label={`Open repair order ${row.orderNumber} from details`}
+                        onKeyDown={(event) => {
+                          if (event.key !== 'Enter' && event.key !== ' ') return
+                          event.preventDefault()
+                          onOpenOrder(row.id, { focusWorkspace: true })
+                        }}
+                        onClick={() => onOpenOrder(row.id)}
+                      >
+                        Open repair order
+                        <ChevronRight aria-hidden="true" />
+                      </button>
+                    </section>
+                  )}
+                </article>
+              )
+            })}
           </div>
         )}
 

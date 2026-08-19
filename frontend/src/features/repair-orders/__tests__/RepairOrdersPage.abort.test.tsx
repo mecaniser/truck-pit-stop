@@ -33,7 +33,10 @@ import type { PartsUsage, RepairOrderHistoryEvent } from '../../../types'
 import RepairOrdersPage from '../RepairOrdersPage'
 import { buildPartHistoryEvents } from '../repairOrderHistory'
 
-function renderPage(initialEntries: string[] = ['/']) {
+function renderPage(
+  initialEntries: string[] = ['/'],
+  props: React.ComponentProps<typeof RepairOrdersPage> = {},
+) {
   const queryClient = new QueryClient({
     defaultOptions: {
       queries: { retry: false },
@@ -44,7 +47,7 @@ function renderPage(initialEntries: string[] = ['/']) {
   return render(
     <QueryClientProvider client={queryClient}>
       <MemoryRouter initialEntries={initialEntries}>
-        <RepairOrdersPage />
+        <RepairOrdersPage {...props} />
         <LocationProbe />
       </MemoryRouter>
     </QueryClientProvider>
@@ -79,7 +82,7 @@ describe('RepairOrdersPage request cancellation', () => {
     themeState.presentationVariant = 'new'
     const { unmount } = renderPage()
     expect(await screen.findByRole('region', { name: 'Repair order ledger' })).toBeInTheDocument()
-    expect(await screen.findByRole('button', { name: /RO-1017/ })).toBeInTheDocument()
+    expect(await screen.findByRole('article', { name: 'Repair order RO-1017' })).toBeInTheDocument()
     expect(document.querySelector('.db-repair-orders-new')).toBeInTheDocument()
     unmount()
 
@@ -158,15 +161,63 @@ describe('RepairOrdersPage request cancellation', () => {
 
     renderPage(['/?selected=queue-order&queue=needs_action'])
 
-    expect(await screen.findByRole('button', { name: /RO-QUEUE-2/ })).toBeInTheDocument()
+    expect(await screen.findByRole('article', { name: 'Repair order RO-QUEUE-2' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Repair Orders scope: Needs Action, 2 orders' })).toBeInTheDocument()
     expect(screen.queryByText('2 total')).not.toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: /RO-QUEUE-2/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'Show details for RO-QUEUE-2' }))
+    expect(screen.getByTestId('repair-orders-location')).toHaveTextContent('?selected=queue-order&queue=needs_action')
+    expect(apiMocks.get).not.toHaveBeenCalledWith('/repair-orders/sibling-order/workspace')
+    fireEvent.click(screen.getByRole('button', { name: 'Open repair order RO-QUEUE-2' }))
     await waitFor(() => expect(screen.getByTestId('repair-orders-location')).toHaveTextContent('?selected=sibling-order&queue=needs_action'))
 
     fireEvent.click(screen.getByRole('button', { name: 'Repair Orders scope: Needs Action, 2 orders' }))
     fireEvent.click(screen.getByRole('menuitem', { name: 'All repair orders' }))
     await waitFor(() => expect(screen.getByTestId('repair-orders-location')).toHaveTextContent('?selected=sibling-order'))
+  })
+
+  it('uses the daily workset in place without falling back to the legacy queue or archive page', async () => {
+    const queueOrder = {
+      id: 'daily-order', tenant_id: 'tenant-1', customer_id: 'customer-1', vehicle_id: 'vehicle-1',
+      vehicle_make: 'Freightliner', vehicle_model: 'Cascadia', vehicle_year: 2022, vehicle_unit_number: '218', vehicle_vin: 'VIN218',
+      customer_company_name: 'Northline Logistics', order_number: 'RO-DAILY-1', status: 'pending_review',
+      description: 'Confirm customer authorization', customer_notes: null, internal_notes: null, assigned_mechanic_id: null,
+      total_parts_cost: '80.00', total_labor_cost: '120.00', total_cost: '200.00',
+      created_at: '2026-08-14T12:00:00Z', updated_at: '2026-08-14T15:00:00Z',
+    }
+    apiMocks.get.mockImplementation((url: string) => {
+      if (url === '/dashboard/daily-workset') return Promise.resolve({
+        data: {
+          timezone: 'America/New_York', business_date: '2026-08-14', next_reset_at: '2026-08-15T04:00:00Z',
+          needs_attention: { items: [{
+            id: queueOrder.id, order_number: queueOrder.order_number, status: queueOrder.status,
+            description: queueOrder.description, customer_name: queueOrder.customer_company_name,
+            vehicle_info: '2022 Freightliner Cascadia · Unit 218', total_cost: queueOrder.total_cost,
+            updated_at: queueOrder.updated_at, mechanic_name: null, work_started_at: null,
+            hold_reason: null, held_at: null, quote_sent: false, paid_at: null,
+          }], has_more: false },
+          on_floor: { items: [], has_more: false },
+          ready_to_close: { items: [], has_more: false },
+          closed_today: { items: [], has_more: false },
+        },
+      })
+      if (url === '/repair-orders/daily-order/workspace') return Promise.resolve({ data: queueOrder })
+      if (url === '/dashboard/mechanics/options') return Promise.resolve({ data: [] })
+      return Promise.resolve({ data: {} })
+    })
+    themeState.presentationVariant = 'new'
+
+    renderPage(['/?selected=daily-order&queue=needs_action'], { workbenchScope: 'daily' })
+
+    expect(await screen.findByRole('region', { name: '#RO-DAILY-1' })).toBeInTheDocument()
+    const row = screen.getByRole('article', { name: 'Repair order RO-DAILY-1' })
+    expect(screen.getByRole('heading', { name: 'Shop Work' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Needs Action · today' })).toBeInTheDocument()
+    expect(row).not.toHaveTextContent('Confirm customer authorization')
+    expect(row).toHaveTextContent('200.00')
+    expect(row).toHaveTextContent('Pending Review')
+    expect(apiMocks.get).toHaveBeenCalledWith('/dashboard/daily-workset')
+    expect(apiMocks.get).not.toHaveBeenCalledWith('/dashboard/action-queue')
+    expect(apiMocks.get).not.toHaveBeenCalledWith('/repair-orders', expect.anything())
   })
 
   it('aborts an in-flight repair-order page request when the page unmounts', async () => {

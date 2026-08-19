@@ -28,6 +28,7 @@ import RepairOrdersLedger, { type RepairOrdersLedgerRow } from './RepairOrdersLe
 import SectionInfoTooltip from '@/components/SectionInfoTooltip'
 import SuggestingTextarea from '@/components/SuggestingTextarea'
 import { buildPartHistoryEvents } from './repairOrderHistory'
+import { REPAIR_ORDERS_QUEUE_LABEL } from './repairOrdersPresentation'
 import type { ActionQueueOrder } from '../dashboard/ShopCockpitActionLedger'
 
 interface NewCustomerForm {
@@ -102,7 +103,8 @@ type ApiErrorLike = {
 
 type ZelleModalMode = 'collect' | 'confirm_pending'
 type EvidencePaymentMethod = 'check' | 'ach' | 'fleet_payment'
-type WorkQueueLane = 'needs_action' | 'on_floor' | 'ready_to_close'
+type WorkQueueLane = 'needs_action' | 'on_floor' | 'ready_to_close' | 'closed_today'
+type WorkbenchScope = 'all' | 'daily'
 
 type WorkQueue = {
   orders_needing_action: ActionQueueOrder[]
@@ -113,15 +115,37 @@ type WorkQueue = {
   orders_ready_to_close_has_more: boolean
 }
 
+type DailyWorkbenchQueue = {
+  items: ActionQueueOrder[]
+  has_more: boolean
+}
+
+type DailyWorkbench = {
+  timezone: string
+  business_date: string
+  next_reset_at: string
+  needs_attention: DailyWorkbenchQueue
+  on_floor: DailyWorkbenchQueue
+  ready_to_close: DailyWorkbenchQueue
+  closed_today: DailyWorkbenchQueue
+}
+
 type WorkQueueOrdersField =
   | 'orders_needing_action'
   | 'orders_on_floor'
   | 'orders_ready_to_close'
 
-const WORK_QUEUE_FIELD: Record<WorkQueueLane, WorkQueueOrdersField> = {
+const WORK_QUEUE_FIELD: Record<Exclude<WorkQueueLane, 'closed_today'>, WorkQueueOrdersField> = {
   needs_action: 'orders_needing_action',
   on_floor: 'orders_on_floor',
   ready_to_close: 'orders_ready_to_close',
+}
+
+const DAILY_WORKBENCH_FIELD: Record<WorkQueueLane, keyof Pick<DailyWorkbench, 'needs_attention' | 'on_floor' | 'ready_to_close' | 'closed_today'>> = {
+  needs_action: 'needs_attention',
+  on_floor: 'on_floor',
+  ready_to_close: 'ready_to_close',
+  closed_today: 'closed_today',
 }
 
 const EVIDENCE_PAYMENT_METHODS: EvidencePaymentMethod[] = ['check', 'ach', 'fleet_payment']
@@ -245,7 +269,7 @@ function RepairOrderLaborBreakdown({
   )
 }
 
-export default function RepairOrdersPage() {
+export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbenchScope?: WorkbenchScope }) {
   const currentUser = useAuthStore((s) => s.user)
   const { accentColors, presentationVariant } = useTheme()
   const [searchParams, setSearchParams] = useSearchParams()
@@ -258,7 +282,7 @@ export default function RepairOrdersPage() {
   const debouncedSearch = useDebouncedValue(searchQuery.trim(), 300)
   const [statusFilter, setStatusFilter] = useState<string>('all')
   const queueParam = searchParams.get('queue')
-  const workQueueLane: WorkQueueLane | null = queueParam && queueParam in WORK_QUEUE_FIELD
+  const workQueueLane: WorkQueueLane | null = queueParam && queueParam in DAILY_WORKBENCH_FIELD
     ? queueParam as WorkQueueLane
     : null
   const RO_PAGE_SIZE = 25
@@ -404,15 +428,30 @@ export default function RepairOrdersPage() {
   const { data: workQueueStats, error: workQueueError } = useQuery<WorkQueue>({
     queryKey: ['dashboard-action-queue'],
     queryFn: async () => (await api.get('/dashboard/action-queue')).data,
-    enabled: !!workQueueLane,
+    enabled: workbenchScope === 'all' && Boolean(workQueueLane && workQueueLane !== 'closed_today'),
     staleTime: 60 * 1000,
   })
-  const workQueueOrderIds = workQueueLane
-    ? (workQueueStats?.[WORK_QUEUE_FIELD[workQueueLane]] ?? []).map((order) => order.id)
-    : []
-  const workQueueOrders = workQueueLane
-    ? (workQueueStats?.[WORK_QUEUE_FIELD[workQueueLane]] ?? [])
-    : []
+  const {
+    data: dailyWorkbench,
+    error: dailyWorkbenchError,
+    isLoading: isDailyWorkbenchLoading,
+    isFetching: isDailyWorkbenchFetching,
+  } = useQuery<DailyWorkbench>({
+    queryKey: ['dashboard-daily-workset'],
+    queryFn: async () => (await api.get('/dashboard/daily-workset')).data,
+    enabled: workbenchScope === 'daily' && Boolean(workQueueLane),
+    staleTime: 60 * 1000,
+  })
+  const workQueueErrorForScope = workbenchScope === 'daily' ? dailyWorkbenchError : workQueueError
+  const workQueueOrders = (() => {
+    if (!workQueueLane) return []
+    if (workbenchScope === 'daily') {
+      return dailyWorkbench?.[DAILY_WORKBENCH_FIELD[workQueueLane]].items ?? []
+    }
+    if (workQueueLane === 'closed_today') return []
+    return workQueueStats?.[WORK_QUEUE_FIELD[workQueueLane]] ?? []
+  })()
+  const workQueueOrderIds = workQueueOrders.map((order) => order.id)
   // Server-side pagination: one page at a time, with search + status pushed to
   // the API instead of loading every order and filtering in the browser.
   const orderPageKey = (p: number) =>
@@ -1203,6 +1242,7 @@ export default function RepairOrdersPage() {
   // when revisited; the other boards preserve their eager refresh behavior.
   const invalidateOrderBoards = () => {
     queryClient.invalidateQueries({ queryKey: ['dashboard-action-queue'] })
+    queryClient.invalidateQueries({ queryKey: ['dashboard-daily-workset'] })
     for (const key of [
       'repair-orders',
       'customerRepairOrders',
@@ -1784,7 +1824,7 @@ export default function RepairOrdersPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pendingPageNav, orders, isPlaceholderData])
 
-  if (isLoading) {
+  if (isLoading || (workbenchScope === 'daily' && Boolean(workQueueLane) && isDailyWorkbenchLoading)) {
     if (presentationVariant === 'new') {
       return (
         <RepairOrdersLedger
@@ -1794,8 +1834,8 @@ export default function RepairOrdersPage() {
           statusFilter={statusFilter}
           statusOptions={[{ value: 'all', label: 'All' }]}
           selectedId={searchParams.get('selected')}
-          queueOrigin={workQueueLane}
-          isFetching
+          queueOrigin={workbenchScope === 'daily' ? null : workQueueLane}
+          isFetching={isFetching || isDailyWorkbenchFetching}
           page={page}
           pageSize={RO_PAGE_SIZE}
           hasMore={false}
@@ -2448,6 +2488,16 @@ export default function RepairOrdersPage() {
       total: `$${(partsTotal + laborTotal).toLocaleString('en-US', { minimumFractionDigits: 2 })}`,
       updated: format(new Date(order.updated_at), 'MMM d, h:mm a'),
       internal: Boolean(order.is_internal),
+      customerName: order.customer_company_name
+        || [order.customer_first_name, order.customer_last_name].filter(Boolean).join(' ')
+        || null,
+      vehicleYear: order.vehicle_year ?? null,
+      vehicleMake: order.vehicle_make ?? null,
+      vehicleModel: order.vehicle_model ?? null,
+      vehicleUnitNumber: order.vehicle_unit_number ?? null,
+      technicianName: order.assigned_mechanic_id ? mechanicLookup.get(order.assigned_mechanic_id) ?? null : null,
+      holdReason: order.hold_reason ?? null,
+      quoteSent: order.quote_sent ?? null,
     }
   })
 
@@ -2490,12 +2540,24 @@ export default function RepairOrdersPage() {
         total: order.total_cost,
         updated: format(new Date(order.updated_at), 'MMM d, h:mm a'),
         internal: false,
+        customerName: order.customer_name,
+        vehicleInfo: order.vehicle_info,
+        technicianName: order.mechanic_name,
+        holdReason: order.hold_reason,
+        quoteSent: order.quote_sent,
       }
     })
 
   const isQueueWorkset = Boolean(workQueueLane)
   const displayedLedgerRows = isQueueWorkset ? workQueueRows : newPresentationRows
   const displayedLedgerTotal = isQueueWorkset ? workQueueOrders.length : totalOrders
+  const ledgerStatusOptions = workbenchScope === 'daily'
+    ? [{ value: 'all', label: 'All work' }]
+    : statusOptions
+  const ledgerTitle = workbenchScope === 'daily' ? 'Shop Work' : 'Repair Orders'
+  const ledgerDescription = workbenchScope === 'daily'
+    ? 'Today’s repair work, ready to operate.'
+    : 'Review and update repair work from check-in through payment.'
   return (
     <div className={`db-repair-orders-workspace flex flex-col h-full ${presentationVariant === 'new' ? 'db-repair-orders-workspace--new' : ''} ${presentationVariant === 'new' && isDetailOpen && selectedOrder ? 'db-repair-orders-workspace--detail-open' : ''}`}>
       {presentationVariant === 'new' ? (
@@ -2504,11 +2566,11 @@ export default function RepairOrdersPage() {
           totalOrders={displayedLedgerTotal}
           searchQuery={searchQuery}
           statusFilter={statusFilter}
-          statusOptions={statusOptions}
+          statusOptions={ledgerStatusOptions}
           selectedId={selectedOrder?.id ?? searchParams.get('selected')}
-          queueOrigin={workQueueLane}
-          isFetching={isFetching}
-          errorMessage={(isQueueWorkset ? workQueueError : orderPageError) ? 'Check the connection and try again.' : null}
+          queueOrigin={workbenchScope === 'daily' ? null : workQueueLane}
+          isFetching={isQueueWorkset ? isDailyWorkbenchFetching || isFetching : isFetching}
+          errorMessage={(isQueueWorkset ? workQueueErrorForScope : orderPageError) ? 'Check the connection and try again.' : null}
           page={page}
           pageSize={RO_PAGE_SIZE}
           hasMore={isQueueWorkset ? false : Boolean(orderPage?.has_more)}
@@ -2529,6 +2591,12 @@ export default function RepairOrdersPage() {
           onShowAllOrders={showAllOrders}
           onPreviousPage={() => setPage((current) => Math.max(0, current - 1))}
           onNextPage={() => setPage((current) => orderPage?.has_more ? current + 1 : current)}
+          pageTitle={ledgerTitle}
+          pageDescription={ledgerDescription}
+          sectionTitle={workbenchScope === 'daily' && workQueueLane
+            ? `${REPAIR_ORDERS_QUEUE_LABEL[workQueueLane]} · today`
+            : 'Order ledger'}
+          compact={workbenchScope === 'daily'}
         />
       ) : (
         <>
