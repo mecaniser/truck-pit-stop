@@ -7,6 +7,7 @@ import { garageOwnerSession } from '../../../test-fixtures/db035/staffSession'
 const testState = vi.hoisted(() => ({
   presentationVariant: 'new' as 'new' | 'legacy',
   navigate: vi.fn(),
+  locationSearch: '',
   invalidateQueries: vi.fn(),
   query: {
     data: undefined as Record<string, unknown> | undefined,
@@ -19,7 +20,7 @@ const testState = vi.hoisted(() => ({
 
 vi.mock('react-router-dom', () => ({
   useNavigate: () => testState.navigate,
-  useLocation: () => ({ state: null }),
+  useLocation: () => ({ state: null, search: testState.locationSearch }),
 }))
 vi.mock('@tanstack/react-query', () => ({
   useQuery: () => testState.query,
@@ -52,6 +53,9 @@ vi.mock('../../../components/SuggestingInput', () => ({
   ),
 }))
 vi.mock('../RecentActivityFeed', () => ({ default: () => <div>Activity surface</div> }))
+vi.mock('../../repair-orders/RepairOrdersPage', () => ({
+  default: ({ workbenchScope }: { workbenchScope?: string }) => <div data-testid="repair-order-workspace">{workbenchScope}</div>,
+}))
 
 const order = (overrides: Record<string, unknown> = {}) => ({
   id: 'ro-needs-17',
@@ -94,6 +98,13 @@ const dashboardFixture = {
   orders_on_floor_has_more: false,
   orders_ready_to_close: [order({ id: 'ro-close-09', order_number: 'RO-1009', status: 'invoiced' })],
   orders_ready_to_close_has_more: false,
+  timezone: 'America/New_York',
+  business_date: '2026-08-12',
+  next_reset_at: '2026-08-13T04:00:00Z',
+  needs_attention: { items: [order()], has_more: false },
+  on_floor: { items: [order({ id: 'ro-floor-22', order_number: 'RO-1022', status: 'in_progress' })], has_more: false },
+  ready_to_close: { items: [order({ id: 'ro-close-09', order_number: 'RO-1009', status: 'invoiced' })], has_more: false },
+  closed_today: { items: [], has_more: false },
 }
 
 beforeAll(() => {
@@ -116,6 +127,7 @@ describe('DashboardHome DB-035 presentation boundary', () => {
   beforeEach(() => {
     testState.presentationVariant = 'new'
     testState.navigate.mockReset()
+    testState.locationSearch = ''
     testState.invalidateQueries.mockReset()
     testState.query = {
       data: dashboardFixture,
@@ -126,7 +138,7 @@ describe('DashboardHome DB-035 presentation boundary', () => {
     }
   })
 
-  it('renders the projection-only Action Ledger and opens the exact canonical Repair Orders handoff in one action', () => {
+  it('renders the projection-only Action Ledger and opens the canonical workspace in place', () => {
     render(<DashboardHome />)
 
     expect(screen.getByRole('heading', { name: 'Shop Work' })).toBeInTheDocument()
@@ -137,7 +149,7 @@ describe('DashboardHome DB-035 presentation boundary', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Open RO-1022 in Repair Orders' }))
 
     expect(testState.navigate).toHaveBeenCalledWith(
-      '/dashboard/repair-orders?selected=ro-floor-22&queue=on_floor',
+      '/dashboard?selected=ro-floor-22&queue=on_floor',
     )
   })
 
@@ -153,6 +165,15 @@ describe('DashboardHome DB-035 presentation boundary', () => {
     expect(document.querySelector('.db-shop-work-new')).not.toBeInTheDocument()
   })
 
+  it('keeps the daily ledger route and mounts the canonical repair-order workspace in place', () => {
+    testState.locationSearch = '?selected=ro-floor-22&queue=on_floor'
+
+    render(<DashboardHome />)
+
+    expect(screen.getByTestId('repair-order-workspace')).toHaveTextContent('daily')
+    expect(testState.navigate).not.toHaveBeenCalled()
+  })
+
   it('uses presentation-specific loading and error states without changing refresh behavior', () => {
     testState.query = { ...testState.query, data: undefined, isLoading: true }
     const { rerender } = render(<DashboardHome />)
@@ -163,6 +184,7 @@ describe('DashboardHome DB-035 presentation boundary', () => {
     expect(screen.getByRole('alert')).toHaveTextContent('Failed to load work queue')
     fireEvent.click(screen.getByRole('button', { name: 'Try again' }))
     expect(testState.invalidateQueries).toHaveBeenCalledWith({ queryKey: ['dashboard-action-queue'] })
+    expect(testState.invalidateQueries).toHaveBeenCalledWith({ queryKey: ['dashboard-daily-workset'] })
 
     testState.presentationVariant = 'legacy'
     rerender(<DashboardHome />)

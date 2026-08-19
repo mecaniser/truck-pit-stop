@@ -6,7 +6,7 @@ from typing import Dict, List, Optional
 from datetime import datetime, timedelta, date, timezone
 from decimal import Decimal
 from uuid import UUID
-from zoneinfo import ZoneInfo
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from sqlalchemy.orm import aliased, load_only
 from app.core.dependencies import get_db, get_current_active_user
@@ -165,6 +165,29 @@ class DashboardActionQueue(BaseModel):
     orders_ready_to_close_has_more: bool = False
 
 
+class DailyWorkbenchOrder(RecentOrder):
+    """A compact queue record with only the paid timestamp added for Close Today."""
+
+    paid_at: Optional[datetime] = None
+
+
+class DailyWorkbenchQueue(BaseModel):
+    items: List[DailyWorkbenchOrder] = Field(default_factory=list)
+    has_more: bool = False
+
+
+class DashboardDailyWorkbench(BaseModel):
+    """Tenant-local active workday projection for the shared Repair Orders workspace."""
+
+    timezone: str
+    business_date: date
+    next_reset_at: datetime
+    needs_attention: DailyWorkbenchQueue = Field(default_factory=DailyWorkbenchQueue)
+    on_floor: DailyWorkbenchQueue = Field(default_factory=DailyWorkbenchQueue)
+    ready_to_close: DailyWorkbenchQueue = Field(default_factory=DailyWorkbenchQueue)
+    closed_today: DailyWorkbenchQueue = Field(default_factory=DailyWorkbenchQueue)
+
+
 class MechanicOption(BaseModel):
     mechanic_id: str
     mechanic_name: str
@@ -226,6 +249,22 @@ def _action_queue_load_options(mechanic):
         ),
         load_only(Vehicle.id, Vehicle.year, Vehicle.make, Vehicle.model, Vehicle.unit_number),
         load_only(mechanic.id, mechanic.first_name, mechanic.last_name),
+    )
+
+
+def _resolve_tenant_timezone(timezone_name: Optional[str]) -> tuple[str, ZoneInfo]:
+    """Keep the daily boundary deterministic even for a malformed legacy tenant value."""
+    configured_timezone = timezone_name or "America/New_York"
+    try:
+        return configured_timezone, ZoneInfo(configured_timezone)
+    except ZoneInfoNotFoundError:
+        return "America/New_York", ZoneInfo("America/New_York")
+
+
+def _daily_workbench_queue(orders: List[RecentOrder], has_more: bool = False) -> DailyWorkbenchQueue:
+    return DailyWorkbenchQueue(
+        items=[DailyWorkbenchOrder(**order.model_dump()) for order in orders],
+        has_more=has_more,
     )
 
 
@@ -401,6 +440,91 @@ async def get_dashboard_action_queue(
         select(Tenant.fleet_company_name).where(Tenant.id == current_user.tenant_id)
     )
     return await _load_dashboard_action_queue(db, current_user.tenant_id, fleet_company_name)
+
+
+@router.get("/daily-workset", response_model=DashboardDailyWorkbench)
+async def get_dashboard_daily_workset(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """Return the tenant's active local-day workset without changing the legacy action queue."""
+    configured_timezone = "America/New_York"
+    fleet_company_name: Optional[str] = None
+    if current_user.tenant_id:
+        tenant_result = await db.execute(
+            select(Tenant.fleet_company_name, Tenant.timezone).where(Tenant.id == current_user.tenant_id)
+        )
+        tenant_row = tenant_result.one_or_none()
+        if tenant_row:
+            fleet_company_name, configured_timezone = tenant_row
+
+    timezone_name, tenant_timezone = _resolve_tenant_timezone(configured_timezone)
+    local_now = datetime.now(timezone.utc).astimezone(tenant_timezone)
+    local_day_start = datetime.combine(local_now.date(), datetime.min.time(), tzinfo=tenant_timezone)
+    next_reset_at = local_day_start + timedelta(days=1)
+
+    empty_workset = DashboardDailyWorkbench(
+        timezone=timezone_name,
+        business_date=local_now.date(),
+        next_reset_at=next_reset_at,
+    )
+    if not current_user.tenant_id:
+        return empty_workset
+
+    action_queue = await _load_dashboard_action_queue(
+        db,
+        current_user.tenant_id,
+        fleet_company_name,
+    )
+    mechanic = aliased(User)
+    closed_today_result = await db.execute(
+        select(RepairOrder, Customer, Vehicle, mechanic, Invoice.paid_at)
+        .join(Customer, RepairOrder.customer_id == Customer.id)
+        .join(Vehicle, RepairOrder.vehicle_id == Vehicle.id)
+        .join(Invoice, Invoice.repair_order_id == RepairOrder.id)
+        .outerjoin(mechanic, RepairOrder.assigned_mechanic_id == mechanic.id)
+        .options(*_action_queue_load_options(mechanic))
+        .where(
+            RepairOrder.tenant_id == current_user.tenant_id,
+            RepairOrder.deleted_at.is_(None),
+            Invoice.tenant_id == current_user.tenant_id,
+            Invoice.status == InvoiceStatus.PAID,
+            Invoice.paid_at.is_not(None),
+            Invoice.paid_at >= local_day_start.astimezone(timezone.utc),
+            Invoice.paid_at < next_reset_at.astimezone(timezone.utc),
+        )
+        .order_by(Invoice.paid_at.desc(), RepairOrder.updated_at.desc())
+        .limit(ACTION_QUEUE_LANE_LIMIT + 1)
+    )
+    closed_today_orders = [
+        DailyWorkbenchOrder(
+            **_dashboard_order(order, customer, vehicle, fleet_company_name, assigned_mechanic).model_dump(),
+            paid_at=paid_at,
+        )
+        for order, customer, vehicle, assigned_mechanic, paid_at in closed_today_result.all()
+    ]
+
+    return DashboardDailyWorkbench(
+        timezone=timezone_name,
+        business_date=local_now.date(),
+        next_reset_at=next_reset_at,
+        needs_attention=_daily_workbench_queue(
+            action_queue.orders_needing_action,
+            action_queue.orders_needing_action_has_more,
+        ),
+        on_floor=_daily_workbench_queue(
+            action_queue.orders_on_floor,
+            action_queue.orders_on_floor_has_more,
+        ),
+        ready_to_close=_daily_workbench_queue(
+            action_queue.orders_ready_to_close,
+            action_queue.orders_ready_to_close_has_more,
+        ),
+        closed_today=DailyWorkbenchQueue(
+            items=closed_today_orders[:ACTION_QUEUE_LANE_LIMIT],
+            has_more=len(closed_today_orders) > ACTION_QUEUE_LANE_LIMIT,
+        ),
+    )
 
 
 @router.get("/mechanics/options", response_model=List[MechanicOption])

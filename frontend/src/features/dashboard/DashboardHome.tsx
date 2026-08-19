@@ -34,6 +34,7 @@ import SectionInfoTooltip from '@/components/SectionInfoTooltip'
 import SuggestingInput from '@/components/SuggestingInput'
 import RecentActivityFeed from './RecentActivityFeed'
 import ShopCockpitActionLedger, { type ActionQueueLane } from './ShopCockpitActionLedger'
+import RepairOrdersPage from '../repair-orders/RepairOrdersPage'
 
 interface StatusCount {
   status: string
@@ -56,6 +57,22 @@ interface RecentOrder {
   hold_reason: string | null
   held_at: string | null
   quote_sent: boolean | null
+  paid_at?: string | null
+}
+
+interface DailyWorkbenchQueue {
+  items: RecentOrder[]
+  has_more: boolean
+}
+
+interface DailyWorkbench {
+  timezone: string
+  business_date: string
+  next_reset_at: string
+  needs_attention: DailyWorkbenchQueue
+  on_floor: DailyWorkbenchQueue
+  ready_to_close: DailyWorkbenchQueue
+  closed_today: DailyWorkbenchQueue
 }
 
 interface MechanicWorkload {
@@ -374,6 +391,7 @@ export default function DashboardHome() {
   const navigate = useNavigate()
   const location = useLocation()
   const queryClient = useQueryClient()
+  const selectedShopWorkRecord = new URLSearchParams(location.search).get('selected')
 
   // Quick order form
   const [showQuickForm, setShowQuickForm] = useState(false)
@@ -438,6 +456,7 @@ export default function DashboardHome() {
       const response = await api.get('/dashboard/action-queue')
       return response.data
     },
+    enabled: presentationVariant !== 'new',
     refetchOnWindowFocus: true, // Refresh when tab becomes visible
     // A 429 means we're rate-limited, not that the request is broken —
     // retrying immediately just extends the block. Let the limiter's
@@ -450,24 +469,41 @@ export default function DashboardHome() {
     staleTime: 60 * 1000,
   })
 
+  const {
+    data: dailyWorkbench,
+    isLoading: isDailyWorkbenchLoading,
+    error: dailyWorkbenchError,
+    isFetching: isDailyWorkbenchRefreshing,
+    dataUpdatedAt: dailyWorkbenchUpdatedAt,
+  } = useQuery<DailyWorkbench>({
+    queryKey: ['dashboard-daily-workset'],
+    queryFn: async () => (await api.get('/dashboard/daily-workset')).data,
+    enabled: presentationVariant === 'new' && !selectedShopWorkRecord,
+    refetchOnWindowFocus: true,
+    retry: (failureCount, err) => !(isAxiosError(err) && err.response?.status === 429) && failureCount < 1,
+    refetchOnMount: true,
+    staleTime: 60 * 1000,
+  })
+
   const isRateLimited = isAxiosError(queryError) && queryError.response?.status === 429
   const error = queryError ? (isRateLimited ? 'Too many requests — waiting a moment before retrying' : 'Failed to load work queue') : null
   const lastUpdated = dataUpdatedAt ? new Date(dataUpdatedAt) : null
   
   const handleManualRefresh = () => {
     queryClient.invalidateQueries({ queryKey: ['dashboard-action-queue'] })
+    queryClient.invalidateQueries({ queryKey: ['dashboard-daily-workset'] })
   }
 
   // Format "last updated" time
-  const formatLastUpdated = () => {
-    if (!lastUpdated) return ''
+  const formatLastUpdated = (updatedAt = lastUpdated) => {
+    if (!updatedAt) return ''
     const now = new Date()
-    const diffSecs = Math.floor((now.getTime() - lastUpdated.getTime()) / 1000)
+    const diffSecs = Math.floor((now.getTime() - updatedAt.getTime()) / 1000)
     if (diffSecs < 10) return 'just now'
     if (diffSecs < 60) return `${diffSecs}s ago`
     const diffMins = Math.floor(diffSecs / 60)
     if (diffMins < 60) return `${diffMins}m ago`
-    return lastUpdated.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    return updatedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
   }
 
   const metricValue = (value?: string) => parseFloat(value || '0')
@@ -755,7 +791,21 @@ export default function DashboardHome() {
     </form>
   ) : null
 
-  if (loading) {
+  if (presentationVariant === 'new' && selectedShopWorkRecord) {
+    return <RepairOrdersPage workbenchScope="daily" />
+  }
+
+  const activeLoading = presentationVariant === 'new' ? isDailyWorkbenchLoading : loading
+  const activeQueryError = presentationVariant === 'new' ? dailyWorkbenchError : queryError
+  const activeRefreshing = presentationVariant === 'new' ? isDailyWorkbenchRefreshing : isRefreshing
+  const activeUpdatedAt = presentationVariant === 'new' ? dailyWorkbenchUpdatedAt : dataUpdatedAt
+  const activeRateLimited = isAxiosError(activeQueryError) && activeQueryError.response?.status === 429
+  const activeError = activeQueryError
+    ? (activeRateLimited ? 'Too many requests — waiting a moment before retrying' : 'Failed to load work queue')
+    : null
+  const activeLastUpdated = activeUpdatedAt ? new Date(activeUpdatedAt) : null
+
+  if (activeLoading) {
     if (presentationVariant === 'new') {
       return (
         <section className="db-shop-work-new db-shop-work-new--state" aria-busy="true" aria-label="Loading Shop Work">
@@ -772,31 +822,31 @@ export default function DashboardHome() {
     )
   }
 
-  if (error) {
+  if (activeError) {
     if (presentationVariant === 'new') {
       return (
         <section className="db-shop-work-new db-shop-work-new--state" role="alert">
           <AlertTriangle aria-hidden="true" />
-          <strong>{error}</strong>
+          <strong>{activeError}</strong>
           <span>The current queue could not be retrieved. Existing repair orders remain in Repair Orders.</span>
-          <button type="button" onClick={handleManualRefresh} disabled={isRefreshing}>
-            <RefreshCw aria-hidden="true" className={isRefreshing ? 'animate-spin' : ''} />
-            {isRefreshing ? 'Retrying…' : 'Try again'}
+          <button type="button" onClick={handleManualRefresh} disabled={activeRefreshing}>
+            <RefreshCw aria-hidden="true" className={activeRefreshing ? 'animate-spin' : ''} />
+            {activeRefreshing ? 'Retrying…' : 'Try again'}
           </button>
         </section>
       )
     }
     return (
       <div className="text-center py-12">
-        <p className="text-red-400">{error}</p>
+        <p className="text-red-400">{activeError}</p>
         <button
           onClick={handleManualRefresh}
-          disabled={isRefreshing}
+          disabled={activeRefreshing}
           className="mt-4 inline-flex items-center gap-2 hover:opacity-80 disabled:opacity-50 disabled:cursor-not-allowed"
           style={{ color: accentColors[500] }}
         >
-          <RefreshCw className={`w-3.5 h-3.5 ${isRefreshing ? 'animate-spin' : ''}`} />
-          {isRefreshing ? 'Retrying…' : 'Try again'}
+          <RefreshCw className={`w-3.5 h-3.5 ${activeRefreshing ? 'animate-spin' : ''}`} />
+          {activeRefreshing ? 'Retrying…' : 'Try again'}
         </button>
       </div>
     )
@@ -805,15 +855,17 @@ export default function DashboardHome() {
   if (presentationVariant === 'new') {
     const returnedQueue = (location.state as { shopWorkQueue?: ActionQueueLane } | null)?.shopWorkQueue
     const projection = {
-      orders_needing_action: stats?.orders_needing_action ?? [],
-      orders_needing_action_has_more: stats?.orders_needing_action_has_more ?? false,
-      orders_on_floor: stats?.orders_on_floor ?? [],
-      orders_on_floor_has_more: stats?.orders_on_floor_has_more ?? false,
-      orders_ready_to_close: stats?.orders_ready_to_close ?? [],
-      orders_ready_to_close_has_more: stats?.orders_ready_to_close_has_more ?? false,
+      orders_needing_action: dailyWorkbench?.needs_attention.items ?? [],
+      orders_needing_action_has_more: dailyWorkbench?.needs_attention.has_more ?? false,
+      orders_on_floor: dailyWorkbench?.on_floor.items ?? [],
+      orders_on_floor_has_more: dailyWorkbench?.on_floor.has_more ?? false,
+      orders_ready_to_close: dailyWorkbench?.ready_to_close.items ?? [],
+      orders_ready_to_close_has_more: dailyWorkbench?.ready_to_close.has_more ?? false,
+      orders_closed_today: dailyWorkbench?.closed_today.items ?? [],
+      orders_closed_today_has_more: dailyWorkbench?.closed_today.has_more ?? false,
     }
     const openRecord = (id: string, lane: ActionQueueLane) => {
-      navigate(`/dashboard/repair-orders?selected=${id}&queue=${lane}`)
+      navigate(`/dashboard?selected=${encodeURIComponent(id)}&queue=${lane}`)
     }
 
     return (
@@ -823,8 +875,8 @@ export default function DashboardHome() {
         canViewActivity={canViewActivity}
         queueView={queueView}
         activityCount={activityCount}
-        isRefreshing={isRefreshing}
-        lastUpdatedLabel={formatLastUpdated() ? `Updated ${formatLastUpdated()}` : 'Updated recently'}
+        isRefreshing={activeRefreshing}
+        lastUpdatedLabel={activeLastUpdated ? `Updated ${formatLastUpdated(activeLastUpdated)}` : 'Updated recently'}
         quickOrderExpanded={showQuickForm}
         notificationRegion={(
           <NotificationBanner

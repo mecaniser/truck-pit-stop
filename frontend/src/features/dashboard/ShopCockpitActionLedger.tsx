@@ -8,7 +8,7 @@ import {
   Zap,
 } from 'lucide-react'
 
-export type ActionQueueLane = 'needs_action' | 'on_floor' | 'ready_to_close'
+export type ActionQueueLane = 'needs_action' | 'on_floor' | 'ready_to_close' | 'closed_today'
 type ActionQueueFilter = 'all' | ActionQueueLane
 
 export interface ActionQueueOrder {
@@ -26,6 +26,7 @@ export interface ActionQueueOrder {
   hold_reason: string | null
   held_at: string | null
   quote_sent: boolean | null
+  paid_at?: string | null
 }
 
 export interface ActionQueueProjection {
@@ -35,6 +36,8 @@ export interface ActionQueueProjection {
   orders_on_floor_has_more: boolean
   orders_ready_to_close: ActionQueueOrder[]
   orders_ready_to_close_has_more: boolean
+  orders_closed_today?: ActionQueueOrder[]
+  orders_closed_today_has_more?: boolean
 }
 
 type LaneDefinition = {
@@ -48,6 +51,7 @@ const LANE_LABEL: Record<ActionQueueLane, string> = {
   needs_action: 'Needs Action',
   on_floor: 'On the Floor',
   ready_to_close: 'Ready to Close',
+  closed_today: 'Closed Today',
 }
 
 const statusLabel = (order: ActionQueueOrder) => {
@@ -134,6 +138,12 @@ export default function ShopCockpitActionLedger({
       label: LANE_LABEL.ready_to_close,
       orders: projection.orders_ready_to_close,
       hasMore: projection.orders_ready_to_close_has_more,
+    },
+    {
+      key: 'closed_today',
+      label: LANE_LABEL.closed_today,
+      orders: projection.orders_closed_today ?? [],
+      hasMore: projection.orders_closed_today_has_more ?? false,
     },
   ], [projection])
   const allRows = useMemo(
