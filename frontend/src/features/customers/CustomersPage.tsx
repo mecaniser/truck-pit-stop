@@ -7,7 +7,7 @@ import api from '../../lib/api'
 import { Customer, Vehicle, Contact, RepairOrder, VINDecodeResult, CustomerWithVehicles } from '../../types'
 import { customerDisplayName, customerPersonalName } from '../../lib/customerName'
 import { vehicleDisplayLabel } from '../../lib/vehicleName'
-import { AlertTriangle, ArrowDown, ArrowRight, ArrowUp, Building2, Combine, DollarSign, Mail, Pencil, Phone, Plus, Route, Search, Star, Trash2, Truck, User, Wrench, X } from 'lucide-react'
+import { AlertTriangle, ArrowDown, ArrowRight, ArrowUp, Building2, ChevronDown, Combine, DollarSign, Mail, Pencil, Phone, Plus, Route, Search, Star, Trash2, Truck, User, Wrench, X } from 'lucide-react'
 import SlidePanel from '@/components/SlidePanel'
 import MapboxAddressInput from '@/components/MapboxAddressInput'
 import { formatUSPhone } from '@/utils/phone'
@@ -451,7 +451,9 @@ export default function CustomersPage() {
   const [detailTab, setDetailTab] = useState<'overview' | 'history'>('overview')
   const [expandedHistoryId, setExpandedHistoryId] = useState<string | null>(null)
   const [workspaceFocusRequest, setWorkspaceFocusRequest] = useState(0)
+  const [inspectedCustomerId, setInspectedCustomerId] = useState<string | null>(null)
   const customerRowRefs = useRef(new Map<string, HTMLElement>())
+  const customerDetailsButtonRefs = useRef(new Map<string, HTMLButtonElement>())
   const selectionOriginRef = useRef<string | null>(null)
   const selectedCustomerId = useMemo(() => {
     if (presentationVariant !== 'new') return null
@@ -1332,6 +1334,19 @@ export default function CustomersPage() {
       updateSelectedCustomerQuery(customer.id)
       if (moveFocus) setWorkspaceFocusRequest((request) => request + 1)
     }
+  }
+
+  const toggleCustomerInspection = (customerId: string) => {
+    if (inspectedCustomerId === customerId) {
+      closeCustomerInspection(customerId)
+      return
+    }
+    setInspectedCustomerId(customerId)
+  }
+
+  const closeCustomerInspection = (customerId: string) => {
+    customerDetailsButtonRefs.current.get(customerId)?.focus()
+    setInspectedCustomerId(null)
   }
 
   const closeDetailPanel = () => {
@@ -3074,6 +3089,80 @@ export default function CustomersPage() {
     )
   }
 
+  const renderCustomerInspectionBrief = (customer: Customer) => {
+    const contacts = queryClient.getQueryData<Contact[]>(['customerContacts', customer.id])
+    const vehicles = queryClient.getQueryData<Vehicle[]>(['customerVehicles', customer.id])
+    const history = queryClient.getQueryData<CustomerHistoryResponse>(['customerHistory', customer.id])
+    const primaryContact = contacts?.[0]
+
+    return (
+      <section
+        id={`customer-inspection-${customer.id}`}
+        className="db-customer-inspection"
+        aria-label={`${customerDisplayName(customer)} details`}
+        onKeyDown={(event) => {
+          if (event.key !== 'Escape') return
+          event.stopPropagation()
+          closeCustomerInspection(customer.id)
+        }}
+      >
+        <div className="db-customer-inspection__facts">
+          <div>
+            <h3>Account</h3>
+            <p>{customer.fleet_enabled ? 'Fleet-enabled customer account' : 'Customer account'}</p>
+            {(customer.usdot_number || customer.mc_number) && (
+              <p className="db-customer-inspection__meta">
+                {customer.usdot_number && `DOT ${stripRegNumber(customer.usdot_number)}`}
+                {customer.usdot_number && customer.mc_number && ' · '}
+                {customer.mc_number && `MC ${stripRegNumber(customer.mc_number)}`}
+              </p>
+            )}
+          </div>
+          <div>
+            <h3>Balance</h3>
+            <p>{customer.balance !== undefined ? balanceLabel(customer.balance) : 'Not available'}</p>
+          </div>
+          <div>
+            <h3>Primary contact</h3>
+            <p>{primaryContact ? [primaryContact.first_name, primaryContact.last_name].filter(Boolean).join(' ') || customerDisplayName(customer) : customerPersonalName(customer) || customerDisplayName(customer)}</p>
+            <p className="db-customer-inspection__meta">
+              {[
+                primaryContact?.email || customer.email,
+                primaryContact?.phone || customer.phone
+                  ? formatUSPhone(primaryContact?.phone || customer.phone || '')
+                  : null,
+              ].filter(Boolean).join(' · ')}
+            </p>
+          </div>
+          <div>
+            <h3>Vehicles &amp; relationships</h3>
+            <p>{vehicles ? `${vehicles.length} connected vehicle${vehicles.length === 1 ? '' : 's'}` : `${customer.vehicle_count || 0} connected vehicle${customer.vehicle_count === 1 ? '' : 's'}`}</p>
+            {customer.fleet_enabled && <p className="db-customer-inspection__meta">Fleet relationship enabled</p>}
+          </div>
+          <div>
+            <h3>Service history</h3>
+            {history ? (
+              <p>{history.stats.total_orders} repair order{history.stats.total_orders === 1 ? '' : 's'} · {history.stats.completed_orders} completed</p>
+            ) : (
+              <p>Available in the customer workspace</p>
+            )}
+          </div>
+        </div>
+        <button
+          type="button"
+          className="db-customer-inspection__open"
+          onClick={(event) => {
+            event.stopPropagation()
+            openDetailPanel(customer, true)
+          }}
+        >
+          Open customer
+          <ArrowRight aria-hidden="true" />
+        </button>
+      </section>
+    )
+  }
+
   return (
     <div className={`db-customers-workspace flex flex-col h-full min-h-0${presentationVariant === 'new' && selectedCustomerId ? ' db-customers-workspace--detail-open' : ''}`}>
       <div className={`flex flex-col sm:flex-row sm:items-center sm:justify-between mb-4 sm:mb-6 flex-shrink-0${presentationVariant === 'new' ? ' db-operating-page-header' : ''}`}>
@@ -3178,10 +3267,11 @@ export default function CustomersPage() {
                 </thead>
                 <tbody className="divide-y divide-white/10">
                   {filteredCustomers?.map((customer) => (
+                    <React.Fragment key={customer.id}>
                     <tr
-                      key={customer.id}
                       onClick={() => openDetailPanel(customer)}
                       onKeyDown={(event) => {
+                        if (event.target !== event.currentTarget) return
                         if (event.key !== 'Enter' && event.key !== ' ') return
                         event.preventDefault()
                         openDetailPanel(customer, true)
@@ -3192,6 +3282,7 @@ export default function CustomersPage() {
                       }}
                       tabIndex={0}
                       aria-selected={selectedCustomerId === customer.id}
+                      data-inspected={presentationVariant === 'new' && inspectedCustomerId === customer.id ? 'true' : undefined}
                       className="db-customer-ledger-row hover:bg-white/5 cursor-pointer transition-colors"
                     >
                       <td className="px-4 py-3">
@@ -3230,18 +3321,44 @@ export default function CustomersPage() {
                         ) : '—'}
                       </td>
                       <td className="px-4 py-3 text-right">
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            openDetailPanel(customer)
-                          }}
-                          className="text-sm font-medium hover:opacity-80"
-                          style={{ color: accentColors[400] }}
-                        >
-                          View
-                        </button>
+                        {presentationVariant === 'new' ? (
+                          <button
+                            type="button"
+                            ref={(node) => {
+                              if (node) customerDetailsButtonRefs.current.set(customer.id, node)
+                              else customerDetailsButtonRefs.current.delete(customer.id)
+                            }}
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              toggleCustomerInspection(customer.id)
+                            }}
+                            aria-expanded={inspectedCustomerId === customer.id}
+                            aria-controls={`customer-inspection-${customer.id}`}
+                            className="db-customer-details-control"
+                          >
+                            Details
+                            <ChevronDown aria-hidden="true" />
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={(event) => {
+                              event.stopPropagation()
+                              openDetailPanel(customer)
+                            }}
+                            className="text-emerald-400 hover:text-emerald-300"
+                          >
+                            View
+                          </button>
+                        )}
                       </td>
                     </tr>
+                    {presentationVariant === 'new' && inspectedCustomerId === customer.id && (
+                      <tr className="db-customer-inspection-row" data-selected={selectedCustomerId === customer.id ? 'true' : undefined}>
+                        <td colSpan={7}>{renderCustomerInspectionBrief(customer)}</td>
+                      </tr>
+                    )}
+                    </React.Fragment>
                   ))}
                 </tbody>
               </table>
@@ -3250,10 +3367,16 @@ export default function CustomersPage() {
             /* Cards View */
             <div className="p-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
               {filteredCustomers?.map((customer) => (
-                <div
+                <article
                   key={customer.id}
+                  className="db-customer-ledger-card-group"
+                  data-inspected={presentationVariant === 'new' && inspectedCustomerId === customer.id ? 'true' : undefined}
+                  data-selected={selectedCustomerId === customer.id ? 'true' : undefined}
+                >
+                <div
                   onClick={() => openDetailPanel(customer)}
                   onKeyDown={(event) => {
+                    if (event.target !== event.currentTarget) return
                     if (event.key !== 'Enter' && event.key !== ' ') return
                     event.preventDefault()
                     openDetailPanel(customer, true)
@@ -3323,18 +3446,40 @@ export default function CustomersPage() {
                   </div>
 
                   <div className="pt-3 border-t border-amber-200/50">
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        openDetailPanel(customer)
-                      }}
-                      className="w-full py-2 text-sm font-medium text-amber-700 hover:text-amber-900 hover:bg-amber-200/50 rounded-lg transition-colors inline-flex items-center justify-center gap-1"
-                    >
-                      View Details
-                      <ArrowRight className="w-4 h-4" />
-                    </button>
+                    {presentationVariant === 'new' ? (
+                      <button
+                        type="button"
+                        ref={(node) => {
+                          if (node) customerDetailsButtonRefs.current.set(customer.id, node)
+                          else customerDetailsButtonRefs.current.delete(customer.id)
+                        }}
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          toggleCustomerInspection(customer.id)
+                        }}
+                        aria-expanded={inspectedCustomerId === customer.id}
+                        aria-controls={`customer-inspection-${customer.id}`}
+                        className="db-customer-details-control w-full"
+                      >
+                        Details
+                        <ChevronDown aria-hidden="true" />
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={(event) => {
+                          event.stopPropagation()
+                          openDetailPanel(customer)
+                        }}
+                        className="w-full text-center font-medium text-amber-700"
+                      >
+                        View Details
+                      </button>
+                    )}
                   </div>
                 </div>
+                {presentationVariant === 'new' && inspectedCustomerId === customer.id && renderCustomerInspectionBrief(customer)}
+                </article>
               ))}
 
               <div

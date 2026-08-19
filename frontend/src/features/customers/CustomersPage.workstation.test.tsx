@@ -56,6 +56,21 @@ const customer = {
   updated_at: '2026-08-12T12:00:00Z',
 } as Customer
 
+const secondCustomer = {
+  ...customer,
+  id: 'customer-2',
+  first_name: 'Maya',
+  last_name: 'Miles',
+  company_name: 'Miles Freight',
+  email: 'maya@miles.test',
+  phone: '(704) 555-0118',
+  usdot_number: null,
+  mc_number: null,
+  fleet_enabled: true,
+  vehicle_count: 3,
+  balance: '0.00',
+} as Customer
+
 function LocationProbe() {
   const location = useLocation()
   return <output data-testid="customers-location">{location.search}</output>
@@ -69,14 +84,17 @@ function renderPage(initialEntry = '/dashboard/customers?view=list') {
     },
   })
 
-  return render(
+  return {
+    queryClient,
+    ...render(
     <QueryClientProvider client={queryClient}>
       <MemoryRouter initialEntries={[initialEntry]}>
         <CustomersPage />
         <LocationProbe />
       </MemoryRouter>
     </QueryClientProvider>,
-  )
+    ),
+  }
 }
 
 function installApiFixture(pageCustomers: Customer[] = [customer]) {
@@ -84,9 +102,9 @@ function installApiFixture(pageCustomers: Customer[] = [customer]) {
     if (url === '/customers') {
       return Promise.resolve({ data: { items: pageCustomers, total: pageCustomers.length, has_more: false } })
     }
-    if (url === `/customers/${customer.id}`) return Promise.resolve({ data: customer })
-    if (url === `/customers/${customer.id}/vehicles`) return Promise.resolve({ data: [] })
-    if (url === `/customers/${customer.id}/contacts`) return Promise.resolve({ data: [] })
+    const matchedCustomer = [customer, secondCustomer].find((candidate) => url === `/customers/${candidate.id}`)
+    if (matchedCustomer) return Promise.resolve({ data: matchedCustomer })
+    if (/\/customers\/[^/]+\/(vehicles|contacts)$/.test(url)) return Promise.resolve({ data: [] })
     return Promise.resolve({ data: [] })
   })
 }
@@ -147,5 +165,53 @@ describe('DB-035C customer workstation', () => {
     expect(screen.getByRole('button', { name: 'Close' })).toBeInTheDocument()
     expect(screen.getByTestId('customers-location')).toHaveTextContent('?view=list')
     expect(document.querySelector('.db-customer-detail-workspace')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'View' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Details' })).not.toBeInTheDocument()
+  })
+
+  it('inspects a different customer without replacing the selected workspace or URL', async () => {
+    installApiFixture([customer, secondCustomer])
+    renderPage('/dashboard/customers?view=list&selected=customer-1')
+
+    expect(await screen.findByRole('region', { name: 'Northline Logistics' })).toBeInTheDocument()
+    const details = await screen.findAllByRole('button', { name: 'Details' })
+    const requestsBeforeInspection = apiMocks.get.mock.calls.length
+    fireEvent.click(details[1])
+
+    expect(await screen.findByRole('region', { name: 'Miles Freight details' })).toBeInTheDocument()
+    expect(screen.getByRole('region', { name: 'Northline Logistics' })).toBeInTheDocument()
+    expect(screen.getByTestId('customers-location')).toHaveTextContent('?view=list&selected=customer-1')
+    expect(apiMocks.get).toHaveBeenCalledTimes(requestsBeforeInspection)
+    expect(details[1]).toHaveAttribute('aria-expanded', 'true')
+  })
+
+  it('keeps only one flat Details disclosure open and restores focus when it closes', async () => {
+    installApiFixture([customer, secondCustomer])
+    renderPage()
+
+    const details = await screen.findAllByRole('button', { name: 'Details' })
+    fireEvent.click(details[0])
+    expect(await screen.findByRole('region', { name: 'Northline Logistics details' })).toBeInTheDocument()
+
+    fireEvent.click(details[1])
+    expect(screen.queryByRole('region', { name: 'Northline Logistics details' })).not.toBeInTheDocument()
+    expect(screen.getByRole('region', { name: 'Miles Freight details' })).toBeInTheDocument()
+    expect(details[0]).toHaveAttribute('aria-expanded', 'false')
+
+    fireEvent.click(details[1])
+    await waitFor(() => expect(screen.queryByRole('region', { name: 'Miles Freight details' })).not.toBeInTheDocument())
+    await waitFor(() => expect(details[1]).toHaveFocus())
+  })
+
+  it('uses the explicit Open customer action to select an inspected record', async () => {
+    installApiFixture([customer, secondCustomer])
+    renderPage('/dashboard/customers?view=list&selected=customer-1')
+
+    const details = await screen.findAllByRole('button', { name: 'Details' })
+    fireEvent.click(details[1])
+    fireEvent.click(await screen.findByRole('button', { name: 'Open customer' }))
+
+    await waitFor(() => expect(screen.getByTestId('customers-location')).toHaveTextContent('?view=list&selected=customer-2'))
+    expect(await screen.findByRole('region', { name: 'Miles Freight' })).toBeInTheDocument()
   })
 })

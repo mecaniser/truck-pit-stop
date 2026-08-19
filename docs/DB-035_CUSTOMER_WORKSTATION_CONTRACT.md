@@ -25,6 +25,13 @@ existing Sidekick unchanged as immediate rollback.
   to the originating customer row.
 - Vehicle drilldown stays inside the customer workspace and returns to the
   selected customer; it does not open another drawer.
+- Every new-presentation navigator record exposes a **Details** disclosure.
+  Inspection is local, read-only navigator state: it never changes `?selected`,
+  navigates, replaces the canonical workspace, or starts a parallel query.
+- At most one customer is inspected. The inspected customer may differ from the
+  selected customer; explicit record activation or **Open customer** alone
+  changes canonical selection. The flat brief reuses row facts and already
+  cached contact, vehicle, and history results without nested-card styling.
 
 ## Source and capability ownership
 
@@ -48,6 +55,8 @@ to DB-035C.
 - The workspace is a labelled region with semantic tabs.
 - Customer rows support pointer and keyboard activation; selection moves focus
   to the customer workspace heading.
+- Details uses `aria-expanded`/`aria-controls`, toggles with native Enter/Space,
+  preserves workspace focus, and restores disclosure focus when closed.
 - Compact targets remain at least 44px with logical focus order.
 - Themes, forced colors, reduced motion, and normal text contrast remain valid.
 
@@ -58,6 +67,8 @@ to DB-035C.
   are covered by focused tests.
 - Existing customer, vehicle, contact, history, balance, mutation, and role
   behavior remains covered without duplicated query state.
+- Selected and inspected customers can differ; one disclosure is open at a
+  time, remains flat at compact widths, and causes no URL or request change.
 - Authenticated checks at 1440, 960, 390, and 320 show no page overflow and a
   usable list-to-workspace hierarchy.
 - Focused/full frontend checks, production build, changed-file lint/diff,
