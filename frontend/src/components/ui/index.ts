@@ -37,3 +37,4 @@ export {
 // GlassNoirCard Spinner and the scattered hand-rolled/border/Loader2 spinners).
 export { Spinner, LoadingLine, default as SpinnerDefault } from './Spinner'
 export type { SpinnerSize, SpinnerProps, LoadingLineProps } from './Spinner'
+export { default as StaffSearchField } from './StaffSearchField'

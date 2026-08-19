@@ -1,5 +1,6 @@
 import { useEffect, useId, useRef, useState } from 'react'
-import { ChevronDown, ChevronLeft, ChevronRight, Plus, Search } from 'lucide-react'
+import { ChevronDown, ChevronLeft, ChevronRight, Plus } from 'lucide-react'
+import { StaffSearchField } from '@/components/ui'
 import { REPAIR_ORDERS_QUEUE_LABEL, type RepairOrdersQueueOrigin } from './repairOrdersPresentation'
 
 export type RepairOrdersLedgerRow = {
@@ -123,16 +124,13 @@ export default function RepairOrdersLedger({
       </header>
 
       <div className="db-repair-orders-new__toolbar">
-        <label className="db-repair-orders-new__search">
-          <span className="sr-only">Search repair orders</span>
-          <Search aria-hidden="true" />
-          <input
-            type="search"
-            value={searchQuery}
-            onChange={(event) => onSearchChange(event.target.value)}
-            placeholder="Order, work, customer, or vehicle"
-          />
-        </label>
+        <StaffSearchField
+          accessibleLabel="Search repair orders"
+          className="db-repair-orders-new__search"
+          value={searchQuery}
+          onChange={(event) => onSearchChange(event.target.value)}
+          placeholder="Order, work, customer, or vehicle"
+        />
         {!compact && (
           <>
             <label className="db-repair-orders-new__status-select">
@@ -269,10 +267,12 @@ export default function RepairOrdersLedger({
                       onClick={() => onOpenOrder(row.id)}
                     >
                       <span className="db-repair-orders-ledger__order">
-                        <strong>{row.orderNumber}</strong>
+                        <span className="db-repair-orders-ledger__order-line">
+                          <strong>{row.orderNumber}</strong>
+                          <span className={`db-repair-orders-ledger__status db-repair-orders-ledger__status--${row.statusTone}`}>{row.status}</span>
+                        </span>
                         {row.internal && <small>Internal</small>}
                       </span>
-                      <span className={`db-repair-orders-ledger__status db-repair-orders-ledger__status--${row.statusTone}`}>{row.status}</span>
                       <span className="db-repair-orders-ledger__money">
                         <strong>{row.total}</strong>
                         <small>{row.updated}</small>
@@ -284,7 +284,10 @@ export default function RepairOrdersLedger({
                       aria-expanded={isBriefOpen}
                       aria-controls={briefId}
                       aria-label={`${isBriefOpen ? 'Hide' : 'Show'} details for ${row.orderNumber}`}
-                      onClick={() => setExpandedBriefId((current) => current === row.id ? null : row.id)}
+                      onClick={(event) => {
+                        event.stopPropagation()
+                        setExpandedBriefId((current) => current === row.id ? null : row.id)
+                      }}
                     >
                       <span aria-hidden="true">Details</span>
                       <ChevronDown aria-hidden="true" />
@@ -334,7 +337,10 @@ export default function RepairOrdersLedger({
                           event.preventDefault()
                           onOpenOrder(row.id, { focusWorkspace: true })
                         }}
-                        onClick={() => onOpenOrder(row.id)}
+                        onClick={(event) => {
+                          event.stopPropagation()
+                          onOpenOrder(row.id)
+                        }}
                       >
                         Open repair order
                         <ChevronRight aria-hidden="true" />

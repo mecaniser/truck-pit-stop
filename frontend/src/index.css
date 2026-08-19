@@ -741,23 +741,6 @@ html::-webkit-scrollbar-thumb:hover {
 /* The customer finder sits on the dark workspace canvas, above the retained
    road-white ledger. In dark appearance it is a dark search control; the
    ledger below stays intentionally light for dense customer scanning. */
-.db-staff-shell:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) .db-customers-workspace__search input {
-  background: var(--surface-overlay) !important;
-  border-color: var(--workspace-border) !important;
-  color: var(--workspace-text) !important;
-  caret-color: var(--workspace-text);
-  color-scheme: dark;
-}
-
-.db-staff-shell:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) .db-customers-workspace__search input::placeholder {
-  color: var(--workspace-muted) !important;
-  opacity: 1;
-}
-
-.db-staff-shell:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) .db-customers-workspace__search svg {
-  color: var(--workspace-muted) !important;
-}
-
 .db-presentation-new .db-customers-workspace__pagination {
   border-color: var(--workspace-border) !important;
   color: var(--workspace-muted) !important;
@@ -770,6 +753,182 @@ html::-webkit-scrollbar-thumb:hover {
 /* DB-035C: Customers owns its selected record in the page. The existing
    customer queries and mutations are reused inside the shared workspace frame;
    only the new presentation adopts this navigator/workspace geometry. */
+.db-presentation-new .db-customers-workspace__ledger,
+.db-presentation-new .db-customer-navigator {
+  min-width: 0;
+  overflow-x: hidden;
+}
+
+.db-presentation-new .db-customer-navigator {
+  container-type: inline-size;
+  width: 100%;
+}
+
+.db-presentation-new .db-customer-navigator__record {
+  min-width: 0;
+  border-bottom: 1px solid var(--workspace-border);
+  background: var(--surface-overlay);
+  color: var(--workspace-text);
+}
+
+.db-presentation-new .db-customer-navigator__record:last-child {
+  border-bottom: 0;
+}
+
+.db-presentation-new .db-customer-navigator__record[data-selected='true'] {
+  background: color-mix(in srgb, var(--surface-raised) 88%, var(--product-copper-500) 12%);
+}
+
+.db-presentation-new .db-customer-navigator__record[data-inspected='true'] {
+  background: color-mix(in srgb, var(--surface-raised) 92%, var(--workspace-border) 8%);
+}
+
+.db-presentation-new .db-customer-navigator__record[data-selected='true'][data-inspected='true'] {
+  background: color-mix(in srgb, var(--surface-raised) 84%, var(--product-copper-500) 10%);
+}
+
+.db-presentation-new .db-customer-navigator__summary {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: minmax(0, 1fr) minmax(9.5rem, .72fr) auto;
+  align-items: center;
+  gap: 8px 14px;
+  padding: 10px 14px;
+  cursor: pointer;
+}
+
+.db-presentation-new .db-customer-navigator__summary:hover {
+  background: color-mix(in srgb, var(--surface-raised) 82%, var(--workspace-border) 18%);
+}
+
+.db-presentation-new .db-customer-navigator__summary:focus-visible {
+  outline: 2px solid var(--product-copper-500);
+  outline-offset: -3px;
+}
+
+.db-presentation-new .db-customer-navigator__identity {
+  display: flex;
+  min-width: 0;
+  min-height: 44px;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  border: 0;
+  padding: 2px 0;
+  background: transparent;
+  color: var(--workspace-text);
+  text-align: left;
+}
+
+.db-presentation-new .db-customer-navigator__name-line {
+  display: flex;
+  max-width: 100%;
+  min-width: 0;
+  align-items: center;
+  gap: 7px;
+}
+
+.db-presentation-new .db-customer-navigator__name-action {
+  display: inline-flex;
+  max-width: 100%;
+  min-width: 0;
+  min-height: 44px;
+  align-items: center;
+  gap: 5px;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: var(--workspace-text);
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+  text-decoration-color: transparent;
+  text-decoration-line: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: .22em;
+}
+
+.db-presentation-new .db-customer-navigator__name-action svg {
+  width: 14px;
+  height: 14px;
+  flex: 0 0 auto;
+  opacity: 0;
+  transform: translateX(-3px);
+  transition: opacity 140ms ease-out, transform 140ms ease-out;
+}
+
+.db-presentation-new .db-customer-navigator__name {
+  display: block;
+  max-width: 100%;
+  min-width: 0;
+  overflow: hidden;
+  font-size: .875rem;
+  font-weight: 720;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.db-presentation-new .db-customer-navigator__phone {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 7px;
+  overflow: hidden;
+  color: var(--workspace-muted);
+  font-size: .8125rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.db-presentation-new .db-customer-navigator__phone svg,
+.db-presentation-new .db-customer-inspection__open svg {
+  width: 15px;
+  height: 15px;
+  flex: 0 0 auto;
+}
+
+.db-presentation-new .db-customer-inspection__open {
+  display: inline-flex;
+  min-height: 44px;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  border: 1px solid var(--workspace-border);
+  border-radius: 8px;
+  padding: 8px 11px;
+  background: var(--surface-overlay);
+  color: var(--workspace-text);
+  font-size: .8125rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.db-presentation-new .db-customer-navigator__name-action:hover,
+.db-presentation-new .db-customer-navigator__name-action:focus-visible,
+.db-presentation-new .db-customer-inspection__open:hover {
+  color: var(--product-copper-600);
+}
+
+.db-presentation-new .db-customer-navigator__name-action:is(:hover, :focus-visible) {
+  text-decoration-color: currentColor;
+}
+
+.db-presentation-new .db-customer-navigator__name-action:is(:hover, :focus-visible) svg {
+  opacity: 1;
+  transform: translateX(0);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .db-presentation-new .db-customer-navigator__name-action svg {
+    transition: none;
+  }
+}
+
+.db-presentation-new :is(.db-customer-navigator__name-action, .db-customer-inspection__open):focus-visible {
+  outline: 2px solid var(--product-copper-500);
+  outline-offset: 2px;
+}
+
 .db-presentation-new .db-customer-ledger-row[aria-selected='true'] {
   background: color-mix(in srgb, var(--surface-raised) 72%, var(--product-copper-500) 8%) !important;
 }
@@ -822,8 +981,7 @@ html::-webkit-scrollbar-thumb:hover {
   transform: rotate(180deg);
 }
 
-.db-presentation-new .db-customer-details-control:focus-visible,
-.db-presentation-new .db-customer-inspection__open:focus-visible {
+.db-presentation-new .db-customer-details-control:focus-visible {
   outline: 2px solid var(--product-copper-500);
   outline-offset: 2px;
 }
@@ -837,8 +995,8 @@ html::-webkit-scrollbar-thumb:hover {
   display: flex;
   width: 100%;
   min-width: 0;
-  align-items: end;
-  justify-content: space-between;
+  align-items: stretch;
+  flex-direction: column;
   gap: 20px;
   padding: 16px;
   color: var(--workspace-text);
@@ -848,12 +1006,19 @@ html::-webkit-scrollbar-thumb:hover {
   display: grid;
   min-width: 0;
   flex: 1;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px 20px;
 }
 
 .db-presentation-new .db-customer-inspection__facts > div {
   min-width: 0;
+}
+
+.db-presentation-new .db-customer-inspection__actions {
+  display: flex;
+  grid-column: 1 / -1;
+  justify-content: flex-end;
+  padding-top: 4px;
 }
 
 .db-presentation-new .db-customer-inspection h3 {
@@ -880,29 +1045,29 @@ html::-webkit-scrollbar-thumb:hover {
   font-size: .75rem;
 }
 
-.db-presentation-new .db-customer-inspection__open {
-  display: inline-flex;
-  min-height: 44px;
-  flex: 0 0 auto;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  border: 1px solid var(--workspace-border);
-  border-radius: 8px;
-  padding: 9px 13px;
-  background: var(--surface-overlay);
-  color: var(--workspace-text);
-  font-size: .8125rem;
-  font-weight: 700;
+@container (max-width: 560px) {
+  .db-presentation-new .db-customer-navigator__summary {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .db-presentation-new .db-customer-navigator__phone {
+    grid-column: 1;
+    grid-row: 2;
+  }
+
+  .db-presentation-new .db-customer-details-control {
+    grid-column: 2;
+    grid-row: 1;
+  }
+
 }
 
-.db-presentation-new .db-customer-inspection__open:hover {
-  border-color: var(--product-copper-500);
-}
+@container (max-width: 380px) {
+  .db-presentation-new .db-customer-navigator__summary {
+    gap: 6px 8px;
+    padding-inline: 10px;
+  }
 
-.db-presentation-new .db-customer-inspection__open svg {
-  width: 16px;
-  height: 16px;
 }
 
 .db-presentation-new .db-customer-ledger-card-group {
@@ -1037,9 +1202,6 @@ html::-webkit-scrollbar-thumb:hover {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .db-presentation-new .db-customer-inspection__open {
-    align-self: flex-start;
-  }
 }
 
 @media (max-width: 639px) {
@@ -1074,14 +1236,15 @@ html::-webkit-scrollbar-thumb:hover {
 }
 
 @media (forced-colors: active) {
-  .db-presentation-new :is(.db-customer-ledger-row[data-inspected='true'], .db-customer-inspection-row, .db-customer-ledger-card-group[data-inspected='true']) {
+  .db-presentation-new .db-customer-navigator__record,
+  .db-presentation-new .db-customer-navigator__record[data-selected='true'],
+  .db-presentation-new .db-customer-navigator__record[data-inspected='true'] {
+    border-color: CanvasText !important;
     background: Canvas !important;
+    color: CanvasText !important;
   }
 
-  .db-presentation-new .db-customer-inspection,
-  .db-presentation-new .db-customer-inspection :is(h3, p, .db-customer-inspection__meta),
-  .db-presentation-new .db-customer-details-control,
-  .db-presentation-new .db-customer-inspection__open {
+  .db-presentation-new :is(.db-customer-navigator__name-action, .db-customer-navigator__phone, .db-customer-inspection__open) {
     color: CanvasText !important;
   }
 
@@ -1090,7 +1253,17 @@ html::-webkit-scrollbar-thumb:hover {
     background: ButtonFace !important;
   }
 
-  .db-presentation-new :is(.db-customer-details-control, .db-customer-inspection__open):focus-visible {
+  .db-presentation-new :is(.db-customer-ledger-row[data-inspected='true'], .db-customer-inspection-row, .db-customer-ledger-card-group[data-inspected='true']) {
+    background: Canvas !important;
+  }
+
+  .db-presentation-new .db-customer-inspection,
+  .db-presentation-new .db-customer-inspection :is(h3, p, .db-customer-inspection__meta),
+  .db-presentation-new .db-customer-details-control {
+    color: CanvasText !important;
+  }
+
+  .db-presentation-new :is(.db-customer-navigator__name-action, .db-customer-inspection__open, .db-customer-details-control):focus-visible {
     outline-color: Highlight !important;
   }
 
@@ -2583,12 +2756,16 @@ html::-webkit-scrollbar-thumb:hover {
 .db-repair-order-detail-new :is(button) svg { width: 17px; height: 17px; }
 
 .db-repair-orders-new__toolbar { display: grid; grid-template-columns: minmax(240px, 360px) minmax(0, 1fr); gap: 10px 14px; margin-bottom: 6px; padding: 3px; }
-.db-repair-orders-new__search { position: relative; min-width: 0; border-radius: 10px; transition: box-shadow 140ms ease-out; }
-.db-repair-orders-new__search svg { position: absolute; left: 12px; top: 50%; color: #607287; transform: translateY(-50%); pointer-events: none; }
-.db-repair-orders-new__search input { width: 100%; height: 44px; padding: 0 12px 0 38px; border: 1px solid #bec9d5 !important; border-radius: 10px; background: #fff !important; color: #17283f !important; }
-.db-repair-orders-new__search input::placeholder { color: #687b91; opacity: 1; }
-.db-repair-orders-new__search:focus-within { z-index: 2; box-shadow: 0 0 0 3px rgba(255, 122, 46, .26); }
-.db-repair-orders-new__search:focus-within input { border-color: #ff7a2e !important; outline: 0; }
+.db-presentation-new .db-staff-search-field-inset { min-width: 0; padding: 4px; }
+.db-presentation-new .db-staff-search-field { position: relative; display: block; min-width: 0; border-radius: 10px; transition: box-shadow 140ms ease-out; }
+.db-presentation-new .db-staff-search-field svg { position: absolute; left: 12px; top: 50%; width: 20px; height: 20px; color: var(--workspace-muted); stroke-width: 2; transform: translateY(-50%); pointer-events: none; }
+.db-presentation-new .db-staff-search-field input { width: 100%; min-width: 0; height: 44px; padding: 0 12px 0 40px; border: 1px solid var(--workspace-muted) !important; border-radius: 10px; background: var(--surface-overlay) !important; color: var(--workspace-text) !important; caret-color: var(--workspace-text); font-size: 16px; line-height: 1.25; }
+.db-presentation-new .db-staff-search-field input::placeholder { color: var(--workspace-muted); opacity: 1; }
+.db-presentation-new .db-staff-search-field:hover input:not(:disabled) { border-color: var(--workspace-text) !important; }
+.db-presentation-new .db-staff-search-field:focus-within { z-index: 2; box-shadow: 0 0 0 3px rgba(255, 122, 46, .26); }
+.db-presentation-new .db-staff-search-field:focus-within input { border-color: #ff7a2e !important; outline: 0; }
+.db-presentation-new .db-staff-search-field input:disabled { cursor: not-allowed; opacity: .6; }
+.db-repair-orders-new__search { align-self: start; }
 .db-repair-orders-new__status-select { position: relative; display: none; min-width: 0; }
 .db-repair-orders-new__status-select select { width: 100%; height: 44px; appearance: none; border: 1px solid #bec9d5 !important; border-radius: 10px; padding: 0 34px 0 12px; background: #fff !important; color: #17283f !important; font-size: 14px; }
 .db-repair-orders-new__status-select svg { position: absolute; top: 50%; right: 10px; width: 16px; height: 16px; color: #53657a; transform: translateY(-50%); pointer-events: none; }
@@ -2598,17 +2775,13 @@ html::-webkit-scrollbar-thumb:hover {
 /* The Shop Work ledger reuses the canonical Repair Orders filters. Keep their
    actual text, placeholder, and selected value legible when the staff shell is
    in a dark or high-contrast appearance mode. */
-.db-staff-shell:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) .db-repair-orders-new :is(.db-repair-orders-new__search input, .db-repair-orders-new__status-select select) {
+.db-staff-shell:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) .db-repair-orders-new .db-repair-orders-new__status-select select {
   border-color: var(--workspace-border) !important;
   background: var(--surface-overlay) !important;
   color: var(--workspace-text) !important;
   caret-color: var(--workspace-text);
 }
-.db-staff-shell:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) .db-repair-orders-new__search input::placeholder {
-  color: var(--workspace-muted);
-  opacity: 1;
-}
-.db-staff-shell:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) .db-repair-orders-new :is(.db-repair-orders-new__search svg, .db-repair-orders-new__status-select svg) {
+.db-staff-shell:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) .db-repair-orders-new__status-select svg {
   color: var(--workspace-muted);
 }
 .db-staff-shell:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) .db-repair-orders-new__status-select option {
@@ -2903,7 +3076,7 @@ html::-webkit-scrollbar-thumb:hover {
 .db-repair-orders-ledger__row-shell[data-selected='true'] { background: var(--db-ledger-selected-surface); }
 .db-repair-orders-ledger__row-shell[data-selected='true'][data-inspected='true'] { background: var(--db-ledger-selected-inspected-surface); }
 .db-repair-orders-ledger__row { position: relative; width: 100%; min-width: 0; display: grid; grid-template-columns: minmax(0,1fr) auto; align-items: stretch; gap: 10px; padding: 0 15px; background: transparent; color: var(--db-ledger-text); }
-.db-repair-orders-ledger__record { width: 100%; min-width: 0; min-height: 66px; display: grid; grid-template-columns: minmax(148px,1fr) auto minmax(104px,.65fr); align-items: center; gap: 14px; border: 0; border-radius: 6px; padding: 11px 0; background: transparent; color: inherit; font: inherit; text-align: left; }
+.db-repair-orders-ledger__record { width: 100%; min-width: 0; min-height: 66px; display: grid; grid-template-columns: minmax(148px,1fr) minmax(104px,.65fr); align-items: center; gap: 14px; border: 0; border-radius: 6px; padding: 11px 0; background: transparent; color: inherit; cursor: pointer; font: inherit; text-align: left; }
 .db-repair-orders-ledger__row-shell:hover { background: var(--db-ledger-raised); }
 .db-repair-orders-ledger__row-shell[data-inspected='true']:hover { background: var(--db-ledger-inspected-surface); }
 .db-repair-orders-ledger__row-shell[data-selected='true']:hover { background: var(--db-ledger-selected-surface); }
@@ -2914,9 +3087,11 @@ html::-webkit-scrollbar-thumb:hover {
 .db-presentation-new .db-staff-content .db-repair-orders-ledger[data-pointer-interaction='true'] :is(.db-repair-orders-ledger__record, .db-repair-orders-ledger__details-toggle, .db-repair-orders-ledger__open-workspace):focus { outline: 0; box-shadow: none !important; }
 .db-repair-orders-ledger__order,
 .db-repair-orders-ledger__money { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.db-repair-orders-ledger__order-line { display: flex; min-width: 0; align-items: center; gap: 7px; flex-wrap: wrap; }
+.db-repair-orders-ledger__order-line strong { min-width: 0; overflow-wrap: normal; word-break: normal; }
 .db-repair-orders-ledger__order strong { color: var(--db-ledger-text); }
 .db-repair-orders-ledger__order small { align-self: flex-start; padding: 2px 5px; border-radius: 5px; background: var(--db-ledger-raised); color: var(--db-ledger-muted); font-size: 9px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; }
-.db-repair-orders-ledger__status { justify-self: start; padding: 5px 8px; border-radius: 999px; font-size: 11px; font-weight: 800; text-transform: capitalize; }
+.db-repair-orders-ledger__status { display: inline-flex; width: max-content; min-height: 20px; flex: 0 0 auto; align-items: center; justify-content: center; padding: 2px 7px; border-radius: 999px; font-size: 11px; font-weight: 800; line-height: 1.2; text-transform: capitalize; white-space: nowrap; }
 .db-repair-orders-ledger__status--neutral { background: #edf1f5; color: #40536a; }
 .db-repair-orders-ledger__status--warning { background: #fff0df; color: #8b4300; }
 .db-repair-orders-ledger__status--active { background: #eaf3fc; color: #19568d; }
@@ -2953,7 +3128,7 @@ html::-webkit-scrollbar-thumb:hover {
 .db-repair-orders-ledger--compact .db-repair-orders-ledger__rows { padding: 0; }
 .db-repair-orders-ledger--compact .db-repair-orders-ledger__row-shell { margin: 0; overflow: visible; border-inline: 0; border-radius: 0; }
 .db-repair-orders-ledger--compact .db-repair-orders-ledger__row { grid-template-columns: minmax(0, 1fr) auto; gap: 10px; padding: 0 11px; }
-.db-repair-orders-ledger--compact .db-repair-orders-ledger__record { min-height: 62px; grid-template-columns: minmax(0, 1fr) auto minmax(92px, .72fr); gap: 10px; padding: 10px 0; }
+.db-repair-orders-ledger--compact .db-repair-orders-ledger__record { min-height: 62px; grid-template-columns: minmax(0, 1fr) minmax(92px, .72fr); gap: 10px; padding: 10px 0; }
 .db-repair-orders-ledger--compact .db-repair-orders-ledger__record .db-repair-orders-ledger__order { grid-column: 1; min-width: 0; overflow: hidden; }
 .db-repair-orders-ledger--compact .db-repair-orders-ledger__details-toggle { padding-inline: 9px; }
 .db-repair-orders-ledger--compact .db-repair-orders-ledger__record .db-repair-orders-ledger__order strong { display: block; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
@@ -2979,7 +3154,7 @@ html::-webkit-scrollbar-thumb:hover {
 
 @media (max-width: 1279px) {
   .db-repair-orders-new__toolbar { grid-template-columns: 280px minmax(0,1fr); }
-  .db-repair-orders-ledger__record { grid-template-columns: minmax(126px,1fr) auto 96px; }
+  .db-repair-orders-ledger__record { grid-template-columns: minmax(126px,1fr) 96px; }
 }
 
 /* The selected record is an explicit list-to-workspace transition below the
@@ -3008,17 +3183,15 @@ html::-webkit-scrollbar-thumb:hover {
   .db-repair-orders-new__status-tabs { display: none; }
   .db-repair-orders-new__status-select { display: block; }
   .db-repair-orders-ledger__row { align-items: stretch; gap: 6px 10px; padding: 0 12px; }
-  .db-repair-orders-ledger__record { min-height: 92px; grid-template-columns: minmax(0,1fr) minmax(88px,.65fr); align-items: start; gap: 6px 10px; padding: 12px 0; }
-  .db-repair-orders-ledger__record .db-repair-orders-ledger__order,
-  .db-repair-orders-ledger__record .db-repair-orders-ledger__status { grid-column: 1; }
-  .db-repair-orders-ledger__record .db-repair-orders-ledger__status { grid-row: 2; }
-  .db-repair-orders-ledger__record .db-repair-orders-ledger__money { grid-column: 2; grid-row: 1 / 3; align-self: center; }
+  .db-repair-orders-ledger__record { min-height: 76px; grid-template-columns: minmax(0,1fr) minmax(88px,.65fr); align-items: center; gap: 6px 10px; padding: 10px 0; }
+  .db-repair-orders-ledger__record .db-repair-orders-ledger__order { grid-column: 1; }
+  .db-repair-orders-ledger__record .db-repair-orders-ledger__money { grid-column: 2; align-self: center; }
   .db-repair-orders-ledger__details-toggle { align-self: center; justify-self: end; }
   .db-repair-orders-ledger__brief { align-items: stretch; flex-direction: column; padding: 4px 12px 14px; }
   .db-repair-orders-ledger__brief dl { grid-template-columns: repeat(2, minmax(0,1fr)); }
   .db-repair-orders-ledger__vehicle-group dl { grid-template-columns: repeat(2, minmax(0,1fr)); }
   .db-repair-orders-ledger__open-workspace { width: 100%; }
-  .db-repair-orders-ledger--compact .db-repair-orders-ledger__record { min-height: 92px; }
+  .db-repair-orders-ledger--compact .db-repair-orders-ledger__record { min-height: 76px; }
   .db-repair-orders-ledger > footer { align-items: stretch; flex-direction: column; }
   .db-repair-orders-ledger > footer > div { display: grid; grid-template-columns: 1fr 1fr; }
   .db-repair-orders-ledger > footer button { justify-content: center; }
@@ -3039,6 +3212,16 @@ html::-webkit-scrollbar-thumb:hover {
 }
 
 @media (forced-colors: active) {
+  .db-presentation-new .db-staff-search-field input {
+    border-color: CanvasText !important;
+    background: Field !important;
+    color: FieldText !important;
+    forced-color-adjust: auto;
+  }
+  .db-presentation-new .db-staff-search-field input::placeholder,
+  .db-presentation-new .db-staff-search-field svg { color: GrayText; }
+  .db-presentation-new .db-staff-search-field:focus-within { box-shadow: 0 0 0 3px Highlight; }
+  .db-presentation-new .db-staff-search-field:focus-within input { border-color: Highlight !important; }
   .db-repair-orders-ledger {
     --db-ledger-text: CanvasText;
     --db-ledger-muted: CanvasText;

@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react'
-import { Spinner, LoadingLine } from '@/components/ui'
+import { Spinner, LoadingLine, StaffSearchField } from '@/components/ui'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
@@ -3006,6 +3006,32 @@ export default function CustomersPage() {
   // list is simply the current page returned by the API.
   const filteredCustomers = customers
 
+  const renderCustomerSearch = (disabled = false) => presentationVariant === 'new' ? (
+    <StaffSearchField
+      accessibleLabel="Search customers"
+      className="db-customers-workspace__search mb-6 flex-shrink-0"
+      placeholder="Search by name, email, or phone..."
+    value={searchQuery}
+      onChange={disabled ? undefined : (event) => setSearchQuery(event.target.value)}
+      disabled={disabled}
+    />
+  ) : (
+    <div className="mb-6 flex-shrink-0">
+      <div className="relative">
+        <Search aria-hidden="true" className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-gray-400" />
+        <input
+          type="text"
+          aria-label="Search customers"
+          placeholder="Search by name, email, or phone..."
+        value={searchQuery}
+          onChange={disabled ? undefined : (event) => setSearchQuery(event.target.value)}
+          disabled={disabled}
+          className="w-full rounded-lg bg-white py-2.5 pl-10 pr-4 text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-amber-500 disabled:opacity-60"
+        />
+      </div>
+    </div>
+  )
+
   if (isLoading) {
     return (
       <div className="flex flex-col h-full min-h-0">
@@ -3024,24 +3050,7 @@ export default function CustomersPage() {
         </div>
 
         {/* Search Bar */}
-        <div className="db-customers-workspace__search mb-6 flex-shrink-0">
-          <div className="relative">
-            <svg
-              className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-            </svg>
-            <input
-              type="text"
-              placeholder="Search by name, email, or phone..."
-              disabled
-              className="w-full pl-10 pr-4 py-2.5 bg-white rounded-lg text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-amber-500 disabled:opacity-60"
-            />
-          </div>
-        </div>
+        {renderCustomerSearch(true)}
 
         <div className="bg-white/5 border border-white/10 rounded-xl overflow-hidden flex flex-col flex-1 min-h-0">
           <div className="hidden lg:flex items-center justify-between px-4 py-3 border-b border-white/10 flex-shrink-0">
@@ -3094,6 +3103,16 @@ export default function CustomersPage() {
     const vehicles = queryClient.getQueryData<Vehicle[]>(['customerVehicles', customer.id])
     const history = queryClient.getQueryData<CustomerHistoryResponse>(['customerHistory', customer.id])
     const primaryContact = contacts?.[0]
+    const address = [
+      customer.billing_address_line1,
+      customer.billing_address_line2,
+      [customer.billing_city, customer.billing_state, customer.billing_zip].filter(Boolean).join(', '),
+      customer.billing_country,
+    ].filter(Boolean).join(' · ')
+    const accountIdentifiers = [
+      customer.usdot_number ? `DOT ${stripRegNumber(customer.usdot_number)}` : null,
+      customer.mc_number ? `MC ${stripRegNumber(customer.mc_number)}` : null,
+    ].filter(Boolean).join(' · ')
 
     return (
       <section
@@ -3107,32 +3126,24 @@ export default function CustomersPage() {
         }}
       >
         <div className="db-customer-inspection__facts">
-          <div>
-            <h3>Account</h3>
-            <p>{customer.fleet_enabled ? 'Fleet-enabled customer account' : 'Customer account'}</p>
-            {(customer.usdot_number || customer.mc_number) && (
-              <p className="db-customer-inspection__meta">
-                {customer.usdot_number && `DOT ${stripRegNumber(customer.usdot_number)}`}
-                {customer.usdot_number && customer.mc_number && ' · '}
-                {customer.mc_number && `MC ${stripRegNumber(customer.mc_number)}`}
-              </p>
-            )}
-          </div>
+          {(primaryContact || customerPersonalName(customer) || customer.email) && <div>
+            <h3>Primary contact</h3>
+            {(primaryContact || customerPersonalName(customer)) && <p>{primaryContact ? [primaryContact.first_name, primaryContact.last_name].filter(Boolean).join(' ') || customerPersonalName(customer) : customerPersonalName(customer)}</p>}
+            {(primaryContact?.email || customer.email) && <p className="db-customer-inspection__meta">{primaryContact?.email || customer.email}</p>}
+          </div>}
+          {(address || accountIdentifiers || customer.source || customer.created_at) && <div>
+            <h3>Account context</h3>
+            {address && <p>{address}</p>}
+            {accountIdentifiers && <p className="db-customer-inspection__meta">{accountIdentifiers}</p>}
+            {(customer.source || customer.created_at) && <p className="db-customer-inspection__meta">
+              {customer.source && `Source: ${customer.source}`}
+              {customer.source && customer.created_at && ' · '}
+              {customer.created_at && `Customer since ${new Date(customer.created_at).toLocaleDateString()}`}
+            </p>}
+          </div>}
           <div>
             <h3>Balance</h3>
             <p>{customer.balance !== undefined ? balanceLabel(customer.balance) : 'Not available'}</p>
-          </div>
-          <div>
-            <h3>Primary contact</h3>
-            <p>{primaryContact ? [primaryContact.first_name, primaryContact.last_name].filter(Boolean).join(' ') || customerDisplayName(customer) : customerPersonalName(customer) || customerDisplayName(customer)}</p>
-            <p className="db-customer-inspection__meta">
-              {[
-                primaryContact?.email || customer.email,
-                primaryContact?.phone || customer.phone
-                  ? formatUSPhone(primaryContact?.phone || customer.phone || '')
-                  : null,
-              ].filter(Boolean).join(' · ')}
-            </p>
           </div>
           <div>
             <h3>Vehicles &amp; relationships</h3>
@@ -3148,17 +3159,19 @@ export default function CustomersPage() {
             )}
           </div>
         </div>
-        <button
-          type="button"
-          className="db-customer-inspection__open"
-          onClick={(event) => {
-            event.stopPropagation()
-            openDetailPanel(customer, true)
-          }}
-        >
-          Open customer
-          <ArrowRight aria-hidden="true" />
-        </button>
+        <div className="db-customer-inspection__actions">
+          <button
+            type="button"
+            className="db-customer-inspection__open"
+            onClick={(event) => {
+              event.stopPropagation()
+              openDetailPanel(customer, true)
+            }}
+          >
+            Open customer
+            <ArrowRight aria-hidden="true" />
+          </button>
+        </div>
       </section>
     )
   }
@@ -3180,29 +3193,11 @@ export default function CustomersPage() {
       </div>
 
       {/* Search Bar */}
-      <div className="db-customers-workspace__search mb-6 flex-shrink-0">
-        <div className="relative">
-          <svg
-            className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-          </svg>
-          <input
-            type="text"
-            placeholder="Search by name, email, or phone..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-10 pr-4 py-2.5 bg-white rounded-lg text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-amber-500"
-          />
-        </div>
-      </div>
+      {renderCustomerSearch()}
 
       <div className="db-customers-workspace__ledger bg-white/5 border border-white/10 rounded-xl overflow-hidden flex flex-col flex-1 min-h-0">
         {/* Header with ViewToggle. Total count lives in the pagination footer. */}
-        <div className="hidden lg:flex items-center justify-between px-4 py-3 border-b border-white/10 flex-shrink-0">
+        <div className={`${presentationVariant === 'new' ? 'hidden' : 'hidden lg:flex'} items-center justify-between px-4 py-3 border-b border-white/10 flex-shrink-0`}>
           <ViewToggle value={activeViewMode} onChange={setViewMode} disabled={isMobile} />
         </div>
 
@@ -3214,7 +3209,85 @@ export default function CustomersPage() {
               <Spinner size="md" className="border-white/40 border-t-white" />
             </div>
           )}
-          {activeViewMode === 'list' ? (
+          {presentationVariant === 'new' ? (
+            <div className="db-customer-navigator" role="list" aria-label="Customers">
+              {filteredCustomers?.map((customer) => {
+                const isSelected = selectedCustomerId === customer.id
+                const isInspected = inspectedCustomerId === customer.id
+                return (
+                  <article
+                    key={customer.id}
+                    className="db-customer-navigator__record"
+                    role="listitem"
+                    aria-label={`${customerDisplayName(customer)} customer record`}
+                    data-selected={isSelected ? 'true' : undefined}
+                    data-inspected={isInspected ? 'true' : undefined}
+                  >
+                    <div
+                      className="db-customer-navigator__summary"
+                      tabIndex={0}
+                      aria-label={`Open ${customerDisplayName(customer)} customer workspace`}
+                      onClick={() => openDetailPanel(customer, true)}
+                      onKeyDown={(event) => {
+                        if (event.target !== event.currentTarget || event.key !== 'Enter') return
+                        event.preventDefault()
+                        openDetailPanel(customer, true)
+                      }}
+                    >
+                      <div className="db-customer-navigator__identity">
+                        <div className="db-customer-navigator__name-line">
+                          <button
+                            type="button"
+                            ref={(node) => {
+                              if (node) customerRowRefs.current.set(customer.id, node)
+                              else customerRowRefs.current.delete(customer.id)
+                            }}
+                            className="db-customer-navigator__name-action"
+                            aria-current={isSelected ? 'true' : undefined}
+                            aria-label={`Open ${customerDisplayName(customer)} customer workspace`}
+                            onClick={(event) => {
+                              event.stopPropagation()
+                              openDetailPanel(customer, true)
+                            }}
+                          >
+                            <span className="db-customer-navigator__name">
+                              {customerDisplayName(customer)}
+                            </span>
+                            <ArrowRight aria-hidden="true" />
+                          </button>
+                          {customer.fleet_enabled && <FleetMemberBadge variant="dark" />}
+                        </div>
+                        <MatchBadges matchedFields={customer.matched_fields} />
+                      </div>
+                      <span className="db-customer-navigator__phone">
+                        <Phone aria-hidden="true" />
+                        {customer.phone ? formatUSPhone(customer.phone) : 'No phone on file'}
+                      </span>
+                      <button
+                        type="button"
+                        ref={(node) => {
+                          if (node) customerDetailsButtonRefs.current.set(customer.id, node)
+                          else customerDetailsButtonRefs.current.delete(customer.id)
+                        }}
+                        onClick={(event) => {
+                          event.stopPropagation()
+                          toggleCustomerInspection(customer.id)
+                        }}
+                        onKeyDown={(event) => event.stopPropagation()}
+                        aria-expanded={isInspected}
+                        aria-controls={`customer-inspection-${customer.id}`}
+                        className="db-customer-details-control"
+                      >
+                        Details
+                        <ChevronDown aria-hidden="true" />
+                      </button>
+                    </div>
+                    {isInspected && renderCustomerInspectionBrief(customer)}
+                  </article>
+                )
+              })}
+            </div>
+          ) : activeViewMode === 'list' ? (
             /* List View */
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
@@ -3282,7 +3355,6 @@ export default function CustomersPage() {
                       }}
                       tabIndex={0}
                       aria-selected={selectedCustomerId === customer.id}
-                      data-inspected={presentationVariant === 'new' && inspectedCustomerId === customer.id ? 'true' : undefined}
                       className="db-customer-ledger-row hover:bg-white/5 cursor-pointer transition-colors"
                     >
                       <td className="px-4 py-3">
@@ -3321,43 +3393,18 @@ export default function CustomersPage() {
                         ) : '—'}
                       </td>
                       <td className="px-4 py-3 text-right">
-                        {presentationVariant === 'new' ? (
-                          <button
-                            type="button"
-                            ref={(node) => {
-                              if (node) customerDetailsButtonRefs.current.set(customer.id, node)
-                              else customerDetailsButtonRefs.current.delete(customer.id)
-                            }}
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              toggleCustomerInspection(customer.id)
-                            }}
-                            aria-expanded={inspectedCustomerId === customer.id}
-                            aria-controls={`customer-inspection-${customer.id}`}
-                            className="db-customer-details-control"
-                          >
-                            Details
-                            <ChevronDown aria-hidden="true" />
-                          </button>
-                        ) : (
-                          <button
-                            type="button"
-                            onClick={(event) => {
-                              event.stopPropagation()
-                              openDetailPanel(customer)
-                            }}
-                            className="text-emerald-400 hover:text-emerald-300"
-                          >
-                            View
-                          </button>
-                        )}
+                        <button
+                          type="button"
+                          onClick={(event) => {
+                            event.stopPropagation()
+                            openDetailPanel(customer)
+                          }}
+                          className="text-emerald-400 hover:text-emerald-300"
+                        >
+                          View
+                        </button>
                       </td>
                     </tr>
-                    {presentationVariant === 'new' && inspectedCustomerId === customer.id && (
-                      <tr className="db-customer-inspection-row" data-selected={selectedCustomerId === customer.id ? 'true' : undefined}>
-                        <td colSpan={7}>{renderCustomerInspectionBrief(customer)}</td>
-                      </tr>
-                    )}
                     </React.Fragment>
                   ))}
                 </tbody>
@@ -3370,7 +3417,6 @@ export default function CustomersPage() {
                 <article
                   key={customer.id}
                   className="db-customer-ledger-card-group"
-                  data-inspected={presentationVariant === 'new' && inspectedCustomerId === customer.id ? 'true' : undefined}
                   data-selected={selectedCustomerId === customer.id ? 'true' : undefined}
                 >
                 <div
@@ -3446,39 +3492,18 @@ export default function CustomersPage() {
                   </div>
 
                   <div className="pt-3 border-t border-amber-200/50">
-                    {presentationVariant === 'new' ? (
-                      <button
-                        type="button"
-                        ref={(node) => {
-                          if (node) customerDetailsButtonRefs.current.set(customer.id, node)
-                          else customerDetailsButtonRefs.current.delete(customer.id)
-                        }}
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          toggleCustomerInspection(customer.id)
-                        }}
-                        aria-expanded={inspectedCustomerId === customer.id}
-                        aria-controls={`customer-inspection-${customer.id}`}
-                        className="db-customer-details-control w-full"
-                      >
-                        Details
-                        <ChevronDown aria-hidden="true" />
-                      </button>
-                    ) : (
-                      <button
-                        type="button"
-                        onClick={(event) => {
-                          event.stopPropagation()
-                          openDetailPanel(customer)
-                        }}
-                        className="w-full text-center font-medium text-amber-700"
-                      >
-                        View Details
-                      </button>
-                    )}
+                    <button
+                      type="button"
+                      onClick={(event) => {
+                        event.stopPropagation()
+                        openDetailPanel(customer)
+                      }}
+                      className="w-full text-center font-medium text-amber-700"
+                    >
+                      View Details
+                    </button>
                   </div>
                 </div>
-                {presentationVariant === 'new' && inspectedCustomerId === customer.id && renderCustomerInspectionBrief(customer)}
                 </article>
               ))}
 

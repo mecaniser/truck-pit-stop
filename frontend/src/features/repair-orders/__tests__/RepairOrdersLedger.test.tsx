@@ -195,6 +195,16 @@ describe('DB-035 Stage 4 Repair Orders presentation', () => {
     expect(props.onNextPage).toHaveBeenCalledOnce()
   })
 
+  it('uses the canonical focus-safe staff search field', () => {
+    renderLedger()
+
+    const search = screen.getByRole('searchbox', { name: 'Search repair orders' })
+    expect(search.closest('.db-staff-search-field')).not.toBeNull()
+    expect(search.closest('.db-staff-search-field-inset')).toHaveClass('db-repair-orders-new__search')
+    expect(LEDGER_CSS).toContain('border: 1px solid var(--workspace-muted) !important')
+    expect(LEDGER_CSS).toContain('width: 20px; height: 20px')
+  })
+
   it('keeps Details in the navigator and opens the workspace only from the record or explicit secondary action', async () => {
     const user = userEvent.setup()
     const { props } = renderLedger()
@@ -210,6 +220,33 @@ describe('DB-035 Stage 4 Repair Orders presentation', () => {
     await user.keyboard('{Enter}')
     expect(props.onOpenOrder).toHaveBeenCalledTimes(2)
     expect(props.onOpenOrder).toHaveBeenLastCalledWith('ro-real-17', { focusWorkspace: true })
+  })
+
+  it('keeps the disclosure plane inert and protects Details from canonical row activation', async () => {
+    const user = userEvent.setup()
+    const { props } = renderLedger()
+    const details = screen.getByRole('button', { name: 'Show details for RO-1017' })
+
+    await user.click(details)
+    const brief = screen.getByRole('region', { name: 'Order brief for RO-1017' })
+    await user.click(within(brief).getByText('Diagnose intermittent no-start with a deliberately long source description'))
+    expect(props.onOpenOrder).not.toHaveBeenCalled()
+
+    await user.click(screen.getByRole('button', { name: 'Open repair order RO-1017 from details' }))
+    expect(props.onOpenOrder).toHaveBeenCalledTimes(1)
+    expect(props.onOpenOrder).toHaveBeenLastCalledWith('ro-real-17')
+  })
+
+  it('keeps canonical status wording in a single-line chip associated with order identity', () => {
+    renderLedger({ rows: [{ ...rows[0], status: 'Authorization Pending' }] })
+
+    const row = screen.getByRole('article', { name: 'Repair order RO-1017' })
+    const identity = row.querySelector('.db-repair-orders-ledger__order-line')
+    const status = within(row).getByText('Authorization Pending')
+    expect(identity).toContainElement(status)
+    expect(LEDGER_CSS).toContain('white-space: nowrap')
+    expect(LEDGER_CSS).toContain('width: max-content')
+    expect(LEDGER_CSS).toContain('min-height: 20px')
   })
 
   it('keeps pointer disclosure separate from the keyboard focus affordance', async () => {
