@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import { Spinner } from '@/components/ui'
 import { useQueryClient } from '@tanstack/react-query'
+import { isAxiosError } from 'axios'
 import api from '@/lib/api'
 import type {
   CursorPageMessageThreads,
@@ -48,6 +49,10 @@ interface SmsRealtimeEvent {
 }
 
 type InboxTab = 'inbox' | 'archived'
+
+function apiErrorDetail(error: unknown, fallback: string): string {
+  return isAxiosError<{ detail?: string }>(error) ? error.response?.data?.detail || fallback : fallback
+}
 
 const sortThreads = (rows: MessageThread[]) =>
   [...rows].sort((a, b) => {
@@ -148,8 +153,8 @@ export default function MessagesInboxPage() {
         if (data.items.length > 0) {
           setSelectedThreadId((prev) => prev || data.items[0].id)
         }
-      } catch (error: any) {
-        toast.error(error?.response?.data?.detail || 'Failed to load message threads')
+      } catch (error: unknown) {
+        toast.error(apiErrorDetail(error, 'Failed to load message threads'))
       } finally {
         setThreadsLoading(false)
       }
@@ -182,8 +187,8 @@ export default function MessagesInboxPage() {
             }))
           }
         }
-      } catch (error: any) {
-        toast.error(error?.response?.data?.detail || 'Failed to load messages')
+      } catch (error: unknown) {
+        toast.error(apiErrorDetail(error, 'Failed to load messages'))
       } finally {
         setMessagesLoading(false)
       }
@@ -205,8 +210,8 @@ export default function MessagesInboxPage() {
         skip = data.skip + data.limit
       }
       setCustomers(allCustomers)
-    } catch (error: any) {
-      toast.error(error?.response?.data?.detail || 'Failed to load customers')
+    } catch (error: unknown) {
+      toast.error(apiErrorDetail(error, 'Failed to load customers'))
       setCustomers([])
     }
   }, [])
@@ -227,8 +232,8 @@ export default function MessagesInboxPage() {
       setReplyBody('')
       await loadMessages(selectedThread.id)
       await loadThreads()
-    } catch (error: any) {
-      toast.error(error?.response?.data?.detail || 'Failed to send message')
+    } catch (error: unknown) {
+      toast.error(apiErrorDetail(error, 'Failed to send message'))
     } finally {
       setSending(false)
     }
@@ -256,8 +261,8 @@ export default function MessagesInboxPage() {
       setShowCompose(false)
       await loadThreads()
       toast.success('Message sent')
-    } catch (error: any) {
-      toast.error(error?.response?.data?.detail || 'Failed to send new message')
+    } catch (error: unknown) {
+      toast.error(apiErrorDetail(error, 'Failed to send new message'))
     } finally {
       setSending(false)
     }
@@ -273,8 +278,8 @@ export default function MessagesInboxPage() {
       setMessages([])
       await loadThreads()
       queryClient.invalidateQueries({ queryKey: ['messages-unread-summary'] })
-    } catch (error: any) {
-      toast.error(error?.response?.data?.detail || 'Failed to archive thread')
+    } catch (error: unknown) {
+      toast.error(apiErrorDetail(error, 'Failed to archive thread'))
     } finally {
       setThreadActionBusy(false)
     }
@@ -299,8 +304,8 @@ export default function MessagesInboxPage() {
       setMessages([])
       await loadThreads()
       queryClient.invalidateQueries({ queryKey: ['messages-unread-summary'] })
-    } catch (error: any) {
-      toast.error(error?.response?.data?.detail || 'Failed to delete thread')
+    } catch (error: unknown) {
+      toast.error(apiErrorDetail(error, 'Failed to delete thread'))
     } finally {
       setThreadActionBusy(false)
     }
@@ -314,8 +319,8 @@ export default function MessagesInboxPage() {
       toast.success('Thread unarchived')
       await loadThreads()
       queryClient.invalidateQueries({ queryKey: ['messages-unread-summary'] })
-    } catch (error: any) {
-      toast.error(error?.response?.data?.detail || 'Failed to unarchive thread')
+    } catch (error: unknown) {
+      toast.error(apiErrorDetail(error, 'Failed to unarchive thread'))
     } finally {
       setThreadActionBusy(false)
     }
@@ -579,7 +584,7 @@ export default function MessagesInboxPage() {
               {/* Back button — mobile only */}
               <button
                 onClick={() => { setSelectedThreadId(null); setMessages([]) }}
-                className="lg:hidden flex-shrink-0 p-1.5 rounded-lg text-gray-400 hover:text-white hover:bg-white/10 transition-colors"
+                className="lg:hidden h-11 w-11 flex-shrink-0 items-center justify-center rounded-lg text-gray-400 hover:text-white hover:bg-white/10 transition-colors inline-flex"
                 aria-label="Back to threads"
               >
                 <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -607,7 +612,7 @@ export default function MessagesInboxPage() {
                 <button
                   onClick={unarchiveSelectedThread}
                   disabled={threadActionBusy}
-                  className="inline-flex items-center gap-1 rounded-md border border-emerald-400/30 bg-emerald-500/10 px-2 py-1.5 text-xs text-emerald-300 hover:bg-emerald-500/20 disabled:opacity-50 transition-colors"
+                  className="inline-flex min-h-11 min-w-11 items-center justify-center gap-1 rounded-md border border-emerald-400/30 bg-emerald-500/10 px-2 py-1.5 text-xs text-emerald-300 hover:bg-emerald-500/20 disabled:opacity-50 transition-colors"
                 >
                   <ArchiveRestore className="w-3.5 h-3.5" />
                   <span className="hidden sm:inline">Unarchive</span>
@@ -616,7 +621,7 @@ export default function MessagesInboxPage() {
                 <button
                   onClick={archiveSelectedThread}
                   disabled={threadActionBusy}
-                  className="inline-flex items-center gap-1 rounded-md border border-white/20 bg-white/5 px-2 py-1.5 text-xs text-gray-300 hover:bg-white/10 disabled:opacity-50 transition-colors"
+                  className="inline-flex min-h-11 min-w-11 items-center justify-center gap-1 rounded-md border border-white/20 bg-white/5 px-2 py-1.5 text-xs text-gray-300 hover:bg-white/10 disabled:opacity-50 transition-colors"
                 >
                   <Archive className="w-3.5 h-3.5" />
                   <span className="hidden sm:inline">Archive</span>
@@ -626,7 +631,7 @@ export default function MessagesInboxPage() {
                 <button
                   onClick={deleteSelectedThread}
                   disabled={threadActionBusy}
-                  className="db-messages-delete-action inline-flex items-center gap-1 rounded-md border border-rose-400/30 bg-rose-500/10 px-2 py-1.5 text-xs text-rose-300 hover:bg-rose-500/20 disabled:opacity-50 transition-colors"
+                  className="db-messages-delete-action inline-flex min-h-11 min-w-11 items-center justify-center gap-1 rounded-md border border-rose-400/30 bg-rose-500/10 px-2 py-1.5 text-xs text-rose-300 hover:bg-rose-500/20 disabled:opacity-50 transition-colors"
                 >
                   <Trash2 className="w-3.5 h-3.5" />
                   <span className="hidden sm:inline">Delete</span>
@@ -640,7 +645,7 @@ export default function MessagesInboxPage() {
             {messagesHasMore && (
               <div className="flex justify-center mb-2">
                 <button
-                  className="rounded-full border border-white/20 bg-white/5 px-3 py-1 text-xs text-gray-400 hover:bg-white/10 transition-colors disabled:opacity-50"
+                  className="inline-flex min-h-11 items-center justify-center rounded-full border border-white/20 bg-white/5 px-3 py-1 text-xs text-gray-400 hover:bg-white/10 transition-colors disabled:opacity-50"
                   onClick={() => loadMessages(selectedThread.id, messagesCursor, true)}
                   disabled={messagesLoading}
                 >
@@ -719,7 +724,7 @@ export default function MessagesInboxPage() {
                 }}
               />
               <button
-                className="db-messages-send-action flex-shrink-0 inline-flex items-center justify-center w-10 h-10 rounded-xl text-white disabled:opacity-40 transition-opacity"
+                className="db-messages-send-action h-11 w-11 flex-shrink-0 inline-flex items-center justify-center rounded-xl text-white disabled:opacity-40 transition-opacity"
                 style={{ backgroundColor: accentColors[600] }}
                 onClick={sendReply}
                 disabled={sending || !replyBody.trim()}
