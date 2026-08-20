@@ -53,6 +53,18 @@ router = APIRouter()
 # and rendering its entire work history on every refresh.
 ACTION_QUEUE_LANE_LIMIT = 50
 
+# This is the same deliberately narrow tenant-wide repair-workspace boundary as
+# the WebSocket channel. Fleet, driver, customer, platform, and unknown roles
+# have narrower surfaces and must never inherit access to the shop workset.
+DAILY_WORKSET_STAFF_ROLES = frozenset(
+    {
+        UserRole.GARAGE_OWNER,
+        UserRole.GARAGE_ADMIN,
+        UserRole.RECEPTIONIST,
+        UserRole.MECHANIC,
+    }
+)
+
 
 def get_effective_total(order: RepairOrder) -> Decimal:
     return get_order_subtotal(order)
@@ -66,6 +78,16 @@ def is_pending_zelle_confirmation(invoice_status: InvoiceStatus, submitted_at: O
 def require_manager(current_user: User) -> None:
     if current_user.role not in (UserRole.GARAGE_OWNER, UserRole.GARAGE_ADMIN):
         raise HTTPException(status_code=403, detail="Shop owner/admin access required")
+
+
+def require_daily_workset_staff(current_user: User) -> None:
+    """Fail closed before loading the tenant-wide operational projection."""
+    if (
+        current_user.role not in DAILY_WORKSET_STAFF_ROLES
+        or current_user.tenant_id is None
+        or current_user.deleted_at is not None
+    ):
+        raise HTTPException(status_code=403, detail="Access denied")
 
 
 class StatusCount(BaseModel):
@@ -448,28 +470,31 @@ async def get_dashboard_daily_workset(
     current_user: User = Depends(get_current_active_user),
 ):
     """Return the tenant's active local-day workset without changing the legacy action queue."""
+    require_daily_workset_staff(current_user)
+
     configured_timezone = "America/New_York"
     fleet_company_name: Optional[str] = None
-    if current_user.tenant_id:
-        tenant_result = await db.execute(
-            select(Tenant.fleet_company_name, Tenant.timezone).where(Tenant.id == current_user.tenant_id)
-        )
-        tenant_row = tenant_result.one_or_none()
-        if tenant_row:
-            fleet_company_name, configured_timezone = tenant_row
+    tenant_result = await db.execute(
+        select(
+            Tenant.fleet_company_name,
+            Tenant.timezone,
+            Tenant.is_active,
+            Tenant.deleted_at,
+        ).where(Tenant.id == current_user.tenant_id)
+    )
+    tenant_row = tenant_result.one_or_none()
+    if (
+        tenant_row is None
+        or tenant_row.is_active is not True
+        or tenant_row.deleted_at is not None
+    ):
+        raise HTTPException(status_code=403, detail="Access denied")
+    fleet_company_name, configured_timezone, _, _ = tenant_row
 
     timezone_name, tenant_timezone = _resolve_tenant_timezone(configured_timezone)
     local_now = datetime.now(timezone.utc).astimezone(tenant_timezone)
     local_day_start = datetime.combine(local_now.date(), datetime.min.time(), tzinfo=tenant_timezone)
     next_reset_at = local_day_start + timedelta(days=1)
-
-    empty_workset = DashboardDailyWorkbench(
-        timezone=timezone_name,
-        business_date=local_now.date(),
-        next_reset_at=next_reset_at,
-    )
-    if not current_user.tenant_id:
-        return empty_workset
 
     action_queue = await _load_dashboard_action_queue(
         db,
