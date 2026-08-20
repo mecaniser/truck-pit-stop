@@ -206,6 +206,16 @@ export default function DashboardLayout() {
     return current?.label || ''
   }
 
+  const getCurrentSurface = () => {
+    if (location.pathname === '/dashboard') return 'dashboard'
+    if (location.pathname === '/dashboard/settings') return 'profile-settings'
+    if (location.pathname === '/dashboard/customers' || location.pathname.startsWith('/dashboard/customers/')) return 'customers'
+    if (location.pathname === '/dashboard/repair-orders') return 'repair-orders'
+    if (location.pathname === '/dashboard/messages') return 'messages'
+    if (location.pathname === '/dashboard/garage' || location.pathname.startsWith('/dashboard/garage/')) return 'my-shop'
+    return getCurrentPageLabel().toLowerCase().replace(/\s+/g, '-') || 'dashboard'
+  }
+
   const isGarageWorkspaceRoute =
     !isSuperAdmin &&
     (location.pathname === '/dashboard/garage' ||
@@ -218,7 +228,7 @@ export default function DashboardLayout() {
   const dashboardAriaLabel = presentationVariant === 'new'
     ? isSuperAdmin
       ? 'DieselBridge dashboard'
-      : 'Powered by DieselBridge — Shop Work'
+      : 'DieselBridge Shop Work'
     : isSuperAdmin
       ? 'Diesel Bridge Network dashboard'
       : `${dashboardLogoAlt} dashboard`
@@ -298,7 +308,7 @@ export default function DashboardLayout() {
       data-appearance-mode={appearance.mode}
       data-appearance-density={appearance.density}
       data-appearance-font-size={appearance.font_size}
-      data-surface={getCurrentPageLabel().toLowerCase().replace(/\s+/g, '-') || 'dashboard'}
+      data-surface={getCurrentSurface()}
       data-rail-expanded={showStaffRailToggle ? String(isStaffRailExpanded) : undefined}
     >
       <nav className={`db-staff-nav sticky top-0 z-50 ${

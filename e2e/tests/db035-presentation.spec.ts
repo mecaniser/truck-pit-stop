@@ -3,6 +3,12 @@ import { presentationFixture } from '../../frontend/src/test-fixtures/db035/appe
 import { dashboardActionQueueFixture } from '../../frontend/src/test-fixtures/db035/dashboard'
 import { garageOwnerSession } from '../../frontend/src/test-fixtures/db035/staffSession'
 
+const runtimeFailures = new WeakMap<Page, string[]>()
+
+function assertNoRuntimeFailures(page: Page) {
+  expect(runtimeFailures.get(page) ?? []).toEqual([])
+}
+
 const managerUser = (variant: 'legacy' | 'new') => ({
   ...garageOwnerSession,
   can_access_messaging: true,
@@ -10,8 +16,42 @@ const managerUser = (variant: 'legacy' | 'new') => ({
   presentation: presentationFixture(variant),
 })
 
+const dailyWorksetFixture = {
+  timezone: 'America/New_York',
+  business_date: '2026-08-14',
+  next_reset_at: '2026-08-15T04:00:00Z',
+  needs_attention: { items: dashboardActionQueueFixture.orders_needing_action, has_more: false },
+  on_floor: { items: dashboardActionQueueFixture.orders_on_floor, has_more: false },
+  ready_to_close: { items: dashboardActionQueueFixture.orders_ready_to_close, has_more: false },
+  closed_today: { items: [], has_more: false },
+}
+
+const selectedWorkspaceFixture = {
+  id: 'ro-needs-action', tenant_id: 'tenant-garage', customer_id: 'customer-1', vehicle_id: 'vehicle-1',
+  vehicle_make: 'Freightliner', vehicle_model: 'Cascadia 126', vehicle_year: 2021, vehicle_unit_number: 'NSL-1047', vehicle_vin: 'VIN1047',
+  customer_company_name: 'NorthStar Logistics', order_number: 'RO-2025-0417', status: 'draft',
+  description: 'Source-grounded dashboard fixture', customer_notes: null, internal_notes: null,
+  assigned_mechanic_id: null, total_parts_cost: '2875.42', total_labor_cost: '1250.00', total_cost: '4494.62',
+  created_at: '2026-08-11T12:00:00Z', updated_at: '2026-08-11T12:30:00Z',
+}
+
 async function installSession(page: Page, variant: 'legacy' | 'new') {
+  const failures: string[] = []
+  runtimeFailures.set(page, failures)
+  page.on('console', message => {
+    if (message.type() === 'error') failures.push(`console: ${message.text()}`)
+  })
+  page.on('pageerror', error => failures.push(`pageerror: ${error.message}`))
+  page.on('requestfailed', request => {
+    const failure = request.failure()?.errorText ?? 'unknown failure'
+    if (request.url().includes('/api/v1/') && failure !== 'net::ERR_ABORTED') {
+      failures.push(`requestfailed: ${request.method()} ${request.url()} (${failure})`)
+    }
+  })
   await page.addInitScript(() => {
+    window.localStorage.clear()
+    window.sessionStorage.clear()
+
     class FixtureWebSocket extends EventTarget {
       static readonly CONNECTING = 0
       static readonly OPEN = 1
@@ -66,6 +106,14 @@ async function installSession(page: Page, variant: 'legacy' | 'new') {
       await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(presentationFixture(variant)) })
       return
     }
+    if (url.pathname.endsWith('/auth/tenant-branding')) {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ name: 'Truck Pit Stop Wisconsin', slug: 'truck-pit-stop-wisconsin', state: 'WI', logo_url: null }),
+      })
+      return
+    }
     if (url.pathname.endsWith('/admin/garage-profile')) {
       await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ name: 'Truck Pit Stop Wisconsin', state: 'WI', logo_url: null }) })
       return
@@ -76,6 +124,30 @@ async function installSession(page: Page, variant: 'legacy' | 'new') {
     }
     if (url.pathname.endsWith('/dashboard/action-queue')) {
       await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(dashboardActionQueueFixture) })
+      return
+    }
+    if (url.pathname.endsWith('/dashboard/daily-workset')) {
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(dailyWorksetFixture) })
+      return
+    }
+    if (url.pathname.endsWith('/repair-orders/ro-needs-action/workspace')) {
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(selectedWorkspaceFixture) })
+      return
+    }
+    if (url.pathname.endsWith('/repair-orders/ro-needs-action/price-build')) {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          order_id: 'ro-needs-action', labor_total: '0.00', parts_total: '0.00', total_cost: '1250.00',
+          pricing_locked: false, can_edit_work: true, can_assign_technician: true, can_start_work: true,
+          can_finalize: false, lines: [], parts: [], warnings: [],
+        }),
+      })
+      return
+    }
+    if (url.pathname.endsWith('/quotes')) {
+      await route.fulfill({ status: 200, contentType: 'application/json', body: '[]' })
       return
     }
     if (url.pathname.endsWith('/customers') || url.pathname.endsWith('/repair-orders')) {
@@ -90,7 +162,7 @@ async function installSession(page: Page, variant: 'legacy' | 'new') {
       await route.fulfill({ status: 200, contentType: 'application/json', body: '[]' })
       return
     }
-    await route.fulfill({ status: 200, contentType: 'application/json', body: '{}' })
+    throw new Error(`Unhandled DB-035 fixture route: ${route.request().method()} ${url.pathname}`)
   })
 }
 
@@ -118,7 +190,12 @@ test('Harden preserves the canonical Shop Cockpit queues and repair-order deep l
     await expect(page.getByRole('button', { name: 'Full Order' })).toBeVisible()
 
     await page.getByRole('button', { name: /RO-2025-0417/ }).click()
-    await expect(page).toHaveURL(/\/dashboard\/repair-orders\?selected=ro-needs-action&queue=needs_action$/)
+    if (variant === 'new') {
+      await expect(page).toHaveURL(/\/dashboard\?selected=ro-needs-action&queue=needs_action$/)
+    } else {
+      await expect(page).toHaveURL(/\/dashboard\/repair-orders\?selected=ro-needs-action&queue=needs_action$/)
+    }
+    assertNoRuntimeFailures(page)
     await context.close()
   }
 })
@@ -126,7 +203,14 @@ test('Harden preserves the canonical Shop Cockpit queues and repair-order deep l
 async function openAppearance(page: Page, variant: 'legacy' | 'new') {
   await installSession(page, variant)
   await page.goto('/dashboard/settings')
-  await page.getByRole('button', { name: /Appearance|Theme/ }).click()
+  const compactSectionPicker = page.getByRole('button', { name: /^Settings section:/ })
+  if (variant === 'new' && page.viewportSize()!.width < 960) {
+    await expect(compactSectionPicker).toBeVisible()
+    await compactSectionPicker.click()
+    await page.getByRole('group', { name: 'Settings sections' }).getByRole('button', { name: 'Appearance' }).click()
+  } else {
+    await page.getByRole('button', { name: /Appearance|Theme/ }).click()
+  }
 }
 
 test('new staff presentation preserves product/shop hierarchy and responsive appearance controls', async ({ page }) => {
@@ -158,14 +242,19 @@ test('new staff presentation preserves product/shop hierarchy and responsive app
   await expect(page.getByRole('status')).toContainText('Previewing changes')
   await page.getByRole('button', { name: /Cancel/i }).click()
   await expect(page.getByRole('status')).toContainText('Up to date')
+  assertNoRuntimeFailures(page)
 })
 
 test('new shell uses a full desktop rail, compact iPad rail, and source-grounded mobile navigation', async ({ page }) => {
   await installSession(page, 'new')
   await page.goto('/dashboard')
+  await expect(page).toHaveURL(/\/dashboard$/)
+  await expect(page.locator('.db-staff-shell')).toHaveAttribute('data-surface', 'dashboard')
+  await expect(page.getByLabel('DieselBridge Shop Work')).toBeVisible()
 
   for (const [width, expectedRail] of [[1280, 224], [1024, 84]] as const) {
     await page.setViewportSize({ width, height: 900 })
+    await expect(page.locator('.db-staff-shell')).toHaveAttribute('data-rail-expanded', String(width >= 1280))
     const rail = await page.locator('.db-staff-nav').boundingBox()
     expect(rail?.width ?? 0).toBeGreaterThanOrEqual(expectedRail - 1)
     expect(rail?.width ?? 0).toBeLessThanOrEqual(expectedRail + 1)
@@ -173,6 +262,7 @@ test('new shell uses a full desktop rail, compact iPad rail, and source-grounded
     if (width < 1280) await expect(page.getByRole('button', { name: /navigation rail/i })).toHaveCount(0)
     await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true)
   }
+  assertNoRuntimeFailures(page)
 
   for (const width of [390, 320]) {
     await page.setViewportSize({ width, height: 844 })
@@ -210,6 +300,7 @@ test('legacy and new resolve from bootstrap without changing the staff route', a
       await expect(page.getByRole('heading', { name: 'Appearance' })).toBeVisible()
     }
     results.push({ variant, path: new URL(page.url()).pathname, requests: [...new Set(requests)].sort() })
+    assertNoRuntimeFailures(page)
     await context.close()
   }
   expect(results[0].path).toBe('/dashboard/settings')
@@ -240,6 +331,7 @@ test('both presentations cover all six staff surfaces across the contracted view
         await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true)
       }
     }
+    assertNoRuntimeFailures(page)
     await context.close()
   }
 })
@@ -264,6 +356,7 @@ test('both presentations remain operable with reduced motion, forced colors, coa
     } else {
       await expect(page.getByText('Theme Preview')).toBeVisible()
     }
+    assertNoRuntimeFailures(page)
     await context.close()
   }
 })

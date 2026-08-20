@@ -15,9 +15,9 @@ export default defineConfig({
   },
   projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
   webServer: process.env.DB035_BASE_URL ? undefined : {
-    command: 'npm --prefix ../frontend run dev -- --host 127.0.0.1 --port 5178',
+    command: 'npm --prefix ../frontend run dev -- --host 127.0.0.1 --port 5178 --strictPort',
     url: 'http://127.0.0.1:5178',
-    reuseExistingServer: true,
+    reuseExistingServer: false,
     timeout: 120_000,
   },
 })
