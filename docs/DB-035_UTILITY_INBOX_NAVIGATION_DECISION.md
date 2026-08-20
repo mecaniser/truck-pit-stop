@@ -1,7 +1,7 @@
 # DB-035 Utility Inbox Navigation Decision
 
-**Status:** Product-selected implementation contract (2026-08-14)  
-**Owner:** Frontend & UX Recovery Owner  
+**Status:** Product-selected implementation contract (2026-08-14)
+**Owner:** Frontend & UX Recovery Owner
 **Scope:** New authenticated presentation shell only
 
 ## Decision

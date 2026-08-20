@@ -1,7 +1,7 @@
 # DB-035C Customer Workstation Contract
 
-Status: Accepted for implementation  
-Accountable owner: Frontend & UX Recovery Owner  
+Status: Accepted for implementation
+Accountable owner: Frontend & UX Recovery Owner
 Presentation boundary: existing authenticated presentation flag
 
 ## Outcome
