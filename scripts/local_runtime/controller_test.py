@@ -111,6 +111,16 @@ class ControllerTests(unittest.TestCase):
         controller = RuntimeController(config_home=self.root, state_home=self.root, script_root=self.root / "repo")
         self.assertEqual((controller.frontend_port, controller.api_port), (5173, 8000))
 
+    def test_bootstrap_uses_canonical_repository_name_for_compose_project(self):
+        with mock.patch.object(
+            self.controller,
+            "common_git_dir",
+            return_value=Path("/srv/truck-pit-stop/.git"),
+        ):
+            config = self.controller.bootstrap_config()
+
+        self.assertEqual(config["compose_project"], "truck-pit-stop")
+
     def test_atomic_state_is_private_and_secret_free(self):
         self.controller.atomic_write(self.controller.state_path, {"schema": 1, "phase": "stopped"})
         self.assertEqual(stat.S_IMODE(self.controller.state_path.stat().st_mode), 0o600)
@@ -337,7 +347,7 @@ class ControllerTests(unittest.TestCase):
                 time.sleep(0.02)
             self.assertIn(process.pid, controller.listeners(port))
             identity = controller.process_identity(process.pid)
-            self.assertEqual(Path(identity["cwd"]), self.root)
+            self.assertEqual(Path(identity["cwd"]).resolve(), self.root.resolve())
         finally:
             process.terminate()
             process.wait(timeout=5)

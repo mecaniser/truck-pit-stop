@@ -177,7 +177,8 @@ class RuntimeController:
 
     def bootstrap_config(self) -> dict[str, Any]:
         main = self._main_worktree()
-        project = re.sub(r"[^a-z0-9_-]", "-", main.path.name.lower()).strip("-")
+        repository_root = self.common_git_dir(self.script_root).parent
+        project = re.sub(r"[^a-z0-9_-]", "-", repository_root.name.lower()).strip("-")
         if not project:
             raise ControllerError("could not derive a safe Compose project name")
         return {
