@@ -88,6 +88,12 @@ UNHANDLED_EXCEPTIONS_TOTAL = Counter(
     ["exception_type"],
 )
 
+PRESENTATION_OPERATIONS_TOTAL = Counter(
+    "dieselbridge_presentation_operations_total",
+    "Authenticated presentation resolution and preference outcomes",
+    ["operation", "outcome", "variant", "source"],
+)
+
 
 _UUID_PATH_SEGMENT = re.compile(
     r"(?<=/)[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}(?=/|$)"
@@ -189,6 +195,21 @@ def record_login(success: bool, tenant_id: str = "unknown") -> None:
 def record_logout(tenant_id: str = "unknown") -> None:
     """Record a logout event."""
     AUTH_LOGOUT_TOTAL.labels(tenant_id=tenant_id).inc()
+
+
+def record_presentation_operation(
+    operation: str,
+    outcome: str,
+    *,
+    variant: str = "unknown",
+    source: str = "unknown",
+) -> None:
+    PRESENTATION_OPERATIONS_TOTAL.labels(
+        operation=operation,
+        outcome=outcome,
+        variant=variant,
+        source=source,
+    ).inc()
 
 
 def record_repair_order_created(tenant_id: str) -> None:

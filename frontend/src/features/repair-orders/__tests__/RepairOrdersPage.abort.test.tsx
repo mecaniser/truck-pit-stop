@@ -1,11 +1,12 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { MemoryRouter } from 'react-router-dom'
+import { MemoryRouter, useLocation } from 'react-router-dom'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 const apiMocks = vi.hoisted(() => ({
   get: vi.fn(),
 }))
+const themeState = vi.hoisted(() => ({ presentationVariant: 'legacy' as 'legacy' | 'new' }))
 
 vi.mock('@/lib/api', () => ({
   default: {
@@ -18,7 +19,10 @@ vi.mock('@/hooks/useWebSocket', () => ({
 }))
 
 vi.mock('@/contexts/ThemeContext', () => ({
-  useTheme: () => ({ accentColors: { primary: '#2563eb' } }),
+  useTheme: () => ({
+    accentColors: { 400: '#f59e0b', 500: '#d97706', 600: '#b45309', primary: '#2563eb' },
+    presentationVariant: themeState.presentationVariant,
+  }),
 }))
 
 vi.mock('../PriceBuilderPanel', () => ({
@@ -29,7 +33,10 @@ import type { PartsUsage, RepairOrderHistoryEvent } from '../../../types'
 import RepairOrdersPage from '../RepairOrdersPage'
 import { buildPartHistoryEvents } from '../repairOrderHistory'
 
-function renderPage(initialEntries: string[] = ['/']) {
+function renderPage(
+  initialEntries: string[] = ['/'],
+  props: React.ComponentProps<typeof RepairOrdersPage> = {},
+) {
   const queryClient = new QueryClient({
     defaultOptions: {
       queries: { retry: false },
@@ -40,15 +47,177 @@ function renderPage(initialEntries: string[] = ['/']) {
   return render(
     <QueryClientProvider client={queryClient}>
       <MemoryRouter initialEntries={initialEntries}>
-        <RepairOrdersPage />
+        <RepairOrdersPage {...props} />
+        <LocationProbe />
       </MemoryRouter>
     </QueryClientProvider>
   )
 }
 
+function LocationProbe() {
+  const location = useLocation()
+  return <output data-testid="repair-orders-location">{location.search}</output>
+}
+
 describe('RepairOrdersPage request cancellation', () => {
   afterEach(() => {
     apiMocks.get.mockReset()
+    themeState.presentationVariant = 'legacy'
+  })
+
+  it('switches only the Repair Orders presentation while preserving the same page API', async () => {
+    const order = {
+      id: 'order-presentation', tenant_id: 'tenant-1', customer_id: 'customer-1', vehicle_id: 'vehicle-1',
+      vehicle_make: 'Freightliner', vehicle_model: 'Cascadia', vehicle_year: 2022, vehicle_unit_number: '218', vehicle_vin: 'VIN218',
+      customer_company_name: 'Northline Logistics', order_number: 'RO-1017', status: 'in_progress',
+      description: 'Diagnose intermittent no-start', customer_notes: null, internal_notes: null,
+      assigned_mechanic_id: null, total_parts_cost: '2780.50', total_labor_cost: '1500.00', total_cost: '4280.50',
+      created_at: '2026-08-12T12:00:00Z', updated_at: '2026-08-12T15:00:00Z',
+    }
+    apiMocks.get.mockImplementation((url: string) => {
+      if (url === '/repair-orders') return Promise.resolve({ data: { items: [order], total: 1, has_more: false } })
+      return Promise.resolve({ data: {} })
+    })
+
+    themeState.presentationVariant = 'new'
+    const { unmount } = renderPage()
+    expect(await screen.findByRole('region', { name: 'Repair order ledger' })).toBeInTheDocument()
+    expect(await screen.findByRole('article', { name: 'Repair order RO-1017' })).toBeInTheDocument()
+    expect(document.querySelector('.db-repair-orders-new')).toBeInTheDocument()
+    unmount()
+
+    themeState.presentationVariant = 'legacy'
+    renderPage()
+    expect(await screen.findByRole('heading', { name: 'Repair Orders' })).toHaveClass('text-white')
+    expect(screen.queryByRole('region', { name: 'Repair order ledger' })).not.toBeInTheDocument()
+    expect(document.querySelector('.db-repair-orders-new')).not.toBeInTheDocument()
+  })
+
+  it('keeps a selected new-presentation repair order in the canonical workspace region, not a modal drawer', async () => {
+    const order = {
+      id: 'workspace-order', tenant_id: 'tenant-1', customer_id: 'customer-1', vehicle_id: 'vehicle-1',
+      vehicle_make: 'Freightliner', vehicle_model: 'Cascadia', vehicle_year: 2022, vehicle_unit_number: '218', vehicle_vin: 'VIN218',
+      customer_company_name: 'Northline Logistics', order_number: 'RO-2018', status: 'draft',
+      description: 'Replace damaged air line', customer_notes: null, internal_notes: null,
+      assigned_mechanic_id: null, total_parts_cost: '0.00', total_labor_cost: '0.00', total_cost: '0.00',
+      created_at: '2026-08-12T12:00:00Z', updated_at: '2026-08-12T15:00:00Z',
+    }
+    apiMocks.get.mockImplementation((url: string) => {
+      if (url === '/repair-orders') return Promise.resolve({ data: { items: [order], total: 1, has_more: false } })
+      if (url === '/repair-orders/workspace-order/workspace') return Promise.resolve({ data: order })
+      return Promise.resolve({ data: {} })
+    })
+    themeState.presentationVariant = 'new'
+
+    renderPage(['/?selected=workspace-order'])
+
+    expect(await screen.findByRole('region', { name: '#RO-2018' })).toBeInTheDocument()
+    expect(document.querySelector('.db-repair-orders-workspace--detail-open')).toBeInTheDocument()
+    expect(document.querySelector('[role="dialog"]')).not.toBeInTheDocument()
+    expect(screen.getByRole('region', { name: '#RO-2018' })).not.toHaveFocus()
+  })
+
+  it('keeps a Shop Work lane through ordinary ledger selection until the operator chooses All orders', async () => {
+    const queueOrder = {
+      id: 'queue-order', tenant_id: 'tenant-1', customer_id: 'customer-1', vehicle_id: 'vehicle-1',
+      vehicle_make: 'Freightliner', vehicle_model: 'Cascadia', vehicle_year: 2022, vehicle_unit_number: '218', vehicle_vin: 'VIN218',
+      customer_company_name: 'Northline Logistics', order_number: 'RO-QUEUE-1', status: 'draft',
+      description: 'Queue repair', customer_notes: null, internal_notes: null, assigned_mechanic_id: null,
+      total_parts_cost: '0.00', total_labor_cost: '0.00', total_cost: '0.00',
+      created_at: '2026-08-12T12:00:00Z', updated_at: '2026-08-12T15:00:00Z',
+    }
+    const siblingOrder = { ...queueOrder, id: 'sibling-order', order_number: 'RO-QUEUE-2', description: 'Follow-up repair' }
+    apiMocks.get.mockImplementation((url: string) => {
+      if (url === '/repair-orders') return Promise.resolve({ data: { items: [queueOrder, siblingOrder], total: 2, has_more: false } })
+      if (url === '/dashboard/action-queue') return Promise.resolve({
+        data: {
+          orders_needing_action: [queueOrder, siblingOrder].map((order) => ({
+            id: order.id,
+            order_number: order.order_number,
+            status: order.status,
+            description: order.description,
+            customer_name: order.customer_company_name,
+            vehicle_info: `${order.vehicle_year} ${order.vehicle_make} ${order.vehicle_model}`,
+            total_cost: order.total_cost,
+            updated_at: order.updated_at,
+            mechanic_name: null,
+            work_started_at: null,
+            hold_reason: null,
+            held_at: null,
+            quote_sent: null,
+          })),
+          orders_needing_action_has_more: false,
+          orders_on_floor: [],
+          orders_on_floor_has_more: false,
+          orders_ready_to_close: [],
+          orders_ready_to_close_has_more: false,
+        },
+      })
+      if (url === '/repair-orders/queue-order/workspace') return Promise.resolve({ data: queueOrder })
+      if (url === '/repair-orders/sibling-order/workspace') return Promise.resolve({ data: siblingOrder })
+      return Promise.resolve({ data: {} })
+    })
+    themeState.presentationVariant = 'new'
+
+    renderPage(['/?selected=queue-order&queue=needs_action'])
+
+    expect(await screen.findByRole('article', { name: 'Repair order RO-QUEUE-2' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Repair Orders scope: Needs Action, 2 orders' })).toBeInTheDocument()
+    expect(screen.queryByText('2 total')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Show details for RO-QUEUE-2' }))
+    expect(screen.getByTestId('repair-orders-location')).toHaveTextContent('?selected=queue-order&queue=needs_action')
+    expect(apiMocks.get).not.toHaveBeenCalledWith('/repair-orders/sibling-order/workspace')
+    fireEvent.click(screen.getByRole('button', { name: 'Open repair order RO-QUEUE-2' }))
+    await waitFor(() => expect(screen.getByTestId('repair-orders-location')).toHaveTextContent('?selected=sibling-order&queue=needs_action'))
+
+    fireEvent.click(screen.getByRole('button', { name: 'Repair Orders scope: Needs Action, 2 orders' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: 'All repair orders' }))
+    await waitFor(() => expect(screen.getByTestId('repair-orders-location')).toHaveTextContent('?selected=sibling-order'))
+  })
+
+  it('uses the daily workset in place without falling back to the legacy queue or archive page', async () => {
+    const queueOrder = {
+      id: 'daily-order', tenant_id: 'tenant-1', customer_id: 'customer-1', vehicle_id: 'vehicle-1',
+      vehicle_make: 'Freightliner', vehicle_model: 'Cascadia', vehicle_year: 2022, vehicle_unit_number: '218', vehicle_vin: 'VIN218',
+      customer_company_name: 'Northline Logistics', order_number: 'RO-DAILY-1', status: 'pending_review',
+      description: 'Confirm customer authorization', customer_notes: null, internal_notes: null, assigned_mechanic_id: null,
+      total_parts_cost: '80.00', total_labor_cost: '120.00', total_cost: '200.00',
+      created_at: '2026-08-14T12:00:00Z', updated_at: '2026-08-14T15:00:00Z',
+    }
+    apiMocks.get.mockImplementation((url: string) => {
+      if (url === '/dashboard/daily-workset') return Promise.resolve({
+        data: {
+          timezone: 'America/New_York', business_date: '2026-08-14', next_reset_at: '2026-08-15T04:00:00Z',
+          needs_attention: { items: [{
+            id: queueOrder.id, order_number: queueOrder.order_number, status: queueOrder.status,
+            description: queueOrder.description, customer_name: queueOrder.customer_company_name,
+            vehicle_info: '2022 Freightliner Cascadia · Unit 218', total_cost: queueOrder.total_cost,
+            updated_at: queueOrder.updated_at, mechanic_name: null, work_started_at: null,
+            hold_reason: null, held_at: null, quote_sent: false, paid_at: null,
+          }], has_more: false },
+          on_floor: { items: [], has_more: false },
+          ready_to_close: { items: [], has_more: false },
+          closed_today: { items: [], has_more: false },
+        },
+      })
+      if (url === '/repair-orders/daily-order/workspace') return Promise.resolve({ data: queueOrder })
+      if (url === '/dashboard/mechanics/options') return Promise.resolve({ data: [] })
+      return Promise.resolve({ data: {} })
+    })
+    themeState.presentationVariant = 'new'
+
+    renderPage(['/?selected=daily-order&queue=needs_action'], { workbenchScope: 'daily' })
+
+    expect(await screen.findByRole('region', { name: '#RO-DAILY-1' })).toBeInTheDocument()
+    const row = screen.getByRole('article', { name: 'Repair order RO-DAILY-1' })
+    expect(screen.getByRole('heading', { name: 'Shop Work' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Needs Action · today' })).toBeInTheDocument()
+    expect(row).not.toHaveTextContent('Confirm customer authorization')
+    expect(row).toHaveTextContent('200.00')
+    expect(row).toHaveTextContent('Pending Review')
+    expect(apiMocks.get).toHaveBeenCalledWith('/dashboard/daily-workset')
+    expect(apiMocks.get).not.toHaveBeenCalledWith('/dashboard/action-queue')
+    expect(apiMocks.get).not.toHaveBeenCalledWith('/repair-orders', expect.anything())
   })
 
   it('aborts an in-flight repair-order page request when the page unmounts', async () => {

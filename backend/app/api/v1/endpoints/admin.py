@@ -42,6 +42,13 @@ from app.core.paid_invoice_webhook_crypto import (
     encrypt_paid_invoice_webhook_secret,
 )
 from app.core.webhook_destination import WebhookDestinationError, validate_webhook_destination
+from app.schemas.presentation import (
+    TenantPresentationRolloutRequest,
+    TenantPresentationRolloutResponse,
+    UserPresentationRolloutRequest,
+    UserPresentationRolloutResponse,
+)
+from app.services.presentation_service import set_tenant_rollout, set_user_rollout
 
 router = APIRouter()
 SMS_PROVISION_COOLDOWN_SECONDS = 15
@@ -120,6 +127,43 @@ def require_super_admin():
             )
         return current_user
     return role_checker
+
+
+@router.put(
+    "/presentation-rollout/tenants/{tenant_id}",
+    response_model=TenantPresentationRolloutResponse,
+)
+async def update_tenant_presentation_rollout(
+    tenant_id: UUID,
+    body: TenantPresentationRolloutRequest,
+    current_user: User = Depends(require_super_admin()),
+    db: AsyncSession = Depends(get_db),
+):
+    await set_tenant_rollout(db, tenant_id, body.presentation)
+    return TenantPresentationRolloutResponse(
+        tenant_id=str(tenant_id), presentation=body.presentation
+    )
+
+
+@router.put(
+    "/presentation-rollout/tenants/{tenant_id}/users/{user_id}",
+    response_model=UserPresentationRolloutResponse,
+)
+async def update_user_presentation_rollout(
+    tenant_id: UUID,
+    user_id: UUID,
+    body: UserPresentationRolloutRequest,
+    current_user: User = Depends(require_super_admin()),
+    db: AsyncSession = Depends(get_db),
+):
+    override = await set_user_rollout(
+        db, tenant_id, user_id, body.presentation_override
+    )
+    return UserPresentationRolloutResponse(
+        tenant_id=str(tenant_id),
+        user_id=str(user_id),
+        presentation_override=override,
+    )
 
 
 @router.get("/platform/quickbooks-status", response_model=QuickBooksPlatformStatusResponse)

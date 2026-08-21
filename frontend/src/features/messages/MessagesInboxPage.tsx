@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import { Spinner } from '@/components/ui'
 import { useQueryClient } from '@tanstack/react-query'
+import { isAxiosError } from 'axios'
 import api from '@/lib/api'
 import type {
   CursorPageMessageThreads,
@@ -49,6 +50,10 @@ interface SmsRealtimeEvent {
 
 type InboxTab = 'inbox' | 'archived'
 
+function apiErrorDetail(error: unknown, fallback: string): string {
+  return isAxiosError<{ detail?: string }>(error) ? error.response?.data?.detail || fallback : fallback
+}
+
 const sortThreads = (rows: MessageThread[]) =>
   [...rows].sort((a, b) => {
     const aTs = a.last_message_at ? new Date(a.last_message_at).getTime() : 0
@@ -81,7 +86,8 @@ function DeliveryIcon({ status }: { status: string }) {
 }
 
 export default function MessagesInboxPage() {
-  const { accentColors } = useTheme()
+  const { accentColors, presentationVariant } = useTheme()
+  const messageActionStyle = { '--db-messages-accent': accentColors[600] } as CSSProperties
   const queryClient = useQueryClient()
   const { user } = useAuthStore()
   useWebSocket()
@@ -147,8 +153,8 @@ export default function MessagesInboxPage() {
         if (data.items.length > 0) {
           setSelectedThreadId((prev) => prev || data.items[0].id)
         }
-      } catch (error: any) {
-        toast.error(error?.response?.data?.detail || 'Failed to load message threads')
+      } catch (error: unknown) {
+        toast.error(apiErrorDetail(error, 'Failed to load message threads'))
       } finally {
         setThreadsLoading(false)
       }
@@ -181,8 +187,8 @@ export default function MessagesInboxPage() {
             }))
           }
         }
-      } catch (error: any) {
-        toast.error(error?.response?.data?.detail || 'Failed to load messages')
+      } catch (error: unknown) {
+        toast.error(apiErrorDetail(error, 'Failed to load messages'))
       } finally {
         setMessagesLoading(false)
       }
@@ -204,8 +210,8 @@ export default function MessagesInboxPage() {
         skip = data.skip + data.limit
       }
       setCustomers(allCustomers)
-    } catch (error: any) {
-      toast.error(error?.response?.data?.detail || 'Failed to load customers')
+    } catch (error: unknown) {
+      toast.error(apiErrorDetail(error, 'Failed to load customers'))
       setCustomers([])
     }
   }, [])
@@ -226,8 +232,8 @@ export default function MessagesInboxPage() {
       setReplyBody('')
       await loadMessages(selectedThread.id)
       await loadThreads()
-    } catch (error: any) {
-      toast.error(error?.response?.data?.detail || 'Failed to send message')
+    } catch (error: unknown) {
+      toast.error(apiErrorDetail(error, 'Failed to send message'))
     } finally {
       setSending(false)
     }
@@ -255,8 +261,8 @@ export default function MessagesInboxPage() {
       setShowCompose(false)
       await loadThreads()
       toast.success('Message sent')
-    } catch (error: any) {
-      toast.error(error?.response?.data?.detail || 'Failed to send new message')
+    } catch (error: unknown) {
+      toast.error(apiErrorDetail(error, 'Failed to send new message'))
     } finally {
       setSending(false)
     }
@@ -272,8 +278,8 @@ export default function MessagesInboxPage() {
       setMessages([])
       await loadThreads()
       queryClient.invalidateQueries({ queryKey: ['messages-unread-summary'] })
-    } catch (error: any) {
-      toast.error(error?.response?.data?.detail || 'Failed to archive thread')
+    } catch (error: unknown) {
+      toast.error(apiErrorDetail(error, 'Failed to archive thread'))
     } finally {
       setThreadActionBusy(false)
     }
@@ -298,8 +304,8 @@ export default function MessagesInboxPage() {
       setMessages([])
       await loadThreads()
       queryClient.invalidateQueries({ queryKey: ['messages-unread-summary'] })
-    } catch (error: any) {
-      toast.error(error?.response?.data?.detail || 'Failed to delete thread')
+    } catch (error: unknown) {
+      toast.error(apiErrorDetail(error, 'Failed to delete thread'))
     } finally {
       setThreadActionBusy(false)
     }
@@ -313,8 +319,8 @@ export default function MessagesInboxPage() {
       toast.success('Thread unarchived')
       await loadThreads()
       queryClient.invalidateQueries({ queryKey: ['messages-unread-summary'] })
-    } catch (error: any) {
-      toast.error(error?.response?.data?.detail || 'Failed to unarchive thread')
+    } catch (error: unknown) {
+      toast.error(apiErrorDetail(error, 'Failed to unarchive thread'))
     } finally {
       setThreadActionBusy(false)
     }
@@ -409,7 +415,7 @@ export default function MessagesInboxPage() {
       <span>{label}</span>
       {!!badge && badge > 0 && (
         <span
-          className="min-w-[18px] h-[18px] rounded-full flex items-center justify-center text-[10px] font-bold text-white px-1"
+          className="db-message-accent-mark min-w-[18px] h-[18px] rounded-full flex items-center justify-center text-[10px] font-bold text-white px-1"
           style={{ backgroundColor: accentColors[500] }}
         >
           {badge > 99 ? '99+' : badge}
@@ -466,16 +472,20 @@ export default function MessagesInboxPage() {
   )
 
   const threadListPanel = (
-    <div className="flex min-w-0 flex-col flex-1 min-h-0">
+    <div className="db-messages-thread-list flex min-w-0 flex-col flex-1 min-h-0">
       {/* Mobile header */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-white/10 lg:hidden">
+      <div className={`flex items-center justify-between px-4 py-3 border-b border-white/10 lg:hidden${presentationVariant === 'new' ? ' db-operating-page-header' : ''}`}>
         <div className="flex items-center gap-2">
           <MessageSquare className="w-4 h-4" style={{ color: accentColors[400] }} />
-          <h1 className="text-base font-semibold text-white">Messages</h1>
+          <div>
+            <h1 className="text-base font-semibold text-white">Messages</h1>
+            {presentationVariant === 'new' && <p className="hidden sm:block">Manage customer conversations and service updates.</p>}
+          </div>
         </div>
         <button
           onClick={() => setShowCompose((v) => !v)}
-          className="inline-flex items-center gap-1 rounded-lg border border-white/20 bg-white/10 px-2.5 py-1.5 text-xs text-gray-200 hover:bg-white/15 transition-colors"
+          className="db-messages-compose-action inline-flex items-center gap-1 rounded-lg border border-white/20 bg-white/10 px-2.5 py-1.5 text-xs text-gray-200 hover:bg-white/15 transition-colors"
+          style={messageActionStyle}
         >
           <Pencil className="w-3 h-3" />
           New
@@ -519,7 +529,7 @@ export default function MessagesInboxPage() {
               }`}
             >
               <div
-                className="flex-shrink-0 w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold text-white"
+                className="db-message-accent-mark flex-shrink-0 w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold text-white"
                 style={{ backgroundColor: isSelected ? accentColors[600] : '#374151' }}
               >
                 {initials || '?'}
@@ -537,7 +547,7 @@ export default function MessagesInboxPage() {
               </div>
               {hasUnread && (
                 <span
-                  className="flex-shrink-0 min-w-[18px] h-[18px] rounded-full flex items-center justify-center text-[10px] font-bold text-white px-1 mt-0.5"
+                  className="db-message-accent-mark flex-shrink-0 min-w-[18px] h-[18px] rounded-full flex items-center justify-center text-[10px] font-bold text-white px-1 mt-0.5"
                   style={{ backgroundColor: accentColors[500] }}
                 >
                   {thread.unread_count_staff}
@@ -560,7 +570,7 @@ export default function MessagesInboxPage() {
   )
 
   const conversationPanel = (
-    <div className="flex flex-col flex-1 min-h-0 min-w-0">
+    <div className="db-messages-conversation flex flex-col flex-1 min-h-0 min-w-0">
       {!selectedThread ? (
         <div className="hidden lg:flex flex-col items-center justify-center h-full gap-3 text-gray-500">
           <MessageSquare className="w-10 h-10 opacity-20" />
@@ -574,7 +584,7 @@ export default function MessagesInboxPage() {
               {/* Back button — mobile only */}
               <button
                 onClick={() => { setSelectedThreadId(null); setMessages([]) }}
-                className="lg:hidden flex-shrink-0 p-1.5 rounded-lg text-gray-400 hover:text-white hover:bg-white/10 transition-colors"
+                className="lg:hidden h-11 w-11 flex-shrink-0 items-center justify-center rounded-lg text-gray-400 hover:text-white hover:bg-white/10 transition-colors inline-flex"
                 aria-label="Back to threads"
               >
                 <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -582,8 +592,8 @@ export default function MessagesInboxPage() {
                 </svg>
               </button>
               <div
-                className="flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold text-white"
-                style={{ backgroundColor: accentColors[600] }}
+                className="db-message-accent-mark flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold text-white"
+                style={{ backgroundColor: accentColors[600], '--db-messages-accent': accentColors[600] } as CSSProperties}
               >
                 {customerInitials(selectedThread.customer.first_name, selectedThread.customer.last_name)}
               </div>
@@ -602,7 +612,7 @@ export default function MessagesInboxPage() {
                 <button
                   onClick={unarchiveSelectedThread}
                   disabled={threadActionBusy}
-                  className="inline-flex items-center gap-1 rounded-md border border-emerald-400/30 bg-emerald-500/10 px-2 py-1.5 text-xs text-emerald-300 hover:bg-emerald-500/20 disabled:opacity-50 transition-colors"
+                  className="inline-flex min-h-11 min-w-11 items-center justify-center gap-1 rounded-md border border-emerald-400/30 bg-emerald-500/10 px-2 py-1.5 text-xs text-emerald-300 hover:bg-emerald-500/20 disabled:opacity-50 transition-colors"
                 >
                   <ArchiveRestore className="w-3.5 h-3.5" />
                   <span className="hidden sm:inline">Unarchive</span>
@@ -611,7 +621,7 @@ export default function MessagesInboxPage() {
                 <button
                   onClick={archiveSelectedThread}
                   disabled={threadActionBusy}
-                  className="inline-flex items-center gap-1 rounded-md border border-white/20 bg-white/5 px-2 py-1.5 text-xs text-gray-300 hover:bg-white/10 disabled:opacity-50 transition-colors"
+                  className="inline-flex min-h-11 min-w-11 items-center justify-center gap-1 rounded-md border border-white/20 bg-white/5 px-2 py-1.5 text-xs text-gray-300 hover:bg-white/10 disabled:opacity-50 transition-colors"
                 >
                   <Archive className="w-3.5 h-3.5" />
                   <span className="hidden sm:inline">Archive</span>
@@ -621,7 +631,7 @@ export default function MessagesInboxPage() {
                 <button
                   onClick={deleteSelectedThread}
                   disabled={threadActionBusy}
-                  className="inline-flex items-center gap-1 rounded-md border border-rose-400/30 bg-rose-500/10 px-2 py-1.5 text-xs text-rose-300 hover:bg-rose-500/20 disabled:opacity-50 transition-colors"
+                  className="db-messages-delete-action inline-flex min-h-11 min-w-11 items-center justify-center gap-1 rounded-md border border-rose-400/30 bg-rose-500/10 px-2 py-1.5 text-xs text-rose-300 hover:bg-rose-500/20 disabled:opacity-50 transition-colors"
                 >
                   <Trash2 className="w-3.5 h-3.5" />
                   <span className="hidden sm:inline">Delete</span>
@@ -635,7 +645,7 @@ export default function MessagesInboxPage() {
             {messagesHasMore && (
               <div className="flex justify-center mb-2">
                 <button
-                  className="rounded-full border border-white/20 bg-white/5 px-3 py-1 text-xs text-gray-400 hover:bg-white/10 transition-colors disabled:opacity-50"
+                  className="inline-flex min-h-11 items-center justify-center rounded-full border border-white/20 bg-white/5 px-3 py-1 text-xs text-gray-400 hover:bg-white/10 transition-colors disabled:opacity-50"
                   onClick={() => loadMessages(selectedThread.id, messagesCursor, true)}
                   disabled={messagesLoading}
                 >
@@ -668,7 +678,9 @@ export default function MessagesInboxPage() {
                   )}
                   <div className={`flex w-full min-w-0 ${isOutbound ? 'justify-end' : 'justify-start'} mb-0.5`}>
                     <div
-                      className={`min-w-0 max-w-[88%] overflow-hidden rounded-2xl px-3.5 py-2 text-sm sm:max-w-[72%] ${
+                      className={`db-message-bubble min-w-0 max-w-[88%] overflow-hidden rounded-2xl px-3.5 py-2 text-sm sm:max-w-[72%] ${
+                        isOutbound ? 'db-message-bubble--outbound' : 'db-message-bubble--inbound'
+                      } ${
                         isOutbound ? 'rounded-tr-sm text-white' : 'rounded-tl-sm bg-white/10 text-gray-100'
                       }`}
                       style={isOutbound ? { backgroundColor: accentColors[600] } : undefined}
@@ -712,10 +724,11 @@ export default function MessagesInboxPage() {
                 }}
               />
               <button
-                className="flex-shrink-0 inline-flex items-center justify-center w-10 h-10 rounded-xl text-white disabled:opacity-40 transition-opacity"
+                className="db-messages-send-action h-11 w-11 flex-shrink-0 inline-flex items-center justify-center rounded-xl text-white disabled:opacity-40 transition-opacity"
                 style={{ backgroundColor: accentColors[600] }}
                 onClick={sendReply}
                 disabled={sending || !replyBody.trim()}
+                aria-label="Send reply"
               >
                 {sending ? <Spinner size="xs" /> : <Send className="w-4 h-4" />}
               </button>
@@ -727,17 +740,21 @@ export default function MessagesInboxPage() {
   )
 
   return (
-    <div className="flex h-full w-full min-w-0 flex-col overflow-hidden" style={{ minHeight: 0 }}>
+    <div className="db-messages-workspace flex h-full w-full min-w-0 flex-col overflow-hidden" style={{ minHeight: 0 }}>
 
       {/* Desktop header — hidden on mobile (mobile header is inside threadListPanel) */}
-      <div className="hidden lg:flex items-center justify-between mb-4">
+      <div className={`hidden lg:flex items-center justify-between mb-4${presentationVariant === 'new' ? ' db-operating-page-header' : ''}`}>
         <div className="flex items-center gap-2">
           <MessageSquare className="w-5 h-5" style={{ color: accentColors[400] }} />
-          <h1 className="text-xl font-semibold text-white">Messages</h1>
+          <div>
+            <h1 className="text-xl font-semibold text-white">Messages</h1>
+            {presentationVariant === 'new' && <p>Manage customer conversations and service updates.</p>}
+          </div>
         </div>
         <button
           onClick={() => setShowCompose((v) => !v)}
-          className="inline-flex items-center gap-1.5 rounded-lg border border-white/20 bg-white/10 px-3 py-1.5 text-sm text-gray-200 hover:bg-white/15 transition-colors"
+          className="db-messages-compose-action inline-flex items-center gap-1.5 rounded-lg border border-white/20 bg-white/10 px-3 py-1.5 text-sm text-gray-200 hover:bg-white/15 transition-colors"
+          style={messageActionStyle}
         >
           <Pencil className="w-3.5 h-3.5" />
           New Message
@@ -754,7 +771,7 @@ export default function MessagesInboxPage() {
 
       {/* Main panel */}
       <div
-        className="flex w-full min-w-0 flex-1 rounded-xl border border-white/10 overflow-hidden"
+        className="db-messages-panel flex w-full min-w-0 flex-1 rounded-xl border border-white/10 overflow-hidden"
         style={{ minHeight: 0, height: 'calc(100vh - 13rem)' }}
       >
         {/* Mobile: single panel navigation */}
@@ -765,7 +782,7 @@ export default function MessagesInboxPage() {
         {/* Desktop: sidebar + thread list + conversation side by side */}
         <div className="hidden lg:flex flex-1 min-h-0 min-w-0">
           {/* Vertical sidebar */}
-          <div className="flex flex-col items-center gap-1 border-r border-white/10 bg-black/20 py-3 px-1.5 w-14 flex-shrink-0">
+          <div className="db-messages-rail flex flex-col items-center gap-1 border-r border-white/10 bg-black/20 py-3 px-1.5 w-14 flex-shrink-0">
             <button
               onClick={() => { setActiveTab('inbox'); setSelectedThreadId(null); setMessages([]) }}
               title="Inbox"
@@ -777,7 +794,7 @@ export default function MessagesInboxPage() {
               <span className="text-[9px] font-medium">Inbox</span>
               {inboxUnread > 0 && (
                 <span
-                  className="absolute -top-1 -right-1 min-w-[16px] h-4 rounded-full flex items-center justify-center text-[9px] font-bold text-white px-1"
+                  className="db-message-accent-mark absolute -top-1 -right-1 min-w-[16px] h-4 rounded-full flex items-center justify-center text-[9px] font-bold text-white px-1"
                   style={{ backgroundColor: accentColors[500] }}
                 >
                   {inboxUnread > 99 ? '99+' : inboxUnread}
@@ -797,7 +814,7 @@ export default function MessagesInboxPage() {
           </div>
 
           {/* Thread list — desktop */}
-          <div className="flex flex-col border-r border-white/10 bg-black/10 w-72 flex-shrink-0">
+          <div className="db-messages-thread-list flex flex-col border-r border-white/10 bg-black/10 w-72 flex-shrink-0">
             <div className="flex items-center justify-between px-3 py-2.5 border-b border-white/10">
               <span className="text-xs font-semibold text-gray-400 uppercase tracking-wide">
                 {activeTab === 'inbox' ? 'Inbox' : 'Archived'}
@@ -824,7 +841,7 @@ export default function MessagesInboxPage() {
                     }`}
                   >
                     <div
-                      className="flex-shrink-0 w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold text-white"
+                      className="db-message-accent-mark flex-shrink-0 w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold text-white"
                       style={{ backgroundColor: isSelected ? accentColors[600] : '#374151' }}
                     >
                       {initials || '?'}
@@ -842,7 +859,7 @@ export default function MessagesInboxPage() {
                     </div>
                     {hasUnread && (
                       <span
-                        className="flex-shrink-0 min-w-[18px] h-[18px] rounded-full flex items-center justify-center text-[10px] font-bold text-white px-1 mt-0.5"
+                        className="db-message-accent-mark flex-shrink-0 min-w-[18px] h-[18px] rounded-full flex items-center justify-center text-[10px] font-bold text-white px-1 mt-0.5"
                         style={{ backgroundColor: accentColors[500] }}
                       >
                         {thread.unread_count_staff}

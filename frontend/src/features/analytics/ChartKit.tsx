@@ -26,7 +26,7 @@ export function ChartCard({
   fit?: boolean; children: ReactNode
 }) {
   return (
-    <div className="bg-gray-800/50 border border-gray-700/50 rounded-lg p-6">
+    <div className="db-analytics-chart-card bg-gray-800/50 border border-gray-700/50 rounded-lg p-6">
       <div className="flex items-start justify-between gap-3 mb-4">
         <div className="min-w-0">
           <h3 className="text-sm font-semibold text-white">{title}</h3>
@@ -144,7 +144,7 @@ export function RankedBar<T extends Record<string, unknown>>({
   const max = Math.max(...data.map((d) => Number(d[dataKey]) || 0), 1)
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="db-analytics-ranked-bar flex flex-col gap-4">
       {data.map((d, i) => {
         const value = Number(d[dataKey]) || 0
         const name = String(d[nameKey] ?? '')

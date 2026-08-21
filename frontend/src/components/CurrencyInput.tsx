@@ -92,12 +92,12 @@ export default function CurrencyInput({
   return (
     <div className="flex items-stretch gap-1.5">
       <button type="button" disabled={disabled} onClick={() => nudge(-step)} aria-label="Decrease amount"
-        className={`${stepBtn} border-red-200 text-red-500 hover:bg-red-50`}>
+        className={`db-currency-stepper__decrease ${stepBtn} border-red-200`}>
         <Minus className="h-3.5 w-3.5" />
       </button>
       {input}
       <button type="button" disabled={disabled} onClick={() => nudge(step)} aria-label="Increase amount"
-        className={`${stepBtn} border-emerald-200 text-emerald-600 hover:bg-emerald-50`}>
+        className={`db-currency-stepper__increase ${stepBtn} border-emerald-200`}>
         <Plus className="h-3.5 w-3.5" />
       </button>
     </div>

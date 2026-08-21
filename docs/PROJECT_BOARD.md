@@ -22,6 +22,61 @@ reviewed, merged, and released. Reconcile this board whenever newer evidence exi
 | DB-003 | P1 | Discovery | Finish versioned additional-work authorizations | Backend & Integrations | PR #196 merged at `e20fa1a` with implementation commit `a51f2af`; immutable revisions/finalization guard exist, but task validation found the portal action still depends on the staff-send flow | Architecture decides automatic vs staff-reviewed publication and any threshold policy; then run mechanic addition → customer prompt → approve/decline → invoice Playwright acceptance, Security GO, QA GO |
 | DB-015 | P0 | Frontend release authorized | Remediate WebSocket token logging | Security & Identity | Backend PR #259 merged as `277146526dd9b7f95d4ae6fe09dd683d558eb304` after all six protected CI contexts passed. Railway production web `b6881963-0864-43b2-9e7c-2f5c8396943a`, performance web `aa9052b9-649d-446d-afac-965125cf00f0`, and worker `5c73e3f2-02e0-462a-9597-334ccf019455` reached healthy state with repeated 200 probes and no 5xx, worker traceback, task failure, or credential value in the correlated application logs. Independent real-browser QA proved a legacy HttpOnly-cookie login and old `?token` client open/ping-pong against the new backend with the query value absent from logs. The only authorized production tab was a token-null WorkOS session: its 2026-08-11 reload remained authenticated, refreshed, loaded data, and produced zero console/log credential leaks, but the old frontend intentionally did not attempt WebSocket without a client token. Product explicitly accepted that production legacy-session limitation as covered by the exact pre-production compatibility gate; it was not run in production and must not be reported otherwise. | Ship the protected queryless frontend PR. After deployment, require the existing WorkOS session to produce a queryless staff WebSocket connection and ping/pong, bounded refresh/logout behavior, zero console/network/edge/application credential leakage, healthy web services, and unchanged worker deployment `5c73e3f2-02e0-462a-9597-334ccf019455`; roll back the frontend if any post-deploy gate fails. |
 | DB-032 | P2 | Ready to Release — independent QA GO | Animate the public DieselBridge wordmark on first page load | Frontend & UX | On `codex/db032-logo-motion`, exact application candidate `ee2b6e2698a60c9965ac9afd2d15c0541431253a` makes the bridge construct deck → pillars → arch across 1.18s while the twelve fixed-slot letters settle over 0.82s with deterministic 0.34–0.68s delays. The SVG box never moves, the footer remains static, and reduced motion uses a 120ms no-travel fade. Evidence: focused landing tests `27/27`, full frontend `173/173`, production build, exact changed-source ESLint, and diff-check passed; dedicated DB-032 Playwright `7/7` passed with natural-load sampling across 32 frames at 1366/390/320, zero clipped or colliding letters, fixed bridge bounds, all three ordered path animations, static footer, and no browser/runtime failures. Current midpoint captures are under `e2e/test-results/db032-natural-letter-drop-frame-{1366,390,320}.png`. Product received a fresh independent QA GO on exact `ee2b6e2`. No API, auth, tenant, data, backend, dependency, worker, or migration change. | PR #263 must carry this exact candidate plus the focused QA handoff, pass every protected CI context, and remain unmerged until Product gives new explicit release authority for the superseding motion change. No deployment is authorized. |
+| DB-035 | P1 | Ready for one PR — independent gates GO | Reshape and polish the authenticated garage cockpit so the landing promise is fulfilled by connected real workflows | Frontend & UX Recovery Owner | Exact application candidate `b49eaf5281b4f5d1c2ae8cb5aa4b46de81b56275` received independent Security GO and fallback independent QA GO with `P0/P1/P2=0`. Release preflight is READY for push and one ready PR. The accepted automated, browser, authorization, migration-head, build, lint, diff, and Impeccable evidence remains attached to the candidate history. | Product may authorize the pending remote push and creation of one ready PR. Merge and deployment remain unauthorized. |
+| DB-035A | P0 | Ready for one PR — Security and fallback QA GO | Replace the rejected transition-only Shop Work → Repair Orders topology with one persistent canonical repair-order workbench: Shop Work is today's tenant-local navigator; Repair Orders is all-record discovery. | Backend & Integrations | The integrated daily-workset authorization remediation in exact application candidate `b49eaf5281b4f5d1c2ae8cb5aa4b46de81b56275` received independent Security GO and fallback independent QA GO with `P0/P1/P2=0`; release preflight is READY. No API shape or migration was added. | Include in the single pending DB-035 push/ready PR only; no merge or deployment. |
+| DB-035B | P2 | Ready for one PR — Security and fallback QA GO | Make the new-presentation authenticated rail describe work, management, and communication rather than one undifferentiated destination list. | Frontend & UX Recovery Owner | The implemented Utility Inbox/navigation grammar in exact application candidate `b49eaf5281b4f5d1c2ae8cb5aa4b46de81b56275` received independent Security GO and fallback independent QA GO with `P0/P1/P2=0`; release preflight is READY. | Include in the single pending DB-035 push/ready PR only; no merge or deployment. |
+| DB-035C | P0 | Ready for one PR — Security and fallback QA GO | Replace the new-presentation customer Sidekick primary detail with a canonical page-owned customer workstation while preserving legacy rollback. | Frontend & UX Recovery Owner | The page-owned Customers workstation and legacy rollback in exact application candidate `b49eaf5281b4f5d1c2ae8cb5aa4b46de81b56275` received independent Security GO and fallback independent QA GO with `P0/P1/P2=0`; release preflight is READY. No backend/API/migration/business-logic/auth change was made for DB-035C. | Include in the single pending DB-035 push/ready PR only; no merge or deployment. |
+
+DB-035 navigation polish addendum: under the new presentation only, Settings now uses one compact, labelled mobile section selector rather than a horizontally scrolling tab strip; all existing role/permission section gates remain intact. The authenticated mobile shell moves its active copper marker to the bottom edge. Focused Settings and shell tests pass `9/9`; changed lint, production build, Impeccable detector, and diff integrity pass. Live authenticated browser review remains pending because the controllable browser session is at `/login`; no auth session was changed.
+
+DB-035 connected-workspace correction (Frontend & UX Recovery Owner, Product review pending): the new presentation now keeps Shop Work strictly as the server-backed action queue and opens the selected canonical repair order directly in Repair Orders. Repair Orders renders that selection as a persistent master/detail workspace at desktop widths; at compact/mobile widths it becomes a canonical list-to-record transition with the same selected URL and queue return context. The existing protected Sidekick remains unchanged for legacy and other incumbent uses. No Dashboard detail API, history/payment/authorization duplication, new route, mutation, or backend contract was added. Focused Repair Orders tests pass `17/17`; production build and Impeccable layout detector pass; direct changed-file lint has no errors (one existing exhaustive-deps warning). Authenticated browser visual acceptance is still pending.
+
+Fleet navigation ownership follow-up: the duplicate Fleet entry is removed from My Shop while the existing Fleet configuration/overview remains available from Settings under **Additional services**, anchored at the bottom of the full-height desktop Settings rail. The existing `/fleet` board handoff remains unchanged. Focused Settings tests pass `4/4`, production build and Impeccable detector pass, and the direct My Shop source contains no Fleet navigation entry. Live authenticated browser verification remains pending at `/login`; no authentication state was changed.
+
+Fleet return-context follow-up: opening the existing Fleet board from Settings now carries `/dashboard/settings?section=fleet`; the Fleet rail returns to that exact prior Settings entry, while a direct `/fleet` visit keeps its existing Shop Work fallback. Focused Settings/Fleet return tests pass `6/6`; production build passes. Live authenticated browser review remains pending at `/login`; no authentication state was changed.
+
+Shell identity follow-up: the new-presentation rail now leads with a larger centered tenant identity, then a shared metadata row of the tenant state and a quieter `Powered by DieselBridge` endorsement rather than three equal brand elements. The existing landing-derived DieselBridge wordmark animation remains; the former standalone separator rule is removed. Focused shell/Settings regression passes `10/10`; live authenticated visual review remains pending at `/login` with no authentication state changed.
+
+Responsive shell identity motion follow-up: the horizontal compact shell reveals tenant identity first, then state, then the `Powered by DieselBridge` endorsement and its existing wordmark motion in one row. The expanded desktop rail pairs a larger tenant logo with the state and places the staged platform endorsement beneath it; the collapsed rail keeps only tenant logo and state. The broad anchor border that created a spurious separator under the endorsement is removed. Reduced-motion preference receives the settled identity without the new staged sequence. Focused shell tests pass `6/6`; production build, Impeccable detector, and diff integrity pass. Live authenticated visual review remains pending at `/login`; no authentication state was changed.
+
+Fleet configuration density follow-up: the locked Fleet Configuration surface now presents its existing Fleet Company and Default Operating Authority values as one compact two-column summary, followed by the unchanged password-gated unlock action. Fleet Overview now uses internal ledger dividers rather than nested rounded manager/truck cards. Existing fields, password verification, save behavior, and Fleet Board handoff are unchanged. Focused Settings tests pass `4/4`; production build, Impeccable detector, and diff integrity pass. Live authenticated visual review remains pending at `/login`; no authentication state was changed.
+
+Fleet overview hierarchy follow-up: Fleet managers now use one compact identity row, while fleet vehicles are presented as a semantic Unit / Vehicle / Status table with a single header boundary and quiet row separators. The Settings rail no longer repeats underline rules for Account and Shop; its only rail boundary identifies the optional Additional services capability. Existing Fleet data, permissions, settings route, and Fleet Board handoff are unchanged. Focused Settings tests pass `4/4`; production build, Impeccable detector, and diff integrity pass. Live authenticated visual review remains pending at `/login`; no authentication state was changed.
+
+Repair Orders responsive filter follow-up: new presentation only. At tablet widths the existing search control occupies its own row and all real status filters wrap into a reachable touch-friendly quick-filter row rather than clipping off-canvas. At compact widths the existing status select remains the authoritative control but aligns to the 44px search baseline, carries a custom chevron affordance, and uses an external focus treatment. Existing status values, callbacks, query parameters, selected-order behavior, routes, permissions, APIs, and mutations are unchanged. Focused Repair Orders tests pass `8/8`; production build, changed-file lint, and Impeccable detector pass. A live authenticated desktop DOM check found all nine real filters and zero console warnings/errors; the controlled in-app browser did not honor its temporary viewport override, so it is not offered as medium/mobile visual evidence.
+
+Repair Orders detail hierarchy follow-up: new presentation only. The presentation-only `Selected repair order` card is removed because it repeated identity and summary facts already owned by the selected repair-order workspace. The existing order header remains the sole display of order type, number, status, customer, and vehicle; requested work, labor/parts, history, and financial context remain in their existing real sections. When the order was opened from a canonical Shop Work queue, the queue-origin return remains a compact header navigation action rather than a second data surface. Legacy rendering, URL/history semantics, hooks, APIs, permissions, mutations, and selected-order behavior are unchanged. Focused Repair Orders tests pass `17/17`; production build and live authenticated DOM inspection confirm no detached context card is rendered.
+
+Repair Orders selected-workspace contrast/frame follow-up: new presentation only. The existing navy header now explicitly owns a road-white order identifier, preserving readable identity against its product field. The Price Builder no longer renders as a rounded, bordered card nested inside the selected-order drawer: the actual Sidekick drawer owns the sole boundary and the workspace fills it directly. Existing selected-order data, workflow controls, disclosures, routes, permissions, APIs, mutations, legacy presentation, and return-context behavior are unchanged. Focused Repair Orders tests pass `17/17`; production build, changed-file lint, diff integrity, and live authenticated DOM inspection pass.
+
+Repair Orders toolbar follow-up: new presentation only. The toolbar now keeps a 3px internal focus runway so the search treatment stays inside the scroll owner instead of being clipped at its left edge. It also uses the actual Repair Orders canvas as its responsive container: when a Sidekick, browser zoom, or medium-width canvas is constrained, search occupies its own row and all nine existing quick filters wrap into a reachable row. The compact native select remains unchanged below the existing mobile breakpoint. Existing filter values/callbacks, selected-order behavior, URLs, permissions, APIs, mutations, and legacy presentation are unchanged. Focused Repair Orders tests pass `17/17`; production build, changed-file lint, and diff integrity pass. Authenticated browser inspection confirms the hot update, internal search runway, nine real filters, and no horizontal page overflow; independent QA/Product review remains required.
+
+Shop Work direct-handoff correction: new presentation only. A real queue-row activation now opens the exact canonical Repair Orders URL with its selected repair-order ID and canonical lane in one click or keyboard activation; Dashboard no longer renders a read-only pseudo-detail strip or a second "Open" action below the queue. The Action Ledger remains limited to its existing server-backed projection and the existing Repair Orders workspace remains the sole owner of sidekick detail, history, authorizations, invoices, payments, and mutations. Focused Dashboard/Action Ledger tests pass `9/9`; changed-file lint, production build, and diff integrity pass. The standalone browser runner has no authenticated session and lands at `/login`, so live authenticated Product review remains required.
+
+Repair Orders continuous-workspace correction: new presentation only. Shop Work queue selection lands directly on the existing canonical `?selected={id}&queue={lane}` Repair Orders workspace. Repair Orders no longer repeats that context in a handoff banner, an `All orders` control, or a secondary return action: the single Shop Work breadcrumb carries the lane context back to the queue, including when Dashboard remains mounted. The compact ledger scope control exposes `All repair orders` as the deliberate way to clear only `queue` while retaining `selected`. Pointer selection remains in the ledger; Enter or Space moves focus to the named inline workspace region. Legacy Sidekick behavior, canonical routes, IDs, query/history semantics, queue projection ownership, existing hooks/APIs/mutations, roles, permissions, and WebSocket invalidation are unchanged. Focused component evidence is `43/43`; production build and diff integrity pass; changed-file lint has no errors and one existing exhaustive-deps warning. The one-run Impeccable detector surfaced inherited Price Builder token warnings outside the two changed Price Builder hunks; they are not accepted as this workspace correction’s visual approval. Product review remains in progress. Independent QA/Security and release remain unauthorized.
+
+Repair Orders keyboard-arrival refinement: new presentation only. A keyboard activation from the canonical order ledger now lands on the selected repair order’s own heading, with a compact rounded focus treatment on that heading rather than a copper frame surrounding the entire master/detail workspace; pointer selection remains in the ledger. The workspace stays a labelled inline region, its query/route/queue semantics, real repair controls, legacy Sidekick behavior, permissions, APIs, mutations, and WebSocket invalidation are unchanged. Focused Stage 4 tests pass `27/27`; changed TypeScript lint, production build, diff integrity, and the one-run Impeccable detector pass. The live recovery stack remains the existing recovery-worktree frontend and `truckpitstop_db035` backend; Product visual/interaction review remains required. Independent QA/Security and release remain unauthorized.
+
+Repair Orders master/detail navigator consolidation: new presentation only. When a canonical repair order is open, the left pane condenses into a navigator—compact title/create action, search, and the existing authoritative status selector—rather than repeating a second filter dashboard. The result list now scrolls independently, is keyboard reachable as the labelled `Scrollable repair-order results` region, and keeps only scan-level order number, status, work, and amount; customer and vehicle identity remain solely in the existing selected repair-order workspace. Selected-row treatment is an inset copper cue rather than a clipped boxed outline. Existing query/history/queue semantics, routes, IDs, real workspace controls, legacy Sidekick behavior, permissions, APIs, mutations, and WebSocket invalidation are unchanged. Focused tests pass `21/21`; changed-file lint reports no new violations, production build, diff integrity, and the Impeccable detector pass. The recovery frontend and `truckpitstop_db035` backend are running, but the controlled browser currently has only an unauthenticated `/login` session, so this correction still requires live authenticated Product review. Independent QA/Security and release remain unauthorized.
+
+### DB-035 backend implementation handoff
+
+Backend implementation is complete on isolated branch `codex/db035-authenticated-presentation`, based on Architecture commit `5cf2e1f41b6f1180ba4d5846fc6323dabc9b9785`. It adds the additive tenant default and dedicated user/tenant appearance and rollout records, shared legacy/WorkOS authenticated bootstrap resolution, staff appearance GET/PUT/reset APIs, super-admin tenant/user rollout APIs, strict curated-value validation, tenant-scoped optimistic revision writes, global-force-legacy precedence, and redacted presentation metrics. Focused DB-035/auth/WorkOS tests pass `41/41`; focused backend/security/auth regression set passes `177/177`; PostgreSQL 15 empty migration reaches sole head `118_authenticated_presentation` and schema preflight passes; complete pinned Python 3.11 backend passes `744 passed, 4 skipped`; syntax compilation, diff check, and OpenAPI import/route checks pass. One WorkOS bootstrap compatibility regression found during the full suite was fixed by resolving presentation against the validated WorkOS principal tenant when the local user row has no tenant. Frontend changes remain unstaged and are handed off to Frontend & UX against Contract v1. Independent Security and QA gates remain required; no push, PR, merge, deploy, or self-approval is claimed.
+
+### DB-035 frontend Harden handoff
+
+Product approved the source-grounded Shape and authorized only Harden. The local candidate on `codex/db035-authenticated-presentation`, layered after backend `f314ab9`, removes the rejected local selected-order Dashboard model and associated fake hierarchy while leaving `DashboardHome` on its canonical action-queue projection, queue/activity switch, quick/full order actions, refresh behavior, statuses and repair-order deep links. The presentation resolver, identity-scoped cache, legacy-key migration, reversible Appearance editor, semantic/personal token separation, notification safety, DieselBridge-primary new shell and legacy presentation remain intact. Responsive shell ownership is bounded to a full 1280+ rail, compact 960–1279 rail, and the existing mobile navigation below 960. Focused tests pass `13/13`; full frontend passes `186/186`; production build, direct changed-source lint, and diff integrity pass; DB-035 Playwright passes `6/6`. This is an intermediate Harden milestone: the approved six-surface structural recomposition, Adapt, Optimize and Polish are not claimed. No push, PR, merge, deploy, Security approval, QA approval, Impeccable/Emil finish approval, or self-approval exists.
+
+### DB-035 controlled recovery
+
+Product rejected local Adapt commit `5c8c698` as a product outcome: it preserved
+behavior but substituted a rail/queue rearrangement for the connected operating
+experience promised publicly. It is audit evidence only and is not eligible for
+QA, integration or release. Recovery restarts from accepted Harden `a7b7fc0` on
+`codex/db035-ux-recovery`. The replacement owner produced two isolated,
+source-grounded prototype directions outside production source. Product now owns
+the single topology decision recorded in `docs/DB-035_MASTER_EXECUTION_PLAN.md`;
+no production implementation resumes before that decision.
 
 ## Blocked
 
@@ -251,6 +306,86 @@ last passing automated and runtime evidence in the item or associated issue.
 - Release evidence must record the focused PR/merge SHA, required CI contexts,
   both Railway web deployment IDs and health gates, changed homepage canary, and
   proof that the worker deployment remained unchanged.
+
+## DB-035 architecture contract and acceptance
+
+- Scope covers the authenticated staff Dashboard, Customers, Repair Orders,
+  Messages, My Shop, and Profile/Settings surfaces. The source-grounded public
+  landing language informs hierarchy, typography, material, spacing, product
+  identity, and motion; authenticated workflows remain source-faithful rather
+  than becoming marketing replicas.
+- **Shape confirmed 2026-08-12.** The new presentation is an operating-system
+  restructure, not a cosmetic reskin: a permanent desktop product rail, a
+  task-first Dashboard, and connected repair/customer/work/invoice/history
+  context. The existing old/new presentation boundary remains the rollback
+  mechanism; one router and the live operational data remain canonical.
+- Rollout is controlled by a tenant/user-scoped old/new presentation flag with
+  explicit precedence and instant rollback. Both modes use one router and the
+  same routes, APIs, permissions, mutations, auth, tenant boundaries, business
+  logic, WebSocket behavior, data, and operational/financial semantics. The flag
+  may select presentation components or tokens only and must not fork domain
+  state or introduce duplicate navigation trees.
+- Architecture defines the flag owner, response shape, bootstrap behavior,
+  caching, stale/offline fallback, tenant default versus user override,
+  observability, compatibility window, and removal plan. Missing, malformed, or
+  unavailable flag data fails safely to the current legacy presentation.
+- DieselBridge remains the product identity in the authenticated shell. A tenant
+  logo is subordinate shop context and cannot displace the product wordmark,
+  navigation identity, accessible name, or browser/document identity.
+- Appearance separates immutable brand/semantic tokens from personalization.
+  User accent choices never recolor success, warning, destructive, financial,
+  authorization, payment, or operational-risk states. Architecture publishes
+  the token ownership map and prohibits component-local semantic overrides.
+- Accent and theme choices come from a curated accessible set, not arbitrary
+  colors. Every supported light/dark/high-contrast combination preserves text,
+  icon, border, focus-ring, selected, disabled, and interactive-state contrast;
+  forced-colors mode remains usable without relying on authored color alone.
+- Appearance revisits accent, font family, font size, density, notification
+  placement, theme/mode, live preview, reset, and persistence. Font choices are
+  bounded, product-safe families. Compact, default, comfortable, and large are
+  explicit type-and-density contracts with documented token values—not global
+  transforms or browser-scale tricks.
+- Every font/density combination preserves financial column alignment, table and
+  work-queue comprehension, truncation/wrapping, 200% zoom, iPad/mobile layouts,
+  and at least 44px visible interactive targets. Large type cannot shrink the
+  available hit area or create horizontal page overflow.
+- Appearance preference ownership is user-scoped server state for cross-device
+  sync, with a small local bootstrap/cache for first paint. Architecture defines
+  request/response fields, authorization, tenant isolation, validation/errors,
+  concurrency or last-write semantics, cache versioning, hydration order, and
+  failure behavior. No preference may be read from or written to another user or
+  tenant.
+- The compatibility plan inventories current localStorage appearance keys,
+  defines a one-time validated migration into the server preference, prevents
+  repeated overwrites, supports old clients during rollout, and removes obsolete
+  keys only after the compatibility window. Reset restores the effective product
+  or tenant default on every device and updates preview, cache, and server state
+  consistently.
+- Live preview is reversible and does not persist until the user applies it.
+  Cancel restores the last committed appearance; reset and apply have explicit
+  pending, success, error, and retry behavior. Notifications do not cover focal
+  controls, move focus unexpectedly, or expose private preference payloads.
+- The old and new presentations preserve semantic landmarks, headings, tab and
+  disclosure behavior, labels, focus order, keyboard operation, live-region
+  behavior, reduced motion, reduced transparency, high contrast, forced colors,
+  coarse pointer support, and stable focus across flag or appearance changes.
+- Acceptance covers every supported appearance combination on Dashboard,
+  Customers, Repair Orders, Messages, My Shop, and Settings at desktop, iPad,
+  390px, and 320px, plus 200% zoom, reduced motion, high contrast, and forced
+  colors. The matrix verifies no overflow, overlap, hidden actions, undersized
+  targets, broken tables, misaligned money, unreadable statuses, stale theme
+  flashes, or notification obstruction.
+- Representative Playwright journeys run in both old and new presentation modes
+  against identical fixtures and assert identical routes, requests, permissions,
+  mutations, and resulting business state. Appearance persistence is verified
+  across reload, new tab, device/session bootstrap, user switch, tenant switch,
+  offline/cache fallback, reset, and rollback.
+- Architecture has recorded the versioned flag and preference contract, token
+  map, localStorage migration inventory, fixtures, compatibility/removal plan,
+  and work split. **Frontend & UX owns the confirmed reshape in
+  `codex/db035-authenticated-presentation`**; independent Security reviews
+  preference and tenant isolation, and independent QA plus Impeccable/Emil
+  finish review gate the rollout.
 
 ## DB-HC001 acceptance criteria
 

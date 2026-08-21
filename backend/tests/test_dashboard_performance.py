@@ -1,12 +1,16 @@
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
+from decimal import Decimal
 from uuid import uuid4
+from zoneinfo import ZoneInfo
 
 import pytest
 from sqlalchemy import event
 
 from app.api.v1.endpoints import dashboard
 from app.db.models.customer import Customer
+from app.db.models.invoice import Invoice, InvoiceStatus
 from app.db.models.repair_order import RepairOrder, RepairOrderStatus
 from app.db.models.tenant import Tenant
 from app.db.models.user import User, UserRole
@@ -271,3 +275,110 @@ async def test_dashboard_action_queue_bounds_each_lane_and_marks_overflow(db_ses
     assert response.orders_on_floor_has_more is True
     assert response.orders_needing_action == []
     assert response.orders_ready_to_close == []
+
+
+@pytest.mark.asyncio
+async def test_dashboard_daily_workset_uses_tenant_local_paid_boundary(db_session):
+    tenant_id = uuid4()
+    tenant = Tenant(
+        id=tenant_id,
+        name="Daily Workset Shop",
+        slug=f"daily-workset-{tenant_id.hex[:8]}",
+        timezone="America/New_York",
+    )
+    manager = User(
+        id=uuid4(),
+        tenant_id=tenant_id,
+        role=UserRole.GARAGE_OWNER,
+        email="daily-workset-owner@example.com",
+        hashed_password="hashed-password",
+        first_name="Daily",
+        last_name="Owner",
+        is_active=True,
+    )
+    customer = Customer(
+        id=uuid4(),
+        tenant_id=tenant_id,
+        first_name="Daily",
+        last_name="Customer",
+        email="daily-workset-customer@example.com",
+    )
+    vehicle = Vehicle(
+        id=uuid4(),
+        tenant_id=tenant_id,
+        customer_id=customer.id,
+        make="Freightliner",
+        model="Cascadia",
+        year=2024,
+    )
+    now = datetime.now(timezone.utc)
+    closed_today = RepairOrder(
+        id=uuid4(),
+        tenant_id=tenant_id,
+        customer_id=customer.id,
+        vehicle_id=vehicle.id,
+        order_number="DAILY-CLOSED-TODAY",
+        status=RepairOrderStatus.PAID,
+    )
+    closed_before_today = RepairOrder(
+        id=uuid4(),
+        tenant_id=tenant_id,
+        customer_id=customer.id,
+        vehicle_id=vehicle.id,
+        order_number="DAILY-CLOSED-YESTERDAY",
+        status=RepairOrderStatus.PAID,
+    )
+    paid_at_missing = RepairOrder(
+        id=uuid4(),
+        tenant_id=tenant_id,
+        customer_id=customer.id,
+        vehicle_id=vehicle.id,
+        order_number="DAILY-PAID-AT-MISSING",
+        status=RepairOrderStatus.PAID,
+    )
+    db_session.add_all([
+        tenant,
+        manager,
+        customer,
+        vehicle,
+        closed_today,
+        closed_before_today,
+        paid_at_missing,
+        Invoice(
+            id=uuid4(),
+            tenant_id=tenant_id,
+            repair_order_id=closed_today.id,
+            invoice_number=f"INV-{uuid4().hex[:12]}",
+            status=InvoiceStatus.PAID,
+            subtotal=Decimal("100.00"),
+            total_amount=Decimal("100.00"),
+            paid_at=now,
+        ),
+        Invoice(
+            id=uuid4(),
+            tenant_id=tenant_id,
+            repair_order_id=closed_before_today.id,
+            invoice_number=f"INV-{uuid4().hex[:12]}",
+            status=InvoiceStatus.PAID,
+            subtotal=Decimal("100.00"),
+            total_amount=Decimal("100.00"),
+            paid_at=now - timedelta(days=1),
+        ),
+        Invoice(
+            id=uuid4(),
+            tenant_id=tenant_id,
+            repair_order_id=paid_at_missing.id,
+            invoice_number=f"INV-{uuid4().hex[:12]}",
+            status=InvoiceStatus.PAID,
+            subtotal=Decimal("100.00"),
+            total_amount=Decimal("100.00"),
+        ),
+    ])
+    await db_session.commit()
+
+    response = await dashboard.get_dashboard_daily_workset(db=db_session, current_user=manager)
+
+    assert response.timezone == "America/New_York"
+    assert response.business_date == now.astimezone(ZoneInfo("America/New_York")).date()
+    assert [order.order_number for order in response.closed_today.items] == ["DAILY-CLOSED-TODAY"]
+    assert response.closed_today.items[0].paid_at is not None

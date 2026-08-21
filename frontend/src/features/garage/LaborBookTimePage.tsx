@@ -1,5 +1,6 @@
 import { useMemo, useRef, useState } from 'react'
 import { Spinner, LoadingLine } from '@/components/ui'
+import DurationStepper from '@/components/DurationStepper'
 import { useMutation, useQuery, useQueryClient, keepPreviousData } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
 import { Check, Clock3, Pencil, Plus, Search, Trash2, X } from 'lucide-react'
@@ -324,8 +325,8 @@ export default function LaborBookTimePage() {
   }
 
   return (
-    <div className="flex min-h-full flex-col gap-5 text-zinc-100">
-      <div className="rounded-2xl border border-zinc-700/50 bg-zinc-900/80 p-5 shadow-xl shadow-black/20">
+    <div className="db-labor-book-time flex min-h-full flex-col gap-5 text-zinc-100">
+      <div className="db-labor-book-time__summary rounded-2xl border border-zinc-700/50 bg-zinc-900/80 p-5 shadow-xl shadow-black/20">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div>
             <div className="mb-2 flex items-center gap-2 text-xs font-bold uppercase tracking-[0.22em] text-[var(--accent-400)]">
@@ -356,7 +357,7 @@ export default function LaborBookTimePage() {
             <button
               type="button"
               onClick={() => setIsCreating((value) => !value)}
-              className="flex w-full items-center justify-center gap-2 rounded-xl border border-[var(--accent-500)]/40 bg-[var(--accent-500)] px-4 py-3 text-sm font-bold text-white transition hover:bg-[var(--accent-600)]"
+              className="db-labor-book-time__primary-action flex w-full items-center justify-center gap-2 rounded-xl border border-[var(--accent-500)]/40 bg-[var(--accent-500)] px-4 py-3 text-sm font-bold text-white transition hover:bg-[var(--accent-600)]"
             >
               {isCreating ? <X className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
               {isCreating ? 'Close form' : 'New book time'}
@@ -364,7 +365,7 @@ export default function LaborBookTimePage() {
           </div>
         </div>
 
-        <div className="mt-5 flex items-center gap-3 rounded-xl border border-zinc-700/70 bg-zinc-950/60 px-3 py-2">
+        <div className="db-labor-book-time__search mt-5 flex items-center gap-3 rounded-xl border border-zinc-700/70 bg-zinc-950/60 px-3 py-2">
           <Search className="h-4 w-4 text-zinc-500" />
           <input
             value={searchQuery}
@@ -572,13 +573,13 @@ export default function LaborBookTimePage() {
         </div>
       ) : null}
 
-      <div className="overflow-hidden rounded-2xl border border-zinc-700/50 bg-zinc-900/80 shadow-xl shadow-black/20">
-        <div className="grid grid-cols-[minmax(0,1.5fr)_120px_minmax(140px,0.8fr)_120px_112px] gap-3 border-b border-zinc-800 bg-zinc-950/60 px-5 py-3 text-[11px] font-bold uppercase tracking-[0.18em] text-zinc-500 max-lg:hidden">
-          <span>Labor</span>
-          <span>Book hours</span>
-          <span>Vehicle scope</span>
-          <span>Last used</span>
-          <span className="text-right">Actions</span>
+      <div className="db-labor-book-time__ledger overflow-hidden rounded-2xl border border-zinc-700/50 bg-zinc-900/80 shadow-xl shadow-black/20">
+        <div className="db-labor-book-time__ledger-header grid grid-cols-[minmax(0,1.5fr)_152px_minmax(140px,0.8fr)_120px_112px] gap-3 border-b border-zinc-800 bg-zinc-950/60 px-5 py-3 text-[11px] font-bold uppercase tracking-[0.18em] text-zinc-500 max-lg:hidden">
+          <span className="db-labor-book-time__ledger-labor">Labor</span>
+          <span className="db-labor-book-time__ledger-hours">Book hours</span>
+          <span className="db-labor-book-time__ledger-scope">Vehicle scope</span>
+          <span className="db-labor-book-time__ledger-last-used">Last used</span>
+          <span className="db-labor-book-time__ledger-actions text-right">Actions</span>
         </div>
 
         {isLoading ? (
@@ -599,21 +600,21 @@ export default function LaborBookTimePage() {
               return (
                 <div
                   key={entry.id}
-                  className="grid gap-3 px-5 py-4 transition hover:bg-zinc-800/30 lg:grid-cols-[minmax(0,1.5fr)_120px_minmax(140px,0.8fr)_120px_112px] lg:items-center"
+                  className={`db-labor-book-time__ledger-row grid gap-3 px-5 py-4 transition hover:bg-zinc-800/30 lg:grid-cols-[minmax(0,1.5fr)_152px_minmax(140px,0.8fr)_120px_112px] lg:items-center${isEditing ? ' db-labor-book-time__ledger-row--editing' : ''}`}
                 >
-                  <div className="min-w-0">
+                  <div className="db-labor-book-time__ledger-labor min-w-0">
                     {isEditing ? (
                       <div className="space-y-2">
                         <input
                           value={editState.operation_name}
                           onChange={(event) => setEditState((prev) => ({ ...prev, operation_name: event.target.value }))}
-                          className="h-10 w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 text-sm font-semibold text-white outline-none focus:border-[var(--accent-400)]"
+                          className="db-labor-book-time__edit-input h-10 w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 text-sm font-semibold text-white outline-none focus:border-[var(--accent-400)]"
                         />
                         <input
                           value={editState.operation_description}
                           onChange={(event) => setEditState((prev) => ({ ...prev, operation_description: event.target.value }))}
                           placeholder="Optional description"
-                          className="h-9 w-full rounded-lg border border-zinc-800 bg-zinc-950/80 px-3 text-xs text-zinc-300 outline-none focus:border-[var(--accent-400)]"
+                          className="db-labor-book-time__edit-input h-9 w-full rounded-lg border border-zinc-800 bg-zinc-950/80 px-3 text-xs text-zinc-300 outline-none focus:border-[var(--accent-400)]"
                         />
                       </div>
                     ) : (
@@ -626,15 +627,12 @@ export default function LaborBookTimePage() {
                     )}
                   </div>
 
-                  <div>
+                  <div className="db-labor-book-time__ledger-hours">
                     {isEditing ? (
-                      <input
-                        value={editState.normalized_hours}
-                        onChange={(event) => setEditState((prev) => ({ ...prev, normalized_hours: event.target.value }))}
-                        type="number"
-                        min="0.01"
-                        step="0.25"
-                        className="h-10 w-28 rounded-lg border border-zinc-700 bg-zinc-950 px-3 text-right text-sm font-semibold text-white outline-none focus:border-[var(--accent-400)]"
+                      <DurationStepper
+                        hours={Number(editState.normalized_hours) || 0.25}
+                        onChange={(nextHours) => setEditState((prev) => ({ ...prev, normalized_hours: String(nextHours) }))}
+                        ariaLabel={`Book hours for ${entry.operation_name}`}
                       />
                     ) : (
                       <div className="inline-flex rounded-full bg-[var(--accent-500)]/10 px-3 py-1 text-sm font-bold text-[var(--accent-300)]">
@@ -643,17 +641,17 @@ export default function LaborBookTimePage() {
                     )}
                   </div>
 
-                  <div className="min-w-0 text-xs text-zinc-400">
+                  <div className="db-labor-book-time__ledger-scope min-w-0 text-xs text-zinc-400">
                     <div className="truncate font-medium text-zinc-300">{scope.primary}</div>
                     <div className="mt-1 truncate text-zinc-600">{scope.secondary}</div>
                   </div>
 
-                  <div className="text-xs text-zinc-500">
+                  <div className="db-labor-book-time__ledger-last-used text-xs text-zinc-500">
                     <div>{formatDate(entry.last_used_at)}</div>
                     <div className="mt-1">{entry.usage_count} use{entry.usage_count === 1 ? '' : 's'}</div>
                   </div>
 
-                  <div className="flex items-center justify-end gap-2">
+                  <div className="db-labor-book-time__ledger-actions flex items-center justify-end gap-2">
                     {isEditing ? (
                       <>
                         <button

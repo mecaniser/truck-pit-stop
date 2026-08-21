@@ -1,10 +1,11 @@
+import { createPortal } from 'react-dom'
 import { useState, useMemo, useEffect, useRef } from 'react'
 import { LoadingLine } from '@/components/ui'
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query'
 import { useSearchParams } from 'react-router-dom'
 import api from '../../lib/api'
 import { InventoryItem, Supplier, UnitType } from '../../types'
-import { ArrowRight, Camera, Download, ImageOff, MapPin, PackageCheck, Pencil, Plus, Settings, Sparkles, Trash2, X } from 'lucide-react'
+import { ArrowRight, Camera, Check, ChevronDown, Download, ImageOff, MapPin, PackageCheck, Pencil, Plus, Settings, Sparkles, Trash2, X } from 'lucide-react'
 import SlidePanelForm from '@/components/SlidePanelForm'
 import Lightbox from '@/components/Lightbox'
 import BaseSelect from '../../components/BaseSelect'
@@ -40,10 +41,9 @@ function fluidLinkPatch(
   return {}
 }
 
-// Selling-price field with a $/% toggle beside its label. '$' types the price
-// directly; '%' types a markup over cost — 15 on a $16.00 cost yields $18.40
-// (cost × 1.15). Form state always holds the resolved dollar amount, so the
-// save path never changes: percent is an input method, not a stored value.
+// Selling-price field with an explicit input-method choice. Price types the
+// resolved unit price; Markup derives it from cost. Form state always keeps
+// that resolved dollar amount, so the save path never changes.
 function SellingPriceField({
   label,
   cost,
@@ -55,8 +55,12 @@ function SellingPriceField({
   value: string
   onChange: (v: string) => void
 }) {
-  const [mode, setMode] = useState<'$' | '%'>('$')
+  const [mode, setMode] = useState<'price' | 'markup'>('price')
   const [pct, setPct] = useState('')
+  const [methodOpen, setMethodOpen] = useState(false)
+  const [methodMenuPos, setMethodMenuPos] = useState<{ top: number; left: number; openUp: boolean } | null>(null)
+  const methodButtonRef = useRef<HTMLButtonElement>(null)
+  const methodMenuRef = useRef<HTMLDivElement>(null)
   const costNum = parseFloat(cost)
   const costValid = Number.isFinite(costNum) && costNum > 0
 
@@ -68,13 +72,13 @@ function SellingPriceField({
 
   // Cost edits while in % mode keep the markup constant and move the price.
   useEffect(() => {
-    if (mode === '%') applyPct(pct, parseFloat(cost))
+    if (mode === 'markup') applyPct(pct, parseFloat(cost))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cost])
 
-  const switchMode = (m: '$' | '%') => {
+  const switchMode = (m: 'price' | 'markup') => {
     if (m === mode) return
-    if (m === '%') {
+    if (m === 'markup') {
       // Seed the markup from the current cost/price pair so toggling is lossless.
       const s = parseFloat(value)
       if (costValid && Number.isFinite(s)) {
@@ -82,74 +86,155 @@ function SellingPriceField({
       }
     }
     setMode(m)
+    setMethodOpen(false)
   }
 
   const sellingNum = parseFloat(value)
+  const markup = costValid && Number.isFinite(sellingNum)
+    ? ((sellingNum - costNum) / costNum) * 100
+    : null
+  const sellingPriceSummary = Number.isFinite(sellingNum)
+    ? `$${sellingNum.toFixed(2)} / unit`
+    : 'Enter a price'
+  const markupSummary = markup == null ? 'Set a cost first' : `${markup.toFixed(1)}% markup`
+
+  const toggleMethodMenu = () => {
+    if (methodOpen) {
+      setMethodOpen(false)
+      return
+    }
+    const rect = methodButtonRef.current?.getBoundingClientRect()
+    if (!rect) return
+    const menuWidth = Math.min(288, window.innerWidth - 24)
+    const estimatedMenuHeight = 198
+    const openUp = window.innerHeight - rect.bottom < estimatedMenuHeight && rect.top > estimatedMenuHeight
+    setMethodMenuPos({
+      top: openUp ? rect.top - 8 : rect.bottom + 8,
+      left: Math.max(12, Math.min(rect.right - menuWidth, window.innerWidth - menuWidth - 12)),
+      openUp,
+    })
+    setMethodOpen(true)
+  }
+
+  useEffect(() => {
+    if (!methodOpen) return
+    const closeOnOutsidePointer = (event: PointerEvent) => {
+      const target = event.target as Node
+      if (methodButtonRef.current?.contains(target) || methodMenuRef.current?.contains(target)) return
+      setMethodOpen(false)
+    }
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return
+      setMethodOpen(false)
+      methodButtonRef.current?.focus()
+    }
+    const closeOnViewportChange = () => setMethodOpen(false)
+    document.addEventListener('pointerdown', closeOnOutsidePointer)
+    document.addEventListener('keydown', closeOnEscape)
+    window.addEventListener('resize', closeOnViewportChange)
+    window.addEventListener('scroll', closeOnViewportChange, true)
+    return () => {
+      document.removeEventListener('pointerdown', closeOnOutsidePointer)
+      document.removeEventListener('keydown', closeOnEscape)
+      window.removeEventListener('resize', closeOnViewportChange)
+      window.removeEventListener('scroll', closeOnViewportChange, true)
+    }
+  }, [methodOpen])
 
   return (
-    <label className="text-sm text-gray-700 space-y-1">
-      {/* h-5 pins this row to the height of a plain one-line label (text-sm
-          line-height), so the sibling Cost field's input stays aligned with
-          ours in the two-column grid. The toggle fits inside that 20px. */}
-      <span className="flex h-5 items-center justify-between gap-2">
+    <label className="db-inventory-price-field text-sm text-gray-700 space-y-1.5">
+      <span className="flex min-h-11 items-center justify-between gap-2">
         <span className="truncate">{label}</span>
-        <span className="inline-flex h-5 overflow-hidden rounded-md border border-gray-200">
-          {(['$', '%'] as const).map((m) => (
-            <button
-              key={m}
-              type="button"
-              // preventDefault: inside a <label>, a plain click would also
-              // activate the label's form control and steal focus.
-              onClick={(e) => {
-                e.preventDefault()
-                switchMode(m)
-              }}
-              className={`flex items-center px-2 text-[10px] font-semibold leading-none whitespace-nowrap transition-colors ${
-                mode === m ? 'bg-amber-500 text-white' : 'bg-white text-gray-500 hover:bg-gray-50'
-              }`}
-              aria-pressed={mode === m}
-              aria-label={m === '$' ? 'Enter selling price in dollars' : 'Enter selling price as % markup over cost'}
-            >
-              {m}
-            </button>
-          ))}
-        </span>
+        <button
+          ref={methodButtonRef}
+          type="button"
+          onClick={(event) => {
+            event.preventDefault()
+            toggleMethodMenu()
+          }}
+          aria-haspopup="menu"
+          aria-expanded={methodOpen}
+          aria-controls="inventory-price-method-menu"
+          className="db-inventory-price-method-trigger inline-flex h-11 shrink-0 items-center gap-1.5 rounded-lg border px-3 text-xs font-semibold"
+        >
+          {mode === 'price' ? 'Price' : 'Markup'}
+          <ChevronDown className={`h-3.5 w-3.5 transition-transform ${methodOpen ? 'rotate-180' : ''}`} aria-hidden="true" />
+        </button>
       </span>
-      {/* Keyed so the $↔% input swap cross-fades instead of hard-flipping. */}
-      <div key={mode} className="animate-status-swap">
-        {mode === '$' ? (
+      <div className="db-inventory-price-field__input">
+        {mode === 'price' ? (
           <CurrencyInput value={value} onChange={onChange} step={1} />
         ) : (
-          <>
-            <CurrencyInput
-              value={pct}
-              onChange={(p) => {
-                setPct(p)
-                applyPct(p, costNum)
-              }}
-              step={1}
-              symbol="%"
-              symbolSuffix
-              decimals={1}
-              placeholder="0"
-              disabled={!costValid}
-            />
-            <p className="mt-1 text-xs">
-              {costValid ? (
-                Number.isFinite(sellingNum) && pct !== '' ? (
-                  <span className="text-gray-500">
-                    = <span className="font-semibold text-gray-700">${sellingNum.toFixed(2)}</span> selling price
-                  </span>
-                ) : (
-                  <span className="text-gray-500">Type a markup % over cost</span>
-                )
-              ) : (
-                <span className="text-amber-600">Set a cost first — % is a markup over cost</span>
-              )}
-            </p>
-          </>
+          <CurrencyInput
+            value={pct}
+            onChange={(p) => {
+              setPct(p)
+              applyPct(p, costNum)
+            }}
+            step={1}
+            symbol="%"
+            symbolSuffix
+            decimals={1}
+            placeholder="0"
+            disabled={!costValid}
+          />
         )}
       </div>
+      {mode === 'markup' && (
+        <span className="db-inventory-price-field__summary flex min-h-5 items-center justify-between gap-2 text-xs">
+          <span>Calculated price</span>
+          <strong>{sellingPriceSummary}</strong>
+        </span>
+      )}
+      {methodOpen && methodMenuPos && createPortal(
+        <div
+          ref={methodMenuRef}
+          id="inventory-price-method-menu"
+          role="menu"
+          aria-label="Selling price input method"
+          style={{
+            position: 'fixed',
+            top: methodMenuPos.top,
+            left: methodMenuPos.left,
+            transform: methodMenuPos.openUp ? 'translateY(-100%)' : undefined,
+            width: 'min(18rem, calc(100vw - 1.5rem))',
+          }}
+          className="db-inventory-price-method-menu z-[80] rounded-xl border p-1.5 shadow-xl"
+        >
+          <p className="px-2.5 pb-1.5 pt-1 text-xs font-semibold">Set selling price by</p>
+          <button
+            type="button"
+            role="menuitemradio"
+            aria-checked={mode === 'price'}
+            onClick={() => switchMode('price')}
+            className="db-inventory-price-method-option flex min-h-12 w-full items-center justify-between gap-3 rounded-lg px-2.5 py-2 text-left"
+          >
+            <span>
+              <span className="block text-sm font-semibold">Price</span>
+              <span className="block text-xs">Enter the selling price per unit.</span>
+            </span>
+            {mode === 'price' && <Check className="h-4 w-4 shrink-0" aria-hidden="true" />}
+          </button>
+          <button
+            type="button"
+            role="menuitemradio"
+            aria-checked={mode === 'markup'}
+            onClick={() => switchMode('markup')}
+            className="db-inventory-price-method-option flex min-h-12 w-full items-center justify-between gap-3 rounded-lg px-2.5 py-2 text-left"
+            disabled={!costValid}
+          >
+            <span>
+              <span className="block text-sm font-semibold">Markup</span>
+              <span className="block text-xs">Calculate price from the unit cost.</span>
+            </span>
+            {mode === 'markup' && <Check className="h-4 w-4 shrink-0" aria-hidden="true" />}
+          </button>
+          <p className="db-inventory-price-method-note px-2.5 pb-1 pt-2 text-xs">
+            {costValid ? `Current markup: ${markupSummary}` : 'Set a unit cost before using markup.'}
+          </p>
+        </div>,
+        document.body,
+      )}
     </label>
   )
 }
@@ -808,7 +893,7 @@ export default function InventoryPage() {
   }
 
   return (
-    <div className="flex flex-col gap-3 lg:h-full lg:min-h-0">
+    <div className="db-inventory-workspace flex flex-col gap-3 lg:h-full lg:min-h-0">
       {syncStatus?.ets_last_synced_at && (
         <div className="text-xs text-gray-400 px-1">
           Last synced from Easy Truck Shop: {new Date(syncStatus.ets_last_synced_at).toLocaleString()}
@@ -913,7 +998,7 @@ export default function InventoryPage() {
         <button
           type="button"
           onClick={openAddPart}
-          className="inline-flex h-[42px] shrink-0 items-center gap-2 rounded-lg px-4 text-sm font-semibold text-white transition-colors"
+          className="db-inventory-workspace__primary-action inline-flex h-[42px] shrink-0 items-center gap-2 rounded-lg px-4 text-sm font-semibold text-white transition-colors"
           style={{ backgroundColor: accentColors[600] }}
         >
           <Plus className="w-4 h-4" />
@@ -987,8 +1072,8 @@ export default function InventoryPage() {
         <div className="inline-flex items-center bg-white/10 border border-white/15 rounded-lg p-0.5">
           <button
             onClick={() => setStockSort('none')}
-            className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors whitespace-nowrap ${
-              stockSort === 'none' ? 'text-white' : 'text-white'
+            className={`db-inventory-stock-sort px-2.5 py-1 rounded-md text-xs font-medium transition-colors whitespace-nowrap ${
+              stockSort === 'none' ? 'db-inventory-stock-sort--selected' : ''
             }`}
             style={stockSort === 'none' ? { backgroundColor: accentColors[500] } : undefined}
           >
@@ -996,8 +1081,8 @@ export default function InventoryPage() {
           </button>
           <button
             onClick={() => setStockSort('low-high')}
-            className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors whitespace-nowrap ${
-              stockSort === 'low-high' ? 'text-white' : 'text-white'
+            className={`db-inventory-stock-sort px-2.5 py-1 rounded-md text-xs font-medium transition-colors whitespace-nowrap ${
+              stockSort === 'low-high' ? 'db-inventory-stock-sort--selected' : ''
             }`}
             style={stockSort === 'low-high' ? { backgroundColor: accentColors[500] } : undefined}
           >
@@ -1005,8 +1090,8 @@ export default function InventoryPage() {
           </button>
           <button
             onClick={() => setStockSort('high-low')}
-            className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors whitespace-nowrap ${
-              stockSort === 'high-low' ? 'text-white' : 'text-white'
+            className={`db-inventory-stock-sort px-2.5 py-1 rounded-md text-xs font-medium transition-colors whitespace-nowrap ${
+              stockSort === 'high-low' ? 'db-inventory-stock-sort--selected' : ''
             }`}
             style={stockSort === 'high-low' ? { backgroundColor: accentColors[500] } : undefined}
           >
@@ -1128,7 +1213,7 @@ export default function InventoryPage() {
         })}
       </div>
 
-      <div className="hidden lg:flex min-h-0 flex-1 flex-col rounded-xl border border-white/10 bg-white/5 overflow-hidden">
+      <div className="db-inventory-workspace__ledger hidden lg:flex min-h-0 flex-1 flex-col rounded-xl border border-white/10 bg-white/5 overflow-hidden">
         <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 border-b border-white/10">
           <ViewToggle value={viewMode} onChange={setViewMode} />
           <div className="flex items-center gap-2">
@@ -1136,7 +1221,9 @@ export default function InventoryPage() {
             <div className="inline-flex items-center bg-white/10 border border-white/15 rounded-lg p-0.5">
               <button
                 onClick={() => setStockSort('none')}
-                className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors whitespace-nowrap ${
+                className={`db-inventory-stock-sort px-2.5 py-1 rounded-md text-xs font-medium transition-colors whitespace-nowrap ${
+                  stockSort === 'none' ? 'db-inventory-stock-sort--selected' : ''
+                } ${
                   stockSort === 'none' ? 'text-white' : 'text-white hover:bg-white/20'
                 }`}
                 style={stockSort === 'none' ? { backgroundColor: accentColors[500] } : undefined}
@@ -1145,7 +1232,9 @@ export default function InventoryPage() {
               </button>
               <button
                 onClick={() => setStockSort('low-high')}
-                className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors whitespace-nowrap ${
+                className={`db-inventory-stock-sort px-2.5 py-1 rounded-md text-xs font-medium transition-colors whitespace-nowrap ${
+                  stockSort === 'low-high' ? 'db-inventory-stock-sort--selected' : ''
+                } ${
                   stockSort === 'low-high' ? 'text-white' : 'text-white hover:bg-white/20'
                 }`}
                 style={stockSort === 'low-high' ? { backgroundColor: accentColors[500] } : undefined}
@@ -1154,7 +1243,9 @@ export default function InventoryPage() {
               </button>
               <button
                 onClick={() => setStockSort('high-low')}
-                className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors whitespace-nowrap ${
+                className={`db-inventory-stock-sort px-2.5 py-1 rounded-md text-xs font-medium transition-colors whitespace-nowrap ${
+                  stockSort === 'high-low' ? 'db-inventory-stock-sort--selected' : ''
+                } ${
                   stockSort === 'high-low' ? 'text-white' : 'text-white hover:bg-white/20'
                 }`}
                 style={stockSort === 'high-low' ? { backgroundColor: accentColors[500] } : undefined}
@@ -1181,16 +1272,16 @@ export default function InventoryPage() {
           </button>
         </div>
         {viewMode === 'cards' ? (
-          <div className="min-h-0 flex-1 overflow-y-auto p-4">
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+          <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden p-4">
+            <div className="db-inventory-card-grid grid min-w-0 grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
               {filteredInventory?.map((item) => {
                 const stockStatus = getStockStatus(item)
                 return (
             <div
                     key={item.id}
-                    className="bg-white/10 border border-white/15 rounded-xl p-4 sm:p-5 space-y-3 hover:border-amber-400/40 hover:bg-white/10 transition-colors"
+                    className="min-w-0 overflow-hidden bg-white/10 border border-white/15 rounded-xl p-4 sm:p-5 space-y-3 hover:border-amber-400/40 hover:bg-white/10 transition-colors"
                   >
-                    <div className="flex items-start justify-between gap-3">
+                    <div className="grid grid-cols-[3.5rem_minmax(0,1fr)] items-start gap-3">
                       {item.image_url || fallbackPartImageUrl ? (
                         <button
                           type="button"
@@ -1209,11 +1300,11 @@ export default function InventoryPage() {
                           <ImageOff className="w-5 h-5" />
                         </div>
                       )}
-                      <div className="flex flex-col items-end gap-1.5">
-                        <span className={`whitespace-nowrap px-3 py-1 rounded-full text-xs font-semibold text-center min-w-[88px] ${stockStatus.bg} ${stockStatus.text}`}>
+                      <div className="flex min-w-0 flex-col items-end gap-1.5">
+                        <span className={`max-w-full whitespace-nowrap px-3 py-1 rounded-full text-xs font-semibold text-center ${stockStatus.bg} ${stockStatus.text}`}>
                           {item.stock_quantity > 0 ? `${stockStatus.label} · ${item.stock_quantity}` : stockStatus.label}
                         </span>
-                        <span className="whitespace-nowrap text-xs font-mono text-gray-200 bg-white/10 px-2 py-0.5 rounded border border-white/20">
+                        <span className="block max-w-full overflow-hidden text-ellipsis whitespace-nowrap text-xs font-mono text-gray-200 bg-white/10 px-2 py-0.5 rounded border border-white/20">
                           {item.sku}
                         </span>
                       </div>
@@ -1373,6 +1464,7 @@ export default function InventoryPage() {
         isSubmitting={updateMutation.isPending}
         submitDisabled={!selectedItem}
         ariaLabel="Manage inventory"
+        panelClassName="db-inventory-editor-panel"
         titleIcon={
           (selectedItem?.image_url || fallbackPartImageUrl) ? (
             <button
@@ -1397,11 +1489,7 @@ export default function InventoryPage() {
           <button
             type="button"
             onClick={() => setEditingIdentity((v) => !v)}
-            className={`p-2 rounded-full transition-colors ${
-              editingIdentity
-                ? 'bg-amber-100 text-amber-700 hover:bg-amber-200'
-                : 'text-gray-400 hover:text-gray-700 hover:bg-gray-100'
-            }`}
+            className={`db-inventory-editor-panel__identity-trigger ${editingIdentity ? 'is-active' : ''}`}
             aria-label="Edit part details"
             title={editingIdentity ? 'Close part details editor' : 'Edit name, SKU, category, description, and photo'}
           >
@@ -1411,8 +1499,8 @@ export default function InventoryPage() {
       >
         {/* Part details editor — only visible when pencil toggled */}
         {editingIdentity && (
-          <div className="rounded-lg border border-amber-200 bg-amber-50/50 p-3 space-y-2">
-            <p className="text-[11px] uppercase tracking-wide text-amber-800 font-semibold">Edit part details</p>
+          <div className="db-inventory-identity-editor rounded-lg border p-3 space-y-2">
+            <p className="db-inventory-identity-editor__eyebrow text-[11px] uppercase tracking-wide font-semibold">Edit part details</p>
 
             {/* Part photo */}
             <div className="flex items-center gap-3 pb-2">
@@ -1435,13 +1523,13 @@ export default function InventoryPage() {
                 </div>
               )}
               <div className="flex-1 min-w-0 space-y-1.5">
-                <p className="text-sm font-medium text-gray-700">Part photo</p>
+                <p className="db-inventory-identity-editor__label text-sm font-medium">Part photo</p>
                 <div className="flex items-center gap-2 flex-wrap">
                   <button
                     type="button"
                     onClick={() => photoInputRef.current?.click()}
                     disabled={uploadPhotoMutation.isPending}
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold text-amber-700 bg-amber-50 border border-amber-200 hover:bg-amber-100 transition-colors disabled:opacity-50 whitespace-nowrap"
+                    className="db-inventory-identity-editor__photo-action inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold transition-colors disabled:opacity-50 whitespace-nowrap"
                   >
                     <Camera className="w-3.5 h-3.5" />
                     {uploadPhotoMutation.isPending ? 'Uploading…' : selectedItem?.image_url ? 'Replace' : 'Add photo'}
@@ -1451,7 +1539,7 @@ export default function InventoryPage() {
                       type="button"
                       onClick={() => deletePhotoMutation.mutate()}
                       disabled={deletePhotoMutation.isPending}
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold text-gray-600 bg-gray-50 border border-gray-200 hover:bg-gray-100 transition-colors disabled:opacity-50 whitespace-nowrap"
+                      className="db-inventory-identity-editor__secondary-action inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold transition-colors disabled:opacity-50 whitespace-nowrap"
                     >
                       <X className="w-3.5 h-3.5" />
                       Remove
@@ -1472,7 +1560,7 @@ export default function InventoryPage() {
               </div>
             </div>
 
-            <label className="text-sm text-gray-700 space-y-1 block">
+            <label className="db-inventory-identity-editor__label text-sm space-y-1 block">
               <span>Name</span>
               <SuggestingInput
                 value={manageForm.name}
@@ -1482,7 +1570,7 @@ export default function InventoryPage() {
               />
             </label>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-              <label className="text-sm text-gray-700 space-y-1 block">
+              <label className="db-inventory-identity-editor__label text-sm space-y-1 block">
                 <span>SKU</span>
                 <input
                   type="text"
@@ -1491,7 +1579,7 @@ export default function InventoryPage() {
                   className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-amber-500 bg-white"
                 />
               </label>
-              <label className="text-sm text-gray-700 space-y-1 block">
+              <label className="db-inventory-identity-editor__label text-sm space-y-1 block">
                 <span>Category</span>
                 <SuggestingInput
                   value={manageForm.category}
@@ -1502,7 +1590,7 @@ export default function InventoryPage() {
                 />
               </label>
             </div>
-            <label className="text-sm text-gray-700 space-y-1 block">
+            <label className="db-inventory-identity-editor__label text-sm space-y-1 block">
               <span>Warehouse location</span>
               <input
                 type="text"
@@ -1512,7 +1600,7 @@ export default function InventoryPage() {
                 placeholder="e.g. Aisle 3, Shelf B"
               />
             </label>
-            <label className="text-sm text-gray-700 space-y-1 block">
+            <label className="db-inventory-identity-editor__label text-sm space-y-1 block">
               <span>Description</span>
               <SuggestingTextarea
                 value={manageForm.description}
@@ -1571,7 +1659,7 @@ export default function InventoryPage() {
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <label className="text-sm text-gray-700 space-y-1">
+          <label className="db-inventory-price-field__peer text-sm text-gray-700 space-y-1.5">
             <span>Cost <span className="text-gray-400 font-normal">(per unit)</span></span>
             <CurrencyInput
               value={manageForm.cost}
@@ -1854,7 +1942,7 @@ export default function InventoryPage() {
               />
             </div>
           </label>
-          <label className="text-sm text-gray-700 space-y-1">
+          <label className="db-inventory-price-field__peer text-sm text-gray-700 space-y-1.5">
             <span>Cost <span className="text-gray-400 font-normal">(per unit)</span> *</span>
             <CurrencyInput
               value={addForm.cost}

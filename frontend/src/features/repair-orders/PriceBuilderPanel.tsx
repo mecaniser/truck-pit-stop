@@ -474,7 +474,7 @@ function LaborLineEditor({
           Writes are debounced so rapid stepping doesn't trip the rate limit. */}
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2 text-sm text-gray-700">
         <label className="inline-flex items-center gap-1.5">
-          <span className="text-[11px] font-medium uppercase tracking-wide text-gray-400">Duration</span>
+          <span className="text-[11px] font-medium uppercase tracking-wide text-slate-600">Duration</span>
           <DurationStepper
             hours={lineHours}
             onChange={(h) => onUpdate({ hours: h })}
@@ -487,7 +487,7 @@ function LaborLineEditor({
         </label>
         <span className="text-gray-400">×</span>
         <label className="inline-flex items-center gap-1.5">
-          <span className="text-[11px] font-medium uppercase tracking-wide text-gray-400">Rate</span>
+          <span className="text-[11px] font-medium uppercase tracking-wide text-slate-600">Rate</span>
           <span className="text-gray-500">$</span>
           <QuantityStepper
             value={lineRate}
@@ -658,7 +658,7 @@ function OrderNumberHeader({ value }: { value: string }) {
         ref={h3Ref}
         title={truncated ? value : undefined}
         onClick={truncated ? toggle : undefined}
-        className={`truncate font-['Barlow_Condensed',sans-serif] text-3xl font-extrabold leading-none tracking-wide${
+        className={`truncate font-['Barlow_Condensed',sans-serif] !text-white text-3xl font-extrabold leading-none tracking-wide${
           truncated ? ' cursor-pointer' : ''
         }`}
       >
@@ -2101,7 +2101,7 @@ export default function PriceBuilderPanel({
   }, [defaultLaborRate, canMutate])
 
   return (
-    <div className="relative flex h-full min-h-full flex-col overflow-hidden bg-white">
+    <div className="db-price-builder relative flex h-full min-h-full flex-col overflow-hidden bg-white">
       <div
         className="px-5 py-4 text-white"
         style={{
@@ -2126,7 +2126,7 @@ export default function PriceBuilderPanel({
               </p>
             )}
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center justify-end gap-2">
             {onPrev && (
               <button
                 type="button"
@@ -2603,7 +2603,7 @@ export default function PriceBuilderPanel({
           )}
           {addType !== 'history' && (
           <div className="relative min-w-[240px] flex-1 basis-[240px]">
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
             <input
               type="text"
               value={searchTerm}
@@ -2617,7 +2617,7 @@ export default function PriceBuilderPanel({
                 addType === 'saved_labor' ? 'Search labor book time — e.g. DPF filter replacement…' :
                 'Add part — search inventory by name or SKU…'
               }
-              className="h-11 w-full rounded-xl border border-gray-200 bg-white pl-9 pr-10 text-sm outline-none focus:border-orange-300 focus:ring-2 focus:ring-orange-100"
+              className="h-11 w-full rounded-xl border border-gray-200 bg-white pl-9 pr-10 text-sm text-slate-950 placeholder:text-slate-500 outline-none focus:border-orange-300 focus:ring-2 focus:ring-orange-100"
             />
             {searchTerm && (
               <button
@@ -2738,10 +2738,10 @@ export default function PriceBuilderPanel({
         {paletteOpen && addType !== 'history' && (
           <div className="mt-3 rounded-[14px] border border-gray-200 bg-white p-2 shadow-[0_10px_30px_rgba(20,25,35,.10)]">
             <div className="mb-2 flex items-center justify-between border-b border-gray-100 px-2 pb-2">
-              <span className="text-xs font-bold uppercase tracking-[0.16em] text-gray-400">
+              <span className="text-xs font-bold uppercase tracking-[0.16em] text-slate-600">
                 {addType === 'operation' ? 'Repair operations & services' : addType === 'saved_labor' ? 'Labor book time' : 'Parts'}
               </span>
-              <span className="font-['JetBrains_Mono',monospace] text-[11px] text-gray-400">↵ to add</span>
+              <span className="font-['JetBrains_Mono',monospace] text-[11px] text-slate-600">↵ to add</span>
             </div>
             {addType === 'operation' ? (
               <>
@@ -2752,7 +2752,7 @@ export default function PriceBuilderPanel({
                   </p>
                 )}
                 {!searchOps.isPending && !candidates.length && (
-                  <p className="px-2 py-3 text-sm text-gray-500">
+                  <p className="px-2 py-3 text-sm text-slate-600">
                     Start by typing an operation name. Saved operations reuse learned labor hours when available.
                   </p>
                 )}
@@ -2812,7 +2812,7 @@ export default function PriceBuilderPanel({
                             estimatedHours: isAddNew ? bookTimeHours : undefined,
                           })}
                           disabled={!canMutate || applyRepairOp.isPending || (isAddNew && !bookTimeHours)}
-                          className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-gray-900 text-white disabled:bg-gray-300"
+                          className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-orange-600 text-white shadow-sm transition-colors hover:bg-orange-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-orange-600 disabled:bg-slate-300"
                           aria-label={isAddingThisOperation ? `Adding ${c.name}` : isAddNew ? 'Add operation' : 'Apply operation'}
                         >
                           {isAddingThisOperation ? <Spinner size="xs" label={`Adding ${c.name}`} /> : <Plus className="h-4 w-4" />}
@@ -2850,7 +2850,7 @@ export default function PriceBuilderPanel({
                         type="button"
                         onClick={() => applyLaborBookEntry.mutate(entry)}
                         disabled={!canMutate || applyLaborBookEntry.isPending}
-                        className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gray-900 text-white disabled:bg-gray-300"
+                        className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-orange-600 text-white shadow-sm transition-colors hover:bg-orange-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-orange-600 disabled:bg-slate-300"
                         aria-label={isAddingThisLaborBookEntry ? `Adding ${entry.operation_name}` : `Add ${entry.operation_name}`}
                       >
                         {isAddingThisLaborBookEntry ? <Spinner size="xs" label={`Adding ${entry.operation_name}`} /> : <Plus className="h-4 w-4" />}
@@ -3052,7 +3052,7 @@ export default function PriceBuilderPanel({
                         <div className="flex items-center justify-between gap-3">
                           <div className="min-w-0">
                             <p className="truncate text-sm font-semibold text-gray-900">{item.name}</p>
-                            <p className="truncate font-['JetBrains_Mono',monospace] text-[11px] text-gray-500">
+                            <p className="truncate font-['JetBrains_Mono',monospace] text-[11px] text-slate-600">
                               {item.sku} · {item.stock_quantity} in stock{unitAbbr ? ` (${unitAbbr})` : ''} · list {money(item.selling_price)}
                             </p>
                           </div>
@@ -3080,7 +3080,7 @@ export default function PriceBuilderPanel({
                               type="button"
                               onClick={() => addPart.mutate(addRequest)}
                               disabled={!canMutate || addPart.isPending}
-                              className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-gray-900 text-white disabled:bg-gray-300"
+                              className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-orange-600 text-white shadow-sm transition-colors hover:bg-orange-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-orange-600 disabled:bg-slate-300"
                               aria-label={isAddingThisPart ? `Adding ${item.name}` : `Add ${item.name}`}
                             >
                               {isAddingThisPart ? <Spinner size="xs" label={`Adding ${item.name}`} /> : <Plus className="h-4 w-4" />}
@@ -3118,7 +3118,7 @@ export default function PriceBuilderPanel({
                       <>
                         {!!forThisOrder.length && (
                           <div className="mb-2">
-                            <p className="px-3 pb-1 text-[10px] font-bold uppercase tracking-[0.16em] text-gray-400">
+                            <p className="px-3 pb-1 text-[10px] font-bold uppercase tracking-[0.16em] text-slate-600">
                               Suggested for this order
                             </p>
                             {forThisOrder.map((s, index) => renderItemRow(
@@ -3129,7 +3129,7 @@ export default function PriceBuilderPanel({
                         )}
                         {!!mostUsed.length && (
                           <div>
-                            <p className="px-3 pb-1 text-[10px] font-bold uppercase tracking-[0.16em] text-gray-400">
+                            <p className="px-3 pb-1 text-[10px] font-bold uppercase tracking-[0.16em] text-slate-600">
                               Most used parts
                             </p>
                             {mostUsed.map((s, index) => renderItemRow(
@@ -3209,7 +3209,7 @@ export default function PriceBuilderPanel({
           <div className="overflow-x-auto rounded-md border border-gray-200 bg-gray-50/50">
             <table className="w-full text-sm">
               <thead>
-                <tr className="text-left text-[11px] text-gray-500 border-b border-gray-200">
+                <tr className="text-left text-[11px] text-slate-600 border-b border-gray-200">
                   <th className="py-1.5 px-2.5 font-medium">Part</th>
                   <th className="py-1.5 px-2.5 font-medium text-right">Qty</th>
                   <th className="py-1.5 px-2.5 font-medium text-right">Unit</th>
@@ -3228,7 +3228,7 @@ export default function PriceBuilderPanel({
                     <tr key={pu.id} className="border-b border-gray-100 last:border-0">
                       <td className="py-1.5 px-2.5 text-gray-800">
                         <div className="font-medium">{pu.inventory_name}</div>
-                        <div className="flex flex-wrap items-center gap-1.5 text-xs text-gray-500">
+                        <div className="flex flex-wrap items-center gap-1.5 text-xs text-slate-600">
                           <span>{pu.inventory_sku}</span>
                           {pu.stock_shortage_override && (
                             <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-800">
@@ -3322,7 +3322,7 @@ export default function PriceBuilderPanel({
                             −${parseFloat(pu.savings).toFixed(2)}
                           </span>
                         ) : (
-                          <span className="text-gray-300">—</span>
+                          <span className="text-slate-500">—</span>
                         )}
                       </td>
                       <td className="py-1.5 px-2.5 text-right text-gray-900 font-medium">${parseFloat(pu.total_price).toFixed(2)}</td>
@@ -3434,7 +3434,7 @@ export default function PriceBuilderPanel({
                               type="button"
                               onClick={() => addPart.mutate(addRequest)}
                               disabled={!canMutate || addPart.isPending}
-                              className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-gray-900 text-white disabled:bg-gray-300"
+                              className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-orange-600 text-white shadow-sm transition-colors hover:bg-orange-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-orange-600 disabled:bg-slate-300"
                               aria-label={isAddingThisPart ? `Adding ${item.name} to ${line.description}` : `Add ${item.name} to ${line.description}`}
                             >
                               {isAddingThisPart ? <Spinner size="xs" label={`Adding ${item.name} to ${line.description}`} /> : <Plus className="h-4 w-4" />}
@@ -3473,7 +3473,7 @@ export default function PriceBuilderPanel({
           return (
             <div className="rounded-xl border border-dashed border-gray-200 bg-gray-50 px-4 py-6 text-center">
               <p className="font-semibold text-gray-900">This order is deleted.</p>
-              <p className="mt-1 text-sm text-gray-500">Restore it from the Danger zone below to view and edit its work &amp; labor.</p>
+              <p className="mt-1 text-sm text-slate-600">Restore it from the Danger zone below to view and edit its work &amp; labor.</p>
             </div>
           )
         }
@@ -3537,8 +3537,8 @@ export default function PriceBuilderPanel({
           <div>
             <div className="mb-1 flex items-center justify-between">
               <span className="inline-flex items-center gap-2">
-                <p className="font-['Barlow_Condensed',sans-serif] text-sm font-extrabold uppercase tracking-[0.16em] text-gray-500">Work & Labor</p>
-                <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[11px] font-bold text-gray-500">{lines.length + (orphanParts.length ? 1 : 0)} lines</span>
+                <p className="font-['Barlow_Condensed',sans-serif] text-sm font-extrabold uppercase tracking-[0.16em] text-slate-700">Work & Labor</p>
+                <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[11px] font-bold text-slate-600">{lines.length + (orphanParts.length ? 1 : 0)} lines</span>
               </span>
               <SectionInfoTooltip text="Each card is one billable item. Service packages bundle labor with their required parts — edit hours, rate, or part quantity inline. Stock adjusts automatically." tooltipClassName="w-72" />
             </div>
@@ -3568,15 +3568,15 @@ export default function PriceBuilderPanel({
                       <span className="min-w-0">
                         <span className="flex min-w-0 flex-wrap items-center gap-2">
                           <span className="truncate font-semibold text-gray-900">{line.description || lineTypeLabel(line)}</span>
-                          <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-gray-500">{lineTypeLabel(line)}</span>
+                          <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-slate-600">{lineTypeLabel(line)}</span>
                         </span>
-                        <span className="mt-0.5 block truncate text-xs text-gray-500">
+                        <span className="mt-0.5 block truncate text-xs text-slate-600">
                           {formatHoursMinutes(line.hours)} labor · {groupedParts.length} parts{partSavings > 0 ? ` · saves ${money(partSavings)}` : ''}
                         </span>
                       </span>
                       <span className="text-right">
                         <span className="block font-['Barlow_Condensed',sans-serif] text-2xl font-extrabold leading-none text-gray-900">{money(lineTotal)}</span>
-                        <span className="block font-['JetBrains_Mono',monospace] text-[10px] text-gray-400">
+                        <span className="block font-['JetBrains_Mono',monospace] text-[10px] text-slate-600">
                           {money(line.total_cost)} labor · {money(partTotal)} parts
                         </span>
                       </span>
@@ -3595,7 +3595,7 @@ export default function PriceBuilderPanel({
                         )}
                         <div className="rounded-xl bg-gray-50 px-3 py-2">
                           <div className="mb-2 flex items-center justify-between gap-2">
-                            <span className="text-[11px] font-bold uppercase tracking-[0.16em] text-gray-400">Labor</span>
+                            <span className="text-[11px] font-bold uppercase tracking-[0.16em] text-slate-600">Labor</span>
                             {canMutate && (
                               <button
                                 type="button"
@@ -3615,7 +3615,7 @@ export default function PriceBuilderPanel({
                           type="button"
                           disabled={!canMutate || addPart.isPending}
                           onClick={() => setOperationPartPickerLineId((current) => current === line.id ? null : line.id)}
-                          className="inline-flex w-full items-center justify-center gap-1 rounded-xl border border-dashed border-gray-300 px-3 py-2 text-sm font-semibold text-gray-500 hover:border-orange-300 hover:bg-orange-50 hover:text-orange-700 disabled:hover:border-gray-300 disabled:hover:bg-transparent disabled:hover:text-gray-400 disabled:opacity-60"
+                          className="inline-flex w-full items-center justify-center gap-1 rounded-xl border border-dashed border-gray-300 px-3 py-2 text-sm font-semibold text-slate-700 hover:border-orange-300 hover:bg-orange-50 hover:text-orange-700 disabled:hover:border-gray-300 disabled:hover:bg-transparent disabled:hover:text-slate-600 disabled:opacity-60"
                         >
                           {isAddingPartHere ? <Spinner size="xs" label="Adding part to this operation" /> : <Plus className="h-4 w-4" />}
                           {isAddingPartHere ? 'Adding part…' : 'Add part to this operation'}
@@ -4030,12 +4030,12 @@ export default function PriceBuilderPanel({
             >
               <div className="mb-3 flex items-center justify-between">
                 <p className="font-semibold text-gray-900">Discounts & pricing</p>
-                <button type="button" onClick={() => setDiscountsOpen(false)} className="rounded-md p-1 text-gray-400 hover:bg-gray-100">
+                <button type="button" onClick={() => setDiscountsOpen(false)} className="rounded-md p-1 text-slate-600 hover:bg-gray-100">
                   <X className="h-4 w-4" />
                 </button>
               </div>
               <label className="mb-3 block text-sm">
-                <span className="mb-1 block text-xs font-bold uppercase tracking-wide text-gray-400">Parts pricing</span>
+                <span className="mb-1 block text-xs font-bold uppercase tracking-wide text-slate-600">Parts pricing</span>
                 <select
                   value={draftPartsPricingMode}
                   disabled={discountsSaving}
@@ -4043,7 +4043,7 @@ export default function PriceBuilderPanel({
                     const v = e.target.value
                     if (v === 'stock' || v === 'list') setDraftPartsPricingMode(v)
                   }}
-                  className="h-10 w-full rounded-lg border border-gray-200 bg-white px-2 text-sm disabled:opacity-60"
+                  className="h-10 w-full rounded-lg border border-gray-200 bg-white px-2 text-sm text-slate-950 disabled:opacity-60"
                 >
                   <option value="stock">Stock price</option>
                   <option value="list">List price</option>
@@ -4058,13 +4058,13 @@ export default function PriceBuilderPanel({
                     onChange={(e) => setLaborDiscount(e.target.value.replace(/[^0-9.]/g, ''))}
                     inputMode="decimal"
                     placeholder="0.00"
-                    className="h-9 w-28 rounded-lg border border-gray-200 bg-white px-2 text-right font-['JetBrains_Mono',monospace] text-sm"
+                    className="h-9 w-28 rounded-lg border border-gray-200 bg-white px-2 text-right font-['JetBrains_Mono',monospace] text-sm text-slate-950 placeholder:text-slate-500"
                   />
                   <button
                     type="button"
                     onClick={() => setLaborDiscount('')}
                     disabled={!laborDiscount}
-                    className="h-9 rounded-lg px-2 text-xs font-semibold text-gray-500 hover:bg-gray-100 hover:text-gray-800 disabled:opacity-40"
+                    className="h-9 rounded-lg px-2 text-xs font-semibold text-slate-600 hover:bg-gray-100 hover:text-gray-900 disabled:text-slate-600 disabled:opacity-100"
                   >
                     Reset
                   </button>
@@ -4079,13 +4079,13 @@ export default function PriceBuilderPanel({
                     onChange={(e) => setOrderDiscount(e.target.value.replace(/[^0-9.]/g, ''))}
                     inputMode="decimal"
                     placeholder="0.00"
-                    className="h-9 w-28 rounded-lg border border-gray-200 bg-white px-2 text-right font-['JetBrains_Mono',monospace] text-sm"
+                    className="h-9 w-28 rounded-lg border border-gray-200 bg-white px-2 text-right font-['JetBrains_Mono',monospace] text-sm text-slate-950 placeholder:text-slate-500"
                   />
                   <button
                     type="button"
                     onClick={() => setOrderDiscount('')}
                     disabled={!orderDiscount}
-                    className="h-9 rounded-lg px-2 text-xs font-semibold text-gray-500 hover:bg-gray-100 hover:text-gray-800 disabled:opacity-40"
+                    className="h-9 rounded-lg px-2 text-xs font-semibold text-slate-600 hover:bg-gray-100 hover:text-gray-900 disabled:text-slate-600 disabled:opacity-100"
                   >
                     Reset
                   </button>

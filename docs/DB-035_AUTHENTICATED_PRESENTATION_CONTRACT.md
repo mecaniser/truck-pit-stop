@@ -1,0 +1,704 @@
+# DB-035 Authenticated Presentation Contract v1
+
+Status: Architecture GO for implementation
+
+Board item: DB-035
+
+Contract owner: Architecture & API Contracts
+Implementation owners: Backend & Integrations, then Frontend & UX
+
+## 1. Decision and boundaries
+
+DB-035 translates the source-grounded DieselBridge landing design language into
+the authenticated staff application. It is presentation and preference
+infrastructure only. It must not change routes, permissions, tenant boundaries,
+API business contracts, repair-order behavior, messaging behavior, financial or
+operational semantics, payments, WebSocket behavior, or resulting domain state.
+
+The rollout covers authenticated garage-staff Dashboard, Customers, Repair
+Orders, Messages, My Shop, and Profile/Settings. It excludes public landing and
+authentication pages, quote and invoice links, customer and driver portals, the
+standalone fleet and mechanic applications, and platform-admin screens.
+
+Both presentations use one router, route table, navigation model, API client,
+query cache, permission system, mutation implementation, WebSocket connection,
+and domain state. Presentation adapters may receive an existing view model and
+callbacks; they must not call APIs directly or own duplicate business state.
+
+## 2. Source map
+
+`frontend/src/components/layout/DashboardLayout.tsx` owns the staff shell,
+navigation, mobile navigation, product/tenant identity, and nested routes.
+`frontend/src/App.tsx` owns the single `ThemeProvider`, router, authenticated
+route guard, and shared toaster. No second router or presentation-specific route
+tree is permitted.
+
+| Surface | Existing route | Existing component | Existing icon |
+|---|---|---|---|
+| Dashboard | `/dashboard` | `DashboardHome` | Lucide `Home` |
+| Customers | `/dashboard/customers` | `CustomersPage` | Lucide `Users` |
+| Repair Orders | `/dashboard/repair-orders` | `RepairOrdersPage` | Lucide `ClipboardList` |
+| Messages | `/dashboard/messages` | `MessagesInboxPage` | Lucide `MessageSquare` |
+| My Shop | `/dashboard/garage/*` | `MyGaragePage` | Lucide `Building2` |
+| Profile/Settings | `/dashboard/settings` | `UnifiedSettingsPage` | Existing profile monogram |
+
+Messages retains its current role/grant and tenant feature-switch checks. My
+Shop retains its current nested mechanics, services, labor-book-time, inventory,
+suppliers, reviews, review-settings, and analytics routes.
+
+`frontend/src/contexts/ThemeContext.tsx` currently owns local-only accent, font,
+font-size, and notification choices. `frontend/src/index.css` currently exposes
+only partial accent/font roots and must become the shared layered token source.
+`frontend/src/features/dashboard/UnifiedSettingsPage.tsx` remains the staff
+Appearance UI. `frontend/src/stores/authStore.ts` supplies the authenticated
+session identity and epoch used to isolate caches.
+
+`backend/app/db/models/user.py` currently has no presentation preference state.
+The legacy and WorkOS `GET /api/v1/auth/me` implementations must use the same
+bootstrap response builder and contract.
+
+## 3. Product identity
+
+DieselBridge is always the primary authenticated product identity. The shell
+shows the DieselBridge logo/wordmark and accessible product name first. The
+tenant logo and shop name are smaller, subordinate workspace context; tenant
+state/location is optional tertiary context.
+
+Tenant branding cannot replace the DieselBridge accessible name, document or
+browser identity, primary shell logo, navigation identity, loading identity, or
+error identity. The current tenant-first shell rendering must be corrected while
+retaining `useTenantBranding()` as the shop-context source.
+
+## 4. Presentation rollout
+
+### 4.1 Values and precedence
+
+The only presentation values are `legacy` and `new`. The backend resolves the
+effective value in this exact order:
+
+1. Global emergency `force_legacy`.
+2. User override for the active user and active tenant.
+3. Active tenant default.
+4. Product default `legacy`.
+
+Missing, malformed, unavailable, or unsupported rollout data resolves to
+`legacy`. Users cannot change rollout assignment from Appearance settings.
+Product & Delivery and Release & Reliability own rollout; Appearance controls
+only personalization inside the resolved presentation.
+
+### 4.2 Storage and administration
+
+Add an additive tenant field `staff_presentation_default`, non-null with server
+default `legacy`. Store a nullable user/tenant presentation override separately
+from Appearance preferences so rollout operations cannot be changed by the user.
+Add global emergency configuration
+`AUTHENTICATED_PRESENTATION_FORCE_LEGACY`.
+
+Super-admin-only rollout endpoints:
+
+```http
+PUT /api/v1/admin/presentation-rollout/tenants/{tenant_id}
+PUT /api/v1/admin/presentation-rollout/tenants/{tenant_id}/users/{user_id}
+```
+
+Tenant request:
+
+```json
+{"schema_version":1,"presentation":"legacy"}
+```
+
+User request, including override removal:
+
+```json
+{"schema_version":1,"presentation_override":"new"}
+```
+
+```json
+{"schema_version":1,"presentation_override":null}
+```
+
+The target user must be active and belong to the target tenant. Foreign,
+missing, deleted, or mismatched target pairs return the same generic `404`.
+Non-super-admin callers return `403` without target-existence disclosure.
+
+### 4.3 Rollback, refresh, observability, and removal
+
+A tenant/user rollback requires no frontend deployment. It applies at bootstrap,
+route transition, focus refresh, or a bounded background refresh, with a maximum
+open-tab delay of 60 seconds. Global `force_legacy` dominates every stored value.
+Rollback changes presentation only and does not delete Appearance preferences.
+
+Record counters for resolved legacy/new source, bootstrap fallback, preference
+GET/PUT/DELETE outcomes, revision conflicts, legacy migration outcomes, matching
+or rejected cache use, and render errors by presentation/surface. Do not record
+preference payloads, logos, emails, tenant names, or free text.
+
+Legacy and new presentations remain compatible for at least two production
+releases and 30 days after the first production cohort. Removal requires a
+separate board transition and 14 consecutive days without a legacy rollback.
+The cleanup removes presentation branching and legacy-only presentation code,
+but not the Appearance preference API.
+
+## 5. Appearance persistence and migration
+
+### 5.1 Dedicated table
+
+User-scoped server state is authoritative. Add an additive migration for:
+
+```text
+user_appearance_preferences
+- id UUID primary key
+- tenant_id UUID not null
+- user_id UUID not null
+- schema_version integer not null default 1
+- revision integer not null default 1
+- appearance JSONB not null
+- legacy_migration_status string not null
+- legacy_migrated_at timestamptz null
+- created_at / updated_at / deleted_at
+- unique active (tenant_id, user_id)
+```
+
+All reads and writes use both authenticated `current_user.id` and
+`current_user.tenant_id`; request bodies never accept either identifier. The
+migration is additive and must preserve a single Alembic head.
+
+### 5.2 Exact localStorage inventory
+
+Only these existing keys are Appearance inputs:
+
+| Legacy key | Existing valid values | v1 target |
+|---|---|---|
+| `theme-accent` | `cyan`, `indigo`, `emerald`, `rose`, `amber` | `appearance.accent` |
+| `theme-font-family` | `geist`, `dm-sans`, `jakarta`, `inter` | `appearance.font_family` |
+| `theme-font-size` | `compact`, `default`, `comfortable`, `large` | Mapping below |
+| `theme-notification-position` | `top`, `bottom`, `center-top` | `top_right`, `bottom_right`, `top_center` |
+
+Legacy size mapping:
+
+| Legacy value | `font_size` | `density` |
+|---|---|---|
+| `compact` | `small` | `compact` |
+| `default` | `default` | `default` |
+| `comfortable` | `large` | `comfortable` |
+| `large` | `large` | `large` |
+
+`auth-storage`, `tps_view_prefs`, fleet layout/rail state, timer-panel state,
+suggestion-toast state, and customer-portal payment/notification preferences are
+not Appearance keys and must not be migrated.
+
+### 5.3 Exactly-once migration and old-client compatibility
+
+`legacy_migration_status` is `pending` or `complete`.
+
+1. An authenticated v1 client receiving `pending` reads only the four keys.
+2. It validates and maps each field; invalid values are ignored field-by-field.
+3. It sends one revision-checked update with
+   `migration_source: "legacy_local_v1"`.
+4. The server atomically stores the preference and marks migration complete.
+5. If no valid values exist, effective defaults are committed and migration is
+   still marked complete.
+6. A completed migration is never imported again.
+
+During the compatibility window, new clients mirror successfully committed
+compatible values back to the four legacy keys. Old clients may continue using
+those values locally, but cannot overwrite server state because v1 never
+re-imports after completion. Failed API writes neither mark migration complete
+nor delete legacy values.
+
+After the compatibility window, the new client stops mirroring, removes the four
+keys following a successful authenticated v1 bootstrap, and a later cleanup
+removes legacy storage listeners and setters.
+
+## 6. Versioned API
+
+### 6.1 Bootstrap
+
+Both legacy and WorkOS authenticated `me` responses add the same optional
+`presentation` object:
+
+```json
+{
+  "presentation": {
+    "schema_version": 1,
+    "resolved_variant": "new",
+    "source": "user_override",
+    "appearance": {
+      "accent": "cyan",
+      "font_family": "geist",
+      "font_size": "default",
+      "density": "default",
+      "notification_position": "bottom_right",
+      "mode": "dark"
+    },
+    "defaults": {
+      "accent": "cyan",
+      "font_family": "geist",
+      "font_size": "default",
+      "density": "default",
+      "notification_position": "bottom_right",
+      "mode": "dark"
+    },
+    "revision": 4,
+    "legacy_migration_status": "complete",
+    "updated_at": "2026-08-11T15:30:00Z"
+  }
+}
+```
+
+`source` is `global_force_legacy`, `user_override`, `tenant_default`, or
+`product_default`. Old clients ignore the additive field.
+
+### 6.2 Read, apply, and reset
+
+```http
+GET /api/v1/auth/me/appearance
+PUT /api/v1/auth/me/appearance
+DELETE /api/v1/auth/me/appearance
+```
+
+PUT request:
+
+```json
+{
+  "schema_version": 1,
+  "base_revision": 4,
+  "appearance": {
+    "accent": "indigo",
+    "font_family": "inter",
+    "font_size": "large",
+    "density": "comfortable",
+    "notification_position": "top_right",
+    "mode": "light"
+  },
+  "migration_source": null
+}
+```
+
+Success returns the complete resolved presentation object and incremented
+revision. DELETE requires `base_revision`, removes the user's Appearance
+override, and restores the effective tenant/product default across devices. It
+does not change the presentation rollout flag.
+
+### 6.3 Authorization, validation, and generic errors
+
+- Active authenticated staff user required.
+- Customer, driver, public-link, and standalone portal identities do not receive
+  or mutate staff Appearance state.
+- Missing active tenant context returns `400 TENANT_CONTEXT_REQUIRED`.
+- Unsupported schema version, unknown enum, extra field, arbitrary CSS/color,
+  malformed body, URL, or numeric scale returns `422` before a write.
+- Unauthenticated/expired session returns `401`.
+- Inactive or ineligible authenticated role returns `403`.
+- Stale `base_revision` returns `409` with current revision only, not payload.
+- Store unavailable returns `503`; no server or local commit is claimed.
+- Foreign preference rows are never loaded and behave as absent.
+- Logs contain only user ID, tenant ID, schema version, revision, operation, and
+  outcome category.
+
+### 6.4 Concurrency and idempotency
+
+Optimistic concurrency is authoritative; silent last-write-wins is prohibited.
+Each apply/reset supplies the current `base_revision`. A revision is accepted
+once; a stale write returns `409`, after which the client refetches and reports
+that settings changed elsewhere. It must not silently replay a stale preview.
+
+An identical retry after confirmed success may return the current representation
+without another revision increment when it carries the same request ID. The
+mutation, migration-complete transition, and revision increment are one
+transaction.
+
+## 7. Appearance values and density
+
+```text
+accent: cyan | indigo | emerald | rose | amber
+font_family: geist | dm-sans | jakarta | inter
+font_size: small | default | large
+density: compact | default | comfortable | large
+notification_position: top_right | bottom_right | top_center
+mode: light | dark | high_contrast
+```
+
+Arbitrary values are prohibited. Density changes spacing and information rhythm,
+not browser zoom:
+
+| Density | Row minimum | Card gap | Section gap | Control minimum |
+|---|---:|---:|---:|---:|
+| Compact | 48px | 8px | 16px | 44px |
+| Default | 52px | 12px | 20px | 44px |
+| Comfortable | 56px | 16px | 24px | 44px |
+| Large | 64px | 20px | 28px | 48px |
+
+Body font sizes are 14px, 16px, and 18px for small, default, and large.
+Touch-first editable controls remain at least 16px. Browser zoom and user-agent
+text scaling remain functional. Financial values use tabular numerals, right
+alignment, and no character clipping.
+
+## 8. Token ownership
+
+### 8.1 Immutable product and semantic tokens
+
+Personalization cannot change the DieselBridge mark, product identity, shell
+semantics, focus structure, minimum contrast, motion ceilings, or semantic
+success, warning, destructive, financial, authorization, payment, settlement,
+and operational-risk states.
+
+Required independent semantic families:
+
+```text
+--semantic-success-*
+--semantic-warning-*
+--semantic-danger-*
+--semantic-info-*
+--semantic-financial-positive-*
+--semantic-financial-negative-*
+--semantic-authorization-*
+--semantic-payment-pending-*
+--semantic-payment-confirmed-*
+--semantic-operational-risk-*
+```
+
+Components carrying those meanings must never consume a personal accent token.
+
+### 8.2 Personalizable tokens
+
+```text
+--personal-accent-400/500/600
+--font-body
+--font-display
+--font-size-body
+--density-row-min
+--density-control-min
+--density-card-gap
+--density-section-gap
+--surface-canvas
+--surface-raised
+--surface-glass
+--surface-overlay
+--text-primary
+--text-secondary
+--border-subtle
+```
+
+Accent is limited to neutral current-navigation/selection states, neutral links,
+focus enhancement in addition to the immutable outline, non-semantic chart
+series with legends, and decoration. High contrast and forced colors may replace
+authored accents entirely.
+
+## 9. Cache, hydration, preview, and notifications
+
+### 9.1 Identity-bound bootstrap cache
+
+Cache key:
+
+```text
+dieselbridge:presentation:v1:{tenant_id}:{user_id}
+```
+
+It contains only schema version, Appearance, revision, resolved presentation,
+and timestamp. It may be read only after persisted/authenticated identity matches
+both user and tenant. WorkOS identity remains untrusted until `/auth/workos/me`
+succeeds. User switch, tenant switch, logout, inactivation, role change, or auth
+session-epoch change immediately removes the previously applied presentation.
+
+The server response always replaces cache. A matching offline cache may be used
+for up to 30 days and marked stale internally. Without a matching cache, use
+legacy presentation and product defaults. Never flash another user's or tenant's
+identity or appearance. Hydration must preserve route, valid focus target, form
+state, and active mutation state.
+
+### 9.2 Reversible live preview
+
+Settings maintains separate committed and draft Appearance values. Control
+changes update draft tokens without a network write. Apply persists with current
+revision and prevents duplicate submission. Cancel, close, or navigation with
+unapplied changes restores the complete committed value.
+
+Failed Apply keeps the draft available in Settings but restores committed values
+outside the preview boundary. Reset first previews effective defaults and
+persists only after confirmation; reset failure restores the prior committed
+preference. Focus remains on the initiating control or resulting status message.
+Announcements are polite and atomic.
+
+### 9.3 Notifications
+
+The existing shared toaster remains authoritative. Placement changes only its
+container anchor. Toasts respect safe areas and mobile navigation and never cover
+the heading, active modal actions, repair-order footer actions, or focused
+control. At 320/390px, maximum width is viewport minus 32px. High contrast and
+forced colors preserve icon, border, and text differentiation. Notifications
+never expose raw preference payloads.
+
+### 9.4 Motion and platform accessibility
+
+No ambient loop is permitted. Presentation transitions use compositor-friendly
+opacity/transform and finish within 240ms. Token changes do not animate every
+descendant. Reduced motion is immediate or a short crossfade. Reduced
+transparency removes blur and uses opaque surfaces. Forced colors uses system
+colors and visible borders. Presentation changes do not reset focus or announce
+unrelated content. Both presentations preserve landmarks, focus order, keyboard
+behavior, accessible names, and at least 44x44 CSS-pixel visible targets.
+
+## 10. Shared import-safe fixtures
+
+Create side-effect-free fixtures under:
+
+```text
+frontend/src/test-fixtures/db035/
+  staffSession.ts
+  tenantBranding.ts
+  dashboard.ts
+  customers.ts
+  repairOrders.ts
+  messages.ts
+  myShop.ts
+  settings.ts
+  appearance.ts
+```
+
+They may not initialize an API client, router, storage, clock, WebSocket, or
+mutation. Required identities and states:
+
+- Garage owner, garage admin, receptionist, assigned mechanic.
+- Fleet manager with and without messaging grant.
+- Same user identity in a different tenant and a second user in the same tenant.
+- Valid, invalid, and missing legacy values.
+- Current and stale server revisions.
+- Tenant default legacy/new; user override legacy/new/null; global force legacy.
+- Matching offline cache and foreign user/tenant cache.
+- Loading, empty, error, populated, long-label, long-tenant-name, absent-logo,
+  oversized-logo, long-money, and negative-balance data.
+
+Old/new browser journeys import identical domain fixtures and differ only in
+resolved presentation.
+
+## 11. Acceptance matrix
+
+### 11.1 Exhaustive Appearance render contract
+
+Every Cartesian combination of five accents, four fonts, three font sizes, four
+densities, three modes, three notification positions, and all six surfaces must
+run through an import-safe render harness. It asserts no exception, no missing
+token, no document overflow, minimum target dimensions, table headings and
+accessible names, aligned/unclipped money, no semantic use of personal accent,
+and valid toast safe-area bounds.
+
+### 11.2 Browser viewport matrix
+
+Both presentations cover all six surfaces at 1440, 1366, 1280, 1120, 960, 390,
+and 320 CSS pixels plus 200% browser zoom. Playwright uses pairwise Appearance
+coverage plus every minimum/maximum boundary; the exhaustive Cartesian contract
+remains in the render harness.
+
+### 11.3 Accessibility and adverse-content matrix
+
+Both presentations cover keyboard-only operation, visible focus, reduced
+motion, reduced transparency, high contrast, forced colors, coarse pointer,
+44px targets, long labels, long tenant names, missing/oversized logos,
+loading/empty/error/populated states, long and negative financial values, and
+notifications while modal/footer actions are active.
+
+### 11.4 Persistence and rollout matrix
+
+Verify reload, new tab, cross-tab committed update, second device/session,
+matching offline cache, absent/foreign cache, stale server revision, user switch,
+tenant switch, logout/login, reset, canceled preview, failed Apply, global and
+tenant rollback, user override removal, exactly-once legacy migration, and an
+old client unable to overwrite completed server state.
+
+### 11.5 Old/new parity journeys
+
+Against identical fixtures, both presentations must produce identical routes,
+requests, permissions, mutation bodies, and resulting domain state for:
+
+1. Dashboard to customer and vehicle/customer detail.
+2. Create/edit repair order, labor/parts, and work-first status.
+3. Existing additional-work authorization publication.
+4. Message list, thread, and reply.
+5. My Shop authorized read/update.
+6. Profile update.
+7. Role-denied Messages route.
+8. Tenant switch and session rebootstrap.
+
+Presentation mode may add no business request and alter no business response.
+
+## 12. Negative cases and rollback triggers
+
+Implementation fails acceptance if:
+
+- New mode changes a route, request, permission, mutation, WebSocket, or result.
+- Appearance crosses a user or tenant boundary.
+- Customer/driver/public identities receive staff preference state.
+- Legacy storage overwrites completed server migration.
+- Arbitrary CSS, color, font, URL, or numeric scale is accepted.
+- Accent recolors financial, payment, authorization, success, warning,
+  destructive, or operational-risk meaning.
+- Cancel/reset leaves partial draft tokens active.
+- Offline startup uses a foreign cache.
+- A notification blocks a focal control.
+- Compact density produces a visible target below 44px.
+- Large type or 200% zoom creates page-level horizontal overflow.
+- Tenant identity replaces DieselBridge product identity.
+- Rollback requires deleting preferences or shipping a different router.
+
+Any authorization/request parity difference, tenant leak, critical navigation or
+mutation divergence, hydration loop, elevated render failure, semantic status
+recoloring, or critical accessibility regression triggers scoped or global
+rollback to legacy.
+
+## 13. Work split and gates
+
+Backend & Integrations owns the additive migration, models, shared bootstrap
+builder, schemas, Appearance endpoints, rollout endpoints, tenant isolation,
+optimistic concurrency/idempotency, redacted metrics, and backend/migration
+tests. Contract enum, precedence, or compatibility changes return to
+Architecture rather than being negotiated during implementation.
+
+Frontend & UX may implement against v1 fixtures after this contract is committed.
+It owns the Presentation provider, identity-bound cache, one-time migration,
+token layers, shared shell, six surfaces, Appearance UI, reversible preview,
+product/tenant hierarchy, responsive/accessibility behavior, component tests,
+production build, and parity Playwright evidence.
+
+Independent Security gates user/tenant preference isolation, rollout authority,
+cache identity, concurrency, and logging. Independent QA gates old/new parity
+and persistence. Independent Impeccable/Emil review gates hierarchy, materials,
+typography, density, motion, and finish. Release & Reliability owns cohort
+rollout, observability, rollback exercise, compatibility evidence, and release.
+
+No implementing owner may self-approve its independent gate.
+
+## 14. Product reshape correction
+
+DB-035 is not satisfied by a rail, token, or CSS reskin. Structural change is
+authorized when it improves the real garage cockpit: hierarchy, navigation
+shell, workspace composition, contextual panels, cross-surface continuity,
+responsive layout, and task priority may change. Routes, permissions, mutations,
+source entities, status vocabulary, business logic, and operational consequences
+remain canonical.
+
+Every structural element must cite an existing component, route, API response,
+or persisted field. No invented queue, selected-record state, workflow, metric,
+status, or marketing-style substitute is permitted. The connected product story
+is the existing record graph:
+
+```text
+repair order ↔ customer ↔ vehicle ↔ labor/parts/work
+             ↔ authorization/history ↔ invoice/payment
+```
+
+Navigation between those records must retain real context through existing route
+parameters and canonical selections. Presentation-only context may organize a
+loaded record, but cannot create a second source of selection or domain truth.
+
+## 15. Source-grounded information architecture
+
+| Surface | Before | After | Primary task and preserved reality |
+|---|---|---|---|
+| Dashboard / Shop Cockpit | Header, quick order actions, three real work-queue lanes, activity, shop/team status | Cockpit hierarchy led by urgent real work, then active floor work, closeout/payment, and team capacity; existing queue cards retain deep links | Decide what needs action next. Preserve `orders_needing_action`, `orders_on_floor`, `orders_ready_to_close`, activity mode, refresh, quick/create order, mechanic capacity, existing statuses and queue query parameters. No replacement lanes or local selected-order workspace. |
+| Repair Orders | Queue-selected workspace containing customer/vehicle, labor, parts, photos, recommendations, history, authorization, invoice and payment actions | Stable master/workspace composition: queue/list context remains visible when space permits; the selected real order owns the central workspace; related record context and canonical next action are adjacent, not duplicated | Progress one real order. Preserve create/edit, assignment, acknowledge/start/hold/resume/complete/reopen, labor/parts/pricing, photos, recommendations, history, estimate/additional authorization, invoice, resend/void and payment recording controls with existing role/status gates. |
+| Customers | Search/sort/list plus customer detail, contacts, vehicles, relationships and service history | Customer account workspace with identity/account summary, vehicles and relationship authority, contacts, balances and chronological service context; opening a related order uses the existing repair-order route | Understand and act for the customer/vehicle. Preserve add/edit/merge/delete, contacts, vehicle add/link/merge, relationship type, history, balances and existing queries/mutations. |
+| Messages | Inbox/archive thread list, compose, selected conversation and reply | Communications workspace retaining thread list and conversation while showing only source-backed customer/phone context and links to existing customer/order surfaces where identifiers already exist | Continue a real customer conversation. Preserve unread state, inbox/archive, load older, compose, reply, archive/unarchive/delete, customer selection and existing messaging permission/tenant switch. Do not infer an order association absent from source data. |
+| My Shop | Nested mechanics, services, labor book time, inventory, suppliers, reviews and analytics | Shop configuration workspace with persistent local section navigation, section summary, and the existing management screen as the content authority | Configure how the shop operates. Preserve every nested route, permission, query, mutation and entity. Do not synthesize shop health or analytics. |
+| Profile / Settings | Large settings surface spanning profile, security, appearance, integrations, garage profile, payments, notifications, fees, fleet and workforce | Account/settings IA split into personal, shop, communications, money/integrations and workforce groups while existing permission-filtered panels remain authoritative | Change an authorized setting safely. Preserve profile/security, Appearance apply/cancel/reset, garage branding, Stripe/Zelle/QuickBooks, reminders, taxes/fees, fleet and workforce controls and their current permission checks. |
+
+### 15.1 Context continuity
+
+- Dashboard queue cards continue to open
+  `/dashboard/repair-orders?selected={id}&queue={canonical_queue}`.
+- Repair Orders is the only owner of selected repair-order workspace state.
+- Customer/vehicle context links to existing customer detail/history and repair
+  order routes; it does not copy editable customer, vehicle, order, or invoice
+  state into the shell.
+- Invoice/payment context appears only when the canonical repair-order response
+  and permissions expose it.
+- Back/breadcrumb behavior returns to the originating real list/queue when that
+  origin is represented in existing route state; otherwise it uses the normal
+  route hierarchy.
+- Cross-surface panels may summarize source fields and deep-link to their owner;
+  they cannot mutate through new presentation-specific handlers.
+
+### 15.2 Responsive composition
+
+| Width | Contract |
+|---|---|
+| Desktop 1280+ | Persistent product navigation may coexist with list/workspace/context columns. Context panels are visible only when sourced and space-safe. |
+| Compact desktop/iPad 960–1279 | Navigation compacts; list/workspace becomes two-pane or an explicit in-surface transition; secondary context is a disclosure/drawer without losing the selected route record. |
+| Mobile 390/320 | One task layer at a time: list → real record workspace → contextual disclosure. Existing back semantics restore list position/filter. Primary actions remain visible, keyboard reachable, and at least 44px. No squeezed desktop rail, hidden footer action, or horizontal page overflow. |
+
+## 16. Required staged delivery
+
+Frontend may not continue from prose directly into production code.
+
+1. **Shape:** Submit source-annotated wireframes and an interaction model for all
+   six surfaces at desktop, iPad, and mobile. Each region names its current
+   component, route, endpoint/field, action owner, empty/loading/error state, and
+   responsive transition. Product must explicitly approve Shape.
+2. **Harden:** Recompose approved structures using the canonical domain hooks and
+   handlers. Prove permissions, mutations, status vocabulary, focus, errors,
+   loading, and old/new parity; remove invented state.
+3. **Adapt:** Complete 1280/1120/960/390/320, 200% zoom, keyboard, coarse pointer,
+   reduced-motion/transparency, high-contrast and forced-colors behavior.
+4. **Optimize:** Reduce duplicated layout work, unnecessary requests/renders,
+   context loss, action distance and notification obstruction. Preserve request
+   and business-state parity.
+5. **Polish:** Apply the approved material, typography and bounded motion system;
+   independent Impeccable/Emil review gates finish, not product structure.
+
+Each stage returns to its owner on failure. Later-stage visual finish cannot be
+used as evidence that Shape or source fidelity passed.
+
+## 17. Current Frontend change disposition
+
+The uncommitted Frontend tree remains untouched by this contract correction.
+
+### Retain as compatible foundation, subject to normal review
+
+- Versioned presentation/Appearance types, Theme/Presentation provider,
+  identity-scoped bootstrap cache, localStorage migration, apply/cancel/reset,
+  curated tokens and semantic-token separation.
+- Auth bootstrap wiring for the already-recorded API contract.
+- DieselBridge-primary and tenant-subordinate identity.
+- Presentation/surface hooks and class boundaries that do not create behavior.
+- Import-safe DB-035 fixtures and test harness foundations.
+- Responsive, reduced-motion, forced-color and notification-placement utilities
+  that remain valid under approved wireframes.
+
+### Reject or hold until Shape approval
+
+- A permanent rail or CSS-only restyle presented as the product reshape.
+- The new Dashboard `OperationalWorkstation`, its local
+  `selectedOrderId`/`WorkstationItem` model, and its invented “attention / active /
+  closeout” selected-record detail. The canonical dashboard already owns three
+  server-backed queues and deep-links to Repair Orders.
+- Any selected repair, customer, invoice, message association, metric, queue,
+  status label or “next action” not supplied by existing source data and rules.
+- Surface-level class additions claimed as completion without an approved
+  before→after structure and responsive interaction model.
+
+Retaining a foundation means it may survive Shape review; it is not acceptance
+of its current visual composition.
+
+## 18. Shape acceptance and exact Frontend return
+
+Frontend & UX returns one source-annotated Shape package containing:
+
+- Six before→after wireframes at desktop, iPad and mobile.
+- Navigation shell and product/tenant identity hierarchy.
+- Dashboard using the three real queues, activity, quick/create actions and team
+  capacity without a fabricated selected-record workstation.
+- Repair-order master/workspace/context model using its existing selected order,
+  history, authorization, invoice and payment controls.
+- Customer, Messages, My Shop and Settings structures mapped to their current
+  routes/components/actions.
+- Click/keyboard/back/focus behavior and loading/empty/error states.
+- A source ledger for every visible region: component, route, API/field, mutation
+  owner, permission and status vocabulary.
+- A disposition list for every current uncommitted DB-035 Frontend file: retain,
+  revise, or remove, with the contract clause supporting the decision.
+
+Shape fails if any visible region lacks a source mapping, if presentation owns a
+new domain selection or mutation, if mobile is merely collapsed desktop, or if
+the landing promise is represented by marketing copy rather than connected real
+records. No Harden/Adapt/Optimize/Polish implementation proceeds until Product
+records explicit Shape approval on DB-035.

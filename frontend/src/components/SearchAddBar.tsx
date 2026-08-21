@@ -29,8 +29,8 @@ export default function SearchAddBar({
   const { accentColors } = useTheme()
   
   return (
-    <div className={`flex items-center gap-2 sm:gap-3 flex-nowrap ${className}`}>
-      <div className={`relative flex-1 min-w-0 ${inputWidthClass}`}>
+    <div className={`db-search-add-bar flex items-center gap-2 sm:gap-3 flex-nowrap ${className}`}>
+      <div className={`db-search-add-bar__field relative flex-1 min-w-0 ${inputWidthClass}`}>
         <input
           type="text"
           value={value}
@@ -54,7 +54,7 @@ export default function SearchAddBar({
             type="button"
             onClick={onAdd}
             disabled={addDisabled}
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold text-white transition-colors disabled:opacity-70"
+            className="db-search-add-bar__primary-action inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold text-white transition-colors disabled:opacity-70"
             style={{ backgroundColor: accentColors[600] }}
           >
             <Plus className="w-4 h-4" />

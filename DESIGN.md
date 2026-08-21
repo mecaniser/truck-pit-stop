@@ -1,6 +1,6 @@
 ---
-name: "DieselBridge Public Homepage"
-description: "A product-led homepage that previews five real DieselBridge shop surfaces."
+name: "DieselBridge Product Presentation"
+description: "The public product preview and authenticated staff presentation system."
 colors:
   canvas: "#07101d"
   raised-canvas: "#0b1728"
@@ -100,3 +100,29 @@ Keyboard activation commits selection, focus, semantic content, and the queued s
 - Suppress a bad connector rather than drawing through a label, control, or card.
 - Keep context and evidence visually related but structurally independent.
 - Preserve compactness without reducing field legibility or touch safety.
+
+## Authenticated staff presentation (DB-035)
+
+The authenticated staff app extends the same DieselBridge product language without copying the public preview or creating a second application. Legacy and new presentations share one router, one domain state, one API client, and the same permissions and mutations. The server resolves the presentation; Appearance never acts as a hidden rollout switch.
+
+### Brand hierarchy
+
+DieselBridge is the primary product identity in the new staff shell. The active shop logo and name are subordinate workspace context, not a replacement product brand. Long or absent tenant branding must compress or fall back without displacing navigation.
+
+### Staff surfaces
+
+The new presentation applies only inside the authenticated staff shell across Dashboard, Customers, Repair Orders, Messages, My Shop, and Profile/Settings. Public, login, customer, driver, fleet, mechanic, and platform-admin surfaces retain their independent presentations. DB-035 may recompose these six staff surfaces around their real work, but it never invents a queue, selected record, route, permission, mutation, or status. Each canonical page keeps ownership of its existing domain state—for example, selected repair work remains owned by Repair Orders, not Dashboard.
+
+At 1280px and above, the new shell uses a full product rail. From 960–1279px it uses the same route links in a compact rail. Below 960px, the existing mobile navigation owns route changes so the work surface is not squeezed. The legacy presentation retains its existing tenant-led header and navigation.
+
+### Personalization boundaries
+
+Appearance is a reversible preference editor with separate draft and committed values. It offers five curated accents, four font families, three font sizes, four densities, three surface modes, and three notification locations. Accent colors may express neutral selection, links, and focus enhancement only. Success, warning, danger, authorization, payment, financial, and operational-risk meanings always use immutable semantic tokens.
+
+Density controls spacing and information rhythm rather than browser zoom. Compact/default/comfortable/large rows are at least 48/52/56/64px; controls remain at least 44px, or 48px in large density. Small/default/large body text is 14/16/18px, while touch-first editable fields remain at least 16px.
+
+### Material and accessibility
+
+Authenticated surfaces use deep navy operating fields, restrained raised layers, road-white light surfaces, explicit edges, and low-noise depth. High contrast and forced colors replace decorative material with opaque system-safe boundaries. Reduced transparency removes blur. There is no ambient animation; preview changes are immediate and reversible, preserve focus, and never animate every descendant.
+
+Notifications use the shared toaster and respect safe areas, mobile navigation, modals, and fixed repair-order actions. At 320px and 390px they wrap within the viewport and retain an accessible 44px dismiss target.

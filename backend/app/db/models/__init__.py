@@ -1,5 +1,6 @@
 from app.db.models.tenant import Tenant
 from app.db.models.user import User
+from app.db.models.appearance import UserAppearancePreference, UserPresentationOverride
 from app.db.models.customer import Customer
 from app.db.models.customer_read_model import CustomerReadModel
 from app.db.models.repair_order_read_model import RepairOrderReadModel
@@ -88,6 +89,8 @@ from app.db.models.google_review import GoogleBusinessConnection, GoogleBusiness
 __all__ = [
     "Tenant",
     "User",
+    "UserAppearancePreference",
+    "UserPresentationOverride",
     "Customer",
     "CustomerReadModel",
     "RepairOrderReadModel",

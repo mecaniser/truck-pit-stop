@@ -15,6 +15,56 @@
   --accent-400: #22D3EE;
   --accent-500: #06B6D4;
   --accent-600: #0891B2;
+
+  /* DB-035 layered presentation tokens. Product and semantic colors are
+     deliberately independent from the user-selected personal accent. */
+  --product-navy-950: #07101d;
+  --product-navy-900: #0b1728;
+  --product-navy-800: #13233d;
+  --product-road-white: #f6f8fb;
+  --product-copper-500: #df5a13;
+  --product-copper-400: #ff7a2e;
+  --semantic-success-500: #10b981;
+  --semantic-warning-500: #f59e0b;
+  --semantic-danger-500: #ef4444;
+  --semantic-info-500: #38bdf8;
+  --semantic-financial-positive-500: #10b981;
+  --semantic-financial-negative-500: #f87171;
+  --semantic-authorization-500: #f59e0b;
+  --semantic-payment-pending-500: #f59e0b;
+  --semantic-payment-confirmed-500: #10b981;
+  --semantic-operational-risk-500: #ef4444;
+  --personal-accent-400: #22d3ee;
+  --personal-accent-500: #06b6d4;
+  --personal-accent-600: #0891b2;
+  --personal-accent-foreground: #07101d;
+  --font-body: var(--theme-font-family);
+  --font-display: var(--theme-font-family);
+  --font-size-body: 16px;
+  --density-row-min: 52px;
+  --density-control-min: 44px;
+  --density-card-gap: 12px;
+  --density-section-gap: 20px;
+  --density-section-padding: 24px;
+  --density-choice-padding: 12px;
+  --density-grid-gap: 10px;
+  --density-preview-padding: 24px;
+  --density-mode-sample-height: 46px;
+}
+
+.db-staff-shell[data-appearance-font-size='small'] { --font-size-body: 14px; }
+.db-staff-shell[data-appearance-font-size='large'] { --font-size-body: 18px; }
+.db-staff-shell[data-appearance-density='compact'] {
+  --density-row-min: 48px; --density-control-min: 44px; --density-card-gap: 8px; --density-section-gap: 16px;
+  --density-section-padding: 16px; --density-choice-padding: 8px; --density-grid-gap: 8px; --density-preview-padding: 18px; --density-mode-sample-height: 42px;
+}
+.db-staff-shell[data-appearance-density='comfortable'] {
+  --density-row-min: 56px; --density-control-min: 44px; --density-card-gap: 16px; --density-section-gap: 24px;
+  --density-section-padding: 30px; --density-choice-padding: 16px; --density-grid-gap: 14px; --density-preview-padding: 30px; --density-mode-sample-height: 52px;
+}
+.db-staff-shell[data-appearance-density='large'] {
+  --density-row-min: 64px; --density-control-min: 48px; --density-card-gap: 20px; --density-section-gap: 28px;
+  --density-section-padding: 36px; --density-choice-padding: 20px; --density-grid-gap: 18px; --density-preview-padding: 36px; --density-mode-sample-height: 58px;
 }
 
 * {
@@ -25,8 +75,8 @@
 
 html, body {
   min-height: 100vh;
-  font-family: var(--theme-font-family);
-  font-size: calc(16px * var(--theme-font-scale));
+  font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: 16px;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   background: linear-gradient(135deg, #1e293b 0%, #0f172a 50%, #1e3a5f 100%);
@@ -77,6 +127,3568 @@ html::-webkit-scrollbar-thumb:hover {
 #root {
   min-height: 100vh;
   width: 100%;
+}
+
+/* DB-035 authenticated staff presentation. The selectors stay below the
+   staff-shell boundary so public, customer, driver, fleet and mechanic apps
+   keep their own visual systems. */
+.db-presentation-new {
+  --shell-field: #0b1b2e;
+  --shell-field-raised: #142a44;
+  --shell-text: #f7f9fc;
+  --shell-muted: #aebdcd;
+  --shell-border: #2b435d;
+  --workspace-canvas: #f4f7fa;
+  --workspace-text: #14243a;
+  --workspace-muted: #5b6d82;
+  --workspace-border: #cbd5df;
+  --surface-canvas: #e8edf4;
+  --surface-raised: #f6f8fb;
+  --surface-glass: rgba(246, 248, 251, 0.92);
+  --surface-overlay: #ffffff;
+  --text-primary: #101827;
+  --text-secondary: #526176;
+  --border-subtle: rgba(19, 35, 61, 0.17);
+  --db-type-xs: 0.75rem;
+  --db-type-sm: 0.875rem;
+  --db-type-base: 1rem;
+  --db-type-lg: 1.125rem;
+  --db-type-xl: 1.25rem;
+  --db-type-2xl: 1.5rem;
+  --db-type-3xl: 1.875rem;
+  background: var(--shell-field) !important;
+  color: var(--text-primary);
+  font-family: var(--font-body);
+  font-size: var(--font-size-body);
+  color-scheme: light;
+}
+
+.db-presentation-new[data-appearance-font-size='small'] {
+  --db-type-xs: 0.65625rem;
+  --db-type-sm: 0.765625rem;
+  --db-type-base: 0.875rem;
+  --db-type-lg: 0.984375rem;
+  --db-type-xl: 1.09375rem;
+  --db-type-2xl: 1.3125rem;
+  --db-type-3xl: 1.640625rem;
+}
+
+.db-presentation-new[data-appearance-font-size='large'] {
+  --db-type-xs: 0.84375rem;
+  --db-type-sm: 0.984375rem;
+  --db-type-base: 1.125rem;
+  --db-type-lg: 1.265625rem;
+  --db-type-xl: 1.40625rem;
+  --db-type-2xl: 1.6875rem;
+  --db-type-3xl: 2.109375rem;
+}
+
+/* Retained authenticated surfaces use Tailwind's fixed rem utilities. Scope
+   their scale to the selected appearance size without changing document zoom. */
+.db-presentation-new .text-xs { font-size: var(--db-type-xs) !important; }
+.db-presentation-new .text-sm { font-size: var(--db-type-sm) !important; }
+.db-presentation-new .text-base { font-size: var(--db-type-base) !important; }
+.db-presentation-new .text-lg { font-size: var(--db-type-lg) !important; }
+.db-presentation-new .text-xl { font-size: var(--db-type-xl) !important; }
+.db-presentation-new .text-2xl { font-size: var(--db-type-2xl) !important; }
+.db-presentation-new .text-3xl { font-size: var(--db-type-3xl) !important; }
+
+.db-staff-shell {
+  font-family: var(--theme-font-family);
+  font-size: calc(16px * var(--theme-font-scale));
+}
+
+.db-staff-shell[data-appearance-mode='light'] {
+  --surface-canvas: #e8edf4;
+  --surface-raised: #f6f8fb;
+  --surface-glass: rgba(246, 248, 251, 0.92);
+  --surface-overlay: #ffffff;
+  --text-primary: #101827;
+  --text-secondary: #526176;
+  --border-subtle: rgba(19, 35, 61, 0.17);
+  color-scheme: light;
+}
+
+.db-staff-shell[data-appearance-mode='dark'] {
+  --workspace-canvas: #07101d;
+  --workspace-text: #f6f8fb;
+  --workspace-muted: #b8c5d5;
+  --workspace-border: #40536c;
+  --surface-canvas: #07101d;
+  --surface-raised: #0d1a2a;
+  --surface-glass: rgba(19, 35, 61, 0.82);
+  --surface-overlay: #111f33;
+  --text-primary: #f6f8fb;
+  --text-secondary: #9fb0c5;
+  --border-subtle: rgba(148, 163, 184, 0.2);
+  color-scheme: dark;
+}
+
+.db-staff-shell[data-appearance-mode='high_contrast'] {
+  --workspace-canvas: #000;
+  --workspace-text: #fff;
+  --workspace-muted: #e5e7eb;
+  --workspace-border: #fff;
+  --surface-canvas: #000;
+  --surface-raised: #080808;
+  --surface-glass: #080808;
+  --surface-overlay: #000;
+  --text-primary: #fff;
+  --text-secondary: #e5e7eb;
+  --border-subtle: #fff;
+  color-scheme: dark;
+}
+
+.db-presentation-new .db-staff-nav {
+  min-height: 64px;
+  color: var(--shell-text);
+  border-bottom: 1px solid var(--shell-border) !important;
+  background: var(--shell-field) !important;
+  box-shadow: none !important;
+  color-scheme: dark;
+}
+
+.db-presentation-new .db-staff-nav__inner {
+  max-width: none;
+  padding-inline: clamp(16px, 2.3vw, 40px);
+}
+
+.db-presentation-new .db-product-brand {
+  min-height: 44px;
+  min-width: 44px;
+  gap: 9px;
+  color: var(--shell-text);
+  text-decoration: none;
+}
+
+.db-presentation-new .db-product-brand .db-wordmark { font-size: 15px; font-weight: 820; letter-spacing: -.035em; }
+.db-presentation-new .db-product-brand .db-wordmark__letter--bridge { color: var(--product-copper-400); }
+.db-presentation-new .db-product-brand__compact-mark { display: none; width: 34px; height: 34px; object-fit: contain; }
+
+/* Tenant identity leads this compact rail lockup. Its state and the platform
+   endorsement share one metadata row, avoiding a second decorative separator. */
+.db-presentation-new .db-brand-lockup {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: center;
+}
+
+.db-presentation-new .db-brand-attribution {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+}
+
+.db-presentation-new .db-brand-attribution__label {
+  color: var(--shell-muted);
+  font-size: 0.625rem;
+  font-weight: 650;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.db-workspace-context {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  color: var(--shell-muted);
+}
+
+.db-workspace-context__tenant {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  align-items: center;
+  gap: 7px;
+}
+.db-workspace-context__logo { max-width: 112px; }
+.db-brand-endorsement-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-width: 0;
+}
+.db-workspace-context__fallback {
+  min-width: 0;
+  max-width: 18ch;
+  overflow: hidden;
+  color: var(--shell-muted);
+  font-size: 12px;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Compact and expanded rails reveal the tenant → state → platform story in
+   order. The collapsed desktop rail intentionally keeps the tenant mark and state. */
+@keyframes db-compact-identity-reveal {
+  from {
+    opacity: 0;
+    transform: translateY(-0.35rem) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes db-compact-endorsement-reveal {
+  from {
+    opacity: 0;
+    clip-path: inset(0 100% 0 0);
+    transform: translateX(-0.35rem);
+  }
+  to {
+    opacity: 1;
+    clip-path: inset(0 0 0 0);
+    transform: translateX(0);
+  }
+}
+
+@media (max-width: 959px) and (prefers-reduced-motion: no-preference) {
+  .db-presentation-new .db-compact-identity-step--tenant {
+    animation: db-compact-identity-reveal 680ms var(--db-wordmark-ease-out, cubic-bezier(.16, 1, .3, 1)) 80ms both;
+  }
+
+  .db-presentation-new .db-compact-identity-step--state {
+    animation: db-compact-identity-reveal 360ms var(--db-wordmark-ease-out, cubic-bezier(.16, 1, .3, 1)) 720ms both;
+  }
+
+  .db-presentation-new .db-compact-identity-step--endorsement {
+    animation: db-compact-endorsement-reveal 420ms var(--db-wordmark-ease-out, cubic-bezier(.16, 1, .3, 1)) 1060ms both;
+  }
+
+  .db-presentation-new .db-compact-identity-step--endorsement .db-wordmark__letter {
+    animation-delay: calc(var(--letter-drop-delay) + 1120ms);
+  }
+}
+
+.db-workspace-context__name {
+  max-width: 18ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.db-presentation-new .db-staff-nav a {
+  min-height: var(--density-control-min);
+  display: inline-flex;
+  align-items: center;
+}
+
+.db-presentation-new .db-staff-main {
+  height: calc(100vh - 64px);
+  padding: clamp(16px, 2vw, 30px) clamp(16px, 2.3vw, 40px);
+  background: var(--workspace-canvas);
+  color: var(--workspace-text);
+  color-scheme: light;
+}
+
+.db-presentation-new:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) .db-staff-main {
+  color-scheme: dark;
+}
+
+.db-presentation-new .db-breadcrumb {
+  min-height: 32px;
+  margin-bottom: 12px;
+  color: var(--workspace-muted);
+}
+.db-presentation-new .db-breadcrumb a { color: var(--workspace-muted) !important; }
+.db-presentation-new .db-breadcrumb > span:last-child { color: var(--product-copper-500) !important; }
+
+.db-presentation-new .db-staff-content {
+  gap: var(--density-section-gap);
+}
+
+/* The operating canvas owns the scrollbar edge, while the scrollable content
+   retains the same right runway as the left canvas. This keeps page actions,
+   ledger columns, and footers out of the browser chrome. */
+@media (min-width: 1024px) {
+  .db-presentation-new .db-staff-main {
+    padding-right: 0 !important;
+  }
+  .db-presentation-new .db-staff-content {
+    padding-right: clamp(16px, 2.3vw, 40px);
+  }
+}
+
+.db-presentation-new .db-staff-content h1,
+.db-presentation-new .db-staff-content h2,
+.db-presentation-new .db-staff-content h3 {
+  color: var(--text-primary);
+  font-family: var(--font-display);
+  letter-spacing: -0.025em;
+}
+
+.db-presentation-new .db-staff-content h1 { font-size: clamp(1.7rem, 2.3vw, 2.35rem); }
+
+.db-presentation-new .db-staff-content :is(button, a, input, select, textarea)[class] {
+  min-height: var(--density-control-min);
+}
+
+.db-presentation-new .db-staff-content :is(button, a):focus-visible,
+.db-presentation-new .db-staff-nav :is(button, a):focus-visible,
+.db-presentation-new .db-mobile-nav :is(button, a):focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 3px;
+  box-shadow: 0 0 0 5px color-mix(in srgb, var(--product-copper-400) 42%, transparent);
+}
+
+.db-presentation-new .db-staff-content :is(input, textarea, select) {
+  color: var(--workspace-text);
+  font-size: max(16px, var(--font-size-body));
+  border-color: var(--workspace-border) !important;
+  background: var(--product-road-white) !important;
+  caret-color: var(--workspace-text);
+  color-scheme: light;
+}
+
+.db-presentation-new .db-staff-content :is(input, textarea)::placeholder {
+  color: var(--workspace-muted);
+  opacity: 1;
+}
+
+.db-presentation-new .db-staff-content :is(input, textarea, select):focus-visible {
+  outline: 2px solid var(--product-copper-400);
+  outline-offset: 2px;
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--product-copper-400) 22%, transparent);
+}
+
+/* A SlidePanel save is an enabled primary action. Its semantic accent belongs
+   with a consistently white foreground, never inherited workspace ink. */
+.db-slide-panel-form__submit,
+.db-slide-panel-form__submit * {
+  color: #fff !important;
+}
+
+/* SearchAddBar is a composed search control. Keep focus on its outer boundary
+   so the ring is never inset or clipped by the input's own rounded edge. */
+.db-presentation-new .db-search-add-bar__field {
+  border-radius: 0.5rem;
+  transition: box-shadow 140ms ease-out;
+}
+
+.db-presentation-new .db-search-add-bar__field:focus-within {
+  position: relative;
+  z-index: 2;
+  outline: 2px solid var(--product-copper-400);
+  outline-offset: 2px;
+  box-shadow: none;
+}
+
+/* Catalog ledgers follow the toolbar in source order. Raise the toolbar while
+   its search field owns focus so the external focus outline cannot paint below
+   that next surface. */
+.db-presentation-new .db-search-add-bar:focus-within {
+  position: relative;
+  z-index: 1;
+}
+
+.db-presentation-new .db-search-add-bar__field:focus-within input {
+  border-color: var(--product-copper-400) !important;
+}
+
+.db-presentation-new .db-search-add-bar__field input:focus {
+  outline: none;
+  box-shadow: none !important;
+}
+
+/* The shared catalog/team primary action deliberately keeps white foreground
+   on the tenant's semantic accent, even inside a scoped light workspace. */
+.db-presentation-new .db-staff-content .db-search-add-bar .db-search-add-bar__primary-action,
+.db-presentation-new .db-staff-content .db-search-add-bar .db-search-add-bar__primary-action svg {
+  color: #fff !important;
+}
+
+/* Price Builder deliberately remains a light working sheet so detailed parts,
+   labor, and pricing values are scanned on one consistent surface. Do not let
+   a dark shell turn its normal form controls into navy islands. */
+.db-presentation-new:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) .db-price-builder {
+  color-scheme: light;
+}
+.db-presentation-new:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) .db-price-builder :is(input, textarea, select) {
+  border-color: #cbd5e1 !important;
+  background: #fff !important;
+  color: #17283f !important;
+  caret-color: #17283f;
+}
+.db-presentation-new:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) .db-price-builder :is(input[type='text'], input[type='search'], textarea)::placeholder {
+  color: #526176;
+  opacity: 1;
+}
+
+.db-presentation-new .db-staff-content :is(table tbody tr, [role='row']) {
+  min-height: var(--density-row-min);
+}
+
+.db-presentation-new .db-staff-content table tbody td {
+  height: var(--density-row-min);
+  color: var(--text-secondary);
+}
+
+.db-presentation-new .db-staff-content table thead th {
+  color: var(--text-secondary);
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+}
+
+.db-presentation-new .db-staff-content :is(.bg-zinc-900\/80, .bg-zinc-900, .bg-zinc-800\/40, .bg-white\/5, .bg-white\/10) {
+  background-color: var(--surface-raised) !important;
+  border-color: var(--border-subtle) !important;
+  color: var(--text-primary) !important;
+}
+
+.db-presentation-new .db-staff-content :is(.text-zinc-500, .text-gray-500, .text-gray-400, .text-zinc-400, .text-gray-300, .text-zinc-300) {
+  color: var(--text-secondary) !important;
+}
+
+/* Operational meanings never consume the personal accent. */
+.db-presentation-new [class*='text-emerald-'],
+.db-presentation-new [class*='text-green-'] { color: var(--semantic-success-500) !important; }
+.db-presentation-new [class*='text-red-'] { color: var(--semantic-danger-500) !important; }
+.db-presentation-new [class*='text-amber-'],
+.db-presentation-new [class*='text-yellow-'] { color: var(--semantic-warning-500) !important; }
+
+/* The shared currency stepper has neutral resting controls. Directional color
+   appears only on the target being hovered, never on its sibling. */
+:is(.db-currency-stepper__decrease, .db-currency-stepper__increase) {
+  color: #64748b;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .db-currency-stepper__decrease:hover {
+    background: #fef2f2;
+    color: var(--semantic-danger-500) !important;
+  }
+
+  .db-currency-stepper__increase:hover {
+    background: #ecfdf5;
+    color: var(--semantic-success-500) !important;
+  }
+}
+
+.db-presentation-new .rounded-2xl { border-radius: 14px; }
+.db-presentation-new .rounded-xl { border-radius: 12px; }
+
+/* Surface hooks are boundaries for later source-grounded recomposition. Harden
+   keeps each canonical page layout and interaction model unchanged. */
+.db-presentation-new :is(.db-customers-workspace, .db-repair-orders-workspace, .db-messages-workspace, .db-my-shop-workspace) {
+  min-width: 0;
+}
+
+/* Messages is a canonical conversation surface. The legacy navy layers become
+   a deliberately tiered road-white thread workspace in the new presentation;
+   outbound messages retain their semantic tenant-accent foreground. */
+.db-presentation-new .db-messages-workspace {
+  color: var(--workspace-text);
+}
+
+.db-presentation-new .db-messages-panel {
+  border-color: var(--workspace-border) !important;
+  background: var(--surface-overlay);
+}
+
+.db-presentation-new .db-messages-rail {
+  border-color: var(--workspace-border) !important;
+  background: var(--surface-raised) !important;
+}
+
+.db-presentation-new .db-messages-thread-list {
+  border-color: var(--workspace-border) !important;
+  background: var(--surface-raised);
+}
+
+.db-presentation-new .db-messages-conversation {
+  background: var(--surface-overlay);
+}
+
+.db-presentation-new .db-messages-workspace :is(.border-white\/5, .border-white\/10, .border-white\/15, .border-white\/20) {
+  border-color: var(--workspace-border) !important;
+}
+
+.db-presentation-new .db-messages-workspace :is(.bg-black\/10, .bg-black\/20, .bg-white\/5) {
+  background-color: var(--surface-raised) !important;
+}
+
+.db-presentation-new .db-messages-workspace :is(.text-white, .text-gray-100, .text-gray-200, .text-gray-300) {
+  color: var(--workspace-text) !important;
+}
+
+.db-presentation-new .db-messages-workspace :is(.text-gray-400, .text-gray-500) {
+  color: var(--workspace-muted) !important;
+}
+
+/* Messages uses the tenant communication accent for its creation action. The
+   destructive control is deliberately solid only when it is available, so it
+   reads as a real action rather than disabled residue. */
+.db-presentation-new .db-messages-workspace .db-messages-compose-action,
+.db-presentation-new .db-messages-workspace .db-messages-compose-action:hover {
+  border-color: color-mix(in srgb, var(--db-messages-accent) 78%, #000) !important;
+  background: var(--db-messages-accent) !important;
+  box-shadow: 0 3px 9px color-mix(in srgb, var(--db-messages-accent) 24%, transparent);
+}
+.db-presentation-new .db-messages-workspace .db-messages-compose-action,
+.db-presentation-new .db-messages-workspace .db-messages-compose-action * {
+  color: #fff !important;
+}
+.db-presentation-new .db-messages-workspace .db-messages-delete-action,
+.db-presentation-new .db-messages-workspace .db-messages-delete-action:hover {
+  border-color: color-mix(in srgb, var(--semantic-danger-500) 78%, #000) !important;
+  background: var(--semantic-danger-500) !important;
+  box-shadow: 0 3px 9px color-mix(in srgb, var(--semantic-danger-500) 22%, transparent);
+}
+.db-presentation-new .db-messages-workspace .db-messages-delete-action,
+.db-presentation-new .db-messages-workspace .db-messages-delete-action * {
+  color: #fff !important;
+}
+
+/* Reply becomes the same outbound-message action once a body is present.
+   An empty composer remains deliberately quiet because it cannot send. */
+.db-presentation-new .db-messages-workspace .db-messages-send-action:not(:disabled) {
+  border: 1px solid var(--db-messages-accent);
+  box-shadow: 0 3px 9px color-mix(in srgb, var(--db-messages-accent) 24%, transparent);
+  opacity: 1;
+}
+
+.db-presentation-new .db-messages-workspace .db-messages-send-action:not(:disabled),
+.db-presentation-new .db-messages-workspace .db-messages-send-action:not(:disabled) * {
+  color: #fff !important;
+}
+
+.db-presentation-new .db-messages-workspace .db-messages-send-action:disabled {
+  border: 1px solid var(--workspace-border);
+  background: var(--surface-raised) !important;
+  box-shadow: none;
+  color: var(--workspace-muted) !important;
+  opacity: 1;
+}
+
+.db-presentation-new .db-messages-workspace .db-messages-send-action:focus-visible {
+  outline: 2px solid var(--product-copper-500);
+  outline-offset: 3px;
+}
+
+.db-presentation-new .db-messages-workspace .db-message-accent-mark,
+.db-presentation-new .db-messages-workspace .db-message-accent-mark * {
+  color: #fff !important;
+}
+
+.db-presentation-new .db-messages-workspace .db-message-bubble--inbound {
+  background: var(--surface-raised) !important;
+  color: var(--workspace-text) !important;
+}
+
+.db-presentation-new .db-messages-workspace .db-message-bubble--outbound,
+.db-presentation-new .db-messages-workspace .db-message-bubble--outbound * {
+  color: #fff !important;
+}
+
+/* Customers remains a canonical legacy surface until its Stage 5 composition.
+   In the new road-white shell, keep its dense ledger readable rather than
+   inheriting the old dark-surface foreground utilities. */
+.db-presentation-new .db-customers-workspace__ledger {
+  background: var(--product-road-white) !important;
+  border-color: var(--workspace-border) !important;
+}
+
+.db-presentation-new .db-customers-workspace__ledger table thead {
+  background: #edf2f7 !important;
+  color: var(--workspace-muted) !important;
+}
+
+/* Sort controls belong to the road-white ledger, not its former dark header.
+   Keep their hover and keyboard states in the readable ink role. */
+.db-presentation-new .db-customers-workspace__ledger .db-customer-sort-control:hover {
+  color: var(--workspace-text) !important;
+}
+
+.db-presentation-new .db-customers-workspace__ledger .db-customer-sort-control:focus-visible {
+  outline: 2px solid var(--product-copper-500);
+  outline-offset: 3px;
+  border-radius: 3px;
+}
+
+.db-presentation-new .db-customers-workspace__ledger table tbody {
+  --tw-divide-opacity: 1;
+  border-color: #dbe3eb !important;
+}
+
+.db-presentation-new .db-customers-workspace__ledger table tbody tr:hover {
+  background: #f4f7fa !important;
+}
+
+.db-presentation-new .db-customers-workspace__ledger table tbody .text-white {
+  color: var(--workspace-text) !important;
+}
+
+/* Customer initials sit on the tenant accent. Their foreground is semantic
+   on-accent white, not the surrounding road-white ledger ink. */
+.db-presentation-new .db-customers-workspace__ledger table tbody .db-customer-avatar,
+.db-presentation-new .db-customers-workspace__ledger table tbody .db-customer-avatar * {
+  color: #fff !important;
+}
+
+.db-presentation-new .db-customers-workspace__ledger table tbody [class*='text-white/'] {
+  color: var(--workspace-muted) !important;
+}
+
+/* The customer finder sits on the dark workspace canvas, above the retained
+   road-white ledger. In dark appearance it is a dark search control; the
+   ledger below stays intentionally light for dense customer scanning. */
+.db-presentation-new .db-customers-workspace__pagination {
+  border-color: var(--workspace-border) !important;
+  color: var(--workspace-muted) !important;
+}
+
+.db-presentation-new .db-customers-workspace__pagination button {
+  border-color: var(--workspace-border) !important;
+}
+
+/* DB-035C: Customers owns its selected record in the page. The existing
+   customer queries and mutations are reused inside the shared workspace frame;
+   only the new presentation adopts this navigator/workspace geometry. */
+.db-presentation-new .db-customers-workspace__ledger,
+.db-presentation-new .db-customer-navigator {
+  min-width: 0;
+  overflow-x: hidden;
+}
+
+.db-presentation-new .db-customer-navigator {
+  container-type: inline-size;
+  width: 100%;
+}
+
+.db-presentation-new .db-customer-navigator__record {
+  min-width: 0;
+  border-bottom: 1px solid var(--workspace-border);
+  background: var(--surface-overlay);
+  color: var(--workspace-text);
+}
+
+.db-presentation-new .db-customer-navigator__record:last-child {
+  border-bottom: 0;
+}
+
+.db-presentation-new .db-customer-navigator__record[data-selected='true'] {
+  background: color-mix(in srgb, var(--surface-raised) 88%, var(--product-copper-500) 12%);
+}
+
+.db-presentation-new .db-customer-navigator__record[data-inspected='true'] {
+  background: color-mix(in srgb, var(--surface-raised) 92%, var(--workspace-border) 8%);
+}
+
+.db-presentation-new .db-customer-navigator__record[data-selected='true'][data-inspected='true'] {
+  background: color-mix(in srgb, var(--surface-raised) 84%, var(--product-copper-500) 10%);
+}
+
+.db-presentation-new .db-customer-navigator__summary {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: minmax(0, 1fr) minmax(9.5rem, .72fr) auto;
+  align-items: center;
+  gap: 8px 14px;
+  padding: 10px 14px;
+  cursor: pointer;
+}
+
+.db-presentation-new .db-customer-navigator__summary:hover {
+  background: color-mix(in srgb, var(--surface-raised) 82%, var(--workspace-border) 18%);
+}
+
+.db-presentation-new .db-customer-navigator__summary:focus-visible {
+  outline: 2px solid var(--product-copper-500);
+  outline-offset: -3px;
+}
+
+.db-presentation-new .db-customer-navigator__identity {
+  display: flex;
+  min-width: 0;
+  min-height: 44px;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  border: 0;
+  padding: 2px 0;
+  background: transparent;
+  color: var(--workspace-text);
+  text-align: left;
+}
+
+.db-presentation-new .db-customer-navigator__name-line {
+  display: flex;
+  max-width: 100%;
+  min-width: 0;
+  align-items: center;
+  gap: 7px;
+}
+
+.db-presentation-new .db-customer-navigator__name-action {
+  display: inline-flex;
+  max-width: 100%;
+  min-width: 0;
+  min-height: 44px;
+  align-items: center;
+  gap: 5px;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: var(--workspace-text);
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+  text-decoration-color: transparent;
+  text-decoration-line: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: .22em;
+}
+
+.db-presentation-new .db-customer-navigator__name-action svg {
+  width: 14px;
+  height: 14px;
+  flex: 0 0 auto;
+  opacity: 0;
+  transform: translateX(-3px);
+  transition: opacity 140ms ease-out, transform 140ms ease-out;
+}
+
+.db-presentation-new .db-customer-navigator__name {
+  display: block;
+  max-width: 100%;
+  min-width: 0;
+  overflow: hidden;
+  font-size: .875rem;
+  font-weight: 720;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.db-presentation-new .db-customer-navigator__phone {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 7px;
+  overflow: hidden;
+  color: var(--workspace-muted);
+  font-size: .8125rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.db-presentation-new .db-customer-navigator__phone svg,
+.db-presentation-new .db-customer-inspection__open svg {
+  width: 15px;
+  height: 15px;
+  flex: 0 0 auto;
+}
+
+.db-presentation-new .db-customer-inspection__open {
+  display: inline-flex;
+  min-height: 44px;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  border: 1px solid var(--workspace-border);
+  border-radius: 8px;
+  padding: 8px 11px;
+  background: var(--surface-overlay);
+  color: var(--workspace-text);
+  font-size: .8125rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.db-presentation-new .db-customer-navigator__name-action:hover,
+.db-presentation-new .db-customer-navigator__name-action:focus-visible,
+.db-presentation-new .db-customer-inspection__open:hover {
+  color: var(--product-copper-600);
+}
+
+.db-presentation-new .db-customer-navigator__name-action:is(:hover, :focus-visible) {
+  text-decoration-color: currentColor;
+}
+
+.db-presentation-new .db-customer-navigator__name-action:is(:hover, :focus-visible) svg {
+  opacity: 1;
+  transform: translateX(0);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .db-presentation-new .db-customer-navigator__name-action svg {
+    transition: none;
+  }
+}
+
+.db-presentation-new :is(.db-customer-navigator__name-action, .db-customer-inspection__open):focus-visible {
+  outline: 2px solid var(--product-copper-500);
+  outline-offset: 2px;
+}
+
+.db-presentation-new .db-customer-ledger-row[aria-selected='true'] {
+  background: color-mix(in srgb, var(--surface-raised) 72%, var(--product-copper-500) 8%) !important;
+}
+
+.db-presentation-new .db-customer-ledger-row[data-inspected='true'],
+.db-presentation-new .db-customer-inspection-row,
+.db-presentation-new .db-customer-ledger-card-group[data-inspected='true'] {
+  background: color-mix(in srgb, var(--surface-raised) 88%, var(--workspace-border) 12%) !important;
+}
+
+.db-presentation-new .db-customer-ledger-row[aria-selected='true'][data-inspected='true'],
+.db-presentation-new .db-customer-inspection-row[data-selected='true'] {
+  background: color-mix(in srgb, var(--surface-raised) 80%, var(--product-copper-500) 8%) !important;
+}
+
+.db-presentation-new .db-customer-details-control {
+  display: inline-flex;
+  min-width: 44px;
+  min-height: 44px;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  border: 0;
+  border-radius: 7px;
+  padding: 8px 6px;
+  background: transparent;
+  color: var(--workspace-muted);
+  font-size: .875rem;
+  font-weight: 650;
+  text-underline-offset: 4px;
+}
+
+.db-presentation-new .db-customer-details-control:hover {
+  background: color-mix(in srgb, var(--surface-raised) 76%, var(--workspace-border) 24%);
+  color: var(--workspace-text);
+}
+
+.db-presentation-new .db-customer-details-control[aria-expanded='true'] {
+  color: var(--product-copper-600);
+  text-decoration: underline;
+}
+
+.db-presentation-new .db-customer-details-control svg {
+  width: 16px;
+  height: 16px;
+  transition: transform 160ms ease-out;
+}
+
+.db-presentation-new .db-customer-details-control[aria-expanded='true'] svg {
+  transform: rotate(180deg);
+}
+
+.db-presentation-new .db-customer-details-control:focus-visible {
+  outline: 2px solid var(--product-copper-500);
+  outline-offset: 2px;
+}
+
+.db-presentation-new .db-customer-inspection-row > td {
+  padding: 0;
+  border-bottom: 1px solid var(--workspace-border);
+}
+
+.db-presentation-new .db-customer-inspection {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  align-items: stretch;
+  flex-direction: column;
+  gap: 20px;
+  padding: 16px;
+  color: var(--workspace-text);
+}
+
+.db-presentation-new .db-customer-inspection__facts {
+  display: grid;
+  min-width: 0;
+  flex: 1;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px 20px;
+}
+
+.db-presentation-new .db-customer-inspection__facts > div {
+  min-width: 0;
+}
+
+.db-presentation-new .db-customer-inspection__actions {
+  display: flex;
+  grid-column: 1 / -1;
+  justify-content: flex-end;
+  padding-top: 4px;
+}
+
+.db-presentation-new .db-customer-inspection h3 {
+  margin: 0 0 5px;
+  color: var(--workspace-muted);
+  font-size: .6875rem;
+  font-weight: 750;
+  letter-spacing: .08em;
+  line-height: 1.35;
+  text-transform: uppercase;
+}
+
+.db-presentation-new .db-customer-inspection p {
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: var(--workspace-text);
+  font-size: .8125rem;
+  line-height: 1.45;
+}
+
+.db-presentation-new .db-customer-inspection .db-customer-inspection__meta {
+  margin-top: 3px;
+  color: var(--workspace-muted);
+  font-size: .75rem;
+}
+
+@container (max-width: 560px) {
+  .db-presentation-new .db-customer-navigator__summary {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .db-presentation-new .db-customer-navigator__phone {
+    grid-column: 1;
+    grid-row: 2;
+  }
+
+  .db-presentation-new .db-customer-details-control {
+    grid-column: 2;
+    grid-row: 1;
+  }
+
+}
+
+@container (max-width: 380px) {
+  .db-presentation-new .db-customer-navigator__summary {
+    gap: 6px 8px;
+    padding-inline: 10px;
+  }
+
+}
+
+.db-presentation-new .db-customer-ledger-card-group {
+  min-width: 0;
+}
+
+.db-presentation-new .db-customer-ledger-card-group .db-customer-inspection {
+  border-top: 1px solid var(--workspace-border);
+}
+
+.db-presentation-new :is(.db-customer-ledger-row, .db-customer-ledger-card):focus-visible {
+  outline: 2px solid var(--product-copper-500);
+  outline-offset: -3px;
+}
+
+.db-presentation-new .db-customer-detail-workspace {
+  min-width: 0;
+  border-color: var(--workspace-border);
+  background: var(--surface-overlay);
+  color: var(--workspace-text);
+}
+
+.db-presentation-new .db-customer-detail-workspace .slide-panel-header,
+.db-presentation-new .db-customer-detail-workspace .slide-panel-footer {
+  border-color: var(--workspace-border) !important;
+  background: var(--surface-raised) !important;
+}
+
+.db-presentation-new .db-customer-detail-workspace .slide-panel-content {
+  background: var(--surface-overlay);
+}
+
+.db-presentation-new .db-customer-detail-workspace :is(.text-gray-900, .text-slate-800, .text-gray-800, .text-gray-700) {
+  color: var(--workspace-text) !important;
+}
+
+.db-presentation-new .db-customer-detail-workspace :is(.text-gray-400, .text-gray-500, .text-gray-600, .text-slate-500, .text-slate-600) {
+  color: var(--workspace-muted) !important;
+}
+
+.db-presentation-new .db-customer-detail-workspace :is(.bg-white, .bg-gray-50, .bg-gray-100) {
+  border-color: var(--workspace-border) !important;
+  background: var(--surface-raised) !important;
+}
+
+.db-presentation-new .db-customer-detail-workspace :is(.border-gray-100, .border-gray-200, .border-gray-300) {
+  border-color: var(--workspace-border) !important;
+}
+
+.db-presentation-new .db-customer-detail-workspace--unavailable {
+  display: flex;
+  min-height: 280px;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 1px solid var(--workspace-border);
+  border-radius: 14px;
+  padding: 24px;
+  text-align: center;
+}
+
+.db-presentation-new .db-customer-detail-workspace--unavailable h2 {
+  margin: 0;
+  color: var(--workspace-text);
+  font-size: 1.15rem;
+}
+
+.db-presentation-new .db-customer-detail-workspace--unavailable p {
+  margin: 0;
+  color: var(--workspace-muted);
+}
+
+.db-presentation-new .db-customer-detail-workspace--unavailable button {
+  min-height: 44px;
+  margin-top: 8px;
+  border: 1px solid var(--workspace-border);
+  border-radius: 9px;
+  padding: 9px 14px;
+  color: var(--workspace-text);
+}
+
+@media (min-width: 1100px) {
+  .db-presentation-new .db-customers-workspace--detail-open {
+    display: grid;
+    grid-template-columns: minmax(340px, .78fr) minmax(560px, 1.45fr);
+    grid-template-rows: auto auto minmax(0, 1fr);
+    gap: 14px;
+    overflow: visible;
+  }
+
+  .db-presentation-new .db-customers-workspace--detail-open > .db-operating-page-header {
+    grid-column: 1 / -1;
+    margin-bottom: 0;
+  }
+
+  .db-presentation-new .db-customers-workspace--detail-open > .db-customers-workspace__search {
+    grid-column: 1;
+    grid-row: 2;
+    margin-bottom: 0;
+  }
+
+  .db-presentation-new .db-customers-workspace--detail-open > .db-customers-workspace__ledger {
+    grid-column: 1;
+    grid-row: 3;
+  }
+
+  .db-presentation-new .db-customers-workspace--detail-open > .db-customer-detail-workspace {
+    grid-column: 2;
+    grid-row: 2 / 4;
+    height: 100%;
+  }
+}
+
+@media (max-width: 1099px) {
+  .db-presentation-new .db-customers-workspace--detail-open > :is(.db-operating-page-header, .db-customers-workspace__search, .db-customers-workspace__ledger) {
+    display: none !important;
+  }
+
+  .db-presentation-new .db-customers-workspace--detail-open > .db-customer-detail-workspace {
+    min-height: 100%;
+  }
+}
+
+@media (max-width: 959px) {
+  .db-presentation-new .db-customer-inspection {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .db-presentation-new .db-customer-inspection__facts {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+}
+
+@media (max-width: 639px) {
+  .db-presentation-new .db-customer-inspection {
+    gap: 14px;
+    padding: 14px 12px 18px;
+  }
+
+  .db-presentation-new .db-customer-inspection__facts {
+    grid-template-columns: 1fr;
+  }
+
+  .db-presentation-new .db-customer-inspection__open {
+    width: 100%;
+  }
+
+  .db-presentation-new .db-customer-detail-workspace {
+    border-radius: 10px;
+  }
+
+  .db-presentation-new .db-customer-detail-workspace .slide-panel-header {
+    padding: 10px 12px;
+  }
+
+  .db-presentation-new .db-customer-detail-workspace .db-slide-panel-workspace__back span {
+    display: inline;
+  }
+
+  .db-presentation-new .db-customer-detail-workspace .slide-panel-content > div {
+    padding: 14px !important;
+  }
+}
+
+@media (forced-colors: active) {
+  .db-presentation-new .db-customer-navigator__record,
+  .db-presentation-new .db-customer-navigator__record[data-selected='true'],
+  .db-presentation-new .db-customer-navigator__record[data-inspected='true'] {
+    border-color: CanvasText !important;
+    background: Canvas !important;
+    color: CanvasText !important;
+  }
+
+  .db-presentation-new :is(.db-customer-navigator__name-action, .db-customer-navigator__phone, .db-customer-inspection__open) {
+    color: CanvasText !important;
+  }
+
+  .db-presentation-new .db-customer-inspection__open {
+    border-color: ButtonText !important;
+    background: ButtonFace !important;
+  }
+
+  .db-presentation-new :is(.db-customer-ledger-row[data-inspected='true'], .db-customer-inspection-row, .db-customer-ledger-card-group[data-inspected='true']) {
+    background: Canvas !important;
+  }
+
+  .db-presentation-new .db-customer-inspection,
+  .db-presentation-new .db-customer-inspection :is(h3, p, .db-customer-inspection__meta),
+  .db-presentation-new .db-customer-details-control {
+    color: CanvasText !important;
+  }
+
+  .db-presentation-new :is(.db-customer-navigator__name-action, .db-customer-inspection__open, .db-customer-details-control):focus-visible {
+    outline-color: Highlight !important;
+  }
+
+  .db-presentation-new .db-customer-detail-workspace,
+  .db-presentation-new .db-customer-detail-workspace :is(.slide-panel-header, .slide-panel-content, .slide-panel-footer) {
+    border-color: CanvasText !important;
+    background: Canvas !important;
+    color: CanvasText !important;
+  }
+
+  .db-presentation-new .db-customer-ledger-row[aria-selected='true'] {
+    background: Highlight !important;
+    color: HighlightText !important;
+  }
+}
+
+/* The Settings route is retained from the legacy dark workstation. Day shop
+   must map those classes to the operating canvas instead of leaving pale
+   dark-mode foregrounds on road-white content. */
+:is(.db-presentation-new[data-appearance-mode='light'], .db-presentation-new:not([data-appearance-mode])) .db-settings-workspace :is(.text-zinc-100, .text-zinc-200, .text-zinc-300) {
+  color: var(--workspace-text) !important;
+}
+
+:is(.db-presentation-new[data-appearance-mode='light'], .db-presentation-new:not([data-appearance-mode])) .db-settings-workspace :is(.text-zinc-400, .text-zinc-500, .text-zinc-600) {
+  color: var(--workspace-muted) !important;
+}
+
+:is(.db-presentation-new[data-appearance-mode='light'], .db-presentation-new:not([data-appearance-mode])) .db-settings-workspace :is(.bg-zinc-900\/80, .bg-zinc-800\/80, .bg-zinc-800\/60, .bg-zinc-800\/40, .bg-zinc-950\/20) {
+  background-color: var(--product-road-white) !important;
+}
+
+:is(.db-presentation-new[data-appearance-mode='light'], .db-presentation-new:not([data-appearance-mode])) .db-settings-workspace :is(.border-zinc-950\/20, .border-zinc-800\/50, .border-zinc-700\/50, .border-zinc-600\/50) {
+  border-color: var(--workspace-border) !important;
+}
+
+:is(.db-presentation-new[data-appearance-mode='light'], .db-presentation-new:not([data-appearance-mode])) .db-settings-workspace .divide-zinc-800\/50 > :not([hidden]) ~ :not([hidden]) {
+  border-color: var(--workspace-border) !important;
+}
+
+/* Legacy settings cards use the old 20px utility shadow. The new operating
+   workspace keeps the same lifted relationship with a contained two-layer
+   shadow, so medium-width cards do not end in a visible rectangular band. */
+.db-presentation-new .db-settings-workspace :is(.db-settings-floating-card, .db-appearance-preview) {
+  box-shadow:
+    0 3px 8px -4px color-mix(in srgb, var(--product-navy-900) 12%, transparent),
+    0 14px 28px -12px color-mix(in srgb, var(--product-navy-900) 28%, transparent) !important;
+}
+
+/* Match My Shop's full-height navigation frame on desktop. Settings remains
+   one operating surface, with its optional service area at the base of the
+   same rail instead of a short floating menu beside a long workspace. */
+@media (min-width: 1024px) {
+  .db-presentation-new .db-settings-workspace {
+    min-height: calc(100dvh - 9.25rem);
+    align-items: stretch;
+  }
+
+  .db-presentation-new .db-settings-workspace .db-settings-sidebar,
+  .db-presentation-new .db-settings-workspace .db-settings-sidebar__panel {
+    min-height: 100%;
+  }
+
+  .db-presentation-new .db-settings-workspace .db-settings-sidebar__panel {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    position: static;
+  }
+
+  .db-presentation-new .db-settings-workspace .db-settings-sidebar__additional {
+    margin-top: auto;
+  }
+}
+
+/* The Settings rail uses headings and whitespace to group account/shop work.
+   A rule is reserved for the optional-services boundary at the bottom, where
+   it communicates a real change in scope rather than repeating under every
+   label. */
+.db-presentation-new .db-settings-sidebar__group > h3,
+.db-presentation-new .db-settings-sidebar__additional > h3 {
+  margin-bottom: 0.65rem !important;
+  padding-bottom: 0 !important;
+  border-bottom: 0 !important;
+}
+
+.db-presentation-new .db-settings-sidebar__additional {
+  border-top: 1px solid var(--workspace-border);
+}
+
+.db-presentation-new[data-appearance-mode='high_contrast'] .db-settings-workspace :is(.db-settings-floating-card, .db-appearance-preview) {
+  box-shadow: none !important;
+}
+
+/* Below the desktop split view, Settings scrolls inside the shell. Reserve a
+   small runway inside that scroll owner so floating-card elevation is visible
+   instead of being cut at the horizontal boundary. */
+@media (max-width: 1023px) {
+  .db-presentation-new .db-settings-workspace :is(.db-settings-floating-card, .db-appearance-preview) {
+    margin-inline: clamp(10px, 2vw, 16px);
+  }
+}
+
+/* Payments & Accounting keeps its real connection state, but legacy
+   night-mode utility fills cannot sit over the road-white operating canvas.
+   These surfaces resolve through appearance tokens in every selected mode. */
+.db-presentation-new .db-settings-payments :is(.bg-zinc-950\/40, .bg-zinc-950\/35) {
+  background-color: color-mix(in srgb, var(--product-navy-800) 3%, var(--surface-overlay)) !important;
+}
+
+/* Payment integrations retain the shared contained elevation while their
+   utility fill resolves through the selected appearance surface. */
+.db-presentation-new .db-settings-payments .db-settings-payment-card {
+  background-color: var(--surface-raised) !important;
+}
+
+.db-presentation-new .db-settings-payments :is(.border-zinc-800, .border-zinc-800\/70, .border-zinc-800\/50) {
+  border-color: var(--workspace-border) !important;
+}
+
+.db-presentation-new .db-settings-payments .divide-zinc-800 > :not([hidden]) ~ :not([hidden]) {
+  border-color: var(--workspace-border) !important;
+}
+
+.db-presentation-new .db-settings-payments .bg-emerald-950\/80 {
+  border-color: color-mix(in srgb, var(--semantic-success-500) 42%, var(--workspace-border)) !important;
+  background-color: color-mix(in srgb, var(--semantic-success-500) 12%, var(--surface-raised)) !important;
+  color: color-mix(in srgb, var(--semantic-success-500) 45%, var(--workspace-text)) !important;
+}
+
+.db-presentation-new .db-settings-payments .bg-emerald-950\/80 .text-emerald-400 {
+  color: color-mix(in srgb, var(--semantic-success-500) 45%, var(--workspace-text)) !important;
+}
+
+.db-presentation-new .db-settings-payments .bg-amber-950\/30 {
+  border-color: color-mix(in srgb, var(--semantic-warning-500) 44%, var(--workspace-border)) !important;
+  background-color: color-mix(in srgb, var(--semantic-warning-500) 11%, var(--surface-raised)) !important;
+}
+
+.db-presentation-new .db-settings-payments .bg-amber-950\/30 .text-amber-300 {
+  color: color-mix(in srgb, var(--semantic-warning-500) 45%, var(--workspace-text)) !important;
+}
+
+/* Shop Profile retains its canonical content, but its old zinc panels need
+   semantic surface roles so all three appearance modes render as one system. */
+.db-presentation-new .db-settings-shop-profile__panel {
+  background: var(--surface-raised) !important;
+  border-color: var(--workspace-border) !important;
+}
+
+.db-presentation-new .db-settings-shop-profile__logo-canvas {
+  background: var(--surface-overlay) !important;
+  border-color: var(--workspace-border) !important;
+}
+
+.db-presentation-new .db-settings-shop-profile__panel :is(.text-zinc-100, .text-zinc-300) {
+  color: var(--workspace-text) !important;
+}
+
+.db-presentation-new .db-settings-shop-profile__panel :is(.text-zinc-400, .text-zinc-500, .text-zinc-600) {
+  color: var(--workspace-muted) !important;
+}
+
+/* Fleet Overview is a read-only handoff to the canonical Fleet board. Its
+   data uses one compact table rather than a pile of bordered mini-cards. */
+.db-presentation-new .db-settings-fleet-overview__section + .db-settings-fleet-overview__section {
+  margin-top: 1.5rem;
+}
+
+.db-presentation-new .db-settings-fleet-overview__manager-list {
+  display: grid;
+  gap: 0.3rem;
+}
+
+.db-presentation-new .db-settings-fleet-overview__manager {
+  min-height: 2.5rem;
+  padding: 0 0.65rem;
+  border-radius: 0.5rem;
+  background: color-mix(in srgb, var(--surface-raised) 78%, transparent);
+}
+
+.db-presentation-new .db-settings-fleet-overview__table {
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+.db-presentation-new .db-settings-fleet-overview__table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 0.5rem 0.65rem;
+  border-bottom: 1px solid var(--workspace-border);
+  background: var(--surface-raised);
+  color: var(--workspace-muted);
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.db-presentation-new .db-settings-fleet-overview__table th:first-child,
+.db-presentation-new .db-settings-fleet-overview__table td:first-child {
+  width: 4.5rem;
+}
+
+.db-presentation-new .db-settings-fleet-overview__table th:last-child,
+.db-presentation-new .db-settings-fleet-overview__table td:last-child {
+  width: 5rem;
+  text-align: right;
+}
+
+.db-presentation-new .db-settings-fleet-overview__table td {
+  padding: 0.7rem 0.65rem;
+  vertical-align: middle;
+}
+
+.db-presentation-new .db-settings-fleet-overview__table tbody tr + tr td {
+  border-top: 1px solid color-mix(in srgb, var(--workspace-border) 72%, transparent);
+}
+
+.db-presentation-new .db-settings-fleet-overview :is(.text-zinc-100, .text-zinc-300) {
+  color: var(--workspace-text) !important;
+}
+
+.db-presentation-new .db-settings-fleet-overview :is(.text-zinc-400, .text-zinc-500, .text-zinc-600) {
+  color: var(--workspace-muted) !important;
+}
+
+@media (max-width: 639px) {
+  .db-presentation-new .db-settings-fleet-overview__manager {
+    align-items: flex-start;
+    flex-direction: column;
+    justify-content: center;
+    gap: 0.1rem;
+    padding-block: 0.5rem;
+  }
+}
+
+/* Fleet configuration is a short, password-gated setup surface. Keep its
+   source fields intact as one card with internal dividers, not a stack of
+   nested panels. */
+.db-presentation-new .db-settings-fleet-config__summary,
+.db-presentation-new .db-settings-fleet-config__unlock {
+  background: transparent;
+}
+
+.db-presentation-new .db-settings-fleet-config__summary {
+  padding: 0.2rem 0;
+}
+
+.db-presentation-new .db-settings-fleet-config__unlock {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem 1rem;
+  padding: 0.85rem 0 0;
+  border-top: 1px solid var(--workspace-border);
+}
+
+@media (min-width: 640px) {
+  .db-presentation-new .db-settings-fleet-config__summary:first-child {
+    padding-right: 1rem;
+    border-right: 1px solid var(--workspace-border);
+  }
+
+  .db-presentation-new .db-settings-fleet-config__summary:last-child {
+    padding-left: 1rem;
+  }
+}
+
+.db-presentation-new .db-settings-fleet-config :is(.text-zinc-100, .text-zinc-300) {
+  color: var(--workspace-text) !important;
+}
+
+.db-presentation-new .db-settings-fleet-config :is(.text-zinc-400, .text-zinc-500, .text-zinc-600) {
+  color: var(--workspace-muted) !important;
+}
+
+@media (max-width: 639px) {
+  .db-presentation-new .db-settings-fleet-config__unlock {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .db-presentation-new .db-settings-fleet-config__unlock > div {
+    width: 100%;
+  }
+}
+
+/* Settings switches retain a 44px touch target without stretching the visual
+   control. The track and thumb are fixed so inherited control sizing cannot
+   distort their geometry. */
+.db-presentation-new .db-staff-content .db-settings-switch {
+  width: 56px !important;
+  min-width: 56px;
+  height: 44px !important;
+  min-height: 44px !important;
+  border: 0 !important;
+  background: transparent !important;
+  isolation: isolate;
+}
+
+.db-presentation-new .db-settings-switch::before {
+  position: absolute;
+  z-index: -1;
+  top: 8px;
+  left: 2px;
+  width: 52px;
+  height: 28px;
+  content: '';
+  border: 1px solid var(--workspace-border);
+  border-radius: 999px;
+  background: var(--surface-overlay);
+  transition: background-color 140ms ease-out, border-color 140ms ease-out;
+}
+
+.db-presentation-new .db-settings-switch[aria-checked='true']::before {
+  border-color: var(--semantic-success-500);
+  background: var(--semantic-success-500);
+}
+
+.db-presentation-new .db-settings-switch > span {
+  top: 12px !important;
+  left: 6px !important;
+  width: 20px !important;
+  height: 20px !important;
+  background: var(--surface-overlay) !important;
+  box-shadow: 0 1px 3px rgba(16, 36, 59, 0.24) !important;
+}
+
+.db-presentation-new .db-settings-switch[aria-checked='true'] > span {
+  left: 30px !important;
+}
+
+.db-presentation-new .db-settings-switch:disabled::before {
+  opacity: 0.58;
+}
+
+@media (forced-colors: active) {
+  .db-presentation-new .db-settings-switch::before {
+    border-color: ButtonText;
+    background: ButtonFace;
+  }
+
+  .db-presentation-new .db-settings-switch[aria-checked='true']::before {
+    background: Highlight;
+  }
+
+  .db-presentation-new .db-settings-switch > span {
+    background: Canvas !important;
+  }
+}
+
+/* Analytics retains its established reports and charts, while its former
+   dark-only surfaces now resolve through the selected operating appearance. */
+.db-presentation-new .db-garage-analytics {
+  color: var(--workspace-text);
+}
+
+.db-presentation-new .db-garage-analytics :is(.text-white, [class*='text-white/85'], [class*='text-white/90'], [class*='text-gray-200']) {
+  color: var(--workspace-text) !important;
+}
+
+.db-presentation-new .db-garage-analytics :is([class*='text-white/'], [class~='text-gray-400']) {
+  color: var(--workspace-muted) !important;
+}
+
+.db-presentation-new .db-analytics-quiet-action {
+  border: 1px solid var(--workspace-border) !important;
+  background: var(--surface-overlay) !important;
+  color: var(--workspace-text) !important;
+}
+
+.db-presentation-new .db-analytics-range-menu,
+.db-presentation-new .db-analytics-detail-table {
+  border-color: var(--workspace-border) !important;
+  background: var(--surface-overlay) !important;
+}
+
+.db-presentation-new .db-analytics-hero {
+  border-color: var(--workspace-border) !important;
+  background: var(--surface-raised) !important;
+}
+
+.db-presentation-new .db-analytics-hero__insight {
+  background: color-mix(in srgb, var(--surface-overlay) 84%, var(--surface-raised)) !important;
+  color: var(--workspace-muted) !important;
+}
+
+.db-presentation-new .db-analytics-stat-strip {
+  border-color: var(--workspace-border) !important;
+  background: var(--workspace-border) !important;
+}
+
+.db-presentation-new .db-analytics-stat-strip__cell,
+.db-presentation-new .db-analytics-chart-card {
+  border-color: var(--workspace-border) !important;
+  background: var(--surface-overlay) !important;
+}
+
+.db-presentation-new .db-analytics-tabs {
+  border-color: var(--workspace-border) !important;
+}
+
+.db-presentation-new .db-analytics-detail-table :is(thead[class*='bg-'], tr:hover) {
+  background: var(--surface-raised) !important;
+}
+
+.db-presentation-new .db-garage-analytics .recharts-cartesian-axis-tick-value {
+  fill: var(--workspace-muted) !important;
+}
+
+.db-presentation-new .db-garage-analytics .recharts-cartesian-grid line {
+  stroke: var(--workspace-border) !important;
+  stroke-opacity: 0.72;
+}
+
+/* Suppliers is a canonical CRUD ledger. Keep its searchable list and actions,
+   but resolve every retained dark utility to the active operating surface. */
+.db-presentation-new .db-suppliers-workspace {
+  color: var(--workspace-text);
+}
+
+.db-presentation-new .db-suppliers-workspace__ledger {
+  border-color: var(--workspace-border) !important;
+  background: var(--surface-overlay) !important;
+}
+
+.db-presentation-new .db-suppliers-workspace__ledger :is(thead, tr[class*='bg-']) {
+  background: var(--surface-raised) !important;
+}
+
+.db-presentation-new .db-suppliers-workspace__ledger :is(.divide-white\/10, .divide-white\/5) > :not([hidden]) ~ :not([hidden]),
+.db-presentation-new .db-suppliers-workspace__ledger :is(.border-white\/10, .border-white\/15) {
+  border-color: var(--workspace-border) !important;
+}
+
+.db-presentation-new .db-suppliers-workspace :is(.text-white, .text-gray-100, .text-gray-200, .text-gray-300) {
+  color: var(--workspace-text) !important;
+}
+
+.db-presentation-new .db-suppliers-workspace :is(.text-gray-400, .text-gray-500, [class*='text-white/']) {
+  color: var(--workspace-muted) !important;
+}
+
+.db-presentation-new .db-suppliers-workspace__contact {
+  border-color: var(--workspace-border) !important;
+  background: var(--surface-overlay) !important;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .db-presentation-new .db-suppliers-workspace__ledger tbody > tr:hover {
+    background: var(--surface-raised) !important;
+  }
+}
+
+/* Inventory remains the authoritative parts ledger. Its retained dark table
+   becomes a road-white operating surface under the new presentation only. */
+.db-presentation-new .db-inventory-workspace {
+  color: var(--workspace-text);
+}
+
+.db-presentation-new .db-inventory-workspace__ledger {
+  border-color: var(--workspace-border) !important;
+  background: var(--surface-overlay) !important;
+}
+
+.db-presentation-new .db-inventory-workspace :is(.bg-white\/5, .bg-white\/10, .bg-white\/20) {
+  border-color: var(--workspace-border) !important;
+  background-color: var(--surface-raised) !important;
+}
+
+.db-presentation-new .db-inventory-workspace :is(.border-white\/10, .border-white\/15, .border-white\/20, .divide-white\/5, .divide-white\/10) {
+  border-color: var(--workspace-border) !important;
+}
+
+.db-presentation-new .db-inventory-workspace :is(.text-white, .text-gray-100, .text-gray-200, .text-gray-300) {
+  color: var(--workspace-text) !important;
+}
+
+/* Sort controls use the operating-surface foreground until selected; an accent
+   fill always uses the semantic on-accent foreground. This covers both the
+   desktop ledger and the compact top-row control. */
+.db-presentation-new .db-inventory-workspace .db-inventory-stock-sort {
+  color: var(--workspace-text) !important;
+}
+
+.db-presentation-new .db-inventory-workspace .db-inventory-stock-sort--selected {
+  color: #fff !important;
+}
+
+.db-presentation-new .db-inventory-workspace :is(.text-gray-400, .text-gray-500, [class*='text-white/']) {
+  color: var(--workspace-muted) !important;
+}
+
+.db-inventory-price-field__summary {
+  color: var(--workspace-muted);
+}
+
+.db-inventory-price-field__summary strong {
+  color: var(--workspace-text);
+}
+
+/* The price method trigger occupies the label row. Match that row's height on
+   the adjacent Cost field so both currency steppers meet the same baseline. */
+.db-inventory-price-field__peer > span:first-child {
+  display: flex;
+  min-height: 2.75rem;
+  align-items: center;
+}
+
+.db-inventory-price-method-trigger {
+  border-color: var(--workspace-border);
+  background: var(--surface-overlay, #fff);
+  color: var(--workspace-text);
+}
+
+.db-inventory-price-method-trigger:focus-visible {
+  outline: 2px solid var(--accent-600, #0f766e);
+  outline-offset: 2px;
+}
+
+.db-inventory-price-method-menu {
+  border-color: var(--workspace-border);
+  background: var(--surface-overlay, #fff);
+  color: var(--workspace-text);
+}
+
+.db-inventory-price-method-option {
+  color: var(--workspace-text);
+}
+
+.db-inventory-price-method-option span:last-child,
+.db-inventory-price-method-note {
+  color: var(--workspace-muted);
+}
+
+.db-inventory-price-method-option[aria-checked='true'] {
+  background: color-mix(in srgb, var(--accent-600, #0f766e) 12%, var(--surface-overlay, #fff));
+  color: var(--accent-600, #0f766e);
+}
+
+.db-inventory-price-method-option[aria-checked='true'] span:last-child {
+  color: var(--workspace-muted);
+}
+
+.db-inventory-price-method-option:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .db-inventory-price-method-trigger:hover,
+  .db-inventory-price-method-option:not(:disabled):hover {
+    background: color-mix(in srgb, var(--accent-600, #0f766e) 7%, var(--surface-overlay, #fff));
+  }
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .db-presentation-new .db-inventory-workspace tbody > tr:hover,
+  .db-presentation-new .db-inventory-workspace [class*='hover\\:bg-white']:hover {
+    background: var(--surface-raised) !important;
+  }
+}
+
+/* The inventory editor lives beneath the workspace selector above, so pin its
+   enabled save action to the required on-accent foreground after that cascade. */
+.db-presentation-new .db-inventory-workspace .db-slide-panel-form__submit,
+.db-presentation-new .db-inventory-workspace .db-slide-panel-form__submit * {
+  color: #fff !important;
+}
+
+/* The inventory editor is a dark-owned control surface in dark appearance.
+   Its inputs must belong to the panel, rather than inherit the road-white
+   workspace form treatment used by the main inventory ledger. */
+.db-staff-shell:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) .db-inventory-editor-panel {
+  color: var(--workspace-text);
+  color-scheme: dark;
+  background: var(--surface-overlay) !important;
+  border-color: var(--workspace-border) !important;
+}
+
+.db-staff-shell:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) .db-inventory-editor-panel :is(.db-slide-panel-form__header, .db-slide-panel-form__footer) {
+  background: var(--surface-raised);
+  border-color: var(--workspace-border) !important;
+}
+
+.db-staff-shell:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) .db-inventory-editor-panel .db-slide-panel-form__content {
+  background: var(--surface-overlay);
+}
+
+.db-staff-shell:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) .db-inventory-editor-panel :is(.text-slate-800, .text-gray-900, .text-gray-800, .text-gray-700, .text-gray-600) {
+  color: var(--workspace-text) !important;
+}
+
+.db-staff-shell:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) .db-inventory-editor-panel :is(.text-gray-500, .text-gray-400) {
+  color: var(--workspace-muted) !important;
+}
+
+.db-staff-shell:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) .db-inventory-editor-panel :is(input, textarea, select) {
+  background: var(--surface-raised) !important;
+  border-color: var(--workspace-border) !important;
+  color: var(--workspace-text) !important;
+  caret-color: var(--workspace-text);
+}
+
+.db-staff-shell:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) .db-inventory-editor-panel :is(input, textarea)::placeholder {
+  color: var(--workspace-muted) !important;
+  opacity: 1;
+}
+
+/* BaseSelect and the nested supplier form retain light utility classes. Scope
+   their neutral surfaces to the editor only; semantic red/green step actions
+   stay untouched. */
+.db-staff-shell:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) .db-inventory-editor-panel :is(.bg-white, .bg-gray-50, .bg-gray-100) {
+  background-color: var(--surface-raised) !important;
+}
+
+.db-staff-shell:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) .db-inventory-editor-panel :is(.border-gray-200, .border-gray-300) {
+  border-color: var(--workspace-border) !important;
+}
+
+/* Identity details is a nested form surface, not a warning state. Its surface
+   is mode-owned, while the selected personal accent only identifies editing.
+   This prevents the old amber-tinted container and navy fields from combining
+   into an unreadable third palette. */
+.db-inventory-editor-panel {
+  --db-inventory-identity-surface: var(--surface-canvas);
+  --db-inventory-identity-field: var(--surface-overlay);
+  --db-inventory-identity-text: var(--text-primary);
+  --db-inventory-identity-muted: var(--text-secondary);
+  --db-inventory-identity-border: var(--border-subtle);
+}
+
+.db-staff-shell:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) .db-inventory-editor-panel {
+  --db-inventory-identity-surface: var(--surface-canvas);
+  --db-inventory-identity-field: var(--surface-raised);
+  --db-inventory-identity-text: var(--workspace-text);
+  --db-inventory-identity-muted: var(--workspace-muted);
+  --db-inventory-identity-border: var(--workspace-border);
+}
+
+.db-inventory-identity-editor {
+  background: var(--db-inventory-identity-surface) !important;
+  border-color: var(--db-inventory-identity-border) !important;
+  color: var(--db-inventory-identity-text);
+}
+
+.db-inventory-identity-editor__eyebrow {
+  color: var(--personal-accent-500) !important;
+}
+
+.db-inventory-identity-editor__label {
+  color: var(--db-inventory-identity-text) !important;
+}
+
+.db-inventory-identity-editor :is(input, textarea, select) {
+  background: var(--db-inventory-identity-field) !important;
+  border-color: var(--db-inventory-identity-border) !important;
+  color: var(--db-inventory-identity-text) !important;
+  caret-color: var(--db-inventory-identity-text);
+}
+
+.db-inventory-identity-editor :is(input, textarea)::placeholder {
+  color: var(--db-inventory-identity-muted) !important;
+  opacity: 1;
+}
+
+.db-inventory-identity-editor :is(input, textarea, select):focus-visible {
+  border-color: var(--personal-accent-400) !important;
+  outline: 2px solid var(--personal-accent-400);
+  outline-offset: 2px;
+  box-shadow: none !important;
+}
+
+.db-inventory-editor-panel__identity-trigger {
+  display: inline-flex;
+  min-height: var(--density-control-min);
+  min-width: var(--density-control-min);
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  color: var(--db-inventory-identity-muted);
+  background: transparent;
+  transition: background-color .16s ease, color .16s ease, border-color .16s ease;
+}
+
+.db-inventory-editor-panel__identity-trigger:hover,
+.db-inventory-editor-panel__identity-trigger:focus-visible,
+.db-inventory-editor-panel__identity-trigger.is-active {
+  color: var(--personal-accent-foreground);
+  background: var(--personal-accent-600);
+}
+
+.db-inventory-editor-panel__identity-trigger:focus-visible {
+  outline: 2px solid var(--personal-accent-400);
+  outline-offset: 2px;
+}
+
+.db-inventory-identity-editor__photo-action {
+  background: var(--personal-accent-600);
+  border: 1px solid var(--personal-accent-400);
+  color: var(--personal-accent-foreground);
+}
+
+.db-inventory-identity-editor__photo-action:hover:not(:disabled) {
+  background: var(--personal-accent-500);
+}
+
+.db-inventory-identity-editor__secondary-action {
+  background: var(--db-inventory-identity-field);
+  border: 1px solid var(--db-inventory-identity-border);
+  color: var(--db-inventory-identity-text);
+}
+
+.db-inventory-identity-editor__secondary-action:hover:not(:disabled) {
+  border-color: var(--personal-accent-400);
+  color: var(--personal-accent-500);
+}
+
+@media (forced-colors: active) {
+  .db-inventory-identity-editor,
+  .db-inventory-identity-editor :is(input, textarea, select),
+  .db-inventory-editor-panel__identity-trigger,
+  .db-inventory-identity-editor__photo-action,
+  .db-inventory-identity-editor__secondary-action {
+    forced-color-adjust: auto;
+    border-color: CanvasText !important;
+  }
+}
+
+/* The desktop catalog action sits outside SearchAddBar. Keep its enabled
+   foreground on-accent after the inventory workspace's legacy text remapping. */
+.db-presentation-new .db-inventory-workspace .db-inventory-workspace__primary-action,
+.db-presentation-new .db-inventory-workspace .db-inventory-workspace__primary-action * {
+  color: #fff !important;
+}
+
+/* Labor Book Time is a real price-builder-derived library. Its content and
+   actions remain intact while retained zinc surfaces follow appearance mode. */
+.db-presentation-new .db-labor-book-time {
+  color: var(--workspace-text);
+}
+
+.db-presentation-new .db-labor-book-time :is(.bg-zinc-900\/80, .bg-zinc-900\/90, .bg-zinc-950\/50, .bg-zinc-950\/60, .bg-zinc-950\/70, .bg-zinc-950\/80) {
+  border-color: var(--workspace-border) !important;
+  background-color: var(--surface-raised) !important;
+}
+
+.db-presentation-new .db-labor-book-time__ledger {
+  border-color: var(--workspace-border) !important;
+  background: var(--surface-overlay) !important;
+}
+
+.db-presentation-new .db-labor-book-time__ledger > div:first-child {
+  border-color: var(--workspace-border) !important;
+  background: var(--surface-raised) !important;
+}
+
+.db-presentation-new .db-labor-book-time :is(.border-zinc-700, .border-zinc-700\/50, .border-zinc-700\/70, .border-zinc-800, .border-zinc-800\/80) {
+  border-color: var(--workspace-border) !important;
+}
+
+.db-presentation-new .db-labor-book-time :is(.text-white, .text-zinc-100, .text-zinc-200, .text-zinc-300) {
+  color: var(--workspace-text) !important;
+}
+
+.db-presentation-new .db-labor-book-time :is(.text-zinc-400, .text-zinc-500, .text-zinc-600) {
+  color: var(--workspace-muted) !important;
+}
+
+/* The library summary and its ledger are separate operating surfaces. Replace
+   the inherited oversized dark shadow with two restrained elevation levels so
+   the summary's shadow settles before the ledger begins. */
+.db-presentation-new .db-labor-book-time__summary {
+  margin-bottom: 16px;
+  box-shadow: 0 12px 24px -22px rgba(16, 36, 59, .58), 0 2px 5px rgba(16, 36, 59, .045) !important;
+}
+
+.db-presentation-new .db-labor-book-time__ledger {
+  box-shadow: 0 8px 18px -18px rgba(16, 36, 59, .5), 0 1px 3px rgba(16, 36, 59, .04) !important;
+}
+
+.db-presentation-new .db-labor-book-time .db-labor-book-time__primary-action,
+.db-presentation-new .db-labor-book-time .db-labor-book-time__primary-action * {
+  color: #fff !important;
+}
+
+/* The search field is one composed control. Its focus belongs to the outer
+   boundary, not the input's inset text area. */
+.db-presentation-new .db-labor-book-time .db-labor-book-time__search {
+  transition: border-color 140ms ease-out, box-shadow 140ms ease-out;
+}
+
+.db-presentation-new .db-labor-book-time .db-labor-book-time__search:focus-within {
+  border-color: var(--product-copper-400) !important;
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--product-copper-400) 22%, transparent);
+}
+
+.db-presentation-new .db-labor-book-time .db-labor-book-time__search input:focus-visible {
+  outline: none;
+  box-shadow: none;
+}
+
+/* Labor Book Time owns a continuous dark search surface. The shared staff
+   form baseline is intentionally light for overlays, so restore transparency
+   only inside this composed control rather than recoloring unrelated forms. */
+.db-presentation-new .db-labor-book-time .db-labor-book-time__search input {
+  background: transparent !important;
+  border-color: transparent !important;
+  color: var(--workspace-text) !important;
+  caret-color: var(--workspace-text);
+}
+
+.db-presentation-new .db-labor-book-time .db-labor-book-time__search input::placeholder {
+  color: var(--workspace-muted) !important;
+  opacity: 1;
+}
+
+/* Inline editing is a focused variation of the same ledger, not a fallback
+   dark form. The shared duration stepper retains its standard 15-minute step. */
+.db-presentation-new .db-labor-book-time__ledger-row--editing {
+  background: var(--surface-raised) !important;
+}
+
+/* At compact shell widths, the ledger—not the browser viewport—determines the
+   available runway. Keep the shared stepper inside Book Hours and move the
+   supporting vehicle metadata onto a second row rather than squeezing Labor
+   inputs underneath adjacent columns. */
+.db-labor-book-time__ledger {
+  container-type: inline-size;
+}
+
+@container (max-width: 860px) {
+  .db-labor-book-time__ledger-header,
+  .db-labor-book-time__ledger-row {
+    grid-template-columns: minmax(0, 1fr) 152px 112px !important;
+    grid-template-areas:
+      'labor hours actions'
+      'scope last-used actions';
+  }
+
+  .db-labor-book-time__ledger-labor { grid-area: labor; }
+  .db-labor-book-time__ledger-hours { grid-area: hours; }
+  .db-labor-book-time__ledger-scope { grid-area: scope; }
+  .db-labor-book-time__ledger-last-used { grid-area: last-used; }
+  .db-labor-book-time__ledger-actions { grid-area: actions; }
+}
+
+.db-presentation-new .db-labor-book-time .db-labor-book-time__edit-input {
+  border-color: var(--workspace-border) !important;
+  background: var(--surface-overlay) !important;
+  color: var(--workspace-text) !important;
+}
+
+.db-presentation-new .db-labor-book-time .db-labor-book-time__edit-input::placeholder {
+  color: var(--workspace-muted) !important;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .db-presentation-new .db-labor-book-time__ledger-row:hover {
+    background: color-mix(in srgb, var(--product-navy-800) 4%, var(--surface-overlay)) !important;
+  }
+}
+
+/* Service catalog entries are authoritative shop records. In the new shell,
+   their legacy dark-surface utilities must resolve through the active palette. */
+.db-presentation-new .db-services-workspace {
+  color: var(--workspace-text);
+}
+
+.db-presentation-new .db-services-workspace :is(.bg-white\/5, .bg-white\/10, .bg-\[\#1a2030\]) {
+  border-color: var(--workspace-border) !important;
+  background-color: var(--surface-raised) !important;
+}
+
+.db-presentation-new .db-services-workspace__ledger {
+  border-color: var(--workspace-border) !important;
+  background: var(--surface-overlay) !important;
+}
+
+.db-presentation-new .db-services-workspace :is(.border-white\/10, .border-white\/15) {
+  border-color: var(--workspace-border) !important;
+}
+
+.db-presentation-new .db-services-workspace :is(.text-white, .text-gray-100, .text-gray-200, .text-gray-300) {
+  color: var(--workspace-text) !important;
+}
+
+.db-presentation-new .db-services-workspace :is(.text-gray-400, .text-gray-500, .text-gray-600) {
+  color: var(--workspace-muted) !important;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .db-presentation-new .db-services-workspace__ledger tbody tr:hover {
+    background: var(--surface-raised) !important;
+  }
+}
+
+/* Team records keep their real management and work actions, while their
+   legacy dark surfaces inherit the selected authenticated appearance. */
+.db-presentation-new .db-team-workspace {
+  color: var(--workspace-text);
+}
+
+.db-presentation-new .db-team-workspace :is(.bg-white\/5, .bg-white\/10) {
+  border-color: var(--workspace-border) !important;
+  background-color: var(--surface-raised) !important;
+}
+
+.db-presentation-new .db-team-workspace :is(.border-white\/10, .border-white\/15, .border-white\/20) {
+  border-color: var(--workspace-border) !important;
+}
+
+.db-presentation-new .db-team-workspace :is(.text-white, .text-gray-100, .text-gray-200, .text-gray-300) {
+  color: var(--workspace-text) !important;
+}
+
+.db-presentation-new .db-team-workspace :is(.text-gray-400, .text-gray-500, .text-gray-600) {
+  color: var(--workspace-muted) !important;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .db-presentation-new .db-team-workspace tbody tr:hover {
+    background-color: var(--surface-raised);
+  }
+}
+
+/* Retained settings navigation inherits legacy zinc utilities. New presentation
+   keeps its active, hover, and keyboard focus states in the current accent ramp. */
+.db-presentation-new .db-settings-nav-item[data-active='true'] {
+  color: var(--personal-accent-400) !important;
+  border-color: color-mix(in srgb, var(--personal-accent-500) 35%, var(--border-subtle)) !important;
+  background-color: color-mix(in srgb, var(--personal-accent-500) 10%, var(--surface-raised)) !important;
+}
+
+.db-presentation-new .db-settings-nav-item:focus-visible {
+  outline: 2px solid var(--personal-accent-400);
+  outline-offset: 2px;
+}
+
+/* New-presentation Settings uses a single compact context control below the
+   desktop sidebar breakpoint. It preserves every section and permission gate
+   without forcing a row of tabs to scroll horizontally. */
+.db-settings-mobile-section-selector {
+  display: none;
+}
+
+@media (max-width: 1023px) {
+  .db-presentation-new .db-settings-workspace .db-settings-mobile-section-selector {
+    display: block !important;
+  }
+
+  .db-presentation-new .db-settings-workspace .db-settings-mobile-legacy-nav {
+    display: none !important;
+  }
+
+  .db-presentation-new .db-settings-workspace .db-settings-mobile-section-selector {
+    position: relative;
+    z-index: 20;
+  }
+
+  .db-presentation-new .db-settings-workspace .db-settings-mobile-section-selector__trigger {
+    display: flex;
+    width: 100%;
+    min-height: var(--density-control-min);
+    align-items: center;
+    gap: 10px;
+    padding: 0 14px;
+    border: 1px solid var(--workspace-border);
+    border-radius: 14px;
+    background: var(--surface-raised);
+    color: var(--workspace-text);
+    font: inherit;
+    font-weight: 650;
+  }
+
+  .db-presentation-new .db-settings-workspace .db-settings-mobile-section-selector__trigger:hover {
+    border-color: color-mix(in srgb, var(--personal-accent-400) 36%, var(--workspace-border));
+  }
+
+  .db-presentation-new .db-settings-workspace .db-settings-mobile-section-selector__trigger:focus-visible {
+    border-color: var(--personal-accent-400);
+    outline: 2px solid color-mix(in srgb, var(--personal-accent-400) 62%, transparent);
+    outline-offset: 2px;
+  }
+
+  .db-presentation-new .db-settings-workspace .db-settings-mobile-section-selector__menu {
+    position: absolute;
+    top: calc(100% + 8px);
+    left: 0;
+    width: 100%;
+    max-height: min(60dvh, 420px);
+    overflow-y: auto;
+    padding: 10px;
+    border: 1px solid var(--workspace-border);
+    border-radius: 14px;
+    background: var(--surface-raised);
+    box-shadow:
+      0 3px 8px -4px color-mix(in srgb, var(--product-navy-900) 12%, transparent),
+      0 14px 28px -12px color-mix(in srgb, var(--product-navy-900) 32%, transparent);
+  }
+
+  .db-presentation-new .db-settings-workspace .db-settings-mobile-section-selector__group + .db-settings-mobile-section-selector__group {
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px solid var(--workspace-border);
+  }
+
+  .db-presentation-new .db-settings-workspace .db-settings-mobile-section-selector__group-label {
+    margin: 0 0 4px;
+    padding: 0 8px;
+    color: var(--workspace-muted);
+    font-size: 0.6875rem;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+  }
+
+  .db-presentation-new .db-settings-workspace .db-settings-mobile-section-selector__option {
+    display: flex;
+    width: 100%;
+    min-height: var(--density-control-min);
+    align-items: center;
+    gap: 10px;
+    padding: 0 10px;
+    border: 1px solid transparent;
+    border-radius: 10px;
+    background: transparent;
+    color: var(--workspace-text);
+    font: inherit;
+    font-size: 0.9375rem;
+    font-weight: 600;
+  }
+
+  .db-presentation-new .db-settings-workspace .db-settings-mobile-section-selector__option[data-active='true'] {
+    border-color: color-mix(in srgb, var(--personal-accent-500) 35%, var(--workspace-border));
+    background: color-mix(in srgb, var(--personal-accent-500) 10%, var(--surface-raised));
+    color: var(--personal-accent-500);
+  }
+
+  @media (hover: hover) and (pointer: fine) {
+    .db-presentation-new .db-settings-workspace .db-settings-mobile-section-selector__option:not([data-active='true']):hover {
+      background: color-mix(in srgb, var(--personal-accent-500) 7%, var(--surface-raised));
+    }
+  }
+
+  .db-presentation-new .db-settings-workspace .db-settings-mobile-section-selector__option:focus-visible {
+    outline: 2px solid var(--personal-accent-400);
+    outline-offset: -2px;
+  }
+}
+
+/* My Shop's category rail is navigation, not a neutral dark-list remnant.
+   Keep its resting and selected states inside the current operating palette;
+   inactive categories preview the selected appearance accent on hover. */
+.db-presentation-new .db-my-shop-workspace .db-my-shop-nav-item {
+  color: var(--workspace-muted) !important;
+  border-color: var(--workspace-border) !important;
+  background-color: var(--surface-raised) !important;
+}
+
+.db-presentation-new .db-my-shop-workspace .db-my-shop-nav-item[aria-current='page'] {
+  color: #fff !important;
+  border-color: color-mix(in srgb, var(--personal-accent-400) 62%, var(--workspace-border)) !important;
+  background-color: var(--personal-accent-600) !important;
+  box-shadow: 0 5px 12px -8px color-mix(in srgb, var(--personal-accent-900, var(--product-navy-900)) 68%, transparent) !important;
+}
+
+.db-presentation-new .db-my-shop-workspace .db-my-shop-nav-item:focus-visible {
+  outline: 2px solid var(--personal-accent-400);
+  outline-offset: 2px;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .db-presentation-new .db-my-shop-workspace .db-my-shop-nav-item:not([aria-current='page']):hover {
+    color: var(--personal-accent-500) !important;
+    border-color: color-mix(in srgb, var(--personal-accent-500) 34%, var(--border-subtle)) !important;
+    background-color: color-mix(in srgb, var(--personal-accent-500) 8%, var(--surface-raised)) !important;
+  }
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .db-presentation-new .db-settings-nav-item:not([data-active='true']):hover {
+    color: var(--personal-accent-500) !important;
+    border-color: color-mix(in srgb, var(--personal-accent-500) 34%, var(--border-subtle)) !important;
+    background-color: color-mix(in srgb, var(--personal-accent-500) 8%, var(--surface-raised)) !important;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .db-presentation-new .db-settings-workspace [class*='animate-'],
+  .db-presentation-new .db-settings-workspace [class*='transition-'] {
+    animation: none !important;
+    transition: none !important;
+  }
+}
+
+/* DB-035 Stage 3: landing-derived Action Ledger. Dashboard continues to own
+   only the server-backed queue projection and hands every deeper action to the
+   canonical Repair Orders route. */
+.db-shop-work-new {
+  --text-primary: #12233b;
+  --text-secondary: #5b6d82;
+  width: 100%;
+  min-width: 0;
+  min-height: 100%;
+  padding-bottom: 4px;
+  color: var(--workspace-text);
+}
+
+.db-shop-work-new__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+  margin-bottom: 18px;
+}
+.db-presentation-new .db-operating-page-header > div:first-child { min-width: 0; }
+.db-presentation-new .db-operating-page-header h1 {
+  margin: 0;
+  color: var(--workspace-text);
+  font-size: 2rem !important;
+  font-weight: 760 !important;
+  line-height: 1.15;
+}
+.db-presentation-new .db-operating-page-header p {
+  margin: 5px 0 0;
+  color: var(--workspace-muted);
+  font-size: .9375rem;
+  line-height: 1.45;
+}
+.db-presentation-new .db-operating-page-header > :last-child { flex-shrink: 0; }
+.db-shop-work-new__header h1 { margin: 0 0 5px; color: #12233b; font-size: 2rem; line-height: 1.15; }
+.db-shop-work-new__header p { margin: 0; color: #5b6d82; line-height: 1.45; }
+.db-shop-work-new__header-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
+.db-shop-work-new__header-actions button,
+.db-shop-work-new__create-action,
+.db-shop-work-new--state button {
+  display: inline-flex;
+  min-height: 44px;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border-radius: 10px;
+  padding: 9px 14px;
+  font-weight: 760;
+}
+.db-shop-work-new__header-actions svg,
+.db-shop-work-new__create-action svg,
+.db-shop-work-new--state svg { width: 17px; height: 17px; }
+.db-shop-work-new__quiet-action { border: 1px solid #bcc8d5; background: #fff; color: #2a3d55; }
+.db-shop-work-new__quick-action { border: 1px solid #9eb0c2; background: #eaf0f5; color: #233a55; }
+.db-shop-work-new__primary-action,
+.db-shop-work-new__create-action {
+  border: 1px solid #b7450b;
+  background: #e75a13;
+  color: #fff;
+  box-shadow: inset 0 1px rgba(255,255,255,.5), 0 5px 13px rgba(144,54,10,.18);
+}
+.db-shop-work-new__header-actions button:hover,
+.db-shop-work-new__create-action:hover { filter: brightness(1.04); }
+.db-shop-work-new__header-actions button:disabled,
+.db-shop-work-new__create-action:disabled { cursor: wait; opacity: .62; }
+
+.db-shop-work-new__view-switch {
+  display: inline-flex;
+  gap: 3px;
+  margin-bottom: 10px;
+  padding: 3px;
+  border: 1px solid #c8d2dd;
+  border-radius: 11px;
+  background: #e9eef4;
+}
+.db-shop-work-new__view-switch button {
+  display: inline-flex;
+  min-height: 44px;
+  align-items: center;
+  gap: 7px;
+  border: 0;
+  border-radius: 8px;
+  padding: 8px 12px;
+  background: transparent;
+  color: #53657a;
+  font-weight: 700;
+}
+.db-shop-work-new__view-switch button[aria-pressed='true'] { background: #fff; color: #17283f; box-shadow: 0 2px 7px rgba(16,36,59,.08); }
+.db-shop-work-new__view-switch svg { width: 16px; height: 16px; }
+.db-shop-work-new__view-switch button > span { min-width: 21px; padding: 2px 6px; border-radius: 999px; background: #dbe3ec; font-size: 11px; text-align: center; }
+
+.db-shop-work-new__toolbar { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin-bottom: 12px; }
+.db-shop-work-new__lane-tabs { display: flex; min-width: 0; flex-wrap: wrap; gap: 4px; }
+.db-shop-work-new__lane-tabs button {
+  min-height: 44px;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  padding: 8px 11px;
+  background: transparent;
+  color: #53657a;
+  white-space: nowrap;
+}
+.db-shop-work-new__lane-tabs button[aria-selected='true'] { border-color: #c4ced9; background: #fff; color: #16273e; box-shadow: 0 2px 7px rgba(16,36,59,.08); }
+.db-shop-work-new__lane-tabs button > span { display: inline-grid; min-width: 30px; height: 22px; margin-left: 4px; padding: 0 6px; place-items: center; border-radius: 999px; background: #e3e9f0; color: #475a70; font-size: 12px; }
+.db-shop-work-new__search { position: relative; width: min(310px, 31vw); flex: 0 1 310px; }
+.db-shop-work-new__search svg { position: absolute; left: 12px; top: 50%; width: 16px; height: 16px; color: #607287; transform: translateY(-50%); pointer-events: none; }
+.db-shop-work-new__search input { width: 100%; height: 44px; padding: 0 12px 0 37px; border: 1px solid #bec9d5 !important; border-radius: 10px; background: #fff !important; color: #17283f !important; }
+.db-shop-work-new__search input::placeholder { color: #687b91; opacity: 1; }
+
+.db-action-ledger,
+.db-shop-work-new__activity {
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid #c8d2dd;
+  border-radius: 14px;
+  background: #fff;
+  box-shadow: 0 5px 16px rgba(16,36,59,.065);
+}
+.db-action-ledger > header { min-height: 50px; display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 10px 15px; border-bottom: 1px solid #d3dbe4; }
+.db-action-ledger > header h2 { margin: 0; color: #17283f; font-size: 15px; }
+.db-action-ledger > header span { color: #61738a; font-size: 12px; }
+.db-action-ledger__row {
+  width: 100%;
+  min-width: 0;
+  min-height: var(--density-row-min);
+  display: grid;
+  grid-template-columns: 112px 124px minmax(190px, 1fr) minmax(148px, .72fr) 110px;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 15px;
+  border: 0;
+  border-bottom: 1px solid #e0e6ec;
+  background: #fff;
+  color: #17283f;
+  text-align: left;
+}
+.db-action-ledger__row:last-child { border-bottom: 0; }
+.db-action-ledger__row:hover { background: #f7f9fb; }
+.db-action-ledger__row:focus-visible { position: relative; z-index: 1; outline: 2px solid #e75a13; outline-offset: -2px; background: #fff8f3; }
+.db-action-ledger__lane { font-size: 12px; font-weight: 800; }
+.db-action-ledger__lane--needs_action { color: #9a4a00; }
+.db-action-ledger__lane--on_floor { color: #1c5d99; }
+.db-action-ledger__lane--ready_to_close { color: #087252; }
+.db-action-ledger__number { color: #1b304a; font-weight: 820; }
+.db-action-ledger__identity,
+.db-action-ledger__status { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.db-action-ledger__identity strong,
+.db-action-ledger__identity span,
+.db-action-ledger__status strong,
+.db-action-ledger__status span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.db-action-ledger__identity strong { color: #17283f; }
+.db-action-ledger__identity span,
+.db-action-ledger__status span { color: #62748a; font-size: 12px; }
+.db-action-ledger__status strong { color: #34506f; font-size: 12px; }
+.db-action-ledger__amount { display: inline-flex; align-items: center; justify-content: flex-end; gap: 9px; color: #17283f; text-align: right; font-variant-numeric: tabular-nums; }
+.db-action-ledger__amount > strong { color: inherit; }
+.db-action-ledger__amount > span { color: #a34c12; font-size: 11px; font-weight: 800; }
+.db-action-ledger__empty { min-height: 158px; display: grid; align-content: center; justify-items: center; gap: 5px; padding: 24px; color: #607287; text-align: center; }
+.db-action-ledger__empty strong { color: #253a52; }
+
+.db-shop-work-new__quick-form { margin-bottom: 14px; padding: 14px; border: 1px solid #efb993; border-radius: 13px; background: #fff8f3; box-shadow: 0 4px 13px rgba(144,54,10,.07); }
+.db-shop-work-new__quick-form-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 11px; }
+.db-shop-work-new__quick-form-heading > div { display: flex; flex-direction: column; gap: 2px; }
+.db-shop-work-new__quick-form-heading strong { color: #6f310d; }
+.db-shop-work-new__quick-form-heading span { color: #7d5b47; font-size: 12px; }
+.db-shop-work-new__quick-form-heading button { min-width: 44px; min-height: 44px; display: grid; place-items: center; border: 0; border-radius: 9px; background: transparent; color: #70401f; }
+.db-shop-work-new__quick-form-heading svg { width: 18px; height: 18px; }
+.db-shop-work-new__quick-form-fields { display: grid; grid-template-columns: 180px minmax(230px, 1fr) 200px auto; align-items: start; gap: 10px; }
+.db-shop-work-new__quick-form-fields label { min-width: 0; display: flex; flex-direction: column; gap: 5px; color: #3d5067; font-size: 12px; font-weight: 700; }
+.db-shop-work-new__quick-form-fields label > span em { color: #6d7c8e; font-style: normal; font-weight: 500; }
+.db-shop-work-new__quick-form-fields input { width: 100%; height: 44px; border: 1px solid #c5cfd9 !important; border-radius: 9px; padding: 0 11px; background: #fff !important; color: #17283f !important; }
+.db-shop-work-new__field { position: relative; }
+.db-shop-work-new__field svg { position: absolute; left: 11px; top: 50%; width: 16px; height: 16px; color: #687b91; transform: translateY(-50%); pointer-events: none; }
+.db-shop-work-new__field input { padding-left: 35px; }
+.db-shop-work-new__quick-form-fields label > small { color: #b42318; }
+.db-shop-work-new__create-action { align-self: end; }
+
+.db-shop-work-new__activity { padding: 14px; }
+.db-shop-work-new__activity-feed { min-height: 320px; color: #17283f; }
+.db-shop-work-new__activity-feed :is(.text-gray-600,.text-gray-500,.text-gray-400,.text-gray-300,.text-gray-200) { color: #607287 !important; }
+.db-shop-work-new__activity-feed :is(select,input) { min-height: 44px; border-color: #c4ced9 !important; background: #fff !important; color: #17283f !important; }
+.db-shop-work-new--state { min-height: 340px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; padding: 28px; border: 1px solid #c8d2dd; border-radius: 14px; background: #fff; color: #607287; text-align: center; }
+.db-shop-work-new--state > strong { color: #17283f; font-size: 18px; }
+.db-shop-work-new--state > svg { width: 24px; height: 24px; color: var(--semantic-warning-500); }
+.db-shop-work-new--state button { margin-top: 6px; border: 1px solid #b7450b; background: #e75a13; color: #fff; }
+
+/* Night shop and high contrast are complete operating environments, not only
+   shell paints. Keep the Action Ledger's scanning hierarchy while resolving
+   its material through the active surface mode. */
+.db-presentation-new[data-appearance-mode='dark'] .db-shop-work-new {
+  --shop-work-surface: #0d1a2a;
+  --shop-work-raised: #13233d;
+  --shop-work-border: #40536c;
+  --shop-work-ink: #f6f8fb;
+  --shop-work-muted: #b8c5d5;
+  --shop-work-lane-action: #f3a55c;
+  --shop-work-lane-floor: #75b8f0;
+  --shop-work-lane-close: #66d3ad;
+}
+
+.db-presentation-new[data-appearance-mode='high_contrast'] .db-shop-work-new {
+  --shop-work-surface: #000;
+  --shop-work-raised: #000;
+  --shop-work-border: #fff;
+  --shop-work-ink: #fff;
+  --shop-work-muted: #e5e7eb;
+  --shop-work-lane-action: #ffcc66;
+  --shop-work-lane-floor: #8ac4ff;
+  --shop-work-lane-close: #73e6bb;
+}
+
+.db-presentation-new:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) .db-shop-work-new__header h1,
+.db-presentation-new:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) .db-action-ledger > header h2,
+.db-presentation-new:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) .db-action-ledger__number,
+.db-presentation-new:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) .db-action-ledger__identity strong,
+.db-presentation-new:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) .db-action-ledger__amount,
+.db-presentation-new:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) .db-shop-work-new--state > strong {
+  color: var(--shop-work-ink);
+}
+
+.db-presentation-new:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) .db-shop-work-new__header p,
+.db-presentation-new:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) .db-action-ledger > header span,
+.db-presentation-new:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) :is(.db-action-ledger__identity span, .db-action-ledger__status span, .db-shop-work-new--state) {
+  color: var(--shop-work-muted);
+}
+
+.db-presentation-new:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) :is(.db-action-ledger, .db-shop-work-new__activity, .db-shop-work-new--state) {
+  border-color: var(--shop-work-border);
+  background: var(--shop-work-surface);
+  box-shadow: none;
+}
+
+.db-presentation-new:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) .db-action-ledger > header,
+.db-presentation-new:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) .db-action-ledger__row {
+  border-color: var(--shop-work-border);
+  background: var(--shop-work-surface);
+}
+
+.db-presentation-new:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) .db-action-ledger__row {
+  color: var(--shop-work-ink);
+}
+
+.db-presentation-new:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) .db-action-ledger__row:hover,
+.db-presentation-new:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) .db-action-ledger__row:focus-visible {
+  background: var(--shop-work-raised);
+}
+
+.db-presentation-new:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) .db-shop-work-new__quiet-action,
+.db-presentation-new:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) .db-shop-work-new__quick-action,
+.db-presentation-new:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) .db-shop-work-new__view-switch,
+.db-presentation-new:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) .db-shop-work-new__lane-tabs button[aria-selected='true'] {
+  border-color: var(--shop-work-border);
+  background: var(--shop-work-raised);
+  color: var(--shop-work-ink);
+  box-shadow: none;
+}
+
+.db-presentation-new:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) :is(.db-shop-work-new__view-switch button, .db-shop-work-new__lane-tabs button) {
+  color: var(--shop-work-muted);
+}
+
+.db-presentation-new:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) :is(.db-shop-work-new__view-switch button > span, .db-shop-work-new__lane-tabs button > span) {
+  background: var(--shop-work-raised);
+  color: var(--shop-work-ink);
+}
+
+.db-presentation-new:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) .db-shop-work-new__search input,
+.db-presentation-new:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) .db-shop-work-new__activity-feed :is(select,input) {
+  border-color: var(--shop-work-border) !important;
+  background: var(--shop-work-surface) !important;
+  color: var(--shop-work-ink) !important;
+}
+
+.db-presentation-new:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) .db-shop-work-new__search :is(svg, input::placeholder) {
+  color: var(--shop-work-muted);
+}
+
+.db-presentation-new:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) .db-action-ledger__lane--needs_action { color: var(--shop-work-lane-action); }
+.db-presentation-new:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) .db-action-ledger__lane--on_floor { color: var(--shop-work-lane-floor); }
+.db-presentation-new:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) .db-action-ledger__lane--ready_to_close { color: var(--shop-work-lane-close); }
+
+@media (max-width: 1279px) {
+  .db-shop-work-new__quick-form-fields { grid-template-columns: minmax(160px,.8fr) minmax(230px,1.4fr) minmax(180px,.9fr); }
+  .db-shop-work-new__create-action { grid-column: 3; justify-self: end; }
+}
+
+@media (max-width: 780px) {
+  .db-presentation-new .db-operating-page-header h1 { font-size: 1.65rem !important; }
+  .db-shop-work-new__header { display: block; }
+  .db-shop-work-new__header-actions { margin-top: 14px; justify-content: stretch; }
+  .db-shop-work-new__header-actions button { flex: 1 1 145px; }
+  .db-shop-work-new__toolbar { display: block; }
+  .db-shop-work-new__lane-tabs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); margin-bottom: 10px; }
+  .db-shop-work-new__lane-tabs button { white-space: normal; }
+  .db-shop-work-new__search { width: 100%; max-width: none; }
+  .db-action-ledger__row { min-height: 112px; grid-template-columns: minmax(0, 1fr) auto; gap: 5px 10px; padding: 12px; }
+  .db-action-ledger__lane,
+  .db-action-ledger__number,
+  .db-action-ledger__status { grid-column: 1; }
+  .db-action-ledger__identity { grid-column: 1 / -1; }
+  .db-action-ledger__amount { grid-column: 2; grid-row: 1 / 3; align-self: center; }
+  .db-shop-work-new__quick-form-fields { display: grid; grid-template-columns: 1fr; }
+  .db-shop-work-new__create-action { width: 100%; grid-column: auto; justify-self: stretch; }
+}
+
+@media (max-width: 390px) {
+  .db-shop-work-new__header h1 { font-size: 1.65rem; }
+  .db-shop-work-new__header-actions { gap: 7px; }
+  .db-shop-work-new__header-actions button { padding-inline: 9px; font-size: 13px; }
+  .db-shop-work-new__view-switch { width: 100%; }
+  .db-shop-work-new__view-switch button { flex: 1; justify-content: center; }
+  .db-action-ledger > header { padding-inline: 12px; }
+  .db-action-ledger__row { padding-inline: 11px; }
+}
+
+@media (pointer: coarse) {
+  .db-shop-work-new :is(button, input, select) { min-height: 48px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .db-shop-work-new *,
+  .db-shop-work-new *::before,
+  .db-shop-work-new *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; }
+}
+
+@media (forced-colors: active) {
+  .db-action-ledger,
+  .db-shop-work-new__activity,
+  .db-action-ledger__row,
+  .db-shop-work-new__lane-tabs button,
+  .db-shop-work-new__view-switch { border: 1px solid CanvasText; box-shadow: none; }
+  .db-action-ledger__row:focus-visible,
+  .db-shop-work-new__lane-tabs button[aria-selected='true'] { outline: 2px solid Highlight; outline-offset: -3px; }
+}
+
+/* DB-035 Stage 4: Repair Orders is the deeper canonical form of Shop Work.
+   These rules are presentation-scoped; the legacy page and every mutation
+   continue to use the incumbent DOM and mechanics. */
+.db-repair-orders-new {
+  --text-primary: #12233b;
+  --text-secondary: #5b6d82;
+  container-type: inline-size;
+  min-width: 0;
+  min-height: 100%;
+  color: #17283f;
+}
+.db-repair-orders-workspace--new {
+  display: grid;
+  grid-template-columns: minmax(360px, .78fr) minmax(520px, 1.45fr);
+  grid-template-rows: minmax(0, 1fr);
+  gap: 14px;
+  min-height: 0;
+  overflow: visible;
+}
+.db-repair-orders-workspace--new > .db-repair-orders-new {
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
+  overflow: auto;
+  padding-right: 4px;
+}
+.db-repair-orders-workspace--new:not(.db-repair-orders-workspace--detail-open) > .db-repair-orders-new { grid-column: 1 / -1; }
+.db-repair-orders-workspace--new > .db-repair-orders-new .db-repair-orders-ledger { flex: 1 1 auto; }
+.db-repair-orders-workspace--new.db-repair-orders-workspace--detail-open > .db-repair-orders-new { overflow: hidden; }
+.db-slide-panel-workspace {
+  height: 100%;
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid #9eacbb;
+  border-radius: 16px;
+  background: #fff;
+  box-shadow: 0 12px 32px rgba(6, 24, 43, .16);
+}
+.db-slide-panel-workspace:focus-visible { outline: 0; }
+.db-repair-orders-new__header { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; margin-bottom: 16px; }
+.db-repair-orders-new__header h1 { margin: 0 0 5px; color: #12233b; font-size: 2rem; line-height: 1.15; }
+.db-repair-orders-new__header p { margin: 0; color: #5b6d82; }
+.db-repair-orders-new__create,
+.db-repair-orders-ledger__scope-control > button {
+  display: inline-flex;
+  min-height: 44px;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border-radius: 10px;
+  padding: 9px 14px;
+  font-weight: 760;
+}
+.db-repair-orders-new__create { border: 1px solid #b7450b; background: #e75a13; color: #fff; box-shadow: inset 0 1px rgba(255,255,255,.45), 0 5px 13px rgba(144,54,10,.18); }
+.db-repair-orders-new__create:disabled { cursor: wait; opacity: .58; }
+.db-repair-orders-new :is(button, input, select) svg,
+.db-repair-order-detail-new :is(button) svg { width: 17px; height: 17px; }
+
+.db-repair-orders-new__toolbar { display: grid; grid-template-columns: minmax(240px, 360px) minmax(0, 1fr); gap: 10px 14px; margin-bottom: 6px; padding: 3px; }
+.db-presentation-new .db-staff-search-field-inset { min-width: 0; padding: 4px; }
+.db-presentation-new .db-staff-search-field { position: relative; display: block; min-width: 0; border-radius: 10px; transition: box-shadow 140ms ease-out; }
+.db-presentation-new .db-staff-search-field svg { position: absolute; left: 12px; top: 50%; width: 20px; height: 20px; color: var(--workspace-muted); stroke-width: 2; transform: translateY(-50%); pointer-events: none; }
+.db-presentation-new .db-staff-search-field input { width: 100%; min-width: 0; height: 44px; padding: 0 12px 0 40px; border: 1px solid var(--workspace-muted) !important; border-radius: 10px; background: var(--surface-overlay) !important; color: var(--workspace-text) !important; caret-color: var(--workspace-text); font-size: 16px; line-height: 1.25; }
+.db-presentation-new .db-staff-search-field input::placeholder { color: var(--workspace-muted); opacity: 1; }
+.db-presentation-new .db-staff-search-field:hover input:not(:disabled) { border-color: var(--workspace-text) !important; }
+.db-presentation-new .db-staff-search-field:focus-within { z-index: 2; box-shadow: 0 0 0 3px rgba(255, 122, 46, .26); }
+.db-presentation-new .db-staff-search-field:focus-within input { border-color: #ff7a2e !important; outline: 0; }
+.db-presentation-new .db-staff-search-field input:disabled { cursor: not-allowed; opacity: .6; }
+.db-repair-orders-new__search { align-self: start; }
+.db-repair-orders-new__status-select { position: relative; display: none; min-width: 0; }
+.db-repair-orders-new__status-select select { width: 100%; height: 44px; appearance: none; border: 1px solid #bec9d5 !important; border-radius: 10px; padding: 0 34px 0 12px; background: #fff !important; color: #17283f !important; font-size: 14px; }
+.db-repair-orders-new__status-select svg { position: absolute; top: 50%; right: 10px; width: 16px; height: 16px; color: #53657a; transform: translateY(-50%); pointer-events: none; }
+.db-repair-orders-new__status-select:focus-within { z-index: 2; border-radius: 10px; box-shadow: 0 0 0 3px rgba(255, 122, 46, .26); }
+.db-repair-orders-new__status-select:focus-within select { border-color: #ff7a2e !important; outline: 0; }
+
+/* The Shop Work ledger reuses the canonical Repair Orders filters. Keep their
+   actual text, placeholder, and selected value legible when the staff shell is
+   in a dark or high-contrast appearance mode. */
+.db-staff-shell:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) .db-repair-orders-new .db-repair-orders-new__status-select select {
+  border-color: var(--workspace-border) !important;
+  background: var(--surface-overlay) !important;
+  color: var(--workspace-text) !important;
+  caret-color: var(--workspace-text);
+}
+.db-staff-shell:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) .db-repair-orders-new__status-select svg {
+  color: var(--workspace-muted);
+}
+.db-staff-shell:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) .db-repair-orders-new__status-select option {
+  background: var(--surface-overlay);
+  color: var(--workspace-text);
+}
+
+/* Repair Orders is a dark operational list in dark appearance. The ledger,
+   status quick-filters, and pagination share the workspace surface; the
+   separate New Repair Order form remains its own light form sheet. */
+.db-staff-shell:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) .db-repair-orders-new {
+  color: var(--workspace-text);
+}
+
+.db-staff-shell:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) .db-repair-orders-new__header :is(h1, p) {
+  color: var(--workspace-text);
+}
+
+.db-staff-shell:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) .db-repair-orders-new__header p {
+  color: var(--workspace-muted);
+}
+
+.db-staff-shell:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) .db-repair-orders-new__status-tabs button {
+  color: var(--workspace-muted);
+}
+
+.db-staff-shell:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) .db-repair-orders-new__status-tabs button:hover {
+  background: var(--surface-raised);
+  color: var(--workspace-text);
+}
+
+.db-staff-shell:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) .db-repair-orders-new__status-tabs button[aria-pressed='true'] {
+  border-color: var(--workspace-border);
+  background: var(--surface-raised);
+  color: var(--workspace-text);
+  box-shadow: none;
+}
+
+.db-staff-shell:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) .db-repair-orders-ledger {
+  --db-ledger-text: var(--workspace-text);
+  --db-ledger-muted: var(--workspace-muted);
+  --db-ledger-border: var(--workspace-border);
+  --db-ledger-surface: var(--surface-overlay);
+  --db-ledger-raised: var(--surface-raised);
+  --db-ledger-inspected-surface: color-mix(in srgb, var(--surface-raised) 76%, var(--surface-overlay));
+  --db-ledger-selected-surface: color-mix(in srgb, var(--surface-raised) 90%, var(--surface-overlay));
+  --db-ledger-selected-inspected-surface: color-mix(in srgb, var(--surface-raised) 86%, var(--surface-overlay));
+  border-color: var(--db-ledger-border);
+  background: var(--db-ledger-surface);
+  box-shadow: none;
+}
+
+.db-staff-shell[data-appearance-mode='high_contrast'] .db-repair-orders-ledger {
+  /* Use opaque workspace tokens in the explicit high-contrast mode rather
+     than a low-contrast mixed dark surface. */
+  --db-ledger-inspected-surface: var(--surface-raised);
+  --db-ledger-selected-surface: var(--workspace-text);
+  --db-ledger-selected-inspected-surface: var(--workspace-text);
+  --db-ledger-focus: Highlight;
+}
+
+.db-staff-shell[data-appearance-mode='high_contrast'] .db-repair-orders-ledger__row-shell[data-selected='true'] {
+  --db-ledger-text: var(--surface-overlay);
+  --db-ledger-muted: var(--surface-overlay);
+  --db-ledger-border: var(--surface-overlay);
+  --db-ledger-surface: var(--workspace-text);
+  --db-ledger-raised: var(--workspace-text);
+}
+
+.db-staff-shell:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) .db-repair-orders-ledger > :is(header, footer) {
+  border-color: var(--workspace-border);
+  background: var(--surface-raised);
+  color: var(--workspace-muted);
+}
+
+.db-staff-shell:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) .db-repair-orders-ledger > header :is(h2, span),
+.db-staff-shell:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) .db-repair-orders-ledger > footer {
+  color: var(--workspace-muted);
+}
+
+.db-staff-shell:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) .db-repair-orders-ledger > header h2 {
+  color: var(--workspace-text);
+}
+
+.db-staff-shell:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) .db-repair-orders-ledger__row-shell {
+  border-color: var(--workspace-border);
+  background: var(--surface-overlay);
+}
+
+.db-staff-shell:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) .db-repair-orders-ledger__row-shell[data-inspected='true'] {
+  background: var(--db-ledger-inspected-surface);
+}
+
+.db-staff-shell:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) .db-repair-orders-ledger__row-shell[data-selected='true'] {
+  background: var(--db-ledger-selected-surface);
+}
+
+.db-staff-shell:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) .db-repair-orders-ledger__row-shell[data-selected='true'][data-inspected='true'] {
+  background: var(--db-ledger-selected-inspected-surface);
+}
+
+.db-staff-shell:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) .db-repair-orders-ledger__row {
+  color: var(--db-ledger-text);
+}
+
+.db-staff-shell:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) .db-repair-orders-ledger__record {
+  color: var(--db-ledger-text);
+}
+
+.db-staff-shell:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) .db-repair-orders-ledger__row-shell:hover {
+  background: var(--surface-raised);
+}
+
+.db-staff-shell:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) .db-repair-orders-ledger__row-shell[data-selected='true'] .db-repair-orders-ledger__record {
+  background: transparent;
+  box-shadow: none;
+}
+
+.db-staff-shell:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) .db-repair-orders-ledger :is(.db-repair-orders-ledger__order strong, .db-repair-orders-ledger__money strong, .db-repair-orders-ledger__empty strong) { color: var(--db-ledger-text); }
+.db-staff-shell:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) .db-repair-orders-ledger :is(.db-repair-orders-ledger__money small, .db-repair-orders-ledger__empty) { color: var(--db-ledger-muted); }
+
+.db-staff-shell:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) .db-repair-orders-ledger :is(.db-repair-orders-ledger__scope-control > button, footer button) {
+  border-color: var(--db-ledger-border);
+  background: var(--db-ledger-surface);
+  color: var(--db-ledger-text);
+}
+
+.db-staff-shell:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) .db-repair-orders-ledger__details-toggle {
+  border-color: transparent;
+  background: transparent;
+  color: var(--db-ledger-muted);
+}
+
+.db-staff-shell:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) .db-repair-orders-ledger__open-workspace {
+  border-color: var(--db-ledger-border);
+  background: var(--db-ledger-raised);
+  color: var(--db-ledger-text);
+}
+
+.db-staff-shell:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) .db-repair-orders-ledger__details-toggle[aria-expanded='true'] {
+  color: var(--db-ledger-disclosure);
+}
+
+.db-staff-shell[data-appearance-mode='high_contrast'] .db-repair-orders-ledger__row-shell[data-selected='true'] .db-repair-orders-ledger__details-toggle[aria-expanded='true'] {
+  color: var(--db-ledger-disclosure);
+}
+
+.db-staff-shell:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) .db-repair-orders-ledger__brief {
+  background: transparent;
+}
+
+.db-staff-shell:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) .db-repair-orders-ledger__brief dt {
+  color: var(--db-ledger-muted);
+}
+
+.db-staff-shell:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) .db-repair-orders-ledger__brief dd {
+  color: var(--db-ledger-text);
+}
+
+.db-staff-shell:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) .db-repair-orders-ledger__vehicle-group {
+  background: transparent;
+}
+
+.db-staff-shell:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) .db-repair-orders-ledger__vehicle-group h3 {
+  color: var(--db-ledger-metadata);
+}
+
+.db-staff-shell:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) .db-repair-orders-ledger__scope-menu,
+.db-staff-shell:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) .db-repair-orders-ledger__scope-menu button {
+  border-color: var(--db-ledger-border);
+  background: var(--db-ledger-raised);
+  color: var(--db-ledger-text);
+}
+.db-repair-orders-new__status-tabs { min-width: 0; display: flex; justify-content: flex-end; gap: 3px; overflow-x: auto; overscroll-behavior-x: contain; scrollbar-color: #97a7b8 transparent; scrollbar-width: thin; }
+.db-repair-orders-new__status-tabs button { flex: none; min-height: 44px; border: 1px solid transparent; border-radius: 9px; padding: 8px 10px; background: transparent; color: #53657a; white-space: nowrap; }
+.db-repair-orders-new__status-tabs button[aria-pressed='true'] { border-color: #c4ced9; background: #fff; color: #16273e; box-shadow: 0 2px 7px rgba(16,36,59,.08); }
+.db-repair-orders-new__status-tabs::-webkit-scrollbar { height: 5px; }
+.db-repair-orders-new__status-tabs::-webkit-scrollbar-thumb { border-radius: 999px; background: #97a7b8; }
+
+/* In the continuous workspace, controls form a compact navigator rather than
+   a second dashboard. Search and the existing status selector retain every
+   filter without competing with the record that is already open beside them. */
+.db-repair-orders-workspace--detail-open .db-repair-orders-new__header { align-items: center; margin-bottom: 10px; }
+.db-repair-orders-workspace--detail-open .db-repair-orders-new__header h1 { margin-bottom: 0; font-size: 1.5rem; }
+.db-repair-orders-workspace--detail-open .db-repair-orders-new__header p { display: none; }
+.db-repair-orders-workspace--detail-open .db-repair-orders-new__create { min-height: 40px; padding-block: 7px; }
+.db-repair-orders-workspace--detail-open .db-repair-orders-new__toolbar { grid-template-columns: minmax(0, 1fr) 148px; gap: 10px; margin-bottom: 10px; }
+.db-repair-orders-workspace--detail-open .db-repair-orders-new__status-select { display: block; }
+.db-repair-orders-workspace--detail-open .db-repair-orders-new__status-tabs { display: none; }
+.db-repair-orders-workspace--detail-open .db-repair-orders-new--compact .db-repair-orders-new__toolbar { grid-template-columns: minmax(0, 1fr); }
+
+/* A sidekick or browser zoom can make the working canvas narrower than the
+   viewport. Reflow from the actual repair-order canvas, keeping every real
+   quick filter visible instead of treating it as a clipped horizontal rail. */
+@container (max-width: 1120px) {
+  .db-repair-orders-new__toolbar { grid-template-columns: minmax(0, 1fr); }
+  .db-repair-orders-new__status-tabs { flex-wrap: wrap; justify-content: flex-start; overflow: visible; padding: 1px 0; }
+}
+
+.db-repair-orders-ledger {
+  --db-ledger-text: var(--workspace-text);
+  --db-ledger-muted: var(--workspace-muted);
+  --db-ledger-metadata: var(--workspace-text);
+  --db-ledger-border: var(--workspace-border);
+  --db-ledger-surface: var(--surface-overlay);
+  --db-ledger-raised: var(--surface-raised);
+  --db-ledger-inspected-surface: color-mix(in srgb, var(--surface-raised) 68%, var(--surface-overlay));
+  --db-ledger-selected-surface: color-mix(in srgb, var(--surface-raised) 88%, var(--surface-overlay));
+  --db-ledger-selected-inspected-surface: color-mix(in srgb, var(--surface-raised) 78%, var(--surface-overlay));
+  /* Accent is deliberately limited to disclosure emphasis and keyboard focus.
+     Record identity, money, facts, separators, and pagination stay bound to
+     workspace roles so every appearance remains independently legible. */
+  --db-ledger-focus: var(--personal-accent-400);
+  --db-ledger-disclosure: var(--personal-accent-400);
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--db-ledger-border);
+  border-radius: 14px;
+  background: var(--db-ledger-surface);
+  box-shadow: 0 5px 16px rgba(16,36,59,.065);
+}
+
+/* The declarations above establish the shared ledger roles. These explicit
+   appearance overrides come after the base component so a dark/high-contrast
+   shell cannot accidentally fall back to the light surface mix. */
+.db-staff-shell[data-appearance-mode='dark'] .db-repair-orders-ledger {
+  --db-ledger-text: var(--workspace-text);
+  --db-ledger-muted: var(--workspace-muted);
+  --db-ledger-metadata: var(--workspace-text);
+  --db-ledger-border: var(--workspace-border);
+  --db-ledger-surface: var(--surface-overlay);
+  --db-ledger-raised: var(--surface-raised);
+  --db-ledger-inspected-surface: color-mix(in srgb, var(--surface-raised) 76%, var(--surface-overlay));
+  --db-ledger-selected-surface: color-mix(in srgb, var(--surface-raised) 90%, var(--surface-overlay));
+  --db-ledger-selected-inspected-surface: color-mix(in srgb, var(--surface-raised) 86%, var(--surface-overlay));
+  --db-ledger-focus: var(--personal-accent-400);
+  --db-ledger-disclosure: var(--personal-accent-400);
+}
+
+.db-staff-shell[data-appearance-mode='high_contrast'] .db-repair-orders-ledger {
+  --db-ledger-text: var(--workspace-text);
+  --db-ledger-muted: var(--workspace-muted);
+  --db-ledger-metadata: var(--workspace-text);
+  --db-ledger-border: var(--workspace-border);
+  --db-ledger-surface: var(--surface-overlay);
+  --db-ledger-raised: var(--surface-raised);
+  /* High contrast never depends on a translucent/mixed surface. */
+  --db-ledger-inspected-surface: var(--surface-raised);
+  --db-ledger-selected-surface: var(--workspace-text);
+  --db-ledger-selected-inspected-surface: var(--workspace-text);
+  --db-ledger-focus: var(--personal-accent-400);
+  --db-ledger-disclosure: var(--personal-accent-400);
+  border-color: var(--workspace-border);
+  box-shadow: none;
+}
+
+.db-staff-shell[data-appearance-mode='high_contrast'] .db-repair-orders-ledger__row-shell[data-selected='true'] {
+  --db-ledger-text: var(--surface-overlay);
+  --db-ledger-muted: var(--surface-overlay);
+  --db-ledger-metadata: var(--surface-overlay);
+  --db-ledger-border: var(--surface-overlay);
+  --db-ledger-surface: var(--workspace-text);
+  --db-ledger-raised: var(--workspace-text);
+  --db-ledger-focus: var(--surface-overlay);
+  --db-ledger-disclosure: var(--surface-overlay);
+}
+.db-repair-orders-workspace--detail-open .db-repair-orders-ledger { display: flex; min-height: 0; flex: 1 1 0; flex-direction: column; }
+.db-repair-orders-ledger > header { min-height: 50px; display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 10px 15px; border-bottom: 1px solid var(--db-ledger-border); background: var(--db-ledger-raised); }
+.db-repair-orders-ledger > header > div:first-child { display: flex; align-items: baseline; gap: 9px; min-width: 0; }
+.db-repair-orders-ledger > header h2 { margin: 0; color: var(--db-ledger-text); font-size: 15px; }
+.db-repair-orders-ledger > header span { color: var(--db-ledger-muted); font-size: 12px; }
+.db-repair-orders-ledger__header-actions { display: flex !important; align-items: center !important; gap: 8px !important; }
+.db-repair-orders-ledger__scope-control { position: relative; }
+.db-repair-orders-ledger__scope-control > button { border: 1px solid var(--db-ledger-border); background: var(--db-ledger-surface); color: var(--db-ledger-text); }
+.db-repair-orders-ledger__scope-control > button:hover { border-color: var(--db-ledger-border); background: var(--db-ledger-raised); }
+.db-repair-orders-ledger__scope-control > button:focus-visible { outline: 2px solid var(--db-ledger-focus); outline-offset: 2px; box-shadow: none; }
+.db-repair-orders-ledger__scope-control > button svg { width: 15px; height: 15px; transition: transform 140ms ease-out; }
+.db-repair-orders-ledger__scope-control > button[aria-expanded='true'] svg { transform: rotate(180deg); }
+.db-repair-orders-ledger__scope-menu { position: absolute; z-index: 4; top: calc(100% + 6px); right: 0; min-width: 184px; overflow: hidden; border: 1px solid var(--db-ledger-border); border-radius: 10px; background: var(--db-ledger-raised); box-shadow: 0 10px 22px rgba(16,36,59,.16); }
+.db-repair-orders-ledger__scope-menu button { width: 100%; min-height: 42px; border: 0; background: var(--db-ledger-raised); color: var(--db-ledger-text); padding: 9px 12px; text-align: left; font-size: 13px; font-weight: 700; }
+.db-repair-orders-ledger__scope-menu button:hover,
+.db-repair-orders-ledger__scope-menu button:focus-visible { background: var(--db-ledger-surface); outline: 0; }
+.db-repair-orders-ledger__sync { color: var(--db-ledger-disclosure) !important; }
+.db-repair-orders-ledger__rows { min-width: 0; }
+.db-repair-orders-workspace--detail-open .db-repair-orders-ledger__rows { min-height: 0; flex: 1 1 auto; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; scrollbar-color: var(--db-ledger-border) transparent; scrollbar-width: thin; }
+.db-repair-orders-workspace--detail-open .db-repair-orders-ledger__rows:focus-visible { outline: 2px solid var(--db-ledger-focus); outline-offset: -3px; }
+.db-repair-orders-workspace--detail-open .db-repair-orders-ledger__rows::-webkit-scrollbar { width: 10px; }
+.db-repair-orders-workspace--detail-open .db-repair-orders-ledger__rows::-webkit-scrollbar-thumb { border: 3px solid var(--db-ledger-surface); border-radius: 999px; background: var(--db-ledger-border); }
+.db-repair-orders-ledger__row-shell { min-width: 0; border-bottom: 1px solid var(--db-ledger-border); background: var(--db-ledger-surface); }
+.db-repair-orders-ledger[data-has-pagination='true'] .db-repair-orders-ledger__row-shell:last-child { border-bottom: 0; }
+.db-repair-orders-ledger__row-shell[data-inspected='true'] { background: var(--db-ledger-inspected-surface); }
+.db-repair-orders-ledger__row-shell[data-selected='true'] { background: var(--db-ledger-selected-surface); }
+.db-repair-orders-ledger__row-shell[data-selected='true'][data-inspected='true'] { background: var(--db-ledger-selected-inspected-surface); }
+.db-repair-orders-ledger__row { position: relative; width: 100%; min-width: 0; display: grid; grid-template-columns: minmax(0,1fr) auto; align-items: stretch; gap: 10px; padding: 0 15px; background: transparent; color: var(--db-ledger-text); }
+.db-repair-orders-ledger__record { width: 100%; min-width: 0; min-height: 66px; display: grid; grid-template-columns: minmax(148px,1fr) minmax(104px,.65fr); align-items: center; gap: 14px; border: 0; border-radius: 6px; padding: 11px 0; background: transparent; color: inherit; cursor: pointer; font: inherit; text-align: left; }
+.db-repair-orders-ledger__row-shell:hover { background: var(--db-ledger-raised); }
+.db-repair-orders-ledger__row-shell[data-inspected='true']:hover { background: var(--db-ledger-inspected-surface); }
+.db-repair-orders-ledger__row-shell[data-selected='true']:hover { background: var(--db-ledger-selected-surface); }
+.db-repair-orders-ledger__row-shell[data-selected='true'][data-inspected='true']:hover { background: var(--db-ledger-selected-inspected-surface); }
+.db-presentation-new .db-staff-content .db-repair-orders-ledger :is(.db-repair-orders-ledger__record, .db-repair-orders-ledger__details-toggle, .db-repair-orders-ledger__open-workspace):focus-visible { outline: 2px solid var(--db-ledger-focus); outline-offset: -2px; box-shadow: none !important; }
+/* Pointer activation should not borrow the keyboard-focus affordance. Keyboard
+   navigation clears this marker before the focused control receives its ring. */
+.db-presentation-new .db-staff-content .db-repair-orders-ledger[data-pointer-interaction='true'] :is(.db-repair-orders-ledger__record, .db-repair-orders-ledger__details-toggle, .db-repair-orders-ledger__open-workspace):focus { outline: 0; box-shadow: none !important; }
+.db-repair-orders-ledger__order,
+.db-repair-orders-ledger__money { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.db-repair-orders-ledger__order-line { display: flex; min-width: 0; align-items: center; gap: 7px; flex-wrap: wrap; }
+.db-repair-orders-ledger__order-line strong { min-width: 0; overflow-wrap: normal; word-break: normal; }
+.db-repair-orders-ledger__order strong { color: var(--db-ledger-text); }
+.db-repair-orders-ledger__order small { align-self: flex-start; padding: 2px 5px; border-radius: 5px; background: var(--db-ledger-raised); color: var(--db-ledger-muted); font-size: 9px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; }
+.db-repair-orders-ledger__status { display: inline-flex; width: max-content; min-height: 20px; flex: 0 0 auto; align-items: center; justify-content: center; padding: 2px 7px; border-radius: 999px; font-size: 11px; font-weight: 800; line-height: 1.2; text-transform: capitalize; white-space: nowrap; }
+.db-repair-orders-ledger__status--neutral { background: #edf1f5; color: #40536a; }
+.db-repair-orders-ledger__status--warning { background: #fff0df; color: #8b4300; }
+.db-repair-orders-ledger__status--active { background: #eaf3fc; color: #19568d; }
+.db-repair-orders-ledger__status--success { background: #e2f5ee; color: #087252; }
+.db-repair-orders-ledger__status--danger { background: #fde8e7; color: #a12720; }
+.db-repair-orders-ledger__money small { color: var(--db-ledger-muted); font-size: 12px; }
+.db-repair-orders-ledger__money { text-align: right; }
+.db-repair-orders-ledger__money strong { color: var(--db-ledger-text); font-variant-numeric: tabular-nums; }
+.db-repair-orders-ledger__details-toggle { min-height: 44px; display: inline-flex; align-items: center; justify-content: center; gap: 5px; border: 1px solid transparent; border-radius: 6px; padding: 9px 10px; background: transparent; color: var(--db-ledger-muted); font-size: 12px; font-weight: 700; white-space: nowrap; }
+.db-repair-orders-ledger__details-toggle { align-self: center; }
+.db-repair-orders-ledger__details-toggle:hover { background: var(--db-ledger-raised); color: var(--db-ledger-text); }
+.db-repair-orders-ledger__details-toggle svg { width: 15px; height: 15px; transition: transform 140ms ease-out; }
+.db-repair-orders-ledger__details-toggle[aria-expanded='true'] { color: var(--db-ledger-disclosure); text-decoration: underline; text-decoration-color: currentColor; text-underline-offset: 4px; }
+.db-repair-orders-ledger__details-toggle[aria-expanded='true'] svg { transform: rotate(180deg); }
+.db-repair-orders-ledger__brief { display: flex; align-items: end; justify-content: space-between; gap: 16px; padding: 3px 15px 16px; background: transparent; color: var(--db-ledger-text); }
+.db-repair-orders-ledger__brief-content { min-width: 0; display: grid; flex: 1 1 auto; gap: 13px; }
+.db-repair-orders-ledger__work-request { min-width: 0; }
+.db-presentation-new .db-staff-content .db-repair-orders-ledger .db-repair-orders-ledger__work-request h3 { margin: 0 0 5px; color: var(--db-ledger-metadata) !important; font-size: 11px; font-weight: 800; letter-spacing: .075em; text-transform: uppercase; }
+.db-repair-orders-ledger__work-request p { overflow-wrap: anywhere; margin: 0; color: var(--db-ledger-text); font-size: 13px; font-weight: 700; line-height: 1.45; }
+.db-repair-orders-ledger__brief dl { min-width: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(145px, 1fr)); gap: 11px 15px; margin: 0; }
+.db-repair-orders-ledger__brief dl > div { min-width: 0; }
+.db-repair-orders-ledger__brief dt { margin: 0 0 3px; color: var(--db-ledger-metadata); font-size: 10px; font-weight: 800; letter-spacing: .075em; line-height: 1.25; text-transform: uppercase; }
+.db-repair-orders-ledger__brief dd { overflow-wrap: anywhere; margin: 0; color: var(--db-ledger-text); font-size: 12px; font-weight: 700; line-height: 1.35; }
+.db-repair-orders-ledger__vehicle-group { min-width: 0; padding: 1px 0 0; background: transparent; }
+.db-repair-orders-ledger__vehicle-group h3 { margin: 0 0 8px; color: var(--db-ledger-metadata); font-size: 11px; font-weight: 800; letter-spacing: .075em; text-transform: uppercase; }
+.db-repair-orders-ledger__vehicle-group dl { grid-template-columns: repeat(4, minmax(0,1fr)); gap: 9px 12px; }
+.db-repair-orders-ledger__vehicle-fallback { overflow-wrap: anywhere; margin: 0; color: var(--db-ledger-text); font-size: 12px; font-weight: 700; line-height: 1.4; }
+.db-repair-orders-ledger__open-workspace { min-height: 44px; display: inline-flex; flex: 0 0 auto; align-items: center; justify-content: center; gap: 7px; border: 1px solid var(--db-ledger-border); border-radius: 9px; padding: 10px 13px; background: var(--db-ledger-raised); color: var(--db-ledger-text); font-size: 12px; font-weight: 800; white-space: nowrap; }
+.db-repair-orders-ledger__open-workspace:hover { border-color: var(--db-ledger-focus); background: var(--db-ledger-surface); color: var(--db-ledger-text); }
+.db-repair-orders-ledger__open-workspace svg { width: 15px; height: 15px; }
+.db-repair-orders-ledger--compact { padding: 0; }
+.db-repair-orders-ledger--compact > header { min-height: 44px; padding: 7px 10px 8px; border-bottom: 0; }
+.db-repair-orders-ledger--compact > header h2 { font-size: 13px; letter-spacing: .04em; text-transform: uppercase; }
+.db-repair-orders-ledger--compact .db-repair-orders-ledger__rows { padding: 0; }
+.db-repair-orders-ledger--compact .db-repair-orders-ledger__row-shell { margin: 0; overflow: visible; border-inline: 0; border-radius: 0; }
+.db-repair-orders-ledger--compact .db-repair-orders-ledger__row { grid-template-columns: minmax(0, 1fr) auto; gap: 10px; padding: 0 11px; }
+.db-repair-orders-ledger--compact .db-repair-orders-ledger__record { min-height: 62px; grid-template-columns: minmax(0, 1fr) minmax(92px, .72fr); gap: 10px; padding: 10px 0; }
+.db-repair-orders-ledger--compact .db-repair-orders-ledger__record .db-repair-orders-ledger__order { grid-column: 1; min-width: 0; overflow: hidden; }
+.db-repair-orders-ledger--compact .db-repair-orders-ledger__details-toggle { padding-inline: 9px; }
+.db-repair-orders-ledger--compact .db-repair-orders-ledger__record .db-repair-orders-ledger__order strong { display: block; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.db-repair-orders-ledger__empty { min-height: 220px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 5px; padding: 24px; color: var(--db-ledger-muted); text-align: center; }
+.db-repair-orders-ledger__empty strong { color: var(--db-ledger-text); }
+.db-repair-orders-ledger > footer { min-height: 64px; display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 12px; padding: 10px 14px; border-top: 1px solid var(--db-ledger-border); background: var(--db-ledger-raised); color: var(--db-ledger-muted); font-size: 12px; }
+.db-repair-orders-ledger > footer > div { display: flex; gap: 7px; }
+.db-repair-orders-ledger > footer button { min-height: 40px; display: inline-flex; align-items: center; gap: 5px; border: 1px solid var(--db-ledger-border); border-radius: 8px; padding: 7px 10px; background: var(--db-ledger-surface); color: var(--db-ledger-text); }
+.db-repair-orders-ledger > footer button:disabled { opacity: .42; }
+
+.db-repair-order-detail-new { border-left: 1px solid #9eacbb; background: #fff !important; box-shadow: -20px 0 50px rgba(6,24,43,.22) !important; }
+.db-slide-panel-workspace.db-repair-order-detail-new { border-left: 1px solid #9eacbb; box-shadow: 0 12px 32px rgba(6,24,43,.16) !important; }
+.db-repair-order-detail-new .db-slide-panel-workspace__title:focus-visible { outline: 2px solid #ff7a2e; outline-offset: 4px; border-radius: 6px; }
+.db-repair-order-detail-new .slide-panel-header { min-height: 70px; border-color: #c8d2dd !important; background: #fff; }
+.db-repair-order-detail-new .slide-panel-content { background: #f4f7fa; }
+.db-repair-order-detail-new .slide-panel-footer { border-color: #c8d2dd !important; background: #fff !important; }
+.db-repair-order-detail-new__body { color: #17283f; }
+.db-repair-order-detail-new__body > * { max-width: 1120px; margin-inline: auto; }
+.db-repair-order-detail-new__body :is(.bg-gray-50,.bg-white) { border-color: #d3dbe4 !important; }
+.db-repair-order-price-shell-new { display: flex; flex-direction: column; min-height: 100%; color: #17283f; }
+.db-repair-order-price-shell-new > :last-child { min-height: 0; flex: 1 1 auto; }
+.db-repair-order-price-shell-new > :last-child > :first-child { background: linear-gradient(100deg,#17314f,#0c2037) !important; }
+
+@media (max-width: 1279px) {
+  .db-repair-orders-new__toolbar { grid-template-columns: 280px minmax(0,1fr); }
+  .db-repair-orders-ledger__record { grid-template-columns: minmax(126px,1fr) 96px; }
+}
+
+/* The selected record is an explicit list-to-workspace transition below the
+   side-by-side threshold. The same canonical URL remains selected; closing
+   returns to the filtered ledger instead of leaving an obscured drawer. */
+@media (max-width: 1099px) {
+  .db-repair-orders-workspace--new { display: block; overflow: visible; }
+  .db-repair-orders-workspace--new > .db-repair-orders-new { overflow: visible; padding-right: 0; }
+  .db-repair-orders-workspace--new.db-repair-orders-workspace--detail-open > .db-repair-orders-new { display: none; }
+  .db-repair-orders-workspace--new > .db-slide-panel-workspace { min-height: 100%; }
+}
+
+/* Tablet keeps every real quick filter reachable without a clipped one-line
+   rail. The ledger remains the same filter model; only its control geometry
+   changes for touch and constrained widths. */
+@media (min-width: 781px) and (max-width: 1023px) {
+  .db-repair-orders-new__toolbar { grid-template-columns: minmax(0,1fr); }
+  .db-repair-orders-new__status-tabs { flex-wrap: wrap; justify-content: flex-start; overflow: visible; padding: 1px 0; }
+}
+
+@media (max-width: 780px) {
+  .db-repair-orders-new__header { display: block; }
+  .db-repair-orders-new__header h1 { font-size: 1.65rem; }
+  .db-repair-orders-new__create { width: 100%; margin-top: 13px; }
+  .db-repair-orders-new__toolbar { display: grid; grid-template-columns: minmax(0,1fr) 132px; }
+  .db-repair-orders-new__status-tabs { display: none; }
+  .db-repair-orders-new__status-select { display: block; }
+  .db-repair-orders-ledger__row { align-items: stretch; gap: 6px 10px; padding: 0 12px; }
+  .db-repair-orders-ledger__record { min-height: 76px; grid-template-columns: minmax(0,1fr) minmax(88px,.65fr); align-items: center; gap: 6px 10px; padding: 10px 0; }
+  .db-repair-orders-ledger__record .db-repair-orders-ledger__order { grid-column: 1; }
+  .db-repair-orders-ledger__record .db-repair-orders-ledger__money { grid-column: 2; align-self: center; }
+  .db-repair-orders-ledger__details-toggle { align-self: center; justify-self: end; }
+  .db-repair-orders-ledger__brief { align-items: stretch; flex-direction: column; padding: 4px 12px 14px; }
+  .db-repair-orders-ledger__brief dl { grid-template-columns: repeat(2, minmax(0,1fr)); }
+  .db-repair-orders-ledger__vehicle-group dl { grid-template-columns: repeat(2, minmax(0,1fr)); }
+  .db-repair-orders-ledger__open-workspace { width: 100%; }
+  .db-repair-orders-ledger--compact .db-repair-orders-ledger__record { min-height: 76px; }
+  .db-repair-orders-ledger > footer { align-items: stretch; flex-direction: column; }
+  .db-repair-orders-ledger > footer > div { display: grid; grid-template-columns: 1fr 1fr; }
+  .db-repair-orders-ledger > footer button { justify-content: center; }
+  .db-repair-order-detail-new { max-width: 100% !important; }
+  .db-slide-panel-workspace { border-radius: 12px; }
+  .db-repair-order-detail-new__body { padding: 14px !important; }
+  .db-repair-order-price-shell-new { min-height: 100%; }
+}
+
+@media (pointer: coarse) {
+  .db-repair-orders-new :is(button,input,select),
+  .db-repair-order-detail-new :is(button,input,select,textarea) { min-height: 44px !important; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .db-repair-orders-new *,
+  .db-repair-order-detail-new * { transition-duration: .01ms !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; }
+}
+
+@media (forced-colors: active) {
+  .db-presentation-new .db-staff-search-field input {
+    border-color: CanvasText !important;
+    background: Field !important;
+    color: FieldText !important;
+    forced-color-adjust: auto;
+  }
+  .db-presentation-new .db-staff-search-field input::placeholder,
+  .db-presentation-new .db-staff-search-field svg { color: GrayText; }
+  .db-presentation-new .db-staff-search-field:focus-within { box-shadow: 0 0 0 3px Highlight; }
+  .db-presentation-new .db-staff-search-field:focus-within input { border-color: Highlight !important; }
+  .db-repair-orders-ledger {
+    --db-ledger-text: CanvasText;
+    --db-ledger-muted: CanvasText;
+    --db-ledger-metadata: CanvasText;
+    --db-ledger-border: CanvasText;
+    --db-ledger-surface: Canvas;
+    --db-ledger-raised: Canvas;
+    --db-ledger-inspected-surface: Canvas;
+    --db-ledger-selected-surface: Highlight;
+    --db-ledger-selected-inspected-surface: Highlight;
+    --db-ledger-focus: Highlight;
+    --db-ledger-disclosure: ButtonText;
+    border: 1px solid CanvasText;
+    box-shadow: none;
+  }
+  .db-repair-orders-ledger__row-shell { border-color: CanvasText; }
+  .db-repair-orders-ledger__row-shell[data-inspected='true'] { background: Canvas; }
+  .db-repair-orders-ledger__row-shell[data-selected='true'] {
+    --db-ledger-text: HighlightText;
+    --db-ledger-muted: HighlightText;
+    --db-ledger-metadata: HighlightText;
+    --db-ledger-border: HighlightText;
+    --db-ledger-surface: Highlight;
+    --db-ledger-raised: Highlight;
+    --db-ledger-focus: HighlightText;
+    --db-ledger-disclosure: HighlightText;
+    background: Highlight;
+    color: HighlightText;
+  }
+  .db-repair-orders-new__status-tabs button[aria-pressed='true'] { outline: 2px solid Highlight; outline-offset: -3px; }
+  .db-repair-orders-ledger :is(.db-repair-orders-ledger__record, .db-repair-orders-ledger__details-toggle, .db-repair-orders-ledger__open-workspace) { color: var(--db-ledger-text); }
+  .db-repair-orders-ledger__details-toggle { border-color: transparent; background: transparent; }
+  .db-repair-orders-ledger__vehicle-group { border: 0; background: transparent; }
+  .db-presentation-new .db-staff-content .db-repair-orders-ledger :is(.db-repair-orders-ledger__record, .db-repair-orders-ledger__details-toggle, .db-repair-orders-ledger__open-workspace):focus-visible { outline-color: Highlight; }
+}
+
+/* One route table, rendered through full, compact and mobile product navigation. */
+@media (min-width: 960px) {
+  .db-presentation-new.db-staff-shell {
+    display: grid;
+    grid-template-columns: 84px minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr);
+    overflow: hidden;
+  }
+  .db-presentation-new .db-staff-nav {
+    grid-column: 1;
+    grid-row: 1;
+    position: relative;
+    height: 100dvh;
+    min-height: 0;
+    border-right: 0 !important;
+    border-bottom: 0 !important;
+    box-shadow: none !important;
+  }
+  .db-presentation-new .db-staff-nav__inner {
+    height: 100%;
+    padding: 16px 10px;
+  }
+  .db-presentation-new .db-staff-nav__layout {
+    height: 100%;
+    flex-direction: column;
+    align-items: stretch;
+    justify-content: flex-start;
+  }
+  .db-presentation-new .db-staff-nav__brand-row {
+    min-height: 92px;
+    flex-direction: column;
+    flex-wrap: nowrap;
+    justify-content: center;
+    gap: 8px;
+    padding: 4px 2px 8px;
+  }
+  .db-presentation-new .db-brand-lockup {
+    width: 100%;
+    justify-content: center;
+    padding: 0 0 12px;
+  }
+  .db-presentation-new .db-product-brand {
+    min-height: 40px;
+    width: 100%;
+    justify-content: center;
+    padding-inline-end: 0;
+    border-inline-end: 0;
+  }
+  .db-presentation-new .db-product-brand .db-wordmark { display: none; }
+  .db-presentation-new .db-product-brand__compact-mark { display: block; }
+  .db-presentation-new .db-workspace-context {
+    display: flex;
+    flex-basis: auto;
+    justify-content: center;
+    padding-left: 0;
+  }
+  .db-presentation-new .db-workspace-context__tenant { align-items: center; }
+  .db-presentation-new .db-workspace-context__logo { display: block; max-width: 72px; max-height: 36px; }
+  .db-presentation-new .db-workspace-context__fallback { max-width: 42px; font-size: 9px; }
+  .db-presentation-new .db-workspace-context__name { display: none; }
+  .db-presentation-new .db-workspace-context__state { min-width: 38px; justify-content: center; }
+  .db-presentation-new.db-staff-shell:not([data-rail-expanded='true']) .db-brand-attribution { display: none; }
+  .db-presentation-new .db-staff-primary-nav {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 4px;
+    margin: 18px 0;
+  }
+  .db-presentation-new .db-staff-primary-nav > * { margin-inline-start: 0 !important; }
+  .db-presentation-new .db-staff-primary-nav__link {
+    min-height: 46px;
+    width: 100%;
+    justify-content: center;
+    padding: 0 10px;
+    border: 0 !important;
+    border-radius: 10px;
+    color: var(--shell-muted);
+  }
+  .db-presentation-new .db-staff-primary-nav__link > span { gap: 0; }
+  .db-presentation-new .db-staff-primary-nav__label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  .db-presentation-new .db-staff-primary-nav__link:hover {
+    color: var(--shell-text);
+    background: rgba(255, 255, 255, .07);
+  }
+  .db-presentation-new .db-staff-primary-nav__link[aria-current='page'] {
+    color: var(--shell-text);
+    background: #30455f;
+    box-shadow: inset 3px 0 var(--product-copper-400);
+  }
+  .db-presentation-new .db-staff-primary-nav__section-label {
+    display: block;
+    height: 1px;
+    margin: 10px 6px 4px;
+    overflow: hidden;
+    border-top: 1px solid var(--shell-border);
+    color: transparent;
+    font-size: 0;
+    line-height: 0;
+  }
+  .db-presentation-new .db-staff-nav__profile {
+    display: flex;
+    margin-top: auto;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 14px 2px 0;
+    border-top: 1px solid var(--shell-border);
+  }
+  .db-presentation-new .db-staff-nav__utility {
+    position: relative;
+    display: inline-flex;
+    min-height: 46px;
+    width: 46px;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid transparent;
+    border-radius: 10px;
+    color: var(--shell-muted);
+    transition: color 140ms ease, background-color 140ms ease, border-color 140ms ease;
+  }
+  .db-presentation-new .db-staff-nav__utility:hover {
+    color: var(--shell-text);
+    background: rgba(255, 255, 255, .07);
+  }
+  .db-presentation-new .db-staff-nav__utility[aria-current='page'] {
+    color: var(--shell-text);
+    border-color: color-mix(in srgb, var(--product-copper-400) 58%, transparent);
+    background: rgba(255, 255, 255, .06);
+    box-shadow: inset 0 -2px var(--product-copper-400);
+  }
+  .db-presentation-new .db-staff-nav__utility-badge {
+    position: absolute;
+    right: -8px;
+    top: -8px;
+    display: inline-flex;
+    min-width: 1rem;
+    height: 1rem;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid var(--shell-field);
+    border-radius: 999px;
+    background: #ef4444;
+    padding: 0 3px;
+    color: white;
+    font-size: 9px;
+    font-weight: 700;
+    line-height: 1;
+  }
+  .db-presentation-new .db-staff-nav__utility-label { display: none; }
+  .db-presentation-new .db-staff-nav__account-controls {
+    display: flex;
+    width: 100%;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+  }
+  .db-presentation-new .db-staff-nav__account-controls > a { width: 46px; border-color: var(--shell-border); color: var(--shell-text); box-shadow: none; }
+  .db-presentation-new .db-staff-nav__account-controls > a[aria-current='page'] { border-color: var(--product-copper-400); box-shadow: inset 0 -2px var(--product-copper-400); }
+  .db-presentation-new .db-staff-nav__rail-toggle {
+    display: grid;
+    width: 46px;
+    min-height: 44px;
+    place-items: center;
+    border: 1px solid var(--shell-border);
+    border-radius: 12px;
+    background: rgba(255, 255, 255, .035);
+    color: var(--shell-muted);
+    transition: color 140ms ease, background-color 140ms ease, border-color 140ms ease, transform 140ms ease;
+  }
+  .db-presentation-new .db-staff-nav__rail-toggle:hover {
+    border-color: rgba(255, 255, 255, .22);
+    background: rgba(255, 255, 255, .08);
+    color: var(--shell-text);
+  }
+  .db-presentation-new .db-staff-nav__rail-toggle:focus-visible {
+    outline: 3px solid var(--product-copper-400);
+    outline-offset: 2px;
+  }
+  .db-presentation-new .db-staff-nav__rail-toggle:active { transform: scale(.96); }
+  .db-presentation-new .db-staff-nav__profile-copy { display: none; }
+  .db-presentation-new .db-staff-main {
+    grid-column: 2;
+    grid-row: 1;
+    height: calc(100dvh - 24px);
+    margin: 12px 12px 12px 0;
+    padding: clamp(20px, 2.2vw, 38px);
+    border: 1px solid var(--workspace-border);
+    border-radius: 18px;
+    overflow: hidden;
+  }
+  .db-presentation-new.db-staff-shell[data-rail-expanded='true'] {
+    grid-template-columns: 224px minmax(0, 1fr);
+  }
+  .db-presentation-new.db-staff-shell[data-rail-expanded='true'] .db-staff-nav__inner { padding: 18px 12px; }
+  .db-presentation-new.db-staff-shell[data-rail-expanded='true'] .db-staff-nav__brand-row { min-height: 156px; align-items: flex-start; justify-content: center; padding: 4px 8px 10px; }
+  .db-presentation-new.db-staff-shell[data-rail-expanded='true'] .db-brand-lockup { width: 100%; align-items: center; padding-bottom: 0; }
+  .db-presentation-new.db-staff-shell[data-rail-expanded='true'] .db-product-brand { width: 100%; justify-content: center; }
+  .db-presentation-new.db-staff-shell[data-rail-expanded='true'] .db-product-brand .db-wordmark { display: inline-flex; max-width: none; font-size: 17px; }
+  .db-presentation-new.db-staff-shell[data-rail-expanded='true'] .db-product-brand__compact-mark { display: none; }
+  .db-presentation-new.db-staff-shell[data-rail-expanded='true'] .db-workspace-context { width: 100%; justify-content: center; }
+  .db-presentation-new.db-staff-shell[data-rail-expanded='true'] .db-workspace-context__tenant {
+    display: grid;
+    width: 100%;
+    grid-template-columns: auto auto;
+    align-items: center;
+    justify-content: center;
+    column-gap: 8px;
+    row-gap: 4px;
+  }
+  .db-presentation-new.db-staff-shell[data-rail-expanded='true'] .db-workspace-context__logo {
+    grid-column: 1;
+    grid-row: 1;
+    width: auto !important;
+    max-width: 92px;
+    height: 48px !important;
+    max-height: 48px;
+  }
+  .db-presentation-new.db-staff-shell[data-rail-expanded='true'] .db-workspace-context__fallback { grid-column: 1; grid-row: 1; }
+  .db-presentation-new.db-staff-shell[data-rail-expanded='true'] .db-brand-endorsement-row { display: contents; }
+  .db-presentation-new.db-staff-shell[data-rail-expanded='true'] .db-workspace-context__state { grid-column: 2; grid-row: 1; }
+  .db-presentation-new.db-staff-shell[data-rail-expanded='true'] .db-brand-attribution { grid-column: 1 / -1; grid-row: 2; justify-content: center; }
+  .db-presentation-new.db-staff-shell[data-rail-expanded='true'] :is(.db-workspace-context__name, .db-workspace-context__fallback) {
+    display: block;
+    flex: 1 1 0;
+    min-width: 0;
+    max-width: none;
+    overflow: visible;
+    overflow-wrap: anywhere;
+    font-size: 11px;
+    line-height: 1.25;
+    text-align: left;
+    text-overflow: clip;
+    white-space: normal;
+  }
+  .db-presentation-new.db-staff-shell[data-rail-expanded='true'] .db-workspace-context__state { min-width: 38px; flex: 0 0 38px; justify-content: center; }
+  .db-presentation-new.db-staff-shell[data-rail-expanded='true'] .db-staff-primary-nav__link { justify-content: flex-start; padding-inline: 13px; }
+  .db-presentation-new.db-staff-shell[data-rail-expanded='true'] .db-staff-primary-nav__link > span { gap: 10px; }
+  .db-presentation-new.db-staff-shell[data-rail-expanded='true'] .db-staff-primary-nav__label { position: static; width: auto; height: auto; overflow: visible; clip: auto; white-space: normal; }
+  .db-presentation-new.db-staff-shell[data-rail-expanded='true'] .db-staff-primary-nav__section-label {
+    height: auto;
+    margin: 12px 10px 2px;
+    padding-top: 10px;
+    overflow: visible;
+    border-top: 1px solid var(--shell-border);
+    color: var(--shell-muted);
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: .12em;
+    line-height: 1.2;
+    text-transform: uppercase;
+  }
+  .db-presentation-new.db-staff-shell[data-rail-expanded='true'] .db-staff-primary-nav__link--management { background: rgba(255,255,255,.025); }
+  .db-presentation-new.db-staff-shell[data-rail-expanded='true'] .db-staff-nav__profile { justify-content: flex-start; padding-inline: 6px; }
+  .db-presentation-new.db-staff-shell[data-rail-expanded='true'] .db-staff-nav__utility {
+    width: 100%;
+    justify-content: center;
+    gap: 10px;
+    padding-inline: 8px;
+  }
+  .db-presentation-new.db-staff-shell[data-rail-expanded='true'] .db-staff-nav__utility-label { display: inline; font-size: 11px; font-weight: 650; }
+  .db-presentation-new.db-staff-shell[data-rail-expanded='true'] .db-staff-nav__utility-badge { position: static; margin-inline-start: auto; }
+  .db-presentation-new.db-staff-shell[data-rail-expanded='true'] .db-staff-nav__account-controls { flex-direction: row; gap: 6px; }
+  .db-presentation-new.db-staff-shell[data-rail-expanded='true'] .db-staff-nav__account-controls > a { min-width: 0; width: auto; flex: 1 1 auto; justify-content: center; gap: 10px; padding: 6px 8px; }
+  /* The monogram is the compact account cue. Expanded mode gives the account
+     card back to the owner's readable identity instead of repeating initials. */
+  .db-presentation-new.db-staff-shell[data-rail-expanded='true'] .db-staff-nav__profile-monogram { display: none; }
+  .db-presentation-new.db-staff-shell[data-rail-expanded='true'] .db-staff-nav__profile-copy { display: flex; min-width: 0; flex: 1 1 0; align-items: center; flex-direction: column; text-align: center; }
+  .db-presentation-new.db-staff-shell[data-rail-expanded='true'] .db-staff-nav__profile-copy strong { max-width: none; overflow-wrap: anywhere; color: var(--shell-text); font-size: 11px; line-height: 1.2; text-overflow: clip; white-space: normal; }
+  .db-presentation-new.db-staff-shell[data-rail-expanded='true'] .db-staff-nav__profile-copy small { color: var(--shell-muted); font-size: 9px; }
+  .db-presentation-new.db-staff-shell[data-rail-expanded='true'] .db-staff-nav__rail-toggle { width: 44px; flex: 0 0 44px; }
+}
+
+@media (min-width: 960px) and (prefers-reduced-motion: no-preference) {
+  .db-presentation-new.db-staff-shell[data-rail-expanded='true'] .db-compact-identity-step--tenant {
+    animation: db-compact-identity-reveal 680ms var(--db-wordmark-ease-out, cubic-bezier(.16, 1, .3, 1)) 80ms both;
+  }
+
+  .db-presentation-new.db-staff-shell[data-rail-expanded='true'] .db-compact-identity-step--state {
+    animation: db-compact-identity-reveal 360ms var(--db-wordmark-ease-out, cubic-bezier(.16, 1, .3, 1)) 720ms both;
+  }
+
+  .db-presentation-new.db-staff-shell[data-rail-expanded='true'] .db-compact-identity-step--endorsement {
+    animation: db-compact-endorsement-reveal 420ms var(--db-wordmark-ease-out, cubic-bezier(.16, 1, .3, 1)) 1060ms both;
+  }
+
+  .db-presentation-new.db-staff-shell[data-rail-expanded='true'] .db-compact-identity-step--endorsement .db-wordmark__letter {
+    animation-delay: calc(var(--letter-drop-delay) + 1120ms);
+  }
+}
+
+@media (max-width: 959px) {
+  .db-presentation-new .db-staff-primary-nav { display: none !important; }
+  .db-presentation-new .db-mobile-nav { display: block !important; }
+  .db-presentation-new .db-mobile-nav-spacer { display: block !important; }
+  .db-presentation-new .db-staff-nav__layout { height: 64px; }
+  .db-presentation-new .db-staff-nav__brand-row { min-width: 0; }
+  .db-presentation-new .db-workspace-context__tenant { flex-direction: row; gap: 8px; }
+  .db-presentation-new .db-workspace-context__logo { max-height: 36px; }
+  .db-presentation-new .db-brand-endorsement-row { gap: 6px; }
+  .db-presentation-new .db-staff-main {
+    height: calc(100dvh - 64px);
+    padding-bottom: calc(14px + 4rem + env(safe-area-inset-bottom));
+  }
+  .db-presentation-new .db-mobile-nav > div { border-color: var(--shell-border) !important; background: var(--shell-field) !important; backdrop-filter: none !important; }
+  .db-presentation-new .db-mobile-nav :is(a, button) { color: var(--shell-muted); }
+  .db-presentation-new .db-mobile-nav :is(a[aria-current='page'], button[aria-expanded='true']) { color: var(--shell-text); box-shadow: inset 0 -3px var(--product-copper-400); }
+}
+
+@media (min-width: 768px) and (max-width: 959px) {
+  .db-presentation-new .db-staff-main {
+    padding-inline: 22px;
+  }
+}
+
+.db-presentation-new .db-toaster > div > div,
+.db-toaster--new > div > div {
+  border: 1px solid var(--border-subtle);
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.28);
+}
+
+@media (max-width: 767px) {
+  .db-presentation-new .db-staff-nav { min-height: 60px; }
+  .db-presentation-new .db-staff-nav__layout { height: 60px; }
+  .db-presentation-new .db-staff-main { height: calc(100dvh - 60px); padding: 14px 14px calc(14px + 4rem + env(safe-area-inset-bottom)); }
+  .db-presentation-new .db-workspace-context__name { display: block; max-width: 8ch; font-size: 10px; }
+  .db-workspace-context__logo { max-width: 60px; }
+  .db-presentation-new .db-product-brand { padding-inline-end: 10px; }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .db-presentation-new,
+  .db-presentation-new .db-staff-nav { --surface-glass: var(--surface-raised); backdrop-filter: none !important; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .db-presentation-new.db-staff-shell,
+  .db-presentation-new .db-staff-nav__rail-toggle { transition: none !important; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .db-staff-shell .db-mobile-nav * { transition: none !important; }
+}
+
+@media (forced-colors: active) {
+  .db-presentation-new { --border-subtle: CanvasText; }
+  .db-presentation-new .db-staff-nav,
+  .db-presentation-new .db-mobile-nav > div,
+  .db-presentation-new .db-staff-main { border-color: CanvasText !important; }
+  .db-presentation-new .db-staff-primary-nav__link[aria-current='page'],
+  .db-presentation-new .db-mobile-nav :is(a[aria-current='page'], button[aria-expanded='true']) { outline: 2px solid Highlight; box-shadow: none; }
+  .db-presentation-new .db-staff-content :is(button, a, input, select, textarea) { border: 1px solid ButtonText !important; }
+}
+
+/* Appearance is a working preference editor, not a gallery of nested cards. */
+.db-appearance { max-width: 1040px; color: var(--text-primary, #f6f8fb); padding-bottom: 32px; }
+.db-appearance__header { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--density-section-gap); margin-bottom: var(--density-section-padding); }
+.db-appearance__header h1 { font-size: clamp(1.75rem, 3vw, 2.4rem); line-height: 1.05; }
+.db-appearance__header p { max-width: 62ch; margin-top: 8px; color: var(--text-secondary, #9fb0c5); }
+.db-appearance__status { min-height: 44px; display: flex; align-items: center; padding: 0 14px; border: 1px solid var(--border-subtle, rgba(148,163,184,.2)); border-radius: 12px; color: var(--text-secondary, #9fb0c5); font-size: .82rem; }
+.db-appearance-preview { overflow: hidden; border: 1px solid var(--border-subtle, rgba(148,163,184,.2)); border-radius: 16px; background: var(--surface-raised, #0d1a2a); box-shadow: 0 18px 52px rgba(0,0,0,.18); }
+.db-appearance-preview__nav { display: flex; gap: 7px; padding: 12px 16px; border-bottom: 1px solid var(--border-subtle, rgba(148,163,184,.2)); }
+.db-appearance-preview__nav span { width: 7px; height: 7px; border-radius: 50%; background: var(--personal-accent-500); opacity: .42; }
+.db-appearance-preview__body { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: var(--density-card-gap); padding: var(--density-preview-padding); }
+.db-appearance-preview__body strong { display: block; font: 700 1.25rem/1.1 var(--font-display); }
+.db-appearance-preview__body > div > span { display: block; margin-top: 7px; color: var(--text-secondary); }
+.db-appearance-preview__action { min-height: var(--density-control-min); display: inline-flex; align-items: center; justify-content: center; padding: 0 20px; border-radius: 12px; background: var(--personal-accent-600); color: var(--personal-accent-foreground); font-weight: 700; }
+.db-appearance-preview__states { grid-column: 1 / -1; display: flex; flex-wrap: wrap; justify-content: center; gap: var(--density-card-gap); padding-top: var(--density-card-gap); border-top: 1px solid var(--border-subtle); }
+.db-appearance-preview__states span { min-height: 32px; display: inline-grid !important; place-items: center; padding: 0 10px; border-radius: 8px; font-size: .78rem; font-weight: 700; line-height: 1.15; text-align: center; }
+.db-appearance-preview__states .is-success { color: var(--semantic-success-500); background: color-mix(in srgb, var(--semantic-success-500) 12%, transparent); }
+.db-appearance-preview__states .is-warning { color: var(--semantic-warning-500); background: color-mix(in srgb, var(--semantic-warning-500) 12%, transparent); }
+.db-appearance-preview__states .is-danger { color: var(--semantic-danger-500); background: color-mix(in srgb, var(--semantic-danger-500) 12%, transparent); }
+.db-appearance-sections { margin-top: var(--density-section-padding); border-top: 1px solid var(--border-subtle, rgba(148,163,184,.2)); }
+.db-appearance-section { padding: var(--density-section-padding) 0; border-bottom: 1px solid var(--border-subtle, rgba(148,163,184,.2)); }
+.db-appearance-section legend { display: flex; align-items: center; gap: 9px; font-weight: 750; font-size: 1rem; }
+.db-appearance-section legend svg { width: 18px; color: var(--personal-accent-400); }
+.db-appearance-section > p { margin: 6px 0 var(--density-card-gap); color: var(--text-secondary, #9fb0c5); font-size: .85rem; }
+.db-appearance-grid { display: grid; gap: var(--density-grid-gap); }
+.db-appearance-grid--accent { grid-template-columns: repeat(5, minmax(92px, 1fr)); }
+.db-appearance-grid--type { grid-template-columns: repeat(4, minmax(128px, 1fr)); }
+.db-appearance-grid--density { grid-template-columns: repeat(4, minmax(150px, 1fr)); }
+.db-appearance-grid--mode, .db-appearance-grid--notifications { grid-template-columns: repeat(3, minmax(170px, 1fr)); }
+.db-presentation-new .db-staff-content .db-appearance-choice { min-height: var(--density-row-min) !important; display: flex; flex-direction: column; align-items: flex-start; justify-content: center; gap: 5px; padding: var(--density-choice-padding); border: 1px solid var(--border-subtle, rgba(148,163,184,.2)); border-radius: 12px; background: transparent; color: var(--text-primary, #f6f8fb); text-align: left; transition: border-color 140ms ease-out, background-color 140ms ease-out, transform 80ms ease-out; }
+.db-appearance-choice:active { transform: scale(.985); }
+.db-appearance-choice.is-selected { border-color: var(--personal-accent-400); background: color-mix(in srgb, var(--personal-accent-500) 10%, transparent); }
+.db-appearance-choice span { color: var(--text-secondary, #9fb0c5); font-size: .76rem; line-height: 1.35; }
+.db-appearance-choice strong { color: var(--text-primary, #f6f8fb); font-size: .88rem; }
+.db-appearance-swatch { width: 38px; height: 38px; display: grid; place-items: center; border-radius: 10px; color: var(--db-appearance-swatch-foreground, var(--personal-accent-foreground)) !important; }
+.db-appearance-swatch svg { width: 18px; }
+.db-appearance-segment { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; margin-top: 12px; padding: 4px; border: 1px solid var(--border-subtle); border-radius: 12px; background: color-mix(in srgb, var(--surface-overlay, #111f33) 72%, transparent); }
+.db-appearance-segment button { min-height: var(--density-control-min); border-radius: 9px; color: var(--text-secondary); }
+.db-appearance-segment button.is-selected { background: var(--surface-raised); color: var(--text-primary); box-shadow: 0 8px 24px rgba(0,0,0,.16); }
+.db-mode-sample { width: 100%; height: var(--density-mode-sample-height); display: flex; gap: 6px; align-items: end; padding: var(--density-choice-padding); border: 1px solid var(--border-subtle); border-radius: 8px; margin-bottom: 4px; }
+.db-mode-sample i { display: block; height: 100%; flex: 1; border-radius: 4px; }
+.db-mode-sample i:last-child { height: 58%; }
+.db-mode-sample--dark { background:#07101d; }.db-mode-sample--dark i{background:#f6f8fb}.db-mode-sample--dark i:last-child{background:#13233d}
+.db-mode-sample--light { background:#f6f8fb; }.db-mode-sample--light i{background:#13233d}.db-mode-sample--light i:last-child{background:#d6dee9}
+.db-mode-sample--high_contrast { background:#000; border-color:#fff; }.db-mode-sample--high_contrast i{background:#fff}.db-mode-sample--high_contrast i:last-child{background:#000;border:1px solid #fff}
+.db-appearance-actions { display: flex; justify-content: space-between; gap: var(--density-card-gap); margin-top: var(--density-section-padding); padding: var(--density-choice-padding); border: 1px solid var(--border-subtle); border-radius: 16px; background: var(--surface-raised, #0d1a2a); }
+.db-appearance-actions > div { display: flex; flex-wrap: wrap; gap: var(--density-card-gap); }
+.db-button { min-height: var(--density-control-min); display: inline-flex; align-items: center; justify-content: center; gap: 8px; padding: 0 16px; border-radius: 12px; font-weight: 700; font-size: .85rem; }
+.db-button svg { width: 17px; }
+.db-button:active:not(:disabled) { transform: scale(.985); }
+.db-button--quiet { color: var(--text-primary); border: 1px solid var(--border-subtle); background: var(--surface-raised); }
+.db-button--primary { color: var(--personal-accent-foreground); border: 1px solid color-mix(in srgb, var(--personal-accent-400) 55%, transparent); background: var(--personal-accent-600); }
+.db-button:disabled { opacity: .42; cursor: not-allowed; }
+.db-confirm { position: fixed; z-index: 100; inset: 0; display: grid; place-items: center; padding: 20px; background: rgba(0,0,0,.68); }
+.db-confirm__panel { width: min(460px, 100%); padding: 26px; border: 1px solid var(--border-subtle); border-radius: 16px; background: var(--surface-overlay, #111f33); box-shadow: 0 28px 80px rgba(0,0,0,.42); }
+.db-confirm__panel h2 { font-size: 1.3rem; }.db-confirm__panel p{margin:10px 0 22px;color:var(--text-secondary)}.db-confirm__panel>div{display:flex;justify-content:flex-end;gap:8px}
+
+@media (max-width: 900px) {
+  .db-appearance-grid--type, .db-appearance-grid--density { grid-template-columns: repeat(2, 1fr); }
+  .db-appearance-grid--accent { grid-template-columns: repeat(5, minmax(72px, 1fr)); }
+}
+@media (max-width: 600px) {
+  .db-appearance__header, .db-appearance-actions { align-items: stretch; flex-direction: column; }
+  .db-appearance__status { width: fit-content; }
+  .db-appearance-preview__body { grid-template-columns: 1fr; }
+  .db-appearance-preview__action { width: 100%; }
+  .db-appearance-grid--accent { grid-template-columns: repeat(2, 1fr); }
+  .db-appearance-grid--type, .db-appearance-grid--density, .db-appearance-grid--mode, .db-appearance-grid--notifications { grid-template-columns: 1fr; }
+  .db-appearance-actions > div, .db-appearance-actions .db-button { width: 100%; }
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .db-appearance-choice:hover { border-color: color-mix(in srgb, var(--personal-accent-400) 48%, var(--border-subtle)); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .db-appearance-choice { transition: none; }
 }
 
 /*

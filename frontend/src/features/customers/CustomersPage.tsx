@@ -1,13 +1,13 @@
 import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react'
-import { Spinner, LoadingLine } from '@/components/ui'
-import { useNavigate } from 'react-router-dom'
+import { Spinner, LoadingLine, StaffSearchField } from '@/components/ui'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
 import api from '../../lib/api'
 import { Customer, Vehicle, Contact, RepairOrder, VINDecodeResult, CustomerWithVehicles } from '../../types'
 import { customerDisplayName, customerPersonalName } from '../../lib/customerName'
 import { vehicleDisplayLabel } from '../../lib/vehicleName'
-import { AlertTriangle, ArrowDown, ArrowRight, ArrowUp, Building2, Combine, DollarSign, Mail, Pencil, Phone, Plus, Route, Search, Star, Trash2, Truck, User, Wrench, X } from 'lucide-react'
+import { AlertTriangle, ArrowDown, ArrowRight, ArrowUp, Building2, ChevronDown, Combine, DollarSign, Mail, Pencil, Phone, Plus, Route, Search, Star, Trash2, Truck, User, Wrench, X } from 'lucide-react'
 import SlidePanel from '@/components/SlidePanel'
 import MapboxAddressInput from '@/components/MapboxAddressInput'
 import { formatUSPhone } from '@/utils/phone'
@@ -150,6 +150,8 @@ interface VehicleAccountRelationship {
   is_primary: boolean
   customer_company_name?: string | null
 }
+
+const EMPTY_VEHICLE_RELATIONSHIPS: VehicleAccountRelationship[] = []
 
 interface FleetCompanyOption {
   id: string
@@ -410,9 +412,10 @@ const MEXICO_STATES = [
 ]
 
 export default function CustomersPage() {
-  const { accentColors } = useTheme()
+  const { accentColors, presentationVariant } = useTheme()
   const currentUser = useAuthStore((state) => state.user)
   const navigate = useNavigate()
+  const location = useLocation()
   const [searchQuery, setSearchQuery] = useState('')
   const debouncedSearch = useDebouncedValue(searchQuery.trim(), 300)
   const PAGE_SIZE = 25
@@ -447,6 +450,15 @@ export default function CustomersPage() {
   const [selectedVehicleInPanel, setSelectedVehicleInPanel] = useState<Vehicle | null>(null)
   const [detailTab, setDetailTab] = useState<'overview' | 'history'>('overview')
   const [expandedHistoryId, setExpandedHistoryId] = useState<string | null>(null)
+  const [workspaceFocusRequest, setWorkspaceFocusRequest] = useState(0)
+  const [inspectedCustomerId, setInspectedCustomerId] = useState<string | null>(null)
+  const customerRowRefs = useRef(new Map<string, HTMLElement>())
+  const customerDetailsButtonRefs = useRef(new Map<string, HTMLButtonElement>())
+  const selectionOriginRef = useRef<string | null>(null)
+  const selectedCustomerId = useMemo(() => {
+    if (presentationVariant !== 'new') return null
+    return new URLSearchParams(location.search).get('selected')
+  }, [location.search, presentationVariant])
 
   // Mechanic lookup for vehicle history
   interface Mechanic {
@@ -525,6 +537,40 @@ export default function CustomersPage() {
   const customers = customerPage?.items
   const totalCustomers = customerPage?.total ?? 0
 
+  const customerOnCurrentPage = useMemo(
+    () => customers?.find((customer) => customer.id === selectedCustomerId) ?? null,
+    [customers, selectedCustomerId]
+  )
+  const {
+    data: selectedCustomerRecord,
+    isFetching: isFetchingSelectedCustomer,
+    isError: isSelectedCustomerUnavailable,
+  } = useQuery<Customer>({
+    queryKey: ['customer', selectedCustomerId],
+    queryFn: async () => (await api.get(`/customers/${selectedCustomerId}`)).data,
+    enabled: presentationVariant === 'new' && !!selectedCustomerId && !customerOnCurrentPage,
+    retry: false,
+  })
+
+  useEffect(() => {
+    if (presentationVariant !== 'new') return
+    if (!selectedCustomerId) {
+      setIsDetailOpen(false)
+      setSelectedCustomer(null)
+      setSelectedVehicleInPanel(null)
+      setIsEditingInPanel(false)
+      return
+    }
+
+    const customer = customerOnCurrentPage ?? selectedCustomerRecord
+    if (!customer) return
+    setSelectedCustomer(customer)
+    setIsDetailOpen(true)
+    setIsEditingInPanel(false)
+    setDetailTab('overview')
+    setSelectedVehicleInPanel(null)
+  }, [customerOnCurrentPage, presentationVariant, selectedCustomerId, selectedCustomerRecord])
+
   // Prefetch the next page once the current one has settled, so paging forward
   // feels instant. Only when a next page exists and we're showing live data.
   useEffect(() => {
@@ -581,7 +627,7 @@ export default function CustomersPage() {
   // review, unlink, and relink them instead of becoming a one-way operation.
   const availableVehicleLinkCandidates = vehicleLinkCandidates
 
-  const { data: vehicleRelationships = [], isFetching: isFetchingVehicleRelationships } = useQuery<VehicleAccountRelationship[]>({
+  const { data: vehicleRelationships = EMPTY_VEHICLE_RELATIONSHIPS, isFetching: isFetchingVehicleRelationships } = useQuery<VehicleAccountRelationship[]>({
     queryKey: ['vehicle-account-relationships', selectedLinkVehicle?.id],
     queryFn: async () => (await api.get(`/vehicles/${selectedLinkVehicle!.id}/relationships`)).data,
     enabled: isVehicleModalOpen && vehicleModalMode === 'existing' && !!selectedLinkVehicle,
@@ -1268,16 +1314,43 @@ export default function CustomersPage() {
     resetForm()
   }
 
-  const openDetailPanel = (customer: Customer) => {
+  const updateSelectedCustomerQuery = (customerId: string | null) => {
+    const params = new URLSearchParams(location.search)
+    if (customerId) params.set('selected', customerId)
+    else params.delete('selected')
+    const search = params.toString()
+    navigate({ pathname: location.pathname, search: search ? `?${search}` : '' })
+  }
+
+  const openDetailPanel = (customer: Customer, moveFocus = false) => {
+    selectionOriginRef.current = customer.id
     setSelectedCustomer(customer)
     setIsDetailOpen(true)
     setIsEditingInPanel(false)
     setDetailTab('overview')
     setVehicleRelationshipSearch('')
     setVehicleRelationshipFilter('all')
+    if (presentationVariant === 'new') {
+      updateSelectedCustomerQuery(customer.id)
+      if (moveFocus) setWorkspaceFocusRequest((request) => request + 1)
+    }
+  }
+
+  const toggleCustomerInspection = (customerId: string) => {
+    if (inspectedCustomerId === customerId) {
+      closeCustomerInspection(customerId)
+      return
+    }
+    setInspectedCustomerId(customerId)
+  }
+
+  const closeCustomerInspection = (customerId: string) => {
+    customerDetailsButtonRefs.current.get(customerId)?.focus()
+    setInspectedCustomerId(null)
   }
 
   const closeDetailPanel = () => {
+    const restoreCustomerId = selectionOriginRef.current ?? selectedCustomer?.id ?? null
     setIsDetailOpen(false)
     setSelectedCustomer(null)
     setIsEditingInPanel(false)
@@ -1287,6 +1360,12 @@ export default function CustomersPage() {
     setVehicleRelationshipSearch('')
     setVehicleRelationshipFilter('all')
     resetForm()
+    if (presentationVariant === 'new') {
+      updateSelectedCustomerQuery(null)
+      window.requestAnimationFrame(() => {
+        if (restoreCustomerId) customerRowRefs.current.get(restoreCustomerId)?.focus()
+      })
+    }
   }
 
   const handleEditFromDetail = () => {
@@ -2509,7 +2588,7 @@ export default function CustomersPage() {
                   && relationship.relationship_type === relationshipType)
                 const roleLocked = isCurrentlyAssigned
                 return (
-                  <label key={relationshipType} className={`flex items-start gap-3 rounded-lg border p-3 text-sm text-gray-700 ${vehicleRelationshipTypes.includes(relationshipType) ? 'border-amber-300 bg-amber-50/60' : 'border-gray-200 bg-white'}`}>
+                  <label key={relationshipType} className={`flex items-start gap-3 rounded-lg border p-3 text-sm ${vehicleRelationshipTypes.includes(relationshipType) ? 'border-amber-300 bg-amber-50/60 text-amber-950' : 'border-gray-200 bg-white text-blueNoir-800'}`}>
                     <input
                       type="checkbox"
                       checked={vehicleRelationshipTypes.includes(relationshipType)}
@@ -2927,11 +3006,40 @@ export default function CustomersPage() {
   // list is simply the current page returned by the API.
   const filteredCustomers = customers
 
+  const renderCustomerSearch = (disabled = false) => presentationVariant === 'new' ? (
+    <StaffSearchField
+      accessibleLabel="Search customers"
+      className="db-customers-workspace__search mb-6 flex-shrink-0"
+      placeholder="Search by name, email, or phone..."
+    value={searchQuery}
+      onChange={disabled ? undefined : (event) => setSearchQuery(event.target.value)}
+      disabled={disabled}
+    />
+  ) : (
+    <div className="mb-6 flex-shrink-0">
+      <div className="relative">
+        <Search aria-hidden="true" className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-gray-400" />
+        <input
+          type="text"
+          aria-label="Search customers"
+          placeholder="Search by name, email, or phone..."
+        value={searchQuery}
+          onChange={disabled ? undefined : (event) => setSearchQuery(event.target.value)}
+          disabled={disabled}
+          className="w-full rounded-lg bg-white py-2.5 pl-10 pr-4 text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-amber-500 disabled:opacity-60"
+        />
+      </div>
+    </div>
+  )
+
   if (isLoading) {
     return (
       <div className="flex flex-col h-full min-h-0">
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-4 sm:mb-6 flex-shrink-0">
-          <h1 className="text-xl sm:text-2xl font-bold text-white">Customers</h1>
+        <div className={`flex flex-col sm:flex-row sm:items-center sm:justify-between mb-4 sm:mb-6 flex-shrink-0${presentationVariant === 'new' ? ' db-operating-page-header' : ''}`}>
+          <div>
+            <h1 className="text-xl sm:text-2xl font-bold text-white">Customers</h1>
+            {presentationVariant === 'new' && <p>Find customers, their vehicles, and service history.</p>}
+          </div>
           <button
             disabled
             className="mt-3 sm:mt-0 px-4 py-2 text-white font-medium rounded-lg opacity-60"
@@ -2942,24 +3050,7 @@ export default function CustomersPage() {
         </div>
 
         {/* Search Bar */}
-        <div className="mb-6 flex-shrink-0">
-          <div className="relative">
-            <svg
-              className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-            </svg>
-            <input
-              type="text"
-              placeholder="Search by name, email, or phone..."
-              disabled
-              className="w-full pl-10 pr-4 py-2.5 bg-white rounded-lg text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-amber-500 disabled:opacity-60"
-            />
-          </div>
-        </div>
+        {renderCustomerSearch(true)}
 
         <div className="bg-white/5 border border-white/10 rounded-xl overflow-hidden flex flex-col flex-1 min-h-0">
           <div className="hidden lg:flex items-center justify-between px-4 py-3 border-b border-white/10 flex-shrink-0">
@@ -3007,10 +3098,91 @@ export default function CustomersPage() {
     )
   }
 
+  const renderCustomerInspectionBrief = (customer: Customer) => {
+    const contacts = queryClient.getQueryData<Contact[]>(['customerContacts', customer.id])
+    const vehicles = queryClient.getQueryData<Vehicle[]>(['customerVehicles', customer.id])
+    const history = queryClient.getQueryData<CustomerHistoryResponse>(['customerHistory', customer.id])
+    const primaryContact = contacts?.[0]
+    const address = [
+      customer.billing_address_line1,
+      customer.billing_address_line2,
+      [customer.billing_city, customer.billing_state, customer.billing_zip].filter(Boolean).join(', '),
+      customer.billing_country,
+    ].filter(Boolean).join(' · ')
+    const accountIdentifiers = [
+      customer.usdot_number ? `DOT ${stripRegNumber(customer.usdot_number)}` : null,
+      customer.mc_number ? `MC ${stripRegNumber(customer.mc_number)}` : null,
+    ].filter(Boolean).join(' · ')
+
+    return (
+      <section
+        id={`customer-inspection-${customer.id}`}
+        className="db-customer-inspection"
+        aria-label={`${customerDisplayName(customer)} details`}
+        onKeyDown={(event) => {
+          if (event.key !== 'Escape') return
+          event.stopPropagation()
+          closeCustomerInspection(customer.id)
+        }}
+      >
+        <div className="db-customer-inspection__facts">
+          {(primaryContact || customerPersonalName(customer) || customer.email) && <div>
+            <h3>Primary contact</h3>
+            {(primaryContact || customerPersonalName(customer)) && <p>{primaryContact ? [primaryContact.first_name, primaryContact.last_name].filter(Boolean).join(' ') || customerPersonalName(customer) : customerPersonalName(customer)}</p>}
+            {(primaryContact?.email || customer.email) && <p className="db-customer-inspection__meta">{primaryContact?.email || customer.email}</p>}
+          </div>}
+          {(address || accountIdentifiers || customer.source || customer.created_at) && <div>
+            <h3>Account context</h3>
+            {address && <p>{address}</p>}
+            {accountIdentifiers && <p className="db-customer-inspection__meta">{accountIdentifiers}</p>}
+            {(customer.source || customer.created_at) && <p className="db-customer-inspection__meta">
+              {customer.source && `Source: ${customer.source}`}
+              {customer.source && customer.created_at && ' · '}
+              {customer.created_at && `Customer since ${new Date(customer.created_at).toLocaleDateString()}`}
+            </p>}
+          </div>}
+          <div>
+            <h3>Balance</h3>
+            <p>{customer.balance !== undefined ? balanceLabel(customer.balance) : 'Not available'}</p>
+          </div>
+          <div>
+            <h3>Vehicles &amp; relationships</h3>
+            <p>{vehicles ? `${vehicles.length} connected vehicle${vehicles.length === 1 ? '' : 's'}` : `${customer.vehicle_count || 0} connected vehicle${customer.vehicle_count === 1 ? '' : 's'}`}</p>
+            {customer.fleet_enabled && <p className="db-customer-inspection__meta">Fleet relationship enabled</p>}
+          </div>
+          <div>
+            <h3>Service history</h3>
+            {history ? (
+              <p>{history.stats.total_orders} repair order{history.stats.total_orders === 1 ? '' : 's'} · {history.stats.completed_orders} completed</p>
+            ) : (
+              <p>Available in the customer workspace</p>
+            )}
+          </div>
+        </div>
+        <div className="db-customer-inspection__actions">
+          <button
+            type="button"
+            className="db-customer-inspection__open"
+            onClick={(event) => {
+              event.stopPropagation()
+              openDetailPanel(customer, true)
+            }}
+          >
+            Open customer
+            <ArrowRight aria-hidden="true" />
+          </button>
+        </div>
+      </section>
+    )
+  }
+
   return (
-    <div className="flex flex-col h-full min-h-0">
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-4 sm:mb-6 flex-shrink-0">
-        <h1 className="text-xl sm:text-2xl font-bold text-white">Customers</h1>
+    <div className={`db-customers-workspace flex flex-col h-full min-h-0${presentationVariant === 'new' && selectedCustomerId ? ' db-customers-workspace--detail-open' : ''}`}>
+      <div className={`flex flex-col sm:flex-row sm:items-center sm:justify-between mb-4 sm:mb-6 flex-shrink-0${presentationVariant === 'new' ? ' db-operating-page-header' : ''}`}>
+        <div>
+          <h1 className="text-xl sm:text-2xl font-bold text-white">Customers</h1>
+          {presentationVariant === 'new' && <p>Find customers, their vehicles, and service history.</p>}
+        </div>
         <button
           onClick={openCreateModal}
           className="mt-3 sm:mt-0 px-4 py-2 text-white font-medium rounded-lg transition-colors"
@@ -3021,29 +3193,11 @@ export default function CustomersPage() {
       </div>
 
       {/* Search Bar */}
-      <div className="mb-6 flex-shrink-0">
-        <div className="relative">
-          <svg
-            className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-          </svg>
-          <input
-            type="text"
-            placeholder="Search by name, email, or phone..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-10 pr-4 py-2.5 bg-white rounded-lg text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-amber-500"
-          />
-        </div>
-      </div>
+      {renderCustomerSearch()}
 
-      <div className="bg-white/5 border border-white/10 rounded-xl overflow-hidden flex flex-col flex-1 min-h-0">
+      <div className="db-customers-workspace__ledger bg-white/5 border border-white/10 rounded-xl overflow-hidden flex flex-col flex-1 min-h-0">
         {/* Header with ViewToggle. Total count lives in the pagination footer. */}
-        <div className="hidden lg:flex items-center justify-between px-4 py-3 border-b border-white/10 flex-shrink-0">
+        <div className={`${presentationVariant === 'new' ? 'hidden' : 'hidden lg:flex'} items-center justify-between px-4 py-3 border-b border-white/10 flex-shrink-0`}>
           <ViewToggle value={activeViewMode} onChange={setViewMode} disabled={isMobile} />
         </div>
 
@@ -3055,7 +3209,85 @@ export default function CustomersPage() {
               <Spinner size="md" className="border-white/40 border-t-white" />
             </div>
           )}
-          {activeViewMode === 'list' ? (
+          {presentationVariant === 'new' ? (
+            <div className="db-customer-navigator" role="list" aria-label="Customers">
+              {filteredCustomers?.map((customer) => {
+                const isSelected = selectedCustomerId === customer.id
+                const isInspected = inspectedCustomerId === customer.id
+                return (
+                  <article
+                    key={customer.id}
+                    className="db-customer-navigator__record"
+                    role="listitem"
+                    aria-label={`${customerDisplayName(customer)} customer record`}
+                    data-selected={isSelected ? 'true' : undefined}
+                    data-inspected={isInspected ? 'true' : undefined}
+                  >
+                    <div
+                      className="db-customer-navigator__summary"
+                      tabIndex={0}
+                      aria-label={`Open ${customerDisplayName(customer)} customer workspace`}
+                      onClick={() => openDetailPanel(customer, true)}
+                      onKeyDown={(event) => {
+                        if (event.target !== event.currentTarget || event.key !== 'Enter') return
+                        event.preventDefault()
+                        openDetailPanel(customer, true)
+                      }}
+                    >
+                      <div className="db-customer-navigator__identity">
+                        <div className="db-customer-navigator__name-line">
+                          <button
+                            type="button"
+                            ref={(node) => {
+                              if (node) customerRowRefs.current.set(customer.id, node)
+                              else customerRowRefs.current.delete(customer.id)
+                            }}
+                            className="db-customer-navigator__name-action"
+                            aria-current={isSelected ? 'true' : undefined}
+                            aria-label={`Open ${customerDisplayName(customer)} customer workspace`}
+                            onClick={(event) => {
+                              event.stopPropagation()
+                              openDetailPanel(customer, true)
+                            }}
+                          >
+                            <span className="db-customer-navigator__name">
+                              {customerDisplayName(customer)}
+                            </span>
+                            <ArrowRight aria-hidden="true" />
+                          </button>
+                          {customer.fleet_enabled && <FleetMemberBadge variant="dark" />}
+                        </div>
+                        <MatchBadges matchedFields={customer.matched_fields} />
+                      </div>
+                      <span className="db-customer-navigator__phone">
+                        <Phone aria-hidden="true" />
+                        {customer.phone ? formatUSPhone(customer.phone) : 'No phone on file'}
+                      </span>
+                      <button
+                        type="button"
+                        ref={(node) => {
+                          if (node) customerDetailsButtonRefs.current.set(customer.id, node)
+                          else customerDetailsButtonRefs.current.delete(customer.id)
+                        }}
+                        onClick={(event) => {
+                          event.stopPropagation()
+                          toggleCustomerInspection(customer.id)
+                        }}
+                        onKeyDown={(event) => event.stopPropagation()}
+                        aria-expanded={isInspected}
+                        aria-controls={`customer-inspection-${customer.id}`}
+                        className="db-customer-details-control"
+                      >
+                        Details
+                        <ChevronDown aria-hidden="true" />
+                      </button>
+                    </div>
+                    {isInspected && renderCustomerInspectionBrief(customer)}
+                  </article>
+                )
+              })}
+            </div>
+          ) : activeViewMode === 'list' ? (
             /* List View */
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
@@ -3064,7 +3296,7 @@ export default function CustomersPage() {
                     <th className="px-4 py-3 text-left font-medium">
                       <button
                         onClick={() => toggleSort('name')}
-                        className="flex items-center gap-1 hover:text-white transition-colors"
+                        className="db-customer-sort-control flex items-center gap-1 hover:text-white transition-colors"
                       >
                         Customer
                         {sortField === 'name' && (sortDirection === 'asc' ? (
@@ -3080,7 +3312,7 @@ export default function CustomersPage() {
                     <th className="px-4 py-3 text-left font-medium hidden xl:table-cell">
                       <button
                         onClick={() => toggleSort('vehicle_count')}
-                        className="flex items-center gap-1 hover:text-white transition-colors whitespace-nowrap"
+                        className="db-customer-sort-control flex items-center gap-1 hover:text-white transition-colors whitespace-nowrap"
                       >
                         Vehicles
                         {sortField === 'vehicle_count' && (sortDirection === 'asc' ? (
@@ -3093,7 +3325,7 @@ export default function CustomersPage() {
                     <th className="px-4 py-3 text-right font-medium hidden md:table-cell">
                       <button
                         onClick={() => toggleSort('balance')}
-                        className="flex items-center gap-1 ml-auto hover:text-white transition-colors"
+                        className="db-customer-sort-control flex items-center gap-1 ml-auto hover:text-white transition-colors"
                       >
                         Balance
                         {sortField === 'balance' && (sortDirection === 'asc' ? (
@@ -3108,14 +3340,26 @@ export default function CustomersPage() {
                 </thead>
                 <tbody className="divide-y divide-white/10">
                   {filteredCustomers?.map((customer) => (
+                    <React.Fragment key={customer.id}>
                     <tr
-                      key={customer.id}
                       onClick={() => openDetailPanel(customer)}
-                      className="hover:bg-white/5 cursor-pointer transition-colors"
+                      onKeyDown={(event) => {
+                        if (event.target !== event.currentTarget) return
+                        if (event.key !== 'Enter' && event.key !== ' ') return
+                        event.preventDefault()
+                        openDetailPanel(customer, true)
+                      }}
+                      ref={(node) => {
+                        if (node) customerRowRefs.current.set(customer.id, node)
+                        else customerRowRefs.current.delete(customer.id)
+                      }}
+                      tabIndex={0}
+                      aria-selected={selectedCustomerId === customer.id}
+                      className="db-customer-ledger-row hover:bg-white/5 cursor-pointer transition-colors"
                     >
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-3">
-                          <div className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0" style={{ backgroundColor: accentColors[500] }}>
+                          <div className="db-customer-avatar w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0" style={{ backgroundColor: accentColors[500] }}>
                             <span className="text-white font-bold text-xs">
                               {customer.first_name.charAt(0)}{customer.last_name.charAt(0)}
                             </span>
@@ -3150,17 +3394,18 @@ export default function CustomersPage() {
                       </td>
                       <td className="px-4 py-3 text-right">
                         <button
-                          onClick={(e) => {
-                            e.stopPropagation()
+                          type="button"
+                          onClick={(event) => {
+                            event.stopPropagation()
                             openDetailPanel(customer)
                           }}
-                          className="text-sm font-medium hover:opacity-80"
-                          style={{ color: accentColors[400] }}
+                          className="text-emerald-400 hover:text-emerald-300"
                         >
                           View
                         </button>
                       </td>
                     </tr>
+                    </React.Fragment>
                   ))}
                 </tbody>
               </table>
@@ -3169,14 +3414,31 @@ export default function CustomersPage() {
             /* Cards View */
             <div className="p-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
               {filteredCustomers?.map((customer) => (
-                <div
+                <article
                   key={customer.id}
+                  className="db-customer-ledger-card-group"
+                  data-selected={selectedCustomerId === customer.id ? 'true' : undefined}
+                >
+                <div
                   onClick={() => openDetailPanel(customer)}
-                  className="bg-gradient-to-br from-yellow-50 via-amber-100 to-yellow-200 p-4 sm:p-5 rounded-xl shadow-lg flex flex-col gap-3 hover:shadow-xl transition-shadow cursor-pointer"
+                  onKeyDown={(event) => {
+                    if (event.target !== event.currentTarget) return
+                    if (event.key !== 'Enter' && event.key !== ' ') return
+                    event.preventDefault()
+                    openDetailPanel(customer, true)
+                  }}
+                  ref={(node) => {
+                    if (node) customerRowRefs.current.set(customer.id, node)
+                    else customerRowRefs.current.delete(customer.id)
+                  }}
+                  role="button"
+                  tabIndex={0}
+                  aria-pressed={selectedCustomerId === customer.id}
+                  className="db-customer-ledger-card bg-gradient-to-br from-yellow-50 via-amber-100 to-yellow-200 p-4 sm:p-5 rounded-xl shadow-lg flex flex-col gap-3 hover:shadow-xl transition-shadow cursor-pointer"
                 >
                   <div>
                     <div className="mb-3 flex items-start justify-between gap-3">
-                      <div className="w-12 h-12 rounded-full flex items-center justify-center" style={{ backgroundColor: accentColors[500] }}>
+                      <div className="db-customer-avatar w-12 h-12 rounded-full flex items-center justify-center" style={{ backgroundColor: accentColors[500] }}>
                         <span className="text-white font-bold text-lg">
                           {customer.first_name.charAt(0)}{customer.last_name.charAt(0)}
                         </span>
@@ -3231,17 +3493,18 @@ export default function CustomersPage() {
 
                   <div className="pt-3 border-t border-amber-200/50">
                     <button
-                      onClick={(e) => {
-                        e.stopPropagation()
+                      type="button"
+                      onClick={(event) => {
+                        event.stopPropagation()
                         openDetailPanel(customer)
                       }}
-                      className="w-full py-2 text-sm font-medium text-amber-700 hover:text-amber-900 hover:bg-amber-200/50 rounded-lg transition-colors inline-flex items-center justify-center gap-1"
+                      className="w-full text-center font-medium text-amber-700"
                     >
                       View Details
-                      <ArrowRight className="w-4 h-4" />
                     </button>
                   </div>
                 </div>
+                </article>
               ))}
 
               <div
@@ -3259,7 +3522,7 @@ export default function CustomersPage() {
 
         {/* Pagination footer (also carries the total count) */}
         {totalCustomers > 0 && (
-          <div className={`flex items-center justify-between px-4 py-3 border-t border-white/10 flex-shrink-0 text-sm text-white/70 ${isPlaceholderData ? 'opacity-60' : ''}`}>
+          <div className={`db-customers-workspace__pagination flex items-center justify-between px-4 py-3 border-t border-white/10 flex-shrink-0 text-sm text-white/70 ${isPlaceholderData ? 'opacity-60' : ''}`}>
             <span>
               {page * PAGE_SIZE + 1}–{Math.min((page + 1) * PAGE_SIZE, totalCustomers)} of {totalCustomers} customer{totalCustomers !== 1 ? 's' : ''}
             </span>
@@ -3334,6 +3597,8 @@ export default function CustomersPage() {
       {/* Customer Detail Slide-out Panel */}
       <SlidePanel
         isOpen={isDetailOpen && !!selectedCustomer}
+        layout={presentationVariant === 'new' ? 'workspace' : 'drawer'}
+        workspaceFocusRequest={presentationVariant === 'new' && workspaceFocusRequest > 0 ? workspaceFocusRequest : undefined}
         onClose={closeDetailPanel}
         width="max-w-full xl:max-w-[80vw] 2xl:max-w-[max(50vw,_960px)]"
         title={
@@ -3350,7 +3615,9 @@ export default function CustomersPage() {
             ? `Customer since ${new Date(selectedCustomer.created_at).toLocaleDateString()}`
             : undefined
         }
-        headerVariant={selectedVehicleInPanel ? 'slate' : 'amber'}
+        headerVariant={presentationVariant === 'new' ? 'minimal' : selectedVehicleInPanel ? 'slate' : 'amber'}
+        hideClose={presentationVariant === 'new'}
+        panelClassName={presentationVariant === 'new' ? 'db-customer-detail-workspace' : ''}
         headerIcon={
           selectedVehicleInPanel ? (
             <div className="w-12 h-12 rounded-lg bg-white/20 flex items-center justify-center">
@@ -3378,8 +3645,20 @@ export default function CustomersPage() {
         ) : selectedCustomer?.fleet_enabled ? (
           <FleetMemberBadge variant="header" />
         ) : undefined}
-        onBack={selectedVehicleInPanel ? () => setSelectedVehicleInPanel(null) : undefined}
-        backLabel={selectedVehicleInPanel && selectedCustomer ? `Back to ${selectedCustomer.first_name}` : undefined}
+        onBack={
+          selectedVehicleInPanel
+            ? () => setSelectedVehicleInPanel(null)
+            : presentationVariant === 'new'
+              ? closeDetailPanel
+              : undefined
+        }
+        backLabel={
+          selectedVehicleInPanel && selectedCustomer
+            ? `Back to ${selectedCustomer.first_name}`
+            : presentationVariant === 'new'
+              ? 'Back to Customers'
+              : undefined
+        }
         footer={
           selectedVehicleInPanel ? (
             <div className="flex flex-wrap items-center justify-between gap-2">
@@ -3903,14 +4182,14 @@ export default function CustomersPage() {
                                 <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
                                   <button
                                     onClick={() => openEditContactModal(contact)}
-                                    className="p-1.5 text-gray-500 hover:text-amber-600 hover:bg-amber-50 rounded transition-colors"
+                                    className="rounded p-1.5 text-blueNoir-800 transition-colors hover:bg-amber-50 hover:text-amber-700"
                                     title="Edit"
                                   >
                                     <Pencil className="w-3.5 h-3.5" />
                                   </button>
                                   <button
                                     onClick={() => handleDeleteContactClick(contact)}
-                                    className="p-1.5 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
+                                    className="rounded p-1.5 text-blueNoir-800 transition-colors hover:bg-red-50 hover:text-red-700"
                                     title="Delete"
                                   >
                                     <Trash2 className="w-3.5 h-3.5" />
@@ -4251,7 +4530,7 @@ export default function CustomersPage() {
                                       openEditVehicleModal(vehicle)
                                     }}
                                     aria-label={`Edit ${cardTitle}`}
-                                    className="flex h-11 w-11 items-center justify-center rounded-lg bg-white text-gray-500 shadow-sm ring-1 ring-gray-200 transition-colors hover:bg-amber-50 hover:text-amber-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-500"
+                                    className="flex h-11 w-11 items-center justify-center rounded-lg bg-white text-blueNoir-800 shadow-sm ring-1 ring-gray-200 transition-colors hover:bg-amber-50 hover:text-amber-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-500"
                                     title="Edit"
                                   >
                                     <Pencil className="h-4 w-4" />
@@ -4262,7 +4541,7 @@ export default function CustomersPage() {
                                       handleDeleteVehicleClick(vehicle)
                                     }}
                                     aria-label={`Delete ${cardTitle}`}
-                                    className="flex h-11 w-11 items-center justify-center rounded-lg bg-white text-gray-500 shadow-sm ring-1 ring-gray-200 transition-colors hover:bg-red-50 hover:text-red-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-500"
+                                    className="flex h-11 w-11 items-center justify-center rounded-lg bg-white text-blueNoir-800 shadow-sm ring-1 ring-gray-200 transition-colors hover:bg-red-50 hover:text-red-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-500"
                                     title="Delete"
                                   >
                                     <Trash2 className="h-4 w-4" />
@@ -4316,9 +4595,27 @@ export default function CustomersPage() {
               )}
       </SlidePanel>
 
+      {presentationVariant === 'new' && selectedCustomerId && !selectedCustomer && (
+        <section
+          className="db-customer-detail-workspace db-customer-detail-workspace--unavailable"
+          role="region"
+          aria-label="Customer workspace"
+        >
+          {isFetchingSelectedCustomer ? (
+            <LoadingLine>Loading customer workspace…</LoadingLine>
+          ) : isSelectedCustomerUnavailable ? (
+            <>
+              <h2>Customer workspace unavailable</h2>
+              <p>This customer cannot be opened with your current access.</p>
+              <button type="button" onClick={closeDetailPanel}>Back to Customers</button>
+            </>
+          ) : null}
+        </section>
+      )}
+
       {/* Delete Confirmation Modal */}
       {deleteConfirmCustomer && (
-        <div className="fixed inset-0 z-[60] overflow-y-auto">
+        <div className="fixed inset-0 z-[80] overflow-y-auto">
           <div className="flex min-h-full items-center justify-center p-4">
             {/* Backdrop */}
             <div 
@@ -4368,7 +4665,7 @@ export default function CustomersPage() {
 
       {/* Merge Customer Modal */}
       {isMergeModalOpen && selectedCustomer && (
-        <div className="fixed inset-0 z-[60] overflow-y-auto">
+        <div className="fixed inset-0 z-[80] overflow-y-auto">
           <div className="flex min-h-full items-center justify-center p-4">
             {/* Backdrop */}
             <div
@@ -4494,7 +4791,7 @@ export default function CustomersPage() {
 
       {/* Add/Edit Vehicle Modal */}
       {isVehicleModalOpen && selectedCustomer && (
-        <div className="fixed inset-0 z-[60] overflow-y-auto">
+        <div className="fixed inset-0 z-[80] overflow-y-auto">
           <div className="flex min-h-full items-center justify-center p-4">
             {/* Backdrop */}
             <div 
@@ -4700,7 +4997,7 @@ export default function CustomersPage() {
 
       {/* Delete Vehicle Confirmation Modal */}
       {deleteConfirmVehicle && selectedCustomer && (
-        <div className="fixed inset-0 z-[70] overflow-y-auto">
+        <div className="fixed inset-0 z-[80] overflow-y-auto">
           <div className="flex min-h-full items-center justify-center p-4">
             {/* Backdrop */}
             <div 
@@ -4754,7 +5051,7 @@ export default function CustomersPage() {
 
       {/* Contact Modal (Add/Edit) */}
       {isContactModalOpen && selectedCustomer && (
-        <div className="fixed inset-0 z-[60] overflow-y-auto">
+        <div className="fixed inset-0 z-[80] overflow-y-auto">
           <div className="flex min-h-full items-center justify-center p-4">
             {/* Backdrop */}
             <div
@@ -4793,7 +5090,7 @@ export default function CustomersPage() {
 
       {/* Delete Contact Confirmation Modal */}
       {deleteConfirmContact && selectedCustomer && (
-        <div className="fixed inset-0 z-[70] overflow-y-auto">
+        <div className="fixed inset-0 z-[80] overflow-y-auto">
           <div className="flex min-h-full items-center justify-center p-4">
             {/* Backdrop */}
             <div
