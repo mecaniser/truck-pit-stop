@@ -35,6 +35,7 @@ class FixtureController(RuntimeController):
         return self.target.path.parent / ".git"
 
     def resolve_target(self, requested):
+        self.calls.append("resolve")
         if Path(requested).resolve() != self.target.path.resolve():
             raise ControllerError("not registered")
         return self.target
@@ -160,14 +161,14 @@ class ControllerTests(unittest.TestCase):
         result = self.controller.switch(self.root / "repo", dry_run=True)
         after = sorted(str(path.relative_to(self.root)) for path in self.root.rglob("*"))
         self.assertEqual(before, after)
-        self.assertEqual(self.controller.calls, ["schema"])
+        self.assertEqual(self.controller.calls, ["resolve", "schema"])
         self.assertTrue(result["dry_run"])
 
     def test_mixed_source_refuses_before_mutation(self):
         self.controller.frontend_occupied = True
         with self.assertRaisesRegex(ControllerError, "mixed runtime ownership"):
             self.controller.switch(self.root / "repo", dry_run=True)
-        self.assertEqual(self.controller.calls, ["schema"])
+        self.assertEqual(self.controller.calls, ["resolve", "schema"])
 
     def test_unknown_listener_refuses_unchanged(self):
         self.controller.frontend_occupied = self.controller.api_occupied = True
@@ -194,7 +195,7 @@ class ControllerTests(unittest.TestCase):
     def test_successful_switch_records_exact_fixture(self):
         result = self.controller.switch(self.root / "repo")
         self.assertEqual(result["runtime"], self.controller.target.public())
-        self.assertEqual(self.controller.calls, ["schema", "start:" + SHA_A])
+        self.assertEqual(self.controller.calls, ["resolve", "schema", "resolve", "start:" + SHA_A, "resolve"])
         raw = self.controller.state_path.read_text()
         self.assertIn("codex/db037-fixture", raw)
         self.assertIn(SHA_A, raw)
@@ -232,11 +233,77 @@ class ControllerTests(unittest.TestCase):
         self.assertEqual(calls, 2)
         self.assertEqual(json.loads(self.controller.state_path.read_text())["phase"], "rolled_back")
 
+    def test_target_is_revalidated_under_lock_and_before_healthy_record(self):
+        self.controller.switch(self.root / "repo")
+        self.assertEqual(self.controller.calls.count("resolve"), 3)
+
+    def test_lock_time_target_change_refuses_before_stop(self):
+        self.persist()
+        self.controller.frontend_occupied = self.controller.api_occupied = True
+        changed = Worktree(self.root / "repo", "codex/db037-fixture", SHA_B)
+        self.controller.resolve_target = mock.Mock(side_effect=[self.controller.target, changed])
+        with self.assertRaisesRegex(ControllerError, "changed before cutover"):
+            self.controller.switch(self.root / "repo")
+        self.assertNotIn("stop:" + SHA_A, self.controller.calls)
+
+    def test_exec_replacement_refuses_stop(self):
+        state = self.state()
+        state["frontend"] = {"pid": 101, "pgid": 101, "started": "fixed", "command": "vite", "cwd": str(self.root / "repo/frontend")}
+        controller = RuntimeController(config_home=self.root / "c", state_home=self.root / "s", script_root=self.root / "repo")
+        controller.resolve_target = mock.Mock(return_value=self.controller.target)
+        controller.listeners = mock.Mock(return_value=[101])
+        controller.process_identity = mock.Mock(return_value={**state["frontend"], "command": "hostile replacement"})
+        controller.container_identity = mock.Mock(return_value={"id": "fixture", "started": None, "bind_source": None, "project": None, "service": None})
+        healthy, reasons = controller.verify_runtime(state, self.config())
+        self.assertFalse(healthy)
+        self.assertIn("frontend command mismatch", reasons)
+
+    def test_compose_up_then_readiness_failure_stops_exact_target_api(self):
+        controller = RuntimeController(config_home=self.root / "c", state_home=self.root / "s", script_root=self.root / "repo")
+        target = self.controller.target
+        process = mock.Mock(pid=777)
+        controller.runner.popen = mock.Mock(return_value=process)
+        controller._compose = mock.Mock(side_effect=[
+            subprocess.CompletedProcess([], 0, stdout=""),
+            subprocess.CompletedProcess([], 0, stdout=""),
+            subprocess.CompletedProcess([], 0, stdout="new-api\n"),
+        ])
+        controller._wait_port = mock.Mock(side_effect=ControllerError("readiness failed"))
+        controller._inspect_api_container = mock.Mock(return_value={"id": "new-api"})
+        controller.runner.run = mock.Mock(return_value=subprocess.CompletedProcess([], 0, stdout=""))
+        with mock.patch("os.getpgid", return_value=777), mock.patch("os.killpg"):
+            with self.assertRaisesRegex(ControllerError, "readiness failed"):
+                controller.start_runtime(target, self.config(), "118_authenticated_presentation")
+        controller.runner.run.assert_called_once_with(["docker", "stop", "new-api"])
+
+    def test_denies_root_home_parent_bare_symlink_and_nested_non_worktree(self):
+        controller = RuntimeController(config_home=self.root / "c", state_home=self.root / "s", script_root=self.root / "repo")
+        registered = Worktree(self.controller.target.path.resolve(), self.controller.target.branch, self.controller.target.sha)
+        controller.registered_worktrees = mock.Mock(return_value=[registered])
+        with self.assertRaisesRegex(ControllerError, "root, user home"):
+            controller.resolve_target("/")
+        with mock.patch("pathlib.Path.home", return_value=self.root):
+            with self.assertRaisesRegex(ControllerError, "root, user home"):
+                controller.resolve_target(self.root)
+        with self.assertRaisesRegex(ControllerError, "repository parent"):
+            controller.resolve_target(self.root)
+        nested = self.root / "repo" / "nested"
+        nested.mkdir()
+        with self.assertRaisesRegex(ControllerError, "registered worktree"):
+            controller.resolve_target(nested.resolve())
+        alias = self.root / "alias"
+        alias.symlink_to(self.root / "repo")
+        with self.assertRaisesRegex(ControllerError, "symlinked"):
+            controller.resolve_target(alias)
+        controller.git = mock.Mock(side_effect=lambda root, *args, **kwargs: "true" if args == ("rev-parse", "--is-bare-repository") else "")
+        with self.assertRaisesRegex(ControllerError, "bare repositories"):
+            controller.resolve_target((self.root / "repo").resolve())
+
     def test_unsafe_rollback_leaves_stopped(self):
         self.persist(self.state())
         self.controller.frontend_occupied = self.controller.api_occupied = True
         self.controller.start_runtime = mock.Mock(side_effect=ControllerError("start failed"))
-        self.controller.resolve_target = mock.Mock(side_effect=[self.controller.target, ControllerError("prior dirty")])
+        self.controller.resolve_target = mock.Mock(side_effect=[self.controller.target, self.controller.target, ControllerError("prior dirty")])
         with self.assertRaisesRegex(ControllerError, "rollback failed"):
             self.controller.switch(self.root / "repo")
         self.assertEqual(self.controller.start_runtime.call_count, 1)

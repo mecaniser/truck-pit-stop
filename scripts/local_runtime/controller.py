@@ -38,6 +38,10 @@ class ControllerError(RuntimeError):
     pass
 
 
+class TargetCleanupError(ControllerError):
+    pass
+
+
 def redact(value: Any) -> Any:
     if isinstance(value, dict):
         return {key: "[REDACTED]" if SECRET_KEY_RE.search(str(key)) else redact(item) for key, item in value.items()}
@@ -130,7 +134,18 @@ class RuntimeController:
         return entries
 
     def resolve_target(self, requested: str | Path) -> Worktree:
-        candidate = Path(requested).expanduser().resolve()
+        requested_path = Path(requested).expanduser()
+        lexical = requested_path.absolute()
+        candidate = requested_path.resolve()
+        home = Path.home().resolve()
+        if candidate == Path("/") or candidate == home or candidate in self.script_root.parents:
+            raise ControllerError("root, user home, and repository parent targets are forbidden")
+        if lexical != candidate:
+            raise ControllerError("symlinked or escaping target paths are forbidden")
+        if not candidate.is_dir():
+            raise ControllerError("target must be a worktree directory")
+        if self.git(candidate, "rev-parse", "--is-bare-repository", check=False) == "true":
+            raise ControllerError("bare repositories are forbidden")
         matches = [item for item in self.registered_worktrees() if item.path == candidate]
         if len(matches) != 1:
             raise ControllerError("target must be one clean, named, registered worktree")
@@ -277,11 +292,8 @@ class RuntimeController:
             raise ControllerError("frontend cwd could not be verified")
         return {"pid": int(parts[0]), "pgid": int(parts[1]), "started": " ".join(parts[2:7]), "command": " ".join(parts[7:]), "cwd": str(Path(cwd_lines[0]).resolve())}
 
-    def container_identity(self, config: dict[str, Any], target: Worktree) -> dict[str, Any]:
-        listing = self.runner.run(["docker", "ps", "--filter", f"publish={self.api_port}", "--format", "{{.ID}}"]).stdout.split()
-        if len(listing) != 1:
-            raise ControllerError("API port must have exactly one running container owner")
-        raw = self.runner.run(["docker", "inspect", listing[0]]).stdout
+    def _inspect_api_container(self, container_id: str, config: dict[str, Any], target: Worktree) -> dict[str, Any]:
+        raw = self.runner.run(["docker", "inspect", container_id]).stdout
         try:
             item = json.loads(raw)[0]
             labels = item["Config"]["Labels"]
@@ -297,6 +309,12 @@ class RuntimeController:
             raise ControllerError("API container published port mismatch")
         return {"id": item["Id"], "started": item["State"]["StartedAt"], "bind_source": str(sources[0]), "project": labels["com.docker.compose.project"], "service": labels["com.docker.compose.service"]}
 
+    def container_identity(self, config: dict[str, Any], target: Worktree) -> dict[str, Any]:
+        listing = self.runner.run(["docker", "ps", "--filter", f"publish={self.api_port}", "--format", "{{.ID}}"]).stdout.split()
+        if len(listing) != 1:
+            raise ControllerError("API port must have exactly one running container owner")
+        return self._inspect_api_container(listing[0], config, target)
+
     def verify_runtime(self, state: dict[str, Any], config: dict[str, Any]) -> tuple[bool, list[str]]:
         reasons: list[str] = []
         try:
@@ -308,7 +326,7 @@ class RuntimeController:
                 reasons.append("frontend listener identity mismatch")
             else:
                 actual = self.process_identity(frontend[0])
-                for key in ("pid", "pgid", "started", "cwd"):
+                for key in ("pid", "pgid", "started", "command", "cwd"):
                     if actual[key] != state["frontend"][key]:
                         reasons.append(f"frontend {key} mismatch")
             container = self.container_identity(config, target)
@@ -367,6 +385,7 @@ class RuntimeController:
             ["npm", "run", "dev", "--", "--host", FRONTEND_HOST, "--port", str(self.frontend_port), "--strictPort"],
             cwd=target.path / "frontend", env=env,
         )
+        before_api = set(self._compose(config, target, "ps", "-q", config["api_service"]).stdout.split())
         try:
             self._compose(config, target, "up", "-d", "--no-deps", config["api_service"])
             self._wait_port(self.frontend_port, True)
@@ -386,6 +405,16 @@ class RuntimeController:
         except Exception:
             with contextlib.suppress(ProcessLookupError):
                 os.killpg(os.getpgid(process.pid), signal.SIGTERM)
+            try:
+                after_api = set(self._compose(config, target, "ps", "-q", config["api_service"]).stdout.split())
+                created = after_api - before_api
+                if len(created) > 1:
+                    raise ControllerError("multiple newly started target API containers found")
+                if created:
+                    api = self._inspect_api_container(created.pop(), config, target)
+                    self.runner.run(["docker", "stop", api["id"]])
+            except Exception as cleanup_error:
+                raise TargetCleanupError(f"target API cleanup could not be verified: {redact(str(cleanup_error))}") from cleanup_error
             raise
 
     def stop_verified(self, state: dict[str, Any], config: dict[str, Any]) -> None:
@@ -404,6 +433,9 @@ class RuntimeController:
         if dry_run:
             return plan
         with self.lock():
+            locked_target = self.resolve_target(requested)
+            if locked_target != target:
+                raise ControllerError("target identity changed before cutover")
             if not self.config_path.exists():
                 self.atomic_write(self.config_path, config)
             if prior:
@@ -412,11 +444,14 @@ class RuntimeController:
             self.atomic_write(self.state_path, switching)
             try:
                 state = self.start_runtime(target, config, repo_head)
+                healthy_target = self.resolve_target(requested)
+                if healthy_target != target:
+                    raise ControllerError("target identity changed during startup")
                 self.atomic_write(self.state_path, state)
                 return state
             except Exception as original:
                 rollback_error: Exception | None = None
-                if prior:
+                if prior and not isinstance(original, TargetCleanupError):
                     try:
                         rollback_target = self.resolve_target(prior["runtime"]["path"])
                         if rollback_target.sha != prior["runtime"]["sha"]:
