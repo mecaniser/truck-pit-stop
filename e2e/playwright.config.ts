@@ -2,7 +2,7 @@ import { defineConfig, devices } from '@playwright/test'
 
 const backendPython = process.env.CI ? 'python' : 'venv/bin/python'
 const backendCommand = `mkdir -p test-results && cd ../backend && exec ${backendPython} -m uvicorn app.main:app --host 127.0.0.1 --port 8000 > ../e2e/test-results/backend-server.log 2>&1`
-const frontendCommand = 'mkdir -p test-results && cd ../frontend && exec npm run dev -- --host 127.0.0.1 > ../e2e/test-results/frontend-server.log 2>&1'
+const frontendCommand = 'mkdir -p test-results && cd ../frontend && exec npm run dev -- --mode test --host 127.0.0.1 > ../e2e/test-results/frontend-server.log 2>&1'
 
 export default defineConfig({
   testDir: './tests',
