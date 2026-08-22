@@ -3,11 +3,12 @@ import react from '@vitejs/plugin-react'
 import path from 'path'
 
 // https://vitejs.dev/config/
-export default defineConfig(({ command }) => {
+export default defineConfig(({ command, mode }) => {
   const runtimeBranch = process.env.VITE_DIESELBRIDGE_RUNTIME_BRANCH ?? ''
   const runtimeSha = process.env.VITE_DIESELBRIDGE_RUNTIME_SHA ?? ''
+  const isLocalRuntimeServe = command === 'serve' && mode !== 'test'
 
-  if (command === 'serve') {
+  if (isLocalRuntimeServe) {
     if (!/^[A-Za-z0-9][A-Za-z0-9._/-]{0,199}$/.test(runtimeBranch)) {
       throw new Error('VITE_DIESELBRIDGE_RUNTIME_BRANCH must be a validated branch name')
     }
@@ -17,7 +18,7 @@ export default defineConfig(({ command }) => {
   }
 
   return {
-  define: command === 'serve' ? {
+  define: isLocalRuntimeServe ? {
     'import.meta.env.VITE_DIESELBRIDGE_RUNTIME_BRANCH': JSON.stringify(runtimeBranch),
     'import.meta.env.VITE_DIESELBRIDGE_RUNTIME_SHA': JSON.stringify(runtimeSha),
   } : undefined,
