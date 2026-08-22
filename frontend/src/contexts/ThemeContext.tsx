@@ -274,11 +274,12 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
           setDefaults(DEFAULT_APPEARANCE)
           return
         }
+        const previousCommitted = committedRef.current
         setServerPresentation(data)
         committedRef.current = data.appearance
         setCommitted(data.appearance)
         setDraft(current => {
-          if (JSON.stringify(current) !== JSON.stringify(committed)) return current
+          if (JSON.stringify(current) !== JSON.stringify(previousCommitted)) return current
           draftRef.current = data.appearance
           return data.appearance
         })
@@ -288,6 +289,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
         // A verified identity-matched cache remains the offline presentation fallback.
       }
     }
+    void refresh()
     const interval = window.setInterval(refresh, 60_000)
     const onFocus = () => void refresh()
     window.addEventListener('focus', onFocus)
@@ -296,7 +298,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
       window.clearInterval(interval)
       window.removeEventListener('focus', onFocus)
     }
-  }, [committed, eligibleStaff, identity])
+  }, [eligibleStaff, identity])
 
   useEffect(() => {
     if (!eligibleStaff || !identity || !serverPresentation || serverPresentation.legacy_migration_status !== 'pending') return

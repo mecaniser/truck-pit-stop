@@ -4,7 +4,7 @@ import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { ThemeProvider, appearanceTokenRecord, useTheme } from '../ThemeContext'
 import { useAuthStore } from '../../stores/authStore'
-import { garageOwnerSession, sameUserOtherTenant } from '../../test-fixtures/db035/staffSession'
+import { fleetManagerWithoutMessaging, garageOwnerSession, sameUserOtherTenant } from '../../test-fixtures/db035/staffSession'
 import { presentationFixture } from '../../test-fixtures/db035/appearance'
 import { isPresentationBootstrap, type AppearancePreferences } from '../../types/presentation'
 import { renderPresentationSurface, STAFF_SURFACES } from '../../test-fixtures/db035/presentationRenderHarness'
@@ -82,6 +82,38 @@ describe('DB-035 presentation provider', () => {
     ))
   })
 
+  it('refreshes a stale legacy bootstrap immediately from the authoritative staff appearance', async () => {
+    const staleLegacy = presentationFixture('legacy')
+    const authoritativeNew = presentationFixture('new')
+    useAuthStore.setState({
+      user: { ...garageOwnerSession, presentation: staleLegacy } as never,
+    })
+    apiMocks.get.mockResolvedValue({ data: authoritativeNew })
+
+    render(<ThemeProvider><StaffProbe /></ThemeProvider>)
+
+    expect(screen.getByText('legacy:cyan:dark:default:committed')).toBeInTheDocument()
+    await waitFor(() => expect(apiMocks.get).toHaveBeenCalledWith('/auth/me/appearance'))
+    await waitFor(() => expect(screen.getByText('new:cyan:dark:default:committed')).toBeInTheDocument())
+    expect(document.querySelector('.db-staff-shell')).toHaveAttribute('data-presentation', 'new')
+  })
+
+  it('does not overwrite an in-progress appearance preview when the mount refresh settles', async () => {
+    const user = userEvent.setup()
+    let resolveRefresh: ((value: { data: ReturnType<typeof presentationFixture> }) => void) | undefined
+    apiMocks.get.mockReturnValue(new Promise(resolve => { resolveRefresh = resolve }))
+
+    render(<ThemeProvider><StaffProbe /></ThemeProvider>)
+    await user.click(screen.getByText('Rose'))
+    expect(screen.getByText('new:rose:dark:default:draft')).toBeInTheDocument()
+
+    await act(async () => {
+      resolveRefresh?.({ data: presentationFixture('new', { ...garageOwnerSession.presentation.appearance, accent: 'indigo' }) })
+    })
+
+    expect(screen.getByText('new:rose:dark:default:draft')).toBeInTheDocument()
+  })
+
   it('keys the bootstrap cache to the exact user and tenant identity', () => {
     const { rerender } = render(<ThemeProvider><StaffProbe /></ThemeProvider>)
     expect(localStorage.getItem('dieselbridge:presentation:v1:tenant-wisconsin:user-owner')).toContain('"resolved_variant":"new"')
@@ -116,6 +148,12 @@ describe('DB-035 presentation provider', () => {
     render(<ThemeProvider><main data-testid="public-surface">Public surface</main></ThemeProvider>)
     expect(document.documentElement.style.getPropertyValue('--personal-accent-500')).toBe('')
     expect(screen.getByTestId('public-surface').style.getPropertyValue('--personal-accent-500')).toBe('')
+  })
+
+  it('does not request staff appearance for an excluded fleet identity', () => {
+    useAuthStore.setState({ user: fleetManagerWithoutMessaging as never })
+    render(<ThemeProvider><StaffProbe /></ThemeProvider>)
+    expect(apiMocks.get).not.toHaveBeenCalled()
   })
 
   it('migrates legacy preferences once even when React replays mount effects', async () => {
