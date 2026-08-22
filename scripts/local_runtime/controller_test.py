@@ -1,0 +1,530 @@
+from __future__ import annotations
+
+import json
+import os
+import stat
+import subprocess
+import tempfile
+import unittest
+from pathlib import Path
+from unittest import mock
+
+from scripts.local_runtime.controller import ControllerError, Runner, RuntimeController, Worktree, _assert_secret_free, parser, redact
+
+
+SHA_A = "a" * 40
+SHA_B = "b" * 40
+
+
+class FixtureController(RuntimeController):
+    def __init__(self, root: Path, **kwargs):
+        super().__init__(
+            config_home=root / "config", state_home=root / "state",
+            script_root=root / "repo", frontend_port=25173, api_port=28000,
+            deadline=0.05, **kwargs,
+        )
+        self.target = Worktree(root / "repo", "codex/db037-fixture", SHA_A)
+        self.calls: list[str] = []
+        self.frontend_occupied = False
+        self.api_occupied = False
+
+    def registered_worktrees(self):
+        return [self.target, Worktree(self.target.path.parent / "main", "main", SHA_B)]
+
+    def common_git_dir(self, root):
+        return self.target.path.parent / ".git"
+
+    def resolve_target(self, requested):
+        self.calls.append("resolve")
+        if Path(requested).resolve() != self.target.path.resolve():
+            raise ControllerError("not registered")
+        return self.target
+
+    def schema_preflight(self, config, target):
+        self.calls.append("schema")
+        return "118_authenticated_presentation"
+
+    def occupancy(self):
+        return ([101] if self.frontend_occupied else [], [202] if self.api_occupied else [])
+
+    def listeners(self, port):
+        if port == self.frontend_port:
+            return [101] if self.frontend_occupied else []
+        return [202] if self.api_occupied else []
+
+    def verify_runtime(self, state, config):
+        return (state.get("trusted", True), [] if state.get("trusted", True) else ["fixture mismatch"])
+
+    def _probe_readiness_once(self):
+        self.calls.append("readiness")
+
+    def stop_verified(self, state, config):
+        healthy, reasons = self.verify_runtime(state, config)
+        if not healthy:
+            raise ControllerError("refusing to stop unverified runtime: " + "; ".join(reasons))
+        self.calls.append("stop:" + state["runtime"]["sha"])
+        self.frontend_occupied = self.api_occupied = False
+
+    def start_runtime(self, target, config, repo_head):
+        self.calls.append("start:" + target.sha)
+        self.frontend_occupied = self.api_occupied = True
+        return {
+            "schema": 1, "phase": "healthy", "runtime": target.public(),
+            "migration_head": repo_head, "frontend": {"pid": 101},
+            "api": {"id": "fixture"}, "recorded_at": 1,
+        }
+
+
+class ControllerTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.root = Path(self.temp.name)
+        (self.root / "repo").mkdir()
+        (self.root / "main").mkdir()
+        self.controller = FixtureController(self.root)
+
+    def tearDown(self):
+        self.temp.cleanup()
+
+    def config(self):
+        return {
+            "schema": 1, "common_git_dir": str(self.root / ".git"),
+            "main_worktree": str(self.root / "main"), "compose_project": "fixture",
+            "api_service": "api", "database_name": "truckpitstop_db035",
+        }
+
+    def state(self, *, trusted=True):
+        return {
+            "schema": 1, "phase": "healthy", "runtime": self.controller.target.public(),
+            "migration_head": "118_authenticated_presentation", "frontend": {"pid": 101},
+            "api": {"id": "fixture"}, "recorded_at": 1, "trusted": trusted,
+        }
+
+    def persist(self, state=None):
+        self.controller.atomic_write(self.controller.config_path, self.config())
+        self.controller.atomic_write(self.controller.state_path, state or self.state())
+
+    def test_cli_surface_is_exact(self):
+        self.assertEqual(parser().parse_args(["status", "--json"]).command, "status")
+        self.assertTrue(parser().parse_args(["switch", "/tmp/x", "--dry-run"]).dry_run)
+        self.assertTrue(parser().parse_args(["switch-main", "--dry-run"]).dry_run)
+        self.assertEqual(parser().parse_args(["stop"]).command, "stop")
+
+    def test_fixed_public_ports(self):
+        controller = RuntimeController(config_home=self.root, state_home=self.root, script_root=self.root / "repo")
+        self.assertEqual((controller.frontend_port, controller.api_port), (5173, 8000))
+
+    def test_frontend_environment_uses_private_controller_keys(self):
+        controller = RuntimeController(config_home=self.root, state_home=self.root, script_root=self.root / "repo")
+        with mock.patch.dict(os.environ, {
+            "VITE_DIESELBRIDGE_RUNTIME_BRANCH": "leaked-branch",
+            "VITE_DIESELBRIDGE_RUNTIME_SHA": "e" * 40,
+        }):
+            env = controller._frontend_environment(self.controller.target)
+        self.assertNotIn("VITE_DIESELBRIDGE_RUNTIME_BRANCH", env)
+        self.assertNotIn("VITE_DIESELBRIDGE_RUNTIME_SHA", env)
+        self.assertEqual(env["DIESELBRIDGE_RUNTIME_BRANCH"], self.controller.target.branch)
+        self.assertEqual(env["DIESELBRIDGE_RUNTIME_SHA"], self.controller.target.sha)
+
+    def test_bootstrap_uses_canonical_repository_name_for_compose_project(self):
+        with mock.patch.object(
+            self.controller,
+            "common_git_dir",
+            return_value=Path("/srv/truck-pit-stop/.git"),
+        ):
+            config = self.controller.bootstrap_config()
+
+        self.assertEqual(config["compose_project"], "truck-pit-stop")
+
+    def test_bootstrap_persists_only_validated_non_secret_database_name(self):
+        with mock.patch.object(
+            self.controller,
+            "common_git_dir",
+            return_value=Path("/srv/truck-pit-stop/.git"),
+        ), mock.patch.dict(os.environ, {"DIESELBRIDGE_LOCAL_DB_NAME": "truckpitstop_db035"}):
+            config = self.controller.bootstrap_config()
+
+        self.assertEqual(config["database_name"], "truckpitstop_db035")
+        self.assertNotIn("DATABASE_URL", config)
+
+    def test_bootstrap_rejects_unsafe_database_name_without_storing_it(self):
+        with mock.patch.object(
+            self.controller,
+            "common_git_dir",
+            return_value=Path("/srv/truck-pit-stop/.git"),
+        ), mock.patch.dict(os.environ, {"DIESELBRIDGE_LOCAL_DB_NAME": "name;print-secret"}):
+            with self.assertRaisesRegex(ControllerError, "database identity is invalid"):
+                self.controller.bootstrap_config()
+
+    def test_compose_receives_database_name_without_database_url(self):
+        controller = RuntimeController(
+            config_home=self.root / "c",
+            state_home=self.root / "s",
+            script_root=self.root / "repo",
+        )
+        controller.runner.run = mock.Mock(return_value=subprocess.CompletedProcess([], 0, stdout=""))
+
+        controller._compose(self.config(), self.controller.target, "ps")
+
+        command = controller.runner.run.call_args.args[0]
+        environment = controller.runner.run.call_args.kwargs["env"]
+        self.assertNotIn("truckpitstop_db035", command)
+        self.assertEqual(environment["DIESELBRIDGE_LOCAL_DB_NAME"], "truckpitstop_db035")
+        self.assertFalse(any("DATABASE_URL" in item for item in command))
+
+    def test_schema_preflight_queries_the_exact_configured_database(self):
+        controller = RuntimeController(
+            config_home=self.root / "c",
+            state_home=self.root / "s",
+            script_root=self.root / "repo",
+        )
+        controller._repo_head = mock.Mock(return_value="118_authenticated_presentation")
+        controller._compose = mock.Mock(side_effect=[
+            subprocess.CompletedProcess([], 0, stdout="postgres:5432 - accepting connections\n"),
+            subprocess.CompletedProcess([], 0, stdout="118_authenticated_presentation\n"),
+            subprocess.CompletedProcess([], 0, stdout="PONG\n"),
+        ])
+
+        head = controller.schema_preflight(self.config(), self.controller.target)
+
+        self.assertEqual(head, "118_authenticated_presentation")
+        pg_ready_args = controller._compose.call_args_list[0].args
+        revision_args = controller._compose.call_args_list[1].args
+        self.assertEqual(pg_ready_args[-2:], ("sh", "truckpitstop_db035"))
+        self.assertEqual(revision_args[-2:], ("sh", "truckpitstop_db035"))
+
+    def test_api_container_database_identity_must_match_config_without_leaking_url(self):
+        controller = RuntimeController(
+            config_home=self.root / "c",
+            state_home=self.root / "s",
+            script_root=self.root / "repo",
+        )
+        secret = "container-database-canary"
+        payload = [{
+            "Id": "api-container",
+            "Config": {
+                "Labels": {
+                    "com.docker.compose.project": "fixture",
+                    "com.docker.compose.service": "api",
+                },
+                "Env": [
+                    f"DATABASE_URL=postgresql+asyncpg://user:{secret}@postgres:5432/other_database",
+                ],
+            },
+            "NetworkSettings": {
+                "Ports": {"8000/tcp": [{"HostPort": "28000", "HostIp": "127.0.0.1"}]},
+            },
+            "Mounts": [{
+                "Source": str(self.root / "repo/backend"),
+                "Destination": "/app",
+                "Type": "bind",
+            }],
+            "State": {"StartedAt": "fixed"},
+        }]
+        controller.api_port = 28000
+        controller.runner.run = mock.Mock(
+            return_value=subprocess.CompletedProcess([], 0, stdout=json.dumps(payload)),
+        )
+
+        with self.assertRaises(ControllerError) as raised:
+            controller._inspect_api_container("api-container", self.config(), self.controller.target)
+
+        self.assertEqual(str(raised.exception), "API container database identity mismatch")
+        self.assertNotIn(secret, str(raised.exception))
+
+    def test_atomic_state_is_private_and_secret_free(self):
+        self.controller.atomic_write(self.controller.state_path, {"schema": 1, "phase": "stopped"})
+        self.assertEqual(stat.S_IMODE(self.controller.state_path.stat().st_mode), 0o600)
+        self.assertEqual(stat.S_IMODE(self.controller.state_path.parent.stat().st_mode), 0o700)
+
+    def test_state_rejects_secret_keys(self):
+        with self.assertRaisesRegex(ControllerError, "secret-shaped"):
+            self.controller.atomic_write(self.controller.state_path, {"schema": 1, "access_token": "canary"})
+        self.assertFalse(self.controller.state_path.exists())
+
+    def test_state_rejects_secret_values(self):
+        with self.assertRaisesRegex(ControllerError, "secret-shaped"):
+            _assert_secret_free({"error": "Authorization: Bearer canary-secret"})
+
+    def test_redaction_covers_bearer_query_and_url_userinfo(self):
+        value = redact(
+            "Bearer abc token=def https://user:pass@example.test "
+            "postgresql+asyncpg://dbuser:dbpass@postgres:5432/local "
+            "redis://redisuser:redispass@redis:6379/0 custom+driver://name:pass@host/path"
+        )
+        self.assertNotIn("abc", value)
+        self.assertNotIn("def", value)
+        self.assertNotIn("user:pass", value)
+        self.assertNotIn("dbpass", value)
+        self.assertNotIn("redispass", value)
+        self.assertNotIn("name:pass", value)
+
+    def test_runner_error_redacts_database_url_credentials(self):
+        secret = "runner-database-canary"
+        completed = subprocess.CompletedProcess(
+            [], 1, stdout="",
+            stderr=f"DATABASE_URL=postgresql+asyncpg://user:{secret}@postgres:5432/local",
+        )
+        with mock.patch("subprocess.run", return_value=completed):
+            with self.assertRaises(ControllerError) as raised:
+                Runner().run(["fixture"])
+        self.assertNotIn(secret, str(raised.exception))
+
+    def test_state_rejects_database_and_redis_url_credentials(self):
+        for scheme in ("postgresql+asyncpg", "postgresql", "redis"):
+            path = self.controller.state_path.with_name(f"{scheme.replace('+', '-')}.json")
+            with self.assertRaisesRegex(ControllerError, "secret-shaped"):
+                self.controller.atomic_write(
+                    path,
+                    {"schema": 1, "error": f"{scheme}://user:state-canary@localhost/value"},
+                )
+            self.assertFalse(path.exists())
+
+    def test_metadata_location_inside_worktree_is_refused(self):
+        controller = FixtureController(self.root)
+        controller.state_path = self.root / "repo" / ".state.json"
+        with self.assertRaisesRegex(ControllerError, "outside every worktree"):
+            controller.atomic_write(controller.state_path, {"schema": 1})
+
+    def test_status_missing_metadata_never_adopts_ports(self):
+        self.controller.frontend_occupied = self.controller.api_occupied = True
+        result = self.controller.status()
+        self.assertFalse(result["managed"])
+        self.assertFalse(result["healthy"])
+        self.assertTrue(result["frontend_port"])
+
+    def test_status_revalidates_recorded_runtime(self):
+        self.persist()
+        self.controller.frontend_occupied = self.controller.api_occupied = True
+        self.assertTrue(self.controller.status()["healthy"])
+        self.assertIn("schema", self.controller.calls)
+        self.assertIn("readiness", self.controller.calls)
+
+    def test_status_fails_closed_when_database_identity_is_missing(self):
+        config = self.config()
+        config.pop("database_name")
+        self.controller.atomic_write(self.controller.config_path, config)
+        self.controller.atomic_write(self.controller.state_path, self.state())
+        self.controller.frontend_occupied = self.controller.api_occupied = True
+
+        result = self.controller.status()
+
+        self.assertFalse(result["healthy"])
+        self.assertIn("configured local database identity is invalid", result["reasons"])
+
+    def test_status_fails_closed_when_current_schema_drifts(self):
+        self.persist()
+        self.controller.frontend_occupied = self.controller.api_occupied = True
+        self.controller.schema_preflight = mock.Mock(return_value="119_future")
+
+        result = self.controller.status()
+
+        self.assertFalse(result["healthy"])
+        self.assertIn("recorded migration head mismatch", result["reasons"])
+
+    def test_status_fails_closed_when_readiness_fails(self):
+        self.persist()
+        self.controller.frontend_occupied = self.controller.api_occupied = True
+        self.controller._probe_readiness_once = mock.Mock(side_effect=ControllerError("API readiness check failed"))
+
+        result = self.controller.status()
+
+        self.assertFalse(result["healthy"])
+        self.assertIn("API readiness check failed", result["reasons"])
+
+    def test_status_reports_identity_drift(self):
+        self.persist(self.state(trusted=False))
+        self.controller.frontend_occupied = self.controller.api_occupied = True
+        result = self.controller.status()
+        self.assertFalse(result["healthy"])
+        self.assertIn("fixture mismatch", result["reasons"])
+
+    def test_dry_run_has_no_filesystem_or_runtime_mutation(self):
+        before = sorted(str(path.relative_to(self.root)) for path in self.root.rglob("*"))
+        result = self.controller.switch(self.root / "repo", dry_run=True)
+        after = sorted(str(path.relative_to(self.root)) for path in self.root.rglob("*"))
+        self.assertEqual(before, after)
+        self.assertEqual(self.controller.calls, ["resolve", "schema"])
+        self.assertTrue(result["dry_run"])
+
+    def test_mixed_source_refuses_before_mutation(self):
+        self.controller.frontend_occupied = True
+        with self.assertRaisesRegex(ControllerError, "mixed runtime ownership"):
+            self.controller.switch(self.root / "repo", dry_run=True)
+        self.assertEqual(self.controller.calls, ["resolve", "schema"])
+
+    def test_unknown_listener_refuses_unchanged(self):
+        self.controller.frontend_occupied = self.controller.api_occupied = True
+        with self.assertRaisesRegex(ControllerError, "no trusted controller state"):
+            self.controller.switch(self.root / "repo", dry_run=True)
+        self.assertTrue(self.controller.frontend_occupied)
+        self.assertTrue(self.controller.api_occupied)
+
+    def test_identity_mismatch_refuses_unchanged(self):
+        self.persist(self.state(trusted=False))
+        self.controller.frontend_occupied = self.controller.api_occupied = True
+        with self.assertRaisesRegex(ControllerError, "ownership refused"):
+            self.controller.switch(self.root / "repo", dry_run=True)
+        self.assertTrue(self.controller.frontend_occupied)
+
+    def test_migration_mismatch_stops_before_occupancy(self):
+        def mismatch(config, target):
+            raise ControllerError("migration mismatch")
+        self.controller.schema_preflight = mismatch
+        self.controller.occupancy = mock.Mock(side_effect=AssertionError("must not inspect cutover after mismatch"))
+        with self.assertRaisesRegex(ControllerError, "migration mismatch"):
+            self.controller.switch(self.root / "repo", dry_run=True)
+
+    def test_successful_switch_records_exact_fixture(self):
+        result = self.controller.switch(self.root / "repo")
+        self.assertEqual(result["runtime"], self.controller.target.public())
+        self.assertEqual(self.controller.calls, ["resolve", "schema", "resolve", "start:" + SHA_A, "resolve"])
+        raw = self.controller.state_path.read_text()
+        self.assertIn("codex/db037-fixture", raw)
+        self.assertIn(SHA_A, raw)
+        self.assertNotIn("token", raw.lower())
+
+    def test_stop_only_stops_verified_joint_runtime(self):
+        self.persist()
+        self.controller.frontend_occupied = self.controller.api_occupied = True
+        result = self.controller.stop()
+        self.assertEqual(result["phase"], "stopped")
+        self.assertEqual(self.controller.calls, ["stop:" + SHA_A])
+
+    def test_stop_refuses_untrusted_runtime(self):
+        self.persist(self.state(trusted=False))
+        self.controller.frontend_occupied = self.controller.api_occupied = True
+        with self.assertRaisesRegex(ControllerError, "unverified"):
+            self.controller.stop()
+        self.assertTrue(self.controller.frontend_occupied)
+
+    def test_failed_cutover_attempts_prior_rollback_once(self):
+        prior_target = Worktree(self.root / "repo", "codex/db037-fixture", SHA_A)
+        self.persist(self.state())
+        self.controller.frontend_occupied = self.controller.api_occupied = True
+        calls = 0
+        original_start = self.controller.start_runtime
+        def fail_then_restore(target, config, head):
+            nonlocal calls
+            calls += 1
+            if calls == 1:
+                raise ControllerError("new runtime failed")
+            return original_start(target, config, head)
+        self.controller.start_runtime = fail_then_restore
+        with self.assertRaisesRegex(ControllerError, "prior runtime was restored"):
+            self.controller.switch(self.root / "repo")
+        self.assertEqual(calls, 2)
+        self.assertEqual(json.loads(self.controller.state_path.read_text())["phase"], "rolled_back")
+
+    def test_target_is_revalidated_under_lock_and_before_healthy_record(self):
+        self.controller.switch(self.root / "repo")
+        self.assertEqual(self.controller.calls.count("resolve"), 3)
+
+    def test_lock_time_target_change_refuses_before_stop(self):
+        self.persist()
+        self.controller.frontend_occupied = self.controller.api_occupied = True
+        changed = Worktree(self.root / "repo", "codex/db037-fixture", SHA_B)
+        self.controller.resolve_target = mock.Mock(side_effect=[self.controller.target, changed])
+        with self.assertRaisesRegex(ControllerError, "changed before cutover"):
+            self.controller.switch(self.root / "repo")
+        self.assertNotIn("stop:" + SHA_A, self.controller.calls)
+
+    def test_exec_replacement_refuses_stop(self):
+        state = self.state()
+        state["frontend"] = {"pid": 101, "pgid": 101, "started": "fixed", "command": "vite", "cwd": str(self.root / "repo/frontend")}
+        controller = RuntimeController(config_home=self.root / "c", state_home=self.root / "s", script_root=self.root / "repo")
+        controller.resolve_target = mock.Mock(return_value=self.controller.target)
+        controller.listeners = mock.Mock(return_value=[101])
+        controller.process_identity = mock.Mock(return_value={**state["frontend"], "command": "hostile replacement"})
+        controller.container_identity = mock.Mock(return_value={"id": "fixture", "started": None, "bind_source": None, "project": None, "service": None})
+        healthy, reasons = controller.verify_runtime(state, self.config())
+        self.assertFalse(healthy)
+        self.assertIn("frontend command mismatch", reasons)
+
+    def test_compose_up_then_readiness_failure_stops_exact_target_api(self):
+        controller = RuntimeController(config_home=self.root / "c", state_home=self.root / "s", script_root=self.root / "repo")
+        target = self.controller.target
+        process = mock.Mock(pid=777)
+        controller.runner.popen = mock.Mock(return_value=process)
+        controller._compose = mock.Mock(side_effect=[
+            subprocess.CompletedProcess([], 0, stdout=""),
+            subprocess.CompletedProcess([], 0, stdout=""),
+            subprocess.CompletedProcess([], 0, stdout="new-api\n"),
+        ])
+        controller._wait_port = mock.Mock(side_effect=ControllerError("readiness failed"))
+        controller._inspect_api_container = mock.Mock(return_value={"id": "new-api"})
+        controller.runner.run = mock.Mock(return_value=subprocess.CompletedProcess([], 0, stdout=""))
+        with mock.patch("os.getpgid", return_value=777), mock.patch("os.killpg"):
+            with self.assertRaisesRegex(ControllerError, "readiness failed"):
+                controller.start_runtime(target, self.config(), "118_authenticated_presentation")
+        controller.runner.run.assert_called_once_with(["docker", "stop", "new-api"])
+
+    def test_denies_root_home_parent_bare_symlink_and_nested_non_worktree(self):
+        controller = RuntimeController(config_home=self.root / "c", state_home=self.root / "s", script_root=self.root / "repo")
+        registered = Worktree(self.controller.target.path.resolve(), self.controller.target.branch, self.controller.target.sha)
+        controller.registered_worktrees = mock.Mock(return_value=[registered])
+        with self.assertRaisesRegex(ControllerError, "root, user home"):
+            controller.resolve_target("/")
+        with mock.patch("pathlib.Path.home", return_value=self.root):
+            with self.assertRaisesRegex(ControllerError, "root, user home"):
+                controller.resolve_target(self.root)
+        with self.assertRaisesRegex(ControllerError, "repository parent"):
+            controller.resolve_target(self.root)
+        nested = self.root / "repo" / "nested"
+        nested.mkdir()
+        with self.assertRaisesRegex(ControllerError, "registered worktree"):
+            controller.resolve_target(nested.resolve())
+        alias = self.root / "alias"
+        alias.symlink_to(self.root / "repo")
+        with self.assertRaisesRegex(ControllerError, "symlinked"):
+            controller.resolve_target(alias)
+        controller.git = mock.Mock(side_effect=lambda root, *args, **kwargs: "true" if args == ("rev-parse", "--is-bare-repository") else "")
+        with self.assertRaisesRegex(ControllerError, "bare repositories"):
+            controller.resolve_target((self.root / "repo").resolve())
+
+    def test_unsafe_rollback_leaves_stopped(self):
+        self.persist(self.state())
+        self.controller.frontend_occupied = self.controller.api_occupied = True
+        self.controller.start_runtime = mock.Mock(side_effect=ControllerError("start failed"))
+        self.controller.resolve_target = mock.Mock(side_effect=[self.controller.target, self.controller.target, ControllerError("prior dirty")])
+        with self.assertRaisesRegex(ControllerError, "rollback failed"):
+            self.controller.switch(self.root / "repo")
+        self.assertEqual(self.controller.start_runtime.call_count, 1)
+        self.assertEqual(json.loads(self.controller.state_path.read_text())["phase"], "rollback_failed")
+
+    def test_lock_refuses_concurrent_controller(self):
+        with self.controller.lock():
+            with self.assertRaisesRegex(ControllerError, "another local-runtime"):
+                with self.controller.lock():
+                    pass
+
+    @unittest.skipUnless(os.name == "posix", "POSIX disposable listener evidence")
+    def test_disposable_listener_inspection_uses_non_product_port(self):
+        import socket
+        try:
+            with socket.socket() as reservation:
+                reservation.bind(("127.0.0.1", 0))
+                port = reservation.getsockname()[1]
+        except PermissionError:
+            self.skipTest("sandbox forbids disposable loopback listeners")
+        process = subprocess.Popen(
+            ["python3", "-m", "http.server", str(port), "--bind", "127.0.0.1"],
+            cwd=self.root, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        )
+        try:
+            controller = RuntimeController(config_home=self.root / "c", state_home=self.root / "s", script_root=self.root / "repo", frontend_port=port, api_port=port + 1)
+            for _ in range(50):
+                if process.pid in controller.listeners(port):
+                    break
+                import time
+                time.sleep(0.02)
+            self.assertIn(process.pid, controller.listeners(port))
+            identity = controller.process_identity(process.pid)
+            self.assertEqual(Path(identity["cwd"]).resolve(), self.root.resolve())
+        finally:
+            process.terminate()
+            process.wait(timeout=5)
+
+
+if __name__ == "__main__":
+    unittest.main()

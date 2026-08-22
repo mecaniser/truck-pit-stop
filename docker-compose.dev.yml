@@ -7,7 +7,7 @@ services:
     env_file:
       - backend/.env
     environment:
-      DATABASE_URL: postgresql+asyncpg://dieselbridge:dieselbridge_dev@postgres:5432/truckpitstop
+      DATABASE_URL: postgresql+asyncpg://dieselbridge:dieselbridge_dev@postgres:5432/${DIESELBRIDGE_LOCAL_DB_NAME:-truckpitstop}
       REDIS_URL: redis://redis:6379/0
       FRONTEND_URL: http://localhost:5173
       CORS_ORIGINS_STR: http://localhost:5173,http://127.0.0.1:5173,http://127.0.0.1:5174
@@ -30,7 +30,7 @@ services:
     env_file:
       - backend/.env
     environment:
-      DATABASE_URL: postgresql+asyncpg://dieselbridge:dieselbridge_dev@postgres:5432/truckpitstop
+      DATABASE_URL: postgresql+asyncpg://dieselbridge:dieselbridge_dev@postgres:5432/${DIESELBRIDGE_LOCAL_DB_NAME:-truckpitstop}
       REDIS_URL: redis://redis:6379/0
       FRONTEND_URL: http://localhost:5173
       CORS_ORIGINS_STR: http://localhost:5173,http://127.0.0.1:5173,http://127.0.0.1:5174
@@ -51,7 +51,7 @@ services:
     env_file:
       - backend/.env
     environment:
-      DATABASE_URL: postgresql+asyncpg://dieselbridge:dieselbridge_dev@postgres:5432/truckpitstop
+      DATABASE_URL: postgresql+asyncpg://dieselbridge:dieselbridge_dev@postgres:5432/${DIESELBRIDGE_LOCAL_DB_NAME:-truckpitstop}
       REDIS_URL: redis://redis:6379/0
       FRONTEND_URL: http://localhost:5173
       CORS_ORIGINS_STR: http://localhost:5173,http://127.0.0.1:5173,http://127.0.0.1:5174

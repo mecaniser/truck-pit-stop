@@ -9,6 +9,7 @@ import type { MessagesUnreadSummary } from '@/types'
 import BrandLogo from '../brand/BrandLogo'
 import DieselBridgeWordmark from '../brand/DieselBridgeWordmark'
 import TenantBrandLogo from '../brand/TenantBrandLogo'
+import DevRuntimeIdentity from '../dev/DevRuntimeIdentity'
 import useTenantBranding from '@/hooks/useTenantBranding'
 
 const STAFF_RAIL_STORAGE_KEY = 'db-staff-rail-expanded'
@@ -367,6 +368,7 @@ export default function DashboardLayout() {
                 </div>
               )}
               </div>
+              <DevRuntimeIdentity />
               {isSuperAdmin && (
                 <span className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 bg-gold-500/10 border border-gold-500/30 rounded-full text-gold-400 text-xs font-medium">
                   <Crown className="w-3 h-3" />
