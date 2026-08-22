@@ -2703,6 +2703,8 @@ html::-webkit-scrollbar-thumb:hover {
 .db-repair-orders-new {
   --text-primary: #12233b;
   --text-secondary: #5b6d82;
+  --db-repair-orders-control-height: 44px;
+  --db-repair-orders-side-control-width: 184px;
   container-type: inline-size;
   min-width: 0;
   min-height: 100%;
@@ -2750,7 +2752,7 @@ html::-webkit-scrollbar-thumb:hover {
   padding: 9px 14px;
   font-weight: 760;
 }
-.db-repair-orders-new__create { border: 1px solid #b7450b; background: #e75a13; color: #fff; box-shadow: inset 0 1px rgba(255,255,255,.45), 0 5px 13px rgba(144,54,10,.18); }
+.db-repair-orders-new__create { height: var(--db-repair-orders-control-height); border: 1px solid #b7450b; background: #e75a13; color: #fff; box-shadow: inset 0 1px rgba(255,255,255,.45), 0 5px 13px rgba(144,54,10,.18); }
 .db-repair-orders-new__create:disabled { cursor: wait; opacity: .58; }
 .db-repair-orders-new :is(button, input, select) svg,
 .db-repair-order-detail-new :is(button) svg { width: 17px; height: 17px; }
@@ -2759,15 +2761,15 @@ html::-webkit-scrollbar-thumb:hover {
 .db-presentation-new .db-staff-search-field-inset { min-width: 0; padding: 4px; }
 .db-presentation-new .db-staff-search-field { position: relative; display: block; min-width: 0; border-radius: 10px; transition: box-shadow 140ms ease-out; }
 .db-presentation-new .db-staff-search-field svg { position: absolute; left: 12px; top: 50%; width: 20px; height: 20px; color: var(--workspace-muted); stroke-width: 2; transform: translateY(-50%); pointer-events: none; }
-.db-presentation-new .db-staff-search-field input { width: 100%; min-width: 0; height: 44px; padding: 0 12px 0 40px; border: 1px solid var(--workspace-muted) !important; border-radius: 10px; background: var(--surface-overlay) !important; color: var(--workspace-text) !important; caret-color: var(--workspace-text); font-size: 16px; line-height: 1.25; }
+.db-presentation-new .db-staff-search-field input { width: 100%; min-width: 0; height: var(--db-repair-orders-control-height, 44px); padding: 0 12px 0 40px; border: 1px solid var(--workspace-muted) !important; border-radius: 10px; background: var(--surface-overlay) !important; color: var(--workspace-text) !important; caret-color: var(--workspace-text); font-size: 16px; line-height: 1.25; }
 .db-presentation-new .db-staff-search-field input::placeholder { color: var(--workspace-muted); opacity: 1; }
 .db-presentation-new .db-staff-search-field:hover input:not(:disabled) { border-color: var(--workspace-text) !important; }
 .db-presentation-new .db-staff-search-field:focus-within { z-index: 2; box-shadow: 0 0 0 3px rgba(255, 122, 46, .26); }
 .db-presentation-new .db-staff-search-field:focus-within input { border-color: #ff7a2e !important; outline: 0; }
 .db-presentation-new .db-staff-search-field input:disabled { cursor: not-allowed; opacity: .6; }
-.db-repair-orders-new__search { align-self: start; }
-.db-repair-orders-new__status-select { position: relative; display: none; min-width: 0; }
-.db-repair-orders-new__status-select select { width: 100%; height: 44px; appearance: none; border: 1px solid #bec9d5 !important; border-radius: 10px; padding: 0 34px 0 12px; background: #fff !important; color: #17283f !important; font-size: 14px; }
+.db-presentation-new .db-repair-orders-new__search { height: var(--db-repair-orders-control-height); align-self: stretch; padding: 0; }
+.db-repair-orders-new__status-select { position: relative; display: none; min-width: 0; height: var(--db-repair-orders-control-height); }
+.db-repair-orders-new__status-select select { width: 100%; height: var(--db-repair-orders-control-height); appearance: none; border: 1px solid #bec9d5 !important; border-radius: 10px; padding: 0 34px 0 12px; background: #fff !important; color: #17283f !important; font-size: 14px; }
 .db-repair-orders-new__status-select svg { position: absolute; top: 50%; right: 10px; width: 16px; height: 16px; color: #53657a; transform: translateY(-50%); pointer-events: none; }
 .db-repair-orders-new__status-select:focus-within { z-index: 2; border-radius: 10px; box-shadow: 0 0 0 3px rgba(255, 122, 46, .26); }
 .db-repair-orders-new__status-select:focus-within select { border-color: #ff7a2e !important; outline: 0; }
@@ -2967,8 +2969,8 @@ html::-webkit-scrollbar-thumb:hover {
 .db-repair-orders-workspace--detail-open .db-repair-orders-new__header { align-items: center; margin-bottom: 10px; }
 .db-repair-orders-workspace--detail-open .db-repair-orders-new__header h1 { margin-bottom: 0; font-size: 1.5rem; }
 .db-repair-orders-workspace--detail-open .db-repair-orders-new__header p { display: none; }
-.db-repair-orders-workspace--detail-open .db-repair-orders-new__create { min-height: 40px; padding-block: 7px; }
-.db-repair-orders-workspace--detail-open .db-repair-orders-new__toolbar { grid-template-columns: minmax(0, 1fr) 148px; gap: 10px; margin-bottom: 10px; }
+.db-repair-orders-workspace--detail-open .db-repair-orders-new__create { width: var(--db-repair-orders-side-control-width); min-height: var(--db-repair-orders-control-height); margin-inline-end: 3px; padding-block: 0; }
+.db-repair-orders-workspace--detail-open .db-repair-orders-new__toolbar { grid-template-columns: minmax(0, 1fr) var(--db-repair-orders-side-control-width); gap: 10px; margin-bottom: 10px; }
 .db-repair-orders-workspace--detail-open .db-repair-orders-new__status-select { display: block; }
 .db-repair-orders-workspace--detail-open .db-repair-orders-new__status-tabs { display: none; }
 .db-repair-orders-workspace--detail-open .db-repair-orders-new--compact .db-repair-orders-new__toolbar { grid-template-columns: minmax(0, 1fr); }
