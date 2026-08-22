@@ -4,16 +4,21 @@ import path from 'path'
 
 // https://vitejs.dev/config/
 export default defineConfig(({ command, mode }) => {
-  const runtimeBranch = process.env.VITE_DIESELBRIDGE_RUNTIME_BRANCH ?? ''
-  const runtimeSha = process.env.VITE_DIESELBRIDGE_RUNTIME_SHA ?? ''
+  const runtimeBranch = process.env.DIESELBRIDGE_RUNTIME_BRANCH ?? ''
+  const runtimeSha = process.env.DIESELBRIDGE_RUNTIME_SHA ?? ''
   const isLocalRuntimeServe = command === 'serve' && mode !== 'test'
+
+  // These browser-facing names are derived only from the controller's validated,
+  // non-VITE environment. Never allow ambient VITE_* values to be auto-exposed.
+  delete process.env.VITE_DIESELBRIDGE_RUNTIME_BRANCH
+  delete process.env.VITE_DIESELBRIDGE_RUNTIME_SHA
 
   if (isLocalRuntimeServe) {
     if (!/^[A-Za-z0-9][A-Za-z0-9._/-]{0,199}$/.test(runtimeBranch)) {
-      throw new Error('VITE_DIESELBRIDGE_RUNTIME_BRANCH must be a validated branch name')
+      throw new Error('DIESELBRIDGE_RUNTIME_BRANCH must be a validated branch name')
     }
     if (!/^[0-9a-f]{40}$/.test(runtimeSha)) {
-      throw new Error('VITE_DIESELBRIDGE_RUNTIME_SHA must be a full lowercase commit SHA')
+      throw new Error('DIESELBRIDGE_RUNTIME_SHA must be a full lowercase commit SHA')
     }
   }
 

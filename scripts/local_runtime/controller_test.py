@@ -114,6 +114,18 @@ class ControllerTests(unittest.TestCase):
         controller = RuntimeController(config_home=self.root, state_home=self.root, script_root=self.root / "repo")
         self.assertEqual((controller.frontend_port, controller.api_port), (5173, 8000))
 
+    def test_frontend_environment_uses_private_controller_keys(self):
+        controller = RuntimeController(config_home=self.root, state_home=self.root, script_root=self.root / "repo")
+        with mock.patch.dict(os.environ, {
+            "VITE_DIESELBRIDGE_RUNTIME_BRANCH": "leaked-branch",
+            "VITE_DIESELBRIDGE_RUNTIME_SHA": "e" * 40,
+        }):
+            env = controller._frontend_environment(self.controller.target)
+        self.assertNotIn("VITE_DIESELBRIDGE_RUNTIME_BRANCH", env)
+        self.assertNotIn("VITE_DIESELBRIDGE_RUNTIME_SHA", env)
+        self.assertEqual(env["DIESELBRIDGE_RUNTIME_BRANCH"], self.controller.target.branch)
+        self.assertEqual(env["DIESELBRIDGE_RUNTIME_SHA"], self.controller.target.sha)
+
     def test_bootstrap_uses_canonical_repository_name_for_compose_project(self):
         with mock.patch.object(
             self.controller,

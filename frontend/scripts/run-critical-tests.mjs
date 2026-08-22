@@ -1,4 +1,7 @@
 import { execFileSync } from 'node:child_process'
+import process from 'node:process'
+
+execFileSync(process.execPath, ['scripts/check-runtime-identity.mjs'], { stdio: 'inherit' })
 
 const criticalTests = [
   'src/__tests__/LandingPage.test.tsx',

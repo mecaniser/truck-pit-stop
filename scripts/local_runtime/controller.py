@@ -444,10 +444,16 @@ class RuntimeController:
             pass
         raise ControllerError("API readiness check failed")
 
-    def start_runtime(self, target: Worktree, config: dict[str, Any], repo_head: str) -> dict[str, Any]:
+    def _frontend_environment(self, target: Worktree) -> dict[str, str]:
         env = os.environ.copy()
-        env["VITE_DIESELBRIDGE_RUNTIME_BRANCH"] = target.branch
-        env["VITE_DIESELBRIDGE_RUNTIME_SHA"] = target.sha
+        env.pop("VITE_DIESELBRIDGE_RUNTIME_BRANCH", None)
+        env.pop("VITE_DIESELBRIDGE_RUNTIME_SHA", None)
+        env["DIESELBRIDGE_RUNTIME_BRANCH"] = target.branch
+        env["DIESELBRIDGE_RUNTIME_SHA"] = target.sha
+        return env
+
+    def start_runtime(self, target: Worktree, config: dict[str, Any], repo_head: str) -> dict[str, Any]:
+        env = self._frontend_environment(target)
         process = self.runner.popen(
             ["npm", "run", "dev", "--", "--host", FRONTEND_HOST, "--port", str(self.frontend_port), "--strictPort"],
             cwd=target.path / "frontend", env=env,
