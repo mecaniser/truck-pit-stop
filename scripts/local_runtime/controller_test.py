@@ -87,7 +87,7 @@ class ControllerTests(unittest.TestCase):
         return {
             "schema": 1, "common_git_dir": str(self.root / ".git"),
             "main_worktree": str(self.root / "main"), "compose_project": "fixture",
-            "api_service": "api",
+            "api_service": "api", "database_name": "truckpitstop_db035",
         }
 
     def state(self, *, trusted=True):
@@ -120,6 +120,63 @@ class ControllerTests(unittest.TestCase):
             config = self.controller.bootstrap_config()
 
         self.assertEqual(config["compose_project"], "truck-pit-stop")
+
+    def test_bootstrap_persists_only_validated_non_secret_database_name(self):
+        with mock.patch.object(
+            self.controller,
+            "common_git_dir",
+            return_value=Path("/srv/truck-pit-stop/.git"),
+        ), mock.patch.dict(os.environ, {"DIESELBRIDGE_LOCAL_DB_NAME": "truckpitstop_db035"}):
+            config = self.controller.bootstrap_config()
+
+        self.assertEqual(config["database_name"], "truckpitstop_db035")
+        self.assertNotIn("DATABASE_URL", config)
+
+    def test_bootstrap_rejects_unsafe_database_name_without_storing_it(self):
+        with mock.patch.object(
+            self.controller,
+            "common_git_dir",
+            return_value=Path("/srv/truck-pit-stop/.git"),
+        ), mock.patch.dict(os.environ, {"DIESELBRIDGE_LOCAL_DB_NAME": "name;print-secret"}):
+            with self.assertRaisesRegex(ControllerError, "database identity is invalid"):
+                self.controller.bootstrap_config()
+
+    def test_compose_receives_database_name_without_database_url(self):
+        controller = RuntimeController(
+            config_home=self.root / "c",
+            state_home=self.root / "s",
+            script_root=self.root / "repo",
+        )
+        controller.runner.run = mock.Mock(return_value=subprocess.CompletedProcess([], 0, stdout=""))
+
+        controller._compose(self.config(), self.controller.target, "ps")
+
+        command = controller.runner.run.call_args.args[0]
+        environment = controller.runner.run.call_args.kwargs["env"]
+        self.assertNotIn("truckpitstop_db035", command)
+        self.assertEqual(environment["DIESELBRIDGE_LOCAL_DB_NAME"], "truckpitstop_db035")
+        self.assertFalse(any("DATABASE_URL" in item for item in command))
+
+    def test_schema_preflight_queries_the_exact_configured_database(self):
+        controller = RuntimeController(
+            config_home=self.root / "c",
+            state_home=self.root / "s",
+            script_root=self.root / "repo",
+        )
+        controller._repo_head = mock.Mock(return_value="118_authenticated_presentation")
+        controller._compose = mock.Mock(side_effect=[
+            subprocess.CompletedProcess([], 0, stdout="postgres:5432 - accepting connections\n"),
+            subprocess.CompletedProcess([], 0, stdout="118_authenticated_presentation\n"),
+            subprocess.CompletedProcess([], 0, stdout="PONG\n"),
+        ])
+
+        head = controller.schema_preflight(self.config(), self.controller.target)
+
+        self.assertEqual(head, "118_authenticated_presentation")
+        pg_ready_args = controller._compose.call_args_list[0].args
+        revision_args = controller._compose.call_args_list[1].args
+        self.assertEqual(pg_ready_args[-2:], ("sh", "truckpitstop_db035"))
+        self.assertEqual(revision_args[-2:], ("sh", "truckpitstop_db035"))
 
     def test_atomic_state_is_private_and_secret_free(self):
         self.controller.atomic_write(self.controller.state_path, {"schema": 1, "phase": "stopped"})

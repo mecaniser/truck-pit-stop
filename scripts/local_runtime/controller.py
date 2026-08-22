@@ -27,6 +27,7 @@ API_PORT = 8000
 SCHEMA_VERSION = 1
 SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 BRANCH_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/-]{0,199}$")
+DATABASE_NAME_RE = re.compile(r"^[A-Za-z0-9_]{1,63}$")
 SECRET_KEY_RE = re.compile(r"(?i)(authorization|cookie|password|passwd|secret|token|api[_-]?key|credential)")
 SECRET_TEXT_RE = re.compile(
     r"(?i)(bearer\s+)[^\s,;]+|((?:token|password|secret|api[_-]?key)=)[^&\s]+|"
@@ -66,8 +67,15 @@ def _assert_secret_free(value: Any, path: str = "root") -> None:
 
 
 class Runner:
-    def run(self, args: Iterable[str], *, cwd: Path | None = None, check: bool = True) -> subprocess.CompletedProcess[str]:
-        result = subprocess.run(list(args), cwd=cwd, text=True, capture_output=True, check=False)
+    def run(
+        self,
+        args: Iterable[str],
+        *,
+        cwd: Path | None = None,
+        check: bool = True,
+        env: dict[str, str] | None = None,
+    ) -> subprocess.CompletedProcess[str]:
+        result = subprocess.run(list(args), cwd=cwd, env=env, text=True, capture_output=True, check=False)
         if check and result.returncode:
             detail = redact((result.stderr or result.stdout).strip())
             raise ControllerError(f"command failed ({result.returncode}): {detail}")
@@ -181,12 +189,16 @@ class RuntimeController:
         project = re.sub(r"[^a-z0-9_-]", "-", repository_root.name.lower()).strip("-")
         if not project:
             raise ControllerError("could not derive a safe Compose project name")
+        database_name = os.environ.get("DIESELBRIDGE_LOCAL_DB_NAME", "truckpitstop")
+        if not DATABASE_NAME_RE.fullmatch(database_name):
+            raise ControllerError("configured local database identity is invalid")
         return {
             "schema": SCHEMA_VERSION,
             "common_git_dir": str(self.common_git_dir(self.script_root)),
             "main_worktree": str(main.path),
             "compose_project": project,
             "api_service": "api",
+            "database_name": database_name,
         }
 
     def _validate_storage_location(self, path: Path) -> None:
@@ -250,22 +262,35 @@ class RuntimeController:
             raise ControllerError("repository must have exactly one Alembic head")
         return heads[0]
 
+    def _configured_database_name(self, config: dict[str, Any]) -> str:
+        database = config.get("database_name")
+        if not isinstance(database, str) or not DATABASE_NAME_RE.fullmatch(database):
+            raise ControllerError("configured local database identity is invalid")
+        return database
+
     def _compose(self, config: dict[str, Any], target: Worktree, *args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
         command = [
             "docker", "compose", "--project-name", config["compose_project"],
             "--project-directory", str(target.path), "-f", str(target.path / "docker-compose.yml"),
             "-f", str(target.path / "docker-compose.dev.yml"), *args,
         ]
-        return self.runner.run(command, check=check)
+        env = os.environ.copy()
+        env["DIESELBRIDGE_LOCAL_DB_NAME"] = self._configured_database_name(config)
+        return self.runner.run(command, check=check, env=env)
 
     def schema_preflight(self, config: dict[str, Any], target: Worktree) -> str:
         repo_head = self._repo_head(target)
-        pg = self._compose(config, target, "exec", "-T", "postgres", "sh", "-ec", 'pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB"')
+        database = self._configured_database_name(config)
+        pg = self._compose(
+            config, target, "exec", "-T", "postgres", "sh", "-ec",
+            'pg_isready -U "$POSTGRES_USER" -d "$1"', "sh", database,
+        )
         if "accepting connections" not in pg.stdout:
             raise ControllerError("configured PostgreSQL is not ready")
         db = self._compose(
             config, target, "exec", "-T", "postgres", "sh", "-ec",
-            'psql -XAt -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "SELECT version_num FROM alembic_version"',
+            'psql -XAt -U "$POSTGRES_USER" -d "$1" -c "SELECT version_num FROM alembic_version"',
+            "sh", database,
         ).stdout.strip().splitlines()
         if db != [repo_head]:
             raise ControllerError(f"migration mismatch: repository={repo_head}, database={db[0] if len(db) == 1 else 'unknown'}")
