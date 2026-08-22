@@ -16,6 +16,7 @@ import sys
 import tempfile
 import time
 import urllib.request
+from urllib.parse import unquote, urlsplit
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable
@@ -31,7 +32,7 @@ DATABASE_NAME_RE = re.compile(r"^[A-Za-z0-9_]{1,63}$")
 SECRET_KEY_RE = re.compile(r"(?i)(authorization|cookie|password|passwd|secret|token|api[_-]?key|credential)")
 SECRET_TEXT_RE = re.compile(
     r"(?i)(bearer\s+)[^\s,;]+|((?:token|password|secret|api[_-]?key)=)[^&\s]+|"
-    r"(https?://)[^/@\s]+@"
+    r"([a-z][a-z0-9+.-]*://)[^/@\s]+@"
 )
 
 
@@ -268,6 +269,24 @@ class RuntimeController:
             raise ControllerError("configured local database identity is invalid")
         return database
 
+    def _database_name_from_url(self, value: str) -> str:
+        try:
+            parsed = urlsplit(value)
+            port = parsed.port
+        except ValueError as error:
+            raise ControllerError("API database identity is invalid") from error
+        database = unquote(parsed.path.lstrip("/"))
+        if (
+            parsed.scheme not in {"postgresql", "postgresql+asyncpg"}
+            or parsed.hostname != "postgres"
+            or port not in {None, 5432}
+            or parsed.query
+            or parsed.fragment
+            or not DATABASE_NAME_RE.fullmatch(database)
+        ):
+            raise ControllerError("API database identity is invalid")
+        return database
+
     def _compose(self, config: dict[str, Any], target: Worktree, *args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
         command = [
             "docker", "compose", "--project-name", config["compose_project"],
@@ -323,17 +342,30 @@ class RuntimeController:
         try:
             item = json.loads(raw)[0]
             labels = item["Config"]["Labels"]
+            environment = item["Config"]["Env"]
             ports = item["NetworkSettings"]["Ports"]["8000/tcp"]
             sources = [Path(mount["Source"]).resolve() for mount in item["Mounts"] if mount["Destination"] == "/app" and mount["Type"] == "bind"]
         except (KeyError, IndexError, TypeError, json.JSONDecodeError) as error:
             raise ControllerError("API container metadata is incomplete") from error
         if labels.get("com.docker.compose.project") != config["compose_project"] or labels.get("com.docker.compose.service") != config["api_service"]:
             raise ControllerError("API container project/service ownership mismatch")
+        if not isinstance(environment, list) or not all(isinstance(entry, str) for entry in environment):
+            raise ControllerError("API container metadata is incomplete")
+        database_urls = [entry.split("=", 1)[1] for entry in environment if entry.startswith("DATABASE_URL=")]
+        if len(database_urls) != 1 or self._database_name_from_url(database_urls[0]) != self._configured_database_name(config):
+            raise ControllerError("API container database identity mismatch")
         if sources != [(target.path / "backend").resolve()]:
             raise ControllerError("API container bind source mismatch")
         if not any(binding.get("HostPort") == str(self.api_port) and binding.get("HostIp") in ("0.0.0.0", "127.0.0.1", "::") for binding in ports or []):
             raise ControllerError("API container published port mismatch")
-        return {"id": item["Id"], "started": item["State"]["StartedAt"], "bind_source": str(sources[0]), "project": labels["com.docker.compose.project"], "service": labels["com.docker.compose.service"]}
+        return {
+            "id": item["Id"],
+            "started": item["State"]["StartedAt"],
+            "bind_source": str(sources[0]),
+            "project": labels["com.docker.compose.project"],
+            "service": labels["com.docker.compose.service"],
+            "database_name": self._configured_database_name(config),
+        }
 
     def container_identity(self, config: dict[str, Any], target: Worktree) -> dict[str, Any]:
         listing = self.runner.run(["docker", "ps", "--filter", f"publish={self.api_port}", "--format", "{{.ID}}"]).stdout.split()
@@ -356,7 +388,7 @@ class RuntimeController:
                     if actual[key] != state["frontend"][key]:
                         reasons.append(f"frontend {key} mismatch")
             container = self.container_identity(config, target)
-            for key in ("id", "started", "bind_source", "project", "service"):
+            for key in ("id", "started", "bind_source", "project", "service", "database_name"):
                 if container[key] != state["api"][key]:
                     reasons.append(f"API {key} mismatch")
         except (ControllerError, KeyError, TypeError) as error:
@@ -402,6 +434,15 @@ class RuntimeController:
                 last = redact(str(error))
             time.sleep(0.2)
         raise ControllerError(f"health probe failed: {last}")
+
+    def _probe_readiness_once(self) -> None:
+        try:
+            with urllib.request.urlopen(f"http://{API_HOST}:{self.api_port}/health/ready", timeout=2) as response:
+                if response.status == 200:
+                    return
+        except Exception:
+            pass
+        raise ControllerError("API readiness check failed")
 
     def start_runtime(self, target: Worktree, config: dict[str, Any], repo_head: str) -> dict[str, Any]:
         env = os.environ.copy()
@@ -524,6 +565,17 @@ class RuntimeController:
         if state.get("phase") not in ("healthy", "rolled_back"):
             return {"schema": SCHEMA_VERSION, "managed": True, "phase": state.get("phase", "unknown"), "healthy": False, "runtime": state.get("runtime"), "frontend_port": bool(frontend), "api_port": bool(api), "reasons": ["runtime is not recorded healthy"]}
         healthy, reasons = self.verify_runtime(state, config)
+        if healthy:
+            try:
+                self._configured_database_name(config)
+                target = self.resolve_target(state["runtime"]["path"])
+                repo_head = self.schema_preflight(config, target)
+                if repo_head != state.get("migration_head"):
+                    raise ControllerError("recorded migration head mismatch")
+                self._probe_readiness_once()
+            except (ControllerError, KeyError, TypeError) as error:
+                reasons.append(str(redact(str(error))))
+                healthy = False
         return {"schema": SCHEMA_VERSION, "managed": True, "phase": state["phase"], "healthy": healthy, "runtime": state["runtime"], "migration_head": state.get("migration_head"), "frontend_port": bool(frontend), "api_port": bool(api), "reasons": reasons}
 
 

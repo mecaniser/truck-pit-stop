@@ -9,7 +9,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from scripts.local_runtime.controller import ControllerError, RuntimeController, Worktree, _assert_secret_free, parser, redact
+from scripts.local_runtime.controller import ControllerError, Runner, RuntimeController, Worktree, _assert_secret_free, parser, redact
 
 
 SHA_A = "a" * 40
@@ -54,6 +54,9 @@ class FixtureController(RuntimeController):
 
     def verify_runtime(self, state, config):
         return (state.get("trusted", True), [] if state.get("trusted", True) else ["fixture mismatch"])
+
+    def _probe_readiness_once(self):
+        self.calls.append("readiness")
 
     def stop_verified(self, state, config):
         healthy, reasons = self.verify_runtime(state, config)
@@ -178,6 +181,45 @@ class ControllerTests(unittest.TestCase):
         self.assertEqual(pg_ready_args[-2:], ("sh", "truckpitstop_db035"))
         self.assertEqual(revision_args[-2:], ("sh", "truckpitstop_db035"))
 
+    def test_api_container_database_identity_must_match_config_without_leaking_url(self):
+        controller = RuntimeController(
+            config_home=self.root / "c",
+            state_home=self.root / "s",
+            script_root=self.root / "repo",
+        )
+        secret = "container-database-canary"
+        payload = [{
+            "Id": "api-container",
+            "Config": {
+                "Labels": {
+                    "com.docker.compose.project": "fixture",
+                    "com.docker.compose.service": "api",
+                },
+                "Env": [
+                    f"DATABASE_URL=postgresql+asyncpg://user:{secret}@postgres:5432/other_database",
+                ],
+            },
+            "NetworkSettings": {
+                "Ports": {"8000/tcp": [{"HostPort": "28000", "HostIp": "127.0.0.1"}]},
+            },
+            "Mounts": [{
+                "Source": str(self.root / "repo/backend"),
+                "Destination": "/app",
+                "Type": "bind",
+            }],
+            "State": {"StartedAt": "fixed"},
+        }]
+        controller.api_port = 28000
+        controller.runner.run = mock.Mock(
+            return_value=subprocess.CompletedProcess([], 0, stdout=json.dumps(payload)),
+        )
+
+        with self.assertRaises(ControllerError) as raised:
+            controller._inspect_api_container("api-container", self.config(), self.controller.target)
+
+        self.assertEqual(str(raised.exception), "API container database identity mismatch")
+        self.assertNotIn(secret, str(raised.exception))
+
     def test_atomic_state_is_private_and_secret_free(self):
         self.controller.atomic_write(self.controller.state_path, {"schema": 1, "phase": "stopped"})
         self.assertEqual(stat.S_IMODE(self.controller.state_path.stat().st_mode), 0o600)
@@ -193,10 +235,38 @@ class ControllerTests(unittest.TestCase):
             _assert_secret_free({"error": "Authorization: Bearer canary-secret"})
 
     def test_redaction_covers_bearer_query_and_url_userinfo(self):
-        value = redact("Bearer abc token=def https://user:pass@example.test")
+        value = redact(
+            "Bearer abc token=def https://user:pass@example.test "
+            "postgresql+asyncpg://dbuser:dbpass@postgres:5432/local "
+            "redis://redisuser:redispass@redis:6379/0 custom+driver://name:pass@host/path"
+        )
         self.assertNotIn("abc", value)
         self.assertNotIn("def", value)
         self.assertNotIn("user:pass", value)
+        self.assertNotIn("dbpass", value)
+        self.assertNotIn("redispass", value)
+        self.assertNotIn("name:pass", value)
+
+    def test_runner_error_redacts_database_url_credentials(self):
+        secret = "runner-database-canary"
+        completed = subprocess.CompletedProcess(
+            [], 1, stdout="",
+            stderr=f"DATABASE_URL=postgresql+asyncpg://user:{secret}@postgres:5432/local",
+        )
+        with mock.patch("subprocess.run", return_value=completed):
+            with self.assertRaises(ControllerError) as raised:
+                Runner().run(["fixture"])
+        self.assertNotIn(secret, str(raised.exception))
+
+    def test_state_rejects_database_and_redis_url_credentials(self):
+        for scheme in ("postgresql+asyncpg", "postgresql", "redis"):
+            path = self.controller.state_path.with_name(f"{scheme.replace('+', '-')}.json")
+            with self.assertRaisesRegex(ControllerError, "secret-shaped"):
+                self.controller.atomic_write(
+                    path,
+                    {"schema": 1, "error": f"{scheme}://user:state-canary@localhost/value"},
+                )
+            self.assertFalse(path.exists())
 
     def test_metadata_location_inside_worktree_is_refused(self):
         controller = FixtureController(self.root)
@@ -215,6 +285,40 @@ class ControllerTests(unittest.TestCase):
         self.persist()
         self.controller.frontend_occupied = self.controller.api_occupied = True
         self.assertTrue(self.controller.status()["healthy"])
+        self.assertIn("schema", self.controller.calls)
+        self.assertIn("readiness", self.controller.calls)
+
+    def test_status_fails_closed_when_database_identity_is_missing(self):
+        config = self.config()
+        config.pop("database_name")
+        self.controller.atomic_write(self.controller.config_path, config)
+        self.controller.atomic_write(self.controller.state_path, self.state())
+        self.controller.frontend_occupied = self.controller.api_occupied = True
+
+        result = self.controller.status()
+
+        self.assertFalse(result["healthy"])
+        self.assertIn("configured local database identity is invalid", result["reasons"])
+
+    def test_status_fails_closed_when_current_schema_drifts(self):
+        self.persist()
+        self.controller.frontend_occupied = self.controller.api_occupied = True
+        self.controller.schema_preflight = mock.Mock(return_value="119_future")
+
+        result = self.controller.status()
+
+        self.assertFalse(result["healthy"])
+        self.assertIn("recorded migration head mismatch", result["reasons"])
+
+    def test_status_fails_closed_when_readiness_fails(self):
+        self.persist()
+        self.controller.frontend_occupied = self.controller.api_occupied = True
+        self.controller._probe_readiness_once = mock.Mock(side_effect=ControllerError("API readiness check failed"))
+
+        result = self.controller.status()
+
+        self.assertFalse(result["healthy"])
+        self.assertIn("API readiness check failed", result["reasons"])
 
     def test_status_reports_identity_drift(self):
         self.persist(self.state(trusted=False))
