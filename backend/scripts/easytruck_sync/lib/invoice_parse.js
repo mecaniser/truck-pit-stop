@@ -29,6 +29,11 @@ function parseInvoicePage(text) {
     invoiceStatus: null,
     invoiceNumber: null,
     invoiceDate: null,
+    // ETS's own labor/parts split for the service. Without it the importer
+    // books every job as 100% labor, so Part Revenue reports as zero while ETS
+    // shows a real parts figure.
+    laborTotal: null,
+    partsTotal: null,
     fees: null,
     discount: null,
     subtotal: null,
@@ -55,6 +60,15 @@ function parseInvoicePage(text) {
       result.invoiceNumber = lines[i + 1];
       result.invoiceDate = lines[i + 2];
       break;
+    }
+  }
+
+  // "Recommendations" block: ETS's labor and parts subtotals for the service.
+  for (let i = 0; i < lines.length; i++) {
+    if (lines[i] === 'Default Labor' && MONEY_RE.test(lines[i + 1] || '')) {
+      result.laborTotal = toNumber(lines[i + 1]);
+    } else if (lines[i] === 'Default Matrix Parts' && MONEY_RE.test(lines[i + 1] || '')) {
+      result.partsTotal = toNumber(lines[i + 1]);
     }
   }
 
