@@ -1,4 +1,5 @@
 import { expect, test, type Page, type Route } from '@playwright/test'
+import { presentationFixture } from '../../frontend/src/test-fixtures/db035/appearance'
 
 type DecisionMode = 'approve' | 'decline' | 'conflict' | 'forbidden'
 
@@ -304,6 +305,7 @@ async function mockStaffAuthorizationWorkspace(page: Page, mode: 'initial' | 'ad
     const url = new URL(request.url())
     const path = url.pathname.replace(/^\/api\/v1/, '')
 
+    if (path === '/auth/me/appearance') return fulfillJson(route, 200, presentationFixture('new'))
     if (path === '/auth/tenant-branding') return fulfillJson(route, 200, { name: 'DieselBridge Test Shop', slug: 'db003-test', logo_url: null, state: 'NC' })
     if (path === '/auth/platform-contact') return fulfillJson(route, 200, { support_name: 'DieselBridge Support', support_email: null, support_phone: null })
     if (path === '/messages/unread-summary') return fulfillJson(route, 200, { unread_count_staff: 0 })
