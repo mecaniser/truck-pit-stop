@@ -1,3 +1,6 @@
 .env
 data/
+# Timestamped snapshots of data/ taken before each full re-scrape. Real
+# customer data, same as data/ — never commit these either.
+data_bak_*/
 *.log
