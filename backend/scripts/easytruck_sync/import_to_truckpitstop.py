@@ -462,9 +462,15 @@ def _create_invoice_and_payments(w, tenant_id, ro_id, order_number, service_no,
     ets_invoice_no = inv_data.get("invoiceNumber") or service_no
     invoice_number = f"ETSINV-{ets_invoice_no}"
     if invoice_number in existing_invoice_numbers:
-        # Two service numbers resolved to the same ETS invoice number (seen
-        # for split/credit invoices) — keep it unique rather than skip data.
-        invoice_number = f"ETSINV-{ets_invoice_no}-{order_number}"
+        # One ETS service carries ONE invoice, but a service with N line items
+        # imports as N repair orders here (see build_records). Attaching the
+        # invoice to each of them multiplied revenue by N — service #1217 had
+        # 10 line items and booked its $6,950 ten times. An earlier version
+        # "resolved" the clash by suffixing the number, which silently created
+        # the duplicate instead of preventing it. Skip: the invoice already
+        # exists on the first repair order of this service.
+        stats["inv_dup_skipped"] += 1
+        return
     existing_invoice_numbers.add(invoice_number)
 
     subtotal = Decimal(str(inv_data.get("subtotal") or 0))
@@ -542,7 +548,7 @@ def resync(conn, tenant_id, commit):
     stats = {"cust_ins": 0, "cust_upd": 0, "cust_skip_edited": 0,
              "veh_ins": 0, "veh_upd": 0, "veh_skip_edited": 0,
              "ro_ins": 0, "ro_exists": 0,
-             "inv_ins": 0, "inv_no_data": 0, "pay_ins": 0}
+             "inv_ins": 0, "inv_no_data": 0, "pay_ins": 0, "inv_dup_skipped": 0}
 
     w = conn.cursor()
     cust_uuid_by_ets = {}
