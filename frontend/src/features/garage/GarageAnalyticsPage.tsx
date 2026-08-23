@@ -12,7 +12,7 @@ import { useTheme } from '../../contexts/ThemeContext'
 import {
   ChartCard, ProfitabilityScatter, QuoteFunnel, RankedBar, ParetoChart,
 } from '../analytics/ChartKit'
-import { SERIES, TAB_ACCENT } from '../analytics/chartTheme'
+import { TAB_ACCENT } from '../analytics/chartTheme'
 
 // ============ SHARED TYPES ============
 
@@ -190,6 +190,15 @@ const fmtNumber = (value: string | number | undefined): string => {
   return n.toLocaleString('en-US', { maximumFractionDigits: 1 })
 }
 
+// Compact money for chart axes. Dividing by 1000 unconditionally rendered real
+// six-figure weeks as "$131.50478k" and empty ones as "$0.004k", so scale to
+// the magnitude actually on the axis.
+const fmtAxisMoney = (value: number): string => {
+  if (!value) return '$0'
+  if (Math.abs(value) >= 1000) return `$${Math.round(value / 1000).toLocaleString('en-US')}k`
+  return `$${Math.round(value).toLocaleString('en-US')}`
+}
+
 function exportRowsToCsv(filename: string, headers: string[], rows: (string | number)[][]) {
   const escape = (v: string | number) => {
     const s = String(v)
@@ -352,11 +361,14 @@ function DashboardTab({ range }: { range: DateRangePreset }) {
   if (isLoading || !data) return <LoadingBlock />
 
   const accent = accentColors[500]
-  // Stacked Labor + Parts revenue across the trend window (both trends share labels).
-  const trendRows = data.revenue.trend.map((p, i) => ({
+  // Revenue per week, straight off the paid invoices the hero total is drawn
+  // from. This used to stack labor and parts, but those come from denormalized
+  // per-order columns that imported orders never populate — the labor lines
+  // carry hours with a zero hourly rate. On an import-heavy shop that charted
+  // a flat zero underneath a six-figure total. Chart what the invoices know.
+  const trendRows = data.revenue.trend.map((p) => ({
     label: p.label,
-    labor: parseFloat(data.labor_revenue.trend[i]?.value ?? '0'),
-    parts: parseFloat(data.part_revenue.trend[i]?.value ?? '0'),
+    revenue: parseFloat(p.value ?? '0'),
   }))
 
   return (
@@ -365,13 +377,13 @@ function DashboardTab({ range }: { range: DateRangePreset }) {
         label="Total Revenue"
         value={fmtMoney(data.revenue.value)}
         accent={accent}
-        insight="Labor and parts stacked below show where the revenue actually comes from across the period."
+        insight="Revenue recognized each week across the period, from paid invoices."
       >
         <div className="h-56">
           <ResponsiveContainer width="100%" height="100%">
             <BarChart data={trendRows} margin={{ top: 6, right: 6, left: -12, bottom: 0 }}>
               <XAxis dataKey="label" tick={{ fill: '#6b7280', fontSize: 11 }} axisLine={false} tickLine={false} />
-              <YAxis tick={{ fill: '#6b7280', fontSize: 11 }} axisLine={false} tickLine={false} tickFormatter={(v) => '$' + (v / 1000) + 'k'} />
+              <YAxis tick={{ fill: '#6b7280', fontSize: 11 }} axisLine={false} tickLine={false} tickFormatter={fmtAxisMoney} />
               <Tooltip
                 contentStyle={{ backgroundColor: '#151b26', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, fontSize: 12 }}
                 labelStyle={{ color: '#9ca3af' }}
@@ -380,8 +392,7 @@ function DashboardTab({ range }: { range: DateRangePreset }) {
                 offset={18}
                 allowEscapeViewBox={{ x: true, y: false }}
               />
-              <Bar dataKey="labor" name="Labor" stackId="r" fill={SERIES.parts} maxBarSize={30} isAnimationActive={false} activeBar={{ fill: SERIES.parts, stroke: '#fff', strokeOpacity: 0.35, strokeWidth: 1 }} />
-              <Bar dataKey="parts" name="Parts" stackId="r" fill={accent} radius={[4, 4, 0, 0]} maxBarSize={30} isAnimationActive={false} activeBar={{ fill: accent, stroke: '#fff', strokeOpacity: 0.35, strokeWidth: 1 }} />
+              <Bar dataKey="revenue" name="Revenue" fill={accent} radius={[4, 4, 0, 0]} maxBarSize={30} isAnimationActive={false} activeBar={{ fill: accent, stroke: '#fff', strokeOpacity: 0.35, strokeWidth: 1 }} />
             </BarChart>
           </ResponsiveContainer>
         </div>
