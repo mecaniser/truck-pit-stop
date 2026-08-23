@@ -250,7 +250,7 @@ async def test_db038_postgres_stock_return_lifecycle_and_one_reversal(monkeypatc
             await parts_operations.receive_purchase_order(po_id=po_id, body=parts_operations.ReceiptCreate(expected_version=2, received_at=datetime(2026, 8, 23, 14, tzinfo=timezone.utc), lines=[parts_operations.ReceiptLineInput(purchase_order_line_id=line_id, quantity=1, unit_cost=Decimal("16.00"))]), idempotency_key="db038-return-receipt", db=db, current_user=user)
             receipt_line = (await db.execute(select(PurchaseReceiptLine).where(PurchaseReceiptLine.purchase_order_line_id == line_id))).scalar_one()
             created = await parts_operations.create_return(body=parts_operations.ReturnCreate(kind="stock", supplier_id=ids["supplier_id"], reason="wrong part", lines=[parts_operations.ReturnLineInput(purchase_receipt_line_id=receipt_line.id, quantity=1, expected_credit=Decimal("16.00"))]), idempotency_key="db038-return-create", db=db, current_user=user)
-            submitted = await parts_operations.submit_return(UUID(created["id"]), parts_operations.VersionCommand(expected_version=1), db=db, current_user=user)
+            submitted = await parts_operations.submit_return(UUID(created["id"]), parts_operations.VersionCommand(expected_version=1), idempotency_key="db038-return-submit", db=db, current_user=user)
             shipped = await parts_operations.ship_return(UUID(created["id"]), parts_operations.VersionCommand(expected_version=submitted["version"]), idempotency_key="db038-return-ship", db=db, current_user=user)
             assert shipped["status"] == "shipped"
             reversed_return = await parts_operations.reverse_return(UUID(created["id"]), parts_operations.VersionCommand(expected_version=shipped["version"], reason="vendor refused"), idempotency_key="db038-return-reverse", db=db, current_user=user)
@@ -324,10 +324,10 @@ async def test_db038_postgres_core_expected_on_hand_returned_waived_and_invalid_
             core = CoreObligation(tenant_id=ids["tenant_id"], parts_usage_id=usage.id, inventory_id=ids["item_id"], supplier_id=ids["supplier_id"], quantity=1, unit_core_value_snapshot=Decimal("50.00"), status="expected")
             db.add(core); await db.commit()
             user = await db.get(User, ids["user_id"])
-            recovered = await parts_operations.recover_core(core.id, parts_operations.VersionCommand(expected_version=1), db=db, current_user=user)
+            recovered = await parts_operations.recover_core(core.id, parts_operations.VersionCommand(expected_version=1), idempotency_key="db038-core-recover", db=db, current_user=user)
             assert recovered["status"] == "on_hand"
             created = await parts_operations.create_return(body=parts_operations.ReturnCreate(kind="core", supplier_id=ids["supplier_id"], reason="core sent", lines=[parts_operations.ReturnLineInput(core_obligation_id=core.id, quantity=1)]), idempotency_key="db038-core-return-create", db=db, current_user=user)
-            submitted = await parts_operations.submit_return(UUID(created["id"]), parts_operations.VersionCommand(expected_version=1), db=db, current_user=user)
+            submitted = await parts_operations.submit_return(UUID(created["id"]), parts_operations.VersionCommand(expected_version=1), idempotency_key="db038-core-return-submit", db=db, current_user=user)
             shipped = await parts_operations.ship_return(UUID(created["id"]), parts_operations.VersionCommand(expected_version=submitted["version"]), idempotency_key="db038-core-return-ship", db=db, current_user=user)
             assert shipped["status"] == "shipped"
             await parts_operations.reverse_return(UUID(created["id"]), parts_operations.VersionCommand(expected_version=shipped["version"], reason="carrier return"), idempotency_key="db038-core-return-reverse", db=db, current_user=user)
@@ -493,3 +493,323 @@ def test_db038_postgres_receipt_and_inventory_statements_lock_rows():
     assert "FOR UPDATE" in str(po.compile(dialect=postgresql.dialect()))
     assert "FOR UPDATE" in str(line.compile(dialect=postgresql.dialect()))
     assert "FOR UPDATE" in str(item.compile(dialect=postgresql.dialect()))
+
+
+async def _db038_stock_return(factory, ids):
+    """Create one independent draft stock return with a durable receipt origin."""
+    po_id, line_id = await _draft_and_submit(factory, ids, quantity=1)
+    async with factory() as db:
+        user = await db.get(User, ids["user_id"])
+        await parts_operations.receive_purchase_order(
+            po_id=po_id,
+            body=parts_operations.ReceiptCreate(
+                expected_version=2,
+                received_at=datetime(2026, 8, 23, 14, tzinfo=timezone.utc),
+                lines=[parts_operations.ReceiptLineInput(
+                    purchase_order_line_id=line_id, quantity=1, unit_cost=Decimal("16.00"),
+                )],
+            ),
+            idempotency_key=f"db038-return-origin-{uuid4().hex}", db=db, current_user=user,
+        )
+        receipt_line = (await db.execute(
+            select(PurchaseReceiptLine).where(PurchaseReceiptLine.purchase_order_line_id == line_id)
+        )).scalar_one()
+        created = await parts_operations.create_return(
+            body=parts_operations.ReturnCreate(
+                kind="stock", supplier_id=ids["supplier_id"], reason="wrong part",
+                lines=[parts_operations.ReturnLineInput(
+                    purchase_receipt_line_id=receipt_line.id, quantity=1,
+                    expected_credit=Decimal("16.00"),
+                )],
+            ),
+            idempotency_key=f"db038-return-create-{uuid4().hex}", db=db, current_user=user,
+        )
+        return UUID(created["id"])
+
+
+async def _db038_return_snapshot(factory, ids, return_id):
+    async with factory() as db:
+        row = await db.get(parts_operations.VendorReturn, return_id)
+        item = await db.get(Inventory, ids["item_id"])
+        movement_count = await db.scalar(select(func.count(InventoryMovement.id)).where(
+            InventoryMovement.tenant_id == ids["tenant_id"],
+            InventoryMovement.inventory_id == item.id,
+        ))
+        return (row.status, row.version, row.shipped_at, row.credited_at,
+                item.stock_quantity, item.cost, item.stock_version, movement_count)
+
+
+async def _db038_assert_durable_replay(factory, ids, *, invoke, snapshot, changed):
+    """Exercise a committed endpoint retry in a fresh session without cache help."""
+    first = await invoke()
+    assert isinstance(first, dict)
+    after_first = await snapshot()
+    assert after_first == changed
+    replay = await invoke()
+    assert replay.headers["Idempotency-Replayed"] == "true"
+    assert replay.status_code in {200, 201}
+    assert json.loads(replay.body) == first
+    assert await snapshot() == after_first
+
+
+@pytest.mark.asyncio
+async def test_db038_postgres_return_transition_replays_are_durable_and_conflict_safe(monkeypatch):
+    """Every return transition stores its response atomically with the state change."""
+    monkeypatch.setattr(settings, "PARTS_OPERATIONS_V1_ENABLED", True)
+    engine = create_async_engine(os.environ[POSTGRES_URL]); factory = async_sessionmaker(engine, expire_on_commit=False)
+
+    async def invoke(ids, return_id, route, body, key):
+        async with factory() as db:
+            user = await db.get(User, ids["user_id"])
+            return await getattr(parts_operations, route)(
+                return_id, body, idempotency_key=key, db=db, current_user=user,
+            )
+
+    async def state(ids, return_id):
+        return await _db038_return_snapshot(factory, ids, return_id)
+
+    async def assert_conflict(ids, return_id, route, body, key, expected):
+        async with factory() as db:
+            user = await db.get(User, ids["user_id"])
+            with pytest.raises(HTTPException) as conflict:
+                await getattr(parts_operations, route)(
+                    return_id, body, idempotency_key=key, db=db, current_user=user,
+                )
+            assert conflict.value.status_code == 409
+            await db.rollback()
+        assert await state(ids, return_id) == expected
+
+    try:
+        ids = await _seed(factory, stock=10)
+        # Draft -> submitted: no stock mutation, timestamp/version remain frozen on replay.
+        return_id = await _db038_stock_return(factory, ids)
+        submit = parts_operations.VersionCommand(expected_version=1)
+        await _db038_assert_durable_replay(
+            factory, ids,
+            invoke=lambda: invoke(ids, return_id, "submit_return", submit, "db038-return-submit-replay-key"),
+            snapshot=lambda: state(ids, return_id),
+            changed=("submitted", 2, (await state(ids, return_id))[2], (await state(ids, return_id))[3],
+                     (await state(ids, return_id))[4], (await state(ids, return_id))[5],
+                     (await state(ids, return_id))[6], (await state(ids, return_id))[7]),
+        )
+        await assert_conflict(ids, return_id, "submit_return", parts_operations.VersionCommand(expected_version=99), "db038-return-submit-replay-key", await state(ids, return_id))
+
+        # Draft -> cancelled is durable and has the same no-second-write guarantee.
+        return_id = await _db038_stock_return(factory, ids)
+        cancel = parts_operations.VersionCommand(expected_version=1, reason="supplier closed")
+        before = await state(ids, return_id)
+        await _db038_assert_durable_replay(
+            factory, ids,
+            invoke=lambda: invoke(ids, return_id, "cancel_return", cancel, "db038-return-cancel-replay-key"),
+            snapshot=lambda: state(ids, return_id),
+            changed=("cancelled", 2, before[2], before[3], before[4], before[5], before[6], before[7]),
+        )
+        await assert_conflict(ids, return_id, "cancel_return", parts_operations.VersionCommand(expected_version=99), "db038-return-cancel-replay-key", await state(ids, return_id))
+
+        # Submitted -> shipped: replay cannot create another negative stock movement.
+        return_id = await _db038_stock_return(factory, ids)
+        await invoke(ids, return_id, "submit_return", parts_operations.VersionCommand(expected_version=1), "db038-return-ship-setup-key")
+        before = await state(ids, return_id)
+        first = await invoke(ids, return_id, "ship_return", parts_operations.VersionCommand(expected_version=2), "db038-return-ship-replay-key")
+        after = await state(ids, return_id)
+        assert after[:2] == ("shipped", 3)
+        assert after[2] is not None and after[3] == before[3]
+        assert after[4:] == (before[4] - 1, before[5], before[6] + 1, before[7] + 1)
+        replay = await invoke(ids, return_id, "ship_return", parts_operations.VersionCommand(expected_version=2), "db038-return-ship-replay-key")
+        assert replay.headers["Idempotency-Replayed"] == "true" and json.loads(replay.body) == first
+        assert await state(ids, return_id) == after
+        await assert_conflict(ids, return_id, "ship_return", parts_operations.VersionCommand(expected_version=99), "db038-return-ship-replay-key", after)
+
+        # Shipped -> credited has no ledger write, and replay keeps its original credited timestamp.
+        return_id = await _db038_stock_return(factory, ids)
+        await invoke(ids, return_id, "submit_return", parts_operations.VersionCommand(expected_version=1), "db038-return-credit-submit-key")
+        await invoke(ids, return_id, "ship_return", parts_operations.VersionCommand(expected_version=2), "db038-return-credit-ship-key")
+        before = await state(ids, return_id)
+        first = await invoke(ids, return_id, "credit_return", parts_operations.VersionCommand(expected_version=3), "db038-return-credit-replay-key")
+        after = await state(ids, return_id)
+        assert after[:2] == ("credited", 4) and after[4:] == before[4:]
+        replay = await invoke(ids, return_id, "credit_return", parts_operations.VersionCommand(expected_version=3), "db038-return-credit-replay-key")
+        assert replay.headers["Idempotency-Replayed"] == "true" and json.loads(replay.body) == first
+        assert await state(ids, return_id) == after
+        await assert_conflict(ids, return_id, "credit_return", parts_operations.VersionCommand(expected_version=99), "db038-return-credit-replay-key", after)
+
+        # Shipped -> reversal is 201; its retry returns the same immutable reversal identity.
+        return_id = await _db038_stock_return(factory, ids)
+        await invoke(ids, return_id, "submit_return", parts_operations.VersionCommand(expected_version=1), "db038-return-reverse-submit-key")
+        await invoke(ids, return_id, "ship_return", parts_operations.VersionCommand(expected_version=2), "db038-return-reverse-ship-key")
+        before = await state(ids, return_id)
+        first = await invoke(ids, return_id, "reverse_return", parts_operations.VersionCommand(expected_version=3, reason="carrier refused"), "db038-return-reverse-replay-key")
+        after = await state(ids, return_id)
+        assert after[:4] == before[:4]
+        assert after[4:] == (before[4] + 1, before[5], before[6] + 1, before[7] + 1)
+        replay = await invoke(ids, return_id, "reverse_return", parts_operations.VersionCommand(expected_version=3, reason="carrier refused"), "db038-return-reverse-replay-key")
+        assert replay.status_code == 201 and replay.headers["Idempotency-Replayed"] == "true"
+        assert json.loads(replay.body) == first and await state(ids, return_id) == after
+        await assert_conflict(ids, return_id, "reverse_return", parts_operations.VersionCommand(expected_version=99, reason="carrier refused"), "db038-return-reverse-replay-key", after)
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_db038_postgres_return_transition_same_key_concurrency_commits_once(monkeypatch):
+    """Two fresh PostgreSQL sessions see one transition and one durable replay."""
+    monkeypatch.setattr(settings, "PARTS_OPERATIONS_V1_ENABLED", True)
+    engine = create_async_engine(os.environ[POSTGRES_URL]); factory = async_sessionmaker(engine, expire_on_commit=False)
+
+    async def call(ids, return_id, method, body, key):
+        async with factory() as db:
+            return await getattr(parts_operations, method)(
+                return_id, body, idempotency_key=key, db=db,
+                current_user=await db.get(User, ids["user_id"]),
+            )
+
+    try:
+        ids = await _seed(factory, stock=10)
+        # The three material return transition forms cover no-ledger, ledger, and 201 reversal response replay.
+        cases = []
+        submitted = await _db038_stock_return(factory, ids)
+        cases.append((submitted, "submit_return", parts_operations.VersionCommand(expected_version=1), "db038-concurrent-return-submit"))
+        cancelled = await _db038_stock_return(factory, ids)
+        cases.append((cancelled, "cancel_return", parts_operations.VersionCommand(expected_version=1), "db038-concurrent-return-cancel"))
+        shipped = await _db038_stock_return(factory, ids)
+        await call(ids, shipped, "submit_return", parts_operations.VersionCommand(expected_version=1), "db038-concurrent-ship-setup")
+        cases.append((shipped, "ship_return", parts_operations.VersionCommand(expected_version=2), "db038-concurrent-return-ship"))
+        credited = await _db038_stock_return(factory, ids)
+        await call(ids, credited, "submit_return", parts_operations.VersionCommand(expected_version=1), "db038-concurrent-credit-submit")
+        await call(ids, credited, "ship_return", parts_operations.VersionCommand(expected_version=2), "db038-concurrent-credit-ship")
+        cases.append((credited, "credit_return", parts_operations.VersionCommand(expected_version=3), "db038-concurrent-return-credit"))
+        reversed_id = await _db038_stock_return(factory, ids)
+        await call(ids, reversed_id, "submit_return", parts_operations.VersionCommand(expected_version=1), "db038-concurrent-reverse-submit")
+        await call(ids, reversed_id, "ship_return", parts_operations.VersionCommand(expected_version=2), "db038-concurrent-reverse-ship")
+        cases.append((reversed_id, "reverse_return", parts_operations.VersionCommand(expected_version=3, reason="carrier refused"), "db038-concurrent-return-reverse"))
+        for return_id, method, body, key in cases:
+            results = await asyncio.wait_for(asyncio.gather(
+                call(ids, return_id, method, body, key), call(ids, return_id, method, body, key),
+            ), timeout=10)
+            first = next(result for result in results if isinstance(result, dict))
+            replay = next(result for result in results if not isinstance(result, dict))
+            assert replay.headers["Idempotency-Replayed"] == "true"
+            assert json.loads(replay.body) == first
+            if method == "reverse_return":
+                assert replay.status_code == 201
+    finally:
+        await engine.dispose()
+
+
+async def _db038_expected_core(factory, ids):
+    async with factory() as db:
+        customer = Customer(tenant_id=ids["tenant_id"], first_name="Core", last_name="Replay", email=f"core-replay-{uuid4().hex}@example.test")
+        db.add(customer); await db.flush()
+        vehicle = Vehicle(tenant_id=ids["tenant_id"], customer_id=customer.id, make="Freightliner", model="Cascadia", year=2024)
+        db.add(vehicle); await db.flush()
+        order = RepairOrder(tenant_id=ids["tenant_id"], customer_id=customer.id, vehicle_id=vehicle.id, order_number=f"CORE-REPLAY-{uuid4().hex[:10]}", status=RepairOrderStatus.DRAFT)
+        db.add(order); await db.flush()
+        usage = PartsUsage(tenant_id=ids["tenant_id"], repair_order_id=order.id, inventory_id=ids["item_id"], quantity=Decimal("1.00"), unit_cost=Decimal("10.00"), unit_price=Decimal("20.00"), total_price=Decimal("20.00"), stock_reserved_packages=1)
+        db.add(usage); await db.flush()
+        core = CoreObligation(tenant_id=ids["tenant_id"], parts_usage_id=usage.id, inventory_id=ids["item_id"], supplier_id=ids["supplier_id"], quantity=1, unit_core_value_snapshot=Decimal("50.00"), status="expected")
+        db.add(core); await db.commit()
+        return core.id
+
+
+@pytest.mark.asyncio
+async def test_db038_postgres_po_and_core_transition_replays_are_serial_and_concurrent(monkeypatch):
+    """Submit/cancel/recover/waive share the same durable-key contract under real sessions."""
+    monkeypatch.setattr(settings, "PARTS_OPERATIONS_V1_ENABLED", True)
+    engine = create_async_engine(os.environ[POSTGRES_URL]); factory = async_sessionmaker(engine, expire_on_commit=False)
+
+    async def draft_po(ids):
+        async with factory() as db:
+            user = await db.get(User, ids["user_id"])
+            created = await parts_operations.create_purchase_order(
+                body=parts_operations.POCreate(
+                    po_number=f"PO-TRANSITION-{uuid4().hex[:10]}", supplier_id=ids["supplier_id"],
+                    lines=[parts_operations.POLineInput(inventory_id=ids["item_id"], ordered_quantity=1, unit_cost=Decimal("16.00"))],
+                ), idempotency_key=f"db038-transition-po-create-{uuid4().hex}", db=db, current_user=user,
+            )
+            return UUID(created["id"])
+
+    async def po_call(ids, po_id, method, body, key):
+        async with factory() as db:
+            return await getattr(parts_operations, method)(po_id, body, idempotency_key=key, db=db, current_user=await db.get(User, ids["user_id"]))
+
+    async def core_call(ids, core_id, method, body, key):
+        async with factory() as db:
+            return await getattr(parts_operations, method)(core_id, body, idempotency_key=key, db=db, current_user=await db.get(User, ids["user_id"]))
+
+    async def assert_pair(call):
+        first = await call()
+        replay = await call()
+        assert isinstance(first, dict)
+        assert replay.headers["Idempotency-Replayed"] == "true"
+        assert json.loads(replay.body) == first
+        return first
+
+    async def assert_concurrent(call):
+        results = await asyncio.wait_for(asyncio.gather(call(), call()), timeout=10)
+        first = next(result for result in results if isinstance(result, dict))
+        replay = next(result for result in results if not isinstance(result, dict))
+        assert replay.headers["Idempotency-Replayed"] == "true"
+        assert json.loads(replay.body) == first
+
+    try:
+        ids = await _seed(factory)
+        # Serial PO submit/cancel replay does not advance optimistic versions a second time.
+        po_id = await draft_po(ids)
+        submitted = await assert_pair(lambda: po_call(ids, po_id, "submit_purchase_order", parts_operations.VersionCommand(expected_version=1), "db038-po-submit-replay-key"))
+        async with factory() as db:
+            po = await db.get(PurchaseOrder, po_id)
+            assert (po.status, po.version) == ("submitted", submitted["version"])
+            user = await db.get(User, ids["user_id"])
+            with pytest.raises(HTTPException) as conflict:
+                await parts_operations.submit_purchase_order(po_id, parts_operations.VersionCommand(expected_version=99), idempotency_key="db038-po-submit-replay-key", db=db, current_user=user)
+            assert conflict.value.status_code == 409
+            await db.rollback()
+        po_id = await draft_po(ids)
+        cancelled = await assert_pair(lambda: po_call(ids, po_id, "cancel_purchase_order", parts_operations.VersionCommand(expected_version=1, reason="supplier closed"), "db038-po-cancel-replay-key"))
+        async with factory() as db:
+            po = await db.get(PurchaseOrder, po_id)
+            assert (po.status, po.version) == ("cancelled", cancelled["version"])
+            user = await db.get(User, ids["user_id"])
+            with pytest.raises(HTTPException) as conflict:
+                await parts_operations.cancel_purchase_order(po_id, parts_operations.VersionCommand(expected_version=99), idempotency_key="db038-po-cancel-replay-key", db=db, current_user=user)
+            assert conflict.value.status_code == 409
+            await db.rollback()
+
+        # Concurrent sessions serialize all four state transitions through the tenant/family/key advisory lock.
+        po_id = await draft_po(ids)
+        await assert_concurrent(lambda: po_call(ids, po_id, "submit_purchase_order", parts_operations.VersionCommand(expected_version=1), "db038-po-submit-concurrent-key"))
+        po_id = await draft_po(ids)
+        await assert_concurrent(lambda: po_call(ids, po_id, "cancel_purchase_order", parts_operations.VersionCommand(expected_version=1), "db038-po-cancel-concurrent-key"))
+        core_id = await _db038_expected_core(factory, ids)
+        recovered = await assert_pair(lambda: core_call(ids, core_id, "recover_core", parts_operations.VersionCommand(expected_version=1), "db038-core-recover-replay-key"))
+        async with factory() as db:
+            core = await db.get(CoreObligation, core_id)
+            movement_count = await db.scalar(select(func.count(InventoryMovement.id)).where(InventoryMovement.source_id == core_id))
+            assert (core.status, core.version, movement_count) == ("on_hand", recovered["version"], 1)
+            user = await db.get(User, ids["user_id"])
+            with pytest.raises(HTTPException) as conflict:
+                await parts_operations.recover_core(core_id, parts_operations.VersionCommand(expected_version=99), idempotency_key="db038-core-recover-replay-key", db=db, current_user=user)
+            assert conflict.value.status_code == 409
+            await db.rollback()
+        core_id = await _db038_expected_core(factory, ids)
+        waived = await assert_pair(lambda: core_call(ids, core_id, "waive_core", parts_operations.VersionCommand(expected_version=1, reason="supplier waiver"), "db038-core-waive-replay-key"))
+        async with factory() as db:
+            core = await db.get(CoreObligation, core_id)
+            assert (core.status, core.version, core.reason) == ("waived", waived["version"], "supplier waiver")
+        core_id = await _db038_expected_core(factory, ids)
+        await assert_concurrent(lambda: core_call(ids, core_id, "recover_core", parts_operations.VersionCommand(expected_version=1), "db038-core-recover-concurrent-key"))
+        core_id = await _db038_expected_core(factory, ids)
+        await assert_concurrent(lambda: core_call(ids, core_id, "waive_core", parts_operations.VersionCommand(expected_version=1, reason="supplier waiver"), "db038-core-waive-concurrent-key"))
+
+        # A reused key with another request body is always a conflict before the domain row is touched.
+        async with factory() as db:
+            user = await db.get(User, ids["user_id"])
+            with pytest.raises(HTTPException) as conflict:
+                await parts_operations.waive_core(
+                    core_id, parts_operations.VersionCommand(expected_version=1, reason="different reason"),
+                    idempotency_key="db038-core-waive-concurrent-key", db=db, current_user=user,
+                )
+            assert conflict.value.status_code == 409
+            await db.rollback()
+    finally:
+        await engine.dispose()

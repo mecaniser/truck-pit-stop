@@ -272,22 +272,28 @@ async def get_purchase_order(po_id: UUID, db: AsyncSession = Depends(get_db), cu
 
 @router.post("/purchase-orders/{po_id}/submit")
 async def submit_purchase_order(po_id: UUID, body: VersionCommand, idempotency_key: Optional[str] = Header(default=None, alias="Idempotency-Key"), db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
-    tenant_id = await _tenant(db, current_user, mutate=True); validate_idempotency_key(idempotency_key)
+    tenant_id = await _tenant(db, current_user, mutate=True)
+    replay, record = await _start_mutation(db, tenant_id=tenant_id, user=current_user, family="po_submit", route=f"POST:/purchase-orders/{po_id}/submit", idempotency_key=idempotency_key, payload=body.model_dump(mode="json"))
+    if replay is not None: return replay
     po = await _po(db, tenant_id, po_id, locked=True)
     if po.version != body.expected_version or po.status != "draft": raise HTTPException(status_code=409, detail="Purchase order changed")
     if not await _po_lines(db, tenant_id, po_id): raise HTTPException(status_code=409, detail="Purchase order has no lines")
     po.status = "submitted"; po.ordered_at = datetime.now(timezone.utc); po.submitted_by_user_id = current_user.id; po.version += 1
-    await db.commit(); return _serialize_po(po, await _po_lines(db, tenant_id, po_id))
+    output = _complete_mutation(record, _serialize_po(po, await _po_lines(db, tenant_id, po_id)))
+    await db.commit(); return output
 
 
 @router.post("/purchase-orders/{po_id}/cancel")
 async def cancel_purchase_order(po_id: UUID, body: VersionCommand, idempotency_key: Optional[str] = Header(default=None, alias="Idempotency-Key"), db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
-    tenant_id = await _tenant(db, current_user, mutate=True); validate_idempotency_key(idempotency_key)
+    tenant_id = await _tenant(db, current_user, mutate=True)
+    replay, record = await _start_mutation(db, tenant_id=tenant_id, user=current_user, family="po_cancel", route=f"POST:/purchase-orders/{po_id}/cancel", idempotency_key=idempotency_key, payload=body.model_dump(mode="json"))
+    if replay is not None: return replay
     po = await _po(db, tenant_id, po_id, locked=True)
     if po.version != body.expected_version or po.status not in {"draft", "submitted"}: raise HTTPException(status_code=409, detail="Purchase order changed")
     if (await _po_lines(db, tenant_id, po_id)).__len__() and any(line.received_quantity for line in await _po_lines(db, tenant_id, po_id)): raise HTTPException(status_code=409, detail="Purchase order has receipts")
     po.status = "cancelled"; po.notes = body.reason or po.notes; po.version += 1
-    await db.commit(); return _serialize_po(po, await _po_lines(db, tenant_id, po_id))
+    output = _complete_mutation(record, _serialize_po(po, await _po_lines(db, tenant_id, po_id)))
+    await db.commit(); return output
 
 
 @router.post("/purchase-orders/{po_id}/receipts", status_code=status.HTTP_201_CREATED)
@@ -326,8 +332,10 @@ async def list_cores(db: AsyncSession = Depends(get_db), current_user: User = De
 
 
 @router.post("/cores/{obligation_id}/recover")
-async def recover_core(obligation_id: UUID, body: VersionCommand, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+async def recover_core(obligation_id: UUID, body: VersionCommand, idempotency_key: Optional[str] = Header(default=None, alias="Idempotency-Key"), db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
     tenant_id = await _tenant(db, current_user, mutate=True)
+    replay, record = await _start_mutation(db, tenant_id=tenant_id, user=current_user, family="core_recover", route=f"POST:/cores/{obligation_id}/recover", idempotency_key=idempotency_key, payload=body.model_dump(mode="json"))
+    if replay is not None: return replay
     core = (await db.execute(select(CoreObligation).where(CoreObligation.id == obligation_id, CoreObligation.tenant_id == tenant_id, CoreObligation.deleted_at.is_(None)).with_for_update())).scalar_one_or_none()
     if not core: raise _not_found()
     if core.status != "expected" or core.version != body.expected_version: raise HTTPException(status_code=409, detail="Core obligation changed")
@@ -336,18 +344,22 @@ async def recover_core(obligation_id: UUID, body: VersionCommand, db: AsyncSessi
     before = int((await db.execute(select(func.coalesce(func.sum(InventoryMovement.quantity_delta), 0)).where(InventoryMovement.tenant_id == tenant_id, InventoryMovement.inventory_id == item.id, InventoryMovement.bucket == "core_on_hand"))).scalar() or 0)
     core.status = "on_hand"; core.version += 1; item.stock_version = int(item.stock_version or 0) + 1
     db.add(InventoryMovement(tenant_id=tenant_id, inventory_id=item.id, bucket="core_on_hand", movement_type="core_recovery", quantity_delta=core.quantity, balance_before=before, balance_after=before + core.quantity, unit_cost_snapshot=core.unit_core_value_snapshot, wac_before=Decimal(item.cost), wac_after=Decimal(item.cost), source_type="core_obligation", source_id=core.id, actor_user_id=current_user.id, actor_display_name_snapshot=f"{current_user.first_name} {current_user.last_name}".strip(), reason_code="core_recovery"))
-    await db.commit(); return {"id": str(core.id), "status": core.status, "version": core.version}
+    output = _complete_mutation(record, {"id": str(core.id), "status": core.status, "version": core.version})
+    await db.commit(); return output
 
 
 @router.post("/cores/{obligation_id}/waive")
-async def waive_core(obligation_id: UUID, body: VersionCommand, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+async def waive_core(obligation_id: UUID, body: VersionCommand, idempotency_key: Optional[str] = Header(default=None, alias="Idempotency-Key"), db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
     tenant_id = await _tenant(db, current_user, mutate=True)
+    replay, record = await _start_mutation(db, tenant_id=tenant_id, user=current_user, family="core_waive", route=f"POST:/cores/{obligation_id}/waive", idempotency_key=idempotency_key, payload=body.model_dump(mode="json"))
+    if replay is not None: return replay
     core = (await db.execute(select(CoreObligation).where(CoreObligation.id == obligation_id, CoreObligation.tenant_id == tenant_id, CoreObligation.deleted_at.is_(None)).with_for_update())).scalar_one_or_none()
     if not core: raise _not_found()
     if core.status not in {"expected", "on_hand"} or core.version != body.expected_version: raise HTTPException(status_code=409, detail="Core obligation changed")
     if not body.reason: raise HTTPException(status_code=422, detail="Waiver reason is required")
     core.status = "waived"; core.reason = body.reason; core.version += 1
-    await db.commit(); return {"id": str(core.id), "status": core.status, "version": core.version}
+    output = _complete_mutation(record, {"id": str(core.id), "status": core.status, "version": core.version})
+    await db.commit(); return output
 
 
 @router.get("/returns")
@@ -409,13 +421,16 @@ async def create_return(body: ReturnCreate, idempotency_key: Optional[str] = Hea
 
 
 @router.post("/returns/{return_id}/submit")
-async def submit_return(return_id: UUID, body: VersionCommand, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+async def submit_return(return_id: UUID, body: VersionCommand, idempotency_key: Optional[str] = Header(default=None, alias="Idempotency-Key"), db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
     tenant_id = await _tenant(db, current_user, mutate=True)
+    replay, record = await _start_mutation(db, tenant_id=tenant_id, user=current_user, family="return_submit", route=f"POST:/returns/{return_id}/submit", idempotency_key=idempotency_key, payload=body.model_dump(mode="json"))
+    if replay is not None: return replay
     row = (await db.execute(select(VendorReturn).where(VendorReturn.id == return_id, VendorReturn.tenant_id == tenant_id, VendorReturn.deleted_at.is_(None)).with_for_update())).scalar_one_or_none()
     if not row: raise _not_found()
     if row.status != "draft" or row.version != body.expected_version: raise HTTPException(status_code=409, detail="Return changed")
     row.status = "submitted"; row.submitted_at = datetime.now(timezone.utc); row.version += 1
-    await db.commit(); return {"id": str(row.id), "status": row.status, "version": row.version}
+    output = _complete_mutation(record, {"id": str(row.id), "status": row.status, "version": row.version})
+    await db.commit(); return output
 
 @router.patch("/purchase-orders/{po_id}")
 async def update_purchase_order(po_id: UUID, body: POUpdate, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
@@ -466,7 +481,9 @@ async def update_return(return_id: UUID, body: ReturnUpdate, db: AsyncSession = 
 
 @router.post("/returns/{return_id}/ship")
 async def ship_return(return_id: UUID, body: VersionCommand, idempotency_key: Optional[str] = Header(default=None, alias="Idempotency-Key"), db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
-    tenant_id = await _tenant(db, current_user, mutate=True); validate_idempotency_key(idempotency_key)
+    tenant_id = await _tenant(db, current_user, mutate=True)
+    replay, record = await _start_mutation(db, tenant_id=tenant_id, user=current_user, family="return_ship", route=f"POST:/returns/{return_id}/ship", idempotency_key=idempotency_key, payload=body.model_dump(mode="json"))
+    if replay is not None: return replay
     row = (await db.execute(select(VendorReturn).where(VendorReturn.id == return_id, VendorReturn.tenant_id == tenant_id, VendorReturn.deleted_at.is_(None)).with_for_update())).scalar_one_or_none()
     if not row: raise _not_found()
     if row.status != "submitted" or row.version != body.expected_version: raise HTTPException(status_code=409, detail="Return changed")
@@ -485,32 +502,41 @@ async def ship_return(return_id: UUID, body: VersionCommand, idempotency_key: Op
             db.add(InventoryMovement(tenant_id=tenant_id, inventory_id=item.id, bucket="core_on_hand", movement_type="core_return", quantity_delta=-line.quantity, balance_before=before, balance_after=before-line.quantity, unit_cost_snapshot=core.unit_core_value_snapshot, wac_before=Decimal(item.cost), wac_after=Decimal(item.cost), source_type="vendor_return", source_id=row.id, actor_user_id=current_user.id, actor_display_name_snapshot=f"{current_user.first_name} {current_user.last_name}".strip(), reason_code=row.reason, idempotency_key=f"{idempotency_key}:{line.id}"))
             item.stock_version = int(item.stock_version or 0) + 1
     row.status = "shipped"; row.shipped_at = datetime.now(timezone.utc); row.version += 1
-    await db.commit(); return {"id": str(row.id), "status": row.status, "version": row.version}
+    output = _complete_mutation(record, {"id": str(row.id), "status": row.status, "version": row.version})
+    await db.commit(); return output
 
 
 @router.post("/returns/{return_id}/credit")
-async def credit_return(return_id: UUID, body: VersionCommand, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+async def credit_return(return_id: UUID, body: VersionCommand, idempotency_key: Optional[str] = Header(default=None, alias="Idempotency-Key"), db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
     tenant_id = await _tenant(db, current_user, mutate=True)
+    replay, record = await _start_mutation(db, tenant_id=tenant_id, user=current_user, family="return_credit", route=f"POST:/returns/{return_id}/credit", idempotency_key=idempotency_key, payload=body.model_dump(mode="json"))
+    if replay is not None: return replay
     row = (await db.execute(select(VendorReturn).where(VendorReturn.id == return_id, VendorReturn.tenant_id == tenant_id, VendorReturn.deleted_at.is_(None)).with_for_update())).scalar_one_or_none()
     if not row: raise _not_found()
     if row.status != "shipped" or row.version != body.expected_version: raise HTTPException(status_code=409, detail="Return changed")
     row.status = "credited"; row.credited_at = datetime.now(timezone.utc); row.version += 1
-    await db.commit(); return {"id": str(row.id), "status": row.status, "version": row.version}
+    output = _complete_mutation(record, {"id": str(row.id), "status": row.status, "version": row.version})
+    await db.commit(); return output
 
 
 @router.post("/returns/{return_id}/cancel")
-async def cancel_return(return_id: UUID, body: VersionCommand, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+async def cancel_return(return_id: UUID, body: VersionCommand, idempotency_key: Optional[str] = Header(default=None, alias="Idempotency-Key"), db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
     tenant_id = await _tenant(db, current_user, mutate=True)
+    replay, record = await _start_mutation(db, tenant_id=tenant_id, user=current_user, family="return_cancel", route=f"POST:/returns/{return_id}/cancel", idempotency_key=idempotency_key, payload=body.model_dump(mode="json"))
+    if replay is not None: return replay
     row = (await db.execute(select(VendorReturn).where(VendorReturn.id == return_id, VendorReturn.tenant_id == tenant_id, VendorReturn.deleted_at.is_(None)).with_for_update())).scalar_one_or_none()
     if not row: raise _not_found()
     if row.status not in {"draft", "submitted"} or row.version != body.expected_version: raise HTTPException(status_code=409, detail="Return changed")
     row.status = "cancelled"; row.version += 1
-    await db.commit(); return {"id": str(row.id), "status": row.status, "version": row.version}
+    output = _complete_mutation(record, {"id": str(row.id), "status": row.status, "version": row.version})
+    await db.commit(); return output
 
 
 @router.post("/returns/{return_id}/reverse", status_code=status.HTTP_201_CREATED)
 async def reverse_return(return_id: UUID, body: VersionCommand, idempotency_key: Optional[str] = Header(default=None, alias="Idempotency-Key"), db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
-    tenant_id = await _tenant(db, current_user, mutate=True); validate_idempotency_key(idempotency_key)
+    tenant_id = await _tenant(db, current_user, mutate=True)
+    replay, record = await _start_mutation(db, tenant_id=tenant_id, user=current_user, family="return_reverse", route=f"POST:/returns/{return_id}/reverse", idempotency_key=idempotency_key, payload=body.model_dump(mode="json"))
+    if replay is not None: return replay
     original = (await db.execute(select(VendorReturn).where(VendorReturn.id == return_id, VendorReturn.tenant_id == tenant_id, VendorReturn.deleted_at.is_(None)).with_for_update())).scalar_one_or_none()
     if not original: raise _not_found()
     if original.status not in {"shipped", "credited"} or original.version != body.expected_version or not body.reason: raise HTTPException(status_code=409, detail="Return cannot be reversed")
@@ -547,4 +573,5 @@ async def reverse_return(return_id: UUID, body: VersionCommand, idempotency_key:
                 reason_code=body.reason, idempotency_key=f"{idempotency_key}:{line.id}",
             ))
         db.add(VendorReturnLine(tenant_id=tenant_id, vendor_return_id=reversal.id, purchase_receipt_line_id=line.purchase_receipt_line_id, core_obligation_id=line.core_obligation_id, inventory_id=line.inventory_id, quantity=line.quantity, expected_credit=line.expected_credit, stock_value_snapshot=line.stock_value_snapshot))
-    await db.commit(); return {"id": str(reversal.id), "return_number": reversal.return_number, "status": reversal.status, "reverses_return_id": str(original.id)}
+    output = _complete_mutation(record, {"id": str(reversal.id), "return_number": reversal.return_number, "status": reversal.status, "reverses_return_id": str(original.id)}, status_code=201)
+    await db.commit(); return output
