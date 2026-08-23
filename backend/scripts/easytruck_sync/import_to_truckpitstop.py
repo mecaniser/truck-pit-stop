@@ -60,10 +60,31 @@ COMMIT_BATCH = 50
 
 
 def _norm_sku(raw_pn):
+    """Display SKU: "ETS-" + the part number as Easy Truck Shop currently spells
+    it, upper-cased. The ETS- prefix marks provenance; upper-casing is applied
+    unconditionally so a part re-typed in ETS as "w261624" can never appear
+    alongside "W261624" as a second row."""
     pn = (raw_pn or "").strip()
     if not pn:
         return None
-    return (pn if pn.startswith("ETS-") else f"ETS-{pn}")[:100]
+    if pn.upper().startswith("ETS-"):
+        pn = pn[4:].strip()
+    return f"ETS-{pn.upper()}"[:100]
+
+
+def _canon_sku(sku):
+    """Match key: strip the prefix and every non-alphanumeric, upper-case.
+
+    Matching on the raw SKU string is what produced 58 duplicate groups in prod
+    — ETS part numbers are free text, so "W261624"/"w261624" and
+    "TCXT130158342AC2"/"TCX T130158342AC2" each forked a second inventory row
+    instead of updating the first. Collapsing to this key makes those the same
+    part. Note it deliberately does NOT merge different part numbers (2401771 vs
+    2401771DH); those are a renumbering question for a human, not formatting."""
+    s = (sku or "").strip()
+    if s.upper().startswith("ETS-"):
+        s = s[4:]
+    return re.sub(r"[^A-Z0-9]", "", s.upper())
 
 
 def _load_image_cache():
@@ -705,9 +726,21 @@ def resync_parts(conn, tenant_id, commit, rehost_images):
 
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     cur.execute(
-        "SELECT id, sku, image_url, created_at, updated_at FROM inventory "
-        "WHERE tenant_id=%s AND source=%s", (tenant_id, IMPORT_SOURCE))
-    existing = {r["sku"]: r for r in cur.fetchall()}
+        "SELECT id, sku, location, image_url, created_at, updated_at FROM inventory "
+        "WHERE tenant_id=%s AND source=%s AND deleted_at IS NULL", (tenant_id, IMPORT_SOURCE))
+    # Keyed by canonical SKU, not the raw string — see _canon_sku. Where a
+    # pre-existing duplicate pair is still present (until the merge pass runs),
+    # keep the richer row: location first, then image. That mirrors the agreed
+    # merge priority, so the copy we keep updating is the one worth keeping.
+    def _richness(row):
+        return (row["location"] is not None, row["image_url"] is not None)
+
+    existing = {}
+    for r in cur.fetchall():
+        key = _canon_sku(r["sku"])
+        prev = existing.get(key)
+        if prev is None or _richness(r) > _richness(prev):
+            existing[key] = r
     cur.close()
 
     # Images are uploaded ahead of time (see upload_all_images / --upload-images-
@@ -726,7 +759,7 @@ def resync_parts(conn, tenant_id, commit, rehost_images):
     now = datetime.utcnow()
     w = conn.cursor()
     stats = {"ins": 0, "upd": 0, "skip_edited": 0, "img_rehosted": 0,
-             "no_sku": 0, "img_placeholder_skipped": 0}
+             "no_sku": 0, "img_placeholder_skipped": 0, "sku_respelled": 0}
     processed = 0
 
     for part in parts:
@@ -734,10 +767,11 @@ def resync_parts(conn, tenant_id, commit, rehost_images):
         if not raw_pn:
             stats["no_sku"] += 1
             continue
-        # The original import stored part SKUs with an "ETS-" prefix. Match that
-        # convention so the resync updates existing rows instead of duplicating
-        # them. Tolerate a part number that already carries the prefix.
+        # Display SKU follows how ETS spells the part number today (upper-cased);
+        # matching is done on the canonical key so a re-spelling updates the row
+        # rather than forking a new one.
         sku = _norm_sku(raw_pn)
+        canon = _canon_sku(sku)
         name = (part.get("description") or sku)[:255]
         location = (part.get("location") or None)
         cost = parse_money(part.get("cost"))
@@ -748,12 +782,16 @@ def resync_parts(conn, tenant_id, commit, rehost_images):
             stats["img_placeholder_skipped"] += 1
             src_img = None
 
-        ex = existing.get(sku)
+        ex = existing.get(canon)
         if ex:
             item_id = ex["id"]
             if not _untouched(ex["created_at"], ex["updated_at"]):
                 stats["skip_edited"] += 1
                 continue
+            if ex["sku"] != sku:
+                # Same part, respelled in ETS (case/spacing). Adopt ETS's current
+                # spelling rather than leaving the old one or adding a second row.
+                stats["sku_respelled"] += 1
             image_url, public_id = ex["image_url"], None
             # only re-host if we don't already have an image locally. Uses the
             # pre-uploaded cache (keyed by source URL) so no slow network call
@@ -763,14 +801,14 @@ def resync_parts(conn, tenant_id, commit, rehost_images):
                 if image_url:
                     stats["img_rehosted"] += 1
             w.execute(
-                """UPDATE inventory SET name=%s,
+                """UPDATE inventory SET name=%s, sku=%s,
                      location=COALESCE(%s, location), cost=%s, selling_price=%s,
                      stock_quantity=%s,
                      image_url=COALESCE(%s, image_url),
                      cloudinary_public_id=COALESCE(%s, cloudinary_public_id),
                      updated_at=%s
                    WHERE id=%s""",
-                (name, location, cost, price, stock, image_url, public_id, now, item_id))
+                (name, sku, location, cost, price, stock, image_url, public_id, now, item_id))
             stats["upd"] += 1
         else:
             item_id = uuid.uuid4()
