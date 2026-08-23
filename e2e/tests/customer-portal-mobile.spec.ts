@@ -122,7 +122,42 @@ const invoices = [
   },
 ]
 
+const activeAuthorization = {
+  id: 'quote-safe-active-1',
+  tenant_id: 'tenant-safe-1',
+  repair_order_id: 'order-active-1',
+  quote_number: 'Q-2026-0811',
+  total_amount: '4494.62',
+  notes: null,
+  expires_at: null,
+  is_approved: false,
+  is_declined: false,
+  decline_notes: null,
+  sent_to_customer: true,
+  sent_at: '2026-08-11T09:47:00Z',
+  created_at: '2026-08-11T09:40:00Z',
+  updated_at: '2026-08-11T09:47:00Z',
+  revision: 1,
+  authorization_type: 'initial_estimate',
+  previously_authorized_amount: '0.00',
+  delta_amount: '4494.62',
+}
+
 async function installSafePortalFixture(page: Page) {
+  const webSocketRegistrations: Array<{ pathname: string; hasQuery: boolean }> = []
+  let draftQuoteRequests = 0
+
+  await page.routeWebSocket(/\/api\/v1\/ws(?:$|\?)/, socket => {
+    const socketUrl = new URL(socket.url())
+    webSocketRegistrations.push({
+      pathname: socketUrl.pathname,
+      hasQuery: socketUrl.search.length > 0,
+    })
+    socket.onMessage(message => {
+      if (message === 'ping') socket.send('pong')
+    })
+  })
+
   await page.addInitScript(({ fixtureCustomer }) => {
     window.localStorage.setItem('theme-font-size', 'compact')
     window.localStorage.setItem('auth-storage', JSON.stringify({
@@ -175,11 +210,26 @@ async function installSafePortalFixture(page: Page) {
     if (path === '/quickbooks/payments/availability/invoice-unpaid-1') {
       return json({ available: false, token_url: null, message: 'Unavailable in safe fixture' })
     }
-    if (path === '/quotes') return json(null)
+    if (path === '/quotes') {
+      draftQuoteRequests += 1
+      return route.fulfill({ status: 403, contentType: 'application/json', body: JSON.stringify({ detail: 'Insufficient permissions' }) })
+    }
+    if (path.startsWith('/quotes/repair-order/') && path.endsWith('/history')) {
+      const repairOrderId = path.split('/')[3]
+      return json({
+        revisions: repairOrderId === activeAuthorization.repair_order_id ? [activeAuthorization] : [],
+        events: [],
+      })
+    }
     if (path === '/auth/platform-contact') return json({ support_name: 'Diesel Bridge Support', support_email: 'support@example.test', support_phone: null })
 
     return route.fulfill({ status: 404, contentType: 'application/json', body: JSON.stringify({ detail: `Unhandled safe fixture route: ${path}` }) })
   })
+
+  return {
+    get webSocketRegistrations() { return [...webSocketRegistrations] },
+    get draftQuoteRequests() { return draftQuoteRequests },
+  }
 }
 
 async function expectContainedPortalGeometry(page: Page, viewportWidth: number) {
@@ -268,7 +318,7 @@ async function expectFullPortalSurfaceTargetsAtLeast44(page: Page) {
 for (const width of [390, 320]) {
   test(`customer portal contains mobile geometry and touch targets at ${width}px`, async ({ page }) => {
     await page.setViewportSize({ width, height: 780 })
-    await installSafePortalFixture(page)
+    const fixture = await installSafePortalFixture(page)
 
     const browserErrors: string[] = []
     page.on('pageerror', error => browserErrors.push(`page: ${error.message}`))
@@ -318,6 +368,12 @@ for (const width of [390, 320]) {
     await expectContainedPortalGeometry(page, width)
     await expectVisibleTargetsAtLeast44(page)
 
+    expect(fixture.webSocketRegistrations.length).toBeGreaterThanOrEqual(1)
+    expect(fixture.webSocketRegistrations.length).toBeLessThanOrEqual(2)
+    expect(fixture.webSocketRegistrations.every(registration => (
+      registration.pathname === '/api/v1/ws' && registration.hasQuery === false
+    ))).toBe(true)
+    expect(fixture.draftQuoteRequests).toBe(0)
     expect(browserErrors).toEqual([])
   })
 }

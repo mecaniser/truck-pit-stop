@@ -261,6 +261,96 @@ async def test_pm_services_default_package_and_seeding(db_session):
 
 
 @pytest.mark.asyncio
+async def test_schedule_pm_rejects_invalid_bundle_before_schedule_or_order_mutation(db_session):
+    """A generated bundle must fail before schedule fields can autoflush."""
+    import sqlalchemy as sa
+    from datetime import date, timedelta
+
+    from fastapi import HTTPException
+
+    from app.db.models.fleet import VehiclePMService
+    from app.db.models.inventory import Inventory, PartsUsage
+    from app.db.models.labor import Labor
+    from app.db.models.service import Service, ServicePart
+    from app.schemas.fleet import SchedulePMRequest
+
+    tenant, fc, user = await _seed(db_session)
+    vehicle = _vehicle(
+        tenant.id,
+        fc.id,
+        unit_number="INVALID-BUNDLE",
+        next_pm_miles=120000,
+    )
+    inventory = Inventory(
+        id=uuid4(),
+        tenant_id=tenant.id,
+        sku="INVALID-BUNDLE-PART",
+        name="Invalid bundled part",
+        stock_quantity=10,
+        cost=Decimal("5.00"),
+        selling_price=Decimal("10.00"),
+    )
+    service = Service(
+        id=uuid4(),
+        tenant_id=tenant.id,
+        name="Invalid bundled service",
+        duration_minutes=60,
+        is_active=True,
+    )
+    db_session.add_all([vehicle, inventory, service])
+    await db_session.commit()
+    db_session.add(
+        ServicePart(
+            id=uuid4(),
+            tenant_id=tenant.id,
+            service_id=service.id,
+            inventory_id=inventory.id,
+            quantity=Decimal("9999.99"),
+        )
+    )
+    await db_session.commit()
+
+    with pytest.raises(HTTPException) as rejected:
+        await fleet.schedule_pm(
+            vehicle_id=vehicle.id,
+            body=SchedulePMRequest(
+                next_pm_miles=130000,
+                due_date=date.today() + timedelta(days=5),
+                create_work_order=True,
+                save_as_default=True,
+                service_ids=[service.id],
+            ),
+            db=db_session,
+            current_user=user,
+        )
+    assert rejected.value.status_code == 422
+
+    await db_session.refresh(vehicle)
+    await db_session.refresh(inventory)
+    assert vehicle.next_pm_miles == 120000
+    assert vehicle.pm_due_date is None
+    assert inventory.stock_quantity == 10
+    assert await db_session.scalar(
+        sa.select(sa.func.count(RepairOrder.id)).where(
+            RepairOrder.vehicle_id == vehicle.id
+        )
+    ) == 0
+    assert await db_session.scalar(
+        sa.select(sa.func.count(Labor.id)).where(Labor.tenant_id == tenant.id)
+    ) == 0
+    assert await db_session.scalar(
+        sa.select(sa.func.count(PartsUsage.id)).where(
+            PartsUsage.tenant_id == tenant.id
+        )
+    ) == 0
+    assert await db_session.scalar(
+        sa.select(sa.func.count(VehiclePMService.id)).where(
+            VehiclePMService.vehicle_id == vehicle.id
+        )
+    ) == 0
+
+
+@pytest.mark.asyncio
 async def test_set_wo_pm_services_on_existing_draft(db_session):
     """A PM work order created without services (the screenshot case) can have
     services added afterward via the work-order endpoint, which seeds the cost

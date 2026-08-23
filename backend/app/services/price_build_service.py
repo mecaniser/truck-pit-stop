@@ -31,6 +31,8 @@ from app.services.repair_operation_library import (
     search_operation_library,
 )
 from app.services.internal_fleet import fleet_labor_uses_customer_rate
+from app.services.pricing import compute_canonical_order_totals
+from app.core.work_value_validation import validate_labor_hours, validate_part_quantity
 
 
 class PriceBuildError(Exception):
@@ -42,6 +44,18 @@ class PriceBuildNotFoundError(PriceBuildError):
 
 
 class PriceBuildLockedError(PriceBuildError):
+    pass
+
+
+class PriceBuildConflictError(PriceBuildError):
+    pass
+
+
+class PriceBuildForbiddenError(PriceBuildError):
+    pass
+
+
+class PriceBuildInputError(PriceBuildError):
     pass
 
 
@@ -70,6 +84,19 @@ INTERNAL_FROZEN_STATUSES = {
 }
 FINALIZED_STATUSES = {RepairOrderStatus.INVOICED, RepairOrderStatus.PAID}
 logger = get_logger(__name__)
+def validate_mechanic_labor_hours(value: Decimal) -> Decimal:
+    """Return exact database-safe hours or reject the additive operation."""
+    try:
+        return validate_labor_hours(value)
+    except ValueError as exc:
+        raise PriceBuildInputError(str(exc)) from exc
+
+
+def _validate_price_build_part_quantity(value: Decimal) -> Decimal:
+    try:
+        return validate_part_quantity(value)
+    except ValueError as exc:
+        raise PriceBuildInputError(str(exc)) from exc
 
 
 @dataclass
@@ -223,8 +250,15 @@ def _memory_operation_key(
 
 
 class PriceBuildService:
-    async def load_order(self, db: AsyncSession, order_id: UUID) -> RepairOrder:
-        result = await db.execute(
+    async def load_order(
+        self,
+        db: AsyncSession,
+        order_id: UUID,
+        *,
+        for_update: bool = False,
+        tenant_id: Optional[UUID] = None,
+    ) -> RepairOrder:
+        statement = (
             select(RepairOrder)
             .where(RepairOrder.id == order_id, RepairOrder.deleted_at.is_(None))
             .options(
@@ -234,6 +268,11 @@ class PriceBuildService:
             )
             .execution_options(populate_existing=True)
         )
+        if tenant_id is not None:
+            statement = statement.where(RepairOrder.tenant_id == tenant_id)
+        if for_update:
+            statement = statement.with_for_update()
+        result = await db.execute(statement)
         order = result.scalar_one_or_none()
         if not order:
             raise PriceBuildNotFoundError("Repair order not found")
@@ -246,10 +285,11 @@ class PriceBuildService:
         service_id: UUID,
         *,
         quantity: int = 1,
+        mechanic_additive_only: bool = False,
+        mechanic_id: Optional[UUID] = None,
     ) -> PriceBuildResult:
-        self._assert_editable(order)
         if quantity < 1:
-            raise PriceBuildValidationError("quantity must be >= 1")
+            raise PriceBuildInputError("quantity must be >= 1")
 
         svc_result = await db.execute(
             select(Service)
@@ -257,6 +297,8 @@ class PriceBuildService:
                 and_(
                     Service.id == service_id,
                     Service.tenant_id == order.tenant_id,
+                    Service.is_active.is_(True),
+                    Service.deleted_at.is_(None),
                 )
             )
             .options(
@@ -265,14 +307,30 @@ class PriceBuildService:
         )
         service = svc_result.scalar_one_or_none()
         if not service:
-            raise PriceBuildNotFoundError("Service not found")
+            raise PriceBuildNotFoundError("Source reference not found")
 
-        tenant = await self._get_tenant(db, order.tenant_id)
-        hourly_rate = _labor_rate_for(order, tenant)
-        # Labor hours come from the service's duration, scaled by quantity (how many
-        # times this service is being performed). A 60-minute service × quantity 2 = 2 hours.
-        hours_per_unit = (Decimal(service.duration_minutes) / Decimal(60))
-        total_hours = hours_per_unit * Decimal(quantity)
+        # Validate every generated numeric value before the repair order or
+        # inventory rows are locked and before any existing bundle is reset.
+        hours_per_unit = Decimal(service.duration_minutes) / Decimal(60)
+        total_hours = validate_mechanic_labor_hours(
+            hours_per_unit * Decimal(quantity)
+        )
+        required_quantities = {
+            sp.id: _validate_price_build_part_quantity(
+                Decimal(str(sp.quantity)) * Decimal(quantity)
+            )
+            for sp in service.service_parts
+        }
+
+        order = await self.load_order(
+            db, order.id, for_update=True, tenant_id=order.tenant_id
+        )
+        self._assert_locked_mechanic_assignment(
+            order,
+            mechanic_additive_only=mechanic_additive_only,
+            mechanic_id=mechanic_id,
+        )
+        self._assert_editable(order)
 
         existing_line = next(
             (
@@ -282,6 +340,15 @@ class PriceBuildService:
             ),
             None,
         )
+        if existing_line and mechanic_additive_only:
+            raise PriceBuildConflictError(
+                "Mechanics may only add new service lines; an existing service requires staff review"
+            )
+
+        tenant = await self._get_tenant(db, order.tenant_id)
+        hourly_rate = _labor_rate_for(order, tenant)
+        # Labor hours come from the service's duration, scaled by quantity (how many
+        # times this service is being performed). A 60-minute service × quantity 2 = 2 hours.
         if existing_line:
             line = existing_line
             line.description = service.name
@@ -310,15 +377,38 @@ class PriceBuildService:
             db.add(line)
             await db.flush()
 
+        inventory_ids = sorted(
+            {
+                sp.inventory_item.id
+                for sp in service.service_parts
+                if sp.inventory_item and sp.inventory_item.deleted_at is None
+            },
+            key=str,
+        )
+        locked_inventory: dict[UUID, Inventory] = {}
+        if inventory_ids:
+            inventory_result = await db.execute(
+                select(Inventory)
+                .where(
+                    Inventory.tenant_id == order.tenant_id,
+                    Inventory.id.in_(inventory_ids),
+                )
+                .order_by(Inventory.id)
+                .with_for_update()
+            )
+            locked_inventory = {
+                inventory.id: inventory for inventory in inventory_result.scalars().all()
+            }
+
         # Auto-attach parts bundled with this service. Skip inventory items whose
         # stock would go negative and return an inline warning on the service labor
         # line. Operators can add/override that part explicitly from the operation.
         warnings: list[OperationWarning] = []
         for sp in service.service_parts:
-            inv = sp.inventory_item
+            inv = locked_inventory.get(sp.inventory_item.id) if sp.inventory_item else None
             if not inv or inv.deleted_at is not None:
                 continue
-            required_qty = sp.quantity * quantity
+            required_qty = required_quantities[sp.id]
             packages_needed = _packages_consumed(required_qty)
             if (inv.stock_quantity or 0) < packages_needed:
                 warnings.append(
@@ -350,8 +440,6 @@ class PriceBuildService:
             )
             inv.stock_quantity = (inv.stock_quantity or 0) - packages_needed
 
-        await db.commit()
-        order = await self.load_order(db, order.id)
         result = await self.recalculate_order(db, order)
         result.warnings.extend(warnings)
         return result
@@ -371,6 +459,7 @@ class PriceBuildService:
                 and_(
                     Service.tenant_id == order.tenant_id,
                     Service.is_active.is_(True),
+                    Service.deleted_at.is_(None),
                     Service.name.ilike(f"%{query}%"),
                 )
             ).limit(8)
@@ -438,18 +527,24 @@ class PriceBuildService:
         estimated_hours: Optional[Decimal] = None,
         provider: Optional[str] = None,
         auto_recalc_enabled: bool = True,
+        mechanic_additive_only: bool = False,
+        mechanic_id: Optional[UUID] = None,
     ) -> PriceBuildResult:
-        self._assert_editable(order)
-
         # Service-catalog candidates (operation_id="service:<uuid>") carry their own
         # parts bundle and pricing — route to the existing flat-service path instead
         # of creating a bare labor line, so PM/kingpin-style packages still attach
         # their parts automatically when picked from the unified operation search.
         if operation_id.startswith("service:"):
             service_id = UUID(operation_id[len("service:"):])
-            return await self.add_flat_service_line(db, order, service_id, quantity=1)
+            return await self.add_flat_service_line(
+                db,
+                order,
+                service_id,
+                quantity=1,
+                mechanic_additive_only=mechanic_additive_only,
+                mechanic_id=mechanic_id,
+            )
 
-        tenant = await self._get_tenant(db, order.tenant_id)
         warnings: list[OperationWarning] = []
 
         est_hours = estimated_hours
@@ -463,6 +558,18 @@ class PriceBuildService:
             est_description = description or estimate.description
             warnings.extend(estimate.warnings)
             resolved_provider = provider or estimate.provider
+        est_hours = validate_mechanic_labor_hours(est_hours)
+
+        order = await self.load_order(
+            db, order.id, for_update=True, tenant_id=order.tenant_id
+        )
+        self._assert_locked_mechanic_assignment(
+            order,
+            mechanic_additive_only=mechanic_additive_only,
+            mechanic_id=mechanic_id,
+        )
+        self._assert_editable(order)
+        tenant = await self._get_tenant(db, order.tenant_id)
 
         hourly_rate = _labor_rate_for(order, tenant)
         line = Labor(
@@ -489,8 +596,6 @@ class PriceBuildService:
             hours=Decimal(str(est_hours)),
             source_provider=resolved_provider,
         )
-        await db.commit()
-        order = await self.load_order(db, order.id)
         result = await self.recalculate_order(db, order)
         result.warnings.extend(warnings)
         return result
@@ -506,6 +611,12 @@ class PriceBuildService:
         hourly_rate: Optional[Decimal] = None,
         auto_recalc_enabled: Optional[bool] = None,
     ) -> PriceBuildResult:
+        if hours is not None:
+            hours = validate_mechanic_labor_hours(hours)
+
+        order = await self.load_order(
+            db, order.id, for_update=True, tenant_id=order.tenant_id
+        )
         self._assert_editable(order)
 
         line_result = await db.execute(
@@ -549,8 +660,6 @@ class PriceBuildService:
                 source_provider=line.provider or "internal_memory",
             )
 
-        await db.commit()
-        order = await self.load_order(db, order.id)
         return await self.recalculate_order(db, order)
 
     async def remove_line(
@@ -560,6 +669,7 @@ class PriceBuildService:
         *,
         line_id: UUID,
     ) -> PriceBuildResult:
+        order = await self.load_order(db, order.id, for_update=True)
         self._assert_editable(order)
         line_result = await db.execute(
             select(Labor).where(
@@ -586,8 +696,6 @@ class PriceBuildService:
             .values(source_line_id=None)
         )
         await db.delete(line)
-        await db.commit()
-        order = await self.load_order(db, order.id)
         return await self.recalculate_order(db, order)
 
     async def _restore_service_parts(
@@ -605,17 +713,35 @@ class PriceBuildService:
                 )
             )
         )
-        for pu in pu_result.scalars().all():
+        parts = pu_result.scalars().all()
+        inventory_ids = sorted({pu.inventory_id for pu in parts}, key=str)
+        locked_inventory: dict[UUID, Inventory] = {}
+        if inventory_ids:
             inv_result = await db.execute(
-                select(Inventory).where(Inventory.id == pu.inventory_id)
+                select(Inventory)
+                .where(
+                    Inventory.tenant_id == order.tenant_id,
+                    Inventory.id.in_(inventory_ids),
+                )
+                .order_by(Inventory.id)
+                .with_for_update()
             )
-            inv = inv_result.scalar_one_or_none()
+            locked_inventory = {
+                inventory.id: inventory for inventory in inv_result.scalars().all()
+            }
+        for pu in parts:
+            inv = locked_inventory.get(pu.inventory_id)
             if inv:
                 inv.stock_quantity = (inv.stock_quantity or 0) + _packages_consumed(pu.quantity)
             await db.delete(pu)
 
     async def recalculate_order(self, db: AsyncSession, order: RepairOrder) -> PriceBuildResult:
         started = perf_counter()
+        # Flush pending child mutations, then refresh canonical children while
+        # retaining the same repair-order row lock. The eventual commit owns the
+        # child/stock changes and their derived totals together.
+        await db.flush()
+        order = await self.load_order(db, order.id, for_update=True)
         self._assert_editable(order)
         warnings: list[OperationWarning] = []
 
@@ -635,6 +761,28 @@ class PriceBuildService:
             return PriceBuildResult(order=order, warnings=warnings)
 
         tenant = await self._get_tenant(db, order.tenant_id)
+        generated_estimates: dict[UUID, tuple[OperationEstimate, Decimal]] = {}
+        for line in order.labor_items:
+            if (
+                line.auto_recalc_enabled
+                and not line.source_service_id
+                and line.line_type == LaborLineType.REPAIR_OPERATION
+                and line.provider_operation_id
+            ):
+                estimate = await self._get_operation_estimate(
+                    db,
+                    order,
+                    line.provider_operation_id,
+                    name=line.description,
+                )
+                # Validate the complete generated set before changing the first
+                # line. One invalid provider/library value rejects the entire
+                # recalculation instead of committing a partial or zeroed total.
+                generated_estimates[line.id] = (
+                    estimate,
+                    validate_mechanic_labor_hours(estimate.estimated_hours),
+                )
+
         for line in order.labor_items:
             if not line.auto_recalc_enabled:
                 continue
@@ -657,13 +805,8 @@ class PriceBuildService:
                 line.hourly_rate = _labor_rate_for(order, tenant)
                 line.total_cost = _money(Decimal(str(line.hours)) * Decimal(str(line.hourly_rate)))
             elif line.line_type == LaborLineType.REPAIR_OPERATION and line.provider_operation_id:
-                estimate = await self._get_operation_estimate(
-                    db,
-                    order,
-                    line.provider_operation_id,
-                    name=line.description,
-                )
-                line.hours = estimate.estimated_hours
+                estimate, estimated_hours = generated_estimates[line.id]
+                line.hours = estimated_hours
                 line.hourly_rate = _labor_rate_for(order, tenant)
                 line.total_cost = _money(Decimal(str(line.hours)) * Decimal(str(line.hourly_rate)))
                 warnings.extend(estimate.warnings)
@@ -691,7 +834,7 @@ class PriceBuildService:
         *,
         reason: str = "quote_sent",
     ) -> RepairOrder:
-        order = await self.load_order(db, order_id)
+        order = await self.load_order(db, order_id, for_update=True)
         if order.pricing_locked_at is None:
             order.pricing_locked_at = datetime.now(timezone.utc)
         order.pricing_lock_reason = reason
@@ -706,6 +849,19 @@ class PriceBuildService:
 
     def compute_totals(self, order: RepairOrder) -> dict[str, Decimal]:
         return self._compute_totals(order)
+
+    @staticmethod
+    def _assert_locked_mechanic_assignment(
+        order: RepairOrder,
+        *,
+        mechanic_additive_only: bool,
+        mechanic_id: Optional[UUID],
+    ) -> None:
+        """Fail closed when assignment changed before the serialized write."""
+        if mechanic_additive_only and (
+            mechanic_id is None or order.assigned_mechanic_id != mechanic_id
+        ):
+            raise PriceBuildForbiddenError("Access denied")
 
     def _assert_editable(self, order: RepairOrder) -> None:
         if _is_locked(order):
@@ -724,18 +880,7 @@ class PriceBuildService:
             )
 
     def _compute_totals(self, order: RepairOrder) -> dict[str, Decimal]:
-        parts_total = _money(sum(Decimal(str(p.total_price)) for p in order.parts_usage))
-        labor_total = _money(sum(Decimal(str(l.total_cost)) for l in order.labor_items))
-        # Manager discounts: labor discount reduces labor, order discount reduces the total.
-        labor_discount = _money(Decimal(str(order.labor_discount_amount or 0)))
-        order_discount = _money(Decimal(str(order.order_discount_amount or 0)))
-        labor_net = max(Decimal("0.00"), labor_total - labor_discount)
-        total_cost = max(Decimal("0.00"), _money(parts_total + labor_net - order_discount))
-        return {
-            "parts_total": parts_total,   # gross parts
-            "labor_total": labor_total,   # gross labor (before discount)
-            "total_cost": total_cost,     # net of both discounts
-        }
+        return compute_canonical_order_totals(order)
 
     async def _get_tenant(self, db: AsyncSession, tenant_id: UUID) -> Tenant:
         result = await db.execute(select(Tenant).where(Tenant.id == tenant_id))

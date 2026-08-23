@@ -12,7 +12,12 @@ from app.core.security import (
     decode_token,
     get_token_expiry_seconds,
 )
-from app.core.dependencies import get_db, get_current_active_user, get_token_from_request
+from app.core.dependencies import (
+    get_db,
+    get_current_active_user,
+    get_token_from_request,
+    identity_user,
+)
 from app.core.redis import (
     get_redis,
     get_token_version,
@@ -1171,6 +1176,7 @@ async def update_current_user(
     current_user: User = Depends(get_current_active_user),
 ):
     """Update current user's profile (name, phone, email)"""
+    persisted_user = identity_user(current_user)
     from app.core.redis import get_redis
     from app.services.email_service import send_email_verification, send_email_change_notification
     import secrets
@@ -1287,7 +1293,7 @@ async def update_current_user(
     
     # Update User fields
     for field, value in data.items():
-        setattr(current_user, field, value)
+        setattr(persisted_user, field, value)
     
     # If user is a customer, also update their Customer record
     if current_user.customer_id and data:
@@ -1304,7 +1310,7 @@ async def update_current_user(
                     setattr(customer, field, value)
     
     await db.commit()
-    await db.refresh(current_user)
+    await db.refresh(persisted_user)
     
     # Build appropriate message based on what was updated
     message = None
@@ -1366,7 +1372,8 @@ async def change_password(
         )
     
     # Update password
-    current_user.hashed_password = get_password_hash(password_data.new_password)
+    persisted_user = identity_user(current_user)
+    persisted_user.hashed_password = get_password_hash(password_data.new_password)
     await db.commit()
     
     # Increment token version to invalidate ALL existing tokens for this user

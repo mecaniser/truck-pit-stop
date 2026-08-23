@@ -3,7 +3,7 @@ from decimal import Decimal
 from typing import Any, Optional, List
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from app.db.models.fleet import (
     InspectionStatus,
@@ -12,6 +12,7 @@ from app.db.models.fleet import (
     IncidentSeverity,
     IncidentStatus,
 )
+from app.core.work_value_validation import validate_labor_hours, validate_part_quantity
 
 
 # ---- Inspections ----
@@ -400,13 +401,23 @@ class TruckUpdate(BaseModel):
 class WorkOrderLaborLineCreate(BaseModel):
     """A manual labor item staged by the Fleet repair-order builder."""
     description: str = Field(min_length=1, max_length=500)
-    hours: Decimal = Field(gt=0, le=Decimal("999.99"))
+    hours: Decimal
+
+    @field_validator("hours")
+    @classmethod
+    def validate_hours(cls, value: Decimal) -> Decimal:
+        return validate_labor_hours(value)
 
 
 class WorkOrderPartLineCreate(BaseModel):
     """An inventory part staged before the Fleet repair order exists."""
     inventory_id: UUID
-    quantity: Decimal = Field(gt=0, le=Decimal("9999.99"))
+    quantity: Decimal
+
+    @field_validator("quantity")
+    @classmethod
+    def validate_quantity(cls, value: Decimal) -> Decimal:
+        return validate_part_quantity(value)
 
 
 class WorkOrderCreate(BaseModel):

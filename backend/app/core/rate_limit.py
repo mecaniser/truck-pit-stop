@@ -153,4 +153,11 @@ def rate_limit_key(request: Request) -> str:
 # and a shop user triaging the work queue can legitimately open several
 # orders within a few seconds — 120/min was tight enough for that normal
 # workflow to trip the limiter on its own.
-limiter = Limiter(key_func=rate_limit_key, default_limits=["300/minute"])
+limiter = Limiter(
+    key_func=rate_limit_key,
+    default_limits=["300/minute"],
+    # Concrete magic-link URLs contain credentials. Endpoint function identity
+    # keeps rate-limit scopes stable without placing path tokens in storage or
+    # SlowAPI diagnostics.
+    key_style="endpoint",
+)

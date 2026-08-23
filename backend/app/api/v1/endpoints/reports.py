@@ -10,7 +10,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel
-from sqlalchemy import func, select
+from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.date_ranges import REPORT_DATE_PRESETS, DateRange, resolve_date_range
@@ -703,8 +703,17 @@ async def get_reports_service_types(
         select(Labor, Service.name)
         .join(RepairOrder, Labor.repair_order_id == RepairOrder.id)
         .join(Invoice, Invoice.repair_order_id == RepairOrder.id)
-        .outerjoin(Service, Labor.source_service_id == Service.id)
+        .outerjoin(
+            Service,
+            and_(
+                Labor.source_service_id == Service.id,
+                Service.tenant_id == tenant_id,
+                Service.deleted_at.is_(None),
+            ),
+        )
         .where(
+            Labor.tenant_id == tenant_id,
+            RepairOrder.tenant_id == tenant_id,
             Invoice.tenant_id == tenant_id,
             Invoice.status == InvoiceStatus.PAID,
             Invoice.is_internal.is_(False),
@@ -834,8 +843,17 @@ async def get_reports_internal(
         select(Labor, Service.name)
         .join(RepairOrder, Labor.repair_order_id == RepairOrder.id)
         .join(Invoice, Invoice.repair_order_id == RepairOrder.id)
-        .outerjoin(Service, Labor.source_service_id == Service.id)
+        .outerjoin(
+            Service,
+            and_(
+                Labor.source_service_id == Service.id,
+                Service.tenant_id == tenant_id,
+                Service.deleted_at.is_(None),
+            ),
+        )
         .where(
+            Labor.tenant_id == tenant_id,
+            RepairOrder.tenant_id == tenant_id,
             Invoice.tenant_id == tenant_id,
             Invoice.is_internal.is_(True),
             func.date(Invoice.created_at) >= rng.start,

@@ -83,6 +83,7 @@ from app.schemas.fleet import (
 from app.schemas.vehicle import VehicleResponse
 from app.schemas.typeahead import VehicleTypeaheadResponse
 from app.core.logging import get_logger
+from app.core.work_value_validation import validate_labor_hours, validate_part_quantity
 from app.services.internal_fleet import (
     fleet_labor_uses_customer_rate,
     project_pm_due_date,
@@ -2305,6 +2306,15 @@ async def complete_work_order(
 ):
     """Approve fleet work and atomically create its billable customer invoice."""
     ro = await _load_fleet_ro_or_404(db, current_user.tenant_id, ro_id, for_update=True)
+    from app.api.v1.endpoints.repair_orders import _refresh_repair_order_totals
+
+    # Rebuild the invoice source values from the locked canonical children.
+    # Price mutations use the same repair-order lock, so completion either
+    # precedes the entire mutation or observes all of it.
+    ro = await _refresh_repair_order_totals(db, ro_id)
+    if ro is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Work order not found")
+    await db.refresh(ro, attribute_names=["customer", "vehicle"])
     if ro.status not in (RepairOrderStatus.IN_PROGRESS, RepairOrderStatus.PENDING_REVIEW):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Cannot complete a work order in '{ro.status.value}' status")
 
@@ -2498,6 +2508,7 @@ async def _load_pm_services(db: AsyncSession, tenant_id: UUID, service_ids: list
             Service.id.in_(service_ids),
             Service.tenant_id == tenant_id,
             Service.is_active.is_(True),
+            Service.deleted_at.is_(None),
         ))
         .options(selectinload(Service.service_parts).selectinload(ServicePart.inventory_item))
     )
@@ -2554,7 +2565,9 @@ async def _pm_services_by_vehicle(
         .join(Service, Service.id == VehiclePMService.service_id)
         .where(and_(
             VehiclePMService.vehicle_id.in_(vehicle_ids),
+            Service.tenant_id == tenant_id,
             Service.is_active.is_(True),
+            Service.deleted_at.is_(None),
         ))
         .order_by(VehiclePMService.vehicle_id, VehiclePMService.sort_order)
     )
@@ -2594,6 +2607,10 @@ async def _apply_pm_services_to_ro(
     run again whenever the service selection changes (while the WO is a draft).
     """
     from decimal import Decimal
+
+    # Validate the complete generated bundle before deleting, inserting, or
+    # mutating any repair-order data.
+    validated_values = _validated_service_work_values(services)
 
     # 1) Replace the per-PM service rows.
     existing = await db.execute(
@@ -2643,21 +2660,20 @@ async def _apply_pm_services_to_ro(
     ))
 
     for s in services:
-        hours = Decimal(str(s.duration_minutes or 0)) / Decimal("60")
-        if hours > 0:
-            db.add(Labor(
-                id=uuid4(), tenant_id=tenant_id, repair_order_id=ro.id,
-                description=s.name, hours=hours, hourly_rate=labor_rate,
-                total_cost=(hours * labor_rate).quantize(Decimal("0.01")),
-                line_type=LaborLineType.FLAT_SERVICE, source_service_id=s.id,
-            ))
+        hours, part_quantities = validated_values[s.id]
+        db.add(Labor(
+            id=uuid4(), tenant_id=tenant_id, repair_order_id=ro.id,
+            description=s.name, hours=hours, hourly_rate=labor_rate,
+            total_cost=(hours * labor_rate).quantize(Decimal("0.01")),
+            line_type=LaborLineType.FLAT_SERVICE, source_service_id=s.id,
+        ))
         for sp in s.service_parts:
             inv = sp.inventory_item
             if inv is None:
                 continue
             # Internal orders cost parts at inventory cost, not selling price.
             unit_price = Decimal(str(inv.cost or 0))
-            qty = sp.quantity or 1
+            qty = part_quantities[sp.id]
             db.add(PartsUsage(
                 id=uuid4(), tenant_id=tenant_id, repair_order_id=ro.id,
                 inventory_id=inv.id, quantity=qty,
@@ -2665,6 +2681,29 @@ async def _apply_pm_services_to_ro(
                 total_price=(unit_price * qty).quantize(Decimal("0.01")),
                 source_service_id=s.id,
             ))
+
+
+def _validated_service_work_values(
+    services: list[Service],
+) -> dict[UUID, tuple[Decimal, dict[UUID, Decimal]]]:
+    """Validate generated labor/part values without rounding or mutation."""
+    values: dict[UUID, tuple[Decimal, dict[UUID, Decimal]]] = {}
+    try:
+        for service in services:
+            hours = validate_labor_hours(
+                Decimal(str(service.duration_minutes or 0)) / Decimal("60")
+            )
+            part_quantities = {
+                part.id: validate_part_quantity(part.quantity)
+                for part in service.service_parts
+            }
+            values[service.id] = (hours, part_quantities)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        ) from exc
+    return values
 
 
 async def _ro_pm_services(db: AsyncSession, tenant_id: UUID, ro_id: UUID) -> list[Service]:
@@ -2693,6 +2732,7 @@ async def pm_service_catalog(
         .where(and_(
             Service.tenant_id == current_user.tenant_id,
             Service.is_active.is_(True),
+            Service.deleted_at.is_(None),
             ServiceCategory.is_pm.is_(True),
         ))
         .options(selectinload(Service.service_parts).selectinload(ServicePart.inventory_item))
@@ -2722,6 +2762,12 @@ async def set_truck_pm_services(
     """Replace the truck's default PM service package."""
     await _load_fleet_vehicle_or_404(db, current_user.tenant_id, vehicle_id)
     services = await _load_pm_services(db, current_user.tenant_id, body.service_ids)
+    if len(services) != len(set(body.service_ids)):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Source reference not found",
+        )
+    _validated_service_work_values(services)
     await _set_vehicle_pm_services(db, current_user.tenant_id, vehicle_id, services)
     await db.commit()
     return _pm_service_entries(services)
@@ -2747,17 +2793,33 @@ async def set_wo_pm_services(
 ):
     """Adjust a PM work order's services and re-seed its cost lines. Only allowed
     while the work order is still a draft (before work starts)."""
-    ro = await _load_fleet_ro_or_404(db, current_user.tenant_id, ro_id)
+    await _load_fleet_ro_or_404(db, current_user.tenant_id, ro_id)
+    from app.api.v1.endpoints.repair_orders import (
+        _load_pricing_order_for_update,
+        _refresh_repair_order_totals,
+    )
+
+    services = await _load_pm_services(db, current_user.tenant_id, body.service_ids)
+    if len(services) != len(set(body.service_ids)):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Source reference not found",
+        )
+    _validated_service_work_values(services)
+
+    ro = await _load_pricing_order_for_update(
+        db, ro_id, tenant_id=current_user.tenant_id
+    )
+    if ro is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Work order not found")
     if ro.status != RepairOrderStatus.DRAFT:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="PM services can only be changed while the work order is a draft.",
         )
-    from app.api.v1.endpoints.repair_orders import _recompute_repair_order_totals
-    services = await _load_pm_services(db, current_user.tenant_id, body.service_ids)
     await _apply_pm_services_to_ro(db, current_user.tenant_id, ro, services)
+    await _refresh_repair_order_totals(db, ro.id)
     await db.commit()
-    await _recompute_repair_order_totals(db, ro.id)
     return _pm_service_entries(services)
 
 
@@ -2771,7 +2833,11 @@ async def service_catalog(
     this is not restricted to PM-flagged categories."""
     result = await db.execute(
         select(Service)
-        .where(and_(Service.tenant_id == current_user.tenant_id, Service.is_active.is_(True)))
+        .where(and_(
+            Service.tenant_id == current_user.tenant_id,
+            Service.is_active.is_(True),
+            Service.deleted_at.is_(None),
+        ))
         .options(selectinload(Service.service_parts).selectinload(ServicePart.inventory_item))
         .order_by(Service.sort_order, Service.name)
     )
@@ -2790,9 +2856,33 @@ async def add_service_to_work_order(
     internal cost — the same costing PM services use. PM work orders are scoped
     through their service picker instead, so this is rejected for them."""
     from decimal import Decimal
-    from app.api.v1.endpoints.repair_orders import _recompute_repair_order_totals
+    from app.api.v1.endpoints.repair_orders import (
+        _load_pricing_order_for_update,
+        _refresh_repair_order_totals,
+    )
 
-    ro = await _load_fleet_ro_or_404(db, current_user.tenant_id, ro_id)
+    await _load_fleet_ro_or_404(db, current_user.tenant_id, ro_id)
+    svc_res = await db.execute(
+        select(Service)
+        .where(and_(
+            Service.id == body.service_id,
+            Service.tenant_id == current_user.tenant_id,
+            Service.is_active.is_(True),
+            Service.deleted_at.is_(None),
+        ))
+        .options(selectinload(Service.service_parts).selectinload(ServicePart.inventory_item))
+    )
+    service = svc_res.scalar_one_or_none()
+    if service is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Source reference not found",
+        )
+    hours, part_quantities = _validated_service_work_values([service])[service.id]
+
+    ro = await _load_pricing_order_for_update(db, ro_id)
+    if ro is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Work order not found")
     if ro.is_pm:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -2804,39 +2894,24 @@ async def add_service_to_work_order(
             detail=f"Cannot add work to a work order in '{ro.status.value}' status.",
         )
 
-    svc_res = await db.execute(
-        select(Service)
-        .where(and_(
-            Service.id == body.service_id,
-            Service.tenant_id == current_user.tenant_id,
-            Service.is_active.is_(True),
-        ))
-        .options(selectinload(Service.service_parts).selectinload(ServicePart.inventory_item))
-    )
-    service = svc_res.scalar_one_or_none()
-    if service is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Service not found")
-
     tenant_res = await db.execute(select(Tenant).where(Tenant.id == current_user.tenant_id))
     tenant = tenant_res.scalar_one_or_none()
     labor_rate = Decimal(str(
         (tenant.labor_rate if fleet_labor_uses_customer_rate(ro) else tenant.internal_labor_rate) if tenant else 0
     ))
 
-    hours = Decimal(str(service.duration_minutes or 0)) / Decimal("60")
-    if hours > 0:
-        db.add(Labor(
-            id=uuid4(), tenant_id=current_user.tenant_id, repair_order_id=ro.id,
-            description=service.name, hours=hours, hourly_rate=labor_rate,
-            total_cost=(hours * labor_rate).quantize(Decimal("0.01")),
-            line_type=LaborLineType.FLAT_SERVICE, source_service_id=service.id,
-        ))
+    db.add(Labor(
+        id=uuid4(), tenant_id=current_user.tenant_id, repair_order_id=ro.id,
+        description=service.name, hours=hours, hourly_rate=labor_rate,
+        total_cost=(hours * labor_rate).quantize(Decimal("0.01")),
+        line_type=LaborLineType.FLAT_SERVICE, source_service_id=service.id,
+    ))
     for sp in service.service_parts:
         inv = sp.inventory_item
         if inv is None:
             continue
         unit_price = Decimal(str(inv.cost or 0))
-        qty = sp.quantity or 1
+        qty = part_quantities[sp.id]
         db.add(PartsUsage(
             id=uuid4(), tenant_id=current_user.tenant_id, repair_order_id=ro.id,
             inventory_id=inv.id, quantity=qty,
@@ -2845,8 +2920,8 @@ async def add_service_to_work_order(
             source_service_id=service.id,
         ))
 
+    await _refresh_repair_order_totals(db, ro.id)
     await db.commit()
-    await _recompute_repair_order_totals(db, ro.id)
     ro = await _load_fleet_ro_or_404(db, current_user.tenant_id, ro_id)
     return _board_work_order(ro)
 
@@ -2974,15 +3049,29 @@ async def new_work_order(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_fleet_access),
 ):
-    vehicle = await _load_fleet_vehicle_or_404(db, current_user.tenant_id, vehicle_id)
     body = body or WorkOrderCreate()
+    try:
+        for line in body.labor_lines:
+            validate_labor_hours(line.hours)
+        for line in body.part_lines:
+            validate_part_quantity(line.quantity)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        ) from exc
+    vehicle = await _load_fleet_vehicle_or_404(db, current_user.tenant_id, vehicle_id)
 
     # Resolve and validate every staged line before inserting the repair order.
     # A bad inventory id or short stock therefore cannot leave behind the empty
     # draft that this one-step builder is specifically designed to avoid.
     services = await _load_pm_services(db, current_user.tenant_id, body.service_ids or [])
     if len(services) != len(set(body.service_ids or [])):
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="One or more services were not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Source reference not found",
+        )
+    _validated_service_work_values(services)
 
     requested_part_ids = {line.inventory_id for line in body.part_lines}
     inventory_by_id: dict[UUID, Inventory] = {}
@@ -2991,7 +3080,7 @@ async def new_work_order(
             select(Inventory).where(and_(
                 Inventory.id.in_(requested_part_ids),
                 Inventory.tenant_id == current_user.tenant_id,
-            ))
+            )).with_for_update()
         )
         inventory_by_id = {item.id: item for item in inventory_result.scalars().all()}
         if set(inventory_by_id) != requested_part_ids:
@@ -3056,9 +3145,10 @@ async def new_work_order(
         ))
         item.stock_quantity = (item.stock_quantity or 0) - packages
 
+    from app.api.v1.endpoints.repair_orders import _refresh_repair_order_totals
+
+    await _refresh_repair_order_totals(db, ro.id)
     await db.commit()
-    from app.api.v1.endpoints.repair_orders import _recompute_repair_order_totals
-    await _recompute_repair_order_totals(db, ro.id)
     await db.refresh(ro)
 
     open_list = (await _open_ros_by_vehicle(db, [vehicle.id])).get(vehicle.id, [])
@@ -3082,6 +3172,19 @@ async def schedule_pm(
     vehicle = await _load_fleet_vehicle_or_404(db, current_user.tenant_id, vehicle_id)
     body = body or SchedulePMRequest()
 
+    # Resolve and validate every generated value before dirtying the vehicle;
+    # later ORM reads may autoflush pending schedule changes.
+    if body.service_ids is not None:
+        services = await _load_pm_services(db, current_user.tenant_id, body.service_ids)
+        if len(services) != len(set(body.service_ids)):
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Source reference not found",
+            )
+    else:
+        services = await _vehicle_pm_services(db, current_user.tenant_id, vehicle.id)
+    _validated_service_work_values(services)
+
     if body.next_pm_miles is not None:
         vehicle.next_pm_miles = body.next_pm_miles
     # Due date: honor a date the manager explicitly picked (they may know the
@@ -3095,29 +3198,24 @@ async def schedule_pm(
         if projected is not None:
             vehicle.pm_due_date = projected
 
-    # Resolve which services this PM uses: an explicit override if provided,
-    # otherwise the truck's saved default package.
-    if body.service_ids is not None:
-        services = await _load_pm_services(db, current_user.tenant_id, body.service_ids)
-    else:
-        services = await _vehicle_pm_services(db, current_user.tenant_id, vehicle.id)
-
     # Optionally persist the selection as the truck's new default package.
     if body.save_as_default and body.service_ids is not None:
         await _set_vehicle_pm_services(db, current_user.tenant_id, vehicle.id, services)
 
     if body.create_work_order:
-        # _spawn_internal_ro commits (and persists the schedule changes above).
+        # Persist the schedule, work order, service lines, and totals together.
         ro = await _spawn_internal_ro(
             db, current_user.tenant_id, vehicle, is_pm=True,
             description=f"Preventive maintenance — Service interval {vehicle.pm_interval_miles or 25000:,} mi",
             bill_to_customer_id=body.bill_to_customer_id,
+            commit=False,
         )
         if services:
-            from app.api.v1.endpoints.repair_orders import _recompute_repair_order_totals
             await _apply_pm_services_to_ro(db, current_user.tenant_id, ro, services)
-            await db.commit()
-            await _recompute_repair_order_totals(db, ro.id)
+            from app.api.v1.endpoints.repair_orders import _refresh_repair_order_totals
+
+            await _refresh_repair_order_totals(db, ro.id)
+        await db.commit()
     else:
         await db.commit()
 

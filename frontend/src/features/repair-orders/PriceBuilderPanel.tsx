@@ -145,7 +145,7 @@ type Props = {
   quoteActionPending?: boolean
   quoteActionDisabled?: boolean
   quoteDisabledReason?: string
-  onQuoteAction?: () => void
+  onQuoteAction?: (trigger?: HTMLButtonElement) => void
   assignedTechnicianName?: string | null
   assignedTechnicianId?: string | null
   technicianOptions?: TechnicianOption[]
@@ -989,6 +989,35 @@ export default function PriceBuilderPanel({
   const [operationPartPickerLineId, setOperationPartPickerLineId] = useState<string | null>(null)
   const [operationPartSearchByLineId, setOperationPartSearchByLineId] = useState<Record<string, string>>({})
   const [bookTimeHours, setBookTimeHours] = useState('1')
+  const desktopQuoteActionRef = useRef<HTMLButtonElement>(null)
+  const mobileQuoteActionRef = useRef<HTMLButtonElement>(null)
+  const restoreQuoteActionFocusRef = useRef(false)
+
+  const handleQuoteActionClick = (event: ReactMouseEvent<HTMLButtonElement>) => {
+    restoreQuoteActionFocusRef.current = document.activeElement === event.currentTarget
+    onQuoteAction?.(event.currentTarget)
+  }
+
+  // Publishing mutations temporarily disable the focused action. Browsers move
+  // focus to <body> when that happens, so explicitly return keyboard users to
+  // the successor action once the create/update transition has settled.
+  useEffect(() => {
+    if (quoteActionPending || !restoreQuoteActionFocusRef.current) return
+
+    const frame = window.requestAnimationFrame(() => {
+      const candidates = [desktopQuoteActionRef.current, mobileQuoteActionRef.current]
+        .filter((candidate): candidate is HTMLButtonElement => !!candidate && !candidate.disabled)
+      const visibleCandidate = candidates.find((candidate) => {
+        const style = window.getComputedStyle(candidate)
+        return style.display !== 'none' && style.visibility !== 'hidden' && candidate.getClientRects().length > 0
+      })
+      const candidate = visibleCandidate ?? candidates[0]
+      candidate?.focus({ preventScroll: true })
+      restoreQuoteActionFocusRef.current = false
+    })
+
+    return () => window.cancelAnimationFrame(frame)
+  }, [quoteActionLabel, quoteActionPending])
 
   // Accordions belong to the selected order. Resetting them on navigation
   // prevents a panel opened for one order from silently triggering optional
@@ -2218,11 +2247,13 @@ export default function PriceBuilderPanel({
             </span>
             {onQuoteAction && canMutate && (
               <button
+                ref={desktopQuoteActionRef}
                 type="button"
-                onClick={onQuoteAction}
+                onClick={handleQuoteActionClick}
+                data-authorization-quote-action="true"
                 disabled={quoteActionBlocked || quoteActionPending}
                 title={quoteButtonDisabledReason}
-                className={`ml-auto inline-flex h-8 items-center gap-1.5 rounded-lg border px-2.5 font-semibold transition-colors disabled:opacity-50 ${
+                className={`ml-auto hidden h-8 items-center gap-1.5 rounded-lg border px-2.5 font-semibold transition-colors disabled:opacity-50 sm:inline-flex ${
                   quoteActionReadyToSend
                     ? 'border-emerald-600 bg-emerald-600 text-white shadow-sm hover:bg-emerald-700'
                     : 'border-amber-200 bg-white text-amber-800 hover:bg-amber-50'
@@ -2234,6 +2265,26 @@ export default function PriceBuilderPanel({
             )}
           </div>
         </div>
+        {onQuoteAction && canMutate && (
+          <div className="border-b border-orange-100 bg-orange-50/60 px-5 py-2.5 sm:hidden">
+            <button
+              ref={mobileQuoteActionRef}
+              type="button"
+              onClick={handleQuoteActionClick}
+              data-authorization-quote-action="true"
+              disabled={quoteActionBlocked || quoteActionPending}
+              title={quoteButtonDisabledReason}
+              className={`inline-flex min-h-[44px] w-full items-center justify-center gap-2 rounded-xl border px-4 font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500 focus-visible:ring-offset-2 disabled:opacity-50 ${
+                quoteActionReadyToSend
+                  ? 'border-emerald-600 bg-emerald-600 text-white shadow-sm hover:bg-emerald-700'
+                  : 'border-amber-200 bg-white text-amber-800 hover:bg-amber-50'
+              }`}
+            >
+              {quoteActionPending ? <Spinner size="xs" /> : <FileText className="h-4 w-4" />}
+              {quoteActionPending ? 'Working…' : quoteActionLabel}
+            </button>
+          </div>
+        )}
         {canManageTechnician && ((onAssignTechnician && availableTechnicians.length > 0) || canOverrideTechnicianAssignment) && (
           <div className="border-t border-orange-100 bg-white px-5 py-3">
             <button

@@ -6,6 +6,7 @@ from decimal import Decimal
 from app.db.models.repair_order import RepairOrderStatus
 from app.db.models.labor import LaborLineType
 from app.db.models.recommended_service import RecommendedServicePriority
+from app.core.work_value_validation import validate_labor_hours, validate_part_quantity
 
 
 _http_url_adapter = TypeAdapter(AnyHttpUrl)
@@ -39,11 +40,21 @@ class PartsUsageCreate(BaseModel):
     # been recorded in inventory yet. The API retains the shortfall for audit.
     allow_stock_shortage: bool = False
 
+    @field_validator("quantity")
+    @classmethod
+    def validate_quantity(cls, value: Decimal) -> Decimal:
+        return validate_part_quantity(value)
+
 
 class PartsUsageUpdate(BaseModel):
     quantity: Optional[Decimal] = None
     unit_price: Optional[Decimal] = None
     allow_stock_shortage: bool = False
+
+    @field_validator("quantity")
+    @classmethod
+    def validate_quantity(cls, value: Optional[Decimal]) -> Optional[Decimal]:
+        return None if value is None else validate_part_quantity(value)
 
 
 class PartsPricingModeRequest(BaseModel):
@@ -119,6 +130,11 @@ class LaborCreate(BaseModel):
     vendor_name: Optional[str] = None
     vendor_cost: Optional[Decimal] = None
 
+    @field_validator("hours")
+    @classmethod
+    def validate_hours(cls, value: Decimal) -> Decimal:
+        return validate_labor_hours(value)
+
 
 class LaborUpdate(BaseModel):
     description: Optional[str] = None
@@ -133,6 +149,11 @@ class LaborUpdate(BaseModel):
     source_service_id: Optional[UUID] = None
     vendor_name: Optional[str] = None
     vendor_cost: Optional[Decimal] = None
+
+    @field_validator("hours")
+    @classmethod
+    def validate_hours(cls, value: Optional[Decimal]) -> Optional[Decimal]:
+        return None if value is None else validate_labor_hours(value)
 
 
 class LaborResponse(BaseModel):
@@ -330,7 +351,7 @@ class PriceBuildWarning(BaseModel):
 
 class PriceBuildFlatServiceRequest(BaseModel):
     service_id: UUID
-    quantity: int = 1
+    quantity: int = Field(default=1, ge=1, le=999)
 
 
 class PriceBuildRepairOpsSearchRequest(BaseModel):
@@ -353,12 +374,22 @@ class PriceBuildRepairOpsApplyRequest(BaseModel):
     provider: Optional[str] = None
     auto_recalc_enabled: bool = True
 
+    @field_validator("estimated_hours")
+    @classmethod
+    def validate_estimated_hours(cls, value: Optional[Decimal]) -> Optional[Decimal]:
+        return None if value is None else validate_labor_hours(value)
+
 
 class PriceBuildLineUpdateRequest(BaseModel):
     description: Optional[str] = None
     hours: Optional[Decimal] = None
     hourly_rate: Optional[Decimal] = None
     auto_recalc_enabled: Optional[bool] = None
+
+    @field_validator("hours")
+    @classmethod
+    def validate_hours(cls, value: Optional[Decimal]) -> Optional[Decimal]:
+        return None if value is None else validate_labor_hours(value)
 
 
 class PriceBuildSummaryResponse(BaseModel):

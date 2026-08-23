@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useQueries, useQuery } from '@tanstack/react-query'
 import { AlertTriangle, Check, ChevronRight, CircleDollarSign, Clock3, Wrench } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { format } from 'date-fns'
@@ -7,7 +7,11 @@ import { format } from 'date-fns'
 import { Spinner } from '@/components/ui'
 import api from '@/lib/api'
 import { useAuthStore } from '@/stores/authStore'
-import type { Customer, Invoice, RepairOrder, Vehicle } from '@/types'
+import type { Customer, Invoice, Quote, RepairOrder, RepairOrderStatus, Vehicle } from '@/types'
+import {
+  type AuthorizationHistory,
+  latestCustomerVisibleAuthorization,
+} from '@/features/quotes/authorization'
 
 import {
   Card,
@@ -39,6 +43,27 @@ async function getAll<T>(url: string) {
     if (!payload.has_more || payload.items.length === 0) return all
     skip = payload.skip + payload.limit
   }
+}
+
+const AUTHORIZATION_ACTION_CLOSED_STATUSES = new Set<RepairOrderStatus>([
+  'completed',
+  'invoiced',
+  'paid',
+  'cancelled',
+  'declined',
+])
+
+function canLoadAuthorizationAction(order: RepairOrder) {
+  return order.quote_sent === true
+    && order.quote_approved !== true
+    && !AUTHORIZATION_ACTION_CLOSED_STATUSES.has(order.status)
+}
+
+function isAuthorizationActionable(order: RepairOrder, quote: Quote | null | undefined) {
+  return canLoadAuthorizationAction(order)
+    && quote?.sent_to_customer === true
+    && quote.is_approved !== true
+    && quote.is_declined !== true
 }
 
 export default function PortalDashboardPage() {
@@ -101,7 +126,22 @@ export default function PortalDashboardPage() {
   const activeRepairs = orders
     .filter(isActiveRepair)
     .sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime())
-  const quoteActions = activeRepairs.filter(order => order.quote_sent === true && order.quote_approved !== true)
+  const authorizationCandidates = activeRepairs.filter(canLoadAuthorizationAction)
+  const authorizationHistoryQueries = useQueries({
+    queries: authorizationCandidates.map(order => ({
+      queryKey: ['authorization-history', order.id],
+      queryFn: async () => {
+        const response = await api.get(`/quotes/repair-order/${order.id}/history`)
+        return response.data as AuthorizationHistory
+      },
+    })),
+  })
+  const quoteActions = authorizationCandidates.filter((order, index) => (
+    isAuthorizationActionable(
+      order,
+      latestCustomerVisibleAuthorization(authorizationHistoryQueries[index]?.data?.revisions),
+    )
+  ))
   const actionCount = quoteActions.length + unpaid.length
   const balance = unpaid.reduce((sum, item) => sum + Number(item.invoice.total_amount || 0), 0)
   const paidYtd = paidThisYear.reduce((sum, invoice) => sum + Number(invoice.total_amount || 0), 0)
@@ -254,12 +294,12 @@ export default function PortalDashboardPage() {
                 className="grid grid-cols-[1fr_auto] items-center gap-3 rounded-xl border border-[#f0b959]/20 bg-[#f0b959]/5 px-3.5 py-3 hover:border-[#f0b959]/40 sm:grid-cols-[210px_1fr_auto]"
               >
                 <div className="min-w-0">
-                  <p className="truncate text-[13px] font-extrabold">Estimate awaiting approval</p>
+                  <p className="truncate text-[13px] font-extrabold">Authorization awaiting review</p>
                   <p className="mt-0.5 truncate text-[11px] text-[#8b92a5]">{order.order_number} · {orderVehicleLabel(order)}</p>
                 </div>
-                <span className="hidden truncate text-xs text-[#9aa1b3] sm:block">{order.description || 'Repair estimate is ready for review'}</span>
+                <span className="hidden truncate text-xs text-[#9aa1b3] sm:block">{order.description || 'Repair authorization is ready for review'}</span>
                 <span className="inline-flex h-[34px] items-center justify-center rounded-lg bg-[#8b7cf7] px-3.5 text-xs font-extrabold text-[#0e1118]">
-                  Review estimate
+                  Review authorization
                 </span>
               </Link>
             ))}

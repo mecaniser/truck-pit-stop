@@ -29,6 +29,14 @@ import CustomerZellePaymentPanel from './ZellePaymentPanel'
 import QuickBooksPaymentPanel from './QuickBooksPaymentPanel'
 import { DateBlock, formatMoney, isActiveRepair, Money, PaidBadge, Pill, repairStatusLabel } from './portal-ui'
 import PortalDocumentTitle from './PortalDocumentTitle'
+import CustomerAuthorizationCard from './CustomerAuthorizationCard'
+import {
+  CUSTOMER_AUTHORIZATION_CONFLICT_MESSAGE,
+  type AuthorizationHistory,
+  isAdditionalWorkAuthorization,
+  isAuthorizationConflict,
+  latestCustomerVisibleAuthorization,
+} from '@/features/quotes/authorization'
 
 const STATUS_BADGE_COLORS: Record<string, string> = {
   draft: 'border border-white/10 bg-white/5 text-gray-300',
@@ -329,7 +337,7 @@ function CustomerDashboard() {
                       <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-gray-300">
                         <span className="inline-flex items-center gap-1">
                           <Calendar className="h-3.5 w-3.5 text-amber-300" />
-                          {order.status === 'invoiced' ? 'Invoice sent' : 'Estimate sent'} {format(
+                          {order.status === 'invoiced' ? 'Invoice sent' : 'Authorization sent'} {format(
                             new Date(order.status === 'invoiced' ? (order.invoice_created_at || order.updated_at) : (order.quote_sent_at || order.updated_at)),
                             'MMM d, yyyy h:mm a',
                           )}
@@ -348,7 +356,7 @@ function CustomerDashboard() {
                           ? 'bg-green-500 text-white' 
                           : 'bg-amber-500 text-white'
                       }`}>
-                        {order.status === 'invoiced' ? 'Pay Now' : 'Review Estimate'}
+                        {order.status === 'invoiced' ? 'Pay Now' : 'Review Authorization'}
                       </span>
                       {order.status === 'invoiced' ? (
                         <div className="text-sm font-bold text-white">
@@ -827,27 +835,50 @@ function CustomerRepairs() {
     }
   }
 
-  // Fetch quote for selected order if it's quoted
-  const { data: selectedQuote } = useQuery<Quote | null>({
-    queryKey: ['quote', selectedOrder?.id],
+  const { data: authorizationHistory } = useQuery<AuthorizationHistory>({
+    queryKey: ['authorization-history', selectedOrder?.id],
     queryFn: async () => {
-      const response = await api.get(`/quotes?repair_order_id=${selectedOrder?.id}`)
-      return response.data as Quote | null
+      const response = await api.get(`/quotes/repair-order/${selectedOrder!.id}/history`)
+      return response.data as AuthorizationHistory
     },
-    enabled: !!selectedOrder && selectedOrder.quote_sent === true,
+    enabled: !!selectedOrder?.id && selectedOrder.quote_sent === true,
   })
+  const selectedQuote = latestCustomerVisibleAuthorization(authorizationHistory?.revisions)
+
+  useEffect(() => {
+    setShowDeclineForm(false)
+    setDeclineNotes('')
+  }, [selectedOrder?.id])
+
+  const handleAuthorizationDecisionError = (error: unknown) => {
+    void Promise.all([
+      queryClient.invalidateQueries({ queryKey: ['repair-orders'] }),
+      queryClient.invalidateQueries({ queryKey: ['authorization-history', selectedOrder?.id] }),
+    ])
+    if (isAuthorizationConflict(error)) {
+      toast.error(CUSTOMER_AUTHORIZATION_CONFLICT_MESSAGE)
+      return
+    }
+    const detail = (error as { response?: { data?: { detail?: unknown } } })?.response?.data?.detail
+    toast.error(typeof detail === 'string' ? detail : 'Unable to record your authorization decision.')
+  }
 
   const approveQuoteMutation = useMutation({
     mutationFn: async (quoteId: string) => {
       const response = await api.post(`/quotes/${quoteId}/approve`)
       return response.data as Quote
     },
-    onSuccess: () => {
+    onSuccess: (quote) => {
       queryClient.invalidateQueries({ queryKey: ['repair-orders'] })
-      queryClient.invalidateQueries({ queryKey: ['quote'] })
-      toast.success('Estimate authorized. The shop has been notified.')
+      queryClient.invalidateQueries({ queryKey: ['authorization-history'] })
+      toast.success(
+        isAdditionalWorkAuthorization(quote)
+          ? 'Additional work authorized. The shop has been notified.'
+          : 'Estimate authorized. The shop has been notified.',
+      )
       setSelectedOrder(null)
     },
+    onError: handleAuthorizationDecisionError,
   })
 
   const declineQuoteMutation = useMutation({
@@ -855,12 +886,17 @@ function CustomerRepairs() {
       const response = await api.post(`/quotes/${quoteId}/decline`, { notes })
       return response.data as Quote
     },
-    onSuccess: () => {
+    onSuccess: (quote) => {
       queryClient.invalidateQueries({ queryKey: ['repair-orders'] })
-      queryClient.invalidateQueries({ queryKey: ['quote'] })
-      toast.success('Changes requested. The shop will contact you about this estimate.')
+      queryClient.invalidateQueries({ queryKey: ['authorization-history'] })
+      toast.success(
+        isAdditionalWorkAuthorization(quote)
+          ? 'Additional work declined. Your earlier approval remains valid.'
+          : 'Estimate declined. The shop can prepare a new revision.',
+      )
       setSelectedOrder(null)
     },
+    onError: handleAuthorizationDecisionError,
   })
 
   const handlePayClick = async () => {
@@ -1111,83 +1147,22 @@ function CustomerRepairs() {
 
         {/* Quote Approval Section */}
         {selectedOrder.quote_sent === true && selectedQuote && !selectedQuote.is_approved && (
-          <div className="bg-amber-500/10 rounded-xl border border-amber-500/30 p-4 sm:p-6">
-            <div className="flex items-center gap-3 mb-4">
-              <FileText className="w-6 h-6 text-amber-400" />
-              <div>
-                <h3 className="font-semibold text-white">Estimate #{selectedQuote.quote_number}</h3>
-                <p className="text-sm text-gray-400">Authorization requested for this estimate</p>
-              </div>
-            </div>
-
-            <div className="bg-white/5 rounded-lg p-4 mb-4">
-              <div className="flex justify-between items-center">
-                <span className="text-gray-400">Estimated Total</span>
-                <span className="font-bold text-xl text-white">${parseFloat(selectedQuote.total_amount).toFixed(2)}</span>
-              </div>
-              {selectedQuote.expires_at && (
-                <p className="text-xs text-gray-500 mt-2">
-                  Valid until {format(new Date(selectedQuote.expires_at), 'MMMM d, yyyy')}
-                </p>
-              )}
-            </div>
-
-            {!showDeclineForm ? (
-              <div className="flex gap-3">
-                <button
-                  type="button"
-                  onClick={() => approveQuoteMutation.mutate(selectedQuote.id)}
-                  disabled={approveQuoteMutation.isPending}
-                  className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-violet-600 px-4 py-3 font-medium text-white transition-colors hover:bg-violet-500 disabled:bg-gray-500"
-                >
-                  <CheckCircle className="w-5 h-5" />
-                  {approveQuoteMutation.isPending ? 'Authorizing...' : 'Authorize Estimate'}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setShowDeclineForm(true)}
-                  className="flex-1 px-4 py-3 bg-white/10 hover:bg-white/20 border border-white/20 text-white font-medium rounded-lg transition-colors"
-                >
-                  Request Changes
-                </button>
-              </div>
-            ) : (
-              <div className="space-y-3">
-                <p className="text-sm text-gray-400">Let us know what changes you'd like:</p>
-                <textarea
-                  value={declineNotes}
-                  onChange={(e) => setDeclineNotes(e.target.value)}
-                  placeholder="e.g., Can we skip the brake fluid flush? Or is there a cheaper option for..."
-                  className="w-full resize-none rounded-xl border border-[#30384b] bg-[#0d1118] px-3 py-2 text-base text-white placeholder-gray-500 focus:border-violet-500 focus:outline-none focus:ring-2 focus:ring-violet-500/30"
-                  rows={3}
-                />
-                <div className="flex gap-3">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      declineQuoteMutation.mutate({ quoteId: selectedQuote.id, notes: declineNotes })
-                      setDeclineNotes('')
-                      setShowDeclineForm(false)
-                    }}
-                    disabled={declineQuoteMutation.isPending}
-                    className="flex-1 rounded-xl bg-violet-600 px-4 py-2 font-medium text-white transition-colors hover:bg-violet-500 disabled:bg-gray-500"
-                  >
-                    {declineQuoteMutation.isPending ? 'Sending...' : 'Send Request'}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setShowDeclineForm(false)
-                      setDeclineNotes('')
-                    }}
-                    className="px-4 py-2 bg-white/10 hover:bg-white/20 text-white font-medium rounded-lg transition-colors"
-                  >
-                    Cancel
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
+          <CustomerAuthorizationCard
+            quote={selectedQuote}
+            historyEvents={authorizationHistory?.events}
+            approvePending={approveQuoteMutation.isPending}
+            declinePending={declineQuoteMutation.isPending}
+            showDeclineForm={showDeclineForm}
+            declineNotes={declineNotes}
+            onApprove={() => approveQuoteMutation.mutate(selectedQuote.id)}
+            onShowDecline={() => setShowDeclineForm(true)}
+            onDeclineNotesChange={setDeclineNotes}
+            onDecline={() => declineQuoteMutation.mutate({ quoteId: selectedQuote.id, notes: declineNotes })}
+            onCancelDecline={() => {
+              setShowDeclineForm(false)
+              setDeclineNotes('')
+            }}
+          />
         )}
 
         {/* Invoice & Payment Section */}
@@ -1416,7 +1391,7 @@ function CustomerRepairs() {
               const actionLabel = needsPayment
                 ? 'Pay invoice'
                 : needsEstimateApproval
-                  ? 'Review estimate'
+                  ? 'Review authorization'
                   : 'View details'
 
               return (

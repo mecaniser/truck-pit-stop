@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import hashlib
+import hmac
 import json
 from typing import Callable, Optional
 
@@ -12,6 +13,7 @@ from app.core.config import settings
 from app.core.logging import get_logger
 from app.core.rate_limit import rate_limit_key
 from app.core.redis import get_redis
+from app.core.redaction import sanitize_request_path
 
 logger = get_logger(__name__)
 
@@ -63,7 +65,12 @@ class IdempotencyMiddleware:
 
     @staticmethod
     def _build_fingerprint(method: str, path: str, principal: str, normalized_body: str) -> str:
-        payload = f"{method}|{path}|{principal}|{normalized_body}"
+        path_identity = hmac.new(
+            settings.SECRET_KEY.encode("utf-8"),
+            path.encode("utf-8"),
+            hashlib.sha256,
+        ).hexdigest()
+        payload = f"{method}|{path_identity}|{principal}|{normalized_body}"
         return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
     @staticmethod
@@ -148,6 +155,7 @@ class IdempotencyMiddleware:
         principal = rate_limit_key(request)
         normalized_body = self._normalize_body(body)
         fingerprint = self._build_fingerprint(scope["method"], scope.get("path", ""), principal, normalized_body)
+        diagnostic_path = sanitize_request_path(scope.get("path", ""))
 
         redis = await get_redis()
         response_key = f"idempotency:response:{principal}:{idempotency_key}"
@@ -157,7 +165,7 @@ class IdempotencyMiddleware:
         if cached_raw:
             cached = json.loads(cached_raw)
             if cached.get("fingerprint") != fingerprint:
-                logger.warning("idempotency_conflict", key=idempotency_key, path=scope.get("path"))
+                logger.warning("idempotency_conflict", key=idempotency_key, path=diagnostic_path)
                 await self._send_json(send, 409, {"detail": "Idempotency key reuse with different payload"})
                 return
 
@@ -232,12 +240,12 @@ class IdempotencyMiddleware:
                         "body_b64": base64.b64encode(response_body).decode("utf-8"),
                     }
                     await redis.setex(response_key, RESULT_TTL_SECONDS, json.dumps(payload))
-                    logger.info("idempotency_stored", key=idempotency_key, path=scope.get("path"), status_code=status_code)
+                    logger.info("idempotency_stored", key=idempotency_key, path=diagnostic_path, status_code=status_code)
                 else:
                     logger.warning(
                         "idempotency_not_stored_body_too_large",
                         key=idempotency_key,
-                        path=scope.get("path"),
+                        path=diagnostic_path,
                         status_code=status_code,
                         body_bytes=len(response_body),
                         max_cached_response_bytes=MAX_CACHED_RESPONSE_BYTES,

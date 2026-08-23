@@ -14,7 +14,7 @@ from starlette.types import ASGIApp
 from app.core.logging import get_logger, bind_contextvars, clear_contextvars
 from app.core.correlation import normalize_correlation_id
 from app.core.metrics import normalize_endpoint_label, record_endpoint_duration
-from app.core.redaction import redact_sensitive, redact_text
+from app.core.redaction import redact_sensitive, redact_text, sanitize_request_path
 from app.core.request_performance import (
     begin_request_database_stats,
     end_request_database_stats,
@@ -56,7 +56,7 @@ class ObservabilityMiddleware(BaseHTTPMiddleware):
         bind_contextvars(
             correlation_id=correlation_id,
             method=request.method,
-            path=request.url.path,
+            path=sanitize_request_path(request.url.path),
             client_ip=client_ip,
         )
         

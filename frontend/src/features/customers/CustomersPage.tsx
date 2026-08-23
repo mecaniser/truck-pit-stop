@@ -2154,7 +2154,7 @@ export default function CustomersPage() {
                 placeholder="Leave empty to disable"
               />
             </div>
-            <p className="text-xs text-gray-500 mt-1">Quotes at or below this amount will be auto-approved. Leave empty to require manual approval.</p>
+            <p className="text-xs text-gray-500 mt-1">Published initial estimates at or below this amount may be auto-approved. Additional work always requires customer approval.</p>
           </div>
 
           {/* Notes */}
@@ -2361,7 +2361,7 @@ export default function CustomersPage() {
                 placeholder="Leave empty to disable"
               />
             </div>
-            <p className="text-xs text-gray-500 mt-1">Quotes at or below this amount will be auto-approved. Leave empty to require manual approval.</p>
+            <p className="text-xs text-gray-500 mt-1">Published initial estimates at or below this amount may be auto-approved. Additional work always requires customer approval.</p>
           </div>
 
           {/* Notes */}
@@ -4217,7 +4217,7 @@ export default function CustomersPage() {
                           </p>
                         </div>
                       </div>
-                      <p className="text-xs text-amber-600 mt-2">Quotes at or below this amount are approved automatically.</p>
+                      <p className="text-xs text-amber-600 mt-2">Published initial estimates at or below this amount may be approved automatically. Additional work still requires the customer.</p>
                     </div>
                   )}
 

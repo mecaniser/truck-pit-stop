@@ -8,14 +8,19 @@ import pytest
 from sqlalchemy import select
 
 from app.db.models.customer import Customer
-from app.db.models.inventory import Inventory
+from app.db.models.inventory import Inventory, PartsUsage
 from app.db.models.labor import Labor, LaborLineType
 from app.db.models.labor_operation_memory import LaborOperationMemory
 from app.db.models.repair_order import RepairOrder, RepairOrderStatus
 from app.db.models.service import Service, ServicePart
 from app.db.models.tenant import Tenant
 from app.db.models.vehicle import Vehicle
-from app.services.price_build_service import PriceBuildService
+from app.services.price_build_service import (
+    PriceBuildInputError,
+    PriceBuildNotFoundError,
+    PriceBuildService,
+)
+from app.services.repair_operation_library import OperationEstimate
 
 
 async def _seed_context(db_session):
@@ -138,6 +143,33 @@ async def test_add_flat_service_line_recomputes_totals(db_session):
 
 
 @pytest.mark.asyncio
+async def test_flat_service_source_must_be_active_and_not_deleted_before_mutation(db_session):
+    _, _, _, order, service = await _seed_context(db_session)
+    order_id = order.id
+    service_id = service.id
+    svc = PriceBuildService()
+
+    service.is_active = False
+    await db_session.commit()
+    loaded = await svc.load_order(db_session, order_id)
+    with pytest.raises(PriceBuildNotFoundError, match="Source reference not found"):
+        await svc.add_flat_service_line(db_session, loaded, service_id)
+
+    service = await db_session.get(Service, service_id)
+    service.is_active = True
+    service.deleted_at = datetime.now(timezone.utc)
+    await db_session.commit()
+    loaded = await svc.load_order(db_session, order_id)
+    with pytest.raises(PriceBuildNotFoundError, match="Source reference not found"):
+        await svc.add_flat_service_line(db_session, loaded, service_id)
+
+    refreshed = await svc.load_order(db_session, order_id)
+    assert refreshed.labor_items == []
+    assert refreshed.parts_usage == []
+    assert refreshed.total_cost == Decimal("0.00")
+
+
+@pytest.mark.asyncio
 async def test_add_flat_service_line_keeps_service_when_bundled_part_stock_is_short(db_session):
     tenant, _, _, order, service = await _seed_context(db_session)
     inventory = Inventory(
@@ -173,6 +205,178 @@ async def test_add_flat_service_line_keeps_service_when_bundled_part_stock_is_sh
     assert result.warnings[0].code == "service_part_stock_shortage"
     assert result.warnings[0].line_id == line.id
     assert "Used Tire" in result.warnings[0].message
+
+
+@pytest.mark.asyncio
+async def test_generated_bundle_rejects_extreme_part_quantity_before_mutation(db_session):
+    tenant, _, _, order, service = await _seed_context(db_session)
+    inventory = Inventory(
+        id=uuid4(),
+        tenant_id=tenant.id,
+        sku="EXTREME-PART",
+        name="Extreme bundled part",
+        stock_quantity=10,
+        cost=Decimal("10.00"),
+        selling_price=Decimal("20.00"),
+    )
+    db_session.add_all(
+        [
+            inventory,
+            ServicePart(
+                id=uuid4(),
+                tenant_id=tenant.id,
+                service_id=service.id,
+                inventory_id=inventory.id,
+                quantity=Decimal("9999.99"),
+            ),
+        ]
+    )
+    await db_session.commit()
+    order_id = order.id
+    service_id = service.id
+
+    svc = PriceBuildService()
+    loaded = await svc.load_order(db_session, order_id)
+    with pytest.raises(PriceBuildInputError):
+        await svc.add_flat_service_line(db_session, loaded, service_id)
+    await db_session.rollback()
+
+    refreshed_order = await svc.load_order(db_session, order_id)
+    await db_session.refresh(inventory)
+    assert refreshed_order.labor_items == []
+    assert refreshed_order.parts_usage == []
+    assert refreshed_order.total_labor_cost == Decimal("0.00")
+    assert refreshed_order.total_parts_cost == Decimal("0.00")
+    assert refreshed_order.total_cost == Decimal("0.00")
+    assert inventory.stock_quantity == 10
+    assert not (
+        await db_session.execute(
+            select(PartsUsage).where(PartsUsage.repair_order_id == order_id)
+        )
+    ).scalars().all()
+
+
+@pytest.mark.asyncio
+async def test_generated_service_hours_reject_database_rounding_before_mutation(db_session):
+    _, _, _, order, service = await _seed_context(db_session)
+    service.duration_minutes = 20
+    await db_session.commit()
+    order_id = order.id
+    service_id = service.id
+
+    svc = PriceBuildService()
+    loaded = await svc.load_order(db_session, order_id)
+    with pytest.raises(PriceBuildInputError):
+        await svc.add_flat_service_line(db_session, loaded, service_id)
+    await db_session.rollback()
+
+    refreshed_order = await svc.load_order(db_session, order_id)
+    assert refreshed_order.labor_items == []
+    assert refreshed_order.parts_usage == []
+    assert refreshed_order.total_cost == Decimal("0.00")
+
+
+@pytest.mark.parametrize(
+    "invalid_hours",
+    [Decimal("0.00"), Decimal("NaN"), Decimal("1.001"), Decimal("1000.00")],
+)
+@pytest.mark.asyncio
+async def test_recalculate_rejects_invalid_generated_hours_without_partial_mutation(
+    db_session,
+    monkeypatch,
+    invalid_hours,
+):
+    tenant, _, _, order, _ = await _seed_context(db_session)
+    line = Labor(
+        tenant_id=tenant.id,
+        repair_order_id=order.id,
+        description="Generated operation",
+        hours=Decimal("1.00"),
+        hourly_rate=Decimal("100.00"),
+        total_cost=Decimal("100.00"),
+        line_type=LaborLineType.REPAIR_OPERATION,
+        provider="test_provider",
+        provider_operation_id="generated-operation",
+        auto_recalc_enabled=True,
+    )
+    order.total_labor_cost = Decimal("100.00")
+    order.total_cost = Decimal("100.00")
+    db_session.add(line)
+    await db_session.commit()
+    order_id = order.id
+    line_id = line.id
+
+    svc = PriceBuildService()
+
+    async def _invalid_estimate(*_args, **_kwargs):
+        return OperationEstimate(
+            operation_id="generated-operation",
+            name="Generated operation",
+            description="Invalid generated hours",
+            estimated_hours=invalid_hours,
+            warnings=[],
+            provider="test_provider",
+        )
+
+    monkeypatch.setattr(svc, "_get_operation_estimate", _invalid_estimate)
+    loaded = await svc.load_order(db_session, order_id)
+    with pytest.raises(PriceBuildInputError):
+        await svc.recalculate_order(db_session, loaded)
+    await db_session.rollback()
+
+    stored_order = await db_session.get(RepairOrder, order_id)
+    stored_line = await db_session.get(Labor, line_id)
+    assert stored_line.hours == Decimal("1.00")
+    assert stored_line.hourly_rate == Decimal("100.00")
+    assert stored_line.total_cost == Decimal("100.00")
+    assert stored_order.total_labor_cost == Decimal("100.00")
+    assert stored_order.total_parts_cost == Decimal("0.00")
+    assert stored_order.total_cost == Decimal("100.00")
+
+
+@pytest.mark.asyncio
+async def test_recalculate_accepts_valid_generated_hours_atomically(
+    db_session,
+    monkeypatch,
+):
+    tenant, _, _, order, _ = await _seed_context(db_session)
+    line = Labor(
+        tenant_id=tenant.id,
+        repair_order_id=order.id,
+        description="Generated operation",
+        hours=Decimal("1.00"),
+        hourly_rate=Decimal("100.00"),
+        total_cost=Decimal("100.00"),
+        line_type=LaborLineType.REPAIR_OPERATION,
+        provider="test_provider",
+        provider_operation_id="generated-operation",
+        auto_recalc_enabled=True,
+    )
+    order.total_labor_cost = Decimal("100.00")
+    order.total_cost = Decimal("100.00")
+    db_session.add(line)
+    await db_session.commit()
+
+    svc = PriceBuildService()
+
+    async def _valid_estimate(*_args, **_kwargs):
+        return OperationEstimate(
+            operation_id="generated-operation",
+            name="Generated operation",
+            description="Valid generated hours",
+            estimated_hours=Decimal("2.50"),
+            warnings=[],
+            provider="test_provider",
+        )
+
+    monkeypatch.setattr(svc, "_get_operation_estimate", _valid_estimate)
+    loaded = await svc.load_order(db_session, order.id)
+    result = await svc.recalculate_order(db_session, loaded)
+    stored_line = next(item for item in result.order.labor_items if item.id == line.id)
+    assert stored_line.hours == Decimal("2.50")
+    assert stored_line.total_cost == Decimal("250.00")
+    assert result.order.total_labor_cost == Decimal("250.00")
+    assert result.order.total_cost == Decimal("250.00")
 
 
 @pytest.mark.asyncio
@@ -261,17 +465,15 @@ async def test_custom_operation_is_not_learned_until_hours_are_entered(db_sessio
     svc = PriceBuildService()
     loaded = await svc.load_order(db_session, order.id)
 
-    created = await svc.add_repair_operation_line(
-        db_session,
-        loaded,
-        operation_id="custom:tire-replacement",
-        name="Tire Replacement",
-        description="New custom repair operation. Save hours once and the system will reuse them next time.",
-        estimated_hours=Decimal("0.00"),
-    )
-
-    first_line = next(li for li in created.order.labor_items if li.provider_operation_id == "custom:tire-replacement")
-    assert Decimal(str(first_line.hours)) == Decimal("0.00")
+    with pytest.raises(PriceBuildInputError):
+        await svc.add_repair_operation_line(
+            db_session,
+            loaded,
+            operation_id="custom:tire-replacement",
+            name="Tire Replacement",
+            description="New custom repair operation. Save hours once and the system will reuse them next time.",
+            estimated_hours=Decimal("0.00"),
+        )
 
     memory_rows = await db_session.execute(select(LaborOperationMemory))
     assert memory_rows.scalars().all() == []
@@ -285,12 +487,20 @@ async def test_custom_operation_is_not_learned_until_hours_are_entered(db_sessio
     assert warnings
     assert warnings[0].code == "no_saved_match"
 
-    await svc.update_line(
+    created = await svc.add_repair_operation_line(
         db_session,
-        created.order,
-        line_id=first_line.id,
-        hours=Decimal("2.50"),
+        loaded,
+        operation_id="custom:tire-replacement",
+        name="Tire Replacement",
+        description="New custom repair operation with entered hours.",
+        estimated_hours=Decimal("2.50"),
     )
+    first_line = next(
+        li
+        for li in created.order.labor_items
+        if li.provider_operation_id == "custom:tire-replacement"
+    )
+    assert Decimal(str(first_line.hours)) == Decimal("2.50")
 
     stored_rows = await db_session.execute(select(LaborOperationMemory))
     stored = stored_rows.scalars().all()

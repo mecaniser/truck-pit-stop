@@ -8,12 +8,14 @@ still tracks whole packages/jugs on hand, rounded up per package consumed.
 """
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from decimal import Decimal
 from uuid import uuid4
 import os
 
 import pytest
 from fastapi import HTTPException
+from pydantic import ValidationError
 from sqlalchemy import select
 
 os.environ.setdefault("TWILIO_ACCOUNT_SID", "AC00000000000000000000000000000000")
@@ -196,6 +198,139 @@ async def test_add_part_rejects_source_line_id_from_another_order(db_session):
     with pytest.raises(HTTPException) as exc_info:
         await add_parts_to_repair_order(order.id, body, db_session, user)
     assert exc_info.value.status_code == 404
+    assert exc_info.value.detail == "Source reference not found"
+
+
+@pytest.mark.asyncio
+async def test_part_source_references_are_active_tenant_scoped_and_related(db_session):
+    from app.db.models.labor import Labor, LaborLineType
+
+    user, order, inv = await _seed(db_session, stock_quantity=10)
+    active_service = Service(
+        id=uuid4(),
+        tenant_id=order.tenant_id,
+        name="Active service",
+        duration_minutes=60,
+        is_active=True,
+    )
+    other_service = Service(
+        id=uuid4(),
+        tenant_id=order.tenant_id,
+        name="Other service",
+        duration_minutes=60,
+        is_active=True,
+    )
+    inactive_service = Service(
+        id=uuid4(),
+        tenant_id=order.tenant_id,
+        name="Inactive service",
+        duration_minutes=60,
+        is_active=False,
+    )
+    deleted_service = Service(
+        id=uuid4(),
+        tenant_id=order.tenant_id,
+        name="Deleted service",
+        duration_minutes=60,
+        is_active=True,
+        deleted_at=datetime.now(timezone.utc),
+    )
+    other_tenant = Tenant(
+        id=uuid4(),
+        name="Other source garage",
+        slug=f"other-source-{uuid4().hex[:8]}",
+    )
+    cross_tenant_service = Service(
+        id=uuid4(),
+        tenant_id=other_tenant.id,
+        name="Cross-tenant service",
+        duration_minutes=60,
+        is_active=True,
+    )
+    line = Labor(
+        id=uuid4(),
+        tenant_id=order.tenant_id,
+        repair_order_id=order.id,
+        description="Sourced labor",
+        hours=Decimal("1.00"),
+        hourly_rate=Decimal("100.00"),
+        total_cost=Decimal("100.00"),
+        line_type=LaborLineType.MANUAL,
+        source_service_id=active_service.id,
+    )
+    db_session.add_all(
+        [
+            active_service,
+            other_service,
+            inactive_service,
+            deleted_service,
+            other_tenant,
+            cross_tenant_service,
+            line,
+        ]
+    )
+    await db_session.commit()
+    order_id = order.id
+    inventory_id = inv.id
+    user_id = user.id
+    inactive_service_id = inactive_service.id
+    deleted_service_id = deleted_service.id
+    cross_tenant_service_id = cross_tenant_service.id
+    other_service_id = other_service.id
+    line_id = line.id
+
+    for missing_service_id in (
+        uuid4(),
+        inactive_service_id,
+        deleted_service_id,
+        cross_tenant_service_id,
+    ):
+        with pytest.raises(HTTPException) as exc_info:
+            await add_parts_to_repair_order(
+                order_id,
+                PartsUsageCreate(
+                    inventory_id=inventory_id,
+                    quantity=Decimal("1.00"),
+                    source_service_id=missing_service_id,
+                ),
+                db_session,
+                user,
+            )
+        assert exc_info.value.status_code == 404
+        assert exc_info.value.detail == "Source reference not found"
+        await db_session.rollback()
+        user = await db_session.get(User, user_id)
+
+    with pytest.raises(HTTPException) as contradictory:
+        await add_parts_to_repair_order(
+            order_id,
+            PartsUsageCreate(
+                inventory_id=inventory_id,
+                quantity=Decimal("1.00"),
+                source_service_id=other_service_id,
+                source_line_id=line_id,
+            ),
+            db_session,
+            user,
+        )
+    assert contradictory.value.status_code == 422
+    assert contradictory.value.detail == "Source references do not match"
+    await db_session.rollback()
+
+    await db_session.refresh(inv)
+    assert inv.stock_quantity == 10
+    assert not (
+        await db_session.execute(
+            select(PartsUsage).where(PartsUsage.repair_order_id == order_id)
+        )
+    ).scalars().all()
+    assert not (
+        await db_session.execute(
+            select(RepairOrderHistoryEvent).where(
+                RepairOrderHistoryEvent.repair_order_id == order_id
+            )
+        )
+    ).scalars().all()
 
 
 @pytest.mark.asyncio
@@ -237,10 +372,8 @@ async def test_add_part_rejects_zero_or_negative_quantity(db_session):
     user, order, inv = await _seed(db_session)
 
     for bad_qty in (Decimal("0"), Decimal("-0.25")):
-        body = PartsUsageCreate(inventory_id=inv.id, quantity=bad_qty)
-        with pytest.raises(HTTPException) as exc_info:
-            await add_parts_to_repair_order(order.id, body, db_session, user)
-        assert exc_info.value.status_code == 400
+        with pytest.raises(ValidationError):
+            PartsUsageCreate(inventory_id=inv.id, quantity=bad_qty)
 
 
 @pytest.mark.asyncio
@@ -405,11 +538,8 @@ async def test_update_quantity_rejects_zero(db_session):
     body = PartsUsageCreate(inventory_id=inv.id, quantity=Decimal("1.00"))
     resp = await add_parts_to_repair_order(order.id, body, db_session, user)
 
-    with pytest.raises(HTTPException) as exc_info:
-        await update_parts_quantity(
-            order.id, resp.id, PartsUsageUpdate(quantity=Decimal("0")), db_session, user
-        )
-    assert exc_info.value.status_code == 400
+    with pytest.raises(ValidationError):
+        PartsUsageUpdate(quantity=Decimal("0"))
 
 
 @pytest.mark.asyncio

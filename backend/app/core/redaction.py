@@ -42,6 +42,9 @@ _SENSITIVE_ASSIGNMENT = re.compile(
     r"(?P<value>[^&\s,;\)\]\}\"']+)"
 )
 _BEARER_VALUE = re.compile(r"(?i)\bBearer\s+[A-Za-z0-9._~+/=-]+")
+_MAGIC_LINK_PATH_VALUE = re.compile(
+    r"(?P<prefix>/(?:api/v1/quotes/token|quote)/)[^/?#\s]+"
+)
 
 
 def _sensitive_key(key: Any) -> bool:
@@ -51,9 +54,24 @@ def _sensitive_key(key: Any) -> bool:
     return any(part in normalized for part in _SENSITIVE_KEY_PARTS)
 
 
+def sanitize_request_path(value: str) -> str:
+    """Replace public quote credentials embedded in paths with a placeholder.
+
+    The concrete path must continue through ASGI for routing, but it is a
+    credential whenever it reaches a human-readable or persisted diagnostic
+    surface.  This also accepts a full URL or exception message containing the
+    path and preserves any route suffix (for example ``/approve``).
+    """
+    return _MAGIC_LINK_PATH_VALUE.sub(
+        lambda match: f"{match.group('prefix')}:token",
+        value,
+    )
+
+
 def redact_text(value: str) -> str:
     """Redact credential-shaped values embedded in arbitrary text or URLs."""
-    redacted = _BEARER_VALUE.sub(f"Bearer {REDACTED}", value)
+    redacted = sanitize_request_path(value)
+    redacted = _BEARER_VALUE.sub(f"Bearer {REDACTED}", redacted)
     return _SENSITIVE_ASSIGNMENT.sub(
         lambda match: f"{match.group('prefix')}{REDACTED}",
         redacted,
@@ -64,6 +82,10 @@ def redact_sensitive(value: Any) -> Any:
     """Recursively redact structured values while preserving container types."""
     if isinstance(value, str):
         return redact_text(value)
+    if isinstance(value, bytes):
+        return redact_text(value.decode("latin1"))
+    if isinstance(value, bytearray):
+        return redact_text(bytes(value).decode("latin1"))
     if isinstance(value, Mapping):
         return {
             key: REDACTED if _sensitive_key(key) else redact_sensitive(item)
