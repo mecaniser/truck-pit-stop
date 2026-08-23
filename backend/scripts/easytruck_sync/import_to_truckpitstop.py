@@ -345,10 +345,22 @@ def dsn_from_env():
     return url
 
 
-def _untouched(created_at, updated_at):
-    """True if the row hasn't been hand-edited since import."""
+def _untouched(created_at, updated_at, imported_at=None):
+    """True if the row hasn't been hand-edited since WE last wrote it.
+
+    Compare against our own last write, not against created_at. The importer
+    sets updated_at = now() on every update, so a created_at comparison marks
+    each part as hand-edited the moment we first touch it and then skips it for
+    good — 97% of prod's catalogue was frozen that way, holding a stock figure
+    the shop had already corrected in ETS.
+
+    imported_at is None for rows written before that column existed, or for
+    rows this importer never created; fall back to the old comparison there.
+    """
     if created_at is None or updated_at is None:
         return True
+    if imported_at is not None:
+        return (updated_at - imported_at) <= UNTOUCHED_EPSILON
     return (updated_at - created_at) <= UNTOUCHED_EPSILON
 
 
@@ -726,7 +738,7 @@ def resync_parts(conn, tenant_id, commit, rehost_images):
 
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     cur.execute(
-        "SELECT id, sku, location, image_url, created_at, updated_at FROM inventory "
+        "SELECT id, sku, location, image_url, created_at, updated_at, ets_imported_at FROM inventory "
         "WHERE tenant_id=%s AND source=%s AND deleted_at IS NULL", (tenant_id, IMPORT_SOURCE))
     # Keyed by canonical SKU, not the raw string — see _canon_sku. Where a
     # pre-existing duplicate pair is still present (until the merge pass runs),
@@ -785,7 +797,7 @@ def resync_parts(conn, tenant_id, commit, rehost_images):
         ex = existing.get(canon)
         if ex:
             item_id = ex["id"]
-            if not _untouched(ex["created_at"], ex["updated_at"]):
+            if not _untouched(ex["created_at"], ex["updated_at"], ex["ets_imported_at"]):
                 stats["skip_edited"] += 1
                 continue
             if ex["sku"] != sku:
@@ -806,9 +818,9 @@ def resync_parts(conn, tenant_id, commit, rehost_images):
                      stock_quantity=%s,
                      image_url=COALESCE(%s, image_url),
                      cloudinary_public_id=COALESCE(%s, cloudinary_public_id),
-                     updated_at=%s
+                     updated_at=%s, ets_imported_at=%s
                    WHERE id=%s""",
-                (name, sku, location, cost, price, stock, image_url, public_id, now, item_id))
+                (name, sku, location, cost, price, stock, image_url, public_id, now, now, item_id))
             stats["upd"] += 1
         else:
             item_id = uuid.uuid4()
@@ -820,10 +832,10 @@ def resync_parts(conn, tenant_id, commit, rehost_images):
             w.execute(
                 """INSERT INTO inventory (id, tenant_id, sku, name, description, location,
                      cost, selling_price, stock_quantity, source, image_url,
-                     cloudinary_public_id, created_at, updated_at)
-                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+                     cloudinary_public_id, created_at, updated_at, ets_imported_at)
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
                 (item_id, tenant_id, sku, name, name, location, cost, price, stock,
-                 IMPORT_SOURCE, image_url, public_id, now, now))
+                 IMPORT_SOURCE, image_url, public_id, now, now, now))
             stats["ins"] += 1
 
         # Commit periodically so a dropped connection (e.g. Railway proxy) loses
