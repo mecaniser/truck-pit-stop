@@ -3,10 +3,11 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from decimal import Decimal
+from math import ceil
 from typing import Literal, Optional
 from uuid import UUID, uuid4
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Response, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Response, status
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -18,6 +19,7 @@ from app.db.models.parts_operations import (
     PurchaseOrderLine, PurchaseReceipt, PurchaseReceiptLine, VendorReturn,
     VendorReturnLine,
 )
+from app.db.models.repair_order import RepairOrder, RepairOrderStatus
 from app.db.models.supplier import Supplier
 from app.db.models.user import User
 from app.services.parts_operations_service import (
@@ -28,6 +30,34 @@ from app.services.parts_operations_service import (
 )
 
 router = APIRouter()
+
+DemandState = Literal["open", "covered", "unlinked"]
+POStatusFilter = Literal["draft", "submitted", "partially_received", "received", "cancelled"]
+ReturnKindFilter = Literal["stock", "core"]
+ReturnStatusFilter = Literal["draft", "submitted", "shipped", "credited", "cancelled"]
+CoreStatusFilter = Literal["expected", "on_hand", "returned", "waived"]
+
+DEMAND_STATES = frozenset({"open", "covered", "unlinked"})
+PO_STATUSES = frozenset({"draft", "submitted", "partially_received", "received", "cancelled"})
+RETURN_KINDS = frozenset({"stock", "core"})
+RETURN_STATUSES = frozenset({"draft", "submitted", "shipped", "credited", "cancelled"})
+CORE_STATUSES = frozenset({"expected", "on_hand", "returned", "waived"})
+MOVEMENT_TYPES = frozenset({
+    "migration_opening_balance", "legacy_inventory_opening", "manual_adjustment",
+    "legacy_direct_receipt", "repair_reservation", "repair_release", "po_receipt",
+    "core_recovery", "vendor_return", "core_return", "vendor_return_reversal",
+    "core_return_reversal",
+})
+SOURCE_TYPES = frozenset({
+    "legacy_inventory_create", "legacy_inventory_preload", "legacy_inventory_update",
+    "legacy_inventory_receive", "repair_order", "purchase_receipt", "core_obligation",
+    "vendor_return",
+})
+EDITABLE_REPAIR_STATUSES = frozenset({
+    RepairOrderStatus.DRAFT, RepairOrderStatus.QUOTED, RepairOrderStatus.DECLINED,
+    RepairOrderStatus.APPROVED, RepairOrderStatus.ASSIGNED, RepairOrderStatus.ACKNOWLEDGED,
+    RepairOrderStatus.IN_PROGRESS, RepairOrderStatus.PENDING_REVIEW,
+})
 
 
 class CategoryInput(BaseModel):
@@ -99,14 +129,89 @@ def _not_found() -> HTTPException:
     return HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
 
 
-def _serialize_movement(row: InventoryMovement) -> dict:
+def _unprocessable(detail: str) -> HTTPException:
+    return HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=detail)
+
+
+def _utc_now() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+def _validate_collection(skip: int, limit: int) -> None:
+    if skip < 0 or not 1 <= limit <= 100:
+        raise _unprocessable("Invalid pagination")
+
+
+def _validate_choice(value: str | None, allowed: frozenset[str], name: str) -> str | None:
+    if value is None:
+        return None
+    normalized = value.strip().lower()
+    if normalized not in allowed:
+        raise _unprocessable(f"Invalid {name}")
+    return normalized
+
+
+def _validate_text_filter(value: str | None, name: str) -> str | None:
+    if value is None:
+        return None
+    normalized = " ".join(value.split())
+    if not normalized or len(normalized) > 255:
+        raise _unprocessable(f"Invalid {name}")
+    return normalized.casefold()
+
+
+def _collection(items: list[dict], *, total: int, skip: int, limit: int, paginated: bool):
+    if not paginated:
+        return items
+    return {"items": items, "total": total, "skip": skip, "limit": limit,
+            "has_more": skip + len(items) < total}
+
+
+def _page(items: list[dict], *, skip: int, limit: int, paginated: bool):
+    return _collection(items[skip:skip + limit], total=len(items), skip=skip, limit=limit, paginated=paginated)
+
+
+def _supplier_summary(row: Supplier | None) -> dict | None:
+    return None if row is None else {"id": str(row.id), "name": row.name, "normalized_name": row.normalized_name}
+
+
+def _inventory_summary(row: Inventory | None) -> dict | None:
+    return None if row is None else {"id": str(row.id), "sku": row.sku, "name": row.name, "unit_type": row.unit_type}
+
+
+async def _tenant_supplier(db: AsyncSession, tenant_id: UUID, supplier_id: UUID | None) -> Supplier | None:
+    if supplier_id is None:
+        return None
+    row = (await db.execute(select(Supplier).where(
+        Supplier.id == supplier_id, Supplier.tenant_id == tenant_id, Supplier.deleted_at.is_(None),
+    ))).scalar_one_or_none()
+    if row is None:
+        raise _not_found()
+    return row
+
+
+async def _tenant_inventory(db: AsyncSession, tenant_id: UUID, inventory_id: UUID | None) -> Inventory | None:
+    if inventory_id is None:
+        return None
+    row = (await db.execute(select(Inventory).where(
+        Inventory.id == inventory_id, Inventory.tenant_id == tenant_id, Inventory.deleted_at.is_(None),
+    ))).scalar_one_or_none()
+    if row is None:
+        raise _not_found()
+    return row
+
+
+def _serialize_movement(row: InventoryMovement, inventory: Inventory | None = None, source: dict | None = None) -> dict:
     return {"id": str(row.id), "inventory_id": str(row.inventory_id), "bucket": row.bucket,
             "movement_type": row.movement_type, "quantity_delta": row.quantity_delta,
             "balance_before": row.balance_before, "balance_after": row.balance_after,
             "wac_before": str(row.wac_before) if row.wac_before is not None else None,
             "wac_after": str(row.wac_after) if row.wac_after is not None else None,
             "source_type": row.source_type, "source_id": str(row.source_id) if row.source_id else None,
-            "occurred_at": row.occurred_at.isoformat()}
+            "destination_type": row.destination_type,
+            "destination_id": str(row.destination_id) if row.destination_id else None,
+            "occurred_at": row.occurred_at.isoformat(),
+            "inventory": _inventory_summary(inventory), "source": source}
 
 
 def _serialize_po(po: PurchaseOrder, lines: list[PurchaseOrderLine]) -> dict:
@@ -177,40 +282,169 @@ async def summary(db: AsyncSession = Depends(get_db), current_user: User = Depen
 
 
 @router.get("/activity")
-async def activity(inventory_id: Optional[UUID] = None, skip: int = 0, limit: int = 50, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+async def activity(
+    inventory_id: Optional[UUID] = None, source_type: Optional[str] = None,
+    movement_type: Optional[str] = None,
+    from_at: Optional[datetime] = Query(default=None, alias="from"),
+    to: Optional[datetime] = None, skip: int = Query(default=0, ge=0),
+    limit: int = Query(default=50, ge=1, le=100), paginated: bool = Query(default=False),
+    db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user),
+):
     tenant_id = await _tenant(db, current_user, mutate=False)
-    if not 0 <= skip or not 1 <= limit <= 100:
-        raise HTTPException(status_code=422, detail="Invalid pagination")
+    _validate_collection(skip, limit)
+    inventory = await _tenant_inventory(db, tenant_id, inventory_id)
+    source_filter = _validate_choice(source_type, SOURCE_TYPES, "source_type")
+    movement_filter = _validate_choice(movement_type, MOVEMENT_TYPES, "movement_type")
+    if (from_at and from_at.tzinfo is None) or (to and to.tzinfo is None) or (from_at and to and from_at > to):
+        raise _unprocessable("Invalid date range")
     stmt = select(InventoryMovement).where(InventoryMovement.tenant_id == tenant_id)
-    if inventory_id:
-        stmt = stmt.where(InventoryMovement.inventory_id == inventory_id)
-    rows = (await db.execute(stmt.order_by(InventoryMovement.occurred_at.desc(), InventoryMovement.id.desc()).offset(skip).limit(limit))).scalars().all()
-    return [_serialize_movement(row) for row in rows]
+    if inventory is not None:
+        stmt = stmt.where(InventoryMovement.inventory_id == inventory.id)
+    if source_filter is not None:
+        stmt = stmt.where(InventoryMovement.source_type == source_filter)
+    if movement_filter is not None:
+        stmt = stmt.where(InventoryMovement.movement_type == movement_filter)
+    if from_at is not None:
+        stmt = stmt.where(InventoryMovement.occurred_at >= from_at)
+    if to is not None:
+        stmt = stmt.where(InventoryMovement.occurred_at <= to)
+    rows = list((await db.execute(stmt.order_by(InventoryMovement.occurred_at.desc(), InventoryMovement.id.desc()))).scalars().all())
+    inventory_ids = {row.inventory_id for row in rows}
+    inventories = {row.id: row for row in (await db.execute(select(Inventory).where(
+        Inventory.tenant_id == tenant_id, Inventory.id.in_(inventory_ids), Inventory.deleted_at.is_(None),
+    ))).scalars().all()} if inventory_ids else {}
+    source_summaries: dict[tuple[str, UUID], dict] = {}
+    repair_ids = {row.source_id for row in rows if row.source_type == "repair_order" and row.source_id}
+    if repair_ids:
+        orders = (await db.execute(select(RepairOrder).where(
+            RepairOrder.tenant_id == tenant_id, RepairOrder.id.in_(repair_ids), RepairOrder.deleted_at.is_(None),
+        ))).scalars().all()
+        source_summaries.update({("repair_order", order.id): {"type": "repair_order", "id": str(order.id), "order_number": order.order_number} for order in orders})
+    return_ids = {row.source_id for row in rows if row.source_type == "vendor_return" and row.source_id}
+    if return_ids:
+        returns = (await db.execute(select(VendorReturn).where(
+            VendorReturn.tenant_id == tenant_id, VendorReturn.id.in_(return_ids), VendorReturn.deleted_at.is_(None),
+        ))).scalars().all()
+        source_summaries.update({("vendor_return", row.id): {"type": "vendor_return", "id": str(row.id), "return_number": row.return_number} for row in returns})
+    receipt_ids = {row.source_id for row in rows if row.source_type == "purchase_receipt" and row.source_id}
+    if receipt_ids:
+        receipts = (await db.execute(select(PurchaseReceipt).where(PurchaseReceipt.tenant_id == tenant_id, PurchaseReceipt.id.in_(receipt_ids)))).scalars().all()
+        source_summaries.update({("purchase_receipt", row.id): {"type": "purchase_receipt", "id": str(row.id), "receipt_number": row.receipt_number, "purchase_order_id": str(row.purchase_order_id)} for row in receipts})
+    values = [_serialize_movement(row, inventories.get(row.inventory_id), source_summaries.get((row.source_type, row.source_id))) for row in rows]
+    return _page(values, skip=skip, limit=limit, paginated=paginated)
 
 
 @router.get("/demand")
-async def demand(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+async def demand(
+    state: Optional[DemandState] = None, supplier_id: Optional[UUID] = None, search: Optional[str] = None,
+    skip: int = Query(default=0, ge=0), limit: int = Query(default=50, ge=1, le=100),
+    paginated: bool = Query(default=False),
+    db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user),
+):
     tenant_id = await _tenant(db, current_user, mutate=False)
-    items = (await db.execute(select(Inventory).where(Inventory.tenant_id == tenant_id, Inventory.deleted_at.is_(None)).order_by(Inventory.name))).scalars().all()
-    result = []
+    _validate_collection(skip, limit)
+    state_filter = _validate_choice(state, DEMAND_STATES, "state")
+    supplier_filter = await _tenant_supplier(db, tenant_id, supplier_id)
+    search_filter = _validate_text_filter(search, "search")
+    items = list((await db.execute(select(Inventory).where(
+        Inventory.tenant_id == tenant_id, Inventory.deleted_at.is_(None),
+    ))).scalars().all())
+    item_ids = {item.id for item in items}
+    suppliers = {row.id: row for row in (await db.execute(select(Supplier).where(
+        Supplier.tenant_id == tenant_id, Supplier.deleted_at.is_(None),
+    ))).scalars().all()}
+    shortage_sources: dict[UUID, list[dict]] = {item_id: [] for item_id in item_ids}
+    shortage_totals: dict[UUID, int] = {item_id: 0 for item_id in item_ids}
+    if item_ids:
+        usages = (await db.execute(
+            select(PartsUsage, RepairOrder).join(RepairOrder, RepairOrder.id == PartsUsage.repair_order_id).where(
+                PartsUsage.tenant_id == tenant_id, PartsUsage.inventory_id.in_(item_ids),
+                PartsUsage.deleted_at.is_(None), RepairOrder.tenant_id == tenant_id,
+                RepairOrder.deleted_at.is_(None), RepairOrder.pricing_locked_at.is_(None),
+                RepairOrder.status.in_(EDITABLE_REPAIR_STATUSES),
+            )
+        )).all()
+        for usage, order in usages:
+            packages = max(0, ceil(Decimal(usage.quantity)) - int(usage.stock_reserved_packages or 0))
+            if packages:
+                shortage_totals[usage.inventory_id] += packages
+                shortage_sources[usage.inventory_id].append({
+                    "type": "repair_order", "repair_order_id": str(order.id),
+                    "order_number": order.order_number, "parts_usage_id": str(usage.id), "packages": packages,
+                })
+    supply_sources: dict[UUID, list[dict]] = {item_id: [] for item_id in item_ids}
+    po_supply: dict[UUID, int] = {item_id: 0 for item_id in item_ids}
+    if item_ids:
+        supply_rows = (await db.execute(
+            select(PurchaseOrderLine, PurchaseOrder).join(PurchaseOrder, PurchaseOrder.id == PurchaseOrderLine.purchase_order_id).where(
+                PurchaseOrderLine.tenant_id == tenant_id, PurchaseOrderLine.inventory_id.in_(item_ids),
+                PurchaseOrderLine.deleted_at.is_(None), PurchaseOrder.tenant_id == tenant_id,
+                PurchaseOrder.deleted_at.is_(None), PurchaseOrder.status.in_(("submitted", "partially_received")),
+            )
+        )).all()
+        for line, po in supply_rows:
+            remaining = max(0, int(line.ordered_quantity) - int(line.received_quantity))
+            if remaining:
+                po_supply[line.inventory_id] += remaining
+                supply_sources[line.inventory_id].append({
+                    "type": "purchase_order", "purchase_order_id": str(po.id),
+                    "po_number": po.po_number, "purchase_order_line_id": str(line.id), "packages": remaining,
+                })
+    fresh_as_of = _utc_now().astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+    values = []
     for item in items:
-        shortages = (await db.execute(select(PartsUsage).where(PartsUsage.tenant_id == tenant_id, PartsUsage.inventory_id == item.id, PartsUsage.deleted_at.is_(None), PartsUsage.stock_shortage_override.is_(True)))).scalars().all()
-        repair_shortage = sum(max(0, int(__import__('math').ceil(line.quantity)) - int(line.stock_reserved_packages or 0)) for line in shortages)
+        if supplier_filter is not None and item.preferred_supplier_id != supplier_filter.id:
+            continue
+        if search_filter and search_filter not in f"{item.sku} {item.name}".casefold():
+            continue
+        repair_shortage = shortage_totals[item.id]
         shelf = max(int(item.reorder_level or 0) - int(item.stock_quantity or 0), 0)
-        open_supply = int(item.on_order_quantity or 0)
-        result.append({"inventory_id": str(item.id), "sku": item.sku, "name": item.name, "unit_type": item.unit_type,
-                       "stock_quantity": item.stock_quantity, "reorder_level": item.reorder_level,
-                       "repair_shortage_packages": repair_shortage, "shelf_replenishment_packages": shelf,
-                       "open_supply_packages": open_supply, "recommended_order_packages": max(repair_shortage + shelf - open_supply, 0),
-                       "sources": []})
-    return result
+        gross_demand = repair_shortage + shelf
+        if gross_demand <= 0:
+            continue
+        legacy_supply = max(0, int(item.on_order_quantity or 0))
+        open_supply = po_supply[item.id] + legacy_supply
+        recommended = max(gross_demand - open_supply, 0)
+        demand_state = "unlinked" if item.is_placeholder else ("open" if recommended else "covered")
+        if state_filter and demand_state != state_filter:
+            continue
+        sources = sorted(shortage_sources[item.id], key=lambda value: (value["order_number"], value["repair_order_id"], value["parts_usage_id"]))
+        if shelf:
+            sources.append({"type": "reorder_level", "packages": shelf})
+        sources.extend(sorted(supply_sources[item.id], key=lambda value: (value["po_number"], value["purchase_order_id"], value["purchase_order_line_id"])))
+        if legacy_supply:
+            sources.append({"type": "legacy_on_order", "packages": legacy_supply, "linked": False})
+        values.append({
+            "inventory_id": str(item.id), "sku": item.sku, "name": item.name, "unit_type": item.unit_type,
+            "state": demand_state, "stock_quantity": item.stock_quantity, "reorder_level": item.reorder_level,
+            "repair_shortage_packages": repair_shortage, "shelf_replenishment_packages": shelf,
+            "open_supply_packages": open_supply, "recommended_order_packages": recommended,
+            "preferred_supplier": _supplier_summary(suppliers.get(item.preferred_supplier_id)),
+            "fresh_as_of": fresh_as_of, "sources": sources,
+        })
+    state_order = {"open": 0, "unlinked": 1, "covered": 2}
+    values.sort(key=lambda value: (state_order[value["state"]], -value["recommended_order_packages"], value["name"].casefold(), value["sku"].casefold(), value["inventory_id"]))
+    return _page(values, skip=skip, limit=limit, paginated=paginated)
 
 
 @router.get("/categories")
-async def list_categories(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+async def list_categories(
+    active: Optional[bool] = None, search: Optional[str] = None, skip: int = Query(default=0, ge=0),
+    limit: int = Query(default=50, ge=1, le=100), paginated: bool = Query(default=False), db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
     tenant_id = await _tenant(db, current_user, mutate=False)
-    rows = (await db.execute(select(InventoryCategory).where(InventoryCategory.tenant_id == tenant_id, InventoryCategory.deleted_at.is_(None)).order_by(InventoryCategory.name))).scalars().all()
-    return [{"id": str(row.id), "name": row.name, "normalized_name": row.normalized_name, "description": row.description, "is_active": row.is_active} for row in rows]
+    _validate_collection(skip, limit)
+    search_filter = _validate_text_filter(search, "search")
+    rows = list((await db.execute(select(InventoryCategory).where(
+        InventoryCategory.tenant_id == tenant_id, InventoryCategory.deleted_at.is_(None),
+    ))).scalars().all())
+    values = [{"id": str(row.id), "name": row.name, "normalized_name": row.normalized_name,
+               "description": row.description, "is_active": row.is_active} for row in rows
+              if (active is None or row.is_active is active)
+              and (not search_filter or search_filter in f"{row.name} {row.description or ''}".casefold())]
+    values.sort(key=lambda value: (value["normalized_name"], value["id"]))
+    return _page(values, skip=skip, limit=limit, paginated=paginated)
 
 
 @router.post("/categories", status_code=status.HTTP_201_CREATED)
@@ -232,10 +466,54 @@ async def create_category(body: CategoryInput, idempotency_key: Optional[str] = 
 
 
 @router.get("/purchase-orders")
-async def list_purchase_orders(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+async def list_purchase_orders(
+    status_filter: Optional[POStatusFilter] = Query(default=None, alias="status"),
+    supplier_id: Optional[UUID] = None, search: Optional[str] = None,
+    skip: int = Query(default=0, ge=0), limit: int = Query(default=50, ge=1, le=100),
+    paginated: bool = Query(default=False),
+    db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user),
+):
     tenant_id = await _tenant(db, current_user, mutate=False)
-    rows = (await db.execute(select(PurchaseOrder).where(PurchaseOrder.tenant_id == tenant_id, PurchaseOrder.deleted_at.is_(None)).order_by(PurchaseOrder.created_at.desc()))).scalars().all()
-    return [{"id": str(row.id), "po_number": row.po_number, "supplier_id": str(row.supplier_id), "status": row.status, "version": row.version} for row in rows]
+    _validate_collection(skip, limit)
+    normalized_status = _validate_choice(status_filter, PO_STATUSES, "status")
+    supplier_filter = await _tenant_supplier(db, tenant_id, supplier_id)
+    search_filter = _validate_text_filter(search, "search")
+    rows = list((await db.execute(select(PurchaseOrder).where(
+        PurchaseOrder.tenant_id == tenant_id, PurchaseOrder.deleted_at.is_(None),
+    ))).scalars().all())
+    suppliers = {row.id: row for row in (await db.execute(select(Supplier).where(
+        Supplier.tenant_id == tenant_id, Supplier.deleted_at.is_(None),
+    ))).scalars().all()}
+    po_ids = {row.id for row in rows}
+    lines_by_po: dict[UUID, list[PurchaseOrderLine]] = {po_id: [] for po_id in po_ids}
+    if po_ids:
+        for line in (await db.execute(select(PurchaseOrderLine).where(
+            PurchaseOrderLine.tenant_id == tenant_id, PurchaseOrderLine.purchase_order_id.in_(po_ids),
+            PurchaseOrderLine.deleted_at.is_(None),
+        ))).scalars().all():
+            lines_by_po[line.purchase_order_id].append(line)
+    values = []
+    for row in rows:
+        supplier = suppliers.get(row.supplier_id)
+        if normalized_status and row.status != normalized_status:
+            continue
+        if supplier_filter and row.supplier_id != supplier_filter.id:
+            continue
+        if search_filter and search_filter not in f"{row.po_number} {row.notes or ''} {supplier.name if supplier else ''}".casefold():
+            continue
+        lines = lines_by_po[row.id]
+        ordered = sum(int(line.ordered_quantity) for line in lines)
+        received = sum(int(line.received_quantity) for line in lines)
+        values.append({
+            "id": str(row.id), "po_number": row.po_number, "supplier_id": str(row.supplier_id),
+            "supplier": _supplier_summary(supplier), "status": row.status, "version": row.version,
+            "expected_at": row.expected_at.isoformat() if row.expected_at else None,
+            "line_count": len(lines), "ordered_quantity": ordered, "received_quantity": received,
+            "remaining_quantity": max(0, ordered - received),
+            "created_at": row.created_at.isoformat(),
+        })
+    values.sort(key=lambda value: (value["created_at"], value["id"]), reverse=True)
+    return _page(values, skip=skip, limit=limit, paginated=paginated)
 
 
 @router.post("/purchase-orders", status_code=status.HTTP_201_CREATED)
@@ -267,7 +545,9 @@ async def create_purchase_order(body: POCreate, idempotency_key: Optional[str] =
 @router.get("/purchase-orders/{po_id}")
 async def get_purchase_order(po_id: UUID, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
     tenant_id = await _tenant(db, current_user, mutate=False); po = await _po(db, tenant_id, po_id)
-    return _serialize_po(po, await _po_lines(db, tenant_id, po.id))
+    output = _serialize_po(po, await _po_lines(db, tenant_id, po.id))
+    output["supplier"] = _supplier_summary(await _tenant_supplier(db, tenant_id, po.supplier_id))
+    return output
 
 
 @router.post("/purchase-orders/{po_id}/submit")
@@ -325,10 +605,51 @@ async def receive_purchase_order(po_id: UUID, body: ReceiptCreate, idempotency_k
 
 
 @router.get("/cores")
-async def list_cores(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+async def list_cores(
+    status_filter: Optional[CoreStatusFilter] = Query(default=None, alias="status"),
+    supplier_id: Optional[UUID] = None, inventory_id: Optional[UUID] = None,
+    skip: int = Query(default=0, ge=0), limit: int = Query(default=50, ge=1, le=100),
+    paginated: bool = Query(default=False),
+    db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user),
+):
     tenant_id = await _tenant(db, current_user, mutate=False)
-    rows = (await db.execute(select(CoreObligation).where(CoreObligation.tenant_id == tenant_id, CoreObligation.deleted_at.is_(None)).order_by(CoreObligation.created_at.desc()))).scalars().all()
-    return [{"id": str(row.id), "inventory_id": str(row.inventory_id), "supplier_id": str(row.supplier_id) if row.supplier_id else None, "quantity": row.quantity, "status": row.status, "version": row.version} for row in rows]
+    _validate_collection(skip, limit)
+    normalized_status = _validate_choice(status_filter, CORE_STATUSES, "status")
+    supplier_filter = await _tenant_supplier(db, tenant_id, supplier_id)
+    inventory_filter = await _tenant_inventory(db, tenant_id, inventory_id)
+    rows = list((await db.execute(select(CoreObligation).where(
+        CoreObligation.tenant_id == tenant_id, CoreObligation.deleted_at.is_(None),
+    ))).scalars().all())
+    inventory_ids = {row.inventory_id for row in rows}
+    inventories = {row.id: row for row in (await db.execute(select(Inventory).where(
+        Inventory.tenant_id == tenant_id, Inventory.id.in_(inventory_ids), Inventory.deleted_at.is_(None),
+    ))).scalars().all()} if inventory_ids else {}
+    supplier_ids = {row.supplier_id for row in rows if row.supplier_id}
+    suppliers = {row.id: row for row in (await db.execute(select(Supplier).where(
+        Supplier.tenant_id == tenant_id, Supplier.id.in_(supplier_ids), Supplier.deleted_at.is_(None),
+    ))).scalars().all()} if supplier_ids else {}
+    usage_ids = {row.parts_usage_id for row in rows}
+    usage_rows = (await db.execute(
+        select(PartsUsage, RepairOrder).join(RepairOrder, RepairOrder.id == PartsUsage.repair_order_id).where(
+            PartsUsage.tenant_id == tenant_id, PartsUsage.id.in_(usage_ids), PartsUsage.deleted_at.is_(None),
+            RepairOrder.tenant_id == tenant_id, RepairOrder.deleted_at.is_(None),
+        )
+    )).all() if usage_ids else []
+    sources = {usage.id: {"parts_usage_id": str(usage.id), "repair_order_id": str(order.id),
+                          "order_number": order.order_number} for usage, order in usage_rows}
+    values = [{
+        "id": str(row.id), "inventory_id": str(row.inventory_id),
+        "inventory": _inventory_summary(inventories.get(row.inventory_id)),
+        "supplier_id": str(row.supplier_id) if row.supplier_id else None,
+        "supplier": _supplier_summary(suppliers.get(row.supplier_id)),
+        "quantity": row.quantity, "status": row.status, "version": row.version,
+        "unit_core_value": str(row.unit_core_value_snapshot), "source": sources.get(row.parts_usage_id),
+        "created_at": row.created_at.isoformat(),
+    } for row in rows if (not normalized_status or row.status == normalized_status)
+        and (not supplier_filter or row.supplier_id == supplier_filter.id)
+        and (not inventory_filter or row.inventory_id == inventory_filter.id)]
+    values.sort(key=lambda value: (value["created_at"], value["id"]), reverse=True)
+    return _page(values, skip=skip, limit=limit, paginated=paginated)
 
 
 @router.post("/cores/{obligation_id}/recover")
@@ -363,10 +684,52 @@ async def waive_core(obligation_id: UUID, body: VersionCommand, idempotency_key:
 
 
 @router.get("/returns")
-async def list_returns(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+async def list_returns(
+    kind: Optional[ReturnKindFilter] = None,
+    status_filter: Optional[ReturnStatusFilter] = Query(default=None, alias="status"),
+    supplier_id: Optional[UUID] = None, skip: int = Query(default=0, ge=0),
+    limit: int = Query(default=50, ge=1, le=100), paginated: bool = Query(default=False),
+    db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user),
+):
     tenant_id = await _tenant(db, current_user, mutate=False)
-    rows = (await db.execute(select(VendorReturn).where(VendorReturn.tenant_id == tenant_id, VendorReturn.deleted_at.is_(None)).order_by(VendorReturn.created_at.desc()))).scalars().all()
-    return [{"id": str(row.id), "return_number": row.return_number, "supplier_id": str(row.supplier_id), "kind": row.kind, "status": row.status, "version": row.version} for row in rows]
+    _validate_collection(skip, limit)
+    normalized_kind = _validate_choice(kind, RETURN_KINDS, "kind")
+    normalized_status = _validate_choice(status_filter, RETURN_STATUSES, "status")
+    supplier_filter = await _tenant_supplier(db, tenant_id, supplier_id)
+    rows = list((await db.execute(select(VendorReturn).where(
+        VendorReturn.tenant_id == tenant_id, VendorReturn.deleted_at.is_(None),
+    ))).scalars().all())
+    return_ids = {row.id for row in rows}
+    lines_by_return: dict[UUID, list[VendorReturnLine]] = {return_id: [] for return_id in return_ids}
+    if return_ids:
+        for line in (await db.execute(select(VendorReturnLine).where(
+            VendorReturnLine.tenant_id == tenant_id, VendorReturnLine.vendor_return_id.in_(return_ids),
+            VendorReturnLine.deleted_at.is_(None),
+        ))).scalars().all():
+            lines_by_return[line.vendor_return_id].append(line)
+    suppliers = {row.id: row for row in (await db.execute(select(Supplier).where(
+        Supplier.tenant_id == tenant_id, Supplier.deleted_at.is_(None),
+    ))).scalars().all()}
+    values = []
+    for row in rows:
+        if normalized_kind and row.kind != normalized_kind:
+            continue
+        if normalized_status and row.status != normalized_status:
+            continue
+        if supplier_filter and row.supplier_id != supplier_filter.id:
+            continue
+        lines = lines_by_return[row.id]
+        values.append({
+            "id": str(row.id), "return_number": row.return_number, "supplier_id": str(row.supplier_id),
+            "supplier": _supplier_summary(suppliers.get(row.supplier_id)), "kind": row.kind,
+            "status": row.status, "version": row.version, "line_count": len(lines),
+            "total_quantity": sum(int(line.quantity) for line in lines),
+            "expected_credit_total": str(decimal_money(sum((Decimal(line.expected_credit) for line in lines), Decimal("0")))),
+            "reverses_return_id": str(row.reverses_return_id) if row.reverses_return_id else None,
+            "created_at": row.created_at.isoformat(),
+        })
+    values.sort(key=lambda value: (value["created_at"], value["id"]), reverse=True)
+    return _page(values, skip=skip, limit=limit, paginated=paginated)
 
 
 @router.post("/returns", status_code=status.HTTP_201_CREATED)
@@ -465,8 +828,26 @@ async def get_return(return_id: UUID, db: AsyncSession = Depends(get_db), curren
     tenant_id = await _tenant(db, current_user, mutate=False)
     row = (await db.execute(select(VendorReturn).where(VendorReturn.id == return_id, VendorReturn.tenant_id == tenant_id, VendorReturn.deleted_at.is_(None)))).scalar_one_or_none()
     if not row: raise _not_found()
-    lines = (await db.execute(select(VendorReturnLine).where(VendorReturnLine.vendor_return_id == row.id, VendorReturnLine.tenant_id == tenant_id, VendorReturnLine.deleted_at.is_(None)))).scalars().all()
-    return {"id": str(row.id), "return_number": row.return_number, "supplier_id": str(row.supplier_id), "kind": row.kind, "status": row.status, "version": row.version, "reason": row.reason, "notes": row.notes, "lines": [{"id": str(line.id), "inventory_id": str(line.inventory_id), "quantity": line.quantity, "expected_credit": str(line.expected_credit), "actual_credit": str(line.actual_credit) if line.actual_credit is not None else None} for line in lines]}
+    lines = list((await db.execute(select(VendorReturnLine).where(VendorReturnLine.vendor_return_id == row.id, VendorReturnLine.tenant_id == tenant_id, VendorReturnLine.deleted_at.is_(None)).order_by(VendorReturnLine.id))).scalars().all())
+    inventory_ids = {line.inventory_id for line in lines}
+    inventories = {item.id: item for item in (await db.execute(select(Inventory).where(
+        Inventory.tenant_id == tenant_id, Inventory.id.in_(inventory_ids), Inventory.deleted_at.is_(None),
+    ))).scalars().all()} if inventory_ids else {}
+    return {
+        "id": str(row.id), "return_number": row.return_number, "supplier_id": str(row.supplier_id),
+        "supplier": _supplier_summary(await _tenant_supplier(db, tenant_id, row.supplier_id)),
+        "kind": row.kind, "status": row.status, "version": row.version, "reason": row.reason,
+        "notes": row.notes, "reverses_return_id": str(row.reverses_return_id) if row.reverses_return_id else None,
+        "lines": [{
+            "id": str(line.id), "inventory_id": str(line.inventory_id),
+            "inventory": _inventory_summary(inventories.get(line.inventory_id)), "quantity": line.quantity,
+            "expected_credit": str(line.expected_credit),
+            "actual_credit": str(line.actual_credit) if line.actual_credit is not None else None,
+            "source": ({"type": "purchase_receipt_line", "id": str(line.purchase_receipt_line_id)}
+                       if line.purchase_receipt_line_id else
+                       {"type": "core_obligation", "id": str(line.core_obligation_id)}),
+        } for line in lines],
+    }
 
 
 @router.patch("/returns/{return_id}")

@@ -813,3 +813,46 @@ async def test_db038_postgres_po_and_core_transition_replays_are_serial_and_conc
             await db.rollback()
     finally:
         await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_db038_postgres_read_contract_fixture_and_tenant_filter_denial(monkeypatch):
+    from test_db038_read_contract import FROZEN, _seed_read_contract
+
+    monkeypatch.setattr(settings, "PARTS_OPERATIONS_V1_ENABLED", True)
+    monkeypatch.setattr(parts_operations, "_utc_now", lambda: FROZEN)
+    engine = create_async_engine(os.environ[POSTGRES_URL]); factory = async_sessionmaker(engine, expire_on_commit=False)
+    try:
+        async with factory() as db:
+            context = await _seed_read_contract(db)
+        async with factory() as db:
+            owner = await db.get(User, context["owner"].id)
+            result = await parts_operations.demand(
+                state=None, supplier_id=None, search=None, skip=0, limit=50, paginated=True,
+                db=db, current_user=owner,
+            )
+            expected = context["fixture"]["read_contract"]["expected_oil_filter_demand"]
+            assert next(item for item in result["items"] if item["inventory_id"] == expected["inventory_id"]) == expected
+            assert result["total"] == 3
+            with pytest.raises(HTTPException) as foreign:
+                await parts_operations.demand(
+                    state=None, supplier_id=context["foreign_supplier"].id, search=None,
+                    skip=0, limit=50, paginated=False, db=db, current_user=owner,
+                )
+            assert foreign.value.status_code == 404 and foreign.value.detail == "Not found"
+            await db.rollback()
+        async with factory() as db:
+            receptionist = await db.get(User, context["receptionist"].id)
+            mechanic = await db.get(User, context["mechanic"].id)
+            assert isinstance(await parts_operations.demand(
+                state="open", supplier_id=None, search=None, skip=0, limit=50, paginated=False,
+                db=db, current_user=receptionist,
+            ), list)
+            with pytest.raises(HTTPException) as denied:
+                await parts_operations.demand(
+                    state=None, supplier_id=None, search=None, skip=0, limit=50, paginated=False,
+                    db=db, current_user=mechanic,
+                )
+            assert denied.value.status_code == 403
+    finally:
+        await engine.dispose()
