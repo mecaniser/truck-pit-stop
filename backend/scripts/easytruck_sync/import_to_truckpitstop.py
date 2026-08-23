@@ -832,6 +832,29 @@ def resync_parts(conn, tenant_id, commit, rehost_images):
         if commit and processed % COMMIT_BATCH == 0:
             conn.commit()
 
+    # Mark parts that have dropped out of the ETS catalogue, and un-mark any that
+    # came back. A retired part is kept (repair orders reference it) but once it
+    # is also empty it stops appearing on the restock list — see
+    # Inventory.needs_restock(). Scoped to import-sourced rows so a part the shop
+    # created by hand is never touched.
+    scraped_canon = [_canon_sku(_norm_sku(p.get("partNumber") or "")) for p in parts]
+    scraped_canon = [c for c in scraped_canon if c]
+    CANON_SQL = "upper(regexp_replace(regexp_replace(sku, '^ETS-', ''), '[^A-Za-z0-9]', '', 'g'))"
+    w.execute(
+        f"""UPDATE inventory SET ets_retired_at=%s, updated_at=%s
+             WHERE tenant_id=%s AND source=%s AND deleted_at IS NULL
+               AND ets_retired_at IS NULL
+               AND NOT ({CANON_SQL} = ANY(%s))""",
+        (now, now, tenant_id, IMPORT_SOURCE, scraped_canon))
+    stats["newly_retired"] = w.rowcount
+    w.execute(
+        f"""UPDATE inventory SET ets_retired_at=NULL, updated_at=%s
+             WHERE tenant_id=%s AND source=%s AND deleted_at IS NULL
+               AND ets_retired_at IS NOT NULL
+               AND {CANON_SQL} = ANY(%s)""",
+        (now, tenant_id, IMPORT_SOURCE, scraped_canon))
+    stats["un_retired"] = w.rowcount
+
     w.close()
     print("=" * 70)
     print("PARTS RESYNC PLAN" + ("" if commit else "  (dry-run)"))

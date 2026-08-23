@@ -51,6 +51,7 @@ class InventoryResponse(BaseModel):
     image_url: Optional[str] = None
     location: Optional[str] = None
     is_placeholder: bool = False
+    ets_retired_at: Optional[str] = None
     created_at: str
     updated_at: str
 
@@ -78,6 +79,7 @@ def _inventory_response(item: Inventory) -> InventoryResponse:
         image_url=item.image_url,
         location=item.location,
         is_placeholder=item.is_placeholder,
+        ets_retired_at=item.ets_retired_at.isoformat() if item.ets_retired_at else None,
         created_at=item.created_at.isoformat(),
         updated_at=item.updated_at.isoformat(),
     )
@@ -298,7 +300,7 @@ async def list_inventory(
 
     # Keep low-stock semantics while making pagination consistent.
     if low_stock:
-        low_stock_filter = Inventory.stock_quantity <= Inventory.reorder_level
+        low_stock_filter = Inventory.needs_restock()
         query = query.where(low_stock_filter)
         count_query = count_query.where(low_stock_filter)
 
