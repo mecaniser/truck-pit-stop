@@ -67,15 +67,42 @@ async function getVehicleEditData(page, vehicleId) {
 }
 
 // Scrape service history table from vehicle detail page (not edit)
+// Service history is paginated at 15 rows. Reading only the first page silently
+// dropped every service past the 15th — vehicle 97945 has 25 services in ETS and
+// we were importing 15 of them. That under-reported revenue for the whole shop,
+// and looked like a reporting discrepancy rather than missing data. Walk every
+// page and stop when the pager says we have them all.
 async function getVehicleServiceHistory(page, vehicleId) {
-  const url = `${BASE}/${SHOP}/vehicles/${vehicleId}`;
-  await page.goto(url, { waitUntil: 'networkidle', timeout: 20000 });
-  await page.waitForTimeout(500);
+  const base = `${BASE}/${SHOP}/vehicles/${vehicleId}`;
+  const all = [];
+  let expected = null;
 
-  const rows = await page.locator('table tbody tr').evaluateAll(trs =>
-    trs.map(tr => Array.from(tr.querySelectorAll('td')).map(td => td.innerText.trim()))
-  );
-  return rows;
+  for (let p = 1; p <= 50; p++) {
+    const url = p === 1 ? base : `${base}?page=${p}`;
+    await page.goto(url, { waitUntil: 'networkidle', timeout: 20000 });
+    await page.waitForTimeout(500);
+
+    if (expected === null) {
+      const text = await page.locator('body').innerText();
+      const m = text.match(/Showing \d+ to \d+ of ([\d,]+) results/);
+      expected = m ? parseInt(m[1].replace(/,/g, ''), 10) : null;
+    }
+
+    const rows = await page.locator('table tbody tr').evaluateAll(trs =>
+      trs.map(tr => Array.from(tr.querySelectorAll('td')).map(td => td.innerText.trim()))
+    );
+    const real = rows.filter(r => r[0] && r[0] !== 'No results');
+    if (!real.length) break;
+    all.push(...real);
+
+    // No pager means a single page; otherwise stop once we have them all.
+    if (expected === null || all.length >= expected) break;
+  }
+
+  if (expected !== null && all.length < expected) {
+    console.log(`  WARNING vehicle ${vehicleId}: captured ${all.length} of ${expected} services`);
+  }
+  return all;
 }
 
 // Scrape contacts table for a customer
