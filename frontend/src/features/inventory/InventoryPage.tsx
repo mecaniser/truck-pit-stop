@@ -239,6 +239,22 @@ function SellingPriceField({
   )
 }
 
+/** Marks an ad-hoc part a tech added to finish a job that was never a real
+ *  catalog entry. Shown inline with the SKU so a placeholder is never mistaken
+ *  for stock on hand — it has no quantity, location, or price behind it. */
+function PlaceholderBadge() {
+  return (
+    <span
+      className="ml-2 inline-flex items-center rounded px-1.5 py-0.5 align-middle
+                 text-[10px] font-semibold uppercase tracking-wide
+                 bg-sky-500/25 text-sky-100 border border-sky-400/40"
+      title="Added on a repair order, not stocked inventory. Edit the part to convert it to a stocked part."
+    >
+      Placeholder
+    </span>
+  )
+}
+
 export default function InventoryPage() {
   const { accentColors } = useTheme()
   const { data: tenantBranding } = useTenantBranding()
@@ -1149,8 +1165,11 @@ export default function InventoryPage() {
                     <div className="text-sm font-semibold leading-tight line-clamp-2">
                       {item.name}
                     </div>
-                    <div className="text-[11px] font-mono text-gray-300 bg-white/10 px-2 py-0.5 rounded border border-white/20 inline-flex whitespace-nowrap">
-                      {item.sku}
+                    <div className="flex items-center flex-wrap gap-1">
+                      <span className="text-[11px] font-mono text-gray-300 bg-white/10 px-2 py-0.5 rounded border border-white/20 inline-flex whitespace-nowrap">
+                        {item.sku}
+                      </span>
+                      {item.is_placeholder && <PlaceholderBadge />}
                     </div>
                     {item.category && (
                       <span className="inline-flex items-center rounded-full bg-white/10 border border-white/20 px-2 py-0.5 text-[11px] text-gray-200">
@@ -1307,6 +1326,7 @@ export default function InventoryPage() {
                         <span className="block max-w-full overflow-hidden text-ellipsis whitespace-nowrap text-xs font-mono text-gray-200 bg-white/10 px-2 py-0.5 rounded border border-white/20">
                           {item.sku}
                         </span>
+                        {item.is_placeholder && <PlaceholderBadge />}
                       </div>
                     </div>
 
@@ -1398,7 +1418,10 @@ export default function InventoryPage() {
                           </div>
                         )}
                       </td>
-                      <td className="px-4 py-3 font-semibold text-white">{item.sku}</td>
+                      <td className="px-4 py-3 font-semibold text-white">
+                        {item.sku}
+                        {item.is_placeholder && <PlaceholderBadge />}
+                      </td>
                       <td className="px-4 py-3">
                         <div className="font-semibold text-white">{item.name}</div>
                         {item.description && <div className="text-xs text-gray-400">{item.description}</div>}

@@ -50,6 +50,7 @@ class InventoryResponse(BaseModel):
     supplier_contact: Optional[str]
     image_url: Optional[str] = None
     location: Optional[str] = None
+    is_placeholder: bool = False
     created_at: str
     updated_at: str
 
@@ -76,6 +77,7 @@ def _inventory_response(item: Inventory) -> InventoryResponse:
         supplier_contact=item.supplier_contact,
         image_url=item.image_url,
         location=item.location,
+        is_placeholder=item.is_placeholder,
         created_at=item.created_at.isoformat(),
         updated_at=item.updated_at.isoformat(),
     )
@@ -128,6 +130,9 @@ class InventoryUpdate(BaseModel):
     supplier_name: Optional[str] = None
     supplier_contact: Optional[str] = None
     location: Optional[str] = None
+    # Setting this false promotes an ad-hoc placeholder into a normally
+    # stocked part, keeping the repair-order history already attached to it.
+    is_placeholder: Optional[bool] = None
 
 
 class ReceiveShipmentRequest(BaseModel):

@@ -466,6 +466,10 @@ export interface InventoryItem {
   supplier_contact: string | null
   image_url: string | null
   location: string | null
+  // Ad-hoc line a tech added to finish a job for a part that was never a
+  // catalog entry (Easy Truck Shop calls these "virtual"). Shown alongside
+  // real parts but marked, since it carries no stock, location, or price.
+  is_placeholder: boolean
   created_at: string
   updated_at: string
 }

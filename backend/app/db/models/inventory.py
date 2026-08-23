@@ -39,6 +39,14 @@ class Inventory(BaseModel):
     location = Column(String(100), nullable=True)
     source = Column(String(50), nullable=True, index=True)  # e.g. easy_truck_shop_import
 
+    # An ad-hoc line a tech added to finish a job for a part that was never a
+    # catalog entry (Easy Truck Shop calls these "virtual"). They carry no
+    # stock, location, photo, or price and exist only so the repair order is
+    # complete. Kept and shown alongside real parts, but marked, so history
+    # stays intact without pretending they are stock on hand. Clearing the flag
+    # promotes one into a normally stocked part.
+    is_placeholder = Column(Boolean, default=False, nullable=False, index=True)
+
     # Single reference photo for the part (Cloudinary). public_id is kept so the
     # old asset can be deleted on replace/remove.
     image_url = Column(String(500), nullable=True)
