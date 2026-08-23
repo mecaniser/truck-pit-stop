@@ -18,14 +18,14 @@ Run backend/scripts/merge_duplicate_inventory.py first; this migration cannot
 be applied while duplicates remain.
 
 Revision ID: 121_inventory_canonical_sku
-Revises: 120_merge_presentation_inventory
+Revises: 120_inventory_is_placeholder
 Create Date: 2026-08-23
 
 """
 from alembic import op
 
 revision = "121_inventory_canonical_sku"
-down_revision = "120_merge_presentation_inventory"
+down_revision = "120_inventory_is_placeholder"
 branch_labels = None
 depends_on = None
 

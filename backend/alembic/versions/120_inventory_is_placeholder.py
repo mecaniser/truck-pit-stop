@@ -11,16 +11,16 @@ Flag them instead of deleting them (they are load-bearing for repair-order
 history), and give them a readable name taken from the SKU, which is where
 their real identity lives: ETS-Steer tire -> "Steer tire".
 
-Revision ID: 119_inventory_is_placeholder
-Revises: 118_ro_projection_cardinality
+Revision ID: 120_inventory_is_placeholder
+Revises: 119_ro_projection_cardinality
 Create Date: 2026-08-23
 
 """
 from alembic import op
 import sqlalchemy as sa
 
-revision = "119_inventory_is_placeholder"
-down_revision = "118_ro_projection_cardinality"
+revision = "120_inventory_is_placeholder"
+down_revision = "119_ro_projection_cardinality"
 branch_labels = None
 depends_on = None
 
