@@ -1,14 +1,14 @@
 """Select one canonical quote and invoice in the repair-order projection.
 
-Revision ID: 118_ro_projection_cardinality
-Revises: 117_conversion_export_security
+Revision ID: 119_ro_projection_cardinality
+Revises: 118_authenticated_presentation
 """
 
 from alembic import op
 
 
-revision = "118_ro_projection_cardinality"
-down_revision = "117_conversion_export_security"
+revision = "119_ro_projection_cardinality"
+down_revision = "118_authenticated_presentation"
 branch_labels = None
 depends_on = None
 
