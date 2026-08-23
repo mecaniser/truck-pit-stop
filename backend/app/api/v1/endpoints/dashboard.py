@@ -682,7 +682,7 @@ async def get_dashboard_stats(
         .where(
             and_(
                 Inventory.tenant_id == tenant_id,
-                Inventory.stock_quantity <= Inventory.reorder_level,
+                Inventory.needs_restock(),
             )
         )
         .limit(10)

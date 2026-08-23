@@ -470,6 +470,9 @@ export interface InventoryItem {
   // catalog entry (Easy Truck Shop calls these "virtual"). Shown alongside
   // real parts but marked, since it carries no stock, location, or price.
   is_placeholder: boolean
+  // When Easy Truck Shop stopped listing this part. Kept for repair-order
+  // history; excluded from restock alerts once it is also out of stock.
+  ets_retired_at: string | null
   created_at: string
   updated_at: string
 }
