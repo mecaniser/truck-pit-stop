@@ -242,6 +242,32 @@ function SellingPriceField({
 /** Marks an ad-hoc part a tech added to finish a job that was never a real
  *  catalog entry. Shown inline with the SKU so a placeholder is never mistaken
  *  for stock on hand — it has no quantity, location, or price behind it. */
+/** Mirrors Inventory.needs_restock() on the server: a part is only worth
+ *  restocking if it is not an ad-hoc placeholder and not a retired ETS part
+ *  that is already empty. Kept in step with the backend deliberately — if the
+ *  two drift, the list and the dashboard tile disagree on "low stock". */
+export function needsRestock(item: InventoryItem) {
+  if (item.stock_quantity > item.reorder_level) return false
+  if (item.is_placeholder) return false
+  if (item.ets_retired_at && item.stock_quantity === 0) return false
+  return true
+}
+
+/** Marks a part Easy Truck Shop no longer lists. It stays visible because
+ *  repair orders reference it, but staff should not expect to reorder it. */
+function RetiredBadge() {
+  return (
+    <span
+      className="ml-2 inline-flex items-center rounded px-1.5 py-0.5 align-middle
+                 text-[10px] font-semibold uppercase tracking-wide
+                 bg-amber-500/25 text-amber-100 border border-amber-400/40"
+      title="No longer listed in Easy Truck Shop. Kept for repair-order history; excluded from restock alerts while out of stock."
+    >
+      Retired
+    </span>
+  )
+}
+
 function PlaceholderBadge() {
   return (
     <span
@@ -413,7 +439,7 @@ export default function InventoryPage() {
 
     // Filter low stock
     if (showLowStock) {
-      filtered = filtered.filter((item) => item.stock_quantity <= item.reorder_level)
+      filtered = filtered.filter(needsRestock)
     }
 
     // Search happens server-side (see the inventory query above): ilike +
@@ -1170,6 +1196,7 @@ export default function InventoryPage() {
                         {item.sku}
                       </span>
                       {item.is_placeholder && <PlaceholderBadge />}
+                      {!item.is_placeholder && item.ets_retired_at && <RetiredBadge />}
                     </div>
                     {item.category && (
                       <span className="inline-flex items-center rounded-full bg-white/10 border border-white/20 px-2 py-0.5 text-[11px] text-gray-200">
@@ -1327,6 +1354,7 @@ export default function InventoryPage() {
                           {item.sku}
                         </span>
                         {item.is_placeholder && <PlaceholderBadge />}
+                      {!item.is_placeholder && item.ets_retired_at && <RetiredBadge />}
                       </div>
                     </div>
 
@@ -1421,6 +1449,7 @@ export default function InventoryPage() {
                       <td className="px-4 py-3 font-semibold text-white">
                         {item.sku}
                         {item.is_placeholder && <PlaceholderBadge />}
+                      {!item.is_placeholder && item.ets_retired_at && <RetiredBadge />}
                       </td>
                       <td className="px-4 py-3">
                         <div className="font-semibold text-white">{item.name}</div>

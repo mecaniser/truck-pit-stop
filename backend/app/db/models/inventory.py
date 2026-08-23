@@ -1,4 +1,4 @@
-from sqlalchemy import Boolean, Column, String, Integer, Numeric, ForeignKey, Text, Date
+from sqlalchemy import Boolean, Column, String, Integer, Numeric, ForeignKey, Text, Date, DateTime, and_, or_
 from sqlalchemy.orm import relationship
 from sqlalchemy.dialects.postgresql import UUID
 from decimal import Decimal
@@ -47,12 +47,41 @@ class Inventory(BaseModel):
     # promotes one into a normally stocked part.
     is_placeholder = Column(Boolean, default=False, nullable=False, index=True)
 
+    # When this part stopped appearing in the Easy Truck Shop catalog. Set (and
+    # cleared again on reappearance) by the resync importer. A retired part is
+    # kept because repair orders reference it, but once it is also out of stock
+    # it should stop asking to be reordered — see needs_restock().
+    ets_retired_at = Column(DateTime(timezone=True), nullable=True, index=True)
+
     # Single reference photo for the part (Cloudinary). public_id is kept so the
     # old asset can be deleted on replace/remove.
     image_url = Column(String(500), nullable=True)
     cloudinary_public_id = Column(String(255), nullable=True)
 
     parts_usage = relationship("PartsUsage", back_populates="inventory_item")
+
+    @staticmethod
+    def needs_restock():
+        """SQL predicate for "this part belongs on the restock list".
+
+        Stock at or below the reorder level, EXCEPT for parts nobody will
+        reorder: ad-hoc placeholders (never catalogue items in the first place),
+        and parts Easy Truck Shop has retired that are also empty. A retired
+        part that still has stock on the shelf is real inventory and stays.
+
+        Without those exclusions 516 of 686 restock rows in prod were noise —
+        one-time parts added months ago to finish a job. Kept here as one
+        definition so the inventory list, the dashboard tile and the frontend
+        cannot drift apart on what "low stock" means.
+        """
+        return and_(
+            Inventory.stock_quantity <= Inventory.reorder_level,
+            Inventory.is_placeholder.is_(False),
+            or_(
+                Inventory.ets_retired_at.is_(None),
+                Inventory.stock_quantity > 0,
+            ),
+        )
 
 
 class PartsUsage(BaseModel):
