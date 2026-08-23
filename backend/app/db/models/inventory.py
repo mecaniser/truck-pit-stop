@@ -53,6 +53,12 @@ class Inventory(BaseModel):
     # it should stop asking to be reordered — see needs_restock().
     ets_retired_at = Column(DateTime(timezone=True), nullable=True, index=True)
 
+    # When the resync importer last wrote this row. Lets the importer tell its
+    # own previous write apart from a human edit: comparing updated_at against
+    # created_at treated every already-imported part as hand-edited and froze
+    # 97% of the catalogue.
+    ets_imported_at = Column(DateTime(timezone=True), nullable=True)
+
     # Single reference photo for the part (Cloudinary). public_id is kept so the
     # old asset can be deleted on replace/remove.
     image_url = Column(String(500), nullable=True)
