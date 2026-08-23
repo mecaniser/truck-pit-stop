@@ -1,6 +1,6 @@
 # DB-038 Parts Operations Contract v1
 
-Status: Architecture GO for implementation handoff
+Status: Architecture GO for implementation handoff; Amendment 1 defers purchase-order attachments
 
 Scope: Phase 1 only — activity and demand, purchasing and receiving, vendor returns and cores
 
@@ -19,7 +19,7 @@ DieselBridge will extend the existing tenant inventory and repair-order parts mo
 - A vendor stock return decreases on-hand at the item's current WAC and records the expected/actual vendor credit separately. It does not rewind historical WAC.
 - A core is a custody bucket, not saleable on-hand inventory. Core obligations originate from a core-bearing repair-order part usage and move through `expected`, `on_hand`, `returned`, or `waived` states.
 - No stock-bearing operation may produce a negative balance. No over-receiving is allowed in Phase 1.
-- The feature is additive and tenant gated. Counter sales, parts-only invoices/payments, external vendor integrations, AI extraction, and broad reporting remain out of scope.
+- The feature is additive and tenant gated. Counter sales, parts-only invoices/payments, purchase-order attachments, external vendor integrations, AI extraction, and broad reporting remain out of scope.
 
 These choices leave no unresolved purchasing or costing fork requiring Product escalation.
 
@@ -101,12 +101,20 @@ Every new operational table has `tenant_id NOT NULL`, indexed tenant ownership, 
 - `quantity INTEGER`, `unit_cost NUMERIC(12,2)`, `wac_before`, `wac_after`, `balance_before`, `balance_after`.
 - A receipt correction is a vendor return or an explicit inventory adjustment; receipt deletion/rewrite is forbidden.
 
-`purchase_order_attachments`
+### 3.2.1 Amendment 1 — attachment deferral
 
-- Metadata only: `id`, tenant/PO, `storage_key`, safe display filename, MIME type, bytes, SHA-256, uploader, timestamp.
-- Allowed Phase 1 MIME types: PDF, JPEG, PNG; maximum 10 MiB each and 10 attachments per PO.
-- Browser clients never receive provider credentials or unrestricted storage keys. Download uses a short-lived, tenant-authorized server response.
-- Extraction or interpretation of attachment contents is out of scope.
+Purchase-order attachments are deferred from DB-038 Phase 1 and are not an API, UI, fixture, Security, or QA acceptance requirement for this release.
+
+The repository has no existing private general-object storage boundary to reuse:
+
+- `backend/app/services/cloudinary_service.py` handles hosted images only (`resource_type="image"`) and returns hosted URLs/public IDs.
+- inventory and repair-order upload routes validate and publish images through that image-specific service;
+- invoice PDF download routes generate bytes on demand and do not persist uploaded documents;
+- there is no existing private PDF/object upload adapter, tenant-authorized signed download, provider-neutral storage-key API, or orphan cleanup worker.
+
+Using the image pattern for invoices/packing slips would either exclude PDFs or invent Cloudinary raw/private delivery, retention, signing, and cleanup semantics outside the accepted contract. Purchase documents are supporting evidence, not an input to ordered/received quantities, WAC, stock movements, approvals, demand, or return/core origins, so their absence does not weaken any Phase 1 stock or tenant invariant.
+
+The additive `purchase_order_attachments` metadata table/model already present in the Backend draft may remain empty and unreachable to avoid churn, or Backend may remove it before its implementation commit. Either choice is contract-equivalent for Phase 1 provided there is no attachment route, browser surface, fixture data, stored object, or claim that attachments are supported. A later Phase 1.1 board item must select a private storage provider/adapter and independently contract upload, content validation, malware posture, authorization, idempotency, cleanup, retention, and download behavior before any metadata is written.
 
 ### 3.3 Immutable inventory movements
 
@@ -205,7 +213,6 @@ Example demand item:
 - `POST /purchase-orders/{po_id}/submit` with `expected_version`.
 - `POST /purchase-orders/{po_id}/cancel` with `expected_version` and reason.
 - `POST /purchase-orders/{po_id}/receipts` — partial/final receive.
-- `POST /purchase-orders/{po_id}/attachments` and `DELETE .../{attachment_id}` — draft/submitted metadata upload/removal; attachment removal does not erase an audit reference used by a receipt.
 
 All POST mutation requests require `Idempotency-Key` of 16–128 safe printable characters. Durable scope is tenant + operation family + key. The stored fingerprint includes method, canonical route, authenticated principal, and canonical JSON/body checksum. Same key/same fingerprint replays the original status/body with `Idempotency-Replayed: true`; same key/different fingerprint is `409`.
 
@@ -279,7 +286,7 @@ Receipt transaction order is mandatory:
 
 1. Derive tenant from the authenticated server principal; reject absent/inactive tenant.
 2. Validate schema, quantity/money bounds, key format, and request fingerprint before database locks/writes.
-3. Resolve PO, supplier, lines, inventory, and attachments with tenant predicates; foreign/missing/deleted return generic `404`.
+3. Resolve PO, supplier, lines, and inventory with tenant predicates; foreign/missing/deleted return generic `404`.
 4. Claim/read the durable idempotency record.
 5. Lock PO, then PO lines, then inventory rows sorted by UUID, then relevant return/core rows sorted by UUID.
 6. Revalidate version, lifecycle, remaining quantities, origins, balances, and all line calculations. Any failure rolls back the entire request.
@@ -307,9 +314,9 @@ Concurrency invariants:
 | Manual adjustment/waive/reversal | yes | yes | no | no | no | no | no implicit access |
 | Repair-order part reservation | existing repair-order role rules | existing | existing | assigned/additive existing rules | internal-fleet existing rules | no | no implicit access |
 
-Receptionists may see purchasing state needed to answer shop questions but cannot change stock or commercial documents. Mechanics retain their existing tenant-scoped repair-order part typeahead and mutation behavior, but the new parts-operations API does not expose demand, costs, vendor pricing, PO documents, returns, activity, or attachments to them. Fleet-manager access remains confined to existing internal-fleet repair behavior; Phase 1 does not grant shop purchasing access.
+Receptionists may see purchasing state needed to answer shop questions but cannot change stock or commercial documents. Mechanics retain their existing tenant-scoped repair-order part typeahead and mutation behavior, but the new parts-operations API does not expose demand, costs, vendor pricing, purchase orders, returns, or activity to them. Fleet-manager access remains confined to existing internal-fleet repair behavior; Phase 1 does not grant shop purchasing access.
 
-All server queries begin with the authenticated tenant. Known foreign UUID, random UUID, deleted row, wrong parent-child pairing, unlinked origin, and disabled feature have indistinguishable `404` bodies. Role denial for a same-tenant resource is `403` only after the resource has been tenant-scoped. Logs and metrics contain tenant-safe internal IDs but never attachment contents, supplier account references, request bodies, or secrets.
+All server queries begin with the authenticated tenant. Known foreign UUID, random UUID, deleted row, wrong parent-child pairing, unlinked origin, and disabled feature have indistinguishable `404` bodies. Role denial for a same-tenant resource is `403` only after the resource has been tenant-scoped. Logs and metrics contain tenant-safe internal IDs but never supplier account references, request bodies, or secrets.
 
 ## 7. Validation and errors
 
@@ -318,10 +325,8 @@ All server queries begin with the authenticated tenant. Known foreign UUID, rand
 - `403`: authenticated same-tenant principal lacks capability.
 - `404`: foreign, missing, deleted, wrong-parent, unlinked, or feature-disabled resource.
 - `409`: stale `expected_version`, invalid current lifecycle, key/payload mismatch, request in progress, over-receipt, insufficient stock, already reversed, duplicate normalized name/SKU, or conflicting concurrent write.
-- `413`: attachment too large/count exceeded.
-- `415`: unsupported attachment type.
 - `422`: field validation (non-positive/excess quantity, excessive precision, invalid dates/money).
-- `503`: dependent storage unavailable before mutation. Database/commit uncertainty returns the standard correlation-safe server error; retry with the same key is required.
+- `503`: an operational dependency is unavailable before mutation. Database/commit uncertainty returns the standard correlation-safe server error; retry with the same key is required.
 
 Money is `0.00..999999.99`, maximum two decimals, and an order/return line total may not exceed `9999999.99`. Unit cost for a stock receipt must be positive; credits may be zero. Stock package quantities are integers `1..999`. Notes are at most 2,000 characters; references/numbers 100 characters; names 255 characters. Rejected requests—including quantity `1000` or an excessive computed line total—are mutation-free, including timestamps and versions.
 
@@ -367,7 +372,7 @@ One gated Inventory workspace under `/dashboard/garage/inventory` provides:
 
 - Demand: prioritized repair shortage and reorder demand with source traceability and “add to draft PO”.
 - Inventory: current catalog/list/detail, balances, WAC, price, location, category, preferred supplier, and item activity.
-- Purchase Orders: draft/submitted/partial/received/cancelled lists, detail, attachments, remaining quantities, and receiving flow.
+- Purchase Orders: draft/submitted/partial/received/cancelled lists, detail, remaining quantities, and receiving flow.
 - Returns & Cores: origin-linked stock returns and core obligations/transitions.
 - Activity: immutable chronological ledger with actor, source, destination, WAC, and balance-after.
 
@@ -403,7 +408,6 @@ Backend must prove on PostgreSQL:
 - return/core origins, limits, state transitions, reversal-once rule, and no WAC rewind;
 - each role in the authorization matrix;
 - foreign versus missing equivalence for every path/body ID and child-parent mismatch, with zero mutation;
-- attachment type/size/count, tenant download boundary, filename/storage-key safety;
 - disabled flags, Redis/cache loss, durable replay, commit retry, and correlation-safe errors;
 - legacy inventory/typeahead/supplier response compatibility.
 
@@ -417,7 +421,7 @@ Frontend/runtime must prove with identical fixtures:
 - desktop, iPad, 390, 320, 200% zoom, keyboard/focus, 44px targets, reduced motion, high contrast/forced colors, long SKU/vendor/reference, empty/loading/stale/error/conflict/offline states;
 - rapid/repeated receipt submission cannot produce duplicate optimistic balance or success state.
 
-Independent Security gates tenant/non-enumeration, durable idempotency, concurrency, attachment access, logs, and role boundaries. Independent QA gates migration fixture behavior, exact browser journeys, responsive/accessibility states, and legacy compatibility. Implementers cannot self-approve either gate.
+Independent Security gates tenant/non-enumeration, durable idempotency, concurrency, logs, and role boundaries. Independent QA gates migration fixture behavior, exact browser journeys, responsive/accessibility states, and legacy compatibility. Implementers cannot self-approve either gate.
 
 ## 13. Implementation split and return conditions
 

@@ -51,6 +51,9 @@ class Settings(BaseSettings):
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
     REFRESH_TOKEN_EXPIRE_DAYS_REMEMBER: int = 30  # "Remember me" duration
     AUTHENTICATED_PRESENTATION_FORCE_LEGACY: bool = False
+    # DB-038 is deployed dark. A tenant flag is required in addition to this
+    # deployment-level switch before the purchasing/ledger API is reachable.
+    PARTS_OPERATIONS_V1_ENABLED: bool = False
 
     # WorkOS is introduced alongside (not in place of) legacy JWT login. Keep
     # this disabled until a tenant has completed the audited dual-run cutover.

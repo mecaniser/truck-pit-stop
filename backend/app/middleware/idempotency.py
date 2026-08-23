@@ -50,6 +50,11 @@ class IdempotencyMiddleware:
             return False
         if path.startswith("/api/v1/webhooks/"):
             return False
+        # DB-038 owns a durable, transaction-coupled replay record. Letting the
+        # Redis convenience cache short-circuit these requests would bypass the
+        # domain replay response and its `Idempotency-Replayed: true` contract.
+        if path.startswith("/api/v1/parts-operations/"):
+            return False
         return True
 
     @staticmethod

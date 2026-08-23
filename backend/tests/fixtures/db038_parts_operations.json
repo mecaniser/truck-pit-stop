@@ -1,0 +1,13 @@
+{
+  "frozen_at": "2026-08-23T14:00:00Z",
+  "tenant_ids": {
+    "primary": "10000000-0000-4000-8000-000000000038",
+    "foreign": "20000000-0000-4000-8000-000000000038"
+  },
+  "inventory": [
+    {"sku": "DB038-OIL-FILTER", "name": "Oil filter", "stock_quantity": 1, "reorder_level": 3, "cost": "10.00"},
+    {"sku": "DB038-STARTER", "name": "Reman starter", "stock_quantity": 2, "reorder_level": 1, "cost": "100.00", "core_charge": "50.00"}
+  ],
+  "receipt": {"first_quantity": 2, "first_unit_cost": "16.00", "second_quantity": 1, "second_unit_cost": "7.00", "expected_wac_after_second": "13.00"},
+  "scenarios": ["opening_balance", "repair_shortage", "partial_receipt", "duplicate_receipt_replay", "over_receipt_race", "stock_return_reversal", "core_recovery", "foreign_tenant_denial", "disabled_rollout"]
+}

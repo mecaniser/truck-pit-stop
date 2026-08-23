@@ -32,6 +32,11 @@ from app.db.models.driver_accountability import (
 from app.db.models.repair_order import RepairOrder
 from app.db.models.inventory import Inventory, PartsUsage
 from app.db.models.supplier import Supplier
+from app.db.models.parts_operations import (
+    CoreObligation, InventoryCategory, InventoryMovement, PartsOperationIdempotency,
+    PurchaseOrder, PurchaseOrderAttachment, PurchaseOrderLine, PurchaseReceipt,
+    PurchaseReceiptLine, VendorReturn, VendorReturnLine,
+)
 from app.db.models.labor import Labor
 from app.db.models.labor import LaborLineType
 from app.db.models.labor_operation_memory import LaborOperationMemory
@@ -178,5 +183,9 @@ __all__ = [
     "QuickBooksConnection",
     "QuickBooksOAuthState",
     "QuickBooksWebhookEvent",
+    "InventoryCategory", "InventoryMovement", "PartsOperationIdempotency",
+    "PurchaseOrder", "PurchaseOrderAttachment", "PurchaseOrderLine",
+    "PurchaseReceipt", "PurchaseReceiptLine", "CoreObligation",
+    "VendorReturn", "VendorReturnLine",
     "GoogleBusinessConnection", "GoogleBusinessOAuthState", "GoogleReviewSettings", "GoogleReview", "GoogleReviewAuditEvent",
 ]
