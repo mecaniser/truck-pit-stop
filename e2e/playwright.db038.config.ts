@@ -16,8 +16,8 @@ export default defineConfig({
   webServer: {
     command: 'npm --prefix ../frontend run dev -- --host 127.0.0.1 --port 5181 --strictPort',
     env: {
-      DIESELBRIDGE_RUNTIME_BRANCH: 'e2e/db038-parts-operations',
-      DIESELBRIDGE_RUNTIME_SHA: '92aed013522c936ddb1c8bfce0cddd1993d665a3',
+      DIESELBRIDGE_RUNTIME_BRANCH: 'codex/db038-main-reconcile',
+      DIESELBRIDGE_RUNTIME_SHA: '772418d7dcf6641dfb65b511c88e5d821beb121d',
     },
     url: 'http://127.0.0.1:5181',
     timeout: 120_000,
