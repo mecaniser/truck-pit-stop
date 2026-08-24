@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter, useLocation } from 'react-router-dom'
@@ -77,6 +77,23 @@ function installDemandSelectionFixture() {
   apiMocks.post.mockResolvedValue({ data: { id: 'po-created' } })
 }
 
+function installInventoryControlsFixture() {
+  const inventory = [
+    { ...inventoryItem, id: oilFilter.inventory_id, sku: 'AIR-000', name: 'Air filter', stock_quantity: 0, reorder_level: 2, supplier_name: 'Alpha Supply', location: 'A-01', image_url: 'https://images.example.test/air-filter.png', ets_retired_at: null },
+    { ...inventoryItem, id: 'brake-shoe', sku: 'BRK-200', name: 'Brake shoe', stock_quantity: 2, reorder_level: 5, supplier_name: 'Beta Supply', location: 'B-02', image_url: 'https://images.example.test/broken.png', ets_retired_at: null },
+    { ...inventoryItem, id: 'coolant', sku: 'CLT-900', name: 'Coolant', stock_quantity: 10, reorder_level: 3, supplier_name: 'Gamma Supply', location: 'C-03', image_url: null, ets_retired_at: null },
+    { ...inventoryItem, id: 'placeholder', sku: 'TMP-100', name: 'Temporary catalog item', stock_quantity: 1, reorder_level: 8, supplier_name: null, location: null, image_url: null, is_placeholder: true, ets_retired_at: null },
+    { ...inventoryItem, id: 'retired-empty', sku: 'RET-000', name: 'Retired empty item', stock_quantity: 0, reorder_level: 4, supplier_name: 'Archive Supply', location: 'R-01', image_url: null, ets_retired_at: fixture.frozen_at },
+  ]
+  apiMocks.get.mockImplementation((url: string) => {
+    if (url === '/parts-operations/summary') return Promise.resolve({ data: { low_stock_count: 2, open_purchase_order_count: 0 } })
+    if (url === '/parts-operations/demand') return Promise.resolve({ data: { items: [oilFilter], total: 1, skip: 0, limit: 100, has_more: false } })
+    if (url === '/inventory') return Promise.resolve({ data: { items: inventory, total: inventory.length, skip: 0, limit: 100, has_more: false } })
+    if (url === '/parts-operations/purchase-orders' || url === '/parts-operations/returns' || url === '/parts-operations/cores' || url === '/parts-operations/activity') return Promise.resolve({ data: { items: [], total: 0, skip: 0, limit: 100, has_more: false } })
+    throw new Error(`Unexpected GET ${url}`)
+  })
+}
+
 describe('DB-038 Parts Operations workspace', () => {
   afterEach(() => { apiMocks.get.mockReset(); apiMocks.post.mockReset(); authState.role = 'garage_owner' })
   it('falls back to the existing catalog only when the server says the feature is unavailable', async () => { apiMocks.get.mockRejectedValue(Object.assign(new Error('off'), { response: { status: 404 } })); renderGate(); expect(await screen.findByText('Legacy inventory catalog')).toBeInTheDocument() })
@@ -103,6 +120,74 @@ describe('DB-038 Parts Operations workspace', () => {
     const inventorySearch = screen.getByRole('searchbox', { name: 'Search inventory' })
     expect(inventorySearch.closest('label')).toHaveClass('db-parts-operations__search')
     expect(inventorySearch.closest('label')?.querySelectorAll('input')).toHaveLength(1)
+  })
+  it('renders canonical part images with a neutral decorative fallback in demand and inventory', async () => {
+    installInventoryControlsFixture()
+    const user = userEvent.setup()
+    renderGate()
+
+    const demandRow = await screen.findByRole('button', { name: /Oil filter/i })
+    expect(demandRow.querySelector('img')).toHaveAttribute('src', 'https://images.example.test/air-filter.png')
+    expect(demandRow).toHaveAccessibleName(/Oil filter/)
+
+    await user.click(screen.getByRole('tab', { name: 'Inventory' }))
+    const airFilter = screen.getByRole('button', { name: /Air filter/i })
+    expect(airFilter.querySelector('img')).toHaveAttribute('alt', '')
+    const broken = screen.getByRole('button', { name: /Brake shoe/i })
+    fireEvent.error(broken.querySelector('img')!)
+    expect(within(broken).getByTestId('part-thumbnail-fallback')).toBeInTheDocument()
+    expect(within(screen.getByRole('button', { name: /Coolant/i })).getByTestId('part-thumbnail-fallback')).toBeInTheDocument()
+  })
+  it('filters and stably sorts inventory while clearing hidden selection and offering one reset path', async () => {
+    installInventoryControlsFixture()
+    const user = userEvent.setup()
+    renderGate()
+    await user.click(await screen.findByRole('tab', { name: 'Inventory' }))
+
+    const rows = () => screen.queryAllByRole('button').filter((button) => button.hasAttribute('data-parts-row'))
+    const names = () => rows().map((row) => row.textContent)
+    expect(screen.getByText('5 inventory items')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'All stock' })).toHaveAttribute('aria-pressed', 'true')
+
+    await user.click(screen.getByRole('button', { name: 'Needs reorder' }))
+    expect(screen.getByText('2 of 5 inventory items')).toBeInTheDocument()
+    expect(names().join(' ')).toContain('Air filter')
+    expect(names().join(' ')).toContain('Brake shoe')
+    expect(names().join(' ')).not.toContain('Temporary catalog item')
+    expect(names().join(' ')).not.toContain('Retired empty item')
+
+    await user.click(screen.getByRole('button', { name: 'Out of stock' }))
+    expect(screen.getByText('2 of 5 inventory items')).toBeInTheDocument()
+    expect(names().join(' ')).toContain('Retired empty item')
+    await user.click(screen.getByRole('button', { name: 'In stock' }))
+    expect(rows()).toHaveLength(1)
+    expect(names()[0]).toContain('Coolant')
+
+    await user.click(screen.getByRole('button', { name: 'All stock' }))
+    await user.selectOptions(screen.getByLabelText('Sort inventory'), 'low-stock')
+    expect(names()[0]).toContain('Air filter')
+    expect(names()[1]).toContain('Retired empty item')
+    await user.selectOptions(screen.getByLabelText('Sort inventory'), 'high-stock')
+    expect(names()[0]).toContain('Coolant')
+    await user.selectOptions(screen.getByLabelText('Sort inventory'), 'name-desc')
+    expect(names()[0]).toContain('Temporary catalog item')
+    await user.selectOptions(screen.getByLabelText('Sort inventory'), 'name-asc')
+    expect(names()[0]).toContain('Air filter')
+
+    await user.click(screen.getByRole('button', { name: /Brake shoe/i }))
+    expect(screen.getByTestId('parts-selection-status')).toHaveTextContent('Needs reorder')
+    await user.click(screen.getByRole('button', { name: 'In stock' }))
+    expect(screen.getByText('Select an inventory item to review stock and activity.')).toBeInTheDocument()
+    expect(screen.getByTestId('parts-selection-status')).toHaveTextContent('')
+
+    await user.type(screen.getByLabelText('Search inventory'), 'Alpha Supply')
+    expect(screen.getByText('0 of 5 inventory items')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Reset inventory view' })).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Reset inventory view' }))
+    expect(screen.getByText('5 inventory items')).toBeInTheDocument()
+    expect(screen.getByLabelText('Search inventory')).toHaveValue('')
+    expect(screen.getByLabelText('Sort inventory')).toHaveValue('catalog')
+    expect(rows()[0]).toHaveAttribute('tabindex', '0')
   })
   it('clears demand selection and its draft form when search changes instead of carrying a quantity to another part', async () => {
     installDemandSelectionFixture()

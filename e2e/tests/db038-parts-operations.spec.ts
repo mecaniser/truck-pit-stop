@@ -4,23 +4,41 @@ import { garageOwnerSession } from '../../frontend/src/test-fixtures/db035/staff
 
 const errors = new WeakMap<Page, string[]>()
 
+const specialInventoryRows = [
+  { name: 'Air filter', stock_quantity: 0, reorder_level: 2, supplier_name: 'Alpha Supply', location: 'A-01', image_url: '/db038-part-image.svg', is_placeholder: false, ets_retired_at: null },
+  { name: 'Brake shoe', stock_quantity: 2, reorder_level: 5, supplier_name: 'Beta Supply', location: 'B-02', image_url: '/db038-broken-image.svg', is_placeholder: false, ets_retired_at: null },
+  { name: 'Coolant', stock_quantity: 10, reorder_level: 3, supplier_name: 'Gamma Supply', location: 'C-03', image_url: null, is_placeholder: false, ets_retired_at: null },
+  { name: 'Temporary catalog item', stock_quantity: 1, reorder_level: 8, supplier_name: null, location: null, image_url: null, is_placeholder: true, ets_retired_at: null },
+  { name: 'Retired empty item', stock_quantity: 0, reorder_level: 4, supplier_name: 'Archive Supply', location: 'R-01', image_url: null, is_placeholder: false, ets_retired_at: fixture.frozen_at },
+] as const
+
 const demandItems = Array.from({ length: 100 }, (_, index) => ({
   ...fixture.read_contract.expected_oil_filter_demand,
-  inventory_id: `demand-${index + 1}`,
+  inventory_id: `inventory-${index + 1}`,
   sku: `DB-FILTER-${String(index + 1).padStart(3, '0')}`,
-  name: `Fleet filter ${index + 1}`,
+  name: specialInventoryRows[index]?.name || `Fleet filter ${index + 1}`,
   state: index === 99 ? 'unlinked' : 'open',
   repair_shortage_packages: index % 2 === 0 ? 2 : 0,
   shelf_replenishment_packages: index % 2 === 0 ? 0 : 1,
   preferred_supplier: index === 99 ? null : fixture.read_contract.expected_oil_filter_demand.preferred_supplier,
 }))
 
-const inventoryItems = Array.from({ length: 100 }, (_, index) => ({
-  ...fixture.inventory[0],
-  id: `inventory-${index + 1}`,
-  sku: `DB-INVENTORY-${String(index + 1).padStart(3, '0')}`,
-  name: `Fleet filter ${index + 1}`,
-}))
+const inventoryItems = Array.from({ length: 100 }, (_, index) => {
+  const special = specialInventoryRows[index]
+  return {
+    ...fixture.inventory[0],
+    id: `inventory-${index + 1}`,
+    sku: `DB-INVENTORY-${String(index + 1).padStart(3, '0')}`,
+    name: special?.name || `Fleet filter ${index + 1}`,
+    stock_quantity: special?.stock_quantity ?? index + 1,
+    reorder_level: special?.reorder_level ?? 3,
+    supplier_name: special?.supplier_name ?? `Supplier ${index + 1}`,
+    location: special?.location ?? `BIN-${index + 1}`,
+    image_url: special?.image_url ?? null,
+    is_placeholder: special?.is_placeholder ?? false,
+    ets_retired_at: special?.ets_retired_at ?? null,
+  }
+})
 
 const purchaseOrder = {
   id: 'po-visual-audit',
@@ -151,6 +169,8 @@ async function installFixture(page: Page) {
 
   await page.route('https://fonts.googleapis.com/**', route => route.fulfill({ status: 200, contentType: 'text/css', body: '' }))
   await page.route('https://fonts.gstatic.com/**', route => route.fulfill({ status: 204, body: '' }))
+  await page.route('**/db038-part-image.svg', route => route.fulfill({ status: 200, contentType: 'image/svg+xml', body: '<svg xmlns="http://www.w3.org/2000/svg" width="44" height="44" viewBox="0 0 44 44"><rect width="44" height="44" rx="8" fill="#d7e4f4"/><path d="M13 15h18v14H13z" fill="#254b73"/></svg>' }))
+  await page.route('**/db038-broken-image.svg', route => route.fulfill({ status: 404, body: '' }))
   await page.route('**/api/v1/**', async route => {
     const url = new URL(route.request().url())
     const json = (body: unknown) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) })
@@ -192,8 +212,46 @@ test('DB-038 contains a 100-row master/detail workstation across responsive view
     await expectIntegratedSearch(page.getByRole('searchbox', { name: 'Search inventory' }))
     await expect(primaryTabs.locator('[role="tab"][aria-selected="true"]')).toHaveCount(1)
     await expect(page.getByRole('region', { name: 'Inventory results, 100 shown of 100', exact: true })).toHaveAttribute('tabindex', '0')
-    await page.getByLabel('Search inventory').fill('Fleet filter 100')
+    const inventoryRows = page.locator('[data-parts-row]')
+    await expect(inventoryRows.first().locator('.db-parts-operations__thumbnail img')).toBeVisible()
+    await expect(inventoryRows.nth(1).locator('.db-parts-operations__thumbnail svg')).toBeVisible()
+    await expect(inventoryRows.nth(2).locator('.db-parts-operations__thumbnail svg')).toBeVisible()
+    for (const label of ['All stock', 'Needs reorder', 'Out of stock', 'In stock']) await expect(page.getByRole('button', { name: label })).toHaveCSS('min-height', '44px')
+    await page.getByRole('button', { name: 'Needs reorder' }).click()
+    await expect(page.getByText('2 of 100 inventory items')).toBeVisible()
+    await page.getByRole('button', { name: 'Out of stock' }).click()
+    await expect(page.getByText('2 of 100 inventory items')).toBeVisible()
+    await page.getByRole('button', { name: 'In stock' }).click()
+    await expect(page.getByText('96 of 100 inventory items')).toBeVisible()
+    await page.getByRole('button', { name: 'All stock' }).click()
+    const sort = page.getByLabel('Sort inventory')
+    await expect(sort).toHaveCSS('min-height', '44px')
+    await sort.selectOption('low-stock')
+    await expect(inventoryRows.first()).toContainText('Air filter')
+    await sort.selectOption('high-stock')
+    await expect(inventoryRows.first()).toContainText('Fleet filter 100')
+    await sort.selectOption('name-desc')
+    await expect(inventoryRows.first()).toContainText('Temporary catalog item')
+    await sort.selectOption('name-asc')
+    await expect(inventoryRows.first()).toContainText('Air filter')
+    await inventoryRows.getByText('Brake shoe', { exact: true }).click()
+    await expect(page.getByTestId('parts-selection-status')).toContainText('Needs reorder')
+    await page.getByRole('button', { name: 'In stock' }).click()
+    await expect(page.getByText('Select an inventory item to review stock and activity.')).toBeVisible()
+    await page.getByLabel('Search inventory').fill('Alpha Supply')
+    await expect(page.getByText('0 of 100 inventory items')).toBeVisible()
+    await page.getByRole('button', { name: 'Reset inventory view' }).click()
+    await expect(page.getByText('100 inventory items')).toBeVisible()
+    await expect(page.getByLabel('Sort inventory')).toHaveValue('catalog')
+    await inventoryRows.first().focus()
+    await page.keyboard.press('ArrowDown')
+    await expect(inventoryRows.first()).toHaveAttribute('tabindex', '-1')
+    await expect(inventoryRows.nth(1)).toHaveAttribute('tabindex', '0')
+    await expect(inventoryRows.nth(1)).toBeFocused()
+    await page.getByLabel('Search inventory').fill('Supplier 100')
     await expect(page.getByText('1 of 100 inventory items')).toBeVisible()
+    await expect(inventoryRows.first()).toContainText('Fleet filter 100')
+    if (width === 1280 || width === 390) await page.screenshot({ path: testInfo.outputPath(`db038-inventory-operate-${width}.png`), fullPage: false })
     await primaryTabs.getByRole('tab', { name: 'Returns & cores' }).click()
     await expect(primaryTabs.locator('[role="tab"][aria-selected="true"]')).toHaveCount(1)
     const custodyTabs = page.getByRole('tablist', { name: 'Return and core custody view' })

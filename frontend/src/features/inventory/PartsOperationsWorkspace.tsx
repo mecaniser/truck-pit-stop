@@ -1,13 +1,15 @@
 import { Children, cloneElement, isValidElement, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate } from 'react-router-dom'
-import { Activity, AlertTriangle, ArrowRight, ClipboardList, PackageSearch, RotateCcw, Search } from 'lucide-react'
+import { Activity, AlertTriangle, ArrowRight, ClipboardList, Package, PackageSearch, RotateCcw, Search } from 'lucide-react'
 import api from '@/lib/api'
 import type { InventoryItem } from '@/types'
 import { useAuthStore } from '@/stores/authStore'
 
 type OperationsTab = 'demand' | 'inventory' | 'purchase-orders' | 'returns-cores' | 'activity'
 type DemandFilter = 'all' | 'repair-shortages' | 'replenishment' | 'unlinked'
+type InventoryStockFilter = 'all' | 'needs-reorder' | 'out-of-stock' | 'in-stock'
+type InventorySort = 'catalog' | 'low-stock' | 'high-stock' | 'name-asc' | 'name-desc'
 type Page<T> = { items: T[]; total: number; skip: number; limit: number; has_more: boolean }
 type CompletePage<T> = Page<T> & { loaded_pages: number }
 
@@ -69,6 +71,21 @@ const demandFilters: Array<{ id: DemandFilter; label: string }> = [
   { id: 'repair-shortages', label: 'Repair shortages' },
   { id: 'replenishment', label: 'Replenishment' },
   { id: 'unlinked', label: 'Unlinked' },
+]
+
+const inventoryStockFilters: Array<{ id: InventoryStockFilter; label: string }> = [
+  { id: 'all', label: 'All stock' },
+  { id: 'needs-reorder', label: 'Needs reorder' },
+  { id: 'out-of-stock', label: 'Out of stock' },
+  { id: 'in-stock', label: 'In stock' },
+]
+
+const inventorySorts: Array<{ id: InventorySort; label: string }> = [
+  { id: 'catalog', label: 'Catalog order' },
+  { id: 'low-stock', label: 'Low stock first' },
+  { id: 'high-stock', label: 'High stock first' },
+  { id: 'name-asc', label: 'Name A–Z' },
+  { id: 'name-desc', label: 'Name Z–A' },
 ]
 
 const EMPTY_DEMAND: DemandItem[] = []
@@ -141,6 +158,47 @@ function isMutationRole(role: string | undefined) {
   return role === 'garage_owner' || role === 'garage_admin'
 }
 
+function isRetiredEmpty(item: InventoryItem) {
+  return Boolean(item.ets_retired_at) && item.stock_quantity <= 0
+}
+
+function needsReorder(item: InventoryItem) {
+  return item.stock_quantity <= item.reorder_level && !item.is_placeholder && !isRetiredEmpty(item)
+}
+
+function inventoryStockLabel(item: InventoryItem) {
+  if (item.stock_quantity === 0) return 'Out of stock'
+  if (needsReorder(item)) return 'Needs reorder'
+  if (item.stock_quantity > item.reorder_level) return 'In stock'
+  return 'Catalog only'
+}
+
+function matchesInventoryStockFilter(item: InventoryItem, filter: InventoryStockFilter) {
+  if (filter === 'needs-reorder') return needsReorder(item)
+  if (filter === 'out-of-stock') return item.stock_quantity === 0
+  if (filter === 'in-stock') return item.stock_quantity > item.reorder_level
+  return true
+}
+
+function inventoryStockRank(item: InventoryItem, direction: 'low' | 'high') {
+  const label = inventoryStockLabel(item)
+  if (direction === 'low') return label === 'Out of stock' ? 0 : label === 'Needs reorder' ? 1 : label === 'In stock' ? 2 : 3
+  return label === 'In stock' ? 0 : label === 'Needs reorder' ? 1 : label === 'Out of stock' ? 2 : 3
+}
+
+function compareInventory(left: InventoryItem, right: InventoryItem, sort: InventorySort) {
+  const byName = left.name.localeCompare(right.name, undefined, { sensitivity: 'base' }) || left.id.localeCompare(right.id)
+  if (sort === 'name-asc') return byName
+  if (sort === 'name-desc') return -byName || left.id.localeCompare(right.id)
+  if (sort === 'low-stock' || sort === 'high-stock') {
+    const direction = sort === 'low-stock' ? 'low' : 'high'
+    const byStatus = inventoryStockRank(left, direction) - inventoryStockRank(right, direction)
+    const byQuantity = direction === 'low' ? left.stock_quantity - right.stock_quantity : right.stock_quantity - left.stock_quantity
+    return byStatus || byQuantity || byName
+  }
+  return 0
+}
+
 /**
  * The backend is the enablement authority. A 404 means the deployment or tenant
  * flag is off; a 403 means this otherwise eligible browser must retain its
@@ -183,6 +241,8 @@ export default function PartsOperationsWorkspace({ summary }: { summary: Summary
   const [demandSearch, setDemandSearch] = useState('')
   const [demandFilter, setDemandFilter] = useState<DemandFilter>('all')
   const [inventorySearch, setInventorySearch] = useState('')
+  const [inventoryStockFilter, setInventoryStockFilter] = useState<InventoryStockFilter>('all')
+  const [inventorySort, setInventorySort] = useState<InventorySort>('catalog')
   const [selectionNotice, setSelectionNotice] = useState('')
   const [notice, setNotice] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -247,9 +307,16 @@ export default function PartsOperationsWorkspace({ summary }: { summary: Summary
       || (demandFilter === 'unlinked' && item.state === 'unlinked')
     return matchesSearch && matchesFilter
   }), [demand, demandFilter, demandSearch])
-  const filteredInventory = useMemo(() => inventory.filter((item) => `${item.name} ${item.sku} ${item.location || ''}`.toLocaleLowerCase().includes(inventorySearch.trim().toLocaleLowerCase())), [inventory, inventorySearch])
+  const filteredInventory = useMemo(() => {
+    const search = inventorySearch.trim().toLocaleLowerCase()
+    const visible = inventory.filter((item) => {
+      const searchable = `${item.name} ${item.sku} ${item.supplier_name || ''} ${item.location || ''}`.toLocaleLowerCase()
+      return searchable.includes(search) && matchesInventoryStockFilter(item, inventoryStockFilter)
+    })
+    return inventorySort === 'catalog' ? visible : [...visible].sort((left, right) => compareInventory(left, right, inventorySort))
+  }, [inventory, inventorySearch, inventorySort, inventoryStockFilter])
   const selectedDemand = filteredDemand.find((item) => item.inventory_id === selectedDemandId) || null
-  const selectedInventory = filteredInventory.find((item) => item.id === selectedInventoryId) || filteredInventory[0] || null
+  const selectedInventory = filteredInventory.find((item) => item.id === selectedInventoryId) || null
   const selectedCore = cores.find((item) => item.id === selectedCoreId) || null
   const isLoading = demandQuery.isLoading || inventoryQuery.isLoading || poQuery.isLoading || returnsQuery.isLoading || coresQuery.isLoading || activityQuery.isLoading
 
@@ -266,6 +333,28 @@ export default function PartsOperationsWorkspace({ summary }: { summary: Summary
   const updateDemandFilter = (value: DemandFilter) => {
     setDemandFilter(value)
     clearDemandSelection()
+  }
+  const clearInventorySelection = () => {
+    setSelectedInventoryId(null)
+    setSelectionNotice('')
+  }
+  const updateInventorySearch = (value: string) => {
+    setInventorySearch(value)
+    clearInventorySelection()
+  }
+  const updateInventoryFilter = (value: InventoryStockFilter) => {
+    setInventoryStockFilter(value)
+    clearInventorySelection()
+  }
+  const updateInventorySort = (value: InventorySort) => {
+    setInventorySort(value)
+    clearInventorySelection()
+  }
+  const resetInventoryView = () => {
+    setInventorySearch('')
+    setInventoryStockFilter('all')
+    setInventorySort('catalog')
+    clearInventorySelection()
   }
 
   return <section className="db-parts-operations" aria-labelledby="parts-operations-title">
@@ -297,7 +386,7 @@ export default function PartsOperationsWorkspace({ summary }: { summary: Summary
 
     <div className="db-parts-operations__content">
       {tab === 'demand' && (demandQuery.isError ? <PanelFailure label="Demand could not be loaded." onRetry={() => void demandQuery.refetch()} /> : <section id="parts-panel-demand" className="db-parts-operations__panel" role="tabpanel" aria-label="Demand"><p className="db-parts-operations__panel-context">Review shortages, replenishment, and unlinked demand before creating a draft purchase order.</p><DemandPanel demand={filteredDemand} totalDemand={demandQuery.data?.total ?? demand.length} inventory={inventory} canMutate={canMutate} selected={selectedDemand} query={demandSearch} filter={demandFilter} pending={pendingAction === `po-create-${selectedDemand?.inventory_id}`} onQuery={updateDemandSearch} onFilter={updateDemandFilter} onSelect={(item) => { setSelectedDemandId(item.inventory_id); announce(`${item.name} selected. ${item.recommended_order_packages} packages recommended.`) }} onCreate={async (body) => call(`po-create-${body.inventoryId}`, (key) => api.post('/parts-operations/purchase-orders', body.payload, { headers: { 'Idempotency-Key': key } }), 'Draft purchase order created.')} onOpenRepair={(id) => navigate(`/dashboard/repair-orders?selected=${encodeURIComponent(id)}`)} /></section>)}
-      {tab === 'inventory' && (inventoryQuery.isError ? <PanelFailure label="Inventory could not be loaded." onRetry={() => void inventoryQuery.refetch()} /> : <section id="parts-panel-inventory" className="db-parts-operations__panel" role="tabpanel" aria-label="Inventory"><p className="db-parts-operations__panel-context">Review on-hand stock, incoming supply, and recent ledger activity for the selected catalog item.</p><InventoryPanel inventory={filteredInventory} totalInventory={inventoryQuery.data?.total ?? inventory.length} activity={activity} activityError={activityQuery.isError} onRetryActivity={() => void activityQuery.refetch()} selected={selectedInventory} query={inventorySearch} onQuery={setInventorySearch} onSelect={(item) => { setSelectedInventoryId(item.id); announce(`${item.name} selected. ${item.stock_quantity} on hand.`) }} /></section>)}
+      {tab === 'inventory' && (inventoryQuery.isError ? <PanelFailure label="Inventory could not be loaded." onRetry={() => void inventoryQuery.refetch()} /> : <section id="parts-panel-inventory" className="db-parts-operations__panel" role="tabpanel" aria-label="Inventory"><p className="db-parts-operations__panel-context">Review on-hand stock, incoming supply, and recent ledger activity for the selected catalog item.</p><InventoryPanel inventory={filteredInventory} totalInventory={inventoryQuery.data?.total ?? inventory.length} activity={activity} activityError={activityQuery.isError} onRetryActivity={() => void activityQuery.refetch()} selected={selectedInventory} query={inventorySearch} filter={inventoryStockFilter} sort={inventorySort} onQuery={updateInventorySearch} onFilter={updateInventoryFilter} onSort={updateInventorySort} onReset={resetInventoryView} onSelect={(item) => { setSelectedInventoryId(item.id); announce(`${item.name} selected. ${item.stock_quantity} on hand. ${inventoryStockLabel(item)}.`) }} /></section>)}
       {tab === 'purchase-orders' && (poQuery.isError ? <PanelFailure label="Purchase orders could not be loaded." onRetry={() => void poQuery.refetch()} /> : <section id="parts-panel-purchase-orders" className="db-parts-operations__panel" role="tabpanel" aria-label="Purchase orders"><p className="db-parts-operations__panel-context">Review supplier approval and receive packages against the selected purchase order.</p><PurchaseOrdersPanel items={purchaseOrders} selectedId={selectedPOId} detail={poDetail.data} detailError={poDetail.isError} onRetryDetail={() => void poDetail.refetch()} canMutate={canMutate} pendingAction={pendingAction} onSelect={(id) => { setSelectedPOId(id); const selected = purchaseOrders.find((item) => item.id === id); if (selected) announce(`${selected.po_number} selected. ${selected.remaining_quantity} packages awaiting receipt.`) }} onOpenDemand={() => selectTab('demand')} onSubmit={(po) => call(`po-submit-${po.id}`, (key) => api.post(`/parts-operations/purchase-orders/${po.id}/submit`, { expected_version: po.version }, { headers: { 'Idempotency-Key': key } }), 'Purchase order submitted.')} onReceive={(po, lines) => call(`po-receipt-${po.id}`, (key) => api.post(`/parts-operations/purchase-orders/${po.id}/receipts`, { expected_version: po.version, received_at: new Date().toISOString(), lines }, { headers: { 'Idempotency-Key': key } }), 'Receipt recorded and inventory ledger updated.')} /></section>)}
       {tab === 'returns-cores' && <section id="parts-panel-returns-cores" className="db-parts-operations__panel" role="tabpanel" aria-label="Returns and cores"><p className="db-parts-operations__panel-context">Choose supplier returns or core custody, then work the selected record.</p><ReturnsCoresPanel returns={returns} returnsError={returnsQuery.isError} onRetryReturns={() => void returnsQuery.refetch()} cores={cores} coresError={coresQuery.isError} onRetryCores={() => void coresQuery.refetch()} selectedReturn={returnDetail.data} selectedReturnId={selectedReturnId} returnDetailError={returnDetail.isError} onRetryReturnDetail={() => void returnDetail.refetch()} selectedCore={selectedCore} canMutate={canMutate} pendingAction={pendingAction} onSelectReturn={(id) => { setSelectedReturnId(id); const selected = returns.find((item) => item.id === id); if (selected) announce(`${selected.return_number} selected. ${humanize(selected.status)}.`) }} onSelectCore={(id) => { setSelectedCoreId(id); const selected = cores.find((item) => item.id === id); if (selected) announce(`${selected.inventory?.name || 'Core obligation'} selected. ${humanize(selected.status)}.`) }} onOpenDemand={() => selectTab('demand')} onRecover={(core) => call(`core-recover-${core.id}`, (key) => api.post(`/parts-operations/cores/${core.id}/recover`, { expected_version: core.version }, { headers: { 'Idempotency-Key': key } }), 'Core recovery recorded.')} onCreateCoreReturn={(core) => call(`core-return-${core.id}`, (key) => api.post('/parts-operations/returns', { kind: 'core', supplier_id: core.supplier_id, reason: 'Core return', lines: [{ core_obligation_id: core.id, quantity: core.quantity, expected_credit: '0.00' }] }, { headers: { 'Idempotency-Key': key } }), 'Core return draft created.')} onReturnAction={(row, action) => call(`return-${action}-${row.id}`, (key) => api.post(`/parts-operations/returns/${row.id}/${action}`, { expected_version: row.version, ...(action === 'reverse' ? { reason: 'Return correction' } : {}) }, { headers: { 'Idempotency-Key': key } }), action === 'reverse' ? 'Return reversal recorded.' : `Return ${action}ed.`)} /></section>}
       {tab === 'activity' && (activityQuery.isError ? <PanelFailure label="Stock activity could not be loaded." onRetry={() => void activityQuery.refetch()} /> : <section id="parts-panel-activity" className="db-parts-operations__panel" role="tabpanel" aria-label="Activity"><p className="db-parts-operations__panel-context">Read the immutable stock ledger to understand what changed inventory and when.</p><ActivityPanel movements={activity} onOpenRepair={(id) => navigate(`/dashboard/repair-orders?selected=${encodeURIComponent(id)}`)} /></section>)}
@@ -342,6 +431,14 @@ function DetailHeader({ title, children }: { title: string; children?: ReactNode
   return <div className="db-parts-operations__detail-header"><h2>{title}</h2>{children}</div>
 }
 
+function PartThumbnail({ src }: { src: string | null | undefined }) {
+  const [failed, setFailed] = useState(false)
+  const showImage = Boolean(src) && !failed
+  return <span className="db-parts-operations__thumbnail" aria-hidden="true">
+    {showImage ? <img src={src!} alt="" loading="lazy" decoding="async" onError={() => setFailed(true)} /> : <Package data-testid="part-thumbnail-fallback" />}
+  </span>
+}
+
 function DemandPanel({ demand, totalDemand, inventory, canMutate, selected, query, filter, pending, onQuery, onFilter, onSelect, onCreate, onOpenRepair }: { demand: DemandItem[]; totalDemand: number; inventory: InventoryItem[]; canMutate: boolean; selected: DemandItem | null; query: string; filter: DemandFilter; pending: boolean; onQuery: (value: string) => void; onFilter: (value: DemandFilter) => void; onSelect: (item: DemandItem) => void; onCreate: (payload: { inventoryId: string; payload: unknown }) => Promise<void>; onOpenRepair: (id: string) => void }) {
   const [poNumber, setPoNumber] = useState('')
   const [quantity, setQuantity] = useState('')
@@ -355,17 +452,18 @@ function DemandPanel({ demand, totalDemand, inventory, canMutate, selected, quer
   return <MasterDetail listKey={demand.map((item) => item.inventory_id).join('|')}
     listLabel={`Demand results, ${demand.length} shown of ${totalDemand}`}
     toolbar={<div className="db-parts-operations__list-toolbar"><label className="db-parts-operations__search"><Search aria-hidden="true" /><span className="sr-only">Search demand</span><input aria-label="Search demand" type="search" value={query} onChange={(event) => onQuery(event.target.value)} placeholder="Search part, SKU, or supplier" /></label><div className="db-parts-operations__filters" aria-label="Demand triage">{demandFilters.map((item) => <button type="button" aria-pressed={filter === item.id} className={filter === item.id ? 'is-selected' : ''} key={item.id} onClick={() => onFilter(item.id)}>{item.label}</button>)}</div><p>{demand.length === totalDemand ? `${totalDemand} demand items` : `${demand.length} of ${totalDemand} demand items`}</p></div>}
-    list={demand.length ? demand.map((item, index) => { const active = selected?.inventory_id === item.inventory_id; return <button data-parts-row type="button" aria-current={active ? 'true' : undefined} tabIndex={active || (!selected && index === 0) ? 0 : -1} className={active ? 'is-active' : ''} key={item.inventory_id} onClick={() => choose(item)}><span><strong>{item.name}</strong><small>{item.sku} · {item.stock_quantity} on hand · {item.recommended_order_packages} recommended</small></span><Status status={item.state} /></button> }) : <Empty label="No demand matches this search and triage view." />}
+    list={demand.length ? demand.map((item, index) => { const active = selected?.inventory_id === item.inventory_id; const imageUrl = inventory.find((entry) => entry.id === item.inventory_id)?.image_url; return <button data-parts-row type="button" aria-current={active ? 'true' : undefined} tabIndex={active || (!selected && index === 0) ? 0 : -1} className={active ? 'is-active' : ''} key={item.inventory_id} onClick={() => choose(item)}><span className="db-parts-operations__row-identity"><PartThumbnail key={imageUrl || 'fallback'} src={imageUrl} /><span className="db-parts-operations__row-copy"><strong>{item.name}</strong><small>{item.sku} · {item.stock_quantity} on hand · {item.recommended_order_packages} recommended</small></span></span><Status status={item.state} /></button> }) : <Empty label="No demand matches this search and triage view." />}
     detail={selected ? <><DetailHeader title={selected.name}><p>{selected.sku} · Preferred supplier: {selected.preferred_supplier?.name || 'Not set'}</p></DetailHeader><dl className="db-parts-operations__facts"><div><dt>Repair shortage</dt><dd>{selected.repair_shortage_packages} packages</dd></div><div><dt>Shelf replenishment</dt><dd>{selected.shelf_replenishment_packages} packages</dd></div><div><dt>Open supply</dt><dd>{selected.open_supply_packages} packages</dd></div><div><dt>Recommended order</dt><dd>{selected.recommended_order_packages} packages</dd></div></dl><div className="db-parts-operations__sources"><h3>Why this is needed</h3>{selected.sources.map((source, index) => <div key={`${source.type}-${index}`}>{source.type === 'repair_order' ? <button type="button" onClick={() => onOpenRepair(source.repair_order_id!)}>Repair order {source.order_number}</button> : <span>{humanize(source.type)}</span>}<strong>{source.packages} pkg</strong></div>)}</div>{canMutate && selected.state !== 'unlinked' && selected.recommended_order_packages > 0 && selected.preferred_supplier ? <form className="db-parts-operations__form" onSubmit={(event) => { event.preventDefault(); void create() }}><h3>Create draft purchase order</h3><label>PO number<input disabled={pending} required minLength={1} value={poNumber} onChange={(event) => setPoNumber(event.target.value)} placeholder="PO-000302" /></label><div><label>Packages<input disabled={pending} required min={1} max={999} type="number" value={quantity} onChange={(event) => setQuantity(event.target.value)} /></label><label>Unit cost<input disabled={pending} required min="0.01" step="0.01" type="number" value={unitCost} onChange={(event) => setUnitCost(event.target.value)} /></label></div><button className="db-parts-operations__primary" type="submit" disabled={pending}>{pending ? 'Creating draft PO…' : 'Create draft PO'}</button></form> : <p className="db-parts-operations__hint">{selected.state === 'unlinked' ? 'Promote this placeholder in the legacy catalog before it can be ordered.' : !canMutate ? 'Read-only access: a shop owner or admin can create the purchase order.' : 'Set a preferred supplier in the legacy catalog before creating a PO.'}</p>}</> : <Empty label="Select a demand item to inspect its repair and replenishment sources." />}
   />
 }
 
-function InventoryPanel({ inventory, totalInventory, activity, activityError, onRetryActivity, selected, query, onQuery, onSelect }: { inventory: InventoryItem[]; totalInventory: number; activity: Movement[]; activityError: boolean; onRetryActivity: () => void; selected: InventoryItem | null; query: string; onQuery: (value: string) => void; onSelect: (item: InventoryItem) => void }) {
+function InventoryPanel({ inventory, totalInventory, activity, activityError, onRetryActivity, selected, query, filter, sort, onQuery, onFilter, onSort, onReset, onSelect }: { inventory: InventoryItem[]; totalInventory: number; activity: Movement[]; activityError: boolean; onRetryActivity: () => void; selected: InventoryItem | null; query: string; filter: InventoryStockFilter; sort: InventorySort; onQuery: (value: string) => void; onFilter: (value: InventoryStockFilter) => void; onSort: (value: InventorySort) => void; onReset: () => void; onSelect: (item: InventoryItem) => void }) {
   const selectedActivity = activity.filter((row) => row.inventory?.id === selected?.id).slice(0, 8)
+  const hasActiveView = Boolean(query.trim()) || filter !== 'all' || sort !== 'catalog'
   return <MasterDetail listKey={inventory.map((item) => item.id).join('|')}
     listLabel={`Inventory results, ${inventory.length} shown of ${totalInventory}`}
-    toolbar={<div className="db-parts-operations__list-toolbar"><label className="db-parts-operations__search"><Search aria-hidden="true" /><span className="sr-only">Search inventory</span><input aria-label="Search inventory" type="search" value={query} onChange={(event) => onQuery(event.target.value)} placeholder="Search part, SKU, or location" /></label><p>{inventory.length === totalInventory ? `${totalInventory} inventory items` : `${inventory.length} of ${totalInventory} inventory items`}</p></div>}
-    list={inventory.length ? inventory.map((item, index) => { const active = selected?.id === item.id; return <button data-parts-row type="button" aria-current={active ? 'true' : undefined} tabIndex={active || (!selected && index === 0) ? 0 : -1} className={active ? 'is-active' : ''} key={item.id} onClick={() => onSelect(item)}><span><strong>{item.name}</strong><small>{item.sku} · {item.location || 'No location'} · {item.unit_type}</small></span><span className="db-parts-operations__number">{item.stock_quantity} on hand</span></button> }) : <Empty label="No inventory items match this search." />}
+    toolbar={<div className="db-parts-operations__list-toolbar"><label className="db-parts-operations__search"><Search aria-hidden="true" /><span className="sr-only">Search inventory</span><input aria-label="Search inventory" type="search" value={query} onChange={(event) => onQuery(event.target.value)} placeholder="Search part, SKU, supplier, or location" /></label><div className="db-parts-operations__filters" role="group" aria-label="Inventory stock filter">{inventoryStockFilters.map((item) => <button type="button" aria-pressed={filter === item.id} className={filter === item.id ? 'is-selected' : ''} key={item.id} onClick={() => onFilter(item.id)}>{item.label}</button>)}</div><label className="db-parts-operations__sort"><span>Sort inventory</span><select value={sort} onChange={(event) => onSort(event.target.value as InventorySort)}>{inventorySorts.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}</select></label><p aria-live="polite">{inventory.length === totalInventory ? `${totalInventory} inventory items` : `${inventory.length} of ${totalInventory} inventory items`}</p></div>}
+    list={inventory.length ? inventory.map((item, index) => { const active = selected?.id === item.id; return <button data-parts-row type="button" aria-current={active ? 'true' : undefined} tabIndex={active || (!selected && index === 0) ? 0 : -1} className={active ? 'is-active' : ''} key={item.id} onClick={() => onSelect(item)}><span className="db-parts-operations__row-identity"><PartThumbnail key={item.image_url || 'fallback'} src={item.image_url} /><span className="db-parts-operations__row-copy"><strong>{item.name}</strong><small>{item.sku} · {item.supplier_name || 'No supplier'} · {item.location || 'No location'}</small></span></span><span className="db-parts-operations__stock"><strong>{item.stock_quantity} on hand</strong><small>{inventoryStockLabel(item)}</small></span></button> }) : <Empty label="No inventory items match this view." action={hasActiveView ? <button className="db-parts-operations__inline-action" type="button" onClick={onReset}>Reset inventory view</button> : undefined} />}
     detail={selected ? <><DetailHeader title={selected.name}><p>{selected.sku} · {selected.location || 'No location'} · {selected.unit_type}</p></DetailHeader><dl className="db-parts-operations__facts"><div><dt>On hand</dt><dd>{selected.stock_quantity}</dd></div><div><dt>On order</dt><dd>{selected.on_order_quantity}</dd></div><div><dt>Reorder level</dt><dd>{selected.reorder_level}</dd></div><div><dt>Current WAC</dt><dd>${selected.cost}</dd></div></dl><div className="db-parts-operations__sources"><h3>Recent stock activity</h3>{activityError ? <InlineFailure label="Recent stock activity could not be loaded." onRetry={onRetryActivity} /> : selectedActivity.length ? selectedActivity.map((row) => <div key={row.id}><span>{humanize(row.movement_type)}</span><strong>Balance {row.balance_after}</strong></div>) : <p className="db-parts-operations__hint">No ledger activity is loaded for this item.</p>}</div><p className="db-parts-operations__hint">Catalog fields remain in the existing inventory editor; this operating view reads the same tenant catalog and ledger.</p></> : <Empty label="Select an inventory item to review stock and activity." />}
   />
 }
