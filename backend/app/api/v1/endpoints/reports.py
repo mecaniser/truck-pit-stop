@@ -18,6 +18,7 @@ from app.core.dependencies import get_db, get_current_active_user
 from app.db.models.customer import Customer
 from app.db.models.inventory import Inventory, PartsUsage
 from app.db.models.invoice import Invoice, InvoiceStatus
+from app.db.models.payment import Payment, PaymentStatus
 from app.db.models.labor import Labor
 from app.db.models.repair_order import RepairOrder
 from app.db.models.service import Service
@@ -118,21 +119,36 @@ async def get_reports_dashboard(
     rng = await _resolve_range(db, tenant_id, range, from_date, to_date)
     weeks = _week_buckets(rng)
 
-    # Paid invoices in range (cash basis: recognized when paid).
+    # Cash basis: recognise money when it is RECEIVED, per payment.
+    #
+    # This used to select fully-paid invoices and count each one's full total.
+    # An invoice only reaches status=paid once payments cover the whole balance,
+    # so part-paid work contributed nothing at all — 77 invoices worth $105,826
+    # in prod — while a payment that merely completed an invoice was recognised
+    # in full in the month it landed, including the part collected earlier.
+    # Easy Truck Shop, which the shop reconciles against, counts payments as they
+    # arrive; this now does the same.
+    #
+    # Each payment is attributed to its invoice pro rata, so a $500 payment
+    # against a $1000 invoice recognises half its labor, parts and fees.
     result = await db.execute(
-        select(Invoice, RepairOrder)
+        select(Payment, Invoice, RepairOrder)
+        .join(Invoice, Payment.invoice_id == Invoice.id)
         .join(RepairOrder, Invoice.repair_order_id == RepairOrder.id)
         .where(
             Invoice.tenant_id == tenant_id,
-            Invoice.status == InvoiceStatus.PAID,
             Invoice.is_internal.is_(False),
-            func.date(Invoice.paid_at) >= rng.start,
-            func.date(Invoice.paid_at) <= rng.end,
+            Invoice.deleted_at.is_(None),
+            Invoice.status != InvoiceStatus.CANCELLED,
+            Payment.deleted_at.is_(None),
+            Payment.status == PaymentStatus.COMPLETED,
+            func.date(Payment.created_at) >= rng.start,
+            func.date(Payment.created_at) <= rng.end,
         )
     )
     paid_rows = result.all()
 
-    order_ids = [ro.id for _, ro in paid_rows]
+    order_ids = list({ro.id for _, _, ro in paid_rows})
     parts_cost_by_order: Dict[UUID, Decimal] = {}
     if order_ids:
         cost_result = await db.execute(
@@ -163,15 +179,27 @@ async def get_reports_dashboard(
     total_fees = Decimal("0.00")
     total_parts_profit = Decimal("0.00")
 
-    for invoice, order in paid_rows:
-        paid_date = invoice.paid_at.date() if invoice.paid_at else rng.start
+    counted_invoices: set = set()
+    for payment, invoice, order in paid_rows:
+        paid_date = payment.created_at.date() if payment.created_at else rng.start
         idx = week_index(paid_date)
 
-        net_sales = _money(invoice.total_amount)
-        parts_rev = _money(order.total_parts_cost)
-        labor_rev = _money(order.total_labor_cost)
-        fees = _money(invoice.shop_supplies_amount) + _money(invoice.service_fee_amount)
-        parts_cost = parts_cost_by_order.get(order.id, Decimal("0.00"))
+        # Share of the invoice this payment settles. A fully-paid invoice gives
+        # 1.0 and behaves exactly as before; a part payment recognises only its
+        # share. Guard a zero/missing total so a payment against a $0 invoice
+        # cannot divide by zero.
+        invoice_total = _money(invoice.total_amount)
+        received = _money(payment.amount)
+        share = (received / invoice_total) if invoice_total > 0 else Decimal("0.00")
+
+        parts_rev = _money(order.total_parts_cost) * share
+        labor_rev = _money(order.total_labor_cost) * share
+        fees = (_money(invoice.shop_supplies_amount) + _money(invoice.service_fee_amount)) * share
+        # Sales tax is collected on behalf of the state and is not revenue, so
+        # strip its share out of the cash received — the same rule ETS uses for
+        # NET SALES (labor + parts + fees - discounts, tax excluded).
+        net_sales = received - (_money(invoice.tax_amount) * share)
+        parts_cost = parts_cost_by_order.get(order.id, Decimal("0.00")) * share
         parts_profit = parts_rev - parts_cost
 
         total_revenue += net_sales
@@ -186,9 +214,13 @@ async def get_reports_dashboard(
             parts_rev_by_week[idx] += parts_rev
             fees_by_week[idx] += fees
             parts_profit_by_week[idx] += parts_profit
-            if order.total_parts_cost and order.total_parts_cost > 0:
-                part_sales_by_week[idx] += 1
-            services_by_week[idx] += 1
+            # Count each invoice once even when it is settled by several
+            # payments, otherwise instalments inflate the job counts.
+            if invoice.id not in counted_invoices:
+                counted_invoices.add(invoice.id)
+                if order.total_parts_cost and order.total_parts_cost > 0:
+                    part_sales_by_week[idx] += 1
+                services_by_week[idx] += 1
 
     # Invoiced hours: labor hours on paid orders in range.
     invoiced_hours_total = Decimal("0.00")
@@ -199,7 +231,8 @@ async def get_reports_dashboard(
             .group_by(Labor.repair_order_id)
         )
         hours_by_order = dict(labor_result.all())
-        order_paid_date = {ro.id: (inv.paid_at.date() if inv.paid_at else rng.start) for inv, ro in paid_rows}
+        order_paid_date = {ro.id: (pay.created_at.date() if pay.created_at else rng.start)
+                           for pay, _inv, ro in paid_rows}
         for oid, hours in hours_by_order.items():
             hours_dec = Decimal(str(hours or 0))
             invoiced_hours_total += hours_dec

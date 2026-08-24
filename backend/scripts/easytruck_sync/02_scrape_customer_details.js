@@ -1,17 +1,39 @@
 // Stage 2: for each customer, scrape contacts (email), vehicles (full VIN via edit form),
 // and each vehicle's service history. Resumable: skips customers already in output.
+//
+// Vehicles come from data/all_vehicles.json (stage 01b), NOT from links on the
+// customer page. A vehicle with no VIN renders there without an <a href=
+// ".../vehicles/{id}">, so link-scraping silently dropped it along with its whole
+// service history — 324 of 826 vehicles were reaching us, capping every revenue
+// figure at roughly 60% of what ETS reports.
 const fs = require('fs');
 const path = require('path');
 const { loginSession } = require('./lib/auth');
-const { getCustomerVehicleIds, getVehicleEditData, getVehicleServiceHistory, getCustomerContacts } = require('./lib/scrape_helpers');
+const { getVehicleEditData, getVehicleServiceHistory, getCustomerContacts } = require('./lib/scrape_helpers');
 
 const IDS_FILE = path.join(__dirname, 'data', 'customer_ids.json');
+const ALL_VEHICLES_FILE = path.join(__dirname, 'data', 'all_vehicles.json');
 const OUT_FILE = path.join(__dirname, 'data', 'customer_details.json');
 const FAIL_FILE = path.join(__dirname, 'data', 'customer_details_failures.json');
 
 (async () => {
   const customerIds = JSON.parse(fs.readFileSync(IDS_FILE, 'utf8'));
   console.log(`Loaded ${customerIds.length} customer ids to process`);
+
+  if (!fs.existsSync(ALL_VEHICLES_FILE)) {
+    console.error('ABORT: data/all_vehicles.json missing — run 01b_scrape_all_vehicles.js first.\n'
+                + 'Without it this stage falls back to link-scraping and silently drops '
+                + 'every vehicle that has no VIN.');
+    process.exit(1);
+  }
+  const allVehicles = JSON.parse(fs.readFileSync(ALL_VEHICLES_FILE, 'utf8'));
+  const vehiclesByCustomer = new Map();
+  for (const v of allVehicles) {
+    if (!v.customerId) continue;
+    if (!vehiclesByCustomer.has(v.customerId)) vehiclesByCustomer.set(v.customerId, []);
+    vehiclesByCustomer.get(v.customerId).push(v);
+  }
+  console.log(`Loaded ${allVehicles.length} vehicles across ${vehiclesByCustomer.size} customers`);
 
   let results = [];
   if (fs.existsSync(OUT_FILE)) {
@@ -29,7 +51,12 @@ const FAIL_FILE = path.join(__dirname, 'data', 'customer_details_failures.json')
 
     try {
       const contacts = await getCustomerContacts(page, cust.id);
-      const vehicleRows = await getCustomerVehicleIds(page, cust.id);
+      const vehicleRows = (vehiclesByCustomer.get(String(cust.id)) || []).map(v => ({
+        vehicleId: v.vehicleId,
+        // The customer page's row cells used to supply unit/desc; take the
+        // equivalents from the authoritative vehicle record instead.
+        listCells: [v.unit || '', '', [v.year, v.make, v.model].filter(Boolean).join(' • ')],
+      }));
 
       const vehicles = [];
       for (const v of vehicleRows) {
