@@ -1,4 +1,12 @@
 import { defineConfig, devices } from '@playwright/test'
+import { execFileSync } from 'node:child_process'
+import path from 'node:path'
+
+const repositoryRoot = path.resolve(__dirname, '..')
+const candidateSha = execFileSync('git', ['rev-parse', 'HEAD'], {
+  cwd: repositoryRoot,
+  encoding: 'utf8',
+}).trim()
 
 export default defineConfig({
   testDir: './tests',
@@ -16,8 +24,8 @@ export default defineConfig({
   webServer: {
     command: 'npm --prefix ../frontend run dev -- --host 127.0.0.1 --port 5181 --strictPort',
     env: {
-      DIESELBRIDGE_RUNTIME_BRANCH: 'codex/db038-main-reconcile',
-      DIESELBRIDGE_RUNTIME_SHA: '772418d7dcf6641dfb65b511c88e5d821beb121d',
+      DIESELBRIDGE_RUNTIME_BRANCH: 'e2e/db038-parts-operations',
+      DIESELBRIDGE_RUNTIME_SHA: candidateSha,
     },
     url: 'http://127.0.0.1:5181',
     timeout: 120_000,
