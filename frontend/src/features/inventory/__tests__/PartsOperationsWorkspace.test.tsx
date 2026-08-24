@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter, useLocation } from 'react-router-dom'
@@ -72,17 +72,30 @@ describe('DB-038 Parts Operations workspace', () => {
     await waitFor(() => expect(apiMocks.post).toHaveBeenCalledWith('/parts-operations/purchase-orders', expect.objectContaining({ supplier_id: fixture.ids.supplier, lines: [expect.objectContaining({ inventory_id: fixture.ids.oil_filter, ordered_quantity: 3 })] }), expect.objectContaining({ headers: expect.objectContaining({ 'Idempotency-Key': expect.stringMatching(/^po-create-/) }) })))
   })
   it('keeps reception staff read-only while exposing the same demand evidence', async () => { authState.role = 'receptionist'; installFixture(); const user = userEvent.setup(); renderGate(); await user.click(await screen.findByRole('button', { name: /Oil filter/i })); expect(screen.getByText(/Read-only access/)).toBeInTheDocument(); expect(screen.queryByRole('button', { name: 'Create draft PO' })).not.toBeInTheDocument() })
-  it('keeps the operation tabs keyboard-operable without inventing a route', async () => {
+  it('keeps one keyboard-operable primary selection and nests return/core selection only inside its panel', async () => {
     installFixture()
     const user = userEvent.setup()
     renderGate()
+    expect(screen.queryByRole('list', { name: 'Parts operations workflow' })).not.toBeInTheDocument()
+    const primaryTablist = await screen.findByRole('tablist', { name: 'Parts Operations areas' })
+    const selectedPrimary = () => within(primaryTablist).getAllByRole('tab').filter((tab) => tab.getAttribute('aria-selected') === 'true')
     const demand = await screen.findByRole('tab', { name: 'Demand' })
+    expect(selectedPrimary()).toEqual([demand])
     demand.focus()
     await user.keyboard('{ArrowRight}')
     const inventory = screen.getByRole('tab', { name: 'Inventory' })
     expect(inventory).toHaveAttribute('aria-selected', 'true')
     expect(inventory).toHaveFocus()
+    expect(selectedPrimary()).toEqual([inventory])
     expect(screen.getByRole('tabpanel', { name: 'Inventory' })).toBeInTheDocument()
+    await user.click(within(primaryTablist).getByRole('tab', { name: 'Returns & cores' }))
+    expect(selectedPrimary()).toHaveLength(1)
+    const custodyTablist = screen.getByRole('tablist', { name: 'Return and core custody view' })
+    const selectedCustody = () => within(custodyTablist).getAllByRole('tab').filter((tab) => tab.getAttribute('aria-selected') === 'true')
+    expect(selectedCustody()).toHaveLength(1)
+    within(custodyTablist).getByRole('tab', { name: 'Returns' }).focus()
+    await user.keyboard('{ArrowRight}')
+    expect(selectedCustody()).toHaveLength(1)
   })
   it('keeps 100 loaded demand rows searchable, triageable, focusable, and selection-announced', async () => {
     installLargeFixture()
