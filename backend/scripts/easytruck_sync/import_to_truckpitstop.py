@@ -454,6 +454,28 @@ def _parse_ets_date(s):
         return None
 
 
+def _ro_money_split(inv_data, fallback_total):
+    """(parts, labor) for a repair order, from ETS's own invoice breakdown.
+
+    Reports read repair_orders.total_parts_cost / total_labor_cost for the
+    labor-vs-parts split, and the importer used to hardcode parts to 0.00 and
+    labor to the row's charge. Service-history rows often carry no charge at
+    all, so August repair orders landed with BOTH at zero — Part Revenue and
+    Labor Revenue both reported $0.00 against ETS's $49,823.29 and $62,749.68.
+
+    ETS states the split on each invoice as "Default Labor" / "Default Matrix
+    Parts"; use it. Fall back to booking the row's own charge as labor when an
+    invoice has no breakdown, which is the old behaviour.
+    """
+    if inv_data:
+        parts = inv_data.get("partsTotal")
+        labor = inv_data.get("laborTotal")
+        if parts is not None or labor is not None:
+            return (Decimal(str(parts or 0)).quantize(Decimal("0.01")),
+                    Decimal(str(labor or 0)).quantize(Decimal("0.01")))
+    return (Decimal("0.00"), fallback_total)
+
+
 def _create_invoice_and_payments(w, tenant_id, ro_id, order_number, service_no,
                                   invoices_by_service_no, existing_invoice_numbers, stats, now):
     """Analytics/reports (see backend/app/api/v1/endpoints/reports.py) key off
@@ -716,6 +738,12 @@ def resync(conn, tenant_id, commit):
         if not cust_id or not veh_id:
             continue
         ro_id = uuid.uuid4()
+        # Only the repair order that will carry this service's invoice takes the
+        # split; the rest of a multi-line-item service must not repeat it, or the
+        # parts and labor figures multiply the same way the invoices did.
+        _inv = invoices_by_service_no.get(r["service_no"])
+        _first_for_service = f"ETSINV-{(_inv or {}).get('invoiceNumber') or r['service_no']}" not in existing_invoice_numbers
+        ro_parts, ro_labor = _ro_money_split(_inv if _first_for_service else None, r["total_cost"])
         w.execute(
             """INSERT INTO repair_orders (id, tenant_id, customer_id, vehicle_id, order_number,
                  status, description, mileage_in, mileage_out, total_parts_cost, total_labor_cost,
@@ -723,7 +751,7 @@ def resync(conn, tenant_id, commit):
                  labor_discount_amount, order_discount_amount, created_at, updated_at)
                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
             (ro_id, r["tenant_id"], cust_id, veh_id, r["order_number"], r["status"],
-             r["description"], r["mileage"], r["mileage"], Decimal("0.00"), r["total_cost"],
+             r["description"], r["mileage"], r["mileage"], ro_parts, ro_labor,
              r["total_cost"], r["work_completed_at"], r["source"], False, False,
              Decimal("0.00"), Decimal("0.00"), now, now))
         w.execute(

@@ -76,8 +76,15 @@ docker compose up -d postgres redis
 cd backend
 
 # Create virtual environment
-python -m venv venv
+# Use Python 3.11 — the version the Dockerfile and CI both build against.
+# A venv built with an older interpreter (e.g. macOS's system python3.9) cannot
+# import the app at all: the codebase uses 3.10+ `X | Y` type syntax, so the
+# whole test suite fails to collect.
+python3.11 -m venv venv
 source venv/bin/activate  # On Windows: venv\Scripts\activate
+
+# Verify you are on the right interpreter before installing:
+python --version   # expect Python 3.11.x
 
 # Install dependencies
 pip install -r requirements.txt
