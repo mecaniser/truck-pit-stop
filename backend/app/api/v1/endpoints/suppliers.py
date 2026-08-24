@@ -1,9 +1,10 @@
+from decimal import Decimal
 from typing import List, Optional
 from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app.core.dependencies import get_db, get_current_active_user
 from app.core.pagination import paginated_or_list
@@ -26,7 +27,14 @@ class SupplierBase(BaseModel):
 
 
 class SupplierCreate(SupplierBase):
-    pass
+    payment_terms: Optional[str] = Field(default=None, max_length=100)
+    default_lead_time_days: Optional[int] = Field(default=None, ge=0, le=365)
+    minimum_order_amount: Optional[Decimal] = Field(
+        default=None,
+        ge=Decimal("0"),
+        le=Decimal("9999999999.99"),
+    )
+    purchasing_notes: Optional[str] = None
 
 
 class SupplierUpdate(BaseModel):
@@ -37,6 +45,14 @@ class SupplierUpdate(BaseModel):
     notes: Optional[str] = None
     account_reference: Optional[str] = None
     email: Optional[str] = None
+    payment_terms: Optional[str] = Field(default=None, max_length=100)
+    default_lead_time_days: Optional[int] = Field(default=None, ge=0, le=365)
+    minimum_order_amount: Optional[Decimal] = Field(
+        default=None,
+        ge=Decimal("0"),
+        le=Decimal("9999999999.99"),
+    )
+    purchasing_notes: Optional[str] = None
     is_active: Optional[bool] = None
 
 
@@ -52,13 +68,33 @@ class SupplierResponse(SupplierBase):
         from_attributes = True
 
 
+class SupplierAdminResponse(SupplierResponse):
+    payment_terms: Optional[str] = None
+    default_lead_time_days: Optional[int] = None
+    minimum_order_amount: Optional[Decimal] = None
+    purchasing_notes: Optional[str] = None
+
+
+def _tenant_id(current_user: User) -> UUID:
+    """Require a server-derived shop boundary for every legacy supplier path."""
+    if not current_user.tenant_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+    return current_user.tenant_id
+
+
+def _not_found() -> HTTPException:
+    return HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
+
+
+def _admin_tenant_id(current_user: User) -> UUID:
+    if current_user.role not in [UserRole.GARAGE_OWNER, UserRole.GARAGE_ADMIN]:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+    return _tenant_id(current_user)
+
+
 def require_admin():
     async def role_checker(current_user: User = Depends(get_current_active_user)):
-        if current_user.role not in [UserRole.GARAGE_OWNER, UserRole.GARAGE_ADMIN]:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Admin access required",
-            )
+        _admin_tenant_id(current_user)
         return current_user
     return role_checker
 
@@ -72,13 +108,16 @@ async def list_suppliers(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
-    query = select(Supplier).where(Supplier.deleted_at.is_(None))
-    if current_user.tenant_id:
-        query = query.where(Supplier.tenant_id == current_user.tenant_id)
+    tenant_id = _tenant_id(current_user)
+    query = select(Supplier).where(
+        Supplier.tenant_id == tenant_id,
+        Supplier.deleted_at.is_(None),
+    )
 
-    count_query = select(func.count(Supplier.id)).where(Supplier.deleted_at.is_(None))
-    if current_user.tenant_id:
-        count_query = count_query.where(Supplier.tenant_id == current_user.tenant_id)
+    count_query = select(func.count(Supplier.id)).where(
+        Supplier.tenant_id == tenant_id,
+        Supplier.deleted_at.is_(None),
+    )
 
     order_by = [Supplier.name]
     if search and search.strip():
@@ -107,58 +146,57 @@ async def list_suppliers(
     return paginated_or_list(items, total, skip, limit, paginated)
 
 
-@router.post("", response_model=SupplierResponse, status_code=status.HTTP_201_CREATED)
+@router.post("", response_model=SupplierAdminResponse, status_code=status.HTTP_201_CREATED)
 async def create_supplier(
     data: SupplierCreate,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_admin()),
 ):
-    if not current_user.tenant_id:
-        raise HTTPException(status_code=400, detail="User must be associated with a tenant")
+    tenant_id = _admin_tenant_id(current_user)
 
     normalized_name = normalize_name(data.name)
     existing = (await db.execute(select(Supplier).where(
-        Supplier.tenant_id == current_user.tenant_id,
+        Supplier.tenant_id == tenant_id,
         Supplier.normalized_name == normalized_name,
         Supplier.deleted_at.is_(None),
     ))).scalar_one_or_none()
     if existing:
         raise HTTPException(status_code=409, detail="Supplier already exists")
     supplier = Supplier(
-        tenant_id=current_user.tenant_id,
+        tenant_id=tenant_id,
         normalized_name=normalized_name,
         **data.model_dump(exclude_unset=True),
     )
     db.add(supplier)
     await db.commit()
     await db.refresh(supplier)
-    return SupplierResponse.model_validate(supplier)
+    return SupplierAdminResponse.model_validate(supplier)
 
 
-@router.put("/{supplier_id}", response_model=SupplierResponse)
+@router.put("/{supplier_id}", response_model=SupplierAdminResponse)
 async def update_supplier(
     supplier_id: str,
     data: SupplierUpdate,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_admin()),
 ):
+    tenant_id = _admin_tenant_id(current_user)
     query = select(Supplier).where(
         Supplier.id == supplier_id,
+        Supplier.tenant_id == tenant_id,
         Supplier.deleted_at.is_(None),
     )
-    if current_user.tenant_id:
-        query = query.where(Supplier.tenant_id == current_user.tenant_id)
 
     result = await db.execute(query)
     supplier = result.scalar_one_or_none()
     if not supplier:
-        raise HTTPException(status_code=404, detail="Supplier not found")
+        raise _not_found()
 
     updates = data.model_dump(exclude_unset=True)
     if "name" in updates:
         normalized_name = normalize_name(updates["name"])
         existing = (await db.execute(select(Supplier).where(
-            Supplier.tenant_id == current_user.tenant_id,
+            Supplier.tenant_id == tenant_id,
             Supplier.normalized_name == normalized_name,
             Supplier.id != supplier.id,
             Supplier.deleted_at.is_(None),
@@ -171,7 +209,7 @@ async def update_supplier(
 
     await db.commit()
     await db.refresh(supplier)
-    return SupplierResponse.model_validate(supplier)
+    return SupplierAdminResponse.model_validate(supplier)
 
 
 @router.delete("/{supplier_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -180,17 +218,17 @@ async def delete_supplier(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_admin()),
 ):
+    tenant_id = _admin_tenant_id(current_user)
     query = select(Supplier).where(
         Supplier.id == supplier_id,
+        Supplier.tenant_id == tenant_id,
         Supplier.deleted_at.is_(None),
     )
-    if current_user.tenant_id:
-        query = query.where(Supplier.tenant_id == current_user.tenant_id)
 
     result = await db.execute(query)
     supplier = result.scalar_one_or_none()
     if not supplier:
-        raise HTTPException(status_code=404, detail="Supplier not found")
+        raise _not_found()
 
     supplier.deleted_at = supplier.deleted_at or supplier.updated_at
     await db.commit()

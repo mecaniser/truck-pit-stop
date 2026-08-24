@@ -1,9 +1,9 @@
 import { NavLink, Routes, Route, Navigate, useLocation } from 'react-router-dom'
-import { BarChart3, Boxes, ChevronRight, ClipboardList, Clock3, PackageSearch, Settings2, Wrench, type LucideIcon } from 'lucide-react'
+import { BarChart3, Boxes, ChevronRight, ClipboardList, Clock3, Settings2, ShoppingCart, Wrench, type LucideIcon } from 'lucide-react'
 import ServicesManagementPage from '@/features/dashboard/ServicesManagementPage'
 import InventoryPage from '@/features/inventory/InventoryPage'
+import PurchasingWorkspace from '@/features/inventory/PurchasingWorkspace'
 import MechanicsPage from '@/features/mechanics/MechanicsPage'
-import SuppliersPage from '@/features/suppliers/SuppliersPage'
 import GarageAnalyticsPage from './GarageAnalyticsPage'
 import LaborBookTimePage from './LaborBookTimePage'
 import GoogleReviewsPage from '@/features/reviews/GoogleReviewsPage'
@@ -21,7 +21,7 @@ const GARAGE_SECTIONS: GarageSection[] = [
   { to: 'services', label: 'Services', shortLabel: 'Services', icon: ClipboardList },
   { to: 'labor-book-time', label: 'Labor Book Time', shortLabel: 'Book Time', icon: Clock3 },
   { to: 'inventory', label: 'Inventory', shortLabel: 'Inventory', icon: Boxes },
-  { to: 'suppliers', label: 'Suppliers', shortLabel: 'Suppliers', icon: PackageSearch },
+  { to: 'purchasing', label: 'Purchasing', shortLabel: 'Purchasing', icon: ShoppingCart },
   { to: 'analytics', label: 'Analytics', shortLabel: 'Analytics', icon: BarChart3 },
 ]
 
@@ -103,7 +103,8 @@ export default function MyGaragePage() {
   const location = useLocation()
   const usesInternalDesktopScroll =
     location.pathname.startsWith('/dashboard/garage/services') ||
-    location.pathname.startsWith('/dashboard/garage/inventory')
+    location.pathname.startsWith('/dashboard/garage/inventory') ||
+    location.pathname.startsWith('/dashboard/garage/purchasing')
 
   return (
     <div className="db-my-shop-workspace flex w-full flex-1 flex-col gap-6 md:h-[calc(100dvh-9.25rem)] md:min-h-0 md:flex-none md:overflow-hidden lg:flex-row lg:items-stretch">
@@ -120,8 +121,9 @@ export default function MyGaragePage() {
           <Route path="services" element={<ServicesManagementPage />} />
           <Route path="labor-book-time" element={<LaborBookTimePage />} />
           <Route path="inventory" element={<InventoryPage />} />
+          <Route path="purchasing" element={<PurchasingWorkspace />} />
           <Route path="mechanics" element={<MechanicsPage />} />
-          <Route path="suppliers" element={<SuppliersPage />} />
+          <Route path="suppliers" element={<Navigate to="/dashboard/garage/purchasing?view=suppliers" replace />} />
           <Route path="reviews" element={<GoogleReviewsPage />} />
           <Route path="reviews/settings" element={<GoogleReviewsSettingsPage />} />
           <Route path="analytics" element={<GarageAnalyticsPage />} />

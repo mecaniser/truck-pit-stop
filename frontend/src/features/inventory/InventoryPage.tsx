@@ -20,7 +20,7 @@ import { formatUSPhone } from '../../utils/phone'
 import { useViewPreference } from '@/hooks/useViewPreference'
 import { useTheme } from '../../contexts/ThemeContext'
 import useTenantBranding from '@/hooks/useTenantBranding'
-import { PartsOperationsGate } from './PartsOperationsWorkspace'
+import { PartsInventoryGate } from './PartsInventoryWorkspace'
 
 // Category ↔ unit linkage: fluid parts are dispensed by volume, so setting one
 // side fills in the other and saves a second click. Only defaults get touched —
@@ -2133,5 +2133,5 @@ function LegacyInventoryPage() {
 }
 
 export default function InventoryPage() {
-  return <PartsOperationsGate legacy={<LegacyInventoryPage />} />
+  return <PartsInventoryGate legacy={<LegacyInventoryPage />} />
 }

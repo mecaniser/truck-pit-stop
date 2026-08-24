@@ -3,7 +3,7 @@ from datetime import datetime
 from decimal import Decimal
 import uuid
 
-from sqlalchemy import Boolean, CheckConstraint, Column, DateTime, ForeignKey, Integer, Numeric, String, Text, UniqueConstraint, func
+from sqlalchemy import Boolean, CheckConstraint, Column, DateTime, ForeignKey, ForeignKeyConstraint, Index, Integer, Numeric, String, Text, UniqueConstraint, func, text
 from sqlalchemy.dialects.postgresql import UUID
 
 from app.db.base import Base, BaseModel
@@ -26,6 +26,74 @@ class InventoryCategory(BaseModel):
     normalized_name = Column(String(255), nullable=False)
     description = Column(Text, nullable=True)
     is_active = Column(Boolean, default=True, nullable=False)
+
+
+class InventorySupplierSource(BaseModel):
+    __tablename__ = "inventory_supplier_sources"
+    __table_args__ = (
+        UniqueConstraint(
+            "tenant_id",
+            "id",
+            name="uq_inventory_supplier_sources_tenant_id_id_db038",
+        ),
+        UniqueConstraint(
+            "tenant_id",
+            "id",
+            "inventory_id",
+            name="uq_inventory_supplier_sources_tenant_id_id_inventory_db038",
+        ),
+        CheckConstraint(
+            "minimum_order_quantity >= 1 AND minimum_order_quantity <= 999",
+            name="ck_inventory_supplier_source_minimum_quantity",
+        ),
+        CheckConstraint(
+            "pack_quantity >= 1 AND pack_quantity <= 999",
+            name="ck_inventory_supplier_source_pack_quantity",
+        ),
+        CheckConstraint(
+            "last_unit_cost IS NULL OR last_unit_cost >= 0",
+            name="ck_inventory_supplier_source_last_cost",
+        ),
+        CheckConstraint(
+            "lead_time_days IS NULL OR (lead_time_days >= 0 AND lead_time_days <= 365)",
+            name="ck_inventory_supplier_source_lead_time",
+        ),
+        ForeignKeyConstraint(
+            ["tenant_id", "inventory_id"],
+            ["inventory.tenant_id", "inventory.id"],
+            name="fk_inventory_supplier_sources_tenant_inventory",
+        ),
+        ForeignKeyConstraint(
+            ["tenant_id", "supplier_id"],
+            ["suppliers.tenant_id", "suppliers.id"],
+            name="fk_inventory_supplier_sources_tenant_supplier",
+        ),
+        Index(
+            "ux_inventory_supplier_sources_live_pair",
+            "tenant_id", "inventory_id", "supplier_id",
+            unique=True,
+            postgresql_where=text("deleted_at IS NULL"),
+            sqlite_where=text("deleted_at IS NULL"),
+        ),
+        Index(
+            "ux_inventory_supplier_sources_live_preferred",
+            "tenant_id", "inventory_id",
+            unique=True,
+            postgresql_where=text("deleted_at IS NULL AND is_preferred"),
+            sqlite_where=text("deleted_at IS NULL AND is_preferred = 1"),
+        ),
+    )
+
+    tenant_id = Column(UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=False, index=True)
+    inventory_id = Column(UUID(as_uuid=True), ForeignKey("inventory.id"), nullable=False, index=True)
+    supplier_id = Column(UUID(as_uuid=True), ForeignKey("suppliers.id"), nullable=False, index=True)
+    supplier_part_number = Column(String(150), nullable=True)
+    is_preferred = Column(Boolean, default=False, server_default="false", nullable=False)
+    minimum_order_quantity = Column(Integer, default=1, server_default="1", nullable=False)
+    pack_quantity = Column(Integer, default=1, server_default="1", nullable=False)
+    last_unit_cost = Column(Numeric(12, 2), nullable=True)
+    lead_time_days = Column(Integer, nullable=True)
+    is_active = Column(Boolean, default=True, server_default="true", nullable=False)
 
 
 class InventoryMovement(ImmutableOperationRecord):
@@ -80,11 +148,28 @@ class PurchaseOrderLine(BaseModel):
     __table_args__ = (
         CheckConstraint("ordered_quantity >= 1 AND ordered_quantity <= 999", name="ck_po_line_ordered_quantity"),
         CheckConstraint("received_quantity >= 0 AND received_quantity <= ordered_quantity", name="ck_po_line_received_quantity"),
+        ForeignKeyConstraint(
+            ["tenant_id", "supplier_source_id"],
+            ["inventory_supplier_sources.tenant_id", "inventory_supplier_sources.id"],
+            name="fk_po_lines_tenant_supplier_source",
+        ),
+        # Enforce source-to-line inventory provenance even for direct SQL/ORM writes.
+        ForeignKeyConstraint(
+            ["tenant_id", "supplier_source_id", "inventory_id"],
+            [
+                "inventory_supplier_sources.tenant_id",
+                "inventory_supplier_sources.id",
+                "inventory_supplier_sources.inventory_id",
+            ],
+            name="fk_po_lines_supplier_source_inventory",
+        ),
     )
 
     tenant_id = Column(UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=False, index=True)
     purchase_order_id = Column(UUID(as_uuid=True), ForeignKey("purchase_orders.id"), nullable=False, index=True)
     inventory_id = Column(UUID(as_uuid=True), ForeignKey("inventory.id"), nullable=False, index=True)
+    supplier_source_id = Column(UUID(as_uuid=True), nullable=True, index=True)
+    supplier_part_number_snapshot = Column(String(150), nullable=True)
     sku_snapshot = Column(String(100), nullable=False)
     description_snapshot = Column(String(255), nullable=False)
     unit_type_snapshot = Column(String(20), nullable=False)

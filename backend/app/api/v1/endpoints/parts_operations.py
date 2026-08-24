@@ -8,20 +8,21 @@ from typing import Literal, Optional
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Response, status
-from pydantic import BaseModel, Field, field_validator
-from sqlalchemy import func, select
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+from sqlalchemy import case, exists, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.dependencies import get_current_active_user, get_db
 from app.db.models.inventory import Inventory, PartsUsage
 from app.db.models.parts_operations import (
-    CoreObligation, InventoryCategory, InventoryMovement, PurchaseOrder,
+    CoreObligation, InventoryCategory, InventoryMovement, InventorySupplierSource, PurchaseOrder,
     PurchaseOrderLine, PurchaseReceipt, PurchaseReceiptLine, VendorReturn,
     VendorReturnLine,
 )
 from app.db.models.repair_order import RepairOrder, RepairOrderStatus
 from app.db.models.supplier import Supplier
 from app.db.models.user import User
+from app.db.models.vehicle import Vehicle
 from app.services.parts_operations_service import (
     apply_inventory_movement, begin_idempotency, canonical_fingerprint,
     complete_idempotency, decimal_money, find_idempotent_response,
@@ -36,6 +37,9 @@ POStatusFilter = Literal["draft", "submitted", "partially_received", "received",
 ReturnKindFilter = Literal["stock", "core"]
 ReturnStatusFilter = Literal["draft", "submitted", "shipped", "credited", "cancelled"]
 CoreStatusFilter = Literal["expected", "on_hand", "returned", "waived"]
+PartView = Literal["active", "archived", "all"]
+PartAttention = Literal["needs_reorder", "out_of_stock", "incoming"]
+PartSort = Literal["catalog", "name", "available", "reorder"]
 
 DEMAND_STATES = frozenset({"open", "covered", "unlinked"})
 PO_STATUSES = frozenset({"draft", "submitted", "partially_received", "received", "cancelled"})
@@ -58,6 +62,9 @@ EDITABLE_REPAIR_STATUSES = frozenset({
     RepairOrderStatus.APPROVED, RepairOrderStatus.ASSIGNED, RepairOrderStatus.ACKNOWLEDGED,
     RepairOrderStatus.IN_PROGRESS, RepairOrderStatus.PENDING_REVIEW,
 })
+PART_VIEWS = frozenset({"active", "archived", "all"})
+PART_ATTENTION = frozenset({"needs_reorder", "out_of_stock", "incoming"})
+PART_SORTS = frozenset({"catalog", "name", "available", "reorder"})
 
 
 class CategoryInput(BaseModel):
@@ -84,6 +91,48 @@ class POUpdate(BaseModel):
     expected_at: Optional[datetime] = None
     notes: Optional[str] = Field(default=None, max_length=2000)
     lines: Optional[list[POLineInput]] = Field(default=None, min_length=1, max_length=100)
+
+
+class SupplierSourceCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    supplier_id: UUID
+    supplier_part_number: Optional[str] = Field(default=None, max_length=150)
+    is_preferred: bool = False
+    minimum_order_quantity: int = Field(default=1, ge=1, le=999)
+    pack_quantity: int = Field(default=1, ge=1, le=999)
+    lead_time_days: Optional[int] = Field(default=None, ge=0, le=365)
+    is_active: bool = True
+
+
+class SupplierSourceUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    expected_updated_at: datetime
+    supplier_part_number: Optional[str] = Field(default=None, max_length=150)
+    is_preferred: Optional[bool] = None
+    minimum_order_quantity: Optional[int] = Field(default=None, ge=1, le=999)
+    pack_quantity: Optional[int] = Field(default=None, ge=1, le=999)
+    lead_time_days: Optional[int] = Field(default=None, ge=0, le=365)
+    is_active: Optional[bool] = None
+
+
+class SupplierSourceDelete(BaseModel):
+    expected_updated_at: datetime
+
+
+class BatchPOLineInput(POLineInput):
+    source_id: UUID
+
+
+class BatchPOGroupInput(BaseModel):
+    supplier_id: UUID
+    lines: list[BatchPOLineInput] = Field(min_length=1, max_length=100)
+
+
+class POBatchCreate(BaseModel):
+    groups: list[BatchPOGroupInput] = Field(min_length=1, max_length=25)
+    notes: Optional[str] = Field(default=None, max_length=2000)
 
 
 class VersionCommand(BaseModel):
@@ -179,6 +228,274 @@ def _inventory_summary(row: Inventory | None) -> dict | None:
     return None if row is None else {"id": str(row.id), "sku": row.sku, "name": row.name, "unit_type": row.unit_type}
 
 
+def _supplier_source_summary(row: InventorySupplierSource, supplier: Supplier | None) -> dict:
+    return {
+        "source_id": str(row.id),
+        "supplier_id": str(row.supplier_id),
+        "supplier_name": supplier.name if supplier else None,
+        "supplier_part_number": row.supplier_part_number,
+        "is_preferred": bool(row.is_preferred),
+        "minimum_order_quantity": int(row.minimum_order_quantity),
+        "pack_quantity": int(row.pack_quantity),
+        "last_unit_cost": str(row.last_unit_cost) if row.last_unit_cost is not None else None,
+        "lead_time_days": row.lead_time_days,
+        "is_active": bool(row.is_active),
+        "updated_at": row.updated_at.isoformat() if row.updated_at else None,
+    }
+
+
+def _part_metric_expressions(tenant_id: UUID):
+    shortage_packages = (
+        func.ceil(PartsUsage.quantity)
+        - func.coalesce(PartsUsage.stock_reserved_packages, 0)
+    )
+    shortage = (
+        select(func.coalesce(func.sum(case((shortage_packages > 0, shortage_packages), else_=0)), 0))
+        .select_from(PartsUsage)
+        .join(RepairOrder, RepairOrder.id == PartsUsage.repair_order_id)
+        .where(
+            PartsUsage.tenant_id == tenant_id,
+            PartsUsage.inventory_id == Inventory.id,
+            PartsUsage.deleted_at.is_(None),
+            RepairOrder.tenant_id == tenant_id,
+            RepairOrder.deleted_at.is_(None),
+            RepairOrder.pricing_locked_at.is_(None),
+            RepairOrder.status.in_(EDITABLE_REPAIR_STATUSES),
+        )
+        .correlate(Inventory)
+        .scalar_subquery()
+    )
+    po_remaining = PurchaseOrderLine.ordered_quantity - PurchaseOrderLine.received_quantity
+    po_incoming = (
+        select(func.coalesce(func.sum(case((po_remaining > 0, po_remaining), else_=0)), 0))
+        .select_from(PurchaseOrderLine)
+        .join(PurchaseOrder, PurchaseOrder.id == PurchaseOrderLine.purchase_order_id)
+        .where(
+            PurchaseOrderLine.tenant_id == tenant_id,
+            PurchaseOrderLine.inventory_id == Inventory.id,
+            PurchaseOrderLine.deleted_at.is_(None),
+            PurchaseOrder.tenant_id == tenant_id,
+            PurchaseOrder.deleted_at.is_(None),
+            PurchaseOrder.status.in_(("submitted", "partially_received")),
+        )
+        .correlate(Inventory)
+        .scalar_subquery()
+    )
+    available = func.coalesce(Inventory.stock_quantity, 0)
+    reorder_level = func.coalesce(Inventory.reorder_level, 0)
+    shelf_need = case((reorder_level > available, reorder_level - available), else_=0)
+    incoming = func.coalesce(Inventory.on_order_quantity, 0) + po_incoming
+    gross_need = shortage + shelf_need
+    recommended = case((gross_need > incoming, gross_need - incoming), else_=0)
+    return shortage, incoming, recommended
+
+
+async def _part_projection_rows(
+    db: AsyncSession,
+    tenant_id: UUID,
+    *,
+    items: list[Inventory],
+) -> list[dict]:
+    item_ids = {item.id for item in items}
+
+    source_rows = list((await db.execute(
+        select(InventorySupplierSource)
+        .join(Supplier, Supplier.id == InventorySupplierSource.supplier_id)
+        .where(
+            InventorySupplierSource.tenant_id == tenant_id,
+            InventorySupplierSource.inventory_id.in_(item_ids),
+            InventorySupplierSource.deleted_at.is_(None),
+            Supplier.tenant_id == tenant_id,
+            Supplier.deleted_at.is_(None),
+            Supplier.is_active.is_(True),
+        )
+        .order_by(
+            InventorySupplierSource.inventory_id,
+            InventorySupplierSource.is_preferred.desc(),
+            InventorySupplierSource.id,
+        )
+    )).scalars().all()) if item_ids else []
+    source_supplier_ids = {source.supplier_id for source in source_rows}
+    suppliers = {row.id: row for row in (await db.execute(select(Supplier).where(
+        Supplier.tenant_id == tenant_id,
+        Supplier.id.in_(source_supplier_ids),
+        Supplier.deleted_at.is_(None),
+    ))).scalars().all()} if source_supplier_ids else {}
+    sources_by_item: dict[UUID, list[InventorySupplierSource]] = {item_id: [] for item_id in item_ids}
+    for source in source_rows:
+        if source.inventory_id in sources_by_item:
+            sources_by_item[source.inventory_id].append(source)
+
+    shortage_totals: dict[UUID, int] = {item_id: 0 for item_id in item_ids}
+    shortage_sources: dict[UUID, list[dict]] = {item_id: [] for item_id in item_ids}
+    if item_ids:
+        usages = (await db.execute(
+            select(PartsUsage, RepairOrder, Vehicle)
+            .join(RepairOrder, RepairOrder.id == PartsUsage.repair_order_id)
+            .join(Vehicle, Vehicle.id == RepairOrder.vehicle_id)
+            .where(
+                PartsUsage.tenant_id == tenant_id,
+                PartsUsage.inventory_id.in_(item_ids),
+                PartsUsage.deleted_at.is_(None),
+                RepairOrder.tenant_id == tenant_id,
+                RepairOrder.deleted_at.is_(None),
+                RepairOrder.pricing_locked_at.is_(None),
+                RepairOrder.status.in_(EDITABLE_REPAIR_STATUSES),
+                Vehicle.tenant_id == tenant_id,
+                Vehicle.deleted_at.is_(None),
+            )
+        )).all()
+        for usage, order, vehicle in usages:
+            packages = max(0, ceil(Decimal(usage.quantity)) - int(usage.stock_reserved_packages or 0))
+            if not packages:
+                continue
+            shortage_totals[usage.inventory_id] += packages
+            vehicle_display = " ".join(str(value) for value in (vehicle.year, vehicle.make, vehicle.model) if value)
+            shortage_sources[usage.inventory_id].append({
+                "type": "repair_order",
+                "repair_order_id": str(order.id),
+                "order_number": order.order_number,
+                "status": order.status.value if hasattr(order.status, "value") else str(order.status),
+                "vehicle_id": str(vehicle.id),
+                "vehicle_display": vehicle_display,
+                "unit_number": vehicle.unit_number,
+                "parts_usage_id": str(usage.id),
+                "packages": packages,
+            })
+
+    incoming_totals: dict[UUID, int] = {item_id: 0 for item_id in item_ids}
+    incoming_sources: dict[UUID, list[dict]] = {item_id: [] for item_id in item_ids}
+    if item_ids:
+        supply_rows = (await db.execute(
+            select(PurchaseOrderLine, PurchaseOrder)
+            .join(PurchaseOrder, PurchaseOrder.id == PurchaseOrderLine.purchase_order_id)
+            .where(
+                PurchaseOrderLine.tenant_id == tenant_id,
+                PurchaseOrderLine.inventory_id.in_(item_ids),
+                PurchaseOrderLine.deleted_at.is_(None),
+                PurchaseOrder.tenant_id == tenant_id,
+                PurchaseOrder.deleted_at.is_(None),
+                PurchaseOrder.status.in_(("submitted", "partially_received")),
+            )
+        )).all()
+        for line, po in supply_rows:
+            remaining = max(0, int(line.ordered_quantity) - int(line.received_quantity))
+            if not remaining:
+                continue
+            incoming_totals[line.inventory_id] += remaining
+            incoming_sources[line.inventory_id].append({
+                "type": "purchase_order",
+                "purchase_order_id": str(po.id),
+                "po_number": po.po_number,
+                "purchase_order_line_id": str(line.id),
+                "packages": remaining,
+                "expected_at": po.expected_at.isoformat() if po.expected_at else None,
+            })
+
+    values: list[dict] = []
+    for item in items:
+        source_rows_for_item = sources_by_item[item.id]
+        preferred = next((source for source in source_rows_for_item if source.is_preferred and source.is_active), None)
+        if preferred is None and item.preferred_supplier_id:
+            preferred = next((source for source in source_rows_for_item if source.supplier_id == item.preferred_supplier_id and source.is_active), None)
+        available = int(item.stock_quantity or 0)
+        needed = shortage_totals[item.id]
+        reorder = int(item.reorder_level or 0)
+        incoming = incoming_totals[item.id] + int(item.on_order_quantity or 0)
+        recommended = max(needed + max(reorder - available, 0) - incoming, 0)
+        values.append({
+            "id": str(item.id),
+            "sku": item.sku,
+            "name": item.name,
+            "description": item.description,
+            "image_url": item.image_url,
+            "unit_type": item.unit_type,
+            "location": item.location,
+            "available_packages": available,
+            "needed_for_open_repairs": needed,
+            "reorder_level": reorder,
+            "incoming_packages": incoming,
+            "recommended_order_packages": recommended,
+            "average_unit_cost": str(decimal_money(item.cost or 0)),
+            "is_archived": item.ets_retired_at is not None,
+            "is_placeholder": bool(item.is_placeholder),
+            "preferred_source": _supplier_source_summary(preferred, suppliers.get(preferred.supplier_id)) if preferred else None,
+            "supplier_sources": [_supplier_source_summary(source, suppliers.get(source.supplier_id)) for source in source_rows_for_item if source.is_active],
+            "repair_sources": shortage_sources[item.id],
+            "incoming_sources": incoming_sources[item.id],
+        })
+    return values
+
+
+async def _supplier_source(
+    db: AsyncSession,
+    tenant_id: UUID,
+    inventory_id: UUID,
+    source_id: UUID,
+    *,
+    locked: bool = False,
+) -> InventorySupplierSource:
+    stmt = select(InventorySupplierSource).where(
+        InventorySupplierSource.id == source_id,
+        InventorySupplierSource.inventory_id == inventory_id,
+        InventorySupplierSource.tenant_id == tenant_id,
+        InventorySupplierSource.deleted_at.is_(None),
+    )
+    if locked:
+        stmt = stmt.with_for_update()
+    value = (await db.execute(stmt)).scalar_one_or_none()
+    if value is None:
+        raise _not_found()
+    return value
+
+
+async def _apply_preferred_source(
+    db: AsyncSession,
+    *,
+    tenant_id: UUID,
+    item: Inventory,
+    source: InventorySupplierSource,
+    is_preferred: bool,
+) -> None:
+    if is_preferred:
+        existing = list((await db.execute(select(InventorySupplierSource).where(
+            InventorySupplierSource.tenant_id == tenant_id,
+            InventorySupplierSource.inventory_id == item.id,
+            InventorySupplierSource.id != source.id,
+            InventorySupplierSource.deleted_at.is_(None),
+            InventorySupplierSource.is_preferred.is_(True),
+        ).with_for_update())).scalars().all())
+        for row in existing:
+            row.is_preferred = False
+        # Apply demotions before the promotion so partial unique indexes never
+        # observe two live preferred sources in the same statement batch.
+        if existing:
+            await db.flush()
+        source.is_preferred = True
+        item.preferred_supplier_id = source.supplier_id
+    else:
+        source.is_preferred = False
+        if item.preferred_supplier_id == source.supplier_id:
+            item.preferred_supplier_id = None
+
+
+async def _next_po_number(db: AsyncSession, tenant_id: UUID) -> str:
+    prefix = f"PO-{_utc_now().strftime('%Y%m%d')}-"
+    if db.bind is not None and db.bind.dialect.name == "postgresql":
+        await db.execute(select(func.pg_advisory_xact_lock(func.hashtext(f"db038:po-number:{tenant_id}"))))
+    values = list((await db.execute(select(PurchaseOrder.po_number).where(
+        PurchaseOrder.tenant_id == tenant_id,
+        PurchaseOrder.po_number.like(f"{prefix}%"),
+    ))).scalars().all())
+    sequence = 1
+    for value in values:
+        try:
+            sequence = max(sequence, int(value.rsplit("-", 1)[1]) + 1)
+        except (ValueError, IndexError):
+            continue
+    return f"{prefix}{sequence:04d}"
+
+
 async def _tenant_supplier(db: AsyncSession, tenant_id: UUID, supplier_id: UUID | None) -> Supplier | None:
     if supplier_id is None:
         return None
@@ -218,6 +535,8 @@ def _serialize_po(po: PurchaseOrder, lines: list[PurchaseOrderLine]) -> dict:
     return {"id": str(po.id), "po_number": po.po_number, "supplier_id": str(po.supplier_id),
             "status": po.status, "version": po.version, "expected_at": po.expected_at.isoformat() if po.expected_at else None,
             "notes": po.notes, "lines": [{"id": str(line.id), "inventory_id": str(line.inventory_id),
+            "supplier_source_id": str(line.supplier_source_id) if line.supplier_source_id else None,
+            "supplier_part_number": line.supplier_part_number_snapshot,
             "sku": line.sku_snapshot, "description": line.description_snapshot, "unit_type": line.unit_type_snapshot,
             "unit_cost": str(line.unit_cost_snapshot), "ordered_quantity": line.ordered_quantity,
             "received_quantity": line.received_quantity} for line in lines]}
@@ -279,6 +598,395 @@ async def summary(db: AsyncSession = Depends(get_db), current_user: User = Depen
     low_stock = (await db.execute(select(func.count(Inventory.id)).where(Inventory.tenant_id == tenant_id, Inventory.deleted_at.is_(None), Inventory.stock_quantity <= Inventory.reorder_level))).scalar() or 0
     open_pos = (await db.execute(select(func.count(PurchaseOrder.id)).where(PurchaseOrder.tenant_id == tenant_id, PurchaseOrder.deleted_at.is_(None), PurchaseOrder.status.in_(("draft", "submitted", "partially_received"))))).scalar() or 0
     return {"low_stock_count": low_stock, "open_purchase_order_count": open_pos}
+
+
+@router.get("/parts")
+async def list_parts(
+    view: PartView = "active",
+    attention: Optional[PartAttention] = None,
+    supplier_id: Optional[UUID] = None,
+    search: Optional[str] = None,
+    sort_by: PartSort = Query(default="catalog", alias="sort"),
+    skip: int = Query(default=0, ge=0),
+    limit: int = Query(default=50, ge=1, le=100),
+    paginated: bool = Query(default=True),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    tenant_id = await _tenant(db, current_user, mutate=False)
+    _validate_collection(skip, limit)
+    view_filter = _validate_choice(view, PART_VIEWS, "view") or "active"
+    attention_filter = _validate_choice(attention, PART_ATTENTION, "attention")
+    sort_filter = _validate_choice(sort_by, PART_SORTS, "sort") or "catalog"
+    supplier_filter = await _tenant_supplier(db, tenant_id, supplier_id)
+    search_filter = _validate_text_filter(search, "search")
+    _, incoming, recommended = _part_metric_expressions(tenant_id)
+    query = select(Inventory).where(
+        Inventory.tenant_id == tenant_id,
+        Inventory.deleted_at.is_(None),
+    )
+    if view_filter == "active":
+        query = query.where(Inventory.ets_retired_at.is_(None))
+    elif view_filter == "archived":
+        query = query.where(Inventory.ets_retired_at.is_not(None))
+    if attention_filter == "needs_reorder":
+        query = query.where(recommended > 0)
+    elif attention_filter == "out_of_stock":
+        query = query.where(func.coalesce(Inventory.stock_quantity, 0) == 0)
+    elif attention_filter == "incoming":
+        query = query.where(incoming > 0)
+    if supplier_filter is not None:
+        query = query.where(exists(
+            select(1).select_from(InventorySupplierSource).where(
+                InventorySupplierSource.tenant_id == tenant_id,
+                InventorySupplierSource.inventory_id == Inventory.id,
+                InventorySupplierSource.supplier_id == supplier_filter.id,
+                InventorySupplierSource.deleted_at.is_(None),
+                InventorySupplierSource.is_active.is_(True),
+            )
+        ))
+    if search_filter:
+        search_pattern = f"%{search_filter}%"
+        source_match = exists(
+            select(1)
+            .select_from(InventorySupplierSource)
+            .join(Supplier, Supplier.id == InventorySupplierSource.supplier_id)
+            .where(
+                InventorySupplierSource.tenant_id == tenant_id,
+                InventorySupplierSource.inventory_id == Inventory.id,
+                InventorySupplierSource.deleted_at.is_(None),
+                InventorySupplierSource.is_active.is_(True),
+                Supplier.tenant_id == tenant_id,
+                Supplier.deleted_at.is_(None),
+                Supplier.is_active.is_(True),
+                or_(
+                    Supplier.name.ilike(search_pattern),
+                    InventorySupplierSource.supplier_part_number.ilike(search_pattern),
+                ),
+            )
+        )
+        query = query.where(or_(
+            Inventory.sku.ilike(search_pattern),
+            Inventory.name.ilike(search_pattern),
+            Inventory.location.ilike(search_pattern),
+            source_match,
+        ))
+
+    count_query = select(func.count()).select_from(query.order_by(None).subquery())
+    total = int((await db.execute(count_query)).scalar_one())
+    if sort_filter == "name":
+        query = query.order_by(func.lower(Inventory.name), func.lower(Inventory.sku), Inventory.id)
+    elif sort_filter == "available":
+        query = query.order_by(func.coalesce(Inventory.stock_quantity, 0), func.lower(Inventory.name), Inventory.id)
+    elif sort_filter == "reorder":
+        query = query.order_by(recommended.desc(), func.lower(Inventory.name), Inventory.id)
+    else:
+        query = query.order_by(func.lower(Inventory.sku), func.lower(Inventory.name), Inventory.id)
+    if paginated:
+        query = query.offset(skip).limit(limit)
+    items = list((await db.execute(query)).scalars().all())
+    values = await _part_projection_rows(db, tenant_id, items=items)
+    return _collection(values, total=total, skip=skip, limit=limit, paginated=paginated)
+
+
+@router.get("/parts/{inventory_id}")
+async def get_part_detail(
+    inventory_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    tenant_id = await _tenant(db, current_user, mutate=False)
+    item = await _tenant_inventory(db, tenant_id, inventory_id)
+    value = next((row for row in await _part_projection_rows(db, tenant_id, items=[item]) if row["id"] == str(inventory_id)), None)
+    if value is None:
+        raise _not_found()
+
+    receipt_rows = (await db.execute(
+        select(PurchaseReceiptLine, PurchaseReceipt, PurchaseOrder)
+        .join(PurchaseReceipt, PurchaseReceipt.id == PurchaseReceiptLine.purchase_receipt_id)
+        .join(PurchaseOrder, PurchaseOrder.id == PurchaseReceipt.purchase_order_id)
+        .where(
+            PurchaseReceiptLine.tenant_id == tenant_id,
+            PurchaseReceiptLine.inventory_id == inventory_id,
+            PurchaseOrder.tenant_id == tenant_id,
+            PurchaseOrder.deleted_at.is_(None),
+        )
+        .order_by(PurchaseReceipt.received_at.desc(), PurchaseReceiptLine.id.desc())
+        .limit(5)
+    )).all()
+    movement_rows = list((await db.execute(select(InventoryMovement).where(
+        InventoryMovement.tenant_id == tenant_id,
+        InventoryMovement.inventory_id == inventory_id,
+    ).order_by(InventoryMovement.occurred_at.desc(), InventoryMovement.id.desc()).limit(20))).scalars().all())
+    open_po_rows = (await db.execute(
+        select(PurchaseOrderLine, PurchaseOrder, Supplier)
+        .join(PurchaseOrder, PurchaseOrder.id == PurchaseOrderLine.purchase_order_id)
+        .join(Supplier, Supplier.id == PurchaseOrder.supplier_id)
+        .where(
+            PurchaseOrderLine.tenant_id == tenant_id,
+            PurchaseOrderLine.inventory_id == inventory_id,
+            PurchaseOrderLine.deleted_at.is_(None),
+            PurchaseOrder.tenant_id == tenant_id,
+            PurchaseOrder.deleted_at.is_(None),
+            PurchaseOrder.status.in_(("draft", "submitted", "partially_received")),
+            Supplier.tenant_id == tenant_id,
+            Supplier.deleted_at.is_(None),
+        )
+        .order_by(PurchaseOrder.created_at.desc(), PurchaseOrderLine.id.desc())
+    )).all()
+    value["recent_receipts"] = [{
+        "receipt_id": str(receipt.id),
+        "receipt_number": receipt.receipt_number,
+        "purchase_order_id": str(po.id),
+        "po_number": po.po_number,
+        "supplier_id": str(po.supplier_id),
+        "quantity": int(line.quantity),
+        "unit_cost": str(line.unit_cost),
+        "received_at": receipt.received_at.isoformat(),
+    } for line, receipt, po in receipt_rows]
+    value["open_purchase_order_lines"] = [{
+        "purchase_order_id": str(po.id),
+        "po_number": po.po_number,
+        "status": po.status,
+        "supplier_id": str(supplier.id),
+        "supplier_name": supplier.name,
+        "purchase_order_line_id": str(line.id),
+        "supplier_source_id": str(line.supplier_source_id) if line.supplier_source_id else None,
+        "supplier_part_number": line.supplier_part_number_snapshot,
+        "ordered_quantity": int(line.ordered_quantity),
+        "received_quantity": int(line.received_quantity),
+        "remaining_quantity": max(0, int(line.ordered_quantity) - int(line.received_quantity)),
+        "unit_cost": str(line.unit_cost_snapshot),
+        "expected_at": po.expected_at.isoformat() if po.expected_at else None,
+    } for line, po, supplier in open_po_rows]
+    value["recent_movements"] = [_serialize_movement(row) for row in movement_rows]
+    return value
+
+
+@router.post("/parts/{inventory_id}/supplier-sources", status_code=status.HTTP_201_CREATED)
+async def create_supplier_source(
+    inventory_id: UUID,
+    body: SupplierSourceCreate,
+    idempotency_key: Optional[str] = Header(default=None, alias="Idempotency-Key"),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    tenant_id = await _tenant(db, current_user, mutate=True)
+    replay, record = await _start_mutation(
+        db,
+        tenant_id=tenant_id,
+        user=current_user,
+        family="supplier_source_create",
+        route=f"POST:/parts/{inventory_id}/supplier-sources",
+        idempotency_key=idempotency_key,
+        payload=body.model_dump(mode="json"),
+    )
+    if replay is not None:
+        return replay
+    item = (await db.execute(select(Inventory).where(
+        Inventory.id == inventory_id,
+        Inventory.tenant_id == tenant_id,
+        Inventory.deleted_at.is_(None),
+    ).with_for_update())).scalar_one_or_none()
+    supplier = (await db.execute(select(Supplier).where(
+        Supplier.id == body.supplier_id,
+        Supplier.tenant_id == tenant_id,
+        Supplier.deleted_at.is_(None),
+        Supplier.is_active.is_(True),
+    ))).scalar_one_or_none()
+    if item is None or supplier is None:
+        raise _not_found()
+    if item.ets_retired_at is not None:
+        raise HTTPException(status_code=409, detail="Archived parts are read-only")
+    duplicate = (await db.execute(select(InventorySupplierSource.id).where(
+        InventorySupplierSource.tenant_id == tenant_id,
+        InventorySupplierSource.inventory_id == item.id,
+        InventorySupplierSource.supplier_id == supplier.id,
+        InventorySupplierSource.deleted_at.is_(None),
+    ))).scalar_one_or_none()
+    if duplicate is not None:
+        raise HTTPException(status_code=409, detail="Supplier source already exists")
+    source = InventorySupplierSource(
+        tenant_id=tenant_id,
+        inventory_id=item.id,
+        supplier_id=supplier.id,
+        supplier_part_number=body.supplier_part_number,
+        minimum_order_quantity=body.minimum_order_quantity,
+        pack_quantity=body.pack_quantity,
+        lead_time_days=body.lead_time_days,
+        is_active=body.is_active,
+    )
+    db.add(source)
+    await db.flush()
+    await _apply_preferred_source(
+        db,
+        tenant_id=tenant_id,
+        item=item,
+        source=source,
+        is_preferred=body.is_preferred,
+    )
+    await db.flush()
+    await db.refresh(source, attribute_names=["updated_at"])
+    output = _complete_mutation(
+        record,
+        _supplier_source_summary(source, supplier),
+        status_code=201,
+    )
+    await db.commit()
+    return output
+
+
+@router.patch("/parts/{inventory_id}/supplier-sources/{source_id}")
+async def update_supplier_source(
+    inventory_id: UUID,
+    source_id: UUID,
+    body: SupplierSourceUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    tenant_id = await _tenant(db, current_user, mutate=True)
+    item = (await db.execute(select(Inventory).where(
+        Inventory.id == inventory_id,
+        Inventory.tenant_id == tenant_id,
+        Inventory.deleted_at.is_(None),
+    ).with_for_update())).scalar_one_or_none()
+    if item is None:
+        raise _not_found()
+    if item.ets_retired_at is not None:
+        raise HTTPException(status_code=409, detail="Archived parts are read-only")
+    source = await _supplier_source(db, tenant_id, inventory_id, source_id, locked=True)
+    if source.updated_at != body.expected_updated_at:
+        raise HTTPException(status_code=409, detail="Supplier source changed")
+    fields = body.model_fields_set
+    if "supplier_part_number" in fields:
+        source.supplier_part_number = body.supplier_part_number
+    if body.minimum_order_quantity is not None:
+        source.minimum_order_quantity = body.minimum_order_quantity
+    if body.pack_quantity is not None:
+        source.pack_quantity = body.pack_quantity
+    if "lead_time_days" in fields:
+        source.lead_time_days = body.lead_time_days
+    if body.is_active is not None:
+        source.is_active = body.is_active
+    desired_preferred = source.is_preferred if body.is_preferred is None else body.is_preferred
+    if not source.is_active:
+        desired_preferred = False
+    await _apply_preferred_source(
+        db,
+        tenant_id=tenant_id,
+        item=item,
+        source=source,
+        is_preferred=desired_preferred,
+    )
+    await db.flush()
+    await db.refresh(source, attribute_names=["updated_at"])
+    supplier = await _tenant_supplier(db, tenant_id, source.supplier_id)
+    output = _supplier_source_summary(source, supplier)
+    await db.commit()
+    return output
+
+
+@router.delete("/parts/{inventory_id}/supplier-sources/{source_id}")
+async def delete_supplier_source(
+    inventory_id: UUID,
+    source_id: UUID,
+    body: SupplierSourceDelete,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    tenant_id = await _tenant(db, current_user, mutate=True)
+    item = (await db.execute(select(Inventory).where(
+        Inventory.id == inventory_id,
+        Inventory.tenant_id == tenant_id,
+        Inventory.deleted_at.is_(None),
+    ).with_for_update())).scalar_one_or_none()
+    if item is None:
+        raise _not_found()
+    if item.ets_retired_at is not None:
+        raise HTTPException(status_code=409, detail="Archived parts are read-only")
+    source = await _supplier_source(db, tenant_id, inventory_id, source_id, locked=True)
+    if source.updated_at != body.expected_updated_at:
+        raise HTTPException(status_code=409, detail="Supplier source changed")
+    if source.is_preferred and item.preferred_supplier_id == source.supplier_id:
+        item.preferred_supplier_id = None
+    source.is_preferred = False
+    source.is_active = False
+    source.deleted_at = _utc_now()
+    await db.commit()
+    return {"deleted": True, "source_id": str(source.id)}
+
+
+@router.get("/suppliers/{supplier_id}/purchasing")
+async def get_supplier_purchasing(
+    supplier_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    tenant_id = await _tenant(db, current_user, mutate=False)
+    supplier = await _tenant_supplier(db, tenant_id, supplier_id)
+    if supplier is None:
+        raise _not_found()
+    sources = list((await db.execute(select(InventorySupplierSource).where(
+        InventorySupplierSource.tenant_id == tenant_id,
+        InventorySupplierSource.supplier_id == supplier.id,
+        InventorySupplierSource.deleted_at.is_(None),
+        InventorySupplierSource.is_active.is_(True),
+    ))).scalars().all())
+    open_orders = list((await db.execute(select(PurchaseOrder).where(
+        PurchaseOrder.tenant_id == tenant_id,
+        PurchaseOrder.supplier_id == supplier.id,
+        PurchaseOrder.deleted_at.is_(None),
+        PurchaseOrder.status.in_(("draft", "submitted", "partially_received")),
+    ))).scalars().all())
+    order_ids = {order.id for order in open_orders}
+    open_lines = list((await db.execute(select(PurchaseOrderLine).where(
+        PurchaseOrderLine.tenant_id == tenant_id,
+        PurchaseOrderLine.purchase_order_id.in_(order_ids),
+        PurchaseOrderLine.deleted_at.is_(None),
+    ))).scalars().all()) if order_ids else []
+    receipt_rows = (await db.execute(
+        select(PurchaseReceipt, PurchaseOrder)
+        .join(PurchaseOrder, PurchaseOrder.id == PurchaseReceipt.purchase_order_id)
+        .where(
+            PurchaseReceipt.tenant_id == tenant_id,
+            PurchaseOrder.tenant_id == tenant_id,
+            PurchaseOrder.supplier_id == supplier.id,
+            PurchaseOrder.deleted_at.is_(None),
+        )
+        .order_by(PurchaseReceipt.received_at.desc(), PurchaseReceipt.id.desc())
+    )).all()
+    completion_receipts: dict[UUID, tuple[PurchaseReceipt, PurchaseOrder]] = {}
+    for receipt, po in receipt_rows:
+        if po.status != "received" or po.expected_at is None:
+            continue
+        current = completion_receipts.get(po.id)
+        if current is None or receipt.received_at > current[0].received_at:
+            completion_receipts[po.id] = (receipt, po)
+    on_time_count = sum(
+        1 for receipt, po in completion_receipts.values()
+        if receipt.received_at <= po.expected_at
+    )
+    timed_order_count = len(completion_receipts)
+    return {
+        **_supplier_summary(supplier),
+        "payment_terms": supplier.payment_terms,
+        "default_lead_time_days": supplier.default_lead_time_days,
+        "minimum_order_amount": str(supplier.minimum_order_amount) if supplier.minimum_order_amount is not None else None,
+        "purchasing_notes": supplier.purchasing_notes,
+        "active_part_source_count": len(sources),
+        "open_purchase_order_count": len(open_orders),
+        "open_purchase_order_value": str(decimal_money(sum(
+            (Decimal(line.unit_cost_snapshot) * (int(line.ordered_quantity) - int(line.received_quantity)) for line in open_lines),
+            Decimal("0"),
+        ))),
+        "last_receipt_at": receipt_rows[0][0].received_at.isoformat() if receipt_rows else None,
+        "on_time_order_count": on_time_count,
+        "timed_order_count": timed_order_count,
+        "on_time_rate": (
+            str(decimal_money(Decimal(on_time_count) * 100 / Decimal(timed_order_count)))
+            if timed_order_count else None
+        ),
+    }
 
 
 @router.get("/activity")
@@ -535,11 +1243,160 @@ async def create_purchase_order(body: POCreate, idempotency_key: Optional[str] =
         seen.add(data.inventory_id)
         item = (await db.execute(select(Inventory).where(Inventory.id == data.inventory_id, Inventory.tenant_id == tenant_id, Inventory.deleted_at.is_(None), Inventory.is_placeholder.is_(False)))).scalar_one_or_none()
         if item is None: raise _not_found()
-        line = PurchaseOrderLine(tenant_id=tenant_id, purchase_order_id=po.id, inventory_id=item.id, sku_snapshot=item.sku, description_snapshot=item.name, unit_type_snapshot=item.unit_type, unit_cost_snapshot=decimal_money(data.unit_cost), core_charge_snapshot=decimal_money(item.core_charge or 0), ordered_quantity=data.ordered_quantity)
+        source = (await db.execute(select(InventorySupplierSource).where(
+            InventorySupplierSource.tenant_id == tenant_id,
+            InventorySupplierSource.inventory_id == item.id,
+            InventorySupplierSource.supplier_id == supplier.id,
+            InventorySupplierSource.deleted_at.is_(None),
+            InventorySupplierSource.is_active.is_(True),
+        ))).scalar_one_or_none()
+        line = PurchaseOrderLine(
+            tenant_id=tenant_id,
+            purchase_order_id=po.id,
+            inventory_id=item.id,
+            supplier_source_id=source.id if source else None,
+            supplier_part_number_snapshot=source.supplier_part_number if source else None,
+            sku_snapshot=item.sku,
+            description_snapshot=item.name,
+            unit_type_snapshot=item.unit_type,
+            unit_cost_snapshot=decimal_money(data.unit_cost),
+            core_charge_snapshot=decimal_money(item.core_charge or 0),
+            ordered_quantity=data.ordered_quantity,
+        )
         db.add(line); lines.append(line)
     record = begin_idempotency(tenant_id=tenant_id, family="po_create", key=key, fingerprint=fingerprint); db.add(record)
     await db.flush(); body_out = _serialize_po(po, lines); complete_idempotency(record, status_code=201, body=body_out)
     await db.commit(); return body_out
+
+
+@router.post("/purchase-orders/batch", status_code=status.HTTP_201_CREATED)
+async def create_purchase_order_batch(
+    body: POBatchCreate,
+    idempotency_key: Optional[str] = Header(default=None, alias="Idempotency-Key"),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """Create one draft PO per supplier as one all-or-nothing operation."""
+    tenant_id = await _tenant(db, current_user, mutate=True)
+    key = validate_idempotency_key(idempotency_key)
+    fingerprint = canonical_fingerprint(
+        route="POST:/purchase-orders/batch",
+        principal_id=current_user.id,
+        payload=body.model_dump(mode="json"),
+    )
+    replay = await find_idempotent_response(
+        db,
+        tenant_id=tenant_id,
+        family="po_batch_create",
+        key=key,
+        fingerprint=fingerprint,
+    )
+    if replay:
+        return Response(
+            content=replay.response_body,
+            status_code=replay.status_code,
+            media_type="application/json",
+            headers={"Idempotency-Replayed": "true"},
+        )
+
+    supplier_ids = [group.supplier_id for group in body.groups]
+    if len(set(supplier_ids)) != len(supplier_ids):
+        raise HTTPException(status_code=422, detail="Duplicate supplier group")
+
+    validated_groups: list[
+        tuple[Supplier, list[tuple[BatchPOLineInput, Inventory, InventorySupplierSource]]]
+    ] = []
+    inventory_ids: set[UUID] = set()
+    for group in body.groups:
+        supplier = (await db.execute(select(Supplier).where(
+            Supplier.id == group.supplier_id,
+            Supplier.tenant_id == tenant_id,
+            Supplier.deleted_at.is_(None),
+            Supplier.is_active.is_(True),
+        ))).scalar_one_or_none()
+        if supplier is None:
+            raise _not_found()
+
+        lines: list[tuple[BatchPOLineInput, Inventory, InventorySupplierSource]] = []
+        for data in group.lines:
+            if data.inventory_id in inventory_ids:
+                raise HTTPException(status_code=422, detail="Duplicate inventory line")
+            inventory_ids.add(data.inventory_id)
+            item = (await db.execute(select(Inventory).where(
+                Inventory.id == data.inventory_id,
+                Inventory.tenant_id == tenant_id,
+                Inventory.deleted_at.is_(None),
+                Inventory.is_placeholder.is_(False),
+                Inventory.ets_retired_at.is_(None),
+            ))).scalar_one_or_none()
+            source = (await db.execute(select(InventorySupplierSource).where(
+                InventorySupplierSource.id == data.source_id,
+                InventorySupplierSource.tenant_id == tenant_id,
+                InventorySupplierSource.inventory_id == data.inventory_id,
+                InventorySupplierSource.supplier_id == supplier.id,
+                InventorySupplierSource.deleted_at.is_(None),
+                InventorySupplierSource.is_active.is_(True),
+            ))).scalar_one_or_none()
+            if item is None or source is None:
+                raise _not_found()
+            if data.ordered_quantity < source.minimum_order_quantity:
+                raise HTTPException(status_code=422, detail="Quantity is below the supplier minimum")
+            if data.ordered_quantity % source.pack_quantity:
+                raise HTTPException(status_code=422, detail="Quantity must match the supplier pack size")
+            lines.append((data, item, source))
+        validated_groups.append((supplier, lines))
+
+    purchase_orders: list[dict] = []
+    for supplier, group_lines in validated_groups:
+        po = PurchaseOrder(
+            tenant_id=tenant_id,
+            po_number=await _next_po_number(db, tenant_id),
+            supplier_id=supplier.id,
+            notes=body.notes,
+            created_by_user_id=current_user.id,
+        )
+        db.add(po)
+        await db.flush()
+        lines: list[PurchaseOrderLine] = []
+        for data, item, source in group_lines:
+            line = PurchaseOrderLine(
+                tenant_id=tenant_id,
+                purchase_order_id=po.id,
+                inventory_id=item.id,
+                supplier_source_id=source.id,
+                supplier_part_number_snapshot=source.supplier_part_number,
+                sku_snapshot=item.sku,
+                description_snapshot=item.name,
+                unit_type_snapshot=item.unit_type,
+                unit_cost_snapshot=decimal_money(data.unit_cost),
+                core_charge_snapshot=decimal_money(item.core_charge or 0),
+                ordered_quantity=data.ordered_quantity,
+            )
+            db.add(line)
+            lines.append(line)
+        await db.flush()
+        purchase_orders.append({
+            **_serialize_po(po, lines),
+            "supplier": _supplier_summary(supplier),
+            "line_count": len(lines),
+            "ordered_quantity": sum(int(line.ordered_quantity) for line in lines),
+        })
+
+    response = {
+        "purchase_orders": purchase_orders,
+        "unassigned": [],
+        "count": len(purchase_orders),
+    }
+    record = begin_idempotency(
+        tenant_id=tenant_id,
+        family="po_batch_create",
+        key=key,
+        fingerprint=fingerprint,
+    )
+    db.add(record)
+    complete_idempotency(record, status_code=201, body=response)
+    await db.commit()
+    return response
 
 
 @router.get("/purchase-orders/{po_id}")
@@ -596,6 +1453,18 @@ async def receive_purchase_order(po_id: UUID, body: ReceiptCreate, idempotency_k
         before = int(item.stock_quantity or 0); old_wac = decimal_money(Decimal(item.cost)); wac = receipt_wac(old_balance=before, old_wac=old_wac, quantity=input_line.quantity, unit_cost=input_line.unit_cost)
         await apply_inventory_movement(db, item=item, quantity_delta=input_line.quantity, movement_type="po_receipt", actor=current_user, source_type="purchase_receipt", source_id=receipt.id, destination_type="purchase_order", destination_id=po.id, idempotency_key=f"{key}:{line.id}", wac_after=wac)
         line.received_quantity += input_line.quantity
+        supplier_source = None
+        if line.supplier_source_id is not None:
+            supplier_source = (await db.execute(select(InventorySupplierSource).where(
+                InventorySupplierSource.id == line.supplier_source_id,
+                InventorySupplierSource.tenant_id == tenant_id,
+                InventorySupplierSource.inventory_id == item.id,
+                InventorySupplierSource.supplier_id == po.supplier_id,
+            ).with_for_update())).scalar_one_or_none()
+            if supplier_source is None:
+                raise _not_found()
+        if supplier_source is not None:
+            supplier_source.last_unit_cost = decimal_money(input_line.unit_cost)
         db.add(PurchaseReceiptLine(tenant_id=tenant_id, purchase_receipt_id=receipt.id, purchase_order_line_id=line.id, inventory_id=item.id, quantity=input_line.quantity, unit_cost=decimal_money(input_line.unit_cost), wac_before=old_wac, wac_after=wac, balance_before=before, balance_after=before + input_line.quantity))
         output.append({"inventory_id": str(item.id), "received_quantity": input_line.quantity, "remaining_quantity": line.ordered_quantity - line.received_quantity, "balance_before": before, "balance_after": before + input_line.quantity, "wac_before": str(old_wac), "wac_after": str(wac)})
     po.status = "received" if all(line.received_quantity == line.ordered_quantity for line in lines.values()) else "partially_received"; po.version += 1
@@ -817,7 +1686,26 @@ async def update_purchase_order(po_id: UUID, body: POUpdate, db: AsyncSession = 
             item = (await db.execute(select(Inventory).where(Inventory.id == data.inventory_id, Inventory.tenant_id == tenant_id, Inventory.deleted_at.is_(None), Inventory.is_placeholder.is_(False)))).scalar_one_or_none()
             if not item:
                 raise _not_found()
-            db.add(PurchaseOrderLine(tenant_id=tenant_id, purchase_order_id=po.id, inventory_id=item.id, sku_snapshot=item.sku, description_snapshot=item.name, unit_type_snapshot=item.unit_type, unit_cost_snapshot=decimal_money(data.unit_cost), core_charge_snapshot=decimal_money(item.core_charge or 0), ordered_quantity=data.ordered_quantity))
+            source = (await db.execute(select(InventorySupplierSource).where(
+                InventorySupplierSource.tenant_id == tenant_id,
+                InventorySupplierSource.inventory_id == item.id,
+                InventorySupplierSource.supplier_id == po.supplier_id,
+                InventorySupplierSource.deleted_at.is_(None),
+                InventorySupplierSource.is_active.is_(True),
+            ))).scalar_one_or_none()
+            db.add(PurchaseOrderLine(
+                tenant_id=tenant_id,
+                purchase_order_id=po.id,
+                inventory_id=item.id,
+                supplier_source_id=source.id if source else None,
+                supplier_part_number_snapshot=source.supplier_part_number if source else None,
+                sku_snapshot=item.sku,
+                description_snapshot=item.name,
+                unit_type_snapshot=item.unit_type,
+                unit_cost_snapshot=decimal_money(data.unit_cost),
+                core_charge_snapshot=decimal_money(item.core_charge or 0),
+                ordered_quantity=data.ordered_quantity,
+            ))
     po.version += 1
     await db.commit()
     return _serialize_po(po, await _po_lines(db, tenant_id, po.id))

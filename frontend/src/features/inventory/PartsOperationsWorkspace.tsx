@@ -11,6 +11,7 @@ type OperationsTab = 'demand' | 'inventory' | 'purchase-orders' | 'returns-cores
 type DemandFilter = 'all' | 'repair-shortages' | 'replenishment' | 'unlinked'
 type InventoryStockFilter = 'all' | 'needs-reorder' | 'out-of-stock' | 'in-stock' | 'archived'
 type InventorySort = 'low-stock' | 'high-stock' | 'name-asc' | 'name-desc'
+type PurchaseOrderMode = 'all' | 'receiving'
 type Page<T> = { items: T[]; total: number; skip: number; limit: number; has_more: boolean }
 type CompletePage<T> = Page<T> & { loaded_pages: number }
 
@@ -130,24 +131,22 @@ function asPage<T>(value: Page<T> | T[]): Page<T> {
  * and triage controls.
  */
 async function fetchCompletePage<T>(path: string): Promise<CompletePage<T>> {
-  const items: T[] = []
-  let skip = 0
-  let total = 0
-  let limit = COLLECTION_PAGE_LIMIT
-  let loadedPages = 0
-  let hasMore = true
-
-  while (hasMore) {
-    const response = asPage<T>((await api.get(path, { params: { paginated: true, skip, limit: COLLECTION_PAGE_LIMIT } })).data)
-    items.push(...response.items)
-    total = response.total
-    limit = response.limit || COLLECTION_PAGE_LIMIT
-    loadedPages += 1
-    hasMore = response.has_more && response.items.length > 0
-    skip = response.skip + response.items.length
+  const first = asPage<T>((await api.get(path, {
+    params: { paginated: true, skip: 0, limit: COLLECTION_PAGE_LIMIT },
+  })).data)
+  const limit = first.limit || COLLECTION_PAGE_LIMIT
+  const pageCount = Math.max(1, Math.ceil(first.total / limit))
+  const remaining = await Promise.all(Array.from({ length: pageCount - 1 }, (_, index) =>
+    api.get(path, { params: { paginated: true, skip: (index + 1) * limit, limit } })
+      .then((response) => asPage<T>(response.data))))
+  return {
+    items: [first, ...remaining].flatMap((page) => page.items),
+    total: first.total,
+    skip: 0,
+    limit,
+    has_more: false,
+    loaded_pages: pageCount,
   }
-
-  return { items, total, skip: 0, limit, has_more: false, loaded_pages: loadedPages }
 }
 
 function operationKey(prefix: string) {
@@ -273,7 +272,7 @@ export function PartsOperationsGate({ legacy }: { legacy: ReactNode }) {
   return <PartsOperationsWorkspace summary={availability.data} />
 }
 
-export default function PartsOperationsWorkspace({ summary }: { summary: Summary }) {
+export default function PartsOperationsWorkspace({ summary, initialTab = 'demand', initialPurchaseOrderId = null, purchaseOrderMode = 'all', visibleTabs, embedded = false }: { summary: Summary; initialTab?: OperationsTab; initialPurchaseOrderId?: string | null; purchaseOrderMode?: PurchaseOrderMode; visibleTabs?: OperationsTab[]; embedded?: boolean }) {
   const queryClient = useQueryClient()
   const navigate = useNavigate()
   const { data: tenantBranding } = useTenantBranding()
@@ -283,10 +282,11 @@ export default function PartsOperationsWorkspace({ summary }: { summary: Summary
     logoUrl: tenantBranding?.logo_url || null,
     name: tenantBranding?.name || null,
   }
-  const [tab, setTab] = useState<OperationsTab>('demand')
+  const activeTabs = useMemo(() => visibleTabs?.length ? tabs.filter((item) => visibleTabs.includes(item.id)) : tabs, [visibleTabs])
+  const [tab, setTab] = useState<OperationsTab>(initialTab)
   const [selectedDemandId, setSelectedDemandId] = useState<string | null>(null)
   const [selectedInventoryId, setSelectedInventoryId] = useState<string | null>(null)
-  const [selectedPOId, setSelectedPOId] = useState<string | null>(null)
+  const [selectedPOId, setSelectedPOId] = useState<string | null>(initialPurchaseOrderId)
   const [selectedReturnId, setSelectedReturnId] = useState<string | null>(null)
   const [selectedCoreId, setSelectedCoreId] = useState<string | null>(null)
   const [custodyView, setCustodyView] = useState<'returns' | 'cores'>('returns')
@@ -337,6 +337,9 @@ export default function PartsOperationsWorkspace({ summary }: { summary: Summary
   const demand = demandQuery.data?.items ?? EMPTY_DEMAND
   const inventory = inventoryQuery.data?.items ?? EMPTY_INVENTORY
   const purchaseOrders = poQuery.data?.items ?? EMPTY_PURCHASE_ORDERS
+  const visiblePurchaseOrders = useMemo(() => purchaseOrderMode === 'receiving'
+    ? purchaseOrders.filter((item) => item.status === 'submitted' || item.status === 'partially_received')
+    : purchaseOrders, [purchaseOrderMode, purchaseOrders])
   const returns = returnsQuery.data?.items ?? EMPTY_RETURNS
   const cores = coresQuery.data?.items ?? EMPTY_CORES
   const activity = activityQuery.data?.items ?? EMPTY_ACTIVITY
@@ -383,7 +386,7 @@ export default function PartsOperationsWorkspace({ summary }: { summary: Summary
       setSelectedInventoryId(first?.id ?? null)
       setSelectionNotice(first ? inventoryAnnouncement(first) : '')
     } else if (next === 'purchase-orders') {
-      const first = purchaseOrders[0] || null
+      const first = visiblePurchaseOrders[0] || null
       setSelectedPOId(first?.id ?? null)
       setSelectionNotice(first ? purchaseOrderAnnouncement(first) : '')
     } else if (next === 'returns-cores') {
@@ -408,12 +411,12 @@ export default function PartsOperationsWorkspace({ summary }: { summary: Summary
     }
   }
   const moveTab = (event: KeyboardEvent<HTMLButtonElement>, current: OperationsTab) => {
-    const index = tabs.findIndex((item) => item.id === current)
+    const index = activeTabs.findIndex((item) => item.id === current)
     const delta = event.key === 'ArrowRight' ? 1 : event.key === 'ArrowLeft' ? -1 : 0
-    const nextIndex = event.key === 'Home' ? 0 : event.key === 'End' ? tabs.length - 1 : index + delta
+    const nextIndex = event.key === 'Home' ? 0 : event.key === 'End' ? activeTabs.length - 1 : index + delta
     if (!delta && event.key !== 'Home' && event.key !== 'End') return
     event.preventDefault()
-    const next = tabs[(nextIndex + tabs.length) % tabs.length].id
+    const next = activeTabs[(nextIndex + activeTabs.length) % activeTabs.length].id
     document.getElementById(`parts-tab-${next}`)?.focus()
     selectTab(next)
   }
@@ -438,12 +441,12 @@ export default function PartsOperationsWorkspace({ summary }: { summary: Summary
 
   useLayoutEffect(() => {
     if (tab !== 'purchase-orders' || poQuery.isLoading || poQuery.isError) return
-    const nextId = reconcileVisibleId(selectedPOId, purchaseOrders, (item) => item.id)
+    const nextId = reconcileVisibleId(selectedPOId, visiblePurchaseOrders, (item) => item.id)
     if (nextId === selectedPOId) return
     setSelectedPOId(nextId)
-    const next = purchaseOrders.find((item) => item.id === nextId)
+    const next = visiblePurchaseOrders.find((item) => item.id === nextId)
     setSelectionNotice(next ? purchaseOrderAnnouncement(next) : '')
-  }, [poQuery.isError, poQuery.isLoading, purchaseOrders, selectedPOId, tab])
+  }, [poQuery.isError, poQuery.isLoading, selectedPOId, tab, visiblePurchaseOrders])
 
   useLayoutEffect(() => {
     if (tab !== 'returns-cores' || custodyView !== 'returns' || returnsQuery.isLoading || returnsQuery.isError) return
@@ -494,8 +497,9 @@ export default function PartsOperationsWorkspace({ summary }: { summary: Summary
     setTab('inventory')
   }
 
-  return <section className="db-parts-operations" aria-labelledby="parts-operations-title">
-    <div className="db-parts-operations__top">
+  return <section className="db-parts-operations" aria-labelledby={embedded ? undefined : 'parts-operations-title'} aria-label={embedded ? 'Purchasing operations' : undefined}>
+    <div className={`db-parts-operations__top${embedded ? ' is-embedded' : ''}`}>
+      {!embedded && <>
       <header className="db-parts-operations__header">
         <div>
           <h1 id="parts-operations-title">Parts & inventory</h1>
@@ -509,12 +513,13 @@ export default function PartsOperationsWorkspace({ summary }: { summary: Summary
 
       <div className="db-parts-operations__tabs-wrap">
         <div className="db-parts-operations__tabs" role="tablist" aria-label="Parts Operations areas" aria-describedby="parts-tabs-scroll-hint">
-        {tabs.map(({ id, label, icon: Icon }) => <button id={`parts-tab-${id}`} key={id} type="button" role="tab" tabIndex={tab === id ? 0 : -1} aria-selected={tab === id} aria-controls={`parts-panel-${id}`} onKeyDown={(event) => moveTab(event, id)} onClick={() => selectTab(id)} className={tab === id ? 'is-selected' : ''}>
+        {activeTabs.map(({ id, label, icon: Icon }) => <button id={`parts-tab-${id}`} key={id} type="button" role="tab" tabIndex={tab === id ? 0 : -1} aria-selected={tab === id} aria-controls={`parts-panel-${id}`} onKeyDown={(event) => moveTab(event, id)} onClick={() => selectTab(id)} className={tab === id ? 'is-selected' : ''}>
           <Icon aria-hidden="true" />{label}
         </button>)}
         </div>
         <p id="parts-tabs-scroll-hint" className="db-parts-operations__tabs-hint">Swipe to see all areas. Arrow keys move the selected area.</p>
       </div>
+      </>}
 
       {notice && <p className="db-parts-operations__notice" role="status">{notice}</p>}
       {error && <div className="db-parts-operations__error" role="alert"><span>{error}</span><button type="button" onClick={() => setError(null)}>Dismiss</button></div>}
@@ -524,8 +529,8 @@ export default function PartsOperationsWorkspace({ summary }: { summary: Summary
     <div className="db-parts-operations__content">
       {tab === 'demand' && (demandQuery.isError ? <PanelFailure label="Demand could not be loaded." onRetry={() => void demandQuery.refetch()} /> : <section id="parts-panel-demand" className="db-parts-operations__panel" role="tabpanel" aria-label="Demand"><p className="db-parts-operations__panel-context">Review shortages, replenishment, and unlinked demand before creating a draft purchase order.</p><DemandPanel demand={filteredDemand} totalDemand={demandQuery.data?.total ?? demand.length} inventory={inventory} imageBranding={partImageBranding} canMutate={canMutate} selected={selectedDemand} query={demandSearch} filter={demandFilter} pending={pendingAction === `po-create-${selectedDemand?.inventory_id}`} onQuery={updateDemandSearch} onFilter={updateDemandFilter} onSelect={(item) => { setSelectedDemandId(item.inventory_id); announce(demandAnnouncement(item)) }} onCreate={async (body) => call(`po-create-${body.inventoryId}`, (key) => api.post('/parts-operations/purchase-orders', body.payload, { headers: { 'Idempotency-Key': key } }), 'Draft purchase order created.')} onOpenRepair={(id) => navigate(`/dashboard/repair-orders?selected=${encodeURIComponent(id)}`)} /></section>)}
       {tab === 'inventory' && (inventoryQuery.isError ? <PanelFailure label="Inventory could not be loaded." onRetry={() => void inventoryQuery.refetch()} /> : <section id="parts-panel-inventory" className="db-parts-operations__panel" role="tabpanel" aria-label="Inventory"><InventoryPanel inventory={filteredInventory} totalInventory={inventoryStockFilter === 'archived' ? inventory.filter(isArchived).length : inventory.filter((item) => !isArchived(item)).length} imageBranding={partImageBranding} activity={activity} activityError={activityQuery.isError} onRetryActivity={() => void activityQuery.refetch()} selected={selectedInventory} canMutate={canMutate} query={inventorySearch} filter={inventoryStockFilter} sort={inventorySort} onQuery={updateInventorySearch} onFilter={updateInventoryFilter} onSort={updateInventorySort} onReset={resetInventoryView} onSelect={(item) => { setSelectedInventoryId(item.id); announce(inventoryAnnouncement(item)) }} onSave={saveInventoryControls} /></section>)}
-      {tab === 'purchase-orders' && (poQuery.isError ? <PanelFailure label="Purchase orders could not be loaded." onRetry={() => void poQuery.refetch()} /> : <section id="parts-panel-purchase-orders" className="db-parts-operations__panel" role="tabpanel" aria-label="Purchase orders"><p className="db-parts-operations__panel-context">Review supplier approval and receive packages against the selected purchase order.</p><PurchaseOrdersPanel items={purchaseOrders} selectedId={selectedPOId} detail={poDetail.data} detailError={poDetail.isError} onRetryDetail={() => void poDetail.refetch()} canMutate={canMutate} pendingAction={pendingAction} onSelect={(id) => { setSelectedPOId(id); const selected = purchaseOrders.find((item) => item.id === id); if (selected) announce(purchaseOrderAnnouncement(selected)) }} onOpenDemand={() => selectTab('demand')} onSubmit={(po) => call(`po-submit-${po.id}`, (key) => api.post(`/parts-operations/purchase-orders/${po.id}/submit`, { expected_version: po.version }, { headers: { 'Idempotency-Key': key } }), 'Purchase order submitted.')} onReceive={(po, lines) => call(`po-receipt-${po.id}`, (key) => api.post(`/parts-operations/purchase-orders/${po.id}/receipts`, { expected_version: po.version, received_at: new Date().toISOString(), lines }, { headers: { 'Idempotency-Key': key } }), 'Purchase received and inventory updated.')} /></section>)}
-      {tab === 'returns-cores' && <section id="parts-panel-returns-cores" className="db-parts-operations__panel" role="tabpanel" aria-label="Returns and cores"><p className="db-parts-operations__panel-context">Choose supplier returns or core custody, then work the selected record.</p><ReturnsCoresPanel view={custodyView} onView={selectCustodyView} returns={returns} returnsError={returnsQuery.isError} onRetryReturns={() => void returnsQuery.refetch()} cores={cores} coresError={coresQuery.isError} onRetryCores={() => void coresQuery.refetch()} selectedReturn={returnDetail.data} selectedReturnId={selectedReturnId} returnDetailError={returnDetail.isError} onRetryReturnDetail={() => void returnDetail.refetch()} selectedCore={selectedCore} canMutate={canMutate} pendingAction={pendingAction} onSelectReturn={(id) => { setSelectedReturnId(id); const selected = returns.find((item) => item.id === id); if (selected) announce(returnAnnouncement(selected)) }} onSelectCore={(id) => { setSelectedCoreId(id); const selected = cores.find((item) => item.id === id); if (selected) announce(coreAnnouncement(selected)) }} onOpenDemand={() => selectTab('demand')} onRecover={(core) => call(`core-recover-${core.id}`, (key) => api.post(`/parts-operations/cores/${core.id}/recover`, { expected_version: core.version }, { headers: { 'Idempotency-Key': key } }), 'Core recovery recorded.')} onCreateCoreReturn={(core) => call(`core-return-${core.id}`, (key) => api.post('/parts-operations/returns', { kind: 'core', supplier_id: core.supplier_id, reason: 'Core return', lines: [{ core_obligation_id: core.id, quantity: core.quantity, expected_credit: '0.00' }] }, { headers: { 'Idempotency-Key': key } }), 'Core return draft created.')} onReturnAction={(row, action) => call(`return-${action}-${row.id}`, (key) => api.post(`/parts-operations/returns/${row.id}/${action}`, { expected_version: row.version, ...(action === 'reverse' ? { reason: 'Return correction' } : {}) }, { headers: { 'Idempotency-Key': key } }), action === 'reverse' ? 'Return reversal recorded.' : `Return ${action}ed.`)} /></section>}
+      {tab === 'purchase-orders' && (poQuery.isError ? <PanelFailure label="Purchase orders could not be loaded." onRetry={() => void poQuery.refetch()} /> : <section id="parts-panel-purchase-orders" className="db-parts-operations__panel" role="tabpanel" aria-label="Purchase orders"><p className="db-parts-operations__panel-context">{purchaseOrderMode === 'receiving' ? 'Record deliveries against submitted purchase orders. Drafts stay in Purchase orders until they are submitted.' : 'Review supplier approval and receive packages against the selected purchase order.'}</p><PurchaseOrdersPanel items={visiblePurchaseOrders} selectedId={selectedPOId} detail={poDetail.data} detailError={poDetail.isError} onRetryDetail={() => void poDetail.refetch()} canMutate={canMutate} pendingAction={pendingAction} emptyLabel={purchaseOrderMode === 'receiving' ? 'No submitted purchase orders are waiting for receipt.' : undefined} onSelect={(id) => { setSelectedPOId(id); const selected = visiblePurchaseOrders.find((item) => item.id === id); if (selected) announce(purchaseOrderAnnouncement(selected)) }} onOpenDemand={() => embedded ? navigate('/dashboard/garage/inventory') : selectTab('demand')} onSubmit={(po) => call(`po-submit-${po.id}`, (key) => api.post(`/parts-operations/purchase-orders/${po.id}/submit`, { expected_version: po.version }, { headers: { 'Idempotency-Key': key } }), 'Purchase order submitted.')} onReceive={(po, lines) => call(`po-receipt-${po.id}`, (key) => api.post(`/parts-operations/purchase-orders/${po.id}/receipts`, { expected_version: po.version, received_at: new Date().toISOString(), lines }, { headers: { 'Idempotency-Key': key } }), 'Purchase received and inventory updated.')} /></section>)}
+      {tab === 'returns-cores' && <section id="parts-panel-returns-cores" className="db-parts-operations__panel" role="tabpanel" aria-label="Returns and cores"><p className="db-parts-operations__panel-context">Choose supplier returns or core custody, then work the selected record.</p><ReturnsCoresPanel view={custodyView} onView={selectCustodyView} returns={returns} returnsError={returnsQuery.isError} onRetryReturns={() => void returnsQuery.refetch()} cores={cores} coresError={coresQuery.isError} onRetryCores={() => void coresQuery.refetch()} selectedReturn={returnDetail.data} selectedReturnId={selectedReturnId} returnDetailError={returnDetail.isError} onRetryReturnDetail={() => void returnDetail.refetch()} selectedCore={selectedCore} canMutate={canMutate} pendingAction={pendingAction} onSelectReturn={(id) => { setSelectedReturnId(id); const selected = returns.find((item) => item.id === id); if (selected) announce(returnAnnouncement(selected)) }} onSelectCore={(id) => { setSelectedCoreId(id); const selected = cores.find((item) => item.id === id); if (selected) announce(coreAnnouncement(selected)) }} onOpenDemand={() => embedded ? navigate('/dashboard/garage/inventory') : selectTab('demand')} onRecover={(core) => call(`core-recover-${core.id}`, (key) => api.post(`/parts-operations/cores/${core.id}/recover`, { expected_version: core.version }, { headers: { 'Idempotency-Key': key } }), 'Core recovery recorded.')} onCreateCoreReturn={(core) => call(`core-return-${core.id}`, (key) => api.post('/parts-operations/returns', { kind: 'core', supplier_id: core.supplier_id, reason: 'Core return', lines: [{ core_obligation_id: core.id, quantity: core.quantity, expected_credit: '0.00' }] }, { headers: { 'Idempotency-Key': key } }), 'Core return draft created.')} onReturnAction={(row, action) => call(`return-${action}-${row.id}`, (key) => api.post(`/parts-operations/returns/${row.id}/${action}`, { expected_version: row.version, ...(action === 'reverse' ? { reason: 'Return correction' } : {}) }, { headers: { 'Idempotency-Key': key } }), action === 'reverse' ? 'Return reversal recorded.' : `Return ${action}ed.`)} /></section>}
       {tab === 'activity' && (activityQuery.isError ? <PanelFailure label="Inventory changes could not be loaded." onRetry={() => void activityQuery.refetch()} /> : <section id="parts-panel-activity" className="db-parts-operations__panel" role="tabpanel" aria-label="Activity"><p className="db-parts-operations__panel-context">See what changed, when it changed, and what caused it.</p><ActivityPanel movements={activity} onOpenRepair={(id) => navigate(`/dashboard/repair-orders?selected=${encodeURIComponent(id)}`)} /></section>)}
     </div>
 
@@ -693,12 +698,29 @@ function InventoryControls({ item, canMutate, archived, onSave }: { item: Invent
   const [saving, setSaving] = useState(false)
   const [localError, setLocalError] = useState<string | null>(null)
   const savingRef = useRef(false)
+  const quantityTriggerRef = useRef<HTMLButtonElement>(null)
+  const reorderTriggerRef = useRef<HTMLButtonElement>(null)
+  const costTriggerRef = useRef<HTMLButtonElement>(null)
+  const [restoreFocus, setRestoreFocus] = useState<InventoryEditMode | null>(null)
   const stockChanged = draft.stock.trim() !== String(item.stock_quantity)
+
+  useEffect(() => {
+    if (editing || !restoreFocus) return
+    const target = restoreFocus === 'quantities' ? quantityTriggerRef : restoreFocus === 'reorder' ? reorderTriggerRef : costTriggerRef
+    const frame = window.requestAnimationFrame(() => target.current?.focus())
+    setRestoreFocus(null)
+    return () => window.cancelAnimationFrame(frame)
+  }, [editing, restoreFocus])
+
+  const closeEditor = () => {
+    setRestoreFocus(editing)
+    setEditing(null)
+  }
 
   const cancel = () => {
     setDraft(inventoryDraft(item))
     setLocalError(null)
-    setEditing(null)
+    closeEditor()
   }
   const update = (field: keyof InventoryDraft, value: string) => {
     setDraft((current) => ({ ...current, [field]: value }))
@@ -740,7 +762,7 @@ function InventoryControls({ item, canMutate, archived, onSave }: { item: Invent
     try {
       const updated = await onSave(item.id, patch)
       setDraft(inventoryDraft(updated))
-      setEditing(null)
+      closeEditor()
     } catch (cause) {
       setLocalError(inventorySaveError(cause))
     } finally {
@@ -755,7 +777,7 @@ function InventoryControls({ item, canMutate, archived, onSave }: { item: Invent
     </div>
     {!editing ? <>
       <dl className="db-parts-operations__facts"><div><dt>Available now</dt><dd>{item.stock_quantity}</dd></div><div><dt>Incoming</dt><dd>{item.on_order_quantity}</dd></div><div><dt>Reorder at</dt><dd>{item.reorder_level}</dd></div><div><dt>Average unit cost</dt><dd>${item.cost}</dd></div></dl>
-      {canMutate && <div className="db-parts-operations__inventory-control-actions"><button type="button" onClick={() => setEditing('quantities')}>Adjust quantities</button><button type="button" onClick={() => setEditing('reorder')}>Change reorder point</button><button type="button" onClick={() => setEditing('cost')}>Update average cost</button></div>}
+      {canMutate && <div className="db-parts-operations__inventory-control-actions"><button ref={quantityTriggerRef} type="button" onClick={() => setEditing('quantities')}>Adjust quantities</button><button ref={reorderTriggerRef} type="button" onClick={() => setEditing('reorder')}>Change reorder point</button><button ref={costTriggerRef} type="button" onClick={() => setEditing('cost')}>Update average cost</button></div>}
       {!canMutate && !archived && <p className="db-parts-operations__hint">You can view stock details. Owners and admins can make changes.</p>}
     </> : <form className="db-parts-operations__inventory-controls-form" noValidate onSubmit={(event) => { event.preventDefault(); void save() }}>
       <h4>{editing === 'quantities' ? 'Adjust quantities' : editing === 'reorder' ? 'Change reorder point' : 'Update average cost'}</h4>
@@ -768,13 +790,13 @@ function InventoryControls({ item, canMutate, archived, onSave }: { item: Invent
   </section>
 }
 
-function PurchaseOrdersPanel({ items, selectedId, detail, detailError, onRetryDetail, canMutate, pendingAction, onSelect, onOpenDemand, onSubmit, onReceive }: { items: PurchaseOrder[]; selectedId: string | null; detail: PurchaseOrderDetail | undefined; detailError: boolean; onRetryDetail: () => void; canMutate: boolean; pendingAction: string | null; onSelect: (id: string) => void; onOpenDemand: () => void; onSubmit: (po: PurchaseOrderDetail) => Promise<void>; onReceive: (po: PurchaseOrderDetail, lines: Array<{ purchase_order_line_id: string; quantity: number; unit_cost: number }>) => Promise<void> }) {
+function PurchaseOrdersPanel({ items, selectedId, detail, detailError, onRetryDetail, canMutate, pendingAction, emptyLabel = 'No purchase orders are awaiting work.', onSelect, onOpenDemand, onSubmit, onReceive }: { items: PurchaseOrder[]; selectedId: string | null; detail: PurchaseOrderDetail | undefined; detailError: boolean; onRetryDetail: () => void; canMutate: boolean; pendingAction: string | null; emptyLabel?: string; onSelect: (id: string) => void; onOpenDemand: () => void; onSubmit: (po: PurchaseOrderDetail) => Promise<void>; onReceive: (po: PurchaseOrderDetail, lines: Array<{ purchase_order_line_id: string; quantity: number; unit_cost: number }>) => Promise<void> }) {
   const [receiptQty, setReceiptQty] = useState<Record<string, string>>({})
   const [receiptCost, setReceiptCost] = useState<Record<string, string>>({})
   const receive = async () => { if (!detail) return; const lines = detail.lines.map((line) => ({ purchase_order_line_id: line.id, quantity: Number(receiptQty[line.id] || 0), unit_cost: Number(receiptCost[line.id] || line.unit_cost) })).filter((line) => line.quantity > 0); if (lines.length) await onReceive(detail, lines) }
   return <MasterDetail listKey={items.map((item) => item.id).join('|')} selectedRowId={selectedId}
     listLabel="Purchase orders"
-    list={items.length ? items.map((po, index) => { const active = selectedId === po.id; return <button data-parts-row={po.id} type="button" aria-current={active ? 'true' : undefined} tabIndex={active || (!selectedId && index === 0) ? 0 : -1} className={active ? 'is-active' : ''} key={po.id} onClick={() => onSelect(po.id)}><span><strong>{po.po_number}</strong><small>{po.supplier?.name || 'Supplier'} · {po.remaining_quantity} packages awaiting receipt</small></span><Status status={po.status} /></button> }) : <Empty label="No purchase orders are awaiting work." action={<button className="db-parts-operations__inline-action" type="button" onClick={onOpenDemand}>Review demand</button>} />}
+    list={items.length ? items.map((po, index) => { const active = selectedId === po.id; return <button data-parts-row={po.id} type="button" aria-current={active ? 'true' : undefined} tabIndex={active || (!selectedId && index === 0) ? 0 : -1} className={active ? 'is-active' : ''} key={po.id} onClick={() => onSelect(po.id)}><span><strong>{po.po_number}</strong><small>{po.supplier?.name || 'Supplier'} · {po.remaining_quantity} packages awaiting receipt</small></span><Status status={po.status} /></button> }) : <Empty label={emptyLabel} action={<button className="db-parts-operations__inline-action" type="button" onClick={onOpenDemand}>Review parts</button>} />}
     detail={detailError ? <InlineFailure label="This purchase order could not be loaded." onRetry={onRetryDetail} /> : detail ? <><DetailHeader title={detail.po_number}><p>{detail.supplier?.name || 'Supplier'} · {humanize(detail.status)} · {detail.remaining_quantity} packages awaiting receipt</p></DetailHeader><div className="db-parts-operations__line-list">{detail.lines.map((line) => <div key={line.id}><span><strong>{line.description}</strong><small>{line.sku} · {line.received_quantity}/{line.ordered_quantity} received · ${line.unit_cost}</small></span>{canMutate && ['submitted', 'partially_received'].includes(detail.status) && line.ordered_quantity > line.received_quantity && <span className="db-parts-operations__receipt-inputs"><input disabled={pendingAction === `po-receipt-${detail.id}`} aria-label={`Receive quantity for ${line.sku}`} type="number" min={0} max={line.ordered_quantity - line.received_quantity} value={receiptQty[line.id] || ''} onChange={(event) => setReceiptQty((old) => ({ ...old, [line.id]: event.target.value }))} placeholder="Qty" /><input disabled={pendingAction === `po-receipt-${detail.id}`} aria-label={`Receipt unit cost for ${line.sku}`} type="number" min="0.01" step="0.01" value={receiptCost[line.id] ?? line.unit_cost} onChange={(event) => setReceiptCost((old) => ({ ...old, [line.id]: event.target.value }))} /></span>}</div>)}</div>{canMutate && detail.status === 'draft' && <button disabled={pendingAction === `po-submit-${detail.id}`} className="db-parts-operations__primary" type="button" onClick={() => void onSubmit(detail)}>{pendingAction === `po-submit-${detail.id}` ? 'Submitting…' : 'Submit purchase order'}</button>}{canMutate && ['submitted', 'partially_received'].includes(detail.status) && <button disabled={pendingAction === `po-receipt-${detail.id}`} className="db-parts-operations__primary" type="button" onClick={() => void receive()}>{pendingAction === `po-receipt-${detail.id}` ? 'Recording receipt…' : 'Record receipt'}</button>}{!canMutate && <p className="db-parts-operations__hint">Read-only access. Owners and admins can submit and receive this PO.</p>}</> : selectedId ? <p className="db-parts-operations__hint" role="status">Loading purchase order…</p> : <Empty label="Select a purchase order to view remaining quantities and receive stock." />}
   />
 }
@@ -805,7 +827,7 @@ function ReturnsCoresPanel({ view, onView, returns, returnsError, onRetryReturns
   </div>
 }
 
-function ActivityPanel({ movements, onOpenRepair }: { movements: Movement[]; onOpenRepair: (id: string) => void }) { return <div className="db-parts-operations__activity">{movements.length ? movements.map((row) => <article key={row.id}><div><strong>{row.inventory?.name || 'Inventory movement'}</strong><p>{humanize(row.movement_type)} · balance {row.balance_after} · WAC {row.wac_after ? `$${row.wac_after}` : '—'}</p></div><div>{row.source?.type === 'repair_order' ? <button type="button" onClick={() => onOpenRepair(row.source!.id)}>{row.source.order_number || 'Open repair order'}<ArrowRight aria-hidden="true" /></button> : <span>{row.source?.receipt_number || row.source?.return_number || 'Opening/manual record'}</span>}<time>{formatDate(row.occurred_at)}</time></div></article>) : <Empty label="No inventory activity yet" />}</div> }
+function ActivityPanel({ movements, onOpenRepair }: { movements: Movement[]; onOpenRepair: (id: string) => void }) { return <div className="db-parts-operations__activity">{movements.length ? movements.map((row) => <article key={row.id}><div><strong>{row.inventory?.name || 'Inventory change'}</strong><p>{stockActivityLabel(row.movement_type)} · {row.balance_after} available after change{row.wac_after ? ` · Average cost $${row.wac_after}` : ''}</p></div><div>{row.source?.type === 'repair_order' ? <button type="button" onClick={() => onOpenRepair(row.source!.id)}>{row.source.order_number || 'Open repair order'}<ArrowRight aria-hidden="true" /></button> : <span>{row.source?.receipt_number || row.source?.return_number || 'Stock record'}</span>}<time>{formatDate(row.occurred_at)}</time></div></article>) : <Empty label="No inventory changes yet" />}</div> }
 
 function Status({ status }: { status: string }) { return <span className={`db-parts-operations__status is-${status}`}>{humanize(status)}</span> }
 function Empty({ label, action }: { label: string; action?: ReactNode }) { return <div className="db-parts-operations__empty"><p>{label}</p>{action}</div> }

@@ -33,7 +33,7 @@ from app.db.models.repair_order import RepairOrder
 from app.db.models.inventory import Inventory, PartsUsage
 from app.db.models.supplier import Supplier
 from app.db.models.parts_operations import (
-    CoreObligation, InventoryCategory, InventoryMovement, PartsOperationIdempotency,
+    CoreObligation, InventoryCategory, InventoryMovement, InventorySupplierSource, PartsOperationIdempotency,
     PurchaseOrder, PurchaseOrderAttachment, PurchaseOrderLine, PurchaseReceipt,
     PurchaseReceiptLine, VendorReturn, VendorReturnLine,
 )
@@ -183,7 +183,7 @@ __all__ = [
     "QuickBooksConnection",
     "QuickBooksOAuthState",
     "QuickBooksWebhookEvent",
-    "InventoryCategory", "InventoryMovement", "PartsOperationIdempotency",
+    "InventoryCategory", "InventoryMovement", "InventorySupplierSource", "PartsOperationIdempotency",
     "PurchaseOrder", "PurchaseOrderAttachment", "PurchaseOrderLine",
     "PurchaseReceipt", "PurchaseReceiptLine", "CoreObligation",
     "VendorReturn", "VendorReturnLine",
