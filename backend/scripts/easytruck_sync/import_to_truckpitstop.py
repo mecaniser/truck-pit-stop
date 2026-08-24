@@ -522,6 +522,87 @@ def _create_invoice_and_payments(w, tenant_id, ro_id, order_number, service_no,
         stats["pay_ins"] += 1
 
 
+def _sync_payments_for_existing_invoices(conn, w, cur, tenant_id, invoices_by_service_no, stats, now):
+    """Add payments that landed on an invoice we already imported.
+
+    Payments were only ever written by _create_invoice_and_payments, which
+    returns early when the invoice already exists. So an invoice imported in one
+    run never picked up the payments made against it afterwards: 12 August
+    payments worth $8,811 sat in the scrape and never reached the database, and
+    invoices part-paid at import time stayed part-paid here forever even once the
+    shop had been paid in full.
+
+    Match on (amount, date) rather than position, since ETS is free to reorder
+    its payment list. Re-derives the invoice's paid status afterwards, so an
+    invoice that has since been settled starts counting as revenue.
+    """
+    by_invoice_no = {}
+    for svc, d in invoices_by_service_no.items():
+        num = d.get("invoiceNumber")
+        if num:
+            by_invoice_no[str(num)] = d
+
+    cur.execute(
+        """SELECT id, invoice_number, total_amount, status, paid_at
+             FROM invoices
+            WHERE tenant_id=%s AND source=%s AND deleted_at IS NULL
+              AND status <> 'cancelled'""",
+        (tenant_id, IMPORT_SOURCE))
+    for inv in cur.fetchall():
+        ets_no = (inv["invoice_number"] or "").replace("ETSINV-", "").split("-")[0]
+        d = by_invoice_no.get(ets_no)
+        if not d:
+            continue
+        scraped = [(Decimal(str(p["amount"])), _parse_ets_date(p.get("date")))
+                   for p in (d.get("payments") or [])]
+        if not scraped:
+            continue
+
+        cur.execute(
+            """SELECT amount, created_at, payment_number FROM payments
+                WHERE invoice_id=%s AND deleted_at IS NULL""", (inv["id"],))
+        existing = cur.fetchall()
+        # Match on AMOUNT only, as a multiset. Dates are not reliable for this:
+        # payments written by an earlier import carry that run's timestamp rather
+        # than the date ETS recorded, so pairing on (amount, date) failed to
+        # recognise them and re-inserted every one — 42 invoices ended up with
+        # doubled payments. Amount alone still distinguishes counts correctly:
+        # two payments of the same value are two entries in the multiset.
+        remaining = [Decimal(str(r["amount"])) for r in existing]
+        missing = []
+        for amt, dt in scraped:
+            if amt in remaining:
+                remaining.remove(amt)
+            else:
+                missing.append((amt, dt))
+        if not missing:
+            continue
+
+        seq = len(existing)
+        for amt, dt in missing:
+            seq += 1
+            when = dt or now
+            w.execute(
+                """INSERT INTO payments (id, tenant_id, invoice_id, payment_number,
+                     amount, method, status, source, created_at, updated_at)
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+                (uuid.uuid4(), tenant_id, inv["id"],
+                 f"{inv['invoice_number']}-PAY-{seq}", amt, "other", "completed",
+                 IMPORT_SOURCE, when, when))
+            stats["pay_synced"] += 1
+
+        # An invoice settled since the last import should now count as revenue.
+        total_paid = sum(a for a, _ in scraped)
+        invoice_total = Decimal(str(inv["total_amount"] or 0))
+        if inv["status"] != "paid" and total_paid >= (invoice_total - Decimal("0.01")):
+            dates = [dt for _, dt in scraped if dt]
+            w.execute(
+                """UPDATE invoices SET status='paid', paid_at=%s, updated_at=%s
+                    WHERE id=%s""",
+                (max(dates) if dates else now, now, inv["id"]))
+            stats["inv_now_paid"] += 1
+
+
 def resync(conn, tenant_id, commit):
     customers = json.loads(DATA_FILE.read_text())
     recs = build_records(customers, tenant_id)
@@ -560,7 +641,8 @@ def resync(conn, tenant_id, commit):
     stats = {"cust_ins": 0, "cust_upd": 0, "cust_skip_edited": 0,
              "veh_ins": 0, "veh_upd": 0, "veh_skip_edited": 0,
              "ro_ins": 0, "ro_exists": 0,
-             "inv_ins": 0, "inv_no_data": 0, "pay_ins": 0, "inv_dup_skipped": 0}
+             "inv_ins": 0, "inv_no_data": 0, "pay_ins": 0, "inv_dup_skipped": 0,
+             "pay_synced": 0, "inv_now_paid": 0}
 
     w = conn.cursor()
     cust_uuid_by_ets = {}
@@ -674,6 +756,11 @@ def resync(conn, tenant_id, commit):
         _create_invoice_and_payments(w, tenant_id, ro_row["id"], order_number,
                                       service_no, invoices_by_service_no,
                                       existing_invoice_numbers, stats, now)
+
+    # Payments made against invoices we already hold are not covered by the
+    # creation path above, which skips an invoice that exists. Sync them here.
+    _sync_payments_for_existing_invoices(
+        conn, w, cur, tenant_id, invoices_by_service_no, stats, now)
 
     w.close()
     cur.close()
