@@ -23,8 +23,15 @@ from app.db.models.vehicle import Vehicle
 @pytest.mark.asyncio
 async def test_report_service_joins_never_resolve_cross_tenant_source_names(db_session):
     suffix = uuid4().hex
-    tenant = Tenant(name="Report shop", slug=f"report-{suffix}")
-    foreign_tenant = Tenant(name="Foreign shop", slug=f"foreign-{suffix}")
+    # Pin both tenants to UTC. The reports resolve "this month" against the
+    # tenant's own timezone (default America/New_York), while this test stamps
+    # paid_at with datetime.now(timezone.utc). Between 00:00 and 04:00 UTC the
+    # UTC date is already the next day in New York, so paid_at landed past the
+    # range end and the report correctly returned nothing — the test failed for
+    # four hours a day depending only on when CI happened to run. This test is
+    # about tenant isolation, so take the timezone out of it.
+    tenant = Tenant(name="Report shop", slug=f"report-{suffix}", timezone="UTC")
+    foreign_tenant = Tenant(name="Foreign shop", slug=f"foreign-{suffix}", timezone="UTC")
     db_session.add_all([tenant, foreign_tenant])
     await db_session.flush()
     customer = Customer(
