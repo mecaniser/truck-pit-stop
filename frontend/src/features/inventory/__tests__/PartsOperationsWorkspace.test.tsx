@@ -168,6 +168,8 @@ describe('DB-038 Parts Operations workspace', () => {
     await user.click(await screen.findByRole('tab', { name: 'Inventory' }))
     const selectedRow = screen.getByRole('button', { name: /Air filter/i })
     expect(selectedRow).toHaveAttribute('aria-current', 'true')
+    expect(screen.getByText(/No unit specified/)).toBeInTheDocument()
+    expect(screen.queryByText(/undefined/)).not.toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'Edit inventory controls' }))
     await user.clear(screen.getByLabelText('On hand')); await user.type(screen.getByLabelText('On hand'), '7')
     await user.clear(screen.getByLabelText('On order')); await user.type(screen.getByLabelText('On order'), '4')
