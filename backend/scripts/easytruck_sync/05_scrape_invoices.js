@@ -4,6 +4,7 @@ const fs = require('fs');
 const path = require('path');
 const { loginSession, SHOP, BASE } = require('./lib/auth');
 const { parseInvoicePage } = require('./lib/invoice_parse');
+const { extractLaborHours } = require('./lib/invoice_json');
 
 const CUSTOMER_DETAILS_FILE = path.join(__dirname, 'data', 'customer_details.json');
 const OUT_FILE = path.join(__dirname, 'data', 'invoices.json');
@@ -38,7 +39,16 @@ function getAllServiceNumbers() {
       await page.goto(`${BASE}/${SHOP}/services/${serviceNo}/invoice`, { waitUntil: 'networkidle', timeout: 20000 });
       await page.waitForTimeout(400);
       const text = await page.locator('body').innerText();
-      results[serviceNo] = parseInvoicePage(text);
+      const parsed = parseInvoicePage(text);
+
+      // "Invoiced Hours" is not derivable from the rendered page text — ETS
+      // computes it server-side from a field ("service_item.charged", minutes)
+      // that only exists in the page's embedded Inertia JSON. See
+      // lib/invoice_json.js for how it was reverse-engineered and verified.
+      const raw = await page.evaluate(() => document.querySelector('[data-page]')?.getAttribute('data-page') || null);
+      parsed.laborHours = extractLaborHours(raw);
+
+      results[serviceNo] = parsed;
     } catch (e) {
       failures.push({ serviceNo, reason: e.message });
     }

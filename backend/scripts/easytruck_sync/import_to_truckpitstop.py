@@ -518,18 +518,20 @@ def _create_invoice_and_payments(w, tenant_id, ro_id, order_number, service_no,
     if is_paid:
         payment_dates = [d for d in (_parse_ets_date(p.get("date")) for p in payments) if d]
         paid_at = max(payment_dates) if payment_dates else None
+    invoiced_at = _parse_ets_date(inv_data.get("invoiceDate"))
+    invoiced_at = invoiced_at.date() if invoiced_at else None
     invoice_id = uuid.uuid4()
     w.execute(
         """INSERT INTO invoices (id, tenant_id, repair_order_id, invoice_number,
              is_internal, status, subtotal, shop_supplies_amount, service_fee_amount,
              tax_amount, discount_amount, total_amount, paid_at, source,
              zelle_pending_reminder_count, reminder_count, quickbooks_sync_status,
-             created_at, updated_at)
-           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+             ets_invoiced_at, created_at, updated_at)
+           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
         (invoice_id, tenant_id, ro_id, invoice_number, False,
          "paid" if is_paid else "sent", subtotal, fees, Decimal("0.00"),
          tax_amount, Decimal("0.00"), total_amount, paid_at, IMPORT_SOURCE,
-         0, 0, "pending", now, now))
+         0, 0, "pending", invoiced_at, now, now))
     stats["inv_ins"] += 1
 
     for idx, p in enumerate(payments, start=1):
@@ -744,6 +746,21 @@ def resync(conn, tenant_id, commit):
         _inv = invoices_by_service_no.get(r["service_no"])
         _first_for_service = f"ETSINV-{(_inv or {}).get('invoiceNumber') or r['service_no']}" not in existing_invoice_numbers
         ro_parts, ro_labor = _ro_money_split(_inv if _first_for_service else None, r["total_cost"])
+
+        # Hours default to the service-history duration field, which is
+        # "0:00 Minutes" on every row this shop has (no time-clocking is in
+        # use) and falls back to a hardcoded 1.00 — 117h against ETS's 683.2h
+        # for the same month. When this RO carries the invoice, use the real
+        # figure ETS itself reports: see lib/invoice_json.js for how
+        # laborHours is derived and verified (683.10h against ETS's 683.2h,
+        # a 0.1h rounding difference, across every August labor line).
+        ro_hours = r["labor_hours"]
+        ro_rate = r["labor_rate"]
+        if _first_for_service and _inv and _inv.get("laborHours") is not None:
+            ro_hours = Decimal(str(_inv["laborHours"])).quantize(Decimal("0.01"))
+            if ro_hours > 0:
+                ro_rate = (ro_labor / ro_hours).quantize(Decimal("0.01"))
+
         w.execute(
             """INSERT INTO repair_orders (id, tenant_id, customer_id, vehicle_id, order_number,
                  status, description, mileage_in, mileage_out, total_parts_cost, total_labor_cost,
@@ -758,8 +775,8 @@ def resync(conn, tenant_id, commit):
             """INSERT INTO labor (id, tenant_id, repair_order_id, description, hours,
                  hourly_rate, total_cost, line_type, created_at, updated_at)
                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
-            (uuid.uuid4(), r["tenant_id"], ro_id, r["description"], r["labor_hours"],
-             r["labor_rate"], r["total_cost"], "manual", now, now))
+            (uuid.uuid4(), r["tenant_id"], ro_id, r["description"], ro_hours,
+             ro_rate, r["total_cost"], "manual", now, now))
         stats["ro_ins"] += 1
 
         _create_invoice_and_payments(w, r["tenant_id"], ro_id, r["order_number"],
@@ -772,7 +789,13 @@ def resync(conn, tenant_id, commit):
     # ROs up through 2026-07-22 under a different invoice_number scheme, e.g.
     # "ETSINV-1007"; anything after that has nothing). Match on repair_order_id
     # membership, not invoice_number, since that older scheme differs from ours.
-    cur.execute("SELECT DISTINCT repair_order_id FROM invoices WHERE tenant_id=%s", (tenant_id,))
+    # Exclude cancelled/deleted invoices from "already covered" — an RO whose
+    # only invoice was cancelled (e.g. by remove_duplicate_ets_invoices.py)
+    # still needs a real one, or its hours/revenue vanish from every report.
+    cur.execute(
+        """SELECT DISTINCT repair_order_id FROM invoices
+            WHERE tenant_id=%s AND deleted_at IS NULL AND status <> 'cancelled'""",
+        (tenant_id,))
     already_invoiced_ro_ids = {r["repair_order_id"] for r in cur.fetchall()}
     service_no_by_order_number = {r["order_number"]: r["service_no"] for r in recs["repair_orders"]}
     for order_number, ro_row in existing_ro.items():
