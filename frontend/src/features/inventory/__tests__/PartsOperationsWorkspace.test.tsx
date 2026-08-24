@@ -97,6 +97,41 @@ function installInventoryControlsFixture() {
   })
 }
 
+function installSelectionLifecycleFixture() {
+  const engineOil = { ...oilFilter, inventory_id: 'engine-oil', sku: 'ENG-OIL-10W30', name: 'Engine oil Delo 10w30', recommended_order_packages: 9 }
+  const fuelFilter = { ...oilFilter, inventory_id: 'fuel-filter', sku: 'FUEL-FILTER-KIT', name: 'Fuel Filter Kit', recommended_order_packages: 3 }
+  const inventory = [
+    { ...inventoryItem, id: engineOil.inventory_id, name: engineOil.name, sku: engineOil.sku, stock_quantity: 4, reorder_level: 6 },
+    { ...inventoryItem, id: fuelFilter.inventory_id, name: fuelFilter.name, sku: fuelFilter.sku, stock_quantity: 8, reorder_level: 3 },
+  ]
+  const purchaseOrders = [
+    { id: 'po-first', po_number: 'PO-FIRST', supplier_id: fixture.ids.supplier, supplier: oilFilter.preferred_supplier, status: 'submitted', version: 1, expected_at: null, line_count: 1, ordered_quantity: 9, received_quantity: 0, remaining_quantity: 9, created_at: fixture.frozen_at },
+    { id: 'po-second', po_number: 'PO-SECOND', supplier_id: fixture.ids.supplier, supplier: oilFilter.preferred_supplier, status: 'draft', version: 1, expected_at: null, line_count: 1, ordered_quantity: 3, received_quantity: 0, remaining_quantity: 3, created_at: fixture.frozen_at },
+  ]
+  const purchaseOrderDetails = Object.fromEntries(purchaseOrders.map((po) => [po.id, { ...po, notes: null, lines: [{ id: `${po.id}-line`, inventory_id: engineOil.inventory_id, sku: engineOil.sku, description: engineOil.name, unit_type: engineOil.unit_type, unit_cost: '20.00', ordered_quantity: po.ordered_quantity, received_quantity: 0 }] }]))
+  const returns = [
+    { id: 'return-first', return_number: 'RET-FIRST', supplier_id: fixture.ids.supplier, supplier: oilFilter.preferred_supplier, kind: 'stock', status: 'submitted', version: 1, line_count: 1, total_quantity: 1, expected_credit_total: '20.00', reverses_return_id: null, created_at: fixture.frozen_at },
+    { id: 'return-second', return_number: 'RET-SECOND', supplier_id: fixture.ids.supplier, supplier: oilFilter.preferred_supplier, kind: 'stock', status: 'draft', version: 1, line_count: 1, total_quantity: 2, expected_credit_total: '40.00', reverses_return_id: null, created_at: fixture.frozen_at },
+  ]
+  const returnDetails = Object.fromEntries(returns.map((row) => [row.id, { ...row, reason: 'Supplier return', notes: null, lines: [{ id: `${row.id}-line`, inventory: { id: engineOil.inventory_id, sku: engineOil.sku, name: engineOil.name }, quantity: row.total_quantity, expected_credit: row.expected_credit_total, actual_credit: null, source: { type: 'receipt', id: 'receipt-source' } }] }]))
+  const cores = [
+    { id: 'core-first', inventory_id: engineOil.inventory_id, inventory: { id: engineOil.inventory_id, sku: engineOil.sku, name: 'Engine oil core' }, supplier_id: fixture.ids.supplier, supplier: oilFilter.preferred_supplier, quantity: 1, status: 'on_hand', version: 1, unit_core_value: '20.00', source: { repair_order_id: fixture.ids.repair_order, order_number: 'TPS-000301' }, created_at: fixture.frozen_at },
+    { id: 'core-second', inventory_id: fuelFilter.inventory_id, inventory: { id: fuelFilter.inventory_id, sku: fuelFilter.sku, name: 'Fuel filter core' }, supplier_id: fixture.ids.supplier, supplier: oilFilter.preferred_supplier, quantity: 1, status: 'expected', version: 1, unit_core_value: '15.00', source: { repair_order_id: fixture.ids.repair_order, order_number: 'TPS-000302' }, created_at: fixture.frozen_at },
+  ]
+  apiMocks.get.mockImplementation((url: string) => {
+    if (url === '/parts-operations/summary') return Promise.resolve({ data: { low_stock_count: 1, open_purchase_order_count: 2 } })
+    if (url === '/parts-operations/demand') return Promise.resolve({ data: { items: [engineOil, fuelFilter], total: 2, skip: 0, limit: 100, has_more: false } })
+    if (url === '/inventory') return Promise.resolve({ data: { items: inventory, total: 2, skip: 0, limit: 100, has_more: false } })
+    if (url === '/parts-operations/purchase-orders') return Promise.resolve({ data: { items: purchaseOrders, total: 2, skip: 0, limit: 100, has_more: false } })
+    if (url.startsWith('/parts-operations/purchase-orders/')) return Promise.resolve({ data: purchaseOrderDetails[url.split('/').at(-1)!] })
+    if (url === '/parts-operations/returns') return Promise.resolve({ data: { items: returns, total: 2, skip: 0, limit: 100, has_more: false } })
+    if (url.startsWith('/parts-operations/returns/')) return Promise.resolve({ data: returnDetails[url.split('/').at(-1)!] })
+    if (url === '/parts-operations/cores') return Promise.resolve({ data: { items: cores, total: 2, skip: 0, limit: 100, has_more: false } })
+    if (url === '/parts-operations/activity') return Promise.resolve({ data: { items: [], total: 0, skip: 0, limit: 100, has_more: false } })
+    throw new Error(`Unexpected GET ${url}`)
+  })
+}
+
 describe('DB-038 Parts Operations workspace', () => {
   afterEach(() => { apiMocks.get.mockReset(); apiMocks.post.mockReset(); authState.role = 'garage_owner'; brandingState.name = 'Truck Pit Stop Wisconsin'; brandingState.logoUrl = 'https://images.example.test/tenant-logo.png' })
   it('falls back to the existing catalog only when the server says the feature is unavailable', async () => { apiMocks.get.mockRejectedValue(Object.assign(new Error('off'), { response: { status: 404 } })); renderGate(); expect(await screen.findByText('Legacy inventory catalog')).toBeInTheDocument() })
@@ -191,7 +226,7 @@ describe('DB-038 Parts Operations workspace', () => {
     fireEvent.error(screen.getByRole('img', { name: 'Truck Pit Stop Wisconsin logo placeholder for Coolant' }))
     expect(screen.getByRole('img', { name: 'No image available for Coolant' })).toContainElement(screen.getByTestId('part-detail-fallback'))
   })
-  it('filters and stably sorts inventory while clearing hidden selection and offering one reset path', async () => {
+  it('filters and stably sorts inventory while re-homing hidden selection and offering one reset path', async () => {
     installInventoryControlsFixture()
     const user = userEvent.setup()
     renderGate()
@@ -230,8 +265,9 @@ describe('DB-038 Parts Operations workspace', () => {
     await user.click(screen.getByRole('button', { name: /Brake shoe/i }))
     expect(screen.getByTestId('parts-selection-status')).toHaveTextContent('Needs reorder')
     await user.click(screen.getByRole('button', { name: 'In stock' }))
-    expect(screen.getByText('Select an inventory item to review stock and activity.')).toBeInTheDocument()
-    expect(screen.getByTestId('parts-selection-status')).toHaveTextContent('')
+    expect(screen.getByRole('button', { name: /Coolant/i })).toHaveAttribute('aria-current', 'true')
+    expect(screen.getByRole('heading', { name: 'Coolant' })).toBeInTheDocument()
+    expect(screen.getByTestId('parts-selection-status')).toHaveTextContent('Coolant selected')
 
     await user.type(screen.getByLabelText('Search inventory'), 'Alpha Supply')
     expect(screen.getByText('0 of 5 inventory items')).toBeInTheDocument()
@@ -241,27 +277,82 @@ describe('DB-038 Parts Operations workspace', () => {
     expect(screen.getByLabelText('Search inventory')).toHaveValue('')
     expect(screen.getByLabelText('Sort inventory')).toHaveValue('catalog')
     expect(rows()[0]).toHaveAttribute('tabindex', '0')
+    expect(rows()[0]).toHaveAttribute('aria-current', 'true')
   })
-  it('clears demand selection and its draft form when search changes instead of carrying a quantity to another part', async () => {
+  it('re-homes demand selection and atomically resets its draft form when search changes', async () => {
     installDemandSelectionFixture()
     const user = userEvent.setup()
     renderGate()
-    await user.click(await screen.findByRole('button', { name: /Engine oil Delo 10w30/i }))
+    const engineOil = await screen.findByRole('button', { name: /Engine oil Delo 10w30/i })
+    expect(engineOil).toHaveAttribute('aria-current', 'true')
     expect(screen.getByLabelText('Packages')).toHaveValue(9)
     expect(screen.getByTestId('parts-selection-status')).toHaveTextContent('Engine oil Delo 10w30 selected.')
 
     await user.clear(screen.getByLabelText('Search demand'))
     await user.type(screen.getByLabelText('Search demand'), 'Fuel Filter')
-    expect(screen.getByText('Select a demand item to inspect its repair and replenishment sources.')).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Create draft PO' })).not.toBeInTheDocument()
-    expect(screen.getByTestId('parts-selection-status')).toHaveTextContent('')
-
-    await user.click(screen.getByRole('button', { name: /Fuel Filter Kit/i }))
+    expect(screen.getByRole('button', { name: /Fuel Filter Kit/i })).toHaveAttribute('aria-current', 'true')
     expect(screen.getByLabelText('Packages')).toHaveValue(3)
     expect(screen.getByTestId('parts-selection-status')).toHaveTextContent('Fuel Filter Kit selected.')
     await user.type(screen.getByLabelText('PO number'), 'PO-FUEL-001')
     await user.click(screen.getByRole('button', { name: 'Create draft PO' }))
     await waitFor(() => expect(apiMocks.post).toHaveBeenCalledWith('/parts-operations/purchase-orders', expect.objectContaining({ lines: [expect.objectContaining({ inventory_id: 'fuel-filter', ordered_quantity: 3 })] }), expect.anything()))
+  })
+  it('explicitly selects the first visible row on every master tab and return/core activation', async () => {
+    installSelectionLifecycleFixture()
+    const user = userEvent.setup()
+    renderGate()
+    const rows = () => screen.queryAllByRole('button').filter((button) => button.hasAttribute('data-parts-row'))
+    const expectSingleCurrentRow = (name: RegExp) => {
+      const visibleRows = rows()
+      const current = visibleRows.filter((row) => row.getAttribute('aria-current') === 'true')
+      const tabStops = visibleRows.filter((row) => row.getAttribute('tabindex') === '0')
+      expect(current).toHaveLength(1)
+      expect(tabStops).toHaveLength(1)
+      expect(current[0]).toBe(tabStops[0])
+      expect(current[0]).toHaveAccessibleName(name)
+    }
+
+    await screen.findByRole('button', { name: /Engine oil Delo 10w30/i })
+    expectSingleCurrentRow(/Engine oil Delo 10w30/i)
+    expect(screen.getByLabelText('Packages')).toHaveValue(9)
+    await user.click(screen.getByRole('button', { name: /Fuel Filter Kit/i }))
+    expectSingleCurrentRow(/Fuel Filter Kit/i)
+    await user.click(screen.getByRole('tab', { name: 'Inventory' }))
+    expectSingleCurrentRow(/Engine oil Delo 10w30/i)
+    await user.click(screen.getByRole('tab', { name: 'Demand' }))
+    expectSingleCurrentRow(/Engine oil Delo 10w30/i)
+    expect(screen.getByLabelText('Packages')).toHaveValue(9)
+
+    await user.click(screen.getByRole('tab', { name: 'Purchase orders' }))
+    expectSingleCurrentRow(/PO-FIRST/i)
+    expect(await screen.findByRole('heading', { name: 'PO-FIRST' })).toBeInTheDocument()
+    expect(apiMocks.get).toHaveBeenCalledWith('/parts-operations/purchase-orders/po-first')
+
+    await user.click(screen.getByRole('tab', { name: 'Returns & cores' }))
+    expectSingleCurrentRow(/RET-FIRST/i)
+    expect(await screen.findByRole('heading', { name: 'RET-FIRST' })).toBeInTheDocument()
+    expect(apiMocks.get).toHaveBeenCalledWith('/parts-operations/returns/return-first')
+    await user.click(screen.getByRole('tab', { name: 'Cores' }))
+    expectSingleCurrentRow(/Engine oil core/i)
+    expect(screen.getByRole('heading', { name: 'Engine oil core' })).toBeInTheDocument()
+    await user.click(screen.getByRole('tab', { name: 'Returns' }))
+    expectSingleCurrentRow(/RET-FIRST/i)
+    await user.click(screen.getByRole('tab', { name: 'Activity' }))
+    expect(rows()).toHaveLength(0)
+  })
+  it('preserves a visible inventory selection through every sort order', async () => {
+    installInventoryControlsFixture()
+    const user = userEvent.setup()
+    renderGate()
+    await user.click(await screen.findByRole('tab', { name: 'Inventory' }))
+    const brake = screen.getByRole('button', { name: /Brake shoe/i })
+    await user.click(brake)
+    for (const sort of ['low-stock', 'high-stock', 'name-desc', 'name-asc']) {
+      await user.selectOptions(screen.getByLabelText('Sort inventory'), sort)
+      const selected = screen.getByRole('button', { name: /Brake shoe/i })
+      expect(selected).toHaveAttribute('aria-current', 'true')
+      expect(selected).toHaveAttribute('tabindex', '0')
+    }
   })
   it('keeps one keyboard-operable primary selection and nests return/core selection only inside its panel', async () => {
     installFixture()

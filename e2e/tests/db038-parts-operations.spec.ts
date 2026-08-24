@@ -70,6 +70,49 @@ const purchaseOrderDetail = {
   }],
 } as const
 
+const vendorReturn = {
+  id: 'return-visual-audit',
+  return_number: 'RET-DB038-001',
+  supplier_id: fixture.ids.supplier,
+  supplier: fixture.read_contract.expected_oil_filter_demand.preferred_supplier,
+  kind: 'stock',
+  status: 'submitted',
+  version: 1,
+  line_count: 1,
+  total_quantity: 1,
+  expected_credit_total: '20.00',
+  reverses_return_id: null,
+  created_at: fixture.frozen_at,
+} as const
+
+const vendorReturnDetail = {
+  ...vendorReturn,
+  reason: 'Supplier return',
+  notes: null,
+  lines: [{
+    id: 'return-line-visual-audit',
+    inventory: { id: fixture.ids.oil_filter, sku: fixture.read_contract.expected_oil_filter_demand.sku, name: fixture.read_contract.expected_oil_filter_demand.name },
+    quantity: 1,
+    expected_credit: '20.00',
+    actual_credit: null,
+    source: { type: 'receipt', id: 'receipt-visual-audit' },
+  }],
+} as const
+
+const coreObligation = {
+  id: 'core-visual-audit',
+  inventory_id: fixture.ids.oil_filter,
+  inventory: { id: fixture.ids.oil_filter, sku: fixture.read_contract.expected_oil_filter_demand.sku, name: 'Oil filter core' },
+  supplier_id: fixture.ids.supplier,
+  supplier: fixture.read_contract.expected_oil_filter_demand.preferred_supplier,
+  quantity: 1,
+  status: 'on_hand',
+  version: 1,
+  unit_core_value: '20.00',
+  source: { repair_order_id: fixture.ids.repair_order, order_number: 'TPS-000301' },
+  created_at: fixture.frozen_at,
+} as const
+
 function rgbChannels(value: string) {
   const channels = value.match(/[\d.]+/g)?.slice(0, 3).map(Number)
   if (!channels || channels.length !== 3) throw new Error(`Expected an rgb color, received ${value}`)
@@ -147,6 +190,13 @@ async function expectSelectedPartImage(image: Locator, width: number) {
   }
 }
 
+async function expectSingleMasterSelection(page: Page, expected: Locator) {
+  await expect(page.locator('[data-parts-row][aria-current="true"]')).toHaveCount(1)
+  await expect(page.locator('[data-parts-row][tabindex="0"]')).toHaveCount(1)
+  await expect(expected).toHaveAttribute('aria-current', 'true')
+  await expect(expected).toHaveAttribute('tabindex', '0')
+}
+
 async function installFixture(page: Page, { tenantLogoUrl = '/db038-tenant-logo.svg' }: { tenantLogoUrl?: string } = {}) {
   const failures: string[] = []
   const expectedImageFailureResponses = new Set<string>()
@@ -211,8 +261,9 @@ async function installFixture(page: Page, { tenantLogoUrl = '/db038-tenant-logo.
     if (url.pathname.endsWith('/inventory')) return json({ items: inventoryItems, total: inventoryItems.length, skip: 0, limit: 100, has_more: false })
     if (url.pathname.endsWith('/parts-operations/purchase-orders') && route.request().method() === 'GET') return json({ items: [purchaseOrder], total: 1, skip: 0, limit: 100, has_more: false })
     if (url.pathname.endsWith(`/parts-operations/purchase-orders/${purchaseOrder.id}`)) return json(purchaseOrderDetail)
-    if (url.pathname.endsWith('/parts-operations/returns')) return json({ items: [], total: 0, skip: 0, limit: 100, has_more: false })
-    if (url.pathname.endsWith('/parts-operations/cores')) return json({ items: [], total: 0, skip: 0, limit: 100, has_more: false })
+    if (url.pathname.endsWith(`/parts-operations/returns/${vendorReturn.id}`)) return json(vendorReturnDetail)
+    if (url.pathname.endsWith('/parts-operations/returns')) return json({ items: [vendorReturn], total: 1, skip: 0, limit: 100, has_more: false })
+    if (url.pathname.endsWith('/parts-operations/cores')) return json({ items: [coreObligation], total: 1, skip: 0, limit: 100, has_more: false })
     if (url.pathname.endsWith('/parts-operations/activity')) return json({ items: [], total: 0, skip: 0, limit: 100, has_more: false })
     if (url.pathname.endsWith('/messages/threads')) return json({ items: [], next_cursor: null, has_more: false })
     if (url.pathname.endsWith('/mechanics') || url.pathname.endsWith('/admin/staff') || url.pathname.endsWith('/mechanics/pto-requests/pending')) return json([])
@@ -233,6 +284,9 @@ test('DB-038 contains a 100-row master/detail workstation across responsive view
     const primaryTabs = page.getByRole('tablist', { name: 'Parts Operations areas' })
     await expect(primaryTabs.locator('[role="tab"][aria-selected="true"]')).toHaveCount(1)
     const demandRows = page.locator('[data-parts-row]')
+    await expectSingleMasterSelection(page, demandRows.first())
+    await expect(page.getByRole('img', { name: 'Air filter part photo' })).toBeVisible()
+    await page.screenshot({ path: testInfo.outputPath(`db038-first-selection-${width}.png`), fullPage: false })
     await expect(demandRows.first().locator('[data-image-source="part"] img')).toBeVisible()
     await demandRows.first().click()
     const demandPartPhoto = page.getByRole('img', { name: 'Air filter part photo' })
@@ -255,6 +309,7 @@ test('DB-038 contains a 100-row master/detail workstation across responsive view
     await expect(primaryTabs.locator('[role="tab"][aria-selected="true"]')).toHaveCount(1)
     await expect(page.getByRole('region', { name: 'Inventory results, 100 shown of 100', exact: true })).toHaveAttribute('tabindex', '0')
     const inventoryRows = page.locator('[data-parts-row]')
+    await expectSingleMasterSelection(page, inventoryRows.first())
     await expect(inventoryRows.first().locator('[data-image-source="part"] img')).toBeVisible()
     await expect(inventoryRows.nth(1).locator('[data-image-source="logo"] img')).toBeVisible()
     await expect(inventoryRows.nth(2).locator('[data-image-source="logo"] img')).toBeVisible()
@@ -285,12 +340,16 @@ test('DB-038 contains a 100-row master/detail workstation across responsive view
     await inventoryRows.getByText('Brake shoe', { exact: true }).click()
     await expect(page.getByTestId('parts-selection-status')).toContainText('Needs reorder')
     await stockFilters.getByRole('button', { name: 'In stock', exact: true }).click()
-    await expect(page.getByText('Select an inventory item to review stock and activity.')).toBeVisible()
+    await expectSingleMasterSelection(page, page.getByRole('button', { name: /Coolant/i }))
+    await expect(page.getByRole('heading', { name: 'Coolant' })).toBeVisible()
     await page.getByLabel('Search inventory').fill('Alpha Supply')
     await expect(page.getByText('0 of 100 inventory items')).toBeVisible()
+    await expect(page.locator('[data-parts-row][aria-current="true"]')).toHaveCount(0)
+    await expect(page.locator('[data-parts-row][tabindex="0"]')).toHaveCount(0)
     await page.getByRole('button', { name: 'Reset inventory view' }).click()
     await expect(page.getByText('100 inventory items')).toBeVisible()
     await expect(page.getByLabel('Sort inventory')).toHaveValue('catalog')
+    await expectSingleMasterSelection(page, inventoryRows.first())
     await inventoryRows.first().focus()
     await page.keyboard.press('ArrowDown')
     await expect(inventoryRows.first()).toHaveAttribute('tabindex', '-1')
@@ -299,11 +358,24 @@ test('DB-038 contains a 100-row master/detail workstation across responsive view
     await page.getByLabel('Search inventory').fill('Supplier 100')
     await expect(page.getByText('1 of 100 inventory items')).toBeVisible()
     await expect(inventoryRows.first()).toContainText('Fleet filter 100')
+    await expectSingleMasterSelection(page, inventoryRows.first())
     if (width === 1280 || width === 390) await page.screenshot({ path: testInfo.outputPath(`db038-inventory-operate-${width}.png`), fullPage: false })
+    await primaryTabs.getByRole('tab', { name: 'Purchase orders' }).click()
+    await expectSingleMasterSelection(page, page.getByRole('button', { name: /PO-DB038-001/i }))
+    await expect(page.getByRole('heading', { name: 'PO-DB038-001' })).toBeVisible()
     await primaryTabs.getByRole('tab', { name: 'Returns & cores' }).click()
     await expect(primaryTabs.locator('[role="tab"][aria-selected="true"]')).toHaveCount(1)
     const custodyTabs = page.getByRole('tablist', { name: 'Return and core custody view' })
     await expect(custodyTabs.locator('[role="tab"][aria-selected="true"]')).toHaveCount(1)
+    await expectSingleMasterSelection(page, page.getByRole('button', { name: /RET-DB038-001/i }))
+    await expect(page.getByRole('heading', { name: 'RET-DB038-001' })).toBeVisible()
+    await custodyTabs.getByRole('tab', { name: 'Cores' }).click()
+    await expectSingleMasterSelection(page, page.getByRole('button', { name: /Oil filter core/i }))
+    await expect(page.getByRole('heading', { name: 'Oil filter core' })).toBeVisible()
+    await custodyTabs.getByRole('tab', { name: 'Returns' }).click()
+    await expectSingleMasterSelection(page, page.getByRole('button', { name: /RET-DB038-001/i }))
+    await primaryTabs.getByRole('tab', { name: 'Activity' }).click()
+    await expect(page.locator('[data-parts-row]')).toHaveCount(0)
     expect(await page.locator('body').evaluate(node => node.scrollWidth <= window.innerWidth)).toBe(true)
     expect(errors.get(page)).toEqual([])
     await context.close()
@@ -338,7 +410,8 @@ test('DB-038 captures initial and scrolled demand/detail states with real owned 
   expect([...fixtureRuntime.expectedImageFailureResponses].some(url => new URL(url).pathname === '/db038-broken-image.svg')).toBe(true)
   expect([...fixtureRuntime.expectedImageFailureResponses].some(url => new URL(url).pathname === '/db038-broken-logo.svg')).toBe(true)
   await page.getByRole('tab', { name: 'Purchase orders' }).click()
-  await page.getByRole('button', { name: /PO-DB038-001/i }).click()
+  await expectSingleMasterSelection(page, page.getByRole('button', { name: /PO-DB038-001/i }))
+  await expect(page.getByRole('heading', { name: 'PO-DB038-001' })).toBeVisible()
   await expectStandaloneField(page.getByLabel(`Receive quantity for ${purchaseOrderDetail.lines[0].sku}`))
   await expectStandaloneField(page.getByLabel(`Receipt unit cost for ${purchaseOrderDetail.lines[0].sku}`))
   await page.screenshot({ path: testInfo.outputPath('db038-controls-audit-1280.png'), fullPage: false })
