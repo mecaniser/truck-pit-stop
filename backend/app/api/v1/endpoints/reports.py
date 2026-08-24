@@ -222,21 +222,56 @@ async def get_reports_dashboard(
                     part_sales_by_week[idx] += 1
                 services_by_week[idx] += 1
 
-    # Invoiced hours: labor hours on paid orders in range.
+    # Invoiced hours. An ordinary DieselBridge invoice has no date of its own
+    # distinct from when it was paid, so it keeps counting by payment date —
+    # the same cash basis every other figure here uses. An ETS-imported
+    # invoice DOES carry its own issue date (ets_invoiced_at), and ETS's own
+    # Invoiced Hours groups by THAT, not by payment date: summing hours for
+    # every August-dated ETS invoice regardless of payment status matched
+    # ETS's reported 683.2h to 0.1h. Grouped by payment date instead it read
+    # 943.90h, 38% high — some July work paid in August pulled in, some
+    # August work not yet paid dropped out.
+    ets_dated_result = await db.execute(
+        select(RepairOrder.id, Invoice.ets_invoiced_at)
+        .join(Invoice, Invoice.repair_order_id == RepairOrder.id)
+        .where(
+            Invoice.tenant_id == tenant_id,
+            Invoice.is_internal.is_(False),
+            Invoice.deleted_at.is_(None),
+            Invoice.status != InvoiceStatus.CANCELLED,
+            Invoice.ets_invoiced_at.is_not(None),
+        )
+    )
+    ets_invoiced_date_by_ro: Dict[UUID, date] = dict(ets_dated_result.all())
+
+    order_paid_date = {ro.id: (pay.created_at.date() if pay.created_at else rng.start)
+                       for pay, _inv, ro in paid_rows}
+    hours_ro_dates: Dict[UUID, date] = {}
+    for oid in order_ids:
+        ets_date = ets_invoiced_date_by_ro.get(oid)
+        if ets_date is not None:
+            # This RO's real invoice date wins even though a payment landed
+            # in this range — a payment alone doesn't put it in this period.
+            if rng.start <= ets_date <= rng.end:
+                hours_ro_dates[oid] = ets_date
+        else:
+            hours_ro_dates[oid] = order_paid_date.get(oid, rng.start)
+    for oid, ets_date in ets_invoiced_date_by_ro.items():
+        if oid not in order_ids and rng.start <= ets_date <= rng.end:
+            hours_ro_dates[oid] = ets_date
+
     invoiced_hours_total = Decimal("0.00")
-    if order_ids:
+    if hours_ro_dates:
         labor_result = await db.execute(
             select(Labor.repair_order_id, func.coalesce(func.sum(Labor.hours), 0))
-            .where(Labor.repair_order_id.in_(order_ids))
+            .where(Labor.repair_order_id.in_(list(hours_ro_dates.keys())))
             .group_by(Labor.repair_order_id)
         )
         hours_by_order = dict(labor_result.all())
-        order_paid_date = {ro.id: (pay.created_at.date() if pay.created_at else rng.start)
-                           for pay, _inv, ro in paid_rows}
         for oid, hours in hours_by_order.items():
             hours_dec = Decimal(str(hours or 0))
             invoiced_hours_total += hours_dec
-            idx = week_index(order_paid_date.get(oid, rng.start))
+            idx = week_index(hours_ro_dates.get(oid, rng.start))
             if idx is not None:
                 invoiced_hours_by_week[idx] += hours_dec
 

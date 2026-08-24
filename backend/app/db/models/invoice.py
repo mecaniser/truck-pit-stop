@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, DateTime, ForeignKey, Numeric, Text, Enum as SQLEnum, Integer, Boolean, Index, text
+from sqlalchemy import Column, String, DateTime, Date, ForeignKey, Numeric, Text, Enum as SQLEnum, Integer, Boolean, Index, text
 from sqlalchemy.orm import relationship
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 import enum
@@ -60,6 +60,11 @@ class Invoice(BaseModel):
     
     due_date = Column(DateTime(timezone=True), nullable=True)
     paid_at = Column(DateTime(timezone=True), nullable=True)
+    # The date Easy Truck Shop shows on the invoice itself. created_at is
+    # stamped at import time and cannot stand in for it. Only the Invoiced
+    # Hours report groups by this — every other report (revenue, parts,
+    # labor $) deliberately keeps its existing payment-date/cash basis.
+    ets_invoiced_at = Column(Date(), nullable=True, index=True)
     notes = Column(Text, nullable=True)
     source = Column(String(50), nullable=True, index=True)  # e.g. easy_truck_shop_import
     created_by_user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
