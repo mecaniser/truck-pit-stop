@@ -106,13 +106,13 @@ export default function MyGaragePage() {
     location.pathname.startsWith('/dashboard/garage/inventory')
 
   return (
-    <div className="db-my-shop-workspace flex w-full flex-1 flex-col gap-6 lg:h-[calc(100vh-9.25rem)] lg:min-h-0 lg:flex-none lg:flex-row lg:items-stretch lg:overflow-hidden">
+    <div className="db-my-shop-workspace flex w-full flex-1 flex-col gap-6 md:h-[calc(100dvh-9.25rem)] md:min-h-0 md:flex-none md:overflow-hidden lg:flex-row lg:items-stretch">
       <MobileGarageNav sections={GARAGE_SECTIONS} />
       <DesktopGarageNav sections={GARAGE_SECTIONS} />
 
       <div
-        className={`min-h-[400px] flex-1 scrollbar-dark lg:min-h-0 lg:pl-1.5 lg:pt-1.5 ${
-          usesInternalDesktopScroll ? 'lg:overflow-hidden' : 'lg:overflow-y-auto'
+        className={`min-h-[400px] flex-1 scrollbar-dark md:min-h-0 lg:pl-1.5 lg:pt-1.5 ${
+          usesInternalDesktopScroll ? 'md:overflow-hidden' : 'md:overflow-y-auto'
         }`}
       >
         <Routes>

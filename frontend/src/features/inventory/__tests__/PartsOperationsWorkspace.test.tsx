@@ -32,6 +32,33 @@ function installFixture() {
   apiMocks.post.mockResolvedValue({ data: { id: 'po-created' } })
 }
 
+function installLargeFixture() {
+  const demand = Array.from({ length: 100 }, (_, index) => ({
+    ...oilFilter,
+    inventory_id: `demand-${index + 1}`,
+    sku: `DB-FILTER-${String(index + 1).padStart(3, '0')}`,
+    name: `Fleet filter ${index + 1}`,
+    state: index === 99 ? 'unlinked' : 'open',
+    repair_shortage_packages: index % 2 === 0 ? 2 : 0,
+    shelf_replenishment_packages: index % 2 === 0 ? 0 : 1,
+    preferred_supplier: index === 99 ? null : oilFilter.preferred_supplier,
+  }))
+  const inventory = Array.from({ length: 100 }, (_, index) => ({
+    ...inventoryItem,
+    id: `inventory-${index + 1}`,
+    sku: `DB-INVENTORY-${String(index + 1).padStart(3, '0')}`,
+    name: `Fleet filter ${index + 1}`,
+  }))
+  apiMocks.get.mockImplementation((url: string) => {
+    if (url === '/parts-operations/summary') return Promise.resolve({ data: { low_stock_count: 50, open_purchase_order_count: 4 } })
+    if (url === '/parts-operations/demand') return Promise.resolve({ data: { items: demand, total: demand.length, skip: 0, limit: 100, has_more: false } })
+    if (url === '/inventory') return Promise.resolve({ data: { items: inventory, total: inventory.length, skip: 0, limit: 100, has_more: false } })
+    if (url === '/parts-operations/purchase-orders') return Promise.resolve({ data: { items: [], total: 0, skip: 0, limit: 100, has_more: false } })
+    if (url === '/parts-operations/returns' || url === '/parts-operations/cores' || url === '/parts-operations/activity') return Promise.resolve({ data: { items: [], total: 0, skip: 0, limit: 100, has_more: false } })
+    throw new Error(`Unexpected GET ${url}`)
+  })
+}
+
 describe('DB-038 Parts Operations workspace', () => {
   afterEach(() => { apiMocks.get.mockReset(); apiMocks.post.mockReset(); authState.role = 'garage_owner' })
   it('falls back to the existing catalog only when the server says the feature is unavailable', async () => { apiMocks.get.mockRejectedValue(Object.assign(new Error('off'), { response: { status: 404 } })); renderGate(); expect(await screen.findByText('Legacy inventory catalog')).toBeInTheDocument() })
@@ -56,5 +83,18 @@ describe('DB-038 Parts Operations workspace', () => {
     expect(inventory).toHaveAttribute('aria-selected', 'true')
     expect(inventory).toHaveFocus()
     expect(screen.getByRole('tabpanel', { name: 'Inventory' })).toBeInTheDocument()
+  })
+  it('keeps 100 loaded demand rows searchable, triageable, focusable, and selection-announced', async () => {
+    installLargeFixture()
+    const user = userEvent.setup()
+    renderGate()
+    expect(await screen.findByText('100 demand items')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Unlinked' }))
+    expect(screen.getByRole('region', { name: 'Demand results, 1 shown of 100' })).toHaveAttribute('tabindex', '0')
+    await user.click(screen.getByRole('button', { name: /Fleet filter 100/i }))
+    expect(screen.getByTestId('parts-selection-status')).toHaveTextContent('Fleet filter 100 selected.')
+    await user.click(screen.getByRole('button', { name: 'All demand' }))
+    await user.type(screen.getByLabelText('Search demand'), 'Fleet filter 100')
+    expect(screen.getByText('1 of 100 demand items')).toBeInTheDocument()
   })
 })
