@@ -135,9 +135,20 @@ async function expectStandaloneField(input: Locator) {
 
 async function installFixture(page: Page) {
   const failures: string[] = []
+  const expectedBrokenThumbnailResponses = new Set<string>()
   errors.set(page, failures)
+  page.on('response', response => {
+    const url = new URL(response.url())
+    if (url.pathname === '/db038-broken-image.svg' && response.status() === 404) {
+      expectedBrokenThumbnailResponses.add(response.url())
+    }
+  })
   page.on('console', message => {
-    if (message.type() === 'error') failures.push(`console: ${message.text()}`)
+    if (message.type() !== 'error') return
+    const locationUrl = message.location().url
+    const isExpectedBrokenThumbnail = message.text().startsWith('Failed to load resource:')
+      && expectedBrokenThumbnailResponses.has(locationUrl)
+    if (!isExpectedBrokenThumbnail) failures.push(`console: ${message.text()}`)
   })
   page.on('pageerror', error => failures.push(`pageerror: ${error.message}`))
   page.on('requestfailed', request => {
@@ -207,8 +218,10 @@ test('DB-038 contains a 100-row master/detail workstation across responsive view
     const demand = page.getByRole('tab', { name: 'Demand' })
     await expect(demand).toHaveCSS('min-height', '44px')
     await demand.focus()
+    const brokenThumbnailResponse = page.waitForResponse(response => new URL(response.url()).pathname === '/db038-broken-image.svg' && response.status() === 404)
     await page.keyboard.press('ArrowRight')
     await expect(page.getByRole('tab', { name: 'Inventory' })).toHaveAttribute('aria-selected', 'true')
+    await expect((await brokenThumbnailResponse).status()).toBe(404)
     await expectIntegratedSearch(page.getByRole('searchbox', { name: 'Search inventory' }))
     await expect(primaryTabs.locator('[role="tab"][aria-selected="true"]')).toHaveCount(1)
     await expect(page.getByRole('region', { name: 'Inventory results, 100 shown of 100', exact: true })).toHaveAttribute('tabindex', '0')
@@ -216,14 +229,15 @@ test('DB-038 contains a 100-row master/detail workstation across responsive view
     await expect(inventoryRows.first().locator('.db-parts-operations__thumbnail img')).toBeVisible()
     await expect(inventoryRows.nth(1).locator('.db-parts-operations__thumbnail svg')).toBeVisible()
     await expect(inventoryRows.nth(2).locator('.db-parts-operations__thumbnail svg')).toBeVisible()
-    for (const label of ['All stock', 'Needs reorder', 'Out of stock', 'In stock']) await expect(page.getByRole('button', { name: label })).toHaveCSS('min-height', '44px')
-    await page.getByRole('button', { name: 'Needs reorder' }).click()
+    const stockFilters = page.getByRole('group', { name: 'Inventory stock filter' })
+    for (const label of ['All stock', 'Needs reorder', 'Out of stock', 'In stock']) await expect(stockFilters.getByRole('button', { name: label, exact: true })).toHaveCSS('min-height', '44px')
+    await stockFilters.getByRole('button', { name: 'Needs reorder', exact: true }).click()
     await expect(page.getByText('2 of 100 inventory items')).toBeVisible()
-    await page.getByRole('button', { name: 'Out of stock' }).click()
+    await stockFilters.getByRole('button', { name: 'Out of stock', exact: true }).click()
     await expect(page.getByText('2 of 100 inventory items')).toBeVisible()
-    await page.getByRole('button', { name: 'In stock' }).click()
+    await stockFilters.getByRole('button', { name: 'In stock', exact: true }).click()
     await expect(page.getByText('96 of 100 inventory items')).toBeVisible()
-    await page.getByRole('button', { name: 'All stock' }).click()
+    await stockFilters.getByRole('button', { name: 'All stock', exact: true }).click()
     const sort = page.getByLabel('Sort inventory')
     await expect(sort).toHaveCSS('min-height', '44px')
     await sort.selectOption('low-stock')
@@ -236,7 +250,7 @@ test('DB-038 contains a 100-row master/detail workstation across responsive view
     await expect(inventoryRows.first()).toContainText('Air filter')
     await inventoryRows.getByText('Brake shoe', { exact: true }).click()
     await expect(page.getByTestId('parts-selection-status')).toContainText('Needs reorder')
-    await page.getByRole('button', { name: 'In stock' }).click()
+    await stockFilters.getByRole('button', { name: 'In stock', exact: true }).click()
     await expect(page.getByText('Select an inventory item to review stock and activity.')).toBeVisible()
     await page.getByLabel('Search inventory').fill('Alpha Supply')
     await expect(page.getByText('0 of 100 inventory items')).toBeVisible()
