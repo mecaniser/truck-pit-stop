@@ -1,0 +1,166 @@
+{
+  "frozen_at": "2026-08-23T14:00:00Z",
+  "tenant_ids": {
+    "primary": "10000000-0000-4000-8000-000000000038",
+    "foreign": "20000000-0000-4000-8000-000000000038"
+  },
+  "ids": {
+    "oil_filter": "10000000-0000-4000-8000-000000000101",
+    "coolant": "10000000-0000-4000-8000-000000000102",
+    "reman_starter": "10000000-0000-4000-8000-000000000103",
+    "placeholder_part": "10000000-0000-4000-8000-000000000104",
+    "foreign_lookalike": "20000000-0000-4000-8000-000000000101",
+    "purchase_order": "20000000-0000-4000-8000-000000000201",
+    "purchase_order_line": "20000000-0000-4000-8000-000000000211",
+    "purchase_receipt": "20000000-0000-4000-8000-000000000221",
+    "purchase_receipt_line": "20000000-0000-4000-8000-000000000222",
+    "repair_order": "30000000-0000-4000-8000-000000000301",
+    "parts_usage": "30000000-0000-4000-8000-000000000311",
+    "supplier": "40000000-0000-4000-8000-000000000401",
+    "category": "50000000-0000-4000-8000-000000000501",
+    "vendor_return": "60000000-0000-4000-8000-000000000601",
+    "vendor_return_line": "60000000-0000-4000-8000-000000000611",
+    "core_obligation": "70000000-0000-4000-8000-000000000701",
+    "movement": "80000000-0000-4000-8000-000000000801"
+  },
+  "inventory": [
+    {
+      "id": "10000000-0000-4000-8000-000000000101",
+      "sku": "DB-OIL-FILTER-01",
+      "name": "Oil filter",
+      "stock_quantity": 1,
+      "on_order_quantity": 0,
+      "reorder_level": 3,
+      "cost": "10.00",
+      "preferred_supplier_id": "40000000-0000-4000-8000-000000000401"
+    },
+    {
+      "id": "10000000-0000-4000-8000-000000000102",
+      "sku": "DB-COOLANT-01",
+      "name": "Coolant jug",
+      "stock_quantity": 3,
+      "on_order_quantity": 0,
+      "reorder_level": 2,
+      "cost": "18.00",
+      "preferred_supplier_id": "40000000-0000-4000-8000-000000000401"
+    },
+    {
+      "id": "10000000-0000-4000-8000-000000000103",
+      "sku": "DB-STARTER-01",
+      "name": "Reman starter",
+      "stock_quantity": 2,
+      "on_order_quantity": 0,
+      "reorder_level": 1,
+      "cost": "100.00",
+      "core_charge": "50.00",
+      "preferred_supplier_id": "40000000-0000-4000-8000-000000000401"
+    },
+    {
+      "id": "10000000-0000-4000-8000-000000000104",
+      "sku": "UNLINKED-001",
+      "name": "Unlinked seal kit",
+      "stock_quantity": 0,
+      "on_order_quantity": 0,
+      "reorder_level": 0,
+      "cost": "0.00",
+      "is_placeholder": true
+    },
+    {
+      "id": "20000000-0000-4000-8000-000000000101",
+      "sku": "DB-OIL-FILTER-01",
+      "name": "Foreign oil filter",
+      "stock_quantity": 99,
+      "reorder_level": 0,
+      "cost": "1.00",
+      "tenant_id": "20000000-0000-4000-8000-000000000038"
+    }
+  ],
+  "read_contract": {
+    "defaults": {
+      "skip": 0,
+      "limit": 50,
+      "paginated": false
+    },
+    "paginated_keys": [
+      "items",
+      "total",
+      "skip",
+      "limit",
+      "has_more"
+    ],
+    "demand_filters": {
+      "state": [
+        "open",
+        "covered",
+        "unlinked"
+      ],
+      "supplier_id": "40000000-0000-4000-8000-000000000401",
+      "search": "oil filter"
+    },
+    "expected_oil_filter_demand": {
+      "inventory_id": "10000000-0000-4000-8000-000000000101",
+      "sku": "DB-OIL-FILTER-01",
+      "name": "Oil filter",
+      "unit_type": "each",
+      "state": "open",
+      "stock_quantity": 1,
+      "reorder_level": 3,
+      "repair_shortage_packages": 2,
+      "shelf_replenishment_packages": 2,
+      "open_supply_packages": 1,
+      "recommended_order_packages": 3,
+      "preferred_supplier": {
+        "id": "40000000-0000-4000-8000-000000000401",
+        "name": "Fleet Parts Co",
+        "normalized_name": "fleet parts co"
+      },
+      "fresh_as_of": "2026-08-23T14:00:00Z",
+      "sources": [
+        {
+          "type": "repair_order",
+          "repair_order_id": "30000000-0000-4000-8000-000000000301",
+          "order_number": "TPS-000301",
+          "parts_usage_id": "30000000-0000-4000-8000-000000000311",
+          "packages": 2
+        },
+        {
+          "type": "reorder_level",
+          "packages": 2
+        },
+        {
+          "type": "purchase_order",
+          "purchase_order_id": "20000000-0000-4000-8000-000000000201",
+          "po_number": "PO-000201",
+          "purchase_order_line_id": "20000000-0000-4000-8000-000000000211",
+          "packages": 1
+        }
+      ]
+    },
+    "expected_return_source": {
+      "type": "purchase_receipt_line",
+      "id": "20000000-0000-4000-8000-000000000222",
+      "quantity": 1,
+      "vendor_return_id": "60000000-0000-4000-8000-000000000601"
+    }
+  },
+  "receipt": {
+    "first_quantity": 2,
+    "first_unit_cost": "16.00",
+    "second_quantity": 1,
+    "second_unit_cost": "7.00",
+    "expected_wac_after_second": "13.00"
+  },
+  "scenarios": [
+    "opening_balance",
+    "repair_shortage",
+    "covered_demand",
+    "unlinked_demand",
+    "partial_receipt",
+    "duplicate_receipt_replay",
+    "over_receipt_race",
+    "stock_return_reversal",
+    "core_recovery",
+    "foreign_tenant_denial",
+    "disabled_rollout"
+  ]
+}

@@ -15,6 +15,7 @@ from sqlalchemy.orm import selectinload
 
 from app.core.config import settings
 from app.db.models.inventory import Inventory, PartsUsage
+from app.db.models.parts_operations import CoreObligation
 from app.db.models.labor import Labor, LaborLineType
 from app.db.models.labor_operation_memory import LaborOperationMemory
 from app.db.models.repair_order import RepairOrder, RepairOrderStatus
@@ -31,6 +32,7 @@ from app.services.repair_operation_library import (
     search_operation_library,
 )
 from app.services.internal_fleet import fleet_labor_uses_customer_rate
+from app.services.parts_operations_service import apply_inventory_movement
 from app.services.pricing import compute_canonical_order_totals
 from app.core.work_value_validation import validate_labor_hours, validate_part_quantity
 
@@ -425,20 +427,34 @@ class PriceBuildService:
                 continue
             unit_price = _part_unit_price_for(order, inv)
             line_total = _money(unit_price * Decimal(required_qty))
-            db.add(
-                PartsUsage(
-                    tenant_id=order.tenant_id,
-                    repair_order_id=order.id,
-                    inventory_id=inv.id,
-                    quantity=required_qty,
-                    unit_cost=inv.cost,
-                    unit_price=unit_price,
-                    list_price=unit_price,
-                    total_price=line_total,
-                    source_service_id=service.id,
-                )
+            part_usage = PartsUsage(
+                tenant_id=order.tenant_id,
+                repair_order_id=order.id,
+                inventory_id=inv.id,
+                quantity=required_qty,
+                unit_cost=inv.cost,
+                unit_price=unit_price,
+                list_price=unit_price,
+                total_price=line_total,
+                source_service_id=service.id,
+                stock_reserved_packages=packages_needed,
+                stock_shortage_override=False,
             )
-            inv.stock_quantity = (inv.stock_quantity or 0) - packages_needed
+            db.add(part_usage)
+            await db.flush()
+            if Decimal(inv.core_charge or 0) > 0:
+                db.add(CoreObligation(
+                    tenant_id=order.tenant_id, parts_usage_id=part_usage.id,
+                    inventory_id=inv.id, supplier_id=inv.preferred_supplier_id,
+                    quantity=packages_needed, unit_core_value_snapshot=inv.core_charge,
+                    status="expected",
+                ))
+            await apply_inventory_movement(
+                db, item=inv, quantity_delta=-packages_needed,
+                movement_type="repair_reservation", actor=None,
+                source_type="repair_order", source_id=order.id,
+                reason_code="bundled_service_part_reservation",
+            )
 
         result = await self.recalculate_order(db, order)
         result.warnings.extend(warnings)
@@ -731,8 +747,23 @@ class PriceBuildService:
             }
         for pu in parts:
             inv = locked_inventory.get(pu.inventory_id)
+            core = (await db.execute(select(CoreObligation).where(
+                CoreObligation.parts_usage_id == pu.id,
+                CoreObligation.deleted_at.is_(None),
+            ).with_for_update())).scalar_one_or_none()
+            if core is not None and core.status == "on_hand":
+                raise PriceBuildConflictError("Return or waive the recovered core before removing this service")
+            if core is not None and core.status == "expected":
+                core.status = "cancelled"
+                core.version += 1
             if inv:
-                inv.stock_quantity = (inv.stock_quantity or 0) + _packages_consumed(pu.quantity)
+                await apply_inventory_movement(
+                    db, item=inv, quantity_delta=_packages_consumed(pu.quantity),
+                    movement_type="repair_release", actor=None,
+                    source_type="repair_order", source_id=order.id,
+                    destination_type="parts_usage", destination_id=pu.id,
+                    reason_code="bundled_service_part_release",
+                )
             await db.delete(pu)
 
     async def recalculate_order(self, db: AsyncSession, order: RepairOrder) -> PriceBuildResult:

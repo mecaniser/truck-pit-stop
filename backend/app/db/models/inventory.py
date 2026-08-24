@@ -1,4 +1,4 @@
-from sqlalchemy import Boolean, Column, String, Integer, Numeric, ForeignKey, Text, Date, DateTime, and_, or_
+from sqlalchemy import BigInteger, Boolean, Column, String, Integer, Numeric, ForeignKey, Text, Date, DateTime, and_, or_
 from sqlalchemy.orm import relationship
 from sqlalchemy.dialects.postgresql import UUID
 from decimal import Decimal
@@ -15,6 +15,10 @@ class Inventory(BaseModel):
     name = Column(String(255), nullable=False)
     description = Column(Text, nullable=True)
     category = Column(String(100), nullable=True)
+    # DB-038 normalized catalog relations remain additive while legacy text
+    # category/supplier fields stay authoritative for compatibility.
+    category_id = Column(UUID(as_uuid=True), ForeignKey("inventory_categories.id"), nullable=True, index=True)
+    preferred_supplier_id = Column(UUID(as_uuid=True), ForeignKey("suppliers.id"), nullable=True, index=True)
     
     stock_quantity = Column(Integer, default=0, nullable=False)
     on_order_quantity = Column(Integer, default=0, nullable=False)
@@ -25,6 +29,7 @@ class Inventory(BaseModel):
     # old core is turned in. Feeds the inventory report's Core Value column
     # (core_charge x stock_quantity). 0 for parts with no core.
     core_charge = Column(Numeric(10, 2), default=Decimal("0.00"), nullable=False)
+    stock_version = Column(BigInteger, default=0, server_default="0", nullable=False)
 
     # Unit this part is dispensed in. "each" parts (filters, belts) use whole-number
     # quantities; fluids (oil, coolant, DEF) are dispensed in fractional amounts of
@@ -65,6 +70,8 @@ class Inventory(BaseModel):
     cloudinary_public_id = Column(String(255), nullable=True)
 
     parts_usage = relationship("PartsUsage", back_populates="inventory_item")
+    category_record = relationship("InventoryCategory", foreign_keys=[category_id])
+    preferred_supplier = relationship("Supplier", foreign_keys=[preferred_supplier_id])
 
     @staticmethod
     def needs_restock():

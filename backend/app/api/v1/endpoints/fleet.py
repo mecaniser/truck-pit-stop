@@ -90,6 +90,7 @@ from app.services.internal_fleet import (
     uses_internal_fleet_pricing,
 )
 from app.services.cloudinary_service import create_direct_image_upload_signature, is_cloudinary_configured, upload_work_photo
+from app.services.parts_operations_service import apply_inventory_movement
 from app.services.vehicle_identity import (
     duplicate_vin_detail,
     end_fleet_membership,
@@ -3143,7 +3144,12 @@ async def new_work_order(
             total_price=(unit_price * quantity).quantize(Decimal("0.01")),
             stock_reserved_packages=packages, stock_shortage_override=False,
         ))
-        item.stock_quantity = (item.stock_quantity or 0) - packages
+        await apply_inventory_movement(
+            db, item=item, quantity_delta=-packages,
+            movement_type="repair_reservation", actor=current_user,
+            source_type="repair_order", source_id=ro.id,
+            reason_code="fleet_work_order_part_reservation",
+        )
 
     from app.api.v1.endpoints.repair_orders import _refresh_repair_order_totals
 

@@ -10,6 +10,7 @@ from app.core.pagination import paginated_or_list
 from app.core.search import build_search
 from app.db.models.user import User, UserRole
 from app.db.models.supplier import Supplier
+from app.services.parts_operations_service import normalize_name
 
 router = APIRouter()
 
@@ -20,6 +21,8 @@ class SupplierBase(BaseModel):
     phone: Optional[str] = None
     contact_name: Optional[str] = None
     notes: Optional[str] = None
+    account_reference: Optional[str] = None
+    email: Optional[str] = None
 
 
 class SupplierCreate(SupplierBase):
@@ -32,11 +35,18 @@ class SupplierUpdate(BaseModel):
     phone: Optional[str] = None
     contact_name: Optional[str] = None
     notes: Optional[str] = None
+    account_reference: Optional[str] = None
+    email: Optional[str] = None
+    is_active: Optional[bool] = None
 
 
 class SupplierResponse(SupplierBase):
     id: UUID
     tenant_id: UUID
+    normalized_name: Optional[str] = None
+    is_active: bool = True
+    account_reference: Optional[str] = None
+    email: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -106,8 +116,17 @@ async def create_supplier(
     if not current_user.tenant_id:
         raise HTTPException(status_code=400, detail="User must be associated with a tenant")
 
+    normalized_name = normalize_name(data.name)
+    existing = (await db.execute(select(Supplier).where(
+        Supplier.tenant_id == current_user.tenant_id,
+        Supplier.normalized_name == normalized_name,
+        Supplier.deleted_at.is_(None),
+    ))).scalar_one_or_none()
+    if existing:
+        raise HTTPException(status_code=409, detail="Supplier already exists")
     supplier = Supplier(
         tenant_id=current_user.tenant_id,
+        normalized_name=normalized_name,
         **data.model_dump(exclude_unset=True),
     )
     db.add(supplier)
@@ -136,6 +155,17 @@ async def update_supplier(
         raise HTTPException(status_code=404, detail="Supplier not found")
 
     updates = data.model_dump(exclude_unset=True)
+    if "name" in updates:
+        normalized_name = normalize_name(updates["name"])
+        existing = (await db.execute(select(Supplier).where(
+            Supplier.tenant_id == current_user.tenant_id,
+            Supplier.normalized_name == normalized_name,
+            Supplier.id != supplier.id,
+            Supplier.deleted_at.is_(None),
+        ))).scalar_one_or_none()
+        if existing:
+            raise HTTPException(status_code=409, detail="Supplier already exists")
+        supplier.normalized_name = normalized_name
     for field, value in updates.items():
         setattr(supplier, field, value)
 

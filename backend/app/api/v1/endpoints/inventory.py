@@ -26,6 +26,7 @@ from app.services.cloudinary_service import (
 )
 from app.tasks.description_library_refresh import process_on_demand_library_regenerate
 from app.schemas.typeahead import InventoryTypeaheadResponse
+from app.services.parts_operations_service import apply_inventory_movement
 
 router = APIRouter()
 
@@ -135,6 +136,7 @@ class InventoryUpdate(BaseModel):
     # Setting this false promotes an ad-hoc placeholder into a normally
     # stocked part, keeping the repair-order history already attached to it.
     is_placeholder: Optional[bool] = None
+    stock_adjustment_reason: Optional[str] = None
 
 
 class ReceiveShipmentRequest(BaseModel):
@@ -395,17 +397,27 @@ async def create_inventory_item(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_admin()),
 ):
+    # Parts inventory is always tenant-owned; a tenantless administrative
+    # principal must never create an unscoped stock record.
     if not current_user.tenant_id:
-        raise HTTPException(status_code=400, detail="User must be associated with a tenant")
+        raise HTTPException(status_code=404, detail="Inventory item not found")
+    if data.stock_quantity < 0:
+        raise HTTPException(status_code=422, detail="Stock quantity cannot be negative")
 
-    item = Inventory(
-        tenant_id=current_user.tenant_id,
-        **data.model_dump(),
-    )
+    values = data.model_dump()
+    opening_quantity = values.pop("stock_quantity")
+    item = Inventory(tenant_id=current_user.tenant_id, stock_quantity=0, **values)
     db.add(item)
+    await db.flush()
+    if opening_quantity:
+        await apply_inventory_movement(
+            db, item=item, quantity_delta=opening_quantity,
+            movement_type="legacy_inventory_opening", actor=current_user,
+            source_type="legacy_inventory_create", source_id=item.id,
+            reason_code="opening_balance",
+        )
     await db.commit()
     await db.refresh(item)
-
     return _inventory_response(item)
 
 
@@ -439,8 +451,18 @@ async def preload_default_inventory(
     added = 0
     for item_data in DEFAULT_INVENTORY:
         if item_data["sku"] not in existing_skus:
-            item = Inventory(id=uuid4(), tenant_id=tenant_id, **item_data)
+            values = dict(item_data)
+            opening_quantity = int(values.pop("stock_quantity", 0))
+            item = Inventory(id=uuid4(), tenant_id=tenant_id, stock_quantity=0, **values)
             db.add(item)
+            await db.flush()
+            if opening_quantity:
+                await apply_inventory_movement(
+                    db, item=item, quantity_delta=opening_quantity,
+                    movement_type="legacy_inventory_opening", actor=current_user,
+                    source_type="legacy_inventory_preload", source_id=item.id,
+                    reason_code="opening_balance",
+                )
             added += 1
 
     await db.commit()
@@ -479,13 +501,13 @@ async def get_inventory_item(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
+    if not current_user.tenant_id:
+        raise HTTPException(status_code=404, detail="Inventory item not found")
     query = select(Inventory).where(
         Inventory.id == item_id,
-        Inventory.deleted_at.is_(None)
+        Inventory.deleted_at.is_(None),
+        Inventory.tenant_id == current_user.tenant_id,
     )
-    
-    if current_user.tenant_id:
-        query = query.where(Inventory.tenant_id == current_user.tenant_id)
     
     result = await db.execute(query)
     item = result.scalar_one_or_none()
@@ -503,13 +525,13 @@ async def update_inventory_item(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_admin()),
 ):
+    if not current_user.tenant_id:
+        raise HTTPException(status_code=404, detail="Inventory item not found")
     query = select(Inventory).where(
         Inventory.id == item_id,
-        Inventory.deleted_at.is_(None)
+        Inventory.deleted_at.is_(None),
+        Inventory.tenant_id == current_user.tenant_id,
     )
-
-    if current_user.tenant_id:
-        query = query.where(Inventory.tenant_id == current_user.tenant_id)
 
     result = await db.execute(query)
     item = result.scalar_one_or_none()
@@ -518,6 +540,26 @@ async def update_inventory_item(
         raise HTTPException(status_code=404, detail="Inventory item not found")
 
     updates = data.model_dump(exclude_unset=True)
+    adjustment_reason = updates.pop("stock_adjustment_reason", None)
+    requested_stock = updates.pop("stock_quantity", None)
+    if requested_stock is not None:
+        if requested_stock < 0:
+            raise HTTPException(status_code=422, detail="Stock quantity cannot be negative")
+        tenant_enabled = bool(settings.PARTS_OPERATIONS_V1_ENABLED and current_user.tenant_id and (
+            await db.execute(select(Tenant.parts_operations_enabled).where(Tenant.id == current_user.tenant_id))
+        ).scalar_one_or_none())
+        if tenant_enabled:
+            if not adjustment_reason or not adjustment_reason.strip():
+                raise HTTPException(status_code=422, detail="Stock adjustment reason is required")
+            delta = requested_stock - int(item.stock_quantity or 0)
+            if delta:
+                await apply_inventory_movement(
+                    db, item=item, quantity_delta=delta, movement_type="manual_adjustment",
+                    actor=current_user, source_type="legacy_inventory_update", source_id=item.id,
+                    reason_code="manual_adjustment", note=adjustment_reason.strip(),
+                )
+        else:
+            item.stock_quantity = requested_stock
     for field, value in updates.items():
         setattr(item, field, value)
 
@@ -537,19 +579,25 @@ async def receive_shipment(
     if body.quantity <= 0:
         raise HTTPException(status_code=400, detail="Quantity must be greater than zero")
 
+    if not current_user.tenant_id:
+        raise HTTPException(status_code=404, detail="Inventory item not found")
     query = select(Inventory).where(
         Inventory.id == item_id,
+        Inventory.tenant_id == current_user.tenant_id,
         Inventory.deleted_at.is_(None),
-    )
-    if current_user.tenant_id:
-        query = query.where(Inventory.tenant_id == current_user.tenant_id)
+    ).with_for_update()
 
     result = await db.execute(query)
     item = result.scalar_one_or_none()
     if not item:
         raise HTTPException(status_code=404, detail="Inventory item not found")
 
-    item.stock_quantity = (item.stock_quantity or 0) + body.quantity
+    await apply_inventory_movement(
+        db, item=item, quantity_delta=body.quantity,
+        movement_type="legacy_direct_receipt", actor=current_user,
+        source_type="legacy_inventory_receive", source_id=item.id,
+        reason_code="legacy_direct_receive",
+    )
     item.on_order_quantity = max(0, (item.on_order_quantity or 0) - body.quantity)
 
     await db.commit()
@@ -559,12 +607,13 @@ async def receive_shipment(
 
 
 async def _get_owned_inventory_item(db: AsyncSession, item_id: UUID, current_user: User) -> Inventory:
+    if not current_user.tenant_id:
+        raise HTTPException(status_code=404, detail="Inventory item not found")
     query = select(Inventory).where(
         Inventory.id == item_id,
         Inventory.deleted_at.is_(None),
+        Inventory.tenant_id == current_user.tenant_id,
     )
-    if current_user.tenant_id:
-        query = query.where(Inventory.tenant_id == current_user.tenant_id)
     result = await db.execute(query)
     item = result.scalar_one_or_none()
     if not item:

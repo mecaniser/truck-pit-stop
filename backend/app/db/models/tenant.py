@@ -29,6 +29,8 @@ class Tenant(BaseModel):
     staff_presentation_default = Column(
         String(16), default="legacy", server_default="legacy", nullable=False
     )
+    # DB-038 tenant rollout gate. This never substitutes for a staff role.
+    parts_operations_enabled = Column(Boolean, default=False, server_default="false", nullable=False)
 
     # Marketing-attribution webhook. The endpoint is tenant-owned; its signing
     # secret is encrypted at rest and is never returned by the settings API.

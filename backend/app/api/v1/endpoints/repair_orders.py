@@ -24,6 +24,7 @@ from app.db.models.vehicle_relationship import FleetMembership
 from app.db.models.invoice import Invoice, InvoiceStatus
 from app.db.models.tenant import Tenant
 from app.db.models.inventory import Inventory, PartsUsage
+from app.db.models.parts_operations import CoreObligation
 from app.db.models.labor import Labor, LaborLineType
 from app.db.models.service import Service
 from app.db.models.recommended_service import RecommendedService, RecommendedServicePriority
@@ -49,6 +50,7 @@ from app.services.repair_order_access import tenant_repair_order_statement
 from app.services.pricing import apply_canonical_order_totals, get_order_total
 from app.services.internal_fleet import fleet_labor_uses_customer_rate, uses_internal_fleet_pricing
 from app.services.vehicle_identity import ensure_vehicle_relationship
+from app.services.parts_operations_service import apply_inventory_movement
 from app.core.config import settings
 from app.core.metrics import record_repair_order_created
 from app.core.logging import get_logger
@@ -1641,7 +1643,12 @@ async def update_repair_order(
             for pu in parts_result.scalars().all():
                 if pu.inventory_item is not None:
                     # Restore exactly what this part row actually reserved.
-                    pu.inventory_item.stock_quantity = (pu.inventory_item.stock_quantity or 0) + _stock_packages_reserved(pu)
+                    await apply_inventory_movement(
+                db, item=pu.inventory_item, quantity_delta=_stock_packages_reserved(pu),
+                movement_type="repair_release", actor=None, source_type="repair_order",
+                source_id=order_id, destination_type="parts_usage", destination_id=pu.id,
+                reason_code="repair_order_stock_release",
+            )
                 await db.delete(pu)
 
     update_data = order_data.model_dump(exclude_unset=True)
@@ -3136,7 +3143,25 @@ async def _release_reserved_stock(db: AsyncSession, order_id: UUID) -> None:
     for pu in result.scalars().all():
         if pu.inventory_item is not None:
             # Give back only the packages this row actually reserved.
-            pu.inventory_item.stock_quantity = (pu.inventory_item.stock_quantity or 0) + _stock_packages_reserved(pu)
+            reserved = _stock_packages_reserved(pu)
+            if reserved:
+                await apply_inventory_movement(
+                    db, item=pu.inventory_item, quantity_delta=reserved,
+                    movement_type="repair_release", actor=None, source_type="repair_order",
+                    source_id=order_id, destination_type="parts_usage", destination_id=pu.id,
+                    reason_code="repair_order_stock_release",
+                )
+        # An unrecovered core is an expected custody obligation, not an asset.
+        # Deleting/cancelling its origin therefore cancels it without creating a
+        # saleable-stock movement; recovered cores remain protected elsewhere.
+        expected_core = (await db.execute(select(CoreObligation).where(
+            CoreObligation.parts_usage_id == pu.id,
+            CoreObligation.status == "expected",
+            CoreObligation.deleted_at.is_(None),
+        ).with_for_update())).scalar_one_or_none()
+        if expected_core is not None:
+            expected_core.status = "cancelled"
+            expected_core.version += 1
 
 
 async def _reserve_stock_again(db: AsyncSession, order_id: UUID) -> list[str]:
@@ -3161,11 +3186,22 @@ async def _reserve_stock_again(db: AsyncSession, order_id: UUID) -> list[str]:
         available = inv.stock_quantity or 0
         if available < needed:
             shortages.append(f"{inv.name} (need {needed}, {available} in stock)")
-            inv.stock_quantity = 0
+            if available:
+                await apply_inventory_movement(
+                    db, item=inv, quantity_delta=-available, movement_type="repair_reservation",
+                    actor=None, source_type="repair_order", source_id=order_id,
+                    destination_type="parts_usage", destination_id=pu.id,
+                    reason_code="repair_order_restore_reservation",
+                )
             pu.stock_reserved_packages = available
             pu.stock_shortage_override = True
         else:
-            inv.stock_quantity = available - needed
+            await apply_inventory_movement(
+                db, item=inv, quantity_delta=-needed, movement_type="repair_reservation",
+                actor=None, source_type="repair_order", source_id=order_id,
+                destination_type="parts_usage", destination_id=pu.id,
+                reason_code="repair_order_restore_reservation",
+            )
     return shortages
 
 
@@ -3673,7 +3709,20 @@ async def add_parts_to_repair_order(
     )
     db.add(pu)
     await db.flush()
-    inv.stock_quantity = available_packages - reserved_packages
+    if Decimal(inv.core_charge or 0) > 0:
+        db.add(CoreObligation(
+            tenant_id=order.tenant_id, parts_usage_id=pu.id, inventory_id=inv.id,
+            supplier_id=inv.preferred_supplier_id, quantity=max(1, int(math.ceil(body.quantity))),
+            unit_core_value_snapshot=inv.core_charge, status="expected",
+        ))
+    if reserved_packages:
+        await apply_inventory_movement(
+            db, item=inv, quantity_delta=-reserved_packages,
+            movement_type="repair_reservation", actor=current_user,
+            source_type="repair_order", source_id=order.id,
+            destination_type="parts_usage", destination_id=pu.id,
+            reason_code="repair_order_part_added",
+        )
     _record_repair_order_history_event(
         db,
         order=order,
@@ -3890,9 +3939,23 @@ async def update_parts_quantity(
                 )
             reserved_packages = min(new_packages, old_reserved_packages + available_packages)
             if reserved_packages >= old_reserved_packages:
-                inv.stock_quantity = available_packages - (reserved_packages - old_reserved_packages)
+                delta = reserved_packages - old_reserved_packages
+                if delta:
+                    await apply_inventory_movement(
+                        db, item=inv, quantity_delta=-delta, movement_type="repair_reservation",
+                        actor=current_user, source_type="repair_order", source_id=order.id,
+                        destination_type="parts_usage", destination_id=pu.id,
+                        reason_code="repair_order_part_quantity_increased",
+                    )
             else:
-                inv.stock_quantity = available_packages + (old_reserved_packages - reserved_packages)
+                delta = old_reserved_packages - reserved_packages
+                if delta:
+                    await apply_inventory_movement(
+                        db, item=inv, quantity_delta=delta, movement_type="repair_release",
+                        actor=current_user, source_type="repair_order", source_id=order.id,
+                        destination_type="parts_usage", destination_id=pu.id,
+                        reason_code="repair_order_part_quantity_reduced",
+                    )
             pu.stock_reserved_packages = reserved_packages
             pu.stock_shortage_override = reserved_packages < new_packages
         else:
@@ -4067,8 +4130,31 @@ async def remove_parts_from_repair_order(
                 .with_for_update()
             )
         ).scalar_one_or_none()
-    if inv is not None:
-        inv.stock_quantity += _stock_packages_reserved(pu)
+    on_hand_core = (await db.execute(select(CoreObligation).where(
+        CoreObligation.tenant_id == current_user.tenant_id,
+        CoreObligation.parts_usage_id == pu.id,
+        CoreObligation.deleted_at.is_(None),
+        CoreObligation.status == "on_hand",
+    ))).scalar_one_or_none()
+    if on_hand_core is not None:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Return or waive the recovered core before removing this part")
+    expected_core = (await db.execute(select(CoreObligation).where(
+        CoreObligation.tenant_id == current_user.tenant_id,
+        CoreObligation.parts_usage_id == pu.id,
+        CoreObligation.deleted_at.is_(None),
+        CoreObligation.status == "expected",
+    ).with_for_update())).scalar_one_or_none()
+    if expected_core is not None:
+        expected_core.status = "cancelled"
+        expected_core.version += 1
+    if inv is not None and _stock_packages_reserved(pu):
+        await apply_inventory_movement(
+            db, item=inv, quantity_delta=_stock_packages_reserved(pu),
+            movement_type="repair_release", actor=current_user,
+            source_type="repair_order", source_id=order.id,
+            destination_type="parts_usage", destination_id=pu.id,
+            reason_code="repair_order_part_removed",
+        )
     _record_repair_order_history_event(
         db,
         order=order,
