@@ -59,6 +59,24 @@ function installLargeFixture() {
   })
 }
 
+function installDemandSelectionFixture() {
+  const engineOil = { ...oilFilter, inventory_id: 'engine-oil', sku: 'ENG-OIL-10W30', name: 'Engine oil Delo 10w30', recommended_order_packages: 9 }
+  const fuelFilter = { ...oilFilter, inventory_id: 'fuel-filter', sku: 'FUEL-FILTER-KIT', name: 'Fuel Filter Kit', recommended_order_packages: 3 }
+  const inventory = [
+    { ...inventoryItem, id: engineOil.inventory_id, name: engineOil.name, sku: engineOil.sku },
+    { ...inventoryItem, id: fuelFilter.inventory_id, name: fuelFilter.name, sku: fuelFilter.sku },
+  ]
+  apiMocks.get.mockImplementation((url: string) => {
+    if (url === '/parts-operations/summary') return Promise.resolve({ data: { low_stock_count: 2, open_purchase_order_count: 0 } })
+    if (url === '/parts-operations/demand') return Promise.resolve({ data: { items: [engineOil, fuelFilter], total: 2, skip: 0, limit: 100, has_more: false } })
+    if (url === '/inventory') return Promise.resolve({ data: { items: inventory, total: inventory.length, skip: 0, limit: 100, has_more: false } })
+    if (url === '/parts-operations/purchase-orders') return Promise.resolve({ data: { items: [], total: 0, skip: 0, limit: 100, has_more: false } })
+    if (url === '/parts-operations/returns' || url === '/parts-operations/cores' || url === '/parts-operations/activity') return Promise.resolve({ data: { items: [], total: 0, skip: 0, limit: 100, has_more: false } })
+    throw new Error(`Unexpected GET ${url}`)
+  })
+  apiMocks.post.mockResolvedValue({ data: { id: 'po-created' } })
+}
+
 describe('DB-038 Parts Operations workspace', () => {
   afterEach(() => { apiMocks.get.mockReset(); apiMocks.post.mockReset(); authState.role = 'garage_owner' })
   it('falls back to the existing catalog only when the server says the feature is unavailable', async () => { apiMocks.get.mockRejectedValue(Object.assign(new Error('off'), { response: { status: 404 } })); renderGate(); expect(await screen.findByText('Legacy inventory catalog')).toBeInTheDocument() })
@@ -72,6 +90,27 @@ describe('DB-038 Parts Operations workspace', () => {
     await waitFor(() => expect(apiMocks.post).toHaveBeenCalledWith('/parts-operations/purchase-orders', expect.objectContaining({ supplier_id: fixture.ids.supplier, lines: [expect.objectContaining({ inventory_id: fixture.ids.oil_filter, ordered_quantity: 3 })] }), expect.objectContaining({ headers: expect.objectContaining({ 'Idempotency-Key': expect.stringMatching(/^po-create-/) }) })))
   })
   it('keeps reception staff read-only while exposing the same demand evidence', async () => { authState.role = 'receptionist'; installFixture(); const user = userEvent.setup(); renderGate(); await user.click(await screen.findByRole('button', { name: /Oil filter/i })); expect(screen.getByText(/Read-only access/)).toBeInTheDocument(); expect(screen.queryByRole('button', { name: 'Create draft PO' })).not.toBeInTheDocument() })
+  it('clears demand selection and its draft form when search changes instead of carrying a quantity to another part', async () => {
+    installDemandSelectionFixture()
+    const user = userEvent.setup()
+    renderGate()
+    await user.click(await screen.findByRole('button', { name: /Engine oil Delo 10w30/i }))
+    expect(screen.getByLabelText('Packages')).toHaveValue(9)
+    expect(screen.getByTestId('parts-selection-status')).toHaveTextContent('Engine oil Delo 10w30 selected.')
+
+    await user.clear(screen.getByLabelText('Search demand'))
+    await user.type(screen.getByLabelText('Search demand'), 'Fuel Filter')
+    expect(screen.getByText('Select a demand item to inspect its repair and replenishment sources.')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Create draft PO' })).not.toBeInTheDocument()
+    expect(screen.getByTestId('parts-selection-status')).toHaveTextContent('')
+
+    await user.click(screen.getByRole('button', { name: /Fuel Filter Kit/i }))
+    expect(screen.getByLabelText('Packages')).toHaveValue(3)
+    expect(screen.getByTestId('parts-selection-status')).toHaveTextContent('Fuel Filter Kit selected.')
+    await user.type(screen.getByLabelText('PO number'), 'PO-FUEL-001')
+    await user.click(screen.getByRole('button', { name: 'Create draft PO' }))
+    await waitFor(() => expect(apiMocks.post).toHaveBeenCalledWith('/parts-operations/purchase-orders', expect.objectContaining({ lines: [expect.objectContaining({ inventory_id: 'fuel-filter', ordered_quantity: 3 })] }), expect.anything()))
+  })
   it('keeps one keyboard-operable primary selection and nests return/core selection only inside its panel', async () => {
     installFixture()
     const user = userEvent.setup()
