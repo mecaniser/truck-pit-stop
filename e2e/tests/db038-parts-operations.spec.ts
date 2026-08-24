@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test'
+import { expect, test, type Locator, type Page } from '@playwright/test'
 import fixture from '../../backend/tests/fixtures/db038_parts_operations.json'
 import { garageOwnerSession } from '../../frontend/src/test-fixtures/db035/staffSession'
 
@@ -21,6 +21,99 @@ const inventoryItems = Array.from({ length: 100 }, (_, index) => ({
   sku: `DB-INVENTORY-${String(index + 1).padStart(3, '0')}`,
   name: `Fleet filter ${index + 1}`,
 }))
+
+const purchaseOrder = {
+  id: 'po-visual-audit',
+  po_number: 'PO-DB038-001',
+  supplier_id: fixture.ids.supplier,
+  supplier: fixture.read_contract.expected_oil_filter_demand.preferred_supplier,
+  status: 'submitted',
+  version: 1,
+  expected_at: null,
+  line_count: 1,
+  ordered_quantity: 3,
+  received_quantity: 0,
+  remaining_quantity: 3,
+  created_at: fixture.frozen_at,
+} as const
+
+const purchaseOrderDetail = {
+  ...purchaseOrder,
+  notes: null,
+  lines: [{
+    id: 'po-line-visual-audit',
+    inventory_id: fixture.ids.oil_filter,
+    sku: fixture.read_contract.expected_oil_filter_demand.sku,
+    description: fixture.read_contract.expected_oil_filter_demand.name,
+    unit_type: fixture.read_contract.expected_oil_filter_demand.unit_type,
+    unit_cost: '20.00',
+    ordered_quantity: 3,
+    received_quantity: 0,
+  }],
+} as const
+
+function rgbChannels(value: string) {
+  const channels = value.match(/[\d.]+/g)?.slice(0, 3).map(Number)
+  if (!channels || channels.length !== 3) throw new Error(`Expected an rgb color, received ${value}`)
+  return channels
+}
+
+function contrastRatio(foreground: string, background: string) {
+  const luminance = (color: string) => {
+    const [red, green, blue] = rgbChannels(color).map((channel) => {
+      const normalized = channel / 255
+      return normalized <= 0.03928 ? normalized / 12.92 : ((normalized + 0.055) / 1.055) ** 2.4
+    })
+    return (0.2126 * red) + (0.7152 * green) + (0.0722 * blue)
+  }
+  const lighter = Math.max(luminance(foreground), luminance(background))
+  const darker = Math.min(luminance(foreground), luminance(background))
+  return (lighter + 0.05) / (darker + 0.05)
+}
+
+async function expectIntegratedSearch(input: Locator) {
+  const shell = input.locator('..')
+  const styles = await input.evaluate((node) => {
+    const inputStyle = getComputedStyle(node)
+    const shellStyle = getComputedStyle(node.parentElement!)
+    const placeholderStyle = getComputedStyle(node, '::placeholder')
+    return {
+      background: inputStyle.backgroundColor,
+      borderWidths: [inputStyle.borderTopWidth, inputStyle.borderRightWidth, inputStyle.borderBottomWidth, inputStyle.borderLeftWidth],
+      borderRadius: inputStyle.borderRadius,
+      boxShadow: inputStyle.boxShadow,
+      color: inputStyle.color,
+      placeholder: placeholderStyle.color,
+      caret: inputStyle.caretColor,
+      shellBackground: shellStyle.backgroundColor,
+    }
+  })
+  expect(styles.background).toMatch(/,\s*0\)$/)
+  expect(styles.borderWidths).toEqual(['0px', '0px', '0px', '0px'])
+  expect(styles.borderRadius).toBe('0px')
+  expect(styles.boxShadow).toBe('none')
+  expect(contrastRatio(styles.color, styles.shellBackground)).toBeGreaterThanOrEqual(4.5)
+  expect(contrastRatio(styles.placeholder, styles.shellBackground)).toBeGreaterThanOrEqual(4.5)
+  expect(styles.caret).toBe(styles.color)
+
+  await input.focus()
+  const focus = await shell.evaluate((node) => {
+    const style = getComputedStyle(node)
+    return { outlineStyle: style.outlineStyle, outlineWidth: style.outlineWidth }
+  })
+  expect(focus.outlineStyle).not.toBe('none')
+  expect(focus.outlineWidth).not.toBe('0px')
+}
+
+async function expectStandaloneField(input: Locator) {
+  const styles = await input.evaluate((node) => {
+    const style = getComputedStyle(node)
+    return { background: style.backgroundColor, color: style.color, borderWidth: style.borderTopWidth }
+  })
+  expect(styles.background).not.toBe('rgba(0, 0, 0, 0)')
+  expect(styles.borderWidth).not.toBe('0px')
+  expect(contrastRatio(styles.color, styles.background)).toBeGreaterThanOrEqual(4.5)
+}
 
 async function installFixture(page: Page) {
   const failures: string[] = []
@@ -68,7 +161,8 @@ async function installFixture(page: Page) {
     if (url.pathname.endsWith('/parts-operations/summary')) return json({ low_stock_count: 50, open_purchase_order_count: 4 })
     if (url.pathname.endsWith('/parts-operations/demand')) return json({ items: demandItems, total: demandItems.length, skip: 0, limit: 100, has_more: false })
     if (url.pathname.endsWith('/inventory')) return json({ items: inventoryItems, total: inventoryItems.length, skip: 0, limit: 100, has_more: false })
-    if (url.pathname.endsWith('/parts-operations/purchase-orders') && route.request().method() === 'GET') return json({ items: [], total: 0, skip: 0, limit: 100, has_more: false })
+    if (url.pathname.endsWith('/parts-operations/purchase-orders') && route.request().method() === 'GET') return json({ items: [purchaseOrder], total: 1, skip: 0, limit: 100, has_more: false })
+    if (url.pathname.endsWith(`/parts-operations/purchase-orders/${purchaseOrder.id}`)) return json(purchaseOrderDetail)
     if (url.pathname.endsWith('/parts-operations/returns')) return json({ items: [], total: 0, skip: 0, limit: 100, has_more: false })
     if (url.pathname.endsWith('/parts-operations/cores')) return json({ items: [], total: 0, skip: 0, limit: 100, has_more: false })
     if (url.pathname.endsWith('/parts-operations/activity')) return json({ items: [], total: 0, skip: 0, limit: 100, has_more: false })
@@ -85,6 +179,7 @@ test('DB-038 contains a 100-row master/detail workstation across responsive view
     await installFixture(page)
     await page.goto('/dashboard/garage/inventory')
     await expect(page.getByRole('heading', { name: 'Supply, stock & custody' })).toBeVisible()
+    await expectIntegratedSearch(page.getByRole('searchbox', { name: 'Search demand' }))
     await expect(page.getByRole('list', { name: 'Parts operations workflow' })).toHaveCount(0)
     const primaryTabs = page.getByRole('tablist', { name: 'Parts Operations areas' })
     await expect(primaryTabs.locator('[role="tab"][aria-selected="true"]')).toHaveCount(1)
@@ -94,6 +189,7 @@ test('DB-038 contains a 100-row master/detail workstation across responsive view
     await demand.focus()
     await page.keyboard.press('ArrowRight')
     await expect(page.getByRole('tab', { name: 'Inventory' })).toHaveAttribute('aria-selected', 'true')
+    await expectIntegratedSearch(page.getByRole('searchbox', { name: 'Search inventory' }))
     await expect(primaryTabs.locator('[role="tab"][aria-selected="true"]')).toHaveCount(1)
     await expect(page.getByRole('region', { name: 'Inventory results, 100 shown of 100', exact: true })).toHaveAttribute('tabindex', '0')
     await page.getByLabel('Search inventory').fill('Fleet filter 100')
@@ -117,6 +213,18 @@ test('DB-038 captures initial and scrolled demand/detail states with real owned 
   await expect(demandList).toBeVisible()
   await expect(detail).toBeVisible()
   await expect(page.getByText('100 demand items')).toBeVisible()
+  await expectIntegratedSearch(page.getByRole('searchbox', { name: 'Search demand' }))
+  await page.getByRole('button', { name: /Fleet filter 1/i, exact: false }).first().click()
+  await expectStandaloneField(page.getByLabel('PO number'))
+  await expectStandaloneField(page.getByLabel('Packages'))
+  await page.getByRole('tab', { name: 'Inventory' }).click()
+  await expectIntegratedSearch(page.getByRole('searchbox', { name: 'Search inventory' }))
+  await page.getByRole('tab', { name: 'Purchase orders' }).click()
+  await page.getByRole('button', { name: /PO-DB038-001/i }).click()
+  await expectStandaloneField(page.getByLabel(`Receive quantity for ${purchaseOrderDetail.lines[0].sku}`))
+  await expectStandaloneField(page.getByLabel(`Receipt unit cost for ${purchaseOrderDetail.lines[0].sku}`))
+  await page.screenshot({ path: testInfo.outputPath('db038-controls-audit-1280.png'), fullPage: false })
+  await page.getByRole('tab', { name: 'Demand' }).click()
   await page.screenshot({ path: testInfo.outputPath('db038-demand-initial-1280.png'), fullPage: false })
   expect(await demandList.evaluate(node => getComputedStyle(node).overflowY)).toMatch(/auto|scroll/)
   expect(await detail.evaluate(node => getComputedStyle(node).overflowY)).toMatch(/auto|scroll/)

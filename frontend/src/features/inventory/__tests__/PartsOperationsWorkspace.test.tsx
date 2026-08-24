@@ -90,6 +90,20 @@ describe('DB-038 Parts Operations workspace', () => {
     await waitFor(() => expect(apiMocks.post).toHaveBeenCalledWith('/parts-operations/purchase-orders', expect.objectContaining({ supplier_id: fixture.ids.supplier, lines: [expect.objectContaining({ inventory_id: fixture.ids.oil_filter, ordered_quantity: 3 })] }), expect.objectContaining({ headers: expect.objectContaining({ 'Idempotency-Key': expect.stringMatching(/^po-create-/) }) })))
   })
   it('keeps reception staff read-only while exposing the same demand evidence', async () => { authState.role = 'receptionist'; installFixture(); const user = userEvent.setup(); renderGate(); await user.click(await screen.findByRole('button', { name: /Oil filter/i })); expect(screen.getByText(/Read-only access/)).toBeInTheDocument(); expect(screen.queryByRole('button', { name: 'Create draft PO' })).not.toBeInTheDocument() })
+  it('uses one composed search shell for both demand and inventory', async () => {
+    installFixture()
+    const user = userEvent.setup()
+    renderGate()
+
+    const demandSearch = await screen.findByRole('searchbox', { name: 'Search demand' })
+    expect(demandSearch.closest('label')).toHaveClass('db-parts-operations__search')
+    expect(demandSearch.closest('label')?.querySelectorAll('input')).toHaveLength(1)
+
+    await user.click(screen.getByRole('tab', { name: 'Inventory' }))
+    const inventorySearch = screen.getByRole('searchbox', { name: 'Search inventory' })
+    expect(inventorySearch.closest('label')).toHaveClass('db-parts-operations__search')
+    expect(inventorySearch.closest('label')?.querySelectorAll('input')).toHaveLength(1)
+  })
   it('clears demand selection and its draft form when search changes instead of carrying a quantity to another part', async () => {
     installDemandSelectionFixture()
     const user = userEvent.setup()
