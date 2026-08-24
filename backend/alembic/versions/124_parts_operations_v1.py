@@ -1,14 +1,14 @@
 """DB-038 immutable parts operations ledger and purchasing foundation.
 
-Revision ID: 122_parts_operations_v1
-Revises: 121_inventory_canonical_sku
+Revision ID: 124_parts_operations_v1
+Revises: 123_inventory_ets_imported_at
 """
 from alembic import op
 import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
-revision = "122_parts_operations_v1"
-down_revision = "121_inventory_canonical_sku"
+revision = "124_parts_operations_v1"
+down_revision = "123_inventory_ets_imported_at"
 branch_labels = None
 depends_on = None
 
@@ -190,7 +190,7 @@ def upgrade() -> None:
 
     op.execute("""
         INSERT INTO inventory_movements (tenant_id, inventory_id, bucket, movement_type, quantity_delta, balance_before, balance_after, unit_cost_snapshot, wac_before, wac_after, reason_code, occurred_at)
-        SELECT tenant_id, id, 'on_hand', 'migration_opening_balance', stock_quantity, 0, stock_quantity, cost, cost, cost, '122_parts_operations_v1', now()
+        SELECT tenant_id, id, 'on_hand', 'migration_opening_balance', stock_quantity, 0, stock_quantity, cost, cost, cost, '124_parts_operations_v1', now()
         FROM inventory WHERE deleted_at IS NULL AND stock_quantity > 0
     """)
 

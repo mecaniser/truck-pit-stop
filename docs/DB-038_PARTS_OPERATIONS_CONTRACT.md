@@ -43,7 +43,7 @@ Current inventory and supplier list/detail queries conditionally omit tenant pre
 
 ## 3. Data contract
 
-Migration revision: `122_parts_operations_v1`, directly after `121_inventory_canonical_sku`.
+Migration revision: `124_parts_operations_v1`, directly after `123_inventory_ets_imported_at`.
 
 Every new operational table has `tenant_id NOT NULL`, indexed tenant ownership, `created_at`, `updated_at`, and soft deletion only where stated. Relationships supplied by a caller are validated with tenant predicates before authorization-dependent disclosure. Cross-tenant foreign keys are prohibited by composite tenant/id constraints or equivalent database constraints plus service validation.
 
@@ -352,7 +352,7 @@ Rollback turns off the tenant or deployment gate and returns users to the existi
 
 ## 9. Migration and backfill
 
-Preflight must prove one Alembic head, revision `121_inventory_canonical_sku`, no live canonical-SKU duplicates, no negative balances/costs, and no orphaned `PartsUsage`/service-part inventory references. Failure aborts before schema/data mutation.
+Preflight must prove one Alembic head at revision `124_parts_operations_v1`, with the linear prerequisite chain through `121_inventory_canonical_sku`, `122_inventory_ets_retired_at`, and `123_inventory_ets_imported_at`, no live canonical-SKU duplicates, no negative balances/costs, and no orphaned `PartsUsage`/service-part inventory references. Failure aborts before schema/data mutation.
 
 Backfill rules:
 

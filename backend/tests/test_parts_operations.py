@@ -103,13 +103,13 @@ async def test_parts_operations_gate_roles_and_foreign_po_are_non_enumerating(cl
 
 def test_parts_operations_migration_supplier_backfill_uses_exact_windowed_match():
     """PostgreSQL has no min(uuid); only a single exact normalized match links it."""
-    migration = (Path(__file__).resolve().parents[1] / "alembic" / "versions" / "122_parts_operations_v1.py").read_text()
+    migration = (Path(__file__).resolve().parents[1] / "alembic" / "versions" / "124_parts_operations_v1.py").read_text()
     assert "min(s.id)" not in migration
     assert "count(s.id) OVER (PARTITION BY i.id) AS supplier_count" in migration
     assert "c.supplier_count = 1" in migration
 
 def test_parts_operations_migration_downgrade_drops_inventory_fks_before_category_table():
-    migration = (Path(__file__).resolve().parents[1] / "alembic" / "versions" / "122_parts_operations_v1.py").read_text()
+    migration = (Path(__file__).resolve().parents[1] / "alembic" / "versions" / "124_parts_operations_v1.py").read_text()
     downgrade = migration.split("def downgrade() -> None:", 1)[1]
     assert downgrade.index('op.drop_column("inventory", "category_id")') < downgrade.index('op.drop_table("inventory_categories")')
     assert '"inventory_categories"' not in downgrade.split('for table in (', 1)[1].split('):', 1)[0]
