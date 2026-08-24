@@ -20,6 +20,7 @@ import { formatUSPhone } from '../../utils/phone'
 import { useViewPreference } from '@/hooks/useViewPreference'
 import { useTheme } from '../../contexts/ThemeContext'
 import useTenantBranding from '@/hooks/useTenantBranding'
+import { PartsOperationsGate } from './PartsOperationsWorkspace'
 
 // Category ↔ unit linkage: fluid parts are dispensed by volume, so setting one
 // side fills in the other and saves a second click. Only defaults get touched —
@@ -281,7 +282,7 @@ function PlaceholderBadge() {
   )
 }
 
-export default function InventoryPage() {
+function LegacyInventoryPage() {
   const { accentColors } = useTheme()
   const { data: tenantBranding } = useTenantBranding()
   const fallbackPartImageUrl = tenantBranding?.logo_url || null
@@ -2129,4 +2130,8 @@ export default function InventoryPage() {
       )}
     </div>
   )
+}
+
+export default function InventoryPage() {
+  return <PartsOperationsGate legacy={<LegacyInventoryPage />} />
 }
