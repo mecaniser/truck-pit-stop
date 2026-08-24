@@ -1,6 +1,6 @@
 import { expect, test, type Locator, type Page } from '@playwright/test'
 import fixture from '../../backend/tests/fixtures/db038_parts_operations.json'
-import { garageOwnerSession } from '../../frontend/src/test-fixtures/db035/staffSession'
+import { garageOwnerSession, receptionistSession } from '../../frontend/src/test-fixtures/db035/staffSession'
 
 const errors = new WeakMap<Page, string[]>()
 
@@ -197,9 +197,23 @@ async function expectSingleMasterSelection(page: Page, expected: Locator) {
   await expect(expected).toHaveAttribute('tabindex', '0')
 }
 
-async function installFixture(page: Page, { tenantLogoUrl = '/db038-tenant-logo.svg' }: { tenantLogoUrl?: string } = {}) {
+type InventoryUpdate = { id: string; body: Record<string, unknown> }
+
+async function installFixture(page: Page, {
+  tenantLogoUrl = '/db038-tenant-logo.svg',
+  readOnly = false,
+  inventoryUpdateStatus = 200,
+  inventoryUpdates = [],
+}: {
+  tenantLogoUrl?: string
+  readOnly?: boolean
+  inventoryUpdateStatus?: number
+  inventoryUpdates?: InventoryUpdate[]
+} = {}) {
   const failures: string[] = []
+  const scopedInventoryItems = inventoryItems.map((item) => ({ ...item }))
   const expectedImageFailureResponses = new Set<string>()
+  const expectedApiFailureResponses = new Set<string>()
   const intentionalImageFailurePaths = new Set(['/db038-broken-image.svg', '/db038-broken-logo.svg'])
   errors.set(page, failures)
   page.on('response', response => {
@@ -207,13 +221,18 @@ async function installFixture(page: Page, { tenantLogoUrl = '/db038-tenant-logo.
     if (intentionalImageFailurePaths.has(url.pathname) && response.status() === 404) {
       expectedImageFailureResponses.add(response.url())
     }
+    if (/\/inventory\/[^/]+$/.test(url.pathname) && response.request().method() === 'PUT' && response.status() === inventoryUpdateStatus && inventoryUpdateStatus !== 200) {
+      expectedApiFailureResponses.add(response.url())
+    }
   })
   page.on('console', message => {
     if (message.type() !== 'error') return
     const locationUrl = message.location().url
     const isExpectedImageFailure = message.text().startsWith('Failed to load resource:')
       && expectedImageFailureResponses.has(locationUrl)
-    if (!isExpectedImageFailure) failures.push(`console: ${message.text()}`)
+    const isExpectedApiFailure = message.text().startsWith('Failed to load resource:')
+      && expectedApiFailureResponses.has(locationUrl)
+    if (!isExpectedImageFailure && !isExpectedApiFailure) failures.push(`console: ${message.text()}`)
   })
   page.on('pageerror', error => failures.push(`pageerror: ${error.message}`))
   page.on('requestfailed', request => {
@@ -252,13 +271,28 @@ async function installFixture(page: Page, { tenantLogoUrl = '/db038-tenant-logo.
   await page.route('**/api/v1/**', async route => {
     const url = new URL(route.request().url())
     const json = (body: unknown) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) })
-    if (url.pathname.endsWith('/auth/workos/me')) return json(garageOwnerSession)
-    if (url.pathname.endsWith('/auth/me/appearance')) return json(garageOwnerSession.presentation)
+    if (url.pathname.endsWith('/auth/workos/me')) return json(readOnly ? receptionistSession : garageOwnerSession)
+    if (url.pathname.endsWith('/auth/me/appearance')) return json((readOnly ? receptionistSession : garageOwnerSession).presentation)
     if (url.pathname.endsWith('/auth/tenant-branding') || url.pathname.endsWith('/admin/garage-profile')) return json({ name: 'Truck Pit Stop Wisconsin', state: 'WI', logo_url: tenantLogoUrl })
     if (url.pathname.endsWith('/messages/unread-summary')) return json({ unread_count: 0 })
     if (url.pathname.endsWith('/parts-operations/summary')) return json({ low_stock_count: 50, open_purchase_order_count: 4 })
     if (url.pathname.endsWith('/parts-operations/demand')) return json({ items: demandItems, total: demandItems.length, skip: 0, limit: 100, has_more: false })
-    if (url.pathname.endsWith('/inventory')) return json({ items: inventoryItems, total: inventoryItems.length, skip: 0, limit: 100, has_more: false })
+    if (/\/inventory\/[^/]+$/.test(url.pathname) && route.request().method() === 'PUT') {
+      const id = url.pathname.split('/').at(-1)!
+      const body = route.request().postDataJSON() as Record<string, unknown>
+      inventoryUpdates.push({ id, body })
+      if (inventoryUpdateStatus !== 200) return route.fulfill({ status: inventoryUpdateStatus, contentType: 'application/json', body: JSON.stringify({ detail: 'Inventory update could not be saved.' }) })
+      const index = scopedInventoryItems.findIndex((item) => item.id === id)
+      if (index < 0) return route.fulfill({ status: 404, contentType: 'application/json', body: JSON.stringify({ detail: 'Inventory item not found.' }) })
+      const updated = {
+        ...scopedInventoryItems[index],
+        ...body,
+        cost: body.cost === undefined ? scopedInventoryItems[index].cost : Number(body.cost).toFixed(2),
+      }
+      scopedInventoryItems[index] = updated
+      return json(updated)
+    }
+    if (url.pathname.endsWith('/inventory')) return json({ items: scopedInventoryItems, total: scopedInventoryItems.length, skip: 0, limit: 100, has_more: false })
     if (url.pathname.endsWith('/parts-operations/purchase-orders') && route.request().method() === 'GET') return json({ items: [purchaseOrder], total: 1, skip: 0, limit: 100, has_more: false })
     if (url.pathname.endsWith(`/parts-operations/purchase-orders/${purchaseOrder.id}`)) return json(purchaseOrderDetail)
     if (url.pathname.endsWith(`/parts-operations/returns/${vendorReturn.id}`)) return json(vendorReturnDetail)
@@ -430,4 +464,91 @@ test('DB-038 captures initial and scrolled demand/detail states with real owned 
   await page.screenshot({ path: testInfo.outputPath('db038-demand-detail-mobile-390.png'), fullPage: false })
   expect(await page.locator('body').evaluate(node => node.scrollWidth <= window.innerWidth)).toBe(true)
   expect(errors.get(page)).toEqual([])
+})
+
+test('DB-038 inventory controls preserve item ownership, permissions, validation, and responsive containment', async ({ browser }, testInfo) => {
+  for (const [width, height] of [[1280, 900], [960, 900], [390, 844], [320, 720]]) {
+    const context = await browser.newContext({ viewport: { width, height }, reducedMotion: 'reduce' })
+    const page = await context.newPage()
+    const updates: InventoryUpdate[] = []
+    await installFixture(page, { inventoryUpdates: updates })
+    await page.goto('/dashboard/garage/inventory')
+    await page.getByRole('tab', { name: 'Inventory' }).click()
+    const rows = page.locator('[data-parts-row]')
+    await expectSingleMasterSelection(page, rows.first())
+    const controls = page.locator('.db-parts-operations__inventory-controls')
+    await expect(controls.getByRole('heading', { name: 'Inventory controls' })).toBeVisible()
+    const edit = controls.getByRole('button', { name: 'Edit inventory controls' })
+    await expect(edit).toBeVisible()
+    expect((await edit.boundingBox())!.height).toBeGreaterThanOrEqual(44)
+    await edit.click()
+    for (const label of ['On hand', 'On order', 'Reorder level', 'Current WAC', 'Adjustment reason']) {
+      const field = controls.getByLabel(label, { exact: true })
+      await expect(field).toBeVisible()
+      expect((await field.boundingBox())!.height).toBeGreaterThanOrEqual(44)
+    }
+    expect(await page.locator('body').evaluate(node => node.scrollWidth <= window.innerWidth)).toBe(true)
+    const controlsBox = await controls.boundingBox()
+    expect(controlsBox).not.toBeNull()
+    expect(controlsBox!.x + controlsBox!.width).toBeLessThanOrEqual(width + 1)
+    if (width === 1280 || width === 390) await page.screenshot({ path: testInfo.outputPath(`db038-inventory-controls-${width}.png`), fullPage: false })
+
+    if (width === 1280) {
+      await controls.getByLabel('On hand', { exact: true }).fill('8')
+      await controls.getByLabel('On order', { exact: true }).fill('4')
+      await controls.getByLabel('Reorder level', { exact: true }).fill('6')
+      await controls.getByLabel('Current WAC', { exact: true }).fill('12.75')
+      await controls.getByRole('button', { name: 'Save inventory controls' }).click()
+      await expect(controls.getByRole('alert')).toHaveText('Adjustment reason is required when On hand changes.')
+      expect(updates).toHaveLength(0)
+      await controls.getByLabel('Adjustment reason', { exact: true }).fill('Cycle count correction')
+      await controls.getByRole('button', { name: 'Save inventory controls' }).click()
+      await expect(page.getByTestId('parts-selection-status')).toContainText('Air filter inventory controls saved. 8 on hand.')
+      expect(updates).toEqual([{ id: 'inventory-1', body: { stock_quantity: 8, stock_adjustment_reason: 'Cycle count correction', on_order_quantity: 4, reorder_level: 6, cost: 12.75 } }])
+      await expectSingleMasterSelection(page, rows.first())
+      await expect(controls).toContainText('8')
+      await expect(controls).toContainText('$12.75')
+
+      await controls.getByRole('button', { name: 'Edit inventory controls' }).click()
+      await controls.getByLabel('On order', { exact: true }).fill('5')
+      await controls.getByRole('button', { name: 'Save inventory controls' }).click()
+      expect(updates[1]).toEqual({ id: 'inventory-1', body: { on_order_quantity: 5 } })
+      await controls.getByRole('button', { name: 'Edit inventory controls' }).click()
+      await controls.getByLabel('On hand', { exact: true }).fill('77')
+      await controls.getByLabel('Adjustment reason', { exact: true }).fill('Must not cross records')
+      await rows.nth(1).click()
+      await expect(page.getByRole('heading', { name: 'Brake shoe' })).toBeVisible()
+      const nextControls = page.locator('.db-parts-operations__inventory-controls')
+      await nextControls.getByRole('button', { name: 'Edit inventory controls' }).click()
+      await expect(nextControls.getByLabel('On hand', { exact: true })).toHaveValue('2')
+      await expect(nextControls.getByLabel('Adjustment reason', { exact: true })).toHaveValue('')
+    }
+    expect(errors.get(page)).toEqual([])
+    await context.close()
+  }
+
+  const failureContext = await browser.newContext({ viewport: { width: 1280, height: 900 } })
+  const failurePage = await failureContext.newPage()
+  await installFixture(failurePage, { inventoryUpdateStatus: 422 })
+  await failurePage.goto('/dashboard/garage/inventory')
+  await failurePage.getByRole('tab', { name: 'Inventory' }).click()
+  const failureControls = failurePage.locator('.db-parts-operations__inventory-controls')
+  await failureControls.getByRole('button', { name: 'Edit inventory controls' }).click()
+  await failureControls.getByLabel('On order', { exact: true }).fill('9')
+  await failureControls.getByRole('button', { name: 'Save inventory controls' }).click()
+  await expect(failureControls.getByRole('alert')).toHaveText('Inventory update could not be saved.')
+  await expect(failureControls.getByLabel('On order', { exact: true })).toHaveValue('9')
+  expect(errors.get(failurePage)).toEqual([])
+  await failureContext.close()
+
+  const readOnlyContext = await browser.newContext({ viewport: { width: 1280, height: 900 } })
+  const readOnlyPage = await readOnlyContext.newPage()
+  await installFixture(readOnlyPage, { readOnly: true })
+  await readOnlyPage.goto('/dashboard/garage/inventory')
+  await readOnlyPage.getByRole('tab', { name: 'Inventory' }).click()
+  const readOnlyControls = readOnlyPage.locator('.db-parts-operations__inventory-controls')
+  await expect(readOnlyControls).toContainText('Read-only access. A shop owner or admin can edit inventory controls.')
+  await expect(readOnlyControls.getByRole('button', { name: 'Edit inventory controls' })).toHaveCount(0)
+  expect(errors.get(readOnlyPage)).toEqual([])
+  await readOnlyContext.close()
 })

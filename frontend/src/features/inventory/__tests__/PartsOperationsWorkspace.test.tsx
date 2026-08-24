@@ -6,11 +6,11 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import fixture from '../../../../../backend/tests/fixtures/db038_parts_operations.json'
 
-const apiMocks = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn() }))
+const apiMocks = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn(), put: vi.fn() }))
 const authState = vi.hoisted(() => ({ role: 'garage_owner' }))
 const brandingState = vi.hoisted(() => ({ name: 'Truck Pit Stop Wisconsin', logoUrl: 'https://images.example.test/tenant-logo.png' as string | null }))
 
-vi.mock('@/lib/api', () => ({ default: { get: apiMocks.get, post: apiMocks.post } }))
+vi.mock('@/lib/api', () => ({ default: { get: apiMocks.get, post: apiMocks.post, put: apiMocks.put } }))
 vi.mock('@/stores/authStore', () => ({ useAuthStore: (selector: (state: { user: { role: string } }) => unknown) => selector({ user: { role: authState.role } }) }))
 vi.mock('@/hooks/useTenantBranding', () => ({ default: () => ({ data: { name: brandingState.name, logo_url: brandingState.logoUrl } }) }))
 
@@ -133,7 +133,7 @@ function installSelectionLifecycleFixture() {
 }
 
 describe('DB-038 Parts Operations workspace', () => {
-  afterEach(() => { apiMocks.get.mockReset(); apiMocks.post.mockReset(); authState.role = 'garage_owner'; brandingState.name = 'Truck Pit Stop Wisconsin'; brandingState.logoUrl = 'https://images.example.test/tenant-logo.png' })
+  afterEach(() => { apiMocks.get.mockReset(); apiMocks.post.mockReset(); apiMocks.put.mockReset(); authState.role = 'garage_owner'; brandingState.name = 'Truck Pit Stop Wisconsin'; brandingState.logoUrl = 'https://images.example.test/tenant-logo.png' })
   it('falls back to the existing catalog only when the server says the feature is unavailable', async () => { apiMocks.get.mockRejectedValue(Object.assign(new Error('off'), { response: { status: 404 } })); renderGate(); expect(await screen.findByText('Legacy inventory catalog')).toBeInTheDocument() })
   it('keeps a transient server failure visible instead of silently simulating an enabled feature', async () => { apiMocks.get.mockRejectedValue(Object.assign(new Error('offline'), { response: { status: 503 } })); renderGate(); expect(await screen.findByRole('alert')).toHaveTextContent('temporarily unavailable'); expect(screen.queryByText('Legacy inventory catalog')).not.toBeInTheDocument() })
   it('uses frozen demand evidence, deep-links to the canonical repair order, and posts an idempotent PO draft', async () => {
@@ -158,6 +158,127 @@ describe('DB-038 Parts Operations workspace', () => {
     const inventorySearch = screen.getByRole('searchbox', { name: 'Search inventory' })
     expect(inventorySearch.closest('label')).toHaveClass('db-parts-operations__search')
     expect(inventorySearch.closest('label')?.querySelectorAll('input')).toHaveLength(1)
+  })
+  it('updates all four inventory controls once, records the stock reason, and keeps the same selected row', async () => {
+    installInventoryControlsFixture()
+    let resolveSave!: (value: unknown) => void
+    apiMocks.put.mockImplementation(() => new Promise((resolve) => { resolveSave = resolve }))
+    const user = userEvent.setup()
+    renderGate()
+    await user.click(await screen.findByRole('tab', { name: 'Inventory' }))
+    const selectedRow = screen.getByRole('button', { name: /Air filter/i })
+    expect(selectedRow).toHaveAttribute('aria-current', 'true')
+    await user.click(screen.getByRole('button', { name: 'Edit inventory controls' }))
+    await user.clear(screen.getByLabelText('On hand')); await user.type(screen.getByLabelText('On hand'), '7')
+    await user.clear(screen.getByLabelText('On order')); await user.type(screen.getByLabelText('On order'), '4')
+    await user.clear(screen.getByLabelText('Reorder level')); await user.type(screen.getByLabelText('Reorder level'), '6')
+    await user.clear(screen.getByLabelText('Current WAC')); await user.type(screen.getByLabelText('Current WAC'), '24.50')
+    expect(screen.getByLabelText('On hand')).toHaveValue(7)
+    await user.type(await screen.findByLabelText('Adjustment reason'), 'Cycle count correction')
+    const save = screen.getByRole('button', { name: 'Save inventory controls' })
+    await user.dblClick(save)
+    expect(apiMocks.put).toHaveBeenCalledTimes(1)
+    expect(apiMocks.put).toHaveBeenCalledWith(`/inventory/${oilFilter.inventory_id}`, {
+      stock_quantity: 7,
+      on_order_quantity: 4,
+      reorder_level: 6,
+      cost: 24.5,
+      stock_adjustment_reason: 'Cycle count correction',
+    })
+    expect(save).toBeDisabled()
+    resolveSave({ data: { ...inventoryItem, id: oilFilter.inventory_id, name: 'Air filter', sku: 'AIR-000', stock_quantity: 7, on_order_quantity: 4, reorder_level: 6, cost: '24.50' } })
+    expect(await screen.findByRole('button', { name: 'Edit inventory controls' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Air filter/i })).toHaveAttribute('aria-current', 'true')
+    expect(screen.getByRole('heading', { name: 'Air filter' })).toBeInTheDocument()
+    const controls = screen.getByRole('heading', { name: 'Inventory controls' }).closest('section')!
+    expect(within(controls).getByText('7')).toBeInTheDocument()
+    expect(within(controls).getByText('4')).toBeInTheDocument()
+    expect(within(controls).getByText('6')).toBeInTheDocument()
+    expect(within(controls).getByText('$24.50')).toBeInTheDocument()
+    expect(screen.getByText('Inventory controls saved for Air filter.')).toBeInTheDocument()
+    expect(screen.getByTestId('parts-selection-status')).toHaveTextContent('Air filter inventory controls saved')
+  })
+  it('requires a reason only when On hand changes and sends only changed fields', async () => {
+    installInventoryControlsFixture()
+    const user = userEvent.setup()
+    renderGate()
+    await user.click(await screen.findByRole('tab', { name: 'Inventory' }))
+    await user.click(screen.getByRole('button', { name: 'Edit inventory controls' }))
+    await user.clear(screen.getByLabelText('On hand')); await user.type(screen.getByLabelText('On hand'), '1')
+    await user.click(screen.getByRole('button', { name: 'Save inventory controls' }))
+    expect(screen.getByRole('alert')).toHaveTextContent('Adjustment reason is required')
+    expect(apiMocks.put).not.toHaveBeenCalled()
+
+    await user.clear(screen.getByLabelText('On hand')); await user.type(screen.getByLabelText('On hand'), '0')
+    expect(screen.getByLabelText('Adjustment reason')).not.toBeRequired()
+    expect(screen.getByText('Required only when On hand changes.')).toBeInTheDocument()
+    await user.clear(screen.getByLabelText('On order')); await user.type(screen.getByLabelText('On order'), '5')
+    apiMocks.put.mockResolvedValue({ data: { ...inventoryItem, id: oilFilter.inventory_id, name: 'Air filter', sku: 'AIR-000', stock_quantity: 0, on_order_quantity: 5 } })
+    await user.click(screen.getByRole('button', { name: 'Save inventory controls' }))
+    await waitFor(() => expect(apiMocks.put).toHaveBeenCalledWith(`/inventory/${oilFilter.inventory_id}`, { on_order_quantity: 5 }))
+  })
+  it('rejects empty, nonnumeric, and negative inventory values without a request', async () => {
+    installInventoryControlsFixture()
+    const user = userEvent.setup()
+    renderGate()
+    await user.click(await screen.findByRole('tab', { name: 'Inventory' }))
+    await user.click(screen.getByRole('button', { name: 'Edit inventory controls' }))
+    await user.clear(screen.getByLabelText('On order'))
+    await user.click(screen.getByRole('button', { name: 'Save inventory controls' }))
+    expect(screen.getByRole('alert')).toHaveTextContent('On order must be a whole number')
+    await user.type(screen.getByLabelText('On order'), '-1')
+    await user.click(screen.getByRole('button', { name: 'Save inventory controls' }))
+    expect(screen.getByRole('alert')).toHaveTextContent('On order must be a whole number')
+    await user.clear(screen.getByLabelText('On order')); await user.type(screen.getByLabelText('On order'), '1')
+    await user.clear(screen.getByLabelText('Current WAC'))
+    await user.click(screen.getByRole('button', { name: 'Save inventory controls' }))
+    expect(screen.getByRole('alert')).toHaveTextContent('Current WAC must be a currency value')
+    expect(apiMocks.put).not.toHaveBeenCalled()
+  })
+  it.each([
+    ['permission response', Object.assign(new Error('forbidden'), { response: { status: 403, data: { detail: 'Inventory controls require shop-owner access.' } } }), 'Inventory controls require shop-owner access.'],
+    ['validation response', Object.assign(new Error('invalid'), { response: { status: 422, data: { detail: [{ msg: 'Adjustment reason is too short.' }] } } }), 'Adjustment reason is too short.'],
+    ['network failure', new Error('Network unavailable'), 'Network unavailable'],
+  ])('retains the draft after a recoverable %s', async (_label, failure, expected) => {
+    installInventoryControlsFixture()
+    apiMocks.put.mockRejectedValue(failure)
+    const user = userEvent.setup()
+    renderGate()
+    await user.click(await screen.findByRole('tab', { name: 'Inventory' }))
+    await user.click(screen.getByRole('button', { name: 'Edit inventory controls' }))
+    await user.clear(screen.getByLabelText('Reorder level')); await user.type(screen.getByLabelText('Reorder level'), '9')
+    await user.click(screen.getByRole('button', { name: 'Save inventory controls' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent(expected)
+    expect(screen.getByLabelText('Reorder level')).toHaveValue(9)
+    expect(screen.getByRole('button', { name: 'Save inventory controls' })).toBeInTheDocument()
+  })
+  it('shows read-only inventory controls to non-manager roles without a fake disabled form', async () => {
+    authState.role = 'receptionist'
+    installInventoryControlsFixture()
+    const user = userEvent.setup()
+    renderGate()
+    await user.click(await screen.findByRole('tab', { name: 'Inventory' }))
+    expect(screen.getByText('Read-only access. A shop owner or admin can edit inventory controls.')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Edit inventory controls' })).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('On hand')).not.toBeInTheDocument()
+  })
+  it('discards the local inventory draft on selection change and Cancel restores saved values', async () => {
+    installInventoryControlsFixture()
+    const user = userEvent.setup()
+    renderGate()
+    await user.click(await screen.findByRole('tab', { name: 'Inventory' }))
+    await user.click(screen.getByRole('button', { name: 'Edit inventory controls' }))
+    await user.clear(screen.getByLabelText('On hand')); await user.type(screen.getByLabelText('On hand'), '12')
+    await user.click(screen.getByRole('button', { name: /Brake shoe/i }))
+    await user.click(screen.getByRole('button', { name: 'Edit inventory controls' }))
+    expect(screen.getByLabelText('On hand')).toHaveValue(2)
+    await user.clear(screen.getByLabelText('On hand')); await user.type(screen.getByLabelText('On hand'), '8')
+    await user.click(screen.getByRole('button', { name: 'Cancel' }))
+    await user.click(screen.getByRole('button', { name: 'Edit inventory controls' }))
+    expect(screen.getByLabelText('On hand')).toHaveValue(2)
+    await user.click(screen.getByRole('button', { name: /Air filter/i }))
+    await user.click(screen.getByRole('button', { name: 'Edit inventory controls' }))
+    expect(screen.getByLabelText('On hand')).toHaveValue(0)
   })
   it('renders canonical photos then tenant-logo placeholders in demand and inventory rows and selected detail', async () => {
     installInventoryControlsFixture()

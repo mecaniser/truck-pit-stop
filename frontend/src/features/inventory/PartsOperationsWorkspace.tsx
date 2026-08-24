@@ -60,6 +60,13 @@ type Movement = {
 type Summary = { low_stock_count: number; open_purchase_order_count: number }
 type PartImageBranding = { logoUrl: string | null; name: string | null }
 type PartImageStage = 'part' | 'logo' | 'icon'
+type InventoryControlPatch = {
+  stock_quantity?: number
+  on_order_quantity?: number
+  reorder_level?: number
+  cost?: number
+  stock_adjustment_reason?: string
+}
 
 const tabs: Array<{ id: OperationsTab; label: string; icon: typeof PackageSearch }> = [
   { id: 'demand', label: 'Demand', icon: AlertTriangle },
@@ -147,9 +154,15 @@ function operationKey(prefix: string) {
 }
 
 function message(error: unknown, fallback = 'The operation could not be completed.') {
-  const candidate = error as { response?: { status?: number; data?: { detail?: string } }; message?: string }
+  const candidate = error as { response?: { status?: number; data?: { detail?: unknown } }; message?: string }
   if (candidate.response?.status === 409) return 'This record changed elsewhere. Review the latest details and try again.'
-  return candidate.response?.data?.detail || candidate.message || fallback
+  const detail = candidate.response?.data?.detail
+  if (typeof detail === 'string') return detail
+  if (Array.isArray(detail)) {
+    const details = detail.map((entry) => typeof entry === 'string' ? entry : (entry as { msg?: string })?.msg).filter(Boolean)
+    if (details.length) return details.join(' ')
+  }
+  return candidate.message || fallback
 }
 
 function formatDate(value: string | null) {
@@ -435,6 +448,19 @@ export default function PartsOperationsWorkspace({ summary }: { summary: Summary
     setInventoryStockFilter('all')
     setInventorySort('catalog')
   }
+  const saveInventoryControls = async (itemId: string, patch: InventoryControlPatch) => {
+    const response = await api.put(`/inventory/${itemId}`, patch)
+    const updated = response.data as InventoryItem
+    queryClient.setQueryData<CompletePage<InventoryItem>>(operationKeys.inventory, (current) => current
+      ? { ...current, items: current.items.map((item) => item.id === updated.id ? updated : item) }
+      : current)
+    void queryClient.invalidateQueries({ queryKey: operationKeys.inventory, refetchType: 'none' })
+    void queryClient.invalidateQueries({ queryKey: ['inventory'] })
+    void queryClient.invalidateQueries({ queryKey: operationKeys.activity })
+    setNotice(`Inventory controls saved for ${updated.name}.`)
+    announce(`${updated.name} inventory controls saved. ${updated.stock_quantity} on hand.`)
+    return updated
+  }
 
   return <section className="db-parts-operations" aria-labelledby="parts-operations-title">
     <div className="db-parts-operations__top">
@@ -465,7 +491,7 @@ export default function PartsOperationsWorkspace({ summary }: { summary: Summary
 
     <div className="db-parts-operations__content">
       {tab === 'demand' && (demandQuery.isError ? <PanelFailure label="Demand could not be loaded." onRetry={() => void demandQuery.refetch()} /> : <section id="parts-panel-demand" className="db-parts-operations__panel" role="tabpanel" aria-label="Demand"><p className="db-parts-operations__panel-context">Review shortages, replenishment, and unlinked demand before creating a draft purchase order.</p><DemandPanel demand={filteredDemand} totalDemand={demandQuery.data?.total ?? demand.length} inventory={inventory} imageBranding={partImageBranding} canMutate={canMutate} selected={selectedDemand} query={demandSearch} filter={demandFilter} pending={pendingAction === `po-create-${selectedDemand?.inventory_id}`} onQuery={updateDemandSearch} onFilter={updateDemandFilter} onSelect={(item) => { setSelectedDemandId(item.inventory_id); announce(demandAnnouncement(item)) }} onCreate={async (body) => call(`po-create-${body.inventoryId}`, (key) => api.post('/parts-operations/purchase-orders', body.payload, { headers: { 'Idempotency-Key': key } }), 'Draft purchase order created.')} onOpenRepair={(id) => navigate(`/dashboard/repair-orders?selected=${encodeURIComponent(id)}`)} /></section>)}
-      {tab === 'inventory' && (inventoryQuery.isError ? <PanelFailure label="Inventory could not be loaded." onRetry={() => void inventoryQuery.refetch()} /> : <section id="parts-panel-inventory" className="db-parts-operations__panel" role="tabpanel" aria-label="Inventory"><p className="db-parts-operations__panel-context">Review on-hand stock, incoming supply, and recent ledger activity for the selected catalog item.</p><InventoryPanel inventory={filteredInventory} totalInventory={inventoryQuery.data?.total ?? inventory.length} imageBranding={partImageBranding} activity={activity} activityError={activityQuery.isError} onRetryActivity={() => void activityQuery.refetch()} selected={selectedInventory} query={inventorySearch} filter={inventoryStockFilter} sort={inventorySort} onQuery={updateInventorySearch} onFilter={updateInventoryFilter} onSort={updateInventorySort} onReset={resetInventoryView} onSelect={(item) => { setSelectedInventoryId(item.id); announce(inventoryAnnouncement(item)) }} /></section>)}
+      {tab === 'inventory' && (inventoryQuery.isError ? <PanelFailure label="Inventory could not be loaded." onRetry={() => void inventoryQuery.refetch()} /> : <section id="parts-panel-inventory" className="db-parts-operations__panel" role="tabpanel" aria-label="Inventory"><p className="db-parts-operations__panel-context">Review on-hand stock, incoming supply, and recent ledger activity for the selected catalog item.</p><InventoryPanel inventory={filteredInventory} totalInventory={inventoryQuery.data?.total ?? inventory.length} imageBranding={partImageBranding} activity={activity} activityError={activityQuery.isError} onRetryActivity={() => void activityQuery.refetch()} selected={selectedInventory} canMutate={canMutate} query={inventorySearch} filter={inventoryStockFilter} sort={inventorySort} onQuery={updateInventorySearch} onFilter={updateInventoryFilter} onSort={updateInventorySort} onReset={resetInventoryView} onSelect={(item) => { setSelectedInventoryId(item.id); announce(inventoryAnnouncement(item)) }} onSave={saveInventoryControls} /></section>)}
       {tab === 'purchase-orders' && (poQuery.isError ? <PanelFailure label="Purchase orders could not be loaded." onRetry={() => void poQuery.refetch()} /> : <section id="parts-panel-purchase-orders" className="db-parts-operations__panel" role="tabpanel" aria-label="Purchase orders"><p className="db-parts-operations__panel-context">Review supplier approval and receive packages against the selected purchase order.</p><PurchaseOrdersPanel items={purchaseOrders} selectedId={selectedPOId} detail={poDetail.data} detailError={poDetail.isError} onRetryDetail={() => void poDetail.refetch()} canMutate={canMutate} pendingAction={pendingAction} onSelect={(id) => { setSelectedPOId(id); const selected = purchaseOrders.find((item) => item.id === id); if (selected) announce(purchaseOrderAnnouncement(selected)) }} onOpenDemand={() => selectTab('demand')} onSubmit={(po) => call(`po-submit-${po.id}`, (key) => api.post(`/parts-operations/purchase-orders/${po.id}/submit`, { expected_version: po.version }, { headers: { 'Idempotency-Key': key } }), 'Purchase order submitted.')} onReceive={(po, lines) => call(`po-receipt-${po.id}`, (key) => api.post(`/parts-operations/purchase-orders/${po.id}/receipts`, { expected_version: po.version, received_at: new Date().toISOString(), lines }, { headers: { 'Idempotency-Key': key } }), 'Receipt recorded and inventory ledger updated.')} /></section>)}
       {tab === 'returns-cores' && <section id="parts-panel-returns-cores" className="db-parts-operations__panel" role="tabpanel" aria-label="Returns and cores"><p className="db-parts-operations__panel-context">Choose supplier returns or core custody, then work the selected record.</p><ReturnsCoresPanel view={custodyView} onView={selectCustodyView} returns={returns} returnsError={returnsQuery.isError} onRetryReturns={() => void returnsQuery.refetch()} cores={cores} coresError={coresQuery.isError} onRetryCores={() => void coresQuery.refetch()} selectedReturn={returnDetail.data} selectedReturnId={selectedReturnId} returnDetailError={returnDetail.isError} onRetryReturnDetail={() => void returnDetail.refetch()} selectedCore={selectedCore} canMutate={canMutate} pendingAction={pendingAction} onSelectReturn={(id) => { setSelectedReturnId(id); const selected = returns.find((item) => item.id === id); if (selected) announce(returnAnnouncement(selected)) }} onSelectCore={(id) => { setSelectedCoreId(id); const selected = cores.find((item) => item.id === id); if (selected) announce(coreAnnouncement(selected)) }} onOpenDemand={() => selectTab('demand')} onRecover={(core) => call(`core-recover-${core.id}`, (key) => api.post(`/parts-operations/cores/${core.id}/recover`, { expected_version: core.version }, { headers: { 'Idempotency-Key': key } }), 'Core recovery recorded.')} onCreateCoreReturn={(core) => call(`core-return-${core.id}`, (key) => api.post('/parts-operations/returns', { kind: 'core', supplier_id: core.supplier_id, reason: 'Core return', lines: [{ core_obligation_id: core.id, quantity: core.quantity, expected_credit: '0.00' }] }, { headers: { 'Idempotency-Key': key } }), 'Core return draft created.')} onReturnAction={(row, action) => call(`return-${action}-${row.id}`, (key) => api.post(`/parts-operations/returns/${row.id}/${action}`, { expected_version: row.version, ...(action === 'reverse' ? { reason: 'Return correction' } : {}) }, { headers: { 'Idempotency-Key': key } }), action === 'reverse' ? 'Return reversal recorded.' : `Return ${action}ed.`)} /></section>}
       {tab === 'activity' && (activityQuery.isError ? <PanelFailure label="Stock activity could not be loaded." onRetry={() => void activityQuery.refetch()} /> : <section id="parts-panel-activity" className="db-parts-operations__panel" role="tabpanel" aria-label="Activity"><p className="db-parts-operations__panel-context">Read the immutable stock ledger to understand what changed inventory and when.</p><ActivityPanel movements={activity} onOpenRepair={(id) => navigate(`/dashboard/repair-orders?selected=${encodeURIComponent(id)}`)} /></section>)}
@@ -579,15 +605,130 @@ function DemandPanel({ demand, totalDemand, inventory, imageBranding, canMutate,
   />
 }
 
-function InventoryPanel({ inventory, totalInventory, imageBranding, activity, activityError, onRetryActivity, selected, query, filter, sort, onQuery, onFilter, onSort, onReset, onSelect }: { inventory: InventoryItem[]; totalInventory: number; imageBranding: PartImageBranding; activity: Movement[]; activityError: boolean; onRetryActivity: () => void; selected: InventoryItem | null; query: string; filter: InventoryStockFilter; sort: InventorySort; onQuery: (value: string) => void; onFilter: (value: InventoryStockFilter) => void; onSort: (value: InventorySort) => void; onReset: () => void; onSelect: (item: InventoryItem) => void }) {
+function InventoryPanel({ inventory, totalInventory, imageBranding, activity, activityError, onRetryActivity, selected, canMutate, query, filter, sort, onQuery, onFilter, onSort, onReset, onSelect, onSave }: { inventory: InventoryItem[]; totalInventory: number; imageBranding: PartImageBranding; activity: Movement[]; activityError: boolean; onRetryActivity: () => void; selected: InventoryItem | null; canMutate: boolean; query: string; filter: InventoryStockFilter; sort: InventorySort; onQuery: (value: string) => void; onFilter: (value: InventoryStockFilter) => void; onSort: (value: InventorySort) => void; onReset: () => void; onSelect: (item: InventoryItem) => void; onSave: (itemId: string, patch: InventoryControlPatch) => Promise<InventoryItem> }) {
   const selectedActivity = activity.filter((row) => row.inventory?.id === selected?.id).slice(0, 8)
   const hasActiveView = Boolean(query.trim()) || filter !== 'all' || sort !== 'catalog'
   return <MasterDetail listKey={inventory.map((item) => item.id).join('|')} selectedRowId={selected?.id ?? null}
     listLabel={`Inventory results, ${inventory.length} shown of ${totalInventory}`}
     toolbar={<div className="db-parts-operations__list-toolbar"><label className="db-parts-operations__search"><Search aria-hidden="true" /><span className="sr-only">Search inventory</span><input aria-label="Search inventory" type="search" value={query} onChange={(event) => onQuery(event.target.value)} placeholder="Search part, SKU, supplier, or location" /></label><div className="db-parts-operations__filters" role="group" aria-label="Inventory stock filter">{inventoryStockFilters.map((item) => <button type="button" aria-pressed={filter === item.id} className={filter === item.id ? 'is-selected' : ''} key={item.id} onClick={() => onFilter(item.id)}>{item.label}</button>)}</div><label className="db-parts-operations__sort"><span>Sort inventory</span><select value={sort} onChange={(event) => onSort(event.target.value as InventorySort)}>{inventorySorts.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}</select></label><p aria-live="polite">{inventory.length === totalInventory ? `${totalInventory} inventory items` : `${inventory.length} of ${totalInventory} inventory items`}</p></div>}
     list={inventory.length ? inventory.map((item, index) => { const active = selected?.id === item.id; return <button data-parts-row={item.id} type="button" aria-current={active ? 'true' : undefined} tabIndex={active || (!selected && index === 0) ? 0 : -1} className={active ? 'is-active' : ''} key={item.id} onClick={() => onSelect(item)}><span className="db-parts-operations__row-identity"><PartImage key={`${item.id}:${item.image_url || ''}:${imageBranding.logoUrl || ''}`} partSrc={item.image_url} branding={imageBranding} partName={item.name} variant="row" /><span className="db-parts-operations__row-copy"><strong>{item.name}</strong><small>{item.sku} · {item.supplier_name || 'No supplier'} · {item.location || 'No location'}</small></span></span><span className="db-parts-operations__stock"><strong>{item.stock_quantity} on hand</strong><small>{inventoryStockLabel(item)}</small></span></button> }) : <Empty label="No inventory items match this view." action={hasActiveView ? <button className="db-parts-operations__inline-action" type="button" onClick={onReset}>Reset inventory view</button> : undefined} />}
-    detail={selected ? <><SelectedPartHeader title={selected.name} meta={`${selected.sku} · ${selected.location || 'No location'} · ${selected.unit_type}`} partSrc={selected.image_url} branding={imageBranding} /><dl className="db-parts-operations__facts"><div><dt>On hand</dt><dd>{selected.stock_quantity}</dd></div><div><dt>On order</dt><dd>{selected.on_order_quantity}</dd></div><div><dt>Reorder level</dt><dd>{selected.reorder_level}</dd></div><div><dt>Current WAC</dt><dd>${selected.cost}</dd></div></dl><div className="db-parts-operations__sources"><h3>Recent stock activity</h3>{activityError ? <InlineFailure label="Recent stock activity could not be loaded." onRetry={onRetryActivity} /> : selectedActivity.length ? selectedActivity.map((row) => <div key={row.id}><span>{humanize(row.movement_type)}</span><strong>Balance {row.balance_after}</strong></div>) : <p className="db-parts-operations__hint">No ledger activity is loaded for this item.</p>}</div><p className="db-parts-operations__hint">Catalog fields remain in the existing inventory editor; this operating view reads the same tenant catalog and ledger.</p></> : <Empty label="Select an inventory item to review stock and activity." />}
+    detail={selected ? <><SelectedPartHeader title={selected.name} meta={`${selected.sku} · ${selected.location || 'No location'} · ${selected.unit_type}`} partSrc={selected.image_url} branding={imageBranding} /><InventoryControls key={selected.id} item={selected} canMutate={canMutate} onSave={onSave} /><div className="db-parts-operations__sources"><h3>Recent stock activity</h3>{activityError ? <InlineFailure label="Recent stock activity could not be loaded." onRetry={onRetryActivity} /> : selectedActivity.length ? selectedActivity.map((row) => <div key={row.id}><span>{humanize(row.movement_type)}</span><strong>Balance {row.balance_after}</strong></div>) : <p className="db-parts-operations__hint">No ledger activity is loaded for this item.</p>}</div><p className="db-parts-operations__hint">Catalog fields remain in the existing inventory editor; this operating view reads the same tenant catalog and ledger.</p></> : <Empty label="Select an inventory item to review stock and activity." />}
   />
+}
+
+type InventoryDraft = {
+  stock: string
+  onOrder: string
+  reorder: string
+  cost: string
+  reason: string
+}
+
+function inventoryDraft(item: InventoryItem): InventoryDraft {
+  return {
+    stock: String(item.stock_quantity),
+    onOrder: String(item.on_order_quantity),
+    reorder: String(item.reorder_level),
+    cost: String(item.cost),
+    reason: '',
+  }
+}
+
+function parseInventoryInteger(label: string, value: string) {
+  if (!/^\d+$/.test(value.trim())) throw new Error(`${label} must be a whole number of zero or more.`)
+  return Number(value)
+}
+
+function parseInventoryCurrency(value: string) {
+  const parsed = Number(value)
+  if (!value.trim() || !Number.isFinite(parsed) || parsed < 0) throw new Error('Current WAC must be a currency value of zero or more.')
+  return Math.round(parsed * 100) / 100
+}
+
+function InventoryControls({ item, canMutate, onSave }: { item: InventoryItem; canMutate: boolean; onSave: (itemId: string, patch: InventoryControlPatch) => Promise<InventoryItem> }) {
+  const adjustmentReasonId = `inventory-adjustment-reason-${item.id}`
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState<InventoryDraft>(() => inventoryDraft(item))
+  const [saving, setSaving] = useState(false)
+  const [localError, setLocalError] = useState<string | null>(null)
+  const savingRef = useRef(false)
+  const stockChanged = draft.stock.trim() !== String(item.stock_quantity)
+
+  const cancel = () => {
+    setDraft(inventoryDraft(item))
+    setLocalError(null)
+    setEditing(false)
+  }
+  const update = (field: keyof InventoryDraft, value: string) => {
+    setDraft((current) => ({ ...current, [field]: value }))
+    setLocalError(null)
+  }
+  const save = async () => {
+    if (savingRef.current) return
+    setLocalError(null)
+    let stock: number
+    let onOrder: number
+    let reorder: number
+    let cost: number
+    try {
+      stock = parseInventoryInteger('On hand', draft.stock)
+      onOrder = parseInventoryInteger('On order', draft.onOrder)
+      reorder = parseInventoryInteger('Reorder level', draft.reorder)
+      cost = parseInventoryCurrency(draft.cost)
+    } catch (cause) {
+      setLocalError(message(cause, 'Review the inventory values and try again.'))
+      return
+    }
+    if (stock !== item.stock_quantity && !draft.reason.trim()) {
+      setLocalError('Adjustment reason is required when On hand changes.')
+      return
+    }
+    const patch: InventoryControlPatch = {}
+    if (stock !== item.stock_quantity) {
+      patch.stock_quantity = stock
+      patch.stock_adjustment_reason = draft.reason.trim()
+    }
+    if (onOrder !== item.on_order_quantity) patch.on_order_quantity = onOrder
+    if (reorder !== item.reorder_level) patch.reorder_level = reorder
+    if (cost !== Number(item.cost)) patch.cost = cost
+    if (!Object.keys(patch).length) {
+      setLocalError('Change at least one inventory value before saving.')
+      return
+    }
+    savingRef.current = true
+    setSaving(true)
+    try {
+      const updated = await onSave(item.id, patch)
+      setDraft(inventoryDraft(updated))
+      setEditing(false)
+    } catch (cause) {
+      setLocalError(message(cause, 'Inventory controls could not be saved. Check the connection and try again.'))
+    } finally {
+      savingRef.current = false
+      setSaving(false)
+    }
+  }
+
+  return <section className="db-parts-operations__inventory-controls" aria-labelledby={`inventory-controls-${item.id}`}>
+    <div className="db-parts-operations__inventory-controls-heading">
+      <div><h3 id={`inventory-controls-${item.id}`}>Inventory controls</h3><p>Current catalog and stock-ledger values.</p></div>
+      {canMutate && !editing && <button className="db-parts-operations__secondary" type="button" onClick={() => setEditing(true)}>Edit inventory controls</button>}
+    </div>
+    {!editing ? <>
+      <dl className="db-parts-operations__facts"><div><dt>On hand</dt><dd>{item.stock_quantity}</dd></div><div><dt>On order</dt><dd>{item.on_order_quantity}</dd></div><div><dt>Reorder level</dt><dd>{item.reorder_level}</dd></div><div><dt>Current WAC</dt><dd>${item.cost}</dd></div></dl>
+      {!canMutate && <p className="db-parts-operations__hint">Read-only access. A shop owner or admin can edit inventory controls.</p>}
+    </> : <form className="db-parts-operations__inventory-controls-form" noValidate onSubmit={(event) => { event.preventDefault(); void save() }}>
+      <div className="db-parts-operations__inventory-controls-grid">
+        <label>On hand<input autoFocus disabled={saving} inputMode="numeric" min={0} step={1} type="number" value={draft.stock} onChange={(event) => update('stock', event.target.value)} /></label>
+        <label>On order<input disabled={saving} inputMode="numeric" min={0} step={1} type="number" value={draft.onOrder} onChange={(event) => update('onOrder', event.target.value)} /></label>
+        <label>Reorder level<input disabled={saving} inputMode="numeric" min={0} step={1} type="number" value={draft.reorder} onChange={(event) => update('reorder', event.target.value)} /></label>
+        <label>Current WAC<input disabled={saving} inputMode="decimal" min={0} step="0.01" type="number" value={draft.cost} onChange={(event) => update('cost', event.target.value)} /></label>
+      </div>
+      <div className="db-parts-operations__adjustment-reason"><label htmlFor={adjustmentReasonId}>Adjustment reason</label><textarea id={adjustmentReasonId} disabled={saving} rows={3} required={stockChanged} aria-required={stockChanged} value={draft.reason} onChange={(event) => update('reason', event.target.value)} aria-describedby={`inventory-reason-help-${item.id}`} /><small id={`inventory-reason-help-${item.id}`}>{stockChanged ? 'This stock change will be recorded in inventory activity.' : 'Required only when On hand changes.'}</small></div>
+      {localError && <p className="db-parts-operations__inventory-controls-error" role="alert">{localError}</p>}
+      <div className="db-parts-operations__inventory-controls-actions"><button className="db-parts-operations__secondary" type="button" disabled={saving} onClick={cancel}>Cancel</button><button className="db-parts-operations__primary" type="submit" disabled={saving}>{saving ? 'Saving inventory…' : 'Save inventory controls'}</button></div>
+    </form>}
+  </section>
 }
 
 function PurchaseOrdersPanel({ items, selectedId, detail, detailError, onRetryDetail, canMutate, pendingAction, onSelect, onOpenDemand, onSubmit, onReceive }: { items: PurchaseOrder[]; selectedId: string | null; detail: PurchaseOrderDetail | undefined; detailError: boolean; onRetryDetail: () => void; canMutate: boolean; pendingAction: string | null; onSelect: (id: string) => void; onOpenDemand: () => void; onSubmit: (po: PurchaseOrderDetail) => Promise<void>; onReceive: (po: PurchaseOrderDetail, lines: Array<{ purchase_order_line_id: string; quantity: number; unit_cost: number }>) => Promise<void> }) {
