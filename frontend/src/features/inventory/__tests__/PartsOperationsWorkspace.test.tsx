@@ -8,9 +8,11 @@ import fixture from '../../../../../backend/tests/fixtures/db038_parts_operation
 
 const apiMocks = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn() }))
 const authState = vi.hoisted(() => ({ role: 'garage_owner' }))
+const brandingState = vi.hoisted(() => ({ name: 'Truck Pit Stop Wisconsin', logoUrl: 'https://images.example.test/tenant-logo.png' as string | null }))
 
 vi.mock('@/lib/api', () => ({ default: { get: apiMocks.get, post: apiMocks.post } }))
 vi.mock('@/stores/authStore', () => ({ useAuthStore: (selector: (state: { user: { role: string } }) => unknown) => selector({ user: { role: authState.role } }) }))
+vi.mock('@/hooks/useTenantBranding', () => ({ default: () => ({ data: { name: brandingState.name, logo_url: brandingState.logoUrl } }) }))
 
 import { PartsOperationsGate } from '../PartsOperationsWorkspace'
 
@@ -85,9 +87,10 @@ function installInventoryControlsFixture() {
     { ...inventoryItem, id: 'placeholder', sku: 'TMP-100', name: 'Temporary catalog item', stock_quantity: 1, reorder_level: 8, supplier_name: null, location: null, image_url: null, is_placeholder: true, ets_retired_at: null },
     { ...inventoryItem, id: 'retired-empty', sku: 'RET-000', name: 'Retired empty item', stock_quantity: 0, reorder_level: 4, supplier_name: 'Archive Supply', location: 'R-01', image_url: null, ets_retired_at: fixture.frozen_at },
   ]
+  const demand = inventory.slice(0, 3).map((item) => ({ ...oilFilter, inventory_id: item.id, sku: item.sku, name: item.name }))
   apiMocks.get.mockImplementation((url: string) => {
     if (url === '/parts-operations/summary') return Promise.resolve({ data: { low_stock_count: 2, open_purchase_order_count: 0 } })
-    if (url === '/parts-operations/demand') return Promise.resolve({ data: { items: [oilFilter], total: 1, skip: 0, limit: 100, has_more: false } })
+    if (url === '/parts-operations/demand') return Promise.resolve({ data: { items: demand, total: demand.length, skip: 0, limit: 100, has_more: false } })
     if (url === '/inventory') return Promise.resolve({ data: { items: inventory, total: inventory.length, skip: 0, limit: 100, has_more: false } })
     if (url === '/parts-operations/purchase-orders' || url === '/parts-operations/returns' || url === '/parts-operations/cores' || url === '/parts-operations/activity') return Promise.resolve({ data: { items: [], total: 0, skip: 0, limit: 100, has_more: false } })
     throw new Error(`Unexpected GET ${url}`)
@@ -95,7 +98,7 @@ function installInventoryControlsFixture() {
 }
 
 describe('DB-038 Parts Operations workspace', () => {
-  afterEach(() => { apiMocks.get.mockReset(); apiMocks.post.mockReset(); authState.role = 'garage_owner' })
+  afterEach(() => { apiMocks.get.mockReset(); apiMocks.post.mockReset(); authState.role = 'garage_owner'; brandingState.name = 'Truck Pit Stop Wisconsin'; brandingState.logoUrl = 'https://images.example.test/tenant-logo.png' })
   it('falls back to the existing catalog only when the server says the feature is unavailable', async () => { apiMocks.get.mockRejectedValue(Object.assign(new Error('off'), { response: { status: 404 } })); renderGate(); expect(await screen.findByText('Legacy inventory catalog')).toBeInTheDocument() })
   it('keeps a transient server failure visible instead of silently simulating an enabled feature', async () => { apiMocks.get.mockRejectedValue(Object.assign(new Error('offline'), { response: { status: 503 } })); renderGate(); expect(await screen.findByRole('alert')).toHaveTextContent('temporarily unavailable'); expect(screen.queryByText('Legacy inventory catalog')).not.toBeInTheDocument() })
   it('uses frozen demand evidence, deep-links to the canonical repair order, and posts an idempotent PO draft', async () => {
@@ -121,22 +124,72 @@ describe('DB-038 Parts Operations workspace', () => {
     expect(inventorySearch.closest('label')).toHaveClass('db-parts-operations__search')
     expect(inventorySearch.closest('label')?.querySelectorAll('input')).toHaveLength(1)
   })
-  it('renders canonical part images with a neutral decorative fallback in demand and inventory', async () => {
+  it('renders canonical photos then tenant-logo placeholders in demand and inventory rows and selected detail', async () => {
     installInventoryControlsFixture()
     const user = userEvent.setup()
     renderGate()
 
-    const demandRow = await screen.findByRole('button', { name: /Oil filter/i })
-    expect(demandRow.querySelector('img')).toHaveAttribute('src', 'https://images.example.test/air-filter.png')
-    expect(demandRow).toHaveAccessibleName(/Oil filter/)
+    const demandAir = await screen.findByRole('button', { name: /Air filter/i })
+    expect(demandAir.querySelector('img')).toHaveAttribute('src', 'https://images.example.test/air-filter.png')
+    expect(demandAir).toHaveAccessibleName(/Air filter/)
+    await user.click(demandAir)
+    expect(screen.getByRole('img', { name: 'Air filter part photo' })).toHaveAttribute('src', 'https://images.example.test/air-filter.png')
+
+    const demandCoolant = screen.getByRole('button', { name: /Coolant/i })
+    expect(demandCoolant.querySelector('img')).toHaveAttribute('src', brandingState.logoUrl)
+    expect(demandCoolant.querySelector('img')).toHaveAttribute('alt', '')
+    await user.click(demandCoolant)
+    expect(screen.getByRole('img', { name: 'Truck Pit Stop Wisconsin logo placeholder for Coolant' })).toHaveAttribute('src', brandingState.logoUrl)
+
+    const demandBrake = screen.getByRole('button', { name: /Brake shoe/i })
+    fireEvent.error(demandBrake.querySelector('img')!)
+    expect(demandBrake.querySelector('img')).toHaveAttribute('src', brandingState.logoUrl)
+    await user.click(demandBrake)
+    const demandBrokenPhoto = screen.getByRole('img', { name: 'Brake shoe part photo' })
+    fireEvent.error(demandBrokenPhoto)
+    expect(screen.getByRole('img', { name: 'Truck Pit Stop Wisconsin logo placeholder for Brake shoe' })).toHaveAttribute('src', brandingState.logoUrl)
 
     await user.click(screen.getByRole('tab', { name: 'Inventory' }))
     const airFilter = screen.getByRole('button', { name: /Air filter/i })
     expect(airFilter.querySelector('img')).toHaveAttribute('alt', '')
+    await user.click(airFilter)
+    expect(screen.getByRole('img', { name: 'Air filter part photo' })).toBeInTheDocument()
     const broken = screen.getByRole('button', { name: /Brake shoe/i })
     fireEvent.error(broken.querySelector('img')!)
-    expect(within(broken).getByTestId('part-thumbnail-fallback')).toBeInTheDocument()
-    expect(within(screen.getByRole('button', { name: /Coolant/i })).getByTestId('part-thumbnail-fallback')).toBeInTheDocument()
+    expect(broken.querySelector('img')).toHaveAttribute('src', brandingState.logoUrl)
+    const coolant = screen.getByRole('button', { name: /Coolant/i })
+    expect(coolant.querySelector('img')).toHaveAttribute('src', brandingState.logoUrl)
+    await user.click(coolant)
+    expect(screen.getByRole('img', { name: 'Truck Pit Stop Wisconsin logo placeholder for Coolant' })).toBeInTheDocument()
+  })
+  it('terminates broken part and company-logo fallbacks at the neutral icon without retry loops', async () => {
+    brandingState.logoUrl = 'https://images.example.test/broken-logo.png'
+    installInventoryControlsFixture()
+    const user = userEvent.setup()
+    renderGate()
+
+    const demandBrake = await screen.findByRole('button', { name: /Brake shoe/i })
+    fireEvent.error(demandBrake.querySelector('img')!)
+    expect(demandBrake.querySelector('img')).toHaveAttribute('src', brandingState.logoUrl)
+    fireEvent.error(demandBrake.querySelector('img')!)
+    expect(within(demandBrake).getByTestId('part-thumbnail-fallback')).toBeInTheDocument()
+    expect(demandBrake.querySelector('img')).not.toBeInTheDocument()
+    await user.click(demandBrake)
+    fireEvent.error(screen.getByRole('img', { name: 'Brake shoe part photo' }))
+    fireEvent.error(screen.getByRole('img', { name: 'Truck Pit Stop Wisconsin logo placeholder for Brake shoe' }))
+    expect(screen.getByRole('img', { name: 'No image available for Brake shoe' })).toContainElement(screen.getByTestId('part-detail-fallback'))
+
+    await user.click(screen.getByRole('tab', { name: 'Inventory' }))
+    const inventoryBrake = screen.getByRole('button', { name: /Brake shoe/i })
+    fireEvent.error(inventoryBrake.querySelector('img')!)
+    fireEvent.error(inventoryBrake.querySelector('img')!)
+    expect(within(inventoryBrake).getByTestId('part-thumbnail-fallback')).toBeInTheDocument()
+    const inventoryCoolant = screen.getByRole('button', { name: /Coolant/i })
+    fireEvent.error(inventoryCoolant.querySelector('img')!)
+    expect(within(inventoryCoolant).getByTestId('part-thumbnail-fallback')).toBeInTheDocument()
+    await user.click(inventoryCoolant)
+    fireEvent.error(screen.getByRole('img', { name: 'Truck Pit Stop Wisconsin logo placeholder for Coolant' }))
+    expect(screen.getByRole('img', { name: 'No image available for Coolant' })).toContainElement(screen.getByTestId('part-detail-fallback'))
   })
   it('filters and stably sorts inventory while clearing hidden selection and offering one reset path', async () => {
     installInventoryControlsFixture()

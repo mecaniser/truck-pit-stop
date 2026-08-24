@@ -133,22 +133,37 @@ async function expectStandaloneField(input: Locator) {
   expect(contrastRatio(styles.color, styles.background)).toBeGreaterThanOrEqual(4.5)
 }
 
-async function installFixture(page: Page) {
+async function expectSelectedPartImage(image: Locator, width: number) {
+  const media = image.locator('..')
+  const box = await media.boundingBox()
+  expect(box).not.toBeNull()
+  expect(Math.abs(box!.width - box!.height)).toBeLessThanOrEqual(1)
+  if (width <= 760) {
+    expect(box!.width).toBeGreaterThanOrEqual(96)
+    expect(box!.width).toBeLessThanOrEqual(120)
+  } else {
+    expect(box!.width).toBeGreaterThanOrEqual(144)
+    expect(box!.width).toBeLessThanOrEqual(176)
+  }
+}
+
+async function installFixture(page: Page, { tenantLogoUrl = '/db038-tenant-logo.svg' }: { tenantLogoUrl?: string } = {}) {
   const failures: string[] = []
-  const expectedBrokenThumbnailResponses = new Set<string>()
+  const expectedImageFailureResponses = new Set<string>()
+  const intentionalImageFailurePaths = new Set(['/db038-broken-image.svg', '/db038-broken-logo.svg'])
   errors.set(page, failures)
   page.on('response', response => {
     const url = new URL(response.url())
-    if (url.pathname === '/db038-broken-image.svg' && response.status() === 404) {
-      expectedBrokenThumbnailResponses.add(response.url())
+    if (intentionalImageFailurePaths.has(url.pathname) && response.status() === 404) {
+      expectedImageFailureResponses.add(response.url())
     }
   })
   page.on('console', message => {
     if (message.type() !== 'error') return
     const locationUrl = message.location().url
-    const isExpectedBrokenThumbnail = message.text().startsWith('Failed to load resource:')
-      && expectedBrokenThumbnailResponses.has(locationUrl)
-    if (!isExpectedBrokenThumbnail) failures.push(`console: ${message.text()}`)
+    const isExpectedImageFailure = message.text().startsWith('Failed to load resource:')
+      && expectedImageFailureResponses.has(locationUrl)
+    if (!isExpectedImageFailure) failures.push(`console: ${message.text()}`)
   })
   page.on('pageerror', error => failures.push(`pageerror: ${error.message}`))
   page.on('requestfailed', request => {
@@ -181,13 +196,15 @@ async function installFixture(page: Page) {
   await page.route('https://fonts.googleapis.com/**', route => route.fulfill({ status: 200, contentType: 'text/css', body: '' }))
   await page.route('https://fonts.gstatic.com/**', route => route.fulfill({ status: 204, body: '' }))
   await page.route('**/db038-part-image.svg', route => route.fulfill({ status: 200, contentType: 'image/svg+xml', body: '<svg xmlns="http://www.w3.org/2000/svg" width="44" height="44" viewBox="0 0 44 44"><rect width="44" height="44" rx="8" fill="#d7e4f4"/><path d="M13 15h18v14H13z" fill="#254b73"/></svg>' }))
+  await page.route('**/db038-tenant-logo.svg', route => route.fulfill({ status: 200, contentType: 'image/svg+xml', body: '<svg xmlns="http://www.w3.org/2000/svg" width="96" height="96" viewBox="0 0 96 96"><rect width="96" height="96" rx="16" fill="#0d2036"/><path d="M20 50h56M30 50c4-22 32-22 36 0" fill="none" stroke="#30d6a0" stroke-width="6"/></svg>' }))
   await page.route('**/db038-broken-image.svg', route => route.fulfill({ status: 404, body: '' }))
+  await page.route('**/db038-broken-logo.svg', route => route.fulfill({ status: 404, body: '' }))
   await page.route('**/api/v1/**', async route => {
     const url = new URL(route.request().url())
     const json = (body: unknown) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) })
     if (url.pathname.endsWith('/auth/workos/me')) return json(garageOwnerSession)
     if (url.pathname.endsWith('/auth/me/appearance')) return json(garageOwnerSession.presentation)
-    if (url.pathname.endsWith('/auth/tenant-branding') || url.pathname.endsWith('/admin/garage-profile')) return json({ name: 'Truck Pit Stop Wisconsin', state: 'WI', logo_url: null })
+    if (url.pathname.endsWith('/auth/tenant-branding') || url.pathname.endsWith('/admin/garage-profile')) return json({ name: 'Truck Pit Stop Wisconsin', state: 'WI', logo_url: tenantLogoUrl })
     if (url.pathname.endsWith('/messages/unread-summary')) return json({ unread_count: 0 })
     if (url.pathname.endsWith('/parts-operations/summary')) return json({ low_stock_count: 50, open_purchase_order_count: 4 })
     if (url.pathname.endsWith('/parts-operations/demand')) return json({ items: demandItems, total: demandItems.length, skip: 0, limit: 100, has_more: false })
@@ -201,34 +218,51 @@ async function installFixture(page: Page) {
     if (url.pathname.endsWith('/mechanics') || url.pathname.endsWith('/admin/staff') || url.pathname.endsWith('/mechanics/pto-requests/pending')) return json([])
     return route.fulfill({ status: 404, contentType: 'application/json', body: JSON.stringify({ detail: `Unhandled DB-038 fixture route: ${route.request().method()} ${url.pathname}` }) })
   })
+  return { expectedImageFailureResponses }
 }
 
 test('DB-038 contains a 100-row master/detail workstation across responsive views without unhandled errors', async ({ browser }, testInfo) => {
   for (const [width, height] of [[1280, 900], [960, 900], [390, 844], [320, 720]]) {
     const context = await browser.newContext({ viewport: { width, height }, reducedMotion: 'reduce', forcedColors: 'active' })
     const page = await context.newPage()
-    await installFixture(page)
+    const fixtureRuntime = await installFixture(page)
     await page.goto('/dashboard/garage/inventory')
     await expect(page.getByRole('heading', { name: 'Supply, stock & custody' })).toBeVisible()
     await expectIntegratedSearch(page.getByRole('searchbox', { name: 'Search demand' }))
     await expect(page.getByRole('list', { name: 'Parts operations workflow' })).toHaveCount(0)
     const primaryTabs = page.getByRole('tablist', { name: 'Parts Operations areas' })
     await expect(primaryTabs.locator('[role="tab"][aria-selected="true"]')).toHaveCount(1)
+    const demandRows = page.locator('[data-parts-row]')
+    await expect(demandRows.first().locator('[data-image-source="part"] img')).toBeVisible()
+    await demandRows.first().click()
+    const demandPartPhoto = page.getByRole('img', { name: 'Air filter part photo' })
+    await expect(demandPartPhoto).toBeVisible()
+    await expectSelectedPartImage(demandPartPhoto, width)
+    await expect(demandRows.nth(1).locator('[data-image-source="logo"] img')).toBeVisible()
+    await demandRows.nth(1).click()
+    const demandLogoPlaceholder = page.getByRole('img', { name: 'Truck Pit Stop Wisconsin logo placeholder for Brake shoe' })
+    await expect(demandLogoPlaceholder).toBeVisible()
+    await expectSelectedPartImage(demandLogoPlaceholder, width)
+    await expect(demandRows.nth(2).locator('[data-image-source="logo"] img')).toBeVisible()
+    expect([...fixtureRuntime.expectedImageFailureResponses].some(url => new URL(url).pathname === '/db038-broken-image.svg')).toBe(true)
     if (width === 390) await page.screenshot({ path: testInfo.outputPath('db038-demand-mobile-390.png'), fullPage: false })
     const demand = page.getByRole('tab', { name: 'Demand' })
     await expect(demand).toHaveCSS('min-height', '44px')
     await demand.focus()
-    const brokenThumbnailResponse = page.waitForResponse(response => new URL(response.url()).pathname === '/db038-broken-image.svg' && response.status() === 404)
     await page.keyboard.press('ArrowRight')
     await expect(page.getByRole('tab', { name: 'Inventory' })).toHaveAttribute('aria-selected', 'true')
-    await expect((await brokenThumbnailResponse).status()).toBe(404)
     await expectIntegratedSearch(page.getByRole('searchbox', { name: 'Search inventory' }))
     await expect(primaryTabs.locator('[role="tab"][aria-selected="true"]')).toHaveCount(1)
     await expect(page.getByRole('region', { name: 'Inventory results, 100 shown of 100', exact: true })).toHaveAttribute('tabindex', '0')
     const inventoryRows = page.locator('[data-parts-row]')
-    await expect(inventoryRows.first().locator('.db-parts-operations__thumbnail img')).toBeVisible()
-    await expect(inventoryRows.nth(1).locator('.db-parts-operations__thumbnail svg')).toBeVisible()
-    await expect(inventoryRows.nth(2).locator('.db-parts-operations__thumbnail svg')).toBeVisible()
+    await expect(inventoryRows.first().locator('[data-image-source="part"] img')).toBeVisible()
+    await expect(inventoryRows.nth(1).locator('[data-image-source="logo"] img')).toBeVisible()
+    await expect(inventoryRows.nth(2).locator('[data-image-source="logo"] img')).toBeVisible()
+    await inventoryRows.nth(2).click()
+    const inventoryLogoPlaceholder = page.getByRole('img', { name: 'Truck Pit Stop Wisconsin logo placeholder for Coolant' })
+    await expect(inventoryLogoPlaceholder).toBeVisible()
+    await expectSelectedPartImage(inventoryLogoPlaceholder, width)
+    if (width === 1280 || width === 390) await page.screenshot({ path: testInfo.outputPath(`db038-inventory-image-detail-${width}.png`), fullPage: false })
     const stockFilters = page.getByRole('group', { name: 'Inventory stock filter' })
     for (const label of ['All stock', 'Needs reorder', 'Out of stock', 'In stock']) await expect(stockFilters.getByRole('button', { name: label, exact: true })).toHaveCSS('min-height', '44px')
     await stockFilters.getByRole('button', { name: 'Needs reorder', exact: true }).click()
@@ -278,7 +312,7 @@ test('DB-038 contains a 100-row master/detail workstation across responsive view
 
 test('DB-038 captures initial and scrolled demand/detail states with real owned scroll regions', async ({ page }, testInfo) => {
   await page.setViewportSize({ width: 1280, height: 900 })
-  await installFixture(page)
+  const fixtureRuntime = await installFixture(page, { tenantLogoUrl: '/db038-broken-logo.svg' })
   await page.goto('/dashboard/garage/inventory')
   const demandList = page.getByRole('region', { name: 'Demand results, 100 shown of 100', exact: true })
   const detail = page.getByRole('region', { name: 'Demand results, 100 shown of 100 detail', exact: true })
@@ -286,11 +320,23 @@ test('DB-038 captures initial and scrolled demand/detail states with real owned 
   await expect(detail).toBeVisible()
   await expect(page.getByText('100 demand items')).toBeVisible()
   await expectIntegratedSearch(page.getByRole('searchbox', { name: 'Search demand' }))
+  const demandRows = page.locator('[data-parts-row]')
+  await expect(demandRows.nth(1).locator('[data-image-source="icon"] svg')).toBeVisible()
+  await expect(demandRows.nth(2).locator('[data-image-source="icon"] svg')).toBeVisible()
+  await demandRows.nth(1).click()
+  await expect(page.getByRole('img', { name: 'No image available for Brake shoe' })).toBeVisible()
   await page.getByRole('button', { name: /Fleet filter 1/i, exact: false }).first().click()
   await expectStandaloneField(page.getByLabel('PO number'))
   await expectStandaloneField(page.getByLabel('Packages'))
   await page.getByRole('tab', { name: 'Inventory' }).click()
   await expectIntegratedSearch(page.getByRole('searchbox', { name: 'Search inventory' }))
+  const inventoryRows = page.locator('[data-parts-row]')
+  await expect(inventoryRows.nth(1).locator('[data-image-source="icon"] svg')).toBeVisible()
+  await expect(inventoryRows.nth(2).locator('[data-image-source="icon"] svg')).toBeVisible()
+  await inventoryRows.nth(2).click()
+  await expect(page.getByRole('img', { name: 'No image available for Coolant' })).toBeVisible()
+  expect([...fixtureRuntime.expectedImageFailureResponses].some(url => new URL(url).pathname === '/db038-broken-image.svg')).toBe(true)
+  expect([...fixtureRuntime.expectedImageFailureResponses].some(url => new URL(url).pathname === '/db038-broken-logo.svg')).toBe(true)
   await page.getByRole('tab', { name: 'Purchase orders' }).click()
   await page.getByRole('button', { name: /PO-DB038-001/i }).click()
   await expectStandaloneField(page.getByLabel(`Receive quantity for ${purchaseOrderDetail.lines[0].sku}`))
