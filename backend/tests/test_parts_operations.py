@@ -625,9 +625,14 @@ def test_parts_operations_migration_downgrade_drops_inventory_fks_before_categor
     assert '"inventory_categories"' not in downgrade.split('for table in (', 1)[1].split('):', 1)[0]
 
 
-def test_parts_redesign_migration_is_additive_exact_and_linear_after_db038():
-    migration = (Path(__file__).resolve().parents[1] / "alembic" / "versions" / "125_inventory_supplier_sources.py").read_text()
-    assert 'down_revision = "124_parts_operations_v1"' in migration
+def test_parts_redesign_migration_is_additive_exact_and_linear_after_main_125():
+    versions = Path(__file__).resolve().parents[1] / "alembic" / "versions"
+    main_125 = (versions / "125_invoice_ets_invoiced_at.py").read_text()
+    migration = (versions / "126_inventory_supplier_sources.py").read_text()
+    assert 'revision = "125_invoice_ets_invoiced_at"' in main_125
+    assert 'down_revision = "124_parts_operations_v1"' in main_125
+    assert 'revision = "126_inventory_supplier_sources"' in migration
+    assert 'down_revision = "125_invoice_ets_invoiced_at"' in migration
     assert "inventory_supplier_sources" in migration
     assert "i.preferred_supplier_id" in migration
     assert "s.id = i.preferred_supplier_id" in migration

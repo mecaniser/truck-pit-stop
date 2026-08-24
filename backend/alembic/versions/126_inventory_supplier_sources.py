@@ -1,14 +1,14 @@
 """Add purchasing profiles and tenant-owned part supplier sources.
 
-Revision ID: 125_inventory_supplier_sources
-Revises: 124_parts_operations_v1
+Revision ID: 126_inventory_supplier_sources
+Revises: 125_invoice_ets_invoiced_at
 """
 from alembic import op
 import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
-revision = "125_inventory_supplier_sources"
-down_revision = "124_parts_operations_v1"
+revision = "126_inventory_supplier_sources"
+down_revision = "125_invoice_ets_invoiced_at"
 branch_labels = None
 depends_on = None
 

@@ -65,7 +65,10 @@ WAC is displayed as **Average unit cost**. It changes through receiving or an ex
 
 ## 4. Data amendment
 
-Migration revision: `125_inventory_supplier_sources`, directly after `124_parts_operations_v1`.
+Historical v1 remains revision `124_parts_operations_v1`. The integrated supplier-source
+amendment is revision `126_inventory_supplier_sources`, directly after main revision
+`125_invoice_ets_invoiced_at`; the integrated migration graph has sole head
+`126_inventory_supplier_sources`.
 
 ### 4.1 Supplier purchasing profile
 
