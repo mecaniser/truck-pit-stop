@@ -1,4 +1,4 @@
-from sqlalchemy import BigInteger, Boolean, Column, String, Integer, Numeric, ForeignKey, Text, Date, DateTime, and_, or_
+from sqlalchemy import BigInteger, Boolean, Column, String, Integer, Numeric, ForeignKey, Text, Date, DateTime, UniqueConstraint, and_, or_
 from sqlalchemy.orm import relationship
 from sqlalchemy.dialects.postgresql import UUID
 from decimal import Decimal
@@ -7,6 +7,9 @@ from app.db.base import BaseModel
 
 class Inventory(BaseModel):
     __tablename__ = "inventory"
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "id", name="uq_inventory_tenant_id_id_db038"),
+    )
     
     tenant_id = Column(UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=False, index=True)
     tenant = relationship("Tenant", backref="inventory")

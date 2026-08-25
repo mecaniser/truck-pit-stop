@@ -1,4 +1,5 @@
 {
+  "fixture_version": 2,
   "frozen_at": "2026-08-23T14:00:00Z",
   "tenant_ids": {
     "primary": "10000000-0000-4000-8000-000000000038",
@@ -9,6 +10,7 @@
     "coolant": "10000000-0000-4000-8000-000000000102",
     "reman_starter": "10000000-0000-4000-8000-000000000103",
     "placeholder_part": "10000000-0000-4000-8000-000000000104",
+    "archived_part": "10000000-0000-4000-8000-000000000105",
     "foreign_lookalike": "20000000-0000-4000-8000-000000000101",
     "purchase_order": "20000000-0000-4000-8000-000000000201",
     "purchase_order_line": "20000000-0000-4000-8000-000000000211",
@@ -17,12 +19,90 @@
     "repair_order": "30000000-0000-4000-8000-000000000301",
     "parts_usage": "30000000-0000-4000-8000-000000000311",
     "supplier": "40000000-0000-4000-8000-000000000401",
+    "alternate_supplier": "40000000-0000-4000-8000-000000000402",
+    "foreign_supplier": "20000000-0000-4000-8000-000000000401",
+    "preferred_source": "41000000-0000-4000-8000-000000000411",
+    "alternate_source": "41000000-0000-4000-8000-000000000412",
+    "starter_source": "41000000-0000-4000-8000-000000000413",
+    "foreign_source": "21000000-0000-4000-8000-000000000411",
+    "invalid_source": "41000000-0000-4000-8000-000000000499",
+    "owner": "90000000-0000-4000-8000-000000000901",
+    "receptionist": "90000000-0000-4000-8000-000000000902",
+    "mechanic": "90000000-0000-4000-8000-000000000903",
+    "foreign_owner": "90000000-0000-4000-8000-000000000904",
     "category": "50000000-0000-4000-8000-000000000501",
     "vendor_return": "60000000-0000-4000-8000-000000000601",
     "vendor_return_line": "60000000-0000-4000-8000-000000000611",
     "core_obligation": "70000000-0000-4000-8000-000000000701",
-    "movement": "80000000-0000-4000-8000-000000000801"
+    "movement": "80000000-0000-4000-8000-000000000801",
+    "archived_movement": "80000000-0000-4000-8000-000000000802"
   },
+  "users": [
+    {
+      "id": "90000000-0000-4000-8000-000000000901",
+      "tenant": "primary",
+      "role": "garage_owner",
+      "email": "db038-owner@example.test",
+      "can_read": true,
+      "can_mutate": true
+    },
+    {
+      "id": "90000000-0000-4000-8000-000000000902",
+      "tenant": "primary",
+      "role": "receptionist",
+      "email": "db038-receptionist@example.test",
+      "can_read": true,
+      "can_mutate": false
+    },
+    {
+      "id": "90000000-0000-4000-8000-000000000903",
+      "tenant": "primary",
+      "role": "mechanic",
+      "email": "db038-mechanic@example.test",
+      "can_read": false,
+      "can_mutate": false
+    },
+    {
+      "id": "90000000-0000-4000-8000-000000000904",
+      "tenant": "foreign",
+      "role": "garage_owner",
+      "email": "db038-foreign-owner@example.test",
+      "can_read": true,
+      "can_mutate": true
+    }
+  ],
+  "suppliers": [
+    {
+      "id": "40000000-0000-4000-8000-000000000401",
+      "tenant": "primary",
+      "name": "Fleet Parts Co",
+      "normalized_name": "fleet parts co",
+      "payment_terms": "Net 30",
+      "default_lead_time_days": 2,
+      "minimum_order_amount": "100.00",
+      "purchasing_notes": "Primary filters and preventive-maintenance supply"
+    },
+    {
+      "id": "40000000-0000-4000-8000-000000000402",
+      "tenant": "primary",
+      "name": "Regional Diesel Supply",
+      "normalized_name": "regional diesel supply",
+      "payment_terms": "COD",
+      "default_lead_time_days": 5,
+      "minimum_order_amount": "0.00",
+      "purchasing_notes": "Alternate source for urgent orders"
+    },
+    {
+      "id": "20000000-0000-4000-8000-000000000401",
+      "tenant": "foreign",
+      "name": "Fleet Parts Co",
+      "normalized_name": "fleet parts co",
+      "payment_terms": "Net 30",
+      "default_lead_time_days": 2,
+      "minimum_order_amount": "100.00",
+      "purchasing_notes": "Same visible supplier in another tenant"
+    }
+  ],
   "inventory": [
     {
       "id": "10000000-0000-4000-8000-000000000101",
@@ -32,6 +112,8 @@
       "on_order_quantity": 0,
       "reorder_level": 3,
       "cost": "10.00",
+      "image_url": "https://cdn.example.test/db038/oil-filter.jpg",
+      "location": "A3-S2",
       "preferred_supplier_id": "40000000-0000-4000-8000-000000000401"
     },
     {
@@ -53,7 +135,7 @@
       "reorder_level": 1,
       "cost": "100.00",
       "core_charge": "50.00",
-      "preferred_supplier_id": "40000000-0000-4000-8000-000000000401"
+      "preferred_supplier_id": "40000000-0000-4000-8000-000000000402"
     },
     {
       "id": "10000000-0000-4000-8000-000000000104",
@@ -66,13 +148,73 @@
       "is_placeholder": true
     },
     {
+      "id": "10000000-0000-4000-8000-000000000105",
+      "sku": "DB-ARCHIVED-01",
+      "name": "Archived air dryer cartridge",
+      "stock_quantity": 0,
+      "on_order_quantity": 0,
+      "reorder_level": 0,
+      "cost": "42.00",
+      "ets_retired_at": "2026-08-01T12:00:00Z"
+    },
+    {
       "id": "20000000-0000-4000-8000-000000000101",
       "sku": "DB-OIL-FILTER-01",
-      "name": "Foreign oil filter",
+      "name": "Oil filter",
       "stock_quantity": 99,
       "reorder_level": 0,
       "cost": "1.00",
       "tenant_id": "20000000-0000-4000-8000-000000000038"
+    }
+  ],
+  "supplier_sources": [
+    {
+      "id": "41000000-0000-4000-8000-000000000411",
+      "tenant": "primary",
+      "inventory_id": "10000000-0000-4000-8000-000000000101",
+      "supplier_id": "40000000-0000-4000-8000-000000000401",
+      "supplier_part_number": "FS-OF-01",
+      "is_preferred": true,
+      "minimum_order_quantity": 2,
+      "pack_quantity": 2,
+      "lead_time_days": 2,
+      "last_unit_cost": "15.75"
+    },
+    {
+      "id": "41000000-0000-4000-8000-000000000412",
+      "tenant": "primary",
+      "inventory_id": "10000000-0000-4000-8000-000000000101",
+      "supplier_id": "40000000-0000-4000-8000-000000000402",
+      "supplier_part_number": "RDS-OF-ALT",
+      "is_preferred": false,
+      "minimum_order_quantity": 4,
+      "pack_quantity": 4,
+      "lead_time_days": 5,
+      "last_unit_cost": "16.00"
+    },
+    {
+      "id": "41000000-0000-4000-8000-000000000413",
+      "tenant": "primary",
+      "inventory_id": "10000000-0000-4000-8000-000000000103",
+      "supplier_id": "40000000-0000-4000-8000-000000000402",
+      "supplier_part_number": "RDS-ST-01",
+      "is_preferred": true,
+      "minimum_order_quantity": 1,
+      "pack_quantity": 1,
+      "lead_time_days": 5,
+      "last_unit_cost": "90.00"
+    },
+    {
+      "id": "21000000-0000-4000-8000-000000000411",
+      "tenant": "foreign",
+      "inventory_id": "20000000-0000-4000-8000-000000000101",
+      "supplier_id": "20000000-0000-4000-8000-000000000401",
+      "supplier_part_number": "FS-OF-01",
+      "is_preferred": true,
+      "minimum_order_quantity": 2,
+      "pack_quantity": 2,
+      "lead_time_days": 2,
+      "last_unit_cost": "1.00"
     }
   ],
   "read_contract": {
@@ -150,7 +292,169 @@
     "second_unit_cost": "7.00",
     "expected_wac_after_second": "13.00"
   },
-  "scenarios": [
+  "v2_read_contract": {
+    "active_part_count": 4,
+    "archived_part_count": 1,
+    "part_without_source_id": "10000000-0000-4000-8000-000000000102",
+    "expected_oil_filter": {
+      "id": "10000000-0000-4000-8000-000000000101",
+      "sku": "DB-OIL-FILTER-01",
+      "name": "Oil filter",
+      "image_url": "https://cdn.example.test/db038/oil-filter.jpg",
+      "location": "A3-S2",
+      "available_packages": 1,
+      "needed_for_open_repairs": 2,
+      "reorder_level": 3,
+      "incoming_packages": 1,
+      "recommended_order_packages": 3,
+      "average_unit_cost": "10.00",
+      "is_archived": false,
+      "preferred_source_id": "41000000-0000-4000-8000-000000000411",
+      "alternate_source_id": "41000000-0000-4000-8000-000000000412"
+    },
+    "archived_part_id": "10000000-0000-4000-8000-000000000105",
+    "archived_movement_id": "80000000-0000-4000-8000-000000000802",
+    "foreign_reused_values": {
+      "sku": "DB-OIL-FILTER-01",
+      "part_name": "Oil filter",
+      "supplier_name": "Fleet Parts Co",
+      "supplier_part_number": "FS-OF-01"
+    }
+  },
+  "grouped_purchasing": {
+    "success": {
+      "idempotency_key": "db038-fixture-grouped-success",
+      "notes": "Prepared from deterministic fixture",
+      "groups": [
+        {
+          "supplier_id": "40000000-0000-4000-8000-000000000401",
+          "lines": [
+            {
+              "inventory_id": "10000000-0000-4000-8000-000000000101",
+              "source_id": "41000000-0000-4000-8000-000000000411",
+              "ordered_quantity": 4,
+              "unit_cost": "15.75"
+            }
+          ]
+        },
+        {
+          "supplier_id": "40000000-0000-4000-8000-000000000402",
+          "lines": [
+            {
+              "inventory_id": "10000000-0000-4000-8000-000000000103",
+              "source_id": "41000000-0000-4000-8000-000000000413",
+              "ordered_quantity": 1,
+              "unit_cost": "90.00"
+            }
+          ]
+        }
+      ],
+      "expected_purchase_order_count": 2,
+      "expected_ordered_quantity": 5,
+      "expected_unassigned": []
+    },
+    "duplicate_line_failure": {
+      "idempotency_key": "db038-fixture-duplicate-line",
+      "expected_status": 422,
+      "groups": [
+        {
+          "supplier_id": "40000000-0000-4000-8000-000000000401",
+          "lines": [
+            {
+              "inventory_id": "10000000-0000-4000-8000-000000000101",
+              "source_id": "41000000-0000-4000-8000-000000000411",
+              "ordered_quantity": 4,
+              "unit_cost": "15.75"
+            }
+          ]
+        },
+        {
+          "supplier_id": "40000000-0000-4000-8000-000000000402",
+          "lines": [
+            {
+              "inventory_id": "10000000-0000-4000-8000-000000000101",
+              "source_id": "41000000-0000-4000-8000-000000000412",
+              "ordered_quantity": 4,
+              "unit_cost": "16.00"
+            }
+          ]
+        }
+      ]
+    },
+    "invalid_source_rollback": {
+      "idempotency_key": "db038-fixture-invalid-source",
+      "expected_status": 404,
+      "groups": [
+        {
+          "supplier_id": "40000000-0000-4000-8000-000000000401",
+          "lines": [
+            {
+              "inventory_id": "10000000-0000-4000-8000-000000000101",
+              "source_id": "41000000-0000-4000-8000-000000000411",
+              "ordered_quantity": 4,
+              "unit_cost": "15.75"
+            }
+          ]
+        },
+        {
+          "supplier_id": "40000000-0000-4000-8000-000000000402",
+          "lines": [
+            {
+              "inventory_id": "10000000-0000-4000-8000-000000000103",
+              "source_id": "41000000-0000-4000-8000-000000000499",
+              "ordered_quantity": 1,
+              "unit_cost": "90.00"
+            }
+          ]
+        }
+      ]
+    },
+    "changed_fingerprint_notes": "Changed deterministic fixture request",
+    "concurrent_number_allocation": {
+      "idempotency_keys": [
+        "db038-fixture-concurrent-a",
+        "db038-fixture-concurrent-b"
+      ],
+      "expected_unique_numbers": 2,
+      "po_number_prefix": "PO-"
+    }
+  },
+  "browser_expectations": {
+    "themes": [
+      "light",
+      "dark",
+      "high_contrast"
+    ],
+    "viewport_widths": [
+      1280,
+      960,
+      390,
+      320
+    ],
+    "required_capabilities": [
+      "part_photo",
+      "bin_location",
+      "supplier_sources",
+      "grouped_purchase_order_preparation",
+      "inventory_history",
+      "archived_read_only_state"
+    ]
+  },
+  "acceptance_scenarios": [
+    "active_part_sources_and_history",
+    "active_part_without_source",
+    "archived_part_read_only_history",
+    "owner_grouped_draft_success",
+    "receptionist_mutation_denied",
+    "duplicate_line_failure",
+    "invalid_source_atomic_rollback",
+    "idempotent_replay",
+    "changed_fingerprint_conflict",
+    "concurrent_number_allocation",
+    "foreign_reused_value_isolation",
+    "disabled_rollout"
+  ],
+  "legacy_scenarios": [
     "opening_balance",
     "repair_shortage",
     "covered_demand",
@@ -160,7 +464,6 @@
     "over_receipt_race",
     "stock_return_reversal",
     "core_recovery",
-    "foreign_tenant_denial",
-    "disabled_rollout"
+    "foreign_tenant_denial"
   ]
 }

@@ -10,15 +10,24 @@ from uuid import UUID, uuid4
 
 import pytest
 from fastapi import HTTPException
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 from sqlalchemy.dialects import postgresql
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from app.api.v1.endpoints import inventory as inventory_endpoints, parts_operations, repair_orders
 from app.api.v1.endpoints import suppliers as supplier_endpoints
 from app.core.config import settings
 from app.db.models.inventory import Inventory, PartsUsage
-from app.db.models.parts_operations import CoreObligation, InventoryMovement, PurchaseOrder, PurchaseOrderLine, PurchaseReceiptLine
+from app.db.models.parts_operations import (
+    CoreObligation,
+    InventoryMovement,
+    InventorySupplierSource,
+    PartsOperationIdempotency,
+    PurchaseOrder,
+    PurchaseOrderLine,
+    PurchaseReceiptLine,
+)
 from app.db.models.customer import Customer
 from app.db.models.repair_order import RepairOrder, RepairOrderStatus
 from app.db.models.supplier import Supplier
@@ -367,14 +376,87 @@ async def test_db038_postgres_legacy_inventory_typeahead_and_supplier_fields_rem
     engine = create_async_engine(os.environ[POSTGRES_URL]); factory = async_sessionmaker(engine, expire_on_commit=False)
     try:
         ids = await _seed(factory)
+        foreign_ids = await _seed(factory)
         async with factory() as db:
             user = await db.get(User, ids["user_id"])
+            supplier = await db.get(Supplier, ids["supplier_id"])
+            supplier.payment_terms = "Net 30"
+            supplier.default_lead_time_days = 3
+            supplier.minimum_order_amount = Decimal("125.00")
+            supplier.purchasing_notes = "Protected commercial profile"
+            mechanic = User(
+                tenant_id=ids["tenant_id"],
+                email=f"db038-pg-supplier-mechanic-{uuid4().hex}@example.test",
+                hashed_password="x",
+                first_name="Supplier",
+                last_name="Mechanic",
+                role=UserRole.MECHANIC,
+                is_active=True,
+                is_verified=True,
+            )
+            tenantless_owner = User(
+                tenant_id=None,
+                email=f"db038-pg-supplier-tenantless-{uuid4().hex}@example.test",
+                hashed_password="x",
+                first_name="Tenantless",
+                last_name="Owner",
+                role=UserRole.GARAGE_OWNER,
+                is_active=True,
+                is_verified=True,
+            )
+            db.add_all((mechanic, tenantless_owner))
+            await db.commit()
             listing = await inventory_endpoints.list_inventory(skip=0, limit=100, paginated=False, category=None, low_stock=None, search=None, db=db, current_user=user)
             assert listing[0].sku.startswith("DB038-") and listing[0].stock_quantity == 2
             suggestions = await inventory_endpoints.inventory_typeahead(q="Filter", limit=20, in_stock=True, db=db, current_user=user)
             assert suggestions[0].id == ids["item_id"]
             suppliers = await supplier_endpoints.list_suppliers(skip=0, limit=100, paginated=False, search=None, db=db, current_user=user)
             assert any(row.name == "Exact Supplier" and row.normalized_name == "exact supplier" for row in suppliers)
+            assert len(suppliers) == 1
+            commercial_fields = {
+                "payment_terms", "default_lead_time_days",
+                "minimum_order_amount", "purchasing_notes",
+            }
+            assert commercial_fields.isdisjoint(suppliers[0].model_dump())
+            mechanic_suppliers = await supplier_endpoints.list_suppliers(
+                skip=0, limit=100, paginated=False, search=None,
+                db=db, current_user=mechanic,
+            )
+            assert len(mechanic_suppliers) == 1
+            assert commercial_fields.isdisjoint(mechanic_suppliers[0].model_dump())
+            with pytest.raises(HTTPException) as tenantless:
+                await supplier_endpoints.list_suppliers(
+                    skip=0, limit=100, paginated=False, search=None,
+                    db=db, current_user=tenantless_owner,
+                )
+            assert tenantless.value.status_code == 403
+            with pytest.raises(HTTPException) as mechanic_mutation:
+                await supplier_endpoints.update_supplier(
+                    supplier_id=str(ids["supplier_id"]),
+                    data=supplier_endpoints.SupplierUpdate(payment_terms="Leaked"),
+                    db=db,
+                    current_user=mechanic,
+                )
+            assert mechanic_mutation.value.status_code == 403
+            foreign_owner = await db.get(User, foreign_ids["user_id"])
+            with pytest.raises(HTTPException) as foreign:
+                await supplier_endpoints.update_supplier(
+                    supplier_id=str(ids["supplier_id"]),
+                    data=supplier_endpoints.SupplierUpdate(payment_terms="Leaked"),
+                    db=db,
+                    current_user=foreign_owner,
+                )
+            with pytest.raises(HTTPException) as missing:
+                await supplier_endpoints.update_supplier(
+                    supplier_id=str(uuid4()),
+                    data=supplier_endpoints.SupplierUpdate(payment_terms="Leaked"),
+                    db=db,
+                    current_user=foreign_owner,
+                )
+            assert foreign.value.status_code == missing.value.status_code == 404
+            assert foreign.value.detail == missing.value.detail == "Not found"
+            await db.refresh(supplier)
+            assert supplier.payment_terms == "Net 30"
     finally:
         await engine.dispose()
 
@@ -834,6 +916,27 @@ async def test_db038_postgres_read_contract_fixture_and_tenant_filter_denial(mon
             expected = context["fixture"]["read_contract"]["expected_oil_filter_demand"]
             assert next(item for item in result["items"] if item["inventory_id"] == expected["inventory_id"]) == expected
             assert result["total"] == 3
+            v2_expected = context["fixture"]["v2_read_contract"]
+            parts = await parts_operations.list_parts(
+                view="active", attention=None, supplier_id=None, search=None,
+                sort_by="catalog", skip=0, limit=50, paginated=True,
+                db=db, current_user=owner,
+            )
+            assert parts["total"] == v2_expected["active_part_count"]
+            oil = next(row for row in parts["items"] if row["id"] == v2_expected["expected_oil_filter"]["id"])
+            assert oil["image_url"] == v2_expected["expected_oil_filter"]["image_url"]
+            assert oil["location"] == v2_expected["expected_oil_filter"]["location"]
+            assert {source["source_id"] for source in oil["supplier_sources"]} == {
+                v2_expected["expected_oil_filter"]["preferred_source_id"],
+                v2_expected["expected_oil_filter"]["alternate_source_id"],
+            }
+            archived = await parts_operations.get_part_detail(
+                inventory_id=UUID(v2_expected["archived_part_id"]),
+                db=db,
+                current_user=owner,
+            )
+            assert archived["is_archived"] is True
+            assert archived["recent_movements"][0]["id"] == v2_expected["archived_movement_id"]
             with pytest.raises(HTTPException) as foreign:
                 await parts_operations.demand(
                     state=None, supplier_id=context["foreign_supplier"].id, search=None,
@@ -854,5 +957,375 @@ async def test_db038_postgres_read_contract_fixture_and_tenant_filter_denial(mon
                     db=db, current_user=mechanic,
                 )
             assert denied.value.status_code == 403
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_db038_postgres_grouped_po_keys_and_numbers_are_concurrency_safe(monkeypatch):
+    from test_db038_read_contract import load_db038_fixture
+
+    monkeypatch.setattr(settings, "PARTS_OPERATIONS_V1_ENABLED", True)
+    concurrency = load_db038_fixture()["grouped_purchasing"]["concurrent_number_allocation"]
+    engine = create_async_engine(os.environ[POSTGRES_URL])
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    try:
+        ids = await _seed(factory)
+        async with factory() as db:
+            user = await db.get(User, ids["user_id"])
+            source = await parts_operations.create_supplier_source(
+                inventory_id=ids["item_id"],
+                body=parts_operations.SupplierSourceCreate(
+                    supplier_id=ids["supplier_id"],
+                    supplier_part_number="PG-SOURCE-01",
+                    is_preferred=True,
+                ),
+                idempotency_key="db038-pg-source-create",
+                db=db,
+                current_user=user,
+            )
+        source_id = UUID(source["source_id"])
+        body = parts_operations.POBatchCreate(groups=[
+            parts_operations.BatchPOGroupInput(
+                supplier_id=ids["supplier_id"],
+                lines=[parts_operations.BatchPOLineInput(
+                    inventory_id=ids["item_id"],
+                    source_id=source_id,
+                    ordered_quantity=1,
+                    unit_cost=Decimal("14.00"),
+                )],
+            ),
+        ])
+
+        async def invoke(key: str):
+            async with factory() as db:
+                return await parts_operations.create_purchase_order_batch(
+                    body=body,
+                    idempotency_key=key,
+                    db=db,
+                    current_user=await db.get(User, ids["user_id"]),
+                )
+
+        same_key_results = await asyncio.wait_for(asyncio.gather(
+            invoke("db038-batch-concurrent-same"),
+            invoke("db038-batch-concurrent-same"),
+        ), timeout=10)
+
+        def payload(value):
+            return value if isinstance(value, dict) else json.loads(value.body)
+
+        same_payloads = [payload(value) for value in same_key_results]
+        assert same_payloads[0] == same_payloads[1]
+        assert same_payloads[0]["unassigned"] == []
+
+        distinct_results = await asyncio.wait_for(asyncio.gather(*(
+            invoke(key) for key in concurrency["idempotency_keys"]
+        )), timeout=10)
+        distinct_payloads = [payload(value) for value in distinct_results]
+        distinct_numbers = {
+            value["purchase_orders"][0]["po_number"] for value in distinct_payloads
+        }
+        assert len(distinct_numbers) == concurrency["expected_unique_numbers"]
+        assert all(number.startswith(concurrency["po_number_prefix"]) for number in distinct_numbers)
+
+        async with factory() as db:
+            orders = list((await db.execute(select(PurchaseOrder).where(
+                PurchaseOrder.tenant_id == ids["tenant_id"],
+            ))).scalars().all())
+            assert len(orders) == 3
+            assert len({order.po_number for order in orders}) == 3
+            assert await db.scalar(select(func.count(PartsOperationIdempotency.id)).where(
+                PartsOperationIdempotency.tenant_id == ids["tenant_id"],
+                PartsOperationIdempotency.operation_family == "po_batch_create",
+            )) == 3
+            lines = list((await db.execute(select(PurchaseOrderLine).where(
+                PurchaseOrderLine.tenant_id == ids["tenant_id"],
+            ))).scalars().all())
+            assert len(lines) == 3
+            assert all(line.supplier_source_id == source_id for line in lines)
+            assert all(line.supplier_part_number_snapshot == "PG-SOURCE-01" for line in lines)
+            persisted_source = await db.get(InventorySupplierSource, source_id)
+            assert persisted_source.is_preferred is True
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_db038_postgres_parts_pagination_detail_and_tenant_source_constraint(monkeypatch):
+    monkeypatch.setattr(settings, "PARTS_OPERATIONS_V1_ENABLED", True)
+    engine = create_async_engine(os.environ[POSTGRES_URL])
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    try:
+        ids = await _seed(factory)
+        foreign_ids = await _seed(factory)
+        async with factory() as db:
+            user = await db.get(User, ids["user_id"])
+            for index in range(3):
+                db.add(Inventory(
+                    tenant_id=ids["tenant_id"],
+                    sku=f"PG-PAGE-{uuid4().hex[:8]}",
+                    name=f"Page part {index}",
+                    stock_quantity=10,
+                    on_order_quantity=0,
+                    reorder_level=0,
+                    cost=Decimal("5.00"),
+                    selling_price=Decimal("10.00"),
+                    unit_type="each",
+                    is_placeholder=False,
+                ))
+            db.add(Inventory(
+                tenant_id=ids["tenant_id"],
+                sku=f"PG-ARCH-{uuid4().hex[:8]}",
+                name="Archived PG part",
+                stock_quantity=0,
+                on_order_quantity=0,
+                reorder_level=0,
+                cost=Decimal("5.00"),
+                selling_price=Decimal("10.00"),
+                unit_type="each",
+                is_placeholder=False,
+                ets_retired_at=datetime(2026, 8, 24, tzinfo=timezone.utc),
+            ))
+            await db.commit()
+            source = await parts_operations.create_supplier_source(
+                inventory_id=ids["item_id"],
+                body=parts_operations.SupplierSourceCreate(
+                    supplier_id=ids["supplier_id"],
+                    supplier_part_number="PG-SEARCH-01",
+                    is_preferred=True,
+                ),
+                idempotency_key="db038-pg-pagination-source",
+                db=db,
+                current_user=user,
+            )
+            first = await parts_operations.list_parts(
+                view="active", attention=None, supplier_id=None, search=None,
+                sort_by="catalog", skip=0, limit=2, paginated=True,
+                db=db, current_user=user,
+            )
+            second = await parts_operations.list_parts(
+                view="active", attention=None, supplier_id=None, search=None,
+                sort_by="catalog", skip=2, limit=2, paginated=True,
+                db=db, current_user=user,
+            )
+            assert first["total"] == second["total"] == 4
+            assert len(first["items"]) == len(second["items"]) == 2
+            assert {row["id"] for row in first["items"]}.isdisjoint(
+                {row["id"] for row in second["items"]}
+            )
+            searched = await parts_operations.list_parts(
+                view="active", attention=None, supplier_id=None, search="pg-search",
+                sort_by="catalog", skip=0, limit=50, paginated=True,
+                db=db, current_user=user,
+            )
+            assert [row["id"] for row in searched["items"]] == [str(ids["item_id"])]
+
+            batch = await parts_operations.create_purchase_order_batch(
+                body=parts_operations.POBatchCreate(groups=[
+                    parts_operations.BatchPOGroupInput(
+                        supplier_id=ids["supplier_id"],
+                        lines=[parts_operations.BatchPOLineInput(
+                            inventory_id=ids["item_id"],
+                            source_id=UUID(source["source_id"]),
+                            ordered_quantity=1,
+                            unit_cost=Decimal("12.00"),
+                        )],
+                    ),
+                ]),
+                idempotency_key="db038-pg-detail-batch",
+                db=db,
+                current_user=user,
+            )
+            detail = await parts_operations.get_part_detail(
+                inventory_id=ids["item_id"], db=db, current_user=user,
+            )
+            assert detail["open_purchase_order_lines"][0]["purchase_order_id"] == batch["purchase_orders"][0]["id"]
+            assert detail["open_purchase_order_lines"][0]["supplier_source_id"] == source["source_id"]
+
+        async with factory() as db:
+            db.add(InventorySupplierSource(
+                tenant_id=ids["tenant_id"],
+                inventory_id=ids["item_id"],
+                supplier_id=foreign_ids["supplier_id"],
+                minimum_order_quantity=1,
+                pack_quantity=1,
+                is_active=True,
+            ))
+            with pytest.raises(IntegrityError):
+                await db.flush()
+            await db.rollback()
+            db_constraint_names = set((await db.execute(text("""
+                SELECT conname
+                  FROM pg_constraint
+                 WHERE conname IN (
+                    'fk_inventory_supplier_sources_tenant_inventory',
+                    'fk_inventory_supplier_sources_tenant_supplier',
+                    'uq_inventory_supplier_sources_tenant_id_id_db038',
+                    'uq_inventory_tenant_id_id_db038',
+                    'uq_suppliers_tenant_id_id_db038'
+                 )
+            """))).scalars().all())
+            metadata_constraint_names = {
+                constraint.name
+                for table in (
+                    InventorySupplierSource.__table__,
+                    Inventory.__table__,
+                    Supplier.__table__,
+                )
+                for constraint in table.constraints
+                if constraint.name and constraint.name.endswith((
+                    "tenant_inventory",
+                    "tenant_supplier",
+                    "tenant_id_id_db038",
+                ))
+            }
+            assert db_constraint_names == metadata_constraint_names == {
+                "fk_inventory_supplier_sources_tenant_inventory",
+                "fk_inventory_supplier_sources_tenant_supplier",
+                "uq_inventory_supplier_sources_tenant_id_id_db038",
+                "uq_inventory_tenant_id_id_db038",
+                "uq_suppliers_tenant_id_id_db038",
+            }
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_db038_postgres_po_line_source_is_bound_to_tenant_and_inventory(monkeypatch):
+    """The database rejects source provenance outside the line's tenant/item."""
+    monkeypatch.setattr(settings, "PARTS_OPERATIONS_V1_ENABLED", True)
+    engine = create_async_engine(os.environ[POSTGRES_URL])
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    try:
+        ids = await _seed(factory)
+        foreign_ids = await _seed(factory)
+
+        async with factory() as db:
+            second_item = Inventory(
+                tenant_id=ids["tenant_id"],
+                sku=f"DB038-SECOND-{uuid4().hex[:8]}",
+                name="Second tenant-local item",
+                stock_quantity=0,
+                on_order_quantity=0,
+                reorder_level=0,
+                cost=Decimal("8.00"),
+                selling_price=Decimal("16.00"),
+                unit_type="each",
+                is_placeholder=False,
+            )
+            valid_source = InventorySupplierSource(
+                tenant_id=ids["tenant_id"],
+                inventory_id=ids["item_id"],
+                supplier_id=ids["supplier_id"],
+                supplier_part_number="DB038-VALID-SOURCE",
+                minimum_order_quantity=1,
+                pack_quantity=1,
+                is_active=True,
+            )
+            foreign_source = InventorySupplierSource(
+                tenant_id=foreign_ids["tenant_id"],
+                inventory_id=foreign_ids["item_id"],
+                supplier_id=foreign_ids["supplier_id"],
+                supplier_part_number="DB038-FOREIGN-SOURCE",
+                minimum_order_quantity=1,
+                pack_quantity=1,
+                is_active=True,
+            )
+            purchase_order = PurchaseOrder(
+                tenant_id=ids["tenant_id"],
+                po_number=f"PO-SOURCE-BOUNDARY-{uuid4().hex[:10]}",
+                supplier_id=ids["supplier_id"],
+                status="draft",
+                version=1,
+                created_by_user_id=ids["user_id"],
+            )
+            db.add_all((second_item, valid_source, foreign_source, purchase_order))
+            await db.commit()
+            second_item_id = second_item.id
+            valid_source_id = valid_source.id
+            foreign_source_id = foreign_source.id
+            purchase_order_id = purchase_order.id
+
+        def po_line(*, inventory_id: UUID, supplier_source_id: UUID, sku: str):
+            return PurchaseOrderLine(
+                tenant_id=ids["tenant_id"],
+                purchase_order_id=purchase_order_id,
+                inventory_id=inventory_id,
+                supplier_source_id=supplier_source_id,
+                supplier_part_number_snapshot=sku,
+                sku_snapshot=sku,
+                description_snapshot="Supplier provenance boundary",
+                unit_type_snapshot="each",
+                unit_cost_snapshot=Decimal("10.00"),
+                core_charge_snapshot=Decimal("0.00"),
+                ordered_quantity=1,
+                received_quantity=0,
+            )
+
+        async with factory() as db:
+            valid_line = po_line(
+                inventory_id=ids["item_id"],
+                supplier_source_id=valid_source_id,
+                sku="VALID-SOURCE-LINE",
+            )
+            db.add(valid_line)
+            await db.commit()
+            valid_line_id = valid_line.id
+
+        async with factory() as db:
+            db.add(po_line(
+                inventory_id=ids["item_id"],
+                supplier_source_id=foreign_source_id,
+                sku="FOREIGN-SOURCE-LINE",
+            ))
+            with pytest.raises(IntegrityError):
+                await db.flush()
+            await db.rollback()
+
+        async with factory() as db:
+            db.add(po_line(
+                inventory_id=second_item_id,
+                supplier_source_id=valid_source_id,
+                sku="WRONG-INVENTORY-SOURCE-LINE",
+            ))
+            with pytest.raises(IntegrityError):
+                await db.flush()
+            await db.rollback()
+
+        expected_constraints = {
+            "uq_inventory_supplier_sources_tenant_id_id_db038",
+            "uq_inventory_supplier_sources_tenant_id_id_inventory_db038",
+            "fk_po_lines_tenant_supplier_source",
+            "fk_po_lines_supplier_source_inventory",
+        }
+        async with factory() as db:
+            persisted_lines = list((await db.execute(select(PurchaseOrderLine).where(
+                PurchaseOrderLine.purchase_order_id == purchase_order_id,
+            ))).scalars().all())
+            assert [line.id for line in persisted_lines] == [valid_line_id]
+            assert persisted_lines[0].tenant_id == ids["tenant_id"]
+            assert persisted_lines[0].inventory_id == ids["item_id"]
+            assert persisted_lines[0].supplier_source_id == valid_source_id
+
+            db_constraint_names = set((await db.execute(text("""
+                SELECT conname
+                  FROM pg_constraint
+                 WHERE conname IN (
+                    'uq_inventory_supplier_sources_tenant_id_id_db038',
+                    'uq_inventory_supplier_sources_tenant_id_id_inventory_db038',
+                    'fk_po_lines_tenant_supplier_source',
+                    'fk_po_lines_supplier_source_inventory'
+                 )
+            """))).scalars().all())
+            metadata_constraint_names = {
+                constraint.name
+                for table in (
+                    InventorySupplierSource.__table__,
+                    PurchaseOrderLine.__table__,
+                )
+                for constraint in table.constraints
+                if constraint.name in expected_constraints
+            }
+            assert db_constraint_names == metadata_constraint_names == expected_constraints
     finally:
         await engine.dispose()

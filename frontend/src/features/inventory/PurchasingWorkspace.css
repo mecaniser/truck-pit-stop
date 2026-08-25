@@ -1,0 +1,326 @@
+.db-purchasing {
+  display: grid;
+  min-block-size: 100%;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  gap: 1rem;
+  color: var(--text-primary);
+}
+
+.db-purchasing__gate {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  min-block-size: 7rem;
+  padding: 1rem;
+  border: 1px solid var(--workspace-border);
+  border-radius: .75rem;
+  background: var(--surface-raised);
+  color: var(--text-secondary);
+}
+
+.db-purchasing__gate button {
+  min-block-size: 44px;
+  padding: .45rem .7rem;
+  border: 1px solid var(--workspace-border);
+  border-radius: .45rem;
+  background: transparent;
+  color: var(--text-primary);
+  font-weight: 750;
+}
+
+.db-purchasing__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1.5rem;
+}
+
+.db-purchasing__header h1,
+.db-purchasing__introduction h2,
+.db-purchasing__preparation h2,
+.db-purchasing__supplier-group h3 { margin: 0; }
+
+.db-purchasing__header p,
+.db-purchasing__introduction p,
+.db-purchasing__preparation-head p {
+  max-inline-size: 68ch;
+  margin: .4rem 0 0;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+.db-purchasing__header > button {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: .45rem;
+  min-block-size: 44px;
+  padding: .5rem .7rem;
+  border: 1px solid var(--workspace-border);
+  border-radius: .55rem;
+  background: var(--surface-canvas);
+  color: var(--text-primary);
+  font-weight: 750;
+}
+
+.db-purchasing__header > button svg { inline-size: 1rem; }
+
+.db-purchasing__tabs {
+  display: flex;
+  gap: .3rem;
+  overflow-x: auto;
+  border-block-end: 1px solid var(--parts-rule, var(--workspace-border));
+  scrollbar-width: thin;
+}
+
+.db-purchasing__tabs button {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: .45rem;
+  min-block-size: 48px;
+  padding: .65rem .8rem;
+  border: 0;
+  border-block-end: 3px solid transparent;
+  background: transparent;
+  color: var(--text-secondary);
+  font-weight: 750;
+}
+
+.db-purchasing__tabs button[aria-current='page'] {
+  border-block-end-color: var(--parts-oxide, var(--accent-primary, var(--accent-400)));
+  color: var(--text-primary);
+}
+
+.db-purchasing__tabs svg { inline-size: 1rem; }
+.db-purchasing__tabs strong {
+  display: grid;
+  min-inline-size: 1.5rem;
+  min-block-size: 1.5rem;
+  place-items: center;
+  border-radius: 999px;
+  background: var(--parts-oxide, var(--accent-primary, var(--accent-500)));
+  color: var(--parts-oxide-foreground, var(--accent-foreground, white));
+  font-size: .72rem;
+}
+
+.db-purchasing__content {
+  min-block-size: 0;
+  overflow-y: auto;
+  padding-block-end: 1rem;
+  scrollbar-gutter: stable;
+}
+
+.db-purchasing__introduction {
+  margin-block: .25rem 1rem;
+  padding-block-end: .85rem;
+  border-block-end: 1px solid var(--workspace-border);
+}
+
+.db-purchasing__introduction h2 { font-size: 1.1rem; }
+.db-purchasing__introduction p { font-size: .86rem; }
+
+.db-purchasing__preparation {
+  margin-block-end: 1.5rem;
+  border-block-end: 1px solid var(--parts-rule, var(--workspace-border));
+  padding-block-end: 1.5rem;
+}
+
+.db-purchasing__preparation-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.db-purchasing__preparation-head > span {
+  flex: 0 0 auto;
+  color: var(--text-secondary);
+  font-size: .78rem;
+  font-weight: 750;
+}
+
+.db-purchasing__notice,
+.db-purchasing__error {
+  margin: .8rem 0;
+  padding: .7rem .8rem;
+  border: 1px solid var(--workspace-border);
+  border-radius: .55rem;
+  background: var(--surface-overlay);
+  color: var(--text-primary);
+}
+
+.db-purchasing__error { border-color: var(--parts-status-danger, var(--status-danger-border)); }
+
+.db-purchasing__empty {
+  display: flex;
+  align-items: center;
+  gap: .75rem;
+  min-block-size: 5rem;
+  margin-block-start: .85rem;
+  color: var(--text-secondary);
+}
+
+.db-purchasing__empty > svg { inline-size: 1.4rem; }
+.db-purchasing__empty strong,
+.db-purchasing__empty small { display: block; }
+.db-purchasing__empty strong { color: var(--text-primary); }
+.db-purchasing__empty small { margin-block-start: .2rem; }
+
+.db-purchasing__supplier-groups {
+  display: grid;
+  gap: 1rem;
+  margin-block-start: 1rem;
+}
+
+.db-purchasing__supplier-group {
+  overflow: hidden;
+  border: 1px solid var(--workspace-border);
+  border-radius: .75rem;
+  background: var(--surface-canvas);
+}
+
+.db-purchasing__supplier-group > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  min-block-size: 48px;
+  padding: .6rem .8rem;
+  border-block-end: 1px solid var(--workspace-border);
+  background: var(--surface-raised);
+}
+
+.db-purchasing__supplier-group h3 { font-size: .95rem; }
+.db-purchasing__supplier-group > header p { margin:.25rem 0 0; color:var(--text-secondary); font-size:.76rem; }
+.db-purchasing__supplier-group > header span { color: var(--text-secondary); font-size: .76rem; }
+.db-purchasing__supplier-group.is-blocked { border-style:dashed; }
+.db-purchasing__supplier-group.is-blocked > header { border-block-end-style:dashed; }
+
+.db-purchasing__line {
+  display: grid;
+  grid-template-columns: minmax(11rem, 1fr) minmax(13rem, .55fr) minmax(6.5rem, .25fr) auto;
+  align-items: center;
+  gap: .8rem;
+  min-block-size: 76px;
+  padding: .65rem .8rem;
+  border-block-end: 1px solid var(--workspace-border);
+}
+
+.db-purchasing__line:last-child { border-block-end: 0; }
+.db-purchasing__line-name strong,
+.db-purchasing__line-name small,
+.db-purchasing__line-cost strong,
+.db-purchasing__line-cost small { display: block; }
+.db-purchasing__line-name small,
+.db-purchasing__line-cost small { margin-block-start: .2rem; color: var(--text-secondary); font-size: .75rem; }
+.db-purchasing__line-cost { text-align: end; }
+.db-purchasing__line.is-blocked { grid-template-columns:minmax(14rem,1fr) minmax(10rem,.45fr) auto auto; }
+.db-purchasing__line-blocked { color:var(--parts-status-warning,var(--text-secondary)); font-size:.78rem; font-weight:750; }
+
+.db-purchasing__line label {
+  display: grid;
+  gap: .2rem;
+  color: var(--text-secondary);
+  font-size: .72rem;
+  font-weight: 700;
+}
+
+.db-purchasing__quantity-stepper { min-inline-size:0; justify-content:flex-start; }
+.db-purchasing__quantity-stepper > span:last-child { inline-size:auto; min-inline-size:2.5rem; }
+.db-purchasing__quantity-stepper > span {
+  border-color:var(--workspace-border);
+  border-radius:2px;
+  background:var(--surface-canvas);
+  box-shadow:none;
+}
+.db-purchasing__line .db-purchasing__quantity-stepper button {
+  min-inline-size:44px;
+  min-block-size:44px;
+  padding:0;
+  border:0;
+  border-radius:0;
+  background:transparent;
+  color:var(--text-primary);
+}
+.db-presentation-new .db-staff-content .db-purchasing__quantity-stepper input {
+  inline-size:4.5rem !important;
+  min-inline-size:4.5rem;
+  min-block-size:44px;
+  padding:.35rem !important;
+  border-block:0 !important;
+  border-inline:1px solid var(--workspace-border) !important;
+  border-radius:0 !important;
+  background:transparent !important;
+  color:var(--text-primary) !important;
+  caret-color:var(--accent-primary,var(--accent-400));
+  color-scheme:dark;
+}
+.db-staff-shell[data-appearance-mode='light'] .db-purchasing__quantity-stepper input { color-scheme:light; }
+.db-purchasing__quantity-stepper.is-invalid > span { border-color:var(--parts-status-danger,var(--status-danger-border)); }
+.db-purchasing__line label small[role='alert'] { color: var(--parts-status-danger, var(--status-danger-text)); }
+.db-purchasing__line > button {
+  min-block-size: 44px;
+  padding: .45rem .65rem;
+  border: 0;
+  background: transparent;
+  color: var(--text-secondary);
+  font-weight: 750;
+}
+
+.db-purchasing__preparation-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 1rem;
+  margin-block-start: 1rem;
+}
+
+.db-purchasing__preparation-actions p { margin: 0 auto 0 0; color: var(--text-secondary); font-size: .8rem; }
+.db-purchasing__preparation-actions button {
+  min-block-size: 46px;
+  padding: .55rem .85rem;
+  border: 1px solid transparent;
+  border-radius: .5rem;
+  background: var(--parts-oxide, var(--accent-primary, var(--accent-500)));
+  color: var(--parts-oxide-foreground, var(--accent-foreground, white));
+  font-weight: 800;
+}
+.db-purchasing__preparation-actions button:disabled { cursor: not-allowed; opacity: .5; }
+
+.db-purchasing :is(button, input):focus-visible {
+  outline: 3px solid var(--focus-ring, var(--accent-primary, var(--accent-400)));
+  outline-offset: 2px;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .db-purchasing__header > button:hover,
+  .db-purchasing__line > button:hover { color: var(--text-primary); }
+  .db-purchasing__quantity-stepper button:hover:not(:disabled) { background:var(--surface-overlay); }
+  .db-purchasing__tabs button:hover { background: var(--surface-hover, var(--surface-overlay)); color: var(--text-primary); }
+}
+
+@media (max-width: 760px) {
+  .db-purchasing { min-block-size: auto; }
+  .db-purchasing__content { overflow: visible; }
+  .db-purchasing__header { display: grid; }
+  .db-purchasing__header > button { justify-self: start; }
+  .db-purchasing__preparation-head { display: grid; }
+  .db-purchasing__line,
+  .db-purchasing__line.is-blocked { grid-template-columns: minmax(0, 1fr); }
+  .db-purchasing__line-cost { text-align: start; }
+  .db-purchasing__line > button { justify-self: start; }
+  .db-purchasing__preparation-actions { align-items: stretch; flex-direction: column; }
+  .db-purchasing__preparation-actions p { margin: 0; }
+}
+
+@media (forced-colors: active) {
+  .db-purchasing__tabs button[aria-current='page'],
+  .db-purchasing__quantity-stepper.is-invalid > span { border-color: Highlight; }
+  .db-purchasing__quantity-stepper > span { border-color:CanvasText; }
+  .db-presentation-new .db-staff-content .db-purchasing__quantity-stepper input,
+  .db-purchasing__line .db-purchasing__quantity-stepper button { background:Canvas !important; color:CanvasText !important; forced-color-adjust:auto; }
+  .db-purchasing__tabs strong,
+  .db-purchasing__preparation-actions button { background: Highlight; color: HighlightText; forced-color-adjust: none; }
+}
