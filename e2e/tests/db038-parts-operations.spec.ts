@@ -443,13 +443,25 @@ async function expectPurchasingQuantityStepper(page: Page, appearanceMode: 'ligh
   await expect(page.getByText('1 line · $80.00')).toBeVisible()
 }
 
-async function expectCompactIdentityGeometry(page: Page) {
+async function expectRuntimeIdentityGeometry(page: Page, width: number) {
   const identityRow = page.locator('.db-staff-nav__brand-row')
   const productIdentity = identityRow.locator('.db-brand-attribution')
   const runtimeIdentity = identityRow.locator('[aria-label^="Local development runtime:"]')
   const viewportWidth = await page.evaluate(() => window.innerWidth)
 
-  await expect(page.locator('.db-staff-shell')).toHaveAttribute('data-appearance-mode', 'high_contrast')
+  if (width === 960) {
+    await expect(runtimeIdentity).toBeHidden()
+    const hiddenGeometry = await runtimeIdentity.evaluate((node) => ({
+      display: getComputedStyle(node).display,
+      clientRects: node.getClientRects().length,
+      offsetWidth: (node as HTMLElement).offsetWidth,
+    }))
+    expect(hiddenGeometry).toEqual({ display: 'none', clientRects: 0, offsetWidth: 0 })
+    expect(await identityRow.evaluate((node) => node.scrollWidth <= node.clientWidth + 1)).toBe(true)
+    expect(await page.locator('body').evaluate((node) => node.scrollWidth <= window.innerWidth)).toBe(true)
+    return
+  }
+
   await expect(productIdentity).toContainText('DieselBridge')
   await expect(runtimeIdentity).toBeVisible()
 
@@ -462,13 +474,15 @@ async function expectCompactIdentityGeometry(page: Page) {
   expect(productBox).not.toBeNull()
   expect(runtimeBox).not.toBeNull()
 
-  const intersects = !(
-    productBox!.x + productBox!.width <= runtimeBox!.x
-    || runtimeBox!.x + runtimeBox!.width <= productBox!.x
-    || productBox!.y + productBox!.height <= runtimeBox!.y
-    || runtimeBox!.y + runtimeBox!.height <= productBox!.y
-  )
-  expect(intersects).toBe(false)
+  if (width === 320) {
+    const intersects = !(
+      productBox!.x + productBox!.width <= runtimeBox!.x
+      || runtimeBox!.x + runtimeBox!.width <= productBox!.x
+      || productBox!.y + productBox!.height <= runtimeBox!.y
+      || runtimeBox!.y + runtimeBox!.height <= productBox!.y
+    )
+    expect(intersects).toBe(false)
+  }
 
   for (const box of [productBox!, runtimeBox!]) {
     expect(box.x).toBeGreaterThanOrEqual(rowBox!.x - 1)
@@ -479,8 +493,10 @@ async function expectCompactIdentityGeometry(page: Page) {
     expect(box.x + box.width).toBeLessThanOrEqual(viewportWidth + 1)
   }
 
-  for (const label of [productIdentity, runtimeIdentity]) {
-    expect(await label.evaluate((node) => node.scrollWidth <= node.clientWidth + 1)).toBe(true)
+  if (width === 320) {
+    for (const label of [productIdentity, runtimeIdentity]) {
+      expect(await label.evaluate((node) => node.scrollWidth <= node.clientWidth + 1)).toBe(true)
+    }
   }
 }
 
@@ -1358,13 +1374,20 @@ test('DB-038 covers All parts, Needs reorder, Movement, and Purchasing across re
       expect(inventoryCreates[0]).toMatchObject({ name: 'Air dryer cartridge', sku: 'AIR-DRY-01', stock_quantity: 0, reorder_level: 0, unit_type: 'each' })
     }
 
+    if (width === 960) {
+      await expectRuntimeIdentityGeometry(page, width)
+      await page.screenshot({ path: testInfo.outputPath('db038-runtime-identity-960-forced-colors.png'), fullPage: false })
+    }
     await page.screenshot({ path: testInfo.outputPath(`db038-first-selection-${width}.png`), fullPage: false })
     await partButtons.first().click()
     const partPhoto = page.getByRole('img', { name: 'Air filter part photo' })
     await expect(partPhoto).toBeVisible()
     await expectSelectedPartImage(partPhoto, width)
     await page.emulateMedia({ forcedColors: 'none' })
-    if (width === 320) await expectCompactIdentityGeometry(page)
+    await expectRuntimeIdentityGeometry(page, width)
+    if (width === 960) {
+      await page.screenshot({ path: testInfo.outputPath('db038-runtime-identity-960-light.png'), fullPage: false })
+    }
     await page.screenshot({ path: testInfo.outputPath(`db038-service-manual-${width}.png`), fullPage: false })
     await expectServiceManualHierarchy(page, width)
     await expectSupplierRelationshipHierarchy(page)

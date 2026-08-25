@@ -3374,6 +3374,12 @@ html::-webkit-scrollbar-thumb:hover {
   .db-presentation-new .db-workspace-context__name { display: none; }
   .db-presentation-new .db-workspace-context__state { min-width: 38px; justify-content: center; }
   .db-presentation-new.db-staff-shell:not([data-rail-expanded='true']) .db-brand-attribution { display: none; }
+  /* The 84px icon rail cannot truthfully contain a branch@SHA label. Keep the
+     development identity complete in expanded and mobile headers; suppress it
+     entirely in the collapsed rail instead of centering a clipped fragment. */
+  .db-presentation-new.db-staff-shell:not([data-rail-expanded='true']) .db-staff-nav__brand-row > span[aria-label^='Local development runtime:'] {
+    display: none;
+  }
   .db-presentation-new .db-staff-primary-nav {
     display: flex;
     flex: 1 1 auto;
