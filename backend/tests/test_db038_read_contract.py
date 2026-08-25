@@ -7,6 +7,7 @@ from pathlib import Path
 from uuid import UUID, uuid4
 
 import pytest
+from fastapi import HTTPException
 from sqlalchemy import func, select
 
 from app.api.v1.endpoints import parts_operations
@@ -44,6 +45,34 @@ def load_db038_fixture() -> dict:
 def _headers(user: User, tenant: Tenant) -> dict[str, str]:
     token = create_access_token({"sub": str(user.id)}, tenant_id=str(tenant.id))
     return {"Authorization": f"Bearer {token}"}
+
+
+def _expected_part_order(rows: list[dict], sort_by: str, direction: str) -> list[str]:
+    if sort_by == "catalog":
+        fallback = lambda row: (row["name"].casefold(), row["id"])
+        primary = lambda row: row["sku"].casefold()
+    elif sort_by == "name":
+        fallback = lambda row: (row["sku"].casefold(), row["id"])
+        primary = lambda row: row["name"].casefold()
+    else:
+        fallback = lambda row: (row["name"].casefold(), row["sku"].casefold(), row["id"])
+        primary = {
+            "available": lambda row: row["available_packages"],
+            "cost": lambda row: Decimal(row["average_unit_cost"]),
+            "reorder": lambda row: row["recommended_order_packages"],
+        }.get(sort_by)
+
+    ordered = sorted(rows, key=fallback)
+    if sort_by == "location":
+        located = [row for row in ordered if (row["location"] or "").strip()]
+        unset = [row for row in ordered if not (row["location"] or "").strip()]
+        located.sort(
+            key=lambda row: row["location"].strip().casefold(),
+            reverse=direction == "desc",
+        )
+        return [row["id"] for row in (*located, *unset)]
+    ordered.sort(key=primary, reverse=direction == "desc")
+    return [row["id"] for row in ordered]
 
 
 async def _seed_read_contract(db):
@@ -341,6 +370,250 @@ async def test_db038_summary_matches_actionable_needs_reorder_collection(
         str(context["foreign_item"].id),
     }
     assert selected_ids.isdisjoint(excluded_ids)
+
+
+@pytest.mark.asyncio
+async def test_db041_parts_sorting_http_contract_and_denials(
+    client,
+    db_session,
+    monkeypatch,
+):
+    monkeypatch.setattr(settings, "PARTS_OPERATIONS_V1_ENABLED", True)
+    context = await _seed_read_contract(db_session)
+    tenant = context["tenant"]
+    owner_headers = _headers(context["owner"], tenant)
+
+    sorting_rows = [
+        Inventory(
+            tenant_id=tenant.id,
+            sku=f"TIE-{index:03d}",
+            name="Stable tie",
+            stock_quantity=5,
+            on_order_quantity=0,
+            reorder_level=0,
+            cost=Decimal("7.00"),
+            selling_price=Decimal("9.00"),
+            unit_type="each",
+            location=f"T-{index:02d}",
+            is_placeholder=False,
+        )
+        for index in (3, 1, 2)
+    ]
+    blank_location = Inventory(
+        tenant_id=tenant.id,
+        sku="LOC-BLANK",
+        name="Blank location",
+        stock_quantity=7,
+        on_order_quantity=0,
+        reorder_level=0,
+        cost=Decimal("2.00"),
+        selling_price=Decimal("3.00"),
+        unit_type="each",
+        location="",
+        is_placeholder=False,
+    )
+    whitespace_location = Inventory(
+        tenant_id=tenant.id,
+        sku="LOC-WHITESPACE",
+        name="Whitespace location",
+        stock_quantity=8,
+        on_order_quantity=0,
+        reorder_level=0,
+        cost=Decimal("11.00"),
+        selling_price=Decimal("12.00"),
+        unit_type="each",
+        location="   ",
+        is_placeholder=False,
+    )
+    db_session.add_all((*sorting_rows, blank_location, whitespace_location))
+    await db_session.commit()
+
+    baseline_response = await client.get(
+        f"{PREFIX}/parts?view=active&paginated=false",
+        headers=owner_headers,
+    )
+    assert baseline_response.status_code == 200
+    baseline_rows = baseline_response.json()
+    expected_ids = {row["id"] for row in baseline_rows}
+    assert str(context["foreign_item"].id) not in expected_ids
+    assert str(context["deleted_item"].id) not in expected_ids
+
+    defaults = {
+        "catalog": "asc",
+        "name": "asc",
+        "available": "asc",
+        "location": "asc",
+        "cost": "desc",
+        "reorder": "desc",
+    }
+    for sort_by, default_direction in defaults.items():
+        for direction in ("asc", "desc"):
+            response = await client.get(
+                f"{PREFIX}/parts?view=active&sort={sort_by}&direction={direction}&paginated=false",
+                headers=owner_headers,
+            )
+            assert response.status_code == 200
+            rows = response.json()
+            assert {row["id"] for row in rows} == expected_ids
+            assert [row["id"] for row in rows] == _expected_part_order(
+                rows,
+                sort_by,
+                direction,
+            )
+
+        omitted = await client.get(
+            f"{PREFIX}/parts?view=active&sort={sort_by}&paginated=false",
+            headers=owner_headers,
+        )
+        explicit = await client.get(
+            f"{PREFIX}/parts?view=active&sort={sort_by}&direction={default_direction}&paginated=false",
+            headers=owner_headers,
+        )
+        assert omitted.status_code == explicit.status_code == 200
+        assert omitted.json() == explicit.json()
+
+    legacy = await client.get(f"{PREFIX}/parts?view=active&paginated=false", headers=owner_headers)
+    catalog_ascending = await client.get(
+        f"{PREFIX}/parts?view=active&sort=catalog&direction=asc&paginated=false",
+        headers=owner_headers,
+    )
+    assert legacy.json() == catalog_ascending.json()
+
+    for direction in ("asc", "desc"):
+        locations = await client.get(
+            f"{PREFIX}/parts?view=active&sort=location&direction={direction}&paginated=false",
+            headers=owner_headers,
+        )
+        rows = locations.json()
+        unset = [row for row in rows if not (row["location"] or "").strip()]
+        assert {row["location"] for row in unset} >= {None, "", "   "}
+        assert rows[-len(unset):] == unset
+
+    numeric_cost = await client.get(
+        f"{PREFIX}/parts?view=active&sort=cost&direction=desc&paginated=false",
+        headers=owner_headers,
+    )
+    costs = [Decimal(row["average_unit_cost"]) for row in numeric_cost.json()]
+    assert costs == sorted(costs, reverse=True)
+    assert Decimal("100.00") < Decimal("18.00") * 10
+    assert costs.index(Decimal("100.00")) < costs.index(Decimal("18.00"))
+
+    first_page = await client.get(
+        f"{PREFIX}/parts?search=stable%20tie&sort=cost&direction=asc&skip=0&limit=2&paginated=true",
+        headers=owner_headers,
+    )
+    second_page = await client.get(
+        f"{PREFIX}/parts?search=stable%20tie&sort=cost&direction=asc&skip=2&limit=2&paginated=true",
+        headers=owner_headers,
+    )
+    assert first_page.status_code == second_page.status_code == 200
+    assert first_page.json()["total"] == second_page.json()["total"] == 3
+    paged = first_page.json()["items"] + second_page.json()["items"]
+    assert [row["sku"] for row in paged] == ["TIE-001", "TIE-002", "TIE-003"]
+    assert len({row["id"] for row in paged}) == 3
+
+    composed = {
+        "all": "view=active&search=stable%20tie&sort=available&direction=desc",
+        "needs": "view=active&attention=needs_reorder&search=oil&sort=reorder&direction=desc",
+        "out": "view=active&attention=out_of_stock&search=unlinked&sort=name&direction=asc",
+        "incoming": "view=active&attention=incoming&search=coolant&sort=location&direction=desc",
+        "archived": "view=archived&search=archived&sort=reorder&direction=desc",
+    }
+    composed_results = {}
+    for name, query in composed.items():
+        response = await client.get(f"{PREFIX}/parts?{query}&paginated=true", headers=owner_headers)
+        assert response.status_code == 200
+        composed_results[name] = response.json()
+    assert composed_results["all"]["total"] == 3
+    assert composed_results["needs"]["total"] == 1
+    assert composed_results["out"]["total"] == 1
+    assert composed_results["incoming"]["total"] == 1
+    assert composed_results["archived"]["total"] == 1
+    assert composed_results["archived"]["items"][0]["recommended_order_packages"] == 0
+
+    placeholder = next(
+        row for row in baseline_rows if row["id"] == context["fixture"]["ids"]["placeholder_part"]
+    )
+    assert placeholder["recommended_order_packages"] == 0
+    foreign_search = await client.get(
+        f"{PREFIX}/parts?search=oil%20filter&sort=reorder&direction=desc&paginated=true",
+        headers=owner_headers,
+    )
+    assert foreign_search.status_code == 200
+    assert [row["id"] for row in foreign_search.json()["items"]] == [
+        context["fixture"]["ids"]["oil_filter"]
+    ]
+
+    paginated = await client.get(f"{PREFIX}/parts?paginated=true", headers=owner_headers)
+    compatible = await client.get(f"{PREFIX}/parts?paginated=false", headers=owner_headers)
+    assert set(paginated.json()) == {"items", "total", "skip", "limit", "has_more"}
+    assert isinstance(compatible.json(), list)
+
+    state_before = list((await db_session.execute(
+        select(Inventory.id, Inventory.stock_quantity, Inventory.cost, Inventory.updated_at)
+        .where(Inventory.tenant_id == tenant.id)
+        .order_by(Inventory.id)
+    )).all())
+    for query in ("sort=invalid", "sort=", "direction=sideways", "direction="):
+        response = await client.get(f"{PREFIX}/parts?{query}", headers=owner_headers)
+        assert response.status_code == 422
+    state_after = list((await db_session.execute(
+        select(Inventory.id, Inventory.stock_quantity, Inventory.cost, Inventory.updated_at)
+        .where(Inventory.tenant_id == tenant.id)
+        .order_by(Inventory.id)
+    )).all())
+    assert state_after == state_before
+
+    receptionist = await client.get(
+        f"{PREFIX}/parts?sort=location&direction=asc",
+        headers=_headers(context["receptionist"], tenant),
+    )
+    mechanic = await client.get(
+        f"{PREFIX}/parts?sort=location&direction=asc",
+        headers=_headers(context["mechanic"], tenant),
+    )
+    assert receptionist.status_code == 200
+    assert mechanic.status_code == 403
+
+    tenantless_owner = User(
+        tenant_id=None,
+        email=f"db041-tenantless-{uuid4().hex}@example.test",
+        hashed_password="x",
+        first_name="Tenantless",
+        last_name="Owner",
+        role=UserRole.GARAGE_OWNER,
+        is_active=True,
+        is_verified=True,
+    )
+    db_session.add(tenantless_owner)
+    await db_session.commit()
+    tenantless_headers = {
+        "Authorization": f"Bearer {create_access_token({'sub': str(tenantless_owner.id)})}",
+    }
+    assert (await client.get(f"{PREFIX}/parts", headers=tenantless_headers)).status_code == 404
+
+    tenant.parts_operations_enabled = False
+    await db_session.commit()
+    assert (await client.get(f"{PREFIX}/parts", headers=owner_headers)).status_code == 404
+
+    tenant.parts_operations_enabled = True
+    tenant.is_active = False
+    await db_session.commit()
+    with pytest.raises(HTTPException) as inactive_tenant:
+        await parts_operations.list_parts(
+            view="active",
+            attention=None,
+            supplier_id=None,
+            search=None,
+            sort_by="catalog",
+            direction="asc",
+            skip=0,
+            limit=50,
+            paginated=True,
+            db=db_session,
+            current_user=context["owner"],
+        )
+    assert inactive_tenant.value.status_code == 404
 
 
 @pytest.mark.asyncio
