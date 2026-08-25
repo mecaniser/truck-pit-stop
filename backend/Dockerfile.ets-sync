@@ -1,0 +1,24 @@
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# Node for the Playwright scrapers, plus the system libraries Chromium needs
+# to actually launch headless (not just download) — --with-deps below covers
+# most of this, curl/gnupg are needed to add the NodeSource repo itself.
+RUN apt-get update && \
+    apt-get install -y curl gnupg && \
+    curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && \
+    apt-get install -y nodejs && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
+
+COPY backend/requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY backend/ .
+
+WORKDIR /app/scripts/easytruck_sync
+RUN npm ci && npx playwright install --with-deps chromium
+
+WORKDIR /app
+CMD ["python3", "scripts/easytruck_sync/nightly_sync.py"]

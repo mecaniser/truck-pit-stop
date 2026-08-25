@@ -829,6 +829,8 @@ def resync(conn, tenant_id, commit):
         conn.rollback()
         print("\nDRY RUN — rolled back, no changes written.")
 
+    return stats
+
 
 def _rehost_part_image(image_url, inventory_item_id):
     """Re-upload an Easy Truck Shop part image to Cloudinary. Cloudinary fetches
@@ -1042,6 +1044,11 @@ def main():
     p.add_argument("--no-rehost-images", action="store_true",
                    help="with --parts: don't upload part images to Cloudinary")
     p.add_argument("--tenant-id", help="target tenant UUID (not needed for --upload-images-only)")
+    p.add_argument("--yes", action="store_true",
+                   help="skip the interactive confirmation prompt before --commit "
+                        "(for unattended/scripted use — the caller is the confirmation)")
+    p.add_argument("--json-out", help="write the final stats dict as JSON to this path "
+                                       "(for scripted callers, e.g. a guardrail check)")
     args = p.parse_args()
 
     # DB-free image pre-upload — no connection, no tenant required.
@@ -1064,16 +1071,17 @@ def main():
                 sys.exit(1)
             backfill_external_ids(conn, args.tenant_id, commit=args.commit)
         else:
-            if args.commit:
+            if args.commit and not args.yes:
                 if input(f"About to resync into tenant {args.tenant_id} on "
                          f"{dsn_from_env().split('@')[-1].split(' ')[0]}. Type 'yes': ").strip().lower() != "yes":
                     print("Aborted.")
                     sys.exit(1)
+            stats = None
             if not args.only_parts:
                 if not DATA_FILE.exists():
                     print(f"ERROR: {DATA_FILE} not found. Run the scrapers (01..07) first.", file=sys.stderr)
                     sys.exit(1)
-                resync(conn, args.tenant_id, commit=args.commit)
+                stats = resync(conn, args.tenant_id, commit=args.commit)
             if args.parts or args.only_parts:
                 resync_parts(conn, args.tenant_id, commit=args.commit,
                              rehost_images=not args.no_rehost_images)
@@ -1082,6 +1090,8 @@ def main():
                 cur.execute("UPDATE tenants SET ets_last_synced_at = %s WHERE id = %s",
                             (datetime.now(timezone.utc), args.tenant_id))
                 conn.commit()
+            if args.json_out and stats is not None:
+                Path(args.json_out).write_text(json.dumps(stats))
                 cur.close()
     finally:
         conn.close()
