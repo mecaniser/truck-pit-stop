@@ -578,6 +578,9 @@ async def get_reports_tax(
 
 class PartRevenueRow(BaseModel):
     invoice_number: str
+    # Lets the report link straight to the order it is reporting on, through the
+    # repair-order list's ?selected= deep link.
+    repair_order_id: str
     revenue: str
     cost: str
     profit: str
@@ -645,6 +648,7 @@ async def get_reports_parts(
         total_cost += cost
         part_rows.append(PartRevenueRow(
             invoice_number=invoice.invoice_number,
+            repair_order_id=str(order.id),
             revenue=str(revenue),
             cost=str(cost),
             profit=str(profit),
