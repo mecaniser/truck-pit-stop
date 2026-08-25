@@ -48,6 +48,7 @@ def main():
     g.add_argument("--dry-run", action="store_true")
     g.add_argument("--commit", action="store_true")
     ap.add_argument("--tenant-id", required=True)
+    ap.add_argument("--json-out", help="write the stats dict as JSON to this path (for scripted callers)")
     args = ap.parse_args()
 
     if not INVOICES_FILE.exists():
@@ -96,6 +97,9 @@ def main():
     else:
         conn.rollback(); print("\nDRY RUN — rolled back, nothing written.")
     w.close(); cur.close(); conn.close()
+
+    if args.json_out:
+        Path(args.json_out).write_text(json.dumps(stats))
 
 
 if __name__ == "__main__":
