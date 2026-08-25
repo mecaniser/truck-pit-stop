@@ -31,6 +31,8 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
+import psycopg2
+
 SYNC_DIR = Path(__file__).parent
 DATA_DIR = SYNC_DIR / "data"
 SCRIPTS_DIR = SYNC_DIR.parent
@@ -62,9 +64,44 @@ IMPORT_CEILINGS = {"inv_ins": 60, "ro_ins": 150, "cust_ins": 150, "veh_ins": 150
 LEGACY_FIX_CEILING = 25       # renamed + squatters_evicted + payments_renamed
 BACKFILL_CEILING = 200        # "updated" on either backfill script
 
+# Arbitrary fixed key for a Postgres advisory lock (any 64-bit int works, it
+# just has to be consistent across runs). A live test proved Railway's "skip
+# if a previous cron execution is still running" isn't reliable under a tight
+# test interval: two overlapping instances both passed fix_legacy_invoice_numbers.py's
+# --dry-run gate against the same pre-run state, then one's --commit hit a
+# unique-constraint conflict from the other's already-committed rename —
+# alerted correctly, but should never have been able to happen. This lock
+# makes "only one instance touches the DB at a time" true regardless of
+# whether Railway's own overlap detection holds up.
+LOCK_KEY = 771198337
+
 
 def log(msg):
     print(f"[{datetime.now(timezone.utc).isoformat()}] {msg}", flush=True)
+
+
+def dsn_from_env():
+    url = os.environ["DATABASE_URL"].strip()
+    return url.replace("postgresql+asyncpg://", "postgresql://").replace("+asyncpg", "")
+
+
+def acquire_lock():
+    """Returns a held connection on success, None if another run holds the lock.
+
+    Deliberately kept open for the caller's lifetime (not closed here) — the
+    lock releases automatically when this connection closes, i.e. when the
+    process exits, so it can't be left stuck by a crash between acquiring and
+    an explicit release.
+    """
+    conn = psycopg2.connect(dsn_from_env())
+    conn.autocommit = True
+    cur = conn.cursor()
+    cur.execute("SELECT pg_try_advisory_lock(%s)", (LOCK_KEY,))
+    got = cur.fetchone()[0]
+    if not got:
+        conn.close()
+        return None
+    return conn
 
 
 def send_alert(subject, body):
@@ -239,6 +276,11 @@ def main():
     if "DATABASE_URL" not in os.environ:
         log("ERROR: DATABASE_URL not set")
         sys.exit(1)
+
+    lock_conn = acquire_lock()
+    if lock_conn is None:
+        log("Another sync run already holds the lock — skipping this tick.")
+        sys.exit(0)
 
     prev_dir = latest_backup_dir()
     ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")

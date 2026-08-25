@@ -14,7 +14,7 @@
   },
   "deploy": {
     "startCommand": "python3 scripts/easytruck_sync/nightly_sync.py",
-    "cronSchedule": "*/5 * * * *",
+    "cronSchedule": "0 0 * * *",
     "restartPolicyType": "NEVER"
   }
 }
