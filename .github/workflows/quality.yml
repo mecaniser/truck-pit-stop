@@ -37,7 +37,7 @@ jobs:
             https://railway.com/railway.schema.json \
             --output /tmp/railway.schema.json
           npx --yes ajv-cli@5.0.0 validate \
-            --spec=draft7 \
+            --spec=draft2020 \
             -s /tmp/railway.schema.json \
             -d railway.json
 
