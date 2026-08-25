@@ -63,6 +63,19 @@ Human-facing quantities are:
 
 WAC is displayed as **Average unit cost**. It changes through receiving or an explicit audited correction. The new interface does not expose a naked WAC field or direct Incoming edit. Legacy mutation compatibility remains available through the v1 rollback surface until separately retired.
 
+### 3.1 Architecture clarification: option 5a recovery
+
+Option 5a is the authoritative visual and composition reference for the Parts workspace. This contract's stock semantics remain authoritative wherever the reference uses conflicting sample data or calculations.
+
+- The ledger presents **Available**, **Needed for open repairs**, **Reorder at**, **Incoming**, **Average cost**, **Preferred supplier**, and **Remarks**. It must not present `Free` or `Committed`, or derive another balance by subtracting repair demand from `inventory.stock_quantity`.
+- Row checkbox selection is independent of the single selected row and its detail drawer. Entering **Needs reorder** preselects eligible rows on the current server page; the interface must not imply that unloaded pages are selected.
+- The only Parts bulk controls are **Add to purchase list** and **Clear selection**. Selected assigned and unassigned lines feed the existing Purchasing preparation tray; unassigned lines remain visible there as blocked and are excluded from batch totals and submission.
+- Supplier grouping, quantity review, and `POST /purchase-orders/batch` remain owned by Purchasing. Parts does not create purchase orders directly.
+- Atomic bulk **Set reorder point** and **Change supplier** actions are deferred pending a separate contract. Existing single-part reorder and supplier-source controls remain supported.
+- **Add Part** reuses the existing `POST /inventory` capability with its current owner/admin authorization and validation. The redesign must not introduce a duplicate or presentation-only create flow.
+- CSV import remains deferred and no Import CSV control renders.
+- This recovery requires no backend, API, schema, or migration change. A backend change is required only if a later scope authorizes atomic bulk mutations or server-persisted preparation state.
+
 ## 4. Data amendment
 
 Historical v1 remains revision `124_parts_operations_v1`. The integrated supplier-source

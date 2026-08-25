@@ -595,9 +595,20 @@ def _complete_mutation(record, body: dict, *, status_code: int = 200) -> dict:
 @router.get("/summary")
 async def summary(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
     tenant_id = await _tenant(db, current_user, mutate=False)
-    low_stock = (await db.execute(select(func.count(Inventory.id)).where(Inventory.tenant_id == tenant_id, Inventory.deleted_at.is_(None), Inventory.stock_quantity <= Inventory.reorder_level))).scalar() or 0
+    _, _, recommended = _part_metric_expressions(tenant_id)
+    needs_reorder = (await db.execute(select(func.count(Inventory.id)).where(
+        Inventory.tenant_id == tenant_id,
+        Inventory.deleted_at.is_(None),
+        Inventory.ets_retired_at.is_(None),
+        Inventory.is_placeholder.is_(False),
+        recommended > 0,
+    ))).scalar() or 0
     open_pos = (await db.execute(select(func.count(PurchaseOrder.id)).where(PurchaseOrder.tenant_id == tenant_id, PurchaseOrder.deleted_at.is_(None), PurchaseOrder.status.in_(("draft", "submitted", "partially_received"))))).scalar() or 0
-    return {"low_stock_count": low_stock, "open_purchase_order_count": open_pos}
+    return {
+        "needs_reorder_count": needs_reorder,
+        "low_stock_count": needs_reorder,
+        "open_purchase_order_count": open_pos,
+    }
 
 
 @router.get("/parts")
@@ -630,7 +641,11 @@ async def list_parts(
     elif view_filter == "archived":
         query = query.where(Inventory.ets_retired_at.is_not(None))
     if attention_filter == "needs_reorder":
-        query = query.where(recommended > 0)
+        query = query.where(
+            Inventory.ets_retired_at.is_(None),
+            Inventory.is_placeholder.is_(False),
+            recommended > 0,
+        )
     elif attention_filter == "out_of_stock":
         query = query.where(func.coalesce(Inventory.stock_quantity, 0) == 0)
     elif attention_filter == "incoming":

@@ -32,6 +32,7 @@ type QuantityStepperProps = {
   /** Control size. 'md' (default, 32px) for dense rows; 'lg' (42px) for larger
    *  touch targets — e.g. a shop floor where users wear gloves. */
   size?: 'md' | 'lg'
+  autoFocus?: boolean
 }
 
 const formatQuantity = (value: number, step: number) => (
@@ -78,6 +79,7 @@ export default function QuantityStepper({
   commitDebounceMs,
   theme = 'light',
   size = 'md',
+  autoFocus = false,
 }: QuantityStepperProps) {
   const t = THEME[theme]
   const sz = SIZE[size]
@@ -181,6 +183,7 @@ export default function QuantityStepper({
           {canRemove ? <Trash2 className="h-3.5 w-3.5" /> : <Minus className="h-3.5 w-3.5" />}
         </button>
         <input
+          autoFocus={autoFocus}
           type="text"
           inputMode="decimal"
           disabled={disabled}

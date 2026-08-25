@@ -4,6 +4,7 @@ import { ArrowLeft, ClipboardCheck, PackageCheck, RotateCcw, Store, Truck } from
 import { useNavigate, useSearchParams } from 'react-router-dom'
 
 import api from '@/lib/api'
+import QuantityStepper from '@/components/QuantityStepper'
 import { useAuthStore } from '@/stores/authStore'
 import SuppliersPage from '@/features/suppliers/SuppliersPage'
 import PartsOperationsWorkspace from './PartsOperationsWorkspace'
@@ -19,6 +20,11 @@ type PurchasingView = 'orders' | 'suppliers' | 'receiving' | 'returns'
 type StoredBatchKey = { fingerprint: string; key: string }
 
 const PURCHASE_BATCH_KEY = 'dieselbridge:db038:purchase-batch-key:v1'
+
+function purchaseBatchStorageKey() {
+  const user = useAuthStore.getState().user
+  return `${PURCHASE_BATCH_KEY}:${user?.tenant_id || 'no-tenant'}:${user?.id || 'no-user'}`
+}
 
 const views = [
   { id: 'orders', label: 'Purchase orders', icon: ClipboardCheck },
@@ -71,12 +77,13 @@ function batchFingerprint(lines: PurchasePreparationLine[]) {
 
 function batchIdempotencyKey(lines: PurchasePreparationLine[]) {
   const fingerprint = batchFingerprint(lines)
+  const storageKey = purchaseBatchStorageKey()
   try {
-    const stored = JSON.parse(window.sessionStorage.getItem(PURCHASE_BATCH_KEY) || 'null') as StoredBatchKey | null
+    const stored = JSON.parse(window.sessionStorage.getItem(storageKey) || 'null') as StoredBatchKey | null
     if (stored?.fingerprint === fingerprint && stored.key) return stored.key
   } catch { /* Replace malformed session state below. */ }
   const key = `po-batch-${crypto.randomUUID()}`
-  window.sessionStorage.setItem(PURCHASE_BATCH_KEY, JSON.stringify({ fingerprint, key } satisfies StoredBatchKey))
+  window.sessionStorage.setItem(storageKey, JSON.stringify({ fingerprint, key } satisfies StoredBatchKey))
   return key
 }
 
@@ -139,7 +146,7 @@ export default function PurchasingWorkspace() {
 
     <div className="db-purchasing__content">
       {view === 'orders' && <>
-        <PurchasePreparationTray onCreated={() => selectView('orders')} />
+        <PurchasePreparationTray onCreated={() => selectView('orders')} onOpenParts={() => navigate('/dashboard/garage/inventory')} />
         <WorkspaceIntroduction title="Current purchase orders">Review draft orders, submit approved orders, and see what is still expected from each supplier.</WorkspaceIntroduction>
         <PartsOperationsWorkspace key={`purchasing-orders-${linkedPurchaseOrderId || 'default'}`} summary={summary} initialTab="purchase-orders" initialPurchaseOrderId={linkedPurchaseOrderId} visibleTabs={['purchase-orders']} embedded />
       </>}
@@ -169,7 +176,7 @@ function WorkspaceIntroduction({ title, children }: { title: string; children: s
   </div>
 }
 
-function PurchasePreparationTray({ onCreated }: { onCreated: () => void }) {
+function PurchasePreparationTray({ onCreated, onOpenParts }: { onCreated: () => void; onOpenParts: () => void }) {
   const role = useAuthStore((state) => state.user?.role)
   const mayCreate = canPurchase(role)
   const queryClient = useQueryClient()
@@ -188,16 +195,20 @@ function PurchasePreparationTray({ onCreated }: { onCreated: () => void }) {
     }
   }, [])
 
+  const assignedLines = useMemo(() => lines.filter((line) => line.sourceId && line.supplierId && !line.blockedReason), [lines])
+  const blockedLines = useMemo(() => lines.filter((line) => !line.sourceId || !line.supplierId || line.blockedReason), [lines])
   const groups = useMemo(() => {
     const grouped = new Map<string, { supplierId: string; supplierName: string; lines: PurchasePreparationLine[] }>()
-    lines.forEach((line) => {
-      const current = grouped.get(line.supplierId) || { supplierId: line.supplierId, supplierName: line.supplierName, lines: [] }
+    assignedLines.forEach((line) => {
+      const supplierId = line.supplierId!
+      const supplierName = line.supplierName || 'Supplier'
+      const current = grouped.get(supplierId) || { supplierId, supplierName, lines: [] }
       current.lines.push(line)
-      grouped.set(line.supplierId, current)
+      grouped.set(supplierId, current)
     })
     return Array.from(grouped.values()).sort((left, right) => left.supplierName.localeCompare(right.supplierName))
-  }, [lines])
-  const hasInvalidLine = lines.some(lineIssue)
+  }, [assignedLines])
+  const hasInvalidLine = assignedLines.some(lineIssue)
 
   const commit = (next: PurchasePreparationLine[]) => {
     setLines(next)
@@ -213,7 +224,7 @@ function PurchasePreparationTray({ onCreated }: { onCreated: () => void }) {
   const removeLine = (inventoryId: string) => commit(lines.filter((line) => line.inventoryId !== inventoryId))
 
   const createDrafts = async () => {
-    if (!mayCreate || !lines.length || hasInvalidLine || submitting) return
+    if (!mayCreate || !assignedLines.length || hasInvalidLine || submitting) return
     setSubmitting(true)
     setNotice(null)
     setError(null)
@@ -223,24 +234,26 @@ function PurchasePreparationTray({ onCreated }: { onCreated: () => void }) {
           supplier_id: group.supplierId,
           lines: group.lines.map((line) => ({
             inventory_id: line.inventoryId,
-            source_id: line.sourceId,
+            source_id: line.sourceId!,
             ordered_quantity: line.quantity,
             unit_cost: line.unitCost,
           })),
         })),
         notes: 'Prepared from Parts & inventory',
-      }, { headers: { 'Idempotency-Key': batchIdempotencyKey(lines) } })
+      }, { headers: { 'Idempotency-Key': batchIdempotencyKey(assignedLines) } })
       const count = Number(response.data?.count || response.data?.purchase_orders?.length || groups.length)
-      writePurchasePreparation([])
-      window.sessionStorage.removeItem(PURCHASE_BATCH_KEY)
-      setLines([])
+      const createdIds = new Set(assignedLines.map((line) => line.inventoryId))
+      const unresolved = lines.filter((line) => !createdIds.has(line.inventoryId))
+      writePurchasePreparation(unresolved)
+      window.sessionStorage.removeItem(purchaseBatchStorageKey())
+      setLines(unresolved)
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['parts-operations', 'summary'] }),
         queryClient.invalidateQueries({ queryKey: ['parts-operations', 'parts'] }),
         queryClient.invalidateQueries({ queryKey: ['parts-operations', 'purchase-orders'] }),
         queryClient.invalidateQueries({ queryKey: ['parts-operations', 'purchase-order'] }),
       ])
-      setNotice(`${count} draft purchase ${count === 1 ? 'order' : 'orders'} created. Nothing was submitted to a supplier.`)
+      setNotice(`${count} draft purchase ${count === 1 ? 'order' : 'orders'} created. Nothing was submitted to a supplier.${unresolved.length ? ` ${unresolved.length} blocked ${unresolved.length === 1 ? 'part remains' : 'parts remain'} in preparation.` : ''}`)
       onCreated()
     } catch (cause) {
       setError(requestError(cause))
@@ -255,10 +268,10 @@ function PurchasePreparationTray({ onCreated }: { onCreated: () => void }) {
         <h2 id="purchase-preparation-title">Ready to prepare</h2>
         <p>Parts added from the reorder list are grouped by supplier. Creating drafts does not send or submit them.</p>
       </div>
-      {lines.length > 0 ? <span>{lines.length} {lines.length === 1 ? 'part' : 'parts'} · {groups.length} {groups.length === 1 ? 'supplier' : 'suppliers'}</span> : null}
+      {lines.length > 0 ? <span>{lines.length} {lines.length === 1 ? 'part' : 'parts'} · {groups.length} orderable {groups.length === 1 ? 'supplier' : 'suppliers'}</span> : null}
     </div>
 
-    {notice && <p className="db-purchasing__notice" role="status">{notice}</p>}
+    {notice && <p className="db-purchasing__notice" role="status" aria-label="Purchase preparation result">{notice}</p>}
     {error && <p className="db-purchasing__error" role="alert">{error}</p>}
 
     {!lines.length ? <div className="db-purchasing__empty">
@@ -273,6 +286,8 @@ function PurchasePreparationTray({ onCreated }: { onCreated: () => void }) {
         <div className="db-purchasing__lines">
           {group.lines.map((line) => {
             const issue = lineIssue(line)
+            const minimum = Math.max(1, line.minimumOrderQuantity)
+            const pack = Math.max(1, line.packQuantity)
             return <div key={line.inventoryId} className="db-purchasing__line">
               <span className="db-purchasing__line-name">
                 <strong>{line.name}</strong>
@@ -280,18 +295,18 @@ function PurchasePreparationTray({ onCreated }: { onCreated: () => void }) {
               </span>
               <label>
                 <span>Quantity</span>
-                <input
-                  type="number"
-                  inputMode="numeric"
-                  min={Math.max(1, line.minimumOrderQuantity)}
-                  step={Math.max(1, line.packQuantity)}
+                <QuantityStepper
                   value={line.quantity}
-                  aria-invalid={Boolean(issue)}
-                  aria-describedby={issue ? `purchase-line-issue-${line.inventoryId}` : undefined}
-                  onChange={(event) => updateQuantity(line.inventoryId, Number(event.target.value))}
-                  onBlur={() => updateQuantity(line.inventoryId, line.quantity, true)}
+                  min={minimum}
+                  step={pack}
+                  unitLabel="units"
+                  ariaLabel={`Quantity for ${line.name}`}
+                  align="start"
+                  size="lg"
+                  className={`db-purchasing__quantity-stepper${issue ? ' is-invalid' : ''}`}
+                  onChange={(quantity) => updateQuantity(line.inventoryId, quantity, true)}
                 />
-                {issue ? <small id={`purchase-line-issue-${line.inventoryId}`} role="alert">{issue}</small> : <small>Pack {Math.max(1, line.packQuantity)} · min {Math.max(1, line.minimumOrderQuantity)}</small>}
+                {issue ? <small id={`purchase-line-issue-${line.inventoryId}`} role="alert">{issue}</small> : <small>Pack {pack} · min {minimum}</small>}
               </label>
               <span className="db-purchasing__line-cost"><small>Last unit cost</small><strong>${Number(line.unitCost || 0).toFixed(2)}</strong></span>
               <button type="button" onClick={() => removeLine(line.inventoryId)} aria-label={`Remove ${line.name} from purchase preparation`}>Remove</button>
@@ -299,12 +314,22 @@ function PurchasePreparationTray({ onCreated }: { onCreated: () => void }) {
           })}
         </div>
       </section>)}
+      {blockedLines.length > 0 && <section className="db-purchasing__supplier-group is-blocked" aria-labelledby="supplier-group-unassigned">
+        <header><div><h3 id="supplier-group-unassigned">Supplier required</h3><p>These parts stay visible but are excluded from totals and draft creation.</p></div><span>{blockedLines.length} blocked {blockedLines.length === 1 ? 'line' : 'lines'}</span></header>
+        <div className="db-purchasing__lines">{blockedLines.map((line) => <div key={line.inventoryId} className="db-purchasing__line is-blocked">
+          <span className="db-purchasing__line-name"><strong>{line.name}</strong><small>{line.sku} · Assign a preferred supplier source in Parts</small></span>
+          <span className="db-purchasing__line-blocked">Excluded from this batch</span>
+          <button type="button" onClick={onOpenParts}>Open Parts</button>
+          <button type="button" onClick={() => removeLine(line.inventoryId)} aria-label={`Remove ${line.name} from purchase preparation`}>Remove</button>
+        </div>)}</div>
+      </section>}
     </div>}
 
     {lines.length > 0 && <div className="db-purchasing__preparation-actions">
       {!mayCreate && <p>Read-only access. Owners and admins can create draft purchase orders.</p>}
       {hasInvalidLine && <p>Correct the highlighted quantities before creating drafts.</p>}
-      <button type="button" disabled={!mayCreate || hasInvalidLine || submitting} onClick={() => void createDrafts()}>
+      {blockedLines.length > 0 && <p>{blockedLines.length} {blockedLines.length === 1 ? 'part needs' : 'parts need'} a supplier and will remain excluded.</p>}
+      <button type="button" disabled={!mayCreate || !assignedLines.length || hasInvalidLine || submitting} onClick={() => void createDrafts()}>
         {submitting ? 'Creating drafts…' : `Create ${groups.length} draft ${groups.length === 1 ? 'order' : 'orders'}`}
       </button>
     </div>}

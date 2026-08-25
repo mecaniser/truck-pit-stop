@@ -255,6 +255,95 @@ async def test_db038_read_contract_collections_filters_sources_and_security(clie
 
 
 @pytest.mark.asyncio
+async def test_db038_summary_matches_actionable_needs_reorder_collection(
+    client,
+    db_session,
+    monkeypatch,
+):
+    monkeypatch.setattr(settings, "PARTS_OPERATIONS_V1_ENABLED", True)
+    context = await _seed_read_contract(db_session)
+    tenant = context["tenant"]
+    fixture_ids = context["fixture"]["ids"]
+    active_order = await db_session.get(RepairOrder, UUID(fixture_ids["repair_order"]))
+
+    repair_shortage = Inventory(
+        tenant_id=tenant.id,
+        sku=f"REPAIR-SHORTAGE-{uuid4().hex[:8]}",
+        name="Repair shortage only",
+        stock_quantity=10,
+        on_order_quantity=0,
+        reorder_level=0,
+        cost=Decimal("1.00"),
+        selling_price=Decimal("2.00"),
+        unit_type="each",
+        is_placeholder=False,
+    )
+    threshold_equal = Inventory(
+        tenant_id=tenant.id,
+        sku=f"THRESHOLD-EQUAL-{uuid4().hex[:8]}",
+        name="Exactly at reorder threshold",
+        stock_quantity=2,
+        on_order_quantity=0,
+        reorder_level=2,
+        cost=Decimal("1.00"),
+        selling_price=Decimal("2.00"),
+        unit_type="each",
+        is_placeholder=False,
+    )
+    db_session.add_all((repair_shortage, threshold_equal))
+    await db_session.flush()
+    db_session.add(PartsUsage(
+        tenant_id=tenant.id,
+        repair_order_id=active_order.id,
+        inventory_id=repair_shortage.id,
+        quantity=Decimal("2.00"),
+        unit_cost=repair_shortage.cost,
+        unit_price=repair_shortage.selling_price,
+        total_price=Decimal("4.00"),
+        stock_reserved_packages=0,
+        stock_shortage_override=True,
+    ))
+
+    # Each excluded row would otherwise have a positive recommendation.
+    context["archived_item"].reorder_level = 5
+    context["deleted_item"].reorder_level = 5
+    context["foreign_item"].stock_quantity = 0
+    context["foreign_item"].reorder_level = 5
+    await db_session.commit()
+
+    headers = _headers(context["owner"], tenant)
+    summary_response = await client.get(f"{PREFIX}/summary", headers=headers)
+    collection_response = await client.get(
+        f"{PREFIX}/parts?attention=needs_reorder&paginated=true",
+        headers=headers,
+    )
+
+    assert summary_response.status_code == collection_response.status_code == 200
+    summary_body = summary_response.json()
+    collection_body = collection_response.json()
+    selected_ids = {item["id"] for item in collection_body["items"]}
+    assert selected_ids == {fixture_ids["oil_filter"], str(repair_shortage.id)}
+    assert summary_body["needs_reorder_count"] == collection_body["total"] == 2
+    assert summary_body["low_stock_count"] == summary_body["needs_reorder_count"]
+    archived_attention = await client.get(
+        f"{PREFIX}/parts?view=archived&attention=needs_reorder&paginated=true",
+        headers=headers,
+    )
+    assert archived_attention.status_code == 200
+    assert archived_attention.json()["total"] == 0
+
+    excluded_ids = {
+        fixture_ids["placeholder_part"],
+        str(context["archived_item"].id),
+        str(threshold_equal.id),
+        fixture_ids["coolant"],  # Its repair shortage is fully covered by incoming supply.
+        str(context["deleted_item"].id),
+        str(context["foreign_item"].id),
+    }
+    assert selected_ids.isdisjoint(excluded_ids)
+
+
+@pytest.mark.asyncio
 async def test_db038_v2_fixture_drives_parts_sources_roles_archived_and_isolation(
     client,
     db_session,
