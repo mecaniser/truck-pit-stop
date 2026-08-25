@@ -297,6 +297,14 @@ describe('DB-038 Parts & inventory workspace', () => {
     expect(document.querySelector('.db-parts-workbench__technical-line')).toHaveTextContent('51 TRACKED / 5 NEEDS REORDER / 2 OPEN PURCHASE ORDERS')
     expect(screen.getByRole('button', { name: /Needs reorder 5/ })).toBeInTheDocument()
     expect(screen.queryByText(/BELOW MIN/)).not.toBeInTheDocument()
+
+    const workbench = document.querySelector('.db-parts-workbench')
+    const body = workbench?.querySelector('.db-parts-workbench__body')
+    expect(workbench?.querySelectorAll('.db-parts-workbench__view-count')).toHaveLength(3)
+    expect(body?.children).toHaveLength(2)
+    expect(body?.firstElementChild).toHaveClass('db-parts-workbench__ledger-workspace')
+    expect(body?.lastElementChild).toHaveClass('db-parts-workbench__inspector')
+    expect(workbench?.querySelector('.db-parts-workbench__toolbar')?.parentElement).toHaveClass('db-parts-workbench__ledger-workspace')
   })
 
   it('owns inspector detail with four keyboard-operable sections and resets new selections to Overview', async () => {
