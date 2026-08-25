@@ -95,8 +95,19 @@ def abort(subject, body):
 
 def run_stage(script):
     log(f"scraping: {script}")
-    result = subprocess.run(["node", script], cwd=SYNC_DIR, capture_output=True,
-                             text=True, timeout=1800)
+    try:
+        # 02_scrape_customer_details.js walks every customer's vehicles and
+        # service history one Playwright navigation at a time — a full
+        # (non-resumed) run against 600+ customers took over an hour in this
+        # session's manual runs. A hard timeout here must not raise past this
+        # function uncaught, or a slow-but-healthy scrape crashes the whole
+        # job with a bare traceback instead of a clean, alerting abort.
+        result = subprocess.run(["node", script], cwd=SYNC_DIR, capture_output=True,
+                                 text=True, timeout=10800)
+    except subprocess.TimeoutExpired as e:
+        tail = ((e.stdout or "")[-2000:] + "\n" + (e.stderr or "")[-2000:]).strip()
+        log(f"TIMEOUT after {e.timeout}s: {script}\n{tail[-1000:]}")
+        return False, f"timed out after {e.timeout}s\n{tail}"
     tail = (result.stdout[-2000:] + "\n" + result.stderr[-2000:]).strip()
     log(tail[-1000:])
     return result.returncode == 0, tail
@@ -154,7 +165,11 @@ def check_record_drops(prev_dir):
 def run_python(script, *args):
     cmd = [sys.executable, str(script), *args]
     log("running: " + " ".join(cmd[1:]))
-    result = subprocess.run(cmd, cwd=SYNC_DIR, capture_output=True, text=True, timeout=1800)
+    try:
+        result = subprocess.run(cmd, cwd=SYNC_DIR, capture_output=True, text=True, timeout=3600)
+    except subprocess.TimeoutExpired as e:
+        log(f"TIMEOUT after {e.timeout}s: {' '.join(cmd[1:])}")
+        return False
     if result.stdout:
         print(result.stdout)
     if result.returncode != 0:
