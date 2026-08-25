@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Spinner } from '@/components/ui'
-import { useNavigate, useSearchParams } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
@@ -108,6 +108,7 @@ interface ReportsTaxResponse {
 
 interface PartRevenueRow {
   invoice_number: string
+  repair_order_id: string
   revenue: string
   cost: string
   profit: string
@@ -715,6 +716,9 @@ function TaxTab({ range }: { range: DateRangePreset }) {
 
 // ============ TAB: PART REVENUE ============
 
+/** The margin this shop prices parts to hit. Under it is money left behind. */
+const TARGET_PARTS_MARGIN_PCT = 40
+
 function PartsTab({ range }: { range: DateRangePreset }) {
   const { data, isLoading } = useQuery<ReportsPartsResponse>({
     queryKey: ['reports-parts', range],
@@ -733,6 +737,35 @@ function PartsTab({ range }: { range: DateRangePreset }) {
 
   const accent = TAB_ACCENT.parts
 
+  // Invoices with no recorded parts cost are held back rather than charted.
+  // Their margin computes to a flat 100% — revenue minus a cost of zero — which
+  // is a hole in the data, not a well-priced job. Left in, they crowd the top of
+  // the chart and read as the best work in the shop.
+  const priced = data.rows.filter((r) => parseFloat(r.cost) > 0)
+  const missingCost = data.rows.length - priced.length
+
+  // Rank by dollars below target, not by margin %. A 5-point miss on a $3,000
+  // job costs more than a 30-point miss on a $40 one, and the dollars are what
+  // decides which invoice is worth re-pricing first.
+  const belowTarget = priced
+    .map((r) => ({
+      label: `${r.invoice_number} · ${Math.round(parseFloat(r.margin_pct))}% margin`,
+      value: ((TARGET_PARTS_MARGIN_PCT - parseFloat(r.margin_pct)) / 100) * parseFloat(r.revenue),
+      repairOrderId: r.repair_order_id,
+    }))
+    .filter((r) => r.value > 0)
+    .sort((a, b) => b.value - a.value)
+  const totalLeak = belowTarget.reduce((sum, r) => sum + r.value, 0)
+
+  const insight = [
+    belowTarget.length > 0
+      ? `${belowTarget.length} invoice${belowTarget.length === 1 ? '' : 's'} priced under the ${TARGET_PARTS_MARGIN_PCT}% target, together worth ${fmtMoney(totalLeak)} in margin. Biggest dollars first.`
+      : `Every priced invoice cleared the ${TARGET_PARTS_MARGIN_PCT}% target.`,
+    missingCost > 0
+      ? `${missingCost} invoice${missingCost === 1 ? '' : 's'} left out — no parts cost recorded, so margin can't be worked out.`
+      : '',
+  ].filter(Boolean).join(' ')
+
   return (
     <div className="space-y-4">
       <Hero
@@ -740,17 +773,16 @@ function PartsTab({ range }: { range: DateRangePreset }) {
         value={`${data.margin_pct}%`}
         sub={`${fmtMoney(data.profit)} profit on ${fmtMoney(data.revenue)} revenue`}
         accent={accent}
-        insight="Each point is an invoice — low-margin points at high revenue are the underpriced parts jobs to fix."
+        insight={insight}
       >
-        {data.rows.length > 0 && (
-          <div className="h-56">
-            <ProfitabilityScatter
-              ros={data.rows.map((r) => ({
-                type: 'Part sale',
-                subtotal: parseFloat(r.revenue),
-                marginPct: parseFloat(r.margin_pct),
-                hours: parseFloat(r.profit),
-              }))}
+        {belowTarget.length > 0 && (
+          <div>
+            <RankedBar
+              accent={accent}
+              data={belowTarget.slice(0, 8)}
+              dataKey="value" nameKey="label"
+              tickFormatter={fmtMoney}
+              hrefFn={(r) => `/dashboard/repair-orders?selected=${r.repairOrderId}`}
             />
           </div>
         )}
@@ -777,7 +809,14 @@ function PartsTab({ range }: { range: DateRangePreset }) {
           <tbody className="divide-y divide-white/[0.06]">
             {data.rows.map((row) => (
               <tr key={row.invoice_number} className="hover:bg-white/[0.03]">
-                <td className="px-4 py-2.5 text-[13px] text-white/85 font-medium">{row.invoice_number}</td>
+                <td className="px-4 py-2.5 text-[13px] font-medium">
+                  <Link
+                    to={`/dashboard/repair-orders?selected=${row.repair_order_id}`}
+                    className="text-white/85 underline decoration-white/25 underline-offset-2 hover:decoration-white/60"
+                  >
+                    {row.invoice_number}
+                  </Link>
+                </td>
                 <td className="px-4 py-2.5 text-[13px] text-right text-white/55">{fmtMoney(row.revenue)}</td>
                 <td className="px-4 py-2.5 text-[13px] text-right text-white/55">{fmtMoney(row.cost)}</td>
                 <td className="px-4 py-2.5 text-[13px] text-right text-white/85 font-medium">{fmtMoney(row.profit)}</td>
