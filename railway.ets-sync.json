@@ -2,7 +2,15 @@
   "$schema": "https://railway.app/railway.schema.json",
   "build": {
     "builder": "DOCKERFILE",
-    "dockerfilePath": "backend/Dockerfile.ets-sync"
+    "dockerfilePath": "backend/Dockerfile.ets-sync",
+    "watchPatterns": [
+      "backend/scripts/easytruck_sync/**",
+      "backend/scripts/fix_legacy_invoice_numbers.py",
+      "backend/scripts/backfill_invoice_ets_date.py",
+      "backend/scripts/backfill_ro_labor_hours.py",
+      "backend/Dockerfile.ets-sync",
+      "railway.ets-sync.json"
+    ]
   },
   "deploy": {
     "startCommand": "python3 scripts/easytruck_sync/nightly_sync.py",
