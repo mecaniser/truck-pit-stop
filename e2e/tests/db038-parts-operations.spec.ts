@@ -1821,3 +1821,202 @@ test('DB-038 stock changes preserve item ownership, permissions, validation, and
   expect(errors.get(readOnlyPage)).toEqual([])
   await readOnlyContext.close()
 })
+
+test('DB-040 renders one connected Parts operating surface across supported widths', async ({ browser }, testInfo) => {
+  const viewports = [
+    { width: 1440, height: 960, mode: 'dark' as const },
+    { width: 1280, height: 900, mode: 'high_contrast' as const },
+    { width: 1100, height: 900, mode: 'dark' as const },
+    { width: 960, height: 900, mode: 'light' as const },
+    { width: 390, height: 844, mode: 'dark' as const },
+    { width: 320, height: 720, mode: 'high_contrast' as const },
+  ]
+
+  for (const { width, height, mode } of viewports) {
+    const context = await browser.newContext({
+      viewport: { width, height },
+      reducedMotion: 'reduce',
+      forcedColors: width === 320 ? 'active' : 'none',
+    })
+    const page = await context.newPage()
+    await installFixture(page, { appearanceMode: mode })
+    await page.goto('/dashboard/garage/inventory')
+
+    const workbench = page.locator('.db-parts-workbench')
+    const body = page.locator('.db-parts-workbench__body')
+    const ledgerWorkspace = page.locator('.db-parts-workbench__ledger-workspace')
+    const inspector = page.locator('.db-parts-workbench__inspector')
+    const toolbar = page.locator('.db-parts-workbench__toolbar')
+    const viewCounts = page.locator('.db-parts-workbench__view-count')
+
+    await expect(workbench).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Parts', exact: true })).toBeVisible()
+    await expect(page.locator('.db-parts-workbench__row-select').first()).toBeVisible()
+    await expect(viewCounts).toHaveCount(3)
+
+    const [workbenchStyle, bodyStyle, toolbarStyle, countStyles] = await Promise.all([
+      workbench.evaluate((node) => {
+        const style = getComputedStyle(node)
+        return {
+          borderTopWidth: style.borderTopWidth,
+          borderRadius: style.borderRadius,
+          backgroundIsTransparent: style.backgroundColor === 'transparent' || /,\s*0\)$/.test(style.backgroundColor),
+        }
+      }),
+      body.evaluate((node) => {
+        const style = getComputedStyle(node)
+        return {
+          borderTopWidth: style.borderTopWidth,
+          borderRightWidth: style.borderRightWidth,
+          borderBottomWidth: style.borderBottomWidth,
+          borderLeftWidth: style.borderLeftWidth,
+          borderRadius: style.borderRadius,
+          backgroundIsTransparent: style.backgroundColor === 'transparent' || /,\s*0\)$/.test(style.backgroundColor),
+        }
+      }),
+      toolbar.evaluate((node) => {
+        const style = getComputedStyle(node)
+        return {
+          borderTopWidth: style.borderTopWidth,
+          borderBottomWidth: style.borderBottomWidth,
+          backgroundIsTransparent: style.backgroundColor === 'transparent' || /,\s*0\)$/.test(style.backgroundColor),
+        }
+      }),
+      viewCounts.evaluateAll((nodes) => nodes.map((node) => {
+        const style = getComputedStyle(node)
+        return { borderTopWidth: style.borderTopWidth, borderRadius: style.borderRadius, backgroundIsTransparent: style.backgroundColor === 'transparent' || /,\s*0\)$/.test(style.backgroundColor) }
+      })),
+    ])
+
+    expect(workbenchStyle).toEqual({ borderTopWidth: '0px', borderRadius: '0px', backgroundIsTransparent: true })
+    expect(bodyStyle).toEqual({
+      borderTopWidth: '0px',
+      borderRightWidth: '0px',
+      borderBottomWidth: '0px',
+      borderLeftWidth: '0px',
+      borderRadius: '0px',
+      backgroundIsTransparent: true,
+    })
+    expect(toolbarStyle).toEqual({ borderTopWidth: '0px', borderBottomWidth: '0px', backgroundIsTransparent: true })
+    expect(countStyles.every((style) => style.borderTopWidth === '0px' && style.borderRadius === '0px' && style.backgroundIsTransparent)).toBe(true)
+
+    const search = page.getByRole('searchbox', { name: 'Search parts' }).locator('..')
+    const filters = page.getByRole('group', { name: 'Stock filter' })
+    const options = page.getByRole('button', { name: 'Ledger options' })
+    for (const control of [search, filters, options]) {
+      const box = await control.boundingBox()
+      expect(box).not.toBeNull()
+      expect(box!.height).toBeGreaterThanOrEqual(44)
+    }
+    const controlRadii = await Promise.all([search, filters, options].map((control) => control.evaluate((node) => Number.parseFloat(getComputedStyle(node).borderRadius))))
+    expect(controlRadii.every((radius) => radius >= 8)).toBe(true)
+
+    if (width > 760) {
+      const ledger = page.locator('.db-parts-workbench__ledger')
+      const divider = await ledgerWorkspace.evaluate((node) => {
+        const style = getComputedStyle(node)
+        return { width: style.borderInlineEndWidth, style: style.borderInlineEndStyle }
+      })
+      const inspectorEdges = await inspector.evaluate((node) => {
+        const style = getComputedStyle(node)
+        return { start: style.borderInlineStartWidth, end: style.borderInlineEndWidth }
+      })
+      expect(Number.parseFloat(divider.width)).toBeGreaterThanOrEqual(1)
+      expect(divider.style).not.toBe('none')
+      expect(inspectorEdges).toEqual({ start: '0px', end: '0px' })
+
+      const [workspaceBox, toolbarBox, optionsBox, ledgerBox] = await Promise.all([
+        ledgerWorkspace.boundingBox(),
+        toolbar.boundingBox(),
+        options.boundingBox(),
+        ledger.boundingBox(),
+      ])
+      expect(workspaceBox).not.toBeNull()
+      expect(toolbarBox).not.toBeNull()
+      expect(optionsBox).not.toBeNull()
+      expect(ledgerBox).not.toBeNull()
+      for (const contentRight of [toolbarBox!.x + toolbarBox!.width, optionsBox!.x + optionsBox!.width, ledgerBox!.x + ledgerBox!.width]) {
+        expect((workspaceBox!.x + workspaceBox!.width) - contentRight).toBeGreaterThanOrEqual(8)
+      }
+      await expect.poll(() => ledger.evaluate((node) => getComputedStyle(node).scrollbarGutter)).toContain('stable')
+
+      await ledger.evaluate((node) => { node.scrollLeft = node.scrollWidth })
+      const statusCells = page.locator('.db-parts-workbench__remark:not(.is-empty)')
+      await expect(statusCells.filter({ hasText: 'Supplier needed' })).toHaveCount(1)
+      const renderedStatusMetrics = await statusCells.evaluateAll((nodes) => nodes.map((node) => ({
+        text: node.textContent?.trim(),
+        clientWidth: node.clientWidth,
+        scrollWidth: node.scrollWidth,
+        right: node.getBoundingClientRect().right,
+      })))
+      expect(renderedStatusMetrics.map((metric) => metric.text)).toEqual(expect.arrayContaining(['Short 2', 'Supplier needed', 'Placeholder']))
+      expect(renderedStatusMetrics.every((metric) => metric.scrollWidth <= metric.clientWidth + 1)).toBe(true)
+      expect(renderedStatusMetrics.every((metric) => (workspaceBox!.x + workspaceBox!.width) - metric.right >= 8)).toBe(true)
+
+      const commonStatusFit = await statusCells.first().evaluate((node, labels) => {
+        const style = getComputedStyle(node)
+        const context = document.createElement('canvas').getContext('2d')!
+        context.font = `${style.fontStyle} ${style.fontWeight} ${style.fontSize} ${style.fontFamily}`
+        const available = node.clientWidth - Number.parseFloat(style.paddingInlineStart) - Number.parseFloat(style.paddingInlineEnd)
+        const marker = 7
+        const gap = Number.parseFloat(style.columnGap) || 0
+        return labels.map((label) => ({ label, required: context.measureText(label).width + marker + gap, available }))
+      }, ['Needs reorder', 'Supplier needed', 'Placeholder', 'Incoming', 'Archived', 'Short 999'])
+      expect(commonStatusFit.every((metric) => metric.required <= metric.available)).toBe(true)
+      await page.screenshot({ path: testInfo.outputPath(`db040-ledger-right-edge-${width}.png`), fullPage: false })
+      await ledger.evaluate((node) => { node.scrollLeft = 0 })
+    }
+
+    await options.focus()
+    await options.press('Enter')
+    await expect(page.getByRole('dialog', { name: 'Ledger options' })).toBeVisible()
+    await page.keyboard.press('Escape')
+    await expect(options).toBeFocused()
+
+    const needsReorder = page.getByRole('button', { name: /Needs reorder 2/ })
+    await needsReorder.focus()
+    await needsReorder.press('Enter')
+    await expect(needsReorder).toHaveAttribute('aria-current', 'page')
+    const allParts = page.getByRole('button', { name: /All parts 99/ })
+    await allParts.focus()
+    await allParts.press('Enter')
+    await expect(allParts).toHaveAttribute('aria-current', 'page')
+
+    if (width <= 760) {
+      await page.screenshot({ path: testInfo.outputPath(`db040-parts-list-${width}.png`), fullPage: false })
+    }
+    await page.locator('.db-parts-workbench__row-select').first().click()
+    await expect(page.locator('.db-parts-workbench__selected-action')).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Air filter' })).toBeVisible()
+
+    const selectedAction = page.locator('.db-parts-workbench__selected-action')
+    const selectedActionStyle = await selectedAction.evaluate((node) => getComputedStyle(node).backgroundColor)
+    expect(selectedActionStyle).not.toBe('rgba(0, 0, 0, 0)')
+    const selectedButtons = selectedAction.getByRole('button')
+    for (let index = 0; index < await selectedButtons.count(); index += 1) {
+      const button = selectedButtons.nth(index)
+      const box = await button.boundingBox()
+      expect(box).not.toBeNull()
+      expect(box!.height).toBeGreaterThanOrEqual(44)
+      expect(await button.evaluate((node) => Number.parseFloat(getComputedStyle(node).borderRadius))).toBeGreaterThanOrEqual(8)
+    }
+
+    const overviewFacts = page.locator('.db-parts-workbench__facts.is-overview')
+    const overviewStyle = await overviewFacts.evaluate((node) => {
+      const style = getComputedStyle(node)
+      return { top: style.borderTopWidth, bottom: style.borderBottomWidth }
+    })
+    expect(overviewStyle).toEqual({ top: '0px', bottom: '0px' })
+    const overviewCellRules = await overviewFacts.locator(':scope > div').evaluateAll((nodes) => nodes.map((node) => getComputedStyle(node).borderInlineEndWidth))
+    expect(overviewCellRules.every((widthValue) => widthValue === '0px')).toBe(true)
+
+    const containment = await page.evaluate(() => ({
+      viewport: document.documentElement.clientWidth,
+      document: document.documentElement.scrollWidth,
+    }))
+    expect(containment.document).toBeLessThanOrEqual(containment.viewport)
+    await page.screenshot({ path: testInfo.outputPath(`db040-parts-connected-${width}.png`), fullPage: false })
+    expect(errors.get(page)).toEqual([])
+    await context.close()
+  }
+})

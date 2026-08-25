@@ -495,9 +495,9 @@ export default function PartsInventoryWorkspace({ summary }: { summary: Summary 
     </header>
 
     <nav className="db-parts-workbench__views" aria-label="Parts and inventory views">
-      <button type="button" aria-current={workspaceView === 'parts' ? 'page' : undefined} onClick={() => selectView('parts')}><Boxes aria-hidden="true" />All parts <span>{allPartsCount ?? '—'}</span></button>
-      <button type="button" aria-current={workspaceView === 'reorder' ? 'page' : undefined} onClick={() => selectView('reorder')}><ShoppingCart aria-hidden="true" />Needs reorder <span>{needsReorderCount}</span></button>
-      <button type="button" aria-current={workspaceView === 'movement' ? 'page' : undefined} onClick={() => selectView('movement')}><History aria-hidden="true" />Movement <span>{movementCount ?? '—'}</span></button>
+      <button type="button" aria-current={workspaceView === 'parts' ? 'page' : undefined} onClick={() => selectView('parts')}><Boxes aria-hidden="true" />All parts <span className="db-parts-workbench__view-count">{allPartsCount ?? '—'}</span></button>
+      <button type="button" aria-current={workspaceView === 'reorder' ? 'page' : undefined} onClick={() => selectView('reorder')}><ShoppingCart aria-hidden="true" />Needs reorder <span className="db-parts-workbench__view-count">{needsReorderCount}</span></button>
+      <button type="button" aria-current={workspaceView === 'movement' ? 'page' : undefined} onClick={() => selectView('movement')}><History aria-hidden="true" />Movement <span className="db-parts-workbench__view-count">{movementCount ?? '—'}</span></button>
     </nav>
 
     {notice && <div className="db-parts-workbench__notice" role="status"><span>{notice}</span><button type="button" onClick={() => setNotice(null)}>Dismiss</button></div>}
