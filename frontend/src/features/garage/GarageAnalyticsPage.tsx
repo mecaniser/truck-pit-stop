@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Spinner } from '@/components/ui'
-import { useNavigate, useSearchParams } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
@@ -108,6 +108,7 @@ interface ReportsTaxResponse {
 
 interface PartRevenueRow {
   invoice_number: string
+  repair_order_id: string
   revenue: string
   cost: string
   profit: string
@@ -750,6 +751,7 @@ function PartsTab({ range }: { range: DateRangePreset }) {
     .map((r) => ({
       label: `${r.invoice_number} · ${Math.round(parseFloat(r.margin_pct))}% margin`,
       value: ((TARGET_PARTS_MARGIN_PCT - parseFloat(r.margin_pct)) / 100) * parseFloat(r.revenue),
+      repairOrderId: r.repair_order_id,
     }))
     .filter((r) => r.value > 0)
     .sort((a, b) => b.value - a.value)
@@ -780,6 +782,7 @@ function PartsTab({ range }: { range: DateRangePreset }) {
               data={belowTarget.slice(0, 8)}
               dataKey="value" nameKey="label"
               tickFormatter={fmtMoney}
+              hrefFn={(r) => `/dashboard/repair-orders?selected=${r.repairOrderId}`}
             />
           </div>
         )}
@@ -806,7 +809,14 @@ function PartsTab({ range }: { range: DateRangePreset }) {
           <tbody className="divide-y divide-white/[0.06]">
             {data.rows.map((row) => (
               <tr key={row.invoice_number} className="hover:bg-white/[0.03]">
-                <td className="px-4 py-2.5 text-[13px] text-white/85 font-medium">{row.invoice_number}</td>
+                <td className="px-4 py-2.5 text-[13px] font-medium">
+                  <Link
+                    to={`/dashboard/repair-orders?selected=${row.repair_order_id}`}
+                    className="text-white/85 underline decoration-white/25 underline-offset-2 hover:decoration-white/60"
+                  >
+                    {row.invoice_number}
+                  </Link>
+                </td>
                 <td className="px-4 py-2.5 text-[13px] text-right text-white/55">{fmtMoney(row.revenue)}</td>
                 <td className="px-4 py-2.5 text-[13px] text-right text-white/55">{fmtMoney(row.cost)}</td>
                 <td className="px-4 py-2.5 text-[13px] text-right text-white/85 font-medium">{fmtMoney(row.profit)}</td>

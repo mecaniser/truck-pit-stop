@@ -1,4 +1,5 @@
 import { ReactNode } from 'react'
+import { Link } from 'react-router-dom'
 import {
   ResponsiveContainer, ComposedChart, BarChart, AreaChart, ScatterChart, FunnelChart,
   Bar, Line, Area, Scatter, Funnel, Cell, LabelList,
@@ -129,12 +130,18 @@ export function ProfitabilityScatter({ ros }: { ros: { type: string; subtotal: n
  * painted inside a light-coloured bar, and gives comfortable row spacing.
  */
 export function RankedBar<T extends Record<string, unknown>>({
-  data, dataKey, nameKey, colorFn, tickFormatter, accent,
+  data, dataKey, nameKey, colorFn, tickFormatter, accent, hrefFn,
 }: {
   data: T[]; dataKey: string; nameKey: string
   colorFn?: (d: T) => string; tickFormatter?: (v: number) => string
   /** Bar fill; defaults to the user's theme accent. */
   accent?: string
+  /**
+   * Optional destination per row. Given one, the row becomes a real link, so a
+   * ranked list of problems can be walked into and fixed rather than only read.
+   * Omitted, rows render exactly as before.
+   */
+  hrefFn?: (d: T) => string
   /** kept for API compatibility; unused in the HTML variant */
   tooltipFormatter?: TipFormatter
 }) {
@@ -150,8 +157,9 @@ export function RankedBar<T extends Record<string, unknown>>({
         const name = String(d[nameKey] ?? '')
         const width = Math.max(2, (value / max) * 100)
         const fill = colorFn ? colorFn(d) : barColor
-        return (
-          <div key={i} title={name} className="min-w-0">
+        const href = hrefFn?.(d)
+        const row = (
+          <>
             <div className="mb-1.5 flex items-baseline justify-between gap-3">
               <span className="truncate text-[12.5px] font-medium text-gray-200">{name}</span>
               <span className="shrink-0 font-['JetBrains_Mono',monospace] text-xs text-gray-400">{valueFmt(value)}</span>
@@ -159,6 +167,23 @@ export function RankedBar<T extends Record<string, unknown>>({
             <div className="h-2 w-full rounded-full bg-white/5">
               <div className="h-full rounded-full" style={{ width: `${width}%`, background: fill }} />
             </div>
+          </>
+        )
+        if (href) {
+          return (
+            <Link
+              key={i}
+              to={href}
+              title={name}
+              className="min-w-0 rounded-md transition-colors hover:bg-white/[0.04] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white/30"
+            >
+              {row}
+            </Link>
+          )
+        }
+        return (
+          <div key={i} title={name} className="min-w-0">
+            {row}
           </div>
         )
       })}
