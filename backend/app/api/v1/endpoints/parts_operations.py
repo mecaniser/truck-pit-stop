@@ -39,7 +39,8 @@ ReturnStatusFilter = Literal["draft", "submitted", "shipped", "credited", "cance
 CoreStatusFilter = Literal["expected", "on_hand", "returned", "waived"]
 PartView = Literal["active", "archived", "all"]
 PartAttention = Literal["needs_reorder", "out_of_stock", "incoming"]
-PartSort = Literal["catalog", "name", "available", "reorder"]
+PartSort = Literal["catalog", "name", "available", "location", "cost", "reorder"]
+PartDirection = Literal["asc", "desc"]
 
 DEMAND_STATES = frozenset({"open", "covered", "unlinked"})
 PO_STATUSES = frozenset({"draft", "submitted", "partially_received", "received", "cancelled"})
@@ -64,7 +65,16 @@ EDITABLE_REPAIR_STATUSES = frozenset({
 })
 PART_VIEWS = frozenset({"active", "archived", "all"})
 PART_ATTENTION = frozenset({"needs_reorder", "out_of_stock", "incoming"})
-PART_SORTS = frozenset({"catalog", "name", "available", "reorder"})
+PART_SORTS = frozenset({"catalog", "name", "available", "location", "cost", "reorder"})
+PART_DIRECTIONS = frozenset({"asc", "desc"})
+PART_DEFAULT_DIRECTIONS = {
+    "catalog": "asc",
+    "name": "asc",
+    "available": "asc",
+    "location": "asc",
+    "cost": "desc",
+    "reorder": "desc",
+}
 
 
 class CategoryInput(BaseModel):
@@ -290,6 +300,45 @@ def _part_metric_expressions(tenant_id: UUID):
     return shortage, incoming, recommended
 
 
+def _actionable_recommendation(recommended):
+    return case(
+        (Inventory.ets_retired_at.is_not(None), 0),
+        (Inventory.is_placeholder.is_(True), 0),
+        else_=recommended,
+    )
+
+
+def _part_ordering(sort_by: str, direction: str, recommended):
+    name = func.lower(Inventory.name)
+    sku = func.lower(Inventory.sku)
+    stable = (name.asc(), sku.asc(), Inventory.id.asc())
+    actionable_reorder = _actionable_recommendation(recommended)
+
+    if sort_by == "catalog":
+        primary = sku
+        fallback = (name.asc(), Inventory.id.asc())
+    elif sort_by == "name":
+        primary = name
+        fallback = (sku.asc(), Inventory.id.asc())
+    elif sort_by == "available":
+        primary = func.coalesce(Inventory.stock_quantity, 0)
+        fallback = stable
+    elif sort_by == "location":
+        normalized_location = func.lower(func.trim(func.coalesce(Inventory.location, "")))
+        location_is_unset = case((func.length(normalized_location) == 0, 1), else_=0)
+        primary_order = normalized_location.desc() if direction == "desc" else normalized_location.asc()
+        return (location_is_unset.asc(), primary_order, *stable)
+    elif sort_by == "cost":
+        primary = Inventory.cost
+        fallback = stable
+    else:
+        primary = actionable_reorder
+        fallback = stable
+
+    primary_order = primary.desc() if direction == "desc" else primary.asc()
+    return (primary_order, *fallback)
+
+
 async def _part_projection_rows(
     db: AsyncSession,
     tenant_id: UUID,
@@ -403,6 +452,8 @@ async def _part_projection_rows(
         reorder = int(item.reorder_level or 0)
         incoming = incoming_totals[item.id] + int(item.on_order_quantity or 0)
         recommended = max(needed + max(reorder - available, 0) - incoming, 0)
+        if item.is_placeholder or item.ets_retired_at is not None:
+            recommended = 0
         values.append({
             "id": str(item.id),
             "sku": item.sku,
@@ -618,6 +669,7 @@ async def list_parts(
     supplier_id: Optional[UUID] = None,
     search: Optional[str] = None,
     sort_by: PartSort = Query(default="catalog", alias="sort"),
+    direction: Optional[PartDirection] = None,
     skip: int = Query(default=0, ge=0),
     limit: int = Query(default=50, ge=1, le=100),
     paginated: bool = Query(default=True),
@@ -629,6 +681,8 @@ async def list_parts(
     view_filter = _validate_choice(view, PART_VIEWS, "view") or "active"
     attention_filter = _validate_choice(attention, PART_ATTENTION, "attention")
     sort_filter = _validate_choice(sort_by, PART_SORTS, "sort") or "catalog"
+    direction_filter = _validate_choice(direction, PART_DIRECTIONS, "direction")
+    direction_filter = direction_filter or PART_DEFAULT_DIRECTIONS[sort_filter]
     supplier_filter = await _tenant_supplier(db, tenant_id, supplier_id)
     search_filter = _validate_text_filter(search, "search")
     _, incoming, recommended = _part_metric_expressions(tenant_id)
@@ -689,14 +743,7 @@ async def list_parts(
 
     count_query = select(func.count()).select_from(query.order_by(None).subquery())
     total = int((await db.execute(count_query)).scalar_one())
-    if sort_filter == "name":
-        query = query.order_by(func.lower(Inventory.name), func.lower(Inventory.sku), Inventory.id)
-    elif sort_filter == "available":
-        query = query.order_by(func.coalesce(Inventory.stock_quantity, 0), func.lower(Inventory.name), Inventory.id)
-    elif sort_filter == "reorder":
-        query = query.order_by(recommended.desc(), func.lower(Inventory.name), Inventory.id)
-    else:
-        query = query.order_by(func.lower(Inventory.sku), func.lower(Inventory.name), Inventory.id)
+    query = query.order_by(*_part_ordering(sort_filter, direction_filter, recommended))
     if paginated:
         query = query.offset(skip).limit(limit)
     items = list((await db.execute(query)).scalars().all())

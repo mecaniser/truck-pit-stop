@@ -2,7 +2,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react'
 import { useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
-import { Archive, ArrowRight, Boxes, Check, ChevronDown, History, MapPin, Package, Pencil, Plus, Search, Settings2, ShoppingCart, X } from 'lucide-react'
+import { Archive, ArrowDown, ArrowRight, ArrowUp, Boxes, ChevronsUpDown, History, MapPin, Package, Pencil, Plus, Search, ShoppingCart, X } from 'lucide-react'
 
 import api from '@/lib/api'
 import useTenantBranding from '@/hooks/useTenantBranding'
@@ -11,19 +11,35 @@ import SlidePanelForm from '@/components/SlidePanelForm'
 import QuantityStepper from '@/components/QuantityStepper'
 
 type Page<T> = { items: T[]; total: number; skip: number; limit: number; has_more: boolean }
-type Summary = { needs_reorder_count?: number; low_stock_count: number; open_purchase_order_count: number }
+type Summary = { needs_reorder_count?: number; low_stock_count?: number; open_purchase_order_count: number }
 type WorkspaceView = 'parts' | 'reorder' | 'movement'
 type CatalogView = 'active' | 'archived'
-type PartSort = 'catalog' | 'name' | 'available' | 'reorder'
+type PartSort = 'catalog' | 'name' | 'available' | 'location' | 'cost' | 'reorder'
+type SortDirection = 'asc' | 'desc'
 type StockFilter = 'all' | 'below_min' | 'out_of_stock'
 type LedgerDensity = 'comfortable' | 'compact'
 type InspectorView = 'overview' | 'stock' | 'ordering' | 'history'
 
-const PART_SORT_OPTIONS: Array<{ id: PartSort; label: string }> = [
-  { id: 'catalog', label: 'Catalog order' },
-  { id: 'name', label: 'Name' },
-  { id: 'available', label: 'Available' },
-  { id: 'reorder', label: 'Reorder urgency' },
+const FIRST_SORT_DIRECTION: Record<PartSort, SortDirection> = {
+  catalog: 'asc',
+  name: 'asc',
+  available: 'asc',
+  location: 'asc',
+  cost: 'desc',
+  reorder: 'desc',
+}
+
+const COMPACT_SORT_OPTIONS: Array<{ sort: Exclude<PartSort, 'catalog'>; direction: SortDirection; label: string }> = [
+  { sort: 'name', direction: 'asc', label: 'Part name A–Z' },
+  { sort: 'name', direction: 'desc', label: 'Part name Z–A' },
+  { sort: 'available', direction: 'asc', label: 'Available low to high' },
+  { sort: 'available', direction: 'desc', label: 'Available high to low' },
+  { sort: 'location', direction: 'asc', label: 'Bin location A–Z' },
+  { sort: 'location', direction: 'desc', label: 'Bin location Z–A' },
+  { sort: 'cost', direction: 'desc', label: 'Average cost high to low' },
+  { sort: 'cost', direction: 'asc', label: 'Average cost low to high' },
+  { sort: 'reorder', direction: 'desc', label: 'Reorder urgency high to low' },
+  { sort: 'reorder', direction: 'asc', label: 'Reorder urgency low to high' },
 ]
 
 const INSPECTOR_VIEWS: Array<{ id: InspectorView; label: string }> = [
@@ -266,6 +282,7 @@ export default function PartsInventoryWorkspace({ summary }: { summary: Summary 
   const [workspaceView, setWorkspaceView] = useState<WorkspaceView>('parts')
   const [catalogView, setCatalogView] = useState<CatalogView>('active')
   const [sort, setSort] = useState<PartSort>('catalog')
+  const [direction, setDirection] = useState<SortDirection>('asc')
   const [stockFilter, setStockFilter] = useState<StockFilter>('all')
   const [density, setDensity] = useState<LedgerDensity>('comfortable')
   const [search, setSearch] = useState('')
@@ -275,17 +292,17 @@ export default function PartsInventoryWorkspace({ summary }: { summary: Summary 
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [checkedParts, setCheckedParts] = useState<Map<string, PartRecord>>(() => new Map())
   const [allPartsCount, setAllPartsCount] = useState<number | null>(null)
-  const [movementCount, setMovementCount] = useState<number | null>(null)
   const [addPartOpen, setAddPartOpen] = useState(false)
   const [mobileDetailOpen, setMobileDetailOpen] = useState(false)
-  const [ledgerOptionsOpen, setLedgerOptionsOpen] = useState(false)
-  const [sortChoicesOpen, setSortChoicesOpen] = useState(false)
+  const [compactSortOpen, setCompactSortOpen] = useState(false)
   const [notice, setNotice] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const ledgerOptions = useRef<HTMLDivElement>(null)
-  const ledgerOptionsTrigger = useRef<HTMLButtonElement>(null)
-  const sortTrigger = useRef<HTMLButtonElement>(null)
-  const sortChoiceRefs = useRef<Record<PartSort, HTMLButtonElement | null>>({ catalog: null, name: null, available: null, reorder: null })
+  const compactSortMenu = useRef<HTMLDivElement>(null)
+  const compactSortTrigger = useRef<HTMLButtonElement>(null)
+  const compactCatalogReset = useRef<HTMLButtonElement>(null)
+  const compactSortRefs = useRef<Array<HTMLButtonElement | null>>([])
+  const headerSortFocus = useRef<Exclude<PartSort, 'catalog'> | null>(null)
+  const selectionMembership = useRef('')
   const reorderPreselection = useRef<{ context: string; pages: Set<string> }>({ context: '', pages: new Set() })
 
   useEffect(() => {
@@ -306,9 +323,10 @@ export default function PartsInventoryWorkspace({ summary }: { summary: Summary 
     ...(workspaceView !== 'reorder' && stockFilter === 'out_of_stock' ? { attention: 'out_of_stock' } : {}),
     ...(debouncedSearch ? { search: debouncedSearch } : {}),
     sort,
+    direction,
     limit: 50,
     paginated: true,
-  }), [catalogView, debouncedSearch, sort, stockFilter, workspaceView])
+  }), [catalogView, debouncedSearch, direction, sort, stockFilter, workspaceView])
 
   const partsQuery = useInfiniteQuery({
     queryKey: ['parts-operations', 'parts', partParams, partsSequence],
@@ -319,10 +337,16 @@ export default function PartsInventoryWorkspace({ summary }: { summary: Summary 
     retry: false,
   })
   const movementQuery = useQuery<Page<Movement>>({
-    queryKey: ['parts-operations', 'movement', movementSkip],
+    queryKey: ['parts-operations', 'movement', 'page', movementSkip],
     queryFn: async () => (await api.get('/parts-operations/activity', { params: { paginated: true, skip: movementSkip, limit: 50 } })).data,
     enabled: workspaceView === 'movement',
     retry: false,
+  })
+  const movementCountQuery = useQuery<Page<Movement>>({
+    queryKey: ['parts-operations', 'movement', 'count'],
+    queryFn: async () => (await api.get('/parts-operations/activity', { params: { paginated: true, skip: 0, limit: 1 } })).data,
+    retry: false,
+    staleTime: 60_000,
   })
   const detailQuery = useQuery<PartDetail>({
     queryKey: ['parts-operations', 'part', selectedId],
@@ -352,13 +376,16 @@ export default function PartsInventoryWorkspace({ summary }: { summary: Summary 
   }, [catalogView, debouncedSearch, firstPartsPage, stockFilter, workspaceView])
 
   useEffect(() => {
-    if (workspaceView === 'movement' && movementQuery.data) setMovementCount(movementQuery.data.total)
-  }, [movementQuery.data, workspaceView])
-
-  useEffect(() => {
-    if (!parts.length) { setSelectedId(null); return }
-    if (!selectedId || !parts.some((part) => part.id === selectedId)) setSelectedId(parts[0].id)
-  }, [parts, selectedId])
+    if (workspaceView === 'movement' || !firstPartsPage) return
+    const membershipChanged = selectionMembership.current !== preselectionContext
+    if (!selectionMembership.current || membershipChanged) {
+      selectionMembership.current = preselectionContext
+      if (!parts.length) { setSelectedId(null); return }
+      if (!selectedId || !parts.some((part) => part.id === selectedId)) setSelectedId(parts[0].id)
+      return
+    }
+    if (!selectedId && parts.length) setSelectedId(parts[0].id)
+  }, [firstPartsPage, parts, preselectionContext, selectedId, workspaceView])
 
   useEffect(() => {
     if (workspaceView !== 'reorder' || !partsQuery.data) return
@@ -366,65 +393,72 @@ export default function PartsInventoryWorkspace({ summary }: { summary: Summary 
       reorderPreselection.current = { context: preselectionContext, pages: new Set() }
       setCheckedParts(new Map())
     }
-    const unseenPages = partsQuery.data.pages.filter((page) => !reorderPreselection.current.pages.has(`${sort}:${page.skip}`))
+    const unseenPages = partsQuery.data.pages.filter((page) => !reorderPreselection.current.pages.has(`${sort}:${direction}:${page.skip}`))
     if (!unseenPages.length) return
-    unseenPages.forEach((page) => reorderPreselection.current.pages.add(`${sort}:${page.skip}`))
+    unseenPages.forEach((page) => reorderPreselection.current.pages.add(`${sort}:${direction}:${page.skip}`))
     setCheckedParts((current) => {
       const next = new Map(current)
       unseenPages.forEach((page) => page.items.filter(isReorderEligible).forEach((part) => next.set(part.id, part)))
       return next
     })
-  }, [partsQuery.data, preselectionContext, sort, workspaceView])
+  }, [direction, partsQuery.data, preselectionContext, sort, workspaceView])
 
   useEffect(() => {
-    if (!ledgerOptionsOpen) return
+    if (!compactSortOpen) return
     const closeOnOutsidePointer = (event: PointerEvent) => {
-      if (ledgerOptions.current?.contains(event.target as Node)) return
-      setLedgerOptionsOpen(false)
-      setSortChoicesOpen(false)
+      if (compactSortMenu.current?.contains(event.target as Node)) return
+      setCompactSortOpen(false)
     }
     document.addEventListener('pointerdown', closeOnOutsidePointer)
     return () => document.removeEventListener('pointerdown', closeOnOutsidePointer)
-  }, [ledgerOptionsOpen])
+  }, [compactSortOpen])
 
   useLayoutEffect(() => {
-    if (!ledgerOptionsOpen) return
-    sortTrigger.current?.focus({ preventScroll: true })
-  }, [ledgerOptionsOpen])
+    if (!compactSortOpen) return
+    compactCatalogReset.current?.focus({ preventScroll: true })
+  }, [compactSortOpen])
 
   useLayoutEffect(() => {
-    if (!sortChoicesOpen) return
-    sortChoiceRefs.current[sort]?.focus({ preventScroll: true })
-  }, [sort, sortChoicesOpen])
+    if (!headerSortFocus.current || partsQuery.isLoading) return
+    const field = headerSortFocus.current
+    const control = document.querySelector<HTMLButtonElement>(`[data-parts-sort-field='${field}']`)
+    control?.focus({ preventScroll: true })
+    headerSortFocus.current = null
+  }, [partsQuery.data, partsQuery.isLoading])
 
-  const closeLedgerOptions = (restoreFocus: boolean) => {
-    setSortChoicesOpen(false)
-    setLedgerOptionsOpen(false)
-    if (restoreFocus) ledgerOptionsTrigger.current?.focus({ preventScroll: true })
+  const closeCompactSort = (restoreFocus: boolean) => {
+    setCompactSortOpen(false)
+    if (restoreFocus) compactSortTrigger.current?.focus({ preventScroll: true })
   }
 
-  const chooseSort = (nextSort: PartSort) => {
-    if (nextSort !== sort) {
+  const chooseSort = (nextSort: PartSort, nextDirection: SortDirection, closeMenu = false) => {
+    if (nextSort !== sort || nextDirection !== direction) {
       setSort(nextSort)
+      setDirection(nextDirection)
       setPartsSequence((current) => current + 1)
     }
-    closeLedgerOptions(true)
+    if (closeMenu) closeCompactSort(true)
+  }
+
+  const toggleHeaderSort = (nextSort: Exclude<PartSort, 'catalog'>) => {
+    const nextDirection = sort === nextSort ? direction === 'asc' ? 'desc' : 'asc' : FIRST_SORT_DIRECTION[nextSort]
+    headerSortFocus.current = nextSort
+    chooseSort(nextSort, nextDirection)
   }
 
   const chooseDensity = (nextDensity: LedgerDensity) => {
     setDensity(nextDensity)
-    closeLedgerOptions(true)
   }
 
-  const moveSortFocus = (event: ReactKeyboardEvent<HTMLButtonElement>, index: number) => {
+  const moveCompactSortFocus = (event: ReactKeyboardEvent<HTMLButtonElement>, index: number) => {
     let nextIndex: number | null = null
-    if (event.key === 'ArrowDown' || event.key === 'ArrowRight') nextIndex = (index + 1) % PART_SORT_OPTIONS.length
-    if (event.key === 'ArrowUp' || event.key === 'ArrowLeft') nextIndex = (index - 1 + PART_SORT_OPTIONS.length) % PART_SORT_OPTIONS.length
+    if (event.key === 'ArrowDown' || event.key === 'ArrowRight') nextIndex = (index + 1) % COMPACT_SORT_OPTIONS.length
+    if (event.key === 'ArrowUp' || event.key === 'ArrowLeft') nextIndex = (index - 1 + COMPACT_SORT_OPTIONS.length) % COMPACT_SORT_OPTIONS.length
     if (event.key === 'Home') nextIndex = 0
-    if (event.key === 'End') nextIndex = PART_SORT_OPTIONS.length - 1
+    if (event.key === 'End') nextIndex = COMPACT_SORT_OPTIONS.length - 1
     if (nextIndex === null) return
     event.preventDefault()
-    sortChoiceRefs.current[PART_SORT_OPTIONS[nextIndex].id]?.focus()
+    compactSortRefs.current[nextIndex]?.focus()
   }
 
   const selectView = (view: WorkspaceView) => {
@@ -468,7 +502,8 @@ export default function PartsInventoryWorkspace({ summary }: { summary: Summary 
 
   const needsReorderCount = workspaceView === 'reorder' && firstPartsPage
     ? firstPartsPage.total
-    : summary.needs_reorder_count ?? summary.low_stock_count
+    : summary.needs_reorder_count ?? summary.low_stock_count ?? 0
+  const movementCount = movementCountQuery.data?.total ?? null
 
   const updatePart = async (part: PartDetail, patch: Record<string, unknown>) => {
     setError(null)
@@ -515,35 +550,32 @@ export default function PartsInventoryWorkspace({ summary }: { summary: Summary 
               <button type="button" aria-pressed={stockFilter === 'out_of_stock'} onClick={() => { setStockFilter('out_of_stock'); setPartsSequence((current) => current + 1); setCheckedParts(new Map()) }}>Out of stock</button>
             </div>
             <button className="db-parts-workbench__archive-link" type="button" onClick={() => { setCatalogView(catalogView === 'active' ? 'archived' : 'active'); setPartsSequence((current) => current + 1); setCheckedParts(new Map()) }} disabled={workspaceView === 'reorder'}><Archive aria-hidden="true" />{catalogView === 'active' ? 'Archived parts' : 'Back to active parts'}</button>
-            <div ref={ledgerOptions} className="db-parts-workbench__options" onKeyDown={(event) => {
-              if (event.key !== 'Escape' || !ledgerOptionsOpen) return
+            <div className="db-parts-workbench__density" role="group" aria-label="Ledger density">
+              <button type="button" aria-pressed={density === 'comfortable'} onClick={() => chooseDensity('comfortable')}>Comfortable</button>
+              <button type="button" aria-pressed={density === 'compact'} onClick={() => chooseDensity('compact')}>Compact</button>
+            </div>
+            {sort !== 'catalog' && <button className="db-parts-workbench__catalog-reset is-desktop" type="button" aria-label="Reset to catalog order" onClick={() => chooseSort('catalog', 'asc')}>Catalog order</button>}
+            <div ref={compactSortMenu} className="db-parts-workbench__compact-sort-menu" onKeyDown={(event) => {
+              if (event.key !== 'Escape' || !compactSortOpen) return
               event.preventDefault()
               event.stopPropagation()
-              closeLedgerOptions(true)
+              closeCompactSort(true)
             }}>
-              <button ref={ledgerOptionsTrigger} type="button" aria-label="Ledger options" aria-expanded={ledgerOptionsOpen} aria-controls="parts-ledger-options-popover" onClick={() => {
-                setSortChoicesOpen(false)
-                setLedgerOptionsOpen((current) => !current)
-              }}><Settings2 aria-hidden="true" /><span>Options</span></button>
-              {ledgerOptionsOpen && <div id="parts-ledger-options-popover" className="db-parts-workbench__options-popover" role="dialog" aria-label="Ledger options">
-                <div className="db-parts-workbench__options-row">
+              <button ref={compactSortTrigger} type="button" aria-label="Sort parts" aria-expanded={compactSortOpen} aria-controls="parts-compact-sort-popover" onClick={() => {
+                setCompactSortOpen((current) => !current)
+              }}><ChevronsUpDown aria-hidden="true" /><span>Sort</span></button>
+              {compactSortOpen && <div id="parts-compact-sort-popover" className="db-parts-workbench__compact-sort-popover" role="dialog" aria-label="Sort parts">
+                <div className="db-parts-workbench__compact-sort-row">
                   <span id="parts-ledger-sort-label">Sort</span>
-                  <div className="db-parts-workbench__sort-picker">
-                    <button ref={sortTrigger} className="db-parts-workbench__sort-trigger" type="button" aria-haspopup="listbox" aria-expanded={sortChoicesOpen} aria-controls="parts-ledger-sort-choices" aria-labelledby="parts-ledger-sort-label parts-ledger-sort-value" onClick={() => setSortChoicesOpen((current) => !current)} onKeyDown={(event) => {
-                      if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return
-                      event.preventDefault()
-                      setSortChoicesOpen(true)
-                    }}><span id="parts-ledger-sort-value">{PART_SORT_OPTIONS.find((option) => option.id === sort)?.label}</span><ChevronDown aria-hidden="true" /></button>
-                    {sortChoicesOpen && <div id="parts-ledger-sort-choices" className="db-parts-workbench__sort-choices" role="listbox" aria-labelledby="parts-ledger-sort-label">
-                      {PART_SORT_OPTIONS.map((option, index) => <button key={option.id} ref={(node) => { sortChoiceRefs.current[option.id] = node }} type="button" role="option" aria-selected={sort === option.id} tabIndex={sort === option.id ? 0 : -1} onKeyDown={(event) => moveSortFocus(event, index)} onClick={() => chooseSort(option.id)}><span>{option.label}</span>{sort === option.id && <Check aria-hidden="true" />}</button>)}
-                    </div>}
-                  </div>
-                </div>
-                <div className="db-parts-workbench__options-row">
-                  <span id="parts-ledger-density-label">Density</span>
-                  <div className="db-parts-workbench__density" role="group" aria-labelledby="parts-ledger-density-label">
-                    <button type="button" aria-pressed={density === 'comfortable'} onClick={() => chooseDensity('comfortable')}>Comfortable</button>
-                    <button type="button" aria-pressed={density === 'compact'} onClick={() => chooseDensity('compact')}>Compact</button>
+                  <div className="db-parts-workbench__sort-controls">
+                    <button ref={compactCatalogReset} className="db-parts-workbench__catalog-reset" type="button" aria-pressed={sort === 'catalog'} onClick={() => chooseSort('catalog', 'asc', true)}>Catalog order</button>
+                    <div className="db-parts-workbench__compact-sort" role="radiogroup" aria-labelledby="parts-ledger-sort-label">
+                      {COMPACT_SORT_OPTIONS.map((option, index) => {
+                        const selected = sort === option.sort && direction === option.direction
+                        const hasSelectedCompactSort = COMPACT_SORT_OPTIONS.some((candidate) => sort === candidate.sort && direction === candidate.direction)
+                        return <button key={`${option.sort}-${option.direction}`} ref={(node) => { compactSortRefs.current[index] = node }} type="button" role="radio" aria-checked={selected} tabIndex={selected || !hasSelectedCompactSort && index === 0 ? 0 : -1} onKeyDown={(event) => moveCompactSortFocus(event, index)} onClick={() => chooseSort(option.sort, option.direction, true)}>{option.label}</button>
+                      })}
+                    </div>
                   </div>
                 </div>
               </div>}
@@ -553,7 +585,7 @@ export default function PartsInventoryWorkspace({ summary }: { summary: Summary 
             <strong>{checkedParts.size} {checkedParts.size === 1 ? 'part' : 'parts'} selected</strong>
             <div><button type="button" onClick={clearChecked}>Clear selection</button><button type="button" onClick={prepareChecked}>Add to purchase list<ArrowRight aria-hidden="true" /></button></div>
           </div>}
-          <PartLedger page={partsPage} loading={partsQuery.isLoading} loadingMore={partsQuery.isFetchingNextPage} failed={partsQuery.isError && !partsQuery.data} manage={manage} selectedId={selectedId} checkedIds={new Set(checkedParts.keys())} density={density} logoUrl={branding?.logo_url || null} companyName={branding?.name || null} onCheck={toggleChecked} onSelect={(id) => { setSelectedId(id); setMobileDetailOpen(true) }} onRetry={() => void partsQuery.refetch()} onLoadMore={() => void partsQuery.fetchNextPage()} />
+          <PartLedger page={partsPage} loading={partsQuery.isLoading} loadingMore={partsQuery.isFetchingNextPage} failed={partsQuery.isError && !partsQuery.data} manage={manage} selectedId={selectedId} checkedIds={new Set(checkedParts.keys())} density={density} sort={sort} direction={direction} logoUrl={branding?.logo_url || null} companyName={branding?.name || null} onSort={toggleHeaderSort} onCheck={toggleChecked} onSelect={(id) => { setSelectedId(id); setMobileDetailOpen(true) }} onRetry={() => void partsQuery.refetch()} onLoadMore={() => void partsQuery.fetchNextPage()} />
         </div>
         <PartInspector part={detailQuery.data} loading={detailQuery.isLoading} failed={detailQuery.isError} manage={manage} logoUrl={branding?.logo_url || null} companyName={branding?.name || null} onBack={() => setMobileDetailOpen(false)} onRetry={() => void detailQuery.refetch()} onAdjust={updatePart} onPrepare={addToPreparation} onPurchasing={() => navigate('/dashboard/garage/purchasing')} onOpenPurchaseOrder={(id) => navigate(`/dashboard/garage/purchasing?view=orders&purchase_order=${encodeURIComponent(id)}`)} onOpenRepair={(id) => navigate(`/dashboard/repair-orders?selected=${encodeURIComponent(id)}`)} />
       </div>}
@@ -568,12 +600,31 @@ export default function PartsInventoryWorkspace({ summary }: { summary: Summary 
   </section>
 }
 
-function PartLedger({ page, loading, loadingMore, failed, manage, selectedId, checkedIds, density, logoUrl, companyName, onCheck, onSelect, onRetry, onLoadMore }: { page?: Page<PartRecord>; loading: boolean; loadingMore: boolean; failed: boolean; manage: boolean; selectedId: string | null; checkedIds: Set<string>; density: LedgerDensity; logoUrl: string | null; companyName: string | null; onCheck: (part: PartRecord, checked: boolean) => void; onSelect: (id: string) => void; onRetry: () => void; onLoadMore: () => void }) {
+function SortableColumnHeader({ label, columnClass, field, sort, direction, onSort }: { label: string; columnClass: string; field: Exclude<PartSort, 'catalog'>; sort: PartSort; direction: SortDirection; onSort: (field: Exclude<PartSort, 'catalog'>) => void }) {
+  const active = sort === field
+  const nextDirection = active ? direction === 'asc' ? 'desc' : 'asc' : FIRST_SORT_DIRECTION[field]
+  return <span className={`${columnClass} is-sortable`} role="columnheader" aria-sort={active ? direction === 'asc' ? 'ascending' : 'descending' : undefined}>
+    <button type="button" data-parts-sort-field={field} aria-label={`${label}: sort ${nextDirection === 'asc' ? 'ascending' : 'descending'}`} onClick={() => onSort(field)}>
+      <span>{label}</span>
+      {active ? direction === 'asc' ? <ArrowUp aria-hidden="true" /> : <ArrowDown aria-hidden="true" /> : <ChevronsUpDown aria-hidden="true" />}
+    </button>
+  </span>
+}
+
+function PartLedger({ page, loading, loadingMore, failed, manage, selectedId, checkedIds, density, sort, direction, logoUrl, companyName, onSort, onCheck, onSelect, onRetry, onLoadMore }: { page?: Page<PartRecord>; loading: boolean; loadingMore: boolean; failed: boolean; manage: boolean; selectedId: string | null; checkedIds: Set<string>; density: LedgerDensity; sort: PartSort; direction: SortDirection; logoUrl: string | null; companyName: string | null; onSort: (field: Exclude<PartSort, 'catalog'>) => void; onCheck: (part: PartRecord, checked: boolean) => void; onSelect: (id: string) => void; onRetry: () => void; onLoadMore: () => void }) {
   if (loading) return <div className="db-parts-workbench__state" role="status">Loading parts…</div>
   if (failed) return <div className="db-parts-workbench__state" role="alert">Parts could not be loaded.<button type="button" onClick={onRetry}>Retry</button></div>
   if (!page?.items.length) return <div className="db-parts-workbench__state"><strong>No parts match this view.</strong><span>Change the search or catalog filter to see more.</span></div>
   return <div className={`db-parts-workbench__ledger is-${density}${manage ? '' : ' is-read-only'}`} role="table" aria-label={`${page.total} matching parts`}>
-    <div className="db-parts-workbench__table-head" role="row">{manage && <span role="columnheader" aria-label="Select part" />}<span className="is-description" role="columnheader">Description</span><span className="is-available" role="columnheader">Available</span><span className="is-bin" role="columnheader">Bin location</span><span className="is-cost" role="columnheader">Average cost</span><span className="is-supplier" role="columnheader">Preferred supplier</span><span className="is-remarks" role="columnheader">Remarks</span></div>
+    <div className="db-parts-workbench__table-head" role="row">
+      {manage && <span role="columnheader" aria-label="Select part" />}
+      <SortableColumnHeader label="Part / Description" columnClass="is-description" field="name" sort={sort} direction={direction} onSort={onSort} />
+      <SortableColumnHeader label="Available" columnClass="is-available" field="available" sort={sort} direction={direction} onSort={onSort} />
+      <SortableColumnHeader label="Bin location" columnClass="is-bin" field="location" sort={sort} direction={direction} onSort={onSort} />
+      <SortableColumnHeader label="Average cost" columnClass="is-cost" field="cost" sort={sort} direction={direction} onSort={onSort} />
+      <span className="is-supplier" role="columnheader">Preferred supplier</span>
+      <SortableColumnHeader label="Remarks / Status" columnClass="is-remarks" field="reorder" sort={sort} direction={direction} onSort={onSort} />
+    </div>
     <div className="db-parts-workbench__rows" role="rowgroup">
       {page.items.map((part) => {
         const eligible = isManuallySelectable(part)

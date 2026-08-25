@@ -11,8 +11,9 @@ const candidateSha = execFileSync('git', ['rev-parse', 'HEAD'], {
 export default defineConfig({
   testDir: './tests',
   testMatch: 'db038-parts-operations.spec.ts',
-  grep: /DB-038/,
-  timeout: 45_000,
+  grep: /DB-041/,
+  timeout: 60_000,
+  expect: { timeout: 8_000 },
   retries: 0,
   workers: 1,
   reporter: 'line',
@@ -25,7 +26,7 @@ export default defineConfig({
   webServer: {
     command: 'npm --prefix ../frontend run dev -- --host 127.0.0.1 --port 5181 --strictPort',
     env: {
-      DIESELBRIDGE_RUNTIME_BRANCH: 'e2e/db038-parts-operations',
+      DIESELBRIDGE_RUNTIME_BRANCH: 'e2e/db041-parts-ledger-sorting',
       DIESELBRIDGE_RUNTIME_SHA: candidateSha,
     },
     url: 'http://127.0.0.1:5181',

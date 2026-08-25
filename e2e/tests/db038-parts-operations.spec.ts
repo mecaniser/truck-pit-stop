@@ -21,11 +21,11 @@ type InventoryFixtureRow = {
 }
 
 const specialInventoryRows = [
-  { name: 'Air filter', stock_quantity: 0, reorder_level: 2, supplier_name: 'Alpha Supply', location: 'A-01', image_url: '/db038-part-image.svg', is_placeholder: false, ets_retired_at: null },
-  { name: 'Brake shoe', stock_quantity: 2, reorder_level: 5, supplier_name: 'Beta Supply', location: 'B-02', image_url: '/db038-broken-image.svg', is_placeholder: false, ets_retired_at: null },
-  { name: 'Coolant', stock_quantity: 10, reorder_level: 3, supplier_name: 'Gamma Supply', location: 'C-03', image_url: null, is_placeholder: false, ets_retired_at: null },
-  { name: 'Temporary catalog item', stock_quantity: 1, reorder_level: 8, supplier_name: null, location: null, image_url: null, is_placeholder: true, ets_retired_at: null },
-  { name: 'Retired empty item', stock_quantity: 0, reorder_level: 4, supplier_name: 'Archive Supply', location: 'R-01', image_url: null, is_placeholder: false, ets_retired_at: fixture.frozen_at },
+  { name: 'Air filter', stock_quantity: 0, reorder_level: 2, cost: '9.50', supplier_name: 'Alpha Supply', location: 'A-01', image_url: '/db038-part-image.svg', is_placeholder: false, ets_retired_at: null },
+  { name: 'Brake shoe', stock_quantity: 2, reorder_level: 5, cost: '120.00', supplier_name: 'Beta Supply', location: 'B-02', image_url: '/db038-broken-image.svg', is_placeholder: false, ets_retired_at: null },
+  { name: 'Coolant', stock_quantity: 10, reorder_level: 3, cost: '7.25', supplier_name: 'Gamma Supply', location: 'C-03', image_url: null, is_placeholder: false, ets_retired_at: null },
+  { name: 'Temporary catalog item', stock_quantity: 1, reorder_level: 8, cost: '99.00', supplier_name: null, location: null, image_url: null, is_placeholder: true, ets_retired_at: null },
+  { name: 'Retired empty item', stock_quantity: 0, reorder_level: 4, cost: '4.25', supplier_name: 'Archive Supply', location: 'R-01', image_url: null, is_placeholder: false, ets_retired_at: fixture.frozen_at },
 ] as const
 
 const demandItems = Array.from({ length: 100 }, (_, index) => ({
@@ -46,6 +46,7 @@ const inventoryItems: InventoryFixtureRow[] = Array.from({ length: 100 }, (_, in
     id: `inventory-${index + 1}`,
     sku: `DB-INVENTORY-${String(index + 1).padStart(3, '0')}`,
     name: special?.name || `Fleet filter ${index + 1}`,
+    cost: special?.cost ?? ((index + 1) * 1.11).toFixed(2),
     stock_quantity: special?.stock_quantity ?? index + 1,
     reorder_level: special?.reorder_level ?? 3,
     supplier_name: special?.supplier_name ?? `Supplier ${index + 1}`,
@@ -355,10 +356,10 @@ async function expectToolbarOptionsContrast(page: Page, mode: 'dark' | 'high_con
   await options.click()
   await expect(options).toHaveAttribute('aria-expanded', 'true')
   await expect(page.locator('.db-parts-workbench__options-popover select')).toHaveCount(0)
-  const sortTrigger = page.getByRole('button', { name: 'Sort Catalog order' })
-  await expect(sortTrigger).toBeVisible()
-  expect(await sortTrigger.evaluate((node) => node.matches(':focus-visible'))).toBe(false)
-  const styles = await sortTrigger.evaluate((node) => {
+  const catalogReset = page.getByRole('button', { name: 'Catalog order' })
+  await expect(catalogReset).toBeVisible()
+  expect(await catalogReset.evaluate((node) => node.matches(':focus-visible'))).toBe(false)
+  const styles = await catalogReset.evaluate((node) => {
     const style = getComputedStyle(node)
     return {
       background: style.backgroundColor,
@@ -369,14 +370,17 @@ async function expectToolbarOptionsContrast(page: Page, mode: 'dark' | 'high_con
   expect(contrastRatio(styles.color, styles.background)).toBeGreaterThanOrEqual(4.5)
   expect(contrastRatio(styles.border, styles.background)).toBeGreaterThanOrEqual(mode === 'high_contrast' ? 3 : 1.25)
   expect(styles.background).not.toBe('rgb(246, 248, 251)')
-  await sortTrigger.click()
-  const selectedSort = page.getByRole('option', { name: 'Catalog order' })
-  await expect(selectedSort).toHaveAttribute('aria-selected', 'true')
-  const optionStyles = await selectedSort.evaluate((node) => {
-    const style = getComputedStyle(node)
-    return { background: style.backgroundColor, color: style.color, outline: style.outlineStyle, boxShadow: style.boxShadow }
-  })
-  expect(contrastRatio(optionStyles.color, optionStyles.background)).toBeGreaterThanOrEqual(4.5)
+  if ((page.viewportSize()?.width ?? 0) <= 760) {
+    const selectedSort = page.getByRole('radio', { name: 'Part name A–Z' })
+    await expect(selectedSort).toBeVisible()
+    const optionStyles = await selectedSort.evaluate((node) => {
+      const style = getComputedStyle(node)
+      return { background: style.backgroundColor, color: style.color, outline: style.outlineStyle, boxShadow: style.boxShadow }
+    })
+    expect(contrastRatio(optionStyles.color, optionStyles.background)).toBeGreaterThanOrEqual(4.5)
+  } else {
+    await expect(page.getByRole('radiogroup', { name: 'Sort' })).toBeHidden()
+  }
   await page.keyboard.press('Escape')
   await expect(page.getByRole('dialog', { name: 'Ledger options' })).toBeHidden()
   await expect(options).toBeFocused()
@@ -913,7 +917,7 @@ async function expectLedgerLineTreatment(page: Page, width: number) {
 }
 
 async function expectAvailableDividerState(page: Page, present: boolean) {
-  const availableHead = page.getByRole('columnheader', { name: 'Available', exact: true })
+  const availableHead = page.locator('.db-parts-workbench__table-head > .is-available')
   const availableCell = page.locator('.db-parts-workbench__row').first().locator('.is-available')
   const [headWidth, cellWidth, headBox, cellBox] = await Promise.all([
     availableHead.evaluate((node) => Number.parseFloat(getComputedStyle(node).borderInlineStartWidth)),
@@ -962,10 +966,10 @@ async function expectPriorityLedgerColumnsContained(page: Page, width: number) {
   const headBox = await tableHead.boundingBox()
   const headScrollWidth = await tableHead.evaluate((node) => node.scrollWidth)
   expect(headBox).not.toBeNull()
-  const visibleLabels = ['Description', 'Available', 'Bin location', 'Average cost', 'Preferred supplier', 'Remarks'] as const
+  const visibleLabels = ['Part / Description', 'Available', 'Bin location', 'Average cost', 'Preferred supplier', 'Remarks / Status'] as const
   const boxes = []
   for (const label of visibleLabels) {
-    const header = page.getByRole('columnheader', { name: label, exact: true })
+    const header = page.getByRole('columnheader', { name: label })
     const box = await header.boundingBox()
     expect(box).not.toBeNull()
     expect(box!.x).toBeGreaterThanOrEqual(headBox!.x - 1)
@@ -990,12 +994,12 @@ async function expectPriorityLedgerColumnsContained(page: Page, width: number) {
 
   expect(await tableHead.getByRole('columnheader').evaluateAll((nodes) => nodes.map((node) => node.getAttribute('aria-label') || node.textContent?.trim()))).toEqual([
     'Select part',
-    'Description',
+    'Part / Description',
     'Available',
     'Bin location',
     'Average cost',
     'Preferred supplier',
-    'Remarks',
+    'Remarks / Status',
   ])
 
   const [headerTemplate, rowTemplate] = await Promise.all([
@@ -1006,7 +1010,7 @@ async function expectPriorityLedgerColumnsContained(page: Page, width: number) {
   expect(headerTemplate.trim().split(/\s+/)).toHaveLength(7)
 
   const [descriptionTextX, identityTextX] = await Promise.all([
-    page.getByRole('columnheader', { name: 'Description', exact: true }).evaluate((node) => {
+    page.locator('.db-parts-workbench__table-head > .is-description').evaluate((node) => {
       const range = document.createRange()
       range.selectNodeContents(node)
       return range.getBoundingClientRect().x
@@ -1043,8 +1047,8 @@ async function expectLedgerControlOwnership(page: Page, width: number) {
   await options.focus()
   await options.press('Enter')
   await expect(page.getByRole('dialog', { name: 'Ledger options' })).toBeVisible()
-  const sortTrigger = page.getByRole('button', { name: /^Sort / })
-  await expect(sortTrigger).toBeFocused()
+  const catalogReset = page.getByRole('button', { name: 'Catalog order' })
+  await expect(catalogReset).toBeFocused()
   await expect(page.locator('.db-parts-workbench__options-popover select')).toHaveCount(0)
   const density = page.getByRole('group', { name: 'Density' })
   await expect(density).toBeVisible()
@@ -1052,7 +1056,7 @@ async function expectLedgerControlOwnership(page: Page, width: number) {
   const [sortLabelBox, densityLabelBox, sortControlBox, densityControlBox] = await Promise.all([
     optionRows.nth(0).locator(':scope > span').boundingBox(),
     optionRows.nth(1).locator(':scope > span').boundingBox(),
-    sortTrigger.boundingBox(),
+    page.locator('.db-parts-workbench__sort-controls').boundingBox(),
     density.boundingBox(),
   ])
   expect(sortLabelBox).not.toBeNull()
@@ -1064,18 +1068,23 @@ async function expectLedgerControlOwnership(page: Page, width: number) {
   expect(Math.abs(sortControlBox!.width - densityControlBox!.width)).toBeLessThanOrEqual(1)
   expect(sortControlBox!.height).toBeGreaterThanOrEqual(44)
   expect(densityControlBox!.height).toBeGreaterThanOrEqual(44)
-  const keyboardFocus = await sortTrigger.evaluate((node) => {
+  const keyboardFocus = await catalogReset.evaluate((node) => {
     const style = getComputedStyle(node)
     return { visible: node.matches(':focus-visible'), outline: style.outlineStyle, shadow: style.boxShadow }
   })
   expect(keyboardFocus.visible).toBe(true)
   expect(keyboardFocus.outline === 'none' || keyboardFocus.outline === 'solid').toBe(true)
   expect(keyboardFocus.outline === 'solid' || keyboardFocus.shadow.includes('inset')).toBe(true)
-  await sortTrigger.press('Enter')
-  await expect(page.getByRole('listbox', { name: 'Sort' })).toBeVisible()
-  await expect(page.getByRole('option', { name: 'Catalog order' })).toBeFocused()
-  await page.keyboard.press('End')
-  await expect(page.getByRole('option', { name: 'Reorder urgency' })).toBeFocused()
+  if (width <= 760) {
+    const compactSort = page.getByRole('radiogroup', { name: 'Sort' })
+    await expect(compactSort).toBeVisible()
+    const firstSort = compactSort.getByRole('radio').first()
+    await firstSort.focus()
+    await page.keyboard.press('End')
+    await expect(compactSort.getByRole('radio').last()).toBeFocused()
+  } else {
+    await expect(page.getByRole('radiogroup', { name: 'Sort' })).toBeHidden()
+  }
   await page.keyboard.press('Escape')
   await expect(page.getByRole('dialog', { name: 'Ledger options' })).toBeHidden()
   await expect(options).toBeFocused()
@@ -1192,17 +1201,28 @@ async function installFixture(page: Page, {
       const attention = url.searchParams.get('attention')
       const search = (url.searchParams.get('search') || '').toLocaleLowerCase()
       const sort = url.searchParams.get('sort') || 'catalog'
+      const direction = url.searchParams.get('direction') === 'desc' ? 'desc' : 'asc'
       const skip = Number(url.searchParams.get('skip') || 0)
       const limit = Number(url.searchParams.get('limit') || 50)
       let items = scopedPartsItems.filter((item) => view === 'archived' ? item.is_archived : view === 'all' ? true : !item.is_archived)
-      if (attention === 'needs_reorder') items = items.filter((item) => !item.is_placeholder && item.available_packages <= item.reorder_level)
+      if (attention === 'needs_reorder') items = items.filter((item) => !item.is_placeholder && item.recommended_order_packages > 0)
       if (attention === 'out_of_stock') items = items.filter((item) => !item.is_placeholder && item.available_packages === 0)
       if (search) items = items.filter((item) => `${item.name} ${item.sku} ${item.location || ''} ${item.preferred_source?.supplier_name || ''} ${item.preferred_source?.supplier_part_number || ''}`.toLocaleLowerCase().includes(search))
       items = [...items].sort((left, right) => {
-        if (sort === 'name') return left.name.localeCompare(right.name) || left.id.localeCompare(right.id)
-        if (sort === 'available') return left.available_packages - right.available_packages || left.name.localeCompare(right.name)
-        if (sort === 'reorder') return (left.available_packages - left.reorder_level) - (right.available_packages - right.reorder_level) || left.name.localeCompare(right.name)
-        return Number(left.id.split('-').at(-1)) - Number(right.id.split('-').at(-1))
+        const compareText = (leftValue: string, rightValue: string) => leftValue.localeCompare(rightValue, undefined, { sensitivity: 'base' })
+        const stable = compareText(left.name, right.name) || compareText(left.sku, right.sku) || compareText(left.id, right.id)
+        const directed = (value: number) => direction === 'desc' ? -value : value
+        if (sort === 'name') return directed(compareText(left.name, right.name)) || stable
+        if (sort === 'available') return directed(left.available_packages - right.available_packages) || stable
+        if (sort === 'location') {
+          const leftLocation = left.location?.trim() || ''
+          const rightLocation = right.location?.trim() || ''
+          if (!leftLocation || !rightLocation) return leftLocation ? -1 : rightLocation ? 1 : stable
+          return directed(compareText(leftLocation, rightLocation)) || stable
+        }
+        if (sort === 'cost') return directed(Number(left.average_unit_cost) - Number(right.average_unit_cost)) || stable
+        if (sort === 'reorder') return directed(left.recommended_order_packages - right.recommended_order_packages) || stable
+        return directed(scopedPartsItems.findIndex((item) => item.id === left.id) - scopedPartsItems.findIndex((item) => item.id === right.id)) || stable
       })
       return json({ items: items.slice(skip, skip + limit), total: items.length, skip, limit, has_more: skip + limit < items.length })
     }
@@ -1292,8 +1312,6 @@ test('DB-038 covers All parts, Needs reorder, Movement, and Purchasing across re
       await ledger.evaluate((node) => { node.scrollLeft = 0 })
       await page.getByRole('button', { name: 'Ledger options' }).click()
       await page.screenshot({ path: testInfo.outputPath('db038-ledger-options-1280.png'), fullPage: false })
-      await page.getByRole('button', { name: /^Sort / }).click()
-      await page.screenshot({ path: testInfo.outputPath('db038-ledger-sort-options-1280.png'), fullPage: false })
       await page.keyboard.press('Escape')
       await page.emulateMedia({ forcedColors: 'active' })
     }
@@ -1307,8 +1325,8 @@ test('DB-038 covers All parts, Needs reorder, Movement, and Purchasing across re
     if (width <= 760) await expectCompactLedgerHitTargets(page)
     await expectSingleWorkbenchSelection(page, partButtons.first())
     await expect(partRows.first().locator('img[src$="/db038-part-image.svg"]')).toBeVisible()
-    for (const label of ['Description', 'Available', 'Bin location', 'Average cost', 'Preferred supplier', 'Remarks']) {
-      const header = page.getByRole('columnheader', { name: label, exact: true })
+    for (const label of ['Part / Description', 'Available', 'Bin location', 'Average cost', 'Preferred supplier', 'Remarks / Status']) {
+      const header = page.getByRole('columnheader', { name: label })
       if (width > 760) await expect(header).toHaveCount(1)
       else await expect(header).toBeHidden()
     }
@@ -1330,21 +1348,21 @@ test('DB-038 covers All parts, Needs reorder, Movement, and Purchasing across re
     if (width === 1280) {
       const retainedCheckbox = page.getByRole('checkbox', { name: 'Select Air filter for purchase preparation' })
       await retainedCheckbox.check()
-      for (const sortName of ['Name', 'Available', 'Reorder urgency', 'Catalog order']) {
-        const options = page.getByRole('button', { name: 'Ledger options' })
-        await options.click()
-        const sortTrigger = page.getByRole('button', { name: /^Sort / })
-        await sortTrigger.click()
-        const sortOption = page.getByRole('option', { name: sortName })
-        await sortOption.click()
-        await expect(page.getByRole('dialog', { name: 'Ledger options' })).toBeHidden()
-        await expect(options).toBeFocused()
+      for (const sortName of ['Part / Description', 'Available', 'Remarks / Status']) {
+        await page.getByRole('columnheader', { name: sortName }).getByRole('button').click()
         await expect(page.getByText('1 part selected')).toBeVisible()
         await expect(page.getByRole('button', { name: /^All parts/ })).toHaveAttribute('aria-current', 'page')
         await expect(stockFilters.getByRole('button', { name: 'All' })).toHaveAttribute('aria-pressed', 'true')
         await expect(page.getByRole('checkbox', { name: 'Select Air filter for purchase preparation' })).toBeChecked()
         expect(await page.getByRole('checkbox', { name: /purchase preparation/ }).count()).toBeGreaterThan(0)
       }
+      const options = page.getByRole('button', { name: 'Ledger options' })
+      await options.click()
+      await page.getByRole('button', { name: 'Catalog order' }).click()
+      await expect(page.getByRole('dialog', { name: 'Ledger options' })).toBeHidden()
+      await expect(options).toBeFocused()
+      await expect(page.getByText('1 part selected')).toBeVisible()
+      await expect(page.getByRole('checkbox', { name: 'Select Air filter for purchase preparation' })).toBeChecked()
       await retainedCheckbox.uncheck()
     }
     const options = page.getByRole('button', { name: 'Ledger options' })
@@ -1445,10 +1463,7 @@ test('DB-038 covers All parts, Needs reorder, Movement, and Purchasing across re
     const bulkActions = page.getByRole('region', { name: 'Selected parts actions' })
     await expect(bulkActions).toContainText('2 parts selected')
     if (width === 1280) {
-      const options = page.getByRole('button', { name: 'Ledger options' })
-      await options.click()
-      await page.getByRole('button', { name: /^Sort / }).click()
-      await page.getByRole('option', { name: 'Name' }).click()
+      await page.getByRole('columnheader', { name: 'Part / Description' }).getByRole('button').click()
       await expect(bulkActions).toContainText('2 parts selected')
       await expect(reorderCheckboxes).toHaveCount(2)
       for (const checkbox of await reorderCheckboxes.all()) await expect(checkbox).toBeChecked()
@@ -1540,7 +1555,7 @@ test('DB-038 preserves photo fallbacks, incremental loading, and repair, PO, and
 
 test('DB-038 stock changes preserve item ownership, permissions, validation, and responsive containment', async ({ browser }, testInfo) => {
   for (const [width, height] of [[1280, 900], [960, 900], [390, 844], [320, 720]]) {
-    const context = await browser.newContext({ viewport: { width, height }, reducedMotion: 'reduce' })
+    const context = await browser.newContext({ viewport: { width, height }, reducedMotion: 'reduce', forcedColors: width === 320 ? 'active' : 'none' })
     const page = await context.newPage()
     const updates: InventoryUpdate[] = []
     const appearanceMode = width === 960 || width === 320 ? 'high_contrast' : 'dark'
@@ -2016,6 +2031,192 @@ test('DB-040 renders one connected Parts operating surface across supported widt
     }))
     expect(containment.document).toBeLessThanOrEqual(containment.viewport)
     await page.screenshot({ path: testInfo.outputPath(`db040-parts-connected-${width}.png`), fullPage: false })
+    expect(errors.get(page)).toEqual([])
+    await context.close()
+  }
+})
+
+test('DB-041 keeps server sorting singular, directional, and continuous across Parts breakpoints', async ({ browser }, testInfo) => {
+  const viewports = [
+    { width: 1440, height: 960 },
+    { width: 1280, height: 900 },
+    { width: 1100, height: 900 },
+    { width: 960, height: 900 },
+    { width: 760, height: 900 },
+    { width: 390, height: 844 },
+    { width: 320, height: 720 },
+  ]
+
+  for (const { width, height } of viewports) {
+    const context = await browser.newContext({ viewport: { width, height }, reducedMotion: 'reduce' })
+    const page = await context.newPage()
+    const partsRequests: URL[] = []
+    const movementRequests: URL[] = []
+    page.on('request', request => {
+      const url = new URL(request.url())
+      if (url.pathname.endsWith('/parts-operations/parts')) partsRequests.push(url)
+      if (url.pathname.endsWith('/parts-operations/activity')) movementRequests.push(url)
+    })
+    await installFixture(page, { appearanceMode: width === 960 ? 'light' : width === 320 ? 'high_contrast' : 'dark' })
+    await page.goto('/dashboard/garage/inventory')
+    await expect(page.locator('.db-parts-workbench__row-select').first()).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Movement 1' })).toBeVisible()
+    await expect.poll(() => movementRequests.filter((request) => request.searchParams.get('limit') === '1').length).toBe(1)
+    expect(movementRequests.filter((request) => request.searchParams.get('limit') === '50')).toHaveLength(0)
+
+    const searchControl = page.getByRole('searchbox', { name: 'Search parts' }).locator('..')
+    const stockFilters = page.getByRole('group', { name: 'Stock filter' })
+    const [searchBox, filterBox] = await Promise.all([searchControl.boundingBox(), stockFilters.boundingBox()])
+    expect(searchBox).not.toBeNull()
+    expect(filterBox).not.toBeNull()
+    expect(Math.abs(searchBox!.height - filterBox!.height)).toBeLessThanOrEqual(1)
+    expect(searchBox!.height).toBeGreaterThanOrEqual(44)
+    expect(filterBox!.height).toBeGreaterThanOrEqual(44)
+
+    const density = page.getByRole('group', { name: 'Ledger density' })
+    await expect(density).toBeVisible()
+    const comfortableDensity = density.getByRole('button', { name: 'Comfortable' })
+    const compactDensity = density.getByRole('button', { name: 'Compact' })
+    expect(await compactDensity.evaluate((node) => node.getBoundingClientRect().height)).toBeGreaterThanOrEqual(44)
+    await compactDensity.click()
+    await expect(compactDensity).toHaveAttribute('aria-pressed', 'true')
+    await expect(page.locator('.db-parts-workbench__ledger')).toHaveClass(/is-compact/)
+    await comfortableDensity.click()
+    await expect(comfortableDensity).toHaveAttribute('aria-pressed', 'true')
+
+    const tableHead = page.locator('.db-parts-workbench__table-head')
+    const compactSortTrigger = page.getByRole('button', { name: 'Sort parts' })
+    await expect(page.getByRole('button', { name: 'Ledger options' })).toHaveCount(0)
+    if (width > 760) {
+      await expect(tableHead).toBeVisible()
+      await expect(compactSortTrigger).toBeHidden()
+      await expect(page.getByRole('button', { name: 'Reset to catalog order' })).toHaveCount(0)
+      const headerButtons = tableHead.locator('button[data-parts-sort-field]')
+      await expect(headerButtons).toHaveCount(5)
+      expect(await headerButtons.evaluateAll((nodes) => nodes.every((node) => node.getBoundingClientRect().height >= 44))).toBe(true)
+      expect(await tableHead.getByRole('columnheader').evaluateAll((nodes) => nodes.every((node) => {
+        const style = getComputedStyle(node)
+        return style.whiteSpace === 'nowrap' && node.scrollWidth <= node.clientWidth + 1
+      }))).toBe(true)
+      await page.getByRole('button', { name: 'Part / Description: sort ascending' }).click()
+      const directReset = page.getByRole('button', { name: 'Reset to catalog order' })
+      await expect(directReset).toBeVisible()
+      expect(await directReset.evaluate((node) => node.getBoundingClientRect().height)).toBeGreaterThanOrEqual(44)
+      await directReset.click()
+      await expect(directReset).toHaveCount(0)
+    } else {
+      await expect(tableHead).toBeHidden()
+      await expect(compactSortTrigger).toBeVisible()
+      await expect(compactSortTrigger).toHaveAttribute('aria-controls', 'parts-compact-sort-popover')
+      await compactSortTrigger.click()
+      const compactSort = page.getByRole('radiogroup', { name: 'Sort' })
+      await expect(compactSort).toBeVisible()
+      await expect(compactSort.getByRole('radio')).toHaveCount(10)
+      const compactChoice = compactSort.getByRole('radio', { name: 'Average cost high to low' })
+      const compactBox = await compactChoice.boundingBox()
+      expect(compactBox).not.toBeNull()
+      expect(compactBox!.height).toBeGreaterThanOrEqual(44)
+      await compactChoice.focus()
+      await compactChoice.press('Enter')
+      await expect(page.getByRole('dialog', { name: 'Sort parts' })).toBeHidden()
+      await expect.poll(() => {
+        const request = partsRequests.at(-1)
+        return request ? `${request.searchParams.get('sort')}:${request.searchParams.get('direction')}:${request.searchParams.get('skip')}` : ''
+      }).toBe('cost:desc:0')
+      await expect(compactSortTrigger).toBeFocused()
+      await expect(page.getByRole('button', { name: 'Reset to catalog order' })).toBeHidden()
+    }
+
+    if (width === 1440) {
+      const expectRenderedDirection = async (field: 'name' | 'available' | 'location' | 'cost' | 'reorder', expectedDirection: 'asc' | 'desc') => {
+        await expect.poll(async () => {
+          const rows = page.locator('.db-parts-workbench__row')
+          if (field === 'reorder') {
+            const firstName = await rows.first().locator('.db-parts-workbench__identity strong').textContent()
+            return firstName?.trim() === (expectedDirection === 'desc' ? 'Brake shoe' : 'Coolant')
+          }
+          const values = field === 'name'
+            ? await rows.locator('.db-parts-workbench__identity strong').allTextContents()
+            : field === 'available'
+              ? (await rows.locator('[data-label="Available"]').allTextContents()).map((value) => Number(value.trim()))
+              : field === 'location'
+                ? (await rows.locator('[data-label="Bin location"]').allTextContents()).map((value) => value.replace(/^Bin\s+/, '').trim())
+                : (await rows.locator('[data-label="Average cost"]').allTextContents()).map((value) => Number(value.replace(/[$,]/g, '').trim()))
+          const compare = (left: string | number, right: string | number) => typeof left === 'number' && typeof right === 'number'
+            ? left - right
+            : String(left).localeCompare(String(right), undefined, { sensitivity: 'base' })
+          return values.every((value, index) => index === 0 || (expectedDirection === 'asc' ? compare(values[index - 1], value) <= 0 : compare(values[index - 1], value) >= 0))
+        }).toBe(true)
+      }
+
+      await page.getByRole('button', { name: 'Load 50 more' }).click()
+      await expect(page.getByText('Showing 99 of 99')).toBeVisible()
+      const targetRow = page.locator('.db-parts-workbench__row', { has: page.locator('.db-parts-workbench__row-select', { hasText: 'Fleet filter 98' }) })
+      await targetRow.locator('.db-parts-workbench__row-select').click()
+      await expect(page.getByRole('heading', { name: 'Fleet filter 98' })).toBeVisible()
+      await targetRow.getByRole('checkbox', { name: 'Select Fleet filter 98 for purchase preparation' }).click()
+      await expect(page.getByText('1 part selected')).toBeVisible()
+
+      const nameHeader = page.getByRole('columnheader', { name: 'Part / Description' })
+      const nameSort = nameHeader.getByRole('button', { name: 'Part / Description: sort ascending' })
+      await nameSort.focus()
+      await nameSort.press('Enter')
+      await expect.poll(() => {
+        const request = partsRequests.at(-1)
+        return request ? `${request.searchParams.get('sort')}:${request.searchParams.get('direction')}:${request.searchParams.get('skip')}` : ''
+      }).toBe('name:asc:0')
+      await expectRenderedDirection('name', 'asc')
+      await expect(page.getByRole('columnheader', { name: 'Part / Description' })).toHaveAttribute('aria-sort', 'ascending')
+      await expect(page.getByRole('button', { name: 'Part / Description: sort descending' })).toBeFocused()
+      await expect(page.getByText('Showing 50 of 99')).toBeVisible()
+      await expect(page.getByRole('checkbox', { name: 'Select Fleet filter 98 for purchase preparation' })).toHaveCount(0)
+      await expect(page.getByRole('heading', { name: 'Fleet filter 98' })).toBeVisible()
+      await expect(page.getByText('1 part selected')).toBeVisible()
+
+      await page.getByRole('button', { name: 'Part / Description: sort descending' }).click()
+      await expect.poll(() => {
+        const request = partsRequests.at(-1)
+        return request ? `${request.searchParams.get('sort')}:${request.searchParams.get('direction')}` : ''
+      }).toBe('name:desc')
+      await expectRenderedDirection('name', 'desc')
+      await expect(page.getByRole('columnheader', { name: 'Part / Description' })).toHaveAttribute('aria-sort', 'descending')
+
+      const firstDirections = [
+        { label: 'Available', field: 'available', direction: 'asc' },
+        { label: 'Bin location', field: 'location', direction: 'asc' },
+        { label: 'Average cost', field: 'cost', direction: 'desc' },
+        { label: 'Remarks / Status', field: 'reorder', direction: 'desc' },
+      ]
+      for (const scenario of firstDirections) {
+        await page.getByRole('button', { name: `${scenario.label}: sort ${scenario.direction === 'asc' ? 'ascending' : 'descending'}` }).click()
+        await expect.poll(() => {
+          const request = partsRequests.at(-1)
+          return request ? `${request.searchParams.get('sort')}:${request.searchParams.get('direction')}:${request.searchParams.get('skip')}` : ''
+        }).toBe(`${scenario.field}:${scenario.direction}:0`)
+        await expect(page.getByRole('columnheader', { name: scenario.label })).toHaveAttribute('aria-sort', scenario.direction === 'asc' ? 'ascending' : 'descending')
+        await expectRenderedDirection(scenario.field as 'available' | 'location' | 'cost' | 'reorder', scenario.direction as 'asc' | 'desc')
+        await page.getByRole('columnheader', { name: scenario.label }).getByRole('button').click()
+        const oppositeDirection = scenario.direction === 'asc' ? 'desc' : 'asc'
+        await expect.poll(() => {
+          const request = partsRequests.at(-1)
+          return request ? `${request.searchParams.get('sort')}:${request.searchParams.get('direction')}:${request.searchParams.get('skip')}` : ''
+        }).toBe(`${scenario.field}:${oppositeDirection}:0`)
+        await expectRenderedDirection(scenario.field as 'available' | 'location' | 'cost' | 'reorder', oppositeDirection)
+      }
+
+      await page.getByRole('searchbox', { name: 'Search parts' }).fill('filter')
+      await expect.poll(() => partsRequests.at(-1)?.searchParams.get('search') || '').toBe('filter')
+      await page.getByRole('button', { name: 'Needs reorder', exact: true }).click()
+      await expect.poll(() => {
+        const request = partsRequests.at(-1)
+        if (!request) return ''
+        return [request.searchParams.get('search'), request.searchParams.get('attention'), request.searchParams.get('sort'), request.searchParams.get('direction'), request.searchParams.get('skip')].join(':')
+      }).toBe('filter:needs_reorder:reorder:asc:0')
+    }
+
+    const containment = await page.evaluate(() => ({ viewport: document.documentElement.clientWidth, document: document.documentElement.scrollWidth }))
+    expect(containment.document).toBeLessThanOrEqual(containment.viewport)
+    await page.screenshot({ path: testInfo.outputPath(`db041-parts-sorting-${width}.png`), fullPage: false })
     expect(errors.get(page)).toEqual([])
     await context.close()
   }

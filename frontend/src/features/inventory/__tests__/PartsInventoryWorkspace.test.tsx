@@ -114,6 +114,13 @@ const unassignedReorderPart: PartRecord = {
   recommended_order_packages: 4,
 }
 
+const directionReorderPart: PartRecord = {
+  ...unassignedReorderPart,
+  id: 'part-direction',
+  sku: 'BELT-DIRECTION',
+  name: 'Belt tensioner',
+}
+
 function detail(part: PartRecord) {
   return {
     ...part,
@@ -206,7 +213,7 @@ describe('DB-038 Parts & inventory workspace', () => {
 
     await screen.findByRole('heading', { name: 'Alternator' })
     expect(apiMocks.get).toHaveBeenCalledWith('/parts-operations/parts', {
-      params: { view: 'active', sort: 'catalog', skip: 0, limit: 50, paginated: true },
+      params: { view: 'active', sort: 'catalog', direction: 'asc', skip: 0, limit: 50, paginated: true },
     })
     expect(screen.getByText('Showing 1 of 51')).toBeInTheDocument()
     const ledger = screen.getByRole('table', { name: '51 matching parts' })
@@ -219,19 +226,19 @@ describe('DB-038 Parts & inventory workspace', () => {
     expect(screen.getByRole('table', { name: '51 matching parts' }).querySelectorAll('.db-parts-workbench__row')).toHaveLength(2)
     expect(screen.getByText('Brake shoe kit')).toBeInTheDocument()
     expect(apiMocks.get).toHaveBeenCalledWith('/parts-operations/parts', {
-      params: { view: 'active', sort: 'catalog', skip: 50, limit: 50, paginated: true },
+      params: { view: 'active', sort: 'catalog', direction: 'asc', skip: 50, limit: 50, paginated: true },
     })
 
     await user.type(screen.getByRole('searchbox', { name: 'Search parts' }), 'brake')
     await waitFor(() => expect(apiMocks.get).toHaveBeenCalledWith('/parts-operations/parts', {
-      params: { view: 'active', search: 'brake', sort: 'catalog', skip: 0, limit: 50, paginated: true },
+      params: { view: 'active', search: 'brake', sort: 'catalog', direction: 'asc', skip: 0, limit: 50, paginated: true },
     }))
     expect(await screen.findByText('Showing 1 of 1')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Load 50 more' })).not.toBeInTheDocument()
 
     await user.clear(screen.getByRole('searchbox', { name: 'Search parts' }))
     await waitFor(() => expect(apiMocks.get).toHaveBeenLastCalledWith('/parts-operations/parts', {
-      params: { view: 'active', sort: 'catalog', skip: 0, limit: 50, paginated: true },
+      params: { view: 'active', sort: 'catalog', direction: 'asc', skip: 0, limit: 50, paginated: true },
     }))
     expect(await screen.findByText('Showing 1 of 51')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Load 50 more' })).toBeInTheDocument()
@@ -267,7 +274,7 @@ describe('DB-038 Parts & inventory workspace', () => {
     expect(screen.queryByRole('button', { name: 'Add to purchase list' })).not.toBeInTheDocument()
     expect(screen.queryByRole('checkbox', { name: /Archived alternator/ })).not.toBeInTheDocument()
     expect(apiMocks.get).toHaveBeenCalledWith('/parts-operations/parts', {
-      params: { view: 'archived', sort: 'catalog', skip: 0, limit: 50, paginated: true },
+      params: { view: 'archived', sort: 'catalog', direction: 'asc', skip: 0, limit: 50, paginated: true },
     })
   })
 
@@ -359,6 +366,7 @@ describe('DB-038 Parts & inventory workspace', () => {
     const fallbackSource = { ...source, lead_time_days: null }
     const fallbackPart = { ...activePart, preferred_source: fallbackSource, supplier_sources: [fallbackSource] }
     apiMocks.get.mockImplementation((url: string) => {
+      if (url === '/parts-operations/activity') return Promise.resolve({ data: page([], { total: 1, limit: 1 }) })
       if (url === '/parts-operations/parts') return Promise.resolve({ data: page([fallbackPart]) })
       if (url === `/parts-operations/parts/${fallbackPart.id}`) return Promise.resolve({ data: detail(fallbackPart) })
       if (url.startsWith('/parts-operations/suppliers/')) return Promise.resolve({ data: { ...supplierPurchasing, default_lead_time_days: 6, timed_order_count: 0, on_time_order_count: 0, on_time_rate: '0' } })
@@ -635,8 +643,12 @@ describe('DB-038 Parts & inventory workspace', () => {
     renderWorkspace()
 
     await screen.findByRole('heading', { name: 'Alternator' })
+    expect(screen.getByRole('button', { name: 'Movement 1' })).toBeInTheDocument()
+    expect(apiMocks.get.mock.calls.filter(([url, config]) => url === '/parts-operations/activity' && config?.params?.limit === 1)).toHaveLength(1)
+    expect(apiMocks.get.mock.calls.filter(([url, config]) => url === '/parts-operations/activity' && config?.params?.limit === 50)).toHaveLength(0)
     await user.click(screen.getByRole('button', { name: /Movement/ }))
     expect(await screen.findByText(/Manual stock adjustment · 2 on hand after change · Average cost \$13.25/)).toBeInTheDocument()
+    expect(apiMocks.get.mock.calls.filter(([url, config]) => url === '/parts-operations/activity' && config?.params?.limit === 50)).toHaveLength(1)
     expect(screen.queryByText(/manual_adjustment/)).not.toBeInTheDocument()
     expect(screen.queryByText(/\bWAC\b/)).not.toBeInTheDocument()
   })
@@ -644,6 +656,7 @@ describe('DB-038 Parts & inventory workspace', () => {
   it('lets managers select an active non-reorder part without changing the detail row or exposing an ordinal column', async () => {
     installApi()
     apiMocks.get.mockImplementation((url: string) => {
+      if (url === '/parts-operations/activity') return Promise.resolve({ data: page([], { total: 1, limit: 1 }) })
       if (url === '/parts-operations/parts') return Promise.resolve({ data: page([activePart, brakePart]) })
       if (url === `/parts-operations/parts/${activePart.id}`) return Promise.resolve({ data: detail(activePart) })
       if (url === `/parts-operations/parts/${brakePart.id}`) return Promise.resolve({ data: detail(brakePart) })
@@ -662,12 +675,12 @@ describe('DB-038 Parts & inventory workspace', () => {
     expect(document.querySelector('.db-parts-workbench__line-number')).not.toBeInTheDocument()
     expect(screen.getAllByRole('columnheader').map((header) => header.getAttribute('aria-label') || header.textContent)).toEqual([
       'Select part',
-      'Description',
+      'Part / Description',
       'Available',
       'Bin location',
       'Average cost',
       'Preferred supplier',
-      'Remarks',
+      'Remarks / Status',
     ])
     for (const removedHeader of ['Needed', 'Reorder', 'Incoming']) {
       expect(screen.queryByRole('columnheader', { name: removedHeader })).not.toBeInTheDocument()
@@ -683,7 +696,9 @@ describe('DB-038 Parts & inventory workspace', () => {
   it('preselects only eligible loaded reorder rows and adds newly loaded eligible rows without implying unloaded selection', async () => {
     installApi()
     apiMocks.get.mockImplementation((url: string, config?: { params?: Record<string, unknown> }) => {
+      if (url === '/parts-operations/activity') return Promise.resolve({ data: page([], { total: 1, limit: 1 }) })
       if (url === '/parts-operations/parts' && config?.params?.attention === 'needs_reorder' && config.params.skip === 50) return Promise.resolve({ data: page([unassignedReorderPart], { total: 2, skip: 50 }) })
+      if (url === '/parts-operations/parts' && config?.params?.attention === 'needs_reorder' && config.params.sort === 'name' && config.params.direction === 'desc') return Promise.resolve({ data: page([activePart, directionReorderPart], { total: 2 }) })
       if (url === '/parts-operations/parts' && config?.params?.attention === 'needs_reorder') return Promise.resolve({ data: page([activePart], { total: 2, has_more: true }) })
       if (url === '/parts-operations/parts') return Promise.resolve({ data: page([activePart]) })
       if (url === `/parts-operations/parts/${activePart.id}`) return Promise.resolve({ data: detail(activePart) })
@@ -703,9 +718,7 @@ describe('DB-038 Parts & inventory workspace', () => {
     expect(screen.getByText('1 part selected')).toBeInTheDocument()
     expect(screen.getByText('Showing 1 of 2')).toBeInTheDocument()
 
-    await user.click(screen.getByRole('button', { name: 'Ledger options' }))
-    await user.click(screen.getByRole('button', { name: /^Sort / }))
-    await user.click(screen.getByRole('option', { name: 'Name' }))
+    await user.click(screen.getByRole('button', { name: 'Part / Description: sort ascending' }))
     await waitFor(() => expect(screen.getAllByRole('checkbox', { name: /purchase preparation/ })).toHaveLength(1))
     expect(screen.getAllByRole('checkbox', { name: /purchase preparation/ }).every((control) => (control as HTMLInputElement).checked)).toBe(true)
     expect(screen.getByText('1 part selected')).toBeInTheDocument()
@@ -714,6 +727,13 @@ describe('DB-038 Parts & inventory workspace', () => {
     await waitFor(() => expect(screen.getAllByRole('checkbox', { name: /purchase preparation/ })).toHaveLength(2))
     expect(screen.getAllByRole('checkbox', { name: /purchase preparation/ }).every((control) => (control as HTMLInputElement).checked)).toBe(true)
     expect(screen.getByText('2 parts selected')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Part / Description: sort descending' }))
+    await waitFor(() => expect(apiMocks.get).toHaveBeenCalledWith('/parts-operations/parts', {
+      params: expect.objectContaining({ attention: 'needs_reorder', sort: 'name', direction: 'desc', skip: 0 }),
+    }))
+    expect(await screen.findByText('3 parts selected')).toBeInTheDocument()
+    expect(screen.getByRole('checkbox', { name: 'Select Belt tensioner for purchase preparation' })).toBeChecked()
     await user.click(within(screen.getByRole('region', { name: 'Selected parts actions' })).getByRole('button', { name: /Add to purchase list/ }))
 
     const prepared = JSON.parse(window.sessionStorage.getItem(purchasePreparationStorageKey()) || '[]')
@@ -731,17 +751,16 @@ describe('DB-038 Parts & inventory workspace', () => {
     await screen.findByRole('heading', { name: 'Alternator' })
     const toolbar = screen.getByRole('searchbox', { name: 'Search parts' }).closest('.db-parts-workbench__toolbar')
     expect(toolbar?.parentElement).toHaveClass('db-parts-workbench__ledger-workspace')
-    expect(screen.queryByRole('dialog', { name: 'Ledger options' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('dialog', { name: 'Sort parts' })).not.toBeInTheDocument()
     expect(screen.queryByRole('combobox', { name: 'Sort' })).not.toBeInTheDocument()
-    const options = screen.getByRole('button', { name: 'Ledger options' })
-    expect(options).toHaveAttribute('aria-expanded', 'false')
-    expect(options).toHaveAttribute('aria-controls', 'parts-ledger-options-popover')
-    await user.click(options)
-    expect(options).toHaveAttribute('aria-expanded', 'true')
-    await user.click(screen.getByRole('button', { name: 'Compact' }))
+    expect(screen.queryByRole('button', { name: 'Ledger options' })).not.toBeInTheDocument()
+    const density = screen.getByRole('group', { name: 'Ledger density' })
+    const comfortable = within(density).getByRole('button', { name: 'Comfortable' })
+    const compact = within(density).getByRole('button', { name: 'Compact' })
+    expect(comfortable).toHaveAttribute('aria-pressed', 'true')
+    await user.click(compact)
+    expect(compact).toHaveAttribute('aria-pressed', 'true')
     expect(document.querySelector('.db-parts-workbench__ledger')).toHaveClass('is-compact')
-    expect(screen.queryByRole('dialog', { name: 'Ledger options' })).not.toBeInTheDocument()
-    expect(options).toHaveFocus()
 
     await user.click(screen.getByRole('button', { name: 'Add Part' }))
     const addPartDialog = screen.getByRole('dialog', { name: 'Add Part' })
@@ -755,7 +774,7 @@ describe('DB-038 Parts & inventory workspace', () => {
     })))
   })
 
-  it('keeps eligible selections through every sort and owns sort dismissal and keyboard focus', async () => {
+  it('uses semantic desktop headers for every server sort and keeps compact fallback and Catalog reset equivalent', async () => {
     installApi()
     const user = userEvent.setup()
     renderWorkspace()
@@ -765,35 +784,133 @@ describe('DB-038 Parts & inventory workspace', () => {
     await user.click(checkbox)
     expect(checkbox).toBeChecked()
 
-    const options = screen.getByRole('button', { name: 'Ledger options' })
-    for (const sortName of ['Name', 'Available', 'Reorder urgency', 'Catalog order']) {
-      await user.click(options)
-      const sortTrigger = screen.getByRole('button', { name: /^Sort / })
-      await user.click(sortTrigger)
-      expect(screen.queryByRole('combobox')).not.toBeInTheDocument()
-      await user.click(screen.getByRole('option', { name: sortName }))
-      await waitFor(() => expect(screen.getByRole('checkbox', { name: 'Select Alternator for purchase preparation' })).toBeChecked())
+    await user.click(screen.getByRole('button', { name: 'Load 50 more' }))
+    expect(await screen.findByText('Showing 2 of 51')).toBeInTheDocument()
+
+    const scenarios = [
+      { label: 'Part / Description', sort: 'name', first: 'asc', second: 'desc' },
+      { label: 'Available', sort: 'available', first: 'asc', second: 'desc' },
+      { label: 'Bin location', sort: 'location', first: 'asc', second: 'desc' },
+      { label: 'Average cost', sort: 'cost', first: 'desc', second: 'asc' },
+      { label: 'Remarks / Status', sort: 'reorder', first: 'desc', second: 'asc' },
+    ] as const
+
+    expect(screen.getAllByRole('columnheader').filter((header) => header.hasAttribute('aria-sort'))).toHaveLength(0)
+    for (const [index, scenario] of scenarios.entries()) {
+      const header = screen.getByRole('columnheader', { name: scenario.label })
+      const firstAction = within(header).getByRole('button', { name: `${scenario.label}: sort ${scenario.first === 'asc' ? 'ascending' : 'descending'}` })
+      firstAction.focus()
+      if (index === 0) await user.keyboard('{Enter}')
+      else await user.click(firstAction)
+      await waitFor(() => expect(apiMocks.get).toHaveBeenCalledWith('/parts-operations/parts', {
+        params: expect.objectContaining({ sort: scenario.sort, direction: scenario.first, skip: 0 }),
+      }))
+      const activeHeader = screen.getByRole('columnheader', { name: scenario.label })
+      expect(activeHeader).toHaveAttribute('aria-sort', scenario.first === 'asc' ? 'ascending' : 'descending')
+      expect(screen.getAllByRole('columnheader').filter((candidate) => candidate.hasAttribute('aria-sort'))).toEqual([activeHeader])
+      await waitFor(() => expect(within(screen.getByRole('columnheader', { name: scenario.label })).getByRole('button')).toHaveFocus())
+      expect(screen.getByText('Showing 1 of 51')).toBeInTheDocument()
+      expect(screen.queryByText('Brake shoe kit')).not.toBeInTheDocument()
+
+      const secondAction = within(screen.getByRole('columnheader', { name: scenario.label })).getByRole('button', { name: `${scenario.label}: sort ${scenario.second === 'asc' ? 'ascending' : 'descending'}` })
+      await user.click(secondAction)
+      await waitFor(() => expect(apiMocks.get).toHaveBeenCalledWith('/parts-operations/parts', {
+        params: expect.objectContaining({ sort: scenario.sort, direction: scenario.second, skip: 0 }),
+      }))
+      expect(screen.getByRole('columnheader', { name: scenario.label })).toHaveAttribute('aria-sort', scenario.second === 'asc' ? 'ascending' : 'descending')
       expect(screen.getByText('1 part selected')).toBeInTheDocument()
-      expect(screen.queryByRole('dialog', { name: 'Ledger options' })).not.toBeInTheDocument()
-      expect(options).toHaveFocus()
     }
 
-    await user.click(options)
-    const sortTrigger = screen.getByRole('button', { name: /^Sort / })
-    sortTrigger.focus()
-    await user.keyboard('{ArrowDown}')
-    expect(screen.getByRole('listbox', { name: 'Sort' })).toBeInTheDocument()
-    expect(screen.getByRole('option', { name: 'Catalog order' })).toHaveFocus()
-    await user.keyboard('{End}')
-    expect(screen.getByRole('option', { name: 'Reorder urgency' })).toHaveFocus()
-    await user.keyboard('{Escape}')
-    expect(screen.queryByRole('dialog', { name: 'Ledger options' })).not.toBeInTheDocument()
-    expect(options).toHaveFocus()
+    expect(within(screen.getByRole('columnheader', { name: 'Preferred supplier' })).queryByRole('button')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Ledger options' })).not.toBeInTheDocument()
+    expect(screen.getByRole('group', { name: 'Ledger density' })).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Reset to catalog order' }))
+    await waitFor(() => expect(apiMocks.get).toHaveBeenCalledWith('/parts-operations/parts', {
+      params: expect.objectContaining({ sort: 'catalog', direction: 'asc', skip: 0 }),
+    }))
+    expect(screen.getAllByRole('columnheader').filter((header) => header.hasAttribute('aria-sort'))).toHaveLength(0)
+    expect(screen.queryByRole('button', { name: 'Reset to catalog order' })).not.toBeInTheDocument()
 
-    await user.click(options)
-    expect(screen.getByRole('dialog', { name: 'Ledger options' })).toBeInTheDocument()
+    const sortTrigger = screen.getByRole('button', { name: 'Sort parts' })
+    expect(sortTrigger).toHaveAttribute('aria-expanded', 'false')
+    expect(sortTrigger).toHaveAttribute('aria-controls', 'parts-compact-sort-popover')
+    await user.click(sortTrigger)
+    const catalogReset = screen.getByRole('button', { name: 'Catalog order' })
+    expect(catalogReset).toHaveFocus()
+    expect(screen.queryByRole('combobox')).not.toBeInTheDocument()
+    const compactRadios = screen.getAllByRole('radio')
+    expect(compactRadios).toHaveLength(10)
+    const compactTabStops = compactRadios.filter((radio) => radio.tabIndex === 0)
+    expect(compactTabStops).toHaveLength(1)
+    expect(compactTabStops[0]).toHaveAttribute('aria-checked', 'false')
+    compactTabStops[0].focus()
+    await user.keyboard('{ArrowDown}')
+    expect(compactRadios[1]).toHaveFocus()
+    await user.keyboard('{Home}')
+    expect(compactRadios[0]).toHaveFocus()
+    await user.keyboard(' ')
+    await waitFor(() => expect(apiMocks.get).toHaveBeenCalledWith('/parts-operations/parts', {
+      params: expect.objectContaining({ sort: 'name', direction: 'asc', skip: 0 }),
+    }))
+    expect(sortTrigger).toHaveFocus()
+
+    await user.click(sortTrigger)
+    await user.click(screen.getByRole('radio', { name: 'Average cost high to low' }))
+    await waitFor(() => expect(apiMocks.get).toHaveBeenCalledWith('/parts-operations/parts', {
+      params: expect.objectContaining({ sort: 'cost', direction: 'desc', skip: 0 }),
+    }))
+    expect(screen.queryByRole('dialog', { name: 'Sort parts' })).not.toBeInTheDocument()
+    expect(sortTrigger).toHaveFocus()
+
+    await user.click(sortTrigger)
+    await user.click(screen.getByRole('button', { name: 'Catalog order' }))
+    await waitFor(() => expect(apiMocks.get).toHaveBeenCalledWith('/parts-operations/parts', {
+      params: expect.objectContaining({ sort: 'catalog', direction: 'asc', skip: 0 }),
+    }))
+    expect(screen.getAllByRole('columnheader').filter((header) => header.hasAttribute('aria-sort'))).toHaveLength(0)
+
+    await user.click(sortTrigger)
+    await user.keyboard('{Escape}')
+    expect(screen.queryByRole('dialog', { name: 'Sort parts' })).not.toBeInTheDocument()
+    expect(sortTrigger).toHaveFocus()
+
+    await user.click(sortTrigger)
     fireEvent.pointerDown(document.body)
-    expect(screen.queryByRole('dialog', { name: 'Ledger options' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('dialog', { name: 'Sort parts' })).not.toBeInTheDocument()
+  })
+
+  it('preserves the selected inspector and checked purchase IDs when sorting moves the row beyond page one', async () => {
+    installApi()
+    apiMocks.get.mockImplementation((url: string, config?: { params?: Record<string, unknown> }) => {
+      if (url === '/parts-operations/activity') return Promise.resolve({ data: page([], { total: 1, limit: 1 }) })
+      if (url === '/parts-operations/parts') {
+        if (config?.params?.sort === 'name') return Promise.resolve({ data: page([activePart], { total: 2 }) })
+        return Promise.resolve({ data: page([activePart, brakePart], { total: 2 }) })
+      }
+      if (url === `/parts-operations/parts/${activePart.id}`) return Promise.resolve({ data: detail(activePart) })
+      if (url === `/parts-operations/parts/${brakePart.id}`) return Promise.resolve({ data: detail(brakePart) })
+      if (url.startsWith('/parts-operations/suppliers/')) return Promise.resolve({ data: supplierPurchasing })
+      throw new Error(`Unexpected GET ${url}`)
+    })
+    const user = userEvent.setup()
+    renderWorkspace()
+
+    await screen.findByRole('heading', { name: 'Alternator' })
+    await user.click(screen.getByRole('cell', { name: 'Brake shoe kit BRK-9' }))
+    await screen.findByRole('heading', { name: 'Brake shoe kit' })
+    await user.click(screen.getByRole('checkbox', { name: 'Select Brake shoe kit for purchase preparation' }))
+
+    await user.click(screen.getByRole('button', { name: 'Part / Description: sort ascending' }))
+    await waitFor(() => expect(apiMocks.get).toHaveBeenCalledWith('/parts-operations/parts', {
+      params: expect.objectContaining({ sort: 'name', direction: 'asc', skip: 0 }),
+    }))
+    expect(screen.queryByRole('checkbox', { name: 'Select Brake shoe kit for purchase preparation' })).not.toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Brake shoe kit' })).toBeInTheDocument()
+    expect(screen.getByText('1 part selected')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Reset to catalog order' }))
+    expect(await screen.findByRole('checkbox', { name: 'Select Brake shoe kit for purchase preparation' })).toBeChecked()
+    expect(screen.getByRole('heading', { name: 'Brake shoe kit' })).toBeInTheDocument()
   })
 
   it('does not expose Add Part to reception staff', async () => {

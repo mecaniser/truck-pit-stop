@@ -962,6 +962,258 @@ async def test_db038_postgres_read_contract_fixture_and_tenant_filter_denial(mon
 
 
 @pytest.mark.asyncio
+async def test_db041_postgres_parts_sorting_is_numeric_stable_and_tenant_safe(monkeypatch):
+    monkeypatch.setattr(settings, "PARTS_OPERATIONS_V1_ENABLED", True)
+    engine = create_async_engine(os.environ[POSTGRES_URL])
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    try:
+        ids = await _seed(factory)
+        foreign_ids = await _seed(factory)
+        async with factory() as db:
+            user = await db.get(User, ids["user_id"])
+            base = await db.get(Inventory, ids["item_id"])
+            base.sku = "BASE-SHELF"
+            base.name = "Shelf need"
+            base.location = "B-02"
+
+            customer = Customer(
+                tenant_id=ids["tenant_id"],
+                first_name="DB041",
+                last_name="Sort",
+                email=f"db041-pg-{uuid4().hex}@example.test",
+            )
+            db.add(customer)
+            await db.flush()
+            vehicle = Vehicle(
+                tenant_id=ids["tenant_id"],
+                customer_id=customer.id,
+                make="Freightliner",
+                model="Cascadia",
+                year=2025,
+            )
+            db.add(vehicle)
+            await db.flush()
+            order = RepairOrder(
+                tenant_id=ids["tenant_id"],
+                customer_id=customer.id,
+                vehicle_id=vehicle.id,
+                order_number=f"DB041-{uuid4().hex[:10]}",
+                status=RepairOrderStatus.IN_PROGRESS,
+            )
+            db.add(order)
+            await db.flush()
+
+            def part(
+                sku: str,
+                name: str,
+                *,
+                stock: int,
+                reorder: int,
+                cost: str,
+                location: str | None,
+                on_order: int = 0,
+                placeholder: bool = False,
+                retired: bool = False,
+                deleted: bool = False,
+            ) -> Inventory:
+                return Inventory(
+                    tenant_id=ids["tenant_id"],
+                    sku=sku,
+                    name=name,
+                    stock_quantity=stock,
+                    on_order_quantity=on_order,
+                    reorder_level=reorder,
+                    cost=Decimal(cost),
+                    selling_price=Decimal("20.00"),
+                    unit_type="each",
+                    location=location,
+                    is_placeholder=placeholder,
+                    ets_retired_at=(datetime(2026, 8, 1, tzinfo=timezone.utc) if retired else None),
+                    deleted_at=(datetime(2026, 8, 2, tzinfo=timezone.utc) if deleted else None),
+                )
+
+            repair_shortage = part(
+                "REPAIR-ONLY", "Repair only shortage", stock=10, reorder=0,
+                cost="12.00", location="R-01",
+            )
+            threshold_equal = part(
+                "THRESHOLD", "Threshold equality", stock=2, reorder=2,
+                cost="2.00", location="E-01",
+            )
+            incoming_covered = part(
+                "COVERED", "Covered incoming", stock=0, reorder=4,
+                cost="100.00", location="C-01", on_order=4,
+            )
+            placeholder = part(
+                "PLACEHOLDER", "Placeholder urgency", stock=0, reorder=9,
+                cost="3.00", location="P-01", placeholder=True,
+            )
+            archived = part(
+                "ARCHIVED", "Archived urgency", stock=0, reorder=9,
+                cost="30.00", location="Z-01", retired=True,
+            )
+            deleted = part(
+                "DELETED", "Deleted urgency", stock=0, reorder=9,
+                cost="40.00", location="D-01", deleted=True,
+            )
+            equal_rows = [
+                part(
+                    f"TIE-{index:03d}", "Equal key", stock=5, reorder=0,
+                    cost="7.00", location=f"T-{index:02d}",
+                )
+                for index in (3, 1, 2)
+            ]
+            null_location = part(
+                "LOC-NULL", "Null location", stock=6, reorder=0,
+                cost="8.00", location=None,
+            )
+            blank_location = part(
+                "LOC-BLANK", "Blank location", stock=7, reorder=0,
+                cost="9.00", location="",
+            )
+            whitespace_location = part(
+                "LOC-SPACE", "Whitespace location", stock=8, reorder=0,
+                cost="11.00", location="   ",
+            )
+            db.add_all((
+                repair_shortage, threshold_equal, incoming_covered, placeholder,
+                archived, deleted, *equal_rows, null_location, blank_location,
+                whitespace_location,
+            ))
+            await db.flush()
+            db.add(PartsUsage(
+                tenant_id=ids["tenant_id"],
+                repair_order_id=order.id,
+                inventory_id=repair_shortage.id,
+                quantity=Decimal("2.00"),
+                unit_cost=repair_shortage.cost,
+                unit_price=Decimal("20.00"),
+                total_price=Decimal("40.00"),
+                stock_reserved_packages=0,
+                stock_shortage_override=True,
+            ))
+            foreign = await db.get(Inventory, foreign_ids["item_id"])
+            foreign.sku = "FOREIGN-FIRST"
+            foreign.name = "Foreign urgency"
+            foreign.stock_quantity = 0
+            foreign.reorder_level = 999
+            foreign.cost = Decimal("999.00")
+            await db.commit()
+
+            async def listed(
+                sort_by: str,
+                direction: str | None,
+                *,
+                view: str = "active",
+                attention: str | None = None,
+                search: str | None = None,
+                skip: int = 0,
+                limit: int = 100,
+                paginated: bool = False,
+            ):
+                return await parts_operations.list_parts(
+                    view=view,
+                    attention=attention,
+                    supplier_id=None,
+                    search=search,
+                    sort_by=sort_by,
+                    direction=direction,
+                    skip=skip,
+                    limit=limit,
+                    paginated=paginated,
+                    db=db,
+                    current_user=user,
+                )
+
+            rows = await listed("catalog", "asc")
+            active_ids = {row["id"] for row in rows}
+            assert str(archived.id) not in active_ids
+            assert str(deleted.id) not in active_ids
+            assert str(foreign.id) not in active_ids
+
+            def expected_order(values: list[dict], sort_by: str, direction: str) -> list[str]:
+                if sort_by == "catalog":
+                    fallback = lambda row: (row["name"].casefold(), row["id"])
+                    primary = lambda row: row["sku"].casefold()
+                elif sort_by == "name":
+                    fallback = lambda row: (row["sku"].casefold(), row["id"])
+                    primary = lambda row: row["name"].casefold()
+                else:
+                    fallback = lambda row: (
+                        row["name"].casefold(), row["sku"].casefold(), row["id"],
+                    )
+                    primary = {
+                        "available": lambda row: row["available_packages"],
+                        "cost": lambda row: Decimal(row["average_unit_cost"]),
+                        "reorder": lambda row: row["recommended_order_packages"],
+                    }.get(sort_by)
+                ordered = sorted(values, key=fallback)
+                if sort_by == "location":
+                    located = [row for row in ordered if (row["location"] or "").strip()]
+                    unset = [row for row in ordered if not (row["location"] or "").strip()]
+                    located.sort(
+                        key=lambda row: row["location"].strip().casefold(),
+                        reverse=direction == "desc",
+                    )
+                    return [row["id"] for row in (*located, *unset)]
+                ordered.sort(key=primary, reverse=direction == "desc")
+                return [row["id"] for row in ordered]
+
+            defaults = {
+                "catalog": "asc", "name": "asc", "available": "asc",
+                "location": "asc", "cost": "desc", "reorder": "desc",
+            }
+            for sort_by, default_direction in defaults.items():
+                for direction in ("asc", "desc"):
+                    sorted_rows = await listed(sort_by, direction)
+                    assert {row["id"] for row in sorted_rows} == active_ids
+                    assert [row["id"] for row in sorted_rows] == expected_order(
+                        sorted_rows, sort_by, direction,
+                    )
+                assert await listed(sort_by, None) == await listed(sort_by, default_direction)
+
+            for direction in ("asc", "desc"):
+                location_rows = await listed("location", direction)
+                unset = [row for row in location_rows if not (row["location"] or "").strip()]
+                assert {row["location"] for row in unset} >= {None, "", "   "}
+                assert location_rows[-len(unset):] == unset
+
+            cost_rows = await listed("cost", "desc")
+            costs = [Decimal(row["average_unit_cost"]) for row in cost_rows]
+            assert costs == sorted(costs, reverse=True)
+            assert costs.index(Decimal("100.00")) < costs.index(Decimal("12.00"))
+
+            first = await listed(
+                "cost", "asc", search="equal key", skip=0, limit=2, paginated=True,
+            )
+            second = await listed(
+                "cost", "asc", search="equal key", skip=2, limit=2, paginated=True,
+            )
+            assert first["total"] == second["total"] == 3
+            paged = first["items"] + second["items"]
+            assert [row["sku"] for row in paged] == ["TIE-001", "TIE-002", "TIE-003"]
+            assert len({row["id"] for row in paged}) == 3
+
+            needs = await listed("reorder", "desc", attention="needs_reorder")
+            assert {row["id"] for row in needs} == {str(base.id), str(repair_shortage.id)}
+            repair_value = next(row for row in needs if row["id"] == str(repair_shortage.id))
+            assert repair_value["recommended_order_packages"] == 2
+            assert (await listed("available", "desc", attention="out_of_stock", search="covered"))[0]["id"] == str(incoming_covered.id)
+            assert (await listed("location", "desc", attention="incoming", search="covered"))[0]["id"] == str(incoming_covered.id)
+            archived_values = await listed("reorder", "desc", view="archived", search="archived")
+            assert [row["id"] for row in archived_values] == [str(archived.id)]
+            assert archived_values[0]["recommended_order_packages"] == 0
+            placeholder_value = next(row for row in rows if row["id"] == str(placeholder.id))
+            assert placeholder_value["recommended_order_packages"] == 0
+            threshold_value = next(row for row in rows if row["id"] == str(threshold_equal.id))
+            covered_value = next(row for row in rows if row["id"] == str(incoming_covered.id))
+            assert threshold_value["recommended_order_packages"] == 0
+            assert covered_value["recommended_order_packages"] == 0
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
 async def test_db038_postgres_grouped_po_keys_and_numbers_are_concurrency_safe(monkeypatch):
     from test_db038_read_contract import load_db038_fixture
 
