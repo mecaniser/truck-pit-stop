@@ -22,7 +22,7 @@ vi.mock('@/hooks/useTenantBranding', () => ({
   default: () => ({ data: { name: brandingState.name, logo_url: brandingState.logoUrl } }),
 }))
 vi.mock('@/components/SlidePanelForm', () => ({
-  default: ({ isOpen, title, onClose, onSubmit, submitLabel, children }: { isOpen: boolean; title: string; onClose: () => void; onSubmit: (event: FormEvent) => void; submitLabel: string; children: ReactNode }) => isOpen ? <div role="dialog" aria-label={title}><button type="button" onClick={onClose}>Close</button><form onSubmit={onSubmit}>{children}<button type="submit">{submitLabel}</button></form></div> : null,
+  default: ({ isOpen, title, onClose, onSubmit, submitLabel, panelClassName, children }: { isOpen: boolean; title: string; onClose: () => void; onSubmit: (event: FormEvent) => void; submitLabel: string; panelClassName?: string; children: ReactNode }) => isOpen ? <div role="dialog" aria-label={title} className={panelClassName}><button type="button" onClick={onClose}>Close</button><form onSubmit={onSubmit}>{children}<button type="submit">{submitLabel}</button></form></div> : null,
 }))
 
 import PartsInventoryWorkspace, {
@@ -136,6 +136,19 @@ function detail(part: PartRecord) {
   }
 }
 
+function editableInventory(part: PartRecord) {
+  return {
+    id: part.id,
+    sku: part.sku,
+    name: part.name,
+    description: part.description,
+    category: 'Electrical',
+    unit_type: part.unit_type,
+    location: part.location,
+    image_url: part.image_url,
+  }
+}
+
 function page<T>(items: T[], overrides: Partial<{ total: number; skip: number; limit: number; has_more: boolean }> = {}) {
   return {
     items,
@@ -146,7 +159,7 @@ function page<T>(items: T[], overrides: Partial<{ total: number; skip: number; l
   }
 }
 
-function installApi() {
+function installApi(detailOverride?: ReturnType<typeof detail>) {
   apiMocks.get.mockImplementation((url: string, config?: { params?: Record<string, unknown> }) => {
     if (url === '/parts-operations/parts') {
       const params = config?.params || {}
@@ -158,7 +171,12 @@ function installApi() {
     if (url.startsWith('/parts-operations/parts/')) {
       const id = url.split('/').at(-1)
       const part = id === archivedPart.id ? archivedPart : id === brakePart.id ? brakePart : activePart
-      return Promise.resolve({ data: detail(part) })
+      return Promise.resolve({ data: detailOverride?.id === part.id ? detailOverride : detail(part) })
+    }
+    if (url.startsWith('/inventory/')) {
+      const id = url.split('/').at(-1)
+      const part = id === archivedPart.id ? archivedPart : id === brakePart.id ? brakePart : activePart
+      return Promise.resolve({ data: editableInventory(part) })
     }
     if (url.startsWith('/parts-operations/suppliers/')) return Promise.resolve({ data: supplierPurchasing })
     if (url === '/suppliers') return Promise.resolve({ data: page([{ id: 'supplier-2', name: 'AutoZone' }]) })
@@ -289,8 +307,9 @@ describe('DB-038 Parts & inventory workspace', () => {
     expect(await screen.findByRole('img', { name: 'No image available for Alternator' })).toBeInTheDocument()
   })
 
-  it('binds the selected ledger row to the service-manual action block and keeps action roles distinct', async () => {
+  it('leads with selected-part identity and relocates stock and ordering actions to their contextual views', async () => {
     installApi()
+    const user = userEvent.setup()
     renderWorkspace()
 
     await screen.findByRole('heading', { name: 'Alternator' })
@@ -298,9 +317,29 @@ describe('DB-038 Parts & inventory workspace', () => {
     expect(selectedSurfaces).toHaveLength(2)
     expect(selectedSurfaces[0]).toHaveClass('is-selected')
     expect(selectedSurfaces[1]).toHaveClass('db-parts-workbench__selected-action')
-    expect(screen.getByRole('button', { name: 'Add to purchase list' })).toHaveClass('db-parts-workbench__action-primary')
-    expect(screen.getByRole('button', { name: 'Adjust on-hand quantity' })).toHaveClass('db-parts-workbench__action-secondary')
-    expect(screen.getByRole('button', { name: /Open Purchasing/ })).toHaveClass('db-parts-workbench__action-tertiary')
+    expect(screen.getByRole('button', { name: 'Edit details' }).parentElement).toHaveClass('db-parts-workbench__selected-label-row')
+    expect(screen.getByRole('tabpanel', { name: 'Overview' })).toHaveTextContent('At a glance')
+    expect(screen.queryByRole('button', { name: 'Add to purchase list' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Adjust on-hand quantity' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Open Purchasing/ })).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('tab', { name: 'Stock' }))
+    const stock = screen.getByRole('tabpanel', { name: 'Stock' })
+    expect(within(stock).getByRole('button', { name: 'Adjust on-hand quantity' })).toHaveClass('db-parts-workbench__stock-action')
+    expect(within(stock).queryByRole('button', { name: 'Edit available quantity' })).not.toBeInTheDocument()
+    expect(within(stock).getByRole('button', { name: 'Edit reorder point' })).toBeInTheDocument()
+
+    await user.click(screen.getByRole('tab', { name: 'Ordering' }))
+    const ordering = screen.getByRole('tabpanel', { name: 'Ordering' })
+    expect(within(ordering).getByText('Replenishment recommended')).toBeInTheDocument()
+    expect(within(ordering).getByRole('button', { name: 'Add to purchase list' })).toHaveClass('db-parts-workbench__action-primary')
+    expect(within(ordering).getAllByRole('button', { name: /Open Purchasing/ })).toHaveLength(1)
+    expect(within(ordering).getByRole('heading', { name: 'Purchase activity' })).toBeInTheDocument()
+    expect(within(ordering).getByRole('heading', { name: 'Open purchase orders' }).parentElement).toHaveTextContent('None')
+    expect(within(ordering).getByRole('heading', { name: 'Recent receipts' }).parentElement).toHaveTextContent('None')
+    expect(within(ordering).getAllByText('None')).toHaveLength(2)
+    expect(within(ordering).queryByText('No open purchase order includes this part.')).not.toBeInTheDocument()
+    expect(within(ordering).queryByText('No receiving history has been recorded for this part.')).not.toBeInTheDocument()
     expect(document.querySelector('.db-parts-workbench__technical-line')).toHaveTextContent('51 TRACKED / 5 NEEDS REORDER / 2 OPEN PURCHASE ORDERS')
     expect(screen.getByRole('button', { name: /Needs reorder 5/ })).toBeInTheDocument()
     expect(screen.queryByText(/BELOW MIN/)).not.toBeInTheDocument()
@@ -312,6 +351,95 @@ describe('DB-038 Parts & inventory workspace', () => {
     expect(body?.firstElementChild).toHaveClass('db-parts-workbench__ledger-workspace')
     expect(body?.lastElementChild).toHaveClass('db-parts-workbench__inspector')
     expect(workbench?.querySelector('.db-parts-workbench__toolbar')?.parentElement).toHaveClass('db-parts-workbench__ledger-workspace')
+  })
+
+  it('keeps manual purchase preparation available without visually escalating healthy stock', async () => {
+    installApi()
+    const user = userEvent.setup()
+    renderWorkspace()
+
+    await screen.findByRole('heading', { name: 'Alternator' })
+    await user.type(screen.getByRole('searchbox', { name: 'Search parts' }), 'brake')
+    await screen.findByRole('heading', { name: 'Brake shoe kit' })
+    await user.click(screen.getByRole('tab', { name: 'Ordering' }))
+
+    const ordering = screen.getByRole('tabpanel', { name: 'Ordering' })
+    expect(within(ordering).getByText('Stock is covered')).toBeInTheDocument()
+    expect(within(ordering).getByText('No replenishment is recommended. Add it only to stage a manual review in Purchasing.')).toBeInTheDocument()
+    expect(within(ordering).getByRole('button', { name: 'Add to purchase list' })).toHaveClass('db-parts-workbench__action-secondary')
+    expect(within(ordering).getByRole('button', { name: 'Add to purchase list' })).not.toHaveClass('db-parts-workbench__action-primary')
+  })
+
+  it('restores the selected-part editor for identity, labels, location, and photo management', async () => {
+    installApi()
+    const user = userEvent.setup()
+    renderWorkspace()
+
+    await screen.findByRole('heading', { name: 'Alternator' })
+    await user.click(screen.getByRole('button', { name: 'Edit details' }))
+    const editor = await screen.findByRole('form', { name: 'Edit part details' })
+    expect(apiMocks.get).toHaveBeenCalledWith('/inventory/part-active')
+    expect(screen.queryByRole('button', { name: 'Close editor' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Add to purchase list' })).not.toBeInTheDocument()
+    expect(editor.parentElement).toHaveTextContent('Changes save immediately')
+    expect(within(editor).getByRole('textbox', { name: 'Part name' })).toHaveValue('Alternator')
+    expect(within(editor).getByRole('textbox', { name: 'SKU' })).toHaveValue('ALT-42')
+    expect(within(editor).getByRole('textbox', { name: 'Category' })).toHaveValue('Electrical')
+    expect(within(editor).getByRole('textbox', { name: 'Description' })).toHaveValue('Heavy-duty alternator')
+    expect(within(editor).getByRole('textbox', { name: 'Bin location' })).toHaveValue('A-12')
+    expect(within(editor).getByRole('textbox', { name: 'Unit label' })).toHaveValue('each')
+
+    const name = within(editor).getByRole('textbox', { name: 'Part name' })
+    const category = within(editor).getByRole('textbox', { name: 'Category' })
+    const location = within(editor).getByRole('textbox', { name: 'Bin location' })
+    await user.clear(name)
+    await user.type(name, 'High-output alternator')
+    await user.clear(category)
+    await user.type(category, 'Charging')
+    await user.clear(location)
+    await user.type(location, 'B-07')
+    await user.click(within(editor).getByRole('button', { name: 'Save details' }))
+    await waitFor(() => expect(apiMocks.put).toHaveBeenCalledWith('/inventory/part-active', {
+      name: 'High-output alternator',
+      category: 'Charging',
+      location: 'B-07',
+    }))
+
+    await user.click(screen.getByRole('button', { name: 'Edit details' }))
+    const reopened = await screen.findByRole('form', { name: 'Edit part details' })
+    expect(within(reopened).getByRole('button', { name: 'Save details' })).toBeDisabled()
+    const file = new File(['photo'], 'alternator.webp', { type: 'image/webp' })
+    const editorRegion = reopened.parentElement!
+    const fileInput = editorRegion.querySelector<HTMLInputElement>('input[type="file"]')
+    expect(fileInput).not.toBeNull()
+    expect(fileInput).toHaveAttribute('hidden')
+    await user.upload(fileInput!, file)
+    await waitFor(() => expect(apiMocks.post).toHaveBeenCalledWith('/inventory/part-active/photo', expect.any(FormData), {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    }))
+    expect((apiMocks.post.mock.calls.at(-1)?.[1] as FormData).get('image')).toBe(file)
+    await user.click(within(editorRegion).getByRole('button', { name: 'Remove photo' }))
+    await waitFor(() => expect(apiMocks.delete).toHaveBeenCalledWith('/inventory/part-active/photo'))
+  })
+
+  it('rejects invalid photo drafts before upload and closes the details draft with Escape', async () => {
+    installApi()
+    const user = userEvent.setup()
+    renderWorkspace()
+
+    await screen.findByRole('heading', { name: 'Alternator' })
+    await user.click(screen.getByRole('button', { name: 'Edit details' }))
+    const editor = await screen.findByRole('form', { name: 'Edit part details' })
+    const fileInput = editor.parentElement!.querySelector<HTMLInputElement>('input[type="file"]')!
+    await user.upload(fileInput, new File([], 'empty.png', { type: 'image/png' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('Choose an image that is not empty.')
+    expect(apiMocks.post).not.toHaveBeenCalled()
+
+    const name = within(editor).getByRole('textbox', { name: 'Part name' })
+    await user.type(name, ' updated')
+    await user.keyboard('{Escape}')
+    expect(screen.queryByRole('form', { name: 'Edit part details' })).not.toBeInTheDocument()
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Edit details' })).toHaveFocus())
   })
 
   it('owns inspector detail with four keyboard-operable sections and resets new selections to Overview', async () => {
@@ -381,16 +509,26 @@ describe('DB-038 Parts & inventory workspace', () => {
     expect(within(section).queryByText('0%')).not.toBeInTheDocument()
   })
 
-  it('makes supplier rows explicit actions and preserves pointer and keyboard focus modality for existing and new sources', async () => {
+  it('separates supplier facts from the edit action and preserves pointer and keyboard focus modality', async () => {
     installApi()
     const user = userEvent.setup()
     renderWorkspace()
 
     await screen.findByRole('heading', { name: 'Alternator' })
     await user.click(screen.getByRole('tab', { name: 'Ordering' }))
-    let sourceTrigger = screen.getByRole('button', { name: 'Edit Fleet Parts Co supplier source' })
+    let sourceRecord = screen.getByRole('article', { name: 'Fleet Parts Co · Preferred' })
+    expect(within(sourceRecord).getByText('Part no.')).toBeInTheDocument()
+    expect(within(sourceRecord).getByText('FPC-ALT-42')).toBeInTheDocument()
+    expect(within(sourceRecord).getByText('Pack')).toBeInTheDocument()
+    expect(within(sourceRecord).getByText('Minimum')).toBeInTheDocument()
+    expect(within(sourceRecord).getByText('Lead time')).toBeInTheDocument()
+    expect(within(sourceRecord).getByText('2 days')).toBeInTheDocument()
+    expect(within(sourceRecord).getByText('Last cost')).toBeInTheDocument()
+    expect(within(sourceRecord).getByText('$12.50')).toBeInTheDocument()
+    let sourceTrigger = within(sourceRecord).getByRole('button', { name: 'Edit Fleet Parts Co supplier source' })
     expect(sourceTrigger).toHaveTextContent('Edit source')
     expect(sourceTrigger).not.toBeDisabled()
+    expect(sourceTrigger.parentElement).toBe(sourceRecord)
 
     fireEvent.click(sourceTrigger, { detail: 1 })
     let sourceForm = screen.getByRole('form', { name: 'Edit Fleet Parts Co supplier source' })
@@ -402,7 +540,8 @@ describe('DB-038 Parts & inventory workspace', () => {
     fireEvent.keyDown(existingSourceField, { key: 'Tab' })
     expect(sourceForm).toHaveAttribute('data-focus-mode', 'keyboard')
     await user.click(within(sourceForm).getByRole('button', { name: 'Cancel' }))
-    sourceTrigger = await screen.findByRole('button', { name: 'Edit Fleet Parts Co supplier source' })
+    sourceRecord = await screen.findByRole('article', { name: 'Fleet Parts Co · Preferred' })
+    sourceTrigger = within(sourceRecord).getByRole('button', { name: 'Edit Fleet Parts Co supplier source' })
     await waitFor(() => expect(sourceTrigger).toHaveFocus())
 
     sourceTrigger.focus()
@@ -439,7 +578,8 @@ describe('DB-038 Parts & inventory workspace', () => {
     expect(screen.getByText('Fleet Parts Co · Preferred')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Edit Fleet Parts Co supplier source' })).not.toBeInTheDocument()
     expect(screen.queryByText('Edit source', { exact: true })).not.toBeInTheDocument()
-    expect(document.querySelector('.db-parts-workbench__source-row')?.tagName).toBe('DIV')
+    expect(document.querySelector('.db-parts-workbench__source-row')?.tagName).toBe('ARTICLE')
+    expect(screen.getByRole('article', { name: 'Fleet Parts Co · Preferred' })).toHaveTextContent('FPC-ALT-42')
     receptionistView.unmount()
 
     authState.role = 'garage_owner'
@@ -463,6 +603,7 @@ describe('DB-038 Parts & inventory workspace', () => {
     await screen.findByRole('heading', { name: 'Alternator' })
     expect(document.body).not.toHaveTextContent(/\b(?:packages|pkg)\b/i)
     expect(screen.getByText(/Pack size 4/)).toBeInTheDocument()
+    await user.click(screen.getByRole('tab', { name: 'Stock' }))
     await user.click(screen.getByRole('button', { name: 'Adjust on-hand quantity' }))
     const onHand = screen.getByRole('textbox', { name: 'On-hand quantity' })
     expect(screen.getByRole('form', { name: 'Edit available quantity' })).toBeInTheDocument()
@@ -486,7 +627,7 @@ describe('DB-038 Parts & inventory workspace', () => {
     }))
   })
 
-  it('opens the same single stock editor from both Available entry points and steps reorder locally before saving', async () => {
+  it('keeps one explicit Available editor entry point and steps reorder locally before saving', async () => {
     installApi()
     const user = userEvent.setup()
     renderWorkspace()
@@ -503,10 +644,9 @@ describe('DB-038 Parts & inventory workspace', () => {
     expect(stock.querySelector('.db-parts-workbench__actions')).not.toBeInTheDocument()
     expect(stock.querySelector('.db-parts-workbench__edit')).not.toBeInTheDocument()
 
-    const availableTrigger = within(stock).getByRole('button', { name: 'Edit available quantity' })
-    expect(availableTrigger).toHaveAttribute('aria-describedby', expect.stringContaining('available-edit-tooltip'))
-    expect(within(stock).getByRole('tooltip', { name: 'Edit available quantity' })).toBeInTheDocument()
-    expect(availableTrigger.closest('.db-parts-workbench__fact')).toHaveTextContent('Available')
+    expect(within(stock).queryByRole('button', { name: 'Edit available quantity' })).not.toBeInTheDocument()
+    const availableTrigger = within(stock).getByRole('button', { name: 'Adjust on-hand quantity' })
+    expect(availableTrigger).toHaveTextContent('Adjust stock')
     await user.click(availableTrigger)
     const availableForm = within(stock).getByRole('form', { name: 'Edit available quantity' })
     expect(within(stock).getAllByRole('form', { name: 'Edit available quantity' })).toHaveLength(1)
@@ -517,7 +657,7 @@ describe('DB-038 Parts & inventory workspace', () => {
     expect(within(availableForm).queryByText('Cancel', { exact: true })).not.toBeInTheDocument()
     expect(within(availableForm).getByRole('button', { name: 'Save' })).toHaveTextContent('Save')
     await user.click(within(availableForm).getByRole('button', { name: 'Cancel available quantity edit' }))
-    await waitFor(() => expect(within(stock).getByRole('button', { name: 'Edit available quantity' })).toHaveFocus())
+    await waitFor(() => expect(within(stock).getByRole('button', { name: 'Adjust on-hand quantity' })).toHaveFocus())
 
     await user.click(screen.getByRole('button', { name: 'Adjust on-hand quantity' }))
     expect(within(stock).getAllByRole('textbox', { name: 'On-hand quantity' })).toHaveLength(1)
@@ -547,6 +687,7 @@ describe('DB-038 Parts & inventory workspace', () => {
     renderWorkspace()
 
     await screen.findByRole('heading', { name: 'Alternator' })
+    await user.click(screen.getByRole('tab', { name: 'Stock' }))
     const shortcut = screen.getByRole('button', { name: 'Adjust on-hand quantity' })
     shortcut.focus()
     fireEvent.click(shortcut, { detail: 1 })
@@ -560,7 +701,6 @@ describe('DB-038 Parts & inventory workspace', () => {
     await user.click(within(pointerForm!).getByRole('button', { name: 'Cancel available quantity edit' }))
     await waitFor(() => expect(screen.getByRole('button', { name: 'Adjust on-hand quantity' })).toHaveFocus())
 
-    await user.click(screen.getByRole('tab', { name: 'Stock' }))
     const stock = screen.getByRole('tabpanel', { name: 'Stock' })
     const reorderTrigger = within(stock).getByRole('button', { name: 'Edit reorder point' })
     reorderTrigger.focus()
@@ -606,6 +746,7 @@ describe('DB-038 Parts & inventory workspace', () => {
     expect(screen.queryByRole('button', { name: 'Adjust on-hand quantity' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Edit available quantity' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Edit reorder point' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Edit details' })).not.toBeInTheDocument()
     expect(screen.queryByRole('spinbutton')).not.toBeInTheDocument()
     expect(screen.queryByRole('columnheader', { name: 'Select part' })).not.toBeInTheDocument()
     expect(screen.queryByRole('checkbox', { name: /purchase preparation/ })).not.toBeInTheDocument()
@@ -618,6 +759,7 @@ describe('DB-038 Parts & inventory workspace', () => {
     renderWorkspace()
 
     await screen.findByRole('heading', { name: 'Alternator' })
+    await user.click(screen.getByRole('tab', { name: 'Ordering' }))
     await user.click(screen.getByRole('button', { name: 'Add to purchase list' }))
 
     expect(JSON.parse(window.sessionStorage.getItem(purchasePreparationStorageKey()) || '[]')).toEqual([{
@@ -635,6 +777,31 @@ describe('DB-038 Parts & inventory workspace', () => {
       blockedReason: null,
     }])
     expect(screen.getByRole('status')).toHaveTextContent('1 part added to purchase preparation')
+    const ordering = screen.getByRole('tabpanel', { name: 'Ordering' })
+    expect(within(ordering).getByText('Prepared for purchasing')).toBeInTheDocument()
+    expect(within(ordering).getByText('This part is staged for review in Purchasing.')).toBeInTheDocument()
+    expect(within(ordering).queryByRole('button', { name: 'Add to purchase list' })).not.toBeInTheDocument()
+    expect(within(ordering).getByRole('button', { name: 'View purchase list' })).toBeInTheDocument()
+  })
+
+  it('preserves populated purchase orders and receipts inside the compact activity group', async () => {
+    installApi({
+      ...detail(activePart),
+      incoming_sources: [{ purchase_order_id: 'po-1', po_number: 'PO-1042', packages: 8, expected_at: '2026-09-02T12:00:00Z' }],
+      recent_receipts: [{ receipt_id: 'receipt-1', receipt_number: 'RCV-2042', purchase_order_id: 'po-1', po_number: 'PO-1042', quantity: 4, unit_cost: '12.25', received_at: '2026-08-24T12:00:00Z' }],
+    })
+    const user = userEvent.setup()
+    renderWorkspace()
+
+    await screen.findByRole('heading', { name: 'Alternator' })
+    await user.click(screen.getByRole('tab', { name: 'Ordering' }))
+    const ordering = screen.getByRole('tabpanel', { name: 'Ordering' })
+    expect(within(ordering).getByRole('heading', { name: 'Purchase activity' })).toBeInTheDocument()
+    const openOrders = within(ordering).getByRole('heading', { name: 'Open purchase orders' }).closest('section')!
+    const recentReceipts = within(ordering).getByRole('heading', { name: 'Recent receipts' }).closest('section')!
+    expect(within(openOrders).getByRole('button', { name: /PO-1042/ })).toHaveTextContent('8 units incoming')
+    expect(within(recentReceipts).getByRole('button', { name: /RCV-2042/ })).toHaveTextContent('4 at $12.25')
+    expect(within(ordering).queryByText('None')).not.toBeInTheDocument()
   })
 
   it('translates movement records into shop language without exposing raw movement or WAC terms', async () => {
@@ -764,13 +931,38 @@ describe('DB-038 Parts & inventory workspace', () => {
 
     await user.click(screen.getByRole('button', { name: 'Add Part' }))
     const addPartDialog = screen.getByRole('dialog', { name: 'Add Part' })
+    expect(addPartDialog).toHaveClass('db-parts-workbench__add-panel')
+    expect(within(addPartDialog).getByRole('group', { name: 'Identity' })).toBeInTheDocument()
+    expect(within(addPartDialog).getByRole('group', { name: 'Stock' })).toBeInTheDocument()
+    expect(within(addPartDialog).getByRole('group', { name: 'Pricing' })).toBeInTheDocument()
+    expect(within(addPartDialog).getByRole('group', { name: 'Supplier' })).toBeInTheDocument()
+    expect(addPartDialog.querySelector('input[type="number"]')).not.toBeInTheDocument()
+    const onHand = within(addPartDialog).getByRole('textbox', { name: 'On-hand quantity' })
+    const reorder = within(addPartDialog).getByRole('textbox', { name: 'Reorder level' })
+    const cost = within(addPartDialog).getByRole('textbox', { name: 'Cost per unit' })
+    const sellingPrice = within(addPartDialog).getByRole('textbox', { name: 'Selling price' })
+    expect(onHand.closest('.db-parts-workbench__add-stepper')).toBeInTheDocument()
+    expect(cost.closest('.db-parts-workbench__add-stepper')).toBeInTheDocument()
+    await user.click(within(addPartDialog).getByRole('button', { name: 'Increase On-hand quantity' }))
+    expect(onHand).toHaveValue('1')
+    await user.click(within(addPartDialog).getByRole('button', { name: 'Decrease On-hand quantity' }))
+    expect(onHand).toHaveValue('0')
+    await user.clear(reorder)
+    await user.type(reorder, '4')
+    await user.tab()
+    await user.clear(cost)
+    await user.type(cost, '12.34')
+    await user.tab()
+    await user.clear(sellingPrice)
+    await user.type(sellingPrice, '18.75')
+    await user.tab()
     fireEvent.submit(addPartDialog.querySelector('form')!)
     expect(screen.getByRole('alert')).toHaveTextContent('Part name is required.')
     await user.type(screen.getByRole('textbox', { name: /Part name/ }), 'Air dryer cartridge')
     await user.type(screen.getByRole('textbox', { name: /SKU/ }), 'AIR-DRY-01')
     fireEvent.submit(addPartDialog.querySelector('form')!)
     await waitFor(() => expect(apiMocks.post).toHaveBeenCalledWith('/inventory', expect.objectContaining({
-      name: 'Air dryer cartridge', sku: 'AIR-DRY-01', stock_quantity: 0, reorder_level: 0, cost: 0, selling_price: 0, unit_type: 'each',
+      name: 'Air dryer cartridge', sku: 'AIR-DRY-01', stock_quantity: 0, reorder_level: 4, cost: 12.34, selling_price: 18.75, unit_type: 'each',
     })))
   })
 

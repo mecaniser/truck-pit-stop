@@ -1,4 +1,4 @@
-import { FormEvent, ReactNode } from 'react'
+import { FormEvent, ReactNode, useEffect, useRef } from 'react'
 import { Spinner } from '@/components/ui'
 import { X } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
@@ -57,6 +57,53 @@ export default function SlidePanelForm({
   panelClassName,
 }: SlidePanelFormProps) {
   const { accentColors } = useTheme()
+  const panelRef = useRef<HTMLElement>(null)
+  const previouslyFocusedRef = useRef<HTMLElement | null>(null)
+  const wasOpenRef = useRef(false)
+  const onCloseRef = useRef(onClose)
+  const isSubmittingRef = useRef(isSubmitting)
+  onCloseRef.current = onClose
+  isSubmittingRef.current = isSubmitting
+  if (isOpen && !wasOpenRef.current) {
+    previouslyFocusedRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
+  }
+  wasOpenRef.current = isOpen
+
+  useEffect(() => {
+    if (!isOpen) return
+    const panel = panelRef.current
+    if (!panel) return
+    const previouslyFocused = previouslyFocusedRef.current
+    const focusable = () => Array.from(panel.querySelectorAll<HTMLElement>('button:not([disabled]), input:not([disabled]), textarea:not([disabled]), select:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])')).filter((element) => !element.hidden && element.getAttribute('aria-hidden') !== 'true')
+    const focusFrame = window.requestAnimationFrame(() => {
+      if (!panel.contains(document.activeElement)) (focusable()[0] || panel).focus()
+    })
+    const handleKeyDown = (event: globalThis.KeyboardEvent) => {
+      if (event.key === 'Escape' && !isSubmittingRef.current) {
+        event.preventDefault()
+        onCloseRef.current()
+        return
+      }
+      if (event.key !== 'Tab') return
+      const controls = focusable()
+      if (!controls.length) { event.preventDefault(); panel.focus(); return }
+      const first = controls[0]
+      const last = controls[controls.length - 1]
+      if (event.shiftKey && (document.activeElement === first || !panel.contains(document.activeElement))) {
+        event.preventDefault()
+        last.focus()
+      } else if (!event.shiftKey && (document.activeElement === last || !panel.contains(document.activeElement))) {
+        event.preventDefault()
+        first.focus()
+      }
+    }
+    document.addEventListener('keydown', handleKeyDown)
+    return () => {
+      window.cancelAnimationFrame(focusFrame)
+      document.removeEventListener('keydown', handleKeyDown)
+      window.requestAnimationFrame(() => previouslyFocused?.focus())
+    }
+  }, [isOpen])
 
   if (!isOpen) return null
 
@@ -79,6 +126,7 @@ export default function SlidePanelForm({
         <button
           type="button"
           onClick={onClose}
+          aria-label={`Close ${title}`}
           className="p-2 text-gray-500 hover:text-gray-700 rounded-full hover:bg-gray-100"
         >
           <X className="w-5 h-5" />
@@ -124,8 +172,11 @@ export default function SlidePanelForm({
 
       {/* Panel */}
       <aside
+        ref={panelRef}
+        tabIndex={-1}
         className={`db-slide-panel-form absolute top-0 right-0 h-full w-full ${width} bg-white/95 backdrop-blur border-l border-gray-200 shadow-xl transform transition-transform animate-slide-in-right ${panelClassName || ''}`}
         role="dialog"
+        aria-modal="true"
         aria-label={ariaLabel || title}
       >
         {onSubmit ? (

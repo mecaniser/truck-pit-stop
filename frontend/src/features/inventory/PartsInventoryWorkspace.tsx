@@ -2,7 +2,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react'
 import { useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
-import { Archive, ArrowDown, ArrowRight, ArrowUp, Boxes, ChevronsUpDown, History, MapPin, Package, Pencil, Plus, Search, ShoppingCart, X } from 'lucide-react'
+import { Archive, ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Boxes, Camera, ChevronsUpDown, History, MapPin, Package, Pencil, Plus, Search, ShoppingCart, Trash2, X } from 'lucide-react'
 
 import api from '@/lib/api'
 import useTenantBranding from '@/hooks/useTenantBranding'
@@ -19,6 +19,9 @@ type SortDirection = 'asc' | 'desc'
 type StockFilter = 'all' | 'below_min' | 'out_of_stock'
 type LedgerDensity = 'comfortable' | 'compact'
 type InspectorView = 'overview' | 'stock' | 'ordering' | 'history'
+
+const PART_PHOTO_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif'])
+const PART_PHOTO_MAX_BYTES = 10 * 1024 * 1024
 
 const FIRST_SORT_DIRECTION: Record<PartSort, SortDirection> = {
   catalog: 'asc',
@@ -99,6 +102,31 @@ export type PartRecord = {
 type PartDetail = PartRecord & {
   recent_receipts: Array<{ receipt_id: string; receipt_number: string; purchase_order_id: string; po_number: string; quantity: number; unit_cost: string; received_at: string }>
   recent_movements: Array<{ id: string; movement_type: string; quantity_delta: number; balance_after: number; wac_after: string | null; occurred_at: string }>
+}
+
+type InventoryEditorRecord = {
+  id: string
+  sku: string
+  name: string
+  description: string | null
+  category: string | null
+  unit_type: string | null
+  location: string | null
+  image_url: string | null
+}
+
+type PartIdentityForm = {
+  name: string
+  sku: string
+  description: string
+  category: string
+  location: string
+  unitType: string
+}
+
+type PartsInfiniteData = {
+  pages: Array<Page<PartRecord>>
+  pageParams: unknown[]
 }
 
 type Movement = {
@@ -247,6 +275,9 @@ function toPreparationLine(part: PartRecord): PurchasePreparationLine {
 
 function PartPhoto({ part, logoUrl, companyName, detail = false }: { part: Pick<PartRecord, 'name' | 'image_url'>; logoUrl: string | null; companyName: string | null; detail?: boolean }) {
   const [source, setSource] = useState<'part' | 'company' | 'icon'>(() => part.image_url ? 'part' : logoUrl ? 'company' : 'icon')
+  useEffect(() => {
+    setSource(part.image_url ? 'part' : logoUrl ? 'company' : 'icon')
+  }, [part.image_url, logoUrl])
   const src = source === 'part' ? part.image_url : source === 'company' ? logoUrl : null
   const fail = () => setSource((current) => current === 'part' && logoUrl && logoUrl !== part.image_url ? 'company' : 'icon')
   if (!src || source === 'icon') return <span className={`db-parts-workbench__photo ${detail ? 'is-detail' : ''}`} role={detail ? 'img' : undefined} aria-label={detail ? `No image available for ${part.name}` : undefined} aria-hidden={detail ? undefined : 'true'}><Package aria-hidden="true" /></span>
@@ -291,6 +322,7 @@ export default function PartsInventoryWorkspace({ summary }: { summary: Summary 
   const [movementSkip, setMovementSkip] = useState(0)
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [checkedParts, setCheckedParts] = useState<Map<string, PartRecord>>(() => new Map())
+  const [preparedPartIds, setPreparedPartIds] = useState<Set<string>>(() => new Set(readPurchasePreparation().map((line) => line.inventoryId)))
   const [allPartsCount, setAllPartsCount] = useState<number | null>(null)
   const [addPartOpen, setAddPartOpen] = useState(false)
   const [mobileDetailOpen, setMobileDetailOpen] = useState(false)
@@ -489,6 +521,7 @@ export default function PartsInventoryWorkspace({ summary }: { summary: Summary 
     const byInventory = new Map(readPurchasePreparation().map((line) => [line.inventoryId, line]))
     eligible.forEach((part) => byInventory.set(part.id, toPreparationLine(part)))
     writePurchasePreparation(Array.from(byInventory.values()))
+    setPreparedPartIds(new Set(byInventory.keys()))
     const blocked = eligible.filter((part) => !part.preferred_source).length
     setNotice(`${eligible.length} ${eligible.length === 1 ? 'part' : 'parts'} added to purchase preparation${blocked ? ` · ${blocked} still ${blocked === 1 ? 'needs' : 'need'} a supplier source` : ''}.`)
     if (openPurchasing) navigate('/dashboard/garage/purchasing?view=orders')
@@ -519,6 +552,44 @@ export default function PartsInventoryWorkspace({ summary }: { summary: Summary 
       setError(errorMessage(cause))
       throw cause
     }
+  }
+
+  const syncPartCaches = (partId: string, patch: Partial<PartRecord & InventoryEditorRecord>) => {
+    queryClient.setQueriesData<PartsInfiniteData>({ queryKey: ['parts-operations', 'parts'] }, (current) => current ? {
+      ...current,
+      pages: current.pages.map((page) => ({
+        ...page,
+        items: page.items.map((item) => item.id === partId ? { ...item, ...patch } : item),
+      })),
+    } : current)
+    queryClient.setQueryData<PartDetail>(['parts-operations', 'part', partId], (current) => current ? { ...current, ...patch } : current)
+    queryClient.setQueryData<InventoryEditorRecord>(['inventory', 'detail', partId], (current) => current ? { ...current, ...patch } : current)
+  }
+
+  const updatePartIdentity = async (part: PartDetail, patch: Record<string, unknown>) => {
+    setError(null)
+    const response = await api.put(`/inventory/${part.id}`, patch)
+    const updated = response.data as Partial<InventoryEditorRecord>
+    syncPartCaches(part.id, { ...patch, ...updated })
+    setPartsSequence((current) => current + 1)
+    setNotice(`${typeof patch.name === 'string' ? patch.name : part.name} details saved.`)
+  }
+
+  const uploadPartPhoto = async (part: PartDetail, file: File) => {
+    setError(null)
+    const formData = new FormData()
+    formData.append('image', file)
+    const response = await api.post(`/inventory/${part.id}/photo`, formData, { headers: { 'Content-Type': 'multipart/form-data' } })
+    const updated = response.data as Partial<InventoryEditorRecord>
+    syncPartCaches(part.id, { image_url: updated.image_url ?? part.image_url })
+    setNotice(`${part.name} photo saved.`)
+  }
+
+  const removePartPhoto = async (part: PartDetail) => {
+    setError(null)
+    await api.delete(`/inventory/${part.id}/photo`)
+    syncPartCaches(part.id, { image_url: null })
+    setNotice(`${part.name} photo removed.`)
   }
 
   return <section className="db-parts-workbench" aria-labelledby="parts-workbench-title">
@@ -587,7 +658,7 @@ export default function PartsInventoryWorkspace({ summary }: { summary: Summary 
           </div>}
           <PartLedger page={partsPage} loading={partsQuery.isLoading} loadingMore={partsQuery.isFetchingNextPage} failed={partsQuery.isError && !partsQuery.data} manage={manage} selectedId={selectedId} checkedIds={new Set(checkedParts.keys())} density={density} sort={sort} direction={direction} logoUrl={branding?.logo_url || null} companyName={branding?.name || null} onSort={toggleHeaderSort} onCheck={toggleChecked} onSelect={(id) => { setSelectedId(id); setMobileDetailOpen(true) }} onRetry={() => void partsQuery.refetch()} onLoadMore={() => void partsQuery.fetchNextPage()} />
         </div>
-        <PartInspector part={detailQuery.data} loading={detailQuery.isLoading} failed={detailQuery.isError} manage={manage} logoUrl={branding?.logo_url || null} companyName={branding?.name || null} onBack={() => setMobileDetailOpen(false)} onRetry={() => void detailQuery.refetch()} onAdjust={updatePart} onPrepare={addToPreparation} onPurchasing={() => navigate('/dashboard/garage/purchasing')} onOpenPurchaseOrder={(id) => navigate(`/dashboard/garage/purchasing?view=orders&purchase_order=${encodeURIComponent(id)}`)} onOpenRepair={(id) => navigate(`/dashboard/repair-orders?selected=${encodeURIComponent(id)}`)} />
+        <PartInspector part={detailQuery.data} loading={detailQuery.isLoading} failed={detailQuery.isError} manage={manage} prepared={Boolean(detailQuery.data && preparedPartIds.has(detailQuery.data.id))} logoUrl={branding?.logo_url || null} companyName={branding?.name || null} onBack={() => setMobileDetailOpen(false)} onRetry={() => void detailQuery.refetch()} onAdjust={updatePart} onUpdateIdentity={updatePartIdentity} onUploadPhoto={uploadPartPhoto} onRemovePhoto={removePartPhoto} onPrepare={addToPreparation} onPurchasing={() => navigate('/dashboard/garage/purchasing')} onOpenPurchaseOrder={(id) => navigate(`/dashboard/garage/purchasing?view=orders&purchase_order=${encodeURIComponent(id)}`)} onOpenRepair={(id) => navigate(`/dashboard/repair-orders?selected=${encodeURIComponent(id)}`)} />
       </div>}
     {addPartOpen && <AddPartDrawer isOpen onClose={() => setAddPartOpen(false)} onCreated={async (partName) => {
       await Promise.all([
@@ -715,26 +786,46 @@ function AddPartDrawer({ isOpen, onClose, onCreated }: { isOpen: boolean; onClos
       setSaving(false)
     }
   }
-  return <SlidePanelForm isOpen={isOpen} onClose={close} category="Parts & inventory" title="Add Part" onSubmit={submit} submitLabel="Add Part" isSubmitting={saving} ariaLabel="Add part">
+  return <SlidePanelForm isOpen={isOpen} onClose={close} title="Add Part" onSubmit={submit} submitLabel="Add Part" isSubmitting={saving} ariaLabel="Add part" panelClassName="db-parts-workbench__add-panel">
     <div className="db-parts-workbench__add-form">
-      <label>Part name <span aria-hidden="true">*</span><input autoFocus required disabled={saving} value={form.name} onChange={(event) => update('name', event.target.value)} placeholder="Brake pads – rear" /></label>
-      <label>SKU <span aria-hidden="true">*</span><input required disabled={saving} value={form.sku} onChange={(event) => update('sku', event.target.value)} placeholder="BRA-HEA-DUT-PAD-001" /></label>
-      <label className="is-wide">Description<textarea disabled={saving} rows={3} value={form.description} onChange={(event) => update('description', event.target.value)} placeholder="Optional catalog description" /></label>
-      <label>Category<input disabled={saving} value={form.category} onChange={(event) => update('category', event.target.value)} placeholder="Brakes" /></label>
-      <label>Bin location<input disabled={saving} value={form.location} onChange={(event) => update('location', event.target.value)} placeholder="A-12" /></label>
-      <label>On-hand quantity<input disabled={saving} type="number" min={0} step={1} value={form.stockQuantity} onChange={(event) => update('stockQuantity', event.target.value)} /></label>
-      <label>Reorder level<input disabled={saving} type="number" min={0} step={1} value={form.reorderLevel} onChange={(event) => update('reorderLevel', event.target.value)} /></label>
-      <label>Cost per unit<input disabled={saving} type="number" min={0} step="0.01" inputMode="decimal" value={form.cost} onChange={(event) => update('cost', event.target.value)} /></label>
-      <label>Selling price<input disabled={saving} type="number" min={0} step="0.01" inputMode="decimal" value={form.sellingPrice} onChange={(event) => update('sellingPrice', event.target.value)} /></label>
-      <label>Unit<input disabled={saving} value={form.unitType} onChange={(event) => update('unitType', event.target.value)} placeholder="each" /></label>
-      <label>Supplier name<input disabled={saving} value={form.supplierName} onChange={(event) => update('supplierName', event.target.value)} placeholder="Optional" /></label>
-      <label className="is-wide">Supplier contact<input disabled={saving} value={form.supplierContact} onChange={(event) => update('supplierContact', event.target.value)} placeholder="Optional contact or terms note" /></label>
+      <fieldset>
+        <legend>Identity</legend>
+        <div className="db-parts-workbench__add-fields">
+          <label>Part name <span aria-hidden="true">*</span><input autoFocus required disabled={saving} value={form.name} onChange={(event) => update('name', event.target.value)} placeholder="Brake pads – rear" /></label>
+          <label>SKU <span aria-hidden="true">*</span><input required disabled={saving} value={form.sku} onChange={(event) => update('sku', event.target.value)} placeholder="BRA-HEA-DUT-PAD-001" /></label>
+          <label className="is-wide">Description<textarea disabled={saving} rows={3} value={form.description} onChange={(event) => update('description', event.target.value)} placeholder="Optional catalog description" /></label>
+          <label>Category<input disabled={saving} value={form.category} onChange={(event) => update('category', event.target.value)} placeholder="Brakes" /></label>
+          <label>Unit<input disabled={saving} value={form.unitType} onChange={(event) => update('unitType', event.target.value)} placeholder="each" /></label>
+        </div>
+      </fieldset>
+      <fieldset>
+        <legend>Stock</legend>
+        <div className="db-parts-workbench__add-fields">
+          <label className="is-wide">Bin location<input disabled={saving} value={form.location} onChange={(event) => update('location', event.target.value)} placeholder="A-12" /></label>
+          <label>On-hand quantity<QuantityStepper disabled={saving} value={Number(form.stockQuantity) || 0} min={0} step={1} unitLabel="units" ariaLabel="On-hand quantity" align="start" size="lg" className="db-parts-workbench__add-stepper" onChange={(next) => update('stockQuantity', String(next))} /></label>
+          <label>Reorder level<QuantityStepper disabled={saving} value={Number(form.reorderLevel) || 0} min={0} step={1} unitLabel="units" ariaLabel="Reorder level" align="start" size="lg" className="db-parts-workbench__add-stepper" onChange={(next) => update('reorderLevel', String(next))} /></label>
+        </div>
+      </fieldset>
+      <fieldset>
+        <legend>Pricing</legend>
+        <div className="db-parts-workbench__add-fields">
+          <label>Cost per unit<span className="db-parts-workbench__add-money-stepper"><span aria-hidden="true">$</span><QuantityStepper disabled={saving} value={Number(form.cost) || 0} min={0} step={0.01} unitLabel="" ariaLabel="Cost per unit" align="start" size="lg" className="db-parts-workbench__add-stepper" onChange={(next) => update('cost', String(next))} /></span></label>
+          <label>Selling price<span className="db-parts-workbench__add-money-stepper"><span aria-hidden="true">$</span><QuantityStepper disabled={saving} value={Number(form.sellingPrice) || 0} min={0} step={0.01} unitLabel="" ariaLabel="Selling price" align="start" size="lg" className="db-parts-workbench__add-stepper" onChange={(next) => update('sellingPrice', String(next))} /></span></label>
+        </div>
+      </fieldset>
+      <fieldset>
+        <legend>Supplier</legend>
+        <div className="db-parts-workbench__add-fields">
+          <label>Supplier name<input disabled={saving} value={form.supplierName} onChange={(event) => update('supplierName', event.target.value)} placeholder="Optional" /></label>
+          <label>Supplier contact<input disabled={saving} value={form.supplierContact} onChange={(event) => update('supplierContact', event.target.value)} placeholder="Optional contact or terms note" /></label>
+        </div>
+      </fieldset>
       {formError && <p className="is-wide" role="alert">{formError}</p>}
     </div>
   </SlidePanelForm>
 }
 
-function PartInspector({ part, loading, failed, manage, logoUrl, companyName, onBack, onRetry, onAdjust, onPrepare, onPurchasing, onOpenPurchaseOrder, onOpenRepair }: { part?: PartDetail; loading: boolean; failed: boolean; manage: boolean; logoUrl: string | null; companyName: string | null; onBack: () => void; onRetry: () => void; onAdjust: (part: PartDetail, patch: Record<string, unknown>) => Promise<void>; onPrepare: (part: PartDetail) => void; onPurchasing: () => void; onOpenPurchaseOrder: (id: string) => void; onOpenRepair: (id: string) => void }) {
+function PartInspector({ part, loading, failed, manage, prepared, logoUrl, companyName, onBack, onRetry, onAdjust, onUpdateIdentity, onUploadPhoto, onRemovePhoto, onPrepare, onPurchasing, onOpenPurchaseOrder, onOpenRepair }: { part?: PartDetail; loading: boolean; failed: boolean; manage: boolean; prepared: boolean; logoUrl: string | null; companyName: string | null; onBack: () => void; onRetry: () => void; onAdjust: (part: PartDetail, patch: Record<string, unknown>) => Promise<void>; onUpdateIdentity: (part: PartDetail, patch: Record<string, unknown>) => Promise<void>; onUploadPhoto: (part: PartDetail, file: File) => Promise<void>; onRemovePhoto: (part: PartDetail) => Promise<void>; onPrepare: (part: PartDetail) => void; onPurchasing: () => void; onOpenPurchaseOrder: (id: string) => void; onOpenRepair: (id: string) => void }) {
   const [inspectorView, setInspectorView] = useState<InspectorView>('overview')
   const [edit, setEdit] = useState<'available' | 'reorder' | null>(null)
   const [value, setValue] = useState('')
@@ -742,12 +833,27 @@ function PartInspector({ part, loading, failed, manage, logoUrl, companyName, on
   const [saving, setSaving] = useState(false)
   const [localError, setLocalError] = useState<string | null>(null)
   const [editFocusMode, setEditFocusMode] = useState<'pointer' | 'keyboard'>('pointer')
+  const [identityOpen, setIdentityOpen] = useState(false)
+  const [identityForm, setIdentityForm] = useState<PartIdentityForm | null>(null)
+  const [identityOriginal, setIdentityOriginal] = useState<InventoryEditorRecord | null>(null)
+  const [identitySaving, setIdentitySaving] = useState(false)
+  const [photoAction, setPhotoAction] = useState<'upload' | 'remove' | null>(null)
+  const [identityError, setIdentityError] = useState<string | null>(null)
+  const [photoError, setPhotoError] = useState<string | null>(null)
+  const photoSaving = photoAction !== null
   const availableTrigger = useRef<HTMLButtonElement>(null)
-  const availableStockTrigger = useRef<HTMLButtonElement>(null)
   const reorderTrigger = useRef<HTMLButtonElement>(null)
   const inspectorTabs = useRef<Array<HTMLButtonElement | null>>([])
-  const editOrigin = useRef<'available-shortcut' | 'available-stock' | 'reorder' | null>(null)
-  const restore = useRef<'available-shortcut' | 'available-stock' | 'reorder' | null>(null)
+  const editOrigin = useRef<'available-shortcut' | 'reorder' | null>(null)
+  const restore = useRef<'available-shortcut' | 'reorder' | null>(null)
+  const identityTrigger = useRef<HTMLButtonElement>(null)
+  const photoInput = useRef<HTMLInputElement>(null)
+  const identityQuery = useQuery<InventoryEditorRecord>({
+    queryKey: ['inventory', 'detail', part?.id],
+    queryFn: async () => (await api.get(`/inventory/${part?.id}`)).data,
+    enabled: Boolean(part?.id && identityOpen),
+    retry: false,
+  })
   const supplierId = part?.preferred_source?.supplier_id || null
   const supplierPurchasingQuery = useQuery<SupplierPurchasing>({
     queryKey: ['parts-operations', 'supplier-purchasing', supplierId],
@@ -755,16 +861,105 @@ function PartInspector({ part, loading, failed, manage, logoUrl, companyName, on
     enabled: Boolean(supplierId),
     retry: false,
   })
-  useEffect(() => { setInspectorView('overview'); setEdit(null); setEditFocusMode('pointer'); setLocalError(null); setReason(''); editOrigin.current = null; restore.current = null }, [part?.id])
+  useEffect(() => { setInspectorView('overview'); setEdit(null); setEditFocusMode('pointer'); setLocalError(null); setReason(''); setIdentityOpen(false); setIdentityForm(null); setIdentityOriginal(null); setIdentityError(null); setPhotoError(null); editOrigin.current = null; restore.current = null }, [part?.id])
+  useEffect(() => {
+    if (!identityOpen || !identityQuery.data || identityOriginal?.id === identityQuery.data.id) return
+    const record = identityQuery.data
+    setIdentityOriginal(record)
+    setIdentityForm({
+      name: record.name || '',
+      sku: record.sku || '',
+      description: record.description || '',
+      category: record.category || '',
+      location: record.location || '',
+      unitType: record.unit_type || 'each',
+    })
+  }, [identityOpen, identityOriginal?.id, identityQuery.data])
   useEffect(() => {
     if (edit || !restore.current) return
-    const target = restore.current === 'available-shortcut' ? availableTrigger : restore.current === 'available-stock' ? availableStockTrigger : reorderTrigger
+    const target = restore.current === 'available-shortcut' ? availableTrigger : reorderTrigger
     restore.current = null
     const frame = window.requestAnimationFrame(() => target.current?.focus())
     return () => window.cancelAnimationFrame(frame)
   }, [edit])
-  const open = (next: 'available' | 'reorder', origin: 'available-shortcut' | 'available-stock' | 'reorder', event: ReactMouseEvent<HTMLButtonElement>) => { if (!part) return; editOrigin.current = origin; setEditFocusMode(event.detail === 0 ? 'keyboard' : 'pointer'); setInspectorView('stock'); setValue(String(next === 'available' ? part.available_packages : part.reorder_level)); setReason(''); setLocalError(null); setEdit(next) }
+  const open = (next: 'available' | 'reorder', origin: 'available-shortcut' | 'reorder', event: ReactMouseEvent<HTMLButtonElement>) => { if (!part) return; editOrigin.current = origin; setEditFocusMode(event.detail === 0 ? 'keyboard' : 'pointer'); setInspectorView('stock'); setValue(String(next === 'available' ? part.available_packages : part.reorder_level)); setReason(''); setLocalError(null); setEdit(next) }
   const close = () => { restore.current = editOrigin.current; editOrigin.current = null; setEdit(null); setLocalError(null) }
+  const openIdentity = () => {
+    setEdit(null)
+    setIdentityError(null)
+    setPhotoError(null)
+    setIdentityForm(null)
+    setIdentityOriginal(null)
+    setIdentityOpen(true)
+  }
+  const closeIdentity = () => {
+    setIdentityOpen(false)
+    setIdentityForm(null)
+    setIdentityOriginal(null)
+    setIdentityError(null)
+    setPhotoError(null)
+    window.requestAnimationFrame(() => identityTrigger.current?.focus())
+  }
+  const updateIdentity = (field: keyof PartIdentityForm, next: string) => {
+    setIdentityForm((current) => current ? { ...current, [field]: next } : current)
+    setIdentityError(null)
+  }
+  const identityPatch = useMemo<Record<string, unknown>>(() => {
+    if (!identityForm || !identityOriginal) return {}
+    const patch: Record<string, unknown> = {}
+    const name = identityForm.name.trim()
+    const sku = identityForm.sku.trim()
+    const description = identityForm.description.trim()
+    const category = identityForm.category.trim()
+    const location = identityForm.location.trim()
+    const unitType = identityForm.unitType.trim()
+    if (name !== identityOriginal.name) patch.name = name
+    if (sku !== identityOriginal.sku) patch.sku = sku
+    if (description !== (identityOriginal.description || '')) patch.description = description || null
+    if (category !== (identityOriginal.category || '')) patch.category = category || null
+    if (location !== (identityOriginal.location || '')) patch.location = location || null
+    if (unitType !== (identityOriginal.unit_type || '')) patch.unit_type = unitType || 'each'
+    return patch
+  }, [identityForm, identityOriginal])
+  const identityDirty = Object.keys(identityPatch).length > 0
+  const saveIdentity = async () => {
+    if (!part || !identityForm || !identityOriginal || identitySaving) return
+    const name = identityForm.name.trim()
+    const sku = identityForm.sku.trim()
+    if (!name) { setIdentityError('Part name is required.'); return }
+    if (!sku) { setIdentityError('SKU is required.'); return }
+    if (!identityDirty) { closeIdentity(); return }
+    setIdentitySaving(true)
+    setIdentityError(null)
+    try {
+      await onUpdateIdentity(part, identityPatch)
+      closeIdentity()
+    } catch (cause) {
+      setIdentityError(errorMessage(cause))
+    } finally {
+      setIdentitySaving(false)
+    }
+  }
+  const choosePhoto = async (file: File) => {
+    if (!part || photoSaving) return
+    const type = file.type.toLowerCase()
+    if (!PART_PHOTO_TYPES.has(type)) { setPhotoError('Choose a JPEG, PNG, WebP, HEIC, or HEIF image.'); return }
+    if (!file.size) { setPhotoError('Choose an image that is not empty.'); return }
+    if (file.size > PART_PHOTO_MAX_BYTES) { setPhotoError('Choose an image smaller than 10 MB.'); return }
+    setPhotoAction('upload')
+    setPhotoError(null)
+    try { await onUploadPhoto(part, file) }
+    catch (cause) { setPhotoError(errorMessage(cause)) }
+    finally { setPhotoAction(null) }
+  }
+  const removePhoto = async () => {
+    if (!part || photoSaving) return
+    setPhotoAction('remove')
+    setPhotoError(null)
+    try { await onRemovePhoto(part) }
+    catch (cause) { setPhotoError(errorMessage(cause)) }
+    finally { setPhotoAction(null) }
+  }
   const selectInspectorView = (next: InspectorView, focus = false) => {
     setInspectorView(next)
     setEdit(null)
@@ -813,12 +1008,14 @@ function PartInspector({ part, loading, failed, manage, logoUrl, companyName, on
       ? `${onTimeValue} on-time delivery reliability`
       : 'Not enough delivery history'
   const remark = partRemark(part)
+  const purchaseActionable = isReorderEligible(part)
   const renderEditableStockFact = (
     kind: 'available' | 'reorder',
     label: string,
     currentValue: number,
-    triggerRef: typeof availableStockTrigger,
-    origin: 'available-stock' | 'reorder',
+    triggerRef: typeof availableTrigger,
+    origin: 'available-shortcut' | 'reorder',
+    showTrigger = true,
   ) => {
     const isEditing = edit === kind
     const editLabel = kind === 'available' ? 'Edit available quantity' : 'Edit reorder point'
@@ -878,7 +1075,7 @@ function PartInspector({ part, loading, failed, manage, logoUrl, companyName, on
             </form>
           : <>
               <span>{currentValue}</span>
-              {manage && !part.is_archived && !edit && <button
+              {showTrigger && manage && !part.is_archived && !edit && <button
                 ref={triggerRef}
                 className="db-parts-workbench__fact-edit"
                 type="button"
@@ -890,7 +1087,7 @@ function PartInspector({ part, loading, failed, manage, logoUrl, companyName, on
       </dd>
     </div>
   }
-  const availableStockFact = renderEditableStockFact('available', 'Available', part.available_packages, availableStockTrigger, 'available-stock')
+  const availableStockFact = renderEditableStockFact('available', 'Available', part.available_packages, availableTrigger, 'available-shortcut', false)
   const reorderStockFact = renderEditableStockFact('reorder', 'Reorder at', part.reorder_level, reorderTrigger, 'reorder')
   const neededStockFact = <div key="needed"><dt>Needed for open repairs</dt><dd>{part.needed_for_open_repairs}</dd></div>
   const incomingStockFact = <div key="incoming"><dt>Incoming</dt><dd>{part.incoming_packages}</dd></div>
@@ -898,18 +1095,43 @@ function PartInspector({ part, loading, failed, manage, logoUrl, companyName, on
     ? [reorderStockFact, availableStockFact, neededStockFact, incomingStockFact]
     : [availableStockFact, neededStockFact, reorderStockFact, incomingStockFact]
   return <aside className="db-parts-workbench__inspector" aria-labelledby="selected-part-name">
-    <button className="db-parts-workbench__mobile-back" type="button" onClick={onBack}>Back to parts</button>
+    <button className="db-parts-workbench__mobile-back" type="button" onClick={onBack}><ArrowLeft aria-hidden="true" />Back to parts</button>
     <div className="db-parts-workbench__selected-action" data-selected-surface="true">
-      <p className="db-parts-workbench__selected-label">Selected part</p>
+      <div className="db-parts-workbench__selected-label-row">
+        <p className="db-parts-workbench__selected-label">Selected part</p>
+        {manage && !part.is_archived && !edit && !identityOpen && <button ref={identityTrigger} className="db-parts-workbench__identity-trigger" type="button" aria-expanded="false" aria-controls="selected-part-identity-editor" onClick={openIdentity}><Pencil aria-hidden="true" />Edit details</button>}
+      </div>
       <div className="db-parts-workbench__selected-part">
         <PartPhoto part={part} logoUrl={logoUrl} companyName={companyName} detail />
         <div className="db-parts-workbench__selected-copy"><h2 id="selected-part-name">{part.name}</h2><p className="db-parts-workbench__technical-line">{part.sku} · {part.location ? <><MapPin aria-hidden="true" />Bin {part.location}</> : 'Bin not set'} · {part.unit_type || 'No unit specified'}</p><span className={`db-parts-workbench__stock-state ${stockStateClass}`}>{stockState}</span></div>
       </div>
-      <div className="db-parts-workbench__selected-actions">
-        {manage && isManuallySelectable(part) && <button className="db-parts-workbench__action-primary" type="button" onClick={() => onPrepare(part)}>Add to purchase list</button>}
-        {manage && !part.is_archived && !edit && <button ref={availableTrigger} className="db-parts-workbench__action-secondary" type="button" onClick={(event) => open('available', 'available-shortcut', event)}>Adjust on-hand quantity</button>}
-        <button className="db-parts-workbench__action-tertiary" type="button" onClick={onPurchasing}>Open Purchasing<ArrowRight aria-hidden="true" /></button>
-      </div>
+      {identityOpen && <div id="selected-part-identity-editor" className="db-parts-workbench__identity-editor" aria-busy={identitySaving || photoSaving}>
+        {identityQuery.isPending && <p role="status">Loading editable part details…</p>}
+        {identityQuery.isError && <div className="db-parts-workbench__identity-recovery" role="alert"><span>Editable part details could not be loaded.</span><button type="button" onClick={() => void identityQuery.refetch()}>Retry</button></div>}
+        {identityForm && <>
+          <div className="db-parts-workbench__photo-editor" role="group" aria-label="Part photo">
+            <div className="db-parts-workbench__photo-editor-copy"><strong>Photo</strong><span>Changes save immediately · JPEG, PNG, WebP, HEIC/HEIF · max 10 MB</span></div>
+            <div className="db-parts-workbench__photo-editor-actions">
+              <button type="button" disabled={photoSaving || identitySaving} onClick={() => photoInput.current?.click()}><Camera aria-hidden="true" />{photoAction === 'upload' ? 'Uploading…' : part.image_url ? 'Replace photo' : 'Add photo'}</button>
+              {part.image_url && <button type="button" disabled={photoSaving || identitySaving} onClick={() => void removePhoto()}><Trash2 aria-hidden="true" />{photoAction === 'remove' ? 'Removing…' : 'Remove photo'}</button>}
+            </div>
+            <input ref={photoInput} hidden tabIndex={-1} type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif" onChange={(event) => { const file = event.target.files?.[0]; if (file) void choosePhoto(file); event.target.value = '' }} />
+            {photoError && <p className="db-parts-workbench__photo-error" role="alert">{photoError}</p>}
+          </div>
+          <form aria-label="Edit part details" onKeyDown={(event) => { if (event.key === 'Escape' && !identitySaving && !photoSaving) { event.preventDefault(); event.stopPropagation(); closeIdentity() } }} onSubmit={(event) => { event.preventDefault(); void saveIdentity() }}>
+            <div className="db-parts-workbench__identity-fields">
+              <label>Part name<input autoFocus required maxLength={255} disabled={identitySaving || photoSaving} value={identityForm.name} onChange={(event) => updateIdentity('name', event.target.value)} /></label>
+              <label>SKU<input required maxLength={100} disabled={identitySaving || photoSaving} value={identityForm.sku} onChange={(event) => updateIdentity('sku', event.target.value)} /></label>
+              <label>Category<input maxLength={100} disabled={identitySaving || photoSaving} value={identityForm.category} onChange={(event) => updateIdentity('category', event.target.value)} placeholder="Brakes, electrical, fluids…" /></label>
+              <label>Bin location<input maxLength={100} disabled={identitySaving || photoSaving} value={identityForm.location} onChange={(event) => updateIdentity('location', event.target.value)} placeholder="A-12" /></label>
+              <label>Unit label<input maxLength={20} disabled={identitySaving || photoSaving} value={identityForm.unitType} onChange={(event) => updateIdentity('unitType', event.target.value)} placeholder="each" /></label>
+              <label className="is-wide">Description<textarea maxLength={5000} disabled={identitySaving || photoSaving} rows={3} value={identityForm.description} onChange={(event) => updateIdentity('description', event.target.value)} placeholder="Catalog details or identifying notes" /></label>
+            </div>
+            {identityError && <p className="db-parts-workbench__identity-error" role="alert">{identityError}</p>}
+            <div className="db-parts-workbench__identity-actions"><button type="button" disabled={identitySaving || photoSaving} onClick={closeIdentity}>Cancel</button><button type="submit" disabled={identitySaving || photoSaving || !identityDirty}>{identitySaving ? 'Saving…' : 'Save details'}</button></div>
+          </form>
+        </>}
+      </div>}
       {!manage && !part.is_archived && <p className="db-parts-workbench__selected-permission">You can view stock. Owners and admins can make changes.</p>}
     </div>
     {part.is_archived && <p className="db-parts-workbench__archive" role="status">Archived part. History stays available, but stock and purchasing actions are locked.</p>}
@@ -948,19 +1170,35 @@ function PartInspector({ part, loading, failed, manage, logoUrl, companyName, on
         <section className="db-parts-workbench__section"><h3>Why this part is needed</h3>{part.repair_sources.length ? part.repair_sources.slice(0, 3).map((source) => <button className="db-parts-workbench__linked-row" type="button" key={source.repair_order_id} onClick={() => onOpenRepair(source.repair_order_id)}><span><strong>{source.order_number}</strong><small>{source.unit_number ? `Unit ${source.unit_number} · ` : ''}{source.vehicle_display || 'Vehicle not set'}</small></span><strong>{source.packages} units needed</strong><ArrowRight aria-hidden="true" /></button>) : <p className="db-parts-workbench__muted">No open repair is waiting on this part.</p>}</section>
         <section className="db-parts-workbench__section"><h3>Recent movement</h3>{part.recent_movements.length ? part.recent_movements.slice(0, 3).map((movement) => <div className="db-parts-workbench__movement-row" key={movement.id}><span><strong>{movementLabel(movement.movement_type)}</strong><small>{new Date(movement.occurred_at).toLocaleString()}</small></span><strong>{movement.quantity_delta > 0 ? '+' : ''}{movement.quantity_delta} · {movement.balance_after} available</strong></div>) : <p className="db-parts-workbench__muted">No inventory changes have been recorded for this part.</p>}</section>
       </>}
-      {inspectorView === 'stock' && <section className="db-parts-workbench__section"><h3>Stock</h3><dl className={`db-parts-workbench__facts${edit ? ' has-editor' : ''}`}>
+      {inspectorView === 'stock' && <section className="db-parts-workbench__section">
+        <div className="db-parts-workbench__section-head">
+          <h3>Stock</h3>
+          {manage && !part.is_archived && !edit && <button ref={availableTrigger} className="db-parts-workbench__stock-action" type="button" aria-label="Adjust on-hand quantity" onClick={(event) => open('available', 'available-shortcut', event)}><Boxes aria-hidden="true" />Adjust stock</button>}
+        </div>
+        <dl className={`db-parts-workbench__facts${edit ? ' has-editor' : ''}`}>
         {stockFacts}
       </dl>
       </section>}
       {inspectorView === 'ordering' && <section className="db-parts-workbench__section">
-        <div className="db-parts-workbench__section-head"><h3>Ordering</h3><button type="button" onClick={onPurchasing}>Open Purchasing<ArrowRight aria-hidden="true" /></button></div>
+        <div className="db-parts-workbench__section-head"><h3>Ordering</h3><button type="button" onClick={onPurchasing}>{prepared ? 'View purchase list' : 'Open Purchasing'}<ArrowRight aria-hidden="true" /></button></div>
         <dl className="db-parts-workbench__facts"><div><dt>Recommended order</dt><dd>{part.recommended_order_packages}</dd></div><div><dt>Average unit cost</dt><dd>${part.average_unit_cost}</dd></div></dl>
+        {manage && isManuallySelectable(part) && <div className={`db-parts-workbench__ordering-action${purchaseActionable ? ' is-actionable' : ''}${prepared ? ' is-prepared' : ''}`}>
+          <span><strong>{prepared ? 'Prepared for purchasing' : purchaseActionable ? 'Replenishment recommended' : 'Stock is covered'}</strong><small>{prepared ? 'This part is staged for review in Purchasing.' : purchaseActionable ? `${part.recommended_order_packages} ${part.unit_type || 'units'} recommended. Add it to stage the quantity for review in Purchasing.` : 'No replenishment is recommended. Add it only to stage a manual review in Purchasing.'}</small></span>
+          {!prepared && <button className={purchaseActionable ? 'db-parts-workbench__action-primary' : 'db-parts-workbench__action-secondary'} type="button" onClick={() => onPrepare(part)}>Add to purchase list</button>}
+        </div>}
         <SupplierSources part={part} manage={manage && !part.is_archived} onChanged={onRetry} />
-        <div className="db-parts-workbench__purchase-history">
-          <h4>Open purchase orders</h4>
-          {part.incoming_sources.length ? part.incoming_sources.map((source) => <button className="db-parts-workbench__linked-row" type="button" key={source.purchase_order_id} onClick={() => onOpenPurchaseOrder(source.purchase_order_id)}><span><strong>{source.po_number}</strong><small>{source.expected_at ? `Expected ${formatDate(source.expected_at)}` : 'Delivery date not set'}</small></span><strong>{source.packages} units incoming</strong><ArrowRight aria-hidden="true" /></button>) : <p className="db-parts-workbench__muted">No open purchase order includes this part.</p>}
-          <h4>Recent receipts</h4>
-          {part.recent_receipts.length ? part.recent_receipts.map((receipt) => <button className="db-parts-workbench__linked-row" type="button" key={receipt.receipt_id} onClick={() => onOpenPurchaseOrder(receipt.purchase_order_id)}><span><strong>{receipt.receipt_number}</strong><small>{receipt.po_number} · Received {formatDate(receipt.received_at)}</small></span><strong>{receipt.quantity} at ${receipt.unit_cost}</strong><ArrowRight aria-hidden="true" /></button>) : <p className="db-parts-workbench__muted">No receiving history has been recorded for this part.</p>}
+        <div className="db-parts-workbench__purchase-activity">
+          <h4>Purchase activity</h4>
+          <div className="db-parts-workbench__purchase-activity-list">
+            <section aria-labelledby={`open-purchase-orders-${part.id}`}>
+              <div className="db-parts-workbench__purchase-activity-title"><h5 id={`open-purchase-orders-${part.id}`}>Open purchase orders</h5>{!part.incoming_sources.length && <strong>None</strong>}</div>
+              {part.incoming_sources.map((source) => <button className="db-parts-workbench__linked-row" type="button" key={source.purchase_order_id} onClick={() => onOpenPurchaseOrder(source.purchase_order_id)}><span><strong>{source.po_number}</strong><small>{source.expected_at ? `Expected ${formatDate(source.expected_at)}` : 'Delivery date not set'}</small></span><strong>{source.packages} units incoming</strong><ArrowRight aria-hidden="true" /></button>)}
+            </section>
+            <section aria-labelledby={`recent-receipts-${part.id}`}>
+              <div className="db-parts-workbench__purchase-activity-title"><h5 id={`recent-receipts-${part.id}`}>Recent receipts</h5>{!part.recent_receipts.length && <strong>None</strong>}</div>
+              {part.recent_receipts.map((receipt) => <button className="db-parts-workbench__linked-row" type="button" key={receipt.receipt_id} onClick={() => onOpenPurchaseOrder(receipt.purchase_order_id)}><span><strong>{receipt.receipt_number}</strong><small>{receipt.po_number} · Received {formatDate(receipt.received_at)}</small></span><strong>{receipt.quantity} at ${receipt.unit_cost}</strong><ArrowRight aria-hidden="true" /></button>)}
+            </section>
+          </div>
         </div>
       </section>}
       {inspectorView === 'history' && <>
@@ -1109,25 +1347,32 @@ function SupplierSources({ part, manage, onChanged }: { part: PartDetail; manage
     </div>
     {part.supplier_sources.length ? <div className="db-parts-workbench__sources-list">{part.supplier_sources.map((source) => {
       const supplierName = source.supplier_name || 'Supplier'
+      const sourceNameId = `supplier-source-${source.source_id}`
       const content = <>
-        <span><strong>{supplierName}{source.is_preferred ? ' · Preferred' : ''}</strong><small>{source.supplier_part_number || 'Supplier part number not set'} · Pack size {source.pack_quantity} · Minimum order {source.minimum_order_quantity} · {source.lead_time_days == null ? 'Lead time not set' : `${source.lead_time_days} day lead time`}</small></span>
-        <span className="db-parts-workbench__source-cost"><small>Last received cost</small><strong>{source.last_unit_cost == null ? 'Not recorded' : `$${source.last_unit_cost}`}</strong></span>
+        <strong className="db-parts-workbench__source-name" id={sourceNameId}>{supplierName}{source.is_preferred ? ' · Preferred' : ''}</strong>
+        <dl className="db-parts-workbench__source-facts">
+          <div><dt>Part no.</dt><dd>{source.supplier_part_number || 'Not set'}</dd></div>
+          <div><dt>Pack</dt><dd>{source.pack_quantity}</dd></div>
+          <div><dt>Minimum</dt><dd>{source.minimum_order_quantity}</dd></div>
+          <div><dt>Lead time</dt><dd>{source.lead_time_days == null ? 'Not set' : `${source.lead_time_days} ${source.lead_time_days === 1 ? 'day' : 'days'}`}</dd></div>
+          <div><dt>Last cost</dt><dd>{source.last_unit_cost == null ? 'Not recorded' : `$${source.last_unit_cost}`}</dd></div>
+        </dl>
       </>
-      if (!manage || editing) return <div className="db-parts-workbench__source-row" key={source.source_id}>{content}</div>
-      return <button
-        key={source.source_id}
-        ref={(node) => {
-          if (node) sourceTriggerRefs.current.set(source.source_id, node)
-          else sourceTriggerRefs.current.delete(source.source_id)
-        }}
-        className="db-parts-workbench__source-row"
-        type="button"
-        aria-label={`Edit ${supplierName} supplier source`}
-        onClick={(event) => open(source, event)}
-      >
+      return <article className="db-parts-workbench__source-row" key={source.source_id} aria-labelledby={sourceNameId}>
         {content}
-        <span className="db-parts-workbench__source-action" aria-hidden="true"><span>Edit source</span><Pencil /></span>
-      </button>
+        {manage && !editing && <button
+          ref={(node) => {
+            if (node) sourceTriggerRefs.current.set(source.source_id, node)
+            else sourceTriggerRefs.current.delete(source.source_id)
+          }}
+          className="db-parts-workbench__source-action"
+          type="button"
+          aria-label={`Edit ${supplierName} supplier source`}
+          onClick={(event) => open(source, event)}
+        >
+          <span>Edit source</span><Pencil aria-hidden="true" />
+        </button>}
+      </article>
     })}</div> : <p className="db-parts-workbench__muted">No supplier source is set. Add one here before preparing this part for purchase.</p>}
 
     {editing && <form
