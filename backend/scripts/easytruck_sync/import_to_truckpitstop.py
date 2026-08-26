@@ -1090,9 +1090,9 @@ def main():
                 cur.execute("UPDATE tenants SET ets_last_synced_at = %s WHERE id = %s",
                             (datetime.now(timezone.utc), args.tenant_id))
                 conn.commit()
+                cur.close()
             if args.json_out and stats is not None:
                 Path(args.json_out).write_text(json.dumps(stats))
-                cur.close()
     finally:
         conn.close()
 
