@@ -2376,13 +2376,189 @@ html::-webkit-scrollbar-thumb:hover {
   }
 }
 
-/* My Shop's category rail is navigation, not a neutral dark-list remnant.
-   Keep its resting and selected states inside the current operating palette;
-   inactive categories preview the selected appearance accent on hover. */
+/* My Shop navigation adapts to the width the workspace actually receives. The
+   product rail can expand independently, so viewport breakpoints alone are not
+   a reliable signal for whether a second vertical rail still earns its space. */
+.db-my-shop-workspace {
+  container-name: my-shop;
+  container-type: inline-size;
+}
+
+.db-my-shop-layout {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.db-my-shop-navigation {
+  min-width: 0;
+  border: 1px solid rgb(63 63 70 / 0.5);
+  border-radius: 14px;
+  background-color: rgb(24 24 27 / 0.8);
+}
+
+.db-my-shop-nav-heading {
+  display: none;
+}
+
+.db-my-shop-nav-groups {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.db-my-shop-nav-cluster {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.5rem;
+}
+
+.db-my-shop-nav-cluster-secondary {
+  border-top: 1px solid rgb(63 63 70 / 0.5);
+  padding-top: 0.75rem;
+}
+
+.db-my-shop-nav-item {
+  width: 100%;
+  min-width: 0;
+  justify-content: center;
+}
+
+.db-my-shop-nav-label-full,
+.db-my-shop-nav-chevron {
+  display: none;
+}
+
+.db-my-shop-content {
+  min-width: 0;
+}
+
+@container my-shop (min-width: 42rem) {
+  .db-my-shop-layout {
+    gap: 1.25rem;
+  }
+
+  .db-my-shop-navigation {
+    border-width: 0 0 1px;
+    border-radius: 0;
+    background: transparent;
+    padding: 0 0 0.75rem;
+  }
+
+  .db-my-shop-nav-groups {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: center;
+    gap: 0.75rem;
+  }
+
+  .db-my-shop-nav-cluster {
+    display: grid;
+    gap: 0.25rem;
+  }
+
+  .db-my-shop-nav-cluster-operational {
+    grid-template-columns: repeat(4, max-content);
+  }
+
+  .db-my-shop-nav-cluster-secondary {
+    grid-template-columns: repeat(2, max-content);
+    justify-self: end;
+    border-top: 0;
+    border-left: 1px solid rgb(63 63 70 / 0.5);
+    padding-top: 0;
+    padding-left: 0.75rem;
+  }
+
+  .db-my-shop-nav-item {
+    padding-inline: 0.625rem;
+  }
+
+  .db-my-shop-content {
+    padding-top: 0.125rem;
+  }
+}
+
+@container my-shop (min-width: 100rem) {
+  .db-my-shop-layout {
+    display: grid;
+    grid-template-columns: 13rem minmax(0, 1fr);
+    align-items: stretch;
+    gap: 1.5rem;
+  }
+
+  .db-my-shop-navigation {
+    display: flex;
+    width: 13rem;
+    height: 100%;
+    flex-direction: column;
+    border-width: 1px;
+    border-radius: 14px;
+    background: rgb(24 24 27 / 0.8);
+    padding: 1rem;
+  }
+
+  .db-my-shop-nav-heading {
+    display: flex;
+    margin-bottom: 1.5rem;
+  }
+
+  .db-my-shop-nav-groups {
+    display: flex;
+    min-height: 0;
+    flex: 1;
+    flex-direction: column;
+    gap: 0.75rem;
+    overflow-y: auto;
+  }
+
+  .db-my-shop-nav-cluster {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+  }
+
+  .db-my-shop-nav-cluster-secondary {
+    margin-top: auto;
+    border-top: 1px solid rgb(63 63 70 / 0.5);
+    border-left: 0;
+    padding-top: 0.75rem;
+    padding-left: 0;
+  }
+
+  .db-my-shop-nav-item {
+    justify-content: flex-start;
+    padding-inline: 0.75rem;
+  }
+
+  .db-my-shop-nav-label-short {
+    display: none;
+  }
+
+  .db-my-shop-nav-label-full,
+  .db-my-shop-nav-chevron {
+    display: block;
+  }
+
+  .db-my-shop-content {
+    padding-top: 0.375rem;
+  }
+}
+
+.db-presentation-new .db-my-shop-navigation {
+  border-color: var(--workspace-border) !important;
+  background-color: var(--surface-overlay) !important;
+}
+
 .db-presentation-new .db-my-shop-workspace .db-my-shop-nav-item {
   color: var(--workspace-muted) !important;
-  border-color: var(--workspace-border) !important;
-  background-color: var(--surface-raised) !important;
+  border-color: transparent !important;
+  background-color: transparent !important;
 }
 
 .db-presentation-new .db-my-shop-workspace .db-my-shop-nav-item[aria-current='page'] {
@@ -2402,6 +2578,35 @@ html::-webkit-scrollbar-thumb:hover {
     color: var(--personal-accent-500) !important;
     border-color: color-mix(in srgb, var(--personal-accent-500) 34%, var(--border-subtle)) !important;
     background-color: color-mix(in srgb, var(--personal-accent-500) 8%, var(--surface-raised)) !important;
+  }
+}
+
+@container my-shop (max-width: 41.999rem) {
+  .db-presentation-new .db-my-shop-workspace .db-my-shop-nav-item {
+    border-color: var(--workspace-border) !important;
+    background-color: var(--surface-raised) !important;
+  }
+}
+
+@container my-shop (min-width: 42rem) {
+  .db-presentation-new .db-my-shop-navigation {
+    background-color: transparent !important;
+    border-radius: 0 !important;
+  }
+
+  .db-presentation-new .db-my-shop-nav-cluster-secondary {
+    border-left-color: var(--workspace-border);
+  }
+}
+
+@container my-shop (min-width: 100rem) {
+  .db-presentation-new .db-my-shop-navigation {
+    background-color: var(--surface-overlay) !important;
+    border-radius: 14px !important;
+  }
+
+  .db-presentation-new .db-my-shop-nav-cluster-secondary {
+    border-top-color: var(--workspace-border);
   }
 }
 

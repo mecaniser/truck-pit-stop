@@ -36,46 +36,35 @@ function hrefs(group: HTMLElement) {
   return within(group).getAllByRole('link').map(link => link.getAttribute('href'))
 }
 
-describe('DB-039 Shop submenu grouping', () => {
-  it('keeps operational work contiguous and moves Team above Analytics in a separated bottom cluster', () => {
+describe('DB-043 container-adaptive Shop navigation', () => {
+  it('uses one semantic navigation while preserving the operational and secondary groups', () => {
     renderGarage()
 
-    const navigations = screen.getAllByRole('navigation', { name: 'Shop sections' })
-    expect(navigations).toHaveLength(2)
+    const navigation = screen.getByRole('navigation', { name: 'Shop sections' })
+    expect(navigation).toHaveAttribute('data-shop-menu-layout', 'container-adaptive')
 
-    for (const navigation of navigations) {
-      const operations = within(navigation).getByRole('group', { name: 'Shop operations' })
-      const secondary = within(navigation).getByRole('group', { name: 'Shop administration and insights' })
+    const operations = within(navigation).getByRole('group', { name: 'Shop operations' })
+    const secondary = within(navigation).getByRole('group', { name: 'Shop administration and insights' })
 
-      expect(hrefs(operations)).toEqual(operationalHrefs)
-      expect(hrefs(secondary)).toEqual(secondaryHrefs)
-      expect(operations.compareDocumentPosition(secondary) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-      expect(secondary.parentElement).toHaveClass('border-t')
-      expect(within(operations).getAllByRole('link')).toHaveLength(4)
-      expect(within(secondary).getAllByRole('link')).toHaveLength(2)
-    }
-
-    const [mobileNavigation, desktopNavigation] = navigations
-    expect(within(mobileNavigation).getByRole('link', { name: 'Book Time' })).toHaveAttribute(
+    expect(hrefs(operations)).toEqual(operationalHrefs)
+    expect(hrefs(secondary)).toEqual(secondaryHrefs)
+    expect(operations.compareDocumentPosition(secondary) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(secondary).toHaveClass('db-my-shop-nav-cluster-secondary')
+    expect(within(operations).getAllByRole('link')).toHaveLength(4)
+    expect(within(secondary).getAllByRole('link')).toHaveLength(2)
+    expect(within(navigation).getByRole('link', { name: 'Labor Book Time' })).toHaveAttribute(
       'href',
       '/dashboard/garage/labor-book-time',
     )
-    expect(within(desktopNavigation).getByRole('link', { name: 'Labor Book Time' })).toHaveAttribute(
-      'href',
-      '/dashboard/garage/labor-book-time',
-    )
-    expect(
-      within(desktopNavigation).getByRole('group', { name: 'Shop administration and insights' }).parentElement,
-    ).toHaveClass('mt-auto')
   })
 
-  it('preserves routes, icons, selected state, target sizing, and keyboard order', async () => {
+  it('preserves routes, icons, selected state, target sizing, and one keyboard order without reveal animation', async () => {
     const user = userEvent.setup()
     renderGarage()
 
-    const [, desktopNavigation] = screen.getAllByRole('navigation', { name: 'Shop sections' })
-    const links = within(desktopNavigation).getAllByRole('link')
-    expect(links.map(link => link.textContent?.trim())).toEqual([
+    const navigation = screen.getByRole('navigation', { name: 'Shop sections' })
+    const links = within(navigation).getAllByRole('link')
+    expect(links.map(link => link.getAttribute('aria-label'))).toEqual([
       'Services',
       'Labor Book Time',
       'Inventory',
@@ -86,20 +75,23 @@ describe('DB-039 Shop submenu grouping', () => {
     for (const link of links) {
       expect(link).toHaveClass('min-h-11')
       expect(link.querySelector('svg')).toBeInTheDocument()
+      expect(link).not.toHaveClass('transition-all', 'opacity-0')
+      expect(link.getAttribute('class')).not.toContain('animate-[')
+      expect(link).not.toHaveAttribute('style')
     }
-    expect(within(desktopNavigation).getByRole('link', { name: 'Inventory' })).toHaveAttribute('aria-current', 'page')
+    expect(within(navigation).getByRole('link', { name: 'Inventory' })).toHaveAttribute('aria-current', 'page')
     expect(screen.getByRole('heading', { name: 'Inventory surface' })).toBeInTheDocument()
 
-    const services = within(desktopNavigation).getByRole('link', { name: 'Services' })
+    const services = within(navigation).getByRole('link', { name: 'Services' })
     services.focus()
     for (const expectedName of ['Labor Book Time', 'Inventory', 'Purchasing', 'Team', 'Analytics']) {
       await user.tab()
-      expect(within(desktopNavigation).getByRole('link', { name: expectedName })).toHaveFocus()
+      expect(within(navigation).getByRole('link', { name: expectedName })).toHaveFocus()
     }
 
     services.focus()
     await user.keyboard('{Enter}')
     expect(await screen.findByRole('heading', { name: 'Services surface' })).toBeInTheDocument()
-    expect(within(desktopNavigation).getByRole('link', { name: 'Services' })).toHaveAttribute('aria-current', 'page')
+    expect(within(navigation).getByRole('link', { name: 'Services' })).toHaveAttribute('aria-current', 'page')
   })
 })

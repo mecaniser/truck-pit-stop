@@ -20,6 +20,7 @@ const operationalHrefs = [
 const secondaryHrefs = ['/dashboard/garage/mechanics', '/dashboard/garage/analytics']
 
 const scenarios: Array<{ width: number; height: number; appearance: AppearancePreferences }> = [
+  { width: 1920, height: 1080, appearance: appearanceDefaults },
   { width: 1440, height: 900, appearance: appearanceDefaults },
   { width: 1280, height: 900, appearance: appearanceDefaults },
   { width: 960, height: 900, appearance: appearanceLargeLight },
@@ -130,7 +131,7 @@ async function installSession(page: Page, appearance: AppearancePreferences) {
   return failures
 }
 
-test('Shop submenu groups operations and keeps Team then Analytics reachable across supported layouts', async ({ browser }) => {
+test('Shop navigation adapts to its workspace while keeping Team then Analytics separated and reachable', async ({ browser }) => {
   for (const scenario of scenarios) {
     const context = await browser.newContext({ viewport: { width: scenario.width, height: scenario.height } })
     const page = await context.newPage()
@@ -151,8 +152,8 @@ test('Shop submenu groups operations and keeps Team then Analytics reachable acr
     await expect(secondaryLinks).toHaveCount(2)
     expect(await operationalLinks.evaluateAll(links => links.map(link => link.getAttribute('href')))).toEqual(operationalHrefs)
     expect(await secondaryLinks.evaluateAll(links => links.map(link => link.getAttribute('href')))).toEqual(secondaryHrefs)
-    await expect(secondaryLinks.nth(0)).toHaveText('Team')
-    await expect(secondaryLinks.nth(1)).toHaveText('Analytics')
+    await expect(secondaryLinks.nth(0)).toHaveAttribute('aria-label', 'Team')
+    await expect(secondaryLinks.nth(1)).toHaveAttribute('aria-label', 'Analytics')
     await expect(secondaryLinks.nth(0)).toHaveAttribute('aria-current', 'page')
 
     const navigationBox = await navigation.boundingBox()
@@ -161,10 +162,31 @@ test('Shop submenu groups operations and keeps Team then Analytics reachable acr
     expect(navigationBox).not.toBeNull()
     expect(operationsBox).not.toBeNull()
     expect(secondaryBox).not.toBeNull()
-    expect(secondaryBox!.y).toBeGreaterThanOrEqual(operationsBox!.y + operationsBox!.height + 8)
+    const workspaceWidth = await page.locator('.db-my-shop-workspace').evaluate(element => element.clientWidth)
+    const usesHorizontalSubnav = workspaceWidth >= 672 && workspaceWidth < 1600
+    if (usesHorizontalSubnav) {
+      expect(Math.abs(secondaryBox!.y - operationsBox!.y)).toBeLessThanOrEqual(2)
+      expect(secondaryBox!.x).toBeGreaterThanOrEqual(operationsBox!.x + operationsBox!.width + 8)
+    } else {
+      expect(secondaryBox!.y).toBeGreaterThanOrEqual(operationsBox!.y + operationsBox!.height + 8)
+    }
     expect(secondaryBox!.x).toBeGreaterThanOrEqual(navigationBox!.x - 1)
     expect(secondaryBox!.x + secondaryBox!.width).toBeLessThanOrEqual(navigationBox!.x + navigationBox!.width + 1)
     expect(secondaryBox!.y + secondaryBox!.height).toBeLessThanOrEqual(navigationBox!.y + navigationBox!.height + 1)
+
+    const heading = navigation.getByRole('heading', { name: 'Shop' })
+    const shortLabel = navigation.locator('.db-my-shop-nav-label-short').first()
+    const fullLabel = navigation.locator('.db-my-shop-nav-label-full').first()
+    if (workspaceWidth >= 1600) {
+      await expect(heading).toBeVisible()
+      await expect(shortLabel).toBeHidden()
+      await expect(fullLabel).toBeVisible()
+      expect(Math.round(navigationBox!.width)).toBe(208)
+    } else {
+      await expect(heading).toBeHidden()
+      await expect(shortLabel).toBeVisible()
+      await expect(fullLabel).toBeHidden()
+    }
 
     for (let index = 0; index < await allLinks.count(); index += 1) {
       const link = allLinks.nth(index)
