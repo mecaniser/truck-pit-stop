@@ -214,13 +214,19 @@ def run_python(script, *args):
     return result.returncode == 0
 
 
-def gated_commit(label, script, tenant_id, ceiling_check, extra_args=()):
+def gated_commit(label, script, tenant_id, ceiling_check, extra_args=(), needs_yes=False):
     """dry-run -> check stats against ceiling_check -> commit only if clean.
 
     ceiling_check(stats) returns (ok: bool, reason: str | None).
     Returns True on a clean commit, False (after alerting) on any failure —
     including a ceiling breach, which skips the commit entirely rather than
     writing and then flagging it.
+
+    needs_yes: only import_to_truckpitstop.py has an interactive confirmation
+    prompt to bypass for unattended use. Passing --yes to the other three
+    scripts fails argparse ("unrecognized arguments") before they even open a
+    DB connection — caught correctly by the run_python() check below and
+    aborted with nothing written, but worth not tripping in the first place.
     """
     STATE_DIR.mkdir(exist_ok=True)
     dry_stats_path = STATE_DIR / f"{label}_dryrun.json"
@@ -237,8 +243,8 @@ def gated_commit(label, script, tenant_id, ceiling_check, extra_args=()):
               "creating/matching rows incorrectly — worth a manual look before "
               "re-running.")
     commit_stats_path = STATE_DIR / f"{label}_committed.json"
-    if not run_python(script, "--tenant-id", tenant_id, "--commit", "--yes",
-                       "--json-out", str(commit_stats_path), *extra_args):
+    commit_args = ("--tenant-id", tenant_id, "--commit") + (("--yes",) if needs_yes else ())
+    if not run_python(script, *commit_args, "--json-out", str(commit_stats_path), *extra_args):
         abort(f"ETS nightly sync ABORTED — {label} commit failed",
               f"{script} passed its dry-run gate but failed on --commit. "
               "Check for a partially-applied state. See Railway logs for this run.")
@@ -315,7 +321,7 @@ def main():
                  tenant_id, legacy_fix_ceiling_check)
 
     gated_commit("import", SYNC_DIR / "import_to_truckpitstop.py",
-                 tenant_id, import_ceiling_check, extra_args=("--parts",))
+                 tenant_id, import_ceiling_check, extra_args=("--parts",), needs_yes=True)
 
     # Defense in depth: new rows already get ets_invoiced_at / real hours set
     # at creation time by the importer above, so these should be near-empty
