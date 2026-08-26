@@ -106,7 +106,18 @@ def main():
             continue
         new_hours = Decimal(str(new_hours)).quantize(Decimal("0.01"))
         current_total = sum(Decimal(str(r["current_hours"] or 0)) for r in labor_rows)
-        if len(labor_rows) == 1 and abs(new_hours - current_total) < Decimal("0.01"):
+        # Multi-row ROs (534 on dev predate this script; the repair-order
+        # consolidation issue in docs/ets-repair-order-consolidation.md means
+        # more keep appearing) never satisfied len(labor_rows) == 1, so a
+        # nightly rerun re-wrote the same values to the same rows forever —
+        # ~500 "updates" every single night that changed nothing, tripping
+        # the automation's own volume guardrail. Check the primary against
+        # the target and every extra against zero instead of gating on row
+        # count, so a row already in the correct shape is actually skipped.
+        primary_hours = Decimal(str(primary["current_hours"] or 0))
+        primary_correct = abs(new_hours - primary_hours) < Decimal("0.01")
+        extras_zeroed = all(Decimal(str(e["current_hours"] or 0)) == 0 for e in extras)
+        if primary_correct and extras_zeroed:
             stats["already_correct"] += 1
             continue
 
