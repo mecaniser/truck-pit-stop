@@ -19,6 +19,23 @@ The Product & Delivery Lead is the only normal intake point. It routes the item;
 the user should not need to decide whether a defect belongs to frontend, backend,
 security, or QA.
 
+## Risk-proportional delivery lanes
+
+The team is a routing map, not a requirement to involve every role. Select the
+lightest lane that covers the actual change.
+
+| Lane | Use when | Required local evidence | Extra roles | Release evidence |
+|---|---|---|---|---|
+| Fast UI | Existing UI and existing contracts; no auth, tenant, data model, migration, payment, dependency, worker, infrastructure, or flag change | Focused component tests, changed-source lint, one signed-in browser pass for the changed desktop interaction and relevant compact/mobile state | None by default; Frontend owns implementation and verification evidence | Protected PR CI, successful deployment, one route/browser smoke check |
+| Standard product | New workflow or cross-layer behavior without a sensitive boundary | Focused tests for changed layers and affected runtime journey | Architecture only for a changed contract; independent QA for the journey | Protected PR CI, changed-journey acceptance, relevant service health |
+| High risk | Auth, tenant isolation, secrets, payments, sensitive data, migrations, destructive operations, workers, infrastructure, or risky rollout | Contract and negative cases, migration/operational evidence, affected journeys | Architecture as needed plus independent Security and QA | Protected PR CI, deployment health, rollback signals, proportional canary |
+
+Do not add Architecture, Security, QA, or Release handoffs to Fast UI work unless
+the diff or runtime evidence reveals a risk that moves it to another lane. Do not
+run timed canaries, repeated health loops, worker scans, or unrelated suites for a
+Fast UI change. The protected branch checks remain the repository integration
+gate and must not be duplicated manually without a concrete failure signal.
+
 ## App task map
 
 These pinned DieselBridge tasks are the stable role inboxes:
@@ -37,11 +54,13 @@ Send new work to Product & Delivery Lead. Direct role assignment is appropriate
 only for a well-formed board item that already names its contract and acceptance
 criteria. Role tasks load this repository's `AGENTS.md` when resumed.
 
-## Required lifecycle
+## Lifecycle
 
 ```text
-Inbox -> Discovery -> Ready -> In Progress -> Review -> QA/Security ->
-Ready to Release -> Released -> Done
+Fast UI: Inbox -> In Progress -> Review -> Released -> Done
+
+Standard/high risk: Inbox -> Discovery -> Ready -> In Progress -> Review ->
+QA/Security (as applicable) -> Ready to Release -> Released -> Done
 ```
 
 `Blocked` is a visible state, not a parking lot. Every blocked item must name the
@@ -87,6 +106,9 @@ Routine retesting, selecting the technical owner, reproducing regressions, and
 coordinating frontend/backend contracts remain the team's responsibility.
 
 ## Independent-gate assignment
+
+This section applies only when the selected lane requires an independent gate.
+Fast UI owner verification is implementation evidence, not a self-issued QA gate.
 
 Independence applies to the agent/session performing the work, not merely the
 role label. The implementation handoff records the implementing agents. Product

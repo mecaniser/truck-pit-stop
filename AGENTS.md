@@ -34,6 +34,10 @@ implementation, verification, and release work.
 9. Use one short-lived branch and one focused pull request per independently
    releasable outcome. Direct pushes to `main` are prohibited.
 10. Update the board at intake, handoff, gate failure, merge, and release.
+11. Match delivery rigor to demonstrated risk. Existing-contract UI refinements
+    use the Fast UI lane in `docs/DELIVERY_TEAM.md`; do not require specialist
+    handoffs, independent QA, extended canaries, or unrelated suites unless the
+    change actually touches a higher-risk boundary or evidence reveals one.
 
 ## Definition of done
 
