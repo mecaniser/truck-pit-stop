@@ -169,7 +169,7 @@ describe('DB-045 repair-first counter sales workspace', () => {
     renderWorkspace()
 
     expect(await screen.findByRole('heading', { name: 'Parts sales' })).toBeInTheDocument()
-    expect(screen.getByText('CS-1001')).toBeInTheDocument()
+    expect(await screen.findByText('CS-1001')).toBeInTheDocument()
     await user.type(screen.getByRole('searchbox', { name: 'Search parts sales' }), 'walk in')
     await user.click(screen.getByRole('button', { name: 'Search' }))
     await waitFor(() => expect(apiMocks.get).toHaveBeenCalledWith('/parts-operations/counter-sales', { params: { text: 'walk in', limit: 50 } }))
