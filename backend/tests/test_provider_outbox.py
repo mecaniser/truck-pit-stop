@@ -164,17 +164,44 @@ async def test_outbox_uses_resend_idempotency_key(monkeypatch):
 
 def test_celery_outbox_task_reuses_its_worker_event_loop(monkeypatch):
     """Repeated sweeps must not reuse asyncpg connections on a closed loop."""
-    worker_loops = []
+    worker_calls = []
 
-    async def _process():
-        worker_loops.append(asyncio.get_running_loop())
-        return {"claimed": 0, "succeeded": 0, "retried": 0, "dead": 0, "invalid": 0}
+    def _processor(name, result):
+        async def _process():
+            worker_calls.append((name, asyncio.get_running_loop()))
+            return result
 
-    monkeypatch.setattr(provider_outbox_task, "process_due_provider_outbox_events", _process)
+        return _process
+
+    monkeypatch.setattr(
+        provider_outbox_task,
+        "process_due_provider_outbox_events",
+        _processor("email", {"claimed": 0, "succeeded": 0}),
+    )
+    monkeypatch.setattr(
+        provider_outbox_task,
+        "process_counter_sale_outbox_events",
+        _processor("counter_sale", {"claimed": 0, "succeeded": 0}),
+    )
+    monkeypatch.setattr(
+        provider_outbox_task,
+        "reconcile_expired_counter_sale_reservations",
+        _processor("reservation", {"checked": 0, "succeeded": 0}),
+    )
+    monkeypatch.setattr(
+        provider_outbox_task,
+        "reconcile_pending_counter_sale_refunds",
+        _processor("refund", {"checked": 0, "succeeded": 0}),
+    )
 
     first = provider_outbox_task.process_provider_outbox.run()
     second = provider_outbox_task.process_provider_outbox.run()
 
     assert first == second
-    assert worker_loops[0] is worker_loops[1]
-    assert not worker_loops[1].is_closed()
+    assert [name for name, _loop in worker_calls] == [
+        "email", "counter_sale", "reservation", "refund",
+        "email", "counter_sale", "reservation", "refund",
+    ]
+    worker_loops = [loop for _name, loop in worker_calls]
+    assert all(loop is worker_loops[0] for loop in worker_loops)
+    assert not worker_loops[0].is_closed()
