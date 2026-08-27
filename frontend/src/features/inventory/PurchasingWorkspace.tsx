@@ -147,7 +147,6 @@ export default function PurchasingWorkspace() {
     <div className="db-purchasing__content">
       {view === 'orders' && <>
         <PurchasePreparationTray onCreated={() => selectView('orders')} onOpenParts={() => navigate('/dashboard/garage/inventory')} />
-        <WorkspaceIntroduction title="Current purchase orders">Review draft orders, submit approved orders, and see what is still expected from each supplier.</WorkspaceIntroduction>
         <PartsOperationsWorkspace key={`purchasing-orders-${linkedPurchaseOrderId || 'default'}`} summary={summary} initialTab="purchase-orders" initialPurchaseOrderId={linkedPurchaseOrderId} visibleTabs={['purchase-orders']} embedded />
       </>}
 
@@ -262,21 +261,21 @@ function PurchasePreparationTray({ onCreated, onOpenParts }: { onCreated: () => 
     }
   }
 
-  return <section className="db-purchasing__preparation" aria-labelledby="purchase-preparation-title">
-    <div className="db-purchasing__preparation-head">
+  return <section className={`db-purchasing__preparation${lines.length ? ' has-lines' : ' is-empty'}`} aria-label="Purchase preparation">
+    {lines.length > 0 && <div className="db-purchasing__preparation-head">
       <div>
-        <h2 id="purchase-preparation-title">Ready to prepare</h2>
+        <h2>Ready to prepare</h2>
         <p>Parts added from the reorder list are grouped by supplier. Creating drafts does not send or submit them.</p>
       </div>
-      {lines.length > 0 ? <span>{lines.length} {lines.length === 1 ? 'part' : 'parts'} · {groups.length} orderable {groups.length === 1 ? 'supplier' : 'suppliers'}</span> : null}
-    </div>
+      <span>{lines.length} {lines.length === 1 ? 'part' : 'parts'} · {groups.length} orderable {groups.length === 1 ? 'supplier' : 'suppliers'}</span>
+    </div>}
 
     {notice && <p className="db-purchasing__notice" role="status" aria-label="Purchase preparation result">{notice}</p>}
     {error && <p className="db-purchasing__error" role="alert">{error}</p>}
 
-    {!lines.length ? <div className="db-purchasing__empty">
+    {!lines.length ? <div className="db-purchasing__empty" role="status">
       <Truck aria-hidden="true" />
-      <span><strong>No parts are waiting to be prepared.</strong><small>Use “Add to purchase list” from a part that needs reorder.</small></span>
+      <span><strong>No parts are waiting to be prepared.</strong><small>Add a reorder item from Inventory; current purchase orders remain available below.</small></span>
     </div> : <div className="db-purchasing__supplier-groups">
       {groups.map((group) => <section key={group.supplierId} className="db-purchasing__supplier-group" aria-labelledby={`supplier-group-${group.supplierId}`}>
         <header>

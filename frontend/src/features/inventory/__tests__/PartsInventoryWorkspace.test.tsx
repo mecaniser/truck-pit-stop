@@ -275,6 +275,38 @@ describe('DB-038 Parts & inventory workspace', () => {
     expect(screen.queryByText('695')).not.toBeInTheDocument()
   })
 
+  it('uses the actionable recommendation for row status and keeps row actions outside table-cell semantics', async () => {
+    const actionablePart: PartRecord = {
+      ...brakePart,
+      id: 'part-actionable-demand',
+      sku: 'FAN-CLUTCH-1',
+      name: 'Fan clutch',
+      available_packages: 10,
+      needed_for_open_repairs: 2,
+      reorder_level: 0,
+      recommended_order_packages: 2,
+      preferred_source: source,
+      supplier_sources: [source],
+    }
+    installApi()
+    apiMocks.get.mockImplementation((url: string) => {
+      if (url === '/parts-operations/parts') return Promise.resolve({ data: page([actionablePart]) })
+      if (url === `/parts-operations/parts/${actionablePart.id}`) return Promise.resolve({ data: detail(actionablePart) })
+      if (url.startsWith('/parts-operations/suppliers/')) return Promise.resolve({ data: supplierPurchasing })
+      if (url === '/parts-operations/activity') return Promise.resolve({ data: page([], { total: 0, limit: 1 }) })
+      throw new Error(`Unexpected GET ${url}`)
+    })
+    renderWorkspace({ needs_reorder_count: 1, low_stock_count: 1, open_purchase_order_count: 0 })
+
+    await screen.findByRole('heading', { name: 'Fan clutch' })
+    const openPart = screen.getByRole('button', { name: /Fan clutch.*FAN-CLUTCH-1/ })
+    expect(openPart).toHaveAttribute('aria-controls', 'selected-part-inspector')
+    expect(openPart).not.toHaveAttribute('role', 'cell')
+    expect(openPart.closest('[role="cell"]')).toHaveClass('db-parts-workbench__part-cell')
+    expect(screen.getAllByText('Needs reorder').length).toBeGreaterThan(0)
+    expect(screen.getByRole('checkbox', { name: 'Select Fan clutch for purchase preparation' }).closest('label')).not.toBeNull()
+  })
+
   it('keeps archived parts out of the default request and locks their stock and purchase actions', async () => {
     installApi()
     const user = userEvent.setup()
@@ -1088,7 +1120,7 @@ describe('DB-038 Parts & inventory workspace', () => {
     renderWorkspace()
 
     await screen.findByRole('heading', { name: 'Alternator' })
-    await user.click(screen.getByRole('cell', { name: 'Brake shoe kit BRK-9' }))
+    await user.click(screen.getByRole('button', { name: /Brake shoe kit.*BRK-9/ }))
     await screen.findByRole('heading', { name: 'Brake shoe kit' })
     await user.click(screen.getByRole('checkbox', { name: 'Select Brake shoe kit for purchase preparation' }))
 
