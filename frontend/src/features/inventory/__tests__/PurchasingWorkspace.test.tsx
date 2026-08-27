@@ -75,6 +75,16 @@ describe('DB-038 Purchasing preparation handoff', () => {
     window.sessionStorage.clear()
   })
 
+  it('distills an empty preparation state without duplicating the purchase-order introduction', async () => {
+    apiMocks.get.mockResolvedValue({ data: { low_stock_count: 0, open_purchase_order_count: 0 } })
+    renderPurchasing()
+
+    expect((await screen.findByText('No parts are waiting to be prepared.')).closest('[role="status"]')).not.toBeNull()
+    expect(screen.queryByRole('heading', { name: 'Ready to prepare' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'Current purchase orders' })).not.toBeInTheDocument()
+    expect(screen.getByText('Purchase orders workspace')).toBeInTheDocument()
+  })
+
   it('groups assigned lines, keeps unassigned lines visible, and excludes blocked lines from draft totals and payloads', async () => {
     apiMocks.get.mockResolvedValue({ data: { low_stock_count: 2, open_purchase_order_count: 0 } })
     apiMocks.post.mockResolvedValue({ data: { count: 1 } })

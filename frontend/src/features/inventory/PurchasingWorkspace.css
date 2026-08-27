@@ -122,6 +122,12 @@
 .db-purchasing__introduction p { font-size: .86rem; }
 
 .db-purchasing__preparation {
+  margin: 0;
+  border: 0;
+  padding: 0;
+}
+
+.db-purchasing__preparation.has-lines {
   margin-block-end: 1.5rem;
   border-block-end: 1px solid var(--parts-rule, var(--workspace-border));
   padding-block-end: 1.5rem;
@@ -157,8 +163,12 @@
   display: flex;
   align-items: center;
   gap: .75rem;
-  min-block-size: 5rem;
-  margin-block-start: .85rem;
+  min-block-size: 3.5rem;
+  margin-block-end: .75rem;
+  padding: .62rem .75rem;
+  border: 1px solid var(--workspace-border);
+  border-radius: .75rem;
+  background: var(--surface-overlay);
   color: var(--text-secondary);
 }
 
@@ -230,8 +240,9 @@
 .db-purchasing__quantity-stepper { min-inline-size:0; justify-content:flex-start; }
 .db-purchasing__quantity-stepper > span:last-child { inline-size:auto; min-inline-size:2.5rem; }
 .db-purchasing__quantity-stepper > span {
+  overflow:hidden;
   border-color:var(--workspace-border);
-  border-radius:2px;
+  border-radius:.75rem;
   background:var(--surface-canvas);
   box-shadow:none;
 }

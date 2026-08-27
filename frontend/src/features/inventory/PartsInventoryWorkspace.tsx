@@ -242,7 +242,7 @@ function partRemark(part: PartRecord) {
   if (part.is_placeholder) return 'Placeholder'
   if (part.available_packages < part.needed_for_open_repairs) return `Short ${part.needed_for_open_repairs - part.available_packages}`
   if (!part.preferred_source && part.recommended_order_packages > 0) return 'Supplier needed'
-  if (part.available_packages <= part.reorder_level) return 'Needs reorder'
+  if (part.recommended_order_packages > 0) return 'Needs reorder'
   if (part.incoming_packages > 0) return 'Incoming'
   return '—'
 }
@@ -701,11 +701,13 @@ function PartLedger({ page, loading, loadingMore, failed, manage, selectedId, ch
         const eligible = isManuallySelectable(part)
         const selected = selectedId === part.id
         const remark = partRemark(part)
-        return <div key={part.id} role="row" className={`db-parts-workbench__row${selected ? ' is-selected' : ''}${!eligible ? ' is-ineligible' : ''}`} data-selected-surface={selected ? 'true' : undefined}>
-          {manage && <span role="cell" className="db-parts-workbench__check" onClick={(event) => event.stopPropagation()}>{eligible && <input type="checkbox" aria-label={`Select ${part.name} for purchase preparation`} checked={checkedIds.has(part.id)} onClick={(event) => event.stopPropagation()} onChange={(event) => onCheck(part, event.target.checked)} />}</span>}
-          <button role="cell" type="button" className="db-parts-workbench__row-select" aria-current={selected ? 'true' : undefined} onClick={() => onSelect(part.id)}>
-            <span className="db-parts-workbench__identity"><PartPhoto part={part} logoUrl={logoUrl} companyName={companyName} /><span><strong>{part.name}</strong><small>{part.sku}</small></span></span>
-          </button>
+        return <div key={part.id} role="row" aria-selected={selected} className={`db-parts-workbench__row${selected ? ' is-selected' : ''}${!eligible ? ' is-ineligible' : ''}`} data-selected-surface={selected ? 'true' : undefined}>
+          {manage && <span role="cell" className="db-parts-workbench__check" onClick={(event) => event.stopPropagation()}>{eligible && <label><input type="checkbox" aria-label={`Select ${part.name} for purchase preparation`} checked={checkedIds.has(part.id)} onClick={(event) => event.stopPropagation()} onChange={(event) => onCheck(part, event.target.checked)} /></label>}</span>}
+          <span role="cell" className="db-parts-workbench__part-cell">
+            <button type="button" className="db-parts-workbench__row-select" aria-current={selected ? 'true' : undefined} aria-controls="selected-part-inspector" onClick={() => onSelect(part.id)}>
+              <span className="db-parts-workbench__identity"><PartPhoto part={part} logoUrl={logoUrl} companyName={companyName} /><span><strong>{part.name}</strong><small>{part.sku}</small></span></span>
+            </button>
+          </span>
           <strong role="cell" data-label="Available" className="is-available">{part.available_packages}</strong>
           <span role="cell" data-label="Bin location" className="is-bin">{part.location ? `Bin ${part.location}` : 'Bin not set'}</span>
           <strong role="cell" data-label="Average cost" className="is-cost">${Number(part.average_unit_cost || 0).toFixed(2)}</strong>
@@ -1094,7 +1096,7 @@ function PartInspector({ part, loading, failed, manage, prepared, logoUrl, compa
   const stockFacts = edit === 'reorder'
     ? [reorderStockFact, availableStockFact, neededStockFact, incomingStockFact]
     : [availableStockFact, neededStockFact, reorderStockFact, incomingStockFact]
-  return <aside className="db-parts-workbench__inspector" aria-labelledby="selected-part-name">
+  return <aside id="selected-part-inspector" className="db-parts-workbench__inspector" aria-labelledby="selected-part-name">
     <button className="db-parts-workbench__mobile-back" type="button" onClick={onBack}><ArrowLeft aria-hidden="true" />Back to parts</button>
     <div className="db-parts-workbench__selected-action" data-selected-surface="true">
       <div className="db-parts-workbench__selected-label-row">
