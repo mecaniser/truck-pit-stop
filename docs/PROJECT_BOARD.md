@@ -15,6 +15,8 @@ reviewed, merged, and released. Reconcile this board whenever newer evidence exi
   owner deliberately archives it; it is not an active implementation branch.
 - New requests enter Inbox through Product & Delivery Lead.
 
+> **DB-045 current delivery gate (supersedes the earlier pending-CI wording in the row below):** implementation/test candidate `595cbb8becd5f063434c4aca784b5daeb7a52567` passed all six protected contexts in Quality gates run `33043222500`, including Frontend full suite `369/369`. Release remains NO-GO `P0/P1/P2=0/1/0` solely because the required QuickBooks Payments and QuickBooks Accounting sandbox journeys have not been executed; merge, deployment, migration/backfill, and feature-gate enablement remain prohibited.
+
 ## In progress
 
 | ID | Priority | State | Outcome | Owner | Evidence now | Next gate |
