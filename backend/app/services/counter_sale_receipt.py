@@ -37,4 +37,3 @@ def generate_counter_sale_receipt_pdf(*, tenant: Tenant, snapshot: dict[str, Any
         story.append(Paragraph(f"Completed returns/refunds: ${refunded:.2f}", styles["Normal"]))
     doc.build(story)
     return buffer.getvalue()
-

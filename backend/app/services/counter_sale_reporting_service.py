@@ -157,4 +157,3 @@ async def load_counter_sale_report_entries(
 
     entries.sort(key=lambda row: (row.occurred_on, row.sale_number, row.entry_type))
     return entries
-

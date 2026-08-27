@@ -36,6 +36,17 @@ EVENT_TYPES = frozenset({
     "counter_sale.receipt.email.v1",
     "counter_sale.compensating_refund.v1",
 })
+SAFE_CONTEXT_ERROR = "Provider outbox context is unavailable"
+
+
+class PermanentOutboxContextError(RuntimeError):
+    """Terminal envelope/tenant mismatch that must never reach a provider."""
+
+    def __init__(self, reason: str) -> None:
+        # Keep the diagnostic only in memory. Persisting identifiers or account
+        # details from a forged row would turn the outbox into a tenant oracle.
+        self.reason = reason
+        super().__init__(SAFE_CONTEXT_ERROR)
 
 
 def _now() -> datetime:
@@ -44,6 +55,61 @@ def _now() -> datetime:
 
 def _retry_at(attempt: int) -> datetime:
     return _now() + timedelta(minutes=min(60, 2 ** max(attempt, 1)))
+
+
+def _payload_uuid(payload: dict, key: str) -> UUID:
+    try:
+        return UUID(str(payload[key]))
+    except (KeyError, TypeError, ValueError, AttributeError) as exc:
+        raise PermanentOutboxContextError(f"invalid payload {key}") from exc
+
+
+def _validate_envelope(
+    event: ProviderOutboxEvent, *, aggregate_type: str, identifier: str,
+) -> dict:
+    payload = event.payload
+    if (
+        event.aggregate_type != aggregate_type
+        or not isinstance(payload, dict)
+        or payload.get("payload_version", 1) != 1
+        or _payload_uuid(payload, identifier) != event.aggregate_id
+    ):
+        raise PermanentOutboxContextError("aggregate envelope mismatch")
+    return payload
+
+
+async def _tenant_context(db: AsyncSession, tenant_id: UUID) -> Tenant:
+    tenant = (await db.execute(select(Tenant).where(
+        Tenant.id == tenant_id,
+        Tenant.is_active.is_(True),
+        Tenant.deleted_at.is_(None),
+    ))).scalar_one_or_none()
+    if tenant is None:
+        raise PermanentOutboxContextError("tenant unavailable")
+    return tenant
+
+
+async def _tenant_sale(
+    db: AsyncSession, *, tenant_id: UUID, sale_id: UUID,
+) -> CounterSale:
+    sale = (await db.execute(select(CounterSale).where(
+        CounterSale.id == sale_id,
+        CounterSale.tenant_id == tenant_id,
+        CounterSale.deleted_at.is_(None),
+    ))).scalar_one_or_none()
+    if sale is None:
+        raise PermanentOutboxContextError("sale tenant mismatch")
+    return sale
+
+
+async def _qbo_connection(
+    db: AsyncSession, *, tenant_id: UUID,
+) -> QuickBooksConnection | None:
+    return (await db.execute(select(QuickBooksConnection).where(
+        QuickBooksConnection.tenant_id == tenant_id,
+        QuickBooksConnection.status == "connected",
+        QuickBooksConnection.deleted_at.is_(None),
+    ))).scalar_one_or_none()
 
 
 async def _refresh_if_needed(connection: QuickBooksConnection) -> None:
@@ -103,17 +169,20 @@ def _receipt_html(tenant: Tenant, sale: CounterSale) -> str:
 
 
 async def _process_qbo_sale(db: AsyncSession, event: ProviderOutboxEvent) -> None:
-    sale = await db.get(CounterSale, event.aggregate_id)
-    tenant = await db.get(Tenant, event.tenant_id)
-    connection = (await db.execute(select(QuickBooksConnection).where(
-        QuickBooksConnection.tenant_id == event.tenant_id,
-        QuickBooksConnection.status == "connected",
-        QuickBooksConnection.deleted_at.is_(None),
-    ))).scalar_one_or_none()
-    if sale is None or tenant is None or sale.status not in {"completed", "partially_returned", "returned"}:
-        raise QuickBooksAccountingError("Counter-sale accounting context is unavailable")
+    _validate_envelope(
+        event, aggregate_type="counter_sale", identifier="sale_id",
+    )
+    tenant = await _tenant_context(db, event.tenant_id)
+    sale = await _tenant_sale(
+        db, tenant_id=event.tenant_id, sale_id=event.aggregate_id,
+    )
+    if sale.status not in {"completed", "partially_returned", "returned"}:
+        raise PermanentOutboxContextError("sale state mismatch")
+    connection = await _qbo_connection(db, tenant_id=event.tenant_id)
     if connection is None:
         raise QuickBooksAccountingError("QuickBooks is not connected", retryable=True)
+    if connection.tenant_id != event.tenant_id or not connection.realm_id:
+        raise PermanentOutboxContextError("QuickBooks account mismatch")
     customer = None
     if sale.customer_id:
         customer = (await db.execute(select(Customer).where(
@@ -121,30 +190,43 @@ async def _process_qbo_sale(db: AsyncSession, event: ProviderOutboxEvent) -> Non
             Customer.deleted_at.is_(None),
         ))).scalar_one_or_none()
         if customer is None:
-            raise QuickBooksAccountingError("Counter-sale customer is unavailable")
+            raise PermanentOutboxContextError("sale customer tenant mismatch")
     lines = list((await db.execute(select(CounterSaleLine).where(
         CounterSaleLine.tenant_id == event.tenant_id,
         CounterSaleLine.sale_id == sale.id,
         CounterSaleLine.deleted_at.is_(None),
     ).order_by(CounterSaleLine.id))).scalars().all())
+    if not lines:
+        raise PermanentOutboxContextError("sale lines unavailable")
     await db.commit()
     await _refresh_if_needed(connection)
     await sync_counter_sale_receipt(connection, tenant, sale, lines, customer)
 
 
 async def _process_qbo_return(db: AsyncSession, event: ProviderOutboxEvent) -> None:
-    return_row = await db.get(CounterSaleReturn, event.aggregate_id)
-    if return_row is None or return_row.state != "completed":
-        raise QuickBooksAccountingError("Counter-sale return context is unavailable")
-    sale = await db.get(CounterSale, return_row.sale_id)
-    tenant = await db.get(Tenant, event.tenant_id)
-    connection = (await db.execute(select(QuickBooksConnection).where(
-        QuickBooksConnection.tenant_id == event.tenant_id,
-        QuickBooksConnection.status == "connected",
-        QuickBooksConnection.deleted_at.is_(None),
+    payload = _validate_envelope(
+        event, aggregate_type="counter_sale_return", identifier="return_id",
+    )
+    tenant = await _tenant_context(db, event.tenant_id)
+    return_row = (await db.execute(select(CounterSaleReturn).where(
+        CounterSaleReturn.id == event.aggregate_id,
+        CounterSaleReturn.tenant_id == event.tenant_id,
+        CounterSaleReturn.deleted_at.is_(None),
     ))).scalar_one_or_none()
-    if sale is None or tenant is None or connection is None:
-        raise QuickBooksAccountingError("QuickBooks return context is unavailable", retryable=True)
+    if return_row is None:
+        raise PermanentOutboxContextError("return tenant mismatch")
+    if _payload_uuid(payload, "sale_id") != return_row.sale_id:
+        raise PermanentOutboxContextError("return sale payload mismatch")
+    if return_row.state != "completed":
+        raise PermanentOutboxContextError("return state mismatch")
+    sale = await _tenant_sale(
+        db, tenant_id=event.tenant_id, sale_id=return_row.sale_id,
+    )
+    connection = await _qbo_connection(db, tenant_id=event.tenant_id)
+    if connection is None:
+        raise QuickBooksAccountingError("QuickBooks is not connected", retryable=True)
+    if connection.tenant_id != event.tenant_id or not connection.realm_id:
+        raise PermanentOutboxContextError("QuickBooks account mismatch")
     customer = None
     if sale.customer_id:
         customer = (await db.execute(select(Customer).where(
@@ -152,18 +234,21 @@ async def _process_qbo_return(db: AsyncSession, event: ProviderOutboxEvent) -> N
             Customer.deleted_at.is_(None),
         ))).scalar_one_or_none()
         if customer is None:
-            raise QuickBooksAccountingError("Counter-sale customer is unavailable")
+            raise PermanentOutboxContextError("sale customer tenant mismatch")
     return_lines = list((await db.execute(select(CounterSaleReturnLine).where(
         CounterSaleReturnLine.tenant_id == event.tenant_id,
         CounterSaleReturnLine.return_id == return_row.id,
     ))).scalars().all())
+    if not return_lines:
+        raise PermanentOutboxContextError("return lines unavailable")
     sale_line_ids = {row.sale_line_id for row in return_lines}
     sale_lines = {row.id: row for row in (await db.execute(select(CounterSaleLine).where(
         CounterSaleLine.tenant_id == event.tenant_id,
+        CounterSaleLine.sale_id == sale.id,
         CounterSaleLine.id.in_(sale_line_ids),
     ))).scalars().all()}
     if len(sale_lines) != len(sale_line_ids):
-        raise QuickBooksAccountingError("Counter-sale return lines are unavailable")
+        raise PermanentOutboxContextError("return sale lines unavailable")
     await db.commit()
     await _refresh_if_needed(connection)
     await sync_counter_sale_refund_receipt(
@@ -172,14 +257,19 @@ async def _process_qbo_return(db: AsyncSession, event: ProviderOutboxEvent) -> N
 
 
 async def _process_receipt_email(db: AsyncSession, event: ProviderOutboxEvent) -> None:
-    sale = await db.get(CounterSale, event.aggregate_id)
-    tenant = await db.get(Tenant, event.tenant_id)
+    _validate_envelope(
+        event, aggregate_type="counter_sale", identifier="sale_id",
+    )
+    tenant = await _tenant_context(db, event.tenant_id)
+    sale = await _tenant_sale(
+        db, tenant_id=event.tenant_id, sale_id=event.aggregate_id,
+    )
     if (
-        sale is None or tenant is None or not sale.receipt_snapshot
+        not sale.receipt_snapshot
         or sale.status not in {"completed", "partially_returned", "returned"}
         or not sale.receipt_email_to
     ):
-        raise RuntimeError("Completed receipt email context is unavailable")
+        raise PermanentOutboxContextError("receipt state mismatch")
     await enqueue_email_notification(
         db, tenant_id=event.tenant_id, aggregate_type="counter_sale_receipt",
         aggregate_id=sale.id,
@@ -192,15 +282,49 @@ async def _process_receipt_email(db: AsyncSession, event: ProviderOutboxEvent) -
 
 
 async def _process_compensation(db: AsyncSession, event: ProviderOutboxEvent) -> None:
-    attempt = await db.get(CounterSalePaymentAttempt, event.aggregate_id)
-    tenant = await db.get(Tenant, event.tenant_id)
-    if attempt is None or tenant is None:
-        raise RuntimeError("Compensating refund context is unavailable")
+    payload = _validate_envelope(
+        event,
+        aggregate_type="counter_sale_payment_attempt",
+        identifier="attempt_id",
+    )
+    tenant = await _tenant_context(db, event.tenant_id)
+    attempt = (await db.execute(select(CounterSalePaymentAttempt).where(
+        CounterSalePaymentAttempt.id == event.aggregate_id,
+        CounterSalePaymentAttempt.tenant_id == event.tenant_id,
+        CounterSalePaymentAttempt.deleted_at.is_(None),
+    ))).scalar_one_or_none()
+    if attempt is None:
+        raise PermanentOutboxContextError("payment attempt tenant mismatch")
+    if (
+        _payload_uuid(payload, "sale_id") != attempt.sale_id
+        or str(payload.get("tender")) != attempt.tender
+    ):
+        raise PermanentOutboxContextError("payment attempt payload mismatch")
+    try:
+        payload_amount = Decimal(str(payload["amount"]))
+    except (KeyError, TypeError, ValueError, ArithmeticError) as exc:
+        raise PermanentOutboxContextError("payment amount payload mismatch") from exc
+    if payload_amount != Decimal(attempt.amount):
+        raise PermanentOutboxContextError("payment amount payload mismatch")
+    sale = await _tenant_sale(
+        db, tenant_id=event.tenant_id, sale_id=attempt.sale_id,
+    )
+    lines = list((await db.execute(select(CounterSaleLine).where(
+        CounterSaleLine.tenant_id == event.tenant_id,
+        CounterSaleLine.sale_id == sale.id,
+        CounterSaleLine.deleted_at.is_(None),
+    ).order_by(CounterSaleLine.id))).scalars().all())
+    if not lines:
+        raise PermanentOutboxContextError("sale lines unavailable")
     if attempt.state == "compensated":
         return
     if attempt.state != "compensating_refund_pending":
-        raise RuntimeError("Compensating refund state is invalid")
+        raise PermanentOutboxContextError("payment attempt state mismatch")
     if attempt.tender == "stripe":
+        if not tenant.stripe_account_id or not (
+            attempt.provider_intent_id or attempt.provider_charge_id
+        ):
+            raise PermanentOutboxContextError("Stripe account mismatch")
         await db.commit()
         result = stripe.Refund.create(
             payment_intent=attempt.provider_intent_id or attempt.provider_charge_id,
@@ -212,13 +336,14 @@ async def _process_compensation(db: AsyncSession, event: ProviderOutboxEvent) ->
             raise RuntimeError("Compensating Stripe refund is pending")
         attempt.provider_reference = str(result.id)
     elif attempt.tender == "quickbooks_payments":
-        connection = (await db.execute(select(QuickBooksConnection).where(
-            QuickBooksConnection.tenant_id == event.tenant_id,
-            QuickBooksConnection.status == "connected",
-            QuickBooksConnection.deleted_at.is_(None),
-        ))).scalar_one_or_none()
+        connection = await _qbo_connection(db, tenant_id=event.tenant_id)
         if connection is None:
             raise RuntimeError("QuickBooks Payments is not connected")
+        if (
+            connection.tenant_id != event.tenant_id or not connection.realm_id
+            or not attempt.provider_charge_id
+        ):
+            raise PermanentOutboxContextError("QuickBooks Payments account mismatch")
         await db.commit()
         result = await refund_charge(
             connection=connection, charge_id=attempt.provider_charge_id or "",
@@ -229,17 +354,9 @@ async def _process_compensation(db: AsyncSession, event: ProviderOutboxEvent) ->
             raise RuntimeError("Compensating QuickBooks refund is pending")
         attempt.provider_reference = result.id
     else:
-        raise RuntimeError("Automatic compensation requires a provider tender")
+        raise PermanentOutboxContextError("provider tender mismatch")
     attempt.state = "compensated"
     attempt.reconciled_at = _now()
-    sale = await db.get(CounterSale, attempt.sale_id)
-    if sale is None or sale.tenant_id != event.tenant_id:
-        raise RuntimeError("Compensating refund sale context is unavailable")
-    lines = list((await db.execute(select(CounterSaleLine).where(
-        CounterSaleLine.tenant_id == event.tenant_id,
-        CounterSaleLine.sale_id == sale.id,
-        CounterSaleLine.deleted_at.is_(None),
-    ).order_by(CounterSaleLine.id))).scalars().all())
     for line in lines:
         # This is intentionally emitted only after the provider refund reports
         # success.  Merely queuing compensation is not a refunded lifecycle
@@ -303,6 +420,15 @@ async def process_counter_sale_outbox_events(
                 event.locked_until = None
                 event.lock_token = None
                 result["succeeded"] += 1
+            except PermanentOutboxContextError:
+                event.last_error = (
+                    f"{PermanentOutboxContextError.__name__}: {SAFE_CONTEXT_ERROR}"
+                )
+                event.locked_until = None
+                event.lock_token = None
+                event.status = ProviderOutboxStatus.DEAD.value
+                event.completed_at = _now()
+                result["dead"] += 1
             except (QuickBooksAccountingError, QuickBooksOAuthError, QuickBooksPaymentError, stripe.error.StripeError, RuntimeError) as exc:
                 event.last_error = f"{type(exc).__name__}: {str(exc)[:500]}"
                 event.locked_until = None
@@ -312,7 +438,11 @@ async def process_counter_sale_outbox_events(
                     event.completed_at = _now()
                     result["dead"] += 1
                     if event.event_type == "quickbooks.counter_sale.sync.v1":
-                        sale = await db.get(CounterSale, event.aggregate_id)
+                        sale = (await db.execute(select(CounterSale).where(
+                            CounterSale.id == event.aggregate_id,
+                            CounterSale.tenant_id == event.tenant_id,
+                            CounterSale.deleted_at.is_(None),
+                        ))).scalar_one_or_none()
                         if sale:
                             sale.accounting_sync_status = "error"
                 else:

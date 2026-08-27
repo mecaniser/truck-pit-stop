@@ -12,6 +12,7 @@ from uuid import uuid4
 import pytest
 from fastapi import HTTPException
 from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from app.core.config import settings
 from app.core.security import create_access_token
@@ -29,6 +30,8 @@ from app.db.models.inventory_lifecycle import (
     PartActivityEvent,
 )
 from app.db.models.provider_outbox import ProviderOutboxEvent
+from app.db.models.notification import Notification
+from app.db.models.quickbooks_connection import QuickBooksConnection
 from app.db.models.parts_operations import PartsOperationIdempotency
 from app.db.models.tenant import Tenant
 from app.db.models.user import User, UserRole
@@ -904,6 +907,8 @@ async def test_late_provider_success_is_idempotently_compensated_without_stock_m
     db_session, monkeypatch,
 ):
     tenant, owner, item, sale, _line = await seed_draft_sale(db_session, quantity=2)
+    tenant.stripe_account_id = f"acct_{uuid4().hex}"
+    tenant.stripe_onboarding_complete = True
     sale, _lines, attempt = await prepare_checkout(
         db_session, tenant=tenant, sale_id=sale.id, actor=owner,
         expected_version=sale.version, tender="stripe", idempotency_key="late-success",
@@ -974,6 +979,199 @@ async def test_late_provider_success_is_idempotently_compensated_without_stock_m
     assert await db_session.scalar(select(func.count(PartActivityEvent.id)).where(
         PartActivityEvent.event_type == "counter_sale.late_success_refunded",
     )) == 1
+
+
+@pytest.mark.asyncio
+async def test_outbox_rejects_cross_tenant_aggregates_before_all_provider_io(
+    db_session, _db_engine, monkeypatch,
+):
+    event_tenant, _event_owner, _event_item = await seed_context(db_session)
+    event_tenant.stripe_account_id = f"acct_{uuid4().hex}"
+    event_tenant.stripe_onboarding_complete = True
+    db_session.add(QuickBooksConnection(
+        tenant_id=event_tenant.id,
+        realm_id=f"realm-{uuid4().hex}",
+        status="connected",
+    ))
+    (
+        foreign_tenant, foreign_owner, _foreign_item,
+        foreign_sale, _foreign_line,
+    ) = await seed_draft_sale(db_session, quantity=1)
+    foreign_sale.accounting_sync_status = "queued"
+    foreign_sale.receipt_email_to = "walk-in@example.test"
+    foreign_sale.receipt_snapshot = {"lines": [], "total": "50.00"}
+    stripe_attempt = CounterSalePaymentAttempt(
+        tenant_id=foreign_tenant.id,
+        sale_id=foreign_sale.id,
+        tender="stripe",
+        state="compensating_refund_pending",
+        amount=Decimal("50.00"),
+        currency="USD",
+        request_fingerprint="a" * 64,
+        idempotency_key="foreign-stripe-compensation",
+        provider_intent_id="pi_foreign_045",
+        actor_user_id=foreign_owner.id,
+    )
+    qbp_attempt = CounterSalePaymentAttempt(
+        tenant_id=foreign_tenant.id,
+        sale_id=foreign_sale.id,
+        tender="quickbooks_payments",
+        state="compensating_refund_pending",
+        amount=Decimal("50.00"),
+        currency="USD",
+        request_fingerprint="b" * 64,
+        idempotency_key="foreign-qbp-compensation",
+        provider_charge_id="charge_foreign_045",
+        actor_user_id=foreign_owner.id,
+    )
+    return_row = CounterSaleReturn(
+        tenant_id=foreign_tenant.id,
+        sale_id=foreign_sale.id,
+        state="completed",
+        version=2,
+        item_amount=Decimal("50.00"),
+        tax_amount=Decimal("0.00"),
+        fee_amount=Decimal("0.00"),
+        refund_amount=Decimal("50.00"),
+        created_by_user_id=foreign_owner.id,
+        reason="Foreign tenant return",
+        completed_at=datetime.now(timezone.utc),
+    )
+    db_session.add_all([stripe_attempt, qbp_attempt, return_row])
+    await db_session.flush()
+    outbox_rows = [
+        ProviderOutboxEvent(
+            tenant_id=event_tenant.id,
+            event_type="quickbooks.counter_sale.sync.v1",
+            aggregate_type="counter_sale",
+            aggregate_id=foreign_sale.id,
+            payload={"sale_id": str(foreign_sale.id), "payload_version": 1},
+            idempotency_key="cross-tenant-qbo-sale",
+            status="pending",
+            attempt_count=settings.PROVIDER_OUTBOX_MAX_ATTEMPTS - 1,
+            available_at=datetime.now(timezone.utc),
+        ),
+        ProviderOutboxEvent(
+            tenant_id=event_tenant.id,
+            event_type="quickbooks.counter_sale_return.sync.v1",
+            aggregate_type="counter_sale_return",
+            aggregate_id=return_row.id,
+            payload={
+                "sale_id": str(foreign_sale.id),
+                "return_id": str(return_row.id),
+                "payload_version": 1,
+            },
+            idempotency_key="cross-tenant-qbo-return",
+            status="pending",
+            available_at=datetime.now(timezone.utc),
+        ),
+        ProviderOutboxEvent(
+            tenant_id=event_tenant.id,
+            event_type="counter_sale.receipt.email.v1",
+            aggregate_type="counter_sale",
+            aggregate_id=foreign_sale.id,
+            payload={"sale_id": str(foreign_sale.id), "payload_version": 1},
+            idempotency_key="cross-tenant-receipt-email",
+            status="pending",
+            available_at=datetime.now(timezone.utc),
+        ),
+        ProviderOutboxEvent(
+            tenant_id=event_tenant.id,
+            event_type="counter_sale.compensating_refund.v1",
+            aggregate_type="counter_sale_payment_attempt",
+            aggregate_id=stripe_attempt.id,
+            payload={
+                "sale_id": str(foreign_sale.id),
+                "attempt_id": str(stripe_attempt.id),
+                "amount": "50.00",
+                "tender": "stripe",
+            },
+            idempotency_key="cross-tenant-stripe-refund",
+            status="pending",
+            available_at=datetime.now(timezone.utc),
+        ),
+        ProviderOutboxEvent(
+            tenant_id=event_tenant.id,
+            event_type="counter_sale.compensating_refund.v1",
+            aggregate_type="counter_sale_payment_attempt",
+            aggregate_id=qbp_attempt.id,
+            payload={
+                "sale_id": str(foreign_sale.id),
+                "attempt_id": str(qbp_attempt.id),
+                "amount": "50.00",
+                "tender": "quickbooks_payments",
+            },
+            idempotency_key="cross-tenant-qbp-refund",
+            status="pending",
+            available_at=datetime.now(timezone.utc),
+        ),
+    ]
+    db_session.add_all(outbox_rows)
+    await db_session.commit()
+    ids = [row.id for row in outbox_rows]
+    foreign_sale_id = foreign_sale.id
+    return_id = return_row.id
+    stripe_attempt_id = stripe_attempt.id
+    qbp_attempt_id = qbp_attempt.id
+
+    calls = {"qbo_sale": 0, "qbo_return": 0, "stripe": 0, "qbp": 0, "email": 0}
+
+    async def qbo_sale_call(*args, **kwargs):
+        calls["qbo_sale"] += 1
+
+    async def qbo_return_call(*args, **kwargs):
+        calls["qbo_return"] += 1
+
+    def stripe_call(**kwargs):
+        calls["stripe"] += 1
+        return SimpleNamespace(id="re_should_not_run", status="succeeded")
+
+    async def qbp_call(**kwargs):
+        calls["qbp"] += 1
+        return SimpleNamespace(id="refund_should_not_run", status="SUCCEEDED")
+
+    async def email_call(*args, **kwargs):
+        calls["email"] += 1
+
+    monkeypatch.setattr(counter_sale_outbox, "sync_counter_sale_receipt", qbo_sale_call)
+    monkeypatch.setattr(counter_sale_outbox, "sync_counter_sale_refund_receipt", qbo_return_call)
+    monkeypatch.setattr(counter_sale_outbox.stripe.Refund, "create", stripe_call)
+    monkeypatch.setattr(counter_sale_outbox, "refund_charge", qbp_call)
+    monkeypatch.setattr(counter_sale_outbox, "enqueue_email_notification", email_call)
+
+    factory = async_sessionmaker(_db_engine, expire_on_commit=False)
+    result = await counter_sale_outbox.process_counter_sale_outbox_events(
+        session_factory=factory, batch_size=10,
+    )
+
+    assert result == {"claimed": 5, "succeeded": 0, "retried": 0, "dead": 5}
+    assert calls == {"qbo_sale": 0, "qbo_return": 0, "stripe": 0, "qbp": 0, "email": 0}
+    db_session.expire_all()
+    events = list((await db_session.execute(select(ProviderOutboxEvent).where(
+        ProviderOutboxEvent.id.in_(ids),
+    ))).scalars().all())
+    assert len(events) == 5
+    assert all(row.status == "dead" and row.completed_at is not None for row in events)
+    assert {
+        row.last_error for row in events
+    } == {
+        "PermanentOutboxContextError: Provider outbox context is unavailable"
+    }
+    persisted_sale = await db_session.get(CounterSale, foreign_sale_id)
+    persisted_stripe_attempt = await db_session.get(
+        CounterSalePaymentAttempt, stripe_attempt_id,
+    )
+    persisted_qbp_attempt = await db_session.get(
+        CounterSalePaymentAttempt, qbp_attempt_id,
+    )
+    persisted_return = await db_session.get(CounterSaleReturn, return_id)
+    assert persisted_sale.accounting_sync_status == "queued"
+    assert persisted_stripe_attempt.state == "compensating_refund_pending"
+    assert persisted_stripe_attempt.provider_reference is None
+    assert persisted_qbp_attempt.state == "compensating_refund_pending"
+    assert persisted_qbp_attempt.provider_reference is None
+    assert persisted_return.accounting_refund_receipt_id is None
+    assert await db_session.scalar(select(func.count(Notification.id))) == 0
 
 
 @pytest.mark.asyncio

@@ -1,16 +1,16 @@
 # DB-045 Inventory Lifecycle, Audit, and Counter Sales Contract
 
-**Contract version:** 1.0.1 (frozen)  
-**Board item:** DB-045  
-**Accountable implementation owner:** Backend & Integrations  
-**Contract owner:** Architecture & API Contracts  
-**Frontend contributor:** Frontend & UX  
-**Required independent gates:** Security & Tenant Isolation, QA & Regression, Release & Reliability  
-**Branch:** `codex/db045-inventory-lifecycle-counter-sales`  
-**Required base:** the merged DB-044 `origin/main`  
-**Frozen base/HEAD at contract authoring:** `cb09d157a1e2635d53847539ca3e7ffa9bfb7965`  
-**Delivery shape:** one branch, one integrated pull request, one exact candidate SHA  
-**Risk lane:** high risk (payments, stock, tax, migrations, tenant authorization)  
+**Contract version:** 1.0.2 (frozen)
+**Board item:** DB-045
+**Accountable implementation owner:** Backend & Integrations
+**Contract owner:** Architecture & API Contracts
+**Frontend contributor:** Frontend & UX
+**Required independent gates:** Security & Tenant Isolation, QA & Regression, Release & Reliability
+**Branch:** `codex/db045-inventory-lifecycle-counter-sales`
+**Required base:** the merged DB-044 `origin/main`
+**Frozen base/HEAD at contract authoring:** `cb09d157a1e2635d53847539ca3e7ffa9bfb7965`
+**Delivery shape:** one branch, one integrated pull request, one exact candidate SHA
+**Risk lane:** high risk (payments, stock, tax, migrations, tenant authorization)
 **Status:** frozen before implementation
 
 ## 1. Purpose and non-goals
