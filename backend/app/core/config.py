@@ -54,6 +54,9 @@ class Settings(BaseSettings):
     # DB-038 is deployed dark. A tenant flag is required in addition to this
     # deployment-level switch before the purchasing/ledger API is reachable.
     PARTS_OPERATIONS_V1_ENABLED: bool = False
+    # DB-045 deployment rollout gate. A tenant gate and verified Activity
+    # backfill are required in addition to this default-off switch.
+    COUNTER_SALES_ENABLED: bool = False
 
     # WorkOS is introduced alongside (not in place of) legacy JWT login. Keep
     # this disabled until a tenant has completed the audited dual-run cutover.

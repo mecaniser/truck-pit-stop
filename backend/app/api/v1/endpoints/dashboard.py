@@ -26,6 +26,12 @@ from app.db.models.inventory import Inventory, PartsUsage
 from app.db.models.invoice import Invoice, InvoiceStatus
 from app.db.models.payment import Payment, PaymentStatus
 from app.db.models.mechanic_time import MechanicSessionType, MechanicTimeSession, MiscWorkCategory
+from app.db.models.inventory_lifecycle import (
+    CounterSale,
+    CounterSaleLine,
+    CounterSaleReturn,
+    CounterSaleReturnLine,
+)
 from app.db.models.tenant import Tenant
 from app.services.internal_fleet import fleet_display_name
 from app.services.pricing import get_order_labor_total, get_order_subtotal
@@ -142,6 +148,15 @@ class RevenueStats(BaseModel):
     today_ppi: str = "0.00"
     this_week_ppi: str = "0.00"
     this_month_ppi: str = "0.00"
+    today_counter_sale_revenue: str = "0.00"
+    this_week_counter_sale_revenue: str = "0.00"
+    this_month_counter_sale_revenue: str = "0.00"
+    today_counter_sale_parts_margin: str = "0.00"
+    this_week_counter_sale_parts_margin: str = "0.00"
+    this_month_counter_sale_parts_margin: str = "0.00"
+    today_counter_sales: int = 0
+    this_week_counter_sales: int = 0
+    this_month_counter_sales: int = 0
 
 
 class InternalCostStats(BaseModel):
@@ -948,6 +963,59 @@ async def get_dashboard_stats(
     week_start = today - timedelta(days=today.weekday())
     month_start = today.replace(day=1)
 
+    def _counter_sale_dashboard_metrics(period_start: date, label: str):
+        sale_scope = (
+            (CounterSale.tenant_id == tenant_id)
+            & CounterSale.status.in_(("completed", "partially_returned", "returned"))
+            & CounterSale.completed_at.is_not(None)
+            & (cast(CounterSale.completed_at, Date) >= period_start)
+            & CounterSale.deleted_at.is_(None)
+        )
+        return_scope = (
+            (CounterSaleReturn.tenant_id == tenant_id)
+            & (CounterSaleReturn.state == "completed")
+            & CounterSaleReturn.completed_at.is_not(None)
+            & (cast(CounterSaleReturn.completed_at, Date) >= period_start)
+            & CounterSaleReturn.deleted_at.is_(None)
+        )
+        sale_revenue = select(func.coalesce(func.sum(CounterSale.total), 0)).where(sale_scope)
+        return_revenue = select(func.coalesce(func.sum(CounterSaleReturn.refund_amount), 0)).where(return_scope)
+        sale_cogs = select(func.coalesce(func.sum(CounterSaleLine.cost_total), 0)).join(
+            CounterSale,
+            (CounterSale.id == CounterSaleLine.sale_id)
+            & (CounterSale.tenant_id == CounterSaleLine.tenant_id),
+        ).where(sale_scope, CounterSaleLine.deleted_at.is_(None))
+        restocked_cogs = select(func.coalesce(func.sum(CounterSaleReturnLine.cost_amount), 0)).join(
+            CounterSaleReturn,
+            (CounterSaleReturn.id == CounterSaleReturnLine.return_id)
+            & (CounterSaleReturn.tenant_id == CounterSaleReturnLine.tenant_id),
+        ).where(
+            return_scope,
+            CounterSaleReturnLine.disposition == "restock",
+            CounterSaleReturnLine.deleted_at.is_(None),
+        )
+        revenue = (
+            sale_revenue.scalar_subquery() - return_revenue.scalar_subquery()
+        ).label(f"counter_{label}_revenue")
+        margin = (
+            select(func.coalesce(func.sum(CounterSale.charged_subtotal), 0)).where(sale_scope).scalar_subquery()
+            - sale_cogs.scalar_subquery()
+            - select(func.coalesce(func.sum(CounterSaleReturn.item_amount), 0)).where(return_scope).scalar_subquery()
+            + restocked_cogs.scalar_subquery()
+        ).label(f"counter_{label}_margin")
+        fees = (
+            select(func.coalesce(func.sum(CounterSale.service_fee_total), 0)).where(sale_scope).scalar_subquery()
+            - select(func.coalesce(func.sum(CounterSaleReturn.fee_amount), 0)).where(return_scope).scalar_subquery()
+        ).label(f"counter_{label}_fees")
+        count = select(func.count(CounterSale.id)).where(sale_scope).scalar_subquery().label(
+            f"counter_{label}_sales"
+        )
+        return revenue, margin, fees, count
+
+    counter_today = _counter_sale_dashboard_metrics(today, "today")
+    counter_week = _counter_sale_dashboard_metrics(week_start, "week")
+    counter_month = _counter_sale_dashboard_metrics(month_start, "month")
+
     revenue_totals = (
         await db.execute(
             select(
@@ -985,6 +1053,9 @@ async def get_dashboard_stats(
                 )
                 .scalar_subquery()
                 .label("total_paid_orders"),
+                *counter_today,
+                *counter_week,
+                *counter_month,
             ).where(
                 Payment.tenant_id == tenant_id,
                 Payment.status == PaymentStatus.COMPLETED,
@@ -1077,6 +1148,26 @@ async def get_dashboard_stats(
             profitability[bucket]["gross_profit"] += gross_profit
             profitability[bucket]["invoices"].add(row.invoice_id)
 
+    counter_metrics = {}
+    for bucket in ("today", "week", "month"):
+        counter_revenue = Decimal(str(getattr(revenue_totals, f"counter_{bucket}_revenue") or 0))
+        counter_margin = Decimal(str(getattr(revenue_totals, f"counter_{bucket}_margin") or 0))
+        counter_fees = Decimal(str(getattr(revenue_totals, f"counter_{bucket}_fees") or 0))
+        counter_sales = int(getattr(revenue_totals, f"counter_{bucket}_sales") or 0)
+        counter_metrics[bucket] = {
+            "revenue": counter_revenue,
+            "parts_margin": counter_margin,
+            "sales": counter_sales,
+        }
+        profitability[bucket]["parts_margin"] += counter_margin
+        profitability[bucket]["gross_profit"] += counter_margin + counter_fees
+        profitability[bucket]["invoices"].update(
+            ("counter_sale", index) for index in range(counter_sales)
+        )
+    revenue_today += counter_metrics["today"]["revenue"]
+    revenue_week += counter_metrics["week"]["revenue"]
+    revenue_month += counter_metrics["month"]["revenue"]
+
     def _ppi_for(bucket: str) -> Decimal:
         invoice_count = len(profitability[bucket]["invoices"])
         if invoice_count == 0:
@@ -1097,6 +1188,15 @@ async def get_dashboard_stats(
         today_ppi=str(_ppi_for("today")),
         this_week_ppi=str(_ppi_for("week")),
         this_month_ppi=str(_ppi_for("month")),
+        today_counter_sale_revenue=str(counter_metrics["today"]["revenue"]),
+        this_week_counter_sale_revenue=str(counter_metrics["week"]["revenue"]),
+        this_month_counter_sale_revenue=str(counter_metrics["month"]["revenue"]),
+        today_counter_sale_parts_margin=str(counter_metrics["today"]["parts_margin"]),
+        this_week_counter_sale_parts_margin=str(counter_metrics["week"]["parts_margin"]),
+        this_month_counter_sale_parts_margin=str(counter_metrics["month"]["parts_margin"]),
+        today_counter_sales=counter_metrics["today"]["sales"],
+        this_week_counter_sales=counter_metrics["week"]["sales"],
+        this_month_counter_sales=counter_metrics["month"]["sales"],
     )
 
     # Internal fleet cost stats: at-cost parts + internal labor rate for

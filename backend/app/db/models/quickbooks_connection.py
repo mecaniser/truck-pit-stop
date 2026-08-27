@@ -39,6 +39,8 @@ class QuickBooksConnection(BaseModel):
     last_webhook_error = Column(Text, nullable=True)
     last_cdc_at = Column(DateTime(timezone=True), nullable=True)
     last_cdc_error = Column(Text, nullable=True)
+    # Deterministic per-tenant QBO customer used only for anonymous walk-ins.
+    walk_in_customer_id = Column(String(64), nullable=True)
 
 
 class QuickBooksOAuthState(BaseModel):

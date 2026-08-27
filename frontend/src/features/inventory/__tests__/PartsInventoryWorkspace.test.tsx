@@ -121,6 +121,34 @@ const directionReorderPart: PartRecord = {
   name: 'Belt tensioner',
 }
 
+const activityEvent = {
+  id: 'event-1',
+  inventory_id: activePart.id,
+  category: 'stock',
+  event_type: 'stock.adjusted',
+  occurred_at: '2026-08-24T12:00:00Z',
+  correlation_id: 'correlation-1',
+  origin: 'live',
+  inventory: { id: activePart.id, sku: activePart.sku, name: activePart.name },
+  actor: { id: 'user-1', name: 'Alex Popescu' },
+  reason: { code: 'count_correction', note: 'Cycle count correction' },
+  before: { stock_quantity: 3 },
+  after: { stock_quantity: 2 },
+  stock: { physical_on_hand: 2, held_for_checkout: 0, available_to_sell: 2, delta: -1, wac: '13.25' },
+  money: null,
+  payment: null,
+  source: { type: 'inventory_movement', id: 'movement-1', number: 'MOV-100', href: '/dashboard/garage/inventory?activity=movement-1' },
+}
+
+const lifecycleSummary = {
+  inventory_id: activePart.id,
+  as_of: '2026-08-24T12:00:00Z',
+  repairs: { units_used: '4', repair_order_count: 2, last_used_at: '2026-08-23T12:00:00Z' },
+  purchasing: { units_received: 8, receipt_count: 1, units_returned_to_vendor: 0, open_core_obligations: 0 },
+  sales: { units_sold: 3, units_returned: 1, net_units: 2, gross_item_revenue: '39.75', discounts: '0.00', refunds: '13.25', net_item_revenue: '26.50', last_sold_at: '2026-08-24T11:00:00Z' },
+  activity: { event_count: 12, last_event_at: '2026-08-24T12:00:00Z' },
+}
+
 function detail(part: PartRecord) {
   return {
     ...part,
@@ -168,6 +196,7 @@ function installApi(detailOverride?: ReturnType<typeof detail>) {
       if (params.skip === 50) return Promise.resolve({ data: page([brakePart], { total: 51, skip: 50 }) })
       return Promise.resolve({ data: page([activePart], { total: 51, has_more: true }) })
     }
+    if (url.endsWith('/lifecycle-summary')) return Promise.resolve({ data: lifecycleSummary })
     if (url.startsWith('/parts-operations/parts/')) {
       const id = url.split('/').at(-1)
       const part = id === archivedPart.id ? archivedPart : id === brakePart.id ? brakePart : activePart
@@ -192,6 +221,7 @@ function installApi(detailOverride?: ReturnType<typeof detail>) {
         occurred_at: '2026-08-24T12:00:00Z',
       }]) })
     }
+    if (url === '/parts-operations/activity-events') return Promise.resolve({ data: { items: [activityEvent], next_cursor: null } })
     throw new Error(`Unexpected GET ${url}`)
   })
   apiMocks.put.mockResolvedValue({ data: detail(activePart) })
@@ -313,7 +343,7 @@ describe('DB-038 Parts & inventory workspace', () => {
     renderWorkspace()
 
     await screen.findByRole('heading', { name: 'Alternator' })
-    expect(screen.queryByText('Archived part. History stays available, but stock and purchasing actions are locked.')).not.toBeInTheDocument()
+    expect(screen.queryByText('Archived part. Activity stays available, but stock and purchasing actions are locked.')).not.toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'Archived parts' }))
 
     expect(await screen.findByRole('heading', { name: 'Archived alternator' })).toBeInTheDocument()
@@ -378,7 +408,7 @@ describe('DB-038 Parts & inventory workspace', () => {
 
     const workbench = document.querySelector('.db-parts-workbench')
     const body = workbench?.querySelector('.db-parts-workbench__body')
-    expect(workbench?.querySelectorAll('.db-parts-workbench__view-count')).toHaveLength(3)
+    expect(workbench?.querySelectorAll('.db-parts-workbench__view-count')).toHaveLength(2)
     expect(body?.children).toHaveLength(2)
     expect(body?.firstElementChild).toHaveClass('db-parts-workbench__ledger-workspace')
     expect(body?.lastElementChild).toHaveClass('db-parts-workbench__inspector')
@@ -481,7 +511,7 @@ describe('DB-038 Parts & inventory workspace', () => {
 
     await screen.findByRole('heading', { name: 'Alternator' })
     const tabs = screen.getAllByRole('tab')
-    expect(tabs.map((tab) => tab.textContent)).toEqual(['Overview', 'Stock', 'Ordering', 'History'])
+    expect(tabs.map((tab) => tab.textContent)).toEqual(['Overview', 'Stock', 'Ordering', 'Activity'])
     expect(tabs.filter((tab) => tab.getAttribute('aria-selected') === 'true')).toHaveLength(1)
     expect(screen.getByRole('tabpanel', { name: 'Overview' })).toBeInTheDocument()
 
@@ -490,8 +520,10 @@ describe('DB-038 Parts & inventory workspace', () => {
     expect(screen.getByRole('tab', { name: 'Stock' })).toHaveAttribute('aria-selected', 'true')
     expect(screen.getByRole('tabpanel', { name: 'Stock' })).toHaveTextContent('Needed for open repairs')
     await user.keyboard('{End}')
-    expect(screen.getByRole('tab', { name: 'History' })).toHaveAttribute('aria-selected', 'true')
-    expect(screen.getByRole('tabpanel', { name: 'History' })).toHaveTextContent('Recent inventory changes')
+    expect(screen.getByRole('tab', { name: 'Activity' })).toHaveAttribute('aria-selected', 'true')
+    const activityPanel = screen.getByRole('tabpanel', { name: 'Activity' })
+    expect(await within(activityPanel).findByRole('heading', { name: 'Lifecycle summary' })).toBeInTheDocument()
+    expect(await within(activityPanel).findByText('stock · adjusted')).toBeInTheDocument()
 
     await user.type(screen.getByRole('searchbox', { name: 'Search parts' }), 'brake')
     await screen.findByRole('heading', { name: 'Brake shoe kit' })
@@ -659,7 +691,7 @@ describe('DB-038 Parts & inventory workspace', () => {
     }))
   })
 
-  it('keeps one explicit Available editor entry point and steps reorder locally before saving', async () => {
+  it('keeps one explicit physical on-hand editor entry point and steps reorder locally before saving', async () => {
     installApi()
     const user = userEvent.setup()
     renderWorkspace()
@@ -684,7 +716,9 @@ describe('DB-038 Parts & inventory workspace', () => {
     expect(within(stock).getAllByRole('form', { name: 'Edit available quantity' })).toHaveLength(1)
     expect(within(stock).getAllByRole('textbox', { name: 'On-hand quantity' })).toHaveLength(1)
     expect(within(stock).queryByRole('button', { name: 'Edit reorder point' })).not.toBeInTheDocument()
-    expect(availableForm.closest('.db-parts-workbench__fact')).toHaveTextContent('Available')
+    expect(availableForm.closest('.db-parts-workbench__fact')).toHaveTextContent('Physical on hand')
+    expect(within(stock).getByText('Held for checkout')).toBeInTheDocument()
+    expect(within(stock).getByText('Available to sell')).toBeInTheDocument()
     expect(availableForm.closest('.db-parts-workbench__fact')).toHaveClass('is-editing')
     expect(within(availableForm).queryByText('Cancel', { exact: true })).not.toBeInTheDocument()
     expect(within(availableForm).getByRole('button', { name: 'Save' })).toHaveTextContent('Save')
@@ -836,20 +870,20 @@ describe('DB-038 Parts & inventory workspace', () => {
     expect(within(ordering).queryByText('None')).not.toBeInTheDocument()
   })
 
-  it('translates movement records into shop language without exposing raw movement or WAC terms', async () => {
+  it('renders immutable inventory Activity with stock projections and source links', async () => {
     installApi()
     const user = userEvent.setup()
     renderWorkspace()
 
     await screen.findByRole('heading', { name: 'Alternator' })
-    expect(screen.getByRole('button', { name: 'Movement 1' })).toBeInTheDocument()
-    expect(apiMocks.get.mock.calls.filter(([url, config]) => url === '/parts-operations/activity' && config?.params?.limit === 1)).toHaveLength(1)
-    expect(apiMocks.get.mock.calls.filter(([url, config]) => url === '/parts-operations/activity' && config?.params?.limit === 50)).toHaveLength(0)
-    await user.click(screen.getByRole('button', { name: /Movement/ }))
-    expect(await screen.findByText(/Manual stock adjustment · 2 on hand after change · Average cost \$13.25/)).toBeInTheDocument()
-    expect(apiMocks.get.mock.calls.filter(([url, config]) => url === '/parts-operations/activity' && config?.params?.limit === 50)).toHaveLength(1)
-    expect(screen.queryByText(/manual_adjustment/)).not.toBeInTheDocument()
-    expect(screen.queryByText(/\bWAC\b/)).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Activity' })).toBeInTheDocument()
+    expect(apiMocks.get.mock.calls.filter(([url]) => url === '/parts-operations/activity-events')).toHaveLength(0)
+    await user.click(screen.getByRole('button', { name: 'Activity' }))
+    expect(await screen.findByText('stock · adjusted')).toBeInTheDocument()
+    expect(screen.getByText(/2 physical · 0 held · 2 available/)).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: /MOV-100/ })).toHaveAttribute('href', '/dashboard/garage/inventory?activity=movement-1')
+    expect(apiMocks.get).toHaveBeenCalledWith('/parts-operations/activity-events', { params: { limit: 50 } })
+    expect(screen.queryByText(/stock\.adjusted/)).not.toBeInTheDocument()
   })
 
   it('lets managers select an active non-reorder part without changing the detail row or exposing an ordinal column', async () => {

@@ -90,6 +90,12 @@ from app.db.models.repair_order_history import RepairOrderHistoryEvent
 from app.db.models.quickbooks_connection import QuickBooksConnection, QuickBooksOAuthState, QuickBooksWebhookEvent
 from app.db.models.stripe_oauth import StripeOAuthState
 from app.db.models.google_review import GoogleBusinessConnection, GoogleBusinessOAuthState, GoogleReviewSettings, GoogleReview, GoogleReviewAuditEvent
+from app.db.models.inventory_lifecycle import (
+    CounterSale, CounterSaleLine, CounterSalePaymentAttempt,
+    CounterSaleProviderEvent, CounterSaleRefund, CounterSaleReservation,
+    CounterSaleReturn, CounterSaleReturnLine, PartActivityBackfillRun,
+    PartActivityEvent,
+)
 
 __all__ = [
     "Tenant",
@@ -188,4 +194,8 @@ __all__ = [
     "PurchaseReceipt", "PurchaseReceiptLine", "CoreObligation",
     "VendorReturn", "VendorReturnLine",
     "GoogleBusinessConnection", "GoogleBusinessOAuthState", "GoogleReviewSettings", "GoogleReview", "GoogleReviewAuditEvent",
+    "PartActivityEvent", "PartActivityBackfillRun", "CounterSale",
+    "CounterSaleLine", "CounterSaleReservation", "CounterSalePaymentAttempt",
+    "CounterSaleProviderEvent", "CounterSaleReturn", "CounterSaleReturnLine",
+    "CounterSaleRefund",
 ]

@@ -31,6 +31,9 @@ class Tenant(BaseModel):
     )
     # DB-038 tenant rollout gate. This never substitutes for a staff role.
     parts_operations_enabled = Column(Boolean, default=False, server_default="false", nullable=False)
+    # DB-045 tenant rollout gate. Deployment and verified-backfill gates are
+    # additionally required; this column defaults dark for every tenant.
+    counter_sales_enabled = Column(Boolean, default=False, server_default="false", nullable=False)
 
     # Marketing-attribution webhook. The endpoint is tenant-owned; its signing
     # secret is encrypted at rest and is never returned by the settings API.

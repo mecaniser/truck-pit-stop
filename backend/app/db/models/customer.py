@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Text, ForeignKey, Numeric, Boolean, DateTime
+from sqlalchemy import Column, String, Text, ForeignKey, Numeric, Boolean, DateTime, UniqueConstraint
 from sqlalchemy.orm import relationship
 from sqlalchemy.dialects.postgresql import UUID
 from app.db.base import BaseModel
@@ -6,6 +6,9 @@ from app.db.base import BaseModel
 
 class Customer(BaseModel):
     __tablename__ = "customers"
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "id", name="uq_customers_tenant_id_id_db045"),
+    )
     
     tenant_id = Column(UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=False, index=True)
     # Tenant also has an optional default operating-authority FK to Customer,
