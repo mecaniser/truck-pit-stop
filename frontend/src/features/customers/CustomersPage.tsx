@@ -4436,13 +4436,13 @@ export default function CustomersPage() {
                           </table>
                         </div>
                       ) : (
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div className="grid grid-cols-1 gap-3">
                           {visibleCustomerVehicleGroups.map((group) => {
                             const GroupIcon = group.icon
                             const isAuthorityGroup = group.key === 'authority'
                             return (
                             <React.Fragment key={group.key}>
-                              <div className={`mt-2 rounded-xl border p-4 sm:col-span-2 first:mt-0 ${
+                              <div className={`mt-2 rounded-xl border p-4 first:mt-0 ${
                                 isAuthorityGroup ? 'border-sky-200 bg-sky-50' : 'border-amber-200 bg-amber-50'
                               }`}>
                                 <div className="flex items-start gap-3">
@@ -4477,8 +4477,8 @@ export default function CustomersPage() {
                                   onClick={() => setSelectedVehicleInPanel(vehicle)}
                                   className="cursor-pointer"
                                 >
-                                  <div className="flex items-start justify-between gap-4">
-                                    <div className="min-w-0">
+                                  <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
+                                    <div className="min-w-0 flex-1">
                                       <p className="truncate text-sm font-semibold text-gray-900">
                                         {cardTitle}
                                       </p>
@@ -4495,7 +4495,7 @@ export default function CustomersPage() {
                                         {vehicleRelationshipNote(vehicle, group.key)}
                                       </p>
                                     </div>
-                                    <div className="flex shrink-0 flex-col items-end gap-1 text-right">
+                                    <div className="flex max-w-full shrink-0 flex-col items-end gap-1 text-right">
                                       {vehicle.unit_number && (
                                         <span className="text-xs font-medium text-slate-700 bg-slate-100 rounded px-2 py-0.5">
                                           Unit {vehicle.unit_number}
@@ -4507,7 +4507,7 @@ export default function CustomersPage() {
                                         </span>
                                       )}
                                       {vehicle.vin && (
-                                        <span className="font-mono text-[11px] text-gray-500">
+                                        <span className="max-w-full break-all font-mono text-[11px] text-gray-500">
                                           VIN {vehicle.vin}
                                         </span>
                                       )}
@@ -4802,7 +4802,7 @@ export default function CustomersPage() {
             />
             
             {/* Modal */}
-            <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
+            <div className="db-customer-vehicle-modal relative bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
               {/* Header */}
               <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 rounded-t-2xl">
                 <div className="flex items-center justify-between">

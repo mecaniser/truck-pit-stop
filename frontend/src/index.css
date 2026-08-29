@@ -828,8 +828,18 @@ html::-webkit-scrollbar-thumb:hover {
   overflow-x: hidden;
 }
 
-.db-presentation-new .db-customer-navigator {
+/* The size container sits on the ledger card, not on the navigator itself.
+   As a size container, the navigator (the records' direct parent) failed to
+   re-lay-out its rows when the workspace switched to its detail-open grid and
+   resized the column without flipping a query result: the rows stayed in the
+   DOM with zero-height boxes, so the list showed only the selected customer on
+   wide screens. Querying the card keeps the same breakpoints -- it is the same
+   width bar its 1px borders -- without containing the rows' parent. */
+.db-presentation-new .db-customers-workspace__ledger .db-operating-surface__card {
   container-type: inline-size;
+}
+
+.db-presentation-new .db-customer-navigator {
   width: 100%;
 }
 
@@ -2655,26 +2665,37 @@ html::-webkit-scrollbar-thumb:hover {
 .db-shop-work-new__header-actions button:disabled,
 .db-shop-work-new__create-action:disabled { cursor: wait; opacity: .62; }
 
+/* A compact segmented control on the ledger's caption row, not a banner across
+   the page: sized to its content so the row still holds only two small items
+   when the viewport narrows. */
 .db-shop-work-new__view-switch {
   display: inline-flex;
+  flex: 0 0 auto;
+  align-self: center;
   gap: 3px;
-  margin-bottom: 10px;
   padding: 3px;
   border: 1px solid #c8d2dd;
-  border-radius: 11px;
+  border-radius: 10px;
   background: #e9eef4;
 }
+
 .db-shop-work-new__view-switch button {
   display: inline-flex;
-  min-height: 44px;
+  min-height: 36px;
   align-items: center;
-  gap: 7px;
+  gap: 6px;
   border: 0;
   border-radius: 8px;
-  padding: 8px 12px;
+  padding: 6px 11px;
   background: transparent;
   color: #53657a;
+  font-size: 13px;
   font-weight: 700;
+}
+
+/* Touch input still gets a full-size target. */
+@media (pointer: coarse) {
+  .db-shop-work-new__view-switch button { min-height: 44px; }
 }
 .db-shop-work-new__view-switch button[aria-pressed='true'] { background: #fff; color: #17283f; box-shadow: 0 2px 7px rgba(16,36,59,.08); }
 .db-shop-work-new__view-switch svg { width: 16px; height: 16px; }
@@ -2708,9 +2729,11 @@ html::-webkit-scrollbar-thumb:hover {
   box-shadow: 0 5px 16px rgba(16,36,59,.065);
 }
 /* Caption sits above the card now, so it carries no card edge of its own. */
-.db-action-ledger__caption { min-height: 44px; display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 0 2px 8px; }
+.db-action-ledger__caption { min-height: 44px; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 14px; padding: 0 2px 10px; }
+/* Switch first, then the section title it heads. Both live in the left gutter. */
+.db-action-ledger__caption-text { display: flex; min-width: 0; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
 .db-action-ledger__caption h2 { margin: 0; color: var(--workspace-text, #17283f); font-size: 15px; }
-.db-action-ledger__caption span { color: var(--workspace-muted, #61738a); font-size: 12px; }
+.db-action-ledger__caption-meta { color: var(--workspace-muted, #61738a); font-size: 12px; }
 .db-action-ledger__row {
   width: 100%;
   min-width: 0;
@@ -2802,7 +2825,7 @@ html::-webkit-scrollbar-thumb:hover {
 }
 
 .db-presentation-new:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) .db-shop-work-new__header h1,
-.db-presentation-new:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) .db-action-ledger > header h2,
+.db-presentation-new:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) :is(.db-action-ledger > header, .db-action-ledger__caption) h2,
 .db-presentation-new:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) .db-action-ledger__number,
 .db-presentation-new:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) .db-action-ledger__identity strong,
 .db-presentation-new:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) .db-action-ledger__amount,
@@ -2811,7 +2834,7 @@ html::-webkit-scrollbar-thumb:hover {
 }
 
 .db-presentation-new:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) .db-shop-work-new__header p,
-.db-presentation-new:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) .db-action-ledger > header span,
+.db-presentation-new:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) :is(.db-action-ledger > header span, .db-action-ledger__caption-meta),
 .db-presentation-new:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) :is(.db-action-ledger__identity span, .db-action-ledger__status span, .db-shop-work-new--state) {
   color: var(--shop-work-muted);
 }
@@ -2849,6 +2872,20 @@ html::-webkit-scrollbar-thumb:hover {
 
 .db-presentation-new:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) :is(.db-shop-work-new__view-switch button, .db-shop-work-new__lane-tabs button) {
   color: var(--shop-work-muted);
+}
+
+/* The muted rule above paints every segment, so the selected one kept the
+   light-mode white face and became light-on-white. In dark modes the track
+   recedes and the selected segment is a raised, outlined face with ink text --
+   selection reads from the label, not only from the block behind it. */
+.db-presentation-new:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) .db-shop-work-new__view-switch {
+  background: var(--shop-work-surface);
+}
+
+.db-presentation-new:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) .db-shop-work-new__view-switch button[aria-pressed='true'] {
+  background: var(--shop-work-raised);
+  box-shadow: inset 0 0 0 1px var(--shop-work-border);
+  color: var(--shop-work-ink);
 }
 
 .db-presentation-new:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) :is(.db-shop-work-new__view-switch button > span, .db-shop-work-new__lane-tabs button > span) {
@@ -5614,4 +5651,164 @@ html.customer-portal-active {
 
 @media (prefers-reduced-motion: reduce) {
   .db-parts-workbench__icon-action .db-parts-workbench__collapsible-label { transition:none; }
+}
+
+/* Customers is still a legacy surface built from light Tailwind utilities
+   (bg-white, bg-gray-50, text-gray-900, border-gray-300). Those are correct in
+   the light appearance and illegible in the dark one — white fields with white
+   text, pale pills, washed stat cards. Remap them onto workspace tokens for the
+   dark and high-contrast appearances only; the light appearance keeps the
+   legacy look until the surface is rebuilt. Scoped to the customer panel so the
+   deliberately white repair-order detail panel is untouched. */
+.db-staff-shell:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) :is(.db-customer-detail-workspace, .db-customer-vehicle-modal) {
+  /* The scope element carries bg-white itself; the descendant rules below only
+     reach its children, which left a white sheet holding dark fields. */
+  background-color: var(--surface-raised) !important;
+  color: var(--workspace-text);
+}
+
+.db-staff-shell:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) :is(.db-customer-detail-workspace, .db-customer-vehicle-modal)
+  :is(.bg-white, .bg-gray-50, .bg-gray-100, .bg-slate-50) {
+  background-color: var(--surface-raised) !important;
+}
+
+.db-staff-shell:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) :is(.db-customer-detail-workspace, .db-customer-vehicle-modal)
+  :is(.border-gray-100, .border-gray-200, .border-gray-300, .border-slate-200) {
+  border-color: var(--workspace-border) !important;
+}
+
+.db-staff-shell:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) :is(.db-customer-detail-workspace, .db-customer-vehicle-modal)
+  :is(.text-gray-900, .text-gray-800, .text-slate-900, .text-slate-800, .text-black) {
+  color: var(--workspace-text) !important;
+}
+
+.db-staff-shell:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) :is(.db-customer-detail-workspace, .db-customer-vehicle-modal)
+  :is(.text-gray-700, .text-gray-600, .text-gray-500, .text-gray-400, .text-slate-600, .text-slate-500) {
+  color: var(--workspace-muted) !important;
+}
+
+/* Form controls: dark field, light text, muted placeholder. */
+.db-staff-shell:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) :is(.db-customer-detail-workspace, .db-customer-vehicle-modal)
+  :is(input:not([type='checkbox']):not([type='radio']), select, textarea) {
+  border-color: var(--workspace-border) !important;
+  background-color: var(--surface-overlay) !important;
+  color: var(--workspace-text) !important;
+  -webkit-text-fill-color: var(--workspace-text);
+  caret-color: var(--workspace-text);
+  color-scheme: dark;
+}
+
+.db-staff-shell:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) :is(.db-customer-detail-workspace, .db-customer-vehicle-modal)
+  :is(input, textarea)::placeholder {
+  color: var(--workspace-muted) !important;
+  -webkit-text-fill-color: var(--workspace-muted);
+}
+
+/* Emerald "total saved" tile: keep the semantic hue, lose the pale fill. */
+.db-staff-shell:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) :is(.db-customer-detail-workspace, .db-customer-vehicle-modal)
+  :is(.bg-emerald-50, .bg-green-50) {
+  background-color: color-mix(in srgb, var(--service-green, #087252) 22%, var(--surface-raised)) !important;
+}
+
+.db-staff-shell:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) :is(.db-customer-detail-workspace, .db-customer-vehicle-modal)
+  :is(.text-emerald-700, .text-emerald-800, .text-green-700) {
+  color: #6ee7b7 !important;
+}
+
+/* The Add Vehicle modal's mode switch: a light pill strip with a white active
+   tab, invisible against the remapped dark surfaces. */
+.db-staff-shell:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) .db-customer-vehicle-modal
+  .bg-gray-100 {
+  background-color: var(--surface-canvas) !important;
+}
+
+.db-staff-shell:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) .db-customer-vehicle-modal
+  .bg-gray-100 .bg-white {
+  background-color: var(--surface-overlay) !important;
+  color: var(--workspace-text) !important;
+}
+
+/* Dark-appearance noise reduction in the customer workspace. The legacy design
+   leans on filled amber/sky blocks that read as loud, competing signals against
+   the dark canvas: a solid Add / Link, a tinted Add Contact, a cream owner
+   banner, and white 44px hover controls. Demote each to a label, an outline, or
+   a neutral surface, and let the OWNED pill carry the ownership signal on its
+   own. Light appearance keeps the legacy treatment. */
+.db-staff-shell:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) .db-customer-detail-workspace
+  button:is(.bg-amber-50, .bg-amber-100, .bg-amber-500, .bg-amber-600) {
+  border: 1px solid color-mix(in srgb, var(--personal-accent-400, #f0b429) 40%, transparent) !important;
+  background-color: transparent !important;
+  color: var(--personal-accent-400, #f0b429) !important;
+  box-shadow: none !important;
+}
+
+.db-staff-shell:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) .db-customer-detail-workspace
+  button:is(.bg-amber-500, .bg-amber-600) .lucide,
+.db-staff-shell:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) .db-customer-detail-workspace
+  button:is(.bg-amber-500, .bg-amber-600) {
+  color: var(--personal-accent-400, #f0b429) !important;
+}
+
+/* Owner / authority grouping keeps its amber (owned) and sky (authority)
+   meaning, but as a soft translucent wash instead of a cream block. Both halves
+   have to flip together on a dark canvas: leaving the fill light and pushing the
+   text to muted grey is what made the OWNED pill unreadable. */
+.db-staff-shell:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) :is(.db-customer-detail-workspace, .db-customer-vehicle-modal)
+  :is(.bg-amber-50, .bg-amber-100) {
+  background-color: rgba(252, 211, 77, .12) !important;
+  border-color: rgba(252, 211, 77, .26) !important;
+}
+
+.db-staff-shell:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) :is(.db-customer-detail-workspace, .db-customer-vehicle-modal)
+  :is(.bg-sky-50, .bg-sky-100) {
+  background-color: rgba(125, 211, 252, .12) !important;
+  border-color: rgba(125, 211, 252, .26) !important;
+}
+
+.db-staff-shell:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) :is(.db-customer-detail-workspace, .db-customer-vehicle-modal)
+  :is(.border-amber-200, .border-amber-300) { border-color: rgba(252, 211, 77, .26) !important; }
+
+.db-staff-shell:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) :is(.db-customer-detail-workspace, .db-customer-vehicle-modal)
+  :is(.border-sky-200, .border-sky-300) { border-color: rgba(125, 211, 252, .26) !important; }
+
+.db-staff-shell:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) :is(.db-customer-detail-workspace, .db-customer-vehicle-modal)
+  :is(.text-amber-950, .text-amber-900, .text-sky-950, .text-sky-900) {
+  color: var(--workspace-text) !important;
+}
+
+.db-staff-shell:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) :is(.db-customer-detail-workspace, .db-customer-vehicle-modal)
+  :is(.text-amber-800, .text-amber-700, .text-amber-600) { color: #fcd34d !important; }
+
+.db-staff-shell:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) :is(.db-customer-detail-workspace, .db-customer-vehicle-modal)
+  :is(.text-sky-800, .text-sky-700, .text-sky-600) { color: #7dd3fc !important; }
+
+/* The relationship banner's supporting line is secondary text, not a second
+   accent: only the eyebrow label and the ownership pill carry the tint. The
+   pill shares the amber-800 class, so this is scoped to the paragraph. */
+.db-staff-shell:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) :is(.db-customer-detail-workspace, .db-customer-vehicle-modal)
+  p:is(.text-amber-800, .text-sky-800) { color: var(--workspace-muted) !important; }
+
+/* Unit / plate chips: a light slate chip reads as a white block on the dark
+   equipment card. */
+.db-staff-shell:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) :is(.db-customer-detail-workspace, .db-customer-vehicle-modal)
+  :is(.bg-slate-100, .bg-gray-100) { background-color: var(--surface-overlay) !important; box-shadow: inset 0 0 0 1px var(--workspace-border); }
+
+.db-staff-shell:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) :is(.db-customer-detail-workspace, .db-customer-vehicle-modal)
+  :is(.text-slate-700, .text-slate-600) { color: var(--workspace-muted) !important; }
+
+
+/* Row hover controls: outlined and smaller, not solid blocks. */
+.db-staff-shell:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) .db-customer-detail-workspace
+  button:is(.h-11.w-11):has(.lucide) {
+  block-size: 34px !important;
+  inline-size: 34px !important;
+  border: 1px solid var(--workspace-border) !important;
+  background-color: transparent !important;
+  box-shadow: none !important;
+}
+
+.db-staff-shell:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) .db-customer-detail-workspace
+  button:is(.h-11.w-11):has(.lucide) .lucide {
+  inline-size: .9rem;
+  block-size: .9rem;
 }
