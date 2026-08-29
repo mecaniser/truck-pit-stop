@@ -123,6 +123,7 @@ type InventoryEditorRecord = {
   core_charge: string
   supplier_name: string | null
   supplier_contact: string | null
+  on_order_quantity: number
 }
 
 type PartIdentityForm = {
@@ -137,6 +138,7 @@ type PartIdentityForm = {
   coreCharge: string
   supplierName: string
   supplierContact: string
+  onOrderQuantity: string
 }
 
 type PartsInfiniteData = {
@@ -210,6 +212,39 @@ function money(value: string | number | null | undefined) {
 // cost. The form always stores the resolved amount, so the save path is
 // unchanged; Markup only changes how you arrive at it. Ported from the previous
 // inventory page, which had this and the new workbench did not.
+// Ported from the previous inventory page: abbreviate the category and the
+// significant words of the name into a SKU stem. Words redundant with the
+// category are dropped, so "Brake pads - rear" in "Brakes" gives BRA-PAD-REA.
+// Category <-> unit linkage, ported from the previous inventory page. Fluids
+// are dispensed by volume, so setting one side fills the other -- but only
+// while the other side is still a default: a deliberate quart/litre choice
+// survives a category edit, and a typed category is never overwritten.
+const FLUID_UNITS = new Set(['gallon', 'quart', 'liter'])
+function fluidLink(field: 'category' | 'unitType', value: string, current: { category: string; unitType: string }) {
+  if (field === 'category' && /fluid/i.test(value) && current.unitType === 'each') return { unitType: 'gallon' }
+  if (field === 'unitType' && FLUID_UNITS.has(value.trim().toLowerCase()) && !current.category.trim()) return { category: 'Fluids' }
+  return {}
+}
+
+function skuStem(name: string, category: string) {
+  const cat = category.trim()
+  const prefix = cat ? cat.substring(0, 3).toUpperCase() : 'GEN'
+  const catLower = cat.toLowerCase()
+  const words = name.trim().split(/[\s\-_]+/)
+    .map((word) => word.replace(/[^a-zA-Z0-9]/g, ''))
+    .filter((word) => word.length > 0)
+    .filter((word) => {
+      if (!cat) return true
+      const lower = word.toLowerCase()
+      return !(catLower.startsWith(lower) || lower.startsWith(catLower.substring(0, Math.min(4, catLower.length))))
+    })
+  if (words.length === 0) return ''
+  const abbrev = words.slice(0, 3)
+    .map((word) => /^\d+$/.test(word) ? word.substring(0, 3) : word.substring(0, 3).toUpperCase())
+    .join('-')
+  return abbrev ? `${prefix}-${abbrev}` : ''
+}
+
 function SellingPriceField({ cost, value, disabled, onChange }: {
   cost: string
   value: string
@@ -600,6 +635,44 @@ export default function PartsInventoryWorkspace({ summary }: { summary: Summary 
     : summary.needs_reorder_count ?? summary.low_stock_count ?? 0
   const counterSalesEnabled = Boolean(summary.capabilities?.counter_sales)
 
+  // A delivery landing against the part, not a purchase order: adds to stock
+  // and draws the on-order figure down. Purchasing owns PO receiving; this is
+  // the ad-hoc "it arrived" path the previous inventory page had.
+  const receiveStock = async (part: PartDetail, quantity: number) => {
+    setError(null)
+    try {
+      await api.post(`/inventory/${part.id}/receive`, { quantity })
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['parts-operations', 'parts'] }),
+        queryClient.invalidateQueries({ queryKey: ['parts-operations', 'part', part.id] }),
+        queryClient.invalidateQueries({ queryKey: ['parts-operations', 'activity-events'] }),
+        queryClient.invalidateQueries({ queryKey: ['inventory', 'detail', part.id] }),
+      ])
+      setNotice(`Received ${quantity} into ${part.name}.`)
+    } catch (cause) {
+      setError(errorMessage(cause))
+    }
+  }
+
+  const maintenanceMenu = useRef<HTMLDetailsElement>(null)
+  const [maintenanceBusy, setMaintenanceBusy] = useState<string | null>(null)
+  const [confirmClear, setConfirmClear] = useState(false)
+  const runMaintenance = async (key: string, path: string, done: string) => {
+    setError(null)
+    setMaintenanceBusy(key)
+    try {
+      await api.post(path)
+      await queryClient.invalidateQueries({ queryKey: ['parts-operations'] })
+      setPartsSequence((current) => current + 1)
+      setNotice(done)
+      if (maintenanceMenu.current) maintenanceMenu.current.open = false
+    } catch (cause) {
+      setError(errorMessage(cause))
+    } finally {
+      setMaintenanceBusy(null)
+    }
+  }
+
   const updatePart = async (part: PartDetail, patch: Record<string, unknown>) => {
     setError(null)
     try {
@@ -660,6 +733,22 @@ export default function PartsInventoryWorkspace({ summary }: { summary: Summary 
       <div className="db-parts-workbench__summary" aria-label="Parts summary">
         {counterSalesEnabled && <button className="db-parts-workbench__sales-link" type="button" onClick={() => navigate('/dashboard/garage/inventory/sales')}>Parts sales<ArrowRight aria-hidden="true" /></button>}
         {manage && <button className="db-parts-workbench__add-part" type="button" onClick={() => setAddPartOpen(true)}><Plus aria-hidden="true" />Add Part</button>}
+        {/* Catalogue maintenance, carried over from the previous inventory page.
+            Kept behind a menu because these act on the whole catalogue, and the
+            destructive one keeps its explicit confirmation. */}
+        {manage && <details className="db-parts-workbench__maintenance" ref={maintenanceMenu}>
+          <summary aria-label="Catalogue maintenance">Maintenance</summary>
+          <div role="group" aria-label="Catalogue maintenance actions">
+            <button type="button" disabled={Boolean(maintenanceBusy)} onClick={() => runMaintenance('preload', '/inventory/preload', 'Sample parts added.')}>{maintenanceBusy === 'preload' ? 'Adding…' : 'Add sample parts'}</button>
+            <button type="button" disabled={Boolean(maintenanceBusy)} onClick={() => runMaintenance('regenerate', '/inventory/library/regenerate', 'Part library regenerated.')}>{maintenanceBusy === 'regenerate' ? 'Regenerating…' : 'Regenerate part library'}</button>
+            {!confirmClear && <button type="button" className="is-danger" disabled={Boolean(maintenanceBusy)} onClick={() => setConfirmClear(true)}>Clear all parts…</button>}
+            {confirmClear && <span className="db-parts-workbench__maintenance-confirm">
+              <strong>Clear all parts?</strong>
+              <button type="button" className="is-danger" disabled={Boolean(maintenanceBusy)} onClick={async () => { await runMaintenance('clear', '/inventory/clear', 'Catalogue cleared.'); setConfirmClear(false) }}>{maintenanceBusy === 'clear' ? 'Clearing…' : 'Yes, clear all'}</button>
+              <button type="button" disabled={Boolean(maintenanceBusy)} onClick={() => setConfirmClear(false)}>Cancel</button>
+            </span>}
+          </div>
+        </details>}
       </div>
     </header>
 
@@ -725,7 +814,7 @@ export default function PartsInventoryWorkspace({ summary }: { summary: Summary 
           </div>}
           <PartLedger page={partsPage} loading={partsQuery.isLoading} loadingMore={partsQuery.isFetchingNextPage} failed={partsQuery.isError && !partsQuery.data} manage={manage} salesEnabled={counterSalesEnabled} selectedId={selectedId} checkedIds={new Set(checkedParts.keys())} density={density} sort={sort} direction={direction} logoUrl={branding?.logo_url || null} companyName={branding?.name || null} onSort={toggleHeaderSort} onCheck={toggleChecked} onSelect={(id) => { setSelectedId(id); setMobileDetailOpen(true) }} onSell={(id) => navigate(`/dashboard/garage/inventory/sales?new=1&part=${encodeURIComponent(id)}`)} onRetry={() => void partsQuery.refetch()} onLoadMore={() => void partsQuery.fetchNextPage()} />
         </div>
-        <PartInspector part={detailQuery.data} loading={detailQuery.isLoading} failed={detailQuery.isError} manage={manage} prepared={Boolean(detailQuery.data && preparedPartIds.has(detailQuery.data.id))} logoUrl={branding?.logo_url || null} companyName={branding?.name || null} onBack={() => setMobileDetailOpen(false)} onRetry={() => void detailQuery.refetch()} onAdjust={updatePart} onUpdateIdentity={updatePartIdentity} onUploadPhoto={uploadPartPhoto} onRemovePhoto={removePartPhoto} onPrepare={addToPreparation} onPurchasing={() => navigate('/dashboard/garage/purchasing')} onOpenPurchaseOrder={(id) => navigate(`/dashboard/garage/purchasing?view=orders&purchase_order=${encodeURIComponent(id)}`)} onOpenRepair={(id) => navigate(`/dashboard/repair-orders?selected=${encodeURIComponent(id)}`)} />
+        <PartInspector part={detailQuery.data} loading={detailQuery.isLoading} failed={detailQuery.isError} manage={manage} prepared={Boolean(detailQuery.data && preparedPartIds.has(detailQuery.data.id))} logoUrl={branding?.logo_url || null} companyName={branding?.name || null} onBack={() => setMobileDetailOpen(false)} onRetry={() => void detailQuery.refetch()} onAdjust={updatePart} onReceive={receiveStock} onUpdateIdentity={updatePartIdentity} onUploadPhoto={uploadPartPhoto} onRemovePhoto={removePartPhoto} onPrepare={addToPreparation} onPurchasing={() => navigate('/dashboard/garage/purchasing')} onOpenPurchaseOrder={(id) => navigate(`/dashboard/garage/purchasing?view=orders&purchase_order=${encodeURIComponent(id)}`)} onOpenRepair={(id) => navigate(`/dashboard/repair-orders?selected=${encodeURIComponent(id)}`)} />
       </div>}
     {addPartOpen && <AddPartDrawer isOpen onClose={() => setAddPartOpen(false)} onCreated={async (partName) => {
       await Promise.all([
@@ -827,7 +916,23 @@ function AddPartDrawer({ isOpen, onClose, onCreated }: { isOpen: boolean; onClos
   const [form, setForm] = useState<AddPartForm>(EMPTY_ADD_PART)
   const [saving, setSaving] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
-  const update = (field: keyof AddPartForm, value: string) => { setForm((current) => ({ ...current, [field]: value })); setFormError(null) }
+  const update = (field: keyof AddPartForm, value: string) => { setForm((current) => ({ ...current, [field]: value, ...(field === 'category' || field === 'unitType' ? fluidLink(field, value, current) : {}) })); setFormError(null) }
+
+  // Suggest a SKU only while the field is untouched. The sequence is resolved
+  // against the server rather than the loaded page: the ledger paginates, so a
+  // client-side count would hand out the same -001 twice, and the tenant has a
+  // unique canonical-SKU index that would reject the second save.
+  const stem = form.sku.trim() ? '' : skuStem(form.name, form.category)
+  const stemQuery = useQuery<Page<PartRecord>>({
+    queryKey: ['parts-operations', 'sku-stem', stem],
+    queryFn: async () => (await api.get('/parts-operations/parts', { params: { search: stem, limit: 1, skip: 0 } })).data,
+    enabled: isOpen && stem.length > 0,
+    staleTime: 30_000,
+    retry: false,
+  })
+  const skuSuggestion = stem && stemQuery.data
+    ? `${stem}-${String((stemQuery.data.total ?? 0) + 1).padStart(3, '0')}`
+    : ''
   const close = () => { if (saving) return; setForm(EMPTY_ADD_PART); setFormError(null); onClose() }
   const submit = async () => {
     if (saving) return
@@ -875,7 +980,9 @@ function AddPartDrawer({ isOpen, onClose, onCreated }: { isOpen: boolean; onClos
         <legend>Identity</legend>
         <div className="db-parts-workbench__add-fields">
           <label>Part name <span aria-hidden="true">*</span><input autoFocus required disabled={saving} value={form.name} onChange={(event) => update('name', event.target.value)} placeholder="Brake pads – rear" /></label>
-          <label>SKU <span aria-hidden="true">*</span><input required disabled={saving} value={form.sku} onChange={(event) => update('sku', event.target.value)} placeholder="BRA-HEA-DUT-PAD-001" /></label>
+          <label>SKU <span aria-hidden="true">*</span><input required disabled={saving} value={form.sku} onChange={(event) => update('sku', event.target.value)} placeholder="BRA-HEA-DUT-PAD-001" />
+            {skuSuggestion && <button type="button" className="db-parts-workbench__sku-suggestion" disabled={saving} onClick={() => update('sku', skuSuggestion)}>Use suggested: <span>{skuSuggestion}</span></button>}
+          </label>
           <label className="is-wide">Description<textarea disabled={saving} rows={3} value={form.description} onChange={(event) => update('description', event.target.value)} placeholder="Optional catalog description" /></label>
           <label>Category<input disabled={saving} value={form.category} onChange={(event) => update('category', event.target.value)} placeholder="Brakes" /></label>
           <label>Unit<input disabled={saving} value={form.unitType} onChange={(event) => update('unitType', event.target.value)} placeholder="each" /></label>
@@ -909,7 +1016,7 @@ function AddPartDrawer({ isOpen, onClose, onCreated }: { isOpen: boolean; onClos
   </SlidePanelForm>
 }
 
-function PartInspector({ part, loading, failed, manage, prepared, logoUrl, companyName, onBack, onRetry, onAdjust, onUpdateIdentity, onUploadPhoto, onRemovePhoto, onPrepare, onPurchasing, onOpenPurchaseOrder, onOpenRepair }: { part?: PartDetail; loading: boolean; failed: boolean; manage: boolean; prepared: boolean; logoUrl: string | null; companyName: string | null; onBack: () => void; onRetry: () => void; onAdjust: (part: PartDetail, patch: Record<string, unknown>) => Promise<void>; onUpdateIdentity: (part: PartDetail, patch: Record<string, unknown>) => Promise<void>; onUploadPhoto: (part: PartDetail, file: File) => Promise<void>; onRemovePhoto: (part: PartDetail) => Promise<void>; onPrepare: (part: PartDetail) => void; onPurchasing: () => void; onOpenPurchaseOrder: (id: string) => void; onOpenRepair: (id: string) => void }) {
+function PartInspector({ part, loading, failed, manage, prepared, logoUrl, companyName, onBack, onRetry, onAdjust, onReceive, onUpdateIdentity, onUploadPhoto, onRemovePhoto, onPrepare, onPurchasing, onOpenPurchaseOrder, onOpenRepair }: { part?: PartDetail; loading: boolean; failed: boolean; manage: boolean; prepared: boolean; logoUrl: string | null; companyName: string | null; onBack: () => void; onRetry: () => void; onAdjust: (part: PartDetail, patch: Record<string, unknown>) => Promise<void>; onReceive: (part: PartDetail, quantity: number) => Promise<void>; onUpdateIdentity: (part: PartDetail, patch: Record<string, unknown>) => Promise<void>; onUploadPhoto: (part: PartDetail, file: File) => Promise<void>; onRemovePhoto: (part: PartDetail) => Promise<void>; onPrepare: (part: PartDetail) => void; onPurchasing: () => void; onOpenPurchaseOrder: (id: string) => void; onOpenRepair: (id: string) => void }) {
   const [inspectorView, setInspectorView] = useState<InspectorView>('overview')
   const [edit, setEdit] = useState<'available' | 'reorder' | null>(null)
   const [value, setValue] = useState('')
@@ -917,6 +1024,10 @@ function PartInspector({ part, loading, failed, manage, prepared, logoUrl, compa
   const [saving, setSaving] = useState(false)
   const [localError, setLocalError] = useState<string | null>(null)
   const [editFocusMode, setEditFocusMode] = useState<'pointer' | 'keyboard'>('pointer')
+  const [promoting, setPromoting] = useState(false)
+  const [receiveQty, setReceiveQty] = useState('')
+  const [receiving, setReceiving] = useState(false)
+  const [receiveError, setReceiveError] = useState<string | null>(null)
   const [identityOpen, setIdentityOpen] = useState(false)
   const [identityForm, setIdentityForm] = useState<PartIdentityForm | null>(null)
   const [identityOriginal, setIdentityOriginal] = useState<InventoryEditorRecord | null>(null)
@@ -965,6 +1076,7 @@ function PartInspector({ part, loading, failed, manage, prepared, logoUrl, compa
       coreCharge: money(record.core_charge),
       supplierName: record.supplier_name || '',
       supplierContact: record.supplier_contact || '',
+      onOrderQuantity: String(record.on_order_quantity ?? 0),
     })
   }, [identityOpen, identityOriginal?.id, identityQuery.data])
   useEffect(() => {
@@ -994,7 +1106,7 @@ function PartInspector({ part, loading, failed, manage, prepared, logoUrl, compa
     window.requestAnimationFrame(() => identityTrigger.current?.focus())
   }
   const updateIdentity = (field: keyof PartIdentityForm, next: string) => {
-    setIdentityForm((current) => current ? { ...current, [field]: next } : current)
+    setIdentityForm((current) => current ? { ...current, [field]: next, ...(field === 'category' || field === 'unitType' ? fluidLink(field, next, current) : {}) } : current)
     setIdentityError(null)
   }
   const identityPatch = useMemo<Record<string, unknown>>(() => {
@@ -1024,6 +1136,8 @@ function PartInspector({ part, loading, failed, manage, prepared, logoUrl, compa
     if (moneyChanged(identityForm.cost, identityOriginal.cost)) patch.cost = Number(identityForm.cost).toFixed(2)
     if (moneyChanged(identityForm.sellingPrice, identityOriginal.selling_price)) patch.selling_price = Number(identityForm.sellingPrice).toFixed(2)
     if (moneyChanged(identityForm.coreCharge, identityOriginal.core_charge)) patch.core_charge = Number(identityForm.coreCharge).toFixed(2)
+    const onOrder = Number(identityForm.onOrderQuantity)
+    if (Number.isInteger(onOrder) && onOrder >= 0 && onOrder !== (identityOriginal.on_order_quantity ?? 0)) patch.on_order_quantity = onOrder
     return patch
   }, [identityForm, identityOriginal])
   const identityDirty = Object.keys(identityPatch).length > 0
@@ -1256,6 +1370,7 @@ function PartInspector({ part, loading, failed, manage, prepared, logoUrl, compa
               <legend>Supplier</legend>
               <div className="db-parts-workbench__identity-fields">
                 <label>Supplier name<input maxLength={255} disabled={identitySaving || photoSaving} value={identityForm.supplierName} onChange={(event) => updateIdentity('supplierName', event.target.value)} /></label>
+                <label>On order<input inputMode="numeric" disabled={identitySaving || photoSaving} value={identityForm.onOrderQuantity} onChange={(event) => updateIdentity('onOrderQuantity', event.target.value)} /></label>
                 <label>Supplier contact<input maxLength={255} disabled={identitySaving || photoSaving} value={identityForm.supplierContact} onChange={(event) => updateIdentity('supplierContact', event.target.value)} /></label>
               </div>
             </fieldset>
@@ -1272,6 +1387,16 @@ function PartInspector({ part, loading, failed, manage, prepared, logoUrl, compa
     </div>
     <div className="db-parts-workbench__inspector-panel" id={`part-inspector-${inspectorView}-panel`} role="tabpanel" aria-labelledby={`part-inspector-${inspectorView}-tab`}>
       {inspectorView === 'overview' && <>
+        {part.is_placeholder && <section className="db-parts-workbench__promote" role="region" aria-label="Placeholder part">
+          <div>
+            <strong>Placeholder part</strong>
+            <span>Added ad-hoc to finish a job, so it carries no stock, price or location. Promoting keeps every repair order already attached to it.</span>
+          </div>
+          {manage && !part.is_archived && <button type="button" disabled={promoting} onClick={async () => {
+            setPromoting(true)
+            try { await onAdjust(part, { is_placeholder: false }) } finally { setPromoting(false) }
+          }}>{promoting ? 'Promoting…' : 'Make this a stocked part'}</button>}
+        </section>}
         <section className="db-parts-workbench__section"><h3>At a glance</h3><dl className="db-parts-workbench__facts is-overview"><div><dt>Physical on hand</dt><dd>{physicalOnHand}</dd></div><div><dt>Held for checkout</dt><dd>{heldForCheckout}</dd></div><div><dt>Available to sell</dt><dd>{availableToSell}</dd></div><div><dt>Needed for open repairs</dt><dd>{part.needed_for_open_repairs}</dd></div><div><dt>Reorder at</dt><dd>{part.reorder_level}</dd></div><div><dt>Incoming</dt><dd>{part.incoming_packages}</dd></div><div><dt>Average cost</dt><dd>${Number(part.average_unit_cost || 0).toFixed(2)}</dd></div><div><dt>Remarks</dt><dd>{remark}</dd></div></dl></section>
         <section className="db-parts-workbench__section db-parts-workbench__supplier-section">
           <div className="db-parts-workbench__supplier-section-head">
@@ -1310,6 +1435,22 @@ function PartInspector({ part, loading, failed, manage, prepared, logoUrl, compa
         <dl className={`db-parts-workbench__facts${edit ? ' has-editor' : ''}`}>
         {stockFacts}
       </dl>
+      {manage && !part.is_archived && <form className="db-parts-workbench__receive" onSubmit={async (event) => {
+        event.preventDefault()
+        const quantity = Number(receiveQty)
+        if (!Number.isInteger(quantity) || quantity <= 0) { setReceiveError('Enter a whole quantity greater than zero.'); return }
+        setReceiveError(null)
+        setReceiving(true)
+        try { await onReceive(part, quantity); setReceiveQty('') } finally { setReceiving(false) }
+      }}>
+        <label htmlFor="part-receive-qty">Receive stock</label>
+        <div>
+          <input id="part-receive-qty" inputMode="numeric" disabled={receiving} value={receiveQty} placeholder="0" onChange={(event) => { setReceiveQty(event.target.value); setReceiveError(null) }} />
+          <button type="submit" disabled={receiving || !receiveQty.trim()}>{receiving ? 'Receiving…' : 'Receive'}</button>
+        </div>
+        <small>Adds to on-hand stock and draws down what is on order.</small>
+        {receiveError && <p role="alert">{receiveError}</p>}
+      </form>}
       </section>}
       {inspectorView === 'ordering' && <section className="db-parts-workbench__section">
         <div className="db-parts-workbench__section-head"><h3>Ordering</h3><button type="button" onClick={onPurchasing}>{prepared ? 'View purchase list' : 'Open Purchasing'}<ArrowRight aria-hidden="true" /></button></div>
