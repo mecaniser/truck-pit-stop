@@ -2,7 +2,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react'
 import { useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
-import { Archive, ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Boxes, Camera, ChevronsUpDown, EllipsisVertical, History, MapPin, Package, Pencil, Plus, Search, ShoppingCart, Trash2, X } from 'lucide-react'
+import { Archive, ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Boxes, Camera, ChevronsUpDown, EllipsisVertical, History, MapPin, Package, Pencil, Plus, Search, Settings2, ShoppingCart, Trash2, X } from 'lucide-react'
 
 import api from '@/lib/api'
 import useTenantBranding from '@/hooks/useTenantBranding'
@@ -657,6 +657,34 @@ export default function PartsInventoryWorkspace({ summary }: { summary: Summary 
   const maintenanceMenu = useRef<HTMLDetailsElement>(null)
   const [maintenanceBusy, setMaintenanceBusy] = useState<string | null>(null)
   const [confirmClear, setConfirmClear] = useState(false)
+  // A menu should close when you look away from it: pointer down anywhere else
+  // or Escape, not only a second click on the trigger.
+  useEffect(() => {
+    const node = maintenanceMenu.current
+    if (!node) return
+    const closeOnOutside = (event: MouseEvent | FocusEvent) => {
+      if (!node.open) return
+      const target = event.target as Node | null
+      if (target && node.contains(target)) return
+      node.open = false
+      setConfirmClear(false)
+    }
+    const closeOnEscape = (event: globalThis.KeyboardEvent) => {
+      if (event.key !== 'Escape' || !node.open) return
+      node.open = false
+      setConfirmClear(false)
+      node.querySelector('summary')?.focus()
+    }
+    document.addEventListener('pointerdown', closeOnOutside)
+    document.addEventListener('focusin', closeOnOutside)
+    document.addEventListener('keydown', closeOnEscape)
+    return () => {
+      document.removeEventListener('pointerdown', closeOnOutside)
+      document.removeEventListener('focusin', closeOnOutside)
+      document.removeEventListener('keydown', closeOnEscape)
+    }
+  }, [])
+
   const runMaintenance = async (key: string, path: string, done: string) => {
     setError(null)
     setMaintenanceBusy(key)
@@ -737,7 +765,7 @@ export default function PartsInventoryWorkspace({ summary }: { summary: Summary 
             Kept behind a menu because these act on the whole catalogue, and the
             destructive one keeps its explicit confirmation. */}
         {manage && <details className="db-parts-workbench__maintenance" ref={maintenanceMenu}>
-          <summary aria-label="Catalogue maintenance">Maintenance</summary>
+          <summary aria-label="Catalogue maintenance" title="Catalogue maintenance"><Settings2 aria-hidden="true" /></summary>
           <div role="group" aria-label="Catalogue maintenance actions">
             <button type="button" disabled={Boolean(maintenanceBusy)} onClick={() => runMaintenance('preload', '/inventory/preload', 'Sample parts added.')}>{maintenanceBusy === 'preload' ? 'Adding…' : 'Add sample parts'}</button>
             <button type="button" disabled={Boolean(maintenanceBusy)} onClick={() => runMaintenance('regenerate', '/inventory/library/regenerate', 'Part library regenerated.')}>{maintenanceBusy === 'regenerate' ? 'Regenerating…' : 'Regenerate part library'}</button>
@@ -977,10 +1005,10 @@ function AddPartDrawer({ isOpen, onClose, onCreated }: { isOpen: boolean; onClos
   return <SlidePanelForm isOpen={isOpen} onClose={close} title="Add Part" onSubmit={submit} submitLabel="Add Part" isSubmitting={saving} ariaLabel="Add part" panelClassName="db-parts-workbench__add-panel">
     <div className="db-parts-workbench__add-form">
       <fieldset>
-        <legend>Identity</legend>
+        <legend>Part details</legend>
         <div className="db-parts-workbench__add-fields">
-          <label>Part name <span aria-hidden="true">*</span><input autoFocus required disabled={saving} value={form.name} onChange={(event) => update('name', event.target.value)} placeholder="Brake pads – rear" /></label>
-          <label>SKU <span aria-hidden="true">*</span><input required disabled={saving} value={form.sku} onChange={(event) => update('sku', event.target.value)} placeholder="BRA-HEA-DUT-PAD-001" />
+          <label><span className="db-parts-workbench__field-label">Part name <span aria-hidden="true">*</span></span><input autoFocus required disabled={saving} value={form.name} onChange={(event) => update('name', event.target.value)} placeholder="Brake pads – rear" /></label>
+          <label><span className="db-parts-workbench__field-label">SKU <span aria-hidden="true">*</span></span><input required disabled={saving} value={form.sku} onChange={(event) => update('sku', event.target.value)} placeholder="BRA-HEA-DUT-PAD-001" />
             {skuSuggestion && <button type="button" className="db-parts-workbench__sku-suggestion" disabled={saving} onClick={() => update('sku', skuSuggestion)}>Use suggested: <span>{skuSuggestion}</span></button>}
           </label>
           <label className="is-wide">Description<textarea disabled={saving} rows={3} value={form.description} onChange={(event) => update('description', event.target.value)} placeholder="Optional catalog description" /></label>

@@ -5244,7 +5244,12 @@ html.customer-portal-active {
 .db-parts-workbench__add-form fieldset { min-inline-size:0; margin:0; padding:0; border:0; }
 .db-parts-workbench__add-form fieldset + fieldset { padding-block-start:1rem; border-block-start:1px solid var(--workspace-border); }
 .db-parts-workbench__add-form legend { inline-size:100%; margin-block-end:.65rem; padding:0; color:var(--text-primary); font-size:.78rem; font-weight:850; }
-.db-parts-workbench__add-fields { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:.72rem .8rem; }
+.db-parts-workbench__add-fields { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:.72rem .8rem; align-items:start; }
+/* The caption is one line: the required marker used to be a separate grid item
+   in the label, so it dropped onto its own row and pushed the control down --
+   which is why the two columns stopped lining up as soon as one grew. */
+.db-parts-workbench__field-label { display:block; }
+.db-parts-workbench__add-form label { align-content:start; }
 .db-parts-workbench__add-form label { display:grid; gap:.35rem; min-inline-size:0; color:var(--text-secondary); font-size:.76rem; font-weight:750; }
 .db-parts-workbench__add-fields .is-wide,.db-parts-workbench__add-form > .is-wide { grid-column:1 / -1; }
 .db-parts-workbench__add-form :is(input,textarea) { inline-size:100%; min-block-size:44px; padding:.58rem .68rem; border:1px solid var(--workspace-border); border-radius:.75rem; background:var(--surface-overlay); color:var(--text-primary); caret-color:var(--text-primary); }
@@ -5277,7 +5282,8 @@ html.customer-portal-active {
 .db-parts-workbench__receive small { color:var(--text-secondary); font-size:.68rem; }
 .db-parts-workbench__receive p { margin:0; color:var(--parts-status-danger); font-size:.72rem; font-weight:700; }
 .db-parts-workbench__maintenance { position:relative; }
-.db-parts-workbench__maintenance > summary { display:inline-flex; min-block-size:44px; align-items:center; padding:.45rem .7rem; border:1px solid var(--workspace-border); border-radius:.6rem; color:var(--text-secondary); font-size:.75rem; font-weight:750; cursor:pointer; list-style:none; }
+.db-parts-workbench__maintenance > summary { display:inline-grid; inline-size:44px; min-block-size:44px; place-items:center; border:1px solid var(--workspace-border); border-radius:.6rem; color:var(--text-secondary); cursor:pointer; list-style:none; }
+.db-parts-workbench__maintenance > summary svg { inline-size:1.05rem; block-size:1.05rem; }
 .db-parts-workbench__maintenance > summary::-webkit-details-marker { display:none; }
 .db-parts-workbench__maintenance[open] > summary { color:var(--text-primary); }
 .db-parts-workbench__maintenance > div { position:absolute; z-index:20; inset-block-start:calc(100% + .3rem); inset-inline-end:0; display:grid; gap:.25rem; min-inline-size:15rem; padding:.4rem; border:1px solid var(--workspace-border); border-radius:.7rem; background:var(--surface-raised); box-shadow:0 12px 28px rgba(6,14,26,.28); }
