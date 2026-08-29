@@ -5259,6 +5259,35 @@ html.customer-portal-active {
    real value; a normal weight separates hint from data at a glance. */
 .db-parts-workbench__add-form :is(input,textarea)::placeholder { color:var(--workspace-muted); -webkit-text-fill-color:var(--workspace-muted); font-weight:500; opacity:1; }
 .db-parts-workbench__add-form p { margin:0; color:var(--parts-status-danger); font-size:.8rem; font-weight:750; }
+/* Click-to-apply, never auto-filled: the SKU is the operator's call. */
+.db-parts-workbench__sku-suggestion { justify-self:start; margin-block-start:.3rem; padding:.3rem .5rem; border:1px dashed var(--workspace-border); border-radius:.5rem; background:transparent; color:var(--text-secondary); font-size:.7rem; font-weight:650; cursor:pointer; }
+.db-parts-workbench__sku-suggestion span { font-family:var(--font-mono,monospace); font-weight:800; color:var(--text-primary); }
+.db-parts-workbench__sku-suggestion:disabled { cursor:not-allowed; opacity:.5; }
+/* Promote / receive: two one-off actions that sit with the facts they change. */
+.db-parts-workbench__promote { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:.6rem; margin-block-end:.9rem; padding:.7rem .8rem; border:1px dashed color-mix(in srgb,var(--parts-selected-ink) 32%,transparent); border-radius:.75rem; }
+.db-parts-workbench__promote > div { display:grid; gap:.2rem; min-inline-size:12rem; flex:1 1 16rem; }
+.db-parts-workbench__promote strong { color:var(--parts-selected-ink); font-size:.78rem; }
+.db-parts-workbench__promote span { color:var(--parts-selected-ink); font-size:.7rem; font-weight:500; opacity:.8; }
+.db-parts-workbench__promote button,.db-parts-workbench__receive button { min-block-size:44px; padding:.45rem .8rem; border:1px solid var(--parts-oxide); border-radius:.6rem; background:var(--parts-oxide); color:var(--parts-oxide-ink,#fff); font-size:.75rem; font-weight:750; cursor:pointer; }
+.db-parts-workbench__promote button:disabled,.db-parts-workbench__receive button:disabled { cursor:not-allowed; opacity:.55; }
+.db-parts-workbench__receive { display:grid; gap:.3rem; margin-block-start:.9rem; padding-block-start:.8rem; border-block-start:1px solid var(--workspace-border); }
+.db-parts-workbench__receive > label { color:var(--text-secondary); font-size:.72rem; font-weight:750; }
+.db-parts-workbench__receive > div { display:flex; gap:.4rem; }
+.db-parts-workbench__receive input { inline-size:7rem; min-block-size:44px; padding:.5rem .6rem; border:1px solid var(--workspace-border); border-radius:.6rem; background:var(--surface-overlay); color:var(--text-primary); }
+.db-parts-workbench__receive small { color:var(--text-secondary); font-size:.68rem; }
+.db-parts-workbench__receive p { margin:0; color:var(--parts-status-danger); font-size:.72rem; font-weight:700; }
+.db-parts-workbench__maintenance { position:relative; }
+.db-parts-workbench__maintenance > summary { display:inline-flex; min-block-size:44px; align-items:center; padding:.45rem .7rem; border:1px solid var(--workspace-border); border-radius:.6rem; color:var(--text-secondary); font-size:.75rem; font-weight:750; cursor:pointer; list-style:none; }
+.db-parts-workbench__maintenance > summary::-webkit-details-marker { display:none; }
+.db-parts-workbench__maintenance[open] > summary { color:var(--text-primary); }
+.db-parts-workbench__maintenance > div { position:absolute; z-index:20; inset-block-start:calc(100% + .3rem); inset-inline-end:0; display:grid; gap:.25rem; min-inline-size:15rem; padding:.4rem; border:1px solid var(--workspace-border); border-radius:.7rem; background:var(--surface-raised); box-shadow:0 12px 28px rgba(6,14,26,.28); }
+.db-parts-workbench__maintenance button { min-block-size:44px; padding:.45rem .6rem; border:0; border-radius:.5rem; background:transparent; color:var(--text-primary); font-size:.76rem; font-weight:650; text-align:start; cursor:pointer; }
+.db-parts-workbench__maintenance button:disabled { cursor:not-allowed; opacity:.55; }
+.db-parts-workbench__maintenance button.is-danger { color:var(--parts-status-danger); font-weight:750; }
+.db-parts-workbench__maintenance-confirm { display:grid; gap:.25rem; padding:.45rem; border:1px solid color-mix(in srgb,var(--parts-status-danger) 45%,transparent); border-radius:.55rem; }
+.db-parts-workbench__maintenance-confirm strong { color:var(--parts-status-danger); font-size:.74rem; }
+@media (hover:hover) and (pointer:fine) { .db-parts-workbench__maintenance button:hover { background:var(--surface-overlay); } }
+@media (pointer:coarse) { .db-parts-workbench__sku-suggestion { min-block-size:44px; } }
 .db-presentation-new .db-staff-content .db-parts-workbench__add-form :is(input,textarea) { border-color:var(--workspace-border) !important; background:var(--surface-overlay) !important; color:var(--text-primary) !important; -webkit-text-fill-color:var(--text-primary); }
 .db-parts-workbench__add-stepper { inline-size:100%; min-inline-size:0; justify-content:flex-start; }
 .db-parts-workbench__add-stepper > span:first-child { flex:1 1 0% !important; inline-size:100%; min-inline-size:0; border-color:var(--workspace-border); border-radius:.75rem; background:var(--surface-overlay); box-shadow:none; overflow:hidden; }
