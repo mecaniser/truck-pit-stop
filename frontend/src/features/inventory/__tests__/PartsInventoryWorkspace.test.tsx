@@ -379,7 +379,10 @@ describe('DB-038 Parts & inventory workspace', () => {
     expect(selectedSurfaces).toHaveLength(2)
     expect(selectedSurfaces[0]).toHaveClass('is-selected')
     expect(selectedSurfaces[1]).toHaveClass('db-parts-workbench__selected-action')
-    expect(screen.getByRole('button', { name: 'Edit details' }).parentElement).toHaveClass('db-parts-workbench__selected-label-row')
+    // Edit now shares a controls group with the dismiss on the same label row.
+    const editDetails = screen.getByRole('button', { name: 'Edit details' })
+    expect(editDetails.parentElement).toHaveClass('db-parts-workbench__selected-controls')
+    expect(editDetails.closest('.db-parts-workbench__selected-label-row')).not.toBeNull()
     expect(screen.getByRole('tabpanel', { name: 'Overview' })).toHaveTextContent('At a glance')
     expect(screen.queryByRole('button', { name: 'Add to purchase list' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Adjust on-hand quantity' })).not.toBeInTheDocument()
@@ -412,7 +415,11 @@ describe('DB-038 Parts & inventory workspace', () => {
     expect(body?.children).toHaveLength(2)
     expect(body?.firstElementChild).toHaveClass('db-parts-workbench__ledger-workspace')
     expect(body?.lastElementChild).toHaveClass('db-parts-workbench__inspector')
-    expect(workbench?.querySelector('.db-parts-workbench__toolbar')?.parentElement).toHaveClass('db-parts-workbench__ledger-workspace')
+    // Ledger controls live outside the bordered body, as a workbench-level
+    // sibling that precedes it.
+    const toolbar = workbench?.querySelector('.db-parts-workbench__toolbar')
+    expect(toolbar?.parentElement).toHaveClass('db-parts-workbench')
+    expect(toolbar?.nextElementSibling).toHaveClass('db-parts-workbench__body')
   })
 
   it('keeps manual purchase preparation available without visually escalating healthy stock', async () => {
@@ -480,6 +487,16 @@ describe('DB-038 Parts & inventory workspace', () => {
       headers: { 'Content-Type': 'multipart/form-data' },
     }))
     expect((apiMocks.post.mock.calls.at(-1)?.[1] as FormData).get('image')).toBe(file)
+    // Removing a photo is destructive, so the trash arms a confirmation rather
+    // than deleting on the first click.
+    await user.click(within(editorRegion).getByRole('button', { name: 'Remove photo' }))
+    expect(apiMocks.delete).not.toHaveBeenCalled()
+    expect(within(editorRegion).getByText('Remove this photo?')).toBeInTheDocument()
+
+    await user.click(within(editorRegion).getByRole('button', { name: 'Keep photo' }))
+    expect(apiMocks.delete).not.toHaveBeenCalled()
+
+    await user.click(within(editorRegion).getByRole('button', { name: 'Remove photo' }))
     await user.click(within(editorRegion).getByRole('button', { name: 'Remove photo' }))
     await waitFor(() => expect(apiMocks.delete).toHaveBeenCalledWith('/inventory/part-active/photo'))
   })
@@ -920,7 +937,7 @@ describe('DB-038 Parts & inventory workspace', () => {
       'Bin location',
       'Average cost',
       'Preferred supplier',
-      'Remarks / Status',
+      'Remarks',
     ])
     for (const removedHeader of ['Needed', 'Reorder', 'Incoming']) {
       expect(screen.queryByRole('columnheader', { name: removedHeader })).not.toBeInTheDocument()
@@ -990,7 +1007,7 @@ describe('DB-038 Parts & inventory workspace', () => {
 
     await screen.findByRole('heading', { name: 'Alternator' })
     const toolbar = screen.getByRole('searchbox', { name: 'Search parts' }).closest('.db-parts-workbench__toolbar')
-    expect(toolbar?.parentElement).toHaveClass('db-parts-workbench__ledger-workspace')
+    expect(toolbar?.parentElement).toHaveClass('db-parts-workbench')
     expect(screen.queryByRole('dialog', { name: 'Sort parts' })).not.toBeInTheDocument()
     expect(screen.queryByRole('combobox', { name: 'Sort' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Ledger options' })).not.toBeInTheDocument()
@@ -1057,7 +1074,7 @@ describe('DB-038 Parts & inventory workspace', () => {
       { label: 'Available', sort: 'available', first: 'asc', second: 'desc' },
       { label: 'Bin location', sort: 'location', first: 'asc', second: 'desc' },
       { label: 'Average cost', sort: 'cost', first: 'desc', second: 'asc' },
-      { label: 'Remarks / Status', sort: 'reorder', first: 'desc', second: 'asc' },
+      { label: 'Remarks', sort: 'reorder', first: 'desc', second: 'asc' },
     ] as const
 
     expect(screen.getAllByRole('columnheader').filter((header) => header.hasAttribute('aria-sort'))).toHaveLength(0)

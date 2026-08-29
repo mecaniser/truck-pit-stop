@@ -144,7 +144,7 @@ export default function PurchasingWorkspace() {
       </button>)}
     </nav>
 
-    <div className="db-purchasing__content">
+    <div className="db-purchasing__content db-operating-surface__scroller">
       {view === 'orders' && <>
         <PurchasePreparationTray onCreated={() => selectView('orders')} onOpenParts={() => navigate('/dashboard/garage/inventory')} />
         <PartsOperationsWorkspace key={`purchasing-orders-${linkedPurchaseOrderId || 'default'}`} summary={summary} initialTab="purchase-orders" initialPurchaseOrderId={linkedPurchaseOrderId} visibleTabs={['purchase-orders']} embedded />

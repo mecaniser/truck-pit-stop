@@ -207,6 +207,11 @@ export default function RepairOrdersLedger({
           </div>
         </header>
 
+        {/* The scroller wraps the bordered card so the scrollbar sits outside the
+            border; the ledger header and pagination footer stay pinned outside
+            the scroller. */}
+        <div className="db-operating-surface__scroller">
+        <div className="db-repair-orders-ledger__card db-operating-surface__card">
         {errorMessage ? (
           <div className="db-repair-orders-ledger__empty" role="alert">
             <strong>Repair orders could not be loaded</strong>
@@ -352,6 +357,8 @@ export default function RepairOrdersLedger({
             })}
           </div>
         )}
+        </div>
+        </div>
 
         {showPagination && totalOrders > 0 && (
           <footer>

@@ -740,7 +740,7 @@ export default function MessagesInboxPage() {
   )
 
   return (
-    <div className="db-messages-workspace flex h-full w-full min-w-0 flex-col overflow-hidden" style={{ minHeight: 0 }}>
+    <div className="db-messages-workspace db-operating-surface w-full">
 
       {/* Desktop header — hidden on mobile (mobile header is inside threadListPanel) */}
       <div className={`hidden lg:flex items-center justify-between mb-4${presentationVariant === 'new' ? ' db-operating-page-header' : ''}`}>
@@ -770,10 +770,10 @@ export default function MessagesInboxPage() {
       )}
 
       {/* Main panel */}
-      <div
-        className="db-messages-panel flex w-full min-w-0 flex-1 rounded-xl border border-white/10 overflow-hidden"
-        style={{ minHeight: 0, height: 'calc(100vh - 13rem)' }}
-      >
+      {/* Height comes from flex against the bounded surface. The old inline
+          calc(100vh - 13rem) guessed at chrome height and got it wrong
+          whenever the compose panel above was open. */}
+      <div className="db-messages-panel db-operating-surface__frame db-operating-surface__frame--row w-full min-w-0 rounded-xl border border-white/10">
         {/* Mobile: single panel navigation */}
         <div className="flex w-full min-w-0 flex-col flex-1 min-h-0 lg:hidden">
           {mobileShowConversation ? conversationPanel : threadListPanel}

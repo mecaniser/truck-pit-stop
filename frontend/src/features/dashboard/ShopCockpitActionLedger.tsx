@@ -174,7 +174,7 @@ export default function ShopCockpitActionLedger({
   }
 
   return (
-    <section className="db-shop-work-new" aria-labelledby="shop-work-title">
+    <section className="db-shop-work-new db-operating-surface" aria-labelledby="shop-work-title">
       <header className="db-shop-work-new__header db-operating-page-header">
         <div>
           <h1 id="shop-work-title">Shop Work</h1>
@@ -237,7 +237,7 @@ export default function ShopCockpitActionLedger({
       </div>
 
       {queueView === 'activity' ? (
-        <div className="db-shop-work-new__activity">{activityFeed}</div>
+        <div className="db-shop-work-new__activity db-operating-surface__scroller">{activityFeed}</div>
       ) : (
         <>
           <div className="db-shop-work-new__toolbar">
@@ -275,11 +275,14 @@ export default function ShopCockpitActionLedger({
             </label>
           </div>
 
-          <section className="db-action-ledger" aria-label="Server-backed work queue">
-            <header>
-              <h2>Action Ledger</h2>
-              <span>{lastUpdatedLabel || 'Updated recently'}</span>
-            </header>
+          {/* Caption stays pinned above the card; the scroller wraps the card so
+              the scrollbar sits outside the border. */}
+          <header className="db-action-ledger__caption">
+            <h2>Action Ledger</h2>
+            <span>{lastUpdatedLabel || 'Updated recently'}</span>
+          </header>
+          <div className="db-operating-surface__scroller">
+          <section className="db-action-ledger db-operating-surface__card" aria-label="Server-backed work queue">
             <div className="db-action-ledger__rows">
               {visibleRows.length === 0 ? (
                 <div className="db-action-ledger__empty" role="status">
@@ -316,6 +319,7 @@ export default function ShopCockpitActionLedger({
               })}
             </div>
           </section>
+          </div>
         </>
       )}
     </section>

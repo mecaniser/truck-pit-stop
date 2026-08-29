@@ -966,7 +966,7 @@ async function expectPriorityLedgerColumnsContained(page: Page, width: number) {
   const headBox = await tableHead.boundingBox()
   const headScrollWidth = await tableHead.evaluate((node) => node.scrollWidth)
   expect(headBox).not.toBeNull()
-  const visibleLabels = ['Part / Description', 'Available', 'Bin location', 'Average cost', 'Preferred supplier', 'Remarks / Status'] as const
+  const visibleLabels = ['Part / Description', 'Available', 'Bin location', 'Average cost', 'Preferred supplier', 'Remarks'] as const
   const boxes = []
   for (const label of visibleLabels) {
     const header = page.getByRole('columnheader', { name: label })
@@ -999,7 +999,7 @@ async function expectPriorityLedgerColumnsContained(page: Page, width: number) {
     'Bin location',
     'Average cost',
     'Preferred supplier',
-    'Remarks / Status',
+    'Remarks',
   ])
 
   const [headerTemplate, rowTemplate] = await Promise.all([
@@ -1035,9 +1035,16 @@ async function expectLedgerControlOwnership(page: Page, width: number) {
     expect(ledgerBox).not.toBeNull()
     expect(inspectorBox).not.toBeNull()
     expect(searchBox).not.toBeNull()
-    expect(toolbarBox!.x).toBeGreaterThanOrEqual(ledgerBox!.x - 1)
-    expect(toolbarBox!.x + toolbarBox!.width).toBeLessThanOrEqual(ledgerBox!.x + ledgerBox!.width + 1)
-    expect(toolbarBox!.x + toolbarBox!.width).toBeLessThanOrEqual(inspectorBox!.x + 1)
+    // Ledger controls now sit above the bordered body rather than inside the
+    // ledger column, matching Customers, Repair Orders, and Shop Work. The
+    // toolbar spans the workbench and must clear the body entirely.
+    const bodyBox = await page.locator('.db-parts-workbench__body').boundingBox()
+    expect(bodyBox).not.toBeNull()
+    expect(toolbarBox!.y + toolbarBox!.height).toBeLessThanOrEqual(bodyBox!.y + 1)
+    expect(toolbarBox!.x).toBeGreaterThanOrEqual(bodyBox!.x - 1)
+    expect(toolbarBox!.x + toolbarBox!.width).toBeLessThanOrEqual(bodyBox!.x + bodyBox!.width + 1)
+    expect(ledgerBox).not.toBeNull()
+    expect(inspectorBox).not.toBeNull()
     expect(searchBox!.width).toBeLessThanOrEqual(338)
   }
   await expect(page.getByRole('dialog', { name: 'Ledger options' })).toBeHidden()
@@ -1325,7 +1332,7 @@ test('DB-038 covers All parts, Needs reorder, Movement, and Purchasing across re
     if (width <= 760) await expectCompactLedgerHitTargets(page)
     await expectSingleWorkbenchSelection(page, partButtons.first())
     await expect(partRows.first().locator('img[src$="/db038-part-image.svg"]')).toBeVisible()
-    for (const label of ['Part / Description', 'Available', 'Bin location', 'Average cost', 'Preferred supplier', 'Remarks / Status']) {
+    for (const label of ['Part / Description', 'Available', 'Bin location', 'Average cost', 'Preferred supplier', 'Remarks']) {
       const header = page.getByRole('columnheader', { name: label })
       if (width > 760) await expect(header).toHaveCount(1)
       else await expect(header).toBeHidden()
@@ -1348,7 +1355,7 @@ test('DB-038 covers All parts, Needs reorder, Movement, and Purchasing across re
     if (width === 1280) {
       const retainedCheckbox = page.getByRole('checkbox', { name: 'Select Air filter for purchase preparation' })
       await retainedCheckbox.check()
-      for (const sortName of ['Part / Description', 'Available', 'Remarks / Status']) {
+      for (const sortName of ['Part / Description', 'Available', 'Remarks']) {
         await page.getByRole('columnheader', { name: sortName }).getByRole('button').click()
         await expect(page.getByText('1 part selected')).toBeVisible()
         await expect(page.getByRole('button', { name: /^All parts/ })).toHaveAttribute('aria-current', 'page')
@@ -2185,7 +2192,7 @@ test('DB-041 keeps server sorting singular, directional, and continuous across P
         { label: 'Available', field: 'available', direction: 'asc' },
         { label: 'Bin location', field: 'location', direction: 'asc' },
         { label: 'Average cost', field: 'cost', direction: 'desc' },
-        { label: 'Remarks / Status', field: 'reorder', direction: 'desc' },
+        { label: 'Remarks', field: 'reorder', direction: 'desc' },
       ]
       for (const scenario of firstDirections) {
         await page.getByRole('button', { name: `${scenario.label}: sort ${scenario.direction === 'asc' ? 'ascending' : 'descending'}` }).click()

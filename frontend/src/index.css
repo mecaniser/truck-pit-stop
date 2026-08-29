@@ -752,8 +752,17 @@ html::-webkit-scrollbar-thumb:hover {
 /* Customers remains a canonical legacy surface until its Stage 5 composition.
    In the new road-white shell, keep its dense ledger readable rather than
    inheriting the old dark-surface foreground utilities. */
+/* The ledger element is now the frame, not the painted card: filling it left
+   a light strip behind the pagination footer and the scrollbar gutter in dark
+   mode. The fill belongs on the card, and it follows the surface tokens so it
+   is correct in both appearances instead of hard-coding road white. */
 .db-presentation-new .db-customers-workspace__ledger {
-  background: var(--product-road-white) !important;
+  background: transparent !important;
+  border: 0 !important;
+}
+
+.db-presentation-new .db-customers-workspace__ledger .db-operating-surface__card {
+  background: var(--surface-overlay) !important;
   border-color: var(--workspace-border) !important;
 }
 
@@ -2199,7 +2208,13 @@ html::-webkit-scrollbar-thumb:hover {
   background-color: var(--surface-raised) !important;
 }
 
+/* Frame stays unpainted; the fill belongs to the card inside the scroller. */
 .db-presentation-new .db-services-workspace__ledger {
+  background: transparent !important;
+  border: 0 !important;
+}
+
+.db-presentation-new .db-services-workspace__ledger .db-operating-surface__card {
   border-color: var(--workspace-border) !important;
   background: var(--surface-overlay) !important;
 }
@@ -2389,19 +2404,17 @@ html::-webkit-scrollbar-thumb:hover {
   min-width: 0;
   min-height: 0;
   height: 100%;
+  flex: 1 1 auto;
   flex-direction: column;
   gap: 1rem;
 }
 
 .db-my-shop-navigation {
   min-width: 0;
+  flex: 0 0 auto;
   border: 1px solid rgb(63 63 70 / 0.5);
   border-radius: 14px;
   background-color: rgb(24 24 27 / 0.8);
-}
-
-.db-my-shop-nav-heading {
-  display: none;
 }
 
 .db-my-shop-nav-groups {
@@ -2430,10 +2443,6 @@ html::-webkit-scrollbar-thumb:hover {
 }
 
 .db-my-shop-nav-label-full,
-.db-my-shop-nav-chevron {
-  display: none;
-}
-
 .db-my-shop-content {
   min-width: 0;
 }
@@ -2485,54 +2494,10 @@ html::-webkit-scrollbar-thumb:hover {
 }
 
 @container my-shop (min-width: 100rem) {
-  .db-my-shop-layout {
-    display: grid;
-    grid-template-columns: 13rem minmax(0, 1fr);
-    align-items: stretch;
-    gap: 1.5rem;
-  }
-
-  .db-my-shop-navigation {
-    display: flex;
-    width: 13rem;
-    height: 100%;
-    flex-direction: column;
-    border-width: 1px;
-    border-radius: 14px;
-    background: rgb(24 24 27 / 0.8);
-    padding: 1rem;
-  }
-
-  .db-my-shop-nav-heading {
-    display: flex;
-    margin-bottom: 1.5rem;
-  }
-
-  .db-my-shop-nav-groups {
-    display: flex;
-    min-height: 0;
-    flex: 1;
-    flex-direction: column;
-    gap: 0.75rem;
-    overflow-y: auto;
-  }
-
-  .db-my-shop-nav-cluster {
-    display: flex;
-    flex-direction: column;
-    gap: 0.25rem;
-  }
-
-  .db-my-shop-nav-cluster-secondary {
-    margin-top: auto;
-    border-top: 1px solid rgb(63 63 70 / 0.5);
-    border-left: 0;
-    padding-top: 0.75rem;
-    padding-left: 0;
-  }
-
+  /* Wide desktop keeps the horizontal strip established at 42rem. The extra
+     room buys full labels instead of a 13rem column that costs the inventory
+     and purchasing tables the width they actually need. */
   .db-my-shop-nav-item {
-    justify-content: flex-start;
     padding-inline: 0.75rem;
   }
 
@@ -2540,8 +2505,7 @@ html::-webkit-scrollbar-thumb:hover {
     display: none;
   }
 
-  .db-my-shop-nav-label-full,
-  .db-my-shop-nav-chevron {
+  .db-my-shop-nav-label-full {
     display: block;
   }
 
@@ -2599,14 +2563,9 @@ html::-webkit-scrollbar-thumb:hover {
   }
 }
 
-@container my-shop (min-width: 100rem) {
-  .db-presentation-new .db-my-shop-navigation {
-    background-color: var(--surface-overlay) !important;
-    border-radius: 14px !important;
-  }
-
+@container my-shop (min-width: 42rem) {
   .db-presentation-new .db-my-shop-nav-cluster-secondary {
-    border-top-color: var(--workspace-border);
+    border-left-color: var(--workspace-border);
   }
 }
 
@@ -2634,7 +2593,6 @@ html::-webkit-scrollbar-thumb:hover {
   --text-secondary: #5b6d82;
   width: 100%;
   min-width: 0;
-  min-height: 100%;
   padding-bottom: 4px;
   color: var(--workspace-text);
 }
@@ -2745,9 +2703,10 @@ html::-webkit-scrollbar-thumb:hover {
   background: #fff;
   box-shadow: 0 5px 16px rgba(16,36,59,.065);
 }
-.db-action-ledger > header { min-height: 50px; display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 10px 15px; border-bottom: 1px solid #d3dbe4; }
-.db-action-ledger > header h2 { margin: 0; color: #17283f; font-size: 15px; }
-.db-action-ledger > header span { color: #61738a; font-size: 12px; }
+/* Caption sits above the card now, so it carries no card edge of its own. */
+.db-action-ledger__caption { min-height: 44px; display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 0 2px 8px; }
+.db-action-ledger__caption h2 { margin: 0; color: var(--workspace-text, #17283f); font-size: 15px; }
+.db-action-ledger__caption span { color: var(--workspace-muted, #61738a); font-size: 12px; }
 .db-action-ledger__row {
   width: 100%;
   min-width: 0;
@@ -2983,16 +2942,18 @@ html::-webkit-scrollbar-thumb:hover {
   min-height: 0;
   overflow: visible;
 }
+/* This element holds the page header and toolbar, so it must clip, not scroll.
+   Scrolling here dragged the title out of view; the ledger rows own the scroll
+   in both list and detail state. */
 .db-repair-orders-workspace--new > .db-repair-orders-new {
   display: flex;
   min-height: 0;
   flex-direction: column;
-  overflow: auto;
+  overflow: hidden;
   padding-right: 4px;
 }
 .db-repair-orders-workspace--new:not(.db-repair-orders-workspace--detail-open) > .db-repair-orders-new { grid-column: 1 / -1; }
 .db-repair-orders-workspace--new > .db-repair-orders-new .db-repair-orders-ledger { flex: 1 1 auto; }
-.db-repair-orders-workspace--new.db-repair-orders-workspace--detail-open > .db-repair-orders-new { overflow: hidden; }
 .db-slide-panel-workspace {
   height: 100%;
   min-width: 0;
@@ -3096,8 +3057,11 @@ html::-webkit-scrollbar-thumb:hover {
   --db-ledger-inspected-surface: color-mix(in srgb, var(--surface-raised) 76%, var(--surface-overlay));
   --db-ledger-selected-surface: color-mix(in srgb, var(--surface-raised) 90%, var(--surface-overlay));
   --db-ledger-selected-inspected-surface: color-mix(in srgb, var(--surface-raised) 86%, var(--surface-overlay));
-  border-color: var(--db-ledger-border);
-  background: var(--db-ledger-surface);
+  /* Tokens only. This element is the frame that holds the caption, the
+     scroller and the footer — filling it put a lighter band behind the footer
+     and a strip beside the scrollbar, which read as the bar being inside the
+     list. The fill belongs to .db-repair-orders-ledger__card. */
+  background: transparent;
   box-shadow: none;
 }
 
@@ -3118,9 +3082,11 @@ html::-webkit-scrollbar-thumb:hover {
   --db-ledger-raised: var(--workspace-text);
 }
 
+/* Caption and footer sit outside the card, so they stay unfilled here too —
+   a fill on either one puts a band across the surface and makes the scrollbar
+   column read as part of the list. */
 .db-staff-shell:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) .db-repair-orders-ledger > :is(header, footer) {
-  border-color: var(--workspace-border);
-  background: var(--surface-raised);
+  background: transparent;
   color: var(--workspace-muted);
 }
 
@@ -3264,9 +3230,19 @@ html::-webkit-scrollbar-thumb:hover {
   --db-ledger-focus: var(--personal-accent-400);
   --db-ledger-disclosure: var(--personal-accent-400);
   min-width: 0;
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
   overflow: hidden;
-  border: 1px solid var(--db-ledger-border);
-  border-radius: 14px;
+}
+
+/* The bordered surface moved off .db-repair-orders-ledger and onto this inner
+   card so the scrollbar renders outside the border, matching every other
+   staff surface. The ledger header and pagination footer stay outside it.
+   Border/radius/background come from .db-operating-surface__card; only the
+   ledger's own elevation is added here. */
+.db-repair-orders-ledger__card {
+  border-color: var(--db-ledger-border);
   background: var(--db-ledger-surface);
   box-shadow: 0 5px 16px rgba(16,36,59,.065);
 }
@@ -3316,7 +3292,10 @@ html::-webkit-scrollbar-thumb:hover {
   --db-ledger-disclosure: var(--surface-overlay);
 }
 .db-repair-orders-workspace--detail-open .db-repair-orders-ledger { display: flex; min-height: 0; flex: 1 1 0; flex-direction: column; }
-.db-repair-orders-ledger > header { min-height: 50px; display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 10px 15px; border-bottom: 1px solid var(--db-ledger-border); background: var(--db-ledger-raised); }
+/* Caption and footer sit OUTSIDE the card now, so they drop the card's edge
+   and fill. Keeping them made the caption, list and footer read as one
+   container with the scrollbar trapped inside it. */
+.db-repair-orders-ledger > header { min-height: 44px; display: flex; align-items: center; justify-content: space-between; gap: 14px; margin-bottom: 10px; padding: 0 2px; background: transparent; }
 .db-repair-orders-ledger > header > div:first-child { display: flex; align-items: baseline; gap: 9px; min-width: 0; }
 .db-repair-orders-ledger > header h2 { margin: 0; color: var(--db-ledger-text); font-size: 15px; }
 .db-repair-orders-ledger > header span { color: var(--db-ledger-muted); font-size: 12px; }
@@ -3333,10 +3312,23 @@ html::-webkit-scrollbar-thumb:hover {
 .db-repair-orders-ledger__scope-menu button:focus-visible { background: var(--db-ledger-surface); outline: 0; }
 .db-repair-orders-ledger__sync { color: var(--db-ledger-disclosure) !important; }
 .db-repair-orders-ledger__rows { min-width: 0; }
-.db-repair-orders-workspace--detail-open .db-repair-orders-ledger__rows { min-height: 0; flex: 1 1 auto; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; scrollbar-color: var(--db-ledger-border) transparent; scrollbar-width: thin; }
+.db-repair-orders-workspace--detail-open .db-repair-orders-ledger__rows { min-height: 0; }
 .db-repair-orders-workspace--detail-open .db-repair-orders-ledger__rows:focus-visible { outline: 2px solid var(--db-ledger-focus); outline-offset: -3px; }
-.db-repair-orders-workspace--detail-open .db-repair-orders-ledger__rows::-webkit-scrollbar { width: 10px; }
-.db-repair-orders-workspace--detail-open .db-repair-orders-ledger__rows::-webkit-scrollbar-thumb { border: 3px solid var(--db-ledger-surface); border-radius: 999px; background: var(--db-ledger-border); }
+.db-repair-orders-workspace--detail-open .db-repair-orders-ledger__rows::-webkit-scrollbar { width: var(--scrollbar-size); }
+.db-repair-orders-workspace--detail-open .db-repair-orders-ledger__rows::-webkit-scrollbar-thumb { border-radius: 999px; background: var(--scrollbar-thumb); }
+
+/* The ledger owns its scroll in the LIST state too, not only when a record is
+   open. Without this the rows were clipped by .db-repair-orders-ledger's
+   overflow:hidden while the header-bearing ancestor did the scrolling.
+   Gated to the side-by-side widths: below 1100 this surface is deliberately a
+   block layout that page-scrolls (see the max-width:1099px block). */
+@media (min-width: 1100px) {
+  .db-repair-orders-workspace--new .db-repair-orders-ledger { display: flex; min-height: 0; flex: 1 1 0; flex-direction: column; }
+  .db-repair-orders-workspace--new .db-repair-orders-ledger__rows { min-height: 0; }
+  .db-repair-orders-workspace--new .db-repair-orders-ledger__rows:focus-visible { outline: 2px solid var(--db-ledger-focus); outline-offset: -3px; }
+  .db-repair-orders-workspace--new .db-repair-orders-ledger__rows::-webkit-scrollbar { width: var(--scrollbar-size); }
+  .db-repair-orders-workspace--new .db-repair-orders-ledger__rows::-webkit-scrollbar-thumb { border-radius: 999px; background: var(--scrollbar-thumb); }
+}
 .db-repair-orders-ledger__row-shell { min-width: 0; border-bottom: 1px solid var(--db-ledger-border); background: var(--db-ledger-surface); }
 .db-repair-orders-ledger[data-has-pagination='true'] .db-repair-orders-ledger__row-shell:last-child { border-bottom: 0; }
 .db-repair-orders-ledger__row-shell[data-inspected='true'] { background: var(--db-ledger-inspected-surface); }
@@ -3401,7 +3393,7 @@ html::-webkit-scrollbar-thumb:hover {
 .db-repair-orders-ledger--compact .db-repair-orders-ledger__record .db-repair-orders-ledger__order strong { display: block; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .db-repair-orders-ledger__empty { min-height: 220px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 5px; padding: 24px; color: var(--db-ledger-muted); text-align: center; }
 .db-repair-orders-ledger__empty strong { color: var(--db-ledger-text); }
-.db-repair-orders-ledger > footer { min-height: 64px; display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 12px; padding: 10px 14px; border-top: 1px solid var(--db-ledger-border); background: var(--db-ledger-raised); color: var(--db-ledger-muted); font-size: 12px; }
+.db-repair-orders-ledger > footer { min-height: 56px; display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 12px; padding: 0 2px; background: transparent; color: var(--db-ledger-muted); font-size: 12px; }
 .db-repair-orders-ledger > footer > div { display: flex; gap: 7px; }
 .db-repair-orders-ledger > footer button { min-height: 40px; display: inline-flex; align-items: center; gap: 5px; border: 1px solid var(--db-ledger-border); border-radius: 8px; padding: 7px 10px; background: var(--db-ledger-surface); color: var(--db-ledger-text); }
 .db-repair-orders-ledger > footer button:disabled { opacity: .42; }
@@ -3528,6 +3520,157 @@ html::-webkit-scrollbar-thumb:hover {
   .db-repair-orders-ledger__details-toggle { border-color: transparent; background: transparent; }
   .db-repair-orders-ledger__vehicle-group { border: 0; background: transparent; }
   .db-presentation-new .db-staff-content .db-repair-orders-ledger :is(.db-repair-orders-ledger__record, .db-repair-orders-ledger__details-toggle, .db-repair-orders-ledger__open-workspace):focus-visible { outline-color: Highlight; }
+}
+
+/* ---- Canonical staff scroll pattern -------------------------------------
+   One operating surface = fixed chrome + exactly one inner scroller. Derived
+   from .db-customers-workspace, which is the reference implementation.
+
+   Four invariants:
+     1. the root is height-bounded, never min-height:100%
+     2. header/toolbar are siblings of the frame, pinned by the > * rule
+     3. the frame clips (overflow:hidden); it does not scroll
+     4. exactly one descendant scrolls
+
+   Contained scroll engages at 1024px (Tailwind lg). Below that every layer
+   collapses and the page scrolls, which is what the smaller viewports already
+   do today. This threshold governs scroll ownership ONLY; the 1099/1100, 760
+   and container-query breakpoints decide when a two-pane split collapses and
+   are a separate axis that must not be folded into this one. */
+.db-operating-surface {
+  display: flex;
+  flex-direction: column;
+  block-size: 100%;
+  min-block-size: 0;
+  min-inline-size: 0;
+}
+
+/* Chrome must not shrink, but only flex-shrink is pinned: this block is
+   emitted after Tailwind's utilities, so a blanket `flex: 0 0 auto` here would
+   silently defeat a child's flex-1 and collapse it. */
+.db-operating-surface > * {
+  flex-shrink: 0;
+  min-inline-size: 0;
+}
+
+.db-operating-surface__frame {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-block-size: 0;
+  min-inline-size: 0;
+  overflow: hidden;
+}
+
+/* Two-pane surfaces (Messages) grow like a frame but lay out side by side.
+   Note the > * rule above is emitted after Tailwind's utilities, so a child
+   cannot opt into growth with flex-1; it needs one of these classes. */
+.db-operating-surface__frame--row {
+  flex-direction: row;
+}
+
+.db-operating-surface__scroller {
+  flex: 1 1 auto;
+  min-block-size: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  /* Breathing room between the card edge and the bar. Without it the two sit
+     1px apart, which reads as the bar being inside the list even though it is
+     structurally outside the border. */
+  padding-inline-end: 10px;
+  /* One scrollbar treatment for every surface. Without this the scroller
+     falls back to the OS default, which reads noticeably thicker than the
+     surfaces that opted into the shared tokens. */
+  scrollbar-width: thin;
+  scrollbar-color: var(--scrollbar-thumb) transparent;
+}
+
+/* If a scroller is itself a flex column, its children default to shrinking:
+   a child with overflow:hidden then collapses to fit and clips its own
+   content, so the scroller never overflows and no scrollbar appears.
+   align-content covers the grid form of the same bug (Activity), where a
+   compressed track clipped the card rather than overflowing the scroller. */
+.db-operating-surface__scroller {
+  align-content: start;
+}
+
+.db-operating-surface__scroller > * {
+  flex-shrink: 0;
+}
+
+/* The only painted element in the stack. The frame and the scroller stay
+   transparent so nothing shows behind a pinned footer or in the scrollbar
+   gutter — that is exactly how the Customers surface leaked a light fill
+   into the dark theme. Tokens are mode-aware; never --product-road-white. */
+.db-operating-surface__card {
+  min-inline-size: 0;
+  overflow: hidden;
+  border: 1px solid var(--workspace-border);
+  border-radius: 14px;
+  background: var(--surface-overlay);
+}
+
+.db-operating-surface,
+.db-operating-surface__frame,
+.db-operating-surface__scroller {
+  background: transparent;
+  border: 0;
+}
+
+.db-operating-surface__scroller::-webkit-scrollbar {
+  width: var(--scrollbar-size);
+  height: var(--scrollbar-size);
+}
+
+.db-operating-surface__scroller::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.db-operating-surface__scroller::-webkit-scrollbar-thumb {
+  border-radius: 9999px;
+  background: var(--scrollbar-thumb);
+}
+
+.db-operating-surface__scroller::-webkit-scrollbar-thumb:hover {
+  background: var(--scrollbar-thumb-hover);
+}
+
+@media (max-width: 1023.98px) {
+  .db-operating-surface,
+  .db-operating-surface__frame {
+    display: block;
+    block-size: auto;
+    min-block-size: 0;
+    overflow: visible;
+  }
+  .db-operating-surface__scroller {
+    display: block;
+    block-size: auto;
+    max-block-size: none;
+    overflow: visible;
+    overscroll-behavior: auto;
+  }
+}
+
+/* Shell height, defined once. Surfaces that need a bounded height read
+   --db-staff-main-block instead of re-deriving nav and padding offsets. */
+.db-staff-shell {
+  --db-shell-nav-block: 3.5rem;
+  --db-shell-main-inset: 0px;
+  --db-staff-main-block: calc(100dvh - var(--db-shell-nav-block) - var(--db-shell-main-inset));
+}
+
+@media (min-width: 640px) {
+  .db-staff-shell { --db-shell-nav-block: 4rem; }
+}
+
+@media (min-width: 960px) {
+  .db-staff-shell {
+    --db-shell-nav-block: 0px;
+    --db-shell-main-inset: 24px;
+  }
 }
 
 /* One route table, rendered through full, compact and mobile product navigation. */
@@ -3721,7 +3864,7 @@ html::-webkit-scrollbar-thumb:hover {
   .db-presentation-new .db-staff-main {
     grid-column: 2;
     grid-row: 1;
-    height: calc(100dvh - 24px);
+    height: var(--db-staff-main-block); /* == calc(100dvh - 24px) at >=960 */
     margin: 12px 12px 12px 0;
     padding: clamp(20px, 2.2vw, 38px);
     border: 1px solid var(--workspace-border);
@@ -4486,7 +4629,7 @@ html.customer-portal-active {
   container-name: parts-workbench;
   container-type:inline-size;
   display:grid;
-  grid-template-rows:auto auto auto minmax(0,1fr);
+  grid-template-rows:auto auto auto auto minmax(0,1fr);
   gap:.75rem;
   inline-size:100%;
   max-inline-size:100%;
@@ -4500,6 +4643,16 @@ html.customer-portal-active {
   background:transparent;
   color:var(--text-primary);
 }
+/* The workbench places children into positional rows, so the scrolling child
+   only gets the flexible track when the child count happens to line up. Pin
+   both possible last children to the final track instead: the Activity view
+   renders fewer siblings than the parts view and was landing in an auto row,
+   which left it unbounded and unscrollable. */
+.db-parts-workbench > .db-parts-workbench__body,
+.db-parts-workbench > .db-activity {
+  grid-row: -2 / -1;
+}
+
 .db-parts-workbench__header { display:flex; align-items:flex-end; justify-content:space-between; gap:1.5rem; padding-block-end:.25rem; }
 .db-parts-workbench__header h1 { margin:0; max-inline-size:18ch; font-size:clamp(1.65rem,2.4vw,2.35rem); letter-spacing:-.03em; line-height:1; text-wrap:balance; }
 .db-parts-workbench__header p { max-inline-size:68ch; margin:.55rem 0 0; color:var(--text-secondary); line-height:1.4; }
@@ -4550,7 +4703,17 @@ html.customer-portal-active {
 .db-parts-workbench__search svg { flex:0 0 auto; inline-size:1.1rem; color:var(--text-secondary); }
 .db-parts-workbench .db-parts-workbench__search input { min-inline-size:0; inline-size:100%; min-block-size:44px; padding:0 !important; border:0 !important; outline:0 !important; background:transparent !important; box-shadow:none !important; color:var(--text-primary) !important; }
 .db-parts-workbench__body { display:grid; grid-template-columns:minmax(30rem,1fr) minmax(22rem,24rem); gap:0; min-block-size:0; overflow:hidden; border:1px solid var(--workspace-border); border-radius:var(--parts-radius-workspace); background:var(--surface-canvas); }
-.db-parts-workbench__ledger,.db-parts-workbench__inspector,.db-parts-workbench__movement-ledger { min-block-size:0; min-inline-size:0; overflow:auto; border:0; border-radius:0; background:var(--surface-canvas); scrollbar-gutter:stable; }
+.db-parts-workbench__ledger,.db-parts-workbench__inspector,.db-parts-workbench__movement-ledger { min-block-size:0; min-inline-size:0; overflow:auto; border:0; border-radius:0; background:var(--surface-canvas); scrollbar-gutter:stable; scrollbar-width:thin; scrollbar-color:var(--scrollbar-thumb) transparent; }
+/* These panes are inner scrollers (they stay inside the workbench border by
+   design), but they share the one scrollbar treatment used everywhere else —
+   without this they fall back to the thicker OS default. */
+.db-parts-workbench__ledger::-webkit-scrollbar,.db-parts-workbench__inspector::-webkit-scrollbar,.db-parts-workbench__movement-ledger::-webkit-scrollbar { width:var(--scrollbar-size); height:var(--scrollbar-size); }
+.db-parts-workbench__ledger::-webkit-scrollbar-track,.db-parts-workbench__inspector::-webkit-scrollbar-track,.db-parts-workbench__movement-ledger::-webkit-scrollbar-track { background:transparent; }
+.db-parts-workbench__ledger::-webkit-scrollbar-thumb,.db-parts-workbench__inspector::-webkit-scrollbar-thumb,.db-parts-workbench__movement-ledger::-webkit-scrollbar-thumb { border-radius:9999px; background:var(--scrollbar-thumb); }
+.db-parts-workbench__ledger::-webkit-scrollbar-thumb:hover,.db-parts-workbench__inspector::-webkit-scrollbar-thumb:hover,.db-parts-workbench__movement-ledger::-webkit-scrollbar-thumb:hover { background:var(--scrollbar-thumb-hover); }
+/* No padding on the pane itself: sticky children (the back bar) size to the
+   content box, so padding left a strip at the right edge where the panel
+   header showed through. scrollbar-gutter already reserves the bar's space. */
 .db-parts-workbench__ledger { border-inline-end:1px solid var(--workspace-border); }
 .db-parts-workbench__movement-ledger { border:1px solid var(--workspace-border); border-radius:var(--parts-radius-workspace); }
 .db-parts-workbench__table-head { position:sticky; inset-block-start:0; z-index:2; min-block-size:42px; padding:.5rem .75rem; border-block-end:3px double var(--parts-rule); background:var(--surface-raised); color:var(--parts-technical-muted); font-family:var(--font-mono,ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace); font-size:.7rem; font-weight:800; text-transform:uppercase; letter-spacing:.055em; }
@@ -4571,10 +4734,11 @@ html.customer-portal-active {
 .db-parts-workbench__inspector { container-name:parts-inspector; container-type:inline-size; padding:0; }
 .db-parts-workbench__mobile-back { display:none; }
 .db-parts-workbench__mobile-back svg { inline-size:1rem; }
+.db-parts-workbench__mobile-back-close { display:none; }
 .db-parts-workbench__selected-action { padding:1rem; border-block-end:1px solid var(--parts-selected-rule); background:var(--parts-selected-surface); color:var(--parts-selected-ink); }
 .db-parts-workbench__selected-label-row { display:flex; align-items:center; justify-content:space-between; gap:.75rem; margin-block-end:.65rem; }
 .db-parts-workbench__selected-label { margin:0; font-family:var(--font-mono,ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace); font-size:.68rem; font-weight:800; letter-spacing:.09em; text-transform:uppercase; }
-.db-parts-workbench__identity-trigger { display:inline-flex; align-items:center; justify-content:center; gap:.35rem; min-block-size:44px; padding:.45rem .7rem; border:1px solid color-mix(in srgb,var(--parts-selected-ink) 45%,transparent); border-radius:.75rem; background:transparent; color:var(--parts-selected-ink); font-size:.75rem; font-weight:800; }
+.db-parts-workbench__identity-trigger { display:inline-flex; align-items:center; justify-content:center; gap:0; min-block-size:44px; padding:.45rem .7rem; border:1px solid color-mix(in srgb,var(--parts-selected-ink) 45%,transparent); border-radius:.75rem; background:transparent; color:var(--parts-selected-ink); font-size:.75rem; font-weight:800; }
 .db-parts-workbench__identity-trigger svg { inline-size:.95rem; }
 .db-parts-workbench__selected-part { display:grid; grid-template-columns:auto minmax(0,1fr); align-items:center; gap:.85rem; }
 .db-parts-workbench__selected-copy { min-inline-size:0; }
@@ -4588,7 +4752,10 @@ html.customer-portal-active {
 .db-parts-workbench__photo-editor-copy { display:grid; gap:.2rem; min-inline-size:0; }
 .db-parts-workbench__photo-editor-copy > strong { font-size:.8rem; }
 .db-parts-workbench__photo-editor-copy > span { max-inline-size:34rem; color:color-mix(in srgb,var(--parts-selected-ink) 76%,transparent); font-size:.72rem; line-height:1.4; overflow-wrap:anywhere; }
-.db-parts-workbench__photo-editor-actions { display:flex; flex-wrap:wrap; justify-content:flex-end; gap:.4rem; }
+.db-parts-workbench__photo-editor-actions { display:flex; flex-wrap:wrap; align-items:center; justify-content:flex-end; gap:.4rem; }
+.db-parts-workbench__photo-confirm { display:inline-flex; flex-wrap:wrap; align-items:center; gap:.4rem; }
+.db-parts-workbench__photo-confirm strong { color:var(--parts-selected-ink); font-size:.72rem; font-weight:800; }
+.db-parts-workbench__photo-confirm button { min-block-size:44px; padding:.4rem .7rem; border:1px solid color-mix(in srgb,var(--parts-selected-ink) 45%,transparent); border-radius:.75rem; background:transparent; color:var(--parts-selected-ink); font-size:.72rem; font-weight:800; }
 .db-parts-workbench__photo-editor button,.db-parts-workbench__identity-recovery button { display:inline-flex; align-items:center; justify-content:center; gap:.35rem; min-block-size:44px; padding:.45rem .65rem; border:1px solid color-mix(in srgb,var(--parts-selected-ink) 45%,transparent); border-radius:.75rem; background:transparent; color:var(--parts-selected-ink); font-weight:800; }
 .db-parts-workbench__photo-editor button svg { inline-size:1rem; }
 .db-parts-workbench__photo-editor button:disabled { cursor:not-allowed; opacity:.55; }
@@ -4882,7 +5049,7 @@ html.customer-portal-active {
 }
 /* DB-038 option 5a recovery: the ledger is the operating surface and the
    bone inspector is its connected secondary surface. */
-.db-parts-workbench { grid-template-rows:auto auto auto auto minmax(0,1fr); gap:.55rem; }
+.db-parts-workbench { grid-template-rows:auto auto auto auto auto minmax(0,1fr); gap:.55rem; }
 .db-parts-workbench__technical-line em { color:var(--parts-status-warning); font-style:normal; }
 .db-parts-workbench__summary .db-parts-workbench__add-part { min-block-size:44px; padding:.55rem .85rem; border:1px solid var(--parts-oxide); border-radius:.75rem; background:var(--parts-oxide); color:var(--parts-oxide-foreground); font-weight:750; }
 .db-parts-workbench__summary .db-parts-workbench__add-part svg { inline-size:1rem; }
@@ -4918,7 +5085,11 @@ html.customer-portal-active {
 .db-parts-workbench__bulk button:last-child { border-color:var(--parts-oxide); background:var(--parts-oxide); color:var(--parts-oxide-foreground); }
 .db-parts-workbench__bulk svg { inline-size:.95rem; }
 .db-parts-workbench__body { position:relative; grid-template-columns:minmax(0,1fr) minmax(24rem,28rem); inline-size:100%; max-inline-size:100%; border:1px solid var(--workspace-border); border-radius:var(--parts-radius-workspace); background:var(--surface-canvas); }
-.db-parts-workbench__ledger-workspace { --parts-ledger-edge-gutter:.75rem; container-name:parts-ledger; container-type:inline-size; display:flex; min-block-size:0; min-inline-size:0; flex-direction:column; padding-inline-end:var(--parts-ledger-edge-gutter); overflow:hidden; border-inline-end:1px solid var(--workspace-border); background:var(--surface-canvas); }
+/* The scroller already reserves its own gutter, so this padding stacked on
+   top of it: ~23px of dead space before the divider, which squeezed the
+   last column until its header truncated. The bar now sits against the
+   divider, beside the selected-part panel. */
+.db-parts-workbench__ledger-workspace { --parts-ledger-edge-gutter:0px; container-name:parts-ledger; container-type:inline-size; display:flex; min-block-size:0; min-inline-size:0; flex-direction:column; padding-inline-end:var(--parts-ledger-edge-gutter); overflow:hidden; border-inline-end:1px solid var(--workspace-border); background:var(--surface-canvas); }
 .db-parts-workbench__ledger { flex:1 1 auto; overflow:auto; border-inline-end:0; scrollbar-gutter:stable; }
 .db-parts-workbench__table-head,.db-parts-workbench__row { display:grid; grid-template-columns:2.75rem minmax(12rem,1fr) 6rem 7.5rem 7.75rem 9rem 8.5rem; align-items:center; gap:0; min-inline-size:53.5rem; }
 .db-parts-workbench__ledger.is-read-only :is(.db-parts-workbench__table-head,.db-parts-workbench__row) { grid-template-columns:minmax(12rem,1fr) 6rem 7.5rem 7.75rem 9rem 8.5rem; min-inline-size:50.75rem; }
@@ -5059,7 +5230,15 @@ html.customer-portal-active {
   .db-parts-workbench__ledger-workspace { padding-inline-end:0; border-inline-end:0; }
   .db-parts-workbench__body:not(.is-mobile-detail) .db-parts-workbench__inspector { display:none; }
   .db-parts-workbench__inspector { position:absolute; z-index:5; inset-block:0; inset-inline-end:0; inline-size:min(28rem,48%); border-inline-start:1px solid var(--workspace-border); border-radius:var(--parts-radius-panel) 0 0 var(--parts-radius-panel); box-shadow:-1rem 0 2.5rem color-mix(in srgb,#000 28%,transparent); }
-  .db-parts-workbench__mobile-back { position:sticky; inset-block-start:0; z-index:7; display:inline-flex; inline-size:100%; align-items:center; justify-content:flex-start; gap:.4rem; border:0; border-block-end:1px solid var(--workspace-border); border-radius:0; background:var(--surface-raised); }
+  /* The back bar and the inspector tabs both pinned to inset-block-start:0, so
+     scrolled tabs slid underneath the bar and — sharing --surface-raised —
+     read as content overlapping a transparent button. The bar takes its own
+     opaque surface, and the tabs pin below it instead of behind it. */
+  .db-parts-workbench__mobile-back { position:sticky; inset-block-start:0; z-index:7; display:inline-flex; min-block-size:44px; inline-size:100%; align-items:center; justify-content:flex-start; gap:.4rem; border:0; border-block-end:1px solid var(--workspace-border); border-radius:0; background:var(--surface-overlay); box-shadow:0 .35rem .75rem color-mix(in srgb,#000 22%,transparent); }
+  /* The dismiss sits on the header row beside the edit control, so it costs no
+     vertical space of its own. Accessible name stays "Back to parts". */
+  .db-parts-workbench__mobile-back { position:static; box-shadow:none; }
+
 }
 @media (max-width:760px) {
   .db-parts-workbench > * + * { margin-block-start:.55rem; }
@@ -5347,3 +5526,88 @@ html.customer-portal-active {
   .db-counter-sales__return-panel article { grid-template-columns:1fr; }
 }
 @media (forced-colors:active) { .db-activity__event-mark { forced-color-adjust:auto; background:Highlight; } }
+
+/* The dismiss now sits on the selected-part header rather than floating over
+   scrolling content, so it takes that header's treatment — matching the edit
+   control beside it instead of the dark panel surface it used to need. */
+.db-parts-workbench__inspector .db-parts-workbench__selected-controls > .db-parts-workbench__mobile-back {
+  /* One appearance at every width. The border and radius were previously set
+     by three separate width-scoped rules (999px in the sheet, .75rem at <=760,
+     nothing at desktop), so the same control rendered three different ways.
+     These match the pencil it sits beside. */
+  border: 1px solid color-mix(in srgb, var(--parts-selected-ink) 45%, transparent);
+  border-radius: .75rem;
+  background: transparent;
+  color: var(--parts-selected-ink);
+  box-shadow: none;
+}
+
+/* Selected-part header controls: dismiss then edit, on one row. */
+.db-parts-workbench__selected-controls { display:flex; align-items:center; gap:.4rem; }
+
+/* Icon-first actions: the control shows its icon and reveals its label on
+   hover or keyboard focus. The label stays in the DOM (clipped, never
+   display:none) so each button keeps its accessible name — "Edit details",
+   "Replace photo", "Remove photo" are all still findable by role and name. */
+/* Collapsed, every icon action is an explicit square with no inline padding,
+   so the glyph centres regardless of what padding the button would otherwise
+   inherit. Hovering releases the width and restores padding for the label. */
+.db-parts-workbench__icon-action {
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  gap:0;
+  inline-size:44px;
+  min-inline-size:44px;
+  min-block-size:44px;
+  padding-inline:0;
+  transition:inline-size 160ms ease-out, padding-inline 160ms ease-out;
+}
+
+.db-parts-workbench__icon-action:hover,
+.db-parts-workbench__icon-action:focus-visible,
+.db-parts-workbench__icon-action:focus-within {
+  inline-size:auto;
+  padding-inline:.7rem;
+}
+
+/* While editing, the top control is the cancel affordance at every width. */
+.db-parts-workbench__mobile-back.is-editing { display:inline-flex; }
+
+/* The control lives on the header row now, so it reads as an X everywhere and
+   carries its meaning ("Back to parts" / "Cancel editing") in aria-label. */
+.db-parts-workbench__selected-controls .db-parts-workbench__mobile-back-arrow,
+.db-parts-workbench__selected-controls .db-parts-workbench__mobile-back-label { display:none; }
+.db-parts-workbench__selected-controls .db-parts-workbench__mobile-back-close { display:block; }
+
+.db-parts-workbench__icon-action--icon-only:hover,
+.db-parts-workbench__icon-action--icon-only:focus-visible,
+.db-parts-workbench__icon-action--icon-only:focus-within {
+  inline-size:44px;
+  padding-inline:0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .db-parts-workbench__icon-action { transition:none; }
+}
+
+
+.db-parts-workbench__icon-action .db-parts-workbench__collapsible-label {
+  display:inline-block;
+  max-inline-size:0;
+  overflow:hidden;
+  white-space:nowrap;
+  vertical-align:middle;
+  transition:max-inline-size 160ms ease-out, margin-inline-start 160ms ease-out;
+}
+
+.db-parts-workbench__icon-action:hover .db-parts-workbench__collapsible-label,
+.db-parts-workbench__icon-action:focus-visible .db-parts-workbench__collapsible-label,
+.db-parts-workbench__icon-action:focus-within .db-parts-workbench__collapsible-label {
+  max-inline-size:10rem;
+  margin-inline-start:.4rem;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .db-parts-workbench__icon-action .db-parts-workbench__collapsible-label { transition:none; }
+}
