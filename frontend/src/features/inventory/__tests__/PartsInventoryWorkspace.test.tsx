@@ -1022,7 +1022,7 @@ describe('DB-038 Parts & inventory workspace', () => {
     await user.click(screen.getByRole('button', { name: 'Add Part' }))
     const addPartDialog = screen.getByRole('dialog', { name: 'Add Part' })
     expect(addPartDialog).toHaveClass('db-parts-workbench__add-panel')
-    expect(within(addPartDialog).getByRole('group', { name: 'Identity' })).toBeInTheDocument()
+    expect(within(addPartDialog).getByRole('group', { name: 'Part details' })).toBeInTheDocument()
     expect(within(addPartDialog).getByRole('group', { name: 'Stock' })).toBeInTheDocument()
     expect(within(addPartDialog).getByRole('group', { name: 'Pricing' })).toBeInTheDocument()
     expect(within(addPartDialog).getByRole('group', { name: 'Supplier' })).toBeInTheDocument()
