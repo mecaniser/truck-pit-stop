@@ -135,8 +135,24 @@ class RepairOrder(BaseModel):
     
     parent_repair_order = relationship("RepairOrder", remote_side="RepairOrder.id", foreign_keys=[parent_repair_order_id])
 
-    parts_usage = relationship("PartsUsage", back_populates="repair_order", cascade="all, delete-orphan")
-    labor_items = relationship("Labor", back_populates="repair_order", cascade="all, delete-orphan")
+    # Ordered explicitly. Without it these come back in heap order, and Postgres
+    # writes a new tuple version on UPDATE that usually lands at the end — so
+    # editing one line (a labor duration, a part quantity) silently moved it to
+    # the bottom of the work list. created_at is the order lines were added,
+    # which is what the numbered list shows; id breaks ties for lines inserted
+    # in the same transaction, where now() is identical.
+    parts_usage = relationship(
+        "PartsUsage",
+        back_populates="repair_order",
+        cascade="all, delete-orphan",
+        order_by="PartsUsage.created_at, PartsUsage.id",
+    )
+    labor_items = relationship(
+        "Labor",
+        back_populates="repair_order",
+        cascade="all, delete-orphan",
+        order_by="Labor.created_at, Labor.id",
+    )
     recommended_services = relationship("RecommendedService", back_populates="repair_order",
                                         foreign_keys="RecommendedService.repair_order_id",
                                         cascade="all, delete-orphan")
