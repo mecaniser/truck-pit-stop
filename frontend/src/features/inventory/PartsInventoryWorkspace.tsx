@@ -40,8 +40,8 @@ const COMPACT_SORT_OPTIONS: Array<{ sort: Exclude<PartSort, 'catalog'>; directio
   { sort: 'available', direction: 'desc', label: 'Available high to low' },
   { sort: 'location', direction: 'asc', label: 'Bin location A–Z' },
   { sort: 'location', direction: 'desc', label: 'Bin location Z–A' },
-  { sort: 'cost', direction: 'desc', label: 'Average cost high to low' },
-  { sort: 'cost', direction: 'asc', label: 'Average cost low to high' },
+  { sort: 'cost', direction: 'desc', label: 'Unit cost high to low' },
+  { sort: 'cost', direction: 'asc', label: 'Unit cost low to high' },
   { sort: 'reorder', direction: 'desc', label: 'Reorder urgency high to low' },
   { sort: 'reorder', direction: 'asc', label: 'Reorder urgency low to high' },
 ]
@@ -863,7 +863,7 @@ function PartLedger({ page, loading, loadingMore, failed, manage, salesEnabled, 
       <SortableColumnHeader label="Part / Description" columnClass="is-description" field="name" sort={sort} direction={direction} onSort={onSort} />
       <SortableColumnHeader label="Available" columnClass="is-available" field="available" sort={sort} direction={direction} onSort={onSort} />
       <SortableColumnHeader label="Bin location" columnClass="is-bin" field="location" sort={sort} direction={direction} onSort={onSort} />
-      <SortableColumnHeader label="Average cost" columnClass="is-cost" field="cost" sort={sort} direction={direction} onSort={onSort} />
+      <SortableColumnHeader label="Unit cost" columnClass="is-cost" field="cost" sort={sort} direction={direction} onSort={onSort} />
       <span className="is-supplier" role="columnheader">Preferred supplier</span>
       <SortableColumnHeader label="Remarks" columnClass="is-remarks" field="reorder" sort={sort} direction={direction} onSort={onSort} />
     </div>
@@ -882,7 +882,7 @@ function PartLedger({ page, loading, loadingMore, failed, manage, salesEnabled, 
           </span>
           <strong role="cell" data-label="Available" className="is-available">{part.available_to_sell_packages ?? part.available_packages}</strong>
           <span role="cell" data-label="Bin location" className="is-bin">{part.location ? `Bin ${part.location}` : 'Bin not set'}</span>
-          <strong role="cell" data-label="Average cost" className="is-cost">${Number(part.average_unit_cost || 0).toFixed(2)}</strong>
+          <strong role="cell" data-label="Unit cost" className="is-cost">${Number(part.average_unit_cost || 0).toFixed(2)}</strong>
           <span role="cell" data-label="Preferred supplier" className={`is-supplier${!part.preferred_source ? ' is-unassigned' : ''}`}>{part.preferred_source?.supplier_name || 'Unassigned'}</span>
           <span role="cell" data-label="Remarks" className={`db-parts-workbench__remark is-remarks${remark === '—' ? ' is-empty' : ''}`}>{remark !== '—' && <i aria-hidden="true" />}{remark}</span>
         </div>
@@ -1397,7 +1397,7 @@ function PartInspector({ part, loading, failed, manage, prepared, logoUrl, compa
             try { await onAdjust(part, { is_placeholder: false }) } finally { setPromoting(false) }
           }}>{promoting ? 'Promoting…' : 'Make this a stocked part'}</button>}
         </section>}
-        <section className="db-parts-workbench__section"><h3>At a glance</h3><dl className="db-parts-workbench__facts is-overview"><div><dt>Physical on hand</dt><dd>{physicalOnHand}</dd></div><div><dt>Held for checkout</dt><dd>{heldForCheckout}</dd></div><div><dt>Available to sell</dt><dd>{availableToSell}</dd></div><div><dt>Needed for open repairs</dt><dd>{part.needed_for_open_repairs}</dd></div><div><dt>Reorder at</dt><dd>{part.reorder_level}</dd></div><div><dt>Incoming</dt><dd>{part.incoming_packages}</dd></div><div><dt>Average cost</dt><dd>${Number(part.average_unit_cost || 0).toFixed(2)}</dd></div><div><dt>Remarks</dt><dd>{remark}</dd></div></dl></section>
+        <section className="db-parts-workbench__section"><h3>At a glance</h3><dl className="db-parts-workbench__facts is-overview"><div><dt>Physical on hand</dt><dd>{physicalOnHand}</dd></div><div><dt>Held for checkout</dt><dd>{heldForCheckout}</dd></div><div><dt>Available to sell</dt><dd>{availableToSell}</dd></div><div><dt>Needed for open repairs</dt><dd>{part.needed_for_open_repairs}</dd></div><div><dt>Reorder at</dt><dd>{part.reorder_level}</dd></div><div><dt>Incoming</dt><dd>{part.incoming_packages}</dd></div><div><dt>Unit cost</dt><dd>${Number(part.average_unit_cost || 0).toFixed(2)}</dd></div><div><dt>Selling price</dt><dd>{part.selling_price == null ? '—' : `$${Number(part.selling_price).toFixed(2)}`}</dd></div><div><dt>Remarks</dt><dd>{remark}</dd></div></dl></section>
         <section className="db-parts-workbench__section db-parts-workbench__supplier-section">
           <div className="db-parts-workbench__supplier-section-head">
             <h3>Supplied by</h3>

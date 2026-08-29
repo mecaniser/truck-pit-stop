@@ -961,7 +961,7 @@ async function expectPriorityLedgerColumnsContained(page: Page, width: number) {
   const headBox = await tableHead.boundingBox()
   const headScrollWidth = await tableHead.evaluate((node) => node.scrollWidth)
   expect(headBox).not.toBeNull()
-  const visibleLabels = ['Part / Description', 'Available', 'Bin location', 'Average cost', 'Preferred supplier', 'Remarks'] as const
+  const visibleLabels = ['Part / Description', 'Available', 'Bin location', 'Unit cost', 'Preferred supplier', 'Remarks'] as const
   const boxes = []
   for (const label of visibleLabels) {
     const header = page.getByRole('columnheader', { name: label })
@@ -992,7 +992,7 @@ async function expectPriorityLedgerColumnsContained(page: Page, width: number) {
     'Part / Description',
     'Available',
     'Bin location',
-    'Average cost',
+    'Unit cost',
     'Preferred supplier',
     'Remarks',
   ])
@@ -1069,7 +1069,7 @@ async function expectLedgerControlOwnership(page: Page, width: number) {
     await expect(page.getByRole('dialog', { name: 'Sort parts' })).toBeHidden()
   } else {
     await expect(page.getByRole('button', { name: 'Sort parts' })).toBeHidden()
-    await page.getByRole('button', { name: 'Average cost: sort descending' }).click()
+    await page.getByRole('button', { name: 'Unit cost: sort descending' }).click()
     const catalogReset = page.getByRole('button', { name: 'Reset to catalog order' })
     await expect(catalogReset).toBeVisible()
     await catalogReset.focus()
@@ -1308,7 +1308,7 @@ test('DB-038 covers All parts, Needs reorder, Movement, and Purchasing across re
     if (width <= 760) await expectCompactLedgerHitTargets(page)
     await expectSingleWorkbenchSelection(page, partButtons.first())
     await expect(partRows.first().locator('img[src$="/db038-part-image.svg"]')).toBeVisible()
-    for (const label of ['Part / Description', 'Available', 'Bin location', 'Average cost', 'Preferred supplier', 'Remarks']) {
+    for (const label of ['Part / Description', 'Available', 'Bin location', 'Unit cost', 'Preferred supplier', 'Remarks']) {
       const header = page.getByRole('columnheader', { name: label })
       if (width > 760) await expect(header).toHaveCount(1)
       else await expect(header).toBeHidden()
@@ -2076,7 +2076,7 @@ test('DB-041 keeps server sorting singular, directional, and continuous across P
       const compactSort = page.getByRole('radiogroup', { name: 'Sort' })
       await expect(compactSort).toBeVisible()
       await expect(compactSort.getByRole('radio')).toHaveCount(10)
-      const compactChoice = compactSort.getByRole('radio', { name: 'Average cost high to low' })
+      const compactChoice = compactSort.getByRole('radio', { name: 'Unit cost high to low' })
       const compactBox = await compactChoice.boundingBox()
       expect(compactBox).not.toBeNull()
       expect(compactBox!.height).toBeGreaterThanOrEqual(44)
@@ -2105,7 +2105,7 @@ test('DB-041 keeps server sorting singular, directional, and continuous across P
               ? (await rows.locator('[data-label="Available"]').allTextContents()).map((value) => Number(value.trim()))
               : field === 'location'
                 ? (await rows.locator('[data-label="Bin location"]').allTextContents()).map((value) => value.replace(/^Bin\s+/, '').trim())
-                : (await rows.locator('[data-label="Average cost"]').allTextContents()).map((value) => Number(value.replace(/[$,]/g, '').trim()))
+                : (await rows.locator('[data-label="Unit cost"]').allTextContents()).map((value) => Number(value.replace(/[$,]/g, '').trim()))
           const compare = (left: string | number, right: string | number) => typeof left === 'number' && typeof right === 'number'
             ? left - right
             : String(left).localeCompare(String(right), undefined, { sensitivity: 'base' })
@@ -2148,7 +2148,7 @@ test('DB-041 keeps server sorting singular, directional, and continuous across P
       const firstDirections = [
         { label: 'Available', field: 'available', direction: 'asc' },
         { label: 'Bin location', field: 'location', direction: 'asc' },
-        { label: 'Average cost', field: 'cost', direction: 'desc' },
+        { label: 'Unit cost', field: 'cost', direction: 'desc' },
         { label: 'Remarks', field: 'reorder', direction: 'desc' },
       ]
       for (const scenario of firstDirections) {

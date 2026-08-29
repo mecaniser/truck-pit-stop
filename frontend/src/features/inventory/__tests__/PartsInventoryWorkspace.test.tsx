@@ -935,7 +935,7 @@ describe('DB-038 Parts & inventory workspace', () => {
       'Part / Description',
       'Available',
       'Bin location',
-      'Average cost',
+      'Unit cost',
       'Preferred supplier',
       'Remarks',
     ])
@@ -945,7 +945,7 @@ describe('DB-038 Parts & inventory workspace', () => {
     expect(screen.getAllByRole('cell', { name: 'Bin A-12' }).length).toBeGreaterThan(0)
     expect(screen.queryByRole('columnheader', { name: /Free|Committed/i })).not.toBeInTheDocument()
     const overview = screen.getByRole('tabpanel', { name: 'Overview' })
-    expect(overview).toHaveTextContent('Average cost')
+    expect(overview).toHaveTextContent('Unit cost')
     expect(overview).toHaveTextContent('Remarks')
     expect(overview).toHaveTextContent('Fleet Parts Co')
   })
@@ -1073,7 +1073,7 @@ describe('DB-038 Parts & inventory workspace', () => {
       { label: 'Part / Description', sort: 'name', first: 'asc', second: 'desc' },
       { label: 'Available', sort: 'available', first: 'asc', second: 'desc' },
       { label: 'Bin location', sort: 'location', first: 'asc', second: 'desc' },
-      { label: 'Average cost', sort: 'cost', first: 'desc', second: 'asc' },
+      { label: 'Unit cost', sort: 'cost', first: 'desc', second: 'asc' },
       { label: 'Remarks', sort: 'reorder', first: 'desc', second: 'asc' },
     ] as const
 
@@ -1137,7 +1137,7 @@ describe('DB-038 Parts & inventory workspace', () => {
     expect(sortTrigger).toHaveFocus()
 
     await user.click(sortTrigger)
-    await user.click(screen.getByRole('radio', { name: 'Average cost high to low' }))
+    await user.click(screen.getByRole('radio', { name: 'Unit cost high to low' }))
     await waitFor(() => expect(apiMocks.get).toHaveBeenCalledWith('/parts-operations/parts', {
       params: expect.objectContaining({ sort: 'cost', direction: 'desc', skip: 0 }),
     }))
