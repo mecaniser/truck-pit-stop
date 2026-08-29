@@ -5231,7 +5231,15 @@ html.customer-portal-active {
 .db-parts-workbench__add-fields .is-wide,.db-parts-workbench__add-form > .is-wide { grid-column:1 / -1; }
 .db-parts-workbench__add-form :is(input,textarea) { inline-size:100%; min-block-size:44px; padding:.58rem .68rem; border:1px solid var(--workspace-border); border-radius:.75rem; background:var(--surface-overlay); color:var(--text-primary); caret-color:var(--text-primary); }
 .db-parts-workbench__add-form textarea { min-block-size:5rem; resize:vertical; }
-.db-parts-workbench__add-form :is(input,textarea)::placeholder { color:var(--text-secondary); opacity:1; }
+/* Two problems here. The form overrode the shell's placeholder token with the
+   stronger --text-secondary, and it set only `color` -- but Chrome resolves
+   placeholder ink from -webkit-text-fill-color, which the field rule sets to
+   the value colour. Together the hints painted at full value strength and read
+   as a filled-in part that could not be cleared. Use the shell's placeholder
+   token and restate the fill, as the other parts fields do. The hints also
+   inherited the field's 750 weight, so they carried the same visual mass as a
+   real value; a normal weight separates hint from data at a glance. */
+.db-parts-workbench__add-form :is(input,textarea)::placeholder { color:var(--workspace-muted); -webkit-text-fill-color:var(--workspace-muted); font-weight:500; opacity:1; }
 .db-parts-workbench__add-form p { margin:0; color:var(--parts-status-danger); font-size:.8rem; font-weight:750; }
 .db-presentation-new .db-staff-content .db-parts-workbench__add-form :is(input,textarea) { border-color:var(--workspace-border) !important; background:var(--surface-overlay) !important; color:var(--text-primary) !important; -webkit-text-fill-color:var(--text-primary); }
 .db-parts-workbench__add-stepper { inline-size:100%; min-inline-size:0; justify-content:flex-start; }
