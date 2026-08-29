@@ -180,6 +180,14 @@ async function installSession(page: Page, variant: 'legacy' | 'new') {
       })
       return
     }
+    if (url.pathname.endsWith('/parts-operations/activity')) {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ items: [], total: 0, skip: 0, limit: 1, has_more: false }),
+      })
+      return
+    }
     throw new Error(`Unhandled DB-035 fixture route: ${route.request().method()} ${url.pathname}`)
   })
 }

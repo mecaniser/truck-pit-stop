@@ -133,6 +133,14 @@ async function installSession(page: Page, appearance: AppearancePreferences) {
       })
       return
     }
+    if (url.pathname.endsWith('/parts-operations/activity')) {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ items: [], total: 0, skip: 0, limit: 1, has_more: false }),
+      })
+      return
+    }
     if (
       url.pathname.endsWith('/mechanics')
       || url.pathname.endsWith('/mechanics/pto-requests/pending')

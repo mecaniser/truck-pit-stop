@@ -2442,7 +2442,11 @@ html::-webkit-scrollbar-thumb:hover {
   justify-content: center;
 }
 
-.db-my-shop-nav-label-full,
+.db-my-shop-nav-label-full {
+  display: none;
+  min-width: 0;
+}
+
 .db-my-shop-content {
   min-width: 0;
 }
