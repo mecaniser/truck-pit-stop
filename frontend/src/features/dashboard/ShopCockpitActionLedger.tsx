@@ -174,7 +174,7 @@ export default function ShopCockpitActionLedger({
   }
 
   return (
-    <section className="db-shop-work-new" aria-labelledby="shop-work-title">
+    <section className="db-shop-work-new db-operating-surface" aria-labelledby="shop-work-title">
       <header className="db-shop-work-new__header db-operating-page-header">
         <div>
           <h1 id="shop-work-title">Shop Work</h1>
@@ -214,72 +214,86 @@ export default function ShopCockpitActionLedger({
       {notificationRegion}
       {quickOrderForm}
 
-      <div className="db-shop-work-new__view-switch" aria-label="Shop Work view">
-        <button
-          type="button"
-          aria-pressed={queueView === 'queue'}
-          onClick={() => onQueueViewChange('queue')}
-        >
-          <LayoutList aria-hidden="true" />
-          Queue
-        </button>
-        {canViewActivity && (
-          <button
-            type="button"
-            aria-pressed={queueView === 'activity'}
-            onClick={() => onQueueViewChange('activity')}
-          >
-            <History aria-hidden="true" />
-            Activity
-            {activityCount > 0 && <span>{activityCount}</span>}
-          </button>
-        )}
-      </div>
+        {/* Section header for the whole queue block. The view switch leads the
+            left gutter -- the page's right gutter already carries three action
+            buttons and the search -- and sits above the chips it outranks, so
+            switching views never moves it. */}
+        <header className="db-action-ledger__caption">
+          <div className="db-action-ledger__caption-text">
+            <div className="db-shop-work-new__view-switch" aria-label="Shop Work view">
+              <button
+                type="button"
+                aria-pressed={queueView === 'queue'}
+                onClick={() => onQueueViewChange('queue')}
+              >
+                <LayoutList aria-hidden="true" />
+                Queue
+              </button>
+              {canViewActivity && (
+                <button
+                  type="button"
+                  aria-pressed={queueView === 'activity'}
+                  onClick={() => onQueueViewChange('activity')}
+                >
+                  <History aria-hidden="true" />
+                  Activity
+                  {activityCount > 0 && <span>{activityCount}</span>}
+                </button>
+              )}
+            </div>
+            <h2>{queueView === 'activity' ? 'Activity' : 'Action Ledger'}</h2>
+          </div>
+          <span className="db-action-ledger__caption-meta">{lastUpdatedLabel || 'Updated recently'}</span>
+        </header>
 
-      {queueView === 'activity' ? (
-        <div className="db-shop-work-new__activity">{activityFeed}</div>
-      ) : (
-        <>
+        {/* Queue-only controls: the chips and search filter the queue, so
+            they leave with it. */}
+        {queueView === 'queue' && (
           <div className="db-shop-work-new__toolbar">
             <div className="db-shop-work-new__lane-tabs" role="tablist" aria-label="Work queues">
+            <button
+              type="button"
+              role="tab"
+              aria-selected={laneFilter === 'all'}
+              onClick={() => selectLane('all')}
+            >
+              All work <span>{totalCount}</span>
+            </button>
+            {lanes.map((lane) => (
               <button
                 type="button"
                 role="tab"
-                aria-selected={laneFilter === 'all'}
-                onClick={() => selectLane('all')}
+                key={lane.key}
+                aria-selected={laneFilter === lane.key}
+                onClick={() => selectLane(lane.key)}
+                data-lane={lane.key}
               >
-                All work <span>{totalCount}</span>
+                {lane.label} <span>{lane.orders.length}{lane.hasMore ? '+' : ''}</span>
               </button>
-              {lanes.map((lane) => (
-                <button
-                  type="button"
-                  role="tab"
-                  key={lane.key}
-                  aria-selected={laneFilter === lane.key}
-                  onClick={() => selectLane(lane.key)}
-                  data-lane={lane.key}
-                >
-                  {lane.label} <span>{lane.orders.length}{lane.hasMore ? '+' : ''}</span>
-                </button>
-              ))}
-            </div>
-            <label className="db-shop-work-new__search">
-              <span className="sr-only">Search work queue</span>
-              <Search aria-hidden="true" />
-              <input
-                type="search"
-                value={searchQuery}
-                onChange={(event) => setSearchQuery(event.target.value)}
-                placeholder="Order, customer, truck, or technician"
-              />
+            ))}
+          </div>
+          <label className="db-shop-work-new__search">
+            <span className="sr-only">Search work queue</span>
+            <Search aria-hidden="true" />
+            <input
+              type="search"
+              value={searchQuery}
+              onChange={(event) => setSearchQuery(event.target.value)}
+              placeholder="Order, customer, truck, or technician"
+            />
             </label>
           </div>
+        )}
 
-          <section className="db-action-ledger" aria-label="Server-backed work queue">
-            <header>
-              <h2>Action Ledger</h2>
-              <span>{lastUpdatedLabel || 'Updated recently'}</span>
-            </header>
+
+      {queueView === 'activity' ? (
+        <div className="db-shop-work-new__activity db-operating-surface__scroller">{activityFeed}</div>
+      ) : (
+        <>
+          {/* The scroller wraps the card so the scrollbar sits outside the
+              border; the caption above stays pinned. */}
+          <div className="db-operating-surface__scroller">
+          <section className="db-action-ledger db-operating-surface__card" aria-label="Server-backed work queue">
             <div className="db-action-ledger__rows">
               {visibleRows.length === 0 ? (
                 <div className="db-action-ledger__empty" role="status">
@@ -316,6 +330,7 @@ export default function ShopCockpitActionLedger({
               })}
             </div>
           </section>
+          </div>
         </>
       )}
     </section>

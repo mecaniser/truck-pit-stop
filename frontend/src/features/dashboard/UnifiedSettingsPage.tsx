@@ -8,6 +8,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useAuthStore } from '../../stores/authStore'
 import type { User as UserType } from '../../types'
 import api from '../../lib/api'
+import { scrollSurfaceToTop } from '../../lib/scrollSurface'
 import { tenantBrandingQueryKey } from '@/hooks/useTenantBranding'
 import { formatUSPhone, isValidUSPhone } from '@/utils/phone'
 import toast from 'react-hot-toast'
@@ -3565,8 +3566,7 @@ export default function UnifiedSettingsPage() {
   const isSuperAdmin = user?.role === 'super_admin'
 
   useEffect(() => {
-    const scrollOwner = document.querySelector<HTMLElement>('.db-staff-content')
-    scrollOwner?.scrollTo({ top: 0, behavior: 'auto' })
+    scrollSurfaceToTop(document.querySelector<HTMLElement>('.db-settings-workspace'))
   }, [activeSection])
 
   useEffect(() => {

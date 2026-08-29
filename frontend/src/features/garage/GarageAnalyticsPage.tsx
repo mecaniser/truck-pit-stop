@@ -884,7 +884,7 @@ function InventoryTab() {
       ]} />
 
       <DetailTable title="Full inventory" count={data.rows.length} onExport={handleExport}>
-        <div className="max-h-[32rem] overflow-y-auto">
+        <div>
           <table className="w-full text-sm">
             <thead className="text-white/35 text-[11px] uppercase tracking-wider sticky top-0 bg-[#12161d]">
               <tr>
@@ -971,7 +971,7 @@ function ServiceTypesTab({ range }: { range: DateRangePreset }) {
       ]} />
 
       <DetailTable title="All service types" count={data.rows.length} onExport={handleExport}>
-        <div className="max-h-[32rem] overflow-y-auto">
+        <div>
           <table className="w-full text-sm">
             <thead className="text-white/35 text-[11px] uppercase tracking-wider sticky top-0 bg-[#12161d]">
               <tr>
@@ -1056,7 +1056,7 @@ function InternalFleetCostsTab({ range }: { range: DateRangePreset }) {
       ]} />
 
       <DetailTable title="All internal invoices" count={data.invoice_rows.length} onExport={handleExport}>
-        <div className="max-h-[32rem] overflow-y-auto">
+        <div>
           <table className="w-full text-sm">
             <thead className="text-white/35 text-[11px] uppercase tracking-wider sticky top-0 bg-[#12161d]">
               <tr>
@@ -1134,7 +1134,7 @@ export default function GarageAnalyticsPage() {
   const [range, setRange] = useState<DateRangePreset>('this_month')
 
   return (
-    <div className="db-garage-analytics flex flex-col h-full min-h-0">
+    <div className="db-garage-analytics db-operating-surface">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-4 sm:mb-6 flex-shrink-0 gap-3">
         <div>
           <h1 className="text-xl sm:text-2xl font-bold text-white">Shop Analytics</h1>
@@ -1159,7 +1159,7 @@ export default function GarageAnalyticsPage() {
         ))}
       </div>
 
-      <div className="flex-1 min-h-0 overflow-y-auto scrollbar-dark">
+      <div className="db-operating-surface__scroller scrollbar-dark">
         {activeTab === 'dashboard' && <DashboardTab range={range} />}
         {activeTab === 'sales' && <SalesTab range={range} />}
         {activeTab === 'fees' && <FeesTab range={range} />}

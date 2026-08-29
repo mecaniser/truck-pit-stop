@@ -325,7 +325,7 @@ export default function LaborBookTimePage() {
   }
 
   return (
-    <div className="db-labor-book-time flex min-h-full flex-col gap-5 text-zinc-100">
+    <div className="db-labor-book-time db-operating-surface gap-5 text-zinc-100">
       <div className="db-labor-book-time__summary rounded-2xl border border-zinc-700/50 bg-zinc-900/80 p-5 shadow-xl shadow-black/20">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div>
@@ -386,6 +386,7 @@ export default function LaborBookTimePage() {
         </div>
       </div>
 
+      <div className="db-operating-surface__scroller space-y-5">
       {isCreating ? (
         <div className="rounded-2xl border border-[var(--accent-500)]/30 bg-zinc-900/90 p-5 shadow-xl shadow-black/20">
           <div className="mb-5 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
@@ -699,6 +700,7 @@ export default function LaborBookTimePage() {
             })}
           </div>
         )}
+      </div>
       </div>
     </div>
   )

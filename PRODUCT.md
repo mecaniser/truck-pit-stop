@@ -28,7 +28,11 @@ Two mechanisms, and future work must serve both without favoring one:
 
 ## Operating Context
 
-- Work happens on the shop floor and in the yard, not only at a desk. The fleet manager is confirmed to use an **iPad, standing, one-handed, next to the truck** — large targets, minimal typing, and portrait layout are functional requirements there, not polish.
+- **Device context is per shell, not global.** Confirmed 2026-08-28:
+  - `/fleet` (fleet board) is used on an **iPad, standing, one-handed, next to the truck**. Large targets, minimal typing, and portrait layout are functional requirements there, not polish. Never assume a pointer, hover, or keyboard on this shell.
+  - `/dashboard` (owner/admin staff workspace) is a **laptop and desktop** surface. It is operated seated, with a pointer and keyboard, at 1280px and wider. Information density, hover affordances, and keyboard navigation are appropriate here and should not be sacrificed to touch sizing borrowed from the fleet board.
+  - `/mechanic` and `/portal` are unconfirmed; do not assert a posture for them without evidence.
+  - Responsive support for smaller viewports remains a requirement on every shell. This decision governs which posture the design is *optimized* for, not which viewports must work.
 - Four app shells serve different situations: `/dashboard` (owner/admin), `/fleet` (fleet manager), `/mechanic` (technician), `/portal` (customer), plus a public marketing site and token-gated quote/invoice pages customers open without an account.
 - Money leaves the product through real integrations: Stripe (including Connect) for payment, QuickBooks Online for accounting sync, Twilio for SMS, Resend for email.
 
@@ -64,6 +68,6 @@ Two mechanisms, and future work must serve both without favoring one:
 
 1. **Serve the network and the internal fleet equally.** The shared thread wins the shop; the fleet board keeps it. Neither gets to become the second-class surface.
 2. **The truck is the record.** Continuity of one truck's history outranks the convenience of any single screen or billing arrangement.
-3. **Design for the yard, not the desk.** Where the real usage scene is a tablet in one hand beside a truck, touch size and low typing beat density.
+3. **Design for the confirmed scene of the shell you are in.** On `/fleet`, the scene is a tablet in one hand beside a truck: touch size and low typing beat density. On `/dashboard`, the scene is a laptop at a desk: density, pointer affordances, and keyboard efficiency win. Applying either shell's posture to the other is a defect, not a consistency win.
 4. **Never claim a state the system won't honor.** If a rule outranks what the operator just did, the interface says so plainly instead of reporting success and showing something else.
 5. **Money is a record, not a draft.** Anything that has been invoiced or paid stops being editable, and the interface should make that boundary visible before it is hit.

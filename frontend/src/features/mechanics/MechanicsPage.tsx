@@ -457,7 +457,8 @@ export default function MechanicsPage() {
 
   return (
     <>
-    <div className="db-team-workspace space-y-6">
+    <div className="db-team-workspace db-operating-surface">
+    <div className="db-team-workspace__scroll db-operating-surface__scroller space-y-6">
       {user?.role !== 'garage_owner' && user?.role !== 'garage_admin' ? (
         <div className="bg-white/5 rounded-xl p-6 border border-white/10">
           <h1 className="text-lg font-semibold text-white mb-2">Team</h1>
@@ -1255,6 +1256,7 @@ export default function MechanicsPage() {
           }}
         />
       )}
+    </div>
     </>
   )
 }

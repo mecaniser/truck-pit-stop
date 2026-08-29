@@ -1,5 +1,5 @@
-import { NavLink, Routes, Route, Navigate, useLocation } from 'react-router-dom'
-import { BarChart3, Boxes, ChevronRight, ClipboardList, Clock3, Settings2, ShoppingCart, Wrench, type LucideIcon } from 'lucide-react'
+import { NavLink, Routes, Route, Navigate } from 'react-router-dom'
+import { BarChart3, Boxes, ClipboardList, Clock3, ShoppingCart, Wrench, type LucideIcon } from 'lucide-react'
 import ServicesManagementPage from '@/features/dashboard/ServicesManagementPage'
 import InventoryPage from '@/features/inventory/InventoryPage'
 import PurchasingWorkspace from '@/features/inventory/PurchasingWorkspace'
@@ -18,19 +18,16 @@ type GarageSection = {
 }
 
 const OPERATIONAL_SECTIONS: GarageSection[] = [
-  { to: 'services', label: 'Services', shortLabel: 'Services', icon: ClipboardList },
-  { to: 'labor-book-time', label: 'Labor Book Time', shortLabel: 'Book Time', icon: Clock3 },
   { to: 'inventory', label: 'Inventory', shortLabel: 'Inventory', icon: Boxes },
   { to: 'purchasing', label: 'Purchasing', shortLabel: 'Purchasing', icon: ShoppingCart },
+  { to: 'services', label: 'Services', shortLabel: 'Services', icon: ClipboardList },
+  { to: 'labor-book-time', label: 'Labor Book Time', shortLabel: 'Book Time', icon: Clock3 },
 ]
 
 const SECONDARY_SECTIONS: GarageSection[] = [
   { to: 'mechanics', label: 'Team', shortLabel: 'Team', icon: Wrench },
   { to: 'analytics', label: 'Analytics', shortLabel: 'Analytics', icon: BarChart3 },
 ]
-
-const sectionHeaderClass =
-  'db-my-shop-nav-heading text-xs font-bold uppercase tracking-[0.2em] text-zinc-500 border-b border-zinc-800/50 pb-2 flex items-center gap-3'
 
 function GarageLinks({ sections }: { sections: GarageSection[] }) {
   return sections.map(section => (
@@ -46,18 +43,13 @@ function GarageLinks({ sections }: { sections: GarageSection[] }) {
         }`
       }
     >
-      {({ isActive }) => (
-        <>
-          <section.icon aria-hidden="true" className="h-4 w-4 shrink-0" />
-          <span aria-hidden="true" className="db-my-shop-nav-label db-my-shop-nav-label-short whitespace-nowrap">
-            {section.shortLabel}
-          </span>
-          <span aria-hidden="true" className="db-my-shop-nav-label db-my-shop-nav-label-full whitespace-nowrap">
-            {section.label}
-          </span>
-          {isActive ? <ChevronRight aria-hidden="true" className="db-my-shop-nav-chevron ml-auto h-4 w-4" /> : null}
-        </>
-      )}
+      <section.icon aria-hidden="true" className="h-4 w-4 shrink-0" />
+      <span aria-hidden="true" className="db-my-shop-nav-label db-my-shop-nav-label-short whitespace-nowrap">
+        {section.shortLabel}
+      </span>
+      <span aria-hidden="true" className="db-my-shop-nav-label db-my-shop-nav-label-full whitespace-nowrap">
+        {section.label}
+      </span>
     </NavLink>
   ))
 }
@@ -69,10 +61,6 @@ function GarageNav() {
       data-shop-menu-layout="container-adaptive"
       className="db-my-shop-navigation shrink-0 p-2"
     >
-      <h2 className={sectionHeaderClass}>
-        <Settings2 aria-hidden="true" className="h-3 w-3" />
-        Shop
-      </h2>
       <div className="db-my-shop-nav-groups scrollbar-dark">
         <div
           role="group"
@@ -96,24 +84,16 @@ function GarageNav() {
 }
 
 export default function MyGaragePage() {
-  const location = useLocation()
-  const usesInternalDesktopScroll =
-    location.pathname.startsWith('/dashboard/garage/services') ||
-    location.pathname.startsWith('/dashboard/garage/inventory') ||
-    location.pathname.startsWith('/dashboard/garage/purchasing')
-
   return (
-    <div className="db-my-shop-workspace w-full flex-1 md:h-[calc(100dvh-9.25rem)] md:min-h-0 md:flex-none md:overflow-hidden">
+    <div className="db-my-shop-workspace db-operating-surface w-full">
       <div className="db-my-shop-layout">
         <GarageNav />
 
-        <div
-          className={`db-my-shop-content min-h-[400px] min-w-0 flex-1 scrollbar-dark md:min-h-0 ${
-            usesInternalDesktopScroll ? 'md:overflow-hidden' : 'md:overflow-y-auto'
-          }`}
-        >
+        {/* Every routed section is an operating surface and owns its own
+            scroller, so this frame clips rather than offering a second one. */}
+        <div className="db-my-shop-content db-operating-surface__frame min-w-0 scrollbar-dark">
           <Routes>
-            <Route index element={<Navigate to="mechanics" replace />} />
+            <Route index element={<Navigate to="inventory" replace />} />
             <Route path="services" element={<ServicesManagementPage />} />
             <Route path="labor-book-time" element={<LaborBookTimePage />} />
             <Route path="inventory" element={<InventoryPage />} />
