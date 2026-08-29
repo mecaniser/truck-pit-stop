@@ -5660,35 +5660,35 @@ html.customer-portal-active {
    dark and high-contrast appearances only; the light appearance keeps the
    legacy look until the surface is rebuilt. Scoped to the customer panel so the
    deliberately white repair-order detail panel is untouched. */
-.db-staff-shell:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) :is(.db-customer-detail-workspace, .db-customer-vehicle-modal) {
+.db-staff-shell:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) :is(.db-customer-detail-workspace, .db-customer-modal) {
   /* The scope element carries bg-white itself; the descendant rules below only
      reach its children, which left a white sheet holding dark fields. */
   background-color: var(--surface-raised) !important;
   color: var(--workspace-text);
 }
 
-.db-staff-shell:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) :is(.db-customer-detail-workspace, .db-customer-vehicle-modal)
+.db-staff-shell:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) :is(.db-customer-detail-workspace, .db-customer-modal)
   :is(.bg-white, .bg-gray-50, .bg-gray-100, .bg-slate-50) {
   background-color: var(--surface-raised) !important;
 }
 
-.db-staff-shell:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) :is(.db-customer-detail-workspace, .db-customer-vehicle-modal)
+.db-staff-shell:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) :is(.db-customer-detail-workspace, .db-customer-modal)
   :is(.border-gray-100, .border-gray-200, .border-gray-300, .border-slate-200) {
   border-color: var(--workspace-border) !important;
 }
 
-.db-staff-shell:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) :is(.db-customer-detail-workspace, .db-customer-vehicle-modal)
+.db-staff-shell:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) :is(.db-customer-detail-workspace, .db-customer-modal)
   :is(.text-gray-900, .text-gray-800, .text-slate-900, .text-slate-800, .text-black) {
   color: var(--workspace-text) !important;
 }
 
-.db-staff-shell:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) :is(.db-customer-detail-workspace, .db-customer-vehicle-modal)
+.db-staff-shell:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) :is(.db-customer-detail-workspace, .db-customer-modal)
   :is(.text-gray-700, .text-gray-600, .text-gray-500, .text-gray-400, .text-slate-600, .text-slate-500) {
   color: var(--workspace-muted) !important;
 }
 
 /* Form controls: dark field, light text, muted placeholder. */
-.db-staff-shell:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) :is(.db-customer-detail-workspace, .db-customer-vehicle-modal)
+.db-staff-shell:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) :is(.db-customer-detail-workspace, .db-customer-modal)
   :is(input:not([type='checkbox']):not([type='radio']), select, textarea) {
   border-color: var(--workspace-border) !important;
   background-color: var(--surface-overlay) !important;
@@ -5698,31 +5698,40 @@ html.customer-portal-active {
   color-scheme: dark;
 }
 
-.db-staff-shell:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) :is(.db-customer-detail-workspace, .db-customer-vehicle-modal)
+/* Checkboxes and radios are excluded above so the fill rules cannot break their
+   native rendering -- but they still need the dark scheme, or they paint as
+   white blocks on a dark field. */
+.db-staff-shell:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) :is(.db-customer-detail-workspace, .db-customer-modal)
+  :is(input[type='checkbox'], input[type='radio']) {
+  color-scheme: dark;
+  accent-color: var(--accent-500, #38bdf8);
+}
+
+.db-staff-shell:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) :is(.db-customer-detail-workspace, .db-customer-modal)
   :is(input, textarea)::placeholder {
   color: var(--workspace-muted) !important;
   -webkit-text-fill-color: var(--workspace-muted);
 }
 
 /* Emerald "total saved" tile: keep the semantic hue, lose the pale fill. */
-.db-staff-shell:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) :is(.db-customer-detail-workspace, .db-customer-vehicle-modal)
+.db-staff-shell:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) :is(.db-customer-detail-workspace, .db-customer-modal)
   :is(.bg-emerald-50, .bg-green-50) {
   background-color: color-mix(in srgb, var(--service-green, #087252) 22%, var(--surface-raised)) !important;
 }
 
-.db-staff-shell:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) :is(.db-customer-detail-workspace, .db-customer-vehicle-modal)
+.db-staff-shell:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) :is(.db-customer-detail-workspace, .db-customer-modal)
   :is(.text-emerald-700, .text-emerald-800, .text-green-700) {
   color: #6ee7b7 !important;
 }
 
 /* The Add Vehicle modal's mode switch: a light pill strip with a white active
    tab, invisible against the remapped dark surfaces. */
-.db-staff-shell:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) .db-customer-vehicle-modal
+.db-staff-shell:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) .db-customer-modal
   .bg-gray-100 {
   background-color: var(--surface-canvas) !important;
 }
 
-.db-staff-shell:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) .db-customer-vehicle-modal
+.db-staff-shell:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) .db-customer-modal
   .bg-gray-100 .bg-white {
   background-color: var(--surface-overlay) !important;
   color: var(--workspace-text) !important;
@@ -5753,47 +5762,47 @@ html.customer-portal-active {
    meaning, but as a soft translucent wash instead of a cream block. Both halves
    have to flip together on a dark canvas: leaving the fill light and pushing the
    text to muted grey is what made the OWNED pill unreadable. */
-.db-staff-shell:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) :is(.db-customer-detail-workspace, .db-customer-vehicle-modal)
+.db-staff-shell:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) :is(.db-customer-detail-workspace, .db-customer-modal)
   :is(.bg-amber-50, .bg-amber-100) {
   background-color: rgba(252, 211, 77, .12) !important;
   border-color: rgba(252, 211, 77, .26) !important;
 }
 
-.db-staff-shell:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) :is(.db-customer-detail-workspace, .db-customer-vehicle-modal)
+.db-staff-shell:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) :is(.db-customer-detail-workspace, .db-customer-modal)
   :is(.bg-sky-50, .bg-sky-100) {
   background-color: rgba(125, 211, 252, .12) !important;
   border-color: rgba(125, 211, 252, .26) !important;
 }
 
-.db-staff-shell:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) :is(.db-customer-detail-workspace, .db-customer-vehicle-modal)
+.db-staff-shell:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) :is(.db-customer-detail-workspace, .db-customer-modal)
   :is(.border-amber-200, .border-amber-300) { border-color: rgba(252, 211, 77, .26) !important; }
 
-.db-staff-shell:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) :is(.db-customer-detail-workspace, .db-customer-vehicle-modal)
+.db-staff-shell:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) :is(.db-customer-detail-workspace, .db-customer-modal)
   :is(.border-sky-200, .border-sky-300) { border-color: rgba(125, 211, 252, .26) !important; }
 
-.db-staff-shell:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) :is(.db-customer-detail-workspace, .db-customer-vehicle-modal)
+.db-staff-shell:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) :is(.db-customer-detail-workspace, .db-customer-modal)
   :is(.text-amber-950, .text-amber-900, .text-sky-950, .text-sky-900) {
   color: var(--workspace-text) !important;
 }
 
-.db-staff-shell:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) :is(.db-customer-detail-workspace, .db-customer-vehicle-modal)
+.db-staff-shell:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) :is(.db-customer-detail-workspace, .db-customer-modal)
   :is(.text-amber-800, .text-amber-700, .text-amber-600) { color: #fcd34d !important; }
 
-.db-staff-shell:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) :is(.db-customer-detail-workspace, .db-customer-vehicle-modal)
+.db-staff-shell:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) :is(.db-customer-detail-workspace, .db-customer-modal)
   :is(.text-sky-800, .text-sky-700, .text-sky-600) { color: #7dd3fc !important; }
 
 /* The relationship banner's supporting line is secondary text, not a second
    accent: only the eyebrow label and the ownership pill carry the tint. The
    pill shares the amber-800 class, so this is scoped to the paragraph. */
-.db-staff-shell:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) :is(.db-customer-detail-workspace, .db-customer-vehicle-modal)
+.db-staff-shell:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) :is(.db-customer-detail-workspace, .db-customer-modal)
   p:is(.text-amber-800, .text-sky-800) { color: var(--workspace-muted) !important; }
 
 /* Unit / plate chips: a light slate chip reads as a white block on the dark
    equipment card. */
-.db-staff-shell:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) :is(.db-customer-detail-workspace, .db-customer-vehicle-modal)
+.db-staff-shell:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) :is(.db-customer-detail-workspace, .db-customer-modal)
   :is(.bg-slate-100, .bg-gray-100) { background-color: var(--surface-overlay) !important; box-shadow: inset 0 0 0 1px var(--workspace-border); }
 
-.db-staff-shell:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) :is(.db-customer-detail-workspace, .db-customer-vehicle-modal)
+.db-staff-shell:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) :is(.db-customer-detail-workspace, .db-customer-modal)
   :is(.text-slate-700, .text-slate-600) { color: var(--workspace-muted) !important; }
 
 

@@ -3573,7 +3573,7 @@ export default function CustomersPage() {
             />
             
             {/* Modal */}
-            <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+            <div className="db-customer-modal relative bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
               {/* Header */}
               <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 rounded-t-2xl">
                 <div className="flex items-center justify-between">
@@ -4626,7 +4626,7 @@ export default function CustomersPage() {
             />
             
               {/* Modal */}
-              <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-md p-6">
+              <div className="db-customer-modal relative bg-white rounded-2xl shadow-2xl w-full max-w-md p-6">
                 <div className="flex items-center gap-4 mb-4">
                   <div className="w-12 h-12 rounded-full bg-red-100 flex items-center justify-center flex-shrink-0">
                     <AlertTriangle className="w-6 h-6 text-red-600" />
@@ -4680,7 +4680,7 @@ export default function CustomersPage() {
             />
 
             {/* Modal */}
-            <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+            <div className="db-customer-modal relative bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
               <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 rounded-t-2xl">
                 <div className="flex items-center justify-between">
                   <div>
@@ -4802,7 +4802,7 @@ export default function CustomersPage() {
             />
             
             {/* Modal */}
-            <div className="db-customer-vehicle-modal relative bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
+            <div className="db-customer-modal relative bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
               {/* Header */}
               <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 rounded-t-2xl">
                 <div className="flex items-center justify-between">
@@ -5008,7 +5008,7 @@ export default function CustomersPage() {
             />
             
             {/* Modal */}
-            <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-md p-6">
+            <div className="db-customer-modal relative bg-white rounded-2xl shadow-2xl w-full max-w-md p-6">
               <div className="flex items-center gap-4 mb-4">
                 <div className="w-12 h-12 rounded-full bg-red-100 flex items-center justify-center flex-shrink-0">
                   <AlertTriangle className="w-6 h-6 text-red-600" />
@@ -5062,7 +5062,7 @@ export default function CustomersPage() {
             />
 
             {/* Modal */}
-            <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
+            <div className="db-customer-modal relative bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
               {/* Header */}
               <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 rounded-t-2xl">
                 <div className="flex items-center justify-between">
@@ -5101,7 +5101,7 @@ export default function CustomersPage() {
             />
 
             {/* Modal */}
-            <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-md p-6">
+            <div className="db-customer-modal relative bg-white rounded-2xl shadow-2xl w-full max-w-md p-6">
               <div className="flex items-center gap-4 mb-4">
                 <div className="w-12 h-12 rounded-full bg-red-100 flex items-center justify-center flex-shrink-0">
                   <AlertTriangle className="w-6 h-6 text-red-600" />
