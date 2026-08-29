@@ -30,6 +30,7 @@ vi.mock('../PriceBuilderPanel', () => ({
 }))
 
 import type { PartsUsage, RepairOrderHistoryEvent } from '../../../types'
+import REPAIR_ORDER_CSS from '../../../index.css?inline'
 import RepairOrdersPage from '../RepairOrdersPage'
 import { buildPartHistoryEvents } from '../repairOrderHistory'
 
@@ -93,11 +94,11 @@ describe('RepairOrdersPage request cancellation', () => {
     expect(document.querySelector('.db-repair-orders-new')).not.toBeInTheDocument()
   })
 
-  it('keeps a selected new-presentation repair order in the canonical workspace region, not a modal drawer', async () => {
+  it('keeps a completed new-presentation repair order in the clipped canonical workspace region, not a modal drawer', async () => {
     const order = {
       id: 'workspace-order', tenant_id: 'tenant-1', customer_id: 'customer-1', vehicle_id: 'vehicle-1',
       vehicle_make: 'Freightliner', vehicle_model: 'Cascadia', vehicle_year: 2022, vehicle_unit_number: '218', vehicle_vin: 'VIN218',
-      customer_company_name: 'Northline Logistics', order_number: 'RO-2018', status: 'draft',
+      customer_company_name: 'Northline Logistics', order_number: 'RO-2018', status: 'completed',
       description: 'Replace damaged air line', customer_notes: null, internal_notes: null,
       assigned_mechanic_id: null, total_parts_cost: '0.00', total_labor_cost: '0.00', total_cost: '0.00',
       created_at: '2026-08-12T12:00:00Z', updated_at: '2026-08-12T15:00:00Z',
@@ -114,6 +115,9 @@ describe('RepairOrdersPage request cancellation', () => {
     const workspace = await screen.findByRole('region', { name: '#RO-2018' })
     expect(workspace).toBeInTheDocument()
     expect(workspace).toHaveClass('db-repair-order-detail-new--price-builder')
+    expect(REPAIR_ORDER_CSS).toMatch(
+      /\.db-repair-order-detail-new--price-builder\s*>\s*\.slide-panel-content\s*\{[^}]*clip-path:\s*inset\(0 round var\(--db-repair-order-content-clip-radius\)\)/,
+    )
     expect(document.querySelector('.db-repair-orders-workspace--detail-open')).toBeInTheDocument()
     expect(document.querySelector('[role="dialog"]')).not.toBeInTheDocument()
     expect(workspace).not.toHaveFocus()
