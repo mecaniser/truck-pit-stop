@@ -3646,7 +3646,9 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
         subtitle="Repair Order"
         headerVariant={presentationVariant === 'new' ? 'minimal' : 'amber'}
         width={presentationVariant === 'new' ? 'max-w-full md:max-w-[84vw] xl:max-w-[76vw] 2xl:max-w-[1400px]' : 'max-w-full sm:max-w-[90vw] xl:max-w-[72vw] 2xl:max-w-[1400px]'}
-        panelClassName={presentationVariant === 'new' ? 'db-repair-order-detail-new' : ''}
+        panelClassName={presentationVariant === 'new'
+          ? `db-repair-order-detail-new${priceBuilderOwnsShell ? ' db-repair-order-detail-new--price-builder' : ''}`
+          : ''}
         hideHeader={priceBuilderOwnsShell}
         onPrev={showNavigation || hasPrev ? goToPrevOrder : undefined}
         onNext={showNavigation || hasNext ? goToNextOrder : undefined}

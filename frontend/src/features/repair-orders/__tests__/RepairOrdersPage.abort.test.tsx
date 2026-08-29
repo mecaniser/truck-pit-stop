@@ -111,10 +111,12 @@ describe('RepairOrdersPage request cancellation', () => {
 
     renderPage(['/?selected=workspace-order'])
 
-    expect(await screen.findByRole('region', { name: '#RO-2018' })).toBeInTheDocument()
+    const workspace = await screen.findByRole('region', { name: '#RO-2018' })
+    expect(workspace).toBeInTheDocument()
+    expect(workspace).toHaveClass('db-repair-order-detail-new--price-builder')
     expect(document.querySelector('.db-repair-orders-workspace--detail-open')).toBeInTheDocument()
     expect(document.querySelector('[role="dialog"]')).not.toBeInTheDocument()
-    expect(screen.getByRole('region', { name: '#RO-2018' })).not.toHaveFocus()
+    expect(workspace).not.toHaveFocus()
   })
 
   it('keeps a Shop Work lane through ordinary ledger selection until the operator chooses All orders', async () => {
