@@ -4809,6 +4809,24 @@ html.customer-portal-active {
 .db-parts-workbench__identity-fields { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:.65rem; }
 .db-parts-workbench__identity-fields label { display:grid; gap:.3rem; min-inline-size:0; color:var(--parts-selected-ink); font-size:.75rem; font-weight:800; }
 .db-parts-workbench__identity-fields label.is-wide { grid-column:1 / -1; }
+/* Pricing and Supplier join identity in the same editor, grouped so the three
+   money fields do not read as one flat list of catalog text. */
+.db-parts-workbench__identity-group { min-inline-size:0; margin:.9rem 0 0; padding:.8rem 0 0; border:0; border-block-start:1px solid color-mix(in srgb,var(--parts-selected-ink) 18%,transparent); }
+.db-parts-workbench__identity-group legend { padding:0; color:var(--parts-selected-ink); font-size:.7rem; font-weight:850; letter-spacing:.04em; text-transform:uppercase; }
+.db-parts-workbench__identity-group .db-parts-workbench__identity-fields { margin-block-start:.55rem; }
+.db-parts-workbench__price-field { display:grid; gap:.3rem; min-inline-size:0; color:var(--parts-selected-ink); font-size:.75rem; font-weight:750; }
+.db-parts-workbench__price-field.is-wide { grid-column:1 / -1; }
+.db-parts-workbench__price-head { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:.4rem; }
+/* A two-way entry choice, not a filter: same segmented treatment as the ledger
+   density control so it reads as "how am I entering this". */
+.db-parts-workbench__price-modes { display:inline-flex; gap:2px; padding:2px; border:1px solid color-mix(in srgb,var(--parts-selected-ink) 30%,transparent); border-radius:.6rem; }
+.db-parts-workbench__price-modes button { min-block-size:32px; padding:.2rem .55rem; border:0; border-radius:.45rem; background:transparent; color:var(--parts-selected-ink); font-size:.7rem; font-weight:750; cursor:pointer; }
+.db-parts-workbench__price-modes button[aria-pressed='true'] { background:color-mix(in srgb,var(--parts-selected-ink) 16%,transparent); }
+.db-parts-workbench__price-modes button:disabled { cursor:not-allowed; opacity:.5; }
+.db-parts-workbench__price-input { display:flex; align-items:center; gap:.35rem; }
+.db-parts-workbench__price-input > span { flex:0 0 auto; color:var(--parts-selected-ink); font-size:.8rem; font-weight:750; opacity:.75; }
+.db-parts-workbench__price-field small { color:var(--parts-selected-ink); font-size:.68rem; font-weight:500; opacity:.75; }
+@media (pointer:coarse) { .db-parts-workbench__price-modes button { min-block-size:44px; } }
 .db-parts-workbench__identity-fields :is(input,textarea) { inline-size:100%; min-block-size:44px; padding:.58rem .68rem; border:1px solid color-mix(in srgb,var(--parts-selected-ink) 38%,transparent); border-radius:.75rem; background:color-mix(in srgb,var(--parts-selected-surface) 72%,#fff); color:var(--parts-selected-ink) !important; font:inherit; font-weight:550; }
 .db-parts-workbench__identity-fields textarea { min-block-size:5rem; resize:vertical; }
 .db-parts-workbench__identity-fields :is(input,textarea)::placeholder { color:color-mix(in srgb,var(--parts-selected-ink) 68%,transparent) !important; }
