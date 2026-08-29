@@ -15,10 +15,10 @@ vi.mock('@/features/reviews/GoogleReviewsPage', () => ({ default: () => null }))
 vi.mock('@/features/reviews/GoogleReviewsSettingsPage', () => ({ default: () => null }))
 
 const operationalHrefs = [
-  '/dashboard/garage/services',
-  '/dashboard/garage/labor-book-time',
   '/dashboard/garage/inventory',
   '/dashboard/garage/purchasing',
+  '/dashboard/garage/services',
+  '/dashboard/garage/labor-book-time',
 ]
 const secondaryHrefs = ['/dashboard/garage/mechanics', '/dashboard/garage/analytics']
 
@@ -65,10 +65,10 @@ describe('DB-043 container-adaptive Shop navigation', () => {
     const navigation = screen.getByRole('navigation', { name: 'Shop sections' })
     const links = within(navigation).getAllByRole('link')
     expect(links.map(link => link.getAttribute('aria-label'))).toEqual([
-      'Services',
-      'Labor Book Time',
       'Inventory',
       'Purchasing',
+      'Services',
+      'Labor Book Time',
       'Team',
       'Analytics',
     ])
@@ -82,13 +82,14 @@ describe('DB-043 container-adaptive Shop navigation', () => {
     expect(within(navigation).getByRole('link', { name: 'Inventory' })).toHaveAttribute('aria-current', 'page')
     expect(screen.getByRole('heading', { name: 'Inventory surface' })).toBeInTheDocument()
 
-    const services = within(navigation).getByRole('link', { name: 'Services' })
-    services.focus()
-    for (const expectedName of ['Labor Book Time', 'Inventory', 'Purchasing', 'Team', 'Analytics']) {
+    const firstSection = within(navigation).getByRole('link', { name: 'Inventory' })
+    firstSection.focus()
+    for (const expectedName of ['Purchasing', 'Services', 'Labor Book Time', 'Team', 'Analytics']) {
       await user.tab()
       expect(within(navigation).getByRole('link', { name: expectedName })).toHaveFocus()
     }
 
+    const services = within(navigation).getByRole('link', { name: 'Services' })
     services.focus()
     await user.keyboard('{Enter}')
     expect(await screen.findByRole('heading', { name: 'Services surface' })).toBeInTheDocument()

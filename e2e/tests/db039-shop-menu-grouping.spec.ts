@@ -12,10 +12,10 @@ import type { AppearancePreferences } from '../../frontend/src/types/presentatio
 
 const captureRoot = path.resolve(__dirname, '../test-results')
 const operationalHrefs = [
-  '/dashboard/garage/services',
-  '/dashboard/garage/labor-book-time',
   '/dashboard/garage/inventory',
   '/dashboard/garage/purchasing',
+  '/dashboard/garage/services',
+  '/dashboard/garage/labor-book-time',
 ]
 const secondaryHrefs = ['/dashboard/garage/mechanics', '/dashboard/garage/analytics']
 
@@ -114,6 +114,25 @@ async function installSession(page: Page, appearance: AppearancePreferences) {
       await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ unread_count: 0 }) })
       return
     }
+    // Inventory is the default My Shop surface, so its reads sit on the
+    // critical path here. Shapes mirror db038's fixtures; this spec only needs
+    // the surface to mount cleanly, not to hold data.
+    if (url.pathname.endsWith('/parts-operations/summary')) {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ needs_reorder_count: 0, low_stock_count: 0, open_purchase_order_count: 0 }),
+      })
+      return
+    }
+    if (url.pathname.endsWith('/parts-operations/parts')) {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ items: [], total: 0, skip: 0, limit: 50, has_more: false }),
+      })
+      return
+    }
     if (
       url.pathname.endsWith('/mechanics')
       || url.pathname.endsWith('/mechanics/pto-requests/pending')
@@ -163,7 +182,7 @@ test('Shop navigation adapts to its workspace while keeping Team then Analytics 
     expect(operationsBox).not.toBeNull()
     expect(secondaryBox).not.toBeNull()
     const workspaceWidth = await page.locator('.db-my-shop-workspace').evaluate(element => element.clientWidth)
-    const usesHorizontalSubnav = workspaceWidth >= 672 && workspaceWidth < 1600
+    const usesHorizontalSubnav = workspaceWidth >= 672
     if (usesHorizontalSubnav) {
       expect(Math.abs(secondaryBox!.y - operationsBox!.y)).toBeLessThanOrEqual(2)
       expect(secondaryBox!.x).toBeGreaterThanOrEqual(operationsBox!.x + operationsBox!.width + 8)
@@ -177,13 +196,12 @@ test('Shop navigation adapts to its workspace while keeping Team then Analytics 
     const heading = navigation.getByRole('heading', { name: 'Shop' })
     const shortLabel = navigation.locator('.db-my-shop-nav-label-short').first()
     const fullLabel = navigation.locator('.db-my-shop-nav-label-full').first()
+    await expect(heading).toBeHidden()
     if (workspaceWidth >= 1600) {
-      await expect(heading).toBeVisible()
+      // Wide desktop stays horizontal and spends the room on full labels.
       await expect(shortLabel).toBeHidden()
       await expect(fullLabel).toBeVisible()
-      expect(Math.round(navigationBox!.width)).toBe(208)
     } else {
-      await expect(heading).toBeHidden()
       await expect(shortLabel).toBeVisible()
       await expect(fullLabel).toBeHidden()
     }
@@ -213,7 +231,7 @@ test('Shop navigation adapts to its workspace while keeping Team then Analytics 
       }
       await operationalLinks.nth(0).focus()
       await page.keyboard.press('Enter')
-      await expect(page).toHaveURL(/\/dashboard\/garage\/services$/)
+      await expect(page).toHaveURL(/\/dashboard\/garage\/inventory$/)
       await expect(operationalLinks.nth(0)).toHaveAttribute('aria-current', 'page')
     }
 
