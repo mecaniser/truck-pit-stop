@@ -3,6 +3,7 @@ import { BarChart3, Boxes, ChevronRight, ClipboardList, Clock3, Settings2, Shopp
 import ServicesManagementPage from '@/features/dashboard/ServicesManagementPage'
 import InventoryPage from '@/features/inventory/InventoryPage'
 import PurchasingWorkspace from '@/features/inventory/PurchasingWorkspace'
+import CounterSalesWorkspace from '@/features/inventory/CounterSalesWorkspace'
 import MechanicsPage from '@/features/mechanics/MechanicsPage'
 import GarageAnalyticsPage from './GarageAnalyticsPage'
 import LaborBookTimePage from './LaborBookTimePage'
@@ -116,6 +117,7 @@ export default function MyGaragePage() {
             <Route path="services" element={<ServicesManagementPage />} />
             <Route path="labor-book-time" element={<LaborBookTimePage />} />
             <Route path="inventory" element={<InventoryPage />} />
+            <Route path="inventory/sales" element={<CounterSalesWorkspace />} />
             <Route path="purchasing" element={<PurchasingWorkspace />} />
             <Route path="mechanics" element={<MechanicsPage />} />
             <Route path="suppliers" element={<Navigate to="/dashboard/garage/purchasing?view=suppliers" replace />} />

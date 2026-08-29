@@ -6,7 +6,7 @@ import json
 import re
 from decimal import Decimal, ROUND_HALF_UP
 from typing import Any, Iterable
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from fastapi import HTTPException, status
 from sqlalchemy import func, select
@@ -72,6 +72,7 @@ async def apply_inventory_movement(
     note: str | None = None,
     idempotency_key: str | None = None,
     wac_after: Decimal | None = None,
+    held_for_checkout: int | None = None,
 ) -> InventoryMovement:
     """Append the immutable on-hand ledger row and materialize the balance."""
     if quantity_delta == 0:
@@ -83,6 +84,7 @@ async def apply_inventory_movement(
     old_wac = decimal_money(item.cost or Decimal("0"))
     new_wac = decimal_money(wac_after if wac_after is not None else old_wac)
     movement = InventoryMovement(
+        id=uuid4(),
         tenant_id=item.tenant_id,
         inventory_id=item.id,
         bucket="on_hand",
@@ -107,6 +109,36 @@ async def apply_inventory_movement(
     item.cost = new_wac
     item.stock_version = int(item.stock_version or 0) + 1
     db.add(movement)
+    if held_for_checkout is None:
+        held_for_checkout = 0
+    available_to_sell = max(after - held_for_checkout, 0)
+    # Activity is an immutable searchable index written atomically with the
+    # authoritative movement and materialized balance.
+    from app.services.part_activity_service import append_part_activity
+    event_type = {
+        "po_receipt": "stock.received",
+        "repair_reservation": "stock.repair_reserved",
+        "repair_release": "stock.repair_released",
+        "counter_sale": "stock.counter_sale_completed",
+        "counter_sale_return": "stock.counter_sale_returned",
+    }.get(movement_type, "stock.adjusted")
+    await append_part_activity(
+        db, tenant_id=item.tenant_id, inventory_id=item.id,
+        category="stock", event_type=event_type,
+        idempotency_key=f"inventory_movement:{movement.id}:v1", actor=actor,
+        source_type=source_type or "inventory_movement", source_id=source_id or movement.id,
+        reason_code=reason_code, note=note,
+        before={"stock_quantity": before}, after={"stock_quantity": after},
+        stock={
+            "physical_on_hand": after, "held_for_checkout": held_for_checkout,
+            "available_to_sell": available_to_sell, "delta": quantity_delta,
+            "bucket": "on_hand", "stock_version": int(item.stock_version),
+        },
+        money={
+            "currency": "USD", "wac_before": str(old_wac), "wac_after": str(new_wac),
+            "cost_before": str(old_wac), "cost_after": str(new_wac),
+        },
+    )
     return movement
 
 
@@ -132,6 +164,7 @@ def validate_idempotency_key(key: str | None) -> str:
 
 async def find_idempotent_response(
     db: AsyncSession, *, tenant_id: UUID, family: str, key: str, fingerprint: str,
+    allow_incomplete_resume: bool = False,
 ) -> PartsOperationIdempotency | None:
     # There is no row to lock for a first request. PostgreSQL's transaction-
     # scoped advisory lock serializes the durable key's initial insert; after
@@ -146,7 +179,7 @@ async def find_idempotent_response(
     ).with_for_update())).scalar_one_or_none()
     if record and record.request_fingerprint != fingerprint:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Idempotency key conflict")
-    if record and record.completed_at is None:
+    if record and record.completed_at is None and not allow_incomplete_resume:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Request in progress")
     return record
 

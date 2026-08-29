@@ -51,6 +51,7 @@ from app.services.pricing import apply_canonical_order_totals, get_order_total
 from app.services.internal_fleet import fleet_labor_uses_customer_rate, uses_internal_fleet_pricing
 from app.services.vehicle_identity import ensure_vehicle_relationship
 from app.services.parts_operations_service import apply_inventory_movement
+from app.services.part_activity_service import append_part_activity
 from app.core.config import settings
 from app.core.metrics import record_repair_order_created
 from app.core.logging import get_logger
@@ -3732,6 +3733,23 @@ async def add_parts_to_repair_order(
         detail=_part_history_detail(inv.name, body.quantity, inv.unit_type),
         entity_id=pu.id,
     )
+    await append_part_activity(
+        db, tenant_id=order.tenant_id, inventory_id=inv.id,
+        category="repairs", event_type="repair_usage.added",
+        idempotency_key=f"parts-usage:{pu.id}:added:v1", actor=current_user,
+        correlation_id=pu.id, source_type="repair_order", source_id=order.id,
+        source_number=order.order_number, reason_code="repair_order_part_added",
+        after={
+            "quantity": pu.quantity, "unit_cost": pu.unit_cost,
+            "unit_price": pu.unit_price, "list_price": pu.list_price,
+        },
+        money={
+            "currency": "USD", "unit_cost": str(pu.unit_cost),
+            "unit_price": str(pu.unit_price), "list_price": str(pu.list_price),
+            "line_total": str(pu.total_price),
+        },
+        source={"stock_shortage_override": bool(pu.stock_shortage_override)},
+    )
     await _refresh_repair_order_totals(db, order_id)
     await db.commit()
     await db.refresh(pu)
@@ -3916,6 +3934,7 @@ async def update_parts_quantity(
             )
         ).scalar_one_or_none()
     old_quantity = pu.quantity
+    old_unit_price = pu.unit_price
 
     if body.quantity is not None:
         # Stock tracks whole packages. Compare the reservation held by this row
@@ -3990,6 +4009,25 @@ async def update_parts_quantity(
                 f"{_format_part_quantity(body.quantity)} {_part_unit_label(inv.unit_type if inv else None)}"
             ),
             entity_id=pu.id,
+        )
+    if pu.quantity != old_quantity or pu.unit_price != old_unit_price:
+        await append_part_activity(
+            db, tenant_id=order.tenant_id, inventory_id=pu.inventory_id,
+            category="repairs", event_type="repair_usage.changed",
+            idempotency_key=(
+                f"parts-usage:{pu.id}:changed:{old_quantity}:{pu.quantity}:"
+                f"{old_unit_price}:{pu.unit_price}:v1"
+            ),
+            actor=current_user, source_type="repair_order", source_id=order.id,
+            source_number=order.order_number, reason_code="repair_order_part_changed",
+            before={"quantity": old_quantity, "unit_price": old_unit_price},
+            after={"quantity": pu.quantity, "unit_price": pu.unit_price},
+            money={
+                "currency": "USD", "unit_cost": str(pu.unit_cost),
+                "unit_price": str(pu.unit_price), "list_price": str(pu.list_price),
+                "line_total": str(pu.total_price),
+            },
+            source={"stock_shortage_override": bool(pu.stock_shortage_override)},
         )
     await _refresh_repair_order_totals(db, order_id)
     await db.commit()
@@ -4168,6 +4206,23 @@ async def remove_parts_from_repair_order(
         ),
         entity_id=pu.id,
     )
+    if pu.inventory_id is not None:
+        await append_part_activity(
+            db, tenant_id=order.tenant_id, inventory_id=pu.inventory_id,
+            category="repairs", event_type="repair_usage.removed",
+            idempotency_key=f"parts-usage:{pu.id}:removed:v1", actor=current_user,
+            correlation_id=pu.id, source_type="repair_order", source_id=order.id,
+            source_number=order.order_number, reason_code="repair_order_part_removed",
+            before={
+                "quantity": pu.quantity, "unit_cost": pu.unit_cost,
+                "unit_price": pu.unit_price, "list_price": pu.list_price,
+            },
+            money={
+                "currency": "USD", "unit_cost": str(pu.unit_cost),
+                "unit_price": str(pu.unit_price), "list_price": str(pu.list_price),
+                "line_total": str(pu.total_price),
+            },
+        )
     await db.delete(pu)
     await _refresh_repair_order_totals(db, order_id)
     await db.commit()

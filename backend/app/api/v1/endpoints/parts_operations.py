@@ -29,8 +29,51 @@ from app.services.parts_operations_service import (
     normalize_name, receipt_wac, require_parts_operations_enabled,
     require_parts_role, validate_idempotency_key,
 )
+from app.services.counter_sale_service import counter_sale_capabilities
+from app.services.part_activity_service import append_part_activity
 
 router = APIRouter()
+
+
+async def _append_lifecycle_event(
+    db: AsyncSession, *, tenant_id: UUID, inventory_id: UUID,
+    category: str, event_type: str, idempotency_key: str, actor: User,
+    source_type: str, source_id: UUID, source_number: str | None = None,
+    before_status: str | None = None, after_status: str | None = None,
+    before_quantity: int | None = None,
+    quantity: int | None = None, reason: str | None = None,
+    money: dict | None = None, source: dict | None = None,
+) -> None:
+    before: dict[str, object] = {}
+    if before_status is not None:
+        before["status"] = before_status
+    if before_quantity is not None:
+        before["quantity"] = before_quantity
+    after: dict[str, object] = {}
+    if after_status is not None:
+        after["status"] = after_status
+    if quantity is not None:
+        after["quantity"] = quantity
+    await append_part_activity(
+        db, tenant_id=tenant_id, inventory_id=inventory_id,
+        category=category, event_type=event_type,
+        idempotency_key=idempotency_key, actor=actor,
+        correlation_id=source_id, source_type=source_type, source_id=source_id,
+        source_number=source_number, reason_code=reason,
+        before=before or None, after=after or None, money=money, source=source,
+    )
+
+
+def _supplier_source_activity_values(source: InventorySupplierSource) -> dict:
+    return {
+        "supplier_id": source.supplier_id,
+        "supplier_part_number": source.supplier_part_number,
+        "is_preferred": bool(source.is_preferred),
+        "minimum_order_quantity": int(source.minimum_order_quantity),
+        "pack_quantity": int(source.pack_quantity),
+        "lead_time_days": source.lead_time_days,
+        "is_active": bool(source.is_active),
+    }
 
 DemandState = Literal["open", "covered", "unlinked"]
 POStatusFilter = Literal["draft", "submitted", "partially_received", "received", "cancelled"]
@@ -448,6 +491,7 @@ async def _part_projection_rows(
         if preferred is None and item.preferred_supplier_id:
             preferred = next((source for source in source_rows_for_item if source.supplier_id == item.preferred_supplier_id and source.is_active), None)
         available = int(item.stock_quantity or 0)
+        held_for_checkout = 0
         needed = shortage_totals[item.id]
         reorder = int(item.reorder_level or 0)
         incoming = incoming_totals[item.id] + int(item.on_order_quantity or 0)
@@ -463,6 +507,9 @@ async def _part_projection_rows(
             "unit_type": item.unit_type,
             "location": item.location,
             "available_packages": available,
+            "physical_on_hand_packages": available,
+            "held_for_checkout_packages": held_for_checkout,
+            "available_to_sell_packages": max(available - held_for_checkout, 0),
             "needed_for_open_repairs": needed,
             "reorder_level": reorder,
             "incoming_packages": incoming,
@@ -507,6 +554,8 @@ async def _apply_preferred_source(
     item: Inventory,
     source: InventorySupplierSource,
     is_preferred: bool,
+    actor: User | None = None,
+    correlation_id: UUID | None = None,
 ) -> None:
     if is_preferred:
         existing = list((await db.execute(select(InventorySupplierSource).where(
@@ -518,6 +567,15 @@ async def _apply_preferred_source(
         ).with_for_update())).scalars().all())
         for row in existing:
             row.is_preferred = False
+            if actor is not None:
+                await append_part_activity(
+                    db, tenant_id=tenant_id, inventory_id=item.id,
+                    category="catalog", event_type="supplier_source.preferred_changed",
+                    idempotency_key=f"supplier-source:{row.id}:preferred-demoted:{correlation_id or source.id}:v1",
+                    actor=actor, correlation_id=correlation_id or source.id,
+                    source_type="supplier_source", source_id=row.id,
+                    before={"is_preferred": True}, after={"is_preferred": False},
+                )
         # Apply demotions before the promotion so partial unique indexes never
         # observe two live preferred sources in the same statement batch.
         if existing:
@@ -659,6 +717,7 @@ async def summary(db: AsyncSession = Depends(get_db), current_user: User = Depen
         "needs_reorder_count": needs_reorder,
         "low_stock_count": needs_reorder,
         "open_purchase_order_count": open_pos,
+        "capabilities": await counter_sale_capabilities(db, current_user),
     }
 
 
@@ -886,6 +945,16 @@ async def create_supplier_source(
         item=item,
         source=source,
         is_preferred=body.is_preferred,
+        actor=current_user,
+        correlation_id=source.id,
+    )
+    await append_part_activity(
+        db, tenant_id=tenant_id, inventory_id=item.id,
+        category="catalog", event_type="supplier_source.created",
+        idempotency_key=f"supplier-source:{source.id}:created:v1",
+        actor=current_user, correlation_id=source.id,
+        source_type="supplier_source", source_id=source.id,
+        after=_supplier_source_activity_values(source),
     )
     await db.flush()
     await db.refresh(source, attribute_names=["updated_at"])
@@ -920,6 +989,7 @@ async def update_supplier_source(
     if source.updated_at != body.expected_updated_at:
         raise HTTPException(status_code=409, detail="Supplier source changed")
     fields = body.model_fields_set
+    before_values = _supplier_source_activity_values(source)
     if "supplier_part_number" in fields:
         source.supplier_part_number = body.supplier_part_number
     if body.minimum_order_quantity is not None:
@@ -939,7 +1009,19 @@ async def update_supplier_source(
         item=item,
         source=source,
         is_preferred=desired_preferred,
+        actor=current_user,
+        correlation_id=source.id,
     )
+    after_values = _supplier_source_activity_values(source)
+    if before_values != after_values:
+        await append_part_activity(
+            db, tenant_id=tenant_id, inventory_id=item.id,
+            category="catalog", event_type="supplier_source.updated",
+            idempotency_key=f"supplier-source:{source.id}:updated:{body.expected_updated_at.isoformat()}:v1",
+            actor=current_user, correlation_id=source.id,
+            source_type="supplier_source", source_id=source.id,
+            before=before_values, after=after_values,
+        )
     await db.flush()
     await db.refresh(source, attribute_names=["updated_at"])
     supplier = await _tenant_supplier(db, tenant_id, source.supplier_id)
@@ -969,11 +1051,21 @@ async def delete_supplier_source(
     source = await _supplier_source(db, tenant_id, inventory_id, source_id, locked=True)
     if source.updated_at != body.expected_updated_at:
         raise HTTPException(status_code=409, detail="Supplier source changed")
+    before_values = _supplier_source_activity_values(source)
     if source.is_preferred and item.preferred_supplier_id == source.supplier_id:
         item.preferred_supplier_id = None
     source.is_preferred = False
     source.is_active = False
     source.deleted_at = _utc_now()
+    await append_part_activity(
+        db, tenant_id=tenant_id, inventory_id=item.id,
+        category="catalog", event_type="supplier_source.removed",
+        idempotency_key=f"supplier-source:{source.id}:removed:{body.expected_updated_at.isoformat()}:v1",
+        actor=current_user, correlation_id=source.id,
+        source_type="supplier_source", source_id=source.id,
+        before=before_values,
+        after={**before_values, "is_active": False, "is_preferred": False},
+    )
     await db.commit()
     return {"deleted": True, "source_id": str(source.id)}
 
@@ -1327,7 +1419,18 @@ async def create_purchase_order(body: POCreate, idempotency_key: Optional[str] =
         )
         db.add(line); lines.append(line)
     record = begin_idempotency(tenant_id=tenant_id, family="po_create", key=key, fingerprint=fingerprint); db.add(record)
-    await db.flush(); body_out = _serialize_po(po, lines); complete_idempotency(record, status_code=201, body=body_out)
+    await db.flush()
+    for line in lines:
+        await _append_lifecycle_event(
+            db, tenant_id=tenant_id, inventory_id=line.inventory_id,
+            category="purchasing", event_type="purchase_order.created",
+            idempotency_key=f"purchase-order:{po.id}:line:{line.id}:created:v1",
+            actor=current_user, source_type="purchase_order", source_id=po.id,
+            source_number=po.po_number, after_status=po.status,
+            quantity=line.ordered_quantity,
+            money={"currency": "USD", "unit_cost": str(line.unit_cost_snapshot)},
+        )
+    body_out = _serialize_po(po, lines); complete_idempotency(record, status_code=201, body=body_out)
     await db.commit(); return body_out
 
 
@@ -1437,6 +1540,16 @@ async def create_purchase_order_batch(
             db.add(line)
             lines.append(line)
         await db.flush()
+        for line in lines:
+            await _append_lifecycle_event(
+                db, tenant_id=tenant_id, inventory_id=line.inventory_id,
+                category="purchasing", event_type="purchase_order.created",
+                idempotency_key=f"purchase-order:{po.id}:line:{line.id}:created:v1",
+                actor=current_user, source_type="purchase_order", source_id=po.id,
+                source_number=po.po_number, after_status=po.status,
+                quantity=line.ordered_quantity,
+                money={"currency": "USD", "unit_cost": str(line.unit_cost_snapshot)},
+            )
         purchase_orders.append({
             **_serialize_po(po, lines),
             "supplier": _supplier_summary(supplier),
@@ -1477,8 +1590,11 @@ async def submit_purchase_order(po_id: UUID, body: VersionCommand, idempotency_k
     po = await _po(db, tenant_id, po_id, locked=True)
     if po.version != body.expected_version or po.status != "draft": raise HTTPException(status_code=409, detail="Purchase order changed")
     if not await _po_lines(db, tenant_id, po_id): raise HTTPException(status_code=409, detail="Purchase order has no lines")
+    lines = await _po_lines(db, tenant_id, po_id)
     po.status = "submitted"; po.ordered_at = datetime.now(timezone.utc); po.submitted_by_user_id = current_user.id; po.version += 1
-    output = _complete_mutation(record, _serialize_po(po, await _po_lines(db, tenant_id, po_id)))
+    for line in lines:
+        await _append_lifecycle_event(db, tenant_id=tenant_id, inventory_id=line.inventory_id, category="purchasing", event_type="purchase_order.submitted", idempotency_key=f"purchase-order:{po.id}:line:{line.id}:submitted:v1", actor=current_user, source_type="purchase_order", source_id=po.id, source_number=po.po_number, before_status="draft", after_status="submitted", quantity=line.ordered_quantity)
+    output = _complete_mutation(record, _serialize_po(po, lines))
     await db.commit(); return output
 
 
@@ -1490,8 +1606,12 @@ async def cancel_purchase_order(po_id: UUID, body: VersionCommand, idempotency_k
     po = await _po(db, tenant_id, po_id, locked=True)
     if po.version != body.expected_version or po.status not in {"draft", "submitted"}: raise HTTPException(status_code=409, detail="Purchase order changed")
     if (await _po_lines(db, tenant_id, po_id)).__len__() and any(line.received_quantity for line in await _po_lines(db, tenant_id, po_id)): raise HTTPException(status_code=409, detail="Purchase order has receipts")
+    lines = await _po_lines(db, tenant_id, po_id)
+    old_status = po.status
     po.status = "cancelled"; po.notes = body.reason or po.notes; po.version += 1
-    output = _complete_mutation(record, _serialize_po(po, await _po_lines(db, tenant_id, po_id)))
+    for line in lines:
+        await _append_lifecycle_event(db, tenant_id=tenant_id, inventory_id=line.inventory_id, category="purchasing", event_type="purchase_order.cancelled", idempotency_key=f"purchase-order:{po.id}:line:{line.id}:cancelled:v1", actor=current_user, source_type="purchase_order", source_id=po.id, source_number=po.po_number, before_status=old_status, after_status="cancelled", quantity=line.ordered_quantity, reason=body.reason)
+    output = _complete_mutation(record, _serialize_po(po, lines))
     await db.commit(); return output
 
 
@@ -1528,6 +1648,16 @@ async def receive_purchase_order(po_id: UUID, body: ReceiptCreate, idempotency_k
         if supplier_source is not None:
             supplier_source.last_unit_cost = decimal_money(input_line.unit_cost)
         db.add(PurchaseReceiptLine(tenant_id=tenant_id, purchase_receipt_id=receipt.id, purchase_order_line_id=line.id, inventory_id=item.id, quantity=input_line.quantity, unit_cost=decimal_money(input_line.unit_cost), wac_before=old_wac, wac_after=wac, balance_before=before, balance_after=before + input_line.quantity))
+        await _append_lifecycle_event(
+            db, tenant_id=tenant_id, inventory_id=item.id,
+            category="purchasing", event_type="receipt.recorded",
+            idempotency_key=f"purchase-receipt:{receipt.id}:line:{line.id}:received:v1",
+            actor=current_user, source_type="purchase_receipt", source_id=receipt.id,
+            source_number=receipt.receipt_number, after_status="received",
+            quantity=input_line.quantity,
+            money={"currency": "USD", "unit_cost": str(decimal_money(input_line.unit_cost)), "wac_after": str(wac)},
+            source={"purchase_order_id": str(po.id), "po_number": po.po_number},
+        )
         output.append({"inventory_id": str(item.id), "received_quantity": input_line.quantity, "remaining_quantity": line.ordered_quantity - line.received_quantity, "balance_before": before, "balance_after": before + input_line.quantity, "wac_before": str(old_wac), "wac_after": str(wac)})
     po.status = "received" if all(line.received_quantity == line.ordered_quantity for line in lines.values()) else "partially_received"; po.version += 1
     response = {"receipt_id": str(receipt.id), "purchase_order_id": str(po.id), "purchase_order_status": po.status, "version": po.version, "lines": output}
@@ -1596,6 +1726,7 @@ async def recover_core(obligation_id: UUID, body: VersionCommand, idempotency_ke
     before = int((await db.execute(select(func.coalesce(func.sum(InventoryMovement.quantity_delta), 0)).where(InventoryMovement.tenant_id == tenant_id, InventoryMovement.inventory_id == item.id, InventoryMovement.bucket == "core_on_hand"))).scalar() or 0)
     core.status = "on_hand"; core.version += 1; item.stock_version = int(item.stock_version or 0) + 1
     db.add(InventoryMovement(tenant_id=tenant_id, inventory_id=item.id, bucket="core_on_hand", movement_type="core_recovery", quantity_delta=core.quantity, balance_before=before, balance_after=before + core.quantity, unit_cost_snapshot=core.unit_core_value_snapshot, wac_before=Decimal(item.cost), wac_after=Decimal(item.cost), source_type="core_obligation", source_id=core.id, actor_user_id=current_user.id, actor_display_name_snapshot=f"{current_user.first_name} {current_user.last_name}".strip(), reason_code="core_recovery"))
+    await _append_lifecycle_event(db, tenant_id=tenant_id, inventory_id=item.id, category="purchasing", event_type="core.status_changed", idempotency_key=f"core-obligation:{core.id}:recovered:v1", actor=current_user, source_type="core_obligation", source_id=core.id, before_status="expected", after_status="on_hand", quantity=core.quantity, money={"currency": "USD", "core_value": str(core.unit_core_value_snapshot)})
     output = _complete_mutation(record, {"id": str(core.id), "status": core.status, "version": core.version})
     await db.commit(); return output
 
@@ -1609,7 +1740,9 @@ async def waive_core(obligation_id: UUID, body: VersionCommand, idempotency_key:
     if not core: raise _not_found()
     if core.status not in {"expected", "on_hand"} or core.version != body.expected_version: raise HTTPException(status_code=409, detail="Core obligation changed")
     if not body.reason: raise HTTPException(status_code=422, detail="Waiver reason is required")
+    old_status = core.status
     core.status = "waived"; core.reason = body.reason; core.version += 1
+    await _append_lifecycle_event(db, tenant_id=tenant_id, inventory_id=core.inventory_id, category="purchasing", event_type="core.status_changed", idempotency_key=f"core-obligation:{core.id}:waived:v1", actor=current_user, source_type="core_obligation", source_id=core.id, before_status=old_status, after_status="waived", quantity=core.quantity, reason=body.reason)
     output = _complete_mutation(record, {"id": str(core.id), "status": core.status, "version": core.version})
     await db.commit(); return output
 
@@ -1673,6 +1806,7 @@ async def create_return(body: ReturnCreate, idempotency_key: Optional[str] = Hea
     if not supplier: raise _not_found()
     row = VendorReturn(tenant_id=tenant_id, return_number=f"RET-{uuid4().hex[:12].upper()}", supplier_id=supplier.id, kind=body.kind, reason=body.reason, notes=body.notes)
     db.add(row); await db.flush()
+    activity_lines: list[tuple[UUID, int, Decimal]] = []
     for line in body.lines:
         if body.kind == "stock":
             if not line.purchase_receipt_line_id or line.core_obligation_id: raise HTTPException(status_code=422, detail="Stock return requires receipt line")
@@ -1704,12 +1838,16 @@ async def create_return(body: ReturnCreate, idempotency_key: Optional[str] = Hea
             if line.quantity > origin.quantity - already_returned:
                 raise HTTPException(status_code=409, detail="Return quantity exceeds receipt origin")
             db.add(VendorReturnLine(tenant_id=tenant_id, vendor_return_id=row.id, purchase_receipt_line_id=origin.id, inventory_id=origin.inventory_id, quantity=line.quantity, expected_credit=decimal_money(line.expected_credit)))
+            activity_lines.append((origin.inventory_id, line.quantity, decimal_money(line.expected_credit)))
         else:
             if not line.core_obligation_id or line.purchase_receipt_line_id: raise HTTPException(status_code=422, detail="Core return requires core obligation")
             origin = (await db.execute(select(CoreObligation).where(CoreObligation.id == line.core_obligation_id, CoreObligation.tenant_id == tenant_id, CoreObligation.deleted_at.is_(None)))).scalar_one_or_none()
             if not origin or origin.status != "on_hand" or origin.supplier_id != supplier.id or line.quantity != origin.quantity:
                 raise _not_found()
             db.add(VendorReturnLine(tenant_id=tenant_id, vendor_return_id=row.id, core_obligation_id=origin.id, inventory_id=origin.inventory_id, quantity=line.quantity, expected_credit=decimal_money(line.expected_credit)))
+            activity_lines.append((origin.inventory_id, line.quantity, decimal_money(line.expected_credit)))
+    for index, (inventory_id, quantity, expected_credit) in enumerate(activity_lines):
+        await _append_lifecycle_event(db, tenant_id=tenant_id, inventory_id=inventory_id, category="returns", event_type="vendor_return.created", idempotency_key=f"vendor-return:{row.id}:line:{index}:created:v1", actor=current_user, source_type="vendor_return", source_id=row.id, source_number=row.return_number, after_status="draft", quantity=quantity, reason=row.reason, money={"currency": "USD", "expected_credit": str(expected_credit)})
     output = _complete_mutation(record, {"id": str(row.id), "return_number": row.return_number, "status": row.status, "version": row.version}, status_code=201)
     await db.commit(); return output
 
@@ -1722,7 +1860,10 @@ async def submit_return(return_id: UUID, body: VersionCommand, idempotency_key: 
     row = (await db.execute(select(VendorReturn).where(VendorReturn.id == return_id, VendorReturn.tenant_id == tenant_id, VendorReturn.deleted_at.is_(None)).with_for_update())).scalar_one_or_none()
     if not row: raise _not_found()
     if row.status != "draft" or row.version != body.expected_version: raise HTTPException(status_code=409, detail="Return changed")
+    lines = list((await db.execute(select(VendorReturnLine).where(VendorReturnLine.vendor_return_id == row.id, VendorReturnLine.tenant_id == tenant_id, VendorReturnLine.deleted_at.is_(None)))).scalars().all())
     row.status = "submitted"; row.submitted_at = datetime.now(timezone.utc); row.version += 1
+    for line in lines:
+        await _append_lifecycle_event(db, tenant_id=tenant_id, inventory_id=line.inventory_id, category="returns", event_type="vendor_return.submitted", idempotency_key=f"vendor-return:{row.id}:line:{line.id}:submitted:v1", actor=current_user, source_type="vendor_return", source_id=row.id, source_number=row.return_number, before_status="draft", after_status="submitted", quantity=line.quantity, reason=row.reason)
     output = _complete_mutation(record, {"id": str(row.id), "status": row.status, "version": row.version})
     await db.commit(); return output
 
@@ -1736,8 +1877,9 @@ async def update_purchase_order(po_id: UUID, body: POUpdate, db: AsyncSession = 
         po.expected_at = body.expected_at
     if body.notes is not None:
         po.notes = body.notes
+    before_lines = await _po_lines(db, tenant_id, po.id, locked=True)
     if body.lines is not None:
-        old_lines = await _po_lines(db, tenant_id, po.id, locked=True)
+        old_lines = before_lines
         for line in old_lines:
             await db.delete(line)
         seen: set[UUID] = set()
@@ -1769,8 +1911,38 @@ async def update_purchase_order(po_id: UUID, body: POUpdate, db: AsyncSession = 
                 ordered_quantity=data.ordered_quantity,
             ))
     po.version += 1
+    after_lines = await _po_lines(db, tenant_id, po.id)
+    if body.lines is not None:
+        correlation_id = uuid4()
+        before_by_inventory = {line.inventory_id: line for line in before_lines}
+        after_by_inventory = {line.inventory_id: line for line in after_lines}
+        for inventory_id in sorted(set(before_by_inventory) | set(after_by_inventory), key=str):
+            old = before_by_inventory.get(inventory_id)
+            new = after_by_inventory.get(inventory_id)
+            if old is not None and new is not None and (
+                old.ordered_quantity == new.ordered_quantity
+                and old.unit_cost_snapshot == new.unit_cost_snapshot
+            ):
+                continue
+            await _append_lifecycle_event(
+                db, tenant_id=tenant_id, inventory_id=inventory_id,
+                category="purchasing", event_type="purchase_order.updated",
+                idempotency_key=(
+                    f"purchase-order:{po.id}:inventory:{inventory_id}:"
+                    f"changed:{correlation_id}:v1"
+                ),
+                actor=current_user, source_type="purchase_order", source_id=po.id,
+                source_number=po.po_number,
+                before_quantity=old.ordered_quantity if old else None,
+                quantity=new.ordered_quantity if new else None,
+                money={
+                    "currency": "USD",
+                    "before_unit_cost": str(old.unit_cost_snapshot) if old else None,
+                    "unit_cost": str(new.unit_cost_snapshot) if new else None,
+                },
+            )
     await db.commit()
-    return _serialize_po(po, await _po_lines(db, tenant_id, po.id))
+    return _serialize_po(po, after_lines)
 
 
 @router.get("/returns/{return_id}")
@@ -1832,6 +2004,7 @@ async def ship_return(return_id: UUID, body: VersionCommand, idempotency_key: Op
             before = int((await db.execute(select(func.coalesce(func.sum(InventoryMovement.quantity_delta), 0)).where(InventoryMovement.tenant_id == tenant_id, InventoryMovement.inventory_id == item.id, InventoryMovement.bucket == "core_on_hand"))).scalar() or 0)
             db.add(InventoryMovement(tenant_id=tenant_id, inventory_id=item.id, bucket="core_on_hand", movement_type="core_return", quantity_delta=-line.quantity, balance_before=before, balance_after=before-line.quantity, unit_cost_snapshot=core.unit_core_value_snapshot, wac_before=Decimal(item.cost), wac_after=Decimal(item.cost), source_type="vendor_return", source_id=row.id, actor_user_id=current_user.id, actor_display_name_snapshot=f"{current_user.first_name} {current_user.last_name}".strip(), reason_code=row.reason, idempotency_key=f"{idempotency_key}:{line.id}"))
             item.stock_version = int(item.stock_version or 0) + 1
+        await _append_lifecycle_event(db, tenant_id=tenant_id, inventory_id=line.inventory_id, category="returns", event_type="vendor_return.shipped", idempotency_key=f"vendor-return:{row.id}:line:{line.id}:shipped:v1", actor=current_user, source_type="vendor_return", source_id=row.id, source_number=row.return_number, before_status="submitted", after_status="shipped", quantity=line.quantity, reason=row.reason, money={"currency": "USD", "expected_credit": str(line.expected_credit)})
     row.status = "shipped"; row.shipped_at = datetime.now(timezone.utc); row.version += 1
     output = _complete_mutation(record, {"id": str(row.id), "status": row.status, "version": row.version})
     await db.commit(); return output
@@ -1845,7 +2018,10 @@ async def credit_return(return_id: UUID, body: VersionCommand, idempotency_key: 
     row = (await db.execute(select(VendorReturn).where(VendorReturn.id == return_id, VendorReturn.tenant_id == tenant_id, VendorReturn.deleted_at.is_(None)).with_for_update())).scalar_one_or_none()
     if not row: raise _not_found()
     if row.status != "shipped" or row.version != body.expected_version: raise HTTPException(status_code=409, detail="Return changed")
+    lines = list((await db.execute(select(VendorReturnLine).where(VendorReturnLine.vendor_return_id == row.id, VendorReturnLine.tenant_id == tenant_id, VendorReturnLine.deleted_at.is_(None)))).scalars().all())
     row.status = "credited"; row.credited_at = datetime.now(timezone.utc); row.version += 1
+    for line in lines:
+        await _append_lifecycle_event(db, tenant_id=tenant_id, inventory_id=line.inventory_id, category="returns", event_type="vendor_return.credited", idempotency_key=f"vendor-return:{row.id}:line:{line.id}:credited:v1", actor=current_user, source_type="vendor_return", source_id=row.id, source_number=row.return_number, before_status="shipped", after_status="credited", quantity=line.quantity, reason=row.reason, money={"currency": "USD", "actual_credit": str(line.actual_credit) if line.actual_credit is not None else None})
     output = _complete_mutation(record, {"id": str(row.id), "status": row.status, "version": row.version})
     await db.commit(); return output
 
@@ -1858,7 +2034,11 @@ async def cancel_return(return_id: UUID, body: VersionCommand, idempotency_key: 
     row = (await db.execute(select(VendorReturn).where(VendorReturn.id == return_id, VendorReturn.tenant_id == tenant_id, VendorReturn.deleted_at.is_(None)).with_for_update())).scalar_one_or_none()
     if not row: raise _not_found()
     if row.status not in {"draft", "submitted"} or row.version != body.expected_version: raise HTTPException(status_code=409, detail="Return changed")
+    lines = list((await db.execute(select(VendorReturnLine).where(VendorReturnLine.vendor_return_id == row.id, VendorReturnLine.tenant_id == tenant_id, VendorReturnLine.deleted_at.is_(None)))).scalars().all())
+    old_status = row.status
     row.status = "cancelled"; row.version += 1
+    for line in lines:
+        await _append_lifecycle_event(db, tenant_id=tenant_id, inventory_id=line.inventory_id, category="returns", event_type="vendor_return.cancelled", idempotency_key=f"vendor-return:{row.id}:line:{line.id}:cancelled:v1", actor=current_user, source_type="vendor_return", source_id=row.id, source_number=row.return_number, before_status=old_status, after_status="cancelled", quantity=line.quantity, reason=body.reason or row.reason)
     output = _complete_mutation(record, {"id": str(row.id), "status": row.status, "version": row.version})
     await db.commit(); return output
 
@@ -1904,5 +2084,6 @@ async def reverse_return(return_id: UUID, body: VersionCommand, idempotency_key:
                 reason_code=body.reason, idempotency_key=f"{idempotency_key}:{line.id}",
             ))
         db.add(VendorReturnLine(tenant_id=tenant_id, vendor_return_id=reversal.id, purchase_receipt_line_id=line.purchase_receipt_line_id, core_obligation_id=line.core_obligation_id, inventory_id=line.inventory_id, quantity=line.quantity, expected_credit=line.expected_credit, stock_value_snapshot=line.stock_value_snapshot))
+        await _append_lifecycle_event(db, tenant_id=tenant_id, inventory_id=line.inventory_id, category="returns", event_type="vendor_return.reversed", idempotency_key=f"vendor-return:{reversal.id}:line:{line.id}:reversed:v1", actor=current_user, source_type="vendor_return", source_id=reversal.id, source_number=reversal.return_number, before_status=original.status, after_status="credited", quantity=line.quantity, reason=body.reason, source={"reverses_return_id": str(original.id)})
     output = _complete_mutation(record, {"id": str(reversal.id), "return_number": reversal.return_number, "status": reversal.status, "reverses_return_id": str(original.id)}, status_code=201)
     await db.commit(); return output

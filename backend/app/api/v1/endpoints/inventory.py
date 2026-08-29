@@ -27,8 +27,47 @@ from app.services.cloudinary_service import (
 from app.tasks.description_library_refresh import process_on_demand_library_regenerate
 from app.schemas.typeahead import InventoryTypeaheadResponse
 from app.services.parts_operations_service import apply_inventory_movement
+from app.services.part_activity_service import append_part_activity
 
 router = APIRouter()
+
+
+CATALOG_ACTIVITY_TYPES = {
+    "sku": "part.identity_changed",
+    "name": "part.identity_changed",
+    "description": "part.identity_changed",
+    "category": "part.category_changed",
+    "location": "part.location_changed",
+    "unit_type": "part.unit_changed",
+    "reorder_level": "part.reorder_level_changed",
+    "cost": "part.cost_changed",
+    "selling_price": "part.selling_price_changed",
+    "core_charge": "part.core_charge_changed",
+    "supplier_name": "part.supplier_text_changed",
+    "supplier_contact": "part.supplier_text_changed",
+    "is_placeholder": "part.identity_changed",
+}
+
+
+async def _append_catalog_changes(
+    db: AsyncSession, *, item: Inventory, actor: User,
+    before: dict[str, object], updates: dict[str, object], correlation_id: UUID,
+) -> None:
+    for field in sorted(updates):
+        if field not in CATALOG_ACTIVITY_TYPES or before.get(field) == updates[field]:
+            continue
+        money_snapshot = None
+        if field in {"cost", "selling_price", "core_charge"}:
+            money_snapshot = {"currency": "USD", field: str(updates[field])}
+        await append_part_activity(
+            db, tenant_id=item.tenant_id, inventory_id=item.id,
+            category="catalog", event_type=CATALOG_ACTIVITY_TYPES[field],
+            idempotency_key=f"inventory:{item.id}:update:{correlation_id}:{field}:v1",
+            actor=actor, correlation_id=correlation_id,
+            source_type="inventory", source_id=item.id, source_number=item.sku,
+            before={field: before.get(field)}, after={field: updates[field]},
+            money=money_snapshot,
+        )
 
 
 class InventoryResponse(BaseModel):
@@ -409,6 +448,20 @@ async def create_inventory_item(
     item = Inventory(tenant_id=current_user.tenant_id, stock_quantity=0, **values)
     db.add(item)
     await db.flush()
+    await append_part_activity(
+        db, tenant_id=item.tenant_id, inventory_id=item.id,
+        category="catalog", event_type="part.created",
+        idempotency_key=f"inventory:{item.id}:created:v1", actor=current_user,
+        correlation_id=item.id, source_type="inventory", source_id=item.id,
+        source_number=item.sku,
+        after={
+            "sku": item.sku, "name": item.name, "description": item.description,
+            "category": item.category, "location": item.location,
+            "unit_type": item.unit_type, "reorder_level": item.reorder_level,
+            "cost": item.cost, "selling_price": item.selling_price,
+        },
+        money={"currency": "USD", "cost": str(item.cost), "selling_price": str(item.selling_price)},
+    )
     if opening_quantity:
         await apply_inventory_movement(
             db, item=item, quantity_delta=opening_quantity,
@@ -456,6 +509,17 @@ async def preload_default_inventory(
             item = Inventory(id=uuid4(), tenant_id=tenant_id, stock_quantity=0, **values)
             db.add(item)
             await db.flush()
+            await append_part_activity(
+                db, tenant_id=tenant_id, inventory_id=item.id,
+                category="catalog", event_type="part.created",
+                idempotency_key=f"inventory:{item.id}:preload-created:v1",
+                actor=current_user, correlation_id=item.id,
+                source_type="inventory", source_id=item.id, source_number=item.sku,
+                after={"sku": item.sku, "name": item.name, "category": item.category,
+                       "unit_type": item.unit_type, "reorder_level": item.reorder_level,
+                       "cost": item.cost, "selling_price": item.selling_price},
+                money={"currency": "USD", "cost": str(item.cost), "selling_price": str(item.selling_price)},
+            )
             if opening_quantity:
                 await apply_inventory_movement(
                     db, item=item, quantity_delta=opening_quantity,
@@ -559,9 +623,22 @@ async def update_inventory_item(
                     reason_code="manual_adjustment", note=adjustment_reason.strip(),
                 )
         else:
-            item.stock_quantity = requested_stock
+            delta = requested_stock - int(item.stock_quantity or 0)
+            if delta:
+                await apply_inventory_movement(
+                    db, item=item, quantity_delta=delta, movement_type="manual_adjustment",
+                    actor=current_user, source_type="legacy_inventory_update", source_id=item.id,
+                    reason_code="legacy_manual_adjustment",
+                    note=adjustment_reason.strip() if adjustment_reason else None,
+                )
+    before = {field: getattr(item, field) for field in updates}
+    correlation_id = uuid4()
     for field, value in updates.items():
         setattr(item, field, value)
+    await _append_catalog_changes(
+        db, item=item, actor=current_user, before=before,
+        updates=updates, correlation_id=correlation_id,
+    )
 
     await db.commit()
     await db.refresh(item)
@@ -641,8 +718,17 @@ async def upload_inventory_item_photo(
     except Exception:
         raise HTTPException(status_code=status.HTTP_424_FAILED_DEPENDENCY, detail="Photo upload failed. Please try again.")
 
+    old_image_url = item.image_url
     item.image_url = image_url
     item.cloudinary_public_id = public_id
+    await append_part_activity(
+        db, tenant_id=item.tenant_id, inventory_id=item.id,
+        category="catalog", event_type="part.photo_changed",
+        idempotency_key=f"inventory:{item.id}:photo:{uuid4()}:v1",
+        actor=current_user, source_type="inventory", source_id=item.id,
+        source_number=item.sku, before={"image_url": old_image_url},
+        after={"image_url": image_url},
+    )
     await db.commit()
     await db.refresh(item)
 
@@ -661,8 +747,18 @@ async def delete_inventory_item_photo(
     item = await _get_owned_inventory_item(db, item_id, current_user)
 
     old_public_id = item.cloudinary_public_id
+    old_image_url = item.image_url
     item.image_url = None
     item.cloudinary_public_id = None
+    if old_image_url:
+        await append_part_activity(
+            db, tenant_id=item.tenant_id, inventory_id=item.id,
+            category="catalog", event_type="part.photo_changed",
+            idempotency_key=f"inventory:{item.id}:photo-delete:{uuid4()}:v1",
+            actor=current_user, source_type="inventory", source_id=item.id,
+            source_number=item.sku, before={"image_url": old_image_url},
+            after={"image_url": None},
+        )
     await db.commit()
     await db.refresh(item)
 

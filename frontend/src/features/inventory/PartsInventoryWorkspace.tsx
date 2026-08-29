@@ -2,23 +2,24 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react'
 import { useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
-import { Archive, ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Boxes, Camera, ChevronsUpDown, History, MapPin, Package, Pencil, Plus, Search, ShoppingCart, Trash2, X } from 'lucide-react'
+import { Archive, ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Boxes, Camera, ChevronsUpDown, EllipsisVertical, History, MapPin, Package, Pencil, Plus, Search, ShoppingCart, Trash2, X } from 'lucide-react'
 
 import api from '@/lib/api'
 import useTenantBranding from '@/hooks/useTenantBranding'
 import { useAuthStore } from '@/stores/authStore'
 import SlidePanelForm from '@/components/SlidePanelForm'
 import QuantityStepper from '@/components/QuantityStepper'
+import ActivityWorkspace, { PartLifecycleSummary } from './ActivityWorkspace'
 
 type Page<T> = { items: T[]; total: number; skip: number; limit: number; has_more: boolean }
-type Summary = { needs_reorder_count?: number; low_stock_count?: number; open_purchase_order_count: number }
-type WorkspaceView = 'parts' | 'reorder' | 'movement'
+type Summary = { needs_reorder_count?: number; low_stock_count?: number; open_purchase_order_count: number; capabilities?: { counter_sales?: boolean; counter_sale_tenders?: string[] } }
+type WorkspaceView = 'parts' | 'reorder' | 'activity'
 type CatalogView = 'active' | 'archived'
 type PartSort = 'catalog' | 'name' | 'available' | 'location' | 'cost' | 'reorder'
 type SortDirection = 'asc' | 'desc'
 type StockFilter = 'all' | 'below_min' | 'out_of_stock'
 type LedgerDensity = 'comfortable' | 'compact'
-type InspectorView = 'overview' | 'stock' | 'ordering' | 'history'
+type InspectorView = 'overview' | 'stock' | 'ordering' | 'activity'
 
 const PART_PHOTO_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif'])
 const PART_PHOTO_MAX_BYTES = 10 * 1024 * 1024
@@ -49,7 +50,7 @@ const INSPECTOR_VIEWS: Array<{ id: InspectorView; label: string }> = [
   { id: 'overview', label: 'Overview' },
   { id: 'stock', label: 'Stock' },
   { id: 'ordering', label: 'Ordering' },
-  { id: 'history', label: 'History' },
+  { id: 'activity', label: 'Activity' },
 ]
 
 export type SupplierSource = {
@@ -75,11 +76,15 @@ export type PartRecord = {
   unit_type: string | null
   location: string | null
   available_packages: number
+  physical_on_hand_packages?: number
+  held_for_checkout_packages?: number
+  available_to_sell_packages?: number
   needed_for_open_repairs: number
   reorder_level: number
   incoming_packages: number
   recommended_order_packages: number
   average_unit_cost: string
+  selling_price?: string | null
   is_archived: boolean
   is_placeholder: boolean
   preferred_source: SupplierSource | null
@@ -127,17 +132,6 @@ type PartIdentityForm = {
 type PartsInfiniteData = {
   pages: Array<Page<PartRecord>>
   pageParams: unknown[]
-}
-
-type Movement = {
-  id: string
-  inventory: { id: string; sku: string; name: string } | null
-  movement_type: string
-  quantity_delta: number
-  balance_after: number
-  wac_after: string | null
-  source: { type: string; id: string; order_number?: string; receipt_number?: string; return_number?: string } | null
-  occurred_at: string
 }
 
 type SupplierOption = { id: string; name: string }
@@ -319,7 +313,6 @@ export default function PartsInventoryWorkspace({ summary }: { summary: Summary 
   const [search, setSearch] = useState('')
   const [debouncedSearch, setDebouncedSearch] = useState('')
   const [partsSequence, setPartsSequence] = useState(0)
-  const [movementSkip, setMovementSkip] = useState(0)
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [checkedParts, setCheckedParts] = useState<Map<string, PartRecord>>(() => new Map())
   const [preparedPartIds, setPreparedPartIds] = useState<Set<string>>(() => new Set(readPurchasePreparation().map((line) => line.inventoryId)))
@@ -365,25 +358,13 @@ export default function PartsInventoryWorkspace({ summary }: { summary: Summary 
     queryFn: async ({ pageParam }): Promise<Page<PartRecord>> => (await api.get('/parts-operations/parts', { params: { ...partParams, skip: pageParam } })).data,
     initialPageParam: 0,
     getNextPageParam: (lastPage) => lastPage.has_more ? lastPage.skip + lastPage.limit : undefined,
-    enabled: workspaceView !== 'movement',
+    enabled: workspaceView !== 'activity',
     retry: false,
-  })
-  const movementQuery = useQuery<Page<Movement>>({
-    queryKey: ['parts-operations', 'movement', 'page', movementSkip],
-    queryFn: async () => (await api.get('/parts-operations/activity', { params: { paginated: true, skip: movementSkip, limit: 50 } })).data,
-    enabled: workspaceView === 'movement',
-    retry: false,
-  })
-  const movementCountQuery = useQuery<Page<Movement>>({
-    queryKey: ['parts-operations', 'movement', 'count'],
-    queryFn: async () => (await api.get('/parts-operations/activity', { params: { paginated: true, skip: 0, limit: 1 } })).data,
-    retry: false,
-    staleTime: 60_000,
   })
   const detailQuery = useQuery<PartDetail>({
     queryKey: ['parts-operations', 'part', selectedId],
     queryFn: async () => (await api.get(`/parts-operations/parts/${selectedId}`)).data,
-    enabled: workspaceView !== 'movement' && Boolean(selectedId),
+    enabled: workspaceView !== 'activity' && Boolean(selectedId),
     retry: false,
   })
   const parts = useMemo(() => {
@@ -408,7 +389,7 @@ export default function PartsInventoryWorkspace({ summary }: { summary: Summary 
   }, [catalogView, debouncedSearch, firstPartsPage, stockFilter, workspaceView])
 
   useEffect(() => {
-    if (workspaceView === 'movement' || !firstPartsPage) return
+    if (workspaceView === 'activity' || !firstPartsPage) return
     const membershipChanged = selectionMembership.current !== preselectionContext
     if (!selectionMembership.current || membershipChanged) {
       selectionMembership.current = preselectionContext
@@ -496,7 +477,6 @@ export default function PartsInventoryWorkspace({ summary }: { summary: Summary 
   const selectView = (view: WorkspaceView) => {
     setWorkspaceView(view)
     setPartsSequence((current) => current + 1)
-    setMovementSkip(0)
     setMobileDetailOpen(false)
     setCheckedParts(new Map())
     reorderPreselection.current = { context: '', pages: new Set() }
@@ -536,7 +516,7 @@ export default function PartsInventoryWorkspace({ summary }: { summary: Summary 
   const needsReorderCount = workspaceView === 'reorder' && firstPartsPage
     ? firstPartsPage.total
     : summary.needs_reorder_count ?? summary.low_stock_count ?? 0
-  const movementCount = movementCountQuery.data?.total ?? null
+  const counterSalesEnabled = Boolean(summary.capabilities?.counter_sales)
 
   const updatePart = async (part: PartDetail, patch: Record<string, unknown>) => {
     setError(null)
@@ -545,7 +525,7 @@ export default function PartsInventoryWorkspace({ summary }: { summary: Summary 
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['parts-operations', 'parts'] }),
         queryClient.invalidateQueries({ queryKey: ['parts-operations', 'part', part.id] }),
-        queryClient.invalidateQueries({ queryKey: ['parts-operations', 'movement'] }),
+        queryClient.invalidateQueries({ queryKey: ['parts-operations', 'activity-events'] }),
       ])
       setNotice(`${part.name} stock setting saved.`)
     } catch (cause) {
@@ -596,6 +576,7 @@ export default function PartsInventoryWorkspace({ summary }: { summary: Summary 
     <header className="db-parts-workbench__header">
       <div><h1 id="parts-workbench-title">Parts</h1><p className="db-parts-workbench__technical-line">{allPartsCount ?? firstPartsPage?.total ?? '—'} TRACKED / <em>{needsReorderCount} NEEDS REORDER</em> / {summary.open_purchase_order_count} OPEN PURCHASE ORDERS</p></div>
       <div className="db-parts-workbench__summary" aria-label="Parts summary">
+        {counterSalesEnabled && <button className="db-parts-workbench__sales-link" type="button" onClick={() => navigate('/dashboard/garage/inventory/sales')}>Parts sales<ArrowRight aria-hidden="true" /></button>}
         {manage && <button className="db-parts-workbench__add-part" type="button" onClick={() => setAddPartOpen(true)}><Plus aria-hidden="true" />Add Part</button>}
       </div>
     </header>
@@ -603,14 +584,14 @@ export default function PartsInventoryWorkspace({ summary }: { summary: Summary 
     <nav className="db-parts-workbench__views" aria-label="Parts and inventory views">
       <button type="button" aria-current={workspaceView === 'parts' ? 'page' : undefined} onClick={() => selectView('parts')}><Boxes aria-hidden="true" />All parts <span className="db-parts-workbench__view-count">{allPartsCount ?? '—'}</span></button>
       <button type="button" aria-current={workspaceView === 'reorder' ? 'page' : undefined} onClick={() => selectView('reorder')}><ShoppingCart aria-hidden="true" />Needs reorder <span className="db-parts-workbench__view-count">{needsReorderCount}</span></button>
-      <button type="button" aria-current={workspaceView === 'movement' ? 'page' : undefined} onClick={() => selectView('movement')}><History aria-hidden="true" />Movement <span className="db-parts-workbench__view-count">{movementCount ?? '—'}</span></button>
+      <button type="button" aria-current={workspaceView === 'activity' ? 'page' : undefined} onClick={() => selectView('activity')}><History aria-hidden="true" />Activity</button>
     </nav>
 
     {notice && <div className="db-parts-workbench__notice" role="status"><span>{notice}</span><button type="button" onClick={() => setNotice(null)}>Dismiss</button></div>}
     {error && <div className="db-parts-workbench__error" role="alert"><span>{error}</span><button type="button" onClick={() => setError(null)}>Dismiss</button></div>}
 
-    {workspaceView === 'movement'
-      ? <MovementLedger page={movementQuery.data} loading={movementQuery.isLoading} failed={movementQuery.isError} onRetry={() => void movementQuery.refetch()} onOpenRepair={(id) => navigate(`/dashboard/repair-orders?selected=${encodeURIComponent(id)}`)} onPage={setMovementSkip} />
+    {workspaceView === 'activity'
+      ? <ActivityWorkspace />
       : <div className={`db-parts-workbench__body is-${density}${mobileDetailOpen ? ' is-mobile-detail' : ''}`}>
         <div className="db-parts-workbench__ledger-workspace">
           <div className="db-parts-workbench__toolbar">
@@ -656,7 +637,7 @@ export default function PartsInventoryWorkspace({ summary }: { summary: Summary 
             <strong>{checkedParts.size} {checkedParts.size === 1 ? 'part' : 'parts'} selected</strong>
             <div><button type="button" onClick={clearChecked}>Clear selection</button><button type="button" onClick={prepareChecked}>Add to purchase list<ArrowRight aria-hidden="true" /></button></div>
           </div>}
-          <PartLedger page={partsPage} loading={partsQuery.isLoading} loadingMore={partsQuery.isFetchingNextPage} failed={partsQuery.isError && !partsQuery.data} manage={manage} selectedId={selectedId} checkedIds={new Set(checkedParts.keys())} density={density} sort={sort} direction={direction} logoUrl={branding?.logo_url || null} companyName={branding?.name || null} onSort={toggleHeaderSort} onCheck={toggleChecked} onSelect={(id) => { setSelectedId(id); setMobileDetailOpen(true) }} onRetry={() => void partsQuery.refetch()} onLoadMore={() => void partsQuery.fetchNextPage()} />
+          <PartLedger page={partsPage} loading={partsQuery.isLoading} loadingMore={partsQuery.isFetchingNextPage} failed={partsQuery.isError && !partsQuery.data} manage={manage} salesEnabled={counterSalesEnabled} selectedId={selectedId} checkedIds={new Set(checkedParts.keys())} density={density} sort={sort} direction={direction} logoUrl={branding?.logo_url || null} companyName={branding?.name || null} onSort={toggleHeaderSort} onCheck={toggleChecked} onSelect={(id) => { setSelectedId(id); setMobileDetailOpen(true) }} onSell={(id) => navigate(`/dashboard/garage/inventory/sales?new=1&part=${encodeURIComponent(id)}`)} onRetry={() => void partsQuery.refetch()} onLoadMore={() => void partsQuery.fetchNextPage()} />
         </div>
         <PartInspector part={detailQuery.data} loading={detailQuery.isLoading} failed={detailQuery.isError} manage={manage} prepared={Boolean(detailQuery.data && preparedPartIds.has(detailQuery.data.id))} logoUrl={branding?.logo_url || null} companyName={branding?.name || null} onBack={() => setMobileDetailOpen(false)} onRetry={() => void detailQuery.refetch()} onAdjust={updatePart} onUpdateIdentity={updatePartIdentity} onUploadPhoto={uploadPartPhoto} onRemovePhoto={removePartPhoto} onPrepare={addToPreparation} onPurchasing={() => navigate('/dashboard/garage/purchasing')} onOpenPurchaseOrder={(id) => navigate(`/dashboard/garage/purchasing?view=orders&purchase_order=${encodeURIComponent(id)}`)} onOpenRepair={(id) => navigate(`/dashboard/repair-orders?selected=${encodeURIComponent(id)}`)} />
       </div>}
@@ -682,7 +663,22 @@ function SortableColumnHeader({ label, columnClass, field, sort, direction, onSo
   </span>
 }
 
-function PartLedger({ page, loading, loadingMore, failed, manage, selectedId, checkedIds, density, sort, direction, logoUrl, companyName, onSort, onCheck, onSelect, onRetry, onLoadMore }: { page?: Page<PartRecord>; loading: boolean; loadingMore: boolean; failed: boolean; manage: boolean; selectedId: string | null; checkedIds: Set<string>; density: LedgerDensity; sort: PartSort; direction: SortDirection; logoUrl: string | null; companyName: string | null; onSort: (field: Exclude<PartSort, 'catalog'>) => void; onCheck: (part: PartRecord, checked: boolean) => void; onSelect: (id: string) => void; onRetry: () => void; onLoadMore: () => void }) {
+function PartLedger({ page, loading, loadingMore, failed, manage, salesEnabled, selectedId, checkedIds, density, sort, direction, logoUrl, companyName, onSort, onCheck, onSelect, onSell, onRetry, onLoadMore }: { page?: Page<PartRecord>; loading: boolean; loadingMore: boolean; failed: boolean; manage: boolean; salesEnabled: boolean; selectedId: string | null; checkedIds: Set<string>; density: LedgerDensity; sort: PartSort; direction: SortDirection; logoUrl: string | null; companyName: string | null; onSort: (field: Exclude<PartSort, 'catalog'>) => void; onCheck: (part: PartRecord, checked: boolean) => void; onSelect: (id: string) => void; onSell: (id: string) => void; onRetry: () => void; onLoadMore: () => void }) {
+  const [openActions, setOpenActions] = useState<string | null>(null)
+  useEffect(() => {
+    if (!openActions) return
+    const surface = document.querySelector<HTMLElement>(`[data-row-actions="${openActions}"]`)
+    surface?.querySelector<HTMLButtonElement>('[role="menuitem"]')?.focus()
+    const close = (restore: boolean) => {
+      setOpenActions(null)
+      if (restore) requestAnimationFrame(() => surface?.querySelector<HTMLButtonElement>(':scope > button')?.focus())
+    }
+    const keydown = (event: KeyboardEvent) => { if (event.key === 'Escape') { event.preventDefault(); close(true) } }
+    const pointerdown = (event: PointerEvent) => { if (!surface?.contains(event.target as Node)) close(false) }
+    document.addEventListener('keydown', keydown)
+    document.addEventListener('pointerdown', pointerdown)
+    return () => { document.removeEventListener('keydown', keydown); document.removeEventListener('pointerdown', pointerdown) }
+  }, [openActions])
   if (loading) return <div className="db-parts-workbench__state" role="status">Loading parts…</div>
   if (failed) return <div className="db-parts-workbench__state" role="alert">Parts could not be loaded.<button type="button" onClick={onRetry}>Retry</button></div>
   if (!page?.items.length) return <div className="db-parts-workbench__state"><strong>No parts match this view.</strong><span>Change the search or catalog filter to see more.</span></div>
@@ -707,8 +703,9 @@ function PartLedger({ page, loading, loadingMore, failed, manage, selectedId, ch
             <button type="button" className="db-parts-workbench__row-select" aria-current={selected ? 'true' : undefined} aria-controls="selected-part-inspector" onClick={() => onSelect(part.id)}>
               <span className="db-parts-workbench__identity"><PartPhoto part={part} logoUrl={logoUrl} companyName={companyName} /><span><strong>{part.name}</strong><small>{part.sku}</small></span></span>
             </button>
+            {salesEnabled && eligible && <span className="db-parts-workbench__row-actions" data-row-actions={part.id} onClick={(event) => event.stopPropagation()}><button type="button" aria-label={`More actions for ${part.name}`} aria-haspopup="menu" aria-expanded={openActions === part.id} onClick={() => setOpenActions((current) => current === part.id ? null : part.id)}><EllipsisVertical aria-hidden="true" /></button>{openActions === part.id && <span role="menu" aria-label={`Actions for ${part.name}`}><button type="button" role="menuitem" onClick={() => { setOpenActions(null); onSell(part.id) }}>Sell part</button></span>}</span>}
           </span>
-          <strong role="cell" data-label="Available" className="is-available">{part.available_packages}</strong>
+          <strong role="cell" data-label="Available" className="is-available">{part.available_to_sell_packages ?? part.available_packages}</strong>
           <span role="cell" data-label="Bin location" className="is-bin">{part.location ? `Bin ${part.location}` : 'Bin not set'}</span>
           <strong role="cell" data-label="Average cost" className="is-cost">${Number(part.average_unit_cost || 0).toFixed(2)}</strong>
           <span role="cell" data-label="Preferred supplier" className={`is-supplier${!part.preferred_source ? ' is-unassigned' : ''}`}>{part.preferred_source?.supplier_name || 'Unassigned'}</span>
@@ -718,10 +715,6 @@ function PartLedger({ page, loading, loadingMore, failed, manage, selectedId, ch
     </div>
     <div className="db-parts-workbench__load-more"><span aria-live="polite">Showing {page.items.length} of {page.total}</span>{page.has_more && <button type="button" disabled={loadingMore} onClick={onLoadMore}>{loadingMore ? 'Loading 50 more…' : 'Load 50 more'}</button>}</div>
   </div>
-}
-
-function Pager({ page, onPage }: { page: Page<unknown>; onPage: (skip: number) => void }) {
-  return <div className="db-parts-workbench__pager"><span>{page.total ? `${page.skip + 1}–${Math.min(page.skip + page.items.length, page.total)} of ${page.total}` : '0 results'}</span><div><button type="button" disabled={page.skip === 0} onClick={() => onPage(Math.max(0, page.skip - page.limit))}>Previous</button><button type="button" disabled={!page.has_more} onClick={() => onPage(page.skip + page.limit)}>Next</button></div></div>
 }
 
 type AddPartForm = {
@@ -1089,13 +1082,18 @@ function PartInspector({ part, loading, failed, manage, prepared, logoUrl, compa
       </dd>
     </div>
   }
-  const availableStockFact = renderEditableStockFact('available', 'Available', part.available_packages, availableTrigger, 'available-shortcut', false)
+  const physicalOnHand = part.physical_on_hand_packages ?? part.available_packages
+  const heldForCheckout = part.held_for_checkout_packages ?? 0
+  const availableToSell = part.available_to_sell_packages ?? Math.max(0, physicalOnHand - heldForCheckout)
+  const availableStockFact = renderEditableStockFact('available', 'Physical on hand', physicalOnHand, availableTrigger, 'available-shortcut', false)
+  const heldStockFact = <div key="held"><dt>Held for checkout</dt><dd>{heldForCheckout}</dd></div>
+  const sellableStockFact = <div key="sellable"><dt>Available to sell</dt><dd>{availableToSell}</dd></div>
   const reorderStockFact = renderEditableStockFact('reorder', 'Reorder at', part.reorder_level, reorderTrigger, 'reorder')
   const neededStockFact = <div key="needed"><dt>Needed for open repairs</dt><dd>{part.needed_for_open_repairs}</dd></div>
   const incomingStockFact = <div key="incoming"><dt>Incoming</dt><dd>{part.incoming_packages}</dd></div>
   const stockFacts = edit === 'reorder'
-    ? [reorderStockFact, availableStockFact, neededStockFact, incomingStockFact]
-    : [availableStockFact, neededStockFact, reorderStockFact, incomingStockFact]
+    ? [reorderStockFact, availableStockFact, heldStockFact, sellableStockFact, neededStockFact, incomingStockFact]
+    : [availableStockFact, heldStockFact, sellableStockFact, neededStockFact, reorderStockFact, incomingStockFact]
   return <aside id="selected-part-inspector" className="db-parts-workbench__inspector" aria-labelledby="selected-part-name">
     <button className="db-parts-workbench__mobile-back" type="button" onClick={onBack}><ArrowLeft aria-hidden="true" />Back to parts</button>
     <div className="db-parts-workbench__selected-action" data-selected-surface="true">
@@ -1136,13 +1134,13 @@ function PartInspector({ part, loading, failed, manage, prepared, logoUrl, compa
       </div>}
       {!manage && !part.is_archived && <p className="db-parts-workbench__selected-permission">You can view stock. Owners and admins can make changes.</p>}
     </div>
-    {part.is_archived && <p className="db-parts-workbench__archive" role="status">Archived part. History stays available, but stock and purchasing actions are locked.</p>}
+    {part.is_archived && <p className="db-parts-workbench__archive" role="status">Archived part. Activity stays available, but stock and purchasing actions are locked.</p>}
     <div className="db-parts-workbench__inspector-tabs" role="tablist" aria-label="Selected part details" onKeyDown={handleInspectorKeys}>
       {INSPECTOR_VIEWS.map((view, index) => <button key={view.id} ref={(node) => { inspectorTabs.current[index] = node }} id={`part-inspector-${view.id}-tab`} type="button" role="tab" aria-selected={inspectorView === view.id} aria-controls={`part-inspector-${view.id}-panel`} tabIndex={inspectorView === view.id ? 0 : -1} onClick={() => selectInspectorView(view.id)}>{view.label}</button>)}
     </div>
     <div className="db-parts-workbench__inspector-panel" id={`part-inspector-${inspectorView}-panel`} role="tabpanel" aria-labelledby={`part-inspector-${inspectorView}-tab`}>
       {inspectorView === 'overview' && <>
-        <section className="db-parts-workbench__section"><h3>At a glance</h3><dl className="db-parts-workbench__facts is-overview"><div><dt>Available</dt><dd>{part.available_packages}</dd></div><div><dt>Needed for open repairs</dt><dd>{part.needed_for_open_repairs}</dd></div><div><dt>Reorder at</dt><dd>{part.reorder_level}</dd></div><div><dt>Incoming</dt><dd>{part.incoming_packages}</dd></div><div><dt>Average cost</dt><dd>${Number(part.average_unit_cost || 0).toFixed(2)}</dd></div><div><dt>Remarks</dt><dd>{remark}</dd></div></dl></section>
+        <section className="db-parts-workbench__section"><h3>At a glance</h3><dl className="db-parts-workbench__facts is-overview"><div><dt>Physical on hand</dt><dd>{physicalOnHand}</dd></div><div><dt>Held for checkout</dt><dd>{heldForCheckout}</dd></div><div><dt>Available to sell</dt><dd>{availableToSell}</dd></div><div><dt>Needed for open repairs</dt><dd>{part.needed_for_open_repairs}</dd></div><div><dt>Reorder at</dt><dd>{part.reorder_level}</dd></div><div><dt>Incoming</dt><dd>{part.incoming_packages}</dd></div><div><dt>Average cost</dt><dd>${Number(part.average_unit_cost || 0).toFixed(2)}</dd></div><div><dt>Remarks</dt><dd>{remark}</dd></div></dl></section>
         <section className="db-parts-workbench__section db-parts-workbench__supplier-section">
           <div className="db-parts-workbench__supplier-section-head">
             <h3>Supplied by</h3>
@@ -1203,10 +1201,7 @@ function PartInspector({ part, loading, failed, manage, prepared, logoUrl, compa
           </div>
         </div>
       </section>}
-      {inspectorView === 'history' && <>
-        <section className="db-parts-workbench__section"><h3>Repair history links</h3>{part.repair_sources.length ? part.repair_sources.map((source) => <button className="db-parts-workbench__linked-row" type="button" key={source.repair_order_id} onClick={() => onOpenRepair(source.repair_order_id)}><span><strong>{source.order_number}</strong><small>{source.unit_number ? `Unit ${source.unit_number} · ` : ''}{source.vehicle_display || 'Vehicle not set'}</small></span><strong>{source.packages} units needed</strong><ArrowRight aria-hidden="true" /></button>) : <p className="db-parts-workbench__muted">No repair has reserved this part.</p>}</section>
-        <section className="db-parts-workbench__section"><h3>Recent inventory changes</h3>{part.recent_movements.length ? part.recent_movements.slice(0, 6).map((movement) => <div className="db-parts-workbench__movement-row" key={movement.id}><span><strong>{movementLabel(movement.movement_type)}</strong><small>{new Date(movement.occurred_at).toLocaleString()}</small></span><strong>{movement.quantity_delta > 0 ? '+' : ''}{movement.quantity_delta} · {movement.balance_after} on hand</strong></div>) : <p className="db-parts-workbench__muted">No inventory changes have been recorded for this part.</p>}</section>
-      </>}
+      {inspectorView === 'activity' && <><PartLifecycleSummary inventoryId={part.id} /><ActivityWorkspace inventoryId={part.id} compact /></>}
     </div>
   </aside>
 }
@@ -1399,11 +1394,4 @@ function SupplierSources({ part, manage, onChanged }: { part: PartDetail; manage
       </div>
     </form>}
   </div>
-}
-
-function MovementLedger({ page, loading, failed, onRetry, onOpenRepair, onPage }: { page?: Page<Movement>; loading: boolean; failed: boolean; onRetry: () => void; onOpenRepair: (id: string) => void; onPage: (skip: number) => void }) {
-  if (loading) return <div className="db-parts-workbench__state" role="status">Loading inventory history…</div>
-  if (failed) return <div className="db-parts-workbench__state" role="alert">Inventory history could not be loaded.<button type="button" onClick={onRetry}>Retry</button></div>
-  if (!page?.items.length) return <div className="db-parts-workbench__state"><strong>No inventory changes yet.</strong><span>Receipts, repair reservations, and audited adjustments will appear here.</span></div>
-  return <div className="db-parts-workbench__movement-ledger">{page.items.map((movement) => <article key={movement.id}><div><strong>{movement.inventory?.name || 'Inventory change'}</strong><p>{movementLabel(movement.movement_type)} · {movement.balance_after} on hand after change{movement.wac_after ? ` · Average cost $${movement.wac_after}` : ''}</p></div><div>{movement.source?.type === 'repair_order' ? <button type="button" onClick={() => onOpenRepair(movement.source!.id)}>{movement.source.order_number || 'Open repair'}<ArrowRight aria-hidden="true" /></button> : <span>{movement.source?.receipt_number || movement.source?.return_number || 'Stock record'}</span>}<time>{formatDate(movement.occurred_at)}</time></div></article>)}<Pager page={page} onPage={onPage} /></div>
 }
