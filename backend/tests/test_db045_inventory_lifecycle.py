@@ -389,6 +389,45 @@ async def test_foreign_sale_is_not_enumerable(client, db_session, monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_counter_sale_draft_rejects_retired_and_foreign_parts_identically(
+    client, db_session, monkeypatch,
+):
+    monkeypatch.setattr(settings, "PARTS_OPERATIONS_V1_ENABLED", True)
+    monkeypatch.setattr(settings, "COUNTER_SALES_ENABLED", True)
+    tenant, owner, retired_item = await seed_context(db_session)
+    retired_item.ets_retired_at = datetime.now(timezone.utc)
+    _foreign_tenant, _foreign_owner, foreign_item = await seed_context(db_session)
+    await db_session.commit()
+
+    async def create_with_part(inventory_id, key):
+        return await client.post(
+            f"{PREFIX}/counter-sales",
+            headers={**auth(owner, tenant), "Idempotency-Key": key},
+            json={
+                "buyer_name": "Walk-in",
+                "lines": [{"inventory_id": str(inventory_id), "quantity": 1}],
+            },
+        )
+
+    retired = await create_with_part(
+        retired_item.id, "db045-retired-part-boundary",
+    )
+    foreign = await create_with_part(
+        foreign_item.id, "db045-foreign-part-boundary",
+    )
+
+    assert retired.status_code == foreign.status_code == 404
+    assert retired.json()["detail"] == foreign.json()["detail"] == "Not found"
+    assert retired.json().keys() == foreign.json().keys()
+    assert await db_session.scalar(select(func.count(CounterSale.id)).where(
+        CounterSale.tenant_id == tenant.id,
+    )) == 0
+    assert await db_session.scalar(select(func.count(CounterSaleLine.id)).where(
+        CounterSaleLine.tenant_id == tenant.id,
+    )) == 0
+
+
+@pytest.mark.asyncio
 async def test_activity_backfill_reruns_and_export_uses_identical_filters(client, db_session, monkeypatch):
     monkeypatch.setattr(settings, "PARTS_OPERATIONS_V1_ENABLED", True)
     tenant, owner, item = await seed_context(db_session, verified=False)

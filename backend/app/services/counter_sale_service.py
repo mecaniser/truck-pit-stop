@@ -118,6 +118,7 @@ async def _tenant_parts(
         Inventory.tenant_id == tenant_id,
         Inventory.id.in_(unique_ids),
         Inventory.deleted_at.is_(None),
+        Inventory.ets_retired_at.is_(None),
         Inventory.is_placeholder.is_(False),
     ).order_by(Inventory.id)
     if lock:

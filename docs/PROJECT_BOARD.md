@@ -23,6 +23,8 @@ reviewed, merged, and released. Reconcile this board whenever newer evidence exi
 
 > This repair note supersedes the DB-045 row's historical pre-repair statements that the local database remained at migration `125` and that no local candidate commit existed. The authorized local review database is verified at sole head `128_inventory_lifecycle_v11`, and the repaired candidate is frozen locally for fresh independent Security and QA adoption; it has not been pushed or substituted into stale PR #306.
 
+> **DB-045 fresh Security return and correction (2026-08-28):** Independent Security returned local candidate `863cdf0303a7e9c4c0a46aba2fedd999997d9add` NO-GO with `P0/P1/P2=0/1/0` after an isolated PostgreSQL reproduction proved that an ETS-retired part could enter a counter-sale draft. Backend & Integrations added the missing `Inventory.ets_retired_at IS NULL` tenant-part boundary and an API regression proving same-tenant retired and foreign parts both receive the identical generic `404` with no sale or line persistence. The focused lifecycle file passes `12/12`, compilation and diff integrity pass, and no shared database or service was touched. This correction requires a new exact committed SHA and fresh independent Security and QA; the earlier gate does not transfer.
+
 ## In progress
 
 | ID | Priority | State | Outcome | Owner | Evidence now | Next gate |
