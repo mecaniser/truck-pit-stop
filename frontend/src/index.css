@@ -3406,12 +3406,17 @@ html::-webkit-scrollbar-thumb:hover {
 .db-repair-orders-ledger > footer button { min-height: 40px; display: inline-flex; align-items: center; gap: 5px; border: 1px solid var(--db-ledger-border); border-radius: 8px; padding: 7px 10px; background: var(--db-ledger-surface); color: var(--db-ledger-text); }
 .db-repair-orders-ledger > footer button:disabled { opacity: .42; }
 
-.db-repair-order-detail-new { border-left: 1px solid #9eacbb; background: #fff !important; box-shadow: -20px 0 50px rgba(6,24,43,.22) !important; }
-.db-slide-panel-workspace.db-repair-order-detail-new { border-left: 1px solid #9eacbb; box-shadow: 0 12px 32px rgba(6,24,43,.16) !important; }
+.db-repair-order-detail-new { border-left: 1px solid #9eacbb; box-shadow: -20px 0 50px rgba(6,24,43,.22) !important; }
+.db-slide-panel-workspace.db-repair-order-detail-new { border-left: 1px solid #9eacbb; background: #fff; box-shadow: 0 12px 32px rgba(6,24,43,.16) !important; }
 .db-repair-order-detail-new .db-slide-panel-workspace__title:focus-visible { outline: 2px solid #ff7a2e; outline-offset: 4px; border-radius: 6px; }
 .db-repair-order-detail-new .slide-panel-header { min-height: 70px; border-color: #c8d2dd !important; background: #fff; }
 .db-repair-order-detail-new .slide-panel-content { background: #f4f7fa; }
 .db-repair-order-detail-new .slide-panel-footer { border-color: #c8d2dd !important; background: #fff !important; }
+.db-slide-panel-workspace.db-repair-order-detail-new--price-builder { background: transparent; }
+.db-repair-order-detail-new--price-builder > .slide-panel-content {
+  border-radius: inherit;
+  background: transparent;
+}
 .db-repair-order-detail-new__body { color: #17283f; }
 .db-repair-order-detail-new__body > * { max-width: 1120px; margin-inline: auto; }
 .db-repair-order-detail-new__body :is(.bg-gray-50,.bg-white) { border-color: #d3dbe4 !important; }
