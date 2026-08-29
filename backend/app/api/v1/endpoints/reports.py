@@ -24,7 +24,6 @@ from app.db.models.repair_order import RepairOrder
 from app.db.models.service import Service
 from app.db.models.tenant import Tenant
 from app.db.models.user import User, UserRole
-from app.services.counter_sale_reporting_service import load_counter_sale_report_entries
 
 router = APIRouter()
 
@@ -87,11 +86,6 @@ class ReportsDashboardResponse(BaseModel):
     invoiced_hours: DashboardMetric
     part_sales_finalized: DashboardMetric
     services_finalized: DashboardMetric
-    counter_sale_revenue: DashboardMetric
-    counter_sale_part_revenue: DashboardMetric
-    counter_sale_fees_revenue: DashboardMetric
-    counter_sale_parts_profit: DashboardMetric
-    counter_sales_finalized: DashboardMetric
 
 
 def _week_buckets(rng: DateRange) -> List[tuple[date, date, str]]:
@@ -184,15 +178,6 @@ async def get_reports_dashboard(
     total_parts_rev = Decimal("0.00")
     total_fees = Decimal("0.00")
     total_parts_profit = Decimal("0.00")
-    counter_sale_revenue = Decimal("0.00")
-    counter_sale_parts = Decimal("0.00")
-    counter_sale_fees = Decimal("0.00")
-    counter_sale_profit = Decimal("0.00")
-    counter_sale_count_by_week = [0 for _ in weeks]
-    counter_sale_revenue_by_week = [Decimal("0.00") for _ in weeks]
-    counter_sale_parts_by_week = [Decimal("0.00") for _ in weeks]
-    counter_sale_fees_by_week = [Decimal("0.00") for _ in weeks]
-    counter_sale_profit_by_week = [Decimal("0.00") for _ in weeks]
 
     counted_invoices: set = set()
     for payment, invoice, order in paid_rows:
@@ -236,33 +221,6 @@ async def get_reports_dashboard(
                 if order.total_parts_cost and order.total_parts_cost > 0:
                     part_sales_by_week[idx] += 1
                 services_by_week[idx] += 1
-
-    counter_entries = await load_counter_sale_report_entries(
-        db, tenant_id=tenant_id, start=rng.start, end=rng.end,
-    )
-    for entry in counter_entries:
-        net_revenue = entry.item_sales + entry.fees
-        counter_sale_revenue += net_revenue
-        counter_sale_parts += entry.item_sales
-        counter_sale_fees += entry.fees
-        counter_sale_profit += entry.margin
-        total_revenue += net_revenue
-        total_parts_rev += entry.item_sales
-        total_fees += entry.fees
-        total_parts_profit += entry.margin
-        idx = week_index(entry.occurred_on)
-        if idx is not None:
-            revenue_by_week[idx] += net_revenue
-            parts_rev_by_week[idx] += entry.item_sales
-            fees_by_week[idx] += entry.fees
-            parts_profit_by_week[idx] += entry.margin
-            counter_sale_revenue_by_week[idx] += net_revenue
-            counter_sale_parts_by_week[idx] += entry.item_sales
-            counter_sale_fees_by_week[idx] += entry.fees
-            counter_sale_profit_by_week[idx] += entry.margin
-            if entry.entry_type == "sale":
-                part_sales_by_week[idx] += 1
-                counter_sale_count_by_week[idx] += 1
 
     # Invoiced hours. An ordinary DieselBridge invoice has no date of its own
     # distinct from when it was paid, so it keeps counting by payment date —
@@ -348,11 +306,6 @@ async def get_reports_dashboard(
         invoiced_hours=DashboardMetric(value=str(invoiced_hours_total), trend=trend(invoiced_hours_by_week)),
         part_sales_finalized=DashboardMetric(value=str(sum(part_sales_by_week)), trend=trend_int(part_sales_by_week)),
         services_finalized=DashboardMetric(value=str(sum(services_by_week)), trend=trend_int(services_by_week)),
-        counter_sale_revenue=DashboardMetric(value=str(counter_sale_revenue), trend=trend(counter_sale_revenue_by_week)),
-        counter_sale_part_revenue=DashboardMetric(value=str(counter_sale_parts), trend=trend(counter_sale_parts_by_week)),
-        counter_sale_fees_revenue=DashboardMetric(value=str(counter_sale_fees), trend=trend(counter_sale_fees_by_week)),
-        counter_sale_parts_profit=DashboardMetric(value=str(counter_sale_profit), trend=trend(counter_sale_profit_by_week)),
-        counter_sales_finalized=DashboardMetric(value=str(sum(counter_sale_count_by_week)), trend=trend_int(counter_sale_count_by_week)),
     )
 
 
@@ -370,9 +323,6 @@ class SalesSummary(BaseModel):
     discounts: str
     fees: str
     sales_tax: str
-    repair_net_sales: str = "0.00"
-    counter_sale_net_sales: str = "0.00"
-    counter_sale_refunds: str = "0.00"
 
 
 class SalesGroupRow(BaseModel):
@@ -384,7 +334,6 @@ class SalesGroupRow(BaseModel):
     sales_tax: str
     discounts: str
     net_sales: str
-    source: str = "repair"
 
 
 class ReportsSalesResponse(BaseModel):
@@ -424,8 +373,8 @@ async def get_reports_sales(
 
     totals = {"net_sales": Decimal("0"), "labor": Decimal("0"), "parts": Decimal("0"),
               "discounts": Decimal("0"), "fees": Decimal("0"), "sales_tax": Decimal("0")}
-    by_customer: Dict[tuple[str, str], Dict[str, Decimal]] = {}
-    customer_labels: Dict[tuple[str, str], str] = {}
+    by_customer: Dict[UUID, Dict[str, Decimal]] = {}
+    customer_labels: Dict[UUID, str] = {}
 
     for invoice, order, customer in rows:
         labor = _money(order.total_labor_cost)
@@ -442,8 +391,7 @@ async def get_reports_sales(
         totals["discounts"] += discounts
         totals["net_sales"] += net_sales
 
-        key = ("repair", str(customer.id))
-        bucket = by_customer.setdefault(key, {
+        bucket = by_customer.setdefault(customer.id, {
             "labor": Decimal("0"), "parts": Decimal("0"), "fees": Decimal("0"),
             "sales_tax": Decimal("0"), "discounts": Decimal("0"), "net_sales": Decimal("0"),
         })
@@ -453,64 +401,20 @@ async def get_reports_sales(
         bucket["sales_tax"] += tax
         bucket["discounts"] += discounts
         bucket["net_sales"] += net_sales
-        customer_labels[key] = customer.company_name or f"{customer.first_name} {customer.last_name}".strip()
-
-    repair_net_sales = totals["net_sales"]
-    counter_sale_net_sales = Decimal("0.00")
-    counter_sale_refunds = Decimal("0.00")
-    counter_entries = await load_counter_sale_report_entries(
-        db, tenant_id=tenant_id, start=rng.start, end=rng.end,
-    )
-    counter_customer_ids = {entry.customer_id for entry in counter_entries if entry.customer_id}
-    counter_customer_labels: dict[UUID, str] = {}
-    if counter_customer_ids:
-        customer_result = await db.execute(select(Customer).where(
-            Customer.tenant_id == tenant_id,
-            Customer.id.in_(counter_customer_ids),
-        ))
-        for customer in customer_result.scalars().all():
-            counter_customer_labels[customer.id] = (
-                customer.company_name or f"{customer.first_name} {customer.last_name}".strip()
-            )
-    for entry in counter_entries:
-        net_total = entry.net_total
-        totals["parts"] += entry.item_sales
-        totals["fees"] += entry.fees
-        totals["sales_tax"] += entry.tax
-        totals["discounts"] += entry.discounts
-        totals["net_sales"] += net_total
-        counter_sale_net_sales += net_total
-        if entry.entry_type == "return":
-            counter_sale_refunds += -net_total
-        customer_key = str(entry.customer_id) if entry.customer_id else "walk-in"
-        key = ("counter_sale", customer_key)
-        bucket = by_customer.setdefault(key, {
-            "labor": Decimal("0"), "parts": Decimal("0"), "fees": Decimal("0"),
-            "sales_tax": Decimal("0"), "discounts": Decimal("0"), "net_sales": Decimal("0"),
-        })
-        bucket["parts"] += entry.item_sales
-        bucket["fees"] += entry.fees
-        bucket["sales_tax"] += entry.tax
-        bucket["discounts"] += entry.discounts
-        bucket["net_sales"] += net_total
-        customer_labels[key] = (
-            counter_customer_labels.get(entry.customer_id)
-            if entry.customer_id else (entry.buyer_name or "Walk-in / anonymous")
-        ) or "Walk-in / anonymous"
+        customer_labels[customer.id] = customer.company_name or f"{customer.first_name} {customer.last_name}".strip()
 
     group_rows = [
         SalesGroupRow(
-            group_key=key[1],
-            group_label=customer_labels[key],
+            group_key=str(cid),
+            group_label=customer_labels[cid],
             labor=str(vals["labor"]),
             parts=str(vals["parts"]),
             fees=str(vals["fees"]),
             sales_tax=str(vals["sales_tax"]),
             discounts=str(vals["discounts"]),
             net_sales=str(vals["net_sales"]),
-            source=key[0],
         )
-        for key, vals in by_customer.items()
+        for cid, vals in by_customer.items()
     ]
     group_rows.sort(key=lambda r: Decimal(r.net_sales), reverse=True)
 
@@ -524,9 +428,6 @@ async def get_reports_sales(
             discounts=str(totals["discounts"]),
             fees=str(totals["fees"]),
             sales_tax=str(totals["sales_tax"]),
-            repair_net_sales=str(repair_net_sales),
-            counter_sale_net_sales=str(counter_sale_net_sales),
-            counter_sale_refunds=str(counter_sale_refunds),
         ),
         rows=group_rows,
     )
@@ -626,8 +527,6 @@ class TaxRow(BaseModel):
     rate_label: str
     percentage: str
     tax_collected: str
-    repair_tax_collected: str = "0.00"
-    counter_sale_tax_collected: str = "0.00"
 
 
 class ReportsTaxResponse(BaseModel):
@@ -660,14 +559,7 @@ async def get_reports_tax(
             func.date(Invoice.paid_at) <= rng.end,
         )
     )
-    repair_tax_collected = _money(result.scalar())
-    counter_entries = await load_counter_sale_report_entries(
-        db, tenant_id=tenant_id, start=rng.start, end=rng.end,
-    )
-    counter_sale_tax_collected = _money(sum(
-        (entry.tax for entry in counter_entries), Decimal("0"),
-    ))
-    tax_collected = _money(repair_tax_collected + counter_sale_tax_collected)
+    tax_collected = _money(result.scalar())
 
     rows = []
     if tax_collected > 0:
@@ -675,8 +567,6 @@ async def get_reports_tax(
             rate_label="Sales Tax",
             percentage=str(tenant.sales_tax_rate or Decimal("0.000")),
             tax_collected=str(tax_collected),
-            repair_tax_collected=str(repair_tax_collected),
-            counter_sale_tax_collected=str(counter_sale_tax_collected),
         ))
 
     return ReportsTaxResponse(range_start=rng.start, range_end=rng.end, rows=rows)
@@ -690,9 +580,7 @@ class PartRevenueRow(BaseModel):
     invoice_number: str
     # Lets the report link straight to the order it is reporting on, through the
     # repair-order list's ?selected= deep link.
-    repair_order_id: Optional[str] = None
-    counter_sale_id: Optional[str] = None
-    source: str = "repair"
+    repair_order_id: str
     revenue: str
     cost: str
     profit: str
@@ -707,10 +595,6 @@ class ReportsPartsResponse(BaseModel):
     profit: str
     margin_pct: str
     rows: List[PartRevenueRow]
-    repair_revenue: str = "0.00"
-    repair_cost: str = "0.00"
-    counter_sale_revenue: str = "0.00"
-    counter_sale_cost: str = "0.00"
 
 
 @router.get("/parts", response_model=ReportsPartsResponse)
@@ -770,38 +654,6 @@ async def get_reports_parts(
             profit=str(profit),
             margin_pct=str(margin),
         ))
-
-    repair_revenue = total_revenue
-    repair_cost = total_cost
-    counter_sale_revenue = Decimal("0.00")
-    counter_sale_cost = Decimal("0.00")
-    counter_entries = await load_counter_sale_report_entries(
-        db, tenant_id=tenant_id, start=rng.start, end=rng.end,
-    )
-    for entry in counter_entries:
-        if entry.item_sales == 0 and entry.cogs == 0:
-            continue
-        profit = _money(entry.item_sales - entry.cogs)
-        margin = (
-            (profit / abs(entry.item_sales) * 100).quantize(Decimal("0.01"))
-            if entry.item_sales else Decimal("0.00")
-        )
-        counter_sale_revenue += entry.item_sales
-        counter_sale_cost += entry.cogs
-        total_revenue += entry.item_sales
-        total_cost += entry.cogs
-        part_rows.append(PartRevenueRow(
-            invoice_number=(
-                entry.sale_number if entry.entry_type == "sale"
-                else f"{entry.sale_number} return"
-            ),
-            counter_sale_id=str(entry.sale_id),
-            source="counter_sale",
-            revenue=str(entry.item_sales),
-            cost=str(entry.cogs),
-            profit=str(profit),
-            margin_pct=str(margin),
-        ))
     part_rows.sort(key=lambda r: Decimal(r.revenue), reverse=True)
 
     total_profit = total_revenue - total_cost
@@ -815,10 +667,6 @@ async def get_reports_parts(
         profit=str(total_profit),
         margin_pct=str(total_margin),
         rows=part_rows,
-        repair_revenue=str(repair_revenue),
-        repair_cost=str(repair_cost),
-        counter_sale_revenue=str(counter_sale_revenue),
-        counter_sale_cost=str(counter_sale_cost),
     )
 
 
@@ -1243,31 +1091,6 @@ async def get_analytics_accounts(
         b["rev"] += _money(invoice.total_amount)
         b["cost"] += _money(order.total_labor_cost) + _money(order.total_parts_cost)
         labels[customer.id] = customer.company_name or f"{customer.first_name} {customer.last_name}".strip()
-
-    counter_entries = await load_counter_sale_report_entries(
-        db, tenant_id=tenant_id, start=rng.start, end=rng.end,
-    )
-    counter_customer_ids = {entry.customer_id for entry in counter_entries if entry.customer_id}
-    if counter_customer_ids:
-        customer_result = await db.execute(select(Customer).where(
-            Customer.tenant_id == tenant_id,
-            Customer.id.in_(counter_customer_ids),
-        ))
-        for customer in customer_result.scalars().all():
-            labels[customer.id] = (
-                customer.company_name or f"{customer.first_name} {customer.last_name}".strip()
-            )
-    for entry in counter_entries:
-        # Anonymous walk-ins remain in aggregate reports but deliberately do
-        # not create or contaminate a customer-profitability account.
-        if not entry.customer_id:
-            continue
-        bucket = by_customer.setdefault(
-            entry.customer_id, {"rev": Decimal("0"), "cost": Decimal("0")},
-        )
-        bucket["rev"] += entry.net_total
-        bucket["cost"] += entry.cogs
-        labels.setdefault(entry.customer_id, entry.buyer_name or "Deleted customer")
 
     ranked = sorted(by_customer.items(), key=lambda kv: kv[1]["rev"], reverse=True)
     total_rev = sum((v["rev"] for _, v in ranked), Decimal("0")) or Decimal("1")

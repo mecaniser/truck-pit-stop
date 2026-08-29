@@ -15,8 +15,10 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from app.db.models.inventory import Inventory
 from app.db.models.inventory_lifecycle import (
     CounterSale,
+    CounterSaleLine,
     CounterSalePaymentAttempt,
-    CounterSaleReservation,
+    CounterSaleReturn,
+    CounterSaleReturnLine,
     PartActivityBackfillRun,
     PartActivityEvent,
 )
@@ -24,9 +26,9 @@ from app.db.models.parts_operations import InventoryMovement
 from app.db.models.tenant import Tenant
 from app.db.models.user import User, UserRole
 from app.services.counter_sale_service import (
+    complete_manual_checkout,
+    complete_manual_return,
     create_or_replace_draft,
-    finalize_checkout_success,
-    prepare_checkout,
 )
 from app.services.part_activity_backfill import backfill_tenant_activity
 from app.services.parts_operations_service import apply_inventory_movement
@@ -48,7 +50,6 @@ async def _seed(factory, *, stock: int = 1):
             parts_operations_enabled=True,
             counter_sales_enabled=False,
             sales_tax_rate=Decimal("7.2500"),
-            service_fee_rate=Decimal("3.0000"),
         )
         owner = User(
             tenant=tenant,
@@ -105,10 +106,10 @@ async def test_db045_postgres_concurrent_checkout_cannot_oversell():
         first_sale = await _draft(factory, tenant_id, owner_id, item_id)
         second_sale = await _draft(factory, tenant_id, owner_id, item_id)
 
-        async def reserve(sale_id, version, key):
+        async def checkout(sale_id, version, key):
             async with factory() as db:
                 try:
-                    sale, _lines, attempt = await prepare_checkout(
+                    sale = await complete_manual_checkout(
                         db,
                         tenant=await db.get(Tenant, tenant_id),
                         sale_id=sale_id,
@@ -116,24 +117,25 @@ async def test_db045_postgres_concurrent_checkout_cannot_oversell():
                         expected_version=version,
                         tender="cash",
                         idempotency_key=key,
+                        manual_reference=None,
                     )
                     # Keep the physical-inventory row locked long enough for the
-                    # competing checkout to block and then observe this hold.
+                    # competing checkout to block and observe the posted stock.
                     await asyncio.sleep(0.05)
                     await db.commit()
-                    return sale.id, attempt.id
+                    return sale.id
                 except HTTPException as exc:
                     await db.rollback()
                     return exc
 
         outcomes = await asyncio.wait_for(
             asyncio.gather(
-                reserve(*first_sale, "db045-pg-checkout-a"),
-                reserve(*second_sale, "db045-pg-checkout-b"),
+                checkout(*first_sale, "db045-pg-checkout-a"),
+                checkout(*second_sale, "db045-pg-checkout-b"),
             ),
             timeout=10,
         )
-        winners = [result for result in outcomes if isinstance(result, tuple)]
+        winners = [result for result in outcomes if not isinstance(result, HTTPException)]
         losers = [
             result for result in outcomes
             if isinstance(result, HTTPException) and result.status_code == 409
@@ -141,37 +143,82 @@ async def test_db045_postgres_concurrent_checkout_cannot_oversell():
         assert len(winners) == 1
         assert len(losers) == 1
 
-        winner_sale_id, attempt_id = winners[0]
-        async with factory() as db:
-            owner = await db.get(User, owner_id)
-            attempt = await db.get(CounterSalePaymentAttempt, attempt_id)
-            await finalize_checkout_success(
-                db,
-                tenant_id=tenant_id,
-                sale_id=winner_sale_id,
-                attempt_id=attempt_id,
-                provider_amount=attempt.amount,
-                currency="USD",
-                provider_status="completed",
-                provider_object_id=None,
-                actor=owner,
-            )
-            await db.commit()
-
         async with factory() as db:
             item = await db.get(Inventory, item_id)
             sales = list((await db.execute(select(CounterSale).where(
                 CounterSale.tenant_id == tenant_id,
             ))).scalars().all())
-            reservations = list((await db.execute(select(CounterSaleReservation).where(
-                CounterSaleReservation.tenant_id == tenant_id,
-            ))).scalars().all())
             assert item.stock_quantity == 0
             assert sorted(sale.status for sale in sales) == ["completed", "draft"]
-            assert [reservation.state for reservation in reservations] == ["consumed"]
+            assert await db.scalar(select(func.count(CounterSalePaymentAttempt.id)).where(
+                CounterSalePaymentAttempt.tenant_id == tenant_id,
+            )) == 1
             assert await db.scalar(select(func.count(InventoryMovement.id)).where(
                 InventoryMovement.inventory_id == item_id,
                 InventoryMovement.movement_type == "counter_sale",
+            )) == 1
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_db045_postgres_provider_era_schema_accepts_manual_sale_and_return():
+    engine = create_async_engine(os.environ[POSTGRES_URL])
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    try:
+        tenant_id, owner_id, item_id = await _seed(factory, stock=1)
+        sale_id, version = await _draft(factory, tenant_id, owner_id, item_id)
+
+        async with factory() as db:
+            sale = await complete_manual_checkout(
+                db,
+                tenant=await db.get(Tenant, tenant_id),
+                sale_id=sale_id,
+                actor=await db.get(User, owner_id),
+                expected_version=version,
+                tender="external_terminal",
+                idempotency_key="db045-pg-compat-checkout",
+                manual_reference="TERM-COMPAT-1",
+            )
+            await db.commit()
+            completed_version = sale.version
+
+        async with factory() as db:
+            line_id = await db.scalar(select(CounterSaleLine.id).where(
+                CounterSaleLine.tenant_id == tenant_id,
+                CounterSaleLine.sale_id == sale_id,
+            ))
+            sale, returned = await complete_manual_return(
+                db,
+                tenant=await db.get(Tenant, tenant_id),
+                sale_id=sale_id,
+                actor=await db.get(User, owner_id),
+                expected_version=completed_version,
+                line_inputs=[{
+                    "sale_line_id": line_id,
+                    "quantity": 1,
+                    "reason": "Compatibility return",
+                    "disposition": "restock",
+                }],
+                manual_reference="REV-COMPAT-1",
+            )
+            await db.commit()
+            return_id = returned.id
+            assert sale.status == "returned"
+
+        async with factory() as db:
+            payment = await db.scalar(select(CounterSalePaymentAttempt).where(
+                CounterSalePaymentAttempt.tenant_id == tenant_id,
+                CounterSalePaymentAttempt.sale_id == sale_id,
+            ))
+            returned = await db.get(CounterSaleReturn, return_id)
+            item = await db.get(Inventory, item_id)
+            assert payment.external_reference == "TERM-COMPAT-1"
+            assert returned.refund_reference == "REV-COMPAT-1"
+            assert item.stock_quantity == 1
+            assert await db.scalar(select(func.count(CounterSaleReturnLine.id)).where(
+                CounterSaleReturnLine.tenant_id == tenant_id,
+                CounterSaleReturnLine.return_id == return_id,
             )) == 1
     finally:
         await engine.dispose()

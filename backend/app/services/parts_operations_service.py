@@ -4,7 +4,6 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-from datetime import datetime, timezone
 from decimal import Decimal, ROUND_HALF_UP
 from typing import Any, Iterable
 from uuid import UUID, uuid4
@@ -111,20 +110,7 @@ async def apply_inventory_movement(
     item.stock_version = int(item.stock_version or 0) + 1
     db.add(movement)
     if held_for_checkout is None:
-        # Keep the Activity stock snapshot truthful even for legacy mutation
-        # paths while counter-sale reservations are active. The import stays
-        # local so this shared service avoids an initialization-time cycle.
-        from app.db.models.inventory_lifecycle import CounterSaleReservation
-
-        held_for_checkout = int(await db.scalar(
-            select(func.coalesce(func.sum(CounterSaleReservation.quantity), 0)).where(
-                CounterSaleReservation.tenant_id == item.tenant_id,
-                CounterSaleReservation.inventory_id == item.id,
-                CounterSaleReservation.state == "held",
-                CounterSaleReservation.expires_at > datetime.now(timezone.utc),
-                CounterSaleReservation.deleted_at.is_(None),
-            )
-        ) or 0)
+        held_for_checkout = 0
     available_to_sell = max(after - held_for_checkout, 0)
     # Activity is an immutable searchable index written atomically with the
     # authoritative movement and materialized balance.

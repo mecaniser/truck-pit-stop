@@ -61,16 +61,13 @@ ACTIVITY_EVENT_TYPES = {
     }),
     "sales": frozenset({
         "counter_sale.created", "counter_sale.updated",
-        "counter_sale.awaiting_payment", "counter_sale.payment_succeeded",
-        "counter_sale.payment_failed", "counter_sale.completed",
-        "counter_sale.cancelled", "counter_sale.return_requested",
-        "counter_sale.refund_succeeded", "counter_sale.refund_failed",
-        "counter_sale.return_completed", "counter_sale.late_success_refunded",
+        "counter_sale.completed", "counter_sale.cancelled",
+        "counter_sale.return_completed",
     }),
 }
 ORIGINS = frozenset({"live", "baseline", "backfill_snapshot"})
 PAYMENT_SAFE_FIELDS = frozenset({
-    "tender", "state", "provider_object_id", "brand", "last_four", "failure_code",
+    "tender", "state", "external_reference",
 })
 STOCK_FIELDS = frozenset({
     "physical_on_hand", "held_for_checkout", "available_to_sell", "delta",
@@ -218,11 +215,8 @@ def safe_payment_snapshot(snapshot: dict[str, Any] | None) -> dict[str, Any] | N
     if set(snapshot) - PAYMENT_SAFE_FIELDS:
         raise ValueError("Undocumented Activity payment snapshot field")
     result = {key: _json_scalar(value) for key, value in snapshot.items()}
-    if result.get("last_four") is not None:
-        last_four = str(result["last_four"])
-        if len(last_four) != 4 or not last_four.isdigit():
-            raise ValueError("Invalid Activity payment last-four")
-        result["last_four"] = last_four
+    if result.get("external_reference") is not None and len(str(result["external_reference"])) > 255:
+        raise ValueError("Activity payment external reference is too long")
     return result
 
 

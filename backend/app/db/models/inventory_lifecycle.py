@@ -9,7 +9,6 @@ from __future__ import annotations
 import uuid
 
 from sqlalchemy import (
-    Boolean,
     CheckConstraint,
     Column,
     DateTime,
@@ -111,7 +110,7 @@ class CounterSale(BaseModel):
             name="fk_counter_sales_tenant_customer",
         ),
         CheckConstraint(
-            "status IN ('draft','awaiting_payment','completed','partially_returned','returned','cancelled')",
+            "status IN ('draft','completed','partially_returned','returned','cancelled')",
             name="ck_counter_sale_status",
         ),
         CheckConstraint("currency = 'USD'", name="ck_counter_sale_currency"),
@@ -128,12 +127,10 @@ class CounterSale(BaseModel):
     buyer_phone_snapshot = Column(String(40), nullable=True)
     currency = Column(String(3), nullable=False, default="USD")
     tax_rate_snapshot = Column(Numeric(7, 4), nullable=False, default=0)
-    service_fee_rate_snapshot = Column(Numeric(7, 4), nullable=False, default=0)
     list_subtotal = Column(Numeric(14, 2), nullable=False, default=0)
     charged_subtotal = Column(Numeric(14, 2), nullable=False, default=0)
     discount_total = Column(Numeric(14, 2), nullable=False, default=0)
     tax_total = Column(Numeric(14, 2), nullable=False, default=0)
-    service_fee_total = Column(Numeric(14, 2), nullable=False, default=0)
     total = Column(Numeric(14, 2), nullable=False, default=0)
     created_by_user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
     updated_by_user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
@@ -141,10 +138,7 @@ class CounterSale(BaseModel):
     cancelled_by_user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
     completed_at = Column(DateTime(timezone=True), nullable=True, index=True)
     cancelled_at = Column(DateTime(timezone=True), nullable=True)
-    accounting_sync_status = Column(String(32), nullable=False, default="not_queued")
-    accounting_sales_receipt_id = Column(String(128), nullable=True)
     receipt_snapshot = Column(JSON, nullable=True)
-    receipt_email_to = Column(String(255), nullable=True)
 
 
 class CounterSaleLine(BaseModel):
@@ -181,47 +175,11 @@ class CounterSaleLine(BaseModel):
     discount_total = Column(Numeric(14, 2), nullable=False, default=0)
     item_subtotal = Column(Numeric(14, 2), nullable=False)
     tax_allocation = Column(Numeric(14, 2), nullable=False, default=0)
-    fee_allocation = Column(Numeric(14, 2), nullable=False, default=0)
     total = Column(Numeric(14, 2), nullable=False)
     cost_total = Column(Numeric(14, 2), nullable=False)
     price_override_reason = Column(Text, nullable=True)
     price_override_actor_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
     unit_allocations = Column(JSON, nullable=False, default=list)
-
-
-class CounterSaleReservation(BaseModel):
-    __tablename__ = "counter_sale_reservations"
-    __table_args__ = (
-        UniqueConstraint("tenant_id", "sale_line_id", name="uq_counter_sale_reservation_line"),
-        ForeignKeyConstraint(
-            ["tenant_id", "sale_id"], ["counter_sales.tenant_id", "counter_sales.id"],
-            name="fk_counter_sale_reservations_tenant_sale",
-        ),
-        ForeignKeyConstraint(
-            ["tenant_id", "sale_id", "sale_line_id"],
-            ["counter_sale_lines.tenant_id", "counter_sale_lines.sale_id", "counter_sale_lines.id"],
-            name="fk_counter_sale_reservations_tenant_sale_line",
-        ),
-        ForeignKeyConstraint(
-            ["tenant_id", "inventory_id"], ["inventory.tenant_id", "inventory.id"],
-            name="fk_counter_sale_reservations_tenant_inventory",
-        ),
-        CheckConstraint("quantity > 0", name="ck_counter_sale_reservation_quantity"),
-        CheckConstraint("state IN ('held','consumed','released','expired')", name="ck_counter_sale_reservation_state"),
-    )
-
-    tenant_id = Column(UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=False, index=True)
-    sale_id = Column(UUID(as_uuid=True), ForeignKey("counter_sales.id"), nullable=False, index=True)
-    sale_line_id = Column(UUID(as_uuid=True), ForeignKey("counter_sale_lines.id"), nullable=False, index=True)
-    inventory_id = Column(UUID(as_uuid=True), ForeignKey("inventory.id"), nullable=False, index=True)
-    quantity = Column(Integer, nullable=False)
-    state = Column(String(16), nullable=False, default="held", index=True)
-    expires_at = Column(DateTime(timezone=True), nullable=False, index=True)
-    held_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
-    released_at = Column(DateTime(timezone=True), nullable=True)
-    consumed_at = Column(DateTime(timezone=True), nullable=True)
-    release_reason = Column(String(100), nullable=True)
-    version = Column(Integer, nullable=False, default=1)
 
 
 class CounterSalePaymentAttempt(BaseModel):
@@ -233,49 +191,20 @@ class CounterSalePaymentAttempt(BaseModel):
             ["tenant_id", "sale_id"], ["counter_sales.tenant_id", "counter_sales.id"],
             name="fk_counter_sale_attempts_tenant_sale",
         ),
-        CheckConstraint(
-            "state IN ('created','pending','succeeded','failed','cancelled','compensating_refund_pending','compensated')",
-            name="ck_counter_sale_attempt_state",
-        ),
+        CheckConstraint("state = 'succeeded'", name="ck_counter_sale_attempt_state"),
         CheckConstraint("amount > 0", name="ck_counter_sale_attempt_amount"),
     )
 
     tenant_id = Column(UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=False, index=True)
     sale_id = Column(UUID(as_uuid=True), ForeignKey("counter_sales.id"), nullable=False, index=True)
     tender = Column(String(32), nullable=False)
-    state = Column(String(40), nullable=False, default="created", index=True)
+    state = Column(String(40), nullable=False, default="succeeded", index=True)
     amount = Column(Numeric(14, 2), nullable=False)
     currency = Column(String(3), nullable=False, default="USD")
     request_fingerprint = Column(String(64), nullable=False)
     idempotency_key = Column(String(128), nullable=False)
-    provider_intent_id = Column(String(255), nullable=True, index=True)
-    provider_charge_id = Column(String(255), nullable=True, index=True)
-    provider_reference = Column(String(255), nullable=True)
-    provider_request_id = Column(String(255), nullable=True)
-    provider_status = Column(String(80), nullable=True)
-    safe_failure_code = Column(String(100), nullable=True)
-    attempt_number = Column(Integer, nullable=False, default=1)
-    reconciled_at = Column(DateTime(timezone=True), nullable=True)
+    external_reference = Column(String(255), nullable=True)
     actor_user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
-
-
-class CounterSaleProviderEvent(Base):
-    __tablename__ = "counter_sale_provider_events"
-    __table_args__ = (
-        UniqueConstraint("provider", "external_event_id", name="uq_counter_sale_provider_event"),
-        CheckConstraint("processing_state IN ('received','processed','failed')", name="ck_counter_sale_provider_event_state"),
-    )
-
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    tenant_id = Column(UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=False, index=True)
-    provider = Column(String(32), nullable=False)
-    external_event_id = Column(String(255), nullable=False)
-    event_type = Column(String(120), nullable=False)
-    safe_payload_hash = Column(String(64), nullable=False)
-    received_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
-    processed_at = Column(DateTime(timezone=True), nullable=True)
-    processing_state = Column(String(24), nullable=False, default="received")
-    safe_error_summary = Column(Text, nullable=True)
 
 
 class CounterSaleReturn(BaseModel):
@@ -286,23 +215,22 @@ class CounterSaleReturn(BaseModel):
             ["tenant_id", "sale_id"], ["counter_sales.tenant_id", "counter_sales.id"],
             name="fk_counter_sale_returns_tenant_sale",
         ),
-        CheckConstraint("state IN ('pending_refund','refund_failed','completed')", name="ck_counter_sale_return_state"),
+        CheckConstraint("state = 'completed'", name="ck_counter_sale_return_state"),
         CheckConstraint("version >= 1", name="ck_counter_sale_return_version"),
     )
 
     tenant_id = Column(UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=False, index=True)
     sale_id = Column(UUID(as_uuid=True), ForeignKey("counter_sales.id"), nullable=False, index=True)
     version = Column(Integer, nullable=False, default=1)
-    state = Column(String(24), nullable=False, default="pending_refund", index=True)
+    state = Column(String(24), nullable=False, default="completed", index=True)
     item_amount = Column(Numeric(14, 2), nullable=False)
     tax_amount = Column(Numeric(14, 2), nullable=False)
-    fee_amount = Column(Numeric(14, 2), nullable=False)
     refund_amount = Column(Numeric(14, 2), nullable=False)
     created_by_user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
     reason = Column(Text, nullable=False)
+    refund_reference = Column(String(255), nullable=True)
     correlation_id = Column(UUID(as_uuid=True), nullable=False, default=uuid.uuid4)
     completed_at = Column(DateTime(timezone=True), nullable=True)
-    accounting_refund_receipt_id = Column(String(128), nullable=True)
 
 
 class CounterSaleReturnLine(BaseModel):
@@ -329,38 +257,5 @@ class CounterSaleReturnLine(BaseModel):
     item_amount = Column(Numeric(14, 2), nullable=False)
     discount_amount = Column(Numeric(14, 2), nullable=False)
     tax_amount = Column(Numeric(14, 2), nullable=False)
-    fee_amount = Column(Numeric(14, 2), nullable=False)
     cost_amount = Column(Numeric(14, 2), nullable=False)
     unit_ordinals = Column(JSON, nullable=False, default=list)
-
-
-class CounterSaleRefund(BaseModel):
-    __tablename__ = "counter_sale_refunds"
-    __table_args__ = (
-        UniqueConstraint("tenant_id", "idempotency_key", name="uq_counter_sale_refund_idempotency"),
-        ForeignKeyConstraint(
-            ["tenant_id", "return_id"],
-            ["counter_sale_returns.tenant_id", "counter_sale_returns.id"],
-            name="fk_counter_sale_refunds_tenant_return",
-        ),
-        ForeignKeyConstraint(
-            ["tenant_id", "payment_attempt_id"],
-            ["counter_sale_payment_attempts.tenant_id", "counter_sale_payment_attempts.id"],
-            name="fk_counter_sale_refunds_tenant_attempt",
-        ),
-        CheckConstraint("state IN ('pending','succeeded','failed')", name="ck_counter_sale_refund_state"),
-        CheckConstraint("amount > 0", name="ck_counter_sale_refund_amount"),
-    )
-
-    tenant_id = Column(UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=False, index=True)
-    return_id = Column(UUID(as_uuid=True), ForeignKey("counter_sale_returns.id"), nullable=False, index=True)
-    payment_attempt_id = Column(UUID(as_uuid=True), ForeignKey("counter_sale_payment_attempts.id"), nullable=False)
-    tender = Column(String(32), nullable=False)
-    state = Column(String(16), nullable=False, default="pending")
-    amount = Column(Numeric(14, 2), nullable=False)
-    provider_refund_id = Column(String(255), nullable=True)
-    provider_reference = Column(String(255), nullable=True)
-    idempotency_key = Column(String(128), nullable=False)
-    request_fingerprint = Column(String(64), nullable=False)
-    attempt_count = Column(Integer, nullable=False, default=1)
-    safe_failure_code = Column(String(100), nullable=True)

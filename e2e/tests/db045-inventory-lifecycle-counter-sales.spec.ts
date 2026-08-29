@@ -17,10 +17,10 @@ const part = {
   image_url: null,
   unit_type: 'each',
   location: 'A-12',
-  available_packages: 15,
+  available_packages: 17,
   physical_on_hand_packages: 17,
-  held_for_checkout_packages: 2,
-  available_to_sell_packages: 15,
+  held_for_checkout_packages: 0,
+  available_to_sell_packages: 17,
   needed_for_open_repairs: 1,
   reorder_level: 4,
   incoming_packages: 3,
@@ -48,10 +48,10 @@ const activityEvent = {
   part: { id: part.id, sku: part.sku, name: part.name },
   actor: { id: garageOwnerSession.id, name: 'Alex Rivera' },
   reason: { code: 'counter_sale', note: 'Walk-in sale' },
-  before: { available_to_sell: 16 },
-  after: { available_to_sell: 15 },
-  stock: { physical_on_hand: 17, held_for_checkout: 2, available_to_sell: 15, delta: -1, balance_after: 17, wac: '8.75' },
-  money: { list_price: '22.00', charged_price: '22.00', tax: '1.65', fee: '0.00' },
+  before: { physical_on_hand: 18 },
+  after: { physical_on_hand: 17 },
+  stock: { physical_on_hand: 17, held_for_checkout: 0, available_to_sell: 17, delta: -1, balance_after: 17, wac: '8.75' },
+  money: { list_price: '22.00', charged_price: '22.00', tax: '1.65' },
   payment: { tender: 'cash', status: 'succeeded' },
   source: { type: 'counter_sale', id: 'sale-db045', number: 'CS-0045', href: '/dashboard/garage/inventory/sales?sale=sale-db045' },
 }
@@ -80,23 +80,22 @@ const saleLine = {
   discount_amount: '0.00',
   item_subtotal: '22.00',
   tax_amount: '1.65',
-  fee_amount: '0.00',
   total_amount: '23.65',
   price_override_reason: null,
   physical_on_hand: 17,
-  held_for_checkout: 1,
-  available_to_sell: 15,
+  held_for_checkout: 0,
+  available_to_sell: 17,
 }
 
-type SaleState = 'draft' | 'awaiting_payment' | 'completed' | 'partially_returned'
+type SaleState = 'draft' | 'completed' | 'partially_returned'
 
-function saleFixture(status: SaleState, overrides: Record<string, unknown> = {}) {
-  const completed = status === 'completed' || status === 'partially_returned'
+function saleFixture(status: SaleState) {
+  const completed = status !== 'draft'
   return {
     id: 'sale-db045',
     sale_number: 'CS-0045',
     status,
-    version: status === 'draft' ? 1 : status === 'awaiting_payment' ? 2 : status === 'completed' ? 3 : 4,
+    version: status === 'draft' ? 1 : status === 'completed' ? 2 : 3,
     customer_id: null,
     buyer_name: 'Walk-in buyer',
     buyer_email: 'buyer@example.test',
@@ -106,25 +105,32 @@ function saleFixture(status: SaleState, overrides: Record<string, unknown> = {})
     charged_subtotal: '22.00',
     discount_amount: '0.00',
     tax_amount: '1.65',
-    service_fee_amount: '0.00',
     total_amount: '23.65',
     lines: [{ ...saleLine, ...(status === 'partially_returned' ? { returned_quantity: 1, remaining_returnable_quantity: 0 } : {}) }],
-    payment_attempts: status === 'draft' ? [] : [{ id: 'attempt-db045', tender: 'cash', state: status === 'awaiting_payment' ? 'pending' : 'succeeded', amount: '23.65', created_at: '2026-08-27T14:14:00Z' }],
-    returns: status === 'partially_returned' ? [{ id: 'return-db045', sale_id: 'sale-db045', version: 1, state: 'completed', refund_amount: '23.65', lines: [{ id: 'return-line-db045', sale_line_id: saleLine.id, quantity: 1, reason: 'Damaged package', disposition: 'damaged', refund_amount: '23.65' }], created_at: '2026-08-27T14:20:00Z', completed_at: '2026-08-27T14:21:00Z' }] : [],
+    payment_attempts: status === 'draft' ? [] : [{ id: 'attempt-db045', tender: 'external_terminal', state: 'succeeded', amount: '23.65', reference: 'TERM-45', created_at: '2026-08-27T14:14:00Z' }],
+    returns: status === 'partially_returned' ? [{
+      id: 'return-db045',
+      sale_id: 'sale-db045',
+      version: 1,
+      state: 'completed',
+      item_amount: '22.00',
+      tax_amount: '1.65',
+      refund_amount: '23.65',
+      reason: null,
+      refund_reference: 'REV-45',
+      lines: [{ id: 'return-line-db045', sale_line_id: saleLine.id, quantity: 1, reason: 'Damaged package', disposition: 'damaged', item_amount: '22.00', tax_amount: '1.65' }],
+      created_at: '2026-08-27T14:20:00Z',
+      completed_at: '2026-08-27T14:21:00Z',
+    }] : [],
     allowed_actions: status === 'draft'
       ? ['edit_draft', 'checkout', 'cancel']
-      : status === 'awaiting_payment'
-        ? ['reconcile_payment']
-        : status === 'completed'
-          ? ['download_receipt', 'email_receipt', 'create_return']
-          : ['download_receipt', 'email_receipt'],
+      : status === 'completed'
+        ? ['download_receipt', 'create_return']
+        : ['download_receipt'],
     created_at: '2026-08-27T14:10:00Z',
     updated_at: '2026-08-27T14:15:00Z',
     completed_at: completed ? '2026-08-27T14:15:00Z' : null,
     cancelled_at: null,
-    accounting_sync_status: completed ? 'queued' : null,
-    receipt_email_status: null,
-    ...overrides,
   }
 }
 
@@ -161,7 +167,6 @@ async function installFixture(page: Page, appearance: AppearancePreferences) {
 
   await page.route('https://fonts.googleapis.com/**', (route) => route.fulfill({ status: 200, contentType: 'text/css', body: '' }))
   await page.route('https://fonts.gstatic.com/**', (route) => route.fulfill({ status: 204, body: '' }))
-  await page.route('https://payments.api.intuit.com/**', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ value: 'opaque-db045-token' }) }))
   await page.route('**/api/v1/**', async (route) => {
     const url = new URL(route.request().url())
     const method = route.request().method()
@@ -175,14 +180,7 @@ async function installFixture(page: Page, appearance: AppearancePreferences) {
       needs_reorder_count: 0,
       low_stock_count: 0,
       open_purchase_order_count: 0,
-      capabilities: {
-        counter_sales: true,
-        counter_sale_tenders: ['cash', 'check', 'ach', 'zelle', 'external_terminal', 'fleet_reference', 'other', 'stripe', 'quickbooks_payments'],
-        counter_sale_providers: {
-          stripe: { available: true, stripe_account_id: 'acct_db045' },
-          quickbooks_payments: { available: true, token_url: 'https://payments.api.intuit.com/db045/tokens' },
-        },
-      },
+      capabilities: { counter_sales: true, counter_sale_tenders: ['cash', 'check', 'ach', 'zelle', 'external_terminal', 'fleet_reference', 'other'] },
     })
     if (url.pathname.endsWith('/parts-operations/parts') && method === 'GET') return json({ items: [part], total: 1, skip: 0, limit: Number(url.searchParams.get('limit') || 50), has_more: false })
     if (url.pathname.endsWith(`/parts-operations/parts/${part.id}`) && method === 'GET') return json(part)
@@ -191,28 +189,20 @@ async function installFixture(page: Page, appearance: AppearancePreferences) {
     if (url.pathname.endsWith('/parts-operations/activity-events/export.csv')) return route.fulfill({ status: 200, contentType: 'text/csv', body: 'event_type,sku\ncounter_sale.completed,DB045-FLTR-001\n' })
     if (url.pathname.endsWith('/parts-operations/activity-events')) return json({ items: [activityEvent], next_cursor: null })
     if (url.pathname.endsWith('/customers/typeahead')) return json([])
-    if (url.pathname.endsWith('/parts-operations/counter-sales') && method === 'GET') return json({ items: [{ id: sale.id, sale_number: sale.sale_number, status: sale.status, buyer_name: sale.buyer_name, buyer_email: sale.buyer_email, total_amount: sale.total_amount, created_at: sale.created_at, completed_at: sale.completed_at, line_count: sale.lines.length, tender: sale.payment_attempts.at(-1)?.tender || null }], next_cursor: null })
+    if (url.pathname.endsWith('/parts-operations/counter-sales') && method === 'GET') return json({ items: [{ id: sale.id, sale_number: sale.sale_number, status: sale.status, buyer_name: sale.buyer_name, buyer_email: sale.buyer_email, total_amount: sale.total_amount, created_at: sale.created_at, completed_at: sale.completed_at, line_count: sale.lines.length, tender: sale.payment_attempts[0]?.tender || null }], next_cursor: null })
     if (url.pathname.endsWith('/parts-operations/counter-sales') && method === 'POST') { sale = saleFixture('draft'); return json(sale) }
     if (url.pathname.endsWith(`/parts-operations/counter-sales/${sale.id}`) && method === 'GET') return json(sale)
     if (url.pathname.endsWith(`/parts-operations/counter-sales/${sale.id}`) && method === 'PATCH') { sale = { ...sale, version: sale.version + 1 }; return json(sale) }
-    if (url.pathname.endsWith(`/parts-operations/counter-sales/${sale.id}/checkout`) && method === 'POST') {
-      sale = saleFixture('completed')
-      return json({ sale, payment: { attempt_id: 'attempt-db045', tender: 'cash', state: 'succeeded', client_secret: null, stripe_account_id: null, reconcile_url: `/api/v1/parts-operations/counter-sales/${sale.id}/payment-attempts/attempt-db045/reconcile` } })
-    }
-    if (url.pathname.endsWith(`/parts-operations/counter-sales/${sale.id}/payment-attempts/attempt-db045/reconcile`) && method === 'POST') { sale = saleFixture('completed'); return json(sale) }
-    if (url.pathname.endsWith(`/parts-operations/counter-sales/${sale.id}/receipt/email`) && method === 'POST') return json({ queued: true })
+    if (url.pathname.endsWith(`/parts-operations/counter-sales/${sale.id}/checkout`) && method === 'POST') { sale = saleFixture('completed'); return json(sale) }
     if (url.pathname.endsWith(`/parts-operations/counter-sales/${sale.id}/receipt.pdf`) && method === 'GET') return route.fulfill({ status: 200, contentType: 'application/pdf', body: '%PDF-1.4 DB045 fixture' })
     if (url.pathname.endsWith(`/parts-operations/counter-sales/${sale.id}/returns`) && method === 'POST') { sale = saleFixture('partially_returned'); return json(sale.returns[0]) }
-    if (url.pathname.endsWith(`/parts-operations/counter-sales/${sale.id}/cancel`) && method === 'POST') return json({ ...sale, status: 'cancelled' })
+    if (url.pathname.endsWith(`/parts-operations/counter-sales/${sale.id}/cancel`) && method === 'POST') { sale = { ...sale, status: 'cancelled', allowed_actions: [] }; return json(sale) }
     if (method === 'GET' && (url.pathname.endsWith('/mechanics') || url.pathname.endsWith('/mechanics/pto-requests/pending') || url.pathname.endsWith('/admin/staff') || url.pathname.endsWith('/services') || url.pathname.endsWith('/services/categories') || url.pathname.endsWith('/inventory'))) return json([])
     failures.push(`unhandled: ${method} ${url.pathname}`)
     return json({ detail: 'Unhandled DB-045 fixture route' }, 500)
   })
 
-  return {
-    failures,
-    setPending: () => { sale = saleFixture('awaiting_payment') },
-  }
+  return { failures }
 }
 
 async function expectContained(page: Page) {
@@ -221,7 +211,7 @@ async function expectContained(page: Page) {
   if (await sales.count()) await expect.poll(() => sales.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true)
 }
 
-test('DB-045 Activity and repair-first counter sale journey stay recoverable, accessible, and contained', async ({ browser }) => {
+test('DB-045 Activity and bounded manual counter sale journey stay accessible and contained', async ({ browser }) => {
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 } })
   const page = await context.newPage()
   const fixture = await installFixture(page, appearanceDefaults)
@@ -233,41 +223,34 @@ test('DB-045 Activity and repair-first counter sale journey stay recoverable, ac
   await page.getByRole('button', { name: /^Activity$/ }).click()
   await expect(page.getByRole('heading', { name: 'Inventory activity' })).toBeVisible()
   await page.getByRole('combobox', { name: 'Category' }).selectOption('sales')
-  await page.getByPlaceholder('Search part, actor, reason, or source').fill('walk-in')
-  await page.getByRole('button', { name: 'Apply filters' }).click()
-  await expect(page.getByText('counter sale · completed')).toBeVisible()
+  await page.getByPlaceholder('Search parts, people, reasons, or sources').fill('walk-in')
+  await page.getByRole('button', { name: 'Apply', exact: true }).click()
+  await expect(page.getByRole('heading', { name: 'Part sale completed' })).toBeVisible()
   await expect(page.getByRole('link', { name: /CS-0045/ })).toHaveAttribute('href', '/dashboard/garage/inventory/sales?sale=sale-db045')
 
   await page.getByRole('button', { name: /All parts/ }).click()
   const actionTrigger = page.getByRole('button', { name: `More actions for ${part.name}` })
-  await actionTrigger.focus()
-  await page.keyboard.press('Enter')
-  await expect(page.getByRole('menuitem', { name: 'Sell part' })).toBeFocused()
-  await page.keyboard.press('Escape')
-  await expect(actionTrigger).toBeFocused()
   await actionTrigger.click()
   await page.getByRole('menuitem', { name: 'Sell part' }).click()
   await expect(page).toHaveURL(new RegExp(`/dashboard/garage/inventory/sales\\?new=1&part=${part.id}`))
   await expect(page.getByRole('heading', { name: 'New counter sale' })).toBeVisible()
-  await expect(page.getByText('17 physical · 2 held · 15 available to sell')).toBeVisible()
+  await expect(page.getByText('17 on hand')).toBeVisible()
   await page.getByLabel('Buyer name').fill('Walk-in buyer')
-  await page.getByLabel('Email').fill('buyer@example.test')
   await page.getByRole('button', { name: /Review checkout/ }).click()
 
   await expect(page.getByRole('heading', { name: 'CS-0045' })).toBeVisible()
   const tender = page.getByLabel('Tender')
-  for (const value of ['cash', 'check', 'ach', 'zelle', 'external_terminal', 'fleet_reference', 'other', 'stripe', 'quickbooks_payments']) {
+  for (const value of ['cash', 'check', 'ach', 'zelle', 'external_terminal', 'fleet_reference', 'other']) {
     await tender.selectOption(value)
     await expect(tender).toHaveValue(value)
   }
-  await expect(page.getByText(/Card data goes directly to Intuit/)).toBeVisible()
-  await tender.selectOption('cash')
-  await page.getByLabel('Reference', { exact: true }).fill('Till 2')
-  await page.getByRole('button', { name: /Checkout \$23\.65/ }).click()
+  await expect(tender.locator('option')).toHaveCount(7)
+  await expect(page.getByText(/Stripe|QuickBooks|payment pending|accounting sync/i)).toHaveCount(0)
+  await tender.selectOption('external_terminal')
+  await page.getByRole('textbox', { name: 'Reference', exact: true }).fill('TERM-45')
+  await page.getByRole('button', { name: /Complete sale/ }).click()
   await expect(page.getByRole('heading', { name: 'Receipt and returns' })).toBeVisible()
   await expect(page.getByRole('button', { name: 'Download receipt' })).toBeVisible()
-  await page.getByRole('button', { name: 'Email receipt' }).click()
-  await expect(page.getByRole('status')).toContainText('Receipt email queued')
 
   await page.getByRole('button', { name: 'Return items' }).click()
   await expect(page.getByRole('dialog', { name: /Return items from CS-0045/ })).toBeVisible()
@@ -279,22 +262,15 @@ test('DB-045 Activity and repair-first counter sale journey stay recoverable, ac
   await page.getByRole('button', { name: `Increase Return quantity for ${part.name}` }).click()
   await page.getByLabel('Reason').fill('Damaged package')
   await page.getByRole('radio', { name: 'Damaged', exact: true }).check()
-  await page.getByRole('button', { name: 'Submit return and refund' }).click()
-  await expect(page.getByRole('heading', { name: 'Returns and refunds' })).toBeVisible()
+  await page.getByLabel('Refund or reversal reference').fill('REV-45')
+  await page.getByRole('button', { name: 'Record return' }).click()
+  await expect(page.getByRole('heading', { name: 'Returns' })).toBeVisible()
   await expect(page.getByText('partially returned')).toBeVisible()
-
-  fixture.setPending()
-  await page.goto('/dashboard/garage/inventory/sales?sale=sale-db045')
-  await expect(page.getByRole('heading', { name: 'Payment pending' })).toBeVisible()
-  await expect(page.getByText(/Stock remains held/)).toBeVisible()
-  await page.getByRole('button', { name: /Reconcile payment/ }).click()
-  await expect(page.getByRole('heading', { name: 'Receipt and returns' })).toBeVisible()
   await expectContained(page)
   expect(fixture.failures).toEqual([])
   await context.close()
 })
-
-test('DB-045 Activity and sales surfaces preserve theme and containment at target widths', async ({ browser }) => {
+test('DB-045 Activity and manual sales surfaces preserve theme and containment at target widths', async ({ browser }) => {
   const scenarios: Array<{ width: number; height: number; appearance: AppearancePreferences }> = [
     { width: 1280, height: 820, appearance: appearanceDefaults },
     { width: 960, height: 820, appearance: appearanceLargeLight },

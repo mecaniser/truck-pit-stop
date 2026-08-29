@@ -14,7 +14,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.dependencies import get_current_active_user, get_db
 from app.db.models.inventory import Inventory, PartsUsage
-from app.db.models.inventory_lifecycle import CounterSaleReservation
 from app.db.models.parts_operations import (
     CoreObligation, InventoryCategory, InventoryMovement, InventorySupplierSource, PurchaseOrder,
     PurchaseOrderLine, PurchaseReceipt, PurchaseReceiptLine, VendorReturn,
@@ -485,19 +484,6 @@ async def _part_projection_rows(
                 "expected_at": po.expected_at.isoformat() if po.expected_at else None,
             })
 
-    checkout_holds: dict[UUID, int] = {item_id: 0 for item_id in item_ids}
-    if item_ids:
-        hold_rows = (await db.execute(select(
-            CounterSaleReservation.inventory_id,
-            func.coalesce(func.sum(CounterSaleReservation.quantity), 0),
-        ).where(
-            CounterSaleReservation.tenant_id == tenant_id,
-            CounterSaleReservation.inventory_id.in_(item_ids),
-            CounterSaleReservation.state == "held",
-            CounterSaleReservation.deleted_at.is_(None),
-        ).group_by(CounterSaleReservation.inventory_id))).all()
-        checkout_holds.update({inventory_id: int(quantity) for inventory_id, quantity in hold_rows})
-
     values: list[dict] = []
     for item in items:
         source_rows_for_item = sources_by_item[item.id]
@@ -505,7 +491,7 @@ async def _part_projection_rows(
         if preferred is None and item.preferred_supplier_id:
             preferred = next((source for source in source_rows_for_item if source.supplier_id == item.preferred_supplier_id and source.is_active), None)
         available = int(item.stock_quantity or 0)
-        held_for_checkout = checkout_holds[item.id]
+        held_for_checkout = 0
         needed = shortage_totals[item.id]
         reorder = int(item.reorder_level or 0)
         incoming = incoming_totals[item.id] + int(item.on_order_quantity or 0)

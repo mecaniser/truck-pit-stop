@@ -92,7 +92,6 @@ from app.db.models.stripe_oauth import StripeOAuthState
 from app.db.models.google_review import GoogleBusinessConnection, GoogleBusinessOAuthState, GoogleReviewSettings, GoogleReview, GoogleReviewAuditEvent
 from app.db.models.inventory_lifecycle import (
     CounterSale, CounterSaleLine, CounterSalePaymentAttempt,
-    CounterSaleProviderEvent, CounterSaleRefund, CounterSaleReservation,
     CounterSaleReturn, CounterSaleReturnLine, PartActivityBackfillRun,
     PartActivityEvent,
 )
@@ -195,7 +194,6 @@ __all__ = [
     "VendorReturn", "VendorReturnLine",
     "GoogleBusinessConnection", "GoogleBusinessOAuthState", "GoogleReviewSettings", "GoogleReview", "GoogleReviewAuditEvent",
     "PartActivityEvent", "PartActivityBackfillRun", "CounterSale",
-    "CounterSaleLine", "CounterSaleReservation", "CounterSalePaymentAttempt",
-    "CounterSaleProviderEvent", "CounterSaleReturn", "CounterSaleReturnLine",
-    "CounterSaleRefund",
+    "CounterSaleLine", "CounterSalePaymentAttempt",
+    "CounterSaleReturn", "CounterSaleReturnLine",
 ]

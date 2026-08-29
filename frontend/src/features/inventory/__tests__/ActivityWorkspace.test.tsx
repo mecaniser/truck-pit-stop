@@ -46,15 +46,19 @@ describe('DB-045 inventory Activity workspace', () => {
     const user = userEvent.setup()
     renderUi(<ActivityWorkspace />)
 
-    expect(await screen.findByText('stock · adjusted')).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'Stock adjusted' })).toBeInTheDocument()
+    expect(screen.getByText('On hand')).toBeInTheDocument()
+    expect(screen.getAllByText('4')).toHaveLength(2)
+    expect(screen.getByText('6')).toBeInTheDocument()
     expect(screen.getByRole('link', { name: /MOV-100/ })).toHaveAttribute('href', '/dashboard/garage/inventory?activity=movement-1')
     await user.type(screen.getByRole('searchbox', { name: 'Search Activity' }), 'filter')
     await user.selectOptions(screen.getByLabelText('Category'), 'stock')
-    await user.type(screen.getByLabelText('Event type'), 'stock.adjusted, stock.reserved')
-    await user.type(screen.getByLabelText('Actor ID'), 'user-1')
-    await user.type(screen.getByLabelText('Source type'), 'inventory_movement')
-    await user.type(screen.getByLabelText('Source ID'), 'movement-1')
-    await user.click(screen.getByRole('button', { name: 'Apply filters' }))
+    await user.click(screen.getByText('Advanced'))
+    await user.type(screen.getByRole('textbox', { name: 'Event types' }), 'stock.adjusted, stock.reserved')
+    await user.type(screen.getByLabelText('Actor reference'), 'user-1')
+    await user.selectOptions(screen.getByLabelText('Source'), 'inventory_movement')
+    await user.type(screen.getByLabelText('Source reference'), 'movement-1')
+    await user.click(screen.getByRole('button', { name: 'Apply' }))
 
     await waitFor(() => expect(apiMocks.get).toHaveBeenCalledWith('/parts-operations/activity-events', {
       params: {
@@ -72,7 +76,8 @@ describe('DB-045 inventory Activity workspace', () => {
       params: expect.objectContaining({ cursor: 'cursor-2', limit: 50 }),
     }))
     await user.click(screen.getByRole('button', { name: /Previous/ }))
-    expect(screen.getByText(/6 physical · 2 held · 4 available/)).toBeInTheDocument()
+    expect(screen.getByText('Held')).toBeInTheDocument()
+    expect(screen.getByText('Available')).toBeInTheDocument()
   })
 
   it('exports the identical active filters without pagination controls', async () => {
@@ -90,7 +95,7 @@ describe('DB-045 inventory Activity workspace', () => {
     await screen.findByText('No events match these filters.')
     await user.type(screen.getByRole('searchbox', { name: 'Search Activity' }), 'sale')
     await user.selectOptions(screen.getByLabelText('Category'), 'sales')
-    await user.click(screen.getByRole('button', { name: 'Apply filters' }))
+    await user.click(screen.getByRole('button', { name: 'Apply' }))
     await user.click(screen.getByRole('button', { name: 'Export CSV' }))
 
     await waitFor(() => expect(apiMocks.get).toHaveBeenCalledWith('/parts-operations/activity-events/export.csv', {
@@ -100,6 +105,34 @@ describe('DB-045 inventory Activity workspace', () => {
     expect(createObjectUrl).toHaveBeenCalledOnce()
     expect(click).toHaveBeenCalledOnce()
     expect(revokeObjectUrl).toHaveBeenCalledWith('blob:activity')
+  })
+
+  it('presents imported baselines as readable starting records instead of raw event payloads', async () => {
+    apiMocks.get.mockResolvedValue({ data: { items: [{
+      ...event,
+      id: 'baseline-1',
+      category: 'catalog',
+      event_type: 'part.baseline',
+      origin: 'baseline',
+      actor: null,
+      reason: null,
+      before: null,
+      after: { sku: 'AIR-1', name: 'Primary air filter', location: null, stock_quantity: 6, cost: '12.50' },
+      money: { list_price: '19.95' },
+      source: { type: 'inventory', id: 'part-1', number: 'AIR-1', href: null },
+    }], next_cursor: null } })
+    const user = userEvent.setup()
+    renderUi(<ActivityWorkspace />)
+
+    expect(await screen.findByRole('heading', { name: 'Imported starting inventory' })).toBeInTheDocument()
+    expect(screen.getByText('Baseline import')).toBeInTheDocument()
+    expect(screen.getByText('Part name')).toBeInTheDocument()
+    expect(screen.queryByText('part · baseline')).not.toBeInTheDocument()
+    await user.click(screen.getByText('Show 1 more detail'))
+    expect(screen.getByText('Unit cost')).toBeInTheDocument()
+    expect(screen.getByText('$12.50')).toBeInTheDocument()
+    expect(screen.getByText('List price')).toBeInTheDocument()
+    expect(screen.getByText('$19.95')).toBeInTheDocument()
   })
 
   it('renders authoritative part lifecycle aggregates without inventing reconstructed history', async () => {

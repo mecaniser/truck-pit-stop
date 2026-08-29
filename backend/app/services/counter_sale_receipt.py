@@ -22,13 +22,13 @@ def generate_counter_sale_receipt_pdf(*, tenant: Tenant, snapshot: dict[str, Any
     buyer = snapshot.get("buyer") or {}
     if buyer.get("name") or buyer.get("email"):
         story.extend([Paragraph(f"Buyer: {buyer.get('name') or 'Walk-in'} {buyer.get('email') or ''}", styles["Normal"]), Spacer(1, 8)])
-    data = [["Part", "Qty", "Unit", "Tax", "Fee", "Total"]]
+    data = [["Part", "Qty", "Unit", "Tax", "Total"]]
     for line in snapshot.get("lines") or []:
-        data.append([line["name"], str(line["quantity"]), f"${line['unit_price']}", f"${line['tax']}", f"${line['fee']}", f"${line['total']}"])
-    table = Table(data, colWidths=[2.7 * inch, .5 * inch, .8 * inch, .65 * inch, .65 * inch, .8 * inch])
+        data.append([line["name"], str(line["quantity"]), f"${line['unit_price']}", f"${line['tax']}", f"${line['total']}"])
+    table = Table(data, colWidths=[3.25 * inch, .5 * inch, .9 * inch, .75 * inch, .9 * inch])
     table.setStyle(TableStyle([("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#111827")), ("TEXTCOLOR", (0, 0), (-1, 0), colors.white), ("GRID", (0, 0), (-1, -1), .25, colors.HexColor("#CBD5E1")), ("ALIGN", (1, 1), (-1, -1), "RIGHT"), ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"), ("PADDING", (0, 0), (-1, -1), 6)]))
     story.extend([table, Spacer(1, 12)])
-    for label, key in (("Subtotal", "subtotal"), ("Tax", "tax"), ("Service fee", "service_fee"), ("Total", "total")):
+    for label, key in (("Subtotal", "subtotal"), ("Tax", "tax"), ("Total", "total")):
         story.append(Paragraph(f"<b>{label}:</b> ${snapshot.get(key, '0.00')}", styles["Normal"]))
     story.append(Spacer(1, 8))
     story.append(Paragraph(f"Tender: {snapshot.get('tender', '').replace('_', ' ').title()}", styles["Normal"]))

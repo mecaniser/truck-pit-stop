@@ -43,10 +43,8 @@ export type LifecycleSummary = {
   activity: { event_count: number; last_event_at: string | null }
 }
 
-export type CounterSaleStatus = 'draft' | 'awaiting_payment' | 'completed' | 'partially_returned' | 'returned' | 'cancelled'
-export type CounterSaleTender = 'stripe' | 'quickbooks_payments' | 'cash' | 'check' | 'ach' | 'zelle' | 'external_terminal' | 'fleet_reference' | 'other'
-export type CounterSaleAttemptState = 'created' | 'pending' | 'succeeded' | 'failed' | 'cancelled' | 'compensating_refund_pending' | 'compensated'
-export type CounterSaleReturnState = 'pending_refund' | 'refund_failed' | 'completed'
+export type CounterSaleStatus = 'draft' | 'completed' | 'partially_returned' | 'returned' | 'cancelled'
+export type CounterSaleTender = 'cash' | 'check' | 'ach' | 'zelle' | 'external_terminal' | 'fleet_reference' | 'other'
 
 export type CounterSaleLine = {
   id: string
@@ -55,15 +53,14 @@ export type CounterSaleLine = {
   name: string
   unit_type: string | null
   quantity: number
-  returned_quantity?: number
-  remaining_returnable_quantity?: number
+  returned_quantity: number
+  remaining_returnable_quantity: number
   unit_cost: string
   list_unit_price: string
   charged_unit_price: string
   discount_amount: string
   item_subtotal: string
   tax_amount: string
-  fee_amount: string
   total_amount: string
   price_override_reason: string | null
   physical_on_hand: number
@@ -74,13 +71,10 @@ export type CounterSaleLine = {
 export type CounterSaleAttempt = {
   id: string
   tender: CounterSaleTender
-  state: CounterSaleAttemptState
+  state: 'succeeded'
   amount: string
-  failure_code?: string | null
-  safe_status?: string | null
+  reference: string | null
   created_at: string
-  client_secret?: string | null
-  stripe_account_id?: string | null
 }
 
 export type CounterSaleReturnLine = {
@@ -89,16 +83,20 @@ export type CounterSaleReturnLine = {
   quantity: number
   reason: string
   disposition: 'restock' | 'damaged'
-  refund_amount: string
+  item_amount: string
+  tax_amount: string
 }
 
 export type CounterSaleReturn = {
   id: string
   sale_id: string
   version: number
-  state: CounterSaleReturnState
+  state: 'completed'
+  item_amount: string
+  tax_amount: string
   refund_amount: string
-  failure_code?: string | null
+  reason: string | null
+  refund_reference: string | null
   lines: CounterSaleReturnLine[]
   created_at: string
   completed_at: string | null
@@ -118,35 +116,15 @@ export type CounterSale = {
   charged_subtotal: string
   discount_amount: string
   tax_amount: string
-  service_fee_amount: string
   total_amount: string
   lines: CounterSaleLine[]
   payment_attempts: CounterSaleAttempt[]
-  returns?: CounterSaleReturn[]
-  allowed_actions: Array<'edit_draft' | 'checkout' | 'cancel' | 'reconcile_payment' | 'download_receipt' | 'email_receipt' | 'create_return' | 'retry_refund'>
+  returns: CounterSaleReturn[]
+  allowed_actions: Array<'edit_draft' | 'checkout' | 'cancel' | 'download_receipt' | 'create_return'>
   created_at: string
   updated_at: string
   completed_at: string | null
   cancelled_at: string | null
-  accounting_sync_status?: string | null
-  receipt_email_status?: string | null
-}
-
-export type CounterSaleProviderCapabilities = {
-  stripe: { available: boolean; stripe_account_id: string | null }
-  quickbooks_payments: { available: boolean; token_url: string | null }
-}
-
-export type CounterSaleCheckoutResponse = {
-  sale: CounterSale
-  payment: {
-    attempt_id: string
-    tender: CounterSaleTender
-    state: CounterSaleAttemptState
-    client_secret: string | null
-    stripe_account_id: string | null
-    reconcile_url: string
-  }
 }
 
 export type CounterSaleListItem = Pick<CounterSale, 'id' | 'sale_number' | 'status' | 'buyer_name' | 'buyer_email' | 'total_amount' | 'created_at' | 'completed_at'> & {
@@ -162,8 +140,6 @@ export type CounterSaleDraftLine = {
 }
 
 export const COUNTER_SALE_TENDER_LABELS: Record<CounterSaleTender, string> = {
-  stripe: 'Stripe card',
-  quickbooks_payments: 'QuickBooks Payments',
   cash: 'Cash',
   check: 'Check',
   ach: 'ACH',
@@ -173,4 +149,4 @@ export const COUNTER_SALE_TENDER_LABELS: Record<CounterSaleTender, string> = {
   other: 'Other',
 }
 
-export const MANUAL_TENDERS: CounterSaleTender[] = ['cash', 'check', 'ach', 'zelle', 'external_terminal', 'fleet_reference', 'other']
+export const MANUAL_TENDERS = Object.keys(COUNTER_SALE_TENDER_LABELS) as CounterSaleTender[]
