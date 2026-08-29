@@ -3445,9 +3445,13 @@ html::-webkit-scrollbar-thumb:hover {
 .db-repair-order-detail-new .slide-panel-header { min-height: 70px; border-color: #c8d2dd !important; background: #fff; }
 .db-repair-order-detail-new .slide-panel-content { background: #f4f7fa; }
 .db-repair-order-detail-new .slide-panel-footer { border-color: #c8d2dd !important; background: #fff !important; }
-.db-slide-panel-workspace.db-repair-order-detail-new--price-builder { background: transparent; }
+.db-slide-panel-workspace.db-repair-order-detail-new--price-builder {
+  --db-repair-order-content-clip-radius: 15px;
+  background: transparent;
+}
 .db-repair-order-detail-new--price-builder > .slide-panel-content {
-  border-radius: inherit;
+  border-radius: var(--db-repair-order-content-clip-radius);
+  clip-path: inset(0 round var(--db-repair-order-content-clip-radius));
   background: transparent;
 }
 .db-repair-order-detail-new__body { color: #17283f; }
@@ -3502,6 +3506,7 @@ html::-webkit-scrollbar-thumb:hover {
   .db-repair-orders-ledger > footer button { justify-content: center; }
   .db-repair-order-detail-new { max-width: 100% !important; }
   .db-slide-panel-workspace { border-radius: 12px; }
+  .db-slide-panel-workspace.db-repair-order-detail-new--price-builder { --db-repair-order-content-clip-radius: 11px; }
   .db-repair-order-detail-new__body { padding: 14px !important; }
   .db-repair-order-price-shell-new { min-height: 100%; }
 }
