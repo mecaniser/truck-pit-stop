@@ -118,6 +118,11 @@ type InventoryEditorRecord = {
   unit_type: string | null
   location: string | null
   image_url: string | null
+  cost: string
+  selling_price: string
+  core_charge: string
+  supplier_name: string | null
+  supplier_contact: string | null
 }
 
 type PartIdentityForm = {
@@ -127,6 +132,11 @@ type PartIdentityForm = {
   category: string
   location: string
   unitType: string
+  cost: string
+  sellingPrice: string
+  coreCharge: string
+  supplierName: string
+  supplierContact: string
 }
 
 type PartsInfiniteData = {
@@ -187,6 +197,78 @@ export function readPurchasePreparation(): PurchasePreparationLine[] {
 export function writePurchasePreparation(lines: PurchasePreparationLine[]) {
   window.sessionStorage.setItem(purchasePreparationStorageKey(), JSON.stringify(lines))
   window.dispatchEvent(new Event('db038:purchase-preparation'))
+}
+
+// Money arrives from the API as a decimal string; the editor needs a plain
+// two-place value so an untouched field never reads as an edit.
+function money(value: string | number | null | undefined) {
+  const n = Number(value ?? 0)
+  return Number.isFinite(n) ? n.toFixed(2) : '0.00'
+}
+
+// Selling price can be entered as the resolved dollar amount or as a markup on
+// cost. The form always stores the resolved amount, so the save path is
+// unchanged; Markup only changes how you arrive at it. Ported from the previous
+// inventory page, which had this and the new workbench did not.
+function SellingPriceField({ cost, value, disabled, onChange }: {
+  cost: string
+  value: string
+  disabled: boolean
+  onChange: (next: string) => void
+}) {
+  const [mode, setMode] = useState<'price' | 'markup'>('price')
+  const [pct, setPct] = useState('')
+  const costNum = Number(cost)
+  const costValid = Number.isFinite(costNum) && costNum > 0
+
+  const applyPct = (nextPct: string, c: number) => {
+    const p = Number(nextPct)
+    if (!Number.isFinite(p) || !Number.isFinite(c) || c <= 0) return
+    onChange((c * (1 + p / 100)).toFixed(2))
+  }
+
+  // Editing cost while in Markup mode holds the margin and moves the price.
+  useEffect(() => {
+    if (mode === 'markup') applyPct(pct, Number(cost))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cost])
+
+  const switchMode = (next: 'price' | 'markup') => {
+    if (next === mode) return
+    // Seed the markup from the current pair so switching back and forth is lossless.
+    if (next === 'markup') {
+      const selling = Number(value)
+      if (costValid && Number.isFinite(selling)) setPct((((selling - costNum) / costNum) * 100).toFixed(1))
+    }
+    setMode(next)
+  }
+
+  const sellingNum = Number(value)
+  const markup = costValid && Number.isFinite(sellingNum) ? ((sellingNum - costNum) / costNum) * 100 : null
+
+  return (
+    <div className="db-parts-workbench__price-field is-wide">
+      <div className="db-parts-workbench__price-head">
+        <span id="selling-price-label">Selling price</span>
+        <div className="db-parts-workbench__price-modes" role="group" aria-label="Selling price entry method">
+          <button type="button" disabled={disabled} aria-pressed={mode === 'price'} onClick={() => switchMode('price')}>Price</button>
+          <button type="button" disabled={disabled} aria-pressed={mode === 'markup'} onClick={() => switchMode('markup')}>Markup</button>
+        </div>
+      </div>
+      {mode === 'price' ? (
+        <span className="db-parts-workbench__price-input"><span aria-hidden="true">$</span>
+          <input inputMode="decimal" disabled={disabled} aria-labelledby="selling-price-label" value={value} onChange={(event) => onChange(event.target.value)} />
+        </span>
+      ) : (
+        <span className="db-parts-workbench__price-input">
+          <input inputMode="decimal" disabled={disabled || !costValid} aria-label="Markup percent" value={pct}
+            onChange={(event) => { setPct(event.target.value); applyPct(event.target.value, costNum) }} />
+          <span aria-hidden="true">%</span>
+        </span>
+      )}
+      <small>{!costValid ? 'Set a cost first to work in markup' : markup == null ? 'Enter a price' : `$${money(value)} per unit · ${markup.toFixed(1)}% markup`}</small>
+    </div>
+  )
 }
 
 function canManage(role: string | undefined) {
@@ -731,13 +813,14 @@ type AddPartForm = {
   reorderLevel: string
   cost: string
   sellingPrice: string
+  coreCharge: string
   unitType: string
   supplierName: string
   supplierContact: string
 }
 
 const EMPTY_ADD_PART: AddPartForm = {
-  name: '', sku: '', description: '', category: '', location: '', stockQuantity: '0', reorderLevel: '0', cost: '0.00', sellingPrice: '0.00', unitType: 'each', supplierName: '', supplierContact: '',
+  name: '', sku: '', description: '', category: '', location: '', stockQuantity: '0', reorderLevel: '0', cost: '0.00', sellingPrice: '0.00', coreCharge: '0.00', unitType: 'each', supplierName: '', supplierContact: '',
 }
 
 function AddPartDrawer({ isOpen, onClose, onCreated }: { isOpen: boolean; onClose: () => void; onCreated: (partName: string) => Promise<void> }) {
@@ -773,6 +856,7 @@ function AddPartDrawer({ isOpen, onClose, onCreated }: { isOpen: boolean; onClos
         reorder_level: Number(form.reorderLevel),
         cost,
         selling_price: sellingPrice,
+        core_charge: Number(form.coreCharge) || 0,
         unit_type: form.unitType.trim() || 'each',
         supplier_name: form.supplierName.trim() || undefined,
         supplier_contact: form.supplierContact.trim() || undefined,
@@ -809,7 +893,8 @@ function AddPartDrawer({ isOpen, onClose, onCreated }: { isOpen: boolean; onClos
         <legend>Pricing</legend>
         <div className="db-parts-workbench__add-fields">
           <label>Cost per unit<span className="db-parts-workbench__add-money-stepper"><span aria-hidden="true">$</span><QuantityStepper disabled={saving} value={Number(form.cost) || 0} min={0} step={0.01} unitLabel="" ariaLabel="Cost per unit" align="start" size="lg" className="db-parts-workbench__add-stepper" onChange={(next) => update('cost', String(next))} /></span></label>
-          <label>Selling price<span className="db-parts-workbench__add-money-stepper"><span aria-hidden="true">$</span><QuantityStepper disabled={saving} value={Number(form.sellingPrice) || 0} min={0} step={0.01} unitLabel="" ariaLabel="Selling price" align="start" size="lg" className="db-parts-workbench__add-stepper" onChange={(next) => update('sellingPrice', String(next))} /></span></label>
+          <label>Core charge<span className="db-parts-workbench__add-money-stepper"><span aria-hidden="true">$</span><QuantityStepper disabled={saving} value={Number(form.coreCharge) || 0} min={0} step={0.01} unitLabel="" ariaLabel="Core charge" align="start" size="lg" className="db-parts-workbench__add-stepper" onChange={(next) => update('coreCharge', String(next))} /></span></label>
+          <SellingPriceField cost={form.cost} value={form.sellingPrice} disabled={saving} onChange={(next) => update('sellingPrice', next)} />
         </div>
       </fieldset>
       <fieldset>
@@ -875,6 +960,11 @@ function PartInspector({ part, loading, failed, manage, prepared, logoUrl, compa
       category: record.category || '',
       location: record.location || '',
       unitType: record.unit_type || 'each',
+      cost: money(record.cost),
+      sellingPrice: money(record.selling_price),
+      coreCharge: money(record.core_charge),
+      supplierName: record.supplier_name || '',
+      supplierContact: record.supplier_contact || '',
     })
   }, [identityOpen, identityOriginal?.id, identityQuery.data])
   useEffect(() => {
@@ -922,6 +1012,18 @@ function PartInspector({ part, loading, failed, manage, prepared, logoUrl, compa
     if (category !== (identityOriginal.category || '')) patch.category = category || null
     if (location !== (identityOriginal.location || '')) patch.location = location || null
     if (unitType !== (identityOriginal.unit_type || '')) patch.unit_type = unitType || 'each'
+    const supplierName = identityForm.supplierName.trim()
+    const supplierContact = identityForm.supplierContact.trim()
+    if (supplierName !== (identityOriginal.supplier_name || '')) patch.supplier_name = supplierName
+    if (supplierContact !== (identityOriginal.supplier_contact || '')) patch.supplier_contact = supplierContact
+    const moneyChanged = (next: string, before: string | number) => {
+      const a = Number(next)
+      if (!Number.isFinite(a) || a < 0) return false
+      return a.toFixed(2) !== Number(before || 0).toFixed(2)
+    }
+    if (moneyChanged(identityForm.cost, identityOriginal.cost)) patch.cost = Number(identityForm.cost).toFixed(2)
+    if (moneyChanged(identityForm.sellingPrice, identityOriginal.selling_price)) patch.selling_price = Number(identityForm.sellingPrice).toFixed(2)
+    if (moneyChanged(identityForm.coreCharge, identityOriginal.core_charge)) patch.core_charge = Number(identityForm.coreCharge).toFixed(2)
     return patch
   }, [identityForm, identityOriginal])
   const identityDirty = Object.keys(identityPatch).length > 0
@@ -1142,6 +1244,21 @@ function PartInspector({ part, loading, failed, manage, prepared, logoUrl, compa
               <label>Unit label<input maxLength={20} disabled={identitySaving || photoSaving} value={identityForm.unitType} onChange={(event) => updateIdentity('unitType', event.target.value)} placeholder="each" /></label>
               <label className="is-wide">Description<textarea maxLength={5000} disabled={identitySaving || photoSaving} rows={3} value={identityForm.description} onChange={(event) => updateIdentity('description', event.target.value)} placeholder="Catalog details or identifying notes" /></label>
             </div>
+            <fieldset className="db-parts-workbench__identity-group">
+              <legend>Pricing</legend>
+              <div className="db-parts-workbench__identity-fields">
+                <label>Cost per unit<span className="db-parts-workbench__price-input"><span aria-hidden="true">$</span><input inputMode="decimal" disabled={identitySaving || photoSaving} value={identityForm.cost} onChange={(event) => updateIdentity('cost', event.target.value)} /></span></label>
+                <label>Core charge<span className="db-parts-workbench__price-input"><span aria-hidden="true">$</span><input inputMode="decimal" disabled={identitySaving || photoSaving} value={identityForm.coreCharge} onChange={(event) => updateIdentity('coreCharge', event.target.value)} /></span></label>
+                <SellingPriceField cost={identityForm.cost} value={identityForm.sellingPrice} disabled={identitySaving || photoSaving} onChange={(next) => updateIdentity('sellingPrice', next)} />
+              </div>
+            </fieldset>
+            <fieldset className="db-parts-workbench__identity-group">
+              <legend>Supplier</legend>
+              <div className="db-parts-workbench__identity-fields">
+                <label>Supplier name<input maxLength={255} disabled={identitySaving || photoSaving} value={identityForm.supplierName} onChange={(event) => updateIdentity('supplierName', event.target.value)} /></label>
+                <label>Supplier contact<input maxLength={255} disabled={identitySaving || photoSaving} value={identityForm.supplierContact} onChange={(event) => updateIdentity('supplierContact', event.target.value)} /></label>
+              </div>
+            </fieldset>
             {identityError && <p className="db-parts-workbench__identity-error" role="alert">{identityError}</p>}
             <div className="db-parts-workbench__identity-actions"><button type="submit" disabled={identitySaving || photoSaving || !identityDirty}>{identitySaving ? 'Saving…' : 'Save details'}</button></div>
           </form>
