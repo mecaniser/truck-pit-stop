@@ -3195,13 +3195,14 @@ export default function CustomersPage() {
       {/* Search Bar */}
       {renderCustomerSearch()}
 
-      <div className="db-customers-workspace__ledger bg-white/5 border border-white/10 rounded-xl overflow-hidden flex flex-col flex-1 min-h-0">
+      <div className="db-customers-workspace__ledger db-operating-surface__frame">
         {/* Header with ViewToggle. Total count lives in the pagination footer. */}
         <div className={`${presentationVariant === 'new' ? 'hidden' : 'hidden lg:flex'} items-center justify-between px-4 py-3 border-b border-white/10 flex-shrink-0`}>
           <ViewToggle value={activeViewMode} onChange={setViewMode} disabled={isMobile} />
         </div>
 
-        <div className="overflow-y-auto flex-1 min-h-0 relative">
+        <div className="db-operating-surface__scroller">
+        <div className="db-operating-surface__card relative">
           {/* Loading overlay for page/search/sort changes (first load uses the
               full skeleton below; this covers subsequent batch fetches). */}
           {isFetching && !isLoading && (
@@ -3519,10 +3520,11 @@ export default function CustomersPage() {
             </div>
           )}
         </div>
+        </div>
 
         {/* Pagination footer (also carries the total count) */}
         {totalCustomers > 0 && (
-          <div className={`db-customers-workspace__pagination flex items-center justify-between px-4 py-3 border-t border-white/10 flex-shrink-0 text-sm text-white/70 ${isPlaceholderData ? 'opacity-60' : ''}`}>
+          <div className={`db-customers-workspace__pagination mt-3 flex items-center justify-between px-1 py-2 flex-shrink-0 text-sm text-white/70 ${isPlaceholderData ? 'opacity-60' : ''}`}>
             <span>
               {page * PAGE_SIZE + 1}–{Math.min((page + 1) * PAGE_SIZE, totalCustomers)} of {totalCustomers} customer{totalCustomers !== 1 ? 's' : ''}
             </span>
@@ -3571,7 +3573,7 @@ export default function CustomersPage() {
             />
             
             {/* Modal */}
-            <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+            <div className="db-customer-modal relative bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
               {/* Header */}
               <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 rounded-t-2xl">
                 <div className="flex items-center justify-between">
@@ -4434,13 +4436,13 @@ export default function CustomersPage() {
                           </table>
                         </div>
                       ) : (
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div className="grid grid-cols-1 gap-3">
                           {visibleCustomerVehicleGroups.map((group) => {
                             const GroupIcon = group.icon
                             const isAuthorityGroup = group.key === 'authority'
                             return (
                             <React.Fragment key={group.key}>
-                              <div className={`mt-2 rounded-xl border p-4 sm:col-span-2 first:mt-0 ${
+                              <div className={`mt-2 rounded-xl border p-4 first:mt-0 ${
                                 isAuthorityGroup ? 'border-sky-200 bg-sky-50' : 'border-amber-200 bg-amber-50'
                               }`}>
                                 <div className="flex items-start gap-3">
@@ -4475,8 +4477,8 @@ export default function CustomersPage() {
                                   onClick={() => setSelectedVehicleInPanel(vehicle)}
                                   className="cursor-pointer"
                                 >
-                                  <div className="flex items-start justify-between gap-4">
-                                    <div className="min-w-0">
+                                  <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
+                                    <div className="min-w-0 flex-1">
                                       <p className="truncate text-sm font-semibold text-gray-900">
                                         {cardTitle}
                                       </p>
@@ -4493,7 +4495,7 @@ export default function CustomersPage() {
                                         {vehicleRelationshipNote(vehicle, group.key)}
                                       </p>
                                     </div>
-                                    <div className="flex shrink-0 flex-col items-end gap-1 text-right">
+                                    <div className="flex max-w-full shrink-0 flex-col items-end gap-1 text-right">
                                       {vehicle.unit_number && (
                                         <span className="text-xs font-medium text-slate-700 bg-slate-100 rounded px-2 py-0.5">
                                           Unit {vehicle.unit_number}
@@ -4505,7 +4507,7 @@ export default function CustomersPage() {
                                         </span>
                                       )}
                                       {vehicle.vin && (
-                                        <span className="font-mono text-[11px] text-gray-500">
+                                        <span className="max-w-full break-all font-mono text-[11px] text-gray-500">
                                           VIN {vehicle.vin}
                                         </span>
                                       )}
@@ -4624,7 +4626,7 @@ export default function CustomersPage() {
             />
             
               {/* Modal */}
-              <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-md p-6">
+              <div className="db-customer-modal relative bg-white rounded-2xl shadow-2xl w-full max-w-md p-6">
                 <div className="flex items-center gap-4 mb-4">
                   <div className="w-12 h-12 rounded-full bg-red-100 flex items-center justify-center flex-shrink-0">
                     <AlertTriangle className="w-6 h-6 text-red-600" />
@@ -4678,7 +4680,7 @@ export default function CustomersPage() {
             />
 
             {/* Modal */}
-            <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+            <div className="db-customer-modal relative bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
               <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 rounded-t-2xl">
                 <div className="flex items-center justify-between">
                   <div>
@@ -4800,7 +4802,7 @@ export default function CustomersPage() {
             />
             
             {/* Modal */}
-            <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
+            <div className="db-customer-modal relative bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
               {/* Header */}
               <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 rounded-t-2xl">
                 <div className="flex items-center justify-between">
@@ -5006,7 +5008,7 @@ export default function CustomersPage() {
             />
             
             {/* Modal */}
-            <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-md p-6">
+            <div className="db-customer-modal relative bg-white rounded-2xl shadow-2xl w-full max-w-md p-6">
               <div className="flex items-center gap-4 mb-4">
                 <div className="w-12 h-12 rounded-full bg-red-100 flex items-center justify-center flex-shrink-0">
                   <AlertTriangle className="w-6 h-6 text-red-600" />
@@ -5060,7 +5062,7 @@ export default function CustomersPage() {
             />
 
             {/* Modal */}
-            <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
+            <div className="db-customer-modal relative bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
               {/* Header */}
               <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 rounded-t-2xl">
                 <div className="flex items-center justify-between">
@@ -5099,7 +5101,7 @@ export default function CustomersPage() {
             />
 
             {/* Modal */}
-            <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-md p-6">
+            <div className="db-customer-modal relative bg-white rounded-2xl shadow-2xl w-full max-w-md p-6">
               <div className="flex items-center gap-4 mb-4">
                 <div className="w-12 h-12 rounded-full bg-red-100 flex items-center justify-center flex-shrink-0">
                   <AlertTriangle className="w-6 h-6 text-red-600" />

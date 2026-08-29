@@ -39,7 +39,7 @@ export default function GoogleReviewsSettingsPage() {
     ? 'Google Business Profile API access is still pending for this platform. Google has assigned this project a zero request quota, so locations cannot be loaded yet.'
     : (locationsError as any)?.response?.data?.detail as string | undefined
 
-  return <div className="mx-auto max-w-4xl p-4 sm:p-6 text-white">
+  return <div className="db-operating-surface__scroller mx-auto max-w-4xl p-4 sm:p-6 text-white">
     <Link to="/dashboard/garage/reviews" className="inline-flex items-center gap-2 text-sm text-gray-400 hover:text-white"><ArrowLeft className="h-4 w-4" /> Google Reviews inbox</Link>
     <h1 className="mt-4 text-2xl font-semibold">Google Reviews settings</h1>
     <p className="mt-1 text-sm text-gray-400">Connect this shop’s own Google Business Profile and control how replies are handled.</p>

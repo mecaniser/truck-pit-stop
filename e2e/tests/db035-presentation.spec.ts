@@ -162,6 +162,32 @@ async function installSession(page: Page, variant: 'legacy' | 'new') {
       await route.fulfill({ status: 200, contentType: 'application/json', body: '[]' })
       return
     }
+    // /dashboard/garage now resolves to Inventory rather than Team, so the
+    // My Shop surface pulls the parts-operations reads on entry.
+    if (url.pathname.endsWith('/parts-operations/summary')) {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ needs_reorder_count: 0, low_stock_count: 0, open_purchase_order_count: 0 }),
+      })
+      return
+    }
+    if (url.pathname.endsWith('/parts-operations/parts')) {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ items: [], total: 0, skip: 0, limit: 50, has_more: false }),
+      })
+      return
+    }
+    if (url.pathname.endsWith('/parts-operations/activity')) {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ items: [], total: 0, skip: 0, limit: 1, has_more: false }),
+      })
+      return
+    }
     throw new Error(`Unhandled DB-035 fixture route: ${route.request().method()} ${url.pathname}`)
   })
 }

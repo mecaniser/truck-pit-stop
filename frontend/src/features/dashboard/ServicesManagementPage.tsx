@@ -538,7 +538,7 @@ export default function ServicesManagementPage() {
   const displayedPrice = (svc: Service) => Number(svc.computed_total_price)
 
   return (
-    <div className="db-services-workspace space-y-6 lg:flex lg:h-full lg:min-h-0 lg:flex-col lg:gap-4 lg:space-y-0">
+    <div className="db-services-workspace db-operating-surface space-y-6 lg:gap-4 lg:space-y-0">
       {/* Header */}
       <div className="mb-4 flex flex-row items-center gap-3 lg:mb-0 lg:flex-shrink-0">
         <div className="flex-1 min-w-0">
@@ -618,11 +618,14 @@ export default function ServicesManagementPage() {
       </div>
 
       {/* Services Table / Cards */}
-      <div className="db-services-workspace__ledger overflow-hidden rounded-xl border border-white/10 bg-white/5 lg:flex lg:min-h-0 lg:flex-1 lg:flex-col">
-        <div className="hidden items-center justify-start border-b border-white/10 px-4 py-3 sm:flex lg:flex-shrink-0">
+      <div className="db-services-workspace__ledger db-operating-surface__frame">
+        {/* Caption sits above the card, unfilled, so the scrollbar reads as
+            outside the list rather than inside a slab. */}
+        <div className="hidden items-center justify-start px-1 pb-2 sm:flex lg:flex-shrink-0">
           <ViewToggle value={activeViewMode} onChange={setViewMode} disabled={isMobile} />
         </div>
-        <div className="max-h-[calc(100vh-240px)] overflow-y-auto lg:min-h-0 lg:flex-1 lg:max-h-none">
+        <div className="db-operating-surface__scroller">
+          <div className="db-operating-surface__card">
           {activeViewMode === 'list' ? (
             <div className="overflow-x-auto">
               <table className="w-full">
@@ -793,6 +796,7 @@ export default function ServicesManagementPage() {
               )}
             </div>
           )}
+          </div>
         </div>
       </div>
 

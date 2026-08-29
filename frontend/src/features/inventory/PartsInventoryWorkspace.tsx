@@ -590,49 +590,53 @@ export default function PartsInventoryWorkspace({ summary }: { summary: Summary 
     {notice && <div className="db-parts-workbench__notice" role="status"><span>{notice}</span><button type="button" onClick={() => setNotice(null)}>Dismiss</button></div>}
     {error && <div className="db-parts-workbench__error" role="alert"><span>{error}</span><button type="button" onClick={() => setError(null)}>Dismiss</button></div>}
 
+    {/* Ledger controls sit outside the bordered body, matching the
+        Customers, Repair Orders, and Shop Work surfaces. */}
+    {workspaceView !== 'activity' &&
+    <div className="db-parts-workbench__toolbar">
+      <label className="db-parts-workbench__search"><Search aria-hidden="true" /><span className="sr-only">Search parts</span><input type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search part, SKU, supplier, source number, or bin" /></label>
+      <div className="db-parts-workbench__filters" role="group" aria-label="Stock filter">
+        <button type="button" aria-pressed={stockFilter === 'all'} onClick={() => { setStockFilter('all'); setPartsSequence((current) => current + 1); setCheckedParts(new Map()) }}>All</button>
+        <button type="button" aria-pressed={stockFilter === 'below_min'} onClick={() => { setStockFilter('below_min'); setPartsSequence((current) => current + 1); setCheckedParts(new Map()) }}>Needs reorder</button>
+        <button type="button" aria-pressed={stockFilter === 'out_of_stock'} onClick={() => { setStockFilter('out_of_stock'); setPartsSequence((current) => current + 1); setCheckedParts(new Map()) }}>Out of stock</button>
+      </div>
+      <button className="db-parts-workbench__archive-link" type="button" onClick={() => { setCatalogView(catalogView === 'active' ? 'archived' : 'active'); setPartsSequence((current) => current + 1); setCheckedParts(new Map()) }} disabled={workspaceView === 'reorder'}><Archive aria-hidden="true" />{catalogView === 'active' ? 'Archived parts' : 'Back to active parts'}</button>
+      <div className="db-parts-workbench__density" role="group" aria-label="Ledger density">
+        <button type="button" aria-pressed={density === 'comfortable'} onClick={() => chooseDensity('comfortable')}>Comfortable</button>
+        <button type="button" aria-pressed={density === 'compact'} onClick={() => chooseDensity('compact')}>Compact</button>
+      </div>
+      {sort !== 'catalog' && <button className="db-parts-workbench__catalog-reset is-desktop" type="button" aria-label="Reset to catalog order" onClick={() => chooseSort('catalog', 'asc')}>Catalog order</button>}
+      <div ref={compactSortMenu} className="db-parts-workbench__compact-sort-menu" onKeyDown={(event) => {
+        if (event.key !== 'Escape' || !compactSortOpen) return
+        event.preventDefault()
+        event.stopPropagation()
+        closeCompactSort(true)
+      }}>
+        <button ref={compactSortTrigger} type="button" aria-label="Sort parts" aria-expanded={compactSortOpen} aria-controls="parts-compact-sort-popover" onClick={() => {
+          setCompactSortOpen((current) => !current)
+        }}><ChevronsUpDown aria-hidden="true" /><span>Sort</span></button>
+        {compactSortOpen && <div id="parts-compact-sort-popover" className="db-parts-workbench__compact-sort-popover" role="dialog" aria-label="Sort parts">
+          <div className="db-parts-workbench__compact-sort-row">
+            <span id="parts-ledger-sort-label">Sort</span>
+            <div className="db-parts-workbench__sort-controls">
+              <button ref={compactCatalogReset} className="db-parts-workbench__catalog-reset" type="button" aria-pressed={sort === 'catalog'} onClick={() => chooseSort('catalog', 'asc', true)}>Catalog order</button>
+              <div className="db-parts-workbench__compact-sort" role="radiogroup" aria-labelledby="parts-ledger-sort-label">
+                {COMPACT_SORT_OPTIONS.map((option, index) => {
+                  const selected = sort === option.sort && direction === option.direction
+                  const hasSelectedCompactSort = COMPACT_SORT_OPTIONS.some((candidate) => sort === candidate.sort && direction === candidate.direction)
+                  return <button key={`${option.sort}-${option.direction}`} ref={(node) => { compactSortRefs.current[index] = node }} type="button" role="radio" aria-checked={selected} tabIndex={selected || !hasSelectedCompactSort && index === 0 ? 0 : -1} onKeyDown={(event) => moveCompactSortFocus(event, index)} onClick={() => chooseSort(option.sort, option.direction, true)}>{option.label}</button>
+                })}
+              </div>
+            </div>
+          </div>
+        </div>}
+      </div>
+    </div>}
+
     {workspaceView === 'activity'
       ? <ActivityWorkspace />
       : <div className={`db-parts-workbench__body is-${density}${mobileDetailOpen ? ' is-mobile-detail' : ''}`}>
         <div className="db-parts-workbench__ledger-workspace">
-          <div className="db-parts-workbench__toolbar">
-            <label className="db-parts-workbench__search"><Search aria-hidden="true" /><span className="sr-only">Search parts</span><input type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search part, SKU, supplier, source number, or bin" /></label>
-            <div className="db-parts-workbench__filters" role="group" aria-label="Stock filter">
-              <button type="button" aria-pressed={stockFilter === 'all'} onClick={() => { setStockFilter('all'); setPartsSequence((current) => current + 1); setCheckedParts(new Map()) }}>All</button>
-              <button type="button" aria-pressed={stockFilter === 'below_min'} onClick={() => { setStockFilter('below_min'); setPartsSequence((current) => current + 1); setCheckedParts(new Map()) }}>Needs reorder</button>
-              <button type="button" aria-pressed={stockFilter === 'out_of_stock'} onClick={() => { setStockFilter('out_of_stock'); setPartsSequence((current) => current + 1); setCheckedParts(new Map()) }}>Out of stock</button>
-            </div>
-            <button className="db-parts-workbench__archive-link" type="button" onClick={() => { setCatalogView(catalogView === 'active' ? 'archived' : 'active'); setPartsSequence((current) => current + 1); setCheckedParts(new Map()) }} disabled={workspaceView === 'reorder'}><Archive aria-hidden="true" />{catalogView === 'active' ? 'Archived parts' : 'Back to active parts'}</button>
-            <div className="db-parts-workbench__density" role="group" aria-label="Ledger density">
-              <button type="button" aria-pressed={density === 'comfortable'} onClick={() => chooseDensity('comfortable')}>Comfortable</button>
-              <button type="button" aria-pressed={density === 'compact'} onClick={() => chooseDensity('compact')}>Compact</button>
-            </div>
-            {sort !== 'catalog' && <button className="db-parts-workbench__catalog-reset is-desktop" type="button" aria-label="Reset to catalog order" onClick={() => chooseSort('catalog', 'asc')}>Catalog order</button>}
-            <div ref={compactSortMenu} className="db-parts-workbench__compact-sort-menu" onKeyDown={(event) => {
-              if (event.key !== 'Escape' || !compactSortOpen) return
-              event.preventDefault()
-              event.stopPropagation()
-              closeCompactSort(true)
-            }}>
-              <button ref={compactSortTrigger} type="button" aria-label="Sort parts" aria-expanded={compactSortOpen} aria-controls="parts-compact-sort-popover" onClick={() => {
-                setCompactSortOpen((current) => !current)
-              }}><ChevronsUpDown aria-hidden="true" /><span>Sort</span></button>
-              {compactSortOpen && <div id="parts-compact-sort-popover" className="db-parts-workbench__compact-sort-popover" role="dialog" aria-label="Sort parts">
-                <div className="db-parts-workbench__compact-sort-row">
-                  <span id="parts-ledger-sort-label">Sort</span>
-                  <div className="db-parts-workbench__sort-controls">
-                    <button ref={compactCatalogReset} className="db-parts-workbench__catalog-reset" type="button" aria-pressed={sort === 'catalog'} onClick={() => chooseSort('catalog', 'asc', true)}>Catalog order</button>
-                    <div className="db-parts-workbench__compact-sort" role="radiogroup" aria-labelledby="parts-ledger-sort-label">
-                      {COMPACT_SORT_OPTIONS.map((option, index) => {
-                        const selected = sort === option.sort && direction === option.direction
-                        const hasSelectedCompactSort = COMPACT_SORT_OPTIONS.some((candidate) => sort === candidate.sort && direction === candidate.direction)
-                        return <button key={`${option.sort}-${option.direction}`} ref={(node) => { compactSortRefs.current[index] = node }} type="button" role="radio" aria-checked={selected} tabIndex={selected || !hasSelectedCompactSort && index === 0 ? 0 : -1} onKeyDown={(event) => moveCompactSortFocus(event, index)} onClick={() => chooseSort(option.sort, option.direction, true)}>{option.label}</button>
-                      })}
-                    </div>
-                  </div>
-                </div>
-              </div>}
-            </div>
-          </div>
           {manage && checkedParts.size > 0 && <div className="db-parts-workbench__bulk" role="region" aria-label="Selected parts actions">
             <strong>{checkedParts.size} {checkedParts.size === 1 ? 'part' : 'parts'} selected</strong>
             <div><button type="button" onClick={clearChecked}>Clear selection</button><button type="button" onClick={prepareChecked}>Add to purchase list<ArrowRight aria-hidden="true" /></button></div>
@@ -690,7 +694,7 @@ function PartLedger({ page, loading, loadingMore, failed, manage, salesEnabled, 
       <SortableColumnHeader label="Bin location" columnClass="is-bin" field="location" sort={sort} direction={direction} onSort={onSort} />
       <SortableColumnHeader label="Average cost" columnClass="is-cost" field="cost" sort={sort} direction={direction} onSort={onSort} />
       <span className="is-supplier" role="columnheader">Preferred supplier</span>
-      <SortableColumnHeader label="Remarks / Status" columnClass="is-remarks" field="reorder" sort={sort} direction={direction} onSort={onSort} />
+      <SortableColumnHeader label="Remarks" columnClass="is-remarks" field="reorder" sort={sort} direction={direction} onSort={onSort} />
     </div>
     <div className="db-parts-workbench__rows" role="rowgroup">
       {page.items.map((part) => {
@@ -833,6 +837,9 @@ function PartInspector({ part, loading, failed, manage, prepared, logoUrl, compa
   const [identityOriginal, setIdentityOriginal] = useState<InventoryEditorRecord | null>(null)
   const [identitySaving, setIdentitySaving] = useState(false)
   const [photoAction, setPhotoAction] = useState<'upload' | 'remove' | null>(null)
+  // Removing a photo is destructive and was firing on a single click, so it
+  // takes the same two-step confirm the supplier-source removal uses.
+  const [confirmPhotoRemove, setConfirmPhotoRemove] = useState(false)
   const [identityError, setIdentityError] = useState<string | null>(null)
   const [photoError, setPhotoError] = useState<string | null>(null)
   const photoSaving = photoAction !== null
@@ -888,6 +895,7 @@ function PartInspector({ part, loading, failed, manage, prepared, logoUrl, compa
     setIdentityOpen(true)
   }
   const closeIdentity = () => {
+    setConfirmPhotoRemove(false)
     setIdentityOpen(false)
     setIdentityForm(null)
     setIdentityOriginal(null)
@@ -1095,11 +1103,17 @@ function PartInspector({ part, loading, failed, manage, prepared, logoUrl, compa
     ? [reorderStockFact, availableStockFact, heldStockFact, sellableStockFact, neededStockFact, incomingStockFact]
     : [availableStockFact, heldStockFact, sellableStockFact, neededStockFact, reorderStockFact, incomingStockFact]
   return <aside id="selected-part-inspector" className="db-parts-workbench__inspector" aria-labelledby="selected-part-name">
-    <button className="db-parts-workbench__mobile-back" type="button" onClick={onBack}><ArrowLeft aria-hidden="true" />Back to parts</button>
     <div className="db-parts-workbench__selected-action" data-selected-surface="true">
       <div className="db-parts-workbench__selected-label-row">
         <p className="db-parts-workbench__selected-label">Selected part</p>
-        {manage && !part.is_archived && !edit && !identityOpen && <button ref={identityTrigger} className="db-parts-workbench__identity-trigger" type="button" aria-expanded="false" aria-controls="selected-part-identity-editor" onClick={openIdentity}><Pencil aria-hidden="true" />Edit details</button>}
+        <div className="db-parts-workbench__selected-controls">
+          {manage && !part.is_archived && !edit && !identityOpen && <button ref={identityTrigger} className="db-parts-workbench__identity-trigger db-parts-workbench__icon-action" type="button" aria-expanded="false" aria-controls="selected-part-identity-editor" onClick={openIdentity}><Pencil aria-hidden="true" /><span className="db-parts-workbench__collapsible-label">Edit details</span></button>}
+          <button className={`db-parts-workbench__mobile-back db-parts-workbench__icon-action db-parts-workbench__icon-action--icon-only${identityOpen ? ' is-editing' : ''}`} type="button" onClick={identityOpen ? closeIdentity : onBack} aria-label={identityOpen ? 'Cancel editing' : 'Back to parts'}>
+            <ArrowLeft className="db-parts-workbench__mobile-back-arrow" aria-hidden="true" />
+            <span className="db-parts-workbench__mobile-back-label">Back to parts</span>
+            <X className="db-parts-workbench__mobile-back-close" aria-hidden="true" />
+          </button>
+        </div>
       </div>
       <div className="db-parts-workbench__selected-part">
         <PartPhoto part={part} logoUrl={logoUrl} companyName={companyName} detail />
@@ -1112,8 +1126,9 @@ function PartInspector({ part, loading, failed, manage, prepared, logoUrl, compa
           <div className="db-parts-workbench__photo-editor" role="group" aria-label="Part photo">
             <div className="db-parts-workbench__photo-editor-copy"><strong>Photo</strong><span>Changes save immediately · JPEG, PNG, WebP, HEIC/HEIF · max 10 MB</span></div>
             <div className="db-parts-workbench__photo-editor-actions">
-              <button type="button" disabled={photoSaving || identitySaving} onClick={() => photoInput.current?.click()}><Camera aria-hidden="true" />{photoAction === 'upload' ? 'Uploading…' : part.image_url ? 'Replace photo' : 'Add photo'}</button>
-              {part.image_url && <button type="button" disabled={photoSaving || identitySaving} onClick={() => void removePhoto()}><Trash2 aria-hidden="true" />{photoAction === 'remove' ? 'Removing…' : 'Remove photo'}</button>}
+              <button className="db-parts-workbench__icon-action db-parts-workbench__icon-action--icon-only" type="button" disabled={photoSaving || identitySaving} aria-label={photoAction === 'upload' ? 'Uploading photo' : part.image_url ? 'Replace photo' : 'Add photo'} onClick={() => photoInput.current?.click()}><Camera aria-hidden="true" /></button>
+              {part.image_url && !confirmPhotoRemove && <button className="db-parts-workbench__icon-action db-parts-workbench__icon-action--icon-only" type="button" disabled={photoSaving || identitySaving} aria-label={photoAction === 'remove' ? 'Removing photo' : 'Remove photo'} onClick={() => setConfirmPhotoRemove(true)}><Trash2 aria-hidden="true" /></button>}
+              {part.image_url && confirmPhotoRemove && <span className="db-parts-workbench__photo-confirm" role="group" aria-label="Confirm photo removal"><strong>Remove this photo?</strong><button type="button" disabled={photoSaving || identitySaving} onClick={() => { setConfirmPhotoRemove(false); void removePhoto() }}>Remove photo</button><button type="button" disabled={photoSaving || identitySaving} onClick={() => setConfirmPhotoRemove(false)}>Keep photo</button></span>}
             </div>
             <input ref={photoInput} hidden tabIndex={-1} type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif" onChange={(event) => { const file = event.target.files?.[0]; if (file) void choosePhoto(file); event.target.value = '' }} />
             {photoError && <p className="db-parts-workbench__photo-error" role="alert">{photoError}</p>}
@@ -1128,7 +1143,7 @@ function PartInspector({ part, loading, failed, manage, prepared, logoUrl, compa
               <label className="is-wide">Description<textarea maxLength={5000} disabled={identitySaving || photoSaving} rows={3} value={identityForm.description} onChange={(event) => updateIdentity('description', event.target.value)} placeholder="Catalog details or identifying notes" /></label>
             </div>
             {identityError && <p className="db-parts-workbench__identity-error" role="alert">{identityError}</p>}
-            <div className="db-parts-workbench__identity-actions"><button type="button" disabled={identitySaving || photoSaving} onClick={closeIdentity}>Cancel</button><button type="submit" disabled={identitySaving || photoSaving || !identityDirty}>{identitySaving ? 'Saving…' : 'Save details'}</button></div>
+            <div className="db-parts-workbench__identity-actions"><button type="submit" disabled={identitySaving || photoSaving || !identityDirty}>{identitySaving ? 'Saving…' : 'Save details'}</button></div>
           </form>
         </>}
       </div>}
