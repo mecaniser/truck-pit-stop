@@ -103,6 +103,10 @@ class RecentOrder(BaseModel):
     description: Optional[str]
     customer_name: str
     vehicle_info: str
+    # vehicle_display_label only falls back to the unit number when make and
+    # model are unknown, but the shop floor identifies a truck by its unit, so
+    # it travels separately rather than being folded into that label.
+    vehicle_unit_number: Optional[str] = None
     total_cost: str
     created_at: datetime
     updated_at: datetime
@@ -236,6 +240,7 @@ def _dashboard_order(
         description=order.description,
         customer_name=fleet_display_name(customer, fleet_company_name),
         vehicle_info=vehicle_display_label(vehicle.year, vehicle.make, vehicle.model, vehicle.unit_number),
+        vehicle_unit_number=(vehicle.unit_number or None),
         total_cost=str(get_effective_total(order)),
         created_at=order.created_at,
         updated_at=order.updated_at,
@@ -718,6 +723,7 @@ async def get_dashboard_stats(
             description=order.description,
             customer_name=fleet_display_name(customer, fleet_company_name),
             vehicle_info=vehicle_display_label(vehicle.year, vehicle.make, vehicle.model, vehicle.unit_number),
+            vehicle_unit_number=(vehicle.unit_number or None),
             total_cost=str(get_effective_total(order)),
             created_at=order.created_at,
             updated_at=order.updated_at,
@@ -740,6 +746,7 @@ async def get_dashboard_stats(
             description=order.description,
             customer_name=fleet_display_name(customer, fleet_company_name),
             vehicle_info=vehicle_display_label(vehicle.year, vehicle.make, vehicle.model, vehicle.unit_number),
+            vehicle_unit_number=(vehicle.unit_number or None),
             total_cost=str(get_effective_total(order)),
             created_at=order.created_at,
             updated_at=order.updated_at,

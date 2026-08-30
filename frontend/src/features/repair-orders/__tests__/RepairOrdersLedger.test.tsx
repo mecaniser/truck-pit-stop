@@ -284,8 +284,11 @@ describe('DB-035 Stage 4 Repair Orders presentation', () => {
     expect(row).toHaveTextContent('Aug 12, 3:00 PM')
     expect(row).not.toHaveTextContent('Diagnose intermittent no-start with a deliberately long source description')
     expect(screen.getByRole('region', { name: 'Scrollable repair-order results' })).toHaveAttribute('tabindex', '0')
-    expect(screen.queryByText('Northline Logistics')).not.toBeInTheDocument()
-    expect(screen.queryByText('2022 Freightliner Cascadia · Unit 218')).not.toBeInTheDocument()
+    // The shop identifies work by customer and truck, so a collapsed row leads
+    // with both and keeps the order number as reference. The work request still
+    // belongs to the expanded brief, which the assertion above guards.
+    expect(row).toHaveTextContent('Northline Logistics')
+    expect(row).toHaveTextContent('2022 Freightliner Cascadia · Unit 218')
   })
 
   it('keeps the daily Shop Work navigator compact without hiding operational overview facts', () => {

@@ -249,6 +249,10 @@ export default function RepairOrdersLedger({
                 row.vehicleUnitNumber ? { label: 'Unit number', value: row.vehicleUnitNumber } : null,
               ].filter((fact): fact is { label: string; value: string } => fact !== null)
               const fallbackVehicleInfo = vehicleFacts.length === 0 ? row.vehicleInfo : null
+              const vehicleLine = [
+                [row.vehicleYear, row.vehicleMake, row.vehicleModel].filter(Boolean).join(' ').trim() || row.vehicleInfo || null,
+                row.vehicleUnitNumber ? `Unit ${row.vehicleUnitNumber}` : null,
+              ].filter(Boolean).join(' · ') || null
 
               return (
                 <article
@@ -273,10 +277,15 @@ export default function RepairOrdersLedger({
                     >
                       <span className="db-repair-orders-ledger__order">
                         <span className="db-repair-orders-ledger__order-line">
-                          <strong>{row.orderNumber}</strong>
+                          {/* The shop identifies work by who it is for and which
+                              truck, so those lead. The order number stays on the
+                              row as reference, below the identity. */}
+                          <strong>{row.customerName || row.orderNumber}</strong>
                           <span className={`db-repair-orders-ledger__status db-repair-orders-ledger__status--${row.statusTone}`}>{row.status}</span>
+                          {row.internal && <small>Internal</small>}
                         </span>
-                        {row.internal && <small>Internal</small>}
+                        {vehicleLine && <span className="db-repair-orders-ledger__vehicle">{vehicleLine}</span>}
+                        {row.customerName && <small className="db-repair-orders-ledger__reference">{row.orderNumber}</small>}
                       </span>
                       <span className="db-repair-orders-ledger__money">
                         <strong>{row.total}</strong>

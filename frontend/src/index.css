@@ -876,6 +876,40 @@ html::-webkit-scrollbar-thumb:hover {
   cursor: pointer;
 }
 
+/* Facts take their own line rather than a fourth column: at the widths this
+   list actually runs, squeezing DOT/MC, fleet size and balance between the name
+   and the phone truncated all three. */
+.db-presentation-new .db-customer-navigator__facts {
+  grid-column: 1 / -1;
+  grid-row: 2;
+  display: flex;
+  flex-wrap: wrap;
+  min-width: 0;
+  align-items: center;
+  gap: 4px 8px;
+}
+
+.db-presentation-new .db-customer-navigator__summary > .db-customer-details-control {
+  grid-column: 3;
+  grid-row: 1;
+}
+
+.db-presentation-new .db-customer-navigator__fact {
+  padding: 2px 7px;
+  border: 1px solid var(--workspace-border);
+  border-radius: 999px;
+  color: var(--workspace-muted);
+  font-size: 11px;
+  font-weight: 650;
+  white-space: nowrap;
+}
+
+/* An outstanding balance is the one fact that changes what the operator does. */
+.db-presentation-new .db-customer-navigator__fact.is-owing {
+  border-color: color-mix(in srgb, var(--parts-status-warning, #f3a55c) 45%, transparent);
+  color: var(--parts-status-warning, #f3a55c);
+}
+
 .db-presentation-new .db-customer-navigator__summary:hover {
   background: color-mix(in srgb, var(--surface-raised) 82%, var(--workspace-border) 18%);
 }
@@ -2739,7 +2773,7 @@ html::-webkit-scrollbar-thumb:hover {
   min-width: 0;
   min-height: var(--density-row-min);
   display: grid;
-  grid-template-columns: 112px 124px minmax(190px, 1fr) minmax(148px, .72fr) 110px;
+  grid-template-columns: 112px minmax(240px, 1fr) minmax(148px, .72fr) 110px;
   align-items: center;
   gap: 12px;
   padding: 12px 15px;
@@ -2756,7 +2790,7 @@ html::-webkit-scrollbar-thumb:hover {
 .db-action-ledger__lane--needs_action { color: #9a4a00; }
 .db-action-ledger__lane--on_floor { color: #1c5d99; }
 .db-action-ledger__lane--ready_to_close { color: #087252; }
-.db-action-ledger__number { color: #1b304a; font-weight: 820; }
+.db-action-ledger__number { color: var(--text-secondary, #61738a); font-size: 11px; font-weight: 700; letter-spacing: .01em; }
 .db-action-ledger__identity,
 .db-action-ledger__status { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
 .db-action-ledger__identity strong,
@@ -3389,6 +3423,11 @@ html::-webkit-scrollbar-thumb:hover {
 .db-repair-orders-ledger__money { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
 .db-repair-orders-ledger__order-line { display: flex; min-width: 0; align-items: center; gap: 7px; flex-wrap: wrap; }
 .db-repair-orders-ledger__order-line strong { min-width: 0; overflow-wrap: normal; word-break: normal; }
+/* Identity leads the row: customer, then the truck, then the order number as
+   reference. The chip treatment on __order small belongs to the Internal badge,
+   so the reference line opts out of it. */
+.db-repair-orders-ledger__vehicle { min-width: 0; color: var(--db-ledger-muted, #61738a); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.db-repair-orders-ledger__order small.db-repair-orders-ledger__reference { align-self: stretch; min-width: 0; padding: 0; border-radius: 0; background: transparent; color: var(--db-ledger-muted, #61738a); font-size: 11px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .db-repair-orders-ledger__order strong { color: var(--db-ledger-text); }
 .db-repair-orders-ledger__order small { align-self: flex-start; padding: 2px 5px; border-radius: 5px; background: var(--db-ledger-raised); color: var(--db-ledger-muted); font-size: 9px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; }
 .db-repair-orders-ledger__status { display: inline-flex; width: max-content; min-height: 20px; flex: 0 0 auto; align-items: center; justify-content: center; padding: 2px 7px; border-radius: 999px; font-size: 11px; font-weight: 800; line-height: 1.2; text-transform: capitalize; white-space: nowrap; }

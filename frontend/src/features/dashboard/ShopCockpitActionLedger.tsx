@@ -19,6 +19,7 @@ export interface ActionQueueOrder {
   description: string | null
   customer_name: string
   vehicle_info: string
+  vehicle_unit_number?: string | null
   total_cost: string
   updated_at: string
   mechanic_name: string | null
@@ -312,10 +313,10 @@ export default function ShopCockpitActionLedger({
                     data-lane={lane}
                   >
                     <span className={`db-action-ledger__lane db-action-ledger__lane--${lane}`}>{LANE_LABEL[lane]}</span>
-                    <strong className="db-action-ledger__number">{order.order_number}</strong>
                     <span className="db-action-ledger__identity">
                       <strong>{order.customer_name}</strong>
-                      <span>{order.vehicle_info}</span>
+                      <span>{[order.vehicle_info, order.vehicle_unit_number ? `Unit ${order.vehicle_unit_number}` : null].filter(Boolean).join(' · ')}</span>
+                      <small className="db-action-ledger__number">{order.order_number}</small>
                     </span>
                     <span className="db-action-ledger__status">
                       <strong>{statusLabel(order)}</strong>
