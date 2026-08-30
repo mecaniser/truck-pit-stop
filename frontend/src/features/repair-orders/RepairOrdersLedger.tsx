@@ -55,7 +55,7 @@ export default function RepairOrdersLedger({
   totalOrders: number
   searchQuery: string
   statusFilter: string
-  statusOptions: Array<{ value: string; label: string }>
+  statusOptions: Array<{ value: string; label: string; count?: number }>
   selectedId: string | null
   queueOrigin: RepairOrdersQueueOrigin | null
   isFetching: boolean
@@ -167,9 +167,9 @@ export default function RepairOrdersLedger({
           <h1 id="repair-orders-title">{pageTitle}</h1>
           <p>{pageDescription}</p>
         </div>
-        <button type="button" className="db-repair-orders-new__create" onClick={onCreateOrder} disabled={isFetching && rows.length === 0}>
+        <button type="button" className="db-repair-orders-new__create" aria-label="New repair order" onClick={onCreateOrder} disabled={isFetching && rows.length === 0}>
           <Plus aria-hidden="true" />
-          New repair order
+          <span className="db-repair-orders-new__create-label">New repair order</span>
         </button>
       </header>
 
@@ -212,7 +212,8 @@ export default function RepairOrdersLedger({
                           setStatusOpen(false)
                         }}
                       >
-                        {option.label}
+                        <span>{option.label}</span>
+                        {option.count !== undefined && <span className="db-repair-orders-new__status-count">{option.count}</span>}
                       </button>
                     </li>
                   ))}
@@ -228,6 +229,7 @@ export default function RepairOrdersLedger({
                   onClick={() => onStatusChange(option.value)}
                 >
                   {option.label}
+                  {option.count !== undefined && <span className="db-repair-orders-new__status-count">{option.count}</span>}
                 </button>
               ))}
             </div>
