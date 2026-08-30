@@ -180,6 +180,36 @@ async def reset_appearance(db: AsyncSession, user: User, *, base_revision: int) 
     return await resolve_presentation(db, user)
 
 
+# Switching the whole shop between the classic and modern workspace is a shop
+# decision, not a platform one, so an owner or admin makes it for their own
+# tenant. Everyone else keeps read-only access to the resolved variant.
+TENANT_PRESENTATION_ADMIN_ROLES = {
+    UserRole.SUPER_ADMIN,
+    UserRole.GARAGE_OWNER,
+    UserRole.GARAGE_ADMIN,
+}
+
+
+async def set_own_tenant_presentation(
+    db: AsyncSession, user: User, presentation: str
+) -> PresentationResponse:
+    """Set the caller's own tenant default and return the re-resolved state.
+
+    Returning the resolution rather than the value just written matters: a user
+    override outranks the tenant default, so an owner who has one would change
+    the shop default and see nothing happen. The response carries the source,
+    which lets the caller say so instead of looking broken.
+    """
+    tenant_id = require_staff_context(user)
+    if user.role not in TENANT_PRESENTATION_ADMIN_ROLES:
+        raise _error(
+            status.HTTP_403_FORBIDDEN,
+            "Changing the shop workspace requires an owner or admin",
+        )
+    await set_tenant_rollout(db, tenant_id, presentation)
+    return await resolve_presentation(db, user, tenant_id=tenant_id)
+
+
 async def set_tenant_rollout(db: AsyncSession, tenant_id: UUID, presentation: str) -> None:
     tenant = await db.scalar(select(Tenant).where(Tenant.id == tenant_id, Tenant.deleted_at.is_(None)))
     if not tenant:

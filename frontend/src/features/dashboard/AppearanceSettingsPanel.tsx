@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react'
-import { Bell, Check, Palette, RotateCcw, Save, Type, X } from 'lucide-react'
+import { Bell, Check, LayoutGrid, Palette, RotateCcw, Save, Type, X } from 'lucide-react'
 import toast from 'react-hot-toast'
 import {
   ACCENT_OPTIONS,
@@ -33,6 +33,11 @@ export default function AppearanceSettingsPanel() {
     cancelPreview,
     previewDefaults,
     resetToDefaults,
+    presentationVariant,
+    presentationSource,
+    canSetPresentation,
+    presentationStatus,
+    setPresentationVariant,
   } = useTheme()
   const [confirmReset, setConfirmReset] = useState(false)
   const accentRamps = accentRampsFor(mode)
@@ -117,6 +122,36 @@ export default function AppearanceSettingsPanel() {
       </div>
 
       <div className="db-appearance-sections">
+        {canSetPresentation && (
+          <fieldset className="db-appearance-section">
+            <legend><LayoutGrid aria-hidden="true" /> Workspace</legend>
+            <p>Applies to everyone at this shop. Classic is the original layout; Modern is the rebuilt one.</p>
+            <div className="db-appearance-segment" aria-label="Workspace layout">
+              {([
+                { id: 'legacy', label: 'Classic' },
+                { id: 'new', label: 'Modern' },
+              ] as const).map(option => (
+                <button
+                  key={option.id}
+                  type="button"
+                  aria-pressed={presentationVariant === option.id}
+                  disabled={presentationStatus === 'saving'}
+                  className={presentationVariant === option.id ? 'is-selected' : ''}
+                  onClick={() => void setPresentationVariant(option.id)}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+            {presentationSource === 'global_force_legacy' && (
+              <p role="note">Locked to Classic for every shop by a platform setting.</p>
+            )}
+            {presentationSource === 'user_override' && (
+              <p role="note">Your account has a personal override, so it may not match the shop default.</p>
+            )}
+          </fieldset>
+        )}
+
         <fieldset className="db-appearance-section">
           <legend><Palette aria-hidden="true" /> Accent</legend>
           <p>{mode === 'dark' ? 'Night shop palette: brighter signals tuned for the navy field.' : mode === 'light' ? 'Day shop palette: deeper action colors tuned for road-white surfaces.' : 'High contrast palette: opaque, high-separation accents for the selected surface.'}</p>

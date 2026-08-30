@@ -55,6 +55,7 @@ from app.schemas.presentation import (
     AppearanceResetRequest,
     AppearanceUpdateRequest,
     PresentationResponse,
+    TenantPresentationRolloutRequest,
 )
 from pydantic import BaseModel, Field, EmailStr
 from typing import Optional, List, Union
@@ -68,6 +69,7 @@ from app.services.identity_lifecycle import IdentityReviewRequired, resolve_auth
 from app.services.presentation_service import (
     get_appearance,
     reset_appearance,
+    set_own_tenant_presentation,
     resolve_presentation,
     update_appearance,
 )
@@ -987,6 +989,21 @@ async def delete_current_appearance(
     db: AsyncSession = Depends(get_db),
 ):
     return await reset_appearance(db, current_user, base_revision=body.base_revision)
+
+
+@router.put("/me/tenant-presentation", response_model=PresentationResponse)
+async def put_tenant_presentation(
+    body: TenantPresentationRolloutRequest,
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Let a shop owner or admin switch their own tenant between workspaces.
+
+    The rollout endpoint under /admin is super-admin only, which meant a shop
+    could not move itself between the classic and modern workspace without
+    platform help. This is the same operation scoped to the caller's tenant.
+    """
+    return await set_own_tenant_presentation(db, current_user, body.presentation)
 
 
 @router.get("/my-shops", response_model=List[ShopOption])
