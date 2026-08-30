@@ -3083,7 +3083,7 @@ html::-webkit-scrollbar-thumb:hover {
 .db-presentation-new .db-staff-search-field input:disabled { cursor: not-allowed; opacity: .6; }
 .db-presentation-new .db-repair-orders-new__search { height: var(--db-repair-orders-control-height); align-self: stretch; padding: 0; }
 .db-repair-orders-new__status-select { position: relative; display: none; min-width: 0; height: var(--db-repair-orders-control-height); }
-.db-repair-orders-new__status-select > button { width: 100%; height: var(--db-repair-orders-control-height); appearance: none; border: 1px solid #bec9d5 !important; border-radius: 10px; padding: 0 34px 0 12px; background: #fff !important; color: #17283f !important; font-size: 14px; }
+.db-repair-orders-new__status-select > button { width: 100%; height: var(--db-repair-orders-control-height); appearance: none; border: 1px solid #bec9d5 !important; border-radius: 10px; padding: 0 12px; background: #fff !important; color: #17283f !important; font-size: 14px; }
 .db-repair-orders-new__status-select > button { display: flex; align-items: center; justify-content: space-between; gap: 8px; text-align: start; cursor: pointer; }
 .db-repair-orders-new__status-select > button > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .db-repair-orders-new__status-select svg { flex: 0 0 auto; width: 16px; height: 16px; color: #53657a; transition: rotate 140ms ease-out; }
@@ -3101,23 +3101,18 @@ html::-webkit-scrollbar-thumb:hover {
 @media (hover: hover) and (pointer: fine) { .db-repair-orders-new__status-select li > button:hover { background: color-mix(in srgb, var(--workspace-text) 9%, transparent); } }
 @media (prefers-reduced-motion: reduce) { .db-repair-orders-new__status-select svg { transition: none; } }
 .db-repair-orders-new__status-select:focus-within { z-index: 2; border-radius: 10px; box-shadow: 0 0 0 3px rgba(255, 122, 46, .26); }
-.db-repair-orders-new__status-select:focus-within select { border-color: #ff7a2e !important; outline: 0; }
+.db-repair-orders-new__status-select:focus-within > button { border-color: #ff7a2e !important; outline: 0; }
 
 /* The Shop Work ledger reuses the canonical Repair Orders filters. Keep their
    actual text, placeholder, and selected value legible when the staff shell is
    in a dark or high-contrast appearance mode. */
-.db-staff-shell:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) .db-repair-orders-new .db-repair-orders-new__status-select select {
+.db-staff-shell:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) .db-repair-orders-new .db-repair-orders-new__status-select > button {
   border-color: var(--workspace-border) !important;
   background: var(--surface-overlay) !important;
   color: var(--workspace-text) !important;
-  caret-color: var(--workspace-text);
 }
 .db-staff-shell:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) .db-repair-orders-new__status-select svg {
   color: var(--workspace-muted);
-}
-.db-staff-shell:is([data-appearance-mode='dark'], [data-appearance-mode='high_contrast']) .db-repair-orders-new__status-select option {
-  background: var(--surface-overlay);
-  color: var(--workspace-text);
 }
 
 /* Repair Orders is a dark operational list in dark appearance. The ledger,
