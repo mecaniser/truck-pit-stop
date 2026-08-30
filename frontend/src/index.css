@@ -3494,6 +3494,31 @@ html::-webkit-scrollbar-thumb:hover {
 .db-repair-orders-workspace--detail-open .db-repair-orders-ledger__row { grid-template-columns: minmax(0,1fr); gap: 2px; }
 .db-repair-orders-workspace--detail-open .db-repair-orders-ledger__details-toggle { justify-self: end; min-height: 32px; }
 
+/* Response (Apple, Designing Fluid Interfaces §1): feedback belongs on the
+   press, not the release. These rows previously changed only once the workspace
+   had loaded, so a click read as nothing happening. :active fires on
+   pointer-down, so the surface acknowledges the press immediately and the
+   selection that follows is a continuation rather than the first sign of life.
+   Background and colour only — compositor-friendly, and a full-width row that
+   scales reads as a glitch rather than a press. */
+.db-repair-orders-ledger__record,
+.db-repair-orders-ledger__details-toggle,
+.db-repair-orders-ledger__open-workspace { transition: background-color 120ms ease-out, border-color 120ms ease-out; }
+.db-repair-orders-ledger__record:active { background: var(--db-ledger-selected-surface); }
+.db-repair-orders-ledger__details-toggle:active,
+.db-repair-orders-ledger__open-workspace:active { background: var(--db-ledger-raised); }
+
+/* Selection is a state change the eye should be able to follow: the row settles
+   into its selected surface rather than cutting to it. */
+.db-repair-orders-ledger__row-shell { transition: background-color 160ms ease-out; }
+
+@media (prefers-reduced-motion: reduce) {
+  .db-repair-orders-ledger__record,
+  .db-repair-orders-ledger__details-toggle,
+  .db-repair-orders-ledger__open-workspace,
+  .db-repair-orders-ledger__row-shell { transition: none; }
+}
+
 .db-repair-orders-ledger__empty { min-height: 220px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 5px; padding: 24px; color: var(--db-ledger-muted); text-align: center; }
 .db-repair-orders-ledger__empty strong { color: var(--db-ledger-text); }
 .db-repair-orders-ledger > footer { min-height: 56px; display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 12px; padding: 0 2px; background: transparent; color: var(--db-ledger-muted); font-size: 12px; }
