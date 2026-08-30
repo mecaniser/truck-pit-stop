@@ -876,6 +876,42 @@ html::-webkit-scrollbar-thumb:hover {
   cursor: pointer;
 }
 
+/* Facts take their own line rather than a fourth column: at the widths this
+   list actually runs, squeezing DOT/MC, fleet size and balance between the name
+   and the phone truncated all three. */
+.db-presentation-new .db-customer-navigator__facts {
+  grid-column: 1 / -1;
+  grid-row: 2;
+  display: flex;
+  flex-wrap: wrap;
+  min-width: 0;
+  align-items: center;
+  gap: 4px 8px;
+}
+
+/* Same selector shape as the narrow-container override below, so source order
+   decides which applies rather than specificity. */
+.db-presentation-new .db-customer-details-control {
+  grid-column: 3;
+  grid-row: 1;
+}
+
+.db-presentation-new .db-customer-navigator__fact {
+  padding: 2px 7px;
+  border: 1px solid var(--workspace-border);
+  border-radius: 999px;
+  color: var(--workspace-muted);
+  font-size: 11px;
+  font-weight: 650;
+  white-space: nowrap;
+}
+
+/* An outstanding balance is the one fact that changes what the operator does. */
+.db-presentation-new .db-customer-navigator__fact.is-owing {
+  border-color: color-mix(in srgb, var(--parts-status-warning, #f3a55c) 45%, transparent);
+  color: var(--parts-status-warning, #f3a55c);
+}
+
 .db-presentation-new .db-customer-navigator__summary:hover {
   background: color-mix(in srgb, var(--surface-raised) 82%, var(--workspace-border) 18%);
 }
@@ -1137,6 +1173,12 @@ html::-webkit-scrollbar-thumb:hover {
   .db-presentation-new .db-customer-details-control {
     grid-column: 2;
     grid-row: 1;
+  }
+
+  /* Phone takes row 2 here, so the facts line follows on row 3. Sharing row 2
+     stacked the two on top of each other in the detail-open column. */
+  .db-presentation-new .db-customer-navigator__facts {
+    grid-row: 3;
   }
 
 }
@@ -2739,7 +2781,7 @@ html::-webkit-scrollbar-thumb:hover {
   min-width: 0;
   min-height: var(--density-row-min);
   display: grid;
-  grid-template-columns: 112px 124px minmax(190px, 1fr) minmax(148px, .72fr) 110px;
+  grid-template-columns: 112px minmax(240px, 1fr) minmax(148px, .72fr) 110px;
   align-items: center;
   gap: 12px;
   padding: 12px 15px;
@@ -2756,7 +2798,7 @@ html::-webkit-scrollbar-thumb:hover {
 .db-action-ledger__lane--needs_action { color: #9a4a00; }
 .db-action-ledger__lane--on_floor { color: #1c5d99; }
 .db-action-ledger__lane--ready_to_close { color: #087252; }
-.db-action-ledger__number { color: #1b304a; font-weight: 820; }
+.db-action-ledger__number { color: var(--text-secondary, #61738a); font-size: 11px; font-weight: 700; letter-spacing: .01em; }
 .db-action-ledger__identity,
 .db-action-ledger__status { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
 .db-action-ledger__identity strong,
@@ -3374,6 +3416,7 @@ html::-webkit-scrollbar-thumb:hover {
 .db-repair-orders-ledger[data-has-pagination='true'] .db-repair-orders-ledger__row-shell:last-child { border-bottom: 0; }
 .db-repair-orders-ledger__row-shell[data-inspected='true'] { background: var(--db-ledger-inspected-surface); }
 .db-repair-orders-ledger__row-shell[data-selected='true'] { background: var(--db-ledger-selected-surface); }
+
 .db-repair-orders-ledger__row-shell[data-selected='true'][data-inspected='true'] { background: var(--db-ledger-selected-inspected-surface); }
 .db-repair-orders-ledger__row { position: relative; width: 100%; min-width: 0; display: grid; grid-template-columns: minmax(0,1fr) auto; align-items: stretch; gap: 10px; padding: 0 15px; background: transparent; color: var(--db-ledger-text); }
 .db-repair-orders-ledger__record { width: 100%; min-width: 0; min-height: 66px; display: grid; grid-template-columns: minmax(148px,1fr) minmax(104px,.65fr); align-items: center; gap: 14px; border: 0; border-radius: 6px; padding: 11px 0; background: transparent; color: inherit; cursor: pointer; font: inherit; text-align: left; }
@@ -3389,6 +3432,11 @@ html::-webkit-scrollbar-thumb:hover {
 .db-repair-orders-ledger__money { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
 .db-repair-orders-ledger__order-line { display: flex; min-width: 0; align-items: center; gap: 7px; flex-wrap: wrap; }
 .db-repair-orders-ledger__order-line strong { min-width: 0; overflow-wrap: normal; word-break: normal; }
+/* Identity leads the row: customer, then the truck, then the order number as
+   reference. The chip treatment on __order small belongs to the Internal badge,
+   so the reference line opts out of it. */
+.db-repair-orders-ledger__vehicle { min-width: 0; color: var(--db-ledger-muted, #61738a); font-size: 12px; overflow-wrap: anywhere; }
+.db-repair-orders-ledger__order small.db-repair-orders-ledger__reference { align-self: stretch; min-width: 0; padding: 0; border-radius: 0; background: transparent; color: var(--db-ledger-muted, #61738a); font-size: 11px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .db-repair-orders-ledger__order strong { color: var(--db-ledger-text); }
 .db-repair-orders-ledger__order small { align-self: flex-start; padding: 2px 5px; border-radius: 5px; background: var(--db-ledger-raised); color: var(--db-ledger-muted); font-size: 9px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; }
 .db-repair-orders-ledger__status { display: inline-flex; width: max-content; min-height: 20px; flex: 0 0 auto; align-items: center; justify-content: center; padding: 2px 7px; border-radius: 999px; font-size: 11px; font-weight: 800; line-height: 1.2; text-transform: capitalize; white-space: nowrap; }
@@ -3406,20 +3454,18 @@ html::-webkit-scrollbar-thumb:hover {
 .db-repair-orders-ledger__details-toggle svg { width: 15px; height: 15px; transition: transform 140ms ease-out; }
 .db-repair-orders-ledger__details-toggle[aria-expanded='true'] { color: var(--db-ledger-disclosure); text-decoration: underline; text-decoration-color: currentColor; text-underline-offset: 4px; }
 .db-repair-orders-ledger__details-toggle[aria-expanded='true'] svg { transform: rotate(180deg); }
-.db-repair-orders-ledger__brief { display: flex; align-items: end; justify-content: space-between; gap: 16px; padding: 3px 15px 16px; background: transparent; color: var(--db-ledger-text); }
+.db-repair-orders-ledger__brief { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px 16px; padding: 3px 15px 16px; background: transparent; color: var(--db-ledger-text); }
 .db-repair-orders-ledger__brief-content { min-width: 0; display: grid; flex: 1 1 auto; gap: 13px; }
 .db-repair-orders-ledger__work-request { min-width: 0; }
 .db-presentation-new .db-staff-content .db-repair-orders-ledger .db-repair-orders-ledger__work-request h3 { margin: 0 0 5px; color: var(--db-ledger-metadata) !important; font-size: 11px; font-weight: 800; letter-spacing: .075em; text-transform: uppercase; }
 .db-repair-orders-ledger__work-request p { overflow-wrap: anywhere; margin: 0; color: var(--db-ledger-text); font-size: 13px; font-weight: 700; line-height: 1.45; }
-.db-repair-orders-ledger__brief dl { min-width: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(145px, 1fr)); gap: 11px 15px; margin: 0; }
+.db-repair-orders-ledger__brief dl { min-width: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px 18px; margin: 0; }
 .db-repair-orders-ledger__brief dl > div { min-width: 0; }
 .db-repair-orders-ledger__brief dt { margin: 0 0 3px; color: var(--db-ledger-metadata); font-size: 10px; font-weight: 800; letter-spacing: .075em; line-height: 1.25; text-transform: uppercase; }
 .db-repair-orders-ledger__brief dd { overflow-wrap: anywhere; margin: 0; color: var(--db-ledger-text); font-size: 12px; font-weight: 700; line-height: 1.35; }
-.db-repair-orders-ledger__vehicle-group { min-width: 0; padding: 1px 0 0; background: transparent; }
 .db-repair-orders-ledger__vehicle-group h3 { margin: 0 0 8px; color: var(--db-ledger-metadata); font-size: 11px; font-weight: 800; letter-spacing: .075em; text-transform: uppercase; }
-.db-repair-orders-ledger__vehicle-group dl { grid-template-columns: repeat(4, minmax(0,1fr)); gap: 9px 12px; }
 .db-repair-orders-ledger__vehicle-fallback { overflow-wrap: anywhere; margin: 0; color: var(--db-ledger-text); font-size: 12px; font-weight: 700; line-height: 1.4; }
-.db-repair-orders-ledger__open-workspace { min-height: 44px; display: inline-flex; flex: 0 0 auto; align-items: center; justify-content: center; gap: 7px; border: 1px solid var(--db-ledger-border); border-radius: 9px; padding: 10px 13px; background: var(--db-ledger-raised); color: var(--db-ledger-text); font-size: 12px; font-weight: 800; white-space: nowrap; }
+.db-repair-orders-ledger__open-workspace { min-height: 44px; margin-inline-start: auto; align-self: center; display: inline-flex; flex: 0 0 auto; align-items: center; justify-content: center; gap: 7px; border: 1px solid var(--db-ledger-border); border-radius: 9px; padding: 10px 13px; background: var(--db-ledger-raised); color: var(--db-ledger-text); font-size: 12px; font-weight: 800; white-space: nowrap; }
 .db-repair-orders-ledger__open-workspace:hover { border-color: var(--db-ledger-focus); background: var(--db-ledger-surface); color: var(--db-ledger-text); }
 .db-repair-orders-ledger__open-workspace svg { width: 15px; height: 15px; }
 .db-repair-orders-ledger--compact { padding: 0; }
@@ -3432,6 +3478,78 @@ html::-webkit-scrollbar-thumb:hover {
 .db-repair-orders-ledger--compact .db-repair-orders-ledger__record .db-repair-orders-ledger__order { grid-column: 1; min-width: 0; overflow: hidden; }
 .db-repair-orders-ledger--compact .db-repair-orders-ledger__details-toggle { padding-inline: 9px; }
 .db-repair-orders-ledger--compact .db-repair-orders-ledger__record .db-repair-orders-ledger__order strong { display: block; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+
+/* Two states, and the request belongs to whichever has room for it.
+   List alone on the page: it reads on the row, in the middle band that was
+   otherwise empty, and the brief drops it so it is never said twice.
+   Workspace open: the column is too narrow to carry it, so the row drops it and
+   the brief carries it in full. */
+.db-repair-orders-ledger__work { min-width: 0; color: var(--db-ledger-muted, #61738a); font-size: 12.5px; line-height: 1.35; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.db-repair-orders-workspace--new:not(.db-repair-orders-workspace--detail-open) .db-repair-orders-ledger__record { grid-template-columns: minmax(148px,1fr) minmax(0,1.05fr) minmax(104px,.65fr); }
+
+/* With a workspace open the row stacks: identity and money on one line, the
+   disclosure beneath. Hiding that disclosure on the open row then removes a
+   line rather than re-flowing the identity and the amount beside it, which is
+   what made selecting a row jump the whole list. */
+.db-repair-orders-workspace--detail-open .db-repair-orders-ledger__row { grid-template-columns: minmax(0,1fr); gap: 2px; }
+.db-repair-orders-workspace--detail-open .db-repair-orders-ledger__details-toggle { justify-self: end; min-height: 32px; }
+
+/* Response (Apple, Designing Fluid Interfaces §1): feedback belongs on the
+   press, not the release. These rows previously changed only once the workspace
+   had loaded, so a click read as nothing happening. :active fires on
+   pointer-down, so the surface acknowledges the press immediately and the
+   selection that follows is a continuation rather than the first sign of life.
+   Background and colour only — compositor-friendly, and a full-width row that
+   scales reads as a glitch rather than a press. */
+.db-repair-orders-ledger__record,
+.db-repair-orders-ledger__details-toggle,
+.db-repair-orders-ledger__open-workspace { transition: background-color 120ms ease-out, border-color 120ms ease-out; }
+.db-repair-orders-ledger__record:active { background: var(--db-ledger-selected-surface); }
+.db-repair-orders-ledger__details-toggle:active,
+.db-repair-orders-ledger__open-workspace:active { background: var(--db-ledger-raised); }
+
+/* Selection is a state change the eye should be able to follow: the row settles
+   into its selected surface rather than cutting to it. */
+.db-repair-orders-ledger__row-shell { transition: background-color 160ms ease-out; }
+
+@media (prefers-reduced-motion: reduce) {
+  .db-repair-orders-ledger__record,
+  .db-repair-orders-ledger__details-toggle,
+  .db-repair-orders-ledger__open-workspace,
+  .db-repair-orders-ledger__row-shell { transition: none; }
+}
+
+/* The disclosure opens and closes along the same path (Apple, Designing Fluid
+   Interfaces §7: if something disappears one way, we expect it to emerge from
+   where it came). grid-template-rows 0fr -> 1fr animates to the content's own
+   height without measuring it; @starting-style supplies the from-state on mount
+   so the enter plays without a frame of pop. Retargeting mid-flight resumes
+   from the current computed value, so opening a brief that is still closing
+   reverses rather than restarting (§3). */
+.db-repair-orders-ledger__brief-reveal {
+  display: grid;
+  grid-template-rows: 1fr;
+  opacity: 1;
+  transition: grid-template-rows 220ms cubic-bezier(0.23, 1, 0.32, 1), opacity 160ms ease-out;
+}
+
+@starting-style {
+  .db-repair-orders-ledger__brief-reveal { grid-template-rows: 0fr; opacity: 0; }
+}
+
+.db-repair-orders-ledger__brief-reveal[data-closing] {
+  grid-template-rows: 0fr;
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* The row that collapses must not scroll its own content while it does. */
+.db-repair-orders-ledger__brief-reveal > * { min-height: 0; overflow: hidden; }
+
+@media (prefers-reduced-motion: reduce) {
+  .db-repair-orders-ledger__brief-reveal { transition: none; }
+}
+
 .db-repair-orders-ledger__empty { min-height: 220px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 5px; padding: 24px; color: var(--db-ledger-muted); text-align: center; }
 .db-repair-orders-ledger__empty strong { color: var(--db-ledger-text); }
 .db-repair-orders-ledger > footer { min-height: 56px; display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 12px; padding: 0 2px; background: transparent; color: var(--db-ledger-muted); font-size: 12px; }

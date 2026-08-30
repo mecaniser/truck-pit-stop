@@ -232,6 +232,26 @@ describe('DB-035 Stage 4 Repair Orders presentation', () => {
     expect(props.onOpenOrder).toHaveBeenLastCalledWith('ro-real-17', { focusWorkspace: true })
   })
 
+  it('removes a closed brief from the document once its exit has played', async () => {
+    const user = userEvent.setup()
+    renderLedger()
+
+    await user.click(screen.getByRole('button', { name: 'Show details for RO-1017' }))
+    expect(screen.getByRole('region', { name: 'Order brief for RO-1017' })).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Hide details for RO-1017' }))
+    // It stays mounted to play the exit, but stops being announced while it does.
+    const closing = document.querySelector('.db-repair-orders-ledger__brief-reveal')
+    expect(closing).toHaveAttribute('data-closing')
+    expect(closing).toHaveAttribute('aria-hidden', 'true')
+
+    // transitionend never fires under jsdom, so this also proves the floor that
+    // guarantees the brief leaves even when the event is missed.
+    await waitFor(() => {
+      expect(screen.queryByRole('region', { name: 'Order brief for RO-1017' })).not.toBeInTheDocument()
+    }, { timeout: 2000 })
+  })
+
   it('keeps the disclosure plane inert and protects Details from canonical row activation', async () => {
     const user = userEvent.setup()
     const { props } = renderLedger()
@@ -239,7 +259,7 @@ describe('DB-035 Stage 4 Repair Orders presentation', () => {
 
     await user.click(details)
     const brief = screen.getByRole('region', { name: 'Order brief for RO-1017' })
-    await user.click(within(brief).getByText('Diagnose intermittent no-start with a deliberately long source description'))
+    await user.click(brief)
     expect(props.onOpenOrder).not.toHaveBeenCalled()
 
     await user.click(screen.getByRole('button', { name: 'Open repair order RO-1017 from details' }))
@@ -282,10 +302,16 @@ describe('DB-035 Stage 4 Repair Orders presentation', () => {
     expect(row).toHaveTextContent('In Progress')
     expect(row).toHaveTextContent('$4,280.50')
     expect(row).toHaveTextContent('Aug 12, 3:00 PM')
+    // The request is not previewed on the row: truncated to a single narrow
+    // column it said less than nothing, and the brief right beneath carries it
+    // in full.
     expect(row).not.toHaveTextContent('Diagnose intermittent no-start with a deliberately long source description')
     expect(screen.getByRole('region', { name: 'Scrollable repair-order results' })).toHaveAttribute('tabindex', '0')
-    expect(screen.queryByText('Northline Logistics')).not.toBeInTheDocument()
-    expect(screen.queryByText('2022 Freightliner Cascadia · Unit 218')).not.toBeInTheDocument()
+    // The shop identifies work by customer and truck, so a collapsed row leads
+    // with both and keeps the order number as reference. The work request still
+    // belongs to the expanded brief, which the assertion above guards.
+    expect(row).toHaveTextContent('Northline Logistics')
+    expect(row).toHaveTextContent('2022 Freightliner Cascadia · Unit 218')
   })
 
   it('keeps the daily Shop Work navigator compact without hiding operational overview facts', () => {
@@ -300,6 +326,9 @@ describe('DB-035 Stage 4 Repair Orders presentation', () => {
     expect(row).toHaveTextContent('In Progress')
     expect(row).toHaveTextContent('$4,280.50')
     expect(row).toHaveTextContent('Aug 12, 3:00 PM')
+    // The request is not previewed on the row: truncated to a single narrow
+    // column it said less than nothing, and the brief right beneath carries it
+    // in full.
     expect(row).not.toHaveTextContent('Diagnose intermittent no-start with a deliberately long source description')
     expect(screen.queryByRole('group', { name: 'Filter repair orders by status' })).not.toBeInTheDocument()
     expect(screen.queryByLabelText('Order status')).not.toBeInTheDocument()
@@ -324,16 +353,12 @@ describe('DB-035 Stage 4 Repair Orders presentation', () => {
 
     await user.click(screen.getByRole('button', { name: 'Show details for RO-1018' }))
     const brief = screen.getByRole('region', { name: 'Order brief for RO-1018' })
-    const vehicle = within(brief).getByRole('region', { name: 'Vehicle' })
-    expect(brief).toHaveTextContent('Allied Freight')
-    expect(vehicle).toHaveTextContent('Year')
-    expect(vehicle).toHaveTextContent('2024')
-    expect(vehicle).toHaveTextContent('Make')
-    expect(vehicle).toHaveTextContent('Volvo')
-    expect(vehicle).toHaveTextContent('Model')
-    expect(vehicle).toHaveTextContent('VNL 760')
-    expect(vehicle).toHaveTextContent('Unit number')
-    expect(vehicle).toHaveTextContent('402')
+    // The brief carries only what the row cannot: the full request and the
+    // operational facts. Customer and vehicle title the row, so repeating them
+    // here split the card into columns too narrow to hold "VOLVO TRUCK".
+    expect(within(brief).queryByRole('region', { name: 'Vehicle' })).not.toBeInTheDocument()
+    expect(brief).not.toHaveTextContent('Unit number')
+    expect(screen.getByRole('article', { name: 'Repair order RO-1018' })).toHaveTextContent('2024 Volvo VNL 760 · Unit 402')
     expect(brief).toHaveTextContent('Work requested')
     expect(brief).toHaveTextContent('Replace air dryer cartridge')
     expect(brief).toHaveTextContent('Not sent')
@@ -347,11 +372,15 @@ describe('DB-035 Stage 4 Repair Orders presentation', () => {
     expect(screen.getByRole('article', { name: 'Repair order RO-1017' })).not.toHaveAttribute('data-inspected')
     expect(screen.getByRole('article', { name: 'Repair order RO-1018' })).toHaveAttribute('data-inspected', 'true')
 
-    await user.click(screen.getByRole('button', { name: 'Show details for RO-1017' }))
-    expect(screen.queryByRole('region', { name: 'Order brief for RO-1018' })).not.toBeInTheDocument()
-    expect(screen.getByRole('region', { name: 'Order brief for RO-1017' })).toHaveTextContent('Northline Logistics')
+    // The selected row offers no brief of its own: the workspace beside the list
+    // is already that order's detail, so a second copy on the row repeated the
+    // customer, truck and work request rather than adding anything.
+    expect(screen.queryByRole('button', { name: 'Show details for RO-1017' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('region', { name: 'Order brief for RO-1017' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Open repair order RO-1017 from details' })).not.toBeInTheDocument()
+    // Inspecting another row still works and still leaves the selection alone.
+    expect(screen.getByRole('region', { name: 'Order brief for RO-1018' })).toBeInTheDocument()
     expect(screen.getByRole('article', { name: 'Repair order RO-1017' })).toHaveAttribute('data-selected', 'true')
-    expect(screen.getByRole('article', { name: 'Repair order RO-1017' })).toHaveAttribute('data-inspected', 'true')
   })
 
   it('omits the Vehicle group when no safe vehicle fact is present', async () => {
@@ -373,7 +402,7 @@ describe('DB-035 Stage 4 Repair Orders presentation', () => {
     expect(within(brief).queryByRole('region', { name: 'Vehicle' })).not.toBeInTheDocument()
   })
 
-  it('renders an unstructured vehicle fallback once beneath the Vehicle heading', async () => {
+  it('falls back to the raw vehicle label on the row when no structured fields exist', async () => {
     const user = userEvent.setup()
     const fallbackVehicleRow: RepairOrdersLedgerRow = {
       ...rows[0],
@@ -387,12 +416,13 @@ describe('DB-035 Stage 4 Repair Orders presentation', () => {
     }
     renderLedger({ rows: [fallbackVehicleRow] })
 
+    // With no structured year/make/model the row falls back to the raw label,
+    // and it reads on the row rather than in a Vehicle block inside the brief.
+    const row = screen.getByRole('article', { name: 'Repair order RO-1020' })
+    expect(row).toHaveTextContent('2020 Volvo VNL 760')
     await user.click(screen.getByRole('button', { name: 'Show details for RO-1020' }))
-    const vehicle = screen.getByRole('region', { name: 'Vehicle' })
-    expect(within(vehicle).getByRole('heading', { name: 'Vehicle' })).toBeInTheDocument()
-    expect(within(vehicle).getByText('2020 Volvo VNL 760')).toBeInTheDocument()
-    expect(within(vehicle).queryByText('Vehicle', { selector: 'dt' })).not.toBeInTheDocument()
-    expect(within(vehicle).queryByRole('term')).not.toBeInTheDocument()
+    expect(screen.queryByRole('region', { name: 'Vehicle' })).not.toBeInTheDocument()
+    expect(screen.getAllByText('2020 Volvo VNL 760')).toHaveLength(1)
   })
 
   it('lands a keyboard-selected record on its heading rather than framing the entire workspace', async () => {

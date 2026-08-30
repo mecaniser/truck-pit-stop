@@ -2196,7 +2196,6 @@ export default function PriceBuilderPanel({
           </div>
         </div>
         <div className="mt-4 flex flex-wrap items-center gap-2 text-xs font-semibold">
-          <span className="rounded-full bg-white px-3 py-1.5 text-blue-700">{orderStatus === 'draft' ? 'checked in' : orderStatus.replace('_', ' ')}</span>
           <span className="inline-flex items-center gap-1 rounded-full bg-white/14 px-3 py-1.5 text-white ring-1 ring-white/20">
             <Building2 className="h-3.5 w-3.5" />
             {customerName || 'Customer'}

@@ -1,4 +1,4 @@
-from typing import List, Optional
+from typing import Any, List, Optional
 from uuid import UUID
 from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, status, Query, Request
@@ -571,6 +571,31 @@ async def confirm_payment(
     }
 
 
+def _manual_collected_amount(invoice: Any, method: str) -> Decimal:
+    """Amount a non-card method actually collects for this invoice.
+
+    The invoice stores the card view: total_amount = subtotal + shop supplies +
+    card fee + tax on all three, less any invoice discount. Manual methods drop
+    the fee, so they also drop the tax that fee attracted; cash drops tax
+    altogether because the shop is tax exempt.
+    """
+    base = _money(invoice.subtotal) + _money(invoice.shop_supplies_amount)
+    discount = _money(invoice.discount_amount)
+    if method == "cash":
+        return max(Decimal("0.00"), base - discount).quantize(Decimal("0.01"))
+    fee = _money(invoice.service_fee_amount)
+    tax = _money(invoice.tax_amount)
+    card_taxable = base + fee
+    rate = (tax / card_taxable) if card_taxable > 0 else Decimal("0")
+    taxed = (base * (Decimal("1") + rate)).quantize(Decimal("0.01"))
+    return max(Decimal("0.00"), taxed - discount).quantize(Decimal("0.01"))
+
+
+def _money(value: Any) -> Decimal:
+    if value is None:
+        return Decimal("0.00")
+    return Decimal(str(value))
+
 @router.post("/record-manual", response_model=ManualPaymentResponse)
 async def record_manual_payment(
     body: ManualPaymentRequest,
@@ -689,12 +714,21 @@ async def record_manual_payment(
     # Update repair order status
     invoice.repair_order.status = RepairOrderStatus.PAID
     
-    # Create payment record. Manual methods (cash, Zelle, checks, ACH, and fleet
-    # instruments) are
-    # not card payments, so they don't incur the card processing fee — the amount
-    # actually collected is the invoice total minus that fee. Only Stripe (card)
-    # collects the full total_amount.
-    collected_amount = invoice.total_amount - (invoice.service_fee_amount or Decimal("0.00"))
+    # Create payment record. Manual methods are not card payments, so none of
+    # them carries the card processing fee. Only Stripe (card) collects the full
+    # total_amount.
+    #
+    # Subtracting the fee alone was not enough: tax_amount was computed on
+    # (repairs + supplies + fee), so dropping only the fee still collected tax on
+    # a fee nobody paid — over-collecting by fee x rate on every manual payment,
+    # and contradicting the quote the customer was given, which
+    # get_order_checkout_breakdown defines as excluding the fee *and* the tax
+    # attributable to it.
+    #
+    # Cash is settled without tax: the shop is tax exempt, so a cash payment
+    # collects repairs plus the shop supplies charge only. Any invoice-level
+    # discount still applies to whatever is collected.
+    collected_amount = _manual_collected_amount(invoice, body.method)
     payment_number = await allocate_next_payment_number(db, invoice.tenant_id)
     payment = Payment(
         tenant_id=invoice.tenant_id,

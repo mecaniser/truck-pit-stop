@@ -1528,6 +1528,23 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
     },
   })
 
+  // Mirrors the server's _manual_collected_amount. The invoice stores the card
+  // view (repairs + supplies + card fee + tax on all three, less any discount),
+  // so a manual method drops the fee and the tax that fee attracted, and cash
+  // drops tax altogether because the shop is tax exempt. Kept in step with
+  // payments.py: what the operator is told is what gets recorded.
+  const manualCollectedAmount = (invoice: Invoice | null | undefined, method: string | null) => {
+    if (!invoice) return 0
+    const base = parseMoney(invoice.subtotal) + parseMoney(invoice.shop_supplies_amount)
+    const discount = parseMoney(invoice.discount_amount)
+    if (method === 'cash') return Math.max(0, base - discount)
+    const fee = parseMoney(invoice.service_fee_amount)
+    const tax = parseMoney(invoice.tax_amount)
+    const cardTaxable = base + fee
+    const rate = cardTaxable > 0 ? tax / cardTaxable : 0
+    return Math.max(0, Math.round(base * (1 + rate) * 100) / 100 - discount)
+  }
+
   const recordManualPaymentMutation = useMutation({
     mutationFn: async ({
       invoiceId,
@@ -5634,9 +5651,8 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
             <div className="mb-4 pr-10">
               <p className="text-lg font-semibold text-gray-900">Record payment</p>
               <p className="text-sm text-gray-500">
-                Invoice {invoiceForOrder.invoice_number} · {formatMoney(
-                  Math.max(0, parseMoney(invoiceForOrder.total_amount) - parseMoney(invoiceForOrder.service_fee_amount)),
-                )}
+                Invoice {invoiceForOrder.invoice_number} · {formatMoney(manualCollectedAmount(invoiceForOrder, selectedPaymentMethod))}
+                {selectedPaymentMethod === 'cash' && <span className="ml-1 text-xs text-gray-400">(no tax on cash)</span>}
               </p>
               {invoiceForOrder.pending_zelle_confirmation && (
                 <p className="mt-2 text-xs leading-5 text-amber-800">
@@ -5731,10 +5747,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
             resolvedProvider.length > 0
             && manualPaymentAuthorization.trim().length > 0
           ))
-        const manualAmount = Math.max(
-          0,
-          parseMoney(invoiceForOrder.total_amount) - parseMoney(invoiceForOrder.service_fee_amount),
-        )
+        const manualAmount = manualCollectedAmount(invoiceForOrder, selectedPaymentMethod)
 
         return (
           <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/40 p-4">
