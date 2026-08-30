@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 
@@ -179,7 +179,11 @@ describe('DB-035 Stage 4 Repair Orders presentation', () => {
     expect(props.onSearchChange).toHaveBeenLastCalledWith('7')
     await user.click(screen.getByRole('button', { name: 'In Progress' }))
     expect(props.onStatusChange).toHaveBeenCalledWith('in_progress')
-    await user.selectOptions(screen.getByLabelText('Order status'), 'in_progress')
+    // The compact control is a listbox now, not a native select: it names the
+    // active status on its face instead of only inside the popup.
+    await user.click(screen.getByRole('button', { name: 'Order status' }))
+    await user.click(within(screen.getByRole('listbox', { name: 'Order status options' }))
+      .getByRole('option', { name: 'In Progress' }))
     expect(props.onStatusChange).toHaveBeenLastCalledWith('in_progress')
     await user.click(screen.getByRole('button', { name: 'Show details for RO-1017' }))
     expect(props.onOpenOrder).not.toHaveBeenCalled()
@@ -450,12 +454,18 @@ describe('DB-035 Stage 4 Repair Orders presentation', () => {
     renderLedger()
 
     const quickFilterGroup = screen.getByRole('group', { name: 'Filter repair orders by status' })
-    const select = screen.getByRole('combobox', { name: 'Order status' })
+    const trigger = screen.getByRole('button', { name: 'Order status' })
 
+    // The trigger states the active filter without being opened.
+    expect(trigger).toHaveTextContent('All')
+
+    fireEvent.click(trigger)
+    const list = screen.getByRole('listbox', { name: 'Order status options' })
     for (const option of statusOptions) {
       expect(quickFilterGroup).toContainElement(screen.getByRole('button', { name: option.label }))
-      expect(select).toHaveTextContent(option.label)
+      expect(within(list).getByRole('option', { name: option.label })).toBeInTheDocument()
     }
+    expect(within(list).getByRole('option', { name: 'All' })).toHaveAttribute('aria-selected', 'true')
   })
 
   it('covers loading/error, filtered empty and no-selection states without invented records', () => {
