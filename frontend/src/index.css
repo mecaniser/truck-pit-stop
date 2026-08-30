@@ -3416,26 +3416,10 @@ html::-webkit-scrollbar-thumb:hover {
 .db-repair-orders-ledger[data-has-pagination='true'] .db-repair-orders-ledger__row-shell:last-child { border-bottom: 0; }
 .db-repair-orders-ledger__row-shell[data-inspected='true'] { background: var(--db-ledger-inspected-surface); }
 .db-repair-orders-ledger__row-shell[data-selected='true'] { background: var(--db-ledger-selected-surface); }
-.db-repair-orders-ledger__row-shell[data-selected='true'] { position: relative; }
-.db-repair-orders-ledger__row-shell[data-selected='true']::after {
-  content: '';
-  position: absolute;
-  inset-block-start: 50%;
-  inset-inline-end: 0;
-  translate: 0 -50%;
-  border-block: 8px solid transparent;
-  border-inline-end: 8px solid var(--db-ledger-focus);
-  pointer-events: none;
-}
 
-/* The caret points at a workspace that is only beside the list at these widths;
-   below it the workspace replaces the list, so it would point at nothing. */
-@media (max-width: 1099.98px) {
-  .db-repair-orders-ledger__row-shell[data-selected='true']::after { content: none; }
-}
 .db-repair-orders-ledger__row-shell[data-selected='true'][data-inspected='true'] { background: var(--db-ledger-selected-inspected-surface); }
 .db-repair-orders-ledger__row { position: relative; width: 100%; min-width: 0; display: grid; grid-template-columns: minmax(0,1fr) auto; align-items: stretch; gap: 10px; padding: 0 15px; background: transparent; color: var(--db-ledger-text); }
-.db-repair-orders-ledger__record { width: 100%; min-width: 0; min-height: 66px; display: grid; grid-template-columns: minmax(148px,1fr) minmax(0,1.05fr) minmax(104px,.65fr); align-items: center; gap: 14px; border: 0; border-radius: 6px; padding: 11px 0; background: transparent; color: inherit; cursor: pointer; font: inherit; text-align: left; }
+.db-repair-orders-ledger__record { width: 100%; min-width: 0; min-height: 66px; display: grid; grid-template-columns: minmax(148px,1fr) minmax(104px,.65fr); align-items: center; gap: 14px; border: 0; border-radius: 6px; padding: 11px 0; background: transparent; color: inherit; cursor: pointer; font: inherit; text-align: left; }
 .db-repair-orders-ledger__row-shell:hover { background: var(--db-ledger-raised); }
 .db-repair-orders-ledger__row-shell[data-inspected='true']:hover { background: var(--db-ledger-inspected-surface); }
 .db-repair-orders-ledger__row-shell[data-selected='true']:hover { background: var(--db-ledger-selected-surface); }
@@ -3451,7 +3435,7 @@ html::-webkit-scrollbar-thumb:hover {
 /* Identity leads the row: customer, then the truck, then the order number as
    reference. The chip treatment on __order small belongs to the Internal badge,
    so the reference line opts out of it. */
-.db-repair-orders-ledger__vehicle { min-width: 0; color: var(--db-ledger-muted, #61738a); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.db-repair-orders-ledger__vehicle { min-width: 0; color: var(--db-ledger-muted, #61738a); font-size: 12px; overflow-wrap: anywhere; }
 .db-repair-orders-ledger__order small.db-repair-orders-ledger__reference { align-self: stretch; min-width: 0; padding: 0; border-radius: 0; background: transparent; color: var(--db-ledger-muted, #61738a); font-size: 11px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .db-repair-orders-ledger__order strong { color: var(--db-ledger-text); }
 .db-repair-orders-ledger__order small { align-self: flex-start; padding: 2px 5px; border-radius: 5px; background: var(--db-ledger-raised); color: var(--db-ledger-muted); font-size: 9px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; }
@@ -3494,13 +3478,6 @@ html::-webkit-scrollbar-thumb:hover {
 .db-repair-orders-ledger--compact .db-repair-orders-ledger__record .db-repair-orders-ledger__order { grid-column: 1; min-width: 0; overflow: hidden; }
 .db-repair-orders-ledger--compact .db-repair-orders-ledger__details-toggle { padding-inline: 9px; }
 .db-repair-orders-ledger--compact .db-repair-orders-ledger__record .db-repair-orders-ledger__order strong { display: block; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-/* The work request fills the run of empty space the row used to carry between
-   the identity and the money. One line, clipped: the full text lives in the
-   expanded brief, and a wrapping request would change every row's height. */
-.db-repair-orders-ledger__work { min-width: 0; color: var(--db-ledger-muted, #61738a); font-size: 12.5px; line-height: 1.35; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-
-/* Compact keeps two columns, so the work line has nowhere to go. */
-.db-repair-orders-ledger--compact .db-repair-orders-ledger__work { display: none; }
 
 .db-repair-orders-ledger__empty { min-height: 220px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 5px; padding: 24px; color: var(--db-ledger-muted); text-align: center; }
 .db-repair-orders-ledger__empty strong { color: var(--db-ledger-text); }

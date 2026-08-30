@@ -282,10 +282,10 @@ describe('DB-035 Stage 4 Repair Orders presentation', () => {
     expect(row).toHaveTextContent('In Progress')
     expect(row).toHaveTextContent('$4,280.50')
     expect(row).toHaveTextContent('Aug 12, 3:00 PM')
-    // Previewed on the row, clipped to a single line; the brief keeps the full
-    // text. The row must never grow to fit it.
-    expect(row).toHaveTextContent('Diagnose intermittent no-start with a deliberately long source description')
-    expect(row.querySelector('.db-repair-orders-ledger__work')).toBeTruthy()
+    // The request is not previewed on the row: truncated to a single narrow
+    // column it said less than nothing, and the brief right beneath carries it
+    // in full.
+    expect(row).not.toHaveTextContent('Diagnose intermittent no-start with a deliberately long source description')
     expect(screen.getByRole('region', { name: 'Scrollable repair-order results' })).toHaveAttribute('tabindex', '0')
     // The shop identifies work by customer and truck, so a collapsed row leads
     // with both and keeps the order number as reference. The work request still
@@ -306,10 +306,10 @@ describe('DB-035 Stage 4 Repair Orders presentation', () => {
     expect(row).toHaveTextContent('In Progress')
     expect(row).toHaveTextContent('$4,280.50')
     expect(row).toHaveTextContent('Aug 12, 3:00 PM')
-    // Previewed on the row, clipped to a single line; the brief keeps the full
-    // text. The row must never grow to fit it.
-    expect(row).toHaveTextContent('Diagnose intermittent no-start with a deliberately long source description')
-    expect(row.querySelector('.db-repair-orders-ledger__work')).toBeTruthy()
+    // The request is not previewed on the row: truncated to a single narrow
+    // column it said less than nothing, and the brief right beneath carries it
+    // in full.
+    expect(row).not.toHaveTextContent('Diagnose intermittent no-start with a deliberately long source description')
     expect(screen.queryByRole('group', { name: 'Filter repair orders by status' })).not.toBeInTheDocument()
     expect(screen.queryByLabelText('Order status')).not.toBeInTheDocument()
   })
@@ -346,10 +346,7 @@ describe('DB-035 Stage 4 Repair Orders presentation', () => {
     expect(within(brief).queryByText('Order status')).not.toBeInTheDocument()
     expect(within(brief).queryByText('Updated')).not.toBeInTheDocument()
     expect(within(brief).queryByText('Order total')).not.toBeInTheDocument()
-    // Twice by design: a clipped preview on the row, the full request in the
-    // brief. It used to appear only in the brief, which left the row's middle
-    // empty at every width.
-    expect(screen.getAllByText('Replace air dryer cartridge')).toHaveLength(2)
+    expect(screen.getAllByText('Replace air dryer cartridge')).toHaveLength(1)
     expect(props.onOpenOrder).not.toHaveBeenCalled()
     expect(screen.getByRole('article', { name: 'Repair order RO-1017' })).toHaveAttribute('data-selected', 'true')
     expect(screen.getByRole('article', { name: 'Repair order RO-1017' })).not.toHaveAttribute('data-inspected')

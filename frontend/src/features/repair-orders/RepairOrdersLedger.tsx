@@ -279,10 +279,6 @@ export default function RepairOrdersLedger({
                         {vehicleLine && <span className="db-repair-orders-ledger__vehicle">{vehicleLine}</span>}
                         {row.customerName && <small className="db-repair-orders-ledger__reference">{row.orderNumber}</small>}
                       </span>
-                      {/* The work itself belongs between the identity and the
-                          money, where the row was otherwise empty. One clipped
-                          line only — the full request stays in the brief. */}
-                      <span className="db-repair-orders-ledger__work">{row.description}</span>
                       <span className="db-repair-orders-ledger__money">
                         <strong>{row.total}</strong>
                         <small>{row.updated}</small>
