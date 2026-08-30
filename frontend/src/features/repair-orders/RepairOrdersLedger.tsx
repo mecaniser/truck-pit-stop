@@ -87,6 +87,32 @@ export default function RepairOrdersLedger({
   const scopeTriggerRef = useRef<HTMLButtonElement>(null)
   const scopeMenuId = useId()
   const [expandedBriefId, setExpandedBriefId] = useState<string | null>(null)
+  // A brief unmounted the instant it closed, so it could only ever animate in.
+  // Keeping the closing one mounted until its transition ends lets it leave
+  // along the path it arrived on, which is what makes the list stop jumping.
+  const [mountedBriefId, setMountedBriefId] = useState<string | null>(null)
+  useEffect(() => {
+    if (expandedBriefId) setMountedBriefId(expandedBriefId)
+  }, [expandedBriefId])
+  const prefersReducedMotion = typeof window !== 'undefined'
+    && typeof window.matchMedia === 'function'
+    && window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  // transitionend is the fast path, not the guarantee: it never fires when
+  // motion is reduced, and it can be missed if the element is hidden or the
+  // transition is interrupted. Without a floor the closed brief would stay in
+  // the DOM for the rest of the session.
+  useEffect(() => {
+    if (expandedBriefId || mountedBriefId === null) return
+    const timer = window.setTimeout(() => setMountedBriefId(null), prefersReducedMotion ? 0 : 320)
+    return () => window.clearTimeout(timer)
+  }, [expandedBriefId, mountedBriefId, prefersReducedMotion])
+  // The work request belongs to whichever surface has room for it. With no
+  // workspace open the list owns the page and the row carries it; once one
+  // opens the column is too narrow, so the brief takes it back. Rendered rather
+  // than hidden in CSS, so it is never read out twice by assistive tech.
+  // The daily Shop Work navigator is a narrow column too, so it reads like an
+  // open workspace here.
+  const requestOnRow = !selectedId && !compact
   const [lastLedgerInteractionWasPointer, setLastLedgerInteractionWasPointer] = useState(false)
   const scopeCount = queueLabel ? `${totalOrders} ${totalOrders === 1 ? 'order' : 'orders'}` : null
 
@@ -232,23 +258,20 @@ export default function RepairOrdersLedger({
             {rows.map((row) => {
               const briefId = `repair-order-brief-${row.id}`
               const workRequestId = `${briefId}-work-request`
-              const vehicleGroupId = `${briefId}-vehicle`
-              const isBriefOpen = expandedBriefId === row.id
+              const isOpenInWorkspace = selectedId === row.id
+              const isBriefOpen = expandedBriefId === row.id && !isOpenInWorkspace
+              const isBriefMounted = mountedBriefId === row.id && !isOpenInWorkspace
               const briefFacts = [
-                row.customerName ? { label: 'Customer', value: row.customerName } : null,
                 row.internal ? { label: 'Order type', value: 'Internal fleet' } : null,
                 row.technicianName ? { label: 'Technician', value: row.technicianName } : null,
                 row.holdReason ? { label: 'Hold', value: row.holdReason } : null,
                 row.quoteSent === true ? { label: 'Estimate', value: 'Sent' } : null,
                 row.quoteSent === false ? { label: 'Estimate', value: 'Not sent' } : null,
               ].filter((fact): fact is { label: string; value: string } => fact !== null)
-              const vehicleFacts = [
-                row.vehicleYear ? { label: 'Year', value: String(row.vehicleYear) } : null,
-                row.vehicleMake ? { label: 'Make', value: row.vehicleMake } : null,
-                row.vehicleModel ? { label: 'Model', value: row.vehicleModel } : null,
-                row.vehicleUnitNumber ? { label: 'Unit number', value: row.vehicleUnitNumber } : null,
-              ].filter((fact): fact is { label: string; value: string } => fact !== null)
-              const fallbackVehicleInfo = vehicleFacts.length === 0 ? row.vehicleInfo : null
+              const vehicleLine = [
+                [row.vehicleYear, row.vehicleMake, row.vehicleModel].filter(Boolean).join(' ').trim() || row.vehicleInfo || null,
+                row.vehicleUnitNumber ? `Unit ${row.vehicleUnitNumber}` : null,
+              ].filter(Boolean).join(' · ') || null
 
               return (
                 <article
@@ -273,17 +296,23 @@ export default function RepairOrdersLedger({
                     >
                       <span className="db-repair-orders-ledger__order">
                         <span className="db-repair-orders-ledger__order-line">
-                          <strong>{row.orderNumber}</strong>
+                          {/* The shop identifies work by who it is for and which
+                              truck, so those lead. The order number stays on the
+                              row as reference, below the identity. */}
+                          <strong>{row.customerName || row.orderNumber}</strong>
                           <span className={`db-repair-orders-ledger__status db-repair-orders-ledger__status--${row.statusTone}`}>{row.status}</span>
+                          {row.internal && <small>Internal</small>}
                         </span>
-                        {row.internal && <small>Internal</small>}
+                        {vehicleLine && <span className="db-repair-orders-ledger__vehicle">{vehicleLine}</span>}
+                        {row.customerName && <small className="db-repair-orders-ledger__reference">{row.orderNumber}</small>}
                       </span>
+                      {requestOnRow && <span className="db-repair-orders-ledger__work">{row.description}</span>}
                       <span className="db-repair-orders-ledger__money">
                         <strong>{row.total}</strong>
                         <small>{row.updated}</small>
                       </span>
                     </button>
-                    <button
+                    {!isOpenInWorkspace && <button
                       type="button"
                       className="db-repair-orders-ledger__details-toggle"
                       aria-expanded={isBriefOpen}
@@ -296,15 +325,29 @@ export default function RepairOrdersLedger({
                     >
                       <span aria-hidden="true">Details</span>
                       <ChevronDown aria-hidden="true" />
-                    </button>
+                    </button>}
                   </div>
-                  {isBriefOpen && (
+                  {isBriefMounted && (
+                    <div
+                      className="db-repair-orders-ledger__brief-reveal"
+                      data-closing={!isBriefOpen || undefined}
+                      // The brief is on its way out: stop announcing it and stop
+                      // it taking clicks while it plays the exit.
+                      aria-hidden={!isBriefOpen || undefined}
+                      onTransitionEnd={(event) => {
+                        if (event.target !== event.currentTarget) return
+                        if (event.propertyName !== 'grid-template-rows') return
+                        if (!isBriefOpen) setMountedBriefId((current) => current === row.id ? null : current)
+                      }}
+                    >
                     <section id={briefId} className="db-repair-orders-ledger__brief" aria-label={`Order brief for ${row.orderNumber}`}>
                       <div className="db-repair-orders-ledger__brief-content">
-                        <section className="db-repair-orders-ledger__work-request" aria-labelledby={workRequestId}>
-                          <h3 id={workRequestId}>Work requested</h3>
-                          <p>{row.description}</p>
-                        </section>
+                        {!requestOnRow && (
+                          <section className="db-repair-orders-ledger__work-request" aria-labelledby={workRequestId}>
+                            <h3 id={workRequestId}>Work requested</h3>
+                            <p>{row.description}</p>
+                          </section>
+                        )}
                         {briefFacts.length > 0 && (
                           <dl className="db-repair-orders-ledger__brief-facts">
                             {briefFacts.map((fact) => (
@@ -315,25 +358,13 @@ export default function RepairOrdersLedger({
                             ))}
                           </dl>
                         )}
-                        {(vehicleFacts.length > 0 || fallbackVehicleInfo) && (
-                          <section className="db-repair-orders-ledger__vehicle-group" aria-labelledby={vehicleGroupId}>
-                            <h3 id={vehicleGroupId}>Vehicle</h3>
-                            {vehicleFacts.length > 0 ? (
-                              <dl>
-                                {vehicleFacts.map((fact) => (
-                                  <div key={fact.label}>
-                                    <dt>{fact.label}</dt>
-                                    <dd>{fact.value}</dd>
-                                  </div>
-                                ))}
-                              </dl>
-                            ) : (
-                              <p className="db-repair-orders-ledger__vehicle-fallback">{fallbackVehicleInfo}</p>
-                            )}
-                          </section>
-                        )}
                       </div>
-                      <button
+                      {/* The workspace beside the list is already showing this
+                          order, so the control would take you where you are.
+                          The ledger is hidden entirely at widths where the
+                          workspace is not visible, so a selected row here always
+                          means an open workspace. */}
+                      {selectedId !== row.id && <button
                         type="button"
                         className="db-repair-orders-ledger__open-workspace"
                         aria-label={`Open repair order ${row.orderNumber} from details`}
@@ -349,8 +380,9 @@ export default function RepairOrdersLedger({
                       >
                         Open repair order
                         <ChevronRight aria-hidden="true" />
-                      </button>
+                      </button>}
                     </section>
+                    </div>
                   )}
                 </article>
               )

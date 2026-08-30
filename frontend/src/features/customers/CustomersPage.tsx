@@ -3264,6 +3264,28 @@ export default function CustomersPage() {
                         <Phone aria-hidden="true" />
                         {customer.phone ? formatUSPhone(customer.phone) : 'No phone on file'}
                       </span>
+                      {/* The operational facts the previous customer table carried
+                          and the navigator dropped: authority numbers, fleet size,
+                          and what the company owes. */}
+                      <span className="db-customer-navigator__facts">
+                        {(customer.usdot_number || customer.mc_number) && (
+                          <span className="db-customer-navigator__fact">
+                            {customer.usdot_number ? `DOT ${customer.usdot_number}` : null}
+                            {customer.usdot_number && customer.mc_number ? ' · ' : null}
+                            {customer.mc_number ? `MC ${customer.mc_number}` : null}
+                          </span>
+                        )}
+                        {typeof customer.vehicle_count === 'number' && (
+                          <span className="db-customer-navigator__fact">
+                            {customer.vehicle_count} {customer.vehicle_count === 1 ? 'truck' : 'trucks'}
+                          </span>
+                        )}
+                        {customer.balance != null && Number(customer.balance) !== 0 && (
+                          <span className={`db-customer-navigator__fact${Number(customer.balance) > 0 ? ' is-owing' : ''}`}>
+                            {Number(customer.balance) > 0 ? `Owes $${Number(customer.balance).toFixed(2)}` : `Credit $${Math.abs(Number(customer.balance)).toFixed(2)}`}
+                          </span>
+                        )}
+                      </span>
                       <button
                         type="button"
                         ref={(node) => {
