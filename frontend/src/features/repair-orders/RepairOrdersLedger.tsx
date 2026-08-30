@@ -87,6 +87,25 @@ export default function RepairOrdersLedger({
   const scopeTriggerRef = useRef<HTMLButtonElement>(null)
   const scopeMenuId = useId()
   const [expandedBriefId, setExpandedBriefId] = useState<string | null>(null)
+  // A brief unmounted the instant it closed, so it could only ever animate in.
+  // Keeping the closing one mounted until its transition ends lets it leave
+  // along the path it arrived on, which is what makes the list stop jumping.
+  const [mountedBriefId, setMountedBriefId] = useState<string | null>(null)
+  useEffect(() => {
+    if (expandedBriefId) setMountedBriefId(expandedBriefId)
+  }, [expandedBriefId])
+  const prefersReducedMotion = typeof window !== 'undefined'
+    && typeof window.matchMedia === 'function'
+    && window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  // transitionend is the fast path, not the guarantee: it never fires when
+  // motion is reduced, and it can be missed if the element is hidden or the
+  // transition is interrupted. Without a floor the closed brief would stay in
+  // the DOM for the rest of the session.
+  useEffect(() => {
+    if (expandedBriefId || mountedBriefId === null) return
+    const timer = window.setTimeout(() => setMountedBriefId(null), prefersReducedMotion ? 0 : 320)
+    return () => window.clearTimeout(timer)
+  }, [expandedBriefId, mountedBriefId, prefersReducedMotion])
   // The work request belongs to whichever surface has room for it. With no
   // workspace open the list owns the page and the row carries it; once one
   // opens the column is too narrow, so the brief takes it back. Rendered rather
@@ -241,6 +260,7 @@ export default function RepairOrdersLedger({
               const workRequestId = `${briefId}-work-request`
               const isOpenInWorkspace = selectedId === row.id
               const isBriefOpen = expandedBriefId === row.id && !isOpenInWorkspace
+              const isBriefMounted = mountedBriefId === row.id && !isOpenInWorkspace
               const briefFacts = [
                 row.internal ? { label: 'Order type', value: 'Internal fleet' } : null,
                 row.technicianName ? { label: 'Technician', value: row.technicianName } : null,
@@ -307,7 +327,19 @@ export default function RepairOrdersLedger({
                       <ChevronDown aria-hidden="true" />
                     </button>}
                   </div>
-                  {isBriefOpen && (
+                  {isBriefMounted && (
+                    <div
+                      className="db-repair-orders-ledger__brief-reveal"
+                      data-closing={!isBriefOpen || undefined}
+                      // The brief is on its way out: stop announcing it and stop
+                      // it taking clicks while it plays the exit.
+                      aria-hidden={!isBriefOpen || undefined}
+                      onTransitionEnd={(event) => {
+                        if (event.target !== event.currentTarget) return
+                        if (event.propertyName !== 'grid-template-rows') return
+                        if (!isBriefOpen) setMountedBriefId((current) => current === row.id ? null : current)
+                      }}
+                    >
                     <section id={briefId} className="db-repair-orders-ledger__brief" aria-label={`Order brief for ${row.orderNumber}`}>
                       <div className="db-repair-orders-ledger__brief-content">
                         {!requestOnRow && (
@@ -350,6 +382,7 @@ export default function RepairOrdersLedger({
                         <ChevronRight aria-hidden="true" />
                       </button>}
                     </section>
+                    </div>
                   )}
                 </article>
               )

@@ -3519,6 +3519,37 @@ html::-webkit-scrollbar-thumb:hover {
   .db-repair-orders-ledger__row-shell { transition: none; }
 }
 
+/* The disclosure opens and closes along the same path (Apple, Designing Fluid
+   Interfaces §7: if something disappears one way, we expect it to emerge from
+   where it came). grid-template-rows 0fr -> 1fr animates to the content's own
+   height without measuring it; @starting-style supplies the from-state on mount
+   so the enter plays without a frame of pop. Retargeting mid-flight resumes
+   from the current computed value, so opening a brief that is still closing
+   reverses rather than restarting (§3). */
+.db-repair-orders-ledger__brief-reveal {
+  display: grid;
+  grid-template-rows: 1fr;
+  opacity: 1;
+  transition: grid-template-rows 220ms cubic-bezier(0.23, 1, 0.32, 1), opacity 160ms ease-out;
+}
+
+@starting-style {
+  .db-repair-orders-ledger__brief-reveal { grid-template-rows: 0fr; opacity: 0; }
+}
+
+.db-repair-orders-ledger__brief-reveal[data-closing] {
+  grid-template-rows: 0fr;
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* The row that collapses must not scroll its own content while it does. */
+.db-repair-orders-ledger__brief-reveal > * { min-height: 0; overflow: hidden; }
+
+@media (prefers-reduced-motion: reduce) {
+  .db-repair-orders-ledger__brief-reveal { transition: none; }
+}
+
 .db-repair-orders-ledger__empty { min-height: 220px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 5px; padding: 24px; color: var(--db-ledger-muted); text-align: center; }
 .db-repair-orders-ledger__empty strong { color: var(--db-ledger-text); }
 .db-repair-orders-ledger > footer { min-height: 56px; display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 12px; padding: 0 2px; background: transparent; color: var(--db-ledger-muted); font-size: 12px; }

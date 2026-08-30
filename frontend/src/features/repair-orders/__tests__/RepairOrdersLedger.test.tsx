@@ -232,6 +232,26 @@ describe('DB-035 Stage 4 Repair Orders presentation', () => {
     expect(props.onOpenOrder).toHaveBeenLastCalledWith('ro-real-17', { focusWorkspace: true })
   })
 
+  it('removes a closed brief from the document once its exit has played', async () => {
+    const user = userEvent.setup()
+    renderLedger()
+
+    await user.click(screen.getByRole('button', { name: 'Show details for RO-1017' }))
+    expect(screen.getByRole('region', { name: 'Order brief for RO-1017' })).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Hide details for RO-1017' }))
+    // It stays mounted to play the exit, but stops being announced while it does.
+    const closing = document.querySelector('.db-repair-orders-ledger__brief-reveal')
+    expect(closing).toHaveAttribute('data-closing')
+    expect(closing).toHaveAttribute('aria-hidden', 'true')
+
+    // transitionend never fires under jsdom, so this also proves the floor that
+    // guarantees the brief leaves even when the event is missed.
+    await waitFor(() => {
+      expect(screen.queryByRole('region', { name: 'Order brief for RO-1017' })).not.toBeInTheDocument()
+    }, { timeout: 2000 })
+  })
+
   it('keeps the disclosure plane inert and protects Details from canonical row activation', async () => {
     const user = userEvent.setup()
     const { props } = renderLedger()
