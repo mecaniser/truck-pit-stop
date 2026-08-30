@@ -889,7 +889,9 @@ html::-webkit-scrollbar-thumb:hover {
   gap: 4px 8px;
 }
 
-.db-presentation-new .db-customer-navigator__summary > .db-customer-details-control {
+/* Same selector shape as the narrow-container override below, so source order
+   decides which applies rather than specificity. */
+.db-presentation-new .db-customer-details-control {
   grid-column: 3;
   grid-row: 1;
 }
@@ -1171,6 +1173,12 @@ html::-webkit-scrollbar-thumb:hover {
   .db-presentation-new .db-customer-details-control {
     grid-column: 2;
     grid-row: 1;
+  }
+
+  /* Phone takes row 2 here, so the facts line follows on row 3. Sharing row 2
+     stacked the two on top of each other in the detail-open column. */
+  .db-presentation-new .db-customer-navigator__facts {
+    grid-row: 3;
   }
 
 }
