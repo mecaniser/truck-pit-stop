@@ -239,7 +239,7 @@ describe('DB-035 Stage 4 Repair Orders presentation', () => {
 
     await user.click(details)
     const brief = screen.getByRole('region', { name: 'Order brief for RO-1017' })
-    await user.click(within(brief).getByText('Diagnose intermittent no-start with a deliberately long source description', { selector: 'p' }))
+    await user.click(brief)
     expect(props.onOpenOrder).not.toHaveBeenCalled()
 
     await user.click(screen.getByRole('button', { name: 'Open repair order RO-1017 from details' }))

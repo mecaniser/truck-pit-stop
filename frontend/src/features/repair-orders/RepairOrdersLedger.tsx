@@ -87,6 +87,13 @@ export default function RepairOrdersLedger({
   const scopeTriggerRef = useRef<HTMLButtonElement>(null)
   const scopeMenuId = useId()
   const [expandedBriefId, setExpandedBriefId] = useState<string | null>(null)
+  // The work request belongs to whichever surface has room for it. With no
+  // workspace open the list owns the page and the row carries it; once one
+  // opens the column is too narrow, so the brief takes it back. Rendered rather
+  // than hidden in CSS, so it is never read out twice by assistive tech.
+  // The daily Shop Work navigator is a narrow column too, so it reads like an
+  // open workspace here.
+  const requestOnRow = !selectedId && !compact
   const [lastLedgerInteractionWasPointer, setLastLedgerInteractionWasPointer] = useState(false)
   const scopeCount = queueLabel ? `${totalOrders} ${totalOrders === 1 ? 'order' : 'orders'}` : null
 
@@ -279,6 +286,7 @@ export default function RepairOrdersLedger({
                         {vehicleLine && <span className="db-repair-orders-ledger__vehicle">{vehicleLine}</span>}
                         {row.customerName && <small className="db-repair-orders-ledger__reference">{row.orderNumber}</small>}
                       </span>
+                      {requestOnRow && <span className="db-repair-orders-ledger__work">{row.description}</span>}
                       <span className="db-repair-orders-ledger__money">
                         <strong>{row.total}</strong>
                         <small>{row.updated}</small>
@@ -302,10 +310,12 @@ export default function RepairOrdersLedger({
                   {isBriefOpen && (
                     <section id={briefId} className="db-repair-orders-ledger__brief" aria-label={`Order brief for ${row.orderNumber}`}>
                       <div className="db-repair-orders-ledger__brief-content">
-                        <section className="db-repair-orders-ledger__work-request" aria-labelledby={workRequestId}>
-                          <h3 id={workRequestId}>Work requested</h3>
-                          <p>{row.description}</p>
-                        </section>
+                        {!requestOnRow && (
+                          <section className="db-repair-orders-ledger__work-request" aria-labelledby={workRequestId}>
+                            <h3 id={workRequestId}>Work requested</h3>
+                            <p>{row.description}</p>
+                          </section>
+                        )}
                         {briefFacts.length > 0 && (
                           <dl className="db-repair-orders-ledger__brief-facts">
                             {briefFacts.map((fact) => (

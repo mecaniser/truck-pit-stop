@@ -3479,6 +3479,21 @@ html::-webkit-scrollbar-thumb:hover {
 .db-repair-orders-ledger--compact .db-repair-orders-ledger__details-toggle { padding-inline: 9px; }
 .db-repair-orders-ledger--compact .db-repair-orders-ledger__record .db-repair-orders-ledger__order strong { display: block; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 
+/* Two states, and the request belongs to whichever has room for it.
+   List alone on the page: it reads on the row, in the middle band that was
+   otherwise empty, and the brief drops it so it is never said twice.
+   Workspace open: the column is too narrow to carry it, so the row drops it and
+   the brief carries it in full. */
+.db-repair-orders-ledger__work { min-width: 0; color: var(--db-ledger-muted, #61738a); font-size: 12.5px; line-height: 1.35; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.db-repair-orders-workspace--new:not(.db-repair-orders-workspace--detail-open) .db-repair-orders-ledger__record { grid-template-columns: minmax(148px,1fr) minmax(0,1.05fr) minmax(104px,.65fr); }
+
+/* With a workspace open the row stacks: identity and money on one line, the
+   disclosure beneath. Hiding that disclosure on the open row then removes a
+   line rather than re-flowing the identity and the amount beside it, which is
+   what made selecting a row jump the whole list. */
+.db-repair-orders-workspace--detail-open .db-repair-orders-ledger__row { grid-template-columns: minmax(0,1fr); gap: 2px; }
+.db-repair-orders-workspace--detail-open .db-repair-orders-ledger__details-toggle { justify-self: end; min-height: 32px; }
+
 .db-repair-orders-ledger__empty { min-height: 220px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 5px; padding: 24px; color: var(--db-ledger-muted); text-align: center; }
 .db-repair-orders-ledger__empty strong { color: var(--db-ledger-text); }
 .db-repair-orders-ledger > footer { min-height: 56px; display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 12px; padding: 0 2px; background: transparent; color: var(--db-ledger-muted); font-size: 12px; }
