@@ -7,6 +7,7 @@ export default defineConfig(({ command, mode }) => {
   const runtimeBranch = process.env.DIESELBRIDGE_RUNTIME_BRANCH ?? ''
   const runtimeSha = process.env.DIESELBRIDGE_RUNTIME_SHA ?? ''
   const isLocalRuntimeServe = command === 'serve' && mode !== 'test'
+  const apiOrigin = process.env.DIESELBRIDGE_API_ORIGIN ?? 'http://127.0.0.1:8000'
 
   // These browser-facing names are derived only from the controller's validated,
   // non-VITE environment. Never allow ambient VITE_* values to be auto-exposed.
@@ -38,13 +39,16 @@ export default defineConfig(({ command, mode }) => {
     port: 5173,
     strictPort: true,
     proxy: {
+      // Two worktrees can each run their own API, so the port is not always
+      // 8000. Pointing the wrong frontend at the wrong API has no symptom until
+      // an endpoint 404s, so let the environment say which one it is talking to.
       '/api': {
-        target: 'http://127.0.0.1:8000',
+        target: apiOrigin,
         changeOrigin: true,
         ws: true,
       },
       '/health': {
-        target: 'http://127.0.0.1:8000',
+        target: apiOrigin,
         changeOrigin: true,
       },
     },
