@@ -218,7 +218,7 @@ describe('RepairOrdersPage request cancellation', () => {
     const row = screen.getByRole('article', { name: 'Repair order RO-DAILY-1' })
     expect(screen.getByRole('heading', { name: 'Shop Work' })).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'Needs Action · today' })).toBeInTheDocument()
-    expect(row).not.toHaveTextContent('Confirm customer authorization')
+    expect(row).toHaveTextContent('Confirm customer authorization')
     expect(row).toHaveTextContent('200.00')
     expect(row).toHaveTextContent('Pending Review')
     expect(apiMocks.get).toHaveBeenCalledWith('/dashboard/daily-workset')

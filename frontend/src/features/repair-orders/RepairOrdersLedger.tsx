@@ -233,7 +233,8 @@ export default function RepairOrdersLedger({
               const briefId = `repair-order-brief-${row.id}`
               const workRequestId = `${briefId}-work-request`
               const vehicleGroupId = `${briefId}-vehicle`
-              const isBriefOpen = expandedBriefId === row.id
+              const isOpenInWorkspace = selectedId === row.id
+              const isBriefOpen = expandedBriefId === row.id && !isOpenInWorkspace
               const briefFacts = [
                 row.customerName ? { label: 'Customer', value: row.customerName } : null,
                 row.internal ? { label: 'Order type', value: 'Internal fleet' } : null,
@@ -287,12 +288,16 @@ export default function RepairOrdersLedger({
                         {vehicleLine && <span className="db-repair-orders-ledger__vehicle">{vehicleLine}</span>}
                         {row.customerName && <small className="db-repair-orders-ledger__reference">{row.orderNumber}</small>}
                       </span>
+                      {/* The work itself belongs between the identity and the
+                          money, where the row was otherwise empty. One clipped
+                          line only — the full request stays in the brief. */}
+                      <span className="db-repair-orders-ledger__work">{row.description}</span>
                       <span className="db-repair-orders-ledger__money">
                         <strong>{row.total}</strong>
                         <small>{row.updated}</small>
                       </span>
                     </button>
-                    <button
+                    {!isOpenInWorkspace && <button
                       type="button"
                       className="db-repair-orders-ledger__details-toggle"
                       aria-expanded={isBriefOpen}
@@ -305,7 +310,7 @@ export default function RepairOrdersLedger({
                     >
                       <span aria-hidden="true">Details</span>
                       <ChevronDown aria-hidden="true" />
-                    </button>
+                    </button>}
                   </div>
                   {isBriefOpen && (
                     <section id={briefId} className="db-repair-orders-ledger__brief" aria-label={`Order brief for ${row.orderNumber}`}>
@@ -342,7 +347,12 @@ export default function RepairOrdersLedger({
                           </section>
                         )}
                       </div>
-                      <button
+                      {/* The workspace beside the list is already showing this
+                          order, so the control would take you where you are.
+                          The ledger is hidden entirely at widths where the
+                          workspace is not visible, so a selected row here always
+                          means an open workspace. */}
+                      {selectedId !== row.id && <button
                         type="button"
                         className="db-repair-orders-ledger__open-workspace"
                         aria-label={`Open repair order ${row.orderNumber} from details`}
@@ -358,7 +368,7 @@ export default function RepairOrdersLedger({
                       >
                         Open repair order
                         <ChevronRight aria-hidden="true" />
-                      </button>
+                      </button>}
                     </section>
                   )}
                 </article>

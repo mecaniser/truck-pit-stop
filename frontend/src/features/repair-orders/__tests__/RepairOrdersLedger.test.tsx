@@ -239,7 +239,7 @@ describe('DB-035 Stage 4 Repair Orders presentation', () => {
 
     await user.click(details)
     const brief = screen.getByRole('region', { name: 'Order brief for RO-1017' })
-    await user.click(within(brief).getByText('Diagnose intermittent no-start with a deliberately long source description'))
+    await user.click(within(brief).getByText('Diagnose intermittent no-start with a deliberately long source description', { selector: 'p' }))
     expect(props.onOpenOrder).not.toHaveBeenCalled()
 
     await user.click(screen.getByRole('button', { name: 'Open repair order RO-1017 from details' }))
@@ -282,7 +282,10 @@ describe('DB-035 Stage 4 Repair Orders presentation', () => {
     expect(row).toHaveTextContent('In Progress')
     expect(row).toHaveTextContent('$4,280.50')
     expect(row).toHaveTextContent('Aug 12, 3:00 PM')
-    expect(row).not.toHaveTextContent('Diagnose intermittent no-start with a deliberately long source description')
+    // Previewed on the row, clipped to a single line; the brief keeps the full
+    // text. The row must never grow to fit it.
+    expect(row).toHaveTextContent('Diagnose intermittent no-start with a deliberately long source description')
+    expect(row.querySelector('.db-repair-orders-ledger__work')).toBeTruthy()
     expect(screen.getByRole('region', { name: 'Scrollable repair-order results' })).toHaveAttribute('tabindex', '0')
     // The shop identifies work by customer and truck, so a collapsed row leads
     // with both and keeps the order number as reference. The work request still
@@ -303,7 +306,10 @@ describe('DB-035 Stage 4 Repair Orders presentation', () => {
     expect(row).toHaveTextContent('In Progress')
     expect(row).toHaveTextContent('$4,280.50')
     expect(row).toHaveTextContent('Aug 12, 3:00 PM')
-    expect(row).not.toHaveTextContent('Diagnose intermittent no-start with a deliberately long source description')
+    // Previewed on the row, clipped to a single line; the brief keeps the full
+    // text. The row must never grow to fit it.
+    expect(row).toHaveTextContent('Diagnose intermittent no-start with a deliberately long source description')
+    expect(row.querySelector('.db-repair-orders-ledger__work')).toBeTruthy()
     expect(screen.queryByRole('group', { name: 'Filter repair orders by status' })).not.toBeInTheDocument()
     expect(screen.queryByLabelText('Order status')).not.toBeInTheDocument()
   })
@@ -344,17 +350,24 @@ describe('DB-035 Stage 4 Repair Orders presentation', () => {
     expect(within(brief).queryByText('Order status')).not.toBeInTheDocument()
     expect(within(brief).queryByText('Updated')).not.toBeInTheDocument()
     expect(within(brief).queryByText('Order total')).not.toBeInTheDocument()
-    expect(screen.getAllByText('Replace air dryer cartridge')).toHaveLength(1)
+    // Twice by design: a clipped preview on the row, the full request in the
+    // brief. It used to appear only in the brief, which left the row's middle
+    // empty at every width.
+    expect(screen.getAllByText('Replace air dryer cartridge')).toHaveLength(2)
     expect(props.onOpenOrder).not.toHaveBeenCalled()
     expect(screen.getByRole('article', { name: 'Repair order RO-1017' })).toHaveAttribute('data-selected', 'true')
     expect(screen.getByRole('article', { name: 'Repair order RO-1017' })).not.toHaveAttribute('data-inspected')
     expect(screen.getByRole('article', { name: 'Repair order RO-1018' })).toHaveAttribute('data-inspected', 'true')
 
-    await user.click(screen.getByRole('button', { name: 'Show details for RO-1017' }))
-    expect(screen.queryByRole('region', { name: 'Order brief for RO-1018' })).not.toBeInTheDocument()
-    expect(screen.getByRole('region', { name: 'Order brief for RO-1017' })).toHaveTextContent('Northline Logistics')
+    // The selected row offers no brief of its own: the workspace beside the list
+    // is already that order's detail, so a second copy on the row repeated the
+    // customer, truck and work request rather than adding anything.
+    expect(screen.queryByRole('button', { name: 'Show details for RO-1017' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('region', { name: 'Order brief for RO-1017' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Open repair order RO-1017 from details' })).not.toBeInTheDocument()
+    // Inspecting another row still works and still leaves the selection alone.
+    expect(screen.getByRole('region', { name: 'Order brief for RO-1018' })).toBeInTheDocument()
     expect(screen.getByRole('article', { name: 'Repair order RO-1017' })).toHaveAttribute('data-selected', 'true')
-    expect(screen.getByRole('article', { name: 'Repair order RO-1017' })).toHaveAttribute('data-inspected', 'true')
   })
 
   it('omits the Vehicle group when no safe vehicle fact is present', async () => {
