@@ -55,7 +55,7 @@ export default function RepairOrdersLedger({
   totalOrders: number
   searchQuery: string
   statusFilter: string
-  statusOptions: Array<{ value: string; label: string }>
+  statusOptions: Array<{ value: string; label: string; count?: number }>
   selectedId: string | null
   queueOrigin: RepairOrdersQueueOrigin | null
   isFetching: boolean
@@ -86,6 +86,30 @@ export default function RepairOrdersLedger({
   const scopeControlRef = useRef<HTMLDivElement>(null)
   const scopeTriggerRef = useRef<HTMLButtonElement>(null)
   const scopeMenuId = useId()
+  const statusMenu = useRef<HTMLDivElement>(null)
+  const [statusOpen, setStatusOpen] = useState(false)
+  // A menu closes when you look away from it, not only on a second click.
+  useEffect(() => {
+    if (!statusOpen) return
+    const closeOutside = (event: MouseEvent | FocusEvent) => {
+      const target = event.target as Node | null
+      if (target && statusMenu.current?.contains(target)) return
+      setStatusOpen(false)
+    }
+    const closeOnEscape = (event: globalThis.KeyboardEvent) => {
+      if (event.key !== 'Escape') return
+      setStatusOpen(false)
+      statusMenu.current?.querySelector('button')?.focus()
+    }
+    document.addEventListener('pointerdown', closeOutside)
+    document.addEventListener('focusin', closeOutside)
+    document.addEventListener('keydown', closeOnEscape)
+    return () => {
+      document.removeEventListener('pointerdown', closeOutside)
+      document.removeEventListener('focusin', closeOutside)
+      document.removeEventListener('keydown', closeOnEscape)
+    }
+  }, [statusOpen])
   const [expandedBriefId, setExpandedBriefId] = useState<string | null>(null)
   // A brief unmounted the instant it closed, so it could only ever animate in.
   // Keeping the closing one mounted until its transition ends lets it leave
@@ -143,9 +167,9 @@ export default function RepairOrdersLedger({
           <h1 id="repair-orders-title">{pageTitle}</h1>
           <p>{pageDescription}</p>
         </div>
-        <button type="button" className="db-repair-orders-new__create" onClick={onCreateOrder} disabled={isFetching && rows.length === 0}>
+        <button type="button" className="db-repair-orders-new__create" aria-label="New repair order" onClick={onCreateOrder} disabled={isFetching && rows.length === 0}>
           <Plus aria-hidden="true" />
-          New repair order
+          <span className="db-repair-orders-new__create-label">New repair order</span>
         </button>
       </header>
 
@@ -159,15 +183,43 @@ export default function RepairOrdersLedger({
         />
         {!compact && (
           <>
-            <label className="db-repair-orders-new__status-select">
-              <span className="sr-only">Order status</span>
-              <select value={statusFilter} onChange={(event) => onStatusChange(event.target.value)}>
-                {statusOptions.map((option) => (
-                  <option key={option.value} value={option.value}>{option.label}</option>
-                ))}
-              </select>
-              <ChevronDown aria-hidden="true" />
-            </label>
+            {/* The narrow column used a native select, which renders OS chrome
+                that ignores the appearance mode and states the current filter
+                only after you open it. A listbox keeps the control on one line,
+                names the active status on its face, and is themed like the rest
+                of the surface. */}
+            <div className="db-repair-orders-new__status-select" ref={statusMenu}>
+              <button
+                type="button"
+                aria-haspopup="listbox"
+                aria-expanded={statusOpen}
+                aria-label="Order status"
+                onClick={() => setStatusOpen((current) => !current)}
+              >
+                <span>{statusOptions.find((option) => option.value === statusFilter)?.label ?? 'All'}</span>
+                <ChevronDown aria-hidden="true" />
+              </button>
+              {statusOpen && (
+                <ul role="listbox" aria-label="Order status options">
+                  {statusOptions.map((option) => (
+                    <li key={option.value} role="presentation">
+                      <button
+                        type="button"
+                        role="option"
+                        aria-selected={option.value === statusFilter}
+                        onClick={() => {
+                          onStatusChange(option.value)
+                          setStatusOpen(false)
+                        }}
+                      >
+                        <span>{option.label}</span>
+                        {option.count !== undefined && <span className="db-repair-orders-new__status-count">{option.count}</span>}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
             <div className="db-repair-orders-new__status-tabs" role="group" aria-label="Filter repair orders by status">
               {statusOptions.map((option) => (
                 <button
@@ -177,6 +229,7 @@ export default function RepairOrdersLedger({
                   onClick={() => onStatusChange(option.value)}
                 >
                   {option.label}
+                  {option.count !== undefined && <span className="db-repair-orders-new__status-count">{option.count}</span>}
                 </button>
               ))}
             </div>

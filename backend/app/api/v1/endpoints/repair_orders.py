@@ -831,6 +831,62 @@ async def regenerate_description_library_endpoint(
     return DescriptionLibraryRegenerateResponse()
 
 
+@router.get("/status-counts")
+async def repair_order_status_counts(
+    customer_id: Optional[UUID] = Query(None),
+    vehicle_id: Optional[UUID] = Query(None),
+    search: Optional[str] = Query(None, description="Same search the list applies, so the counts match what it shows"),
+    deleted: bool = Query(False),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """How many orders sit in each status, for the filters currently applied.
+
+    The status filters showed no counts, so an operator could not tell an empty
+    stage from a busy one without selecting it and waiting for an empty list.
+    Counting here rather than client-side keeps the numbers true across the
+    whole ledger instead of the loaded page, and honouring the same search means
+    a filter never advertises rows the list would not show.
+    """
+    if current_user.role == UserRole.CUSTOMER:
+        if not current_user.customer_id:
+            return {"all": 0}
+        filters = [RepairOrderReadModel.customer_id == current_user.customer_id]
+    else:
+        if not current_user.tenant_id:
+            return {"all": 0}
+        filters = [RepairOrderReadModel.tenant_id == current_user.tenant_id]
+        if current_user.role == UserRole.FLEET_MANAGER:
+            filters.append(RepairOrderReadModel.is_internal.is_(True))
+        if customer_id:
+            filters.append(RepairOrderReadModel.customer_id == customer_id)
+
+    if vehicle_id:
+        filters.append(RepairOrderReadModel.vehicle_id == vehicle_id)
+    filters.append(RepairOrderReadModel.is_deleted.is_(deleted))
+
+    search_term = (search if isinstance(search, str) else "").strip()
+    if search_term:
+        compact_term = re.sub(r"[^A-Za-z0-9]", "", search_term)
+        search_filters = [RepairOrderReadModel.search_document.ilike(f"%{search_term}%")]
+        if compact_term:
+            search_filters.append(RepairOrderReadModel.search_compact.ilike(f"%{compact_term}%"))
+        filters.append(or_(*search_filters))
+
+    result = await db.execute(
+        select(RepairOrderReadModel.status, func.count(RepairOrderReadModel.id))
+        .where(*filters)
+        .group_by(RepairOrderReadModel.status)
+    )
+    counts: dict[str, int] = {}
+    total = 0
+    for status_value, count in result.all():
+        counts[str(status_value)] = int(count)
+        total += int(count)
+    counts["all"] = total
+    return counts
+
+
 @router.get("", response_model=List[RepairOrderResponse])
 async def list_repair_orders(
     customer_id: Optional[UUID] = Query(None),

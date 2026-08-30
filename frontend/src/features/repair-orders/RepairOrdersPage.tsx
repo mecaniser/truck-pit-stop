@@ -291,6 +291,18 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
   const [searchQuery, setSearchQuery] = useState('')
   const debouncedSearch = useDebouncedValue(searchQuery.trim(), 300)
   const [statusFilter, setStatusFilter] = useState<string>('all')
+  // Counts for the status filters. Kept with the other hooks: this component
+  // returns early for the legacy presentation, so a query declared beside
+  // statusOptions further down runs on only some renders.
+  const statusCountsQuery = useQuery<Record<string, number>>({
+    queryKey: ['repair-orders', 'status-counts', debouncedSearch],
+    queryFn: async () => (await api.get('/repair-orders/status-counts', {
+      params: { ...(debouncedSearch ? { search: debouncedSearch } : {}) },
+    })).data,
+    staleTime: 15_000,
+    retry: false,
+  })
+  const statusCounts = statusCountsQuery.data
   const queueParam = searchParams.get('queue')
   const workQueueLane: WorkQueueLane | null = queueParam && queueParam in DAILY_WORKBENCH_FIELD
     ? queueParam as WorkQueueLane
@@ -2376,7 +2388,12 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
     { value: 'invoiced', label: 'Invoiced' },
     { value: 'paid', label: 'Paid' },
     ...(canViewDeletedOrders ? [{ value: 'deleted', label: 'Deleted' }] : []),
-  ]
+  ].map((option) => ({
+    ...option,
+    // undefined while the counts are loading, so the filter shows a label
+    // rather than a zero it cannot yet stand behind
+    count: statusCounts ? statusCounts[option.value] ?? 0 : undefined,
+  }))
 
   const resetModal = () => {
     setSelectedCustomerId('')
