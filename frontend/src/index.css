@@ -3083,8 +3083,17 @@ html::-webkit-scrollbar-thumb:hover {
 .db-presentation-new .db-staff-search-field input:disabled { cursor: not-allowed; opacity: .6; }
 .db-presentation-new .db-repair-orders-new__search { height: var(--db-repair-orders-control-height); align-self: stretch; padding: 0; }
 .db-repair-orders-new__status-select { position: relative; display: none; min-width: 0; height: var(--db-repair-orders-control-height); }
-.db-repair-orders-new__status-select select { width: 100%; height: var(--db-repair-orders-control-height); appearance: none; border: 1px solid #bec9d5 !important; border-radius: 10px; padding: 0 34px 0 12px; background: #fff !important; color: #17283f !important; font-size: 14px; }
-.db-repair-orders-new__status-select svg { position: absolute; top: 50%; right: 10px; width: 16px; height: 16px; color: #53657a; transform: translateY(-50%); pointer-events: none; }
+.db-repair-orders-new__status-select > button { width: 100%; height: var(--db-repair-orders-control-height); appearance: none; border: 1px solid #bec9d5 !important; border-radius: 10px; padding: 0 34px 0 12px; background: #fff !important; color: #17283f !important; font-size: 14px; }
+.db-repair-orders-new__status-select > button { display: flex; align-items: center; justify-content: space-between; gap: 8px; text-align: start; cursor: pointer; }
+.db-repair-orders-new__status-select > button > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.db-repair-orders-new__status-select svg { flex: 0 0 auto; width: 16px; height: 16px; color: #53657a; transition: rotate 140ms ease-out; }
+.db-repair-orders-new__status-select > button[aria-expanded='true'] svg { rotate: 180deg; }
+/* The list floats over the ledger rather than pushing them down. */
+.db-repair-orders-new__status-select ul { position: absolute; z-index: 30; inset-block-start: calc(100% + 4px); inset-inline: 0; max-height: 17rem; overflow-y: auto; margin: 0; padding: 4px; list-style: none; border: 1px solid var(--workspace-border); border-radius: 10px; background: var(--surface-raised); box-shadow: 0 14px 30px rgba(6,14,26,.24); }
+.db-repair-orders-new__status-select li > button { width: 100%; min-height: 40px; display: flex; align-items: center; gap: 8px; padding: 6px 10px; border: 0; border-radius: 7px; background: transparent; color: var(--workspace-text); font-size: 13px; font-weight: 700; text-align: start; cursor: pointer; }
+.db-repair-orders-new__status-select li > button[aria-selected='true'] { background: color-mix(in srgb, var(--workspace-text) 16%, transparent); }
+@media (hover: hover) and (pointer: fine) { .db-repair-orders-new__status-select li > button:hover { background: color-mix(in srgb, var(--workspace-text) 9%, transparent); } }
+@media (prefers-reduced-motion: reduce) { .db-repair-orders-new__status-select svg { transition: none; } }
 .db-repair-orders-new__status-select:focus-within { z-index: 2; border-radius: 10px; box-shadow: 0 0 0 3px rgba(255, 122, 46, .26); }
 .db-repair-orders-new__status-select:focus-within select { border-color: #ff7a2e !important; outline: 0; }
 
