@@ -1,13 +1,14 @@
 import { useState } from 'react'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { beforeEach, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { Link, MemoryRouter, Route, Routes, useNavigate } from 'react-router-dom'
 import { ThemeProvider, useTheme } from '../../../contexts/ThemeContext'
 import { useAuthStore } from '../../../stores/authStore'
 import { garageOwnerSession } from '../../../test-fixtures/db035/staffSession'
 import { presentationFixture } from '../../../test-fixtures/db035/appearance'
 import AppearanceSettingsPanel from '../AppearanceSettingsPanel'
+import STAFF_CSS from '../../../index.css?inline'
 
 const apiMocks = vi.hoisted(() => ({ get: vi.fn(), put: vi.fn(), delete: vi.fn() }))
 vi.mock('../../../lib/api', () => ({ default: apiMocks }))
@@ -160,4 +161,43 @@ it('persists an applied preview across navigation but abandons an unapplied prev
   render(<RouterHarness />)
   expect(screen.getByLabelText('settings appearance')).toHaveTextContent('light:committed')
   expect(apiMocks.put).toHaveBeenCalledTimes(1)
+})
+
+describe('Appearance selection is visible', () => {
+  // The selected treatment was written as `.db-appearance-choice.is-selected`
+  // (two classes) while the base rule is scoped
+  // `.db-presentation-new .db-staff-content .db-appearance-choice` (three), so
+  // the base won and the selected background and border never rendered. Every
+  // section looked unselected; what read as selection on screen was the focus
+  // ring. Nothing in a component test can see that, so assert the cascade.
+  // Match the selector on its own line. A pattern like /[^{}]*\.foo \{/ looks
+  // right but [^{}]* also crosses newlines, so it swallows every preceding
+  // declaration and the class counts stop meaning anything — that mistake made
+  // an earlier version of this test pass against the very bug it describes.
+  const selector = (needle: string) =>
+    STAFF_CSS.split('\n').find(line => line.trimStart().startsWith(needle) && line.includes('{'))?.split('{')[0].trim() ?? ''
+  const classCount = (sel: string) => (sel.match(/\./g) ?? []).length
+
+  const baseRule = selector('.db-presentation-new .db-staff-content .db-appearance-choice {')
+  const selectedRuleSelector = STAFF_CSS.split('\n').find(l => l.includes('.db-appearance-choice.is-selected'))?.split('{')[0].trim() ?? ''
+  const hoverRuleSelector = STAFF_CSS.split('\n').find(l => l.includes('.db-appearance-choice:hover'))?.split('{')[0].trim() ?? ''
+  const selectedRule = selectedRuleSelector
+  const hoverRule = hoverRuleSelector
+
+  it('gives the selected rule more weight than the base rule it must override', () => {
+    expect(classCount(selectedRule)).toBeGreaterThan(classCount(baseRule))
+  })
+
+  it('gives the hover rule enough weight to show at all', () => {
+    expect(classCount(hoverRule)).toBeGreaterThanOrEqual(classCount(baseRule))
+  })
+
+  it('lifts the selected option off the page rather than only tinting it', () => {
+    expect(selectedRule).toBeTruthy()
+    const start = STAFF_CSS.indexOf('.db-appearance-choice.is-selected')
+    const body = STAFF_CSS.slice(start, STAFF_CSS.indexOf('}', start))
+    expect(body).toContain('box-shadow')
+    // A tint over `transparent` stains the page instead of raising a surface.
+    expect(body).toContain('var(--surface-raised)')
+  })
 })
