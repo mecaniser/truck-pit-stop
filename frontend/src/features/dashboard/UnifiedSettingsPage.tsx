@@ -3258,7 +3258,7 @@ export function LegacyAppearanceSection() {
           </div>
 
           <p className="text-xs text-zinc-600 mb-4 leading-relaxed">
-            Applies to everyone at this shop. Classic is this layout; Modern is the rebuilt one.
+            Applies to everyone at this shop. Classic is this layout; Modern is the rebuilt one, including the Parts & inventory workspace.
           </p>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">

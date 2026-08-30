@@ -125,7 +125,7 @@ export default function AppearanceSettingsPanel() {
         {canSetPresentation && (
           <fieldset className="db-appearance-section">
             <legend><LayoutGrid aria-hidden="true" /> Workspace</legend>
-            <p>Applies to everyone at this shop. Classic is the original layout; Modern is the rebuilt one.</p>
+            <p>Applies to everyone at this shop. Classic is the original layout; Modern is the rebuilt one, including the Parts &amp; inventory workspace.</p>
             <div className="db-appearance-segment" aria-label="Workspace layout">
               {([
                 { id: 'legacy', label: 'Classic' },

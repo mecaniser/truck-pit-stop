@@ -211,10 +211,25 @@ async def set_own_tenant_presentation(
 
 
 async def set_tenant_rollout(db: AsyncSession, tenant_id: UUID, presentation: str) -> None:
+    """Move a tenant between the classic and modern workspace.
+
+    The modern Inventory tab is gated a second time, by
+    tenants.parts_operations_enabled, and the frontend gate falls back to the
+    legacy catalog on the 404 that gate produces — silently, with no indication
+    anything is switched off. A shop moved to the modern workspace with that
+    column still false therefore lands on the modern shell wrapped around the
+    old inventory page, which reads as a bug rather than a setting.
+
+    So the two move together. Modern turns Parts & inventory on; classic turns
+    it back off, which is what the classic workspace expects to render anyway.
+    Note the column only has an effect while PARTS_OPERATIONS_V1_ENABLED is set
+    for the deployment; this cannot switch on a build-level flag.
+    """
     tenant = await db.scalar(select(Tenant).where(Tenant.id == tenant_id, Tenant.deleted_at.is_(None)))
     if not tenant:
         raise _error(status.HTTP_404_NOT_FOUND, "Not found")
     tenant.staff_presentation_default = presentation
+    tenant.parts_operations_enabled = presentation == "new"
     await db.commit()
     record_presentation_operation("tenant_rollout", "success", variant=presentation, source="tenant_default")
 
