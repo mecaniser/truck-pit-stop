@@ -3453,18 +3453,16 @@ html::-webkit-scrollbar-thumb:hover {
 .db-repair-orders-ledger__details-toggle svg { width: 15px; height: 15px; transition: transform 140ms ease-out; }
 .db-repair-orders-ledger__details-toggle[aria-expanded='true'] { color: var(--db-ledger-disclosure); text-decoration: underline; text-decoration-color: currentColor; text-underline-offset: 4px; }
 .db-repair-orders-ledger__details-toggle[aria-expanded='true'] svg { transform: rotate(180deg); }
-.db-repair-orders-ledger__brief { display: flex; align-items: end; justify-content: space-between; gap: 16px; padding: 3px 15px 16px; background: transparent; color: var(--db-ledger-text); }
+.db-repair-orders-ledger__brief { display: flex; flex-wrap: wrap; align-items: start; justify-content: space-between; gap: 12px 16px; padding: 3px 15px 16px; background: transparent; color: var(--db-ledger-text); }
 .db-repair-orders-ledger__brief-content { min-width: 0; display: grid; flex: 1 1 auto; gap: 13px; }
 .db-repair-orders-ledger__work-request { min-width: 0; }
 .db-presentation-new .db-staff-content .db-repair-orders-ledger .db-repair-orders-ledger__work-request h3 { margin: 0 0 5px; color: var(--db-ledger-metadata) !important; font-size: 11px; font-weight: 800; letter-spacing: .075em; text-transform: uppercase; }
 .db-repair-orders-ledger__work-request p { overflow-wrap: anywhere; margin: 0; color: var(--db-ledger-text); font-size: 13px; font-weight: 700; line-height: 1.45; }
-.db-repair-orders-ledger__brief dl { min-width: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(145px, 1fr)); gap: 11px 15px; margin: 0; }
+.db-repair-orders-ledger__brief dl { min-width: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px 18px; margin: 0; }
 .db-repair-orders-ledger__brief dl > div { min-width: 0; }
 .db-repair-orders-ledger__brief dt { margin: 0 0 3px; color: var(--db-ledger-metadata); font-size: 10px; font-weight: 800; letter-spacing: .075em; line-height: 1.25; text-transform: uppercase; }
 .db-repair-orders-ledger__brief dd { overflow-wrap: anywhere; margin: 0; color: var(--db-ledger-text); font-size: 12px; font-weight: 700; line-height: 1.35; }
-.db-repair-orders-ledger__vehicle-group { min-width: 0; padding: 1px 0 0; background: transparent; }
 .db-repair-orders-ledger__vehicle-group h3 { margin: 0 0 8px; color: var(--db-ledger-metadata); font-size: 11px; font-weight: 800; letter-spacing: .075em; text-transform: uppercase; }
-.db-repair-orders-ledger__vehicle-group dl { grid-template-columns: repeat(4, minmax(0,1fr)); gap: 9px 12px; }
 .db-repair-orders-ledger__vehicle-fallback { overflow-wrap: anywhere; margin: 0; color: var(--db-ledger-text); font-size: 12px; font-weight: 700; line-height: 1.4; }
 .db-repair-orders-ledger__open-workspace { min-height: 44px; display: inline-flex; flex: 0 0 auto; align-items: center; justify-content: center; gap: 7px; border: 1px solid var(--db-ledger-border); border-radius: 9px; padding: 10px 13px; background: var(--db-ledger-raised); color: var(--db-ledger-text); font-size: 12px; font-weight: 800; white-space: nowrap; }
 .db-repair-orders-ledger__open-workspace:hover { border-color: var(--db-ledger-focus); background: var(--db-ledger-surface); color: var(--db-ledger-text); }

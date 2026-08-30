@@ -333,16 +333,12 @@ describe('DB-035 Stage 4 Repair Orders presentation', () => {
 
     await user.click(screen.getByRole('button', { name: 'Show details for RO-1018' }))
     const brief = screen.getByRole('region', { name: 'Order brief for RO-1018' })
-    const vehicle = within(brief).getByRole('region', { name: 'Vehicle' })
-    expect(brief).toHaveTextContent('Allied Freight')
-    expect(vehicle).toHaveTextContent('Year')
-    expect(vehicle).toHaveTextContent('2024')
-    expect(vehicle).toHaveTextContent('Make')
-    expect(vehicle).toHaveTextContent('Volvo')
-    expect(vehicle).toHaveTextContent('Model')
-    expect(vehicle).toHaveTextContent('VNL 760')
-    expect(vehicle).toHaveTextContent('Unit number')
-    expect(vehicle).toHaveTextContent('402')
+    // The brief carries only what the row cannot: the full request and the
+    // operational facts. Customer and vehicle title the row, so repeating them
+    // here split the card into columns too narrow to hold "VOLVO TRUCK".
+    expect(within(brief).queryByRole('region', { name: 'Vehicle' })).not.toBeInTheDocument()
+    expect(brief).not.toHaveTextContent('Unit number')
+    expect(screen.getByRole('article', { name: 'Repair order RO-1018' })).toHaveTextContent('2024 Volvo VNL 760 · Unit 402')
     expect(brief).toHaveTextContent('Work requested')
     expect(brief).toHaveTextContent('Replace air dryer cartridge')
     expect(brief).toHaveTextContent('Not sent')
@@ -389,7 +385,7 @@ describe('DB-035 Stage 4 Repair Orders presentation', () => {
     expect(within(brief).queryByRole('region', { name: 'Vehicle' })).not.toBeInTheDocument()
   })
 
-  it('renders an unstructured vehicle fallback once beneath the Vehicle heading', async () => {
+  it('falls back to the raw vehicle label on the row when no structured fields exist', async () => {
     const user = userEvent.setup()
     const fallbackVehicleRow: RepairOrdersLedgerRow = {
       ...rows[0],
@@ -403,12 +399,13 @@ describe('DB-035 Stage 4 Repair Orders presentation', () => {
     }
     renderLedger({ rows: [fallbackVehicleRow] })
 
+    // With no structured year/make/model the row falls back to the raw label,
+    // and it reads on the row rather than in a Vehicle block inside the brief.
+    const row = screen.getByRole('article', { name: 'Repair order RO-1020' })
+    expect(row).toHaveTextContent('2020 Volvo VNL 760')
     await user.click(screen.getByRole('button', { name: 'Show details for RO-1020' }))
-    const vehicle = screen.getByRole('region', { name: 'Vehicle' })
-    expect(within(vehicle).getByRole('heading', { name: 'Vehicle' })).toBeInTheDocument()
-    expect(within(vehicle).getByText('2020 Volvo VNL 760')).toBeInTheDocument()
-    expect(within(vehicle).queryByText('Vehicle', { selector: 'dt' })).not.toBeInTheDocument()
-    expect(within(vehicle).queryByRole('term')).not.toBeInTheDocument()
+    expect(screen.queryByRole('region', { name: 'Vehicle' })).not.toBeInTheDocument()
+    expect(screen.getAllByText('2020 Volvo VNL 760')).toHaveLength(1)
   })
 
   it('lands a keyboard-selected record on its heading rather than framing the entire workspace', async () => {

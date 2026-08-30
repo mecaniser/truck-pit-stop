@@ -232,24 +232,15 @@ export default function RepairOrdersLedger({
             {rows.map((row) => {
               const briefId = `repair-order-brief-${row.id}`
               const workRequestId = `${briefId}-work-request`
-              const vehicleGroupId = `${briefId}-vehicle`
               const isOpenInWorkspace = selectedId === row.id
               const isBriefOpen = expandedBriefId === row.id && !isOpenInWorkspace
               const briefFacts = [
-                row.customerName ? { label: 'Customer', value: row.customerName } : null,
                 row.internal ? { label: 'Order type', value: 'Internal fleet' } : null,
                 row.technicianName ? { label: 'Technician', value: row.technicianName } : null,
                 row.holdReason ? { label: 'Hold', value: row.holdReason } : null,
                 row.quoteSent === true ? { label: 'Estimate', value: 'Sent' } : null,
                 row.quoteSent === false ? { label: 'Estimate', value: 'Not sent' } : null,
               ].filter((fact): fact is { label: string; value: string } => fact !== null)
-              const vehicleFacts = [
-                row.vehicleYear ? { label: 'Year', value: String(row.vehicleYear) } : null,
-                row.vehicleMake ? { label: 'Make', value: row.vehicleMake } : null,
-                row.vehicleModel ? { label: 'Model', value: row.vehicleModel } : null,
-                row.vehicleUnitNumber ? { label: 'Unit number', value: row.vehicleUnitNumber } : null,
-              ].filter((fact): fact is { label: string; value: string } => fact !== null)
-              const fallbackVehicleInfo = vehicleFacts.length === 0 ? row.vehicleInfo : null
               const vehicleLine = [
                 [row.vehicleYear, row.vehicleMake, row.vehicleModel].filter(Boolean).join(' ').trim() || row.vehicleInfo || null,
                 row.vehicleUnitNumber ? `Unit ${row.vehicleUnitNumber}` : null,
@@ -328,23 +319,6 @@ export default function RepairOrdersLedger({
                               </div>
                             ))}
                           </dl>
-                        )}
-                        {(vehicleFacts.length > 0 || fallbackVehicleInfo) && (
-                          <section className="db-repair-orders-ledger__vehicle-group" aria-labelledby={vehicleGroupId}>
-                            <h3 id={vehicleGroupId}>Vehicle</h3>
-                            {vehicleFacts.length > 0 ? (
-                              <dl>
-                                {vehicleFacts.map((fact) => (
-                                  <div key={fact.label}>
-                                    <dt>{fact.label}</dt>
-                                    <dd>{fact.value}</dd>
-                                  </div>
-                                ))}
-                              </dl>
-                            ) : (
-                              <p className="db-repair-orders-ledger__vehicle-fallback">{fallbackVehicleInfo}</p>
-                            )}
-                          </section>
                         )}
                       </div>
                       {/* The workspace beside the list is already showing this
