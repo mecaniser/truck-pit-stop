@@ -104,18 +104,15 @@ const renderLedger = (overrides: Partial<React.ComponentProps<typeof RepairOrder
     selectedId: null,
     queueOrigin: 'on_floor',
     isFetching: false,
-    page: 0,
-    pageSize: 25,
+    loadedCount: 0,
     hasMore: false,
-    isPlaceholder: false,
-    canGoPrevious: false,
+    isLoadingMore: false,
     onSearchChange: vi.fn(),
     onStatusChange: vi.fn(),
     onOpenOrder: vi.fn(),
     onCreateOrder: vi.fn(),
     onShowAllOrders: vi.fn(),
-    onPreviousPage: vi.fn(),
-    onNextPage: vi.fn(),
+    onLoadMore: vi.fn(),
     ...overrides,
   }
   return { props, ...render(<RepairOrdersLedger {...props} />) }
@@ -195,8 +192,34 @@ describe('DB-035 Stage 4 Repair Orders presentation', () => {
     expect(screen.getByRole('menu', { name: 'Repair Orders scope' })).toBeInTheDocument()
     await user.click(screen.getByRole('menuitem', { name: 'All repair orders' }))
     expect(props.onShowAllOrders).toHaveBeenCalledOnce()
-    await user.click(screen.getByRole('button', { name: 'Next repair-order page' }))
-    expect(props.onNextPage).toHaveBeenCalledOnce()
+    await user.click(screen.getByRole('button', { name: /Load more repair orders/ }))
+    expect(props.onLoadMore).toHaveBeenCalledOnce()
+  })
+
+  // The list loads as it is scrolled, but the control has to stay reachable
+  // without a pointer: an observer that only fires on scroll leaves keyboard
+  // and screen-reader users with no way to reach the rest of the set.
+  it('states how much of the set is loaded and offers an explicit way to load the rest', async () => {
+    const user = userEvent.setup()
+    const { props } = renderLedger({ loadedCount: 25, totalOrders: 60, hasMore: true })
+
+    expect(screen.getByText('25 of 60 loaded')).toBeInTheDocument()
+    const button = screen.getByRole('button', { name: 'Load more repair orders, 25 of 60 loaded' })
+    await user.click(button)
+    expect(props.onLoadMore).toHaveBeenCalledOnce()
+  })
+
+  it('stops offering more once the whole set is loaded', () => {
+    renderLedger({ loadedCount: 60, totalOrders: 60, hasMore: false })
+
+    expect(screen.queryByRole('button', { name: /Load more/ })).not.toBeInTheDocument()
+    expect(screen.getByText('60 orders')).toBeInTheDocument()
+  })
+
+  it('does not offer to load more while a load is already running', () => {
+    renderLedger({ loadedCount: 25, totalOrders: 60, hasMore: true, isLoadingMore: true })
+
+    expect(screen.getByRole('button', { name: /Load more repair orders/ })).toBeDisabled()
   })
 
   it('uses the canonical focus-safe staff search field', () => {

@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Dialog, DialogBackdrop, DialogPanel, DialogTitle } from '@headlessui/react'
 import { Spinner, LoadingLine } from '@/components/ui'
-import { useMutation, useQuery, useQueryClient, keepPreviousData } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient, keepPreviousData, useInfiniteQuery,
+} from '@tanstack/react-query'
 import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 import { formatHoursMinutes } from '@/lib/durationFormat'
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom'
@@ -308,12 +309,13 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
     ? queueParam as WorkQueueLane
     : null
   const RO_PAGE_SIZE = 25
-  const [page, setPage] = useState(0)
-  // Reset to the first page whenever the search term or status filter changes.
-  useEffect(() => { setPage(0) }, [debouncedSearch, statusFilter])
+  type OrderPage = { items: RepairOrder[]; total: number; has_more: boolean }
+  // No page state: the query key carries the search and status, so changing
+  // either starts a fresh list rather than paging an existing one.
   // Set by the drawer's Next/Prev when it crosses a list-page boundary;
   // consumed once the new page's orders load to auto-open the right one.
-  const [pendingPageNav, setPendingPageNav] = useState<'first' | 'last' | null>(null)
+  // Index the drawer should land on once a newly requested page arrives.
+  const [pendingNavIndex, setPendingNavIndex] = useState<number | null>(null)
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [selectedCustomerId, setSelectedCustomerId] = useState<string>('')
   const [selectedVehicleId, setSelectedVehicleId] = useState<string>('')
@@ -476,8 +478,6 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
   const workQueueOrderIds = workQueueOrders.map((order) => order.id)
   // Server-side pagination: one page at a time, with search + status pushed to
   // the API instead of loading every order and filtering in the browser.
-  const orderPageKey = (p: number) =>
-    ['repair-orders', { page: p, search: debouncedSearch, status: statusFilter }] as const
   const fetchOrderPage = async (p: number, signal?: AbortSignal) => {
     const response = await api.get('/repair-orders', {
       signal,
@@ -493,30 +493,33 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
         ...(debouncedSearch ? { search: debouncedSearch } : {}),
       },
     })
-    return response.data as { items: RepairOrder[]; total: number; has_more: boolean }
+    return response.data as OrderPage
   }
-  const { data: orderPage, isLoading, isPlaceholderData, isFetching, error: orderPageError } = useQuery({
-    queryKey: orderPageKey(page),
-    queryFn: ({ signal }) => fetchOrderPage(page, signal),
-    placeholderData: keepPreviousData,
+  const ordersQuery = useInfiniteQuery({
+    queryKey: ['repair-orders', 'infinite', { search: debouncedSearch, status: statusFilter }] as const,
+    queryFn: ({ pageParam, signal }: { pageParam: number; signal: AbortSignal }) => fetchOrderPage(pageParam, signal),
+    initialPageParam: 0,
+    getNextPageParam: (last: OrderPage, all: OrderPage[]) => (last.has_more ? all.length : undefined),
     staleTime: 30_000,
     enabled: !workQueueLane,
   })
-  const orders = orderPage?.items
-  const totalOrders = orderPage?.total ?? 0
-
-  // Prefetch the next page once the current one settles, so paging forward feels
-  // instant. Only when a next page exists and we're showing live (non-placeholder) data.
-  useEffect(() => {
-    if (orderPage?.has_more && !isPlaceholderData) {
-      queryClient.prefetchQuery({
-        queryKey: orderPageKey(page + 1),
-        queryFn: ({ signal }) => fetchOrderPage(page + 1, signal),
-        staleTime: 30_000,
-      })
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page, debouncedSearch, statusFilter, orderPage?.has_more, isPlaceholderData])
+  const {
+    isLoading,
+    isFetching,
+    hasNextPage,
+    isFetchingNextPage,
+    fetchNextPage,
+    error: orderPageError,
+  } = ordersQuery
+  // One list, not a window onto one. Every page the operator has pulled stays
+  // rendered, so the row they were reading does not move under them and the
+  // detail drawer can walk the whole loaded set without reloading anything.
+  const orders = useMemo(
+    () => (ordersQuery.data ? ordersQuery.data.pages.flatMap((chunk: OrderPage) => chunk.items) : undefined),
+    [ordersQuery.data],
+  )
+  const totalOrders = ordersQuery.data?.pages[0]?.total ?? 0
+  const loadedOrderCount = orders?.length ?? 0
 
   // Handle ?new=true query param to auto-open create modal
   useEffect(() => {
@@ -1889,29 +1892,17 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isDetailOpen, filteredOrders, selectedOrder])
 
-  // Once a page change triggered by goToNextOrder/goToPrevOrder (defined
-  // below, in scope by the time this runs) resolves, land on that page's
-  // first (Next) or last (Prev) order. The target page is normally already
-  // prefetched (see the prefetch effect above), so this fires as soon as the
-  // new `orders` array is in the cache rather than waiting on a fresh fetch.
-  // Placed before the isLoading early return below so this hook always runs
-  // in the same order across renders — moving it after that guard broke the
-  // Rules of Hooks (present on some renders, absent on others).
-  //
-  // Must also wait on !isPlaceholderData: react-query's placeholderData:
-  // keepPreviousData means `orders` briefly still holds the OUTGOING page's
-  // data the instant `page` changes (not empty, not undefined — just stale),
-  // so without this check the effect could fire on the previous page's last
-  // row instead of the new page's first row, landing on the wrong order or
-  // opening one whose detail/price-build queries then race against the
-  // still-in-flight real fetch and can settle into a false failure state.
+  // Land on the row the drawer was walking towards once the page carrying it
+  // has arrived. Placed before the loading early-return below so the hook order
+  // stays identical across renders.
   useEffect(() => {
-    if (!pendingPageNav || !orders || orders.length === 0 || isPlaceholderData) return
-    const target = pendingPageNav === 'first' ? orders[0] : orders[orders.length - 1]
-    setPendingPageNav(null)
+    if (pendingNavIndex === null || !orders) return
+    const target = orders[pendingNavIndex]
+    if (!target) return
+    setPendingNavIndex(null)
     openDetail(target)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pendingPageNav, orders, isPlaceholderData])
+  }, [pendingNavIndex, orders])
 
   if (isLoading || (workbenchScope === 'daily' && Boolean(workQueueLane) && isDailyWorkbenchLoading)) {
     if (presentationVariant === 'new') {
@@ -1925,18 +1916,15 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
           selectedId={searchParams.get('selected')}
           queueOrigin={workbenchScope === 'daily' ? null : workQueueLane}
           isFetching={isFetching || isDailyWorkbenchFetching}
-          page={page}
-          pageSize={RO_PAGE_SIZE}
+          loadedCount={0}
           hasMore={false}
-          isPlaceholder={false}
-          canGoPrevious={false}
+          isLoadingMore={false}
           onSearchChange={setSearchQuery}
           onStatusChange={setStatusFilter}
           onOpenOrder={() => undefined}
           onCreateOrder={() => undefined}
           onShowAllOrders={showAllOrders}
-          onPreviousPage={() => undefined}
-          onNextPage={() => undefined}
+          onLoadMore={() => undefined}
         />
       )
     }
@@ -2028,23 +2016,22 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
   const currentNavIndex = selectedOrder
     ? navigationOrders.findIndex(o => o.id === selectedOrder.id)
     : -1
-  const isAtLastOnPage = currentNavIndex >= 0 && currentNavIndex === navigationOrders.length - 1
-  const isAtFirstOnPage = currentNavIndex === 0
-  const canCrossToNextPage = isAtLastOnPage && !!orderPage?.has_more
-  const canCrossToPrevPage = isAtFirstOnPage && page > 0
+  const isAtLastLoaded = currentNavIndex >= 0 && currentNavIndex === navigationOrders.length - 1
+  // Walking past the last loaded order pulls the next page instead of jumping a
+  // window. Nothing above is ever unloaded, so there is no backwards equivalent.
+  const canLoadMoreForNav = isAtLastLoaded && Boolean(hasNextPage)
   const showNavigation = isWorkQueueNavigation || (navigationOrders.length > 1 && currentNavIndex >= 0)
   const hasPrev = isWorkQueueNavigation
     ? workQueueNavIndex > 0
-    : (currentNavIndex > 0) || canCrossToPrevPage
+    : currentNavIndex > 0
   const hasNext = isWorkQueueNavigation
     ? workQueueNavIndex < workQueueOrderIds.length - 1
-    : (currentNavIndex >= 0 && currentNavIndex < navigationOrders.length - 1) || canCrossToNextPage
-  // Position within the current 25-row page, projected onto the true
-  // position across every page — otherwise crossing a page boundary reset
-  // the counter back to "1 / 25" instead of continuing "26 / <total>".
+    : (currentNavIndex >= 0 && currentNavIndex < navigationOrders.length - 1) || canLoadMoreForNav
+  // The loaded list is the list, so the index is already the true position and
+  // needs no projection across pages.
   const globalNavPosition = isWorkQueueNavigation
     ? workQueueNavIndex + 1
-    : currentNavIndex >= 0 ? page * RO_PAGE_SIZE + currentNavIndex + 1 : 0
+    : currentNavIndex >= 0 ? currentNavIndex + 1 : 0
   const globalNavTotal = isWorkQueueNavigation
     ? workQueueOrderIds.length
     : totalOrders || navigationOrders.length
@@ -2058,9 +2045,11 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
       openDetail(navigationOrders[currentNavIndex + 1])
       return
     }
-    if (canCrossToNextPage) {
-      setPendingPageNav('first')
-      setPage((p) => p + 1)
+    if (canLoadMoreForNav) {
+      // Land on the first row that arrives, which is the one after the current
+      // end of the list.
+      setPendingNavIndex(navigationOrders.length)
+      void fetchNextPage()
     }
   }
 
@@ -2072,10 +2061,6 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
     if (currentNavIndex > 0) {
       openDetail(navigationOrders[currentNavIndex - 1])
       return
-    }
-    if (canCrossToPrevPage) {
-      setPendingPageNav('last')
-      setPage((p) => Math.max(0, p - 1))
     }
   }
 
@@ -2730,11 +2715,9 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
           queueOrigin={workbenchScope === 'daily' ? null : workQueueLane}
           isFetching={isQueueWorkset ? isDailyWorkbenchFetching || isFetching : isFetching}
           errorMessage={(isQueueWorkset ? workQueueErrorForScope : orderPageError) ? 'Check the connection and try again.' : null}
-          page={page}
-          pageSize={RO_PAGE_SIZE}
-          hasMore={isQueueWorkset ? false : Boolean(orderPage?.has_more)}
-          isPlaceholder={isPlaceholderData}
-          canGoPrevious={!isQueueWorkset && page > 0}
+          loadedCount={isQueueWorkset ? displayedLedgerRows.length : loadedOrderCount}
+          hasMore={isQueueWorkset ? false : Boolean(hasNextPage)}
+          isLoadingMore={isFetchingNextPage}
           showPagination={!isQueueWorkset}
           onSearchChange={setSearchQuery}
           onStatusChange={setStatusFilter}
@@ -2748,8 +2731,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
           }}
           onCreateOrder={openModal}
           onShowAllOrders={showAllOrders}
-          onPreviousPage={() => setPage((current) => Math.max(0, current - 1))}
-          onNextPage={() => setPage((current) => orderPage?.has_more ? current + 1 : current)}
+          onLoadMore={() => void fetchNextPage()}
           pageTitle={ledgerTitle}
           pageDescription={ledgerDescription}
           sectionTitle={workbenchScope === 'daily' && workQueueLane
@@ -3067,29 +3049,20 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
           )}
         </div>
 
-        {/* Pagination footer (also carries the total count) */}
+        {/* Footer: how much of the set is loaded, and one way to load more */}
         {totalOrders > 0 && (
-          <div className={`flex items-center justify-between px-4 py-3 border-t border-white/10 flex-shrink-0 text-sm text-white/70 ${isPlaceholderData ? 'opacity-60' : ''}`}>
+          <div className="flex items-center justify-between px-4 py-3 border-t border-white/10 flex-shrink-0 text-sm text-white/70">
             <span>
-              {page * RO_PAGE_SIZE + 1}–{Math.min((page + 1) * RO_PAGE_SIZE, totalOrders)} of {totalOrders} order{totalOrders !== 1 ? 's' : ''}
+              Showing {loadedOrderCount} of {totalOrders} order{totalOrders !== 1 ? 's' : ''}
             </span>
-            {totalOrders > RO_PAGE_SIZE && (
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => setPage((p) => Math.max(0, p - 1))}
-                  disabled={page === 0 || isPlaceholderData}
-                  className="px-3 py-1.5 rounded-lg border border-white/15 hover:bg-white/10 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-                >
-                  Previous
-                </button>
-                <button
-                  onClick={() => setPage((p) => (orderPage?.has_more ? p + 1 : p))}
-                  disabled={!orderPage?.has_more || isPlaceholderData}
-                  className="px-3 py-1.5 rounded-lg border border-white/15 hover:bg-white/10 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-                >
-                  Next
-                </button>
-              </div>
+            {hasNextPage && (
+              <button
+                onClick={() => void fetchNextPage()}
+                disabled={isFetchingNextPage}
+                className="px-3 py-1.5 rounded-lg border border-white/15 hover:bg-white/10 disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                {isFetchingNextPage ? 'Loading…' : 'Load more'}
+              </button>
             )}
           </div>
         )}

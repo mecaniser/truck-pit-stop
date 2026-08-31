@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef, useState } from 'react'
-import { ChevronDown, ChevronLeft, ChevronRight, Plus } from 'lucide-react'
+import { ChevronDown, ChevronRight, Plus } from 'lucide-react'
 import { StaffSearchField } from '@/components/ui'
 import { REPAIR_ORDERS_QUEUE_LABEL, type RepairOrdersQueueOrigin } from './repairOrdersPresentation'
 
@@ -33,19 +33,16 @@ export default function RepairOrdersLedger({
   queueOrigin,
   isFetching,
   errorMessage,
-  page,
-  pageSize,
+  loadedCount,
   hasMore,
-  isPlaceholder,
-  canGoPrevious,
+  isLoadingMore,
   showPagination = true,
   onSearchChange,
   onStatusChange,
   onOpenOrder,
   onCreateOrder,
   onShowAllOrders,
-  onPreviousPage,
-  onNextPage,
+  onLoadMore,
   pageTitle = 'Repair Orders',
   pageDescription = 'Review and update repair work from check-in through payment.',
   sectionTitle = 'Order ledger',
@@ -60,19 +57,16 @@ export default function RepairOrdersLedger({
   queueOrigin: RepairOrdersQueueOrigin | null
   isFetching: boolean
   errorMessage?: string | null
-  page: number
-  pageSize: number
+  loadedCount: number
   hasMore: boolean
-  isPlaceholder: boolean
-  canGoPrevious: boolean
+  isLoadingMore: boolean
   showPagination?: boolean
   onSearchChange: (value: string) => void
   onStatusChange: (value: string) => void
   onOpenOrder: (id: string, options?: { focusWorkspace?: boolean }) => void
   onCreateOrder: () => void
   onShowAllOrders: () => void
-  onPreviousPage: () => void
-  onNextPage: () => void
+  onLoadMore: () => void
   pageTitle?: string
   pageDescription?: string
   /** A daily Shop Work navigator intentionally avoids restating the record
@@ -87,6 +81,26 @@ export default function RepairOrdersLedger({
   const scopeTriggerRef = useRef<HTMLButtonElement>(null)
   const scopeMenuId = useId()
   const statusMenu = useRef<HTMLDivElement>(null)
+  const loadMoreSentinelRef = useRef<HTMLDivElement | null>(null)
+  const onLoadMoreRef = useRef(onLoadMore)
+  useEffect(() => { onLoadMoreRef.current = onLoadMore }, [onLoadMore])
+  // Fetch the next page as the end of the list comes into view. The callback is
+  // read from a ref so a new function identity each render does not tear the
+  // observer down and rebuild it mid-scroll. rootMargin starts the request
+  // before the sentinel is actually visible, so rows are usually there by the
+  // time the operator reaches them.
+  useEffect(() => {
+    const node = loadMoreSentinelRef.current
+    if (!node || !hasMore || isLoadingMore) return
+    if (typeof IntersectionObserver === 'undefined') return
+    const observer = new IntersectionObserver(
+      (entries) => { if (entries.some((entry) => entry.isIntersecting)) onLoadMoreRef.current() },
+      { rootMargin: '320px' },
+    )
+    observer.observe(node)
+    return () => observer.disconnect()
+  }, [hasMore, isLoadingMore, loadedCount])
+
   const [statusOpen, setStatusOpen] = useState(false)
   // A menu closes when you look away from it, not only on a second click.
   useEffect(() => {
@@ -442,20 +456,30 @@ export default function RepairOrdersLedger({
             })}
           </div>
         )}
+        {/* Watched by the observer below: once this reaches the viewport the
+            next page is already being fetched, so the list continues without
+            the operator asking. The button in the footer stays as the explicit
+            path for keyboards, screen readers, and any browser where the
+            observer never fires. */}
+        {showPagination && hasMore && <div ref={loadMoreSentinelRef} aria-hidden="true" style={{ blockSize: 1 }} />}
         </div>
         </div>
 
         {showPagination && totalOrders > 0 && (
           <footer>
-            <span>{page * pageSize + 1}–{Math.min((page + 1) * pageSize, totalOrders)} of {totalOrders}</span>
-            <div>
-              <button type="button" onClick={onPreviousPage} disabled={!canGoPrevious || isPlaceholder} aria-label="Previous repair-order page">
-                <ChevronLeft aria-hidden="true" /> Previous
+            <span aria-live="polite">
+              {hasMore ? `${loadedCount} of ${totalOrders} loaded` : `${totalOrders} order${totalOrders === 1 ? '' : 's'}`}
+            </span>
+            {hasMore && (
+              <button
+                type="button"
+                onClick={onLoadMore}
+                disabled={isLoadingMore}
+                aria-label={`Load more repair orders, ${loadedCount} of ${totalOrders} loaded`}
+              >
+                {isLoadingMore ? 'Loading…' : 'Load more'}
               </button>
-              <button type="button" onClick={onNextPage} disabled={!hasMore || isPlaceholder} aria-label="Next repair-order page">
-                Next <ChevronRight aria-hidden="true" />
-              </button>
-            </div>
+            )}
           </footer>
         )}
       </section>
