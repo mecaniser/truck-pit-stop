@@ -1,0 +1,43 @@
+# A second, self-contained API stack so two agents can develop in parallel.
+#
+# The default dev stack hardcodes container names and host ports, so a second
+# `docker compose up` from another worktree collides with the first and the
+# survivor silently serves the loser's code. That is how :8000 ended up serving
+# one worktree's branch while a different worktree's frontend called it.
+#
+# This file starts an API only, and joins the network the default stack already
+# created, so Postgres and Redis are shared servers while the *data* is not:
+# every parallel environment gets its own database and its own Redis db index.
+# Schema and migrations — the real conflict surface — stay isolated.
+#
+#   scripts/dev-env.sh up        # from the worktree you want served
+#
+# `./backend` resolves relative to this file, so the stack always mounts the
+# worktree it was started from. That is the property the default stack lacks.
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile.dev
+    image: truck-pit-stop-api
+    container_name: dieselbridge_api_${DIESELBRIDGE_ENV_NAME:-parallel}
+    env_file:
+      - backend/.env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://dieselbridge:dieselbridge_dev@postgres:5432/${DIESELBRIDGE_LOCAL_DB_NAME:-truckpitstop_parallel}
+      # A separate Redis db index keeps Celery queues from crossing between
+      # environments; sharing db 0 would let one stack consume the other's tasks.
+      REDIS_URL: redis://redis:6379/${DIESELBRIDGE_REDIS_DB:-1}
+      FRONTEND_URL: http://127.0.0.1:${DIESELBRIDGE_WEB_PORT:-5174}
+      CORS_ORIGINS_STR: http://localhost:${DIESELBRIDGE_WEB_PORT:-5174},http://127.0.0.1:${DIESELBRIDGE_WEB_PORT:-5174}
+    volumes:
+      - ./backend:/app
+    ports:
+      - "127.0.0.1:${DIESELBRIDGE_API_PORT:-8001}:8000"
+    restart: unless-stopped
+
+networks:
+  default:
+    name: ${DIESELBRIDGE_SHARED_NETWORK:-truck-pit-stop_default}
+    external: true
