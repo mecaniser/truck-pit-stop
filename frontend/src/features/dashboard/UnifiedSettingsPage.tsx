@@ -431,24 +431,24 @@ function PaymentSourceDisconnectDialog({
 
   return (
     <div
-      className="fixed inset-0 z-[100] grid place-items-center bg-black/70 p-4 backdrop-blur-sm"
+      className="db-payment-dialog fixed inset-0 z-[100] grid place-items-center bg-black/70 p-4 backdrop-blur-sm"
       onMouseDown={(event) => event.target === event.currentTarget && !pending && onCancel()}
     >
-      <div role="alertdialog" aria-modal="true" aria-labelledby={titleId} aria-describedby={descriptionId} className="w-full max-w-md rounded-xl border border-red-800/50 bg-zinc-950 p-6 shadow-2xl shadow-black/60">
+      <div role="alertdialog" aria-modal="true" aria-labelledby={titleId} aria-describedby={descriptionId} className="db-payment-dialog__panel w-full max-w-md rounded-xl border p-6">
         <div className="flex items-start justify-between gap-4">
           <div className="flex items-center gap-3">
-            <span className="grid h-10 w-10 shrink-0 place-items-center rounded-lg border border-red-800/50 bg-red-950/70 text-red-400">
+            <span className="db-payment-dialog__danger-icon grid h-10 w-10 shrink-0 place-items-center rounded-lg border">
               <AlertCircle className="h-5 w-5" />
             </span>
-            <h3 id={titleId} className="text-lg font-semibold text-zinc-100">{title}</h3>
+            <h3 id={titleId} className="db-payment-dialog__title text-lg font-semibold">{title}</h3>
           </div>
-          <button type="button" onClick={onCancel} disabled={pending} aria-label="Close confirmation" className="grid h-9 w-9 shrink-0 place-items-center rounded-lg text-zinc-400 transition hover:bg-zinc-800 hover:text-zinc-100 disabled:opacity-50">
+          <button type="button" onClick={onCancel} disabled={pending} aria-label="Close confirmation" className="db-payment-dialog__close grid h-9 w-9 shrink-0 place-items-center rounded-lg transition disabled:opacity-50">
             <X className="h-5 w-5" />
           </button>
         </div>
-        <p id={descriptionId} className="mt-4 text-sm leading-6 text-zinc-400">{description}</p>
+        <p id={descriptionId} className="db-payment-dialog__copy mt-4 text-sm leading-6">{description}</p>
         {notice && (
-          <p className="mt-3 rounded-lg border border-amber-800/40 bg-amber-950/20 px-3 py-2 text-sm text-amber-200">
+          <p className="db-payment-dialog__notice mt-3 rounded-lg border px-3 py-2 text-sm">
             {notice}
           </p>
         )}
@@ -1259,15 +1259,23 @@ function PaymentSourceStepUpDialog({
     onError: (reason: unknown) => setError(paymentStepUpError(reason, 'Unable to verify your password.')),
   })
 
+  useEffect(() => {
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && !grantMutation.isPending) onCancel()
+    }
+    window.addEventListener('keydown', closeOnEscape)
+    return () => window.removeEventListener('keydown', closeOnEscape)
+  }, [grantMutation.isPending, onCancel])
+
   return (
-    <div className="fixed inset-0 z-[110] grid place-items-center bg-black/70 p-4 backdrop-blur-sm" onMouseDown={(event) => event.target === event.currentTarget && !grantMutation.isPending && onCancel()}>
-      <div role="alertdialog" aria-modal="true" aria-labelledby="payment-step-up-title" aria-describedby="payment-step-up-description" className="w-full max-w-md rounded-xl border border-red-800/50 bg-zinc-950 p-6 shadow-2xl shadow-black/60">
+    <div className="db-payment-dialog fixed inset-0 z-[110] grid place-items-center bg-black/70 p-4 backdrop-blur-sm" onMouseDown={(event) => event.target === event.currentTarget && !grantMutation.isPending && onCancel()}>
+      <div role="alertdialog" aria-modal="true" aria-labelledby="payment-step-up-title" aria-describedby="payment-step-up-description" className="db-payment-dialog__panel w-full max-w-md rounded-xl border p-6">
         <div className="flex items-start justify-between gap-4">
           <div>
-            <h3 id="payment-step-up-title" className="text-lg font-semibold text-zinc-100">{prompt.title}</h3>
-            <p id="payment-step-up-description" className="mt-2 text-sm leading-6 text-zinc-400">{prompt.description}</p>
+            <h3 id="payment-step-up-title" className="db-payment-dialog__title text-lg font-semibold">{prompt.title}</h3>
+            <p id="payment-step-up-description" className="db-payment-dialog__copy mt-2 text-sm leading-6">{prompt.description}</p>
           </div>
-          <button type="button" onClick={onCancel} disabled={grantMutation.isPending} aria-label="Close verification" className="rounded p-1 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100 disabled:opacity-50"><X className="h-5 w-5" /></button>
+          <button type="button" onClick={onCancel} disabled={grantMutation.isPending} aria-label="Close verification" className="db-payment-dialog__close rounded p-1 disabled:opacity-50"><X className="h-5 w-5" /></button>
         </div>
         <form className="mt-5 space-y-4" onSubmit={(event) => { event.preventDefault(); if (password) grantMutation.mutate() }}>
           <div>
@@ -1288,6 +1296,7 @@ function PaymentSourceStepUpDialog({
 function PaymentsSection() {
   const [isRedirecting, setIsRedirecting] = useState(false)
   const [disconnectKind, setDisconnectKind] = useState<'current' | 'legacy' | null>(null)
+  const [stripeDisconnectGrant, setStripeDisconnectGrant] = useState<string | null>(null)
   const [openPaymentPanel, setOpenPaymentPanel] = useState<'stripe' | 'zelle' | 'quickbooks' | null>('stripe')
   const [manageGrant, setManageGrant] = useState<{ token: string; expiresAt: number } | null>(null)
   const [unlockPassword, setUnlockPassword] = useState('')
@@ -1317,13 +1326,20 @@ function PaymentsSection() {
   }, [manageGrant])
 
   const handleGrantRejected = (error: unknown) => {
-    if (paymentStepUpRequiredScope(error) === 'payment_sources.manage') {
+    const requiredScope = paymentStepUpRequiredScope(error)
+    if (requiredScope?.startsWith('payment_sources.')) {
       setManageGrant(null)
       setUnlockError('Verification expired. Enter your password again.')
     }
   }
 
-  const requestDestructiveStepUp = (prompt: DestructiveStepUpPrompt) => setDestructivePrompt(prompt)
+  const requestDestructiveStepUp = (prompt: DestructiveStepUpPrompt) => {
+    if (manageGrant) {
+      prompt.onGranted(manageGrant.token)
+      return
+    }
+    setDestructivePrompt(prompt)
+  }
 
   const { data: status, isLoading, refetch } = useQuery<ConnectStatus>({
     queryKey: ['stripe-connect-status'],
@@ -1373,11 +1389,27 @@ function PaymentsSection() {
     mutationFn: async (grantToken: string) => (await api.post('/stripe/connect/disconnect', undefined, { headers: paymentStepUpHeaders(grantToken) })).data,
     onSuccess: () => {
       setDisconnectKind(null)
+      setStripeDisconnectGrant(null)
       toast.success('Stripe connection removed. Your Stripe account was not deleted.')
       refetch()
     },
-    onError: (error: unknown) => toast.error(paymentStepUpError(error, 'Unable to disconnect Stripe account')),
+    onError: (error: unknown) => {
+      handleGrantRejected(error)
+      toast.error(paymentStepUpError(error, 'Unable to disconnect Stripe account'))
+    },
   })
+
+  const beginStripeDisconnect = (kind: 'current' | 'legacy') => {
+    requestDestructiveStepUp({
+      scope: 'payment_sources.stripe.disconnect',
+      title: 'Verify Stripe disconnection',
+      description: 'Enter your current password to authorize this Stripe disconnection. The final consequence is shown before anything changes.',
+      onGranted: (grantToken) => {
+        setStripeDisconnectGrant(grantToken)
+        setDisconnectKind(kind)
+      },
+    })
+  }
 
   if (isLoading) {
     return (
@@ -1564,14 +1596,14 @@ function PaymentsSection() {
           ) : !status.configured && !status.onboarding_complete ? (
             <div className="space-y-3">
               <p className="text-sm text-amber-300">This account is connected, but DieselBridge platform configuration must be restored before onboarding can continue.</p>
-              <button onClick={() => setDisconnectKind('current')} disabled={disconnectMutation.isPending} className={industrialStyles.btnSecondary}>
+              <button onClick={() => beginStripeDisconnect('current')} disabled={disconnectMutation.isPending} className={industrialStyles.btnSecondary}>
                 {disconnectMutation.isPending ? 'Resetting...' : 'Reset Stripe Connection'}
               </button>
             </div>
           ) : status.verification_status === 'under_review' ? (
             <div className="space-y-3">
               <p className="text-sm text-sky-300">Verification is in progress. This page refreshes automatically while Stripe reviews your account.</p>
-              <button onClick={() => setDisconnectKind('current')} disabled={disconnectMutation.isPending} className={industrialStyles.btnSecondary}>
+              <button onClick={() => beginStripeDisconnect('current')} disabled={disconnectMutation.isPending} className={industrialStyles.btnSecondary}>
                 {disconnectMutation.isPending ? 'Resetting...' : 'Reset Stripe Connection'}
               </button>
             </div>
@@ -1580,7 +1612,7 @@ function PaymentsSection() {
               <button onClick={() => connectMutation.mutate()} disabled={!manageGrant || connectMutation.isPending || isRedirecting} className={industrialStyles.btnPrimary}>
                 {connectMutation.isPending || isRedirecting ? 'Redirecting...' : status.verification_status === 'needs_information' || status.verification_status === 'restricted' ? 'Update Stripe Details' : 'Continue Stripe Setup'}
               </button>
-              <button onClick={() => setDisconnectKind('current')} disabled={disconnectMutation.isPending} className={industrialStyles.btnSecondary}>
+              <button onClick={() => beginStripeDisconnect('current')} disabled={disconnectMutation.isPending} className={industrialStyles.btnSecondary}>
                 {disconnectMutation.isPending ? 'Resetting...' : 'Reset Stripe Connection'}
               </button>
             </div>
@@ -1591,12 +1623,12 @@ function PaymentsSection() {
                   <span className="inline-flex items-center gap-2"><ExternalLink className="w-4 h-4" />View Connected Account Payments</span>
                 </a>
               )}
-              <button onClick={() => setDisconnectKind('current')} disabled={disconnectMutation.isPending} className={industrialStyles.btnSecondary}>
+              <button onClick={() => beginStripeDisconnect('current')} disabled={disconnectMutation.isPending} className={industrialStyles.btnSecondary}>
                 {disconnectMutation.isPending ? 'Disconnecting...' : 'Disconnect Stripe'}
               </button>
             </div>
           ) : (
-            <button onClick={() => setDisconnectKind('legacy')} disabled={disconnectMutation.isPending} className={industrialStyles.btnSecondary}>
+            <button onClick={() => beginStripeDisconnect('legacy')} disabled={disconnectMutation.isPending} className={industrialStyles.btnSecondary}>
               {disconnectMutation.isPending ? 'Disconnecting...' : 'Disconnect Legacy Connection'}
             </button>
           )}
@@ -1610,13 +1642,11 @@ function PaymentsSection() {
           confirmLabel="Disconnect Stripe"
           pendingLabel="Disconnecting..."
           pending={disconnectMutation.isPending}
-          onCancel={() => setDisconnectKind(null)}
-          onConfirm={() => requestDestructiveStepUp({
-            scope: 'payment_sources.stripe.disconnect',
-            title: 'Verify Stripe disconnection',
-            description: 'Enter your current password again. This one-time authorization removes the local Stripe connection without deleting the Stripe account.',
-            onGranted: (grantToken) => disconnectMutation.mutate(grantToken),
-          })}
+          onCancel={() => {
+            setDisconnectKind(null)
+            setStripeDisconnectGrant(null)
+          }}
+          onConfirm={() => stripeDisconnectGrant && disconnectMutation.mutate(stripeDisconnectGrant)}
         />
       )}
       <ZelleSection
@@ -1799,6 +1829,7 @@ function QuickBooksIntegrationCard({
   const queryClient = useQueryClient()
   const [isRedirecting, setIsRedirecting] = useState(false)
   const [showDisconnectConfirmation, setShowDisconnectConfirmation] = useState(false)
+  const [disconnectGrantToken, setDisconnectGrantToken] = useState<string | null>(null)
   const [searchParams, setSearchParams] = useSearchParams()
   const { data: status, isLoading } = useQuery<QuickBooksConnectionStatus>({
     queryKey: ['quickbooks-status'],
@@ -1840,10 +1871,13 @@ function QuickBooksIntegrationCard({
   const disconnectMutation = useMutation({
     mutationFn: async (grantToken: string) => (await api.post('/quickbooks/disconnect', undefined, { headers: paymentStepUpHeaders(grantToken) })).data,
     onSuccess: () => {
+      setShowDisconnectConfirmation(false)
+      setDisconnectGrantToken(null)
       toast.success('QuickBooks disconnected.')
       queryClient.invalidateQueries({ queryKey: ['quickbooks-status'] })
     },
     onError: (error: unknown) => {
+      onGrantRejected(error)
       toast.error(paymentStepUpError(error, 'Failed to disconnect QuickBooks'))
     },
   })
@@ -1852,6 +1886,18 @@ function QuickBooksIntegrationCard({
     status?.is_connected
     && (status.token_health === 'reconnect_required' || status.last_token_refresh_error),
   )
+
+  const beginQuickBooksDisconnect = () => {
+    requestDestructiveStepUp({
+      scope: 'payment_sources.quickbooks.disconnect',
+      title: 'Verify QuickBooks disconnection',
+      description: 'Enter your current password to authorize this QuickBooks disconnection. The final consequence is shown before anything changes.',
+      onGranted: (grantToken) => {
+        setDisconnectGrantToken(grantToken)
+        setShowDisconnectConfirmation(true)
+      },
+    })
+  }
 
   const statusConfig = !status?.configured
     ? { led: 'warning' as const, title: 'NOT AVAILABLE YET', desc: 'DieselBridge is still enabling QuickBooks for its garage network.' }
@@ -1910,7 +1956,7 @@ function QuickBooksIntegrationCard({
                     </button>
                   )}
                   <button
-                    onClick={() => setShowDisconnectConfirmation(true)}
+                    onClick={beginQuickBooksDisconnect}
                     disabled={disconnectMutation.isPending}
                     className={industrialStyles.btnSecondary}
                   >
@@ -1941,16 +1987,11 @@ function QuickBooksIntegrationCard({
           confirmLabel="Disconnect QuickBooks"
           pendingLabel="Disconnecting..."
           pending={disconnectMutation.isPending}
-          onCancel={() => setShowDisconnectConfirmation(false)}
-          onConfirm={() => {
+          onCancel={() => {
             setShowDisconnectConfirmation(false)
-            requestDestructiveStepUp({
-              scope: 'payment_sources.quickbooks.disconnect',
-              title: 'Verify QuickBooks disconnection',
-              description: 'Enter your current password again. This one-time authorization removes the local QuickBooks connection while preserving accounting and payment history.',
-              onGranted: (grantToken) => disconnectMutation.mutate(grantToken),
-            })
+            setDisconnectGrantToken(null)
           }}
+          onConfirm={() => disconnectGrantToken && disconnectMutation.mutate(disconnectGrantToken)}
         />
       )}
     </>
@@ -1976,6 +2017,10 @@ function ZelleSection({
   const [zelleEmail, setZelleEmail] = useState('')
   const [zellePhone, setZellePhone] = useState('')
   const [contactEditing, setContactEditing] = useState(false)
+  const [pendingDestructiveAction, setPendingDestructiveAction] = useState<{
+    kind: 'disable' | 'remove_qr'
+    grantToken: string
+  } | null>(null)
 
   const { data: garageProfile } = useQuery<GarageProfile>({
     queryKey: ['garage-profile'],
@@ -2021,6 +2066,7 @@ function ZelleSection({
       toast.success('Zelle contact details saved')
       queryClient.invalidateQueries({ queryKey: ['zelle-settings'] })
       setContactEditing(false)
+      setPendingDestructiveAction(null)
     },
     onError: (error: unknown) => {
       onGrantRejected(error)
@@ -2037,6 +2083,7 @@ function ZelleSection({
       toast.success(zelleQrPreview ? 'QR code uploaded' : 'QR code removed')
       queryClient.invalidateQueries({ queryKey: ['zelle-settings'] })
       setZelleQrPreview(null)
+      setPendingDestructiveAction(null)
     },
     onError: (error: unknown) => {
       onGrantRejected(error)
@@ -2134,11 +2181,15 @@ function ZelleSection({
                         onClick={() => {
                           const isDisabling = !zelleEmail.trim() && !zellePhone.trim()
                           if (isDisabling) {
-                            requestDestructiveStepUp({
+                            const confirmDisable = (grantToken: string) => {
+                              setPendingDestructiveAction({ kind: 'disable', grantToken })
+                            }
+                            if (manageGrant) confirmDisable(manageGrant)
+                            else requestDestructiveStepUp({
                               scope: 'payment_sources.zelle.disable',
                               title: 'Verify Zelle disablement',
-                              description: 'Enter your current password again. This removes both Zelle contact methods so customers can no longer select Zelle.',
-                              onGranted: (grantToken) => saveContactMutation.mutate(grantToken),
+                              description: 'Enter your current password to remove both Zelle contact methods so customers can no longer select Zelle.',
+                              onGranted: confirmDisable,
                             })
                           } else {
                             saveContactMutation.mutate(manageGrant)
@@ -2206,15 +2257,18 @@ function ZelleSection({
                   )}
                   {(zelleSettings?.zelle_qr_image || zelleQrPreview) && (
                     <button
-                      onClick={() => requestDestructiveStepUp({
-                        scope: 'payment_sources.zelle.qr.remove',
-                        title: 'Verify Zelle QR removal',
-                        description: 'Enter your current password again. This removes the QR image customers use for Zelle payments.',
-                        onGranted: (grantToken) => {
-                          uploadQrMutation.mutate({ base64Image: null, grantToken })
-                          setZelleQrPreview(null)
-                        },
-                      })}
+                      onClick={() => {
+                        const removeQr = (grantToken: string) => {
+                          setPendingDestructiveAction({ kind: 'remove_qr', grantToken })
+                        }
+                        if (manageGrant) removeQr(manageGrant)
+                        else requestDestructiveStepUp({
+                          scope: 'payment_sources.zelle.qr.remove',
+                          title: 'Verify Zelle QR removal',
+                          description: 'Enter your current password to remove the QR image customers use for Zelle payments.',
+                          onGranted: removeQr,
+                        })
+                      }}
                       disabled={uploadQrMutation.isPending}
                       className={industrialStyles.btnDanger}
                     >
@@ -2230,6 +2284,25 @@ function ZelleSection({
           </div>
         )}
       </PaymentIntegrationPanel>
+      {pendingDestructiveAction && (
+        <PaymentSourceDisconnectDialog
+          title={pendingDestructiveAction.kind === 'disable' ? 'Disable Zelle payments?' : 'Remove the Zelle QR code?'}
+          description={pendingDestructiveAction.kind === 'disable'
+            ? 'Customers will no longer be able to select Zelle until new contact details are saved.'
+            : 'Customers will no longer see this QR code. Your saved Zelle contact details will remain available.'}
+          confirmLabel={pendingDestructiveAction.kind === 'disable' ? 'Disable Zelle' : 'Remove QR code'}
+          pendingLabel={pendingDestructiveAction.kind === 'disable' ? 'Disabling...' : 'Removing...'}
+          pending={pendingDestructiveAction.kind === 'disable' ? saveContactMutation.isPending : uploadQrMutation.isPending}
+          onCancel={() => setPendingDestructiveAction(null)}
+          onConfirm={() => {
+            if (pendingDestructiveAction.kind === 'disable') {
+              saveContactMutation.mutate(pendingDestructiveAction.grantToken)
+            } else {
+              uploadQrMutation.mutate({ base64Image: null, grantToken: pendingDestructiveAction.grantToken })
+            }
+          }}
+        />
+      )}
     </div>
   )
 }

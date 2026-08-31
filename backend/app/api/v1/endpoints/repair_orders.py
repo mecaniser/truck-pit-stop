@@ -3961,6 +3961,7 @@ async def force_void_repair_order(
         db,
         context=step_up_context,
         required_scope=PaymentStepUpScope.REPAIR_ORDER_FORCE_VOID,
+        consume=True,
     )
 
     result = await db.execute(
@@ -4039,8 +4040,6 @@ async def force_void_repair_order(
             succeeded=True,
         )
     )
-    grant.consumed_at = now
-
     await db.commit()
     await db.refresh(order)
     return RepairOrderResponse.model_validate(order)

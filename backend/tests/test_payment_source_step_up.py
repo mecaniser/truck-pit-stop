@@ -111,7 +111,7 @@ async def test_zelle_mutation_requires_grant_and_preserves_state_when_missing(
 
 
 @pytest.mark.asyncio
-async def test_manage_grant_is_reusable_but_cannot_authorize_disable(
+async def test_manage_grant_is_reusable_across_payment_source_changes(
     client, db_session
 ):
     tenant, _user, token = await _owner(db_session, "manage")
@@ -132,7 +132,7 @@ async def test_manage_grant_is_reusable_but_cannot_authorize_disable(
         headers=headers,
         json={"zelle_email": "second@example.test", "zelle_phone": None},
     )
-    wrong_scope = await client.put(
+    disable = await client.put(
         "/api/v1/admin/zelle-settings",
         headers=headers,
         json={"zelle_email": None, "zelle_phone": None},
@@ -140,9 +140,9 @@ async def test_manage_grant_is_reusable_but_cannot_authorize_disable(
 
     assert first.status_code == 200
     assert second.status_code == 200
-    assert wrong_scope.status_code == 403
+    assert disable.status_code == 200
     await db_session.refresh(tenant)
-    assert tenant.zelle_email == "second@example.test"
+    assert tenant.zelle_email is None
     outcomes = (await db_session.execute(
         select(PaymentStepUpAuditEvent).where(
             PaymentStepUpAuditEvent.event_type == "mutation_succeeded"
@@ -158,6 +158,11 @@ async def test_manage_grant_is_reusable_but_cannot_authorize_disable(
             "action": "zelle.contacts.update",
             "configured_before": True,
             "configured_after": True,
+        },
+        {
+            "action": "zelle.contacts.update",
+            "configured_before": True,
+            "configured_after": False,
         },
     ]
     assert "first@example.test" not in str(outcomes)
@@ -204,7 +209,7 @@ async def test_destructive_grant_is_one_time_and_replay_is_rejected(
 
 
 @pytest.mark.asyncio
-async def test_empty_zelle_qr_requires_destructive_grant_and_normalizes_to_null(
+async def test_empty_zelle_qr_accepts_manage_or_exact_destructive_grant(
     client, db_session
 ):
     tenant, _user, token = await _owner(db_session, "qr-empty")
@@ -216,14 +221,17 @@ async def test_empty_zelle_qr_requires_destructive_grant_and_normalizes_to_null(
         "X-Step-Up-Authorization": managed.json()["grant_token"],
     }
 
-    rejected = await client.put(
+    removed_with_manage = await client.put(
         "/api/v1/admin/zelle-qr-image",
         headers=managed_headers,
         json={"zelle_qr_image": ""},
     )
-    assert rejected.status_code == 403
+    assert removed_with_manage.status_code == 200
     await db_session.refresh(tenant)
-    assert tenant.zelle_qr_image == "data:image/png;base64,existing"
+    assert tenant.zelle_qr_image is None
+
+    tenant.zelle_qr_image = "data:image/png;base64,replaced"
+    await db_session.commit()
 
     destructive = await _request_grant(
         client, token, PaymentStepUpScope.ZELLE_QR_REMOVE
@@ -239,6 +247,27 @@ async def test_empty_zelle_qr_requires_destructive_grant_and_normalizes_to_null(
     assert removed.status_code == 200
     await db_session.refresh(tenant)
     assert tenant.zelle_qr_image is None
+
+
+@pytest.mark.asyncio
+async def test_manage_grant_cannot_cross_into_non_payment_destructive_scope(
+    client, db_session
+):
+    _tenant, _user, token = await _owner(db_session, "manage-scope-boundary")
+    issued = await _request_grant(client, token, PaymentStepUpScope.MANAGE)
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "X-Step-Up-Authorization": issued.json()["grant_token"],
+    }
+
+    response = await client.post(
+        "/api/v1/repair-orders/00000000-0000-0000-0000-000000000000/force-void",
+        headers=headers,
+        json={"reason": "Scope boundary test only"},
+    )
+
+    assert response.status_code == 403
+    assert response.json()["detail"] == "Step-up grant scope is not allowed for this action"
 
 
 @pytest.mark.asyncio

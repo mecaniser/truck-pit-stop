@@ -644,6 +644,41 @@ async def test_quickbooks_connection_status_is_tenant_scoped_and_disconnect_forg
 
 
 @pytest.mark.asyncio
+async def test_manage_grant_can_disconnect_quickbooks_without_being_consumed(
+    client, db_session, monkeypatch, issue_payment_step_up
+):
+    _configure_quickbooks(monkeypatch)
+    tenant, user, token = await _owner_with_token(db_session, suffix="manage-disconnect")
+    connection = QuickBooksConnection(
+        tenant_id=tenant.id,
+        realm_id="913035829570003",
+        scopes="com.intuit.quickbooks.accounting com.intuit.quickbooks.payment",
+        status="connected",
+    )
+    db_session.add(connection)
+    await db_session.commit()
+
+    headers = await issue_payment_step_up(
+        token=token,
+        user=user,
+        scope=PaymentStepUpScope.MANAGE,
+    )
+    response = await client.post("/api/v1/quickbooks/disconnect", headers=headers)
+
+    assert response.status_code == 200
+    grant = (
+        await db_session.execute(
+            select(PaymentStepUpGrant).where(
+                PaymentStepUpGrant.user_id == user.id,
+                PaymentStepUpGrant.scope == PaymentStepUpScope.MANAGE.value,
+            )
+        )
+    ).scalar_one()
+    assert grant.one_time is False
+    assert grant.consumed_at is None
+
+
+@pytest.mark.asyncio
 async def test_quickbooks_webhook_verifies_signature_and_records_tenant_health(client, db_session, monkeypatch):
     _configure_quickbooks(monkeypatch)
     verifier = "quickbooks-webhook-verifier"
