@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from contextlib import asynccontextmanager
 from datetime import date, datetime, timezone
 from decimal import Decimal
 from uuid import uuid4
@@ -49,6 +50,13 @@ class _FakeAsyncSession:
 
     def add(self, obj):
         self.added.append(obj)
+
+    @asynccontextmanager
+    async def begin_nested(self):
+        yield
+
+    async def flush(self):
+        return None
 
     async def commit(self):
         self.commit_count += 1
