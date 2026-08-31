@@ -3646,6 +3646,16 @@ html::-webkit-scrollbar-thumb:hover {
    .db-repair-orders-new :is(button,input,select) sets it with !important, so
    overriding needs both the weight and the specificity. */
 @media (pointer: fine) {
+  /* An action that sits inside a label line is text, not a tap target: held to
+     44px it doubles the height of the row it lives on and pushes the field
+     below it down the moment the label appears. Same reasoning and same gate as
+     the quick-pick chips. */
+  .db-repair-orders-new .db-inline-text-action,
+  .db-inline-text-action {
+    min-height: 0 !important;
+    min-block-size: 0 !important;
+  }
+
   .db-repair-orders-new .db-service-quickpick button,
   .db-service-quickpick button {
     min-height: 28px !important;

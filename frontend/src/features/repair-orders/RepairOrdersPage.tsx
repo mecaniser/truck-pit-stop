@@ -3618,7 +3618,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                           <button
                             type="button"
                             onClick={() => { setMileageIn(String(lastKnownMileage)); setMileageInCarried(true) }}
-                            className="font-semibold text-amber-700 underline-offset-2 hover:underline"
+                            className="db-inline-text-action font-semibold text-amber-700 underline-offset-2 hover:underline"
                           >
                             Use this
                           </button>
