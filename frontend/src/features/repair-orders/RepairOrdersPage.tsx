@@ -142,6 +142,13 @@ type DailyWorkbench = {
   closed_today: DailyWorkbenchQueue
 }
 
+type OrderValueSummary = {
+  order_count: number
+  order_value: string
+  currency: 'USD'
+  amount_basis: 'repair_order_net'
+}
+
 type WorkQueueOrdersField =
   | 'orders_needing_action'
   | 'orders_on_floor'
@@ -531,6 +538,38 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
   )
   const totalOrders = ordersQuery.data?.pages[0]?.total ?? 0
   const loadedOrderCount = orders?.length ?? 0
+  const repairOrderValueQuery = useQuery<OrderValueSummary>({
+    queryKey: ['repair-orders', 'value-summary', { search: debouncedSearch, status: statusFilter }],
+    queryFn: async () => (await api.get('/repair-orders/value-summary', {
+      params: {
+        ...(statusFilter === 'deleted'
+          ? { deleted: true }
+          : statusFilter !== 'all'
+            ? { status: statusFilter }
+            : {}),
+        ...(debouncedSearch ? { search: debouncedSearch } : {}),
+      },
+    })).data,
+    enabled: presentationVariant === 'new' && !workQueueLane,
+    staleTime: 15_000,
+    retry: false,
+  })
+  const dailyValueQuery = useQuery<OrderValueSummary>({
+    queryKey: ['dashboard-daily-workset', 'value-summary', workQueueLane, debouncedSearch],
+    queryFn: async () => (await api.get('/dashboard/daily-workset/value-summary', {
+      params: {
+        lane: workQueueLane,
+        ...(debouncedSearch ? { search: debouncedSearch } : {}),
+      },
+    })).data,
+    // Queue-origin Repair Orders routes use the same lane projection even when
+    // they were opened outside the embedded daily Shop Work surface. Keep the
+    // value query active for every rendered queue lane so those routes never
+    // fall through to a fabricated $0.00 summary.
+    enabled: presentationVariant === 'new' && Boolean(workQueueLane),
+    staleTime: 15_000,
+    retry: false,
+  })
 
   // Handle ?new=true query param to auto-open create modal
   useEffect(() => {
@@ -933,6 +972,10 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
       queryClient.invalidateQueries({ queryKey: ['repair-orders'] })
       queryClient.invalidateQueries({ queryKey: ['repair-order-detail', selectedOrder?.id] })
       queryClient.invalidateQueries({ queryKey: ['repair-order-status-counts'] })
+      // Queue-origin routes render their rows and DB-052 value summary from
+      // dashboard projections, so a force-void must refresh those caches too.
+      queryClient.invalidateQueries({ queryKey: ['dashboard-action-queue'] })
+      queryClient.invalidateQueries({ queryKey: ['dashboard-daily-workset'] })
       toast.success('Order voided')
     },
     onError: (error: unknown) => toast.error(getErrorDetail(error, 'Could not void this order')),
@@ -2799,6 +2842,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
   const ledgerDescription = workbenchScope === 'daily'
     ? 'Today’s repair work, ready to operate.'
     : 'Review and update repair work from check-in through payment.'
+  const activeValueQuery = isQueueWorkset ? dailyValueQuery : repairOrderValueQuery
   return (
     <div className={`db-repair-orders-workspace flex flex-col h-full ${presentationVariant === 'new' ? 'db-repair-orders-workspace--new' : ''} ${presentationVariant === 'new' && isDetailOpen && selectedOrder ? 'db-repair-orders-workspace--detail-open' : ''}`}>
       {presentationVariant === 'new' ? (
@@ -2836,6 +2880,10 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
             ? `${REPAIR_ORDERS_QUEUE_LABEL[workQueueLane]} · today`
             : 'Order ledger'}
           compact={workbenchScope === 'daily'}
+          valueSummary={activeValueQuery.data}
+          valueSummaryLoading={activeValueQuery.isLoading || searchQuery.trim() !== debouncedSearch}
+          valueSummaryError={Boolean(activeValueQuery.error)}
+          valueSummaryLabel={workbenchScope === 'daily' ? 'Work value' : 'Filtered order value'}
         />
       ) : (
         <>

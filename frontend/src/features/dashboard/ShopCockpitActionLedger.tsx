@@ -101,6 +101,10 @@ export default function ShopCockpitActionLedger({
   onFullOrder,
   onRefresh,
   onOpenRecord,
+  valueSummary,
+  valueSummaryLoading = false,
+  valueSummaryError = false,
+  onValueScopeChange,
   initialLaneFilter = 'all',
 }: {
   projection: ActionQueueProjection
@@ -119,6 +123,10 @@ export default function ShopCockpitActionLedger({
   onFullOrder: () => void
   onRefresh: () => void
   onOpenRecord: (id: string, lane: ActionQueueLane) => void
+  valueSummary?: { order_count: number; order_value: string } | null
+  valueSummaryLoading?: boolean
+  valueSummaryError?: boolean
+  onValueScopeChange?: (scope: { lane: ActionQueueFilter; search: string }) => void
   initialLaneFilter?: ActionQueueFilter
 }) {
   const lanes = useMemo<LaneDefinition[]>(() => [
@@ -153,6 +161,10 @@ export default function ShopCockpitActionLedger({
   )
   const [laneFilter, setLaneFilter] = useState<ActionQueueFilter>(initialLaneFilter)
   const [searchQuery, setSearchQuery] = useState('')
+
+  useEffect(() => {
+    onValueScopeChange?.({ lane: laneFilter, search: searchQuery.trim() })
+  }, [laneFilter, onValueScopeChange, searchQuery])
 
   // A return from Repair Orders carries only a transient navigation state. The
   // cockpit instance stays mounted under the authenticated shell, so sync that
@@ -244,7 +256,19 @@ export default function ShopCockpitActionLedger({
             </div>
             <h2>{queueView === 'activity' ? 'Activity' : 'Action Ledger'}</h2>
           </div>
-          <span className="db-action-ledger__caption-meta">{lastUpdatedLabel || 'Updated recently'}</span>
+          <div className="db-action-ledger__caption-summary" aria-live="polite">
+            <span className="db-action-ledger__caption-value">
+              <span>{searchQuery.trim() ? 'Matching work value' : 'Work value'}</span>
+              <strong>
+                {valueSummaryLoading
+                  ? 'Calculating…'
+                  : valueSummaryError
+                    ? 'Unavailable'
+                    : currency(valueSummary?.order_value ?? '0.00')}
+              </strong>
+            </span>
+            <span className="db-action-ledger__caption-meta">{lastUpdatedLabel || 'Updated recently'}</span>
+          </div>
         </header>
 
         {/* Queue-only controls: the chips and search filter the queue, so

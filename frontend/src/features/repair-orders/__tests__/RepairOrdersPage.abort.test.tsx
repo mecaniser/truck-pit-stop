@@ -5,12 +5,14 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 const apiMocks = vi.hoisted(() => ({
   get: vi.fn(),
+  post: vi.fn(),
 }))
 const themeState = vi.hoisted(() => ({ presentationVariant: 'legacy' as 'legacy' | 'new' }))
 
 vi.mock('@/lib/api', () => ({
   default: {
     get: apiMocks.get,
+    post: apiMocks.post,
   },
 }))
 
@@ -26,7 +28,16 @@ vi.mock('@/contexts/ThemeContext', () => ({
 }))
 
 vi.mock('../PriceBuilderPanel', () => ({
-  default: () => null,
+  default: ({ onForceVoidOrder }: {
+    onForceVoidOrder?: (args: { reason: string; password: string }) => Promise<void> | void
+  }) => (
+    <button
+      type="button"
+      onClick={() => void onForceVoidOrder?.({ reason: 'Duplicate invoice', password: 'test-password' })}
+    >
+      Test force void
+    </button>
+  ),
 }))
 
 import type { PartsUsage, RepairOrderHistoryEvent } from '../../../types'
@@ -45,7 +56,7 @@ function renderPage(
     },
   })
 
-  return render(
+  const renderResult = render(
     <QueryClientProvider client={queryClient}>
       <MemoryRouter initialEntries={initialEntries}>
         <RepairOrdersPage {...props} />
@@ -53,6 +64,7 @@ function renderPage(
       </MemoryRouter>
     </QueryClientProvider>
   )
+  return { ...renderResult, queryClient }
 }
 
 function LocationProbe() {
@@ -63,6 +75,7 @@ function LocationProbe() {
 describe('RepairOrdersPage request cancellation', () => {
   afterEach(() => {
     apiMocks.get.mockReset()
+    apiMocks.post.mockReset()
     themeState.presentationVariant = 'legacy'
   })
 
@@ -77,6 +90,14 @@ describe('RepairOrdersPage request cancellation', () => {
     }
     apiMocks.get.mockImplementation((url: string) => {
       if (url === '/repair-orders') return Promise.resolve({ data: { items: [order], total: 1, has_more: false } })
+      if (url === '/repair-orders/value-summary') return Promise.resolve({
+        data: {
+          order_count: 1,
+          order_value: '4280.50',
+          currency: 'USD',
+          amount_basis: 'repair_order_net',
+        },
+      })
       return Promise.resolve({ data: {} })
     })
 
@@ -84,6 +105,11 @@ describe('RepairOrdersPage request cancellation', () => {
     const { unmount } = renderPage()
     expect(await screen.findByRole('region', { name: 'Repair order ledger' })).toBeInTheDocument()
     expect(await screen.findByRole('article', { name: 'Repair order RO-1017' })).toBeInTheDocument()
+    expect((await screen.findAllByText('$4,280.50')).length).toBeGreaterThanOrEqual(2)
+    expect(apiMocks.get).toHaveBeenCalledWith(
+      '/repair-orders/value-summary',
+      expect.objectContaining({ params: {} }),
+    )
     expect(document.querySelector('.db-repair-orders-new')).toBeInTheDocument()
     unmount()
 
@@ -196,6 +222,14 @@ describe('RepairOrdersPage request cancellation', () => {
           orders_ready_to_close_has_more: false,
         },
       })
+      if (url === '/dashboard/daily-workset/value-summary') return Promise.resolve({
+        data: {
+          order_count: 2,
+          order_value: '300.25',
+          currency: 'USD',
+          amount_basis: 'repair_order_net',
+        },
+      })
       if (url === '/repair-orders/queue-order/workspace') return Promise.resolve({ data: queueOrder })
       if (url === '/repair-orders/sibling-order/workspace') return Promise.resolve({ data: siblingOrder })
       return Promise.resolve({ data: {} })
@@ -205,6 +239,11 @@ describe('RepairOrdersPage request cancellation', () => {
     renderPage(['/?selected=queue-order&queue=needs_action'])
 
     expect(await screen.findByRole('article', { name: 'Repair order RO-QUEUE-2' })).toBeInTheDocument()
+    expect(await screen.findByText('$300.25')).toBeInTheDocument()
+    expect(apiMocks.get).toHaveBeenCalledWith(
+      '/dashboard/daily-workset/value-summary',
+      expect.objectContaining({ params: expect.objectContaining({ lane: 'needs_action' }) }),
+    )
     expect(screen.getByRole('button', { name: 'Repair Orders scope: Needs Action, 2 orders' })).toBeInTheDocument()
     expect(screen.queryByText('2 total')).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Show details for RO-QUEUE-2' }))
@@ -243,6 +282,14 @@ describe('RepairOrdersPage request cancellation', () => {
           closed_today: { items: [], has_more: false },
         },
       })
+      if (url === '/dashboard/daily-workset/value-summary') return Promise.resolve({
+        data: {
+          order_count: 1,
+          order_value: '200.00',
+          currency: 'USD',
+          amount_basis: 'repair_order_net',
+        },
+      })
       if (url === '/repair-orders/daily-order/workspace') return Promise.resolve({ data: queueOrder })
       if (url === '/dashboard/mechanics/options') return Promise.resolve({ data: [] })
       return Promise.resolve({ data: {} })
@@ -255,12 +302,73 @@ describe('RepairOrdersPage request cancellation', () => {
     const row = screen.getByRole('article', { name: 'Repair order RO-DAILY-1' })
     expect(screen.getByRole('heading', { name: 'Shop Work' })).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'Needs Action · today' })).toBeInTheDocument()
+    expect(screen.getByText('$200.00')).toBeInTheDocument()
+    expect(apiMocks.get).toHaveBeenCalledWith(
+      '/dashboard/daily-workset/value-summary',
+      expect.objectContaining({ params: expect.objectContaining({ lane: 'needs_action' }) }),
+    )
     expect(row).not.toHaveTextContent('Confirm customer authorization')
     expect(row).toHaveTextContent('200.00')
     expect(row).toHaveTextContent('Pending Review')
     expect(apiMocks.get).toHaveBeenCalledWith('/dashboard/daily-workset')
     expect(apiMocks.get).not.toHaveBeenCalledWith('/dashboard/action-queue')
     expect(apiMocks.get).not.toHaveBeenCalledWith('/repair-orders', expect.anything())
+  })
+
+  it('refreshes queue rows and the queue value summary after force-void succeeds', async () => {
+    const queueOrder = {
+      id: 'force-void-order', tenant_id: 'tenant-1', customer_id: 'customer-1', vehicle_id: 'vehicle-1',
+      vehicle_make: 'Freightliner', vehicle_model: 'Cascadia', vehicle_year: 2022, vehicle_unit_number: '218', vehicle_vin: 'VIN218',
+      customer_company_name: 'Northline Logistics', order_number: 'RO-VOID-1', status: 'invoiced',
+      description: 'Duplicate invoiced repair', customer_notes: null, internal_notes: null, assigned_mechanic_id: null,
+      total_parts_cost: '100.00', total_labor_cost: '200.00', total_cost: '300.00',
+      created_at: '2026-08-14T12:00:00Z', updated_at: '2026-08-14T15:00:00Z',
+    }
+    apiMocks.get.mockImplementation((url: string) => {
+      if (url === '/dashboard/action-queue') return Promise.resolve({
+        data: {
+          orders_needing_action: [{
+            id: queueOrder.id, order_number: queueOrder.order_number, status: queueOrder.status,
+            description: queueOrder.description, customer_name: queueOrder.customer_company_name,
+            vehicle_info: '2022 Freightliner Cascadia · Unit 218', total_cost: queueOrder.total_cost,
+            updated_at: queueOrder.updated_at, mechanic_name: null, work_started_at: null,
+            hold_reason: null, held_at: null, quote_sent: true,
+          }],
+          orders_needing_action_has_more: false,
+          orders_on_floor: [],
+          orders_on_floor_has_more: false,
+          orders_ready_to_close: [],
+          orders_ready_to_close_has_more: false,
+        },
+      })
+      if (url === '/dashboard/daily-workset/value-summary') return Promise.resolve({
+        data: {
+          order_count: 1,
+          order_value: '300.00',
+          currency: 'USD',
+          amount_basis: 'repair_order_net',
+        },
+      })
+      if (url === '/repair-orders/force-void-order/workspace') return Promise.resolve({ data: queueOrder })
+      return Promise.resolve({ data: {} })
+    })
+    apiMocks.post
+      .mockResolvedValueOnce({ data: { grant_token: 'one-time-grant' } })
+      .mockResolvedValueOnce({ data: {} })
+    themeState.presentationVariant = 'new'
+
+    const { queryClient } = renderPage(['/?selected=force-void-order&queue=needs_action'])
+    const invalidateQueries = vi.spyOn(queryClient, 'invalidateQueries')
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Test force void' }))
+
+    await waitFor(() => expect(apiMocks.post).toHaveBeenCalledWith(
+      '/repair-orders/force-void-order/force-void',
+      { reason: 'Duplicate invoice' },
+      { headers: { 'X-Step-Up-Authorization': 'one-time-grant' } },
+    ))
+    expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ['dashboard-action-queue'] })
+    expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ['dashboard-daily-workset'] })
   })
 
   it('aborts an in-flight repair-order page request when the page unmounts', async () => {

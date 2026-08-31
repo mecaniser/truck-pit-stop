@@ -67,6 +67,7 @@ from app.core.work_value_validation import validate_labor_hours, validate_part_q
 from app.core.websocket import broadcast_repair_order_update
 from app.core.websocket import broadcast_mechanic_timer_update
 from app.core.websocket import broadcast_mechanic_attendance_update
+from app.schemas.order_value import FilteredRepairOrderValueSummary
 from app.services.mechanic_time_service import fetch_tenant_and_mechanic, get_active_session, start_session, stop_active_session
 from app.services.cloudinary_service import create_direct_image_upload_signature, is_cloudinary_configured, upload_work_photo
 from app.db.models.mechanic_time import MechanicSessionType, MechanicTimeSession
@@ -898,6 +899,129 @@ async def repair_order_status_counts(
     return counts
 
 
+@router.get("/value-summary", response_model=FilteredRepairOrderValueSummary)
+async def repair_order_value_summary(
+    customer_id: Optional[UUID] = Query(None),
+    vehicle_id: Optional[UUID] = Query(None),
+    status: Optional[RepairOrderStatus] = Query(None),
+    search: Optional[str] = Query(None),
+    deleted: bool = Query(False),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """Return the complete filtered ledger's canonical net order value."""
+    if current_user.role not in (
+        UserRole.GARAGE_OWNER,
+        UserRole.GARAGE_ADMIN,
+        UserRole.RECEPTIONIST,
+        UserRole.MECHANIC,
+        UserRole.FLEET_MANAGER,
+    ):
+        raise HTTPException(status_code=403, detail="Shop access denied")
+
+    if deleted and current_user.role not in (UserRole.GARAGE_OWNER, UserRole.GARAGE_ADMIN):
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    if not current_user.tenant_id:
+        return FilteredRepairOrderValueSummary(order_count=0, order_value=Decimal("0.00"))
+    projection_filters = [RepairOrderReadModel.tenant_id == current_user.tenant_id]
+    source_filters = [RepairOrder.tenant_id == current_user.tenant_id]
+    if current_user.role == UserRole.FLEET_MANAGER:
+        projection_filters.append(RepairOrderReadModel.is_internal.is_(True))
+        source_filters.append(RepairOrder.is_internal.is_(True))
+    if customer_id:
+        projection_filters.append(RepairOrderReadModel.customer_id == customer_id)
+        source_filters.append(RepairOrder.customer_id == customer_id)
+
+    if vehicle_id:
+        projection_filters.append(RepairOrderReadModel.vehicle_id == vehicle_id)
+        source_filters.append(RepairOrder.vehicle_id == vehicle_id)
+    if status:
+        projection_filters.append(RepairOrderReadModel.status == status.value)
+        source_filters.append(RepairOrder.status == status)
+    projection_filters.append(RepairOrderReadModel.is_deleted.is_(deleted))
+    source_filters.append(RepairOrder.deleted_at.isnot(None) if deleted else RepairOrder.deleted_at.is_(None))
+
+    source_count, projected_count = (
+        await db.execute(
+            select(func.count(RepairOrder.id), func.count(RepairOrderReadModel.repair_order_id))
+            .select_from(RepairOrder)
+            .outerjoin(RepairOrderReadModel, RepairOrderReadModel.repair_order_id == RepairOrder.id)
+            .where(*source_filters)
+        )
+    ).one()
+
+    search_term = (search if isinstance(search, str) else "").strip()
+    visible_value = case(
+        (
+            RepairOrder.total_cost < 0,
+            Decimal("0.00"),
+        ),
+        else_=func.coalesce(RepairOrder.total_cost, Decimal("0.00")),
+    )
+    if (source_count or 0) == (projected_count or 0):
+        if search_term:
+            compact_term = re.sub(r"[^A-Za-z0-9]", "", search_term)
+            search_filters = [RepairOrderReadModel.search_document.ilike(f"%{search_term}%")]
+            if compact_term:
+                search_filters.append(RepairOrderReadModel.search_compact.ilike(f"%{compact_term}%"))
+            projection_filters.append(or_(*search_filters))
+        statement = (
+            select(
+                func.count(RepairOrderReadModel.repair_order_id),
+                func.coalesce(func.sum(visible_value), Decimal("0.00")),
+            )
+            .select_from(RepairOrderReadModel)
+            .join(RepairOrder, RepairOrder.id == RepairOrderReadModel.repair_order_id)
+            .where(*projection_filters)
+        )
+    else:
+        statement = select(
+            func.count(RepairOrder.id),
+            func.coalesce(func.sum(visible_value), Decimal("0.00")),
+        ).select_from(RepairOrder).where(*source_filters)
+        if search_term:
+            full_name = Customer.first_name + literal_column("' '") + Customer.last_name
+            search_clause, _ = build_search(
+                search_term,
+                primary=[
+                    RepairOrder.order_number,
+                    Customer.first_name,
+                    Customer.last_name,
+                    full_name,
+                    Customer.company_name,
+                    Vehicle.vin,
+                    Vehicle.unit_number,
+                ],
+                squashed=[RepairOrder.order_number, Vehicle.vin, Vehicle.unit_number],
+                secondary=[
+                    RepairOrder.description,
+                    Customer.usdot_number,
+                    Customer.mc_number,
+                    Vehicle.make,
+                    Vehicle.model,
+                ],
+                similarity=[full_name, Customer.company_name, Vehicle.make],
+            )
+            stripped = re.sub(r"[\s().+-]", "", search_term)
+            if stripped and stripped.isdigit():
+                phone_hit = func.regexp_replace(func.coalesce(Customer.phone, ""), r"\D", "", "g").ilike(
+                    f"%{stripped}%"
+                )
+                search_clause = or_(search_clause, phone_hit)
+            statement = (
+                statement.join(Customer, RepairOrder.customer_id == Customer.id)
+                .join(Vehicle, RepairOrder.vehicle_id == Vehicle.id)
+                .where(search_clause)
+            )
+
+    order_count, order_value = (await db.execute(statement)).one()
+    return FilteredRepairOrderValueSummary(
+        order_count=int(order_count or 0),
+        order_value=Decimal(str(order_value or 0)).quantize(Decimal("0.01")),
+    )
+
+
 @router.get("", response_model=List[RepairOrderResponse])
 async def list_repair_orders(
     customer_id: Optional[UUID] = Query(None),
@@ -1054,8 +1178,8 @@ async def _list_repair_orders_legacy(
         count_query = count_query.where(RepairOrder.tenant_id == current_user.tenant_id)
         # Fleet operations may be customer-billed; pricing scope is separate.
         if current_user.role == UserRole.FLEET_MANAGER:
-            query = query.where(RepairOrder.is_fleet_work.is_(True))
-            count_query = count_query.where(RepairOrder.is_fleet_work.is_(True))
+            query = query.where(RepairOrder.is_internal.is_(True))
+            count_query = count_query.where(RepairOrder.is_internal.is_(True))
         if customer_id:
             query = query.where(RepairOrder.customer_id == customer_id)
             count_query = count_query.where(RepairOrder.customer_id == customer_id)

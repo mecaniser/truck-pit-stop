@@ -28,6 +28,7 @@ import { useAuthStore } from '../../stores/authStore'
 import { useTheme } from '../../contexts/ThemeContext'
 import { useWebSocket } from '../../hooks/useWebSocket'
 import { useNotificationManager } from '../../hooks/useNotificationManager'
+import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 import NotificationBanner from '../../components/NotificationBanner'
 import AlertsBanner from '../../components/AlertsBanner'
 import SectionInfoTooltip from '@/components/SectionInfoTooltip'
@@ -39,6 +40,13 @@ import RepairOrdersPage from '../repair-orders/RepairOrdersPage'
 interface StatusCount {
   status: string
   count: number
+}
+
+interface OrderValueSummary {
+  order_count: number
+  order_value: string
+  currency: 'USD'
+  amount_basis: 'repair_order_net'
 }
 
 interface RecentOrder {
@@ -435,6 +443,11 @@ export default function DashboardHome() {
   const [dismissedAlertKeys, setDismissedAlertKeys] = useState<Set<string>>(new Set())
   const [exitingAlertKey, setExitingAlertKey] = useState<string | null>(null)
   const nowMs = useNow()
+  const [shopValueScope, setShopValueScope] = useState<{ lane: ActionQueueLane | 'all'; search: string }>({
+    lane: 'all',
+    search: '',
+  })
+  const debouncedShopValueSearch = useDebouncedValue(shopValueScope.search, 300)
 
   const isMechanic = user?.role === 'mechanic'
   const isManager = user?.role === 'garage_owner' || user?.role === 'garage_admin'
@@ -483,6 +496,18 @@ export default function DashboardHome() {
     retry: (failureCount, err) => !(isAxiosError(err) && err.response?.status === 429) && failureCount < 1,
     refetchOnMount: true,
     staleTime: 60 * 1000,
+  })
+  const shopValueSummaryQuery = useQuery<OrderValueSummary>({
+    queryKey: ['dashboard-daily-workset', 'value-summary', shopValueScope.lane, debouncedShopValueSearch],
+    queryFn: async () => (await api.get('/dashboard/daily-workset/value-summary', {
+      params: {
+        lane: shopValueScope.lane,
+        ...(debouncedShopValueSearch ? { search: debouncedShopValueSearch } : {}),
+      },
+    })).data,
+    enabled: presentationVariant === 'new' && !selectedShopWorkRecord && queueView === 'queue',
+    staleTime: 15_000,
+    retry: false,
   })
 
   const isRateLimited = isAxiosError(queryError) && queryError.response?.status === 429
@@ -898,6 +923,10 @@ export default function DashboardHome() {
         onFullOrder={() => navigate('/dashboard/repair-orders?new=true')}
         onRefresh={handleManualRefresh}
         onOpenRecord={openRecord}
+        valueSummary={shopValueSummaryQuery.data}
+        valueSummaryLoading={shopValueSummaryQuery.isLoading || shopValueScope.search !== debouncedShopValueSearch}
+        valueSummaryError={Boolean(shopValueSummaryQuery.error)}
+        onValueScopeChange={setShopValueScope}
         initialLaneFilter={returnedQueue || 'all'}
       />
     )
