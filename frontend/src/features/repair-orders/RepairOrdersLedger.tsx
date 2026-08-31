@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef, useState } from 'react'
-import { ChevronDown, ChevronLeft, ChevronRight, Plus } from 'lucide-react'
+import { ChevronDown, ChevronRight, Plus } from 'lucide-react'
 import { StaffSearchField } from '@/components/ui'
 import { REPAIR_ORDERS_QUEUE_LABEL, type RepairOrdersQueueOrigin } from './repairOrdersPresentation'
 
@@ -33,19 +33,16 @@ export default function RepairOrdersLedger({
   queueOrigin,
   isFetching,
   errorMessage,
-  page,
-  pageSize,
+  loadedCount,
   hasMore,
-  isPlaceholder,
-  canGoPrevious,
+  isLoadingMore,
   showPagination = true,
   onSearchChange,
   onStatusChange,
   onOpenOrder,
   onCreateOrder,
   onShowAllOrders,
-  onPreviousPage,
-  onNextPage,
+  onLoadMore,
   pageTitle = 'Repair Orders',
   pageDescription = 'Review and update repair work from check-in through payment.',
   sectionTitle = 'Order ledger',
@@ -60,19 +57,16 @@ export default function RepairOrdersLedger({
   queueOrigin: RepairOrdersQueueOrigin | null
   isFetching: boolean
   errorMessage?: string | null
-  page: number
-  pageSize: number
+  loadedCount: number
   hasMore: boolean
-  isPlaceholder: boolean
-  canGoPrevious: boolean
+  isLoadingMore: boolean
   showPagination?: boolean
   onSearchChange: (value: string) => void
   onStatusChange: (value: string) => void
   onOpenOrder: (id: string, options?: { focusWorkspace?: boolean }) => void
   onCreateOrder: () => void
   onShowAllOrders: () => void
-  onPreviousPage: () => void
-  onNextPage: () => void
+  onLoadMore: () => void
   pageTitle?: string
   pageDescription?: string
   /** A daily Shop Work navigator intentionally avoids restating the record
@@ -87,6 +81,31 @@ export default function RepairOrdersLedger({
   const scopeTriggerRef = useRef<HTMLButtonElement>(null)
   const scopeMenuId = useId()
   const statusMenu = useRef<HTMLDivElement>(null)
+  const loadMoreSentinelRef = useRef<HTMLDivElement | null>(null)
+  const scrollerRef = useRef<HTMLDivElement | null>(null)
+  const onLoadMoreRef = useRef(onLoadMore)
+  useEffect(() => { onLoadMoreRef.current = onLoadMore }, [onLoadMore])
+  // Fetch the next page as the end of the list comes into view. The callback is
+  // read from a ref so a new function identity each render does not tear the
+  // observer down and rebuild it mid-scroll. rootMargin starts the request
+  // before the sentinel is actually visible, so rows are usually there by the
+  // time the operator reaches them.
+  useEffect(() => {
+    const node = loadMoreSentinelRef.current
+    if (!node || !hasMore || isLoadingMore) return
+    if (typeof IntersectionObserver === 'undefined') return
+    // The root must be the scroller, not the viewport. Left to default, the
+    // margin is applied to the viewport while the scroller still clips the
+    // sentinel out of existence, so the observer only fires once the sentinel
+    // is genuinely on screen — at the very bottom, with nothing prefetched.
+    const observer = new IntersectionObserver(
+      (entries) => { if (entries.some((entry) => entry.isIntersecting)) onLoadMoreRef.current() },
+      { root: scrollerRef.current, rootMargin: '320px' },
+    )
+    observer.observe(node)
+    return () => observer.disconnect()
+  }, [hasMore, isLoadingMore, loadedCount])
+
   const [statusOpen, setStatusOpen] = useState(false)
   // A menu closes when you look away from it, not only on a second click.
   useEffect(() => {
@@ -289,7 +308,7 @@ export default function RepairOrdersLedger({
         {/* The scroller wraps the bordered card so the scrollbar sits outside the
             border; the ledger header and pagination footer stay pinned outside
             the scroller. */}
-        <div className="db-operating-surface__scroller">
+        <div className="db-operating-surface__scroller" ref={scrollerRef}>
         <div className="db-repair-orders-ledger__card db-operating-surface__card">
         {errorMessage ? (
           <div className="db-repair-orders-ledger__empty" role="alert">
@@ -442,20 +461,61 @@ export default function RepairOrdersLedger({
             })}
           </div>
         )}
+        {/* Watched by the observer below: once this reaches the viewport the
+            next page is already being fetched, so the list continues without
+            the operator asking. The button in the footer stays as the explicit
+            path for keyboards, screen readers, and any browser where the
+            observer never fires. */}
+        {showPagination && isLoadingMore && (
+          <div className="db-repair-orders-ledger__pending" aria-hidden="true">
+            {[0, 1, 2].map((index) => (
+              <div key={index} className="db-repair-orders-ledger__skeleton">
+                <span className="db-repair-orders-ledger__skeleton-line is-name" />
+                <span className="db-repair-orders-ledger__skeleton-line is-vehicle" />
+                <span className="db-repair-orders-ledger__skeleton-line is-reference" />
+                <span className="db-repair-orders-ledger__skeleton-line is-amount" />
+              </div>
+            ))}
+          </div>
+        )}
+        {showPagination && hasMore && <div ref={loadMoreSentinelRef} aria-hidden="true" style={{ blockSize: 1 }} />}
         </div>
         </div>
 
         {showPagination && totalOrders > 0 && (
           <footer>
-            <span>{page * pageSize + 1}–{Math.min((page + 1) * pageSize, totalOrders)} of {totalOrders}</span>
-            <div>
-              <button type="button" onClick={onPreviousPage} disabled={!canGoPrevious || isPlaceholder} aria-label="Previous repair-order page">
-                <ChevronLeft aria-hidden="true" /> Previous
+            <span className="db-repair-orders-ledger__progress">
+              <span aria-live="polite">
+                {hasMore ? `${loadedCount} of ${totalOrders} loaded` : `${totalOrders} order${totalOrders === 1 ? '' : 's'}`}
+              </span>
+              {hasMore && totalOrders > 0 && (
+                <span
+                  className="db-repair-orders-ledger__progress-track"
+                  role="progressbar"
+                  aria-label="Repair orders loaded"
+                  aria-valuemin={0}
+                  aria-valuemax={totalOrders}
+                  aria-valuenow={loadedCount}
+                >
+                  <span
+                    className="db-repair-orders-ledger__progress-fill"
+                    data-loading={isLoadingMore || undefined}
+                    style={{ inlineSize: `${Math.min(100, Math.round((loadedCount / totalOrders) * 100))}%` }}
+                  />
+                </span>
+              )}
+            </span>
+            {hasMore && (
+              <button
+                type="button"
+                onClick={onLoadMore}
+                disabled={isLoadingMore}
+                aria-label={`Load more repair orders, ${loadedCount} of ${totalOrders} loaded`}
+              >
+                {isLoadingMore && <span className="db-repair-orders-ledger__spinner" aria-hidden="true" />}
+                {isLoadingMore ? 'Loading' : 'Load more'}
               </button>
-              <button type="button" onClick={onNextPage} disabled={!hasMore || isPlaceholder} aria-label="Next repair-order page">
-                Next <ChevronRight aria-hidden="true" />
-              </button>
-            </div>
+            )}
           </footer>
         )}
       </section>
