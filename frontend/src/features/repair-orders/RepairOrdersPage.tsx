@@ -3530,7 +3530,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                           return (
                             <span
                               key={svc.id}
-                              className={`inline-flex shrink-0 items-center gap-1 overflow-hidden rounded-full border pe-2 text-[11px] font-medium leading-4 transition-colors ${
+                              className={`inline-flex shrink-0 items-center overflow-hidden rounded-full border pe-1.5 text-[11px] font-medium leading-4 transition-colors ${
                                 active
                                   ? 'border-amber-500 bg-amber-50 text-amber-700'
                                   : 'border-gray-200 bg-white hover:border-amber-300 text-gray-700'
@@ -3547,7 +3547,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                                     setSelectedServiceOptions((prev) => [...prev.filter((item) => item.id !== svc.id), svc])
                                   }
                                 }}
-                                className="px-2.5 focus:outline-none"
+                                className="ps-2.5 pe-1.5 focus:outline-none"
                               >
                                 {svc.name}
                               </button>
@@ -3558,10 +3558,10 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                                     setSelectedServiceIds((prev) => prev.filter((id) => id !== svc.id))
                                     setSelectedServiceOptions((prev) => prev.filter((item) => item.id !== svc.id))
                                   }}
-                                  className="inline-flex items-center justify-center w-3.5 h-3.5 -mr-0.5 leading-none text-amber-700 hover:text-amber-900"
+                                  className="inline-flex w-4 shrink-0 items-center justify-center self-stretch leading-none text-amber-700 hover:text-amber-900"
                                   aria-label={`Remove ${svc.name}`}
                                 >
-                                  <span className="block -mt-px text-sm">×</span>
+                                  <span aria-hidden="true" className="block text-[13px] leading-none">×</span>
                                 </button>
                               )}
                             </span>
