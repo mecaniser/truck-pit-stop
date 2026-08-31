@@ -35,9 +35,14 @@ class PaymentStepUpScope(str, Enum):
     QUICKBOOKS_DISCONNECT = "payment_sources.quickbooks.disconnect"
     PLATFORM_STRIPE_RESET = "platform.payment_sources.stripe.reset"
     PLATFORM_QUICKBOOKS_RESET = "platform.payment_sources.quickbooks.reset"
+    # Voiding an order the financial-record guard protects. Not a payment
+    # setting, but the same question: prove it is you before overriding a rule
+    # that exists to stop an accident.
+    REPAIR_ORDER_FORCE_VOID = "repair_orders.force_void"
 
 
 DESTRUCTIVE_SCOPES = {
+    PaymentStepUpScope.REPAIR_ORDER_FORCE_VOID,
     PaymentStepUpScope.ZELLE_DISABLE,
     PaymentStepUpScope.ZELLE_QR_REMOVE,
     PaymentStepUpScope.STRIPE_DISCONNECT,
@@ -211,6 +216,18 @@ def validate_scope_authority(
 
     if target_tenant_id is not None:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Target tenant is not allowed for this scope")
+    if scope is PaymentStepUpScope.REPAIR_ORDER_FORCE_VOID:
+        # Overriding the financial-record guard is the shop's call, not the
+        # payment-settings permission's: this scope changes a repair order, and
+        # gating it on "payments" would both admit and exclude the wrong people.
+        if current_user.role not in (UserRole.GARAGE_OWNER, UserRole.GARAGE_ADMIN):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Only the shop owner or an admin can void a finalized order",
+            )
+        if current_user.tenant_id is None:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="A shop context is required")
+        return
     if not user_has_permission(current_user, "payments"):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -253,7 +270,11 @@ def step_up_required(scope: PaymentStepUpScope) -> HTTPException:
         status_code=status.HTTP_428_PRECONDITION_REQUIRED,
         detail={
             "code": "STEP_UP_REQUIRED",
-            "message": "Verify your password to change payment sources.",
+            "message": (
+                "Verify your password to void a finalized order."
+                if scope is PaymentStepUpScope.REPAIR_ORDER_FORCE_VOID
+                else "Verify your password to change payment sources."
+            ),
             "required_scope": scope.value,
         },
     )

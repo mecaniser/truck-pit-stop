@@ -33,6 +33,13 @@ from app.db.models.mechanic_points import MechanicPoints, MechanicPointsBalance,
 from app.db.models.description_library import DescriptionLibraryEntry
 from app.db.models.work_photo import WorkPhoto
 from app.db.models.repair_order_history import RepairOrderHistoryEvent
+from app.core.payment_step_up import (
+    PaymentStepUpContext,
+    PaymentStepUpScope,
+    authorize_step_up,
+    get_payment_step_up_context,
+    payment_step_up_mutation_result,
+)
 from app.services.email_service import send_email
 from app.services.tenant_branding import build_tenant_contact_html, get_tenant_display_name
 from app.services.twilio_service import send_sms
@@ -94,6 +101,7 @@ from app.schemas.repair_order import (
     RecommendedServiceResponse,
     PartSuggestion,
     PartSuggestionsResponse,
+    RepairOrderForceVoidRequest,
     RepairOrderHistoryEventResponse,
     RepairOrderNoteCreate,
 )
@@ -3799,6 +3807,119 @@ async def add_ad_hoc_part_to_repair_order(
 # along" has to accumulate and carry an author, and the order already has a
 # durable, ordered, tenant-scoped place for things that happened to it.
 NOTE_EVENT_TYPES = {"note_customer": "customer", "note_shop": "shop"}
+
+
+@router.post("/{order_id}/force-void", response_model=RepairOrderResponse)
+async def force_void_repair_order(
+    order_id: UUID,
+    body: RepairOrderForceVoidRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+    step_up_context: PaymentStepUpContext = Depends(get_payment_step_up_context),
+):
+    """Void an invoiced or paid order, past the guard that normally protects it.
+
+    The guard exists for a good reason: an invoiced or paid order is a financial
+    record, and deleting one silently is how books stop reconciling. But a test
+    transaction that was never real is also a financial record by that rule, and
+    until now there was no way to retire one.
+
+    So this does not delete. It voids: the invoice is cancelled with a reason,
+    the order is marked cancelled, and both rows stay exactly where they were,
+    visibly void and attributable. What is removed is the amount, not the
+    evidence.
+
+    Proving possession of a session is not enough to get here — the caller
+    re-enters their password for a one-time grant, on the same machinery that
+    guards payment-source changes.
+    """
+    grant = await authorize_step_up(
+        db,
+        context=step_up_context,
+        required_scope=PaymentStepUpScope.REPAIR_ORDER_FORCE_VOID,
+    )
+
+    result = await db.execute(
+        select(RepairOrder).where(RepairOrder.id == order_id, RepairOrder.deleted_at.is_(None))
+    )
+    order = result.scalar_one_or_none()
+    if not order:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repair order not found")
+    if current_user.tenant_id != order.tenant_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+
+    # This route is the override for the financial-record guard and nothing
+    # else. An order the ordinary cancel path can already handle must go
+    # through that path, so the override never becomes the normal way to work.
+    if order.status not in FINANCIALLY_PROTECTED_STATUSES:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="This order is not invoiced or paid — cancel it the ordinary way.",
+        )
+
+    now = datetime.now(timezone.utc)
+    invoices = (await db.execute(
+        select(Invoice).where(
+            Invoice.repair_order_id == order.id,
+            Invoice.status != InvoiceStatus.CANCELLED,
+        )
+    )).scalars().all()
+
+    # A synced invoice is not ours alone to retire: voiding it here would leave
+    # the accounting system holding a document this shop no longer has.
+    synced = [i for i in invoices if i.quickbooks_invoice_id]
+    if synced:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "This invoice is in QuickBooks. Void it there first, or the two ledgers disagree."
+            ),
+        )
+
+    actor_name = f"{current_user.first_name} {current_user.last_name}".strip() or current_user.email
+    voided_numbers = []
+    for invoice in invoices:
+        invoice.status = InvoiceStatus.CANCELLED
+        invoice.voided_at = now
+        invoice.voided_by_user_id = current_user.id
+        invoice.void_reason = body.reason
+        voided_numbers.append(invoice.invoice_number)
+
+    order.status = RepairOrderStatus.CANCELLED
+    order.cancelled_at = now
+    order.cancelled_by_user_id = current_user.id
+    order.pricing_locked_at = None
+    order.pricing_lock_reason = None
+
+    # Parts stay consumed. The order reached invoicing, so the work really
+    # happened and the stock really left the shelf; returning it here would
+    # invent inventory that is not on the shelf to match a void.
+    db.add(
+        RepairOrderHistoryEvent(
+            tenant_id=order.tenant_id,
+            repair_order_id=order.id,
+            created_at=now,
+            event_type="order_force_voided",
+            label="Order voided by override",
+            detail=" · ".join(filter(None, [", ".join(voided_numbers) or None, body.reason])),
+            actor_name=actor_name,
+            actor_user_id=current_user.id,
+        )
+    )
+    db.add(
+        payment_step_up_mutation_result(
+            context=step_up_context,
+            grant=grant,
+            scope=PaymentStepUpScope.REPAIR_ORDER_FORCE_VOID,
+            provider=None,
+            succeeded=True,
+        )
+    )
+    grant.consumed_at = now
+
+    await db.commit()
+    await db.refresh(order)
+    return RepairOrderResponse.model_validate(order)
 
 
 @router.get("/{order_id}/notes", response_model=List[RepairOrderHistoryEventResponse])

@@ -136,6 +136,20 @@ class RepairOrderHistoryEventResponse(BaseModel):
         from_attributes = True
 
 
+class RepairOrderForceVoidRequest(BaseModel):
+    """Override the financial-record guard on an invoiced or paid order."""
+
+    reason: str = Field(min_length=3, max_length=1000)
+
+    @field_validator("reason")
+    @classmethod
+    def _reason_is_not_blank(cls, value: str) -> str:
+        cleaned = value.strip()
+        if len(cleaned) < 3:
+            raise ValueError("A reason of at least 3 characters is required")
+        return cleaned
+
+
 class RepairOrderNoteCreate(BaseModel):
     """A note appended to the order. Audience decides who ever reads it."""
 

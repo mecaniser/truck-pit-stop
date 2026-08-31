@@ -206,6 +206,10 @@ type Props = {
   onToggleDangerActions?: () => void
   onDeleteOrder?: () => void
   deletePending?: boolean
+  /** Shown only when the financial-record guard is what blocks deleting. */
+  canForceVoid?: boolean
+  onForceVoidOrder?: (args: { reason: string; password: string }) => Promise<void> | void
+  forceVoidPending?: boolean
   isDeleted?: boolean
   deletedByName?: string | null
   deletedAt?: string | null
@@ -946,6 +950,9 @@ export default function PriceBuilderPanel({
   onToggleDangerActions,
   onDeleteOrder,
   deletePending,
+  canForceVoid = false,
+  onForceVoidOrder,
+  forceVoidPending = false,
   isDeleted = false,
   deletedByName,
   deletedAt,
@@ -997,6 +1004,11 @@ export default function PriceBuilderPanel({
   // each one is signed and timed and never overwrites the last, because the
   // question a note answers later is "who said this, and when".
   const [notesOpen, setNotesOpen] = useState(false)
+  // Forcing past the financial-record guard. Two fields, because the password
+  // is what makes this different from every other button in the danger zone.
+  const [forceVoidOpen, setForceVoidOpen] = useState(false)
+  const [forceVoidReason, setForceVoidReason] = useState('')
+  const [forceVoidPassword, setForceVoidPassword] = useState('')
   const [noteComposerOpen, setNoteComposerOpen] = useState(false)
   const [noteAudience, setNoteAudience] = useState<'customer' | 'shop'>('shop')
   const [noteDraft, setNoteDraft] = useState('')
@@ -4969,6 +4981,66 @@ export default function PriceBuilderPanel({
                   >
                     {deletePending ? 'Deleting...' : 'Delete'}
                   </button>
+
+                  {canForceVoid && onForceVoidOrder && (
+                    <div className="mt-5 border-t border-red-100 pt-4">
+                      <p className="text-sm text-red-700">
+                        This order is invoiced or paid, so deleting it is blocked — it counts as a
+                        financial record. Voiding keeps the record and marks it void, with your
+                        reason attached.
+                      </p>
+                      {!forceVoidOpen ? (
+                        <button
+                          type="button"
+                          onClick={() => setForceVoidOpen(true)}
+                          className="mt-3 w-full rounded-lg border border-red-300 px-4 py-2.5 text-sm font-semibold text-red-700 hover:bg-red-50"
+                        >
+                          Void this order…
+                        </button>
+                      ) : (
+                        <div className="mt-3 space-y-2">
+                          <textarea
+                            value={forceVoidReason}
+                            onChange={(e) => setForceVoidReason(e.target.value)}
+                            rows={2}
+                            placeholder="Why is this being voided? (recorded)"
+                            className="w-full resize-none rounded-lg border border-red-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-red-200"
+                          />
+                          <input
+                            type="password"
+                            value={forceVoidPassword}
+                            onChange={(e) => setForceVoidPassword(e.target.value)}
+                            placeholder="Your password"
+                            autoComplete="current-password"
+                            className="w-full rounded-lg border border-red-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-red-200"
+                          />
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => { setForceVoidOpen(false); setForceVoidReason(''); setForceVoidPassword('') }}
+                              className="rounded-lg px-3 py-2 text-sm font-semibold text-gray-500 hover:text-gray-700"
+                            >
+                              Cancel
+                            </button>
+                            <button
+                              type="button"
+                              disabled={forceVoidPending || forceVoidReason.trim().length < 3 || !forceVoidPassword}
+                              onClick={async () => {
+                                await onForceVoidOrder({
+                                  reason: forceVoidReason.trim(),
+                                  password: forceVoidPassword,
+                                })
+                                setForceVoidPassword('')
+                              }}
+                              className="flex-1 rounded-lg bg-red-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-50"
+                            >
+                              {forceVoidPending ? 'Voiding…' : 'Void order'}
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </>
               )}
             </div>
