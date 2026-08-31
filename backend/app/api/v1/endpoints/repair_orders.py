@@ -4,7 +4,7 @@ import re
 import traceback
 from decimal import Decimal
 from typing import List, Optional
-from uuid import UUID
+from uuid import UUID, uuid4
 from datetime import date, datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status, Query, Response
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -64,6 +64,7 @@ from app.services.mechanic_time_service import fetch_tenant_and_mechanic, get_ac
 from app.services.cloudinary_service import create_direct_image_upload_signature, is_cloudinary_configured, upload_work_photo
 from app.db.models.mechanic_time import MechanicSessionType, MechanicTimeSession
 from app.schemas.repair_order import (
+    AdHocPartCreate,
     RepairOrderCreate,
     RepairOrderUpdate,
     RepairOrderResponse,
@@ -3681,6 +3682,103 @@ async def add_sublet_to_price_build(
 
 
 # --- Parts ---
+
+
+@router.post("/{order_id}/parts/ad-hoc", response_model=PartsUsageResponse, status_code=status.HTTP_201_CREATED)
+async def add_ad_hoc_part_to_repair_order(
+    order_id: UUID,
+    body: AdHocPartCreate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role(*PRICE_BUILD_ADD_ROLES)),
+):
+    """Put a part that is not in the catalogue onto this order, and keep it.
+
+    Until now a part had to exist in inventory before it could be used, so a
+    one-off — a hose from the parts store, something a tech carried in — had no
+    route onto the order at all. Creating it here rather than sending the
+    operator to the inventory screen matters twice: it keeps them in the job,
+    and POST /inventory is admin-only while adding a part to an order is not, so
+    a mechanic could not have taken that route anyway.
+
+    The part is created as a placeholder: no stock, no location, no photo, but a
+    real catalogue row with a price and a history. If it turns out to be worth
+    stocking, clearing that one flag promotes it and everything recorded against
+    it stays attached.
+    """
+    if not current_user.tenant_id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="User must be associated with a tenant")
+
+    name = body.name.strip()
+    if not name:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Part name is required")
+
+    supplied_sku = (body.sku or "").strip()
+    item: Optional[Inventory] = None
+    if supplied_sku:
+        # The catalogue is unique on a canonical SKU — the prefix stripped, every
+        # non-alphanumeric removed, upper-cased — so typing a number the shop
+        # already carries must land on that part rather than fail on the index or
+        # quietly mint a duplicate spelling of it.
+        # Upper-case first. The index strips a literal "ETS-" before normalising,
+        # so ets-0532668000 typed in lower case would otherwise canonicalise to
+        # ETS0532668000 and miss the ETS-0532668000 already in the catalogue.
+        # SKUs are stored upper-cased for the same reason.
+        supplied_sku = supplied_sku.upper()
+        canonical = re.sub(r"[^A-Za-z0-9]", "", re.sub(r"^ETS-", "", supplied_sku))
+        if canonical:
+            # Compared in Python, not SQL: regexp_replace is Postgres-only and the
+            # test database is SQLite, so an expression matching the index would
+            # pass against production and fail everywhere else. Narrow the rows
+            # first on the part of the key that is a plain string operation, so
+            # this reads a handful of candidates rather than the catalogue.
+            tail = canonical[-6:]
+            candidates = await db.execute(
+                select(Inventory).where(
+                    Inventory.tenant_id == current_user.tenant_id,
+                    Inventory.deleted_at.is_(None),
+                    Inventory.sku.ilike(f"%{tail}%"),
+                )
+            )
+            item = next(
+                (
+                    candidate
+                    for candidate in candidates.scalars().all()
+                    if re.sub(r"[^A-Za-z0-9]", "", re.sub(r"^ETS-", "", (candidate.sku or "").upper())) == canonical
+                ),
+                None,
+            )
+
+    if item is None:
+        item = Inventory(
+            tenant_id=current_user.tenant_id,
+            # A part with no number still needs one the index can keep unique.
+            sku=supplied_sku or f"ADHOC-{uuid4().hex[:10].upper()}",
+            name=name,
+            cost=body.unit_cost if body.unit_cost is not None else Decimal("0"),
+            selling_price=body.unit_price,
+            stock_quantity=0,
+            is_placeholder=True,
+        )
+        db.add(item)
+        await db.flush()
+
+    # Reuse the ordinary add-part path so movement, core obligations, activity
+    # and order totals stay identical to a catalogue part. Stock shortage is
+    # expected and allowed: a placeholder has never been stocked, and the shop is
+    # holding the part in its hand.
+    return await add_parts_to_repair_order(
+        order_id=order_id,
+        body=PartsUsageCreate(
+            inventory_id=item.id,
+            quantity=body.quantity,
+            unit_price=body.unit_price,
+            source_service_id=body.source_service_id,
+            source_line_id=body.source_line_id,
+            allow_stock_shortage=True,
+        ),
+        db=db,
+        current_user=current_user,
+    )
 
 
 @router.post("/{order_id}/parts", response_model=PartsUsageResponse, status_code=status.HTTP_201_CREATED)

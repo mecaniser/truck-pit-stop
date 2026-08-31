@@ -28,6 +28,40 @@ def _normalize_landing_page_url(value: Optional[str]) -> Optional[str]:
 # --- Parts and labor line items ---
 
 
+class AdHocPartCreate(BaseModel):
+    """A part the shop is using that was never in the catalogue.
+
+    Easy Truck Shop has produced these for years — at one point 44% of the
+    imported catalogue — and the model already carries them as placeholders:
+    catalogue rows with no stock, location or photo, which keep their history
+    and become stocked parts the day someone clears the flag. What was missing
+    was any way to make one from the job that needs it.
+    """
+
+    name: str = Field(min_length=1, max_length=255)
+    # Optional: a tech holding a box may have a part number, or only a name.
+    sku: Optional[str] = Field(default=None, max_length=100)
+    quantity: Decimal
+    unit_price: Decimal
+    unit_cost: Optional[Decimal] = None
+    source_service_id: Optional[UUID] = None
+    source_line_id: Optional[UUID] = None
+
+    @field_validator("quantity")
+    @classmethod
+    def _positive_quantity(cls, value: Decimal) -> Decimal:
+        if value <= 0:
+            raise ValueError("Quantity must be greater than zero")
+        return value
+
+    @field_validator("unit_price", "unit_cost")
+    @classmethod
+    def _not_negative(cls, value: Optional[Decimal]) -> Optional[Decimal]:
+        if value is not None and value < 0:
+            raise ValueError("Amounts cannot be negative")
+        return value
+
+
 class PartsUsageCreate(BaseModel):
     inventory_id: UUID
     # Decimal so fluid parts (oil, coolant, DEF) can be entered in fractional
