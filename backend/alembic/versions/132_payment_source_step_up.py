@@ -1,7 +1,7 @@
 """Add server-enforced payment-source step-up grants.
 
-Revision ID: 131_payment_source_step_up
-Revises: 130_repair_order_shop_notes
+Revision ID: 132_payment_source_step_up
+Revises: 131_repair_order_notes
 """
 
 from alembic import op
@@ -9,8 +9,8 @@ import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
 
-revision = "131_payment_source_step_up"
-down_revision = "130_repair_order_shop_notes"
+revision = "132_payment_source_step_up"
+down_revision = "131_repair_order_notes"
 branch_labels = None
 depends_on = None
 
