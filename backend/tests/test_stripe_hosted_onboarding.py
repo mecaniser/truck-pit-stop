@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import pytest
+from sqlalchemy import select
 
 from app.api.v1.endpoints import stripe_connect
+from app.core.payment_step_up import PaymentStepUpScope
 from app.core.security import create_access_token
 from app.db.models.tenant import Tenant
+from app.db.models.payment_step_up import PaymentStepUpAuditEvent
 from app.db.models.user import User, UserRole
 
 
@@ -22,7 +25,7 @@ async def _owner(db_session):
     )
     db_session.add_all([tenant, user])
     await db_session.commit()
-    return tenant, create_access_token({"sub": str(user.id)})
+    return tenant, user, create_access_token({"sub": str(user.id)})
 
 
 def _configure(monkeypatch):
@@ -41,9 +44,45 @@ def test_verification_status_distinguishes_review_from_missing_details():
 
 
 @pytest.mark.asyncio
-async def test_hosted_onboarding_creates_and_reuses_connected_account(client, db_session, monkeypatch):
+async def test_connect_alias_and_disconnect_have_no_side_effect_without_step_up(
+    client, db_session, monkeypatch
+):
     _configure(monkeypatch)
-    tenant, token = await _owner(db_session)
+    tenant, _user, token = await _owner(db_session)
+    provider_calls = []
+
+    def unexpected_provider_call(**kwargs):
+        provider_calls.append(kwargs)
+        return {"id": "acct_should_not_exist"}
+
+    monkeypatch.setattr(stripe_connect.stripe.Account, "create", unexpected_provider_call)
+    headers = {"Authorization": f"Bearer {token}"}
+    connect = await client.post("/api/v1/stripe/connect/connect", headers=headers)
+    alias = await client.post("/api/v1/stripe/connect/onboard", headers=headers)
+
+    assert connect.status_code == 428
+    assert alias.status_code == 428
+    assert provider_calls == []
+    await db_session.refresh(tenant)
+    assert tenant.stripe_account_id is None
+
+    tenant.stripe_account_id = "acct_preserved"
+    tenant.stripe_connection_type = "stripe_hosted"
+    tenant.stripe_onboarding_complete = True
+    await db_session.commit()
+    disconnect = await client.post("/api/v1/stripe/connect/disconnect", headers=headers)
+    assert disconnect.status_code == 428
+    await db_session.refresh(tenant)
+    assert tenant.stripe_account_id == "acct_preserved"
+    assert tenant.stripe_onboarding_complete is True
+
+
+@pytest.mark.asyncio
+async def test_hosted_onboarding_creates_and_reuses_connected_account(
+    client, db_session, monkeypatch, issue_payment_step_up
+):
+    _configure(monkeypatch)
+    tenant, user, token = await _owner(db_session)
     created_accounts = []
     account_links = []
 
@@ -62,7 +101,11 @@ async def test_hosted_onboarding_creates_and_reuses_connected_account(client, db
     monkeypatch.setattr(stripe_connect.stripe.Account, "create", create_account)
     monkeypatch.setattr(stripe_connect.stripe.Account, "retrieve", retrieve_account)
     monkeypatch.setattr(stripe_connect.stripe.AccountLink, "create", create_link)
-    headers = {"Authorization": f"Bearer {token}"}
+    headers = await issue_payment_step_up(
+        token=token,
+        user=user,
+        scope=PaymentStepUpScope.MANAGE,
+    )
 
     first = await client.post("/api/v1/stripe/connect/connect", headers=headers)
     second = await client.post("/api/v1/stripe/connect/connect", headers=headers)
@@ -90,21 +133,35 @@ async def test_hosted_onboarding_creates_and_reuses_connected_account(client, db
 
 
 @pytest.mark.asyncio
-async def test_hosted_onboarding_requires_platform_keys(client, db_session, monkeypatch):
+async def test_hosted_onboarding_requires_platform_keys(
+    client, db_session, monkeypatch, issue_payment_step_up
+):
     monkeypatch.setattr(stripe_connect.settings, "STRIPE_SECRET_KEY", "")
     monkeypatch.setattr(stripe_connect.settings, "STRIPE_PUBLISHABLE_KEY", "")
-    _tenant, token = await _owner(db_session)
+    _tenant, user, token = await _owner(db_session)
+    headers = await issue_payment_step_up(
+        token=token,
+        user=user,
+        scope=PaymentStepUpScope.MANAGE,
+    )
     response = await client.post(
         "/api/v1/stripe/connect/connect",
-        headers={"Authorization": f"Bearer {token}"},
+        headers=headers,
     )
     assert response.status_code == 503
 
 
 @pytest.mark.asyncio
-async def test_hosted_onboarding_reports_unactivated_platform(client, db_session, monkeypatch):
+async def test_hosted_onboarding_reports_unactivated_platform(
+    client, db_session, monkeypatch, issue_payment_step_up
+):
     _configure(monkeypatch)
-    _tenant, token = await _owner(db_session)
+    _tenant, user, token = await _owner(db_session)
+    headers = await issue_payment_step_up(
+        token=token,
+        user=user,
+        scope=PaymentStepUpScope.MANAGE,
+    )
 
     def create_account(**_params):
         raise stripe_connect.stripe.error.InvalidRequestError(
@@ -115,17 +172,29 @@ async def test_hosted_onboarding_reports_unactivated_platform(client, db_session
     monkeypatch.setattr(stripe_connect.stripe.Account, "create", create_account)
     response = await client.post(
         "/api/v1/stripe/connect/connect",
-        headers={"Authorization": f"Bearer {token}"},
+        headers=headers,
     )
 
     assert response.status_code == 409
     assert "platform activation" in response.json()["detail"]
+    outcome = (await db_session.execute(
+        select(PaymentStepUpAuditEvent).where(
+            PaymentStepUpAuditEvent.event_type == "mutation_failed"
+        )
+    )).scalar_one()
+    assert outcome.provider == "stripe"
+    assert outcome.metadata_json == {
+        "action": "stripe.connect",
+        "reason": "provider_rejected",
+    }
 
 
 @pytest.mark.asyncio
-async def test_deleted_connected_account_can_be_reset_by_shop(client, db_session, monkeypatch):
+async def test_deleted_connected_account_can_be_reset_by_shop(
+    client, db_session, monkeypatch, issue_payment_step_up
+):
     _configure(monkeypatch)
-    tenant, token = await _owner(db_session)
+    tenant, user, token = await _owner(db_session)
     tenant.stripe_account_id = "acct_deleted"
     tenant.stripe_connection_type = "stripe_hosted"
     tenant.stripe_onboarding_complete = True
@@ -145,7 +214,15 @@ async def test_deleted_connected_account_can_be_reset_by_shop(client, db_session
     assert status_response.json()["verification_status"] == "unreachable"
     assert status_response.json()["onboarding_complete"] is False
 
-    reset_response = await client.post("/api/v1/stripe/connect/disconnect", headers=headers)
+    destructive_headers = await issue_payment_step_up(
+        token=token,
+        user=user,
+        scope=PaymentStepUpScope.STRIPE_DISCONNECT,
+    )
+    reset_response = await client.post(
+        "/api/v1/stripe/connect/disconnect",
+        headers=destructive_headers,
+    )
     assert reset_response.status_code == 200
     await db_session.refresh(tenant)
     assert tenant.stripe_account_id is None

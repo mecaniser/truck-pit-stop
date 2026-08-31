@@ -88,6 +88,7 @@ from app.db.models.conversion_api_key import ConversionApiKey
 from app.db.models.conversion_export_audit import ConversionExportAudit
 from app.db.models.repair_order_history import RepairOrderHistoryEvent
 from app.db.models.quickbooks_connection import QuickBooksConnection, QuickBooksOAuthState, QuickBooksWebhookEvent
+from app.db.models.payment_step_up import PaymentStepUpAuditEvent, PaymentStepUpGrant
 from app.db.models.stripe_oauth import StripeOAuthState
 from app.db.models.google_review import GoogleBusinessConnection, GoogleBusinessOAuthState, GoogleReviewSettings, GoogleReview, GoogleReviewAuditEvent
 from app.db.models.inventory_lifecycle import (
@@ -188,6 +189,8 @@ __all__ = [
     "QuickBooksConnection",
     "QuickBooksOAuthState",
     "QuickBooksWebhookEvent",
+    "PaymentStepUpGrant",
+    "PaymentStepUpAuditEvent",
     "InventoryCategory", "InventoryMovement", "InventorySupplierSource", "PartsOperationIdempotency",
     "PurchaseOrder", "PurchaseOrderAttachment", "PurchaseOrderLine",
     "PurchaseReceipt", "PurchaseReceiptLine", "CoreObligation",

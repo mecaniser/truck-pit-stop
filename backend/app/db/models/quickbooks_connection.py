@@ -49,6 +49,12 @@ class QuickBooksOAuthState(BaseModel):
     state_hash = Column(String(64), nullable=False, unique=True)
     tenant_id = Column(UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=False, index=True)
     initiated_by_user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True)
+    # DB-050 step-up attestation is snapshotted on OAuth initiation.  The
+    # callback cannot carry a browser grant, so it relies on this one-time,
+    # tenant-bound state record instead.
+    step_up_grant_id = Column(UUID(as_uuid=True), ForeignKey("payment_step_up_grants.id"), nullable=True, index=True)
+    step_up_scope = Column(String(96), nullable=True)
+    step_up_verified_at = Column(DateTime(timezone=True), nullable=True)
     expires_at = Column(DateTime(timezone=True), nullable=False, index=True)
     consumed_at = Column(DateTime(timezone=True), nullable=True, index=True)
 

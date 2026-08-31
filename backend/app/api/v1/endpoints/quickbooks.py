@@ -27,6 +27,15 @@ from uuid import UUID
 from app.core.config import settings
 from app.core.dependencies import get_current_active_user, get_db, user_has_permission
 from app.core.logging import get_logger
+from app.core.payment_step_up import (
+    PaymentStepUpContext,
+    PaymentStepUpScope,
+    authorize_step_up,
+    get_payment_step_up_context,
+    payment_step_up_mutation_result,
+)
+from app.core import redis as redis_store
+from app.db.models.payment_step_up import PaymentStepUpAuditEvent, PaymentStepUpGrant
 from app.db.models.quickbooks_connection import (
     QuickBooksConnection,
     QuickBooksOAuthState,
@@ -79,6 +88,86 @@ from app.services.quickbooks_sync_service import (
 
 router = APIRouter()
 logger = get_logger(__name__)
+
+
+def _quickbooks_callback_audit(
+    *,
+    tenant_id: UUID,
+    user_id: UUID,
+    grant_id: Optional[UUID],
+    succeeded: bool,
+    reason: str,
+) -> PaymentStepUpAuditEvent:
+    """Build a redacted terminal event for an attested OAuth callback."""
+    return PaymentStepUpAuditEvent(
+        tenant_id=tenant_id,
+        user_id=user_id,
+        grant_id=grant_id,
+        event_type="mutation_succeeded" if succeeded else "mutation_failed",
+        scope=PaymentStepUpScope.MANAGE.value,
+        provider="quickbooks",
+        metadata_json={
+            "action": "quickbooks.connect",
+            "stage": "oauth_callback",
+            "reason": reason,
+        },
+    )
+
+
+async def _valid_quickbooks_step_up_attestation(
+    db: AsyncSession,
+    oauth_state: QuickBooksOAuthState,
+) -> bool:
+    """Revalidate authority before an OAuth callback changes a source.
+
+    The originating grant may expire while the user is at Intuit, but password
+    changes, logout/revocation, permission or role removal, and tenant/user
+    deactivation must still invalidate the callback.
+    """
+    values = (
+        oauth_state.step_up_grant_id,
+        oauth_state.step_up_scope,
+        oauth_state.step_up_verified_at,
+    )
+    if not any(values):
+        # Rolling-deploy compatibility for states created before DB-050.
+        return True
+    if not all(values) or oauth_state.step_up_scope != PaymentStepUpScope.MANAGE.value:
+        return False
+
+    row = (
+        await db.execute(
+            select(PaymentStepUpGrant, User, Tenant)
+            .join(User, User.id == PaymentStepUpGrant.user_id)
+            .join(Tenant, Tenant.id == oauth_state.tenant_id)
+            .where(PaymentStepUpGrant.id == oauth_state.step_up_grant_id)
+        )
+    ).one_or_none()
+    if row is None:
+        return False
+    grant, user, tenant = row
+    if (
+        grant.deleted_at is not None
+        or grant.revoked_at is not None
+        or grant.consumed_at is not None
+        or grant.one_time
+        or grant.scope != PaymentStepUpScope.MANAGE.value
+        or grant.target_tenant_id is not None
+        or grant.user_id != oauth_state.initiated_by_user_id
+        or grant.tenant_id != oauth_state.tenant_id
+        or user.deleted_at is not None
+        or not user.is_active
+        or not user.hashed_password
+        or user.tenant_id != oauth_state.tenant_id
+        or user.role not in (UserRole.GARAGE_OWNER, UserRole.GARAGE_ADMIN)
+        or not user_has_permission(user, "payments")
+        or tenant.deleted_at is not None
+        or not tenant.is_active
+    ):
+        return False
+    if await redis_store.is_token_blacklisted(grant.session_jti):
+        return False
+    return grant.token_version == await redis_store.get_token_version(str(user.id))
 
 
 def _is_recoverable_legacy_quickbooks_sync(
@@ -682,12 +771,29 @@ async def reconcile_quickbooks_payment(
 async def begin_quickbooks_connection(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
+    step_up_context: PaymentStepUpContext = Depends(get_payment_step_up_context),
 ):
     """Start one-time OAuth consent for the signed-in tenant administrator."""
     _require_quickbooks_admin(current_user)
+    grant = await authorize_step_up(
+        db,
+        context=step_up_context,
+        required_scope=PaymentStepUpScope.MANAGE,
+    )
     try:
         ensure_quickbooks_configured()
     except QuickBooksConfigurationError:
+        db.add(
+            payment_step_up_mutation_result(
+                context=step_up_context,
+                scope=PaymentStepUpScope.MANAGE,
+                grant=grant,
+                succeeded=False,
+                provider="quickbooks",
+                metadata={"action": "quickbooks.connect", "reason": "platform_unavailable"},
+            )
+        )
+        await db.commit()
         logger.warning("quickbooks_connection_requested_without_configuration", tenant_id=str(current_user.tenant_id))
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -701,7 +807,20 @@ async def begin_quickbooks_connection(
             state_hash=_state_hash(state_value),
             tenant_id=current_user.tenant_id,
             initiated_by_user_id=current_user.id,
+            step_up_grant_id=grant.id,
+            step_up_scope=PaymentStepUpScope.MANAGE.value,
+            step_up_verified_at=datetime.now(timezone.utc),
             expires_at=now + timedelta(seconds=settings.QUICKBOOKS_OAUTH_STATE_TTL_SECONDS),
+        )
+    )
+    db.add(
+        payment_step_up_mutation_result(
+            context=step_up_context,
+            scope=PaymentStepUpScope.MANAGE,
+            grant=grant,
+            succeeded=True,
+            provider="quickbooks",
+            metadata={"action": "quickbooks.connect", "stage": "oauth_started"},
         )
     )
     await db.commit()
@@ -733,22 +852,63 @@ async def quickbooks_oauth_callback(
         # callback as an open redirect and makes state replay visible to Intuit.
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired QuickBooks authorization state")
 
+    if not await _valid_quickbooks_step_up_attestation(db, oauth_state):
+        # Consume an invalid callback state so revoked authorization cannot be
+        # retried after credentials or permissions change again.
+        oauth_state.consumed_at = now
+        if oauth_state.step_up_grant_id is not None:
+            db.add(
+                _quickbooks_callback_audit(
+                    tenant_id=oauth_state.tenant_id,
+                    user_id=oauth_state.initiated_by_user_id,
+                    grant_id=oauth_state.step_up_grant_id,
+                    succeeded=False,
+                    reason="attestation_invalid",
+                )
+            )
+        await db.commit()
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired QuickBooks authorization state")
+
     # Keep the scalar identity before the state-consumption commit. SQLAlchemy
     # expires ORM attributes on commit/rollback, and the callback must never
     # trigger an implicit async reload while handling a provider or DB failure.
     tenant_id = oauth_state.tenant_id
+    initiated_by_user_id = oauth_state.initiated_by_user_id
+    step_up_grant_id = oauth_state.step_up_grant_id
 
     # Commit before calling Intuit so a double callback cannot race this request.
     oauth_state.consumed_at = now
     await db.commit()
 
     if oauth_error or not code or not realm_id:
+        if step_up_grant_id is not None:
+            db.add(
+                _quickbooks_callback_audit(
+                    tenant_id=tenant_id,
+                    user_id=initiated_by_user_id,
+                    grant_id=step_up_grant_id,
+                    succeeded=False,
+                    reason="authorization_not_completed",
+                )
+            )
+            await db.commit()
         logger.info("quickbooks_authorization_not_completed", tenant_id=str(tenant_id))
         return _callback_redirect("not-connected")
 
     try:
         token_set = await exchange_authorization_code(code)
     except (QuickBooksConfigurationError, QuickBooksOAuthError):
+        if step_up_grant_id is not None:
+            db.add(
+                _quickbooks_callback_audit(
+                    tenant_id=tenant_id,
+                    user_id=initiated_by_user_id,
+                    grant_id=step_up_grant_id,
+                    succeeded=False,
+                    reason="provider_exchange_failed",
+                )
+            )
+            await db.commit()
         logger.warning("quickbooks_authorization_exchange_failed", tenant_id=str(tenant_id))
         return _callback_redirect("error")
 
@@ -760,6 +920,17 @@ async def quickbooks_oauth_callback(
         )
     )
     if other_realm_result.scalar_one_or_none():
+        if step_up_grant_id is not None:
+            db.add(
+                _quickbooks_callback_audit(
+                    tenant_id=tenant_id,
+                    user_id=initiated_by_user_id,
+                    grant_id=step_up_grant_id,
+                    succeeded=False,
+                    reason="realm_in_use",
+                )
+            )
+            await db.commit()
         logger.warning("quickbooks_realm_already_connected", tenant_id=str(tenant_id))
         return _callback_redirect("realm-in-use")
 
@@ -842,9 +1013,30 @@ async def quickbooks_oauth_callback(
             event_key = f"quickbooks-invoice:{invoice.id}:sync:v1"
             if event_key not in existing_event_keys:
                 await enqueue_quickbooks_invoice_sync(db, invoice=invoice)
+        if step_up_grant_id is not None:
+            db.add(
+                _quickbooks_callback_audit(
+                    tenant_id=tenant_id,
+                    user_id=initiated_by_user_id,
+                    grant_id=step_up_grant_id,
+                    succeeded=True,
+                    reason="connected",
+                )
+            )
         await db.commit()
     except (IntegrityError, QuickBooksOAuthError, RuntimeError):
         await db.rollback()
+        if step_up_grant_id is not None:
+            db.add(
+                _quickbooks_callback_audit(
+                    tenant_id=tenant_id,
+                    user_id=initiated_by_user_id,
+                    grant_id=step_up_grant_id,
+                    succeeded=False,
+                    reason="persistence_failed",
+                )
+            )
+            await db.commit()
         logger.exception("quickbooks_connection_persist_failed", tenant_id=str(tenant_id))
         return _callback_redirect("error")
 
@@ -856,14 +1048,31 @@ async def quickbooks_oauth_callback(
 async def disconnect_quickbooks(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
+    step_up_context: PaymentStepUpContext = Depends(get_payment_step_up_context),
 ):
     """Forget local QuickBooks credentials for this tenant."""
     _require_quickbooks_admin(current_user)
+    grant = await authorize_step_up(
+        db,
+        context=step_up_context,
+        required_scope=PaymentStepUpScope.QUICKBOOKS_DISCONNECT,
+        consume=True,
+    )
     connection = await _get_connection(db, current_user.tenant_id)
     if connection:
         disconnect(connection)
-        await db.commit()
         logger.info("quickbooks_connection_disconnected", tenant_id=str(current_user.tenant_id))
+    db.add(
+        payment_step_up_mutation_result(
+            context=step_up_context,
+            scope=PaymentStepUpScope.QUICKBOOKS_DISCONNECT,
+            grant=grant,
+            succeeded=True,
+            provider="quickbooks",
+            metadata={"action": "quickbooks.disconnect", "linked": False},
+        )
+    )
+    await db.commit()
     return _status_response(connection)
 
 

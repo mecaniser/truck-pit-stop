@@ -82,6 +82,14 @@ from app.services.email_service import (
 from app.services.website_logo_service import import_logo_from_website
 from app.core.logging import get_logger
 from app.core.password_policy import validate_password
+from app.core.payment_step_up import (
+    PaymentStepUpContext,
+    PaymentStepUpScope,
+    get_payment_step_up_context,
+    issue_step_up_grant,
+    payment_step_up_audit_event,
+    validate_scope_authority,
+)
 
 router = APIRouter()
 logger = get_logger(__name__)
@@ -1361,13 +1369,102 @@ class VerifyPasswordResponse(BaseModel):
     valid: bool
 
 
+class PaymentStepUpGrantRequest(BaseModel):
+    password: str = Field(min_length=1, max_length=256)
+    scope: PaymentStepUpScope
+    target_tenant_id: Optional[UUID] = None
+
+
+class PaymentStepUpGrantResponse(BaseModel):
+    grant_token: str
+    scope: PaymentStepUpScope
+    expires_at: datetime
+    one_time: bool
+
+
+@router.post("/step-up-grants", response_model=PaymentStepUpGrantResponse)
+@limiter.limit("20/hour")
+@limiter.limit("5/15 minutes")
+async def create_payment_step_up_grant(
+    request: Request,
+    body: PaymentStepUpGrantRequest,
+    db: AsyncSession = Depends(get_db),
+    context: PaymentStepUpContext = Depends(get_payment_step_up_context),
+):
+    """Verify the current user and issue a server-stored payment-settings grant."""
+    validate_scope_authority(context.current_user, body.scope, body.target_tenant_id)
+    if not context.current_user.hashed_password:
+        db.add(
+            payment_step_up_audit_event(
+                context=context,
+                event_type="denied",
+                scope=body.scope,
+                target_tenant_id=body.target_tenant_id,
+                metadata={"reason": "method_unavailable"},
+            )
+        )
+        await db.commit()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "code": "STEP_UP_METHOD_UNAVAILABLE",
+                "message": "This account has no local password available for payment-settings verification.",
+            },
+        )
+    if not verify_password(body.password, context.current_user.hashed_password):
+        db.add(
+            payment_step_up_audit_event(
+                context=context,
+                event_type="denied",
+                scope=body.scope,
+                target_tenant_id=body.target_tenant_id,
+                metadata={"reason": "verification_failed"},
+            )
+        )
+        await db.commit()
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={
+                "code": "STEP_UP_VERIFICATION_FAILED",
+                "message": "Password verification failed.",
+            },
+        )
+
+    grant, raw_grant = issue_step_up_grant(
+        context=context,
+        scope=body.scope,
+        target_tenant_id=body.target_tenant_id,
+    )
+    db.add(grant)
+    await db.flush()
+    db.add(
+        payment_step_up_audit_event(
+            context=context,
+            event_type="issued",
+            scope=body.scope,
+            grant=grant,
+            target_tenant_id=body.target_tenant_id,
+        )
+    )
+    await db.commit()
+    return PaymentStepUpGrantResponse(
+        grant_token=raw_grant,
+        scope=body.scope,
+        expires_at=grant.expires_at,
+        one_time=grant.one_time,
+    )
+
+
 @router.post("/verify-password", response_model=VerifyPasswordResponse)
+@limiter.limit("20/hour")
+@limiter.limit("5/15 minutes")
 async def verify_user_password(
-    request: VerifyPasswordRequest,
+    request: Request,
+    body: VerifyPasswordRequest,
     current_user: User = Depends(get_current_active_user),
 ):
     """Verify current user's password without changing anything."""
-    is_valid = bool(current_user.hashed_password) and verify_password(request.password, current_user.hashed_password)
+    is_valid = bool(current_user.hashed_password) and verify_password(body.password, current_user.hashed_password)
     return VerifyPasswordResponse(valid=is_valid)
 
 

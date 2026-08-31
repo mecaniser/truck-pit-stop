@@ -16,10 +16,12 @@ from pydantic import ValidationError
 from sqlalchemy import select
 
 from app.api.v1.endpoints import quickbooks
+from app.core.payment_step_up import PaymentStepUpScope
 from app.core.quickbooks_crypto import decrypt_quickbooks_token
 from app.core.security import create_access_token
 from app.db.models.customer import Customer
 from app.db.models.invoice import Invoice, InvoiceStatus
+from app.db.models.payment_step_up import PaymentStepUpAuditEvent, PaymentStepUpGrant
 from app.db.models.provider_outbox import ProviderOutboxEvent, ProviderOutboxStatus
 from app.db.models.quickbooks_connection import QuickBooksConnection, QuickBooksOAuthState
 from app.db.models.repair_order import RepairOrder, RepairOrderStatus
@@ -91,10 +93,16 @@ def test_quickbooks_payment_charge_request_accepts_only_an_opaque_token(monkeypa
 
 
 @pytest.mark.asyncio
-async def test_quickbooks_connect_callback_encrypts_tokens_and_rejects_state_replay(client, db_session, monkeypatch):
+async def test_quickbooks_connect_callback_encrypts_tokens_and_rejects_state_replay(
+    client, db_session, monkeypatch, issue_payment_step_up
+):
     _configure_quickbooks(monkeypatch)
-    tenant, _user, token = await _owner_with_token(db_session)
-    headers = {"Authorization": f"Bearer {token}"}
+    tenant, user, token = await _owner_with_token(db_session)
+    headers = await issue_payment_step_up(
+        token=token,
+        user=user,
+        scope=PaymentStepUpScope.MANAGE,
+    )
 
     start = await client.post("/api/v1/quickbooks/connect", headers=headers)
 
@@ -116,6 +124,9 @@ async def test_quickbooks_connect_callback_encrypts_tokens_and_rejects_state_rep
     assert state_record.tenant_id == tenant.id
     assert state_record.state_hash != state_value
     assert state_record.consumed_at is None
+    assert state_record.step_up_grant_id is not None
+    assert state_record.step_up_scope == PaymentStepUpScope.MANAGE.value
+    assert state_record.step_up_verified_at is not None
 
     async def fake_exchange(_code: str) -> QuickBooksTokenSet:
         return QuickBooksTokenSet(
@@ -144,6 +155,18 @@ async def test_quickbooks_connect_callback_encrypts_tokens_and_rejects_state_rep
     assert connection.encrypted_refresh_token != "intuit-refresh-token"
     assert decrypt_quickbooks_token(connection.encrypted_access_token) == "intuit-access-token"
     assert decrypt_quickbooks_token(connection.encrypted_refresh_token) == "intuit-refresh-token"
+    callback_outcome = (await db_session.execute(
+        select(PaymentStepUpAuditEvent).where(
+            PaymentStepUpAuditEvent.event_type == "mutation_succeeded",
+            PaymentStepUpAuditEvent.provider == "quickbooks",
+            PaymentStepUpAuditEvent.metadata_json["stage"].as_string() == "oauth_callback",
+        )
+    )).scalar_one()
+    assert callback_outcome.metadata_json == {
+        "action": "quickbooks.connect",
+        "stage": "oauth_callback",
+        "reason": "connected",
+    }
 
     replay = await client.get(
         "/api/v1/quickbooks/oauth/callback",
@@ -153,14 +176,160 @@ async def test_quickbooks_connect_callback_encrypts_tokens_and_rejects_state_rep
 
 
 @pytest.mark.asyncio
+async def test_quickbooks_source_mutations_have_no_side_effect_without_step_up(
+    client, db_session, monkeypatch
+):
+    _configure_quickbooks(monkeypatch)
+    tenant, _user, token = await _owner_with_token(db_session, suffix="missing-step-up")
+    headers = {"Authorization": f"Bearer {token}"}
+
+    start = await client.post("/api/v1/quickbooks/connect", headers=headers)
+    assert start.status_code == 428
+    states = (await db_session.execute(select(QuickBooksOAuthState))).scalars().all()
+    assert states == []
+
+    connection = QuickBooksConnection(
+        tenant_id=tenant.id,
+        realm_id="913035829570011",
+        scopes="com.intuit.quickbooks.accounting com.intuit.quickbooks.payment",
+        status="connected",
+        encrypted_access_token="preserved-access",
+        encrypted_refresh_token="preserved-refresh",
+    )
+    db_session.add(connection)
+    await db_session.commit()
+    disconnect_response = await client.post(
+        "/api/v1/quickbooks/disconnect", headers=headers
+    )
+    assert disconnect_response.status_code == 428
+    await db_session.refresh(connection)
+    assert connection.status == "connected"
+    assert connection.encrypted_access_token == "preserved-access"
+
+
+@pytest.mark.asyncio
+async def test_quickbooks_callback_rejects_revoked_or_permissionless_attestation(
+    client, db_session, monkeypatch, issue_payment_step_up
+):
+    _configure_quickbooks(monkeypatch)
+    provider_calls = []
+
+    async def unexpected_exchange(code: str):
+        provider_calls.append(code)
+        raise AssertionError("provider exchange must not run")
+
+    monkeypatch.setattr(quickbooks, "exchange_authorization_code", unexpected_exchange)
+
+    async def start_flow(suffix: str):
+        tenant, user, token = await _owner_with_token(db_session, suffix=suffix)
+        headers = await issue_payment_step_up(
+            token=token,
+            user=user,
+            scope=PaymentStepUpScope.MANAGE,
+        )
+        response = await client.post("/api/v1/quickbooks/connect", headers=headers)
+        state_value = parse_qs(urlparse(response.json()["url"]).query)["state"][0]
+        state = (
+            await db_session.execute(
+                select(QuickBooksOAuthState).where(
+                    QuickBooksOAuthState.state_hash
+                    == sha256(state_value.encode()).hexdigest()
+                )
+            )
+        ).scalar_one()
+        return user, state_value, state
+
+    _revoked_user, revoked_value, revoked_state = await start_flow("revoked-attestation")
+    revoked_grant = await db_session.get(PaymentStepUpGrant, revoked_state.step_up_grant_id)
+    assert revoked_grant is not None
+    revoked_grant.revoked_at = datetime.now(timezone.utc)
+    await db_session.commit()
+    revoked = await client.get(
+        "/api/v1/quickbooks/oauth/callback",
+        params={"state": revoked_value, "code": "revoked-code", "realmId": "realm-revoked"},
+    )
+    assert revoked.status_code == 400
+
+    permission_user, permission_value, _permission_state = await start_flow("permission-attestation")
+    permission_user.role = UserRole.RECEPTIONIST
+    await db_session.commit()
+    permissionless = await client.get(
+        "/api/v1/quickbooks/oauth/callback",
+        params={"state": permission_value, "code": "permission-code", "realmId": "realm-permission"},
+    )
+    assert permissionless.status_code == 400
+    assert provider_calls == []
+
+
+@pytest.mark.asyncio
+async def test_quickbooks_callback_rejects_partial_attestation_but_accepts_legacy_state(
+    client, db_session, monkeypatch
+):
+    _configure_quickbooks(monkeypatch)
+    tenant, user, _token = await _owner_with_token(db_session, suffix="legacy-attestation")
+    partial_value = "partial-step-up-oauth-state-value"
+    legacy_value = "legacy-predeployment-oauth-state-value"
+    now = datetime.now(timezone.utc)
+    db_session.add_all(
+        [
+            QuickBooksOAuthState(
+                state_hash=sha256(partial_value.encode()).hexdigest(),
+                tenant_id=tenant.id,
+                initiated_by_user_id=user.id,
+                step_up_scope=PaymentStepUpScope.MANAGE.value,
+                expires_at=now + timedelta(minutes=5),
+            ),
+            QuickBooksOAuthState(
+                state_hash=sha256(legacy_value.encode()).hexdigest(),
+                tenant_id=tenant.id,
+                initiated_by_user_id=user.id,
+                expires_at=now + timedelta(minutes=5),
+            ),
+        ]
+    )
+    await db_session.commit()
+    exchanges = []
+
+    async def fake_exchange(code: str) -> QuickBooksTokenSet:
+        exchanges.append(code)
+        return QuickBooksTokenSet(
+            access_token="legacy-access",
+            refresh_token="legacy-refresh",
+            expires_in=3600,
+            refresh_token_expires_in=8_640_000,
+        )
+
+    monkeypatch.setattr(quickbooks, "exchange_authorization_code", fake_exchange)
+    partial = await client.get(
+        "/api/v1/quickbooks/oauth/callback",
+        params={"state": partial_value, "code": "partial-code", "realmId": "realm-partial"},
+    )
+    assert partial.status_code == 400
+    assert exchanges == []
+
+    legacy = await client.get(
+        "/api/v1/quickbooks/oauth/callback",
+        params={"state": legacy_value, "code": "legacy-code", "realmId": "913035829570099"},
+    )
+    assert legacy.status_code == 303
+    assert legacy.headers["location"].endswith("/dashboard/settings?quickbooks=connected")
+    assert exchanges == ["legacy-code"]
+
+
+@pytest.mark.asyncio
 async def test_quickbooks_callback_resets_accounting_links_when_company_changes(
     client,
     db_session,
     monkeypatch,
+    issue_payment_step_up,
 ):
     _configure_quickbooks(monkeypatch)
-    tenant, _user, token = await _owner_with_token(db_session, suffix="realm-switch")
-    headers = {"Authorization": f"Bearer {token}"}
+    tenant, user, token = await _owner_with_token(db_session, suffix="realm-switch")
+    headers = await issue_payment_step_up(
+        token=token,
+        user=user,
+        scope=PaymentStepUpScope.MANAGE,
+    )
     customer = Customer(
         id=uuid4(),
         tenant_id=tenant.id,
@@ -268,13 +437,18 @@ async def test_quickbooks_callback_deduplicates_existing_sync_events_and_recover
     client,
     db_session,
     monkeypatch,
+    issue_payment_step_up,
 ):
     _configure_quickbooks(monkeypatch)
-    tenant, _user, token = await _owner_with_token(
+    tenant, user, token = await _owner_with_token(
         db_session,
         suffix="existing-outbox",
     )
-    headers = {"Authorization": f"Bearer {token}"}
+    headers = await issue_payment_step_up(
+        token=token,
+        user=user,
+        scope=PaymentStepUpScope.MANAGE,
+    )
     customer = Customer(
         id=uuid4(),
         tenant_id=tenant.id,
@@ -416,9 +590,11 @@ async def test_quickbooks_callback_deduplicates_existing_sync_events_and_recover
 
 
 @pytest.mark.asyncio
-async def test_quickbooks_connection_status_is_tenant_scoped_and_disconnect_forgets_tokens(client, db_session, monkeypatch):
+async def test_quickbooks_connection_status_is_tenant_scoped_and_disconnect_forgets_tokens(
+    client, db_session, monkeypatch, issue_payment_step_up
+):
     _configure_quickbooks(monkeypatch)
-    tenant, _user, token = await _owner_with_token(db_session, suffix="primary")
+    tenant, user, token = await _owner_with_token(db_session, suffix="primary")
     _other_tenant, _other_user, other_token = await _owner_with_token(db_session, suffix="other")
     encrypted_access = Fernet(quickbooks.settings.QUICKBOOKS_TOKEN_ENCRYPTION_KEY.encode()).encrypt(b"access").decode()
     encrypted_refresh = Fernet(quickbooks.settings.QUICKBOOKS_TOKEN_ENCRYPTION_KEY.encode()).encrypt(b"refresh").decode()
@@ -448,9 +624,14 @@ async def test_quickbooks_connection_status_is_tenant_scoped_and_disconnect_forg
     assert healthy_status.status_code == 200
     assert healthy_status.json()["token_health"] == "healthy"
 
+    disconnect_headers = await issue_payment_step_up(
+        token=token,
+        user=user,
+        scope=PaymentStepUpScope.QUICKBOOKS_DISCONNECT,
+    )
     disconnect_response = await client.post(
         "/api/v1/quickbooks/disconnect",
-        headers={"Authorization": f"Bearer {token}"},
+        headers=disconnect_headers,
     )
     assert disconnect_response.status_code == 200
     assert disconnect_response.json()["is_connected"] is False
@@ -502,16 +683,23 @@ async def test_quickbooks_webhook_verifies_signature_and_records_tenant_health(c
 
 
 @pytest.mark.asyncio
-async def test_quickbooks_connect_requires_deployment_credentials(client, db_session, monkeypatch):
+async def test_quickbooks_connect_requires_deployment_credentials(
+    client, db_session, monkeypatch, issue_payment_step_up
+):
     monkeypatch.setattr(quickbooks.settings, "QUICKBOOKS_CLIENT_ID", "")
     monkeypatch.setattr(quickbooks.settings, "QUICKBOOKS_CLIENT_SECRET", "")
     monkeypatch.setattr(quickbooks.settings, "QUICKBOOKS_REDIRECT_URI", "")
     monkeypatch.setattr(quickbooks.settings, "QUICKBOOKS_TOKEN_ENCRYPTION_KEY", "")
-    _tenant, _user, token = await _owner_with_token(db_session, suffix="unconfigured")
+    _tenant, user, token = await _owner_with_token(db_session, suffix="unconfigured")
+    headers = await issue_payment_step_up(
+        token=token,
+        user=user,
+        scope=PaymentStepUpScope.MANAGE,
+    )
 
     response = await client.post(
         "/api/v1/quickbooks/connect",
-        headers={"Authorization": f"Bearer {token}"},
+        headers=headers,
     )
 
     assert response.status_code == 503

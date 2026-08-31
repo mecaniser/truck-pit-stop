@@ -237,6 +237,9 @@ describe('UnifiedSettingsPage compact mobile section selector', () => {
 
 describe('UnifiedSettingsPage payment disclosures', () => {
   beforeEach(() => {
+    apiMocks.get.mockReset()
+    apiMocks.post.mockReset()
+    apiMocks.put.mockReset()
     apiMocks.get.mockImplementation((path: string) => {
       const dataByPath: Record<string, unknown> = {
         '/stripe/connect/status': stripeConnection,
@@ -245,6 +248,35 @@ describe('UnifiedSettingsPage payment disclosures', () => {
         '/admin/zelle-settings': { zelle_email: 'payments@truckpitstop.com', zelle_phone: null, zelle_qr_image: null },
       }
       return Promise.resolve({ data: dataByPath[path] ?? garageProfile })
+    })
+    apiMocks.post.mockResolvedValue({
+      data: {
+        grant_token: 'opaque-step-up-grant',
+        scope: 'payment_sources.manage',
+        expires_at: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
+        one_time: false,
+      },
+    })
+    apiMocks.put.mockResolvedValue({
+      data: { zelle_email: 'updated@truckpitstop.com', zelle_phone: null, zelle_qr_image: null },
+    })
+    useAuthStore.setState({
+      user: {
+        id: 'u-1',
+        email: 'owner@example.com',
+        first_name: 'Owner',
+        last_name: 'User',
+        phone: null,
+        role: 'garage_owner',
+        is_active: true,
+        tenant_id: 't-1',
+        customer_id: null,
+        tenant_name: 'Truck Pit Stop',
+        tenant_slug: 'truck-pit-stop',
+      },
+      token: 'token',
+      refreshToken: 'refresh',
+      isAuthenticated: true,
     })
   })
 
@@ -272,5 +304,137 @@ describe('UnifiedSettingsPage payment disclosures', () => {
     await user.keyboard('{Enter}')
     expect(zelleTrigger).toHaveAttribute('aria-expanded', 'false')
     expect(screen.queryByRole('region', { name: /Zelle Payments/i })).not.toBeInTheDocument()
+  })
+
+  it('unlocks payment-source changes in memory and sends the grant on mutation', async () => {
+    const user = userEvent.setup()
+    renderPage()
+
+    await user.click(screen.getByRole('button', { name: 'Payments & Accounting' }))
+    await user.type(
+      screen.getByLabelText('Verify your current password to change payment sources'),
+      'local-password',
+    )
+    await user.click(screen.getByRole('button', { name: 'Unlock changes' }))
+
+    await waitFor(() => {
+      expect(apiMocks.post).toHaveBeenCalledWith('/auth/step-up-grants', {
+        password: 'local-password',
+        scope: 'payment_sources.manage',
+        target_tenant_id: null,
+      })
+    })
+    expect(screen.getByText(/Payment-source changes are unlocked/)).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: /Zelle Payments/i }))
+    const email = await screen.findByLabelText('Zelle Email')
+    await user.clear(email)
+    await user.type(email, 'updated@truckpitstop.com')
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+
+    await waitFor(() => {
+      expect(apiMocks.put).toHaveBeenCalledWith(
+        '/admin/zelle-settings',
+        { zelle_email: 'updated@truckpitstop.com', zelle_phone: '5551234567' },
+        { headers: { 'X-Step-Up-Authorization': 'opaque-step-up-grant' } },
+      )
+    })
+  })
+
+  it('requires a fresh exact one-time grant before disconnecting Stripe', async () => {
+    const user = userEvent.setup()
+    apiMocks.post.mockImplementation((path: string, body?: { scope?: string }) => {
+      if (path === '/auth/step-up-grants') {
+        return Promise.resolve({ data: {
+          grant_token: body?.scope === 'payment_sources.stripe.disconnect'
+            ? 'one-time-stripe-grant'
+            : 'manage-grant',
+          scope: body?.scope ?? 'payment_sources.manage',
+          expires_at: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
+          one_time: body?.scope !== 'payment_sources.manage',
+        } })
+      }
+      return Promise.resolve({ data: { disconnected: true } })
+    })
+    renderPage()
+
+    await user.click(screen.getByRole('button', { name: 'Payments & Accounting' }))
+    await user.type(screen.getByLabelText('Verify your current password to change payment sources'), 'local-password')
+    await user.click(screen.getByRole('button', { name: 'Unlock changes' }))
+    await screen.findByText(/Payment-source changes are unlocked/)
+
+    await user.click(screen.getByRole('button', { name: 'Disconnect Stripe' }))
+    const confirmation = await screen.findByRole('alertdialog', { name: 'Disconnect Stripe account?' })
+    await user.click(within(confirmation).getByRole('button', { name: 'Disconnect Stripe' }))
+
+    const stepUp = await screen.findByRole('alertdialog', { name: 'Verify Stripe disconnection' })
+    await user.type(within(stepUp).getByLabelText('Your current password'), 'fresh-password')
+    await user.click(within(stepUp).getByRole('button', { name: 'Verify and continue' }))
+
+    await waitFor(() => {
+      expect(apiMocks.post).toHaveBeenCalledWith('/auth/step-up-grants', {
+        password: 'fresh-password',
+        scope: 'payment_sources.stripe.disconnect',
+        target_tenant_id: null,
+      })
+      expect(apiMocks.post).toHaveBeenCalledWith(
+        '/stripe/connect/disconnect',
+        undefined,
+        { headers: { 'X-Step-Up-Authorization': 'one-time-stripe-grant' } },
+      )
+    })
+  })
+
+  it('sends the manage grant on QuickBooks connect and relocks on a 428', async () => {
+    const user = userEvent.setup()
+    apiMocks.get.mockImplementation((path: string) => {
+      const dataByPath: Record<string, unknown> = {
+        '/stripe/connect/status': stripeConnection,
+        '/quickbooks/status': quickBooksConnection,
+        '/admin/garage-profile': garageProfile,
+        '/admin/zelle-settings': { zelle_email: 'payments@truckpitstop.com', zelle_phone: null, zelle_qr_image: null },
+      }
+      return Promise.resolve({ data: dataByPath[path] ?? garageProfile })
+    })
+    apiMocks.post.mockImplementation((path: string) => {
+      if (path === '/auth/step-up-grants') {
+        return Promise.resolve({ data: {
+          grant_token: 'manage-grant',
+          scope: 'payment_sources.manage',
+          expires_at: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
+          one_time: false,
+        } })
+      }
+      if (path === '/quickbooks/connect') return new Promise(() => {})
+      return Promise.resolve({ data: {} })
+    })
+    apiMocks.put.mockRejectedValue({
+      response: {
+        status: 428,
+        data: { detail: { required_scope: 'payment_sources.manage', message: 'Verify again.' } },
+      },
+    })
+    renderPage()
+
+    await user.click(screen.getByRole('button', { name: 'Payments & Accounting' }))
+    await user.type(screen.getByLabelText('Verify your current password to change payment sources'), 'local-password')
+    await user.click(screen.getByRole('button', { name: 'Unlock changes' }))
+    await screen.findByText(/Payment-source changes are unlocked/)
+
+    await user.click(screen.getByRole('button', { name: /QuickBooks Online/i }))
+    await user.click(await screen.findByRole('button', { name: 'Connect My QuickBooks' }))
+    await waitFor(() => expect(apiMocks.post).toHaveBeenCalledWith(
+      '/quickbooks/connect',
+      undefined,
+      { headers: { 'X-Step-Up-Authorization': 'manage-grant' } },
+    ))
+
+    await user.click(screen.getByRole('button', { name: /Zelle Payments/i }))
+    const email = await screen.findByLabelText('Zelle Email')
+    await user.clear(email)
+    await user.type(email, 'retry@truckpitstop.com')
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+    await screen.findByText('Verification expired. Enter your password again.')
+    expect(screen.getByRole('button', { name: 'Unlock changes' })).toBeInTheDocument()
   })
 })

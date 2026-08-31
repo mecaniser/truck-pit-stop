@@ -15,6 +15,13 @@ from sqlalchemy.orm import selectinload
 
 from app.core.config import settings
 from app.core.dependencies import get_current_active_user, get_db
+from app.core.payment_step_up import (
+    PaymentStepUpContext,
+    PaymentStepUpScope,
+    authorize_step_up,
+    get_payment_step_up_context,
+    payment_step_up_mutation_result,
+)
 from app.db.models.error_log import ErrorCategory, ErrorLog
 from app.db.models.invoice import Invoice
 from app.db.models.payment import Payment, PaymentMethod, PaymentStatus
@@ -430,6 +437,7 @@ async def reset_tenant_stripe_connection(
     tenant_id: UUID,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
+    step_up_context: PaymentStepUpContext = Depends(get_payment_step_up_context),
 ):
     """Clear a stale local Stripe link so a merchant can start onboarding again."""
     _require_super_admin(current_user)
@@ -439,12 +447,30 @@ async def reset_tenant_stripe_connection(
     if not tenant.stripe_account_id:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Tenant has no Stripe connection to reset")
 
+    grant = await authorize_step_up(
+        db,
+        context=step_up_context,
+        required_scope=PaymentStepUpScope.PLATFORM_STRIPE_RESET,
+        target_tenant_id=tenant_id,
+        consume=True,
+    )
+
     tenant.stripe_account_id = None
     tenant.stripe_connection_type = None
     tenant.stripe_onboarding_complete = False
     tenant.stripe_last_webhook_at = None
     tenant.stripe_last_webhook_event = None
     tenant.stripe_last_webhook_error = None
+    db.add(
+        payment_step_up_mutation_result(
+            context=step_up_context,
+            scope=PaymentStepUpScope.PLATFORM_STRIPE_RESET,
+            grant=grant,
+            target_tenant_id=tenant_id,
+            succeeded=True,
+            metadata={"action": "platform.stripe.reset", "linked": False},
+        )
+    )
     await db.commit()
     return {
         "tenant_id": str(tenant.id),
@@ -458,6 +484,7 @@ async def reset_tenant_quickbooks_connection(
     tenant_id: UUID,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
+    step_up_context: PaymentStepUpContext = Depends(get_payment_step_up_context),
 ):
     """Forget tenant QuickBooks authorization without deleting local history."""
     _require_super_admin(current_user)
@@ -472,7 +499,25 @@ async def reset_tenant_quickbooks_connection(
     if not connection or connection.status != "connected":
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Tenant has no active QuickBooks connection to reset")
 
+    grant = await authorize_step_up(
+        db,
+        context=step_up_context,
+        required_scope=PaymentStepUpScope.PLATFORM_QUICKBOOKS_RESET,
+        target_tenant_id=tenant_id,
+        consume=True,
+    )
+
     disconnect_quickbooks_connection(connection)
+    db.add(
+        payment_step_up_mutation_result(
+            context=step_up_context,
+            scope=PaymentStepUpScope.PLATFORM_QUICKBOOKS_RESET,
+            grant=grant,
+            target_tenant_id=tenant_id,
+            succeeded=True,
+            metadata={"action": "platform.quickbooks.reset", "linked": False},
+        )
+    )
     await db.commit()
     return {
         "tenant_id": str(tenant.id),
