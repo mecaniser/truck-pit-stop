@@ -399,12 +399,28 @@ function PaymentIntegrationPanel({
   )
 }
 
-function DisconnectStripeDialog({ legacy, pending, onCancel, onConfirm }: {
-  legacy: boolean
+function PaymentSourceDisconnectDialog({
+  title,
+  description,
+  notice,
+  confirmLabel,
+  pendingLabel,
+  pending,
+  onCancel,
+  onConfirm,
+}: {
+  title: string
+  description: string
+  notice?: string
+  confirmLabel: string
+  pendingLabel: string
   pending: boolean
   onCancel: () => void
   onConfirm: () => void
 }) {
+  const titleId = useId()
+  const descriptionId = useId()
+
   useEffect(() => {
     const closeOnEscape = (event: KeyboardEvent) => {
       if (event.key === 'Escape' && !pending) onCancel()
@@ -418,32 +434,28 @@ function DisconnectStripeDialog({ legacy, pending, onCancel, onConfirm }: {
       className="fixed inset-0 z-[100] grid place-items-center bg-black/70 p-4 backdrop-blur-sm"
       onMouseDown={(event) => event.target === event.currentTarget && !pending && onCancel()}
     >
-      <div role="alertdialog" aria-modal="true" aria-labelledby="disconnect-stripe-title" aria-describedby="disconnect-stripe-description" className="w-full max-w-md rounded-xl border border-red-800/50 bg-zinc-950 p-6 shadow-2xl shadow-black/60">
+      <div role="alertdialog" aria-modal="true" aria-labelledby={titleId} aria-describedby={descriptionId} className="w-full max-w-md rounded-xl border border-red-800/50 bg-zinc-950 p-6 shadow-2xl shadow-black/60">
         <div className="flex items-start justify-between gap-4">
           <div className="flex items-center gap-3">
             <span className="grid h-10 w-10 shrink-0 place-items-center rounded-lg border border-red-800/50 bg-red-950/70 text-red-400">
               <AlertCircle className="h-5 w-5" />
             </span>
-            <h3 id="disconnect-stripe-title" className="text-lg font-semibold text-zinc-100">
-              {legacy ? 'Disconnect legacy Stripe connection?' : 'Disconnect Stripe account?'}
-            </h3>
+            <h3 id={titleId} className="text-lg font-semibold text-zinc-100">{title}</h3>
           </div>
           <button type="button" onClick={onCancel} disabled={pending} aria-label="Close confirmation" className="grid h-9 w-9 shrink-0 place-items-center rounded-lg text-zinc-400 transition hover:bg-zinc-800 hover:text-zinc-100 disabled:opacity-50">
             <X className="h-5 w-5" />
           </button>
         </div>
-        <p id="disconnect-stripe-description" className="mt-4 text-sm leading-6 text-zinc-400">
-          DieselBridge will stop routing new invoice payments to this connection. The Stripe account and its payment history will not be deleted.
-        </p>
-        {legacy && (
+        <p id={descriptionId} className="mt-4 text-sm leading-6 text-zinc-400">{description}</p>
+        {notice && (
           <p className="mt-3 rounded-lg border border-amber-800/40 bg-amber-950/20 px-3 py-2 text-sm text-amber-200">
-            After disconnecting, you can set up the new Stripe-hosted connection.
+            {notice}
           </p>
         )}
         <div className="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
-          <button type="button" onClick={onCancel} disabled={pending} className={industrialStyles.btnSecondary}>Cancel</button>
+          <button type="button" autoFocus onClick={onCancel} disabled={pending} className={industrialStyles.btnSecondary}>Cancel</button>
           <button type="button" onClick={onConfirm} disabled={pending} className={industrialStyles.btnDanger}>
-            {pending ? 'Disconnecting...' : 'Disconnect Stripe'}
+            {pending ? pendingLabel : confirmLabel}
           </button>
         </div>
       </div>
@@ -1591,8 +1603,12 @@ function PaymentsSection() {
         </div>
       </PaymentIntegrationPanel>
       {disconnectKind && (
-        <DisconnectStripeDialog
-          legacy={disconnectKind === 'legacy'}
+        <PaymentSourceDisconnectDialog
+          title={disconnectKind === 'legacy' ? 'Disconnect legacy Stripe connection?' : 'Disconnect Stripe account?'}
+          description="DieselBridge will stop routing new invoice payments to this connection. The Stripe account and its payment history will not be deleted."
+          notice={disconnectKind === 'legacy' ? 'After disconnecting, you can set up the new Stripe-hosted connection.' : undefined}
+          confirmLabel="Disconnect Stripe"
+          pendingLabel="Disconnecting..."
           pending={disconnectMutation.isPending}
           onCancel={() => setDisconnectKind(null)}
           onConfirm={() => requestDestructiveStepUp({
@@ -1782,6 +1798,7 @@ function QuickBooksIntegrationCard({
 }) {
   const queryClient = useQueryClient()
   const [isRedirecting, setIsRedirecting] = useState(false)
+  const [showDisconnectConfirmation, setShowDisconnectConfirmation] = useState(false)
   const [searchParams, setSearchParams] = useSearchParams()
   const { data: status, isLoading } = useQuery<QuickBooksConnectionStatus>({
     queryKey: ['quickbooks-status'],
@@ -1845,7 +1862,8 @@ function QuickBooksIntegrationCard({
       : { led: 'inactive' as const, title: 'NOT CONNECTED', desc: 'Connect QuickBooks to use accounting and payments.' }
 
   return (
-    <PaymentIntegrationPanel
+    <>
+      <PaymentIntegrationPanel
       icon={<Building2 className="h-5 w-5" />}
       title="QuickBooks Online"
       summary={isLoading ? 'Checking connection status...' : statusConfig.desc}
@@ -1892,16 +1910,7 @@ function QuickBooksIntegrationCard({
                     </button>
                   )}
                   <button
-                    onClick={() => {
-                      if (window.confirm('Disconnect QuickBooks? Accounting and payments will stop until you reconnect.')) {
-                        requestDestructiveStepUp({
-                          scope: 'payment_sources.quickbooks.disconnect',
-                          title: 'Verify QuickBooks disconnection',
-                          description: 'Enter your current password again. This one-time authorization removes the local QuickBooks connection while preserving accounting and payment history.',
-                          onGranted: (grantToken) => disconnectMutation.mutate(grantToken),
-                        })
-                      }
-                    }}
+                    onClick={() => setShowDisconnectConfirmation(true)}
                     disabled={disconnectMutation.isPending}
                     className={industrialStyles.btnSecondary}
                   >
@@ -1924,7 +1933,27 @@ function QuickBooksIntegrationCard({
           )}
         </>
       )}
-    </PaymentIntegrationPanel>
+      </PaymentIntegrationPanel>
+      {showDisconnectConfirmation && (
+        <PaymentSourceDisconnectDialog
+          title="Disconnect QuickBooks?"
+          description="Accounting sync and QuickBooks payment processing will stop until you reconnect. Existing accounting and payment history will be preserved."
+          confirmLabel="Disconnect QuickBooks"
+          pendingLabel="Disconnecting..."
+          pending={disconnectMutation.isPending}
+          onCancel={() => setShowDisconnectConfirmation(false)}
+          onConfirm={() => {
+            setShowDisconnectConfirmation(false)
+            requestDestructiveStepUp({
+              scope: 'payment_sources.quickbooks.disconnect',
+              title: 'Verify QuickBooks disconnection',
+              description: 'Enter your current password again. This one-time authorization removes the local QuickBooks connection while preserving accounting and payment history.',
+              onGranted: (grantToken) => disconnectMutation.mutate(grantToken),
+            })
+          }}
+        />
+      )}
+    </>
   )
 }
 
