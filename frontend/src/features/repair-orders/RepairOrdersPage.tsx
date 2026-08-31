@@ -8,7 +8,7 @@ import { formatHoursMinutes } from '@/lib/durationFormat'
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import toast from 'react-hot-toast'
 import api from '../../lib/api'
-import { Customer, RepairOrder, RepairOrderDetail, RepairOrderStatus, Vehicle, PartsUsage, Labor, InventoryItem, Quote, Invoice, RecommendedService, RecommendedServicePriority, VINDecodeResult, PriceBuildWarning } from '../../types'
+import { Customer, RepairOrder, RepairOrderDetail, RepairOrderHistoryEvent, RepairOrderStatus, Vehicle, PartsUsage, Labor, InventoryItem, Quote, Invoice, RecommendedService, RecommendedServicePriority, VINDecodeResult, PriceBuildWarning } from '../../types'
 import { format } from 'date-fns'
 import { ArrowRight, FileText, Plus, TriangleAlert, Trash2, Wrench, ChevronDown, ChevronLeft, ChevronUp, RotateCcw, Search, X } from 'lucide-react'
 import SlidePanel from '@/components/SlidePanel'
@@ -905,21 +905,31 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
     onSuccess: () => refetchRecServices(),
   })
 
-  // The note goes through the generic update. shop_notes is its own column
-  // because internal_notes is a JSON envelope the pricer and portal parse —
-  // prose there would zero the order's labour total.
-  const saveOrderNotesMutation = useMutation({
-    mutationFn: async (notes: { customer_notes?: string | null; shop_notes?: string | null }) => {
-      const response = await api.put(`/repair-orders/${selectedOrder!.id}`, notes)
-      return response.data as RepairOrder
+  // Notes are history events: appended, signed, never overwritten. The single
+  // customer_notes/shop_notes columns could not answer "who wrote this, and
+  // when" — and a second note overwrote the first.
+  const addOrderNoteMutation = useMutation({
+    mutationFn: async (note: { body: string; audience: 'customer' | 'shop' }) => {
+      await api.post(`/repair-orders/${selectedOrder!.id}/notes`, note)
     },
-    onSuccess: (updated) => {
-      queryClient.invalidateQueries({ queryKey: ['repair-orders'] })
-      queryClient.invalidateQueries({ queryKey: ['repair-order-detail', updated.id] })
-      setSelectedOrder(updated)
-      toast.success('Note saved')
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['repair-order-notes', selectedOrder?.id] })
+      queryClient.invalidateQueries({ queryKey: ['repair-order-detail', selectedOrder?.id] })
+      toast.success('Note posted')
     },
-    onError: (error: unknown) => toast.error(getErrorDetail(error, 'Could not save the note')),
+    onError: (error: unknown) => toast.error(getErrorDetail(error, 'Could not post the note')),
+  })
+
+  const deleteOrderNoteMutation = useMutation({
+    mutationFn: async (noteId: string) => {
+      await api.delete(`/repair-orders/${selectedOrder!.id}/notes/${noteId}`)
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['repair-order-notes', selectedOrder?.id] })
+      queryClient.invalidateQueries({ queryKey: ['repair-order-detail', selectedOrder?.id] })
+      toast.success('Note deleted')
+    },
+    onError: (error: unknown) => toast.error(getErrorDetail(error, 'Could not delete the note')),
   })
 
   const deleteRecServiceMutation = useMutation({
@@ -1942,6 +1952,39 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pendingNavIndex, orders])
 
+  // Notes are history events with an audience, but they come from their own
+  // route rather than the detail payload: detail is fetched lazily, only on
+  // explicit History intent, because it also pulls parts, labor and PM scope.
+  // Notes show whenever the order is open, so they must not depend on it.
+  const { data: orderNotesData } = useQuery<RepairOrderHistoryEvent[]>({
+    queryKey: ['repair-order-notes', selectedOrder?.id],
+    queryFn: async ({ signal }) => {
+      const response = await api.get(`/repair-orders/${selectedOrder!.id}/notes`, { signal })
+      return response.data
+    },
+    enabled: !!(selectedOrder?.id && isDetailOpen),
+  })
+
+  const orderNotes = useMemo(() => {
+    const NOTE_AUDIENCE: Record<string, 'customer' | 'shop'> = {
+      note_customer: 'customer',
+      note_shop: 'shop',
+    }
+    const mayDeleteAny = currentUser?.role === 'garage_owner' || currentUser?.role === 'garage_admin'
+    // Guard the shape, don't assume it: a stubbed or errored response can hand
+    // back something that is not a list, and this runs on every render.
+    return (Array.isArray(orderNotesData) ? orderNotesData : [])
+      .filter((event) => event?.event_type in NOTE_AUDIENCE)
+      .map((event) => ({
+        id: event.id,
+        body: event.detail || '',
+        audience: NOTE_AUDIENCE[event.event_type],
+        at: event.created_at,
+        actor: event.actor_name || undefined,
+        canDelete: Boolean(mayDeleteAny || (event.actor_user_id && event.actor_user_id === currentUser?.id)),
+      }))
+  }, [orderNotesData, currentUser?.id, currentUser?.role])
+
   if (isLoading || (workbenchScope === 'daily' && Boolean(workQueueLane) && isDailyWorkbenchLoading)) {
     if (presentationVariant === 'new') {
       return (
@@ -2155,6 +2198,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
       : quoteIsSent && !effectiveQuoteNeedsUpdate
         ? 'The estimate has been sent. It can be resent if its amount changes.'
         : undefined
+
   const priceBuilderHistoryEvents = (() => {
     const order = orderDetail ?? selectedOrder
     if (!order) return []
@@ -4257,10 +4301,10 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                     mileageIn={selectedOrder.mileage_in}
                     mileageOut={selectedOrder.mileage_out}
                     poNumber={selectedOrder.po_number}
-                    customerNotes={selectedOrder.customer_notes}
-                    shopNotes={selectedOrder.shop_notes}
-                    notesSaving={saveOrderNotesMutation.isPending}
-                    onSaveNotes={async (notes) => { await saveOrderNotesMutation.mutateAsync(notes) }}
+                    notes={orderNotes}
+                    notesSaving={addOrderNoteMutation.isPending}
+                    onAddNote={async (note) => { await addOrderNoteMutation.mutateAsync(note) }}
+                    onDeleteNote={async (noteId) => { await deleteOrderNoteMutation.mutateAsync(noteId) }}
                     orderTypeLabel={selectedOrder.is_warranty_repair ? 'Warranty' : selectedOrder.parent_repair_order_id ? 'Comeback' : 'Standard'}
                     quoteNumber={quoteForOrder?.quote_number}
                     quoteIsSent={quoteIsSent}
