@@ -650,6 +650,10 @@ class PriceBuildService:
 
         if description is not None:
             line.description = description
+            # Renaming is an override of the Service's name, so stop recalc
+            # from reapplying it — the same rule a manual rate edit follows.
+            if auto_recalc_enabled is None and description.strip():
+                line.auto_recalc_enabled = False
         if hours is not None:
             line.hours = hours
         if hourly_rate is not None:
@@ -844,6 +848,9 @@ class PriceBuildService:
                     )
                 )
                 service = svc_result.scalar_one_or_none()
+                # Reached only while auto_recalc_enabled — the loop above skips
+                # a line the operator has taken over — so renaming a line is
+                # what stops its Service name being reapplied here.
                 if service:
                     line.description = service.name
                 # Service-sourced lines are billed as labor-hour units.
