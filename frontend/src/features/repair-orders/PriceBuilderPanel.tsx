@@ -74,6 +74,16 @@ export type PriceBuilderHistoryEvent = {
   actor?: string
 }
 
+export type PriceBuilderNote = {
+  id: string
+  body: string
+  audience: 'customer' | 'shop'
+  at: string
+  actor?: string
+  /** Whether this viewer may remove it — their own note, or any if they run the shop. */
+  canDelete: boolean
+}
+
 type AddBarType = 'operation' | 'saved_labor' | 'part' | 'history'
 
 type RepairPhotoUploadItem = {
@@ -137,9 +147,9 @@ type Props = {
   mileageOut?: number | null
   poNumber?: string | null
   orderTypeLabel?: string
-  customerNotes?: string | null
-  shopNotes?: string | null
-  onSaveNotes?: (notes: { customer_notes?: string | null; shop_notes?: string | null }) => Promise<void> | void
+  notes?: PriceBuilderNote[]
+  onAddNote?: (note: { body: string; audience: 'customer' | 'shop' }) => Promise<void> | void
+  onDeleteNote?: (noteId: string) => Promise<void> | void
   notesSaving?: boolean
   quoteNumber?: string | null
   quoteIsSent?: boolean
@@ -878,9 +888,9 @@ export default function PriceBuilderPanel({
   mileageOut,
   poNumber,
   orderTypeLabel,
-  customerNotes,
-  shopNotes,
-  onSaveNotes,
+  notes = [],
+  onAddNote,
+  onDeleteNote,
   notesSaving = false,
   quoteNumber,
   quoteIsApproved = false,
@@ -983,21 +993,22 @@ export default function PriceBuilderPanel({
   const [customerOpen, setCustomerOpen] = useState(false)
   const [recommendedOpen, setRecommendedOpen] = useState(false)
   // A note belongs to the order, not to a service on it, so it lives beside
-  // Customer & Vehicle rather than inside the work list. Two audiences, one
-  // card: what the customer reads on the invoice, and what stays in the shop.
+  // Customer & Vehicle rather than inside the work list. Notes accumulate:
+  // each one is signed and timed and never overwrites the last, because the
+  // question a note answers later is "who said this, and when".
   const [notesOpen, setNotesOpen] = useState(false)
-  const [notesAudience, setNotesAudience] = useState<'customer' | 'shop'>('customer')
-  const [notesDraft, setNotesDraft] = useState<{ customer: string; shop: string } | null>(null)
-  // Reset the draft whenever the order's stored notes change underneath it —
-  // switching orders in the ledger keeps this panel mounted.
+  const [noteComposerOpen, setNoteComposerOpen] = useState(false)
+  const [noteAudience, setNoteAudience] = useState<'customer' | 'shop'>('shop')
+  const [noteDraft, setNoteDraft] = useState('')
+  const noteInputRef = useRef<HTMLTextAreaElement | null>(null)
+  const noteComposerWasOpen = useRef(false)
+  // Focus on the open transition only — not on every render, which is what
+  // made autoFocus steal the caret in the ad-hoc part form.
   useEffect(() => {
-    setNotesDraft(null)
-  }, [customerNotes, shopNotes])
-  const notesCustomerValue = notesDraft ? notesDraft.customer : customerNotes || ''
-  const notesShopValue = notesDraft ? notesDraft.shop : shopNotes || ''
-  const notesDirty = notesDraft !== null
-    && (notesDraft.customer !== (customerNotes || '') || notesDraft.shop !== (shopNotes || ''))
-  const notesRecorded = [customerNotes, shopNotes].filter((n) => (n || '').trim()).length
+    if (noteComposerOpen && !noteComposerWasOpen.current) noteInputRef.current?.focus()
+    noteComposerWasOpen.current = noteComposerOpen
+  }, [noteComposerOpen])
+  const notesNewestFirst = [...notes].sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime())
   const [photosOpen, setPhotosOpen] = useState(false)
   // Closed by default: the pipeline row above already names this step, and the
   // pill there opens this when the operator actually wants it. Open on load, it
@@ -4203,7 +4214,7 @@ export default function PriceBuilderPanel({
           </div>
         )}
 
-        {onSaveNotes && (
+        {onAddNote && (
           <button
             type="button"
             onClick={() => setNotesOpen((open) => !open)}
@@ -4213,78 +4224,125 @@ export default function PriceBuilderPanel({
             <span className="inline-flex items-center gap-2 text-sm font-semibold text-gray-800">
               <StickyNote className="h-4 w-4 text-gray-400" />
               Notes
-              {notesRecorded > 0 && (
-                <span className="rounded-full bg-gray-100 px-1.5 py-0.5 text-[11px] text-gray-600">{notesRecorded}</span>
+              {notes.length > 0 && (
+                <span className="rounded-full bg-gray-100 px-1.5 py-0.5 text-[11px] text-gray-600">{notes.length}</span>
               )}
             </span>
             <span className="inline-flex min-w-0 items-center gap-2">
               <span className="truncate px-3 text-right text-xs text-gray-500">
-                {notesRecorded ? 'Recorded on this order' : 'None yet'}
+                {notes.length
+                  ? `Last by ${notesNewestFirst[0].actor || 'Unknown'}`
+                  : 'None yet'}
               </span>
               <ChevronRight className={`h-4 w-4 shrink-0 text-gray-400 transition-transform ${notesOpen ? 'rotate-90' : ''}`} />
             </span>
           </button>
         )}
-        {onSaveNotes && notesOpen && (
+        {onAddNote && notesOpen && (
           <div className="space-y-2 rounded-xl bg-gray-50 p-3">
-            <div className="inline-flex rounded-lg bg-white p-0.5 ring-1 ring-gray-200" role="tablist">
-              {([['customer', 'On the invoice'], ['shop', 'Shop only']] as const).map(([key, label]) => (
-                <button
-                  key={key}
-                  type="button"
-                  role="tab"
-                  aria-selected={notesAudience === key}
-                  onClick={() => setNotesAudience(key)}
-                  className={`db-notes-tab rounded-md px-3 py-1.5 text-xs font-semibold transition-colors ${
-                    notesAudience === key ? 'bg-orange-50 text-orange-700' : 'text-gray-500 hover:text-gray-700'
-                  }`}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-            <textarea
-              value={notesAudience === 'customer' ? notesCustomerValue : notesShopValue}
-              onChange={(e) => setNotesDraft({
-                customer: notesAudience === 'customer' ? e.target.value : notesCustomerValue,
-                shop: notesAudience === 'shop' ? e.target.value : notesShopValue,
-              })}
-              rows={3}
-              placeholder={notesAudience === 'customer'
-                ? 'Note the customer will see on the invoice…'
-                : 'Note for the shop — never shown to the customer…'}
-              className="w-full resize-none rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-orange-200"
-            />
-            <div className="flex items-center justify-between gap-3">
-              <p className="text-[11px] text-gray-500">
-                {notesAudience === 'customer' ? 'Appears on the invoice.' : 'Shop only — the customer never sees this.'}
-              </p>
-              <span className="inline-flex items-center gap-2">
-                {notesDirty && (
-                  <button
-                    type="button"
-                    onClick={() => setNotesDraft(null)}
-                    className="db-notes-action rounded-lg px-3 py-1.5 text-xs font-semibold text-gray-500 hover:text-gray-700"
-                  >
-                    Cancel
-                  </button>
-                )}
-                <button
-                  type="button"
-                  disabled={!notesDirty || notesSaving}
-                  onClick={async () => {
-                    if (!notesDraft) return
-                    await onSaveNotes({
-                      customer_notes: notesDraft.customer.trim() || null,
-                      shop_notes: notesDraft.shop.trim() || null,
-                    })
-                  }}
-                  className="db-notes-action rounded-lg bg-orange-600 px-3 py-1.5 text-xs font-bold text-white disabled:cursor-not-allowed disabled:bg-gray-200 disabled:text-gray-400"
-                >
-                  {notesSaving ? 'Saving…' : 'Save note'}
-                </button>
-              </span>
-            </div>
+            {notesNewestFirst.length > 0 && (
+              <ul className="space-y-2">
+                {notesNewestFirst.map((note) => (
+                  <li key={note.id} className="db-order-note rounded-xl bg-white p-3 ring-1 ring-gray-200">
+                    <div className="flex items-baseline justify-between gap-2">
+                      <span className="min-w-0 truncate text-xs font-semibold text-gray-700">
+                        {note.actor || 'Unknown'}
+                        <span className="ml-2 font-normal text-gray-400">
+                          {new Date(note.at).toLocaleString(undefined, {
+                            month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit',
+                          })}
+                        </span>
+                      </span>
+                      <span className="inline-flex shrink-0 items-center gap-2">
+                        <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${
+                          note.audience === 'customer' ? 'bg-orange-50 text-orange-700' : 'bg-gray-100 text-gray-500'
+                        }`}>
+                          {note.audience === 'customer' ? 'On invoice' : 'Shop only'}
+                        </span>
+                        {note.canDelete && onDeleteNote && (
+                          <button
+                            type="button"
+                            onClick={() => onDeleteNote(note.id)}
+                            aria-label="Delete this note"
+                            className="db-notes-action rounded-md p-1 text-gray-300 transition-colors hover:bg-gray-100 hover:text-gray-600"
+                          >
+                            <X className="h-3.5 w-3.5" />
+                          </button>
+                        )}
+                      </span>
+                    </div>
+                    <p className="mt-1 whitespace-pre-wrap break-words text-sm text-gray-800">{note.body}</p>
+                  </li>
+                ))}
+              </ul>
+            )}
+
+            {!noteComposerOpen ? (
+              <button
+                type="button"
+                onClick={() => setNoteComposerOpen(true)}
+                className="db-notes-action inline-flex items-center gap-1 rounded-lg bg-white px-3 py-2 text-xs font-bold text-orange-700 ring-1 ring-gray-200"
+              >
+                <Plus className="h-3.5 w-3.5" /> Add note
+              </button>
+            ) : (
+              <div className="space-y-2 rounded-xl bg-white p-3 ring-1 ring-gray-200">
+                <div className="inline-flex rounded-lg bg-gray-50 p-0.5 ring-1 ring-gray-200" role="tablist">
+                  {([['shop', 'Shop only'], ['customer', 'On the invoice']] as const).map(([key, label]) => (
+                    <button
+                      key={key}
+                      type="button"
+                      role="tab"
+                      aria-selected={noteAudience === key}
+                      onClick={() => setNoteAudience(key)}
+                      className={`db-notes-tab rounded-md px-3 py-1.5 text-xs font-semibold transition-colors ${
+                        noteAudience === key ? 'bg-white text-orange-700 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+                <textarea
+                  ref={noteInputRef}
+                  value={noteDraft}
+                  onChange={(e) => setNoteDraft(e.target.value)}
+                  rows={3}
+                  placeholder={noteAudience === 'customer'
+                    ? 'Note the customer will see on the invoice…'
+                    : 'Note for the shop — never shown to the customer…'}
+                  className="w-full resize-none rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-orange-200"
+                />
+                <div className="flex items-center justify-between gap-3">
+                  <p className="text-[11px] text-gray-500">
+                    {noteAudience === 'customer' ? 'Appears on the invoice.' : 'Shop only — the customer never sees this.'}
+                  </p>
+                  <span className="inline-flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => { setNoteComposerOpen(false); setNoteDraft('') }}
+                      className="db-notes-action rounded-lg px-3 py-1.5 text-xs font-semibold text-gray-500 hover:text-gray-700"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      disabled={!noteDraft.trim() || notesSaving}
+                      onClick={async () => {
+                        const body = noteDraft.trim()
+                        if (!body) return
+                        await onAddNote({ body, audience: noteAudience })
+                        setNoteDraft('')
+                        setNoteComposerOpen(false)
+                      }}
+                      className="db-notes-action rounded-lg bg-orange-600 px-3 py-1.5 text-xs font-bold text-white disabled:cursor-not-allowed disabled:bg-gray-200 disabled:text-gray-400"
+                    >
+                      {notesSaving ? 'Posting…' : 'Post note'}
+                    </button>
+                  </span>
+                </div>
+              </div>
+            )}
           </div>
         )}
 

@@ -1,5 +1,5 @@
 from pydantic import AnyHttpUrl, BaseModel, Field, TypeAdapter, field_validator
-from typing import Optional, List
+from typing import Literal, Optional, List
 from datetime import datetime
 from uuid import UUID
 from decimal import Decimal
@@ -129,10 +129,26 @@ class RepairOrderHistoryEventResponse(BaseModel):
     detail: Optional[str] = None
     entity_id: Optional[UUID] = None
     actor_name: Optional[str] = None
+    actor_user_id: Optional[UUID] = None
     created_at: datetime
 
     class Config:
         from_attributes = True
+
+
+class RepairOrderNoteCreate(BaseModel):
+    """A note appended to the order. Audience decides who ever reads it."""
+
+    body: str = Field(min_length=1, max_length=4000)
+    audience: Literal["customer", "shop"] = "shop"
+
+    @field_validator("body")
+    @classmethod
+    def _body_is_not_blank(cls, value: str) -> str:
+        cleaned = value.strip()
+        if not cleaned:
+            raise ValueError("Note cannot be empty")
+        return cleaned
 
 
 class PartSuggestion(BaseModel):
