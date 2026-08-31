@@ -1581,3 +1581,97 @@ async def test_db038_postgres_po_line_source_is_bound_to_tenant_and_inventory(mo
             assert db_constraint_names == metadata_constraint_names == expected_constraints
     finally:
         await engine.dispose()
+
+
+async def _order_with_part_and_core(factory, ids, *, core_status: str):
+    """A repair order carrying one part that has a core obligation against it."""
+    from app.db.models.repair_order import RepairOrder, RepairOrderStatus
+    from app.db.models.customer import Customer
+    from app.db.models.vehicle import Vehicle
+
+    suffix = uuid4().hex[:8]
+    async with factory() as db:
+        customer = Customer(tenant_id=ids["tenant_id"], first_name="Pat", last_name="Driver", email=f"core-{suffix}@example.test")
+        db.add(customer); await db.flush()
+        vehicle = Vehicle(tenant_id=ids["tenant_id"], customer_id=customer.id, make="Volvo", model="VNL")
+        db.add(vehicle); await db.flush()
+        order = RepairOrder(
+            tenant_id=ids["tenant_id"], customer_id=customer.id, vehicle_id=vehicle.id,
+            order_number=f"RO-CORE-{suffix}", status=RepairOrderStatus.IN_PROGRESS, is_internal=False,
+            total_parts_cost=Decimal("0.00"), total_labor_cost=Decimal("0.00"), total_cost=Decimal("0.00"),
+        )
+        db.add(order); await db.flush()
+        pu = PartsUsage(
+            tenant_id=ids["tenant_id"], repair_order_id=order.id, inventory_id=ids["item_id"],
+            quantity=Decimal("1"), unit_cost=Decimal("10.00"), unit_price=Decimal("20.00"),
+            list_price=Decimal("20.00"), total_price=Decimal("20.00"),
+        )
+        db.add(pu); await db.flush()
+        db.add(CoreObligation(
+            tenant_id=ids["tenant_id"], parts_usage_id=pu.id, inventory_id=ids["item_id"],
+            supplier_id=ids["supplier_id"], quantity=1,
+            unit_core_value_snapshot=Decimal("50.00"), status=core_status,
+        ))
+        await db.commit()
+        return order.id, pu.id
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("core_status", ["expected", "cancelled", "waived", "returned", "credited"])
+async def test_db038_postgres_removing_a_part_releases_its_core_obligation(monkeypatch, core_status):
+    """Deleting a part whose core obligation still points at it must not 500.
+
+    core_obligations.parts_usage_id is ON DELETE NO ACTION, so marking the
+    obligation cancelled while leaving the row in place still holds the key:
+    Postgres refuses the delete with a ForeignKeyViolationError, which reached
+    the operator as a 500 both when removing the part and when removing the
+    service line above it. Only PostgreSQL enforces this — SQLite would pass
+    against the bug.
+    """
+    engine = create_async_engine(os.environ[POSTGRES_URL])
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    try:
+        ids = await _seed(factory)
+        order_id, pu_id = await _order_with_part_and_core(factory, ids, core_status=core_status)
+
+        async with factory() as db:
+            user = await db.get(User, ids["user_id"])
+            await repair_orders.remove_parts_from_repair_order(
+                order_id=order_id, parts_usage_id=pu_id, db=db, current_user=user,
+            )
+
+        async with factory() as db:
+            assert (await db.execute(select(func.count()).select_from(PartsUsage).where(PartsUsage.id == pu_id))).scalar() == 0
+            # The obligation goes with the part. parts_usage_id is NOT NULL and
+            # the FK is ON DELETE NO ACTION, so it cannot be kept pointing at a
+            # row that no longer exists — and a core owed on a part that was
+            # never really used is not owed at all. What survives is the
+            # history event recording the removal.
+            assert (await db.execute(select(func.count()).select_from(CoreObligation).where(
+                CoreObligation.parts_usage_id == pu_id
+            ))).scalar() == 0
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_db038_postgres_an_on_hand_core_still_blocks_removing_the_part(monkeypatch):
+    """The one status that must keep refusing: the core is physically held."""
+    engine = create_async_engine(os.environ[POSTGRES_URL])
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    try:
+        ids = await _seed(factory)
+        order_id, pu_id = await _order_with_part_and_core(factory, ids, core_status="on_hand")
+
+        async with factory() as db:
+            user = await db.get(User, ids["user_id"])
+            with pytest.raises(HTTPException) as exc:
+                await repair_orders.remove_parts_from_repair_order(
+                    order_id=order_id, parts_usage_id=pu_id, db=db, current_user=user,
+                )
+            assert exc.value.status_code == 409
+
+        async with factory() as db:
+            assert (await db.execute(select(func.count()).select_from(PartsUsage).where(PartsUsage.id == pu_id))).scalar() == 1
+    finally:
+        await engine.dispose()

@@ -9,13 +9,13 @@ from time import perf_counter
 from typing import Optional
 from uuid import UUID
 
-from sqlalchemy import and_, or_, select, update
+from sqlalchemy import and_, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.config import settings
 from app.db.models.inventory import Inventory, PartsUsage
-from app.db.models.parts_operations import CoreObligation
+from app.db.models.parts_operations import CoreObligation, VendorReturnLine
 from app.db.models.labor import Labor, LaborLineType
 from app.db.models.labor_operation_memory import LaborOperationMemory
 from app.db.models.repair_order import RepairOrder, RepairOrderStatus
@@ -747,15 +747,31 @@ class PriceBuildService:
             }
         for pu in parts:
             inv = locked_inventory.get(pu.inventory_id)
-            core = (await db.execute(select(CoreObligation).where(
+            # The obligations must release this part before it can be deleted:
+            # core_obligations.parts_usage_id is ON DELETE NO ACTION, so
+            # changing a status alone still holds the key and Postgres refuses
+            # the delete — which is why removing a service with parts under it
+            # failed with a 500 rather than doing anything.
+            # The obligations must go before the part can: the FK is ON DELETE
+            # NO ACTION and parts_usage_id is NOT NULL, so neither a status
+            # change nor a soft-delete releases the key. Leaving them is why
+            # removing a service with parts under it failed with a 500 instead
+            # of doing anything at all.
+            cores = (await db.execute(select(CoreObligation).where(
                 CoreObligation.parts_usage_id == pu.id,
-                CoreObligation.deleted_at.is_(None),
-            ).with_for_update())).scalar_one_or_none()
-            if core is not None and core.status == "on_hand":
+            ).with_for_update())).scalars().all()
+            if any(core.status == "on_hand" and core.deleted_at is None for core in cores):
                 raise PriceBuildConflictError("Return or waive the recovered core before removing this service")
-            if core is not None and core.status == "expected":
-                core.status = "cancelled"
-                core.version += 1
+            if cores:
+                cited = (await db.execute(select(func.count()).select_from(VendorReturnLine).where(
+                    VendorReturnLine.core_obligation_id.in_([c.id for c in cores]),
+                ))).scalar() or 0
+                if cited:
+                    raise PriceBuildConflictError(
+                        "This part's core is on a vendor return. Void that return before removing this service."
+                    )
+            for core in cores:
+                await db.delete(core)
             if inv:
                 await apply_inventory_movement(
                     db, item=inv, quantity_delta=_packages_consumed(pu.quantity),

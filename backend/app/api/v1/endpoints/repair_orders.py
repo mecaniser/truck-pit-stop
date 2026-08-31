@@ -24,7 +24,7 @@ from app.db.models.vehicle_relationship import FleetMembership
 from app.db.models.invoice import Invoice, InvoiceStatus
 from app.db.models.tenant import Tenant
 from app.db.models.inventory import Inventory, PartsUsage
-from app.db.models.parts_operations import CoreObligation
+from app.db.models.parts_operations import CoreObligation, VendorReturnLine
 from app.db.models.labor import Labor, LaborLineType
 from app.db.models.service import Service
 from app.db.models.recommended_service import RecommendedService, RecommendedServicePriority
@@ -4713,15 +4713,30 @@ async def remove_parts_from_repair_order(
     ))).scalar_one_or_none()
     if on_hand_core is not None:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Return or waive the recovered core before removing this part")
-    expected_core = (await db.execute(select(CoreObligation).where(
+    # Every obligation against this part has to go before the part can: the FK
+    # is ON DELETE NO ACTION and parts_usage_id is NOT NULL, so neither a
+    # status change nor a soft-delete releases the key — Postgres refuses the
+    # delete, and the operator got a 500 both here and when removing the
+    # service line above it.
+    #
+    # An obligation that a vendor return already cites is different: that is a
+    # core physically sent back for credit, and deleting it would orphan the
+    # return line. Refuse, rather than quietly break the return.
+    cores = (await db.execute(select(CoreObligation).where(
         CoreObligation.tenant_id == current_user.tenant_id,
         CoreObligation.parts_usage_id == pu.id,
-        CoreObligation.deleted_at.is_(None),
-        CoreObligation.status == "expected",
-    ).with_for_update())).scalar_one_or_none()
-    if expected_core is not None:
-        expected_core.status = "cancelled"
-        expected_core.version += 1
+    ).with_for_update())).scalars().all()
+    if cores:
+        cited = (await db.execute(select(func.count()).select_from(VendorReturnLine).where(
+            VendorReturnLine.core_obligation_id.in_([c.id for c in cores]),
+        ))).scalar() or 0
+        if cited:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="This part's core is on a vendor return. Void that return before removing the part.",
+            )
+    for core in cores:
+        await db.delete(core)
     if inv is not None and _stock_packages_reserved(pu):
         await apply_inventory_movement(
             db, item=inv, quantity_delta=_stock_packages_reserved(pu),
