@@ -984,13 +984,21 @@ export default function PriceBuilderPanel({
   const [adHocDraft, setAdHocDraft] = useState<{ name: string; sku: string; price: string; cost: string; quantity: string } | null>(null)
   const adHocNameRef = useRef<HTMLInputElement | null>(null)
   const adHocWasOpen = useRef(false)
+  // Until the operator types in the name field, the search box is still the
+  // thing they are naming the part with — keep the name following it. The
+  // moment they edit the name directly, it stops following: the field they
+  // touched last is the one that means it.
+  const adHocNameClaimed = useRef(false)
   // Focus the name once, when the form opens — not on every render of it. The
   // form is rebuilt each time the search query settles, so autoFocus here pulled
   // the caret back out of the search field on every keystroke and the typed
   // characters went nowhere.
   useEffect(() => {
     const open = adHocDraft !== null
-    if (open && !adHocWasOpen.current) adHocNameRef.current?.focus()
+    if (open && !adHocWasOpen.current) {
+      adHocNameClaimed.current = false
+      adHocNameRef.current?.focus()
+    }
     adHocWasOpen.current = open
   }, [adHocDraft])
   const [technicianAssignmentOpen, setTechnicianAssignmentOpen] = useState(false)
@@ -1322,6 +1330,18 @@ export default function PriceBuilderPanel({
     250,
   )
   const inventorySearchTerm = addType === 'part' ? partSearchTerm : operationPartSearchTerm
+
+  // Whichever search box opened the new-part form is still the one the operator
+  // is typing the part's name into. Track it raw, not debounced — the name
+  // should follow the keystrokes, not lag a beat behind them.
+  const adHocSourceSearch = operationPartPickerLineId
+    ? operationPartSearchByLineId[operationPartPickerLineId] || ''
+    : searchTerm
+  useEffect(() => {
+    if (!adHocDraft || adHocNameClaimed.current) return
+    const next = adHocSourceSearch.trim()
+    setAdHocDraft((current) => (current && current.name !== next ? { ...current, name: next } : current))
+  }, [adHocSourceSearch, adHocDraft])
   const shouldSearchInventory = (
     (addType === 'part' || !!operationPartPickerLineId) && inventorySearchTerm.length >= 2
   )
@@ -1705,7 +1725,7 @@ export default function PriceBuilderPanel({
                     <input
                       ref={adHocNameRef}
                       value={draft.name}
-                      onChange={(e) => setAdHocDraft({ ...draft, name: e.target.value })}
+                      onChange={(e) => { adHocNameClaimed.current = true; setAdHocDraft({ ...draft, name: e.target.value }) }}
                       placeholder="Part name"
                       className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-orange-500 focus:ring-2 focus:ring-orange-500"
                     />
