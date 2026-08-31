@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
@@ -383,6 +383,155 @@ describe('UnifiedSettingsPage payment disclosures', () => {
         { headers: { 'X-Step-Up-Authorization': 'one-time-stripe-grant' } },
       )
     })
+  })
+
+  it('uses an app-native confirmation before the QuickBooks destructive step-up', async () => {
+    const user = userEvent.setup()
+    apiMocks.get.mockImplementation((path: string) => {
+      const dataByPath: Record<string, unknown> = {
+        '/stripe/connect/status': stripeConnection,
+        '/quickbooks/status': {
+          ...quickBooksConnection,
+          is_connected: true,
+          token_health: 'healthy',
+        },
+        '/admin/garage-profile': garageProfile,
+        '/admin/zelle-settings': { zelle_email: 'payments@truckpitstop.com', zelle_phone: null, zelle_qr_image: null },
+      }
+      return Promise.resolve({ data: dataByPath[path] ?? garageProfile })
+    })
+    apiMocks.post.mockImplementation((path: string, body?: { scope?: string }) => {
+      if (path === '/auth/step-up-grants') {
+        return Promise.resolve({ data: {
+          grant_token: 'one-time-quickbooks-grant',
+          scope: body?.scope ?? 'payment_sources.quickbooks.disconnect',
+          expires_at: new Date(Date.now() + 2 * 60 * 1000).toISOString(),
+          one_time: true,
+        } })
+      }
+      return Promise.resolve({ data: { disconnected: true } })
+    })
+    renderPage()
+
+    await user.click(screen.getByRole('button', { name: 'Payments & Accounting' }))
+    await user.click(screen.getByRole('button', { name: /QuickBooks Online/i }))
+    await user.click(await screen.findByRole('button', { name: 'Disconnect QuickBooks' }))
+
+    const confirmation = await screen.findByRole('alertdialog', { name: 'Disconnect QuickBooks?' })
+    expect(within(confirmation).getByText(/Accounting sync and QuickBooks payment processing will stop/)).toBeInTheDocument()
+    await user.click(within(confirmation).getByRole('button', { name: 'Cancel' }))
+    expect(screen.queryByRole('alertdialog', { name: 'Disconnect QuickBooks?' })).not.toBeInTheDocument()
+    expect(apiMocks.post).not.toHaveBeenCalledWith('/quickbooks/disconnect', expect.anything(), expect.anything())
+
+    await user.click(screen.getByRole('button', { name: 'Disconnect QuickBooks' }))
+    await user.click(within(await screen.findByRole('alertdialog', { name: 'Disconnect QuickBooks?' })).getByRole('button', { name: 'Disconnect QuickBooks' }))
+
+    const stepUp = await screen.findByRole('alertdialog', { name: 'Verify QuickBooks disconnection' })
+    await user.type(within(stepUp).getByLabelText('Your current password'), 'fresh-password')
+    await user.click(within(stepUp).getByRole('button', { name: 'Verify and continue' }))
+
+    await waitFor(() => {
+      expect(apiMocks.post).toHaveBeenCalledWith('/auth/step-up-grants', {
+        password: 'fresh-password',
+        scope: 'payment_sources.quickbooks.disconnect',
+        target_tenant_id: null,
+      })
+      expect(apiMocks.post).toHaveBeenCalledWith(
+        '/quickbooks/disconnect',
+        undefined,
+        { headers: { 'X-Step-Up-Authorization': 'one-time-quickbooks-grant' } },
+      )
+    })
+  })
+
+  it('dismisses the QuickBooks consequence dialog without mutation from every safe exit', async () => {
+    const user = userEvent.setup()
+    apiMocks.get.mockImplementation((path: string) => Promise.resolve({ data: {
+      '/stripe/connect/status': stripeConnection,
+      '/quickbooks/status': { ...quickBooksConnection, is_connected: true, token_health: 'healthy' },
+      '/admin/garage-profile': garageProfile,
+      '/admin/zelle-settings': { zelle_email: 'payments@truckpitstop.com', zelle_phone: null, zelle_qr_image: null },
+    }[path] ?? garageProfile }))
+    renderPage()
+
+    await user.click(screen.getByRole('button', { name: 'Payments & Accounting' }))
+    await user.click(screen.getByRole('button', { name: /QuickBooks Online/i }))
+
+    const openConfirmation = async () => {
+      await user.click(await screen.findByRole('button', { name: 'Disconnect QuickBooks' }))
+      return screen.findByRole('alertdialog', { name: 'Disconnect QuickBooks?' })
+    }
+
+    await openConfirmation()
+    await user.keyboard('{Escape}')
+    expect(screen.queryByRole('alertdialog', { name: 'Disconnect QuickBooks?' })).not.toBeInTheDocument()
+
+    const backdropDialog = await openConfirmation()
+    fireEvent.mouseDown(backdropDialog.parentElement as HTMLElement)
+    expect(screen.queryByRole('alertdialog', { name: 'Disconnect QuickBooks?' })).not.toBeInTheDocument()
+
+    const closeDialog = await openConfirmation()
+    await user.click(within(closeDialog).getByRole('button', { name: 'Close confirmation' }))
+    expect(screen.queryByRole('alertdialog', { name: 'Disconnect QuickBooks?' })).not.toBeInTheDocument()
+    expect(apiMocks.post).not.toHaveBeenCalledWith('/quickbooks/disconnect', expect.anything(), expect.anything())
+  })
+
+  it('locks the shared consequence dialog while Stripe disconnection is pending', async () => {
+    const user = userEvent.setup()
+    let finishDisconnect: ((value: { data: { disconnected: boolean } }) => void) | undefined
+    apiMocks.post.mockImplementation((path: string, body?: { scope?: string }) => {
+      if (path === '/auth/step-up-grants') {
+        return Promise.resolve({ data: {
+          grant_token: 'one-time-stripe-grant',
+          scope: body?.scope ?? 'payment_sources.stripe.disconnect',
+          expires_at: new Date(Date.now() + 2 * 60 * 1000).toISOString(),
+          one_time: true,
+        } })
+      }
+      if (path === '/stripe/connect/disconnect') {
+        return new Promise((resolve) => { finishDisconnect = resolve })
+      }
+      return Promise.resolve({ data: {} })
+    })
+    renderPage()
+
+    await user.click(screen.getByRole('button', { name: 'Payments & Accounting' }))
+    await user.click(screen.getByRole('button', { name: 'Disconnect Stripe' }))
+    const confirmation = await screen.findByRole('alertdialog', { name: 'Disconnect Stripe account?' })
+    await user.click(within(confirmation).getByRole('button', { name: 'Disconnect Stripe' }))
+    const stepUp = await screen.findByRole('alertdialog', { name: 'Verify Stripe disconnection' })
+    await user.type(within(stepUp).getByLabelText('Your current password'), 'fresh-password')
+    await user.click(within(stepUp).getByRole('button', { name: 'Verify and continue' }))
+
+    await waitFor(() => {
+      const pendingDialog = screen.getByRole('alertdialog', { name: 'Disconnect Stripe account?' })
+      expect(within(pendingDialog).getByRole('button', { name: 'Disconnecting...' })).toBeDisabled()
+      expect(within(pendingDialog).getByRole('button', { name: 'Cancel' })).toBeDisabled()
+      expect(within(pendingDialog).getByRole('button', { name: 'Close confirmation' })).toBeDisabled()
+    })
+    await user.keyboard('{Escape}')
+    expect(screen.getByRole('alertdialog', { name: 'Disconnect Stripe account?' })).toBeInTheDocument()
+
+    finishDisconnect?.({ data: { disconnected: true } })
+    await waitFor(() => {
+      expect(screen.queryByRole('alertdialog', { name: 'Disconnect Stripe account?' })).not.toBeInTheDocument()
+    })
+  })
+
+  it('explains the migration consequence for a legacy Stripe connection', async () => {
+    const user = userEvent.setup()
+    apiMocks.get.mockImplementation((path: string) => Promise.resolve({ data: {
+      '/stripe/connect/status': { ...stripeConnection, connection_type: 'express_legacy' },
+      '/quickbooks/status': quickBooksConnection,
+      '/admin/garage-profile': garageProfile,
+      '/admin/zelle-settings': { zelle_email: 'payments@truckpitstop.com', zelle_phone: null, zelle_qr_image: null },
+    }[path] ?? garageProfile }))
+    renderPage()
+
+    await user.click(screen.getByRole('button', { name: 'Payments & Accounting' }))
+    await user.click(screen.getByRole('button', { name: 'Disconnect Legacy Connection' }))
+    const confirmation = await screen.findByRole('alertdialog', { name: 'Disconnect legacy Stripe connection?' })
+    expect(within(confirmation).getByText('After disconnecting, you can set up the new Stripe-hosted connection.')).toBeInTheDocument()
   })
 
   it('sends the manage grant on QuickBooks connect and relocks on a 428', async () => {
