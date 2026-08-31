@@ -374,6 +374,8 @@ export interface RepairOrderHistoryEvent {
   entity_id?: string | null
   actor_name?: string | null
   created_at: string
+  /** Who wrote it, by identity — a note's author survives a rename. */
+  actor_user_id?: string | null
 }
 
 export interface RepairOrderDetail extends RepairOrder {

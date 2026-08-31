@@ -16,3 +16,6 @@ class RepairOrderHistoryEvent(BaseModel):
     detail = Column(Text, nullable=True)
     entity_id = Column(UUID(as_uuid=True), nullable=True, index=True)
     actor_name = Column(String(255), nullable=True)
+    # Who wrote it, by identity rather than by display name — a note's author
+    # must survive a rename, and two people can share a name.
+    actor_user_id = Column(UUID(as_uuid=True), nullable=True, index=True)

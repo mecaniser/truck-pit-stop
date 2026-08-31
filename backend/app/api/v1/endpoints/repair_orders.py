@@ -95,6 +95,7 @@ from app.schemas.repair_order import (
     PartSuggestion,
     PartSuggestionsResponse,
     RepairOrderHistoryEventResponse,
+    RepairOrderNoteCreate,
 )
 
 logger = get_logger(__name__)
@@ -382,6 +383,7 @@ def _record_repair_order_history_event(
             detail=detail,
             entity_id=entity_id,
             actor_name=actor_name,
+            actor_user_id=current_user.id,
         )
     )
 
@@ -3791,6 +3793,118 @@ async def add_ad_hoc_part_to_repair_order(
         db=db,
         current_user=current_user,
     )
+
+
+# Notes are history events, not columns. A note that "goes with the order all
+# along" has to accumulate and carry an author, and the order already has a
+# durable, ordered, tenant-scoped place for things that happened to it.
+NOTE_EVENT_TYPES = {"note_customer": "customer", "note_shop": "shop"}
+
+
+@router.get("/{order_id}/notes", response_model=List[RepairOrderHistoryEventResponse])
+async def list_repair_order_notes(
+    order_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role(*RO_MANAGE_ROLES)),
+):
+    """Just the notes.
+
+    The full detail payload carries history too, but it is fetched lazily — only
+    on explicit History intent — because it also pulls parts, labor and PM
+    scope. Notes are shown whenever the order is open, so they get a route of
+    their own rather than making every order open pay for the heavy call.
+    """
+    try:
+        order = await _load_tenant_price_build_order(db, order_id, current_user)
+        _check_ro_access(current_user, order)
+    except Exception as exc:
+        raise _map_price_build_error(exc)
+
+    result = await db.execute(
+        select(RepairOrderHistoryEvent)
+        .where(
+            RepairOrderHistoryEvent.repair_order_id == order.id,
+            RepairOrderHistoryEvent.tenant_id == order.tenant_id,
+            RepairOrderHistoryEvent.event_type.in_(list(NOTE_EVENT_TYPES)),
+            RepairOrderHistoryEvent.deleted_at.is_(None),
+        )
+        .order_by(RepairOrderHistoryEvent.created_at.asc())
+    )
+    return [RepairOrderHistoryEventResponse.model_validate(e) for e in result.scalars().all()]
+
+
+@router.post("/{order_id}/notes", response_model=RepairOrderHistoryEventResponse, status_code=status.HTTP_201_CREATED)
+async def add_repair_order_note(
+    order_id: UUID,
+    body: RepairOrderNoteCreate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role(*RO_MANAGE_ROLES)),
+):
+    try:
+        order = await _load_tenant_price_build_order(db, order_id, current_user)
+        _check_ro_access(current_user, order)
+    except Exception as exc:
+        raise _map_price_build_error(exc)
+
+    event_type = "note_customer" if body.audience == "customer" else "note_shop"
+    actor_name = f"{current_user.first_name} {current_user.last_name}".strip() or current_user.email
+    event = RepairOrderHistoryEvent(
+        tenant_id=order.tenant_id,
+        repair_order_id=order.id,
+        created_at=datetime.now(timezone.utc),
+        event_type=event_type,
+        label="Note added",
+        detail=body.body,
+        actor_name=actor_name,
+        actor_user_id=current_user.id,
+    )
+    db.add(event)
+    await db.commit()
+    await db.refresh(event)
+    return RepairOrderHistoryEventResponse.model_validate(event)
+
+
+@router.delete("/{order_id}/notes/{note_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_repair_order_note(
+    order_id: UUID,
+    note_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role(*RO_MANAGE_ROLES)),
+):
+    """Delete a note you wrote.
+
+    Only a note, and only your own: the same route must never become a way to
+    erase the part and status events this table exists to preserve. Owners and
+    admins may remove anyone's note, because somebody has to be able to take
+    down what should not have been written.
+    """
+    try:
+        order = await _load_tenant_price_build_order(db, order_id, current_user)
+        _check_ro_access(current_user, order)
+    except Exception as exc:
+        raise _map_price_build_error(exc)
+
+    result = await db.execute(
+        select(RepairOrderHistoryEvent).where(
+            RepairOrderHistoryEvent.id == note_id,
+            RepairOrderHistoryEvent.repair_order_id == order.id,
+            RepairOrderHistoryEvent.tenant_id == order.tenant_id,
+            RepairOrderHistoryEvent.deleted_at.is_(None),
+        )
+    )
+    note = result.scalar_one_or_none()
+    # A non-note id and a missing one answer alike: this route knows nothing
+    # about the rest of the history.
+    if note is None or note.event_type not in NOTE_EVENT_TYPES:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Note not found")
+
+    may_delete_any = current_user.role in (UserRole.GARAGE_OWNER, UserRole.GARAGE_ADMIN)
+    if not may_delete_any and note.actor_user_id != current_user.id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You can only delete your own note")
+
+    note.deleted_at = datetime.now(timezone.utc)
+    await db.commit()
+    return None
 
 
 @router.post("/{order_id}/parts", response_model=PartsUsageResponse, status_code=status.HTTP_201_CREATED)
