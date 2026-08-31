@@ -222,6 +222,33 @@ describe('DB-035 Stage 4 Repair Orders presentation', () => {
     expect(screen.getByRole('button', { name: /Load more repair orders/ })).toBeDisabled()
   })
 
+  // On localhost the fetch is a blink and none of this is visible. On a shop's
+  // connection it is the whole experience, and a disabled button on its own
+  // leaves the operator unsure the press registered.
+  it('shows the rows that are arriving, in the place they will arrive', () => {
+    const { container } = renderLedger({ loadedCount: 25, totalOrders: 60, hasMore: true, isLoadingMore: true })
+
+    const pending = container.querySelector('.db-repair-orders-ledger__pending')
+    expect(pending).toBeInTheDocument()
+    expect(container.querySelectorAll('.db-repair-orders-ledger__skeleton')).toHaveLength(3)
+    // Placeholders carry no information, so they must not be announced as rows.
+    expect(pending).toHaveAttribute('aria-hidden', 'true')
+  })
+
+  it('renders no placeholders when nothing is loading', () => {
+    const { container } = renderLedger({ loadedCount: 25, totalOrders: 60, hasMore: true })
+
+    expect(container.querySelectorAll('.db-repair-orders-ledger__skeleton')).toHaveLength(0)
+  })
+
+  it('reports load progress against the whole set, not the loaded page', () => {
+    renderLedger({ loadedCount: 25, totalOrders: 60, hasMore: true })
+
+    const bar = screen.getByRole('progressbar', { name: 'Repair orders loaded' })
+    expect(bar).toHaveAttribute('aria-valuenow', '25')
+    expect(bar).toHaveAttribute('aria-valuemax', '60')
+  })
+
   it('uses the canonical focus-safe staff search field', () => {
     renderLedger()
 

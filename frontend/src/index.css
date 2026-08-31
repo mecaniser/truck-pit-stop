@@ -3631,6 +3631,105 @@ html::-webkit-scrollbar-thumb:hover {
 .db-repair-orders-ledger__empty strong { color: var(--db-ledger-text); }
 .db-repair-orders-ledger > footer { min-height: 56px; display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 12px; padding: 0 2px; background: transparent; color: var(--db-ledger-muted); font-size: 12px; }
 .db-repair-orders-ledger > footer > div { display: flex; gap: 7px; }
+
+/* Loading more, shown as the thing that is arriving rather than as a spinner
+   alone. On a fast connection this is a blink; on a slow one it is the whole
+   experience, and a bare disabled button leaves the operator wondering whether
+   the press registered. Placeholder rows answer that in the place the rows will
+   appear, at the size they will be, so the arrival fills a shape that is already
+   there instead of shoving the list down. */
+.db-repair-orders-ledger__pending { display: grid; gap: 8px; padding-top: 8px; }
+.db-repair-orders-ledger__skeleton {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px 12px;
+  min-height: 76px;
+  align-content: center;
+  padding: 14px 12px;
+  border: 1px solid var(--db-ledger-border);
+  border-radius: 12px;
+  background: var(--db-ledger-raised);
+}
+.db-repair-orders-ledger__skeleton-line {
+  display: block;
+  block-size: 0.7em;
+  border-radius: 999px;
+  /* Two stops of the same ink: the sweep is a lightening of the bar, not a
+     colour of its own, so it stays quiet against every accent. */
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--workspace-text) 12%, transparent) 0%,
+    color-mix(in srgb, var(--workspace-text) 20%, transparent) 50%,
+    color-mix(in srgb, var(--workspace-text) 12%, transparent) 100%
+  );
+  background-size: 220% 100%;
+  animation: db-ledger-skeleton-sweep 1.4s ease-in-out infinite;
+}
+.db-repair-orders-ledger__skeleton-line.is-name { inline-size: 42%; block-size: 0.85em; }
+.db-repair-orders-ledger__skeleton-line.is-vehicle { inline-size: 62%; grid-column: 1; }
+.db-repair-orders-ledger__skeleton-line.is-reference { inline-size: 34%; grid-column: 1; }
+.db-repair-orders-ledger__skeleton-line.is-amount { inline-size: 4.5em; grid-column: 2; grid-row: 1; justify-self: end; }
+
+@keyframes db-ledger-skeleton-sweep {
+  from { background-position: 120% 0; }
+  to { background-position: -20% 0; }
+}
+
+/* The count, made spatial. The scrollbar cannot answer "how far into the set am
+   I" once the list is loaded in pages, so the number says it and the bar shows
+   it. */
+.db-repair-orders-ledger__progress { display: inline-flex; align-items: center; gap: 10px; min-inline-size: 0; }
+.db-repair-orders-ledger__progress-track {
+  position: relative;
+  inline-size: 5.5em;
+  block-size: 3px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--workspace-text) 14%, transparent);
+  overflow: hidden;
+}
+.db-repair-orders-ledger__progress-fill {
+  display: block;
+  block-size: 100%;
+  border-radius: inherit;
+  background: var(--personal-accent-400, var(--accent-500));
+  transition: inline-size 320ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+/* While a page is in flight the bar cannot say how far the new rows have got,
+   so it says that something is moving rather than pretending to measure it. */
+.db-repair-orders-ledger__progress-fill[data-loading]::after {
+  content: '';
+  position: absolute;
+  inset-block: 0;
+  inline-size: 40%;
+  border-radius: inherit;
+  background: color-mix(in srgb, var(--personal-accent-400, var(--accent-500)) 55%, transparent);
+  animation: db-ledger-progress-drift 1.1s ease-in-out infinite;
+}
+
+@keyframes db-ledger-progress-drift {
+  from { inset-inline-start: -40%; }
+  to { inset-inline-start: 100%; }
+}
+
+.db-repair-orders-ledger__spinner {
+  inline-size: 0.85em;
+  block-size: 0.85em;
+  border-radius: 50%;
+  border: 2px solid color-mix(in srgb, currentColor 28%, transparent);
+  border-block-start-color: currentColor;
+  animation: db-ledger-spin 700ms linear infinite;
+}
+
+@keyframes db-ledger-spin { to { rotate: 360deg; } }
+
+/* Reduced motion keeps the information and drops the movement: the rows still
+   reserve their space and the bar still fills, they just do not sweep. */
+@media (prefers-reduced-motion: reduce) {
+  .db-repair-orders-ledger__skeleton-line { animation: none; background: color-mix(in srgb, var(--workspace-text) 15%, transparent); }
+  .db-repair-orders-ledger__progress-fill { transition: none; }
+  .db-repair-orders-ledger__progress-fill[data-loading]::after { animation: none; inset-inline-start: 0; inline-size: 100%; }
+  .db-repair-orders-ledger__spinner { animation-duration: 2s; }
+}
 .db-repair-orders-ledger > footer button { min-height: 40px; display: inline-flex; align-items: center; gap: 5px; border: 1px solid var(--db-ledger-border); border-radius: 8px; padding: 7px 10px; background: var(--db-ledger-surface); color: var(--db-ledger-text); }
 .db-repair-orders-ledger > footer button:disabled { opacity: .42; }
 

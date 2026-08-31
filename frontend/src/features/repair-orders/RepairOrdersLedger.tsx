@@ -82,6 +82,7 @@ export default function RepairOrdersLedger({
   const scopeMenuId = useId()
   const statusMenu = useRef<HTMLDivElement>(null)
   const loadMoreSentinelRef = useRef<HTMLDivElement | null>(null)
+  const scrollerRef = useRef<HTMLDivElement | null>(null)
   const onLoadMoreRef = useRef(onLoadMore)
   useEffect(() => { onLoadMoreRef.current = onLoadMore }, [onLoadMore])
   // Fetch the next page as the end of the list comes into view. The callback is
@@ -93,9 +94,13 @@ export default function RepairOrdersLedger({
     const node = loadMoreSentinelRef.current
     if (!node || !hasMore || isLoadingMore) return
     if (typeof IntersectionObserver === 'undefined') return
+    // The root must be the scroller, not the viewport. Left to default, the
+    // margin is applied to the viewport while the scroller still clips the
+    // sentinel out of existence, so the observer only fires once the sentinel
+    // is genuinely on screen — at the very bottom, with nothing prefetched.
     const observer = new IntersectionObserver(
       (entries) => { if (entries.some((entry) => entry.isIntersecting)) onLoadMoreRef.current() },
-      { rootMargin: '320px' },
+      { root: scrollerRef.current, rootMargin: '320px' },
     )
     observer.observe(node)
     return () => observer.disconnect()
@@ -303,7 +308,7 @@ export default function RepairOrdersLedger({
         {/* The scroller wraps the bordered card so the scrollbar sits outside the
             border; the ledger header and pagination footer stay pinned outside
             the scroller. */}
-        <div className="db-operating-surface__scroller">
+        <div className="db-operating-surface__scroller" ref={scrollerRef}>
         <div className="db-repair-orders-ledger__card db-operating-surface__card">
         {errorMessage ? (
           <div className="db-repair-orders-ledger__empty" role="alert">
@@ -461,14 +466,44 @@ export default function RepairOrdersLedger({
             the operator asking. The button in the footer stays as the explicit
             path for keyboards, screen readers, and any browser where the
             observer never fires. */}
+        {showPagination && isLoadingMore && (
+          <div className="db-repair-orders-ledger__pending" aria-hidden="true">
+            {[0, 1, 2].map((index) => (
+              <div key={index} className="db-repair-orders-ledger__skeleton">
+                <span className="db-repair-orders-ledger__skeleton-line is-name" />
+                <span className="db-repair-orders-ledger__skeleton-line is-vehicle" />
+                <span className="db-repair-orders-ledger__skeleton-line is-reference" />
+                <span className="db-repair-orders-ledger__skeleton-line is-amount" />
+              </div>
+            ))}
+          </div>
+        )}
         {showPagination && hasMore && <div ref={loadMoreSentinelRef} aria-hidden="true" style={{ blockSize: 1 }} />}
         </div>
         </div>
 
         {showPagination && totalOrders > 0 && (
           <footer>
-            <span aria-live="polite">
-              {hasMore ? `${loadedCount} of ${totalOrders} loaded` : `${totalOrders} order${totalOrders === 1 ? '' : 's'}`}
+            <span className="db-repair-orders-ledger__progress">
+              <span aria-live="polite">
+                {hasMore ? `${loadedCount} of ${totalOrders} loaded` : `${totalOrders} order${totalOrders === 1 ? '' : 's'}`}
+              </span>
+              {hasMore && totalOrders > 0 && (
+                <span
+                  className="db-repair-orders-ledger__progress-track"
+                  role="progressbar"
+                  aria-label="Repair orders loaded"
+                  aria-valuemin={0}
+                  aria-valuemax={totalOrders}
+                  aria-valuenow={loadedCount}
+                >
+                  <span
+                    className="db-repair-orders-ledger__progress-fill"
+                    data-loading={isLoadingMore || undefined}
+                    style={{ inlineSize: `${Math.min(100, Math.round((loadedCount / totalOrders) * 100))}%` }}
+                  />
+                </span>
+              )}
             </span>
             {hasMore && (
               <button
@@ -477,7 +512,8 @@ export default function RepairOrdersLedger({
                 disabled={isLoadingMore}
                 aria-label={`Load more repair orders, ${loadedCount} of ${totalOrders} loaded`}
               >
-                {isLoadingMore ? 'Loading…' : 'Load more'}
+                {isLoadingMore && <span className="db-repair-orders-ledger__spinner" aria-hidden="true" />}
+                {isLoadingMore ? 'Loading' : 'Load more'}
               </button>
             )}
           </footer>
