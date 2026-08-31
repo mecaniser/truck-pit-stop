@@ -303,7 +303,10 @@ export interface RepairOrder {
   status: RepairOrderStatus
   description: string | null
   customer_notes: string | null
+  // A JSON envelope (selected_services, reviews), not free text — the pricer,
+  // quotes and the portal all parse it. The shop's prose goes in shop_notes.
   internal_notes: string | null
+  shop_notes?: string | null
   lead_source_channel?: string | null
   external_lead_id?: string | null
   callrail_call_id?: string | null

@@ -997,6 +997,7 @@ async def list_repair_orders(
             item.model_copy(
                 update={
                     "internal_notes": None,
+                    "shop_notes": None,
                     "total_parts_cost": Decimal("0.00"),
                     "total_labor_cost": Decimal("0.00"),
                     "total_cost": Decimal("0.00"),
@@ -1230,6 +1231,7 @@ async def _list_repair_orders_legacy(
     if current_user.role == UserRole.CUSTOMER:
         for item, order in zip(items, orders):
             item.internal_notes = None
+            item.shop_notes = None
             if not _customer_financials_are_published(order):
                 item.total_parts_cost = Decimal("0.00")
                 item.total_labor_cost = Decimal("0.00")
@@ -1265,6 +1267,8 @@ async def get_repair_order_workspace(
         if current_user.role == UserRole.CUSTOMER:
             if not current_user.customer_id or current_user.customer_id != projection.customer_id:
                 raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+            # The shop's note is never the customer's to read, published or not.
+            item.shop_notes = None
             if not _customer_financials_are_published(item):
                 item.internal_notes = None
                 item.total_parts_cost = Decimal("0.00")
@@ -1314,6 +1318,8 @@ async def get_repair_order_workspace(
         customer_email=customer.email if customer else None,
         customer_phone=customer.phone if customer else None,
     )
+    if current_user.role == UserRole.CUSTOMER:
+        item.shop_notes = None
     if current_user.role == UserRole.CUSTOMER and not _customer_financials_are_published(order):
         item.internal_notes = None
         item.total_parts_cost = Decimal("0.00")
@@ -1416,6 +1422,7 @@ async def get_repair_order_detail(
     })
     if current_user.role == UserRole.CUSTOMER:
         detail_base["internal_notes"] = None
+        detail_base["shop_notes"] = None
     if customer_financials_hidden:
         detail_base.update({
             "total_parts_cost": Decimal("0.00"),
@@ -1650,8 +1657,13 @@ async def get_repair_order(
         invoice and invoice.zelle_pending_submitted_at is not None and invoice.status != InvoiceStatus.PAID
     )
 
+    payload = RepairOrderResponse.model_validate(order).model_dump(exclude={'pending_zelle_confirmation'})
+    # This path authorises the customer but returns the row as-is. The shop's
+    # note is never theirs to read.
+    if current_user.role == UserRole.CUSTOMER:
+        payload["shop_notes"] = None
     return RepairOrderResponse(
-        **RepairOrderResponse.model_validate(order).model_dump(exclude={'pending_zelle_confirmation'}),
+        **payload,
         pending_zelle_confirmation=pending_zelle_confirmation,
     )
 

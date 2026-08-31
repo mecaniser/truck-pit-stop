@@ -3700,6 +3700,19 @@ html::-webkit-scrollbar-thumb:hover {
     min-height: 28px !important;
     min-block-size: 28px !important;
   }
+
+  /* The notes card's own controls. The audience tabs are a segmented control
+     sized to their text, and holding them to 44px makes the pair taller than
+     the textarea's first two lines — the switch then reads as the subject of
+     the card rather than a setting on it. The save action is sized to match
+     them so the footer row keeps one height. */
+  .db-repair-orders-new .db-notes-tab,
+  .db-notes-tab,
+  .db-repair-orders-new .db-notes-action,
+  .db-notes-action {
+    min-height: 0 !important;
+    min-block-size: 0 !important;
+  }
 }
 
 .db-service-quickpick {
