@@ -49,7 +49,7 @@
      property is inherited untouched through both, so a ratio of it always
      means the same thing wherever it is used. Ratios are stated against the
      16px default, so default rendering is unchanged. */
-  --font-size-body: 16px;
+  --font-size-body: 1rem;
   --density-row-min: 52px;
   --density-control-min: 44px;
   --density-card-gap: 12px;
@@ -61,8 +61,8 @@
   --density-mode-sample-height: 46px;
 }
 
-.db-staff-shell[data-appearance-font-size='small'] { --font-size-body: 14px; }
-.db-staff-shell[data-appearance-font-size='large'] { --font-size-body: 18px; }
+.db-staff-shell[data-appearance-font-size='small'] { --font-size-body: 0.875rem; }
+.db-staff-shell[data-appearance-font-size='large'] { --font-size-body: 1.125rem; }
 .db-staff-shell[data-appearance-density='compact'] {
   --density-row-min: 48px; --density-control-min: 44px; --density-card-gap: 8px; --density-section-gap: 16px;
   --density-section-padding: 16px; --density-choice-padding: 8px; --density-grid-gap: 8px; --density-preview-padding: 18px; --density-mode-sample-height: 42px;
@@ -85,7 +85,11 @@
 html, body {
   min-height: 100vh;
   font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  font-size: 16px;
+  /* 100%, not 16px: a fixed root size silently discards the text size the
+     reader set in their browser, which for some people is the accommodation
+     they depend on. Everything below is relative, so the whole interface
+     scales with it and the default rendering is unchanged at the usual 16px. */
+  font-size: 100%;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   background: linear-gradient(135deg, #1e293b 0%, #0f172a 50%, #1e3a5f 100%);
@@ -219,7 +223,7 @@ html::-webkit-scrollbar-thumb:hover {
 
 .db-staff-shell {
   font-family: var(--theme-font-family);
-  font-size: calc(16px * var(--theme-font-scale));
+  font-size: calc(1rem * var(--theme-font-scale));
 }
 
 .db-staff-shell[data-appearance-mode='light'] {
@@ -3105,11 +3109,40 @@ html::-webkit-scrollbar-thumb:hover {
 .db-repair-orders-new__status-tabs button .db-repair-orders-new__status-count { margin-inline-start: 6px; padding-inline-start: 0; }
 .db-repair-orders-new__status-select li > button { justify-content: flex-start; }
 
-.db-repair-orders-new__status-select ul { position: absolute; z-index: 30; inset-block-start: calc(100% + 4px); inset-inline-start: auto; inset-inline-end: 0; min-inline-size: 100%; inline-size: max-content; max-inline-size: min(17rem, 80vw); max-height: 17rem; overflow-y: auto; margin: 0; padding: 4px; list-style: none; border: 1px solid var(--workspace-border); border-radius: 10px; background: var(--surface-raised); box-shadow: 0 14px 30px rgba(6,14,26,.24); }
+.db-repair-orders-new__status-select ul { position: absolute; z-index: 30; inset-block-start: calc(100% + 4px); inset-inline-start: auto; inset-inline-end: 0; min-inline-size: 100%; inline-size: max-content; max-inline-size: min(17rem, 80vw); max-height: 17rem; transform-origin: top right; transition: opacity 140ms ease-out, transform 140ms cubic-bezier(0.23, 1, 0.32, 1); overflow-y: auto; margin: 0; padding: 4px; list-style: none; border: 1px solid var(--workspace-border); border-radius: 10px; background: var(--surface-raised); box-shadow: 0 14px 30px rgba(6,14,26,.24); }
 .db-repair-orders-new__status-select li > button { width: 100%; min-height: 40px; display: flex; align-items: center; gap: 8px; padding: 6px 10px; border: 0; border-radius: 7px; background: transparent; color: var(--workspace-text); font-size: 13px; font-weight: 700; text-align: start; cursor: pointer; }
 .db-repair-orders-new__status-select li > button[aria-selected='true'] { background: color-mix(in srgb, var(--workspace-text) 16%, transparent); }
 @media (hover: hover) and (pointer: fine) { .db-repair-orders-new__status-select li > button:hover { background: color-mix(in srgb, var(--workspace-text) 9%, transparent); } }
 @media (prefers-reduced-motion: reduce) { .db-repair-orders-new__status-select svg { transition: none; } }
+/* Response: the ledger rows beside these already acknowledge a press, so a
+   toolbar that does nothing on pointer-down reads as dead next to a list that
+   answers. Compact controls can take a scale where the wide rows could not —
+   that is why the rows use a background shift instead. brightness() rather than
+   a background override because the trigger's light background is !important. */
+.db-repair-orders-new__status-select > button,
+.db-repair-orders-new__status-tabs button,
+.db-repair-orders-new__create { transition: filter 120ms ease-out, transform 90ms ease-out; }
+.db-repair-orders-new__status-select > button:active,
+.db-repair-orders-new__status-tabs button:active,
+.db-repair-orders-new__create:active { transform: scale(.98); filter: brightness(.95); }
+@media (prefers-reduced-motion: reduce) {
+  .db-repair-orders-new__status-select > button,
+  .db-repair-orders-new__status-tabs button,
+  .db-repair-orders-new__create { transition: filter 120ms ease-out; }
+  .db-repair-orders-new__status-select > button:active,
+  .db-repair-orders-new__status-tabs button:active,
+  .db-repair-orders-new__create:active { transform: none; }
+}
+
+@starting-style {
+  .db-repair-orders-new__status-select ul { opacity: 0; transform: scale(.97) translateY(-4px); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .db-repair-orders-new__status-select ul { transition: none; }
+  @starting-style {
+    .db-repair-orders-new__status-select ul { opacity: 1; transform: none; }
+  }
+}
 .db-repair-orders-new__status-select:focus-within { z-index: 2; border-radius: 10px; box-shadow: 0 0 0 3px rgba(255, 122, 46, .26); }
 .db-repair-orders-new__status-select:focus-within > button { border-color: #ff7a2e !important; outline: 0; }
 
@@ -4250,6 +4283,23 @@ html::-webkit-scrollbar-thumb:hover {
 @media (prefers-reduced-transparency: reduce) {
   .db-presentation-new,
   .db-presentation-new .db-staff-nav { --surface-glass: var(--surface-raised); backdrop-filter: none !important; }
+
+  /* The rule above covered two selectors while blur is applied on around a
+     hundred elements through Tailwind utilities — modal panels, scrims and
+     sticky headers — so someone who asked for less transparency still got the
+     full glass treatment everywhere else. Reduced transparency is not only
+     "drop the blur": the surface has to become more opaque too, or removing
+     the blur leaves text over unblurred content and reads worse than before. */
+  [class*='backdrop-blur'] { backdrop-filter: none !important; }
+
+  .bg-zinc-900\/70, .bg-zinc-900\/80, .bg-zinc-900\/95 { background-color: rgb(24 24 27) !important; }
+  .bg-zinc-950\/75 { background-color: rgb(9 9 11) !important; }
+  .bg-gray-900\/95 { background-color: rgb(17 24 39) !important; }
+  .bg-white\/10 { background-color: rgb(63 63 70) !important; }
+
+  /* Scrims stay a scrim — the background must still read as behind — but at an
+     opacity that separates rather than merely tints. */
+  .bg-black\/60, .bg-black\/70 { background-color: rgb(0 0 0 / .88) !important; }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -5836,7 +5886,10 @@ html.customer-portal-active {
   min-inline-size:44px;
   min-block-size:44px;
   padding-inline:0;
-  transition:inline-size 160ms ease-out, padding-inline 160ms ease-out;
+  /* No transition on the box. It expanded to inline-size:auto, and a length to
+     auto is not interpolable by default, so that transition never ran — it only
+     declared an intent the browser ignored. The reveal is carried by the label
+     below, on properties that do not reflow. */
 }
 
 .db-parts-workbench__icon-action:hover,
@@ -5873,7 +5926,12 @@ html.customer-portal-active {
   overflow:hidden;
   white-space:nowrap;
   vertical-align:middle;
-  transition:max-inline-size 160ms ease-out, margin-inline-start 160ms ease-out;
+  opacity:0;
+  transform:translateX(-4px);
+  /* max-inline-size does interpolate, and animating it relaid out the toolbar on
+     every frame. The width now changes in one step and the motion is carried by
+     opacity and transform, which the compositor can do without touching layout. */
+  transition:opacity 140ms ease-out, transform 140ms ease-out;
 }
 
 .db-parts-workbench__icon-action:hover .db-parts-workbench__collapsible-label,
@@ -5881,6 +5939,8 @@ html.customer-portal-active {
 .db-parts-workbench__icon-action:focus-within .db-parts-workbench__collapsible-label {
   max-inline-size:10rem;
   margin-inline-start:.4rem;
+  opacity:1;
+  transform:none;
 }
 
 @media (prefers-reduced-motion: reduce) {
