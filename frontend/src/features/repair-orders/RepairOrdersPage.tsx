@@ -3522,15 +3522,15 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                       </svg>
                     </div>
 
-                    <div className="flex flex-wrap gap-1.5">
+                    <div className="flex h-8 flex-wrap content-start gap-1.5 overflow-hidden">
                       {visibleServiceOptions
-                        .slice(0, 8)
+                        .slice(0, 7)
                         .map((svc) => {
                           const active = selectedServiceIds.includes(svc.id)
                           return (
                             <span
                               key={svc.id}
-                              className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-medium transition-colors ${
+                              className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium leading-5 transition-colors ${
                                 active
                                   ? 'border-amber-500 bg-amber-50 text-amber-700'
                                   : 'border-gray-200 bg-white hover:border-amber-300 text-gray-700'
@@ -3569,7 +3569,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                         })}
 
                       {!isFetchingServices && !isLoadingServices && serviceOptions.length === 0 && (
-                        <span className="text-sm text-gray-500">No matching services found</span>
+                        <span className="self-start text-xs text-gray-500">No matching services found</span>
                       )}
                     </div>
 
