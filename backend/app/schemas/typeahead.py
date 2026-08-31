@@ -31,6 +31,10 @@ class VehicleTypeaheadResponse(BaseModel):
     unit_number: Optional[str] = None
     license_plate: Optional[str] = None
     vin: Optional[str] = None
+    # Highest odometer reading on record for this truck: the vehicle's own value
+    # or anything a repair order recorded, whichever is greater. Offered on the
+    # intake form so a reading can be reused rather than retyped or guessed.
+    last_known_mileage: Optional[int] = None
 
 
 class ServiceTypeaheadResponse(BaseModel):

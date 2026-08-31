@@ -87,6 +87,7 @@ type VehicleTypeaheadItem = {
   unit_number: string | null
   license_plate: string | null
   vin: string | null
+  last_known_mileage?: number | null
 }
 
 type ServiceTypeaheadItem = {
@@ -326,6 +327,9 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
   const [showNewVehicleForm, setShowNewVehicleForm] = useState(false)
   const [description, setDescription] = useState('')
   const [mileageIn, setMileageIn] = useState('')
+  // True only while the field still holds exactly the reading we offered. Any
+  // edit makes it a fresh observation again.
+  const [mileageInCarried, setMileageInCarried] = useState(false)
   const [attributionDraft, setAttributionDraft] = useState(EMPTY_ATTRIBUTION)
   const [detailAttributionDraft, setDetailAttributionDraft] = useState(EMPTY_ATTRIBUTION)
   const [serviceSearch, setServiceSearch] = useState('')
@@ -979,6 +983,14 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
     })
   }, [serviceOptions, selectedServiceIds])
 
+  // The highest reading the shop has for this truck, offered as a starting
+  // point so intake is not a retype or a guess.
+  const lastKnownMileage = useMemo(() => {
+    if (!selectedVehicleId) return null
+    const chosen = vehicleOptions.find((vehicle) => vehicle.id === selectedVehicleId)
+    return chosen?.last_known_mileage ?? null
+  }, [selectedVehicleId, vehicleOptions])
+
   const filteredVehicles = useMemo(
     () => vehicleOptions.filter((vehicle) => vehicle.customer_id === selectedCustomerId),
     [vehicleOptions, selectedCustomerId],
@@ -1193,14 +1205,16 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
       description: roDescription,
       internal_notes,
       mileage_in,
+      mileage_in_carried,
       attribution,
-    }: { customer_id: string; vehicle_id: string; description: string; internal_notes?: string | null; mileage_in?: number | null; attribution: typeof EMPTY_ATTRIBUTION }) => {
+    }: { customer_id: string; vehicle_id: string; description: string; internal_notes?: string | null; mileage_in?: number | null; mileage_in_carried?: boolean | null; attribution: typeof EMPTY_ATTRIBUTION }) => {
       const response = await api.post('/repair-orders', {
         customer_id,
         vehicle_id,
         description: roDescription || null,
         internal_notes: internal_notes || null,
         mileage_in: mileage_in ?? null,
+        mileage_in_carried: mileage_in_carried ?? false,
         ...Object.fromEntries(Object.entries(attribution).map(([key, value]) => [key, value.trim() || null])),
       })
       return response.data as RepairOrder
@@ -2561,6 +2575,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
         description: combinedDescription,
         internal_notes: null,
         mileage_in: mileageIn.trim() === '' ? null : Number(mileageIn),
+        mileage_in_carried: mileageInCarried && mileageIn.trim() !== '',
         attribution: attributionDraft,
       })
 
@@ -3590,12 +3605,32 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Mileage In</label>
+                  <div className="mb-1 flex min-h-[20px] items-baseline justify-between gap-3">
+                    <label className="text-sm font-medium text-gray-700">Mileage In</label>
+                    {lastKnownMileage !== null && (
+                      mileageInCarried ? (
+                        <span className="shrink-0 rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-700 ring-1 ring-amber-200">
+                          Carried from last visit
+                        </span>
+                      ) : (
+                        <span className="shrink-0 text-xs text-gray-500">
+                          Last on record: {lastKnownMileage.toLocaleString()}{' '}
+                          <button
+                            type="button"
+                            onClick={() => { setMileageIn(String(lastKnownMileage)); setMileageInCarried(true) }}
+                            className="font-semibold text-amber-700 underline-offset-2 hover:underline"
+                          >
+                            Use this
+                          </button>
+                        </span>
+                      )
+                    )}
+                  </div>
                   <input
                     type="text"
                     inputMode="numeric"
                     value={mileageIn}
-                    onChange={(e) => { const v = e.target.value; if (v === '' || /^\d+$/.test(v)) setMileageIn(v) }}
+                    onChange={(e) => { const v = e.target.value; if (v === '' || /^\d+$/.test(v)) { setMileageIn(v); setMileageInCarried(false) } }}
                     className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors"
                     placeholder="Odometer reading when the vehicle arrived"
                   />

@@ -196,6 +196,16 @@ class RepairOrderBase(BaseModel):
     internal_notes: Optional[str] = None
     po_number: Optional[str] = None
     mileage_in: Optional[int] = None
+    # The reading was reused from the last visit rather than taken at intake.
+    mileage_in_carried: bool = False
+
+    @field_validator("mileage_in_carried", mode="before")
+    @classmethod
+    def _carried_defaults_false(cls, value: object) -> object:
+        # An order object that has not been flushed yet still holds None here,
+        # and rows written before this column existed carry NULL. Neither means
+        # the reading was carried; both mean nobody said it was.
+        return False if value is None else value
     lead_source_channel: Optional[str] = Field(None, max_length=64)
     external_lead_id: Optional[str] = Field(None, max_length=255)
     callrail_call_id: Optional[str] = Field(None, max_length=255)
@@ -231,6 +241,7 @@ class RepairOrderUpdate(BaseModel):
     assigned_mechanic_id: Optional[UUID] = None
     po_number: Optional[str] = None
     mileage_in: Optional[int] = None
+    mileage_in_carried: Optional[bool] = None
     mileage_out: Optional[int] = None
     parent_repair_order_id: Optional[UUID] = None
     is_warranty_repair: Optional[bool] = None

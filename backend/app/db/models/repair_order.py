@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Numeric, ForeignKey, Text, DateTime, Integer, Boolean, Enum as SQLEnum
+from sqlalchemy import Column, String, Numeric, ForeignKey, Text, DateTime, Integer, Boolean, Enum as SQLEnum, text
 from sqlalchemy.orm import relationship
 from sqlalchemy.dialects.postgresql import UUID
 import enum
@@ -61,6 +61,12 @@ class RepairOrder(BaseModel):
     utm_term = Column(String(255), nullable=True)
     utm_content = Column(String(255), nullable=True)
     mileage_in = Column(Integer, nullable=True)
+    # True when the reading was carried from the previous visit rather than
+    # taken at intake, so a stale odometer is never read as a fresh one.
+    # No server_default here: SQLite reads text('false') back as a string and
+    # the response then fails bool validation. The column default lives in the
+    # migration, where it is Postgres-specific and correct.
+    mileage_in_carried = Column(Boolean, nullable=False, default=False)
     mileage_out = Column(Integer, nullable=True)
     
     assigned_mechanic_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
