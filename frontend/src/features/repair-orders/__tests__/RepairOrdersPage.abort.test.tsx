@@ -94,6 +94,43 @@ describe('RepairOrdersPage request cancellation', () => {
     expect(document.querySelector('.db-repair-orders-new')).not.toBeInTheDocument()
   })
 
+  it('keeps the search input mounted while a new search term loads', async () => {
+    // Typing a company name lost the rest of the word. The search term is part
+    // of the orders query key, so a settled keystroke starts a query with no
+    // cached data; isLoading went true, the page returned the loading skeleton
+    // in place of itself, and React unmounted the input mid-word — focus and
+    // every character after it went with it.
+    const order = {
+      id: 'search-order', tenant_id: 'tenant-1', customer_id: 'customer-1', vehicle_id: 'vehicle-1',
+      vehicle_make: 'Freightliner', vehicle_model: 'Cascadia', vehicle_year: 2022, vehicle_unit_number: '218', vehicle_vin: 'VIN218',
+      customer_company_name: 'Northline Logistics', order_number: 'RO-3019', status: 'in_progress',
+      description: 'Diagnose', customer_notes: null, internal_notes: null,
+      assigned_mechanic_id: null, total_parts_cost: '0.00', total_labor_cost: '0.00', total_cost: '0.00',
+      created_at: '2026-08-12T12:00:00Z', updated_at: '2026-08-12T15:00:00Z',
+    }
+    let resolveSearch: ((value: unknown) => void) | null = null
+    apiMocks.get.mockImplementation((url: string, config?: { params?: Record<string, unknown> }) => {
+      if (url === '/repair-orders') {
+        // The searched fetch never settles during the assertion, which is the
+        // window the operator is typing in.
+        if (config?.params?.search) return new Promise((resolve) => { resolveSearch = resolve })
+        return Promise.resolve({ data: { items: [order], total: 1, has_more: false } })
+      }
+      return Promise.resolve({ data: {} })
+    })
+
+    themeState.presentationVariant = 'new'
+    renderPage()
+    const input = await screen.findByPlaceholderText(/order, work, customer/i)
+    fireEvent.change(input, { target: { value: 'Northline' } })
+
+    await waitFor(() => expect(resolveSearch).not.toBeNull())
+    // Same element, still in the document: not a remount wearing the same role.
+    expect(screen.getByPlaceholderText(/order, work, customer/i)).toBe(input)
+    expect(input).toHaveValue('Northline')
+    expect(input.isConnected).toBe(true)
+  })
+
   it('keeps a completed new-presentation repair order in the clipped canonical workspace region, not a modal drawer', async () => {
     const order = {
       id: 'workspace-order', tenant_id: 'tenant-1', customer_id: 'customer-1', vehicle_id: 'vehicle-1',

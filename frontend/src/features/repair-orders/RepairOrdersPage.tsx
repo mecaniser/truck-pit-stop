@@ -506,6 +506,13 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
     getNextPageParam: (last: OrderPage, all: OrderPage[]) => (last.has_more ? all.length : undefined),
     staleTime: 30_000,
     enabled: !workQueueLane,
+    // The search term is part of the query key, so every keystroke that
+    // settles starts a query with no cached data. Without this, isLoading goes
+    // true, the whole page returns the loading skeleton instead of itself, and
+    // React unmounts the search input mid-word — the operator's focus and the
+    // rest of what they were typing go with it. Hold the previous rows on
+    // screen while the next ones load.
+    placeholderData: keepPreviousData,
   })
   const {
     isLoading,
@@ -2008,30 +2015,14 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
       }))
   }, [orderNotesData, currentUser?.id, currentUser?.role])
 
-  if (isLoading || (workbenchScope === 'daily' && Boolean(workQueueLane) && isDailyWorkbenchLoading)) {
-    if (presentationVariant === 'new') {
-      return (
-        <RepairOrdersLedger
-          rows={[]}
-          totalOrders={0}
-          searchQuery={searchQuery}
-          statusFilter={statusFilter}
-          statusOptions={[{ value: 'all', label: 'All' }]}
-          selectedId={searchParams.get('selected')}
-          queueOrigin={workbenchScope === 'daily' ? null : workQueueLane}
-          isFetching={isFetching || isDailyWorkbenchFetching}
-          loadedCount={0}
-          hasMore={false}
-          isLoadingMore={false}
-          onSearchChange={setSearchQuery}
-          onStatusChange={setStatusFilter}
-          onOpenOrder={() => undefined}
-          onCreateOrder={() => undefined}
-          onShowAllOrders={showAllOrders}
-          onLoadMore={() => undefined}
-        />
-      )
-    }
+  // The modern ledger renders its own loading state, so it must not be swapped
+  // for a second copy of itself while a page loads. It used to be: a separate
+  // early return mounted a skeleton ledger at a different depth in the tree
+  // (bare, where the loaded one sits inside the workspace div), and every
+  // search keystroke that started a fetch tore the real ledger down and built
+  // a new one — taking the operator's focus and the rest of their word with
+  // it. One ledger, told whether it is fetching.
+  if (presentationVariant !== 'new' && (isLoading || (workbenchScope === 'daily' && Boolean(workQueueLane) && isDailyWorkbenchLoading))) {
     return (
       <div className="flex flex-col h-full">
         <h1 className="text-xl sm:text-2xl font-bold text-white mb-4 flex-shrink-0">Repair Orders</h1>
@@ -2812,6 +2803,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
     <div className={`db-repair-orders-workspace flex flex-col h-full ${presentationVariant === 'new' ? 'db-repair-orders-workspace--new' : ''} ${presentationVariant === 'new' && isDetailOpen && selectedOrder ? 'db-repair-orders-workspace--detail-open' : ''}`}>
       {presentationVariant === 'new' ? (
         <RepairOrdersLedger
+          key="repair-orders-ledger"
           rows={displayedLedgerRows}
           totalOrders={displayedLedgerTotal}
           searchQuery={searchQuery}
