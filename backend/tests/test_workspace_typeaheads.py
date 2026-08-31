@@ -234,8 +234,13 @@ async def test_workspace_typeaheads_are_tenant_scoped_capped_and_minimal(client,
     )
     assert vehicles.status_code == 200
     assert [item["id"] for item in vehicles.json()] == [str(ctx["vehicle"].id)]
+    # last_known_mileage joins the minimal set deliberately: intake needs the
+    # truck's previous odometer reading to offer, and it is one integer read for
+    # the returned page rather than a relation or a price bundle, which is what
+    # this assertion exists to keep out.
     assert set(vehicles.json()[0]) == {
-        "id", "customer_id", "make", "model", "year", "unit_number", "license_plate", "vin"
+        "id", "customer_id", "make", "model", "year", "unit_number", "license_plate", "vin",
+        "last_known_mileage",
     }
 
     services = await client.get("/api/v1/services/typeahead", params={"q": "inspection"}, headers=headers)

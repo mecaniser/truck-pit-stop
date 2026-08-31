@@ -725,18 +725,23 @@ async def vehicle_typeahead(
     recorded: dict[UUID, int] = {}
     if vehicles:
         ids = [vehicle.id for vehicle in vehicles]
+        # Aggregate each column separately and combine in Python: GREATEST is
+        # Postgres and MySQL, and the test database is SQLite, where it does not
+        # exist and the endpoint 500s.
         readings = await db.execute(
             select(
                 RepairOrder.vehicle_id,
-                func.max(func.greatest(
-                    func.coalesce(RepairOrder.mileage_out, 0),
-                    func.coalesce(RepairOrder.mileage_in, 0),
-                )),
+                func.max(RepairOrder.mileage_out),
+                func.max(RepairOrder.mileage_in),
             )
             .where(RepairOrder.vehicle_id.in_(ids), RepairOrder.deleted_at.is_(None))
             .group_by(RepairOrder.vehicle_id)
         )
-        recorded = {vehicle_id: reading for vehicle_id, reading in readings.all() if reading}
+        recorded = {
+            vehicle_id: highest
+            for vehicle_id, out_reading, in_reading in readings.all()
+            if (highest := max(out_reading or 0, in_reading or 0))
+        }
 
     return [
         VehicleTypeaheadResponse(
