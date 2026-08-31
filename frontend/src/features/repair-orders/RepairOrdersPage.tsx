@@ -905,6 +905,23 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
     onSuccess: () => refetchRecServices(),
   })
 
+  // The note goes through the generic update. shop_notes is its own column
+  // because internal_notes is a JSON envelope the pricer and portal parse —
+  // prose there would zero the order's labour total.
+  const saveOrderNotesMutation = useMutation({
+    mutationFn: async (notes: { customer_notes?: string | null; shop_notes?: string | null }) => {
+      const response = await api.put(`/repair-orders/${selectedOrder!.id}`, notes)
+      return response.data as RepairOrder
+    },
+    onSuccess: (updated) => {
+      queryClient.invalidateQueries({ queryKey: ['repair-orders'] })
+      queryClient.invalidateQueries({ queryKey: ['repair-order-detail', updated.id] })
+      setSelectedOrder(updated)
+      toast.success('Note saved')
+    },
+    onError: (error: unknown) => toast.error(getErrorDetail(error, 'Could not save the note')),
+  })
+
   const deleteRecServiceMutation = useMutation({
     mutationFn: async (serviceId: string) => {
       await api.delete(`/repair-orders/${selectedOrder!.id}/recommended-services/${serviceId}`)
@@ -4240,6 +4257,10 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                     mileageIn={selectedOrder.mileage_in}
                     mileageOut={selectedOrder.mileage_out}
                     poNumber={selectedOrder.po_number}
+                    customerNotes={selectedOrder.customer_notes}
+                    shopNotes={selectedOrder.shop_notes}
+                    notesSaving={saveOrderNotesMutation.isPending}
+                    onSaveNotes={async (notes) => { await saveOrderNotesMutation.mutateAsync(notes) }}
                     orderTypeLabel={selectedOrder.is_warranty_repair ? 'Warranty' : selectedOrder.parent_repair_order_id ? 'Comeback' : 'Standard'}
                     quoteNumber={quoteForOrder?.quote_number}
                     quoteIsSent={quoteIsSent}

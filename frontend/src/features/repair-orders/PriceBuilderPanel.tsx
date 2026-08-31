@@ -26,8 +26,7 @@ import {
   Trash2,
   Truck,
   Wrench,
-  X,
-} from 'lucide-react'
+  X, StickyNote } from 'lucide-react'
 
 import api from '@/lib/api'
 import { useDebouncedValue } from '@/hooks/useDebouncedValue'
@@ -138,6 +137,10 @@ type Props = {
   mileageOut?: number | null
   poNumber?: string | null
   orderTypeLabel?: string
+  customerNotes?: string | null
+  shopNotes?: string | null
+  onSaveNotes?: (notes: { customer_notes?: string | null; shop_notes?: string | null }) => Promise<void> | void
+  notesSaving?: boolean
   quoteNumber?: string | null
   quoteIsSent?: boolean
   quoteIsApproved?: boolean
@@ -875,6 +878,10 @@ export default function PriceBuilderPanel({
   mileageOut,
   poNumber,
   orderTypeLabel,
+  customerNotes,
+  shopNotes,
+  onSaveNotes,
+  notesSaving = false,
   quoteNumber,
   quoteIsApproved = false,
   quoteActionLabel = 'Create estimate',
@@ -975,6 +982,22 @@ export default function PriceBuilderPanel({
   const totalMotionTimerRef = useRef<number | null>(null)
   const [customerOpen, setCustomerOpen] = useState(false)
   const [recommendedOpen, setRecommendedOpen] = useState(false)
+  // A note belongs to the order, not to a service on it, so it lives beside
+  // Customer & Vehicle rather than inside the work list. Two audiences, one
+  // card: what the customer reads on the invoice, and what stays in the shop.
+  const [notesOpen, setNotesOpen] = useState(false)
+  const [notesAudience, setNotesAudience] = useState<'customer' | 'shop'>('customer')
+  const [notesDraft, setNotesDraft] = useState<{ customer: string; shop: string } | null>(null)
+  // Reset the draft whenever the order's stored notes change underneath it —
+  // switching orders in the ledger keeps this panel mounted.
+  useEffect(() => {
+    setNotesDraft(null)
+  }, [customerNotes, shopNotes])
+  const notesCustomerValue = notesDraft ? notesDraft.customer : customerNotes || ''
+  const notesShopValue = notesDraft ? notesDraft.shop : shopNotes || ''
+  const notesDirty = notesDraft !== null
+    && (notesDraft.customer !== (customerNotes || '') || notesDraft.shop !== (shopNotes || ''))
+  const notesRecorded = [customerNotes, shopNotes].filter((n) => (n || '').trim()).length
   const [photosOpen, setPhotosOpen] = useState(false)
   // Closed by default: the pipeline row above already names this step, and the
   // pill there opens this when the operator actually wants it. Open on load, it
@@ -4177,6 +4200,91 @@ export default function PriceBuilderPanel({
             ) : (
               <p className="rounded-xl bg-white px-3 py-2 text-xs text-gray-400">No recommended services recorded.</p>
             )}
+          </div>
+        )}
+
+        {onSaveNotes && (
+          <button
+            type="button"
+            onClick={() => setNotesOpen((open) => !open)}
+            aria-expanded={notesOpen}
+            className="flex w-full items-center justify-between rounded-xl border-t border-gray-100 px-2 py-3 text-left hover:bg-gray-50"
+          >
+            <span className="inline-flex items-center gap-2 text-sm font-semibold text-gray-800">
+              <StickyNote className="h-4 w-4 text-gray-400" />
+              Notes
+              {notesRecorded > 0 && (
+                <span className="rounded-full bg-gray-100 px-1.5 py-0.5 text-[11px] text-gray-600">{notesRecorded}</span>
+              )}
+            </span>
+            <span className="inline-flex min-w-0 items-center gap-2">
+              <span className="truncate px-3 text-right text-xs text-gray-500">
+                {notesRecorded ? 'Recorded on this order' : 'None yet'}
+              </span>
+              <ChevronRight className={`h-4 w-4 shrink-0 text-gray-400 transition-transform ${notesOpen ? 'rotate-90' : ''}`} />
+            </span>
+          </button>
+        )}
+        {onSaveNotes && notesOpen && (
+          <div className="space-y-2 rounded-xl bg-gray-50 p-3">
+            <div className="inline-flex rounded-lg bg-white p-0.5 ring-1 ring-gray-200" role="tablist">
+              {([['customer', 'On the invoice'], ['shop', 'Shop only']] as const).map(([key, label]) => (
+                <button
+                  key={key}
+                  type="button"
+                  role="tab"
+                  aria-selected={notesAudience === key}
+                  onClick={() => setNotesAudience(key)}
+                  className={`db-notes-tab rounded-md px-3 py-1.5 text-xs font-semibold transition-colors ${
+                    notesAudience === key ? 'bg-orange-50 text-orange-700' : 'text-gray-500 hover:text-gray-700'
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            <textarea
+              value={notesAudience === 'customer' ? notesCustomerValue : notesShopValue}
+              onChange={(e) => setNotesDraft({
+                customer: notesAudience === 'customer' ? e.target.value : notesCustomerValue,
+                shop: notesAudience === 'shop' ? e.target.value : notesShopValue,
+              })}
+              rows={3}
+              placeholder={notesAudience === 'customer'
+                ? 'Note the customer will see on the invoice…'
+                : 'Note for the shop — never shown to the customer…'}
+              className="w-full resize-none rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-orange-200"
+            />
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-[11px] text-gray-500">
+                {notesAudience === 'customer' ? 'Appears on the invoice.' : 'Shop only — the customer never sees this.'}
+              </p>
+              <span className="inline-flex items-center gap-2">
+                {notesDirty && (
+                  <button
+                    type="button"
+                    onClick={() => setNotesDraft(null)}
+                    className="db-notes-action rounded-lg px-3 py-1.5 text-xs font-semibold text-gray-500 hover:text-gray-700"
+                  >
+                    Cancel
+                  </button>
+                )}
+                <button
+                  type="button"
+                  disabled={!notesDirty || notesSaving}
+                  onClick={async () => {
+                    if (!notesDraft) return
+                    await onSaveNotes({
+                      customer_notes: notesDraft.customer.trim() || null,
+                      shop_notes: notesDraft.shop.trim() || null,
+                    })
+                  }}
+                  className="db-notes-action rounded-lg bg-orange-600 px-3 py-1.5 text-xs font-bold text-white disabled:cursor-not-allowed disabled:bg-gray-200 disabled:text-gray-400"
+                >
+                  {notesSaving ? 'Saving…' : 'Save note'}
+                </button>
+              </span>
+            </div>
           </div>
         )}
 

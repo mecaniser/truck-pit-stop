@@ -43,7 +43,12 @@ class RepairOrder(BaseModel):
     
     description = Column(Text, nullable=True)
     customer_notes = Column(Text, nullable=True)
+    # Not a note field: a JSON envelope that pricing, quoting, invoicing and the
+    # customer portal all parse. Prose written here makes the services
+    # unparseable and zeroes the order's labour total. Use shop_notes.
     internal_notes = Column(Text, nullable=True)
+    # The shop's own plain-text note on this order, never shown to the customer.
+    shop_notes = Column(Text, nullable=True)
     po_number = Column(String(100), nullable=True)
     source = Column(String(50), nullable=True, index=True)  # e.g. easy_truck_shop_import
     # Structured marketing attribution. These never reuse/overwrite ``source``

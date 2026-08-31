@@ -228,6 +228,7 @@ class RepairOrderBase(BaseModel):
     description: Optional[str] = None
     customer_notes: Optional[str] = None
     internal_notes: Optional[str] = None
+    shop_notes: Optional[str] = None
     po_number: Optional[str] = None
     mileage_in: Optional[int] = None
     # The reading was reused from the last visit rather than taken at intake.
@@ -272,6 +273,7 @@ class RepairOrderUpdate(BaseModel):
     description: Optional[str] = None
     customer_notes: Optional[str] = None
     internal_notes: Optional[str] = None
+    shop_notes: Optional[str] = None
     assigned_mechanic_id: Optional[UUID] = None
     po_number: Optional[str] = None
     mileage_in: Optional[int] = None
