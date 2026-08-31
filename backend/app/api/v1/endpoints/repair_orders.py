@@ -3954,12 +3954,19 @@ async def list_repair_order_parts(
 @router.get("/{order_id}/parts/suggestions", response_model=PartSuggestionsResponse)
 async def get_repair_order_part_suggestions(
     order_id: UUID,
+    line_id: Optional[UUID] = Query(
+        None,
+        description="Narrow suggestions to the service on this labor line, for adding a part to one operation",
+    ),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role(*PRICE_BUILD_ADD_ROLES)),
 ):
-    """Part-tab empty-state suggestions: parts that paired with the operations/
-    services already on this order elsewhere in the shop's history, plus the
-    tenant's overall most-frequently-used in-stock parts as a fallback."""
+    """Parts that paired with this work elsewhere in the shop's history.
+
+    Without line_id the answer covers every service on the order, which is what
+    the Part tab's empty state wants. With it, the answer is about one operation:
+    someone adding a part to a tire change should be offered what tire changes
+    actually consume, not the union of everything else on the order."""
     result = await db.execute(
         tenant_repair_order_statement(order_id, current_user).options(
             selectinload(RepairOrder.labor_items)
@@ -3975,8 +3982,13 @@ async def get_repair_order_part_suggestions(
     )
     already_added_ids = {row[0] for row in already_added_result.all()}
 
-    service_ids = {li.source_service_id for li in order.labor_items if li.source_service_id}
-    operation_ids = {li.provider_operation_id for li in order.labor_items if li.provider_operation_id}
+    scoped_lines = order.labor_items
+    if line_id is not None:
+        scoped_lines = [li for li in order.labor_items if li.id == line_id]
+        if not scoped_lines:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Labor line not found")
+    service_ids = {li.source_service_id for li in scoped_lines if li.source_service_id}
+    operation_ids = {li.provider_operation_id for li in scoped_lines if li.provider_operation_id}
 
     def _to_suggestions(rows) -> List[PartSuggestion]:
         suggestions: List[PartSuggestion] = []
