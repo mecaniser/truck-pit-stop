@@ -3638,6 +3638,21 @@ html::-webkit-scrollbar-thumb:hover {
    through its own word reads as a mistake; fading the edge reads as more to
    come, which is what it is. No scrollbar — the strip is one row of shortcuts,
    not a region to navigate. */
+/* Exempt from the 44px touch minimum, but only where there is a mouse. This row
+   is a strip of shortcuts on a desktop form and every service in it is also
+   reachable through the search field directly above, so a large target buys
+   nothing and costs the row's proportion against that field. On a touch screen
+   there is no second way to hit a small chip, so the minimum stays.
+   .db-repair-orders-new :is(button,input,select) sets it with !important, so
+   overriding needs both the weight and the specificity. */
+@media (pointer: fine) {
+  .db-repair-orders-new .db-service-quickpick button,
+  .db-service-quickpick button {
+    min-height: 28px !important;
+    min-block-size: 28px !important;
+  }
+}
+
 .db-service-quickpick {
   scrollbar-width: none;
   mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent 100%);

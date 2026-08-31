@@ -3561,7 +3561,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                                   className="inline-flex w-4 shrink-0 items-center justify-center self-stretch leading-none text-amber-700 hover:text-amber-900"
                                   aria-label={`Remove ${svc.name}`}
                                 >
-                                  <span aria-hidden="true" className="block text-[13px] leading-none">×</span>
+                                  <X aria-hidden="true" className="h-3 w-3" />
                                 </button>
                               )}
                             </span>
