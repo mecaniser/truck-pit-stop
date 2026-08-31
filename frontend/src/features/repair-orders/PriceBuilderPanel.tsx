@@ -2273,7 +2273,7 @@ export default function PriceBuilderPanel({
                 // The pill shows the state it is in — a name, or Shop-managed —
                 // so the name says what pressing it does instead.
                 aria-label={hasAssignedTechnician ? 'Reassign technician' : 'Assign technician'}
-                className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 font-semibold transition-colors ${
+                className={`db-pipeline-step inline-flex items-center gap-1 rounded-full px-2.5 py-1 font-semibold transition-colors ${
                   hasAssignedTechnician || technicianAssignmentBypassed
                     ? 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200'
                     : 'bg-white text-amber-700 ring-1 ring-amber-200 hover:bg-amber-50'
