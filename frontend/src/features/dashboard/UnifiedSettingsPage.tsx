@@ -3125,6 +3125,10 @@ export function LegacyAppearanceSection() {
           <span>Accent Color</span>
         </div>
 
+        <p className="text-xs text-zinc-600 mb-4 leading-relaxed">
+          Sets selection, focus and secondary actions. The primary action on each screen keeps the Truck Pit Stop copper.
+        </p>
+
         <div className="flex flex-wrap gap-4">
           {ACCENT_OPTIONS.map((option, i) => (
             <button
