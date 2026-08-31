@@ -3037,9 +3037,12 @@ html::-webkit-scrollbar-thumb:hover {
 }
 .db-repair-orders-workspace--new {
   display: grid;
-  grid-template-columns: minmax(360px, .78fr) minmax(520px, 1.45fr);
+  /* The list column absorbs what the gutter gives up: the workspace keeps its
+     own minimum and fraction, so the space freed here widens the ledger rather
+     than the open order. */
+  grid-template-columns: minmax(360px, .84fr) minmax(520px, 1.45fr);
   grid-template-rows: minmax(0, 1fr);
-  gap: 14px;
+  gap: 16px;
   min-height: 0;
   overflow: visible;
 }
@@ -3051,7 +3054,6 @@ html::-webkit-scrollbar-thumb:hover {
   min-height: 0;
   flex-direction: column;
   overflow: hidden;
-  padding-right: 4px;
 }
 .db-repair-orders-workspace--new:not(.db-repair-orders-workspace--detail-open) > .db-repair-orders-new { grid-column: 1 / -1; }
 .db-repair-orders-workspace--new > .db-repair-orders-new .db-repair-orders-ledger { flex: 1 1 auto; }
@@ -3675,42 +3677,6 @@ html::-webkit-scrollbar-thumb:hover {
   to { background-position: -20% 0; }
 }
 
-/* The count, made spatial. The scrollbar cannot answer "how far into the set am
-   I" once the list is loaded in pages, so the number says it and the bar shows
-   it. */
-.db-repair-orders-ledger__progress { display: inline-flex; align-items: center; gap: 10px; min-inline-size: 0; }
-.db-repair-orders-ledger__progress-track {
-  position: relative;
-  inline-size: 5.5em;
-  block-size: 3px;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--workspace-text) 14%, transparent);
-  overflow: hidden;
-}
-.db-repair-orders-ledger__progress-fill {
-  display: block;
-  block-size: 100%;
-  border-radius: inherit;
-  background: var(--personal-accent-400, var(--accent-500));
-  transition: inline-size 320ms cubic-bezier(0.23, 1, 0.32, 1);
-}
-/* While a page is in flight the bar cannot say how far the new rows have got,
-   so it says that something is moving rather than pretending to measure it. */
-.db-repair-orders-ledger__progress-fill[data-loading]::after {
-  content: '';
-  position: absolute;
-  inset-block: 0;
-  inline-size: 40%;
-  border-radius: inherit;
-  background: color-mix(in srgb, var(--personal-accent-400, var(--accent-500)) 55%, transparent);
-  animation: db-ledger-progress-drift 1.1s ease-in-out infinite;
-}
-
-@keyframes db-ledger-progress-drift {
-  from { inset-inline-start: -40%; }
-  to { inset-inline-start: 100%; }
-}
-
 .db-repair-orders-ledger__spinner {
   inline-size: 0.85em;
   block-size: 0.85em;
@@ -3726,8 +3692,6 @@ html::-webkit-scrollbar-thumb:hover {
    reserve their space and the bar still fills, they just do not sweep. */
 @media (prefers-reduced-motion: reduce) {
   .db-repair-orders-ledger__skeleton-line { animation: none; background: color-mix(in srgb, var(--workspace-text) 15%, transparent); }
-  .db-repair-orders-ledger__progress-fill { transition: none; }
-  .db-repair-orders-ledger__progress-fill[data-loading]::after { animation: none; inset-inline-start: 0; inline-size: 100%; }
   .db-repair-orders-ledger__spinner { animation-duration: 2s; }
 }
 .db-repair-orders-ledger > footer button { min-height: 40px; display: inline-flex; align-items: center; gap: 5px; border: 1px solid var(--db-ledger-border); border-radius: 8px; padding: 7px 10px; background: var(--db-ledger-surface); color: var(--db-ledger-text); }
@@ -3919,7 +3883,7 @@ html::-webkit-scrollbar-thumb:hover {
   /* Breathing room between the card edge and the bar. Without it the two sit
      1px apart, which reads as the bar being inside the list even though it is
      structurally outside the border. */
-  padding-inline-end: 10px;
+  padding-inline-end: 3px;
   /* One scrollbar treatment for every surface. Without this the scroller
      falls back to the OS default, which reads noticeably thicker than the
      surfaces that opted into the shared tokens. */

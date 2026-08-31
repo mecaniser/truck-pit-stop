@@ -241,12 +241,14 @@ describe('DB-035 Stage 4 Repair Orders presentation', () => {
     expect(container.querySelectorAll('.db-repair-orders-ledger__skeleton')).toHaveLength(0)
   })
 
-  it('reports load progress against the whole set, not the loaded page', () => {
+  // No progress bar: the line already says "25 of 2737 loaded". A bar restates
+  // that same ratio a third way, and at 25 of 2737 it renders as a sliver that
+  // reads as empty rather than as one percent.
+  it('states the counts once, without a bar restating them', () => {
     renderLedger({ loadedCount: 25, totalOrders: 60, hasMore: true })
 
-    const bar = screen.getByRole('progressbar', { name: 'Repair orders loaded' })
-    expect(bar).toHaveAttribute('aria-valuenow', '25')
-    expect(bar).toHaveAttribute('aria-valuemax', '60')
+    expect(screen.getByText('25 of 60 loaded')).toBeInTheDocument()
+    expect(screen.queryByRole('progressbar')).not.toBeInTheDocument()
   })
 
   it('uses the canonical focus-safe staff search field', () => {

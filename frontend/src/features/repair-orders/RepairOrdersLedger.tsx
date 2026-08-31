@@ -484,26 +484,8 @@ export default function RepairOrdersLedger({
 
         {showPagination && totalOrders > 0 && (
           <footer>
-            <span className="db-repair-orders-ledger__progress">
-              <span aria-live="polite">
-                {hasMore ? `${loadedCount} of ${totalOrders} loaded` : `${totalOrders} order${totalOrders === 1 ? '' : 's'}`}
-              </span>
-              {hasMore && totalOrders > 0 && (
-                <span
-                  className="db-repair-orders-ledger__progress-track"
-                  role="progressbar"
-                  aria-label="Repair orders loaded"
-                  aria-valuemin={0}
-                  aria-valuemax={totalOrders}
-                  aria-valuenow={loadedCount}
-                >
-                  <span
-                    className="db-repair-orders-ledger__progress-fill"
-                    data-loading={isLoadingMore || undefined}
-                    style={{ inlineSize: `${Math.min(100, Math.round((loadedCount / totalOrders) * 100))}%` }}
-                  />
-                </span>
-              )}
+            <span aria-live="polite">
+              {hasMore ? `${loadedCount} of ${totalOrders} loaded` : `${totalOrders} order${totalOrders === 1 ? '' : 's'}`}
             </span>
             {hasMore && (
               <button
