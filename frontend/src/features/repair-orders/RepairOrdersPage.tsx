@@ -908,6 +908,29 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
   // Notes are history events: appended, signed, never overwritten. The single
   // customer_notes/shop_notes columns could not answer "who wrote this, and
   // when" — and a second note overwrote the first.
+  // Two calls, deliberately: the password buys a one-time grant, and the grant
+  // authorises exactly one void. The password itself never reaches this route.
+  const forceVoidOrderMutation = useMutation({
+    mutationFn: async ({ reason, password }: { reason: string; password: string }) => {
+      const grant = await api.post('/auth/step-up-grants', {
+        password,
+        scope: 'repair_orders.force_void',
+      })
+      await api.post(
+        `/repair-orders/${selectedOrder!.id}/force-void`,
+        { reason },
+        { headers: { 'X-Step-Up-Authorization': grant.data.grant_token } },
+      )
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['repair-orders'] })
+      queryClient.invalidateQueries({ queryKey: ['repair-order-detail', selectedOrder?.id] })
+      queryClient.invalidateQueries({ queryKey: ['repair-order-status-counts'] })
+      toast.success('Order voided')
+    },
+    onError: (error: unknown) => toast.error(getErrorDetail(error, 'Could not void this order')),
+  })
+
   const addOrderNoteMutation = useMutation({
     mutationFn: async (note: { body: string; audience: 'customer' | 'shop' }) => {
       await api.post(`/repair-orders/${selectedOrder!.id}/notes`, note)
@@ -4417,6 +4440,12 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                     onToggleDangerActions={() => setShowDangerActions((prev) => !prev)}
                     onDeleteOrder={() => setShowDeleteConfirm(true)}
                     deletePending={deleteRepairOrderMutation.isPending}
+                    canForceVoid={
+                      (selectedOrder.status === 'invoiced' || selectedOrder.status === 'paid')
+                      && (currentUser?.role === 'garage_owner' || currentUser?.role === 'garage_admin')
+                    }
+                    forceVoidPending={forceVoidOrderMutation.isPending}
+                    onForceVoidOrder={async (args) => { await forceVoidOrderMutation.mutateAsync(args) }}
                     isDeleted={!!(orderDetail ?? selectedOrder).deleted_at}
                     deletedByName={(orderDetail ?? selectedOrder).deleted_by_name}
                     deletedAt={(orderDetail ?? selectedOrder).deleted_at}
