@@ -119,6 +119,33 @@ const renderLedger = (overrides: Partial<React.ComponentProps<typeof RepairOrder
 }
 
 describe('DB-035 Stage 4 Repair Orders presentation', () => {
+  it('renders the complete filtered server value independently from loaded rows', () => {
+    renderLedger({
+      loadedCount: 1,
+      totalOrders: 63,
+      valueSummary: { order_count: 63, order_value: '102345.67' },
+    })
+
+    expect(screen.getByText('Filtered order value')).toBeInTheDocument()
+    expect(screen.getByText('$102,345.67')).toBeInTheDocument()
+  })
+  it('distinguishes calculating, unavailable, and genuine zero order values', () => {
+    const { rerender, props } = renderLedger({ valueSummaryLoading: true })
+    expect(screen.getByText('Calculating…')).toBeInTheDocument()
+
+    rerender(<RepairOrdersLedger {...props} valueSummaryLoading={false} valueSummaryError />)
+    expect(screen.getByText('Unavailable')).toBeInTheDocument()
+
+    rerender(
+      <RepairOrdersLedger
+        {...props}
+        valueSummaryLoading={false}
+        valueSummaryError={false}
+        valueSummary={{ order_count: 0, order_value: '0.00' }}
+      />,
+    )
+    expect(screen.getByText('$0.00')).toBeInTheDocument()
+  })
   it('binds work-request and Vehicle facts to ledger appearance roles instead of light-only ink', () => {
     const workRequestRules = LEDGER_CSS.match(/\.db-presentation-new \.db-staff-content \.db-repair-orders-ledger \.db-repair-orders-ledger__work-request h3 \{[^}]+\}\s*\.db-repair-orders-ledger__work-request p \{[^}]+\}/)?.[0]
 

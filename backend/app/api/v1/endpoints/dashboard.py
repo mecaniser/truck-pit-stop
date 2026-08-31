@@ -1,8 +1,8 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, and_, cast, Date, or_, case
+from sqlalchemy import select, func, and_, cast, Date, or_, case, literal, String
 from pydantic import BaseModel, Field
-from typing import Dict, List, Optional
+from typing import Dict, List, Literal, Optional
 from datetime import datetime, timedelta, date, timezone
 from decimal import Decimal
 from uuid import UUID
@@ -28,7 +28,8 @@ from app.db.models.payment import Payment, PaymentStatus
 from app.db.models.mechanic_time import MechanicSessionType, MechanicTimeSession, MiscWorkCategory
 from app.db.models.tenant import Tenant
 from app.services.internal_fleet import fleet_display_name
-from app.services.pricing import get_order_labor_total, get_order_subtotal
+from app.services.pricing import get_order_labor_total
+from app.schemas.order_value import FilteredRepairOrderValueSummary
 from app.services.mechanic_time_service import (
     ATTENTION_REASON_LABELS,
     clock_in,
@@ -67,7 +68,7 @@ DAILY_WORKSET_STAFF_ROLES = frozenset(
 
 
 def get_effective_total(order: RepairOrder) -> Decimal:
-    return get_order_subtotal(order)
+    return max(Decimal("0.00"), Decimal(str(order.total_cost or 0)))
 
 
 def is_pending_zelle_confirmation(invoice_status: InvoiceStatus, submitted_at: Optional[datetime]) -> bool:
@@ -214,6 +215,12 @@ class DashboardDailyWorkbench(BaseModel):
     closed_today: DailyWorkbenchQueue = Field(default_factory=DailyWorkbenchQueue)
 
 
+class DailyWorkbenchValueSummary(FilteredRepairOrderValueSummary):
+    lane: Literal["all", "needs_action", "on_floor", "ready_to_close", "closed_today"]
+    timezone: str
+    business_date: date
+
+
 class MechanicOption(BaseModel):
     mechanic_id: str
     mechanic_name: str
@@ -262,6 +269,7 @@ def _action_queue_load_options(mechanic):
             RepairOrder.description,
             RepairOrder.total_parts_cost,
             RepairOrder.total_labor_cost,
+            RepairOrder.total_cost,
             RepairOrder.created_at,
             RepairOrder.updated_at,
             RepairOrder.work_started_at,
@@ -554,6 +562,145 @@ async def get_dashboard_daily_workset(
             items=closed_today_orders[:ACTION_QUEUE_LANE_LIMIT],
             has_more=len(closed_today_orders) > ACTION_QUEUE_LANE_LIMIT,
         ),
+    )
+
+
+@router.get("/daily-workset/value-summary", response_model=DailyWorkbenchValueSummary)
+async def get_dashboard_daily_workset_value_summary(
+    lane: Literal["all", "needs_action", "on_floor", "ready_to_close", "closed_today"] = Query("all"),
+    search: Optional[str] = Query(None),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """Return the uncapped net value for the current Shop Work scope."""
+    require_daily_workset_staff(current_user)
+
+    tenant_result = await db.execute(
+        select(Tenant.fleet_company_name, Tenant.timezone, Tenant.is_active, Tenant.deleted_at).where(
+            Tenant.id == current_user.tenant_id
+        )
+    )
+    tenant_row = tenant_result.one_or_none()
+    if tenant_row is None or tenant_row.is_active is not True or tenant_row.deleted_at is not None:
+        raise HTTPException(status_code=403, detail="Access denied")
+    fleet_company_name, configured_timezone, _, _ = tenant_row
+    timezone_name, tenant_timezone = _resolve_tenant_timezone(configured_timezone)
+    local_now = datetime.now(timezone.utc).astimezone(tenant_timezone)
+    local_day_start = datetime.combine(local_now.date(), datetime.min.time(), tzinfo=tenant_timezone)
+    next_reset_at = local_day_start + timedelta(days=1)
+
+    pending_zelle = (
+        select(Invoice.id)
+        .where(
+            Invoice.tenant_id == current_user.tenant_id,
+            Invoice.repair_order_id == RepairOrder.id,
+            Invoice.zelle_pending_submitted_at.is_not(None),
+            Invoice.status.not_in([InvoiceStatus.PAID, InvoiceStatus.CANCELLED]),
+        )
+        .exists()
+    )
+    closed_today = (
+        select(Invoice.id)
+        .where(
+            Invoice.tenant_id == current_user.tenant_id,
+            Invoice.repair_order_id == RepairOrder.id,
+            Invoice.status == InvoiceStatus.PAID,
+            Invoice.paid_at.is_not(None),
+            Invoice.paid_at >= local_day_start.astimezone(timezone.utc),
+            Invoice.paid_at < next_reset_at.astimezone(timezone.utc),
+        )
+        .exists()
+    )
+    needs_action = or_(
+        pending_zelle,
+        RepairOrder.status.in_([
+            RepairOrderStatus.DRAFT,
+            RepairOrderStatus.QUOTED,
+            RepairOrderStatus.DECLINED,
+            RepairOrderStatus.PENDING_REVIEW,
+        ]),
+    )
+    on_floor = RepairOrder.status.in_([
+        RepairOrderStatus.APPROVED,
+        RepairOrderStatus.ASSIGNED,
+        RepairOrderStatus.ACKNOWLEDGED,
+        RepairOrderStatus.IN_PROGRESS,
+    ])
+    ready_to_close = and_(
+        RepairOrder.status.in_([RepairOrderStatus.COMPLETED, RepairOrderStatus.INVOICED]),
+        or_(
+            RepairOrder.source.is_(None),
+            RepairOrder.source != "easy_truck_shop_import",
+            RepairOrder.status != RepairOrderStatus.COMPLETED,
+            RepairOrder.total_cost > 0,
+        ),
+        ~pending_zelle,
+    )
+    lane_predicates = {
+        "needs_action": needs_action,
+        "on_floor": on_floor,
+        "ready_to_close": ready_to_close,
+        "closed_today": closed_today,
+    }
+    lane_predicate = or_(*lane_predicates.values()) if lane == "all" else lane_predicates[lane]
+
+    mechanic = aliased(User)
+    statement = (
+        select(
+            func.count(func.distinct(RepairOrder.id)),
+            func.coalesce(
+                func.sum(
+                    case(
+                        (RepairOrder.total_cost < 0, Decimal("0.00")),
+                        else_=func.coalesce(RepairOrder.total_cost, Decimal("0.00")),
+                    )
+                ),
+                Decimal("0.00"),
+            ),
+        )
+        .select_from(RepairOrder)
+        .join(Customer, RepairOrder.customer_id == Customer.id)
+        .join(Vehicle, RepairOrder.vehicle_id == Vehicle.id)
+        .outerjoin(mechanic, RepairOrder.assigned_mechanic_id == mechanic.id)
+        .where(
+            RepairOrder.tenant_id == current_user.tenant_id,
+            RepairOrder.deleted_at.is_(None),
+            lane_predicate,
+        )
+    )
+    search_term = (search if isinstance(search, str) else "").strip()
+    if search_term:
+        pattern = f"%{search_term}%"
+        customer_name = func.coalesce(Customer.first_name, "") + literal(" ") + func.coalesce(Customer.last_name, "")
+        mechanic_name = func.coalesce(mechanic.first_name, "") + literal(" ") + func.coalesce(mechanic.last_name, "")
+        vehicle_name = (
+            func.coalesce(cast(Vehicle.year, String), "")
+            + literal(" ")
+            + func.coalesce(Vehicle.make, "")
+            + literal(" ")
+            + func.coalesce(Vehicle.model, "")
+            + literal(" ")
+            + func.coalesce(Vehicle.unit_number, "")
+        )
+        statement = statement.where(
+            or_(
+                RepairOrder.order_number.ilike(pattern),
+                RepairOrder.description.ilike(pattern),
+                Customer.company_name.ilike(pattern),
+                customer_name.ilike(pattern),
+                vehicle_name.ilike(pattern),
+                mechanic_name.ilike(pattern),
+                and_(Customer.is_internal_fleet.is_(True), func.coalesce(fleet_company_name, "").ilike(pattern)),
+            )
+        )
+
+    order_count, order_value = (await db.execute(statement)).one()
+    return DailyWorkbenchValueSummary(
+        order_count=int(order_count or 0),
+        order_value=Decimal(str(order_value or 0)).quantize(Decimal("0.01")),
+        lane=lane,
+        timezone=timezone_name,
+        business_date=local_now.date(),
     )
 
 

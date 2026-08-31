@@ -159,4 +159,37 @@ describe('DB-035 Stage 3 Action Ledger', () => {
     rerender(<ShopCockpitActionLedger {...props} queueView="activity" />)
     expect(screen.getByText('Authentic activity feed')).toBeInTheDocument()
   })
+
+  it('shows the server-authoritative work value and reports lane/search scope changes', async () => {
+    const user = userEvent.setup()
+    const onValueScopeChange = vi.fn()
+    renderLedger({
+      valueSummary: { order_count: 61, order_value: '81234.56' },
+      onValueScopeChange,
+    })
+
+    expect(screen.getByText('$81,234.56')).toBeInTheDocument()
+    await user.click(screen.getByRole('tab', { name: 'On the Floor 1' }))
+    await user.type(screen.getByRole('searchbox', { name: 'Search work queue' }), 'NorthStar')
+
+    expect(onValueScopeChange).toHaveBeenLastCalledWith({ lane: 'on_floor', search: 'NorthStar' })
+  })
+
+  it('distinguishes calculating, unavailable, and genuine zero work values', () => {
+    const { rerender, props } = renderLedger({ valueSummaryLoading: true })
+    expect(screen.getByText('Calculating…')).toBeInTheDocument()
+
+    rerender(<ShopCockpitActionLedger {...props} valueSummaryLoading={false} valueSummaryError />)
+    expect(screen.getByText('Unavailable')).toBeInTheDocument()
+
+    rerender(
+      <ShopCockpitActionLedger
+        {...props}
+        valueSummaryLoading={false}
+        valueSummaryError={false}
+        valueSummary={{ order_count: 0, order_value: '0.00' }}
+      />,
+    )
+    expect(screen.getByText('$0.00')).toBeInTheDocument()
+  })
 })

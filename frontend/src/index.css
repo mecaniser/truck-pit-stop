@@ -2794,6 +2794,9 @@ html::-webkit-scrollbar-thumb:hover {
 .db-action-ledger__caption-text { display: flex; min-width: 0; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
 .db-action-ledger__caption h2 { margin: 0; color: var(--workspace-text, #17283f); font-size: 15px; }
 .db-action-ledger__caption-meta { color: var(--workspace-muted, #61738a); font-size: 12px; }
+.db-action-ledger__caption-summary { display: flex; align-items: center; justify-content: flex-end; gap: 12px; }
+.db-action-ledger__caption-value { display: inline-flex; align-items: baseline; gap: 6px; color: var(--workspace-muted, #61738a); font-size: 12px; }
+.db-action-ledger__caption-value strong { color: var(--workspace-text, #17283f); font-size: 15px; font-variant-numeric: tabular-nums; }
 .db-action-ledger__row {
   width: 100%;
   min-width: 0;
@@ -3452,6 +3455,14 @@ html::-webkit-scrollbar-thumb:hover {
 .db-repair-orders-ledger > header h2 { margin: 0; color: var(--db-ledger-text); font-size: 15px; }
 .db-repair-orders-ledger > header span { color: var(--db-ledger-muted); font-size: 12px; }
 .db-repair-orders-ledger__header-actions { display: flex !important; align-items: center !important; gap: 8px !important; }
+.db-repair-orders-ledger__value-summary { display: inline-flex; align-items: baseline; gap: 6px; white-space: nowrap; }
+.db-repair-orders-ledger__value-summary strong { color: var(--db-ledger-text); font-size: 15px; font-variant-numeric: tabular-nums; }
+@media (max-width: 760px) {
+  .db-repair-orders-ledger > header { align-items: flex-start; }
+  .db-repair-orders-ledger__header-actions { flex-wrap: wrap; justify-content: flex-end; }
+  .db-repair-orders-ledger__value-summary { width: 100%; justify-content: flex-end; }
+  .db-action-ledger__caption-summary { width: 100%; justify-content: space-between; }
+}
 .db-repair-orders-ledger__scope-control { position: relative; }
 .db-repair-orders-ledger__scope-control > button { border: 1px solid var(--db-ledger-border); background: var(--db-ledger-surface); color: var(--db-ledger-text); }
 .db-repair-orders-ledger__scope-control > button:hover { border-color: var(--db-ledger-border); background: var(--db-ledger-raised); }

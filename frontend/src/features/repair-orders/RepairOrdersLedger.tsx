@@ -47,6 +47,10 @@ export default function RepairOrdersLedger({
   pageDescription = 'Review and update repair work from check-in through payment.',
   sectionTitle = 'Order ledger',
   compact = false,
+  valueSummary,
+  valueSummaryLoading = false,
+  valueSummaryError = false,
+  valueSummaryLabel = 'Filtered order value',
 }: {
   rows: RepairOrdersLedgerRow[]
   totalOrders: number
@@ -73,6 +77,10 @@ export default function RepairOrdersLedger({
    * identity, status, and financial fields owned by the adjacent workspace. */
   sectionTitle?: string
   compact?: boolean
+  valueSummary?: { order_count: number; order_value: string } | null
+  valueSummaryLoading?: boolean
+  valueSummaryError?: boolean
+  valueSummaryLabel?: string
 }) {
   const queueLabel = !compact && queueOrigin ? REPAIR_ORDERS_QUEUE_LABEL[queueOrigin] : null
   const filtered = Boolean(searchQuery || statusFilter !== 'all')
@@ -270,6 +278,19 @@ export default function RepairOrdersLedger({
             {!queueLabel && <span>{filtered ? `${totalOrders} matching` : `${totalOrders} total`}</span>}
           </div>
           <div className="db-repair-orders-ledger__header-actions">
+            <div className="db-repair-orders-ledger__value-summary" aria-live="polite">
+              <span>{valueSummaryLabel}</span>
+              <strong>
+                {valueSummaryLoading
+                  ? 'Calculating…'
+                  : valueSummaryError
+                    ? 'Unavailable'
+                    : Number.parseFloat(valueSummary?.order_value ?? '0').toLocaleString('en-US', {
+                      style: 'currency',
+                      currency: 'USD',
+                    })}
+              </strong>
+            </div>
             {queueLabel && (
               <div ref={scopeControlRef} className="db-repair-orders-ledger__scope-control">
                 <button
