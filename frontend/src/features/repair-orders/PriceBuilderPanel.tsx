@@ -976,7 +976,41 @@ export default function PriceBuilderPanel({
   const [customerOpen, setCustomerOpen] = useState(false)
   const [recommendedOpen, setRecommendedOpen] = useState(false)
   const [photosOpen, setPhotosOpen] = useState(false)
-  const [technicianAssignmentOpen, setTechnicianAssignmentOpen] = useState(true)
+  // Closed by default: the pipeline row above already names this step, and the
+  // pill there opens this when the operator actually wants it. Open on load, it
+  // cost ~140px above the work list on every order.
+  const [technicianAssignmentOpen, setTechnicianAssignmentOpen] = useState(false)
+  const technicianPopoverRef = useRef<HTMLSpanElement | null>(null)
+  const technicianTriggerRef = useRef<HTMLButtonElement | null>(null)
+  const [technicianPopoverPosition, setTechnicianPopoverPosition] = useState<{ top: number; left: number } | null>(null)
+  useEffect(() => {
+    if (!technicianAssignmentOpen) return
+    const onPointerDown = (event: MouseEvent) => {
+      if (!technicianPopoverRef.current?.contains(event.target as Node)) setTechnicianAssignmentOpen(false)
+    }
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setTechnicianAssignmentOpen(false)
+    }
+    // Anything that moves the trigger invalidates the position, and a menu that
+    // follows a scrolling anchor is more distracting than one that closes.
+    const close = () => setTechnicianAssignmentOpen(false)
+    document.addEventListener('mousedown', onPointerDown)
+    document.addEventListener('keydown', onKeyDown)
+    window.addEventListener('resize', close)
+    window.addEventListener('scroll', close, true)
+    return () => {
+      document.removeEventListener('mousedown', onPointerDown)
+      document.removeEventListener('keydown', onKeyDown)
+      window.removeEventListener('resize', close)
+      window.removeEventListener('scroll', close, true)
+    }
+  }, [technicianAssignmentOpen])
+
+  useEffect(() => {
+    if (!technicianAssignmentOpen) { setTechnicianPopoverPosition(null); return }
+    const rect = technicianTriggerRef.current?.getBoundingClientRect()
+    if (rect) setTechnicianPopoverPosition({ top: rect.bottom + 6, left: rect.left })
+  }, [technicianAssignmentOpen])
   const [photoCaption, setPhotoCaption] = useState('')
   const [photoUploadItems, setPhotoUploadItems] = useState<RepairPhotoUploadItem[]>([])
   const [armWoComplete, setArmWoComplete] = useState(false)
@@ -1091,6 +1125,10 @@ export default function PriceBuilderPanel({
   })
 
   const isFinalizedOrder = ['completed', 'invoiced', 'paid', 'cancelled'].includes(orderStatus)
+  // The pipeline row is only drawn for customer-facing, unfinalised orders. Where
+  // it is absent the band keeps its own header, or internal fleet orders would
+  // lose technician assignment altogether.
+  const technicianPillInPipeline = !isInternalOrder && !isFinalizedOrder
   const { data: repairPhotosData, isFetching: repairPhotosFetching } = useQuery<RepairOrderPhoto[]>({
     queryKey: ['repair-order-photos', orderId],
     queryFn: async ({ signal }) => {
@@ -1449,9 +1487,13 @@ export default function PriceBuilderPanel({
     setHistoryVisibleCount(5)
   }, [orderId])
 
+  // Reset per order, but do not auto-open. This used to expand for every order
+  // without an assigned technician, which is most of them, so the band was the
+  // default state rather than the exception. The pipeline pill already carries
+  // the pending step in amber, and it is the control that opens this.
   useEffect(() => {
-    setTechnicianAssignmentOpen(!technicianAssignmentBypassed)
-  }, [orderId, technicianAssignmentBypassed])
+    setTechnicianAssignmentOpen(false)
+  }, [orderId])
 
   useEffect(() => {
     if (!['in_progress', 'pending_review'].includes(orderStatus)) {
@@ -2221,13 +2263,75 @@ export default function PriceBuilderPanel({
               {orderStatus === 'draft' ? 'Checked in' : '✓ Checked in'}
             </span>
             <span className="text-gray-300">→</span>
-            <span className={`rounded-full px-2.5 py-1 font-semibold ${
-              hasAssignedTechnician || technicianAssignmentBypassed
-                ? 'bg-emerald-100 text-emerald-700'
-                : 'bg-white text-amber-700 ring-1 ring-amber-200'
-            }`}>
-              {hasAssignedTechnician ? `✓ ${assignedTechnicianName}` : technicianAssignmentBypassed ? '✓ Shop-managed' : 'Assign technician'}
-            </span>
+            {canManageTechnician && ((onAssignTechnician && availableTechnicians.length > 0) || canOverrideTechnicianAssignment) ? (
+              <span className="relative inline-flex" ref={technicianPopoverRef}>
+              <button
+                type="button"
+                ref={technicianTriggerRef}
+                onClick={() => setTechnicianAssignmentOpen((open) => !open)}
+                aria-expanded={technicianAssignmentOpen}
+                // The pill shows the state it is in — a name, or Shop-managed —
+                // so the name says what pressing it does instead.
+                aria-label={hasAssignedTechnician ? 'Reassign technician' : 'Assign technician'}
+                className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 font-semibold transition-colors ${
+                  hasAssignedTechnician || technicianAssignmentBypassed
+                    ? 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200'
+                    : 'bg-white text-amber-700 ring-1 ring-amber-200 hover:bg-amber-50'
+                }`}
+              >
+                {hasAssignedTechnician ? `✓ ${assignedTechnicianName}` : technicianAssignmentBypassed ? '✓ Shop-managed' : 'Assign technician'}
+                <ChevronDown className={`h-3 w-3 transition-transform ${technicianAssignmentOpen ? 'rotate-180' : ''}`} aria-hidden="true" />
+              </button>
+              {technicianAssignmentOpen && technicianPopoverPosition && (
+                <div
+                  role="dialog"
+                  aria-label={hasAssignedTechnician ? 'Reassign technician' : 'Assign technician'}
+                  style={{ position: 'fixed', top: technicianPopoverPosition.top, left: technicianPopoverPosition.left }}
+                  className="db-technician-popover z-50 w-64 rounded-xl border border-gray-200 bg-white p-1.5 text-left shadow-[0_14px_34px_rgba(16,36,59,.18)]"
+                >
+                  {onAssignTechnician && availableTechnicians.length > 0 && (
+                    <div className="max-h-64 overflow-y-auto">
+                      {availableTechnicians.map((tech) => (
+                        <button
+                          key={tech.mechanic_id}
+                          type="button"
+                          onClick={() => { onAssignTechnician(tech.mechanic_id); setTechnicianAssignmentOpen(false) }}
+                          disabled={technicianAssignmentPending || technicianOverridePending}
+                          className="db-technician-choice flex w-full items-center justify-between gap-2 rounded-lg px-2.5 py-1.5 text-left disabled:opacity-50"
+                        >
+                          <span className="truncate text-[13px] font-semibold text-gray-900">{tech.mechanic_name}</span>
+                          <span className={`shrink-0 text-[11px] font-bold ${tech.load < 50 ? 'text-emerald-600' : tech.load < 80 ? 'text-orange-600' : 'text-red-600'}`}>
+                            {tech.load.toFixed(0)}%
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  {canOverrideTechnicianAssignment && (
+                    <button
+                      type="button"
+                      onClick={() => { onOverrideTechnicianAssignment?.(); setTechnicianAssignmentOpen(false) }}
+                      disabled={technicianOverridePending || technicianAssignmentPending}
+                      className={`flex w-full items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[12px] font-semibold text-amber-700 transition-colors hover:bg-amber-50 disabled:opacity-50 ${
+                        onAssignTechnician && availableTechnicians.length > 0 ? 'mt-1 border-t border-gray-100 pt-2' : ''
+                      }`}
+                    >
+                      {technicianOverridePending ? <Spinner size="xs" /> : <Play className="h-3.5 w-3.5" />}
+                      {technicianOverridePending ? 'Starting…' : 'Start without a technician'}
+                    </button>
+                  )}
+                </div>
+              )}
+              </span>
+            ) : (
+              <span className={`rounded-full px-2.5 py-1 font-semibold ${
+                hasAssignedTechnician || technicianAssignmentBypassed
+                  ? 'bg-emerald-100 text-emerald-700'
+                  : 'bg-white text-amber-700 ring-1 ring-amber-200'
+              }`}>
+                {hasAssignedTechnician ? `✓ ${assignedTechnicianName}` : technicianAssignmentBypassed ? '✓ Shop-managed' : 'Assign technician'}
+              </span>
+            )}
             <span className="text-gray-300">→</span>
             <span className={`rounded-full px-2.5 py-1 font-semibold ${
               ['in_progress', 'pending_review'].includes(orderStatus)
@@ -2284,70 +2388,58 @@ export default function PriceBuilderPanel({
             </button>
           </div>
         )}
-        {canManageTechnician && ((onAssignTechnician && availableTechnicians.length > 0) || canOverrideTechnicianAssignment) && (
+        {!technicianPillInPipeline && canManageTechnician && ((onAssignTechnician && availableTechnicians.length > 0) || canOverrideTechnicianAssignment) && (
           <div className="border-t border-orange-100 bg-white px-5 py-3">
-            <button
-              type="button"
-              onClick={() => setTechnicianAssignmentOpen((open) => !open)}
-              className={`flex w-full items-center justify-between gap-2 text-left ${technicianAssignmentOpen ? 'mb-2' : ''}`}
-              aria-expanded={technicianAssignmentOpen}
-            >
-              <span className="text-[11px] font-bold uppercase tracking-[0.16em] text-gray-500">
-                {hasAssignedTechnician ? 'Reassign technician' : 'Assign technician'}
-              </span>
-              {hasAssignedTechnician && assignedTechnicianName && (
-                <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700">
-                  Current: {assignedTechnicianName}
+            {!technicianPillInPipeline && (
+              <button
+                type="button"
+                onClick={() => setTechnicianAssignmentOpen((open) => !open)}
+                className={`flex w-full items-center justify-between gap-2 text-left ${technicianAssignmentOpen ? 'mb-2' : ''}`}
+                aria-expanded={technicianAssignmentOpen}
+              >
+                <span className="text-[11px] font-bold uppercase tracking-[0.16em] text-gray-500">
+                  {hasAssignedTechnician ? 'Reassign technician' : 'Assign technician'}
                 </span>
-              )}
-              {!hasAssignedTechnician && (
-                <ChevronDown className={`h-4 w-4 text-gray-400 transition-transform ${technicianAssignmentOpen ? 'rotate-180' : ''}`} />
-              )}
-            </button>
-            {technicianAssignmentOpen && onAssignTechnician && availableTechnicians.length > 0 && (
-              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                <ChevronDown className={`h-4 w-4 text-gray-400 transition-transform ${technicianAssignmentOpen ? 'rotate-180' : ''}`} aria-hidden="true" />
+              </button>
+            )}
+            {technicianAssignmentOpen && (
+              <>
+            {onAssignTechnician && availableTechnicians.length > 0 && (
+              <div className="grid grid-cols-1 gap-1 sm:grid-cols-2 lg:grid-cols-3">
                 {availableTechnicians.map((tech) => (
                   <button
                     key={tech.mechanic_id}
                     type="button"
                     onClick={() => onAssignTechnician(tech.mechanic_id)}
                     disabled={technicianAssignmentPending || technicianOverridePending}
-                    className="rounded-lg border border-gray-200 bg-white p-2.5 text-left transition hover:border-orange-300 hover:bg-orange-50 disabled:cursor-not-allowed disabled:opacity-50"
+                    className="db-technician-choice flex items-center justify-between gap-2 rounded-lg px-2.5 py-1.5 text-left disabled:opacity-50"
                   >
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="truncate text-sm font-semibold text-gray-900">{tech.mechanic_name}</span>
-                      <span className={`text-xs font-bold ${tech.load < 50 ? 'text-emerald-600' : tech.load < 80 ? 'text-orange-600' : 'text-red-600'}`}>
-                        {tech.load.toFixed(0)}%
-                      </span>
-                    </div>
-                    <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-gray-100">
-                      <div
-                        className={`h-full rounded-full ${tech.load < 50 ? 'bg-emerald-500' : tech.load < 80 ? 'bg-orange-500' : 'bg-red-500'}`}
-                        style={{ width: `${tech.load}%` }}
-                      />
-                    </div>
+                    <span className="truncate text-[13px] font-semibold text-gray-900">{tech.mechanic_name}</span>
+                    <span className={`shrink-0 text-[11px] font-bold ${tech.load < 50 ? 'text-emerald-600' : tech.load < 80 ? 'text-orange-600' : 'text-red-600'}`}>
+                      {tech.load.toFixed(0)}%
+                    </span>
                   </button>
                 ))}
               </div>
             )}
-            {technicianAssignmentOpen && canOverrideTechnicianAssignment && (
-              <div className="mt-3 rounded-lg border border-dashed border-amber-300 bg-amber-50/70 p-3">
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                  <div>
-                    <p className="text-sm font-semibold text-amber-900">Start without assigning a technician</p>
-                    <p className="mt-0.5 text-xs text-amber-700">Admin override for work handled verbally or outside the mechanic portal.</p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={onOverrideTechnicianAssignment}
-                    disabled={technicianOverridePending || technicianAssignmentPending}
-                    className="inline-flex h-9 shrink-0 items-center justify-center gap-2 rounded-lg bg-amber-600 px-3 text-sm font-bold text-white hover:bg-amber-700 disabled:bg-gray-300"
-                  >
-                    {technicianOverridePending ? <Spinner size="xs" /> : <Play className="h-4 w-4" />}
-                    {technicianOverridePending ? 'Starting...' : 'Override & start'}
-                  </button>
-                </div>
+            {canOverrideTechnicianAssignment && (
+              <div className={`flex items-center justify-between gap-3 ${onAssignTechnician && availableTechnicians.length > 0 ? 'mt-3 border-t border-gray-100 pt-3' : ''}`}>
+                <p className="text-xs text-gray-500">
+                  Handled verbally or outside the mechanic portal?
+                </p>
+                <button
+                  type="button"
+                  onClick={onOverrideTechnicianAssignment}
+                  disabled={technicianOverridePending || technicianAssignmentPending}
+                  className="inline-flex shrink-0 items-center gap-1.5 rounded-lg px-2 py-1 text-xs font-semibold text-amber-700 underline-offset-2 transition-colors hover:bg-amber-50 hover:underline disabled:opacity-50"
+                >
+                  {technicianOverridePending ? <Spinner size="xs" /> : <Play className="h-3.5 w-3.5" />}
+                  {technicianOverridePending ? 'Starting…' : 'Start without a technician'}
+                </button>
               </div>
+            )}
+              </>
             )}
           </div>
         )}

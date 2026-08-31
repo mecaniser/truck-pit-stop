@@ -87,6 +87,7 @@ type VehicleTypeaheadItem = {
   unit_number: string | null
   license_plate: string | null
   vin: string | null
+  last_known_mileage?: number | null
 }
 
 type ServiceTypeaheadItem = {
@@ -326,6 +327,9 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
   const [showNewVehicleForm, setShowNewVehicleForm] = useState(false)
   const [description, setDescription] = useState('')
   const [mileageIn, setMileageIn] = useState('')
+  // True only while the field still holds exactly the reading we offered. Any
+  // edit makes it a fresh observation again.
+  const [mileageInCarried, setMileageInCarried] = useState(false)
   const [attributionDraft, setAttributionDraft] = useState(EMPTY_ATTRIBUTION)
   const [detailAttributionDraft, setDetailAttributionDraft] = useState(EMPTY_ATTRIBUTION)
   const [serviceSearch, setServiceSearch] = useState('')
@@ -733,12 +737,16 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
     staleTime: 30_000,
   })
 
-  // Creating an order does not require the shop roster. Load it only once an
-  // open order reaches the assignment or review stages, where it is actionable.
+  // Creating an order does not require the shop roster, but every state the
+  // server will accept an assignment in does. POST /{id}/assign-mechanic moves
+  // draft, quoted, declined, approved and acknowledged orders to assigned, so
+  // omitting the first three left the pipeline showing "Assign technician" as
+  // the live step with an empty list behind it — the shop's own drafts, which
+  // this product calls Checked in, could only be started by overriding the step.
   const shouldLoadMechanics = !!(
     selectedOrder?.id
     && isDetailOpen
-    && ['approved', 'assigned', 'acknowledged', 'in_progress', 'pending_review'].includes(selectedOrder.status)
+    && ['draft', 'quoted', 'declined', 'approved', 'assigned', 'acknowledged', 'in_progress', 'pending_review'].includes(selectedOrder.status)
   )
 
   const { data: mechanics } = useQuery<{ mechanic_id: string; mechanic_name: string; assigned_count?: number; in_progress_count?: number }[]>({
@@ -750,6 +758,9 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
     enabled: shouldLoadMechanics,
     staleTime: 60_000,
   })
+  // The panel derives its list with .filter, so a response that is not an array
+  // takes the whole workspace down instead of showing an empty roster.
+  const technicianRoster = Array.isArray(mechanics) ? mechanics : []
 
   const { data: orderDetail, refetch: refetchOrderDetail, isLoading: isOrderDetailLoading } = useQuery<RepairOrderDetail>({
     queryKey: ['repair-order-detail', selectedOrder?.id],
@@ -972,6 +983,14 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
     })
   }, [serviceOptions, selectedServiceIds])
 
+  // The highest reading the shop has for this truck, offered as a starting
+  // point so intake is not a retype or a guess.
+  const lastKnownMileage = useMemo(() => {
+    if (!selectedVehicleId) return null
+    const chosen = vehicleOptions.find((vehicle) => vehicle.id === selectedVehicleId)
+    return chosen?.last_known_mileage ?? null
+  }, [selectedVehicleId, vehicleOptions])
+
   const filteredVehicles = useMemo(
     () => vehicleOptions.filter((vehicle) => vehicle.customer_id === selectedCustomerId),
     [vehicleOptions, selectedCustomerId],
@@ -1024,7 +1043,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
 
   const mechanicLookup = useMemo(() => {
     const map = new Map<string, string>()
-    mechanics?.forEach((m) => map.set(m.mechanic_id, m.mechanic_name))
+    technicianRoster.forEach((m) => map.set(m.mechanic_id, m.mechanic_name))
     return map
   }, [mechanics])
 
@@ -1186,14 +1205,16 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
       description: roDescription,
       internal_notes,
       mileage_in,
+      mileage_in_carried,
       attribution,
-    }: { customer_id: string; vehicle_id: string; description: string; internal_notes?: string | null; mileage_in?: number | null; attribution: typeof EMPTY_ATTRIBUTION }) => {
+    }: { customer_id: string; vehicle_id: string; description: string; internal_notes?: string | null; mileage_in?: number | null; mileage_in_carried?: boolean | null; attribution: typeof EMPTY_ATTRIBUTION }) => {
       const response = await api.post('/repair-orders', {
         customer_id,
         vehicle_id,
         description: roDescription || null,
         internal_notes: internal_notes || null,
         mileage_in: mileage_in ?? null,
+        mileage_in_carried: mileage_in_carried ?? false,
         ...Object.fromEntries(Object.entries(attribution).map(([key, value]) => [key, value.trim() || null])),
       })
       return response.data as RepairOrder
@@ -2554,6 +2575,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
         description: combinedDescription,
         internal_notes: null,
         mileage_in: mileageIn.trim() === '' ? null : Number(mileageIn),
+        mileage_in_carried: mileageInCarried && mileageIn.trim() !== '',
         attribution: attributionDraft,
       })
 
@@ -3515,15 +3537,15 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                       </svg>
                     </div>
 
-                    <div className="grid grid-flow-col grid-rows-2 auto-cols-max gap-2 overflow-hidden">
+                    <div className="db-service-quickpick flex min-h-[46px] flex-nowrap items-center gap-1.5 overflow-x-auto">
                       {visibleServiceOptions
-                        .slice(0, 8)
+                        .slice(0, 7)
                         .map((svc) => {
                           const active = selectedServiceIds.includes(svc.id)
                           return (
                             <span
                               key={svc.id}
-                              className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-full text-sm font-medium border transition-colors ${
+                              className={`inline-flex shrink-0 items-center overflow-hidden rounded-full border pe-1.5 text-[11px] font-medium leading-4 transition-colors ${
                                 active
                                   ? 'border-amber-500 bg-amber-50 text-amber-700'
                                   : 'border-gray-200 bg-white hover:border-amber-300 text-gray-700'
@@ -3540,7 +3562,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                                     setSelectedServiceOptions((prev) => [...prev.filter((item) => item.id !== svc.id), svc])
                                   }
                                 }}
-                                className="focus:outline-none"
+                                className="ps-2.5 pe-1.5 focus:outline-none"
                               >
                                 {svc.name}
                               </button>
@@ -3551,10 +3573,10 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                                     setSelectedServiceIds((prev) => prev.filter((id) => id !== svc.id))
                                     setSelectedServiceOptions((prev) => prev.filter((item) => item.id !== svc.id))
                                   }}
-                                  className="inline-flex items-center justify-center w-4 h-4 -mr-0.5 leading-none text-amber-700 hover:text-amber-900"
+                                  className="inline-flex w-4 shrink-0 items-center justify-center self-stretch leading-none text-amber-700 hover:text-amber-900"
                                   aria-label={`Remove ${svc.name}`}
                                 >
-                                  <span className="block -mt-px text-base">×</span>
+                                  <X aria-hidden="true" className="h-3 w-3" />
                                 </button>
                               )}
                             </span>
@@ -3562,7 +3584,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                         })}
 
                       {!isFetchingServices && !isLoadingServices && serviceOptions.length === 0 && (
-                        <span className="text-sm text-gray-500">No matching services found</span>
+                        <span className="self-start text-xs text-gray-500">No matching services found</span>
                       )}
                     </div>
 
@@ -3583,12 +3605,32 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Mileage In</label>
+                  <div className="mb-1 flex min-h-[20px] items-baseline justify-between gap-3">
+                    <label className="text-sm font-medium text-gray-700">Mileage In</label>
+                    {lastKnownMileage !== null && (
+                      mileageInCarried ? (
+                        <span className="shrink-0 rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-700 ring-1 ring-amber-200">
+                          Carried from last visit
+                        </span>
+                      ) : (
+                        <span className="shrink-0 text-xs text-gray-500">
+                          Last on record: {lastKnownMileage.toLocaleString()}{' '}
+                          <button
+                            type="button"
+                            onClick={() => { setMileageIn(String(lastKnownMileage)); setMileageInCarried(true) }}
+                            className="db-inline-text-action font-semibold text-amber-700 underline-offset-2 hover:underline"
+                          >
+                            Use this
+                          </button>
+                        </span>
+                      )
+                    )}
+                  </div>
                   <input
                     type="text"
                     inputMode="numeric"
                     value={mileageIn}
-                    onChange={(e) => { const v = e.target.value; if (v === '' || /^\d+$/.test(v)) setMileageIn(v) }}
+                    onChange={(e) => { const v = e.target.value; if (v === '' || /^\d+$/.test(v)) { setMileageIn(v); setMileageInCarried(false) } }}
                     className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors"
                     placeholder="Odometer reading when the vehicle arrived"
                   />
@@ -3814,7 +3856,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                   const isApproved = quoteForOrder?.is_approved
                   const isSent = quoteForOrder?.sent_to_customer || quoteSent
                   const hasMechanic = !!selectedOrder.assigned_mechanic_id
-                  const mechanicName = mechanics?.find(m => m.mechanic_id === selectedOrder.assigned_mechanic_id)?.mechanic_name || 'Assigned'
+                  const mechanicName = technicianRoster.find(m => m.mechanic_id === selectedOrder.assigned_mechanic_id)?.mechanic_name || 'Assigned'
                   const canAssignTechnicianInline = isApproved && !hasMechanic && (
                     (orderDetail ?? selectedOrder).status === 'approved' || assignmentBypassedInDrawer
                   )
@@ -3948,7 +3990,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                             </button>
                             {assignMechanicOpen && (
                               <>
-                                {mechanics && mechanics.length > 0 && (
+                                {technicianRoster.length > 0 && (
                                   <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                                     {[...(mechanics || [])]
                                       .map((m) => {
@@ -4009,7 +4051,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                         )}
 
                         {/* Reassign Mechanic - shown when mechanic is already assigned and work not yet done */}
-                        {hasMechanic && mechanics && mechanics.length > 1 && !['pending_review', 'completed', 'invoiced', 'paid'].includes((orderDetail ?? selectedOrder).status) && (
+                        {hasMechanic && technicianRoster.length > 1 && !['pending_review', 'completed', 'invoiced', 'paid'].includes((orderDetail ?? selectedOrder).status) && (
                           <div className="pt-3 border-t border-gray-200">
                             {!showReassignMechanic ? (
                               <button
@@ -4213,7 +4255,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                         : null
                     }
                     assignedTechnicianId={selectedOrder.assigned_mechanic_id}
-                    technicianOptions={mechanics || []}
+                    technicianOptions={technicianRoster}
                     technicianAssignmentPending={assignMechanicMutation.isPending}
                     onAssignTechnician={(mechanicId) =>
                       selectedOrder.id &&

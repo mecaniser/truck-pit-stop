@@ -12,6 +12,7 @@ from app.core.pagination import paginated_or_list
 from app.core.search import build_search
 from app.core.default_catalog import DEFAULT_CATEGORIES, DEFAULT_SERVICES
 from app.db.models.appointment import Appointment
+from app.db.models.labor import Labor
 from app.db.models.inventory import Inventory
 from app.db.models.tenant import Tenant
 from app.db.models.user import User, UserRole
@@ -505,12 +506,32 @@ async def service_typeahead(
         pattern = f"%{term}%"
         filters.append(or_(Service.name.ilike(pattern), Service.description.ilike(pattern)))
 
-    result = await db.execute(
-        select(Service)
-        .where(*filters)
-        .order_by(Service.sort_order, func.lower(Service.name), Service.id)
-        .limit(limit)
-    )
+    # With no term this list is the quick-pick row on the create form, where the
+    # useful order is what this shop actually books, not the catalogue's own
+    # sort. Labor lines carry the service they came from, so the count of them
+    # is the shop's own history rather than a guess. A search is different: the
+    # operator has said what they want, and relevance stays with the catalogue
+    # order. Ties and never-booked services keep the configured sequence, so the
+    # row is stable for a shop that has not built any history yet.
+    if term:
+        ordering = [Service.sort_order, func.lower(Service.name), Service.id]
+        query = select(Service).where(*filters)
+    else:
+        usage = (
+            select(Labor.source_service_id.label("service_id"), func.count().label("times_used"))
+            .where(Labor.tenant_id == tenant_id, Labor.deleted_at.is_(None), Labor.source_service_id.is_not(None))
+            .group_by(Labor.source_service_id)
+            .subquery()
+        )
+        query = select(Service).where(*filters).outerjoin(usage, usage.c.service_id == Service.id)
+        ordering = [
+            func.coalesce(usage.c.times_used, 0).desc(),
+            Service.sort_order,
+            func.lower(Service.name),
+            Service.id,
+        ]
+
+    result = await db.execute(query.order_by(*ordering).limit(limit))
     return [
         ServiceTypeaheadResponse(
             id=service.id,

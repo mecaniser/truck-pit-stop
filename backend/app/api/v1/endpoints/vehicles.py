@@ -10,6 +10,7 @@ from app.core.pagination import paginated_or_list
 from app.core.phone import normalize_phone
 from app.db.models.user import User, UserRole
 from app.db.models.vehicle import Vehicle
+from app.db.models.repair_order import RepairOrder
 from app.db.models.customer import Customer
 from app.db.models.vehicle_relationship import FleetMembership, VehicleCustomerRelationship
 from app.schemas.vehicle import (
@@ -715,6 +716,33 @@ async def vehicle_typeahead(
         )
         .limit(limit)
     )
+    vehicles = result.scalars().all()
+
+    # Odometers only go up, so the highest reading on record is the latest one,
+    # and taking a max tolerates the gaps: the vehicle row carries a mileage for
+    # roughly half this tenant's trucks while repair orders carry one for many of
+    # the rest. Read for the returned page only, not the whole fleet.
+    recorded: dict[UUID, int] = {}
+    if vehicles:
+        ids = [vehicle.id for vehicle in vehicles]
+        # Aggregate each column separately and combine in Python: GREATEST is
+        # Postgres and MySQL, and the test database is SQLite, where it does not
+        # exist and the endpoint 500s.
+        readings = await db.execute(
+            select(
+                RepairOrder.vehicle_id,
+                func.max(RepairOrder.mileage_out),
+                func.max(RepairOrder.mileage_in),
+            )
+            .where(RepairOrder.vehicle_id.in_(ids), RepairOrder.deleted_at.is_(None))
+            .group_by(RepairOrder.vehicle_id)
+        )
+        recorded = {
+            vehicle_id: highest
+            for vehicle_id, out_reading, in_reading in readings.all()
+            if (highest := max(out_reading or 0, in_reading or 0))
+        }
+
     return [
         VehicleTypeaheadResponse(
             id=vehicle.id,
@@ -725,8 +753,11 @@ async def vehicle_typeahead(
             unit_number=vehicle.unit_number,
             license_plate=vehicle.license_plate,
             vin=vehicle.vin,
+            last_known_mileage=(
+                max(vehicle.mileage or 0, recorded.get(vehicle.id, 0)) or None
+            ),
         )
-        for vehicle in result.scalars().all()
+        for vehicle in vehicles
     ]
 
 

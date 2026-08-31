@@ -3634,6 +3634,76 @@ html::-webkit-scrollbar-thumb:hover {
 .db-repair-orders-ledger > footer { min-height: 56px; display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 12px; padding: 0 2px; background: transparent; color: var(--db-ledger-muted); font-size: 12px; }
 .db-repair-orders-ledger > footer > div { display: flex; gap: 7px; }
 
+/* The quick-pick row holds more suggestions than fit. Cutting the last chip
+   through its own word reads as a mistake; fading the edge reads as more to
+   come, which is what it is. No scrollbar — the strip is one row of shortcuts,
+   not a region to navigate. */
+/* Exempt from the 44px touch minimum, but only where there is a mouse. This row
+   is a strip of shortcuts on a desktop form and every service in it is also
+   reachable through the search field directly above, so a large target buys
+   nothing and costs the row's proportion against that field. On a touch screen
+   there is no second way to hit a small chip, so the minimum stays.
+   .db-repair-orders-new :is(button,input,select) sets it with !important, so
+   overriding needs both the weight and the specificity. */
+@media (pointer: fine) {
+  /* An action that sits inside a label line is text, not a tap target: held to
+     44px it doubles the height of the row it lives on and pushes the field
+     below it down the moment the label appears. Same reasoning and same gate as
+     the quick-pick chips. */
+  .db-repair-orders-new .db-inline-text-action,
+  .db-inline-text-action {
+    min-height: 0 !important;
+    min-block-size: 0 !important;
+  }
+
+  .db-repair-orders-new .db-service-quickpick button,
+  .db-service-quickpick button {
+    min-height: 28px !important;
+    min-block-size: 28px !important;
+  }
+}
+
+.db-service-quickpick {
+  scrollbar-width: none;
+  mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent 100%);
+}
+.db-service-quickpick::-webkit-scrollbar { display: none; }
+
+/* Technician assignment. The list used to be a band inside the order, three
+   cards wide with a progress bar each, which pushed the work itself below the
+   fold for a step that is usually one click. It is a popover on the pipeline
+   pill now, and the row is the whole card: a name and the load figure that
+   decides between them. The bar is gone — the number already said it. */
+.db-technician-popover {
+  /* It belongs to the pill, so it grows from the pill's own corner rather than
+     from its middle. */
+  transform-origin: top left;
+  transition: opacity 160ms cubic-bezier(0.23, 1, 0.32, 1), transform 160ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+@starting-style {
+  .db-technician-popover { opacity: 0; transform: scale(.96); }
+}
+
+.db-technician-choice {
+  min-block-size: 32px;
+  transition: background-color 120ms ease-out, transform 100ms ease-out;
+}
+.db-technician-choice:active:not(:disabled) { transform: scale(.97); }
+
+@media (hover: hover) and (pointer: fine) {
+  .db-technician-choice:hover:not(:disabled) { background: color-mix(in srgb, var(--product-copper-400, #ff7a2e) 10%, transparent); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .db-technician-popover { transition: opacity 120ms ease-out; }
+  @starting-style {
+    .db-technician-popover { opacity: 0; transform: none; }
+  }
+  .db-technician-choice { transition: background-color 120ms ease-out; }
+  .db-technician-choice:active:not(:disabled) { transform: none; }
+}
+
 /* Loading more, shown as the thing that is arriving rather than as a spinner
    alone. On a fast connection this is a blink; on a slow one it is the whole
    experience, and a bare disabled button leaves the operator wondering whether
