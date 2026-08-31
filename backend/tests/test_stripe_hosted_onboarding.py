@@ -7,7 +7,7 @@ from app.api.v1.endpoints import stripe_connect
 from app.core.payment_step_up import PaymentStepUpScope
 from app.core.security import create_access_token
 from app.db.models.tenant import Tenant
-from app.db.models.payment_step_up import PaymentStepUpAuditEvent
+from app.db.models.payment_step_up import PaymentStepUpAuditEvent, PaymentStepUpGrant
 from app.db.models.user import User, UserRole
 
 
@@ -227,3 +227,36 @@ async def test_deleted_connected_account_can_be_reset_by_shop(
     await db_session.refresh(tenant)
     assert tenant.stripe_account_id is None
     assert tenant.stripe_connection_type is None
+
+
+@pytest.mark.asyncio
+async def test_manage_grant_can_disconnect_stripe_without_being_consumed(
+    client, db_session, monkeypatch, issue_payment_step_up
+):
+    _configure(monkeypatch)
+    tenant, user, token = await _owner(db_session)
+    tenant.stripe_account_id = "acct_manage_unlock"
+    tenant.stripe_connection_type = "stripe_hosted"
+    tenant.stripe_onboarding_complete = True
+    await db_session.commit()
+
+    headers = await issue_payment_step_up(
+        token=token,
+        user=user,
+        scope=PaymentStepUpScope.MANAGE,
+    )
+    response = await client.post("/api/v1/stripe/connect/disconnect", headers=headers)
+
+    assert response.status_code == 200
+    await db_session.refresh(tenant)
+    assert tenant.stripe_account_id is None
+    grant = (
+        await db_session.execute(
+            select(PaymentStepUpGrant).where(
+                PaymentStepUpGrant.user_id == user.id,
+                PaymentStepUpGrant.scope == PaymentStepUpScope.MANAGE.value,
+            )
+        )
+    ).scalar_one()
+    assert grant.one_time is False
+    assert grant.consumed_at is None

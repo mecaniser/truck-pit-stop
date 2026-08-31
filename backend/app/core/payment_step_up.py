@@ -56,6 +56,17 @@ PLATFORM_SCOPES = {
     PaymentStepUpScope.PLATFORM_QUICKBOOKS_RESET,
 }
 
+# A successful top-level Payments & Accounting unlock is intentionally broader
+# than a single provider action.  It may authorize tenant payment-source
+# mutations for the lifetime of the reusable manage grant, but it must never
+# cross into platform administration or unrelated destructive workflows.
+MANAGE_AUTHORIZED_SCOPES = {
+    PaymentStepUpScope.ZELLE_DISABLE,
+    PaymentStepUpScope.ZELLE_QR_REMOVE,
+    PaymentStepUpScope.STRIPE_DISCONNECT,
+    PaymentStepUpScope.QUICKBOOKS_DISCONNECT,
+}
+
 
 @dataclass(frozen=True)
 class PaymentStepUpContext:
@@ -326,13 +337,18 @@ async def authorize_step_up(
         reason = "session_mismatch"
     elif grant.token_version != context.token_version:
         reason = "session_version_mismatch"
-    elif grant.scope != required_scope.value:
+    grant_scope = PaymentStepUpScope(grant.scope)
+    manage_authorizes_action = (
+        grant_scope is PaymentStepUpScope.MANAGE
+        and required_scope in MANAGE_AUTHORIZED_SCOPES
+    )
+    if reason is None and grant.scope != required_scope.value and not manage_authorizes_action:
         db.add(payment_step_up_audit_event(context=context, event_type="denied", scope=required_scope, grant=grant, target_tenant_id=target_tenant_id, metadata={"reason": "scope_mismatch"}))
         await db.commit()
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Step-up grant scope is not allowed for this action")
-    elif grant.target_tenant_id != target_tenant_id:
+    elif reason is None and grant.target_tenant_id != target_tenant_id:
         reason = "target_mismatch"
-    elif grant.one_time != (required_scope in DESTRUCTIVE_SCOPES):
+    elif reason is None and grant.one_time != (grant_scope in DESTRUCTIVE_SCOPES):
         reason = "grant_type_mismatch"
 
     current_version = await redis_store.get_token_version(str(context.current_user.id))
@@ -345,22 +361,23 @@ async def authorize_step_up(
         raise step_up_required(required_scope)
 
     if consume:
-        if not grant.one_time:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="A one-time step-up grant is required")
-        claim = await db.execute(
-            update(PaymentStepUpGrant)
-            .where(
-                PaymentStepUpGrant.id == grant.id,
-                PaymentStepUpGrant.consumed_at.is_(None),
-                PaymentStepUpGrant.revoked_at.is_(None),
+        if grant.one_time:
+            claim = await db.execute(
+                update(PaymentStepUpGrant)
+                .where(
+                    PaymentStepUpGrant.id == grant.id,
+                    PaymentStepUpGrant.consumed_at.is_(None),
+                    PaymentStepUpGrant.revoked_at.is_(None),
+                )
+                .values(consumed_at=now)
             )
-            .values(consumed_at=now)
-        )
-        if claim.rowcount != 1:
-            db.add(payment_step_up_audit_event(context=context, event_type="denied", scope=required_scope, grant=grant, target_tenant_id=target_tenant_id, metadata={"reason": "consumed"}))
-            await db.commit()
-            raise step_up_required(required_scope)
-        grant.consumed_at = now
+            if claim.rowcount != 1:
+                db.add(payment_step_up_audit_event(context=context, event_type="denied", scope=required_scope, grant=grant, target_tenant_id=target_tenant_id, metadata={"reason": "consumed"}))
+                await db.commit()
+                raise step_up_required(required_scope)
+            grant.consumed_at = now
+        elif not manage_authorizes_action:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="A one-time step-up grant is required")
 
     db.add(payment_step_up_audit_event(context=context, event_type="used", scope=required_scope, grant=grant, target_tenant_id=target_tenant_id))
     return grant

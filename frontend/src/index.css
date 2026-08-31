@@ -1540,6 +1540,53 @@ html::-webkit-scrollbar-thumb:hover {
   color: color-mix(in srgb, var(--semantic-warning-500) 45%, var(--workspace-text)) !important;
 }
 
+/* Payment-source verification and consequence dialogs belong to the active
+   staff presentation. They are protective focus surfaces, not a permanent
+   night-mode island over Day shop. */
+.db-presentation-new .db-payment-dialog__panel {
+  border-color: color-mix(in srgb, var(--semantic-danger-500) 42%, var(--workspace-border));
+  background: var(--surface-raised);
+  color: var(--workspace-text);
+  box-shadow:
+    0 4px 12px -6px color-mix(in srgb, #000 30%, transparent),
+    0 24px 56px -22px color-mix(in srgb, #000 52%, transparent);
+}
+
+.db-presentation-new .db-payment-dialog__title {
+  color: var(--workspace-text);
+}
+
+.db-presentation-new .db-payment-dialog__copy,
+.db-presentation-new .db-payment-dialog__close {
+  color: var(--workspace-muted);
+}
+
+.db-presentation-new .db-payment-dialog__danger-icon {
+  border-color: color-mix(in srgb, var(--semantic-danger-500) 45%, var(--workspace-border));
+  background: color-mix(in srgb, var(--semantic-danger-500) 11%, var(--surface-overlay));
+  color: var(--semantic-danger-500);
+}
+
+.db-presentation-new .db-payment-dialog__notice {
+  border-color: color-mix(in srgb, var(--semantic-warning-500) 42%, var(--workspace-border));
+  background: color-mix(in srgb, var(--semantic-warning-500) 10%, var(--surface-overlay));
+  color: color-mix(in srgb, var(--semantic-warning-500) 46%, var(--workspace-text));
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .db-presentation-new .db-payment-dialog__close:hover {
+    background: var(--surface-overlay);
+    color: var(--workspace-text);
+  }
+}
+
+.db-presentation-new[data-appearance-mode='high_contrast'] .db-payment-dialog__panel,
+.db-presentation-new[data-appearance-mode='high_contrast'] .db-payment-dialog__danger-icon,
+.db-presentation-new[data-appearance-mode='high_contrast'] .db-payment-dialog__notice {
+  border-color: var(--workspace-border);
+  box-shadow: none;
+}
+
 /* Shop Profile retains its canonical content, but its old zinc panels need
    semantic surface roles so all three appearance modes render as one system. */
 .db-presentation-new .db-settings-shop-profile__panel {
