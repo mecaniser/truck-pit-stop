@@ -3860,6 +3860,48 @@ html::-webkit-scrollbar-thumb:hover {
   border: 0;
 }
 
+/* A scrollbar answers "where am I", which is not the question people have when
+   a ledger is paginated: the bar describes the loaded page while the footer
+   describes the set, so the two disagree and reaching the bottom of the bar
+   reads as reaching the end of the orders. The question worth answering is "is
+   there more", so the edge itself says it — content fades out where it
+   continues, and the fade is gone once there is nothing past it.
+   The fade is driven by scroll position rather than time. Where scroll-driven
+   animations are unsupported the timeline never activates, the custom
+   properties keep their 0 initial values, and the mask resolves to fully
+   opaque — no fade, exactly as before. */
+@property --db-scroll-fade-top {
+  syntax: '<length>';
+  inherits: false;
+  initial-value: 0px;
+}
+@property --db-scroll-fade-bottom {
+  syntax: '<length>';
+  inherits: false;
+  initial-value: 0px;
+}
+
+@keyframes db-scroll-edge-fade {
+  0%   { --db-scroll-fade-top: 0px;    --db-scroll-fade-bottom: 20px; }
+  12%  { --db-scroll-fade-top: 20px;   --db-scroll-fade-bottom: 20px; }
+  88%  { --db-scroll-fade-top: 20px;   --db-scroll-fade-bottom: 20px; }
+  100% { --db-scroll-fade-top: 20px;   --db-scroll-fade-bottom: 0px; }
+}
+
+@supports (animation-timeline: scroll()) {
+  .db-operating-surface__scroller {
+    mask-image: linear-gradient(
+      to bottom,
+      transparent 0,
+      #000 var(--db-scroll-fade-top),
+      #000 calc(100% - var(--db-scroll-fade-bottom)),
+      transparent 100%
+    );
+    animation: db-scroll-edge-fade linear both;
+    animation-timeline: scroll(self block);
+  }
+}
+
 .db-operating-surface__scroller::-webkit-scrollbar {
   width: var(--scrollbar-size);
   height: var(--scrollbar-size);
@@ -5379,6 +5421,31 @@ html.customer-portal-active {
 .db-parts-workbench__ledger-workspace { --parts-ledger-edge-gutter:0px; container-name:parts-ledger; container-type:inline-size; display:flex; min-block-size:0; min-inline-size:0; flex-direction:column; padding-inline-end:var(--parts-ledger-edge-gutter); overflow:hidden; border-inline-end:1px solid var(--workspace-border); background:var(--surface-canvas); }
 .db-parts-workbench__ledger { flex:1 1 auto; overflow:auto; border-inline-end:0; scrollbar-gutter:stable; }
 .db-parts-workbench__table-head,.db-parts-workbench__row { display:grid; grid-template-columns:2.75rem minmax(12rem,1fr) 6rem 7.5rem 7.75rem 9rem 8.5rem; align-items:center; gap:0; min-inline-size:53.5rem; }
+/* The seven columns ask for 53.5rem — about 856px — before they will lay out,
+   and the pane is narrower than that between the compact fallback at 760px and
+   roughly a thousand. The pane already clips horizontally, so those columns were
+   not scrollable, they were unreachable: Bin and Remarks simply stopped existing
+   at those widths. The pane's width is not a function of the viewport either,
+   because the inspector opens at some sizes and takes room from the ledger, so a
+   single breakpoint below cannot be exact. Tightening the columns across the
+   whole band costs some air between them and keeps every column reachable,
+   which is the trade worth making. Cells already truncate. */
+@media (min-width:761px) and (max-width:1120px) {
+  .db-parts-workbench__table-head,
+  .db-parts-workbench__row {
+    grid-template-columns:2.4rem minmax(7.5rem,1fr) 4.25rem 5.25rem 5.5rem 6.25rem 5.75rem;
+    /* The floor is the whole problem. min-inline-size:53.5rem guarantees the row
+       is wider than the pane, and the pane clips horizontally, so the guarantee
+       is that the last columns cannot be reached at all. Releasing it lets the
+       tightened tracks do their job. */
+    min-inline-size:0;
+  }
+  .db-parts-workbench__ledger.is-read-only :is(.db-parts-workbench__table-head,.db-parts-workbench__row) {
+    grid-template-columns:minmax(7.5rem,1fr) 4.25rem 5.25rem 5.5rem 6.25rem 5.75rem;
+    min-inline-size:0;
+  }
+}
+
 .db-parts-workbench__ledger.is-read-only :is(.db-parts-workbench__table-head,.db-parts-workbench__row) { grid-template-columns:minmax(12rem,1fr) 6rem 7.5rem 7.75rem 9rem 8.5rem; min-inline-size:50.75rem; }
 .db-parts-workbench__table-head { min-block-size:47px; padding:0; }
 .db-parts-workbench__table-head > span { display:flex; min-block-size:44px; min-inline-size:0; align-items:center; padding-inline:.35rem; overflow:hidden; line-height:1.15; overflow-wrap:normal; text-align:left; white-space:nowrap; word-break:normal; }
