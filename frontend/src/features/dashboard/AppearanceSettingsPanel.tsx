@@ -155,6 +155,7 @@ export default function AppearanceSettingsPanel() {
         <fieldset className="db-appearance-section">
           <legend><Palette aria-hidden="true" /> Accent</legend>
           <p>{mode === 'dark' ? 'Night shop palette: brighter signals tuned for the navy field.' : mode === 'light' ? 'Day shop palette: deeper action colors tuned for road-white surfaces.' : 'High contrast palette: opaque, high-separation accents for the selected surface.'}</p>
+          <p>Sets selection, focus and secondary actions. The primary action on each screen keeps the Truck Pit Stop copper.</p>
           <div className="db-appearance-grid db-appearance-grid--accent">
             {ACCENT_OPTIONS.map(option => (
               <button key={option.id} type="button" aria-pressed={accent === option.id} className={choice(accent === option.id)} onClick={() => setAccent(option.id)}>
