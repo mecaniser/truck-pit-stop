@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from hashlib import sha256
 import base64
@@ -254,6 +254,158 @@ async def test_quickbooks_callback_resets_accounting_links_when_company_changes(
     assert event.attempt_count == 0
     assert event.completed_at is None
     assert event.last_error is None
+
+
+@pytest.mark.asyncio
+async def test_quickbooks_callback_deduplicates_existing_sync_events_and_recovers_stale_processing(
+    client,
+    db_session,
+    monkeypatch,
+):
+    _configure_quickbooks(monkeypatch)
+    tenant, _user, token = await _owner_with_token(
+        db_session,
+        suffix="existing-outbox",
+    )
+    headers = {"Authorization": f"Bearer {token}"}
+    customer = Customer(
+        id=uuid4(),
+        tenant_id=tenant.id,
+        first_name="Outbox",
+        last_name="Customer",
+        email="outbox@example.test",
+    )
+    vehicle = Vehicle(
+        id=uuid4(),
+        tenant_id=tenant.id,
+        customer_id=customer.id,
+        year=2024,
+        make="Kenworth",
+        model="T680",
+    )
+    stale_order = RepairOrder(
+        id=uuid4(),
+        tenant_id=tenant.id,
+        customer_id=customer.id,
+        vehicle_id=vehicle.id,
+        order_number=f"RO-{uuid4().hex[:8]}",
+        status=RepairOrderStatus.INVOICED,
+        total_parts_cost=Decimal("0.00"),
+        total_labor_cost=Decimal("100.00"),
+        total_cost=Decimal("100.00"),
+    )
+    active_order = RepairOrder(
+        id=uuid4(),
+        tenant_id=tenant.id,
+        customer_id=customer.id,
+        vehicle_id=vehicle.id,
+        order_number=f"RO-{uuid4().hex[:8]}",
+        status=RepairOrderStatus.INVOICED,
+        total_parts_cost=Decimal("0.00"),
+        total_labor_cost=Decimal("75.00"),
+        total_cost=Decimal("75.00"),
+    )
+    stale_invoice = Invoice(
+        id=uuid4(),
+        tenant_id=tenant.id,
+        repair_order_id=stale_order.id,
+        invoice_number=f"INV-{uuid4().hex[:8]}",
+        status=InvoiceStatus.SENT,
+        subtotal=Decimal("100.00"),
+        tax_amount=Decimal("0.00"),
+        discount_amount=Decimal("0.00"),
+        total_amount=Decimal("100.00"),
+    )
+    active_invoice = Invoice(
+        id=uuid4(),
+        tenant_id=tenant.id,
+        repair_order_id=active_order.id,
+        invoice_number=f"INV-{uuid4().hex[:8]}",
+        status=InvoiceStatus.SENT,
+        subtotal=Decimal("75.00"),
+        tax_amount=Decimal("0.00"),
+        discount_amount=Decimal("0.00"),
+        total_amount=Decimal("75.00"),
+    )
+    stale_event = ProviderOutboxEvent(
+        tenant_id=tenant.id,
+        event_type=QUICKBOOKS_INVOICE_SYNC_EVENT,
+        aggregate_type="quickbooks_invoice",
+        aggregate_id=stale_invoice.id,
+        payload={"invoice_id": str(stale_invoice.id), "operation": "sync"},
+        idempotency_key=f"quickbooks-invoice:{stale_invoice.id}:sync:v1",
+        status=ProviderOutboxStatus.PROCESSING.value,
+        attempt_count=1,
+        available_at=datetime.now(timezone.utc) - timedelta(days=30),
+        updated_at=datetime.now(timezone.utc) - timedelta(days=30),
+    )
+    active_event = ProviderOutboxEvent(
+        tenant_id=tenant.id,
+        event_type=QUICKBOOKS_INVOICE_SYNC_EVENT,
+        aggregate_type="quickbooks_invoice",
+        aggregate_id=active_invoice.id,
+        payload={"invoice_id": str(active_invoice.id), "operation": "sync"},
+        idempotency_key=f"quickbooks-invoice:{active_invoice.id}:sync:v1",
+        status=ProviderOutboxStatus.PROCESSING.value,
+        attempt_count=1,
+        available_at=datetime.now(timezone.utc) - timedelta(hours=2),
+        updated_at=datetime.now(timezone.utc) - timedelta(hours=2),
+    )
+    db_session.add_all([
+        customer,
+        vehicle,
+        stale_order,
+        active_order,
+        stale_invoice,
+        active_invoice,
+        stale_event,
+        active_event,
+    ])
+    await db_session.commit()
+
+    async def fake_exchange(_code: str) -> QuickBooksTokenSet:
+        return QuickBooksTokenSet(
+            access_token="new-access",
+            refresh_token="new-refresh",
+            expires_in=3600,
+            refresh_token_expires_in=8_640_000,
+        )
+
+    monkeypatch.setattr(quickbooks, "exchange_authorization_code", fake_exchange)
+    start = await client.post("/api/v1/quickbooks/connect", headers=headers)
+    state_value = parse_qs(urlparse(start.json()["url"]).query)["state"][0]
+    callback = await client.get(
+        "/api/v1/quickbooks/oauth/callback",
+        params={
+            "state": state_value,
+            "code": "authorization-code",
+            "realmId": "913035829570777",
+        },
+    )
+
+    assert callback.status_code == 303
+    assert callback.headers["location"].endswith(
+        "/dashboard/settings?quickbooks=connected"
+    )
+    await db_session.refresh(stale_event)
+    await db_session.refresh(active_event)
+    events = (await db_session.execute(
+        select(ProviderOutboxEvent).where(
+            ProviderOutboxEvent.tenant_id == tenant.id,
+            ProviderOutboxEvent.event_type == QUICKBOOKS_INVOICE_SYNC_EVENT,
+        )
+    )).scalars().all()
+    assert len(events) == 2
+    events_by_invoice = {event.aggregate_id: event for event in events}
+    assert (
+        events_by_invoice[stale_invoice.id].status
+        == ProviderOutboxStatus.PENDING.value
+    )
+    assert events_by_invoice[stale_invoice.id].locked_until is None
+    assert (
+        events_by_invoice[active_invoice.id].status
+        == ProviderOutboxStatus.PROCESSING.value
+    )
 
 
 @pytest.mark.asyncio

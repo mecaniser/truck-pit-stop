@@ -3,13 +3,15 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from sqlalchemy import or_, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import selectinload
 
 from app.core.config import settings
+from app.db.models.customer import Customer
 from app.db.models.invoice import Invoice
 from app.db.models.payment import Payment, PaymentMethod, PaymentStatus
 from app.db.models.provider_outbox import ProviderOutboxEvent, ProviderOutboxStatus
@@ -34,6 +36,20 @@ def _now() -> datetime:
     return datetime.now(timezone.utc)
 
 
+def _quickbooks_sync_lease_seconds() -> int:
+    """Cover the bounded worst-case QBO request sequence for one invoice.
+
+    A sync can refresh a token and then perform customer, item/account, and
+    invoice lookup/create calls.  Every request has the configured HTTP
+    timeout, so twelve timeout windows plus a minute of local overhead keeps a
+    second worker from reclaiming a provider call that is still in flight.
+    """
+    return max(
+        settings.PROVIDER_OUTBOX_LEASE_SECONDS,
+        int(settings.QUICKBOOKS_HTTP_TIMEOUT_SECONDS * 12) + 60,
+    )
+
+
 async def enqueue_quickbooks_invoice_sync(
     db: AsyncSession,
     *,
@@ -50,7 +66,24 @@ async def enqueue_quickbooks_invoice_sync(
         status=ProviderOutboxStatus.PENDING.value,
         available_at=_now(),
     )
-    db.add(event)
+    try:
+        # The deterministic key is the final authority.  A savepoint keeps a
+        # concurrent enqueue from aborting the caller's surrounding invoice or
+        # OAuth transaction when PostgreSQL reports the unique-key conflict.
+        async with db.begin_nested():
+            db.add(event)
+            await db.flush()
+    except IntegrityError:
+        existing = (await db.execute(
+            select(ProviderOutboxEvent).where(
+                ProviderOutboxEvent.tenant_id == invoice.tenant_id,
+                ProviderOutboxEvent.event_type == QUICKBOOKS_INVOICE_SYNC_EVENT,
+                ProviderOutboxEvent.idempotency_key == event.idempotency_key,
+            )
+        )).scalar_one_or_none()
+        if existing is None:
+            raise
+        return existing
     return event
 
 
@@ -64,35 +97,91 @@ async def _refresh_if_needed(connection: QuickBooksConnection) -> None:
     connection.last_token_refresh_error = None
 
 
+async def _quickbooks_claim_is_current(
+    db: AsyncSession,
+    *,
+    event_id: UUID,
+    lock_token: str,
+) -> bool:
+    """Check lease ownership without flushing provider-side ORM changes."""
+    with db.no_autoflush:
+        current = (await db.execute(
+            select(ProviderOutboxEvent.id).where(
+                ProviderOutboxEvent.id == event_id,
+                ProviderOutboxEvent.status
+                == ProviderOutboxStatus.PROCESSING.value,
+                ProviderOutboxEvent.lock_token == lock_token,
+            )
+        )).scalar_one_or_none()
+    return current is not None
+
+
+async def _claim_next_quickbooks_sync_event(
+    db: AsyncSession,
+) -> tuple[UUID, str] | None:
+    """Lease one event immediately before processing it."""
+    claim_now = _now()
+    event = (await db.execute(
+        select(ProviderOutboxEvent)
+        .where(
+            ProviderOutboxEvent.event_type == QUICKBOOKS_INVOICE_SYNC_EVENT,
+            or_(
+                (
+                    ProviderOutboxEvent.status
+                    == ProviderOutboxStatus.PENDING.value
+                )
+                & (ProviderOutboxEvent.available_at <= claim_now),
+                (
+                    ProviderOutboxEvent.status
+                    == ProviderOutboxStatus.PROCESSING.value
+                )
+                & ProviderOutboxEvent.locked_until.is_not(None)
+                & (ProviderOutboxEvent.locked_until <= claim_now),
+            ),
+        )
+        .order_by(
+            ProviderOutboxEvent.available_at,
+            ProviderOutboxEvent.created_at,
+        )
+        .limit(1)
+        .with_for_update(skip_locked=True)
+    )).scalar_one_or_none()
+    if event is None:
+        await db.rollback()
+        return None
+    token = uuid4().hex
+    event.status = ProviderOutboxStatus.PROCESSING.value
+    event.attempt_count += 1
+    event.locked_at = claim_now
+    event.locked_until = claim_now + timedelta(
+        seconds=_quickbooks_sync_lease_seconds()
+    )
+    event.lock_token = token
+    event.last_attempt_at = claim_now
+    await db.commit()
+    return event.id, token
+
+
 async def process_quickbooks_invoice_sync_events(
     *,
     session_factory: async_sessionmaker[AsyncSession] = AsyncSessionLocal,
     batch_size: int = 20,
 ) -> dict[str, int]:
     results = {"processed": 0, "succeeded": 0, "retried": 0, "dead": 0, "skipped": 0}
-    async with session_factory() as db:
-        events = (await db.execute(
-            select(ProviderOutboxEvent)
-            .where(
-                ProviderOutboxEvent.event_type == QUICKBOOKS_INVOICE_SYNC_EVENT,
-                ProviderOutboxEvent.status == ProviderOutboxStatus.PENDING.value,
-                ProviderOutboxEvent.available_at <= _now(),
-            )
-            .order_by(ProviderOutboxEvent.available_at)
-            .limit(batch_size)
-            .with_for_update(skip_locked=True)
-        )).scalars().all()
-        for event in events:
-            event.status = ProviderOutboxStatus.PROCESSING.value
-            event.attempt_count += 1
-        await db.commit()
-        event_ids = [event.id for event in events]
-
-    for event_id in event_ids:
+    for _ in range(batch_size):
+        async with session_factory() as db:
+            claim = await _claim_next_quickbooks_sync_event(db)
+        if claim is None:
+            break
+        event_id, lock_token = claim
         results["processed"] += 1
         async with session_factory() as db:
             event = await db.get(ProviderOutboxEvent, event_id)
-            if not event or event.status != ProviderOutboxStatus.PROCESSING.value:
+            if (
+                not event
+                or event.status != ProviderOutboxStatus.PROCESSING.value
+                or event.lock_token != lock_token
+            ):
                 results["skipped"] += 1
                 continue
             invoice = (await db.execute(
@@ -101,7 +190,16 @@ async def process_quickbooks_invoice_sync_events(
                     selectinload(Invoice.tenant),
                     selectinload(Invoice.repair_order).selectinload(RepairOrder.customer),
                 )
-                .where(Invoice.id == event.aggregate_id)
+                .where(
+                    Invoice.id == event.aggregate_id,
+                    Invoice.tenant_id == event.tenant_id,
+                    Invoice.repair_order.has(
+                        (RepairOrder.tenant_id == event.tenant_id)
+                        & RepairOrder.customer.has(
+                            Customer.tenant_id == event.tenant_id
+                        )
+                    ),
+                )
             )).scalar_one_or_none()
             connection = (await db.execute(
                 select(QuickBooksConnection).where(
@@ -113,6 +211,8 @@ async def process_quickbooks_invoice_sync_events(
                 event.status = ProviderOutboxStatus.DEAD.value
                 event.last_error = "Invoice accounting context is unavailable"
                 event.completed_at = _now()
+                event.locked_until = None
+                event.lock_token = None
                 results["dead"] += 1
                 await db.commit()
                 continue
@@ -122,27 +222,51 @@ async def process_quickbooks_invoice_sync_events(
                 event.status = ProviderOutboxStatus.PENDING.value
                 event.available_at = _now() + timedelta(hours=6)
                 event.last_error = "QuickBooks is not connected"
+                event.locked_until = None
+                event.lock_token = None
                 results["retried"] += 1
                 await db.commit()
                 continue
             try:
                 await _refresh_if_needed(connection)
                 await sync_invoice(connection, invoice, invoice.repair_order.customer)
+                if not await _quickbooks_claim_is_current(
+                    db,
+                    event_id=event_id,
+                    lock_token=lock_token,
+                ):
+                    await db.rollback()
+                    results["skipped"] += 1
+                    continue
                 event.status = ProviderOutboxStatus.SUCCEEDED.value
                 event.completed_at = _now()
                 event.last_error = None
+                event.locked_until = None
+                event.lock_token = None
                 results["succeeded"] += 1
             except (QuickBooksAccountingError, QuickBooksOAuthError) as exc:
+                if not await _quickbooks_claim_is_current(
+                    db,
+                    event_id=event_id,
+                    lock_token=lock_token,
+                ):
+                    await db.rollback()
+                    results["skipped"] += 1
+                    continue
                 invoice.quickbooks_sync_status = "error"
                 invoice.quickbooks_sync_error = str(exc)
                 event.last_error = f"{type(exc).__name__}: {str(exc)[:500]}"
                 if event.attempt_count >= settings.PROVIDER_OUTBOX_MAX_ATTEMPTS:
                     event.status = ProviderOutboxStatus.DEAD.value
                     event.completed_at = _now()
+                    event.locked_until = None
+                    event.lock_token = None
                     results["dead"] += 1
                 else:
                     event.status = ProviderOutboxStatus.PENDING.value
                     event.available_at = _now() + timedelta(minutes=min(60, 2 ** event.attempt_count))
+                    event.locked_until = None
+                    event.lock_token = None
                     results["retried"] += 1
             await db.commit()
     return results
