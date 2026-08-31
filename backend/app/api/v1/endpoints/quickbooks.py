@@ -81,6 +81,33 @@ router = APIRouter()
 logger = get_logger(__name__)
 
 
+def _is_recoverable_legacy_quickbooks_sync(
+    event: ProviderOutboxEvent,
+    *,
+    now: datetime,
+) -> bool:
+    """Whether a pre-lease orphan is old enough for explicit recovery.
+
+    Current workers always set lease metadata.  The long cutoff and absence of
+    every claim marker distinguish abandoned legacy rows from a slow provider
+    request that may still be running.
+    """
+    if (
+        event.status != ProviderOutboxStatus.PROCESSING.value
+        or event.locked_at is not None
+        or event.locked_until is not None
+        or event.lock_token is not None
+        or event.last_attempt_at is not None
+    ):
+        return False
+    last_update = event.updated_at or event.created_at
+    if last_update is None:
+        return False
+    if last_update.tzinfo is None:
+        last_update = last_update.replace(tzinfo=timezone.utc)
+    return last_update <= now - timedelta(hours=24)
+
+
 async def _reset_accounting_links_for_realm_change(
     db: AsyncSession,
     *,
@@ -706,35 +733,46 @@ async def quickbooks_oauth_callback(
         # callback as an open redirect and makes state replay visible to Intuit.
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired QuickBooks authorization state")
 
+    # Keep the scalar identity before the state-consumption commit. SQLAlchemy
+    # expires ORM attributes on commit/rollback, and the callback must never
+    # trigger an implicit async reload while handling a provider or DB failure.
+    tenant_id = oauth_state.tenant_id
+
     # Commit before calling Intuit so a double callback cannot race this request.
     oauth_state.consumed_at = now
     await db.commit()
 
     if oauth_error or not code or not realm_id:
-        logger.info("quickbooks_authorization_not_completed", tenant_id=str(oauth_state.tenant_id))
+        logger.info("quickbooks_authorization_not_completed", tenant_id=str(tenant_id))
         return _callback_redirect("not-connected")
 
     try:
         token_set = await exchange_authorization_code(code)
     except (QuickBooksConfigurationError, QuickBooksOAuthError):
-        logger.warning("quickbooks_authorization_exchange_failed", tenant_id=str(oauth_state.tenant_id))
+        logger.warning("quickbooks_authorization_exchange_failed", tenant_id=str(tenant_id))
         return _callback_redirect("error")
 
     other_realm_result = await db.execute(
         select(QuickBooksConnection).where(
             QuickBooksConnection.realm_id == realm_id,
-            QuickBooksConnection.tenant_id != oauth_state.tenant_id,
+            QuickBooksConnection.tenant_id != tenant_id,
             QuickBooksConnection.status == "connected",
         )
     )
     if other_realm_result.scalar_one_or_none():
-        logger.warning("quickbooks_realm_already_connected", tenant_id=str(oauth_state.tenant_id))
+        logger.warning("quickbooks_realm_already_connected", tenant_id=str(tenant_id))
         return _callback_redirect("realm-in-use")
 
-    connection = await _get_connection(db, oauth_state.tenant_id)
+    # Serialize connection persistence per tenant.  Token exchange has already
+    # completed, but concurrent callbacks must not race connection creation or
+    # realm replacement inside DieselBridge.
+    await db.execute(
+        select(Tenant.id).where(Tenant.id == tenant_id).with_for_update()
+    )
+    connection = await _get_connection(db, tenant_id)
     previous_realm_id = connection.realm_id if connection else None
     if not connection:
-        connection = QuickBooksConnection(tenant_id=oauth_state.tenant_id)
+        connection = QuickBooksConnection(tenant_id=tenant_id)
         db.add(connection)
     try:
         save_token_set(
@@ -747,45 +785,70 @@ async def quickbooks_oauth_callback(
         if previous_realm_id and previous_realm_id != realm_id:
             await _reset_accounting_links_for_realm_change(
                 db,
-                tenant_id=oauth_state.tenant_id,
+                tenant_id=tenant_id,
                 now=sync_now,
             )
             logger.info(
                 "quickbooks_realm_changed",
-                tenant_id=str(oauth_state.tenant_id),
+                tenant_id=str(tenant_id),
                 previous_realm_id=previous_realm_id,
                 realm_id=realm_id,
             )
         # Backfill finalized invoices that predate the connection and wake any
         # events that were waiting for this garage to authorize QuickBooks.
-        waiting_events = (await db.execute(
-            select(ProviderOutboxEvent).where(
-                ProviderOutboxEvent.tenant_id == oauth_state.tenant_id,
-                ProviderOutboxEvent.event_type == QUICKBOOKS_INVOICE_SYNC_EVENT,
-                ProviderOutboxEvent.status == ProviderOutboxStatus.PENDING.value,
-            )
-        )).scalars().all()
-        existing_invoice_ids = {event.aggregate_id for event in waiting_events}
-        for event in waiting_events:
-            event.available_at = sync_now
-            event.last_error = None
         unsynced_invoices = (await db.execute(
             select(Invoice).where(
-                Invoice.tenant_id == oauth_state.tenant_id,
+                Invoice.tenant_id == tenant_id,
                 Invoice.quickbooks_invoice_id.is_(None),
                 Invoice.status.in_([InvoiceStatus.SENT, InvoiceStatus.PAID]),
             ).limit(500)
         )).scalars().all()
+        expected_event_keys = {
+            f"quickbooks-invoice:{invoice.id}:sync:v1"
+            for invoice in unsynced_invoices
+        }
+        existing_event_keys = set((await db.execute(
+            select(ProviderOutboxEvent.idempotency_key).where(
+                ProviderOutboxEvent.tenant_id == tenant_id,
+                ProviderOutboxEvent.event_type == QUICKBOOKS_INVOICE_SYNC_EVENT,
+                ProviderOutboxEvent.idempotency_key.in_(expected_event_keys),
+            )
+        )).scalars().all())
+        waiting_events = (await db.execute(
+            select(ProviderOutboxEvent).where(
+                ProviderOutboxEvent.tenant_id == tenant_id,
+                ProviderOutboxEvent.event_type == QUICKBOOKS_INVOICE_SYNC_EVENT,
+                ProviderOutboxEvent.status.in_([
+                    ProviderOutboxStatus.PENDING.value,
+                    ProviderOutboxStatus.PROCESSING.value,
+                ]),
+            )
+        )).scalars().all()
+        for event in waiting_events:
+            is_waiting = event.status == ProviderOutboxStatus.PENDING.value
+            is_stale = _is_recoverable_legacy_quickbooks_sync(
+                event,
+                now=sync_now,
+            )
+            if is_waiting or is_stale:
+                event.status = ProviderOutboxStatus.PENDING.value
+                event.available_at = sync_now
+                event.locked_at = None
+                event.locked_until = None
+                event.lock_token = None
+                event.completed_at = None
+                event.last_error = None
         for invoice in unsynced_invoices:
-            if invoice.id not in existing_invoice_ids:
+            event_key = f"quickbooks-invoice:{invoice.id}:sync:v1"
+            if event_key not in existing_event_keys:
                 await enqueue_quickbooks_invoice_sync(db, invoice=invoice)
         await db.commit()
     except (IntegrityError, QuickBooksOAuthError, RuntimeError):
         await db.rollback()
-        logger.exception("quickbooks_connection_persist_failed", tenant_id=str(oauth_state.tenant_id))
+        logger.exception("quickbooks_connection_persist_failed", tenant_id=str(tenant_id))
         return _callback_redirect("error")
 
-    logger.info("quickbooks_connection_established", tenant_id=str(oauth_state.tenant_id))
+    logger.info("quickbooks_connection_established", tenant_id=str(tenant_id))
     return _callback_redirect("connected")
 
 
