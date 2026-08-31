@@ -30,6 +30,13 @@ STORED_RESPONSE_HEADERS = (
     "expires",
 )
 CACHEABLE_ERROR_STATUSES = frozenset({400, 409, 422})
+SENSITIVE_NON_IDEMPOTENT_PATHS = frozenset(
+    {
+        # The response contains a raw step-up bearer grant that is returned
+        # exactly once and must never be persisted outside browser memory.
+        "/api/v1/auth/step-up-grants",
+    }
+)
 
 
 class IdempotencyMiddleware:
@@ -47,6 +54,8 @@ class IdempotencyMiddleware:
 
         path = scope.get("path", "")
         if not path.startswith("/api/v1"):
+            return False
+        if path in SENSITIVE_NON_IDEMPOTENT_PATHS:
             return False
         if path.startswith("/api/v1/webhooks/"):
             return False

@@ -6,6 +6,7 @@ from decimal import Decimal
 import pytest
 
 from app.api.v1.endpoints import platform_payments
+from app.core.payment_step_up import PaymentStepUpScope
 from app.core.security import create_access_token
 from app.db.models.quickbooks_connection import QuickBooksConnection
 from app.db.models.tenant import Tenant
@@ -24,7 +25,7 @@ async def _super_admin_token(db_session):
     )
     db_session.add(user)
     await db_session.commit()
-    return create_access_token({"sub": str(user.id)})
+    return user, create_access_token({"sub": str(user.id)})
 
 
 @pytest.mark.asyncio
@@ -32,7 +33,7 @@ async def test_super_admin_can_view_controls_and_set_forward_only_fee(client, db
     tenant = Tenant(name="Payments Garage", slug="payments-garage")
     db_session.add(tenant)
     await db_session.commit()
-    token = await _super_admin_token(db_session)
+    _user, token = await _super_admin_token(db_session)
     monkeypatch.setattr(
         platform_payments,
         "_merchant_status",
@@ -73,7 +74,9 @@ async def test_super_admin_can_view_controls_and_set_forward_only_fee(client, db
 
 
 @pytest.mark.asyncio
-async def test_super_admin_can_reset_a_stale_stripe_connection(client, db_session):
+async def test_super_admin_can_reset_a_stale_stripe_connection(
+    client, db_session, issue_payment_step_up
+):
     tenant = Tenant(
         name="Stale Stripe Garage",
         slug="stale-stripe-garage",
@@ -84,11 +87,17 @@ async def test_super_admin_can_reset_a_stale_stripe_connection(client, db_sessio
     )
     db_session.add(tenant)
     await db_session.commit()
-    token = await _super_admin_token(db_session)
+    user, token = await _super_admin_token(db_session)
+    headers = await issue_payment_step_up(
+        token=token,
+        user=user,
+        scope=PaymentStepUpScope.PLATFORM_STRIPE_RESET,
+        target_tenant_id=tenant.id,
+    )
 
     response = await client.post(
         f"/api/v1/admin/payments-control/tenants/{tenant.id}/reset-stripe-connection",
-        headers={"Authorization": f"Bearer {token}"},
+        headers=headers,
     )
 
     assert response.status_code == 200
@@ -101,7 +110,55 @@ async def test_super_admin_can_reset_a_stale_stripe_connection(client, db_sessio
 
 
 @pytest.mark.asyncio
-async def test_super_admin_can_view_and_reset_quickbooks_controls(client, db_session, monkeypatch):
+async def test_platform_reset_requires_target_bound_grant_and_preserves_connections(
+    client, db_session, issue_payment_step_up
+):
+    first = Tenant(
+        name="First Reset Garage",
+        slug="first-reset-garage",
+        stripe_account_id="acct_first",
+        stripe_connection_type="stripe_hosted",
+        stripe_onboarding_complete=True,
+    )
+    second = Tenant(
+        name="Second Reset Garage",
+        slug="second-reset-garage",
+        stripe_account_id="acct_second",
+        stripe_connection_type="stripe_hosted",
+        stripe_onboarding_complete=True,
+    )
+    db_session.add_all([first, second])
+    await db_session.commit()
+    user, token = await _super_admin_token(db_session)
+    bare_headers = {"Authorization": f"Bearer {token}"}
+
+    missing = await client.post(
+        f"/api/v1/admin/payments-control/tenants/{second.id}/reset-stripe-connection",
+        headers=bare_headers,
+    )
+    assert missing.status_code == 428
+
+    first_headers = await issue_payment_step_up(
+        token=token,
+        user=user,
+        scope=PaymentStepUpScope.PLATFORM_STRIPE_RESET,
+        target_tenant_id=first.id,
+    )
+    mismatch = await client.post(
+        f"/api/v1/admin/payments-control/tenants/{second.id}/reset-stripe-connection",
+        headers=first_headers,
+    )
+    assert mismatch.status_code == 428
+    await db_session.refresh(first)
+    await db_session.refresh(second)
+    assert first.stripe_account_id == "acct_first"
+    assert second.stripe_account_id == "acct_second"
+
+
+@pytest.mark.asyncio
+async def test_super_admin_can_view_and_reset_quickbooks_controls(
+    client, db_session, monkeypatch, issue_payment_step_up
+):
     monkeypatch.setattr(platform_payments.settings, "QUICKBOOKS_CLIENT_ID", "configured")
     monkeypatch.setattr(platform_payments.settings, "QUICKBOOKS_CLIENT_SECRET", "configured")
     monkeypatch.setattr(platform_payments.settings, "QUICKBOOKS_REDIRECT_URI", "https://app.example.com/callback")
@@ -126,7 +183,7 @@ async def test_super_admin_can_view_and_reset_quickbooks_controls(client, db_ses
     )
     db_session.add(connection)
     await db_session.commit()
-    token = await _super_admin_token(db_session)
+    user, token = await _super_admin_token(db_session)
     headers = {"Authorization": f"Bearer {token}"}
 
     overview = await client.get("/api/v1/admin/payments-control/quickbooks/overview", headers=headers)
@@ -148,9 +205,15 @@ async def test_super_admin_can_view_and_reset_quickbooks_controls(client, db_ses
     assert ledger.json()["entries"] == []
     assert ledger.json()["totals"]["unreconciled"] == 0
 
+    reset_headers = await issue_payment_step_up(
+        token=token,
+        user=user,
+        scope=PaymentStepUpScope.PLATFORM_QUICKBOOKS_RESET,
+        target_tenant_id=tenant.id,
+    )
     reset = await client.post(
         f"/api/v1/admin/payments-control/tenants/{tenant.id}/reset-quickbooks-connection",
-        headers=headers,
+        headers=reset_headers,
     )
     assert reset.status_code == 200
     assert reset.json()["status"] == "not_connected"

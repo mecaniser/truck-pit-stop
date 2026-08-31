@@ -18,6 +18,13 @@ from app.core.phone import normalize_phone
 from app.core.unique_id import derive_order_number_prefix
 from app.core.pagination import paginated_or_list
 from app.core.security import get_password_hash
+from app.core.payment_step_up import (
+    PaymentStepUpContext,
+    PaymentStepUpScope,
+    authorize_step_up,
+    get_payment_step_up_context,
+    payment_step_up_mutation_result,
+)
 from app.core.password_policy import validate_password
 from app.core.redis import get_redis
 from app.db.models.user import User, UserRole
@@ -1380,6 +1387,7 @@ async def update_zelle_settings(
     body: ZelleSettingsRequest,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_permission("payments")),
+    step_up_context: PaymentStepUpContext = Depends(get_payment_step_up_context),
 ):
     """Update Zelle payment settings for the garage"""
     result = await db.execute(select(Tenant).where(Tenant.id == current_user.tenant_id))
@@ -1387,9 +1395,36 @@ async def update_zelle_settings(
     
     if not tenant:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tenant not found")
+
+    scope = (
+        PaymentStepUpScope.ZELLE_DISABLE
+        if not body.zelle_email and not body.zelle_phone
+        else PaymentStepUpScope.MANAGE
+    )
+    before_configured = bool(tenant.zelle_email or tenant.zelle_phone)
+    grant = await authorize_step_up(
+        db,
+        context=step_up_context,
+        required_scope=scope,
+        consume=scope == PaymentStepUpScope.ZELLE_DISABLE,
+    )
     
     tenant.zelle_email = body.zelle_email
     tenant.zelle_phone = body.zelle_phone
+    db.add(
+        payment_step_up_mutation_result(
+            context=step_up_context,
+            scope=scope,
+            grant=grant,
+            succeeded=True,
+            provider="zelle",
+            metadata={
+                "action": "zelle.contacts.update",
+                "configured_before": before_configured,
+                "configured_after": bool(body.zelle_email or body.zelle_phone),
+            },
+        )
+    )
     
     await db.commit()
     await db.refresh(tenant)
@@ -1406,6 +1441,7 @@ async def update_zelle_qr_image(
     body: ZelleQrImageRequest,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_garage_owner()),
+    step_up_context: PaymentStepUpContext = Depends(get_payment_step_up_context),
 ):
     """Upload or remove Zelle QR code image"""
     result = await db.execute(select(Tenant).where(Tenant.id == current_user.tenant_id))
@@ -1413,6 +1449,21 @@ async def update_zelle_qr_image(
     
     if not tenant:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tenant not found")
+
+    # Treat every clearing representation as removal. An empty string must not
+    # turn a destructive QR removal into a reusable manage-scope mutation.
+    scope = (
+        PaymentStepUpScope.ZELLE_QR_REMOVE
+        if not body.zelle_qr_image
+        else PaymentStepUpScope.MANAGE
+    )
+    before_configured = bool(tenant.zelle_qr_image)
+    grant = await authorize_step_up(
+        db,
+        context=step_up_context,
+        required_scope=scope,
+        consume=scope == PaymentStepUpScope.ZELLE_QR_REMOVE,
+    )
     
     # Validate base64 if provided
     if body.zelle_qr_image:
@@ -1429,7 +1480,21 @@ async def update_zelle_qr_image(
                 detail="Image too large. Maximum size is ~1.5MB.",
             )
     
-    tenant.zelle_qr_image = body.zelle_qr_image
+    tenant.zelle_qr_image = body.zelle_qr_image or None
+    db.add(
+        payment_step_up_mutation_result(
+            context=step_up_context,
+            scope=scope,
+            grant=grant,
+            succeeded=True,
+            provider="zelle",
+            metadata={
+                "action": "zelle.qr.update",
+                "configured_before": before_configured,
+                "configured_after": bool(body.zelle_qr_image),
+            },
+        )
+    )
     
     await db.commit()
     await db.refresh(tenant)

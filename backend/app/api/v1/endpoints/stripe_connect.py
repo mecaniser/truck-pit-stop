@@ -11,6 +11,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.core.dependencies import get_current_active_user, get_db, user_has_permission
 from app.core.logging import get_logger
+from app.core.payment_step_up import (
+    PaymentStepUpContext,
+    PaymentStepUpScope,
+    authorize_step_up,
+    get_payment_step_up_context,
+    payment_step_up_mutation_result,
+    payment_step_up_mutation_result_for_ids,
+)
 from app.db.models.invoice import Invoice
 from app.db.models.payment import Payment, PaymentMethod, PaymentStatus
 from app.db.models.tenant import Tenant
@@ -180,10 +188,35 @@ def _create_hosted_account(tenant: Tenant) -> Any:
 async def start_hosted_onboarding(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
+    step_up_context: PaymentStepUpContext = Depends(get_payment_step_up_context),
 ):
     """Create or resume Stripe-hosted onboarding for a garage merchant account."""
     _require_garage_admin(current_user)
+    grant = await authorize_step_up(
+        db,
+        context=step_up_context,
+        required_scope=PaymentStepUpScope.MANAGE,
+    )
+    audit_identity = {
+        "tenant_id": current_user.tenant_id,
+        "user_id": current_user.id,
+        "grant_id": grant.id,
+        "correlation_id": step_up_context.correlation_id,
+    }
+    # Preserve the security-use audit even if the external provider rejects
+    # onboarding before any local configuration is changed.
+    await db.commit()
     if not _connect_configured():
+        db.add(
+            payment_step_up_mutation_result_for_ids(
+                **audit_identity,
+                scope=PaymentStepUpScope.MANAGE,
+                provider="stripe",
+                succeeded=False,
+                metadata={"action": "stripe.connect", "reason": "platform_unavailable"},
+            )
+        )
+        await db.commit()
         raise HTTPException(status_code=503, detail="Stripe Connect is not available yet")
 
     tenant = await _tenant_for(current_user, db)
@@ -213,6 +246,9 @@ async def start_hosted_onboarding(
         if not link_url:
             raise ValueError("Stripe did not return an onboarding URL")
     except stripe.error.InvalidRequestError as exc:
+        await db.rollback()
+        db.add(payment_step_up_mutation_result_for_ids(**audit_identity, scope=PaymentStepUpScope.MANAGE, succeeded=False, provider="stripe", metadata={"action": "stripe.connect", "reason": "provider_rejected"}))
+        await db.commit()
         # Stripe rejects Connect account creation until the platform's own live
         # account has completed activation. That is a platform action, not a
         # tenant onboarding failure, so make it clear to the garage.
@@ -224,9 +260,15 @@ async def start_hosted_onboarding(
         logger.exception("stripe_hosted_onboarding_failed", tenant_id=str(tenant.id), error=str(exc))
         raise HTTPException(status_code=502, detail="Unable to start Stripe onboarding")
     except stripe.error.StripeError as exc:
+        await db.rollback()
+        db.add(payment_step_up_mutation_result_for_ids(**audit_identity, scope=PaymentStepUpScope.MANAGE, succeeded=False, provider="stripe", metadata={"action": "stripe.connect", "reason": "provider_error"}))
+        await db.commit()
         logger.exception("stripe_hosted_onboarding_failed", tenant_id=str(tenant.id), error=str(exc))
         raise HTTPException(status_code=502, detail="Unable to start Stripe onboarding")
     except ValueError as exc:
+        await db.rollback()
+        db.add(payment_step_up_mutation_result_for_ids(**audit_identity, scope=PaymentStepUpScope.MANAGE, succeeded=False, provider="stripe", metadata={"action": "stripe.connect", "reason": "invalid_provider_response"}))
+        await db.commit()
         logger.error("stripe_hosted_onboarding_invalid_response", tenant_id=str(tenant.id), error=str(exc))
         raise HTTPException(status_code=502, detail="Unable to start Stripe onboarding")
 
@@ -235,6 +277,16 @@ async def start_hosted_onboarding(
         tenant_id=str(tenant.id),
         account_id=tenant.stripe_account_id,
     )
+    db.add(
+        payment_step_up_mutation_result_for_ids(
+            **audit_identity,
+            scope=PaymentStepUpScope.MANAGE,
+            succeeded=True,
+            provider="stripe",
+            metadata={"action": "stripe.connect", "linked": True},
+        )
+    )
+    await db.commit()
     return ConnectLinkResponse(url=link_url)
 
 
@@ -242,8 +294,9 @@ async def start_hosted_onboarding(
 async def start_hosted_onboarding_compat(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
+    step_up_context: PaymentStepUpContext = Depends(get_payment_step_up_context),
 ):
-    return await start_hosted_onboarding(db, current_user)
+    return await start_hosted_onboarding(db, current_user, step_up_context)
 
 
 @router.get("/status", response_model=ConnectStatusResponse)
@@ -344,13 +397,29 @@ async def get_connect_status(
 async def disconnect_stripe_account(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
+    step_up_context: PaymentStepUpContext = Depends(get_payment_step_up_context),
 ):
     """Unlink the garage locally without deleting its Stripe account."""
     _require_garage_admin(current_user)
     tenant = await _tenant_for(current_user, db)
+    grant = await authorize_step_up(
+        db,
+        context=step_up_context,
+        required_scope=PaymentStepUpScope.STRIPE_DISCONNECT,
+        consume=True,
+    )
     tenant.stripe_account_id = None
     tenant.stripe_connection_type = None
     tenant.stripe_onboarding_complete = False
+    db.add(
+        payment_step_up_mutation_result(
+            context=step_up_context,
+            scope=PaymentStepUpScope.STRIPE_DISCONNECT,
+            grant=grant,
+            succeeded=True,
+            metadata={"action": "stripe.disconnect", "linked": False},
+        )
+    )
     await db.commit()
     return DisconnectResponse()
 

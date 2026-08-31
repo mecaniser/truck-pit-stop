@@ -8,6 +8,13 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useAuthStore } from '../../stores/authStore'
 import type { User as UserType } from '../../types'
 import api from '../../lib/api'
+import {
+  createPaymentStepUpGrant,
+  paymentStepUpError,
+  paymentStepUpHeaders,
+  paymentStepUpRequiredScope,
+  type PaymentStepUpScope,
+} from '../../lib/paymentStepUp'
 import { scrollSurfaceToTop } from '../../lib/scrollSurface'
 import { tenantBrandingQueryKey } from '@/hooks/useTenantBranding'
 import { formatUSPhone, isValidUSPhone } from '@/utils/phone'
@@ -230,12 +237,6 @@ interface GoogleReviewsPlatformStatus {
 interface StripePlatformStatus {
   platform_ready: boolean
   onboarding_mode: string
-}
-
-function apiErrorDetail(error: unknown, fallback: string): string {
-  if (!error || typeof error !== 'object') return fallback
-  const response = (error as { response?: { data?: { detail?: unknown } } }).response
-  return typeof response?.data?.detail === 'string' ? response.data.detail : fallback
 }
 
 interface ZelleSettings {
@@ -1220,11 +1221,97 @@ function SecuritySection() {
   )
 }
 
+interface DestructiveStepUpPrompt {
+  scope: PaymentStepUpScope
+  title: string
+  description: string
+  onGranted: (grantToken: string) => void
+}
+
+function PaymentSourceStepUpDialog({
+  prompt,
+  onCancel,
+}: {
+  prompt: DestructiveStepUpPrompt
+  onCancel: () => void
+}) {
+  const [password, setPassword] = useState('')
+  const [error, setError] = useState<string | null>(null)
+  const grantMutation = useMutation({
+    mutationFn: () => createPaymentStepUpGrant(password, prompt.scope),
+    onSuccess: (grant) => {
+      prompt.onGranted(grant.grant_token)
+      setPassword('')
+      onCancel()
+    },
+    onError: (reason: unknown) => setError(paymentStepUpError(reason, 'Unable to verify your password.')),
+  })
+
+  return (
+    <div className="fixed inset-0 z-[110] grid place-items-center bg-black/70 p-4 backdrop-blur-sm" onMouseDown={(event) => event.target === event.currentTarget && !grantMutation.isPending && onCancel()}>
+      <div role="alertdialog" aria-modal="true" aria-labelledby="payment-step-up-title" aria-describedby="payment-step-up-description" className="w-full max-w-md rounded-xl border border-red-800/50 bg-zinc-950 p-6 shadow-2xl shadow-black/60">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h3 id="payment-step-up-title" className="text-lg font-semibold text-zinc-100">{prompt.title}</h3>
+            <p id="payment-step-up-description" className="mt-2 text-sm leading-6 text-zinc-400">{prompt.description}</p>
+          </div>
+          <button type="button" onClick={onCancel} disabled={grantMutation.isPending} aria-label="Close verification" className="rounded p-1 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100 disabled:opacity-50"><X className="h-5 w-5" /></button>
+        </div>
+        <form className="mt-5 space-y-4" onSubmit={(event) => { event.preventDefault(); if (password) grantMutation.mutate() }}>
+          <div>
+            <label htmlFor="payment-step-up-password" className={industrialStyles.label}>Your current password</label>
+            <input id="payment-step-up-password" autoFocus type="password" autoComplete="current-password" value={password} onChange={(event) => { setPassword(event.target.value); setError(null) }} className={industrialStyles.input} />
+            {error && <p className="mt-2 text-xs text-red-400" role="alert">{error}</p>}
+          </div>
+          <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+            <button type="button" className={industrialStyles.btnSecondary} onClick={onCancel} disabled={grantMutation.isPending}>Cancel</button>
+            <button type="submit" className={industrialStyles.btnDanger} disabled={!password || grantMutation.isPending}>{grantMutation.isPending ? 'Verifying...' : 'Verify and continue'}</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  )
+}
+
 function PaymentsSection() {
   const [isRedirecting, setIsRedirecting] = useState(false)
   const [disconnectKind, setDisconnectKind] = useState<'current' | 'legacy' | null>(null)
   const [openPaymentPanel, setOpenPaymentPanel] = useState<'stripe' | 'zelle' | 'quickbooks' | null>('stripe')
+  const [manageGrant, setManageGrant] = useState<{ token: string; expiresAt: number } | null>(null)
+  const [unlockPassword, setUnlockPassword] = useState('')
+  const [unlockError, setUnlockError] = useState<string | null>(null)
+  const [destructivePrompt, setDestructivePrompt] = useState<DestructiveStepUpPrompt | null>(null)
   const [searchParams, setSearchParams] = useSearchParams()
+
+  const unlockMutation = useMutation({
+    mutationFn: () => createPaymentStepUpGrant(unlockPassword, 'payment_sources.manage'),
+    onSuccess: (grant) => {
+      setManageGrant({ token: grant.grant_token, expiresAt: new Date(grant.expires_at).getTime() })
+      setUnlockPassword('')
+      setUnlockError(null)
+    },
+    onError: (error: unknown) => setUnlockError(paymentStepUpError(error, 'Unable to verify your password.')),
+  })
+
+  useEffect(() => {
+    if (!manageGrant) return
+    const remaining = manageGrant.expiresAt - Date.now()
+    if (remaining <= 0) {
+      setManageGrant(null)
+      return
+    }
+    const timeout = window.setTimeout(() => setManageGrant(null), remaining)
+    return () => window.clearTimeout(timeout)
+  }, [manageGrant])
+
+  const handleGrantRejected = (error: unknown) => {
+    if (paymentStepUpRequiredScope(error) === 'payment_sources.manage') {
+      setManageGrant(null)
+      setUnlockError('Verification expired. Enter your password again.')
+    }
+  }
+
+  const requestDestructiveStepUp = (prompt: DestructiveStepUpPrompt) => setDestructivePrompt(prompt)
 
   const { data: status, isLoading, refetch } = useQuery<ConnectStatus>({
     queryKey: ['stripe-connect-status'],
@@ -1256,26 +1343,28 @@ function PaymentsSection() {
 
   const connectMutation = useMutation({
     mutationFn: async () => {
-      const response = await api.post('/stripe/connect/connect')
+      if (!manageGrant) throw new Error('Payment settings are locked')
+      const response = await api.post('/stripe/connect/connect', undefined, { headers: paymentStepUpHeaders(manageGrant.token) })
       return response.data
     },
     onSuccess: (data) => {
       setIsRedirecting(true)
       window.location.href = data.url
     },
-    onError: (error: any) => {
-      toast.error(error.response?.data?.detail || 'Failed to start Stripe connection')
+    onError: (error: unknown) => {
+      handleGrantRejected(error)
+      toast.error(paymentStepUpError(error, 'Failed to start Stripe connection'))
     },
   })
 
   const disconnectMutation = useMutation({
-    mutationFn: async () => (await api.post('/stripe/connect/disconnect')).data,
+    mutationFn: async (grantToken: string) => (await api.post('/stripe/connect/disconnect', undefined, { headers: paymentStepUpHeaders(grantToken) })).data,
     onSuccess: () => {
       setDisconnectKind(null)
       toast.success('Stripe connection removed. Your Stripe account was not deleted.')
       refetch()
     },
-    onError: (error: unknown) => toast.error(apiErrorDetail(error, 'Unable to disconnect Stripe account')),
+    onError: (error: unknown) => toast.error(paymentStepUpError(error, 'Unable to disconnect Stripe account')),
   })
 
   if (isLoading) {
@@ -1325,6 +1414,23 @@ function PaymentsSection() {
       <h2 className="sr-only">Payments &amp; Accounting</h2>
       <div className="rounded-xl border border-zinc-800 bg-zinc-950/40 px-4 py-3 text-sm text-zinc-400">
         Manage every invoice settlement method here: Stripe collects online card payments, Zelle is confirmed by shop staff, and QuickBooks synchronizes finalized invoices and Intuit payment settlement.
+      </div>
+      <div className={`rounded-xl border px-4 py-4 ${manageGrant ? 'border-emerald-700/40 bg-emerald-950/20' : 'border-amber-700/40 bg-amber-950/20'}`}>
+        {manageGrant ? (
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <p className="flex items-center gap-2 text-sm text-emerald-300"><ShieldCheck className="h-4 w-4" />Payment-source changes are unlocked for this session.</p>
+            <button type="button" className={industrialStyles.btnSecondary} onClick={() => setManageGrant(null)}>Lock changes</button>
+          </div>
+        ) : (
+          <form className="flex flex-col gap-3 sm:flex-row sm:items-end" onSubmit={(event) => { event.preventDefault(); if (unlockPassword) unlockMutation.mutate() }}>
+            <div className="min-w-0 flex-1">
+              <label htmlFor="payment-sources-password" className={industrialStyles.label}>Verify your current password to change payment sources</label>
+              <input id="payment-sources-password" type="password" autoComplete="current-password" value={unlockPassword} onChange={(event) => { setUnlockPassword(event.target.value); setUnlockError(null) }} className={industrialStyles.input} />
+              {unlockError && <p className="mt-2 text-xs text-red-400" role="alert">{unlockError}</p>}
+            </div>
+            <button type="submit" className={industrialStyles.btnPrimary} disabled={!unlockPassword || unlockMutation.isPending}><span className="inline-flex items-center gap-2"><Lock className="h-4 w-4" />{unlockMutation.isPending ? 'Verifying...' : 'Unlock changes'}</span></button>
+          </form>
+        )}
       </div>
       <PaymentIntegrationPanel
         icon={<CreditCard className="h-5 w-5" />}
@@ -1426,7 +1532,7 @@ function PaymentsSection() {
           {!status?.is_connected && status?.configured ? (
             <button
               onClick={() => connectMutation.mutate()}
-              disabled={connectMutation.isPending || isRedirecting}
+              disabled={!manageGrant || connectMutation.isPending || isRedirecting}
               className={industrialStyles.btnPrimary}
             >
               {connectMutation.isPending || isRedirecting ? (
@@ -1459,7 +1565,7 @@ function PaymentsSection() {
             </div>
           ) : !status.onboarding_complete && status.connection_type !== 'express_legacy' ? (
             <div className="flex flex-wrap items-center gap-3">
-              <button onClick={() => connectMutation.mutate()} disabled={connectMutation.isPending || isRedirecting} className={industrialStyles.btnPrimary}>
+              <button onClick={() => connectMutation.mutate()} disabled={!manageGrant || connectMutation.isPending || isRedirecting} className={industrialStyles.btnPrimary}>
                 {connectMutation.isPending || isRedirecting ? 'Redirecting...' : status.verification_status === 'needs_information' || status.verification_status === 'restricted' ? 'Update Stripe Details' : 'Continue Stripe Setup'}
               </button>
               <button onClick={() => setDisconnectKind('current')} disabled={disconnectMutation.isPending} className={industrialStyles.btnSecondary}>
@@ -1489,17 +1595,29 @@ function PaymentsSection() {
           legacy={disconnectKind === 'legacy'}
           pending={disconnectMutation.isPending}
           onCancel={() => setDisconnectKind(null)}
-          onConfirm={() => disconnectMutation.mutate()}
+          onConfirm={() => requestDestructiveStepUp({
+            scope: 'payment_sources.stripe.disconnect',
+            title: 'Verify Stripe disconnection',
+            description: 'Enter your current password again. This one-time authorization removes the local Stripe connection without deleting the Stripe account.',
+            onGranted: (grantToken) => disconnectMutation.mutate(grantToken),
+          })}
         />
       )}
       <ZelleSection
         open={openPaymentPanel === 'zelle'}
         onOpenChange={(nextOpen) => setOpenPaymentPanel(nextOpen ? 'zelle' : null)}
+        manageGrant={manageGrant?.token ?? null}
+        onGrantRejected={handleGrantRejected}
+        requestDestructiveStepUp={requestDestructiveStepUp}
       />
       <QuickBooksIntegrationCard
         open={openPaymentPanel === 'quickbooks'}
         onOpenChange={(nextOpen) => setOpenPaymentPanel(nextOpen ? 'quickbooks' : null)}
+        manageGrant={manageGrant?.token ?? null}
+        onGrantRejected={handleGrantRejected}
+        requestDestructiveStepUp={requestDestructiveStepUp}
       />
+      {destructivePrompt && <PaymentSourceStepUpDialog prompt={destructivePrompt} onCancel={() => setDestructivePrompt(null)} />}
     </div>
   )
 }
@@ -1649,7 +1767,19 @@ function PlatformIntegrationsSection() {
   )
 }
 
-function QuickBooksIntegrationCard({ open, onOpenChange }: { open: boolean; onOpenChange: (nextOpen: boolean) => void }) {
+function QuickBooksIntegrationCard({
+  open,
+  onOpenChange,
+  manageGrant,
+  onGrantRejected,
+  requestDestructiveStepUp,
+}: {
+  open: boolean
+  onOpenChange: (nextOpen: boolean) => void
+  manageGrant: string | null
+  onGrantRejected: (error: unknown) => void
+  requestDestructiveStepUp: (prompt: DestructiveStepUpPrompt) => void
+}) {
   const queryClient = useQueryClient()
   const [isRedirecting, setIsRedirecting] = useState(false)
   const [searchParams, setSearchParams] = useSearchParams()
@@ -1676,24 +1806,28 @@ function QuickBooksIntegrationCard({ open, onOpenChange }: { open: boolean; onOp
   }, [queryClient, searchParams, setSearchParams])
 
   const connectMutation = useMutation({
-    mutationFn: async () => (await api.post('/quickbooks/connect')).data as { url: string },
+    mutationFn: async () => {
+      if (!manageGrant) throw new Error('Payment settings are locked')
+      return (await api.post('/quickbooks/connect', undefined, { headers: paymentStepUpHeaders(manageGrant) })).data as { url: string }
+    },
     onSuccess: (data) => {
       setIsRedirecting(true)
       window.location.href = data.url
     },
     onError: (error: unknown) => {
-      toast.error(apiErrorDetail(error, 'Failed to start QuickBooks connection'))
+      onGrantRejected(error)
+      toast.error(paymentStepUpError(error, 'Failed to start QuickBooks connection'))
     },
   })
 
   const disconnectMutation = useMutation({
-    mutationFn: async () => (await api.post('/quickbooks/disconnect')).data,
+    mutationFn: async (grantToken: string) => (await api.post('/quickbooks/disconnect', undefined, { headers: paymentStepUpHeaders(grantToken) })).data,
     onSuccess: () => {
       toast.success('QuickBooks disconnected.')
       queryClient.invalidateQueries({ queryKey: ['quickbooks-status'] })
     },
     onError: (error: unknown) => {
-      toast.error(apiErrorDetail(error, 'Failed to disconnect QuickBooks'))
+      toast.error(paymentStepUpError(error, 'Failed to disconnect QuickBooks'))
     },
   })
 
@@ -1751,7 +1885,7 @@ function QuickBooksIntegrationCard({ open, onOpenChange }: { open: boolean; onOp
                   {connectionNeedsAttention && (
                     <button
                       onClick={() => connectMutation.mutate()}
-                      disabled={connectMutation.isPending || isRedirecting}
+                      disabled={!manageGrant || connectMutation.isPending || isRedirecting}
                       className={industrialStyles.btnPrimary}
                     >
                       {connectMutation.isPending || isRedirecting ? 'Redirecting...' : 'Reconnect QuickBooks'}
@@ -1760,7 +1894,12 @@ function QuickBooksIntegrationCard({ open, onOpenChange }: { open: boolean; onOp
                   <button
                     onClick={() => {
                       if (window.confirm('Disconnect QuickBooks? Accounting and payments will stop until you reconnect.')) {
-                        disconnectMutation.mutate()
+                        requestDestructiveStepUp({
+                          scope: 'payment_sources.quickbooks.disconnect',
+                          title: 'Verify QuickBooks disconnection',
+                          description: 'Enter your current password again. This one-time authorization removes the local QuickBooks connection while preserving accounting and payment history.',
+                          onGranted: (grantToken) => disconnectMutation.mutate(grantToken),
+                        })
                       }
                     }}
                     disabled={disconnectMutation.isPending}
@@ -1772,7 +1911,7 @@ function QuickBooksIntegrationCard({ open, onOpenChange }: { open: boolean; onOp
               ) : (
                 <button
                   onClick={() => connectMutation.mutate()}
-                  disabled={connectMutation.isPending || isRedirecting}
+                  disabled={!manageGrant || connectMutation.isPending || isRedirecting}
                   className={industrialStyles.btnPrimary}
                 >
                   <span className="flex items-center gap-2">
@@ -1789,16 +1928,25 @@ function QuickBooksIntegrationCard({ open, onOpenChange }: { open: boolean; onOp
   )
 }
 
-function ZelleSection({ open, onOpenChange }: { open: boolean; onOpenChange: (nextOpen: boolean) => void }) {
+function ZelleSection({
+  open,
+  onOpenChange,
+  manageGrant,
+  onGrantRejected,
+  requestDestructiveStepUp,
+}: {
+  open: boolean
+  onOpenChange: (nextOpen: boolean) => void
+  manageGrant: string | null
+  onGrantRejected: (error: unknown) => void
+  requestDestructiveStepUp: (prompt: DestructiveStepUpPrompt) => void
+}) {
   const queryClient = useQueryClient()
   const [zelleQrPreview, setZelleQrPreview] = useState<string | null>(null)
   const [_isUploadingQr, setIsUploadingQr] = useState(false)
   const [zelleEmail, setZelleEmail] = useState('')
   const [zellePhone, setZellePhone] = useState('')
   const [contactEditing, setContactEditing] = useState(false)
-  const [isUnlocked, setIsUnlocked] = useState(false)
-  const [unlockPassword, setUnlockPassword] = useState('')
-  const [unlockError, setUnlockError] = useState<string | null>(null)
 
   const { data: garageProfile } = useQuery<GarageProfile>({
     queryKey: ['garage-profile'],
@@ -1832,48 +1980,28 @@ function ZelleSection({ open, onOpenChange }: { open: boolean; onOpenChange: (ne
     ? { label: 'PAYMENT DETAILS READY', variant: 'success' as const, led: 'active' as const }
     : { label: 'PAYMENT DETAILS NEEDED', variant: 'warning' as const, led: 'warning' as const }
 
-  const unlockMutation = useMutation({
-    mutationFn: async (password: string) => {
-      const response = await api.post('/auth/verify-password', { password })
-      return response.data as { valid: boolean }
-    },
-    onSuccess: (data) => {
-      if (data.valid) {
-        setIsUnlocked(true)
-        setContactEditing(true)
-        setUnlockPassword('')
-        setUnlockError(null)
-      } else {
-        setUnlockError('Incorrect password.')
-      }
-    },
-    onError: () => {
-      setUnlockError('Incorrect password.')
-    },
-  })
-
   const saveContactMutation = useMutation({
-    mutationFn: async () => {
+    mutationFn: async (grantToken: string) => {
       const response = await api.put('/admin/zelle-settings', {
         zelle_email: zelleEmail.trim() || null,
         zelle_phone: zellePhone.trim() || null,
-      })
+      }, { headers: paymentStepUpHeaders(grantToken) })
       return response.data
     },
     onSuccess: () => {
       toast.success('Zelle contact details saved')
       queryClient.invalidateQueries({ queryKey: ['zelle-settings'] })
       setContactEditing(false)
-      setIsUnlocked(false)
     },
-    onError: (error: any) => {
-      toast.error(error.response?.data?.detail || 'Failed to save Zelle settings')
+    onError: (error: unknown) => {
+      onGrantRejected(error)
+      toast.error(paymentStepUpError(error, 'Failed to save Zelle settings'))
     },
   })
 
   const uploadQrMutation = useMutation({
-    mutationFn: async (base64Image: string | null) => {
-      const response = await api.put('/admin/zelle-qr-image', { zelle_qr_image: base64Image })
+    mutationFn: async ({ base64Image, grantToken }: { base64Image: string | null; grantToken: string }) => {
+      const response = await api.put('/admin/zelle-qr-image', { zelle_qr_image: base64Image }, { headers: paymentStepUpHeaders(grantToken) })
       return response.data
     },
     onSuccess: () => {
@@ -1881,8 +2009,9 @@ function ZelleSection({ open, onOpenChange }: { open: boolean; onOpenChange: (ne
       queryClient.invalidateQueries({ queryKey: ['zelle-settings'] })
       setZelleQrPreview(null)
     },
-    onError: (error: any) => {
-      toast.error(error.response?.data?.detail || 'Failed to upload QR code')
+    onError: (error: unknown) => {
+      onGrantRejected(error)
+      toast.error(paymentStepUpError(error, 'Failed to upload QR code'))
     },
   })
 
@@ -1913,16 +2042,14 @@ function ZelleSection({ open, onOpenChange }: { open: boolean; onOpenChange: (ne
         onOpenChange={onOpenChange}
       >
 
-        {!isUnlocked ? (
-          /* Lock gate */
+        {!manageGrant ? (
           <div className="space-y-4">
             <div className="flex items-start gap-3 bg-amber-950/30 border border-amber-700/40 rounded-xl p-4">
               <Shield className="w-5 h-5 text-amber-400 mt-0.5 shrink-0" />
               <p className="text-sm text-amber-300">
-                Zelle payment details are protected. Confirm your password to make changes.
+                Payment-source changes are locked. Use the verification control above to edit Zelle details.
               </p>
             </div>
-            {/* Current values read-only preview */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
                 <label className={industrialStyles.label}>Zelle Email</label>
@@ -1937,45 +2064,9 @@ function ZelleSection({ open, onOpenChange }: { open: boolean; onOpenChange: (ne
                 </div>
               </div>
             </div>
-            <div className="max-w-sm space-y-2">
-              <label className={industrialStyles.label}>Your Password</label>
-              <input
-                type="password"
-                value={unlockPassword}
-                onChange={(e) => { setUnlockPassword(e.target.value); setUnlockError(null) }}
-                onKeyDown={(e) => e.key === 'Enter' && unlockPassword && unlockMutation.mutate(unlockPassword)}
-                placeholder="Enter your password to unlock"
-                className={unlockError ? `${industrialStyles.input} border-red-500 focus:border-red-400` : industrialStyles.input}
-              />
-              {unlockError && <p className="text-xs text-red-400">{unlockError}</p>}
-              <button
-                onClick={() => unlockMutation.mutate(unlockPassword)}
-                disabled={!unlockPassword || unlockMutation.isPending}
-                className={industrialStyles.btnPrimary}
-              >
-                <span className="flex items-center gap-2">
-                  <Lock className="w-4 h-4" />
-                  {unlockMutation.isPending ? 'Verifying...' : 'Unlock to Edit'}
-                </span>
-              </button>
-            </div>
           </div>
         ) : (
-          /* Unlocked — editable */
           <div className="space-y-6">
-            <div className="flex items-center justify-between bg-green-950/30 border border-green-700/40 rounded-xl px-4 py-2">
-              <span className="text-sm text-green-400 flex items-center gap-2">
-                <Shield className="w-4 h-4" /> Editing unlocked
-              </span>
-              <button
-                onClick={() => { setIsUnlocked(false); setContactEditing(false) }}
-                className="text-xs text-zinc-400 hover:text-zinc-200 underline"
-              >
-                Lock
-              </button>
-            </div>
-
-            {/* Contact fields */}
             {(() => {
               const emailInvalid = zelleEmail.trim() !== '' && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(zelleEmail.trim())
               const phoneInvalid = zellePhone.trim() !== '' && !isValidUSPhone(zellePhone)
@@ -1984,8 +2075,9 @@ function ZelleSection({ open, onOpenChange }: { open: boolean; onOpenChange: (ne
                 <div className="space-y-3">
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>
-                      <label className={industrialStyles.label}>Zelle Email</label>
+                      <label htmlFor="zelle-payment-email" className={industrialStyles.label}>Zelle Email</label>
                       <input
+                        id="zelle-payment-email"
                         type="email"
                         value={zelleEmail}
                         onChange={(e) => { setZelleEmail(e.target.value); setContactEditing(true) }}
@@ -1995,8 +2087,9 @@ function ZelleSection({ open, onOpenChange }: { open: boolean; onOpenChange: (ne
                       {emailInvalid && <p className="text-xs text-red-400 mt-1">Enter a valid email address</p>}
                     </div>
                     <div>
-                      <label className={industrialStyles.label}>Zelle Phone</label>
+                      <label htmlFor="zelle-payment-phone" className={industrialStyles.label}>Zelle Phone</label>
                       <input
+                        id="zelle-payment-phone"
                         type="tel"
                         value={zellePhone}
                         onChange={(e) => { setZellePhone(formatUSPhone(e.target.value)); setContactEditing(true) }}
@@ -2009,7 +2102,19 @@ function ZelleSection({ open, onOpenChange }: { open: boolean; onOpenChange: (ne
                   {contactEditing && (
                     <div className="flex gap-3">
                       <button
-                        onClick={() => saveContactMutation.mutate()}
+                        onClick={() => {
+                          const isDisabling = !zelleEmail.trim() && !zellePhone.trim()
+                          if (isDisabling) {
+                            requestDestructiveStepUp({
+                              scope: 'payment_sources.zelle.disable',
+                              title: 'Verify Zelle disablement',
+                              description: 'Enter your current password again. This removes both Zelle contact methods so customers can no longer select Zelle.',
+                              onGranted: (grantToken) => saveContactMutation.mutate(grantToken),
+                            })
+                          } else {
+                            saveContactMutation.mutate(manageGrant)
+                          }
+                        }}
                         disabled={saveContactMutation.isPending || !canSave}
                         className={industrialStyles.btnPrimary}
                       >
@@ -2034,7 +2139,6 @@ function ZelleSection({ open, onOpenChange }: { open: boolean; onOpenChange: (ne
               )
             })()}
 
-            {/* QR code */}
             <div className="flex flex-col sm:flex-row items-start gap-6">
               <div className="w-32 h-32 bg-zinc-800/60 border border-zinc-600/50 rounded-2xl flex items-center justify-center overflow-hidden flex-shrink-0">
                 {zelleQrPreview || zelleSettings?.zelle_qr_image ? (
@@ -2045,8 +2149,9 @@ function ZelleSection({ open, onOpenChange }: { open: boolean; onOpenChange: (ne
               </div>
               <div className="flex-1 space-y-4">
                 <div>
-                  <label className={industrialStyles.label}>Upload QR Code</label>
+                  <label htmlFor="zelle-payment-qr" className={industrialStyles.label}>Upload QR Code</label>
                   <input
+                    id="zelle-payment-qr"
                     type="file"
                     accept="image/*"
                     onChange={handleQrFileChange}
@@ -2060,7 +2165,7 @@ function ZelleSection({ open, onOpenChange }: { open: boolean; onOpenChange: (ne
                 <div className="flex gap-3">
                   {zelleQrPreview && (
                     <button
-                      onClick={() => uploadQrMutation.mutate(zelleQrPreview)}
+                      onClick={() => uploadQrMutation.mutate({ base64Image: zelleQrPreview, grantToken: manageGrant })}
                       disabled={uploadQrMutation.isPending}
                       className={industrialStyles.btnPrimary}
                     >
@@ -2072,7 +2177,15 @@ function ZelleSection({ open, onOpenChange }: { open: boolean; onOpenChange: (ne
                   )}
                   {(zelleSettings?.zelle_qr_image || zelleQrPreview) && (
                     <button
-                      onClick={() => { uploadQrMutation.mutate(null); setZelleQrPreview(null) }}
+                      onClick={() => requestDestructiveStepUp({
+                        scope: 'payment_sources.zelle.qr.remove',
+                        title: 'Verify Zelle QR removal',
+                        description: 'Enter your current password again. This removes the QR image customers use for Zelle payments.',
+                        onGranted: (grantToken) => {
+                          uploadQrMutation.mutate({ base64Image: null, grantToken })
+                          setZelleQrPreview(null)
+                        },
+                      })}
                       disabled={uploadQrMutation.isPending}
                       className={industrialStyles.btnDanger}
                     >

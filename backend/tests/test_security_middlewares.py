@@ -145,6 +145,52 @@ def test_idempotency_replay_and_conflict(monkeypatch, fake_redis):
     assert r3.status_code == 409
 
 
+def test_step_up_grant_route_never_persists_credentials(monkeypatch, fake_redis):
+    """Step-up grant responses bypass the generic Redis replay cache."""
+    import app.middleware.idempotency as idempotency_module
+
+    async def _fake_get_redis():
+        return fake_redis
+
+    monkeypatch.setattr(idempotency_module, "get_redis", _fake_get_redis)
+
+    app = FastAPI()
+    app.add_middleware(IdempotencyMiddleware)
+    state = {"calls": 0}
+
+    @app.post("/api/v1/auth/step-up-grants")
+    async def create_step_up_grant(payload: dict):
+        state["calls"] += 1
+        return {"grant_token": f"raw-step-up-grant-{state['calls']}"}
+
+    client = TestClient(app)
+    key = "step-up-grant-key-1234"
+    password = "server-only-password"
+    headers = {"Idempotency-Key": key}
+
+    first = client.post(
+        "/api/v1/auth/step-up-grants",
+        json={"password": password, "scope": "payment_sources.manage"},
+        headers=headers,
+    )
+    second = client.post(
+        "/api/v1/auth/step-up-grants",
+        json={"password": password, "scope": "payment_sources.manage"},
+        headers=headers,
+    )
+
+    assert first.status_code == 200
+    assert second.status_code == 200
+    assert first.json()["grant_token"] != second.json()["grant_token"]
+    assert state["calls"] == 2
+    assert first.headers.get("X-Idempotency-Replayed") is None
+    assert second.headers.get("X-Idempotency-Replayed") is None
+    persisted = json.dumps(fake_redis.kv, sort_keys=True)
+    assert "raw-step-up-grant" not in persisted
+    assert password not in persisted
+    assert not any(key.startswith("idempotency:") for key in fake_redis.kv)
+
+
 def test_idempotency_preserves_streamed_body_through_base_middleware(monkeypatch, fake_redis):
     """The replay receive channel must not invent a client disconnect.
 

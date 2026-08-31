@@ -50,6 +50,8 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
     REFRESH_TOKEN_EXPIRE_DAYS_REMEMBER: int = 30  # "Remember me" duration
+    PAYMENT_STEP_UP_MANAGE_TTL_SECONDS: int = Field(default=600, ge=60, le=900)
+    PAYMENT_STEP_UP_DESTRUCTIVE_TTL_SECONDS: int = Field(default=120, ge=60, le=300)
     AUTHENTICATED_PRESENTATION_FORCE_LEGACY: bool = False
     # DB-038 is deployed dark. A tenant flag is required in addition to this
     # deployment-level switch before the purchasing/ledger API is reachable.

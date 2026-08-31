@@ -113,6 +113,48 @@ def fake_redis() -> FakeRedis:
     return FakeRedis()
 
 
+@pytest.fixture
+def issue_payment_step_up(db_session):
+    """Persist a correctly session-bound grant for existing endpoint tests.
+
+    Grant issuance/password verification has its own focused API tests. Existing
+    provider tests use this fixture so they can remain focused on provider
+    behavior while still exercising the production grant validator.
+    """
+    from datetime import datetime, timedelta, timezone
+    from hashlib import sha256
+    import secrets
+
+    from app.core.payment_step_up import DESTRUCTIVE_SCOPES, PaymentStepUpScope
+    from app.core.security import decode_token
+    from app.db.models.payment_step_up import PaymentStepUpGrant
+
+    async def _issue(*, token, user, scope, target_tenant_id=None):
+        normalized_scope = PaymentStepUpScope(scope)
+        claims = decode_token(token)
+        assert claims and claims.get("jti")
+        raw_grant = secrets.token_urlsafe(32)
+        grant = PaymentStepUpGrant(
+            tenant_id=user.tenant_id,
+            target_tenant_id=target_tenant_id,
+            user_id=user.id,
+            session_jti=claims["jti"],
+            token_version=int(claims.get("ver", 0)),
+            scope=normalized_scope.value,
+            token_digest=sha256(raw_grant.encode("utf-8")).hexdigest(),
+            one_time=normalized_scope in DESTRUCTIVE_SCOPES,
+            expires_at=datetime.now(timezone.utc) + timedelta(minutes=5),
+        )
+        db_session.add(grant)
+        await db_session.commit()
+        return {
+            "Authorization": f"Bearer {token}",
+            "X-Step-Up-Authorization": raw_grant,
+        }
+
+    return _issue
+
+
 # ---------------------------------------------------------------------------
 # Integration-test fixtures: async client with in-memory SQLite
 # ---------------------------------------------------------------------------

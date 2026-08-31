@@ -15,6 +15,7 @@ import {
 import { AxiosError } from 'axios'
 import toast from 'react-hot-toast'
 import api from '@/lib/api'
+import { createPaymentStepUpGrant, paymentStepUpError, paymentStepUpHeaders } from '@/lib/paymentStepUp'
 import { Spinner } from '@/components/ui'
 import { GlassNoirButton, GlassNoirCard, GlassNoirHeader } from '@/components/ui/GlassNoirCard'
 
@@ -475,9 +476,10 @@ function ResetProviderDialog({
   target: ResetTarget
   pending: boolean
   onCancel: () => void
-  onConfirm: () => void
+  onConfirm: (password: string) => void
 }) {
   const label = target.provider === 'stripe' ? 'Stripe' : 'QuickBooks'
+  const [password, setPassword] = useState('')
   return (
     <div className="fixed inset-0 z-[100] grid place-items-center bg-black/70 p-4 backdrop-blur-sm" onMouseDown={(event) => event.target === event.currentTarget && !pending && onCancel()}>
       <div role="alertdialog" aria-modal="true" aria-labelledby="reset-provider-title" aria-describedby="reset-provider-description" className="w-full max-w-md rounded-lg border border-red-800/50 bg-zinc-950 p-6 shadow-2xl shadow-black/60">
@@ -485,7 +487,8 @@ function ResetProviderDialog({
           <div><h3 id="reset-provider-title" className="text-lg font-semibold text-zinc-100">Reset {label} connection?</h3><p id="reset-provider-description" className="mt-3 text-sm leading-6 text-zinc-400">This removes the local {label} authorization for <span className="font-medium text-zinc-200">{target.tenantName}</span>. Provider accounts and prior accounting or payment history are preserved.</p></div>
           <button type="button" onClick={onCancel} disabled={pending} aria-label="Close confirmation" className="rounded p-1 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100 disabled:opacity-50"><X className="h-5 w-5" /></button>
         </div>
-        <div className="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end"><GlassNoirButton variant="secondary" onClick={onCancel} disabled={pending}>Cancel</GlassNoirButton><GlassNoirButton variant="danger" onClick={onConfirm} disabled={pending}>{pending ? 'Resetting...' : `Reset ${label}`}</GlassNoirButton></div>
+        <div className="mt-5"><label htmlFor="platform-payment-reset-password" className="mb-2 block text-xs font-medium text-zinc-400">Your current password</label><input id="platform-payment-reset-password" autoFocus type="password" autoComplete="current-password" value={password} onChange={(event) => setPassword(event.target.value)} className="w-full rounded-lg border border-zinc-700 bg-zinc-900 px-4 py-3 text-sm text-zinc-100 outline-none focus:border-gold-500 focus:ring-2 focus:ring-gold-500/20" /></div>
+        <div className="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end"><GlassNoirButton variant="secondary" onClick={onCancel} disabled={pending}>Cancel</GlassNoirButton><GlassNoirButton variant="danger" onClick={() => onConfirm(password)} disabled={pending || !password}>{pending ? 'Resetting...' : `Verify and reset ${label}`}</GlassNoirButton></div>
       </div>
     </div>
   )
@@ -547,17 +550,25 @@ export default function PaymentControlCenter() {
     }
   }
 
-  const resetConnection = async () => {
+  const resetConnection = async (password: string) => {
     if (!resetTarget) return
     try {
       setResettingTenantId(resetTarget.tenantId)
       const endpoint = resetTarget.provider === 'stripe' ? 'reset-stripe-connection' : 'reset-quickbooks-connection'
-      await api.post(`/admin/payments-control/tenants/${resetTarget.tenantId}/${endpoint}`)
+      const scope = resetTarget.provider === 'stripe'
+        ? 'platform.payment_sources.stripe.reset'
+        : 'platform.payment_sources.quickbooks.reset'
+      const grant = await createPaymentStepUpGrant(password, scope, resetTarget.tenantId)
+      await api.post(
+        `/admin/payments-control/tenants/${resetTarget.tenantId}/${endpoint}`,
+        undefined,
+        { headers: paymentStepUpHeaders(grant.grant_token) },
+      )
       toast.success(`Reset ${resetTarget.provider === 'stripe' ? 'Stripe' : 'QuickBooks'} connection for ${resetTarget.tenantName}`)
       setResetTarget(null)
       await load(true)
     } catch (error: unknown) {
-      toast.error(apiErrorDetail(error, 'Unable to reset provider connection'))
+      toast.error(paymentStepUpError(error, 'Unable to reset provider connection'))
     } finally {
       setResettingTenantId(null)
     }
