@@ -3650,6 +3650,16 @@ html::-webkit-scrollbar-thumb:hover {
      44px it doubles the height of the row it lives on and pushes the field
      below it down the moment the label appears. Same reasoning and same gate as
      the quick-pick chips. */
+  /* One step in the pipeline is a control and the rest are labels, so the 44px
+     minimum made that one step taller than the row it belongs to. It is the
+     same shape and the same information as its neighbours; only the ability to
+     open the roster differs. */
+  .db-repair-orders-new .db-pipeline-step,
+  .db-pipeline-step {
+    min-height: 0 !important;
+    min-block-size: 0 !important;
+  }
+
   .db-repair-orders-new .db-inline-text-action,
   .db-inline-text-action {
     min-height: 0 !important;
