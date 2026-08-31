@@ -982,6 +982,17 @@ export default function PriceBuilderPanel({
   // The unlisted part a tech is holding: name is what they know, the rest is
   // what the bill needs.
   const [adHocDraft, setAdHocDraft] = useState<{ name: string; sku: string; price: string; cost: string; quantity: string } | null>(null)
+  const adHocNameRef = useRef<HTMLInputElement | null>(null)
+  const adHocWasOpen = useRef(false)
+  // Focus the name once, when the form opens — not on every render of it. The
+  // form is rebuilt each time the search query settles, so autoFocus here pulled
+  // the caret back out of the search field on every keystroke and the typed
+  // characters went nowhere.
+  useEffect(() => {
+    const open = adHocDraft !== null
+    if (open && !adHocWasOpen.current) adHocNameRef.current?.focus()
+    adHocWasOpen.current = open
+  }, [adHocDraft])
   const [technicianAssignmentOpen, setTechnicianAssignmentOpen] = useState(false)
   const technicianPopoverRef = useRef<HTMLSpanElement | null>(null)
   const technicianTriggerRef = useRef<HTMLButtonElement | null>(null)
@@ -1692,7 +1703,7 @@ export default function PriceBuilderPanel({
                   >
                     <p className="text-xs font-semibold uppercase tracking-[0.14em] text-gray-500">New part</p>
                     <input
-                      autoFocus
+                      ref={adHocNameRef}
                       value={draft.name}
                       onChange={(e) => setAdHocDraft({ ...draft, name: e.target.value })}
                       placeholder="Part name"
