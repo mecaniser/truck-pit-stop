@@ -3522,7 +3522,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                       </svg>
                     </div>
 
-                    <div className="flex h-8 flex-wrap content-start gap-1.5 overflow-hidden">
+                    <div className="db-service-quickpick flex min-h-[46px] flex-nowrap items-center gap-1.5 overflow-x-auto">
                       {visibleServiceOptions
                         .slice(0, 7)
                         .map((svc) => {
@@ -3530,7 +3530,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                           return (
                             <span
                               key={svc.id}
-                              className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium leading-5 transition-colors ${
+                              className={`inline-flex shrink-0 items-center gap-1 overflow-hidden rounded-full border pe-2 text-[11px] font-medium leading-4 transition-colors ${
                                 active
                                   ? 'border-amber-500 bg-amber-50 text-amber-700'
                                   : 'border-gray-200 bg-white hover:border-amber-300 text-gray-700'
@@ -3547,7 +3547,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                                     setSelectedServiceOptions((prev) => [...prev.filter((item) => item.id !== svc.id), svc])
                                   }
                                 }}
-                                className="focus:outline-none"
+                                className="px-2.5 focus:outline-none"
                               >
                                 {svc.name}
                               </button>

@@ -3634,6 +3634,16 @@ html::-webkit-scrollbar-thumb:hover {
 .db-repair-orders-ledger > footer { min-height: 56px; display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 12px; padding: 0 2px; background: transparent; color: var(--db-ledger-muted); font-size: 12px; }
 .db-repair-orders-ledger > footer > div { display: flex; gap: 7px; }
 
+/* The quick-pick row holds more suggestions than fit. Cutting the last chip
+   through its own word reads as a mistake; fading the edge reads as more to
+   come, which is what it is. No scrollbar — the strip is one row of shortcuts,
+   not a region to navigate. */
+.db-service-quickpick {
+  scrollbar-width: none;
+  mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent 100%);
+}
+.db-service-quickpick::-webkit-scrollbar { display: none; }
+
 /* Technician assignment. The list used to be a band inside the order, three
    cards wide with a progress bar each, which pushed the work itself below the
    fold for a step that is usually one click. It is a popover on the pipeline
