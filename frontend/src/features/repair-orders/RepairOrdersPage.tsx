@@ -2391,8 +2391,12 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
   ].map((option) => ({
     ...option,
     // undefined while the counts are loading, so the filter shows a label
-    // rather than a zero it cannot yet stand behind
-    count: statusCounts ? statusCounts[option.value] ?? 0 : undefined,
+    // rather than a zero it cannot yet stand behind. Deleted is deliberately
+    // uncounted: the endpoint counts live rows, so a count here would read as
+    // "no deleted orders" when there may be plenty.
+    count: option.value === 'deleted' || !statusCounts
+      ? undefined
+      : statusCounts[option.value] ?? 0,
   }))
 
   const resetModal = () => {

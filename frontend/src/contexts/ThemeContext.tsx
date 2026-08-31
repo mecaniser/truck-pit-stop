@@ -13,6 +13,7 @@ import {
   type FontFamily,
   type NotificationPosition as ServerNotificationPosition,
   type PresentationBootstrap,
+  type PresentationSource,
   type PresentationVariant,
 } from '../types/presentation'
 import { accentRampFor, appearanceTokenRecord } from './appearanceTokens'
@@ -168,6 +169,10 @@ interface ThemeContextValue {
   notificationPosition: NotificationPosition
   accentColors: { 400: string; 500: string; 600: string }
   presentationVariant: PresentationVariant
+  presentationSource: PresentationSource | null
+  canSetPresentation: boolean
+  presentationStatus: 'idle' | 'saving'
+  setPresentationVariant: (value: PresentationVariant) => Promise<void>
   appearance: AppearancePreferences
   committedAppearance: AppearancePreferences
   defaults: AppearancePreferences
@@ -456,6 +461,37 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     }
   }, [committed, eligibleStaff, revision])
 
+  // Switching workspace is a tenant-wide change, so it is limited to the roles
+  // that own the shop. Everyone else still reads the resolved variant.
+  const canSetPresentation = Boolean(
+    eligibleStaff && ['garage_owner', 'garage_admin'].includes(user?.role || ''),
+  )
+  const [presentationStatus, setPresentationStatus] = useState<'idle' | 'saving'>('idle')
+
+  const setPresentationVariant = useCallback(async (next: PresentationVariant) => {
+    if (!canSetPresentation || next === variant) return
+    setPresentationStatus('saving')
+    try {
+      const { data } = await api.put<PresentationBootstrap>('/auth/me/tenant-presentation', {
+        schema_version: 1,
+        presentation: next,
+      })
+      if (!isPresentationBootstrap(data)) throw new Error('unrecognised presentation response')
+      setServerPresentation(data)
+      // A personal override outranks the tenant default, so the write can
+      // succeed while the caller sees no change. Say so rather than look broken.
+      if (data.resolved_variant !== next && data.source === 'user_override') {
+        toast('Shop default saved. Your personal override still applies to this account.')
+      } else {
+        toast.success(next === 'new' ? 'Modern workspace enabled' : 'Classic workspace restored')
+      }
+    } catch {
+      toast.error('Workspace could not be changed')
+    } finally {
+      setPresentationStatus('idle')
+    }
+  }, [canSetPresentation, variant])
+
   const fontSize = legacyFontSize(draft)
   const notificationPosition = toLegacyPosition(draft.notification_position)
   const accentColors = accentRampFor(draft.accent, draft.mode)
@@ -466,6 +502,10 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     notificationPosition,
     accentColors,
     presentationVariant: variant,
+    presentationSource: serverPresentation?.source ?? null,
+    canSetPresentation,
+    presentationStatus,
+    setPresentationVariant,
     appearance: draft,
     committedAppearance: committed,
     defaults,
@@ -485,7 +525,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     cancelPreview,
     previewDefaults,
     resetToDefaults,
-  }), [accentColors, applyAppearance, cancelPreview, committed, defaults, draft, fontSize, notificationPosition, previewDefaults, resetToDefaults, saveStatus, updatePreference, variant])
+  }), [accentColors, applyAppearance, cancelPreview, committed, defaults, draft, fontSize, notificationPosition, previewDefaults, resetToDefaults, saveStatus, updatePreference, variant, canSetPresentation, presentationStatus, setPresentationVariant, serverPresentation])
 
   return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>
 }

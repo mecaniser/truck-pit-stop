@@ -15,7 +15,8 @@ import toast from 'react-hot-toast'
 import { 
   User, Lock, CreditCard, Bell, Percent, QrCode, Globe, Building2,
   AlertCircle, ExternalLink, RefreshCw, Save, Trash2, Palette, Check, RotateCcw, Type,
-  ChevronRight, ChevronDown, Zap, Shield, Settings2, Star, Truck, MessageSquare, Landmark, ShieldCheck, X
+  ChevronRight, ChevronDown, Zap, Shield, Settings2, Star, Truck, MessageSquare, Landmark, ShieldCheck, X,
+  LayoutGrid
 } from 'lucide-react'
 import { useTheme, ACCENT_OPTIONS, FONT_FAMILY_OPTIONS, FONT_SIZE_OPTIONS, NOTIFICATION_POSITION_OPTIONS } from '../../contexts/ThemeContext'
 import AppearanceSettingsPanel from './AppearanceSettingsPanel'
@@ -3035,6 +3036,11 @@ function WorkforceSection() {
 
 export function LegacyAppearanceSection() {
   const {
+    presentationVariant,
+    presentationSource,
+    canSetPresentation,
+    presentationStatus,
+    setPresentationVariant,
     accent,
     setAccent,
     fontFamily,
@@ -3243,6 +3249,58 @@ export function LegacyAppearanceSection() {
           ))}
         </div>
       </IndustrialCard>
+
+      {canSetPresentation && (
+        <IndustrialCard className="p-6 sm:p-8">
+          <div className={industrialStyles.sectionHeader}>
+            <LayoutGrid className="w-4 h-4 text-[var(--accent-400)]" />
+            <span>Workspace</span>
+          </div>
+
+          <p className="text-xs text-zinc-600 mb-4 leading-relaxed">
+            Applies to everyone at this shop. Classic is this layout; Modern is the rebuilt one, including the Parts & inventory workspace.
+          </p>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {([
+              { id: 'legacy', label: 'Classic', description: 'The original workspace.' },
+              { id: 'new', label: 'Modern', description: 'The rebuilt workspace.' },
+            ] as const).map(option => (
+              <button
+                key={option.id}
+                type="button"
+                aria-pressed={presentationVariant === option.id}
+                disabled={presentationStatus === 'saving'}
+                onClick={() => void setPresentationVariant(option.id)}
+                className={`p-4 text-left rounded-xl border transition-all disabled:opacity-50 ${
+                  presentationVariant === option.id
+                    ? 'border-white/50 bg-zinc-800/80'
+                    : 'border-zinc-700/50 hover:border-zinc-600 bg-zinc-800/40'
+                }`}
+              >
+                <span className={`flex items-center gap-2 text-sm font-semibold ${presentationVariant === option.id ? 'text-white' : 'text-zinc-400'}`}>
+                  {presentationVariant === option.id && <Check className="w-4 h-4 text-[var(--accent-400)]" />}
+                  {option.label}
+                </span>
+                <span className="block text-xs text-zinc-600 mt-2 leading-relaxed">
+                  {option.description}
+                </span>
+              </button>
+            ))}
+          </div>
+
+          {presentationSource === 'global_force_legacy' && (
+            <p className="text-xs text-zinc-600 mt-4">
+              Locked to Classic for every shop by a platform setting.
+            </p>
+          )}
+          {presentationSource === 'user_override' && (
+            <p className="text-xs text-zinc-600 mt-4">
+              Your account has a personal override, so it may not match the shop default.
+            </p>
+          )}
+        </IndustrialCard>
+      )}
 
       <p className="text-xs text-zinc-600">
         All preferences are saved automatically and persist across sessions.

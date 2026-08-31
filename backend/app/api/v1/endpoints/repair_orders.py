@@ -874,7 +874,7 @@ async def repair_order_status_counts(
         filters.append(or_(*search_filters))
 
     result = await db.execute(
-        select(RepairOrderReadModel.status, func.count(RepairOrderReadModel.id))
+        select(RepairOrderReadModel.status, func.count(RepairOrderReadModel.repair_order_id))
         .where(*filters)
         .group_by(RepairOrderReadModel.status)
     )
