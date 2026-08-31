@@ -979,6 +979,9 @@ export default function PriceBuilderPanel({
   // Closed by default: the pipeline row above already names this step, and the
   // pill there opens this when the operator actually wants it. Open on load, it
   // cost ~140px above the work list on every order.
+  // The unlisted part a tech is holding: name is what they know, the rest is
+  // what the bill needs.
+  const [adHocDraft, setAdHocDraft] = useState<{ name: string; sku: string; price: string; cost: string; quantity: string } | null>(null)
   const [technicianAssignmentOpen, setTechnicianAssignmentOpen] = useState(false)
   const technicianPopoverRef = useRef<HTMLSpanElement | null>(null)
   const technicianTriggerRef = useRef<HTMLButtonElement | null>(null)
@@ -1021,6 +1024,18 @@ export default function PriceBuilderPanel({
   const [partQuantityOverrides, setPartQuantityOverrides] = useState<Record<string, number>>({})
   const [partQuantitySavingKey, setPartQuantitySavingKey] = useState<string | null>(null)
   const [operationPartPickerLineId, setOperationPartPickerLineId] = useState<string | null>(null)
+  // Escape backs out of adding a part — first the form, then the panel — so the
+  // operator never has to find the close control to abandon the attempt.
+  useEffect(() => {
+    if (!operationPartPickerLineId && !adHocDraft) return
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return
+      if (adHocDraft) setAdHocDraft(null)
+      else setOperationPartPickerLineId(null)
+    }
+    document.addEventListener('keydown', onKeyDown)
+    return () => document.removeEventListener('keydown', onKeyDown)
+  }, [operationPartPickerLineId, adHocDraft])
   const [operationPartSearchByLineId, setOperationPartSearchByLineId] = useState<Record<string, string>>({})
   const [bookTimeHours, setBookTimeHours] = useState('1')
   const desktopQuoteActionRef = useRef<HTMLButtonElement>(null)
@@ -1324,6 +1339,22 @@ export default function PriceBuilderPanel({
     enabled: !!orderId && !isDeleted && addType === 'part' && partSearchTerm.length === 0,
   })
 
+  // What this operation actually consumes, from the shop's own history. Asked
+  // per line rather than per order: someone adding a part to a tire change
+  // should be offered what tire changes use, not everything else on the order.
+  const { data: operationSuggestionData } = useQuery<PartSuggestionsResponse>({
+    queryKey: ['price-build-part-suggestions', orderId, operationPartPickerLineId],
+    queryFn: async ({ signal }) => {
+      const response = await api.get(`/repair-orders/${orderId}/parts/suggestions`, {
+        signal,
+        params: { line_id: operationPartPickerLineId },
+      })
+      return response.data
+    },
+    enabled: !!orderId && !isDeleted && !!operationPartPickerLineId && operationPartSearchTerm.length === 0,
+  })
+  const operationSuggestions = (operationSuggestionData?.for_this_order ?? []).slice(0, 6)
+
   const laborBookSearchTerm = searchTerm.trim()
   const { data: laborBookEntries = [], isFetching: laborBookEntriesFetching } = useQuery<LaborBookTimeEntry[]>({
     queryKey: ['labor-book-time', laborBookSearchTerm],
@@ -1623,6 +1654,99 @@ export default function PriceBuilderPanel({
     } finally {
       setDiscountsSaving(false)
     }
+  }
+
+  const addAdHocPart = useMutation({
+    mutationFn: async (draft: { name: string; sku: string; price: string; cost: string; quantity: string; sourceLineId?: string | null }) => {
+      await api.post(`/repair-orders/${orderId}/parts/ad-hoc`, {
+        name: draft.name.trim(),
+        sku: draft.sku.trim() || null,
+        quantity: Number(draft.quantity || '1'),
+        unit_price: Number(draft.price || '0'),
+        unit_cost: draft.cost.trim() === '' ? null : Number(draft.cost),
+        source_line_id: draft.sourceLineId ?? null,
+      })
+    },
+    onSuccess: async () => {
+      setAdHocDraft(null)
+      setSearchTerm('')
+      setPaletteOpen(false)
+      await invalidate()
+      // The part is on the order and in the catalogue, so the next job can find
+      // it by name instead of inventing it again.
+      queryClient.invalidateQueries({ queryKey: ['inventory-typeahead'] })
+      toast.success('Part added and saved to the catalogue')
+    },
+    onError: () => toast.error('Could not add that part'),
+  })
+
+  // One form, wherever the operator finds the part missing: the Part tab,
+  // or the operation that needs it. sourceLineId decides what it attaches to.
+  const renderAdHocForm = (sourceLineId: string | null) => {
+    if (!adHocDraft) return null
+    const draft = adHocDraft
+    return (
+                  <form
+                    className="space-y-2 px-2 py-3"
+                    onSubmit={(event) => { event.preventDefault(); addAdHocPart.mutate({ ...draft, sourceLineId }) }}
+                  >
+                    <p className="text-xs font-semibold uppercase tracking-[0.14em] text-gray-500">New part</p>
+                    <input
+                      autoFocus
+                      value={draft.name}
+                      onChange={(e) => setAdHocDraft({ ...draft, name: e.target.value })}
+                      placeholder="Part name"
+                      className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-orange-500 focus:ring-2 focus:ring-orange-500"
+                    />
+                    <div className="grid grid-cols-2 gap-2">
+                      <input
+                        value={draft.sku}
+                        onChange={(e) => setAdHocDraft({ ...draft, sku: e.target.value })}
+                        placeholder="Part number (optional)"
+                        className="rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-orange-500 focus:ring-2 focus:ring-orange-500"
+                      />
+                      <input
+                        value={draft.quantity}
+                        inputMode="decimal"
+                        onChange={(e) => setAdHocDraft({ ...draft, quantity: e.target.value })}
+                        placeholder="Qty"
+                        className="rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-orange-500 focus:ring-2 focus:ring-orange-500"
+                      />
+                      <input
+                        value={draft.cost}
+                        inputMode="decimal"
+                        onChange={(e) => setAdHocDraft({ ...draft, cost: e.target.value })}
+                        placeholder="Unit cost"
+                        className="rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-orange-500 focus:ring-2 focus:ring-orange-500"
+                      />
+                      <input
+                        value={draft.price}
+                        inputMode="decimal"
+                        onChange={(e) => setAdHocDraft({ ...draft, price: e.target.value })}
+                        placeholder="Selling price"
+                        className="rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-orange-500 focus:ring-2 focus:ring-orange-500"
+                      />
+                    </div>
+                    <p className="text-[11px] text-gray-500">Saved to the catalogue as a placeholder, so the next job can find it.</p>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="submit"
+                        disabled={!draft.name.trim() || !draft.price.trim() || addAdHocPart.isPending}
+                        className="inline-flex items-center gap-1.5 rounded-lg bg-orange-600 px-3 py-2 text-sm font-semibold text-white disabled:opacity-50"
+                      >
+                        {addAdHocPart.isPending ? <Spinner size="xs" /> : null}
+                        {addAdHocPart.isPending ? 'Adding…' : 'Add to order'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setAdHocDraft(null)}
+                        className="rounded-lg px-2 py-2 text-sm font-semibold text-gray-500 hover:text-gray-700"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </form>
+    )
   }
 
   const addPart = useMutation({
@@ -3306,7 +3430,24 @@ export default function PriceBuilderPanel({
                     item.name.toLowerCase().includes(term) || item.sku.toLowerCase().includes(term)
                   ))
                   if (!matches.length) {
-                    return <p className="px-2 py-3 text-sm text-gray-500">No parts match this search.</p>
+                    // A search that finds nothing is where an unlisted part is
+                    // discovered, so this is where adding one belongs — not on
+                    // the inventory screen, which means leaving the job.
+                    if (adHocDraft) return renderAdHocForm(null)
+                    return (
+                      <div className="px-2 py-3">
+                        <p className="text-sm text-gray-500">No parts match this search.</p>
+                        {canMutate && (
+                          <button
+                            type="button"
+                            onClick={() => setAdHocDraft({ name: partSearchTerm.trim(), sku: '', price: '', cost: '', quantity: '1' })}
+                            className="mt-1.5 text-sm font-semibold text-orange-700 underline-offset-2 hover:underline"
+                          >
+                            Add &ldquo;{partSearchTerm.trim()}&rdquo; as a new part
+                          </button>
+                        )}
+                      </div>
+                    )
                   }
                   return matches.map((item, index) => renderItemRow(item, index))
                 })()}
@@ -3488,9 +3629,12 @@ export default function PriceBuilderPanel({
           const inventoryLoadingWithoutResults = inventoryFetching && inventory.length === 0
 
           return (
-            <div className="rounded-xl border border-dashed border-orange-200 bg-orange-50/50 p-3">
+            <div className="db-op-part-panel rounded-xl border border-dashed border-orange-300 bg-orange-50/60 p-3">
               <div className="mb-2 flex items-center justify-between gap-2">
-                <span className="text-[11px] font-bold uppercase tracking-[0.16em] text-orange-500">Add part to operation</span>
+                <span className="inline-flex items-center gap-1.5 text-sm font-semibold text-orange-700">
+                  <Plus className="h-4 w-4" aria-hidden="true" />
+                  Add part to this operation
+                </span>
                 <button
                   type="button"
                   onClick={() => setOperationPartPickerLineId(null)}
@@ -3505,12 +3649,36 @@ export default function PriceBuilderPanel({
                 <input
                   value={operationPartSearchByLineId[line.id] || ''}
                   onChange={(e) => setOperationPartSearchByLineId((current) => ({ ...current, [line.id]: e.target.value }))}
-                  placeholder="Search inventory for this operation..."
+                  placeholder="Search parts, or type a name to add a new one"
                   className="h-10 w-full rounded-lg border border-orange-200 bg-white pl-9 pr-3 text-sm outline-none focus:ring-2 focus:ring-orange-200"
                 />
               </div>
               {!hasSearchTerm ? (
-                <p className="px-1 py-2 text-sm text-gray-500">Type at least two characters to search inventory.</p>
+                (
+                  operationSuggestions.length > 0 ? (
+                    <div className="flex flex-wrap gap-1.5 px-1 pb-1">
+                      {operationSuggestions.map((suggestion) => (
+                        <button
+                          key={suggestion.inventory_id}
+                          type="button"
+                          disabled={!canMutate || addPart.isPending}
+                          onClick={() => addPart.mutate({
+                            inventoryId: suggestion.inventory_id,
+                            quantity: 1,
+                            sourceLineId: operationPartPickerLineId,
+                            quantityKey: `op:${suggestion.inventory_id}`,
+                          })}
+                          className="db-inline-text-action inline-flex items-center gap-1 rounded-full border border-orange-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-gray-700 hover:border-orange-400 disabled:opacity-50"
+                        >
+                          <Plus className="h-3 w-3 text-orange-600" aria-hidden="true" />
+                          {suggestion.name}
+                        </button>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="px-1 pb-1 text-xs text-gray-500">Search by name or part number.</p>
+                  )
+                )
               ) : inventoryLoadingWithoutResults ? (
                 <PickerLoadingRows message="Searching inventory…" />
               ) : inventoryErrored ? (
@@ -3525,7 +3693,22 @@ export default function PriceBuilderPanel({
                   </button>
                 </p>
               ) : !matches.length ? (
-                <p className="px-1 py-2 text-sm text-gray-500">No parts match this operation search.</p>
+                (
+                    adHocDraft ? renderAdHocForm(operationPartPickerLineId) : (
+                      <div className="px-1 py-2">
+                        <p className="text-sm text-gray-500">No parts match this search.</p>
+                        {canMutate && (
+                          <button
+                            type="button"
+                            onClick={() => setAdHocDraft({ name: operationPartSearchTerm.trim(), sku: '', price: '', cost: '', quantity: '1' })}
+                            className="db-inline-text-action mt-1 text-sm font-semibold text-orange-700 underline-offset-2 hover:underline"
+                          >
+                            Add &ldquo;{operationPartSearchTerm.trim()}&rdquo; as a new part
+                          </button>
+                        )}
+                      </div>
+                    )
+                  )
               ) : (
                 <div className="space-y-1">
                   {matches.map((item) => {
@@ -3753,15 +3936,17 @@ export default function PriceBuilderPanel({
                         </div>
                         {groupedParts.length > 0 && renderPartsRows(groupedParts)}
                         {isAddingPartHere && <PendingWorkRows message="Adding part to this operation…" />}
-                        <button
-                          type="button"
-                          disabled={!canMutate || addPart.isPending}
-                          onClick={() => setOperationPartPickerLineId((current) => current === line.id ? null : line.id)}
-                          className="inline-flex w-full items-center justify-center gap-1 rounded-xl border border-dashed border-gray-300 px-3 py-2 text-sm font-semibold text-slate-700 hover:border-orange-300 hover:bg-orange-50 hover:text-orange-700 disabled:hover:border-gray-300 disabled:hover:bg-transparent disabled:hover:text-slate-600 disabled:opacity-60"
-                        >
-                          {isAddingPartHere ? <Spinner size="xs" label="Adding part to this operation" /> : <Plus className="h-4 w-4" />}
-                          {isAddingPartHere ? 'Adding part…' : 'Add part to this operation'}
-                        </button>
+                        {operationPartPickerLineId !== line.id && (
+                          <button
+                            type="button"
+                            disabled={!canMutate || addPart.isPending}
+                            onClick={() => setOperationPartPickerLineId(line.id)}
+                            className="db-op-part-trigger inline-flex w-full items-center justify-center gap-1 rounded-xl border border-dashed border-gray-300 px-3 py-2.5 text-sm font-semibold text-gray-600 hover:border-orange-300 hover:text-orange-700 disabled:opacity-50"
+                          >
+                            {isAddingPartHere ? <Spinner size="xs" label="Adding part to this operation" /> : <Plus className="h-4 w-4" />}
+                            {isAddingPartHere ? 'Adding part…' : 'Add part to this operation'}
+                          </button>
+                        )}
                         {renderOperationPartPicker(line, groupedParts)}
                       </div>
                     )}

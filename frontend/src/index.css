@@ -3634,6 +3634,35 @@ html::-webkit-scrollbar-thumb:hover {
 .db-repair-orders-ledger > footer { min-height: 56px; display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 12px; padding: 0 2px; background: transparent; color: var(--db-ledger-muted); font-size: 12px; }
 .db-repair-orders-ledger > footer > div { display: flex; gap: 7px; }
 
+/* Adding a part to an operation is one control in two states, so opening it
+   grows the same box rather than dropping a second one under a button. It
+   starts from the trigger's own edge and at nearly full size — nothing in the
+   world appears from nothing — over the 150-250ms a disclosure of this size
+   should take, on a curve with enough in it to feel deliberate. */
+.db-op-part-trigger { transition: border-color 140ms ease-out, color 140ms ease-out, transform 90ms ease-out; }
+.db-op-part-trigger:active:not(:disabled) { transform: scale(.99); }
+
+.db-op-part-panel {
+  transform-origin: top center;
+  transition:
+    opacity 180ms cubic-bezier(0.23, 1, 0.32, 1),
+    transform 180ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+@starting-style {
+  .db-op-part-panel { opacity: 0; transform: scale(.98) translateY(-4px); }
+}
+
+/* Reduced motion keeps the state change and drops the movement. */
+@media (prefers-reduced-motion: reduce) {
+  .db-op-part-trigger { transition: border-color 140ms ease-out, color 140ms ease-out; }
+  .db-op-part-trigger:active:not(:disabled) { transform: none; }
+  .db-op-part-panel { transition: opacity 140ms ease-out; }
+  @starting-style {
+    .db-op-part-panel { opacity: 0; transform: none; }
+  }
+}
+
 /* The quick-pick row holds more suggestions than fit. Cutting the last chip
    through its own word reads as a mistake; fading the edge reads as more to
    come, which is what it is. No scrollbar — the strip is one row of shortcuts,
