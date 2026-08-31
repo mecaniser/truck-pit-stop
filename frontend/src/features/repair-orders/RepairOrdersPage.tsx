@@ -981,6 +981,22 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
     onError: (error: unknown) => toast.error(getErrorDetail(error, 'Could not void this order')),
   })
 
+  // Work requested is the customer's own words about why the truck is here.
+  // It was displayed and never editable, and hidden entirely when absent.
+  const saveDescriptionMutation = useMutation({
+    mutationFn: async (description: string | null) => {
+      const response = await api.put(`/repair-orders/${selectedOrder!.id}`, { description })
+      return response.data as RepairOrder
+    },
+    onSuccess: (updated) => {
+      queryClient.invalidateQueries({ queryKey: ['repair-orders'] })
+      queryClient.invalidateQueries({ queryKey: ['repair-order-detail', updated.id] })
+      setSelectedOrder(updated)
+      toast.success('Work requested updated')
+    },
+    onError: (error: unknown) => toast.error(getErrorDetail(error, 'Could not save work requested')),
+  })
+
   const addOrderNoteMutation = useMutation({
     mutationFn: async (note: { body: string; audience: 'customer' | 'shop' }) => {
       await api.post(`/repair-orders/${selectedOrder!.id}/notes`, note)
@@ -4364,6 +4380,8 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                     mileageIn={selectedOrder.mileage_in}
                     mileageOut={selectedOrder.mileage_out}
                     poNumber={selectedOrder.po_number}
+                    onSaveDescription={async (d) => { await saveDescriptionMutation.mutateAsync(d) }}
+                    descriptionSaving={saveDescriptionMutation.isPending}
                     notes={orderNotes}
                     notesSaving={addOrderNoteMutation.isPending}
                     onAddNote={async (note) => { await addOrderNoteMutation.mutateAsync(note) }}

@@ -26,7 +26,7 @@ import {
   Trash2,
   Truck,
   Wrench,
-  X, StickyNote } from 'lucide-react'
+  X, StickyNote, Pencil } from 'lucide-react'
 
 import api from '@/lib/api'
 import { useDebouncedValue } from '@/hooks/useDebouncedValue'
@@ -147,6 +147,8 @@ type Props = {
   mileageOut?: number | null
   poNumber?: string | null
   orderTypeLabel?: string
+  onSaveDescription?: (description: string | null) => Promise<void> | void
+  descriptionSaving?: boolean
   notes?: PriceBuilderNote[]
   onAddNote?: (note: { body: string; audience: 'customer' | 'shop' }) => Promise<void> | void
   onDeleteNote?: (noteId: string) => Promise<void> | void
@@ -892,6 +894,8 @@ export default function PriceBuilderPanel({
   mileageOut,
   poNumber,
   orderTypeLabel,
+  onSaveDescription,
+  descriptionSaving = false,
   notes = [],
   onAddNote,
   onDeleteNote,
@@ -1006,6 +1010,16 @@ export default function PriceBuilderPanel({
   const [notesOpen, setNotesOpen] = useState(false)
   // Forcing past the financial-record guard. Two fields, because the password
   // is what makes this different from every other button in the danger zone.
+  // Work requested was read-only, and the whole block was hidden when empty —
+  // so an order that came in without one could never be given one.
+  const [descriptionEditing, setDescriptionEditing] = useState(false)
+  const [descriptionDraft, setDescriptionDraft] = useState('')
+  const descriptionRef = useRef<HTMLTextAreaElement | null>(null)
+  const descriptionWasEditing = useRef(false)
+  useEffect(() => {
+    if (descriptionEditing && !descriptionWasEditing.current) descriptionRef.current?.focus()
+    descriptionWasEditing.current = descriptionEditing
+  }, [descriptionEditing])
   const [forceVoidOpen, setForceVoidOpen] = useState(false)
   const [forceVoidReason, setForceVoidReason] = useState('')
   const [forceVoidPassword, setForceVoidPassword] = useState('')
@@ -2140,13 +2154,22 @@ export default function PriceBuilderPanel({
     onError: () => toast.error('Unable to update line'),
   })
 
+  // Removing a line does not remove the parts an operator added to it: those
+  // are kept on the order as standalone parts, and only a Service's own
+  // bundled parts go with it. That is deliberate — a tech's parts should not
+  // vanish with a labor line — but silently moving them left the operator to
+  // discover them loose later, so say what happened.
   const removeLine = useMutation({
-    mutationFn: async (lineId: string) => {
+    mutationFn: async ({ lineId }: { lineId: string; keptParts: number }) => {
       await api.delete(`/repair-orders/${orderId}/price-build/lines/${lineId}`)
     },
-    onSuccess: async () => {
+    onSuccess: async (_data, variables) => {
       await invalidate()
-      toast.success('Line removed')
+      toast.success(
+        variables.keptParts
+          ? `Service removed · ${variables.keptParts} part${variables.keptParts === 1 ? '' : 's'} kept on this order`
+          : 'Line removed',
+      )
     },
     onError: () => toast.error('Unable to remove line'),
   })
@@ -2649,12 +2672,60 @@ export default function PriceBuilderPanel({
 
       <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-5 py-5 pb-4">
 
-      {description && description.trim() && (
+      {(onSaveDescription || (description && description.trim())) && (
         <div>
-          <p className="text-xs font-medium text-gray-400 uppercase tracking-wider mb-1">Work Requested</p>
-          <div className="rounded-lg bg-gray-50 p-3 text-sm text-gray-800 whitespace-pre-wrap">
-            {description}
+          <div className="mb-1 flex items-center justify-between gap-2">
+            <p className="text-xs font-medium text-gray-400 uppercase tracking-wider">Work Requested</p>
+            {onSaveDescription && !descriptionEditing && (
+              <button
+                type="button"
+                onClick={() => { setDescriptionDraft(description || ''); setDescriptionEditing(true) }}
+                aria-label={description && description.trim() ? 'Edit work requested' : 'Add work requested'}
+                className="db-inline-text-action inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-xs font-semibold text-orange-700 hover:bg-orange-50"
+              >
+                <Pencil className="h-3.5 w-3.5" />
+                {description && description.trim() ? 'Edit' : 'Add'}
+              </button>
+            )}
           </div>
+          {descriptionEditing ? (
+            <div className="space-y-2">
+              <textarea
+                ref={descriptionRef}
+                value={descriptionDraft}
+                onChange={(e) => setDescriptionDraft(e.target.value)}
+                rows={3}
+                placeholder="What the customer asked for…"
+                className="w-full resize-none rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-orange-200"
+              />
+              <div className="flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => { setDescriptionEditing(false); setDescriptionDraft('') }}
+                  className="db-inline-text-action rounded-lg px-3 py-1.5 text-xs font-semibold text-gray-500 hover:text-gray-700"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  disabled={descriptionSaving || descriptionDraft.trim() === (description || '').trim()}
+                  onClick={async () => {
+                    await onSaveDescription?.(descriptionDraft.trim() || null)
+                    setDescriptionEditing(false)
+                  }}
+                  className="db-inline-text-action rounded-lg bg-orange-600 px-3 py-1.5 text-xs font-bold text-white disabled:cursor-not-allowed disabled:bg-gray-200 disabled:text-gray-400"
+                >
+                  {descriptionSaving ? 'Saving…' : 'Save'}
+                </button>
+              </div>
+            </div>
+          ) : description && description.trim() ? (
+            <div className="rounded-lg bg-gray-50 p-3 text-sm text-gray-800 whitespace-pre-wrap">
+              {description}
+            </div>
+          ) : (
+            <p className="rounded-lg bg-gray-50 p-3 text-sm text-gray-400">No work requested recorded.</p>
+          )}
         </div>
       )}
 
@@ -3880,7 +3951,7 @@ export default function PriceBuilderPanel({
           )
         }
         if (isLoading) {
-          // Skeleton that mirrors the Work & Labor list, so a slow fetch (prod)
+          // Skeleton that mirrors the Services & Parts list, so a slow fetch (prod)
           // reads as "loading" in the open drawer rather than an empty panel.
           return (
             <div className="animate-pulse">
@@ -3939,7 +4010,7 @@ export default function PriceBuilderPanel({
           <div>
             <div className="mb-1 flex items-center justify-between">
               <span className="inline-flex items-center gap-2">
-                <p className="font-['Barlow_Condensed',sans-serif] text-sm font-extrabold uppercase tracking-[0.16em] text-slate-700">Work & Labor</p>
+                <p className="font-['Barlow_Condensed',sans-serif] text-sm font-extrabold uppercase tracking-[0.16em] text-slate-700">Services & Parts</p>
                 <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[11px] font-bold text-slate-600">{lines.length + (orphanParts.length ? 1 : 0)} lines</span>
               </span>
               <SectionInfoTooltip text="Each card is one billable item. Service packages bundle labor with their required parts — edit hours, rate, or part quantity inline. Stock adjusts automatically." tooltipClassName="w-72" />
@@ -4001,7 +4072,12 @@ export default function PriceBuilderPanel({
                             {canMutate && (
                               <button
                                 type="button"
-                                onClick={() => removeLine.mutate(line.id)}
+                                onClick={() => removeLine.mutate({
+                                  lineId: line.id,
+                                  // Parts linked to the line survive it; a Service's
+                                  // bundled parts go with it and are not counted.
+                                  keptParts: (partsByLine.get(line.id) || []).length,
+                                })}
                                 disabled={removeLine.isPending}
                                 className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-semibold text-red-600 hover:bg-red-50 disabled:opacity-50"
                               >

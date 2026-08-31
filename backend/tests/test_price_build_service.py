@@ -942,3 +942,48 @@ async def test_component_match_requires_minimum_engine_fields(db_session):
     assert candidates
     assert candidates[0].provider == "internal_library"
     assert warnings == []
+
+
+@pytest.mark.asyncio
+async def test_renaming_a_service_line_survives_the_recalculation_that_follows_it(db_session):
+    """The rename was accepted, then reverted inside the same request.
+
+    recalculate_order() reset every Service-sourced line's description back to
+    the Service's name, and update_line calls it. So the PATCH returned 200
+    with the old name still in the response: the field took typing it could
+    never keep. Renaming now takes the line off auto-recalc, the same way a
+    hand-edited rate already did.
+    """
+    _, _, _, order, service = await _seed_context(db_session)
+    svc = PriceBuildService()
+    loaded = await svc.load_order(db_session, order.id)
+    added = await svc.add_flat_service_line(db_session, loaded, service.id, quantity=2)
+    line = added.order.labor_items[0]
+    assert line.description == service.name
+
+    result = await svc.update_line(
+        db_session, added.order, line_id=line.id, description="Brake Inspection Test",
+    )
+
+    renamed = next(item for item in result.order.labor_items if item.id == line.id)
+    assert renamed.description == "Brake Inspection Test"
+
+    # And it must still be there on the next recalculation, not only this one.
+    again = await svc.recalculate_order(db_session, result.order)
+    assert next(i for i in again.order.labor_items if i.id == line.id).description == "Brake Inspection Test"
+
+
+@pytest.mark.asyncio
+async def test_an_untouched_service_line_still_follows_its_service_name(db_session):
+    """The behaviour the overwrite existed for, which must not be lost."""
+    _, _, _, order, service = await _seed_context(db_session)
+    svc = PriceBuildService()
+    loaded = await svc.load_order(db_session, order.id)
+    added = await svc.add_flat_service_line(db_session, loaded, service.id, quantity=1)
+    line = added.order.labor_items[0]
+
+    service.name = "Brake Inspection (revised)"
+    await db_session.flush()
+    result = await svc.recalculate_order(db_session, added.order)
+
+    assert next(i for i in result.order.labor_items if i.id == line.id).description == "Brake Inspection (revised)"
