@@ -212,6 +212,10 @@ async def test_quickbooks_callback_resets_accounting_links_when_company_changes(
         status=ProviderOutboxStatus.SUCCEEDED.value,
         attempt_count=5,
         available_at=datetime.now(timezone.utc),
+        locked_at=datetime.now(timezone.utc) - timedelta(minutes=2),
+        locked_until=datetime.now(timezone.utc) + timedelta(minutes=10),
+        lock_token="old-claim-token",
+        last_attempt_at=datetime.now(timezone.utc) - timedelta(minutes=2),
         completed_at=datetime.now(timezone.utc),
         last_error="old failure",
     )
@@ -252,6 +256,9 @@ async def test_quickbooks_callback_resets_accounting_links_when_company_changes(
     assert invoice.quickbooks_sync_error is None
     assert event.status == ProviderOutboxStatus.PENDING.value
     assert event.attempt_count == 0
+    assert event.locked_at is None
+    assert event.locked_until is None
+    assert event.lock_token is None
     assert event.completed_at is None
     assert event.last_error is None
 
