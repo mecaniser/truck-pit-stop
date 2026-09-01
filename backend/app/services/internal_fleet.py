@@ -89,12 +89,20 @@ def advance_vehicle_pm(vehicle, base_odometer: Optional[int], completed_on: Opti
 def fleet_display_name(customer, fleet_company_name: Optional[str]) -> str:
     """Customer display name for a repair order.
 
-    For internal fleet ROs the customer is the tenant's house account, which
-    shouldn't show its generic placeholder name. Prefer the configured fleet
-    company name (e.g. "77 Cargo"); fall back to the customer's first/last name.
+    This is a heavy-duty shop: the work belongs to a carrier, so the company
+    name is the identifier that matters and the contact's own name is
+    secondary. Company name first, personal name only when there is no company
+    on the record — the same rule the customer ledger already applies.
+
+    Internal fleet ROs are the exception ahead of that: their customer is the
+    tenant's house account, whose generic placeholder name should never show,
+    so the configured fleet company name wins.
     """
     if getattr(customer, "is_internal_fleet", False) and fleet_company_name:
         return fleet_company_name
+    company = (getattr(customer, "company_name", None) or "").strip()
+    if company:
+        return company
     return f"{customer.first_name} {customer.last_name}".strip()
 
 
