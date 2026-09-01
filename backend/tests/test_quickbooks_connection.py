@@ -21,6 +21,11 @@ from app.core.quickbooks_crypto import decrypt_quickbooks_token
 from app.core.security import create_access_token
 from app.db.models.customer import Customer
 from app.db.models.invoice import Invoice, InvoiceStatus
+from app.db.models.invoice_settlement import (
+    InvoicePaymentAttempt,
+    InvoiceSettlement,
+    TenantPaymentProviderConfiguration,
+)
 from app.db.models.payment_step_up import PaymentStepUpAuditEvent, PaymentStepUpGrant
 from app.db.models.provider_outbox import ProviderOutboxEvent, ProviderOutboxStatus
 from app.db.models.quickbooks_connection import QuickBooksConnection, QuickBooksOAuthState
@@ -587,6 +592,169 @@ async def test_quickbooks_callback_deduplicates_existing_sync_events_and_recover
         events_by_invoice[active_invoice.id].status
         == ProviderOutboxStatus.PROCESSING.value
     )
+
+
+@pytest.mark.asyncio
+async def test_quickbooks_callback_blocks_realm_change_with_db048_history(
+    client,
+    db_session,
+    monkeypatch,
+    issue_payment_step_up,
+):
+    _configure_quickbooks(monkeypatch)
+    tenant, owner, token = await _owner_with_token(
+        db_session,
+        suffix="db048-realm-fence",
+    )
+    headers = await issue_payment_step_up(
+        token=token,
+        user=owner,
+        scope=PaymentStepUpScope.MANAGE,
+    )
+    tenant.stripe_account_id = "acct_db048_realm"
+    tenant.stripe_onboarding_complete = True
+    customer = Customer(
+        tenant_id=tenant.id,
+        first_name="Realm",
+        last_name="Customer",
+        email=f"realm-{uuid4().hex}@example.test",
+    )
+    db_session.add(customer)
+    await db_session.flush()
+    vehicle = Vehicle(
+        tenant_id=tenant.id,
+        customer_id=customer.id,
+        year=2024,
+        make="Volvo",
+        model="VNL",
+    )
+    db_session.add(vehicle)
+    await db_session.flush()
+    order = RepairOrder(
+        tenant_id=tenant.id,
+        customer_id=customer.id,
+        vehicle_id=vehicle.id,
+        order_number=f"RO-{uuid4().hex[:8]}",
+        status=RepairOrderStatus.INVOICED,
+        total_parts_cost=Decimal("0"),
+        total_labor_cost=Decimal("100"),
+        total_cost=Decimal("100"),
+    )
+    db_session.add(order)
+    await db_session.flush()
+    invoice = Invoice(
+        tenant_id=tenant.id,
+        repair_order_id=order.id,
+        invoice_number=f"INV-{uuid4().hex[:8]}",
+        status=InvoiceStatus.SENT,
+        subtotal=Decimal("100"),
+        tax_amount=Decimal("0"),
+        discount_amount=Decimal("0"),
+        total_amount=Decimal("100"),
+    )
+    db_session.add(invoice)
+    await db_session.flush()
+    config = TenantPaymentProviderConfiguration(
+        tenant_id=tenant.id,
+        version=1,
+        selected_provider="stripe_connect",
+        readiness_state="ready",
+        is_active=True,
+        actor_user_id=owner.id,
+        actor_name_snapshot="QuickBooks Owner",
+        provider_account_snapshot="acct_db048_realm",
+        qbo_realm_snapshot="111111111111111",
+        writer_strategy="dieselbridge",
+        idempotency_key="realm-fence-config",
+        request_hash="1" * 64,
+        stripe_clearing_account="Stripe Clearing",
+        qbp_clearing_account="QBP Clearing",
+        check_deposit_account="Undeposited Funds",
+        zelle_ach_account="Zelle Clearing",
+        card_fee_income_account="Card Fee Income",
+        processor_fee_expense_account="Processor Fees",
+        sales_tax_liability_account="Sales Tax Payable",
+        checking_account="Checking",
+    )
+    settlement = InvoiceSettlement(
+        tenant_id=tenant.id,
+        invoice_id=invoice.id,
+        customer_id=customer.id,
+        principal_total=Decimal("100"),
+        max_card_fee=Decimal("0"),
+        max_card_fee_tax=Decimal("0"),
+        sales_tax_rate_snapshot=Decimal("0"),
+        card_fee_rate_snapshot=Decimal("0"),
+        confirmed_principal=Decimal("0"),
+        active_pending_principal=Decimal("10"),
+        unapplied_credit=Decimal("0"),
+        refund_pending=Decimal("0"),
+        state="payment_pending",
+        qbo_realm_snapshot="111111111111111",
+        initial_provider_configuration_version=1,
+    )
+    connection = QuickBooksConnection(
+        tenant_id=tenant.id,
+        realm_id="111111111111111",
+        scopes="com.intuit.quickbooks.accounting",
+        status="connected",
+        encrypted_access_token="old-access",
+        encrypted_refresh_token="old-refresh",
+    )
+    db_session.add_all([config, settlement, connection])
+    await db_session.flush()
+    attempt = InvoicePaymentAttempt(
+        tenant_id=tenant.id,
+        invoice_id=invoice.id,
+        settlement_id=settlement.id,
+        customer_id=customer.id,
+        source="customer_portal",
+        rail="card",
+        provider="stripe_connect",
+        state="pending",
+        principal_amount=Decimal("10"),
+        card_fee_amount=Decimal("0"),
+        card_fee_tax_amount=Decimal("0"),
+        provider_charge_amount=Decimal("10"),
+        provider_configuration_version=1,
+        provider_account_id="acct_db048_realm",
+        actor_name_snapshot="Customer",
+        subject_type="customer",
+        subject_id=customer.id,
+        idempotency_key="realm-fence-attempt",
+        request_hash="2" * 64,
+    )
+    db_session.add(attempt)
+    await db_session.commit()
+
+    async def fake_exchange(_code: str) -> QuickBooksTokenSet:
+        return QuickBooksTokenSet(
+            access_token="new-access",
+            refresh_token="new-refresh",
+            expires_in=3600,
+            refresh_token_expires_in=8_640_000,
+        )
+
+    monkeypatch.setattr(quickbooks, "exchange_authorization_code", fake_exchange)
+    start = await client.post("/api/v1/quickbooks/connect", headers=headers)
+    state_value = parse_qs(urlparse(start.json()["url"]).query)["state"][0]
+    callback = await client.get(
+        "/api/v1/quickbooks/oauth/callback",
+        params={
+            "state": state_value,
+            "code": "authorization-code",
+            "realmId": "222222222222222",
+        },
+    )
+
+    assert callback.status_code == 303
+    assert callback.headers["location"].endswith(
+        "/dashboard/settings?quickbooks=realm-change-blocked"
+    )
+    await db_session.refresh(connection)
+    assert connection.realm_id == "111111111111111"
+    assert connection.encrypted_access_token == "old-access"
+    assert connection.encrypted_refresh_token == "old-refresh"
 
 
 @pytest.mark.asyncio

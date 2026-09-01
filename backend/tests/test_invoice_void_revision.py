@@ -14,6 +14,7 @@ from app.api.v1.endpoints.invoices import (
 )
 from app.db.models.customer import Customer
 from app.db.models.invoice import Invoice, InvoiceStatus
+from app.db.models.invoice_settlement import InvoiceSettlement
 from app.db.models.repair_order import RepairOrder, RepairOrderStatus
 from app.db.models.repair_order_history import RepairOrderHistoryEvent
 from app.db.models.tenant import Tenant
@@ -150,6 +151,12 @@ async def test_void_preserves_invoice_and_replacement_supersedes_it(db_session, 
     )).scalars().all()
     assert len(invoices) == 2
     assert sum(item.status != InvoiceStatus.CANCELLED for item in invoices) == 1
+    replacement_settlement = await db_session.scalar(select(InvoiceSettlement).where(
+        InvoiceSettlement.invoice_id == replacement.id,
+    ))
+    assert replacement_settlement is not None
+    assert replacement_settlement.customer_id == order.customer_id
+    assert replacement_settlement.legacy_reconciliation_status == "native"
 
 
 @pytest.mark.asyncio

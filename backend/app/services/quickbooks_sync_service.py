@@ -13,6 +13,7 @@ from sqlalchemy.orm import selectinload
 from app.core.config import settings
 from app.db.models.customer import Customer
 from app.db.models.invoice import Invoice
+from app.db.models.invoice_settlement import InvoiceSettlement
 from app.db.models.payment import Payment, PaymentMethod, PaymentStatus
 from app.db.models.provider_outbox import ProviderOutboxEvent, ProviderOutboxStatus
 from app.db.models.quickbooks_connection import QuickBooksConnection
@@ -27,6 +28,7 @@ from app.services.quickbooks_accounting_service import (
 )
 from app.services.quickbooks_payments_service import QuickBooksPaymentError, get_charge, is_successful_charge
 from app.services.quickbooks_service import QuickBooksOAuthError, refresh_access_token, save_token_set
+from app.services.db048_accounting_reconciliation import sync_db048_principal_invoice
 
 
 QUICKBOOKS_INVOICE_SYNC_EVENT = "quickbooks.invoice.sync.v1"
@@ -229,7 +231,22 @@ async def process_quickbooks_invoice_sync_events(
                 continue
             try:
                 await _refresh_if_needed(connection)
-                await sync_invoice(connection, invoice, invoice.repair_order.customer)
+                settlement = await db.scalar(
+                    select(InvoiceSettlement).where(
+                        InvoiceSettlement.tenant_id == invoice.tenant_id,
+                        InvoiceSettlement.invoice_id == invoice.id,
+                        InvoiceSettlement.deleted_at.is_(None),
+                    )
+                )
+                if settlement:
+                    await sync_db048_principal_invoice(
+                        connection=connection,
+                        invoice=invoice,
+                        customer=invoice.repair_order.customer,
+                        settlement=settlement,
+                    )
+                else:
+                    await sync_invoice(connection, invoice, invoice.repair_order.customer)
                 if not await _quickbooks_claim_is_current(
                     db,
                     event_id=event_id,

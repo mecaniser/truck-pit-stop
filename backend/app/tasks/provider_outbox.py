@@ -2,6 +2,10 @@
 from __future__ import annotations
 
 from app.services.provider_outbox_service import process_due_provider_outbox_events
+from app.services.db048_accounting_reconciliation import (
+    process_db048_settlement_maintenance,
+    process_due_db048_outbox_events,
+)
 from app.services.paid_invoice_webhook_service import process_due_paid_invoice_webhooks
 from app.services.conversion_pii_retention_service import purge_expired_conversion_event_pii
 from app.tasks import celery_app
@@ -18,6 +22,30 @@ from app.tasks.async_runtime import run_async
 def process_provider_outbox() -> dict[str, int]:
     """Process a small due batch; Celery beat invokes this every ten seconds."""
     return run_async(process_due_provider_outbox_events())
+
+
+@celery_app.task(
+    name="process_db048_financial_outbox",
+    acks_late=True,
+    reject_on_worker_lost=True,
+    soft_time_limit=45,
+    time_limit=60,
+)
+def process_db048_financial_outbox() -> dict[str, int]:
+    """Process DB-048 QBO accounting and provider refund operations."""
+    return run_async(process_due_db048_outbox_events())
+
+
+@celery_app.task(
+    name="process_db048_settlement_maintenance",
+    acks_late=True,
+    reject_on_worker_lost=True,
+    soft_time_limit=45,
+    time_limit=60,
+)
+def process_db048_settlement_maintenance_task() -> dict[str, int]:
+    """Expire manual reservations and provider-check card holds."""
+    return run_async(process_db048_settlement_maintenance())
 
 
 @celery_app.task(

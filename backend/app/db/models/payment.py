@@ -75,3 +75,13 @@ class Payment(BaseModel):
     source = Column(String(50), nullable=True, index=True)  # e.g. easy_truck_shop_import
     recorded_by_user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
     recorded_by_user = relationship("User", foreign_keys=[recorded_by_user_id])
+
+    # DB-048 compatibility link. A confirmed allocation still writes exactly
+    # one legacy payment row, while the allocation owns the principal/fee split.
+    invoice_payment_attempt_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("invoice_payment_attempts.id"),
+        nullable=True,
+        unique=True,
+        index=True,
+    )

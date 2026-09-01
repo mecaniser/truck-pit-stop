@@ -35,6 +35,7 @@ import DurationStepper from '@/components/DurationStepper'
 import { formatHoursMinutes } from '@/lib/durationFormat'
 import { formatFileSize, isSupportedPhotoFile, runPhotoUploadQueue, uploadDirectPhoto, type PhotoUploadStatus } from '@/lib/photoUpload'
 import SectionInfoTooltip from '@/components/SectionInfoTooltip'
+import { SettlementSummaryCard, type InvoiceSettlementSummary } from '@/features/payments'
 import {
   PartsUsage,
   PartSuggestionsResponse,
@@ -197,6 +198,7 @@ type Props = {
   onInvoiceRecipientChange?: (value: string) => void
   onCreateInvoice?: (dueDate?: string | null, billToCustomerId?: string) => void
   invoice?: Invoice | null
+  invoiceSettlement?: InvoiceSettlementSummary | null
   invoiceActionPending?: boolean
   onResendInvoice?: () => void
   onRecordPayment?: () => void
@@ -945,6 +947,7 @@ export default function PriceBuilderPanel({
   onInvoiceRecipientChange,
   onCreateInvoice,
   invoice,
+  invoiceSettlement = null,
   invoiceActionPending = false,
   onResendInvoice,
   onRecordPayment,
@@ -1471,13 +1474,18 @@ export default function PriceBuilderPanel({
 
   const isLocked = !!summary?.pricing_locked
   const hasInvoice = !!invoice && ['invoiced', 'paid'].includes(orderStatus)
-  const invoiceDisplayTotal = invoice
+  const invoiceDisplayTotal = invoiceSettlement
+    ? parseFloat(invoiceSettlement.allocatable_balance || '0')
+    : invoice
     ? Math.max(
         0,
         parseFloat(invoice.total_amount || '0')
           - (invoice.pending_zelle_confirmation ? parseFloat(invoice.service_fee_amount || '0') : 0),
       )
     : 0
+  const invoiceFinanciallyPaid = invoiceSettlement
+    ? invoiceSettlement.state === 'paid'
+    : orderStatus === 'paid'
   const canCreateInvoice = !isInternalOrder && orderStatus === 'completed' && !!onCreateInvoice
   const showRecommendedServicesPanel = !['completed', 'invoiced', 'paid'].includes(orderStatus)
   // Work-first: the repair order is editable throughout active shop work. The
@@ -2805,7 +2813,13 @@ export default function PriceBuilderPanel({
               <div className="min-w-0">
                 <p className="truncate font-semibold text-purple-950">Invoice {invoice.invoice_number}</p>
                 <p className="text-sm text-purple-700">
-                  {orderStatus === 'paid' ? 'Paid' : invoice.pending_zelle_confirmation ? 'Pending Zelle confirmation' : 'Awaiting payment'}
+                  {invoiceSettlement
+                    ? invoiceSettlement.state.replace(/_/g, ' ')
+                    : orderStatus === 'paid'
+                      ? 'Paid'
+                      : invoice.pending_zelle_confirmation
+                        ? 'Pending Zelle confirmation'
+                        : 'Awaiting payment'}
                 </p>
               </div>
             </div>
@@ -2824,14 +2838,18 @@ export default function PriceBuilderPanel({
             </span>
           </button>
 
-          {invoice.pending_zelle_confirmation && (
+          {!invoiceSettlement && invoice.pending_zelle_confirmation && (
             <div className="mt-3 rounded-xl border border-yellow-200 bg-yellow-50 px-3 py-2 text-sm text-yellow-900">
               Customer marked this invoice as paid via Zelle. Confirm receipt from the footer payment action.
             </div>
           )}
 
           {invoiceDetailsOpen && (
-          <div className="mt-3 space-y-2 rounded-xl bg-white p-3 text-sm ring-1 ring-purple-100">
+          <div className="mt-3 space-y-3 rounded-xl bg-white p-3 text-sm ring-1 ring-purple-100">
+            {invoiceSettlement && (
+              <SettlementSummaryCard summary={invoiceSettlement} tone="light" compact />
+            )}
+            <div className="space-y-2">
             <div className="flex items-center justify-between">
               <span className="text-gray-500">Repair subtotal</span>
               <span className="font-semibold text-gray-900">{money(invoice.subtotal)}</span>
@@ -2862,11 +2880,12 @@ export default function PriceBuilderPanel({
             )}
             <div className="flex items-center justify-between border-t border-purple-100 pt-2">
               <span className="font-semibold text-purple-950">
-                {invoice.pending_zelle_confirmation ? 'Zelle total' : 'Invoice total'}
+                {invoiceSettlement ? 'Remaining payable' : invoice.pending_zelle_confirmation ? 'Zelle total' : 'Invoice total'}
               </span>
               <span className="font-['Barlow_Condensed',sans-serif] text-2xl font-extrabold text-purple-950">{money(invoiceDisplayTotal)}</span>
             </div>
-            {invoice.payment && (
+            </div>
+            {!invoiceSettlement && invoice.payment && (
               <div className="mt-2 flex items-start justify-between gap-3 rounded-xl bg-emerald-50 px-3 py-2 ring-1 ring-emerald-100">
                 <div className="min-w-0">
                   <p className="text-[11px] font-bold uppercase tracking-wide text-emerald-700">Paid</p>
@@ -4875,7 +4894,7 @@ export default function PriceBuilderPanel({
                 </div>
               ) : hasInvoice && invoice ? (
                 <div className="flex min-w-0 items-center justify-end gap-1.5 sm:flex-wrap sm:gap-2">
-                  {orderStatus !== 'paid' && (
+                  {!invoiceFinanciallyPaid && (
                     <button
                       type="button"
                       onClick={() => {
@@ -4920,16 +4939,16 @@ export default function PriceBuilderPanel({
                         ? 'w-[136px] gap-1.5 px-3 max-[360px]:w-[116px] max-[360px]:px-2 max-[360px]:text-[11px]'
                         : 'w-10 gap-0 px-0'
                     }`}
-                    aria-label={orderStatus === 'paid' ? 'Resend copy' : 'Resend invoice'}
+                    aria-label={invoiceFinanciallyPaid ? 'Resend copy' : 'Resend invoice'}
                   >
                     <Mail className="h-4 w-4 shrink-0" />
                     <span className={`overflow-hidden transition-[max-width,opacity] duration-150 sm:max-w-32 sm:opacity-100 ${
                       expandedInvoiceAction === 'resend' ? 'max-w-32 opacity-100' : 'max-w-0 opacity-0'
                     }`}>
-                      {orderStatus === 'paid' ? 'Resend copy' : 'Resend invoice'}
+                      {invoiceFinanciallyPaid ? 'Resend copy' : 'Resend invoice'}
                     </span>
                   </button>
-                  {orderStatus !== 'paid' && !invoice.pending_zelle_confirmation && onVoidInvoice && (
+                  {!invoiceFinanciallyPaid && !invoice.pending_zelle_confirmation && onVoidInvoice && (
                     <button
                       type="button"
                       onClick={() => {

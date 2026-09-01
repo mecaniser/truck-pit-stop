@@ -10,6 +10,7 @@ from fastapi import HTTPException
 
 from app.api.v1.endpoints import invoices
 from app.db.models.customer import Customer
+from app.db.models.invoice_settlement import InvoiceSettlement
 from app.db.models.repair_order import RepairOrder, RepairOrderStatus
 from app.db.models.tenant import Tenant
 from app.db.models.user import User, UserRole
@@ -169,6 +170,11 @@ async def test_create_invoice_applies_discount_amount(monkeypatch):
     assert response.total_amount == Decimal("140.00")
     assert order.status == RepairOrderStatus.INVOICED
     assert fake_db.commit_count == 1
+    settlements = [row for row in fake_db.added if isinstance(row, InvoiceSettlement)]
+    assert len(settlements) == 1
+    assert settlements[0].invoice_id == response.id
+    assert settlements[0].customer_id == order.customer_id
+    assert settlements[0].legacy_reconciliation_status == "native"
 
 
 @pytest.mark.asyncio

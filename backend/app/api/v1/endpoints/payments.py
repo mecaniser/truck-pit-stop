@@ -1,7 +1,7 @@
 from typing import Any, List, Optional
 from uuid import UUID
 from datetime import datetime, timezone
-from fastapi import APIRouter, Depends, HTTPException, status, Query, Request
+from fastapi import APIRouter, Depends, Header, HTTPException, status, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_
 from sqlalchemy.orm import selectinload
@@ -18,6 +18,7 @@ from app.core.phone import normalize_phone
 from app.db.models.user import User, UserRole
 from app.db.models.customer import Customer
 from app.db.models.invoice import Invoice, InvoiceStatus
+from app.db.models.invoice_settlement import InvoicePaymentAttempt
 from app.db.models.repair_order import RepairOrder, RepairOrderStatus
 from app.db.models.payment import Payment, PaymentMethod as PaymentMethodEnum, PaymentStatus
 from app.db.models.tenant import Tenant
@@ -30,6 +31,19 @@ from app.services.stripe_payment_finalization import finalize_stripe_invoice_pay
 from app.services.stripe_customer_service import ensure_connected_stripe_customer
 from app.services.stripe_platform_fee import platform_fee_amount_cents, platform_fee_percent_for
 from app.services.paid_invoice_webhook_service import enqueue_paid_invoice_webhook
+from app.services.invoice_settlement_service import (
+    allocatable_balance,
+    confirm_attempt,
+    create_attempt,
+    fail_attempt,
+    get_or_create_settlement,
+    money,
+    settlement_for_compatibility_route,
+)
+from app.api.v1.endpoints.invoice_settlements import (
+    _persist_and_bind_stripe_intent,
+    invoice_for_principal,
+)
 
 logger = get_logger(__name__)
 
@@ -59,6 +73,8 @@ class ConfigResponse(BaseModel):
 
 class PaymentIntentRequest(BaseModel):
     invoice_id: UUID
+    amount: Optional[Decimal] = None
+    expected_settlement_version: Optional[int] = None
 
 
 class PaymentIntentResponse(BaseModel):
@@ -83,6 +99,8 @@ class ManualPaymentRequest(BaseModel):
     zelle_sender_email: Optional[EmailStr] = None
     zelle_sender_phone: Optional[str] = None
     update_customer_from_sender: bool = False
+    amount: Optional[Decimal] = None
+    expected_settlement_version: Optional[int] = None
 
 
 class ZelleInfoResponse(BaseModel):
@@ -109,6 +127,8 @@ class SubmitCustomerZellePaymentRequest(BaseModel):
     sender_email: Optional[EmailStr] = None
     sender_phone: Optional[str] = None
     notes: Optional[str] = None
+    amount: Optional[Decimal] = None
+    expected_settlement_version: Optional[int] = None
 
 
 class SubmitCustomerZellePaymentResponse(BaseModel):
@@ -175,6 +195,14 @@ def _normalized_manual_payment_details(body: ManualPaymentRequest) -> tuple[Opti
             )
 
     return provider, reference, authorization, notes
+
+
+def _db048_enabled(tenant: Optional[Tenant]) -> bool:
+    return bool(
+        tenant
+        and settings.INVOICE_SPLIT_PAYMENTS_ENABLED
+        and tenant.invoice_split_payments_enabled
+    )
 
 
 def _is_placeholder_walkin_customer(customer: Customer) -> bool:
@@ -360,6 +388,7 @@ async def set_default_payment_method(
 @router.post("/create-payment-intent", response_model=PaymentIntentResponse)
 async def create_payment_intent_for_invoice(
     body: PaymentIntentRequest,
+    idempotency_header: Optional[str] = Header(default=None, alias="Idempotency-Key"),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
@@ -367,33 +396,15 @@ async def create_payment_intent_for_invoice(
     if current_user.role != UserRole.CUSTOMER or not current_user.customer_id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only customers can pay invoices")
     
-    # Get invoice with repair order
-    result = await db.execute(
-        select(Invoice)
-        .options(
-            selectinload(Invoice.repair_order).selectinload(RepairOrder.customer),
-            selectinload(Invoice.repair_order).selectinload(RepairOrder.vehicle),
-        )
-        .where(Invoice.id == body.invoice_id)
+    invoice, tenant, customer_id = await invoice_for_principal(
+        db, body.invoice_id, current_user,
     )
-    invoice = result.scalar_one_or_none()
-    
-    if not invoice:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Invoice not found")
-    
-    # Verify customer owns this invoice
-    if invoice.repair_order.customer_id != current_user.customer_id:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
-
     customer = invoice.repair_order.customer
-    if not customer:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Customer not found")
+    if not customer or customer.id != customer_id:
+        raise SettlementDomainError("invoice_not_found", "Invoice not found.", status_code=404)
     
     if invoice.status == InvoiceStatus.PAID:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invoice already paid")
-    if invoice.status == InvoiceStatus.CANCELLED:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Voided invoices cannot be paid")
-    
     # Stripe minimum is $0.50 USD
     if invoice.total_amount < Decimal("0.50"):
         raise HTTPException(
@@ -401,15 +412,50 @@ async def create_payment_intent_for_invoice(
             detail="Invoice amount is below the minimum charge amount ($0.50)",
         )
     
-    result = await db.execute(select(Customer).where(Customer.id == current_user.customer_id))
-    customer = result.scalar_one_or_none()
-    if not customer:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Customer not found")
-
-    result = await db.execute(select(Tenant).where(Tenant.id == invoice.tenant_id))
-    tenant = result.scalar_one_or_none()
-    if not tenant or not tenant.stripe_account_id or not tenant.stripe_onboarding_complete:
+    if not tenant.stripe_account_id or not tenant.stripe_onboarding_complete:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="This shop has not finished setting up Stripe payments.")
+
+    settlement = await settlement_for_compatibility_route(
+        db,
+        invoice=invoice,
+        customer_id=customer.id,
+        tenant=tenant,
+        lock=True,
+    )
+    if settlement is not None:
+        principal = money(body.amount if body.amount is not None else allocatable_balance(settlement))
+        key = (idempotency_header or f"compat:customer-card:{invoice.id}:{current_user.id}:{principal}").strip()
+        if not key or len(key) > 255:
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Invalid Idempotency-Key")
+        creation = await create_attempt(
+            db,
+            invoice=invoice,
+            tenant=tenant,
+            customer_id=customer.id,
+            actor=current_user,
+            amount=principal,
+            rail="card",
+            expected_settlement_version=body.expected_settlement_version or settlement.version,
+            idempotency_key=key,
+            source="compatibility_adapter",
+            subject_type="customer",
+            subject_id=current_user.id,
+        )
+        bound, client_secret = await _persist_and_bind_stripe_intent(
+            db,
+            attempt=creation.attempt,
+            tenant=tenant,
+            invoice=invoice,
+            customer=customer,
+            idempotency_key=key,
+            actor=current_user,
+        )
+        return PaymentIntentResponse(
+            client_secret=client_secret,
+            payment_intent_id=bound.provider_intent_id,
+            amount=money(bound.provider_charge_amount),
+            stripe_account_id=bound.provider_account_id,
+        )
 
     try:
         # Create PaymentIntent
@@ -491,38 +537,34 @@ async def confirm_payment(
     if current_user.role != UserRole.CUSTOMER or not current_user.customer_id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
     
-    # Get invoice (with repair order + vehicle eagerly loaded)
-    result = await db.execute(
-        select(Invoice)
-        .options(selectinload(Invoice.repair_order).selectinload(RepairOrder.vehicle))
-        .where(Invoice.id == body.invoice_id)
+    invoice, tenant, customer_id = await invoice_for_principal(
+        db, body.invoice_id, current_user,
     )
-    invoice = result.scalar_one_or_none()
-
-    if not invoice:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Invoice not found")
-
-    if invoice.repair_order.customer_id != current_user.customer_id:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
-    if invoice.status == InvoiceStatus.CANCELLED:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Voided invoices cannot be paid")
-
-    # Get tenant to check for Stripe Connect
-    tenant_result = await db.execute(select(Tenant).where(Tenant.id == invoice.tenant_id))
-    tenant = tenant_result.scalar_one_or_none()
-
-    # Load customer for confirmation email
-    customer_result = await db.execute(
-        select(Customer).where(Customer.id == current_user.customer_id)
-    )
-    customer = customer_result.scalar_one_or_none()
+    customer = invoice.repair_order.customer
+    if not customer or customer.id != customer_id:
+        raise SettlementDomainError("invoice_not_found", "Invoice not found.", status_code=404)
     
     # Verify payment intent status with Stripe
     # If using Connect, retrieve from connected account
+    db048_attempt = await db.scalar(select(InvoicePaymentAttempt).where(
+        InvoicePaymentAttempt.tenant_id == invoice.tenant_id,
+        InvoicePaymentAttempt.invoice_id == invoice.id,
+        InvoicePaymentAttempt.provider == "stripe_connect",
+        InvoicePaymentAttempt.provider_intent_id == body.payment_intent_id,
+    ))
+    resolved_provider_account_id = (
+        db048_attempt.provider_account_id
+        if db048_attempt is not None
+        else (
+            tenant.stripe_account_id
+            if tenant and tenant.stripe_account_id and tenant.stripe_onboarding_complete
+            else None
+        )
+    )
     try:
         retrieve_params = {}
-        if tenant and tenant.stripe_account_id and tenant.stripe_onboarding_complete:
-            retrieve_params["stripe_account"] = tenant.stripe_account_id
+        if resolved_provider_account_id:
+            retrieve_params["stripe_account"] = resolved_provider_account_id
         payment_intent = stripe.PaymentIntent.retrieve(body.payment_intent_id, **retrieve_params)
     except stripe.error.InvalidRequestError as e:
         logger.warning("stripe_retrieve_payment_intent_failed", payment_intent_id=body.payment_intent_id, error=str(e))
@@ -532,7 +574,10 @@ async def confirm_payment(
         record_payment_error(error_type=type(e).__name__, provider="stripe")
         raise
     
-    if payment_intent.status != "succeeded":
+    # DB-048 intents are checked by the centralized complete-envelope validator
+    # in the shared finalizer below. Preserve the legacy prechecks only for
+    # intents without a durable attempt snapshot.
+    if db048_attempt is None and payment_intent.status != "succeeded":
         logger.warning(
             "payment_not_succeeded",
             invoice_id=str(invoice.id),
@@ -545,7 +590,10 @@ async def confirm_payment(
         )
     
     # Verify this payment intent is for this invoice
-    if payment_intent.metadata.get("invoice_id") != str(invoice.id):
+    if (
+        db048_attempt is None
+        and payment_intent.metadata.get("invoice_id") != str(invoice.id)
+    ):
         logger.warning(
             "payment_intent_mismatch",
             invoice_id=str(invoice.id),
@@ -562,6 +610,7 @@ async def confirm_payment(
         vehicle=invoice.repair_order.vehicle,
         payment_intent=payment_intent,
         payment_note=PORTAL_PAYMENT_NOTE,
+        provider_account_id=resolved_provider_account_id,
     )
     
     return {
@@ -599,6 +648,7 @@ def _money(value: Any) -> Decimal:
 @router.post("/record-manual", response_model=ManualPaymentResponse)
 async def record_manual_payment(
     body: ManualPaymentRequest,
+    idempotency_header: Optional[str] = Header(default=None, alias="Idempotency-Key"),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
@@ -606,6 +656,10 @@ async def record_manual_payment(
     # Only garage staff can record manual payments
     if current_user.role not in [UserRole.GARAGE_OWNER, UserRole.GARAGE_ADMIN, UserRole.RECEPTIONIST]:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Staff access required")
+
+    invoice, tenant, customer_id = await invoice_for_principal(
+        db, body.invoice_id, current_user,
+    )
     
     # Validate payment method
     method_map = {
@@ -623,35 +677,126 @@ async def record_manual_payment(
         _normalized_manual_payment_details(body)
     )
     
-    # Get invoice (with repair order + vehicle eagerly loaded)
-    result = await db.execute(
-        select(Invoice)
-        .options(selectinload(Invoice.repair_order).selectinload(RepairOrder.vehicle))
-        .where(Invoice.id == body.invoice_id, Invoice.tenant_id == current_user.tenant_id)
-    )
-    invoice = result.scalar_one_or_none()
-    
-    if not invoice:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Invoice not found")
-    
     if invoice.status == InvoiceStatus.PAID:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invoice already paid")
-    if invoice.status == InvoiceStatus.CANCELLED:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Voided invoices cannot be paid")
-
-    tenant_result = await db.execute(select(Tenant).where(Tenant.id == invoice.tenant_id))
-    tenant = tenant_result.scalar_one_or_none()
 
     # Optional walk-in capture/enrichment for Zelle payments
     customer_result = await db.execute(
         select(Customer).where(
             and_(
-                Customer.id == invoice.repair_order.customer_id,
+                Customer.id == customer_id,
                 Customer.tenant_id == current_user.tenant_id,
             )
         )
     )
     customer = customer_result.scalar_one_or_none()
+
+    settlement = await settlement_for_compatibility_route(
+        db,
+        invoice=invoice,
+        customer_id=(customer.id if customer else invoice.repair_order.customer_id),
+        tenant=tenant,
+        lock=True,
+    ) if tenant else None
+    if settlement is not None:
+        if body.method not in {"zelle", "check", "ach"}:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="This payment method is not available for split invoice settlement.",
+            )
+        if not customer:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Invoice not found")
+        reference = reference_number or authorization_number
+        if not reference:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="A transaction reference is required to confirm this payment.",
+            )
+        pending_zelle = None
+        if body.method == "zelle":
+            candidates = (
+                await db.execute(
+                    select(InvoicePaymentAttempt).where(
+                        InvoicePaymentAttempt.tenant_id == tenant.id,
+                        InvoicePaymentAttempt.invoice_id == invoice.id,
+                        InvoicePaymentAttempt.customer_id == customer.id,
+                        InvoicePaymentAttempt.rail == "zelle",
+                        InvoicePaymentAttempt.state == "pending",
+                        InvoicePaymentAttempt.deleted_at.is_(None),
+                    ).order_by(InvoicePaymentAttempt.created_at).with_for_update()
+                )
+            ).scalars().all()
+            if body.amount is not None:
+                expected = money(body.amount)
+                pending_zelle = next(
+                    (candidate for candidate in candidates if money(candidate.principal_amount) == expected),
+                    None,
+                )
+            elif len(candidates) == 1:
+                pending_zelle = candidates[0]
+        principal = money(
+            body.amount
+            if body.amount is not None
+            else (
+                pending_zelle.principal_amount
+                if pending_zelle is not None
+                else allocatable_balance(settlement)
+            )
+        )
+        key = (
+            idempotency_header
+            or f"compat:staff:{body.method}:{invoice.id}:{reference}:{principal}"
+        ).strip()
+        if not key or len(key) > 255:
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Invalid Idempotency-Key")
+        if pending_zelle is None:
+            creation = await create_attempt(
+                db,
+                invoice=invoice,
+                tenant=tenant,
+                customer_id=customer.id,
+                actor=current_user,
+                amount=principal,
+                rail=body.method,
+                expected_settlement_version=body.expected_settlement_version or settlement.version,
+                idempotency_key=key,
+                source="compatibility_adapter",
+                subject_type="staff",
+                subject_id=current_user.id,
+                sender_evidence={
+                    "reference_number": reference,
+                    "provider": payment_provider,
+                    "authorization_number": authorization_number,
+                    "notes": payment_notes,
+                    "sender_email": str(body.zelle_sender_email) if body.zelle_sender_email else None,
+                    "sender_phone": body.zelle_sender_phone,
+                },
+            )
+            attempt_to_confirm = creation.attempt
+        else:
+            # A customer/guest Zelle submission already owns the reservation.
+            # Staff confirmation is a transition of that exact attempt, never
+            # creation of a second allocation.
+            attempt_to_confirm = pending_zelle
+        confirmation = await confirm_attempt(
+            db,
+            attempt_id=attempt_to_confirm.id,
+            tenant=tenant,
+            actor=current_user,
+            expected_attempt_version=attempt_to_confirm.version,
+            idempotency_key=f"{key}:confirm",
+            received_principal=principal,
+            reference=reference,
+        )
+        await db.commit()
+        return ManualPaymentResponse(
+            status="success",
+            message=(
+                f"Payment recorded as {body.method}; invoice paid in full"
+                if confirmation.paid_transition
+                else f"Partial payment recorded as {body.method}"
+            ),
+        )
 
     sender_email = _normalize_email(body.zelle_sender_email)
     sender_phone = _normalize_phone(body.zelle_sender_phone)
@@ -865,6 +1010,7 @@ async def revert_pending_zelle(
 async def submit_customer_zelle_payment(
     request: Request,
     body: SubmitCustomerZellePaymentRequest,
+    idempotency_header: Optional[str] = Header(default=None, alias="Idempotency-Key"),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
@@ -872,28 +1018,59 @@ async def submit_customer_zelle_payment(
     if current_user.role != UserRole.CUSTOMER or not current_user.customer_id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Customer access required")
 
-    result = await db.execute(
-        select(Invoice)
-        .options(selectinload(Invoice.repair_order))
-        .where(Invoice.id == body.invoice_id)
+    invoice, tenant, customer_id = await invoice_for_principal(
+        db, body.invoice_id, current_user,
     )
-    invoice = result.scalar_one_or_none()
-    if not invoice:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Invoice not found")
-    if invoice.repair_order.customer_id != current_user.customer_id:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+    if customer_id != current_user.customer_id:
+        raise SettlementDomainError("invoice_not_found", "Invoice not found.", status_code=404)
     if invoice.status == InvoiceStatus.PAID:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invoice already paid")
-    if invoice.status == InvoiceStatus.CANCELLED:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Voided invoices cannot be paid")
-
-    was_pending = invoice.pending_zelle_confirmation
+    compatibility_submitted_at = (
+        invoice.zelle_pending_submitted_at or datetime.now(timezone.utc)
+    )
     sender_email = _normalize_email(str(body.sender_email) if body.sender_email else current_user.email)
     sender_phone = _normalize_phone(body.sender_phone or current_user.phone)
     notes = body.notes.strip() if body.notes else None
+    settlement = await settlement_for_compatibility_route(
+        db,
+        invoice=invoice,
+        customer_id=current_user.customer_id,
+        tenant=tenant,
+        lock=True,
+    ) if tenant else None
+    if settlement is not None:
+        principal = money(body.amount if body.amount is not None else allocatable_balance(settlement))
+        key = (
+            idempotency_header
+            or f"compat:customer-zelle:{invoice.id}:{current_user.id}:{principal}"
+        ).strip()
+        if not key or len(key) > 255:
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Invalid Idempotency-Key")
+        await create_attempt(
+            db,
+            invoice=invoice,
+            tenant=tenant,
+            customer_id=current_user.customer_id,
+            actor=current_user,
+            amount=principal,
+            rail="zelle",
+            expected_settlement_version=body.expected_settlement_version or settlement.version,
+            idempotency_key=key,
+            source="compatibility_adapter",
+            subject_type="customer",
+            subject_id=current_user.id,
+            sender_evidence={
+                "sender_email": sender_email,
+                "sender_phone": sender_phone,
+                "notes": notes,
+                "compatibility_submitted_at": compatibility_submitted_at.isoformat(),
+            },
+        )
+
+    was_pending = invoice.pending_zelle_confirmation
     zelle_amount = invoice.total_amount - (invoice.service_fee_amount or 0)
 
-    invoice.zelle_pending_submitted_at = datetime.now(timezone.utc)
+    invoice.zelle_pending_submitted_at = compatibility_submitted_at
     invoice.zelle_pending_sender_email = sender_email
     invoice.zelle_pending_sender_phone = sender_phone
     invoice.zelle_pending_last_reminder_at = None

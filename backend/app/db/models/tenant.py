@@ -34,6 +34,9 @@ class Tenant(BaseModel):
     # DB-045 tenant rollout gate. Deployment and verified-backfill gates are
     # additionally required; this column defaults dark for every tenant.
     counter_sales_enabled = Column(Boolean, default=False, server_default="false", nullable=False)
+    # DB-048 tenant gate. The deployment gate and provider/accounting
+    # readiness must also pass before any new allocation is accepted.
+    invoice_split_payments_enabled = Column(Boolean, default=False, server_default="false", nullable=False)
 
     # Marketing-attribution webhook. The endpoint is tenant-owned; its signing
     # secret is encrypted at rest and is never returned by the settings API.

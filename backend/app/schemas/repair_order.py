@@ -345,6 +345,9 @@ class RepairOrderResponse(RepairOrderBase):
     updated_at: datetime
     work_started_at: Optional[datetime] = None
     work_completed_at: Optional[datetime] = None
+    vehicle_released_at: Optional[datetime] = None
+    vehicle_released_by_user_id: Optional[UUID] = None
+    vehicle_release_reason: Optional[str] = None
     hold_reason: Optional[str] = None
     held_at: Optional[datetime] = None
     cancelled_at: Optional[datetime] = None

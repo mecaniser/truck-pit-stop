@@ -28,6 +28,7 @@ import {
 import { useTheme, ACCENT_OPTIONS, FONT_FAMILY_OPTIONS, FONT_SIZE_OPTIONS, NOTIFICATION_POSITION_OPTIONS } from '../../contexts/ThemeContext'
 import AppearanceSettingsPanel from './AppearanceSettingsPanel'
 import GoogleReviewsPage from '@/features/reviews/GoogleReviewsPage'
+import { CardProviderSettingsCard, CustomerCreditAgingCard } from '@/features/payments'
 
 // ============ HYBRID DESIGN SYSTEM (Industrial + Organic) ============
 const industrialStyles = {
@@ -1459,6 +1460,8 @@ function PaymentsSection() {
       <div className="rounded-xl border border-zinc-800 bg-zinc-950/40 px-4 py-3 text-sm text-zinc-400">
         Manage every invoice settlement method here: Stripe collects online card payments, Zelle is confirmed by shop staff, and QuickBooks synchronizes finalized invoices and Intuit payment settlement.
       </div>
+      <CardProviderSettingsCard />
+      <CustomerCreditAgingCard />
       <div className={`rounded-xl border px-4 py-4 ${manageGrant ? 'border-emerald-700/40 bg-emerald-950/20' : 'border-amber-700/40 bg-amber-950/20'}`}>
         {manageGrant ? (
           <div className="flex flex-wrap items-center justify-between gap-3">

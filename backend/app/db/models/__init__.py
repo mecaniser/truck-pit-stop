@@ -96,6 +96,21 @@ from app.db.models.inventory_lifecycle import (
     CounterSaleReturn, CounterSaleReturnLine, PartActivityBackfillRun,
     PartActivityEvent,
 )
+from app.db.models.invoice_settlement import (
+    CustomerCreditDueDiligenceEvent,
+    CustomerCreditEntry,
+    InvoicePaymentAttempt,
+    InvoicePaymentLedgerEvent,
+    InvoiceSettlement,
+    InvoiceSettlementBackfillRun,
+    PaymentAccountingLink,
+    PaymentOverpayment,
+    PaymentProviderDispute,
+    PaymentRefund,
+    ProviderSettlementBatch,
+    ProviderSettlementEntry,
+    TenantPaymentProviderConfiguration,
+)
 
 __all__ = [
     "Tenant",
@@ -199,4 +214,9 @@ __all__ = [
     "PartActivityEvent", "PartActivityBackfillRun", "CounterSale",
     "CounterSaleLine", "CounterSalePaymentAttempt",
     "CounterSaleReturn", "CounterSaleReturnLine",
+    "InvoiceSettlement", "InvoicePaymentAttempt", "InvoicePaymentLedgerEvent",
+    "TenantPaymentProviderConfiguration", "PaymentOverpayment", "CustomerCreditEntry",
+    "CustomerCreditDueDiligenceEvent",
+    "PaymentRefund", "PaymentProviderDispute", "PaymentAccountingLink", "ProviderSettlementBatch",
+    "ProviderSettlementEntry", "InvoiceSettlementBackfillRun",
 ]

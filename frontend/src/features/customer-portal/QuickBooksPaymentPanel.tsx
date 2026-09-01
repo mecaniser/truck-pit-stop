@@ -4,12 +4,14 @@ import toast from 'react-hot-toast'
 import api from '../../lib/api'
 
 interface QuickBooksPaymentPanelProps {
-  invoiceId: string
+  invoiceId?: string
   tokenUrl: string
   onSuccess: () => void
+  onToken?: (token: string) => Promise<void>
+  submitLabel?: string
 }
 
-export default function QuickBooksPaymentPanel({ invoiceId, tokenUrl, onSuccess }: QuickBooksPaymentPanelProps) {
+export default function QuickBooksPaymentPanel({ invoiceId, tokenUrl, onSuccess, onToken, submitLabel }: QuickBooksPaymentPanelProps) {
   const [isProcessing, setIsProcessing] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -50,6 +52,13 @@ export default function QuickBooksPaymentPanel({ invoiceId, tokenUrl, onSuccess 
         throw new Error('QuickBooks could not securely prepare this payment.')
       }
 
+      if (onToken) {
+        await onToken(tokenPayload.value)
+        toast.success('Payment successful!')
+        onSuccess()
+        return
+      }
+      if (!invoiceId) throw new Error('The invoice payment target is unavailable.')
       const response = await api.post('/quickbooks/payments/charge', {
         invoice_id: invoiceId,
         token: tokenPayload.value,
@@ -99,7 +108,7 @@ export default function QuickBooksPaymentPanel({ invoiceId, tokenUrl, onSuccess 
       {error && <p className="rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-300">{error}</p>}
       <button type="submit" disabled={isProcessing} className="flex w-full items-center justify-center gap-2 rounded-xl bg-[#8b7cf7] py-3 font-extrabold text-[#0e1118] hover:brightness-110 disabled:opacity-60">
         <CreditCard className="h-5 w-5" />
-        {isProcessing ? 'Processing...' : 'Submit secure payment'}
+        {isProcessing ? 'Processing...' : submitLabel || 'Submit secure payment'}
       </button>
     </form>
   )

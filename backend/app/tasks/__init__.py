@@ -54,6 +54,14 @@ celery_app.conf.update(
             "task": "process_provider_outbox",
             "schedule": timedelta(seconds=10),
         },
+        "process-db048-financial-outbox": {
+            "task": "process_db048_financial_outbox",
+            "schedule": timedelta(seconds=10),
+        },
+        "process-db048-settlement-maintenance": {
+            "task": "process_db048_settlement_maintenance",
+            "schedule": timedelta(minutes=1),
+        },
         "process-paid-invoice-webhooks": {
             "task": "process_paid_invoice_webhooks",
             "schedule": timedelta(seconds=10),
