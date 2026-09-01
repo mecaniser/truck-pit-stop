@@ -101,6 +101,9 @@ type ServiceTypeaheadItem = {
 
 type CustomerLookupItem = Pick<CustomerTypeaheadItem, 'id' | 'first_name' | 'last_name' | 'company_name' | 'email' | 'phone'> & {
   source?: string | null
+  /** The carrier is on a fleet plan (Customer.fleet_enabled), which is not the
+      same as the order being internal work (RepairOrder.is_internal). */
+  fleet_enabled?: boolean
 }
 
 type VehicleLookupItem = VehicleTypeaheadItem
@@ -1130,6 +1133,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
           company_name: o.customer_company_name ?? null,
           email: o.customer_email ?? '',
           phone: o.customer_phone ?? null,
+          fleet_enabled: o.customer_fleet_enabled ?? false,
         })
       }
     })
@@ -3965,7 +3969,14 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
         {selectedOrder && (!isOrderDetailLoading || !!orderDetail || priceBuilderOwnsShell) && (
           <div className={priceBuilderOwnsShell
             ? `h-full min-h-0 ${presentationVariant === 'new' ? 'db-repair-order-price-shell-new' : ''}${
-                presentationVariant === 'new' && !selectedOrder.is_internal ? ' db-repair-order-price-shell-new--customer' : ''
+                // Navy for a fleet member's work, copper for everyone else.
+                // Fleet membership is the customer's plan (fleet_enabled), not
+                // whose trucks these are — the shop's own internal fleet is a
+                // fleet member too, so it stays navy by the same rule.
+                presentationVariant === 'new'
+                  && !selectedOrder.is_internal
+                  && !selectedOrderCustomer?.fleet_enabled
+                  ? ' db-repair-order-price-shell-new--customer' : ''
               }`
             : `p-6 space-y-6 ${presentationVariant === 'new' ? 'db-repair-order-detail-new__body' : ''}`}>
 
@@ -4382,6 +4393,15 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                     mileageIn={selectedOrder.mileage_in}
                     mileageOut={selectedOrder.mileage_out}
                     poNumber={selectedOrder.po_number}
+                    isFleetMember={!!selectedOrderCustomer?.fleet_enabled}
+                    onOpenCustomer={selectedOrder.customer_id
+                      ? () => navigate(
+                          `/dashboard/customers?selected=${selectedOrder.customer_id}`,
+                          // Where to come back to, so the customer screen can
+                          // return the operator to the order they left.
+                          { state: { returnTo: `/dashboard/repair-orders?selected=${selectedOrder.id}`, returnLabel: `#${selectedOrder.order_number}` } },
+                        )
+                      : undefined}
                     onSaveDescription={async (d) => { await saveDescriptionMutation.mutateAsync(d) }}
                     descriptionSaving={saveDescriptionMutation.isPending}
                     notes={orderNotes}

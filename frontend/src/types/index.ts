@@ -297,6 +297,8 @@ export interface RepairOrder {
   customer_first_name?: string
   customer_last_name?: string
   customer_company_name?: string | null
+  /** Carrier is on a fleet plan; not the same as the order being internal. */
+  customer_fleet_enabled?: boolean
   customer_email?: string | null
   customer_phone?: string | null
   order_number: string

@@ -7,7 +7,7 @@ import api from '../../lib/api'
 import { Customer, Vehicle, Contact, RepairOrder, VINDecodeResult, CustomerWithVehicles } from '../../types'
 import { customerDisplayName, customerPersonalName } from '../../lib/customerName'
 import { vehicleDisplayLabel } from '../../lib/vehicleName'
-import { AlertTriangle, ArrowDown, ArrowRight, ArrowUp, Building2, ChevronDown, Combine, DollarSign, Mail, Pencil, Phone, Plus, Route, Search, Star, Trash2, Truck, User, Wrench, X } from 'lucide-react'
+import { AlertTriangle, ArrowDown, ArrowRight, ArrowUp, Building2, ChevronDown, Combine, DollarSign, Mail, Pencil, Phone, Plus, Route, Search, Star, Trash2, Truck, User, Wrench, X, ChevronLeft } from 'lucide-react'
 import SlidePanel from '@/components/SlidePanel'
 import MapboxAddressInput from '@/components/MapboxAddressInput'
 import { formatUSPhone } from '@/utils/phone'
@@ -455,6 +455,9 @@ export default function CustomersPage() {
   const customerRowRefs = useRef(new Map<string, HTMLElement>())
   const customerDetailsButtonRefs = useRef(new Map<string, HTMLButtonElement>())
   const selectionOriginRef = useRef<string | null>(null)
+  // Passed by whoever sent the operator here, so they can get back.
+  const returnTo = (location.state as { returnTo?: string } | null)?.returnTo
+  const returnLabel = (location.state as { returnLabel?: string } | null)?.returnLabel
   const selectedCustomerId = useMemo(() => {
     if (presentationVariant !== 'new') return null
     return new URLSearchParams(location.search).get('selected')
@@ -3178,6 +3181,19 @@ export default function CustomersPage() {
 
   return (
     <div className={`db-customers-workspace flex flex-col h-full min-h-0${presentationVariant === 'new' && selectedCustomerId ? ' db-customers-workspace--detail-open' : ''}`}>
+      {/* Arriving from a repair order, the way back is the first thing needed —
+          otherwise looking up a customer mid-job costs the operator their place
+          in the order they were working. */}
+      {returnTo && (
+        <button
+          type="button"
+          onClick={() => navigate(returnTo)}
+          className="mb-3 inline-flex w-fit items-center gap-1.5 rounded-lg px-2 py-1.5 text-sm font-semibold text-orange-700 hover:bg-orange-50"
+        >
+          <ChevronLeft className="h-4 w-4" />
+          Back to {returnLabel || 'the repair order'}
+        </button>
+      )}
       <div className={`flex flex-col sm:flex-row sm:items-center sm:justify-between mb-4 sm:mb-6 flex-shrink-0${presentationVariant === 'new' ? ' db-operating-page-header' : ''}`}>
         <div>
           <h1 className="text-xl sm:text-2xl font-bold text-white">Customers</h1>

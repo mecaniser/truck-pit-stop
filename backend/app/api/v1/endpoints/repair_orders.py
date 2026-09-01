@@ -1338,13 +1338,14 @@ async def _list_repair_orders_legacy(
 
     def _customer_fields(c) -> dict:
         if not c:
-            return {"customer_first_name": "", "customer_last_name": "", "customer_company_name": None, "customer_email": None, "customer_phone": None}
-        return {"customer_first_name": c.first_name or "", "customer_last_name": c.last_name or "", "customer_company_name": c.company_name, "customer_email": c.email, "customer_phone": c.phone}
+            return {"customer_first_name": "", "customer_last_name": "", "customer_company_name": None, "customer_email": None, "customer_phone": None, "customer_fleet_enabled": False}
+        return {"customer_first_name": c.first_name or "", "customer_last_name": c.last_name or "", "customer_company_name": c.company_name, "customer_email": c.email, "customer_phone": c.phone, "customer_fleet_enabled": bool(c.fleet_enabled)}
 
     _vf_exclude = {
         'quote_sent', 'quote_approved', 'quote_sent_at', 'invoice_created_at', 'invoice_due_date', 'pending_zelle_confirmation', 'vehicle_make', 'vehicle_model', 'vehicle_year',
         'vehicle_unit_number', 'vehicle_vin', 'cancelled_by_name', 'deleted_by_name',
         'customer_first_name', 'customer_last_name', 'customer_company_name', 'customer_email', 'customer_phone',
+        'customer_fleet_enabled',
     }
     items = [
         RepairOrderResponse(
@@ -1436,6 +1437,7 @@ async def get_repair_order_workspace(
         "pending_zelle_confirmation", "vehicle_make", "vehicle_model", "vehicle_year",
         "vehicle_unit_number", "vehicle_vin", "cancelled_by_name", "deleted_by_name",
         "customer_first_name", "customer_last_name", "customer_company_name", "customer_email", "customer_phone",
+        "customer_fleet_enabled",
     }
     vehicle = order.vehicle
     customer = order.customer
@@ -1451,6 +1453,7 @@ async def get_repair_order_workspace(
         customer_company_name=customer.company_name if customer else None,
         customer_email=customer.email if customer else None,
         customer_phone=customer.phone if customer else None,
+        customer_fleet_enabled=bool(customer.fleet_enabled) if customer else False,
     )
     if current_user.role == UserRole.CUSTOMER:
         item.shop_notes = None

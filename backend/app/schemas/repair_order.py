@@ -387,6 +387,9 @@ class RepairOrderResponse(RepairOrderBase):
     customer_company_name: Optional[str] = None
     customer_email: Optional[str] = None
     customer_phone: Optional[str] = None
+    # Whether the carrier is on a fleet plan. Distinct from is_internal, which
+    # is the shop's own trucks: a paying carrier can be a fleet member too.
+    customer_fleet_enabled: bool = False
 
     @field_validator("bill_labor_at_customer_rate", mode="before")
     @classmethod
