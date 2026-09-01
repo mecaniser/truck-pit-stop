@@ -26,7 +26,7 @@ import {
   Trash2,
   Truck,
   Wrench,
-  X, StickyNote, Pencil } from 'lucide-react'
+  X, StickyNote, Pencil, Star } from 'lucide-react'
 
 import api from '@/lib/api'
 import { useDebouncedValue } from '@/hooks/useDebouncedValue'
@@ -147,6 +147,10 @@ type Props = {
   mileageOut?: number | null
   poNumber?: string | null
   orderTypeLabel?: string
+  /** The carrier is on a fleet plan — distinct from isInternalOrder, which is
+      the shop's own trucks. A customer can be one, both, or neither. */
+  isFleetMember?: boolean
+  onOpenCustomer?: () => void
   onSaveDescription?: (description: string | null) => Promise<void> | void
   descriptionSaving?: boolean
   notes?: PriceBuilderNote[]
@@ -894,6 +898,8 @@ export default function PriceBuilderPanel({
   mileageOut,
   poNumber,
   orderTypeLabel,
+  isFleetMember = false,
+  onOpenCustomer,
   onSaveDescription,
   descriptionSaving = false,
   notes = [],
@@ -2462,10 +2468,36 @@ export default function PriceBuilderPanel({
           </div>
         </div>
         <div className="mt-4 flex flex-wrap items-center gap-2 text-xs font-semibold">
-          <span className="inline-flex items-center gap-1 rounded-full bg-white/14 px-3 py-1.5 text-white ring-1 ring-white/20">
-            <Building2 className="h-3.5 w-3.5" />
-            {customerName || 'Customer'}
-          </span>
+          {/* The company is the way into the customer's record — from here you
+              can see their other trucks and what they owe without hunting for
+              them in the ledger. The star marks a fleet-plan carrier, which is
+              a different question from whose truck this is: the shop's own
+              fleet is isInternalOrder, and a paying carrier can be on a fleet
+              plan too. */}
+          {onOpenCustomer ? (
+            <button
+              type="button"
+              onClick={onOpenCustomer}
+              title={`Open ${customerName || 'customer'}`}
+              className="db-order-customer-pill inline-flex items-center gap-1 rounded-full bg-white/14 px-3 py-1.5 text-white ring-1 ring-white/20 transition-colors hover:bg-white/24"
+            >
+              <Building2 className="h-3.5 w-3.5" />
+              {customerName || 'Customer'}
+              {isFleetMember && <Star className="h-3.5 w-3.5 flex-none fill-current text-amber-300" aria-label="Fleet member" />}
+            </button>
+          ) : (
+            <span className="inline-flex items-center gap-1 rounded-full bg-white/14 px-3 py-1.5 text-white ring-1 ring-white/20">
+              <Building2 className="h-3.5 w-3.5" />
+              {customerName || 'Customer'}
+              {isFleetMember && <Star className="h-3.5 w-3.5 flex-none fill-current text-amber-300" aria-label="Fleet member" />}
+            </span>
+          )}
+          {isInternalOrder && (
+            <span className="inline-flex items-center gap-1 rounded-full bg-white/24 px-2.5 py-1.5 text-[11px] uppercase tracking-[0.08em] text-white ring-1 ring-white/30">
+              <Truck className="h-3.5 w-3.5" />
+              Shop fleet
+            </span>
+          )}
           {/* Vehicle chip is the least critical here — hide it on mobile so the
               status + company stay on one tidy row. */}
           <span className="hidden items-center gap-1 rounded-full bg-white/14 px-3 py-1.5 text-white ring-1 ring-white/20 sm:inline-flex">

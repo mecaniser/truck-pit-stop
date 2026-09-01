@@ -3897,7 +3897,18 @@ html::-webkit-scrollbar-thumb:hover {
 .db-repair-order-detail-new__body :is(.bg-gray-50,.bg-white) { border-color: #d3dbe4 !important; }
 .db-repair-order-price-shell-new { display: flex; flex-direction: column; min-height: 100%; color: #17283f; }
 .db-repair-order-price-shell-new > :last-child { min-height: 0; flex: 1 1 auto; }
-.db-repair-order-price-shell-new > :last-child > :first-child { background: linear-gradient(100deg,#17314f,#0c2037) !important; }
+/* The order header says whose truck this is before you read a word of it: the
+   shop's own fleet in navy, a paying carrier in the brand's copper. Both run
+   the same sheen — light at the left edge, deepening toward the right.
+   100deg puts the light end on the left; the copper is darkened from
+   --product-copper-500 because a saturated block that size costs the white
+   text its contrast. */
+.db-repair-order-price-shell-new > :last-child > :first-child {
+  background: linear-gradient(100deg,#1d3d63 0%,#17314f 45%,#0c2037 100%) !important;
+}
+.db-repair-order-price-shell-new--customer > :last-child > :first-child {
+  background: linear-gradient(100deg,#a03a0b 0%,#8a3208 45%,#5c1f04 100%) !important;
+}
 
 @media (max-width: 1279px) {
   .db-repair-orders-new__toolbar { grid-template-columns: 280px minmax(0,1fr); }
