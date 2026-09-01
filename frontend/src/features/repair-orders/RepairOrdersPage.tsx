@@ -3964,7 +3964,9 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
         )}
         {selectedOrder && (!isOrderDetailLoading || !!orderDetail || priceBuilderOwnsShell) && (
           <div className={priceBuilderOwnsShell
-            ? `h-full min-h-0 ${presentationVariant === 'new' ? 'db-repair-order-price-shell-new' : ''}`
+            ? `h-full min-h-0 ${presentationVariant === 'new' ? 'db-repair-order-price-shell-new' : ''}${
+                presentationVariant === 'new' && !selectedOrder.is_internal ? ' db-repair-order-price-shell-new--customer' : ''
+              }`
             : `p-6 space-y-6 ${presentationVariant === 'new' ? 'db-repair-order-detail-new__body' : ''}`}>
 
                 {!priceBuilderOwnsShell && (
