@@ -280,6 +280,10 @@ def _action_queue_load_options(mechanic):
             Customer.id,
             Customer.first_name,
             Customer.last_name,
+            # The carrier's name is what identifies the work in this shop, so
+            # the display helper needs it loaded — reading it off an unloaded
+            # column raises MissingGreenlet under async.
+            Customer.company_name,
             Customer.is_internal_fleet,
         ),
         load_only(Vehicle.id, Vehicle.year, Vehicle.make, Vehicle.model, Vehicle.unit_number),
