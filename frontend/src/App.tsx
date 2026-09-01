@@ -4,6 +4,7 @@ import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-route
 import { Toaster, ToastBar, toast, useToasterStore } from 'react-hot-toast'
 import { useAuthStore } from './stores/authStore'
 import { ThemeProvider, useTheme, type NotificationPosition } from './contexts/ThemeContext'
+import { AppearanceNavigationGuardProvider } from './features/dashboard/AppearanceNavigationGuard'
 
 const LandingPage = lazy(() => import('./features/landing/LandingPage'))
 const PrivacyPolicyPage = lazy(() => import('./features/landing/PrivacyPolicyPage'))
@@ -380,6 +381,7 @@ function App() {
   return (
     <ThemeProvider>
     <BrowserRouter>
+      <AppearanceNavigationGuardProvider>
       <ProductAnalyticsTracker />
       <RouteFaviconManager />
       <ToastLimiter />
@@ -447,6 +449,7 @@ function App() {
         <Route path="/terms" element={<TermsOfServicePage />} />
       </Routes>
       </Suspense>
+      </AppearanceNavigationGuardProvider>
     </BrowserRouter>
     </ThemeProvider>
   )
