@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { Link, MemoryRouter, Route, Routes, useNavigate } from 'react-router-dom'
@@ -8,6 +8,7 @@ import { useAuthStore } from '../../../stores/authStore'
 import { garageOwnerSession } from '../../../test-fixtures/db035/staffSession'
 import { presentationFixture } from '../../../test-fixtures/db035/appearance'
 import AppearanceSettingsPanel from '../AppearanceSettingsPanel'
+import { AppearanceNavigationGuardProvider } from '../AppearanceNavigationGuard'
 import STAFF_CSS from '../../../index.css?inline'
 
 const apiMocks = vi.hoisted(() => ({ get: vi.fn(), put: vi.fn(), delete: vi.fn() }))
@@ -26,7 +27,7 @@ function SettingsProbe() {
   const [section, setSection] = useState<'appearance' | 'profile'>('appearance')
   const { mode, hasUnappliedChanges } = useTheme()
   return <>
-    <button type="button" onClick={() => setSection('profile')}>Profile section</button>
+    <button type="button" className="db-settings-nav-item" onClick={() => setSection('profile')}>Profile section</button>
     <Link to="/dashboard/repair-orders">Repair Orders route</Link>
     <output aria-label="settings appearance">{mode}:{hasUnappliedChanges ? 'draft' : 'committed'}</output>
     {section === 'appearance' ? <AppearanceSettingsPanel /> : <div>Profile content</div>}
@@ -36,12 +37,14 @@ function SettingsProbe() {
 function RouterHarness({ initialPath = '/dashboard/settings' }: { initialPath?: string }) {
   return <MemoryRouter initialEntries={[initialPath]}>
     <ThemeProvider>
-      <div className="db-staff-shell">
-        <Routes>
-          <Route path="/dashboard/settings" element={<SettingsProbe />} />
-          <Route path="/dashboard/repair-orders" element={<RepairOrdersProbe />} />
-        </Routes>
-      </div>
+      <AppearanceNavigationGuardProvider>
+        <div className="db-staff-shell">
+          <Routes>
+            <Route path="/dashboard/settings" element={<SettingsProbe />} />
+            <Route path="/dashboard/repair-orders" element={<RepairOrdersProbe />} />
+          </Routes>
+        </div>
+      </AppearanceNavigationGuardProvider>
     </ThemeProvider>
   </MemoryRouter>
 }
@@ -105,7 +108,7 @@ it('renders a contrast-safe accent ramp for the selected operating surface', asy
   expect(cyan.querySelector('.db-appearance-swatch')).toHaveStyle({ backgroundColor: '#22d3ee' })
 })
 
-it('restores committed appearance before a route destination and section switch are presented', async () => {
+it('summarizes a draft and keeps editing as the safe navigation default', async () => {
   const user = userEvent.setup()
   const committedLight = presentationFixture('new', { ...garageOwnerSession.presentation.appearance, mode: 'light' })
   useAuthStore.setState({ user: { ...garageOwnerSession, presentation: committedLight } as never })
@@ -113,28 +116,86 @@ it('restores committed appearance before a route destination and section switch 
   const shell = container.querySelector('.db-staff-shell')
 
   await waitFor(() => expect(shell).toHaveAttribute('data-appearance-mode', 'light'))
-  await waitFor(() => expect(localStorage.getItem('dieselbridge:presentation:v1:tenant-wisconsin:user-owner')).not.toBeNull())
-  const committedCache = localStorage.getItem('dieselbridge:presentation:v1:tenant-wisconsin:user-owner')
-
   await user.click(screen.getByRole('button', { name: /Night shop/ }))
   expect(shell).toHaveAttribute('data-appearance-mode', 'dark')
-  expect(apiMocks.put).not.toHaveBeenCalled()
-  expect(localStorage.getItem('dieselbridge:presentation:v1:tenant-wisconsin:user-owner')).toBe(committedCache)
-
   await user.click(screen.getByRole('link', { name: 'Repair Orders route' }))
-  expect(screen.getByLabelText('repair appearance')).toHaveTextContent('light:committed')
-  expect(shell).toHaveAttribute('data-appearance-mode', 'light')
-  expect(apiMocks.put).not.toHaveBeenCalled()
+  const dialog = screen.getByRole('dialog', { name: 'Apply appearance changes?' })
+  expect(dialog).toBeInTheDocument()
+  expect(within(dialog).getByText('Surface mode')).toBeInTheDocument()
+  expect(within(dialog).getByText('Day shop')).toBeInTheDocument()
+  expect(within(dialog).getByText('Night shop')).toBeInTheDocument()
+  expect(screen.getByRole('button', { name: 'Keep editing' })).toHaveFocus()
+  expect(screen.queryByLabelText('repair appearance')).not.toBeInTheDocument()
 
-  await user.click(screen.getByRole('button', { name: 'Browser back' }))
-  expect(screen.getByLabelText('settings appearance')).toHaveTextContent('light:committed')
-  expect(screen.getByRole('button', { name: /Day shop/ })).toHaveAttribute('aria-pressed', 'true')
+  await user.click(screen.getByRole('button', { name: 'Keep editing' }))
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  expect(screen.getByLabelText('settings appearance')).toHaveTextContent('dark:draft')
+  expect(shell).toHaveAttribute('data-appearance-mode', 'dark')
+  expect(apiMocks.put).not.toHaveBeenCalled()
+})
+
+it('discards a preview before continuing to another settings section', async () => {
+  const user = userEvent.setup()
+  const committedLight = presentationFixture('new', { ...garageOwnerSession.presentation.appearance, mode: 'light' })
+  useAuthStore.setState({ user: { ...garageOwnerSession, presentation: committedLight } as never })
+  const { container } = render(<RouterHarness />)
 
   await user.click(screen.getByRole('button', { name: /Night shop/ }))
   await user.click(screen.getByRole('button', { name: 'Profile section' }))
+  expect(screen.getByRole('dialog', { name: 'Apply appearance changes?' })).toBeInTheDocument()
+  await user.click(screen.getByRole('button', { name: 'Discard & continue' }))
+
   expect(screen.getByText('Profile content')).toBeInTheDocument()
   expect(screen.getByLabelText('settings appearance')).toHaveTextContent('light:committed')
-  expect(shell).toHaveAttribute('data-appearance-mode', 'light')
+  expect(container.querySelector('.db-staff-shell')).toHaveAttribute('data-appearance-mode', 'light')
+  expect(apiMocks.put).not.toHaveBeenCalled()
+})
+
+it('applies successfully before continuing to another page', async () => {
+  const user = userEvent.setup()
+  const committedLight = presentationFixture('new', { ...garageOwnerSession.presentation.appearance, mode: 'light' })
+  const committedDark = presentationFixture('new', { ...garageOwnerSession.presentation.appearance, mode: 'dark' })
+  useAuthStore.setState({ user: { ...garageOwnerSession, presentation: committedLight } as never })
+  apiMocks.put.mockResolvedValue({ data: committedDark })
+  render(<RouterHarness />)
+
+  await user.click(screen.getByRole('button', { name: /Night shop/ }))
+  await user.click(screen.getByRole('link', { name: 'Repair Orders route' }))
+  await user.click(screen.getByRole('button', { name: 'Apply & continue' }))
+
+  await waitFor(() => expect(apiMocks.put).toHaveBeenCalledTimes(1))
+  expect(screen.getByLabelText('repair appearance')).toHaveTextContent('dark:committed')
+})
+
+it('stays on Appearance when saving before navigation fails', async () => {
+  const user = userEvent.setup()
+  const committedLight = presentationFixture('new', { ...garageOwnerSession.presentation.appearance, mode: 'light' })
+  useAuthStore.setState({ user: { ...garageOwnerSession, presentation: committedLight } as never })
+  apiMocks.put.mockRejectedValue(new Error('offline'))
+  render(<RouterHarness />)
+
+  await user.click(screen.getByRole('button', { name: /Night shop/ }))
+  await user.click(screen.getByRole('link', { name: 'Repair Orders route' }))
+  await user.click(screen.getByRole('button', { name: 'Apply & continue' }))
+
+  await waitFor(() => expect(apiMocks.put).toHaveBeenCalledTimes(1))
+  expect(screen.getByRole('dialog', { name: 'Apply appearance changes?' })).toBeInTheDocument()
+  expect(screen.getByLabelText('settings appearance')).toHaveTextContent('dark:draft')
+  expect(screen.queryByLabelText('repair appearance')).not.toBeInTheDocument()
+})
+
+it('registers a native unload warning only while an appearance draft exists', async () => {
+  const user = userEvent.setup()
+  render(<RouterHarness />)
+
+  const cleanUnload = new Event('beforeunload', { cancelable: true })
+  window.dispatchEvent(cleanUnload)
+  expect(cleanUnload.defaultPrevented).toBe(false)
+
+  await user.click(screen.getByRole('button', { name: /Day shop/ }))
+  const dirtyUnload = new Event('beforeunload', { cancelable: true })
+  window.dispatchEvent(dirtyUnload)
+  expect(dirtyUnload.defaultPrevented).toBe(true)
 })
 
 it('persists an applied preview across navigation but abandons an unapplied preview on reload', async () => {
@@ -199,5 +260,16 @@ describe('Appearance selection is visible', () => {
     expect(body).toContain('box-shadow')
     // A tint over `transparent` stains the page instead of raising a surface.
     expect(body).toContain('var(--surface-raised)')
+  })
+
+  it('gives Night shop selected segments a caught-light edge and visible depth', () => {
+    const needle = ".db-presentation-new[data-appearance-mode='dark'] .db-appearance-segment button.is-selected"
+    const start = STAFF_CSS.indexOf(needle)
+    expect(start).toBeGreaterThan(-1)
+    const body = STAFF_CSS.slice(start, STAFF_CSS.indexOf('}', start))
+
+    expect(body).toContain('color-mix(in srgb, var(--surface-raised)')
+    expect(body).toContain('inset 0 1px 0 rgba(255, 255, 255, .12)')
+    expect(body).toContain('0 10px 24px rgba(0, 0, 0, .24)')
   })
 })

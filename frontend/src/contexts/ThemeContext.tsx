@@ -186,7 +186,7 @@ interface ThemeContextValue {
   setNotificationPosition: (value: NotificationPosition) => void
   setDensity: (value: AppearanceDensity) => void
   setMode: (value: AppearanceMode) => void
-  applyAppearance: () => Promise<void>
+  applyAppearance: () => Promise<boolean>
   cancelPreview: () => void
   previewDefaults: () => void
   resetToDefaults: () => Promise<void>
@@ -373,7 +373,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   }, [persistLegacyChange, variant])
 
   const applyAppearance = useCallback(async () => {
-    if (!eligibleStaff) return
+    if (!eligibleStaff) return false
     setSaveStatus('saving')
     try {
       const requestId = crypto.randomUUID()
@@ -394,6 +394,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
       mirrorLegacyAppearance(data.appearance)
       setSaveStatus('saved')
       toast.success('Appearance applied')
+      return true
     } catch (error: unknown) {
       const status = typeof error === 'object' && error && 'response' in error
         ? (error as { response?: { status?: number } }).response?.status
@@ -418,6 +419,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
         setSaveStatus('error')
         toast.error('Appearance could not be saved. Your preview is still available here.')
       }
+      return false
     }
   }, [draft, eligibleStaff, revision])
 

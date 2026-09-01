@@ -47,7 +47,6 @@ export default function AppearanceSettingsPanel() {
   const cancelPreviewRef = useRef(cancelPreview)
 
   useLayoutEffect(() => { cancelPreviewRef.current = cancelPreview }, [cancelPreview])
-  useLayoutEffect(() => () => cancelPreviewRef.current(), [])
 
   useEffect(() => {
     if (!confirmReset) return
