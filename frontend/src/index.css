@@ -3764,6 +3764,11 @@ html::-webkit-scrollbar-thumb:hover {
      the textarea's first two lines — the switch then reads as the subject of
      the card rather than a setting on it. The save action is sized to match
      them so the footer row keeps one height. */
+  /* The company pill is a chip that happens to be clickable, sized to its text
+     like the truck chip beside it. Held to 44px it stands 16px taller than its
+     neighbour and adds that to the header on every order. */
+  .db-repair-orders-new .db-order-customer-pill,
+  .db-order-customer-pill,
   .db-repair-orders-new .db-notes-tab,
   .db-notes-tab,
   .db-repair-orders-new .db-notes-action,
@@ -3793,6 +3798,62 @@ html::-webkit-scrollbar-thumb:hover {
 
 @starting-style {
   .db-technician-popover { opacity: 0; transform: scale(.96); }
+}
+
+/* The state dot on the popover trigger. Closed it is an outline; open it is
+   filled. The fill is an inner pseudo-element that scales from .3 rather than
+   0 — a thing that shrinks to nothing reads as vanishing, not as emptying —
+   and it uses the same 160ms ease-out curve as the popover it announces, so
+   the two read as one gesture rather than two events. */
+.db-popover-dot {
+  position: relative;
+  inline-size: 11px;
+  block-size: 11px;
+  border-radius: 999px;
+  border: 1.5px solid currentColor;
+  opacity: .65;
+  flex: none;
+  transition: opacity 160ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+.db-popover-dot::after {
+  content: '';
+  position: absolute;
+  inset: 1px;
+  border-radius: 999px;
+  background: currentColor;
+  transform: scale(.3);
+  opacity: 0;
+  transition: transform 160ms cubic-bezier(0.23, 1, 0.32, 1), opacity 160ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+.db-popover-dot.is-open { opacity: 1; }
+.db-popover-dot.is-open::after { transform: scale(1); opacity: 1; }
+
+/* The company name opens the customer's record. It has to stay the size of the
+   chip beside it, so the affordance is depth rather than bulk: it sits a
+   half-pixel proud of the header on a soft shadow, lifts on hover, and presses
+   in on click. Pressing is the one moment the control must feel like it heard
+   you. */
+.db-order-customer-pill {
+  box-shadow: 0 1px 2px rgba(0,0,0,.18), 0 0 0 .5px rgba(255,255,255,.10) inset;
+  transition: transform 160ms cubic-bezier(0.23, 1, 0.32, 1),
+              box-shadow 160ms cubic-bezier(0.23, 1, 0.32, 1),
+              background-color 160ms ease;
+}
+@media (hover: hover) and (pointer: fine) {
+  .db-order-customer-pill:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 3px 8px rgba(0,0,0,.24), 0 0 0 .5px rgba(255,255,255,.16) inset;
+  }
+}
+.db-order-customer-pill:active {
+  transform: translateY(0) scale(.97);
+  box-shadow: 0 1px 1px rgba(0,0,0,.20);
+}
+@media (prefers-reduced-motion: reduce) {
+  .db-order-customer-pill,
+  .db-popover-dot,
+  .db-popover-dot::after { transition-duration: 1ms; }
+  .db-order-customer-pill:hover { transform: none; }
 }
 
 .db-technician-choice {
