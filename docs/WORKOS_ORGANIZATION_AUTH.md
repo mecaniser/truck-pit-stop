@@ -88,8 +88,13 @@ is outside this WorkOS organization cutover.
   resolves an active organization membership or exact accepted invitation,
   creates an opaque server session, and redirects to the app.
 - `POST /api/v1/auth/workos/session/refresh` rotates the encrypted server-side
-  WorkOS refresh token, revalidates membership, and issues a fresh five-minute
-  local access cookie. It never enters the legacy refresh path.
+  WorkOS refresh token, revalidates membership, and issues a fresh local access
+  cookie (`WORKOS_ACCESS_TOKEN_MINUTES`, default 15). It never enters the legacy
+  refresh path. Concurrent calls for one session are serialized by a per-session
+  Redis lock (`WORKOS_SESSION_REFRESH_LOCK_SECONDS`): the lock winner calls
+  WorkOS and rotates the stored refresh token; a loser waits for that rotation
+  and refreshes with the new credential, so a multi-tab browser cannot
+  invalidate its own session.
 - `POST /api/v1/auth/workos/logout` revokes and clears only the tenant WorkOS
   session; it does not clear a legacy/platform refresh session.
 - `POST /api/v1/auth/workos/invitations` requires `members:manage`. A driver
@@ -124,12 +129,20 @@ The principal contract remains:
 The browser never receives the WorkOS refresh token. It receives an opaque
 `workos_session` cookie scoped to `/api/v1/auth/workos`; the encrypted refresh
 credential is stored in Redis and rotated on every provider refresh. Local
-access cookies are five minutes by default.
+access cookies default to 15 minutes.
+
+The SPA does not wait for a 401 to renew. A client-side keep-alive
+(`frontend/src/lib/sessionKeepAlive.ts`) renews the access credential at ~65% of
+its lifetime and on tab refocus / network recovery, single-flight within the tab
+and across tabs (BroadcastChannel). A transient renewal failure is retried with
+backoff; only a 401/403 from the refresh endpoint itself ends the session. This
+keeps an all-day workspace on the 7-day server session rather than the
+15-minute access-cookie lifetime.
 
 Signed, idempotent WorkOS webhooks are the sole continuous reconciliation path.
 Membership/user/role changes increment the local token version immediately.
 If webhook delivery is unavailable, the next provider refresh fails closed; the
-maximum local access staleness is the five-minute access-cookie lifetime.
+maximum local access staleness is the access-cookie lifetime (default 15 min).
 
 The Staging dashboard currently has no publicly reachable API origin, so its
 webhook endpoint cannot be registered yet. Do not register localhost or invent a

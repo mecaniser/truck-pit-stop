@@ -24,6 +24,8 @@ from app.core.redis import (
     increment_token_version,
     blacklist_token,
     is_token_blacklisted,
+    mark_refresh_token_rotated,
+    was_refresh_token_recently_rotated,
     store_password_reset_token,
     get_email_from_reset_token,
     delete_password_reset_token,
@@ -842,14 +844,18 @@ async def refresh_token_endpoint(
     user_id = payload.get("sub")
     jti = payload.get("jti")
     token_version = payload.get("ver", 0)
-    
-    # Check if token is blacklisted
+
+    # Check if token is blacklisted. A token blacklisted moments ago by this
+    # same rotation flow (a second tab, an in-flight retry racing the refresh
+    # that just succeeded) is still honored within a short grace window so the
+    # browser is not force-logged-out over a benign race.
     if jti and await is_token_blacklisted(jti):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Token has been revoked",
-        )
-    
+        if not await was_refresh_token_recently_rotated(jti):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Token has been revoked",
+            )
+
     # Check token version
     current_version = await get_token_version(user_id)
     if token_version < current_version:
@@ -857,22 +863,27 @@ async def refresh_token_endpoint(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Token has been invalidated",
         )
-    
+
     result = await db.execute(select(User).where(User.id == user_id))
     user = result.scalar_one_or_none()
-    
+
     if not user or not user.is_active:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid refresh token",
         )
-    
-    # Blacklist the old refresh token
+
+    # Blacklist the old refresh token and remember, for a short grace window,
+    # that it was rotated (not revoked) so a racing sibling request is renewed
+    # rather than rejected.
     if jti:
         expiry = get_token_expiry_seconds(token_str)
         if expiry > 0:
             await blacklist_token(jti, expiry)
-    
+        grace = settings.REFRESH_TOKEN_ROTATION_GRACE_SECONDS
+        if grace > 0:
+            await mark_refresh_token_rotated(jti, grace)
+
     # Preserve remember_me and tenant scope from original token
     remember_me = payload.get("rem", False)
     tid = payload.get("tid")

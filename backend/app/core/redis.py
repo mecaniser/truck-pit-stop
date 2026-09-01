@@ -46,6 +46,22 @@ async def is_token_blacklisted(jti: str) -> bool:
     return await r.exists(f"{BLACKLIST_PREFIX}{jti}") > 0
 
 
+# When a refresh token is rotated we briefly remember its jti so a sibling
+# request (a second tab, an in-flight retry) that presents the same just-rotated
+# token can be re-issued a fresh pair instead of being force-logged-out.
+REFRESH_ROTATION_GRACE_PREFIX = "refresh_rotated:"
+
+
+async def mark_refresh_token_rotated(jti: str, grace_seconds: int) -> None:
+    r = await get_redis()
+    await r.setex(f"{REFRESH_ROTATION_GRACE_PREFIX}{jti}", grace_seconds, "1")
+
+
+async def was_refresh_token_recently_rotated(jti: str) -> bool:
+    r = await get_redis()
+    return await r.exists(f"{REFRESH_ROTATION_GRACE_PREFIX}{jti}") > 0
+
+
 async def increment_token_version(user_id: str) -> int:
     """Increment user's token version (invalidates all existing tokens)."""
     r = await get_redis()
