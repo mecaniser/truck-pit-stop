@@ -2536,7 +2536,16 @@ export default function PriceBuilderPanel({
                 }`}
               >
                 {hasAssignedTechnician ? `✓ ${assignedTechnicianName}` : technicianAssignmentBypassed ? '✓ Shop-managed' : 'Assign technician'}
-                <ChevronDown className={`h-3 w-3 transition-transform ${technicianAssignmentOpen ? 'rotate-180' : ''}`} aria-hidden="true" />
+                {/* Not a chevron: a chevron promises a list unrolling below the
+                    control, and this opens a popover beside it. A ring that
+                    fills is the honest shape — closed is an outline, open is
+                    solid, and the fill grows from the middle rather than
+                    appearing, because nothing in the world arrives from
+                    nothing. */}
+                <span
+                  className={`db-popover-dot ${technicianAssignmentOpen ? 'is-open' : ''}`}
+                  aria-hidden="true"
+                />
               </button>
               {technicianAssignmentOpen && technicianPopoverPosition && (
                 <div
