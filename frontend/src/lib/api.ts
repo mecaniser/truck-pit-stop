@@ -1,6 +1,7 @@
 import axios from 'axios'
 import { useAuthStore } from '../stores/authStore'
 import { requestTokenRefresh, requestWorkOSSessionRefresh } from './authRefresh'
+import { stopSessionKeepAlive } from './sessionKeepAlive'
 
 const api = axios.create({
   baseURL: import.meta.env.VITE_API_URL || '/api/v1',
@@ -45,6 +46,43 @@ const processQueue = (error: unknown, token: string | null = null) => {
   failedQueue = []
 }
 
+// A single failed renewal used to force a logout. In an all-day workspace a
+// transient failure (network blip, provider 5xx, rate limit, a cross-tab
+// rotation race) must not eject the user — retry a few times first, and only
+// log out when the refresh endpoint itself says the session is gone.
+const REFRESH_RETRY_BACKOFF_MS = [250, 1000, 3000]
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
+
+function refreshErrorStatus(error: unknown): number | undefined {
+  if (typeof error === 'object' && error !== null && 'response' in error) {
+    return (error as { response?: { status?: number } }).response?.status
+  }
+  return undefined
+}
+
+async function runRefreshWithRetry(
+  attempt: () => Promise<{ accessToken: string | null }>
+): Promise<{ accessToken: string | null }> {
+  let lastError: unknown
+  for (let i = 0; i <= REFRESH_RETRY_BACKOFF_MS.length; i += 1) {
+    try {
+      return await attempt()
+    } catch (error) {
+      lastError = error
+      const status = refreshErrorStatus(error)
+      // A definitive "session is gone" answer is not retryable.
+      if (status === 401 || status === 403) {
+        throw error
+      }
+      if (i < REFRESH_RETRY_BACKOFF_MS.length) {
+        await sleep(REFRESH_RETRY_BACKOFF_MS[i])
+      }
+    }
+  }
+  throw lastError
+}
+
 api.interceptors.response.use(
   (response) => response,
   async (error) => {
@@ -81,20 +119,27 @@ api.interceptors.response.use(
       isRefreshing = true
 
       try {
-        if (authProvider === 'workos') {
-          await requestWorkOSSessionRefresh()
-          delete originalRequest.headers?.Authorization
-          processQueue(null, null)
-        } else {
+        const { accessToken } = await runRefreshWithRetry(async () => {
+          if (authProvider === 'workos') {
+            await requestWorkOSSessionRefresh()
+            return { accessToken: null }
+          }
           const refreshToken = useAuthStore.getState().refreshToken
           const { access_token, refresh_token: newRefreshToken } = await requestTokenRefresh(refreshToken)
           useAuthStore.getState().setTokens(access_token, newRefreshToken)
-          originalRequest.headers.Authorization = `Bearer ${access_token}`
-          processQueue(null, access_token)
+          return { accessToken: access_token }
+        })
+
+        if (accessToken) {
+          originalRequest.headers.Authorization = `Bearer ${accessToken}`
+        } else {
+          delete originalRequest.headers?.Authorization
         }
+        processQueue(null, accessToken)
         return api(originalRequest)
       } catch (refreshError) {
         processQueue(refreshError, null)
+        stopSessionKeepAlive()
         if (authProvider === 'workos') {
           const role = useAuthStore.getState().user?.role
           const tenantId = useAuthStore.getState().user?.tenant_id

@@ -187,6 +187,37 @@ async def test_refresh_with_invalid_token(client):
 
 
 @pytest.mark.asyncio
+async def test_refresh_honors_just_rotated_token_within_grace(client):
+    """A second tab presenting the token the first refresh just rotated is
+    renewed, not force-logged-out."""
+    reg = await client.post(REGISTER_URL, json=VALID_USER)
+    original_refresh = reg.json()["refresh_token"]
+
+    first = await client.post(REFRESH_URL, json={"refresh_token": original_refresh})
+    assert first.status_code == 200
+
+    # The now-blacklisted original token is still accepted during the grace
+    # window and yields a fresh pair.
+    racing = await client.post(REFRESH_URL, json={"refresh_token": original_refresh})
+    assert racing.status_code == 200
+    assert racing.json()["access_token"]
+
+
+@pytest.mark.asyncio
+async def test_refresh_rejects_rotated_token_when_grace_disabled(client, monkeypatch):
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "REFRESH_TOKEN_ROTATION_GRACE_SECONDS", 0)
+    reg = await client.post(REGISTER_URL, json=VALID_USER)
+    original_refresh = reg.json()["refresh_token"]
+
+    assert (await client.post(REFRESH_URL, json={"refresh_token": original_refresh})).status_code == 200
+    replayed = await client.post(REFRESH_URL, json={"refresh_token": original_refresh})
+    assert replayed.status_code == 401
+    assert "revoked" in replayed.json()["detail"].lower()
+
+
+@pytest.mark.asyncio
 async def test_logout_clears_session(client):
     reg = await client.post(REGISTER_URL, json=VALID_USER)
     token = reg.json()["access_token"]

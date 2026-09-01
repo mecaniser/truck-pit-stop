@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Spinner } from '@/components/ui'
 import { useNavigate, useSearchParams, Link } from 'react-router-dom'
 import { useForm } from 'react-hook-form'
@@ -10,6 +10,27 @@ import { useAuthStore } from '../../stores/authStore'
 import BrandLogo from '../../components/brand/BrandLogo'
 import { applySeo } from '../../lib/seo'
 import { startWorkOSLogin } from '../../lib/workosAuth'
+import {
+  getLastLoginMethod,
+  getRememberedLogin,
+  setLastLoginMethod,
+  updateRememberedLogin,
+} from '../../lib/rememberedLogin'
+
+function landingPathForRole(role: string | undefined): string {
+  switch (role) {
+    case 'customer':
+      return '/portal'
+    case 'mechanic':
+      return '/mechanic'
+    case 'fleet_manager':
+      return '/fleet'
+    case 'driver':
+      return '/driver'
+    default:
+      return '/dashboard'
+  }
+}
 
 const loginSchema = z.object({
   email: z
@@ -42,7 +63,9 @@ interface ShopOption {
 export default function LoginPage() {
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
-  const { login } = useAuthStore()
+  const { login, isAuthenticated, user } = useAuthStore()
+  const remembered = useMemo(() => getRememberedLogin(), [])
+  const lastMethod = useMemo(() => getLastLoginMethod(), [])
   const [error, setError] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
@@ -53,6 +76,19 @@ export default function LoginPage() {
   const workOSStateExpired = searchParams.get('reason') === 'workos_state_expired'
   const organizationReturnTo = searchParams.get('return_to') || '/dashboard'
   const organizationTenantId = searchParams.get('tenant_id')
+
+  // A still-valid session means the user never needs to see this form. Send
+  // them straight into the workspace they were headed for. The reason=* params
+  // (session expired / re-auth required) mean the session is gone, so honor
+  // those by staying on the form.
+  const hasReauthReason = Boolean(searchParams.get('reason'))
+  useEffect(() => {
+    if (isAuthenticated && !hasReauthReason) {
+      const target = searchParams.get('return_to') || landingPathForRole(user?.role)
+      navigate(target, { replace: true })
+    }
+  }, [isAuthenticated, hasReauthReason, navigate, searchParams, user?.role])
+
   useEffect(() => {
     const pageTitle = 'Staff Login | Diesel Bridge Network'
     const pageDescription = 'Secure login for Diesel Bridge Network staff and authorized users.'
@@ -79,9 +115,9 @@ export default function LoginPage() {
     resolver: zodResolver(loginSchema),
     mode: 'onBlur',
     defaultValues: {
-      email: '',
+      email: remembered.email,
       password: '',
-      remember_me: false,
+      remember_me: remembered.rememberMe,
     },
   })
 
@@ -137,6 +173,11 @@ export default function LoginPage() {
     try {
       const response = await api.post('/auth/login', data)
       const { access_token, refresh_token, requires_shop_selection, shops: shopList } = response.data
+
+      // Persist (or clear) the remembered email now that the credentials are
+      // known good. Never the password.
+      updateRememberedLogin(data.email, data.remember_me)
+      setLastLoginMethod('password')
 
       if (requires_shop_selection && shopList?.length) {
         setShopSelectToken(access_token)
@@ -424,11 +465,21 @@ export default function LoginPage() {
 
           <button
             type="button"
-            onClick={() => startWorkOSLogin(organizationReturnTo, null, organizationTenantId)}
-            className="flex w-full justify-center rounded-xl border border-zinc-700 bg-zinc-900 px-4 py-3 text-sm font-semibold text-zinc-100 transition-colors hover:border-zinc-500 hover:bg-zinc-800 focus:outline-none focus:ring-2 focus:ring-[var(--accent-500)] focus:ring-offset-2 focus:ring-offset-zinc-950"
+            onClick={() => {
+              setLastLoginMethod('workos')
+              startWorkOSLogin(organizationReturnTo, null, organizationTenantId)
+            }}
+            className={`flex w-full justify-center rounded-xl border px-4 py-3 text-sm font-semibold text-zinc-100 transition-colors focus:outline-none focus:ring-2 focus:ring-[var(--accent-500)] focus:ring-offset-2 focus:ring-offset-zinc-950 ${
+              lastMethod === 'workos'
+                ? 'border-[var(--accent-500)] bg-zinc-900 hover:bg-zinc-800'
+                : 'border-zinc-700 bg-zinc-900 hover:border-zinc-500 hover:bg-zinc-800'
+            }`}
           >
             Continue with organization sign-in
           </button>
+          {lastMethod === 'workos' && (
+            <p className="-mt-2 text-center text-xs text-[var(--accent-400)]">You used organization sign-in last time.</p>
+          )}
           <p className="text-center text-xs leading-5 text-zinc-500">
             {organizationTenantId
               ? 'Sign in to the garage selected for this workspace.'

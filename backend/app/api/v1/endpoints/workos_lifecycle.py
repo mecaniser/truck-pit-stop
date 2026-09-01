@@ -1044,6 +1044,33 @@ async def refresh_session(
     stored = await workos_session.get_session(workos_session_cookie)
     if not stored:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="WorkOS session expired")
+
+    # Serialize concurrent renewals of the same session. Provider refresh tokens
+    # rotate on every use, so two tabs calling WorkOS at once would each
+    # invalidate the other's token and log the whole browser out. The lock
+    # loser waits for the winner to publish the rotated token, then refreshes
+    # with that current credential instead of the stale one it was holding.
+    lock_token = await workos_session.acquire_refresh_lock(workos_session_cookie)
+    if lock_token is None:
+        rotated = await workos_session.wait_for_rotated_session(
+            workos_session_cookie, stored["refresh_token"]
+        )
+        if rotated is None:
+            # Winner deleted the session (revoked) or never landed a rotation in
+            # time. Fall through and try once ourselves under a fresh lock.
+            lock_token = await workos_session.acquire_refresh_lock(workos_session_cookie)
+            if lock_token is None:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="WorkOS session refresh is already in progress",
+                )
+            stored = await workos_session.get_session(workos_session_cookie)
+            if not stored:
+                await workos_session.release_refresh_lock(workos_session_cookie, lock_token)
+                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="WorkOS session expired")
+        else:
+            stored = rotated
+
     try:
         result = await workos_provider.authenticate({
             "grant_type": "refresh_token",
@@ -1054,28 +1081,36 @@ async def refresh_session(
         })
         claims = await workos_provider.verify_access_token(result.get("access_token"))
     except WorkOSProviderError:
+        await workos_session.release_refresh_lock(workos_session_cookie, lock_token)
         await workos_session.delete_session(workos_session_cookie)
         response.delete_cookie("workos_session", path="/api/v1/auth/workos", domain=_cookie_domain())
         response.delete_cookie("access_token", path="/", domain=_cookie_domain())
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="WorkOS session is no longer authorized")
     if claims["sub"] != stored["workos_user_id"] or claims["org_id"] != stored["workos_org_id"]:
+        await workos_session.release_refresh_lock(workos_session_cookie, lock_token)
         await workos_session.delete_session(workos_session_cookie)
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="WorkOS session identity changed")
     try:
         user, tenant, _ = await resolve_authenticated_identity(db, claims=claims, workos_user=result.get("user") or {})
     except HTTPException:
         await db.rollback()
+        await workos_session.release_refresh_lock(workos_session_cookie, lock_token)
         await workos_session.delete_session(workos_session_cookie)
         response.delete_cookie("workos_session", path="/api/v1/auth/workos", domain=_cookie_domain())
         response.delete_cookie("access_token", path="/", domain=_cookie_domain())
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="WorkOS membership is no longer authorized")
     if str(user.id) != stored["local_user_id"]:
+        await workos_session.release_refresh_lock(workos_session_cookie, lock_token)
         await workos_session.delete_session(workos_session_cookie)
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="WorkOS session identity changed")
     await db.commit()
     rotated = result.get("refresh_token")
     if not isinstance(rotated, str) or not await workos_session.rotate_session(workos_session_cookie, rotated):
+        await workos_session.release_refresh_lock(workos_session_cookie, lock_token)
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="WorkOS session could not be renewed")
+    # Rotation landed; siblings waiting on wait_for_rotated_session can now see
+    # the new token. Releasing the lock here just frees it a beat sooner.
+    await workos_session.release_refresh_lock(workos_session_cookie, lock_token)
     token_version = await get_token_version(str(user.id))
     local_token = create_access_token(
         data={

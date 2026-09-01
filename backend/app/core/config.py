@@ -50,6 +50,10 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
     REFRESH_TOKEN_EXPIRE_DAYS_REMEMBER: int = 30  # "Remember me" duration
+    # Grace window during which a just-rotated legacy refresh token is still
+    # honored, so a second tab or a retried request presenting the same token
+    # gets a fresh pair instead of a forced logout.
+    REFRESH_TOKEN_ROTATION_GRACE_SECONDS: int = Field(default=20, ge=0, le=120)
     PAYMENT_STEP_UP_MANAGE_TTL_SECONDS: int = Field(default=600, ge=60, le=900)
     PAYMENT_STEP_UP_DESTRUCTIVE_TTL_SECONDS: int = Field(default=120, ge=60, le=300)
     AUTHENTICATED_PRESENTATION_FORCE_LEGACY: bool = False
@@ -73,8 +77,20 @@ class Settings(BaseSettings):
     WORKOS_REDIRECT_URI: str = "http://localhost:8000/api/v1/auth/workos/callback"
     WORKOS_WEBHOOK_SECRET: str = ""
     WORKOS_POST_LOGIN_URL: str = "http://localhost:5173"
-    WORKOS_ACCESS_TOKEN_MINUTES: int = Field(default=5, ge=1, le=15)
+    # The browser holds only this short-lived local access cookie; the client
+    # renews it well before expiry against the 7-day server-side WorkOS session.
+    # 15 minutes gives the proactive refresh a wide margin without letting a
+    # revoked membership linger appreciably longer.
+    WORKOS_ACCESS_TOKEN_MINUTES: int = Field(default=15, ge=1, le=15)
     WORKOS_SESSION_TTL_DAYS: int = Field(default=7, ge=1, le=30)
+    # A single browser can have several tabs racing to renew the same server
+    # session. Only one refresh may call WorkOS and rotate the stored refresh
+    # token at a time; the rest wait briefly for that rotation to land. The TTL
+    # must comfortably exceed WorkOS's refresh latency: if the lock expires
+    # while the winner is still mid-call, a second tab acquires it and refreshes
+    # with the not-yet-rotated token, reopening the multi-tab logout race the
+    # lock exists to close.
+    WORKOS_SESSION_REFRESH_LOCK_SECONDS: int = Field(default=20, ge=2, le=30)
 
     def validate_workos_deployment(self) -> None:
         """Fail startup when WorkOS credentials and app environment can cross.

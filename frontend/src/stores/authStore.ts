@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import { persist, createJSONStorage } from 'zustand/middleware'
 import api from '../lib/api'
 import { isTokenExpired } from '../lib/authTokens'
+import { startSessionKeepAlive, stopSessionKeepAlive } from '../lib/sessionKeepAlive'
 import type { PresentationBootstrap } from '../types/presentation'
 
 interface User {
@@ -114,7 +115,7 @@ export const useAuthStore = create<AuthState>()(
       authSessionEpoch: 0,
       logoutInProgress: false,
       webSocketRecoverySessionKey: null,
-      login: (token, refreshToken, user) =>
+      login: (token, refreshToken, user) => {
         set((state) => ({
           token,
           refreshToken,
@@ -124,8 +125,12 @@ export const useAuthStore = create<AuthState>()(
           authSessionEpoch: state.authSessionEpoch + 1,
           logoutInProgress: false,
           webSocketRecoverySessionKey: null,
-        })),
-      establishCookieSession: (user) =>
+        }))
+        // Keep the short-lived access token renewed ahead of expiry so an
+        // all-day session never rides a stale credential into a forced logout.
+        startSessionKeepAlive()
+      },
+      establishCookieSession: (user) => {
         set((state) => ({
           user,
           token: null,
@@ -135,7 +140,9 @@ export const useAuthStore = create<AuthState>()(
           authSessionEpoch: state.authSessionEpoch + 1,
           logoutInProgress: false,
           webSocketRecoverySessionKey: null,
-        })),
+        }))
+        startSessionKeepAlive()
+      },
       logout: async () => {
         const session = get()
         if (session.logoutInProgress) return
@@ -147,6 +154,7 @@ export const useAuthStore = create<AuthState>()(
 
         // Publish logout intent before waiting on the network so live resources
         // cannot remain attached to the session during a slow provider logout.
+        stopSessionKeepAlive()
         set({ authSessionEpoch: logoutEpoch, logoutInProgress: true })
 
         // Call backend to blacklist token and clear cookies
@@ -172,16 +180,19 @@ export const useAuthStore = create<AuthState>()(
           }
         })
       },
-      clearSession: () => set((state) => ({
-        user: null,
-        token: null,
-        refreshToken: null,
-        isAuthenticated: false,
-        authProvider: null,
-        authSessionEpoch: state.authSessionEpoch + 1,
-        logoutInProgress: false,
-        webSocketRecoverySessionKey: null,
-      })),
+      clearSession: () => {
+        stopSessionKeepAlive()
+        set((state) => ({
+          user: null,
+          token: null,
+          refreshToken: null,
+          isAuthenticated: false,
+          authProvider: null,
+          authSessionEpoch: state.authSessionEpoch + 1,
+          logoutInProgress: false,
+          webSocketRecoverySessionKey: null,
+        }))
+      },
       setUser: (user) => set((state) => {
         const identityChanged = state.user?.id !== user.id
           || state.user?.tenant_id !== user.tenant_id
@@ -221,6 +232,15 @@ export const useAuthStore = create<AuthState>()(
         return {
           ...currentState,
           ...sanitized,
+        }
+      },
+      onRehydrateStorage: () => (state) => {
+        // A legacy session resumed straight from localStorage never calls
+        // login(); start the keep-alive here so a reloaded all-day tab still
+        // renews its access token ahead of expiry. The WorkOS path rehydrates
+        // as unauthenticated and starts the scheduler from establishCookieSession.
+        if (state?.isAuthenticated && state.authProvider === 'legacy') {
+          startSessionKeepAlive()
         }
       },
     }
