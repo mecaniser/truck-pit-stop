@@ -586,6 +586,10 @@ async def test_supplier_purchasing_profile_round_trip_validation_roles_and_tenan
 
 @pytest.mark.asyncio
 async def test_parts_operations_gate_roles_and_foreign_po_are_non_enumerating(client, db_session, monkeypatch):
+    # This first assertion checks the deployment-level kill switch, so pin it
+    # off explicitly: a local .env sets PARTS_OPERATIONS_V1_ENABLED=true and
+    # would otherwise make the "feature is dark -> 404" check see a live 200.
+    monkeypatch.setattr(settings, "PARTS_OPERATIONS_V1_ENABLED", False)
     tenant, owner, supplier, item = await seed(db_session)
     headers = auth(owner, tenant)
     denied_gate = await client.get(f"{PREFIX}/summary", headers=headers)
