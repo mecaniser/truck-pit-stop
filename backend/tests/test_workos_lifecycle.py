@@ -76,8 +76,12 @@ async def test_provider_access_token_signature_and_authoritative_claims(monkeypa
         return {"keys": [jwk]}
     monkeypatch.setattr(workos_provider, "_get_jwks", keys)
     private_pem = key.private_bytes(serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8, serialization.NoEncryption())
+    # Mint the valid token against whatever issuer this environment is configured
+    # for. A local .env can override WORKOS_ISSUER to the production per-client
+    # issuer, so hardcoding "https://api.workos.com" makes the happy-path token
+    # fail its own issuer check.
     claims = {
-        "iss": "https://api.workos.com",
+        "iss": settings.WORKOS_ISSUER,
         "client_id": "client_test",
         "sub": "wu_signed",
         "org_id": "org_signed",
