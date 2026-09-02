@@ -165,7 +165,10 @@ export default function FleetBoard({
     odo: (a, b) => (b.odometer ?? 0) - (a.odometer ?? 0),
   }
   list = [...list].sort(sorters[sort])
-  const showActionLane = tab === 'trucks' && filter === 'all' && !query.trim()
+  // Action Now sits above the tab toggle, so it stays put across a tab switch:
+  // gating it on the tab would shift the toggle out from under the pointer that
+  // just clicked it. Only what is below the toggle changes.
+  const showActionLane = filter === 'all' && !query.trim()
   const needsAction = list.filter((t) => {
     return isPmOverdue(t) || t.status === 'shop' || t.status === 'parts' || !!t.open_incident_count || !!t.warning_lights?.length
   })
