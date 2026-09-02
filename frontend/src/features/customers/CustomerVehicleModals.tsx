@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { AlertTriangle, Combine, Search, Truck, X } from 'lucide-react'
 import toast from 'react-hot-toast'
@@ -1157,7 +1158,11 @@ const {
     </form>
   )
 
-  return (
+  // Rendered into <body>. The workspace panel that hosts these sets
+  // clip-path on its scroll container, and a clip-path on an ancestor clips
+  // position:fixed descendants — so a modal opened from inside the panel was
+  // centred correctly and then cut to the panel's rounded rectangle.
+  return createPortal(
     <>
       {isVehicleModalOpen && selectedCustomer && (
         <div className="fixed inset-0 z-[80] overflow-y-auto">
@@ -1413,6 +1418,7 @@ const {
           </div>
         </div>
       )}
-    </>
+    </>,
+    document.body,
   )
 }

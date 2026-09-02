@@ -1,4 +1,5 @@
 import React, { useCallback, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { AlertTriangle, Search, Truck, X } from 'lucide-react'
 import toast from 'react-hot-toast'
@@ -1109,7 +1110,11 @@ const renderCustomerForm = (onCancel: () => void) => (
     openMerge: () => setIsMergeModalOpen(true),
   }
 
-  return (
+  // Rendered into <body>. The workspace panel that hosts these sets
+  // clip-path on its scroll container, and a clip-path on an ancestor clips
+  // position:fixed descendants — so a modal opened from inside the panel was
+  // centred correctly and then cut to the panel's rounded rectangle.
+  return createPortal(
     <>
       {isModalOpen && (
         <div className="fixed inset-0 z-50 overflow-y-auto">
@@ -1315,6 +1320,7 @@ const renderCustomerForm = (onCancel: () => void) => (
           </div>
         </div>
       )}
-    </>
+    </>,
+    document.body,
   )
 }
