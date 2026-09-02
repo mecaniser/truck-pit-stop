@@ -1,4 +1,5 @@
 import React, { useState } from 'react'
+import type { AxiosError } from 'axios'
 import { createPortal } from 'react-dom'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { AlertTriangle, X } from 'lucide-react'
@@ -83,7 +84,7 @@ const createContactMutation = useMutation({
     closeContactModal()
     toast.success('Contact added')
   },
-  onError: (error: any) => {
+  onError: (error: AxiosError<{ detail?: string }>) => {
     toast.error(error.response?.data?.detail || 'Failed to add contact')
   },
 })
@@ -107,7 +108,7 @@ const updateContactMutation = useMutation({
     closeContactModal()
     toast.success('Contact updated')
   },
-  onError: (error: any) => {
+  onError: (error: AxiosError<{ detail?: string }>) => {
     toast.error(error.response?.data?.detail || 'Failed to update contact')
   },
 })
@@ -121,7 +122,7 @@ const deleteContactMutation = useMutation({
     setDeleteConfirmContact(null)
     toast.success('Contact deleted')
   },
-  onError: (error: any) => {
+  onError: (error: AxiosError<{ detail?: string }>) => {
     toast.error(error.response?.data?.detail || 'Failed to delete contact')
   },
 })

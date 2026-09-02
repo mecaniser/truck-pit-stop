@@ -9,7 +9,7 @@ import { LoadingLine } from '@/components/ui'
 import ViewToggle from '@/components/ViewToggle'
 import { formatUSPhone } from '@/utils/phone'
 import { vehicleDisplayLabel } from '@/lib/vehicleName'
-import type { Customer, Vehicle } from '@/types'
+import type { Contact, Customer, Vehicle } from '@/types'
 import {
   balanceAmountLabel,
   balanceLabel,
@@ -40,7 +40,7 @@ export type CustomerDetailPanelProps = {
   HistoryRoDetail: (props: { customerId: string; orderId: string }) => ReactNode
 
   customerVehicles?: Vehicle[]
-  customerContacts?: any[]
+  customerContacts?: Contact[]
   customerHistory?: CustomerHistoryResponse | null
   isLoadingVehicles?: boolean
   isLoadingContacts?: boolean
@@ -74,8 +74,8 @@ export type CustomerDetailPanelProps = {
   setSelectedVehicleInPanel: (vehicle: Vehicle | null) => void
 
   openAddContactModal: () => void
-  openEditContactModal: (contact: any) => void
-  handleDeleteContactClick: (contact: any) => void
+  openEditContactModal: (contact: Contact) => void
+  handleDeleteContactClick: (contact: Contact) => void
   openAddVehicleModal: () => void
   openEditVehicleModal: (vehicle: Vehicle) => void
   handleDeleteVehicleClick: (vehicle: Vehicle) => void

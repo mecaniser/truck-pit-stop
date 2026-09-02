@@ -1,4 +1,5 @@
 import React, { useCallback, useRef, useState } from 'react'
+import type { AxiosError } from 'axios'
 import { createPortal } from 'react-dom'
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { AlertTriangle, Search, Truck, X } from 'lucide-react'
@@ -263,8 +264,9 @@ const decodeVin = async (rawVin: string, options: { quiet?: boolean } = {}) => {
     
     const decodedLabel = [result.year, result.make, result.model].filter(Boolean).join(' ')
     toast.success(decodedLabel ? `VIN decoded: ${decodedLabel}` : 'VIN decoded')
-  } catch (error: any) {
-    if (!options.quiet) toast.error(error.response?.data?.detail || 'Failed to decode VIN')
+  } catch (error) {
+    const detail = (error as AxiosError<{ detail?: string }>)?.response?.data?.detail
+    if (!options.quiet) toast.error(detail || 'Failed to decode VIN')
   } finally {
     setIsDecodingVin(false)
   }
@@ -285,7 +287,7 @@ const { data: mergeCandidatePage } = useQuery<{ items: Customer[] }>({
 const createMutation = useMutation({
   mutationFn: async (data: CustomerFormData) => {
     // Build payload with initial vehicle if provided
-    const payload: Record<string, any> = {
+    const payload: Record<string, unknown> = {
       first_name: data.first_name,
       last_name: data.last_name,
       company_name: data.company_name || null,
@@ -328,7 +330,7 @@ const createMutation = useMutation({
     const vehicleCount = customer.vehicles?.length || 0
     toast.success(`Customer ${customer.first_name} ${customer.last_name} created${vehicleCount > 0 ? ` with ${vehicleCount} vehicle` : ''}`)
   },
-  onError: (error: any) => {
+  onError: (error: AxiosError<{ detail?: string }>) => {
     toast.error(error.response?.data?.detail || 'Failed to create customer')
   },
 })
@@ -346,7 +348,7 @@ const updateMutation = useMutation({
     closeModal()
     toast.success('Customer updated')
   },
-  onError: (error: any) => {
+  onError: (error: AxiosError<{ detail?: string }>) => {
     toast.error(error.response?.data?.detail || 'Failed to update customer')
   },
 })
@@ -362,7 +364,7 @@ const deleteMutation = useMutation({
     onDeleted?.()
     toast.success('Customer deleted')
   },
-  onError: (error: any) => {
+  onError: (error: AxiosError<{ detail?: string }>) => {
     toast.error(error.response?.data?.detail || 'Failed to delete customer')
   },
 })
@@ -383,7 +385,7 @@ const mergeMutation = useMutation({
       `Merged: ${result.vehicles_moved} vehicles, ${result.repair_orders_moved} repair orders, ${result.contacts_moved} contacts moved`
     )
   },
-  onError: (error: any) => {
+  onError: (error: AxiosError<{ detail?: string }>) => {
     toast.error(error.response?.data?.detail || 'Failed to merge customers')
   },
 })
@@ -474,7 +476,7 @@ const handleSubmit = (e: React.FormEvent) => {
       mc_number: stripRegNumber(formData.mc_number) || null,
       fleet_enabled: formData.fleet_enabled,
     }
-    updateMutation.mutate({ id: editingCustomer.id, data: payload as any })
+    updateMutation.mutate({ id: editingCustomer.id, data: payload as unknown as CustomerFormData })
   } else {
     createMutation.mutate(formData)
   }
@@ -712,7 +714,13 @@ const renderCustomerForm = (onCancel: () => void) => (
             }}
             onAddressSelect={({ feature, formatted }) => {
               if (feature?.properties) {
-                const props = feature.properties as Record<string, any>
+                // Only the fields this form reads; the feature carries more (nested
+                // metadata among them) that would not survive a flat string map.
+                const props = feature.properties as unknown as {
+                  address_line1?: string; full_address?: string; place?: string
+                  locality?: string; place_name?: string; region_code?: string
+                  region?: string; postcode?: string; country_code?: string
+                }
                 setFormData((prev) => ({
                   ...prev,
                   billing_address_line1:

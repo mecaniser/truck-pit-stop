@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react'
+import type { AxiosError } from 'axios'
 import { createPortal } from 'react-dom'
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { AlertTriangle, Combine, Search, Truck, X } from 'lucide-react'
@@ -127,9 +128,16 @@ const emptyVehicleForm: VehicleFormData = {
 
 
 
-const duplicateVinFieldError = (error: any): DuplicateVinConflict | null => {
-  const detail = error.response?.data?.detail
-  if (error.response?.status !== 409) {
+type DuplicateVinDetail = {
+  code?: string
+  message?: string
+  vehicle?: DuplicateVinVehicleSummary | null
+}
+
+const duplicateVinFieldError = (error: unknown): DuplicateVinConflict | null => {
+  const response = (error as AxiosError<{ detail?: DuplicateVinDetail }>)?.response
+  const detail = response?.data?.detail
+  if (response?.status !== 409) {
     return null
   }
 
@@ -279,7 +287,7 @@ export default function CustomerVehicleModals({
       closeVehicleModal()
       toast.success('Vehicle added')
     },
-    onError: (error: any) => {
+    onError: (error: AxiosError<{ detail?: string }>) => {
       const vinError = duplicateVinFieldError(error)
       if (vinError) {
         setVehicleVinError(vinError)
@@ -313,7 +321,7 @@ export default function CustomerVehicleModals({
       closeVehicleModal()
       toast.success('Vehicle updated')
     },
-    onError: (error: any) => {
+    onError: (error: AxiosError<{ detail?: string }>) => {
       const vinError = duplicateVinFieldError(error)
       if (vinError) {
         setVehicleVinError(vinError)
@@ -352,7 +360,7 @@ export default function CustomerVehicleModals({
       closeVehicleModal()
       toast.success('Truck roles updated')
     },
-    onError: (error: any) => {
+    onError: (error: AxiosError<{ detail?: string }>) => {
       toast.error(error.response?.data?.detail || error.message || 'Failed to update truck roles')
     },
   })
@@ -368,7 +376,7 @@ export default function CustomerVehicleModals({
       setPendingFleetRemovalId(null)
       toast.success(`Removed from ${variables.companyName} Fleet Board. Owner, payer, and service history were not changed.`)
     },
-    onError: (error: any) => {
+    onError: (error: AxiosError<{ detail?: string }>) => {
       toast.error(error.response?.data?.detail || 'Failed to remove truck from Fleet Board')
     },
   })
@@ -385,7 +393,7 @@ export default function CustomerVehicleModals({
       }
       toast.success('Vehicle deleted')
     },
-    onError: (error: any) => {
+    onError: (error: AxiosError<{ detail?: string }>) => {
       toast.error(error.response?.data?.detail || 'Failed to delete vehicle')
     },
   })
@@ -418,7 +426,7 @@ export default function CustomerVehicleModals({
       const movedHistory = (result.moved.repair_orders || 0) + (result.moved.inspections || 0) + (result.moved.incidents || 0)
       toast.success(`Trucks merged. ${movedHistory} history record${movedHistory === 1 ? '' : 's'} moved to the kept truck.`)
     },
-    onError: (error: any) => {
+    onError: (error: AxiosError<{ detail?: string }>) => {
       toast.error(error.response?.data?.detail || error.message || 'Failed to merge trucks')
     },
   })
@@ -568,8 +576,9 @@ export default function CustomerVehicleModals({
       
       const decodedLabel = [result.year, result.make, result.model].filter(Boolean).join(' ')
       toast.success(decodedLabel ? `VIN decoded: ${decodedLabel}` : 'VIN decoded')
-    } catch (error: any) {
-      if (!options.quiet) toast.error(error.response?.data?.detail || 'Failed to decode VIN')
+    } catch (error) {
+      const detail = (error as AxiosError<{ detail?: string }>)?.response?.data?.detail
+      if (!options.quiet) toast.error(detail || 'Failed to decode VIN')
     } finally {
       setIsDecodingVehicleVin(false)
     }
