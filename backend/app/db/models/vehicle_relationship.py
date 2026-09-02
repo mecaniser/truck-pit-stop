@@ -51,7 +51,13 @@ class FleetMembership(BaseModel):
     effective_from = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
     effective_to = Column(DateTime(timezone=True), nullable=True, index=True)
     notes = Column(Text, nullable=True)
+    # Who ended the membership. Null for the sync path, which ends memberships
+    # as a side effect of a customer change rather than by anyone's decision.
+    ended_by_user_id = Column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
 
+    ended_by = relationship("User", foreign_keys=[ended_by_user_id])
     vehicle = relationship("Vehicle", back_populates="fleet_memberships")
     fleet_customer = relationship("Customer", back_populates="fleet_memberships")
 

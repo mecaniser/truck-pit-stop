@@ -1,7 +1,9 @@
+import { useState } from 'react'
 import { Wrench, Gauge, ClipboardList, MapPin, User, Search, ChevronDown, ChevronRight, Check, AlertTriangle, X } from 'lucide-react'
 import type { BoardTruck, FleetBoard as FleetBoardData, TruckStatus } from './types'
 import { STATUS_META, fleetUnitLabel, fmt, pmState, rank } from './helpers'
 import { formatUSPhone } from '@/utils/phone'
+import FleetActivity from './FleetActivity'
 
 type QueueFilter = 'pm_planning' | 'open_work_orders'
 type Filter = 'all' | TruckStatus | QueueFilter
@@ -125,6 +127,10 @@ export default function FleetBoard({
   sort: Sort; setSort: (s: Sort) => void
 }) {
   const { trucks, stats } = data
+  // The board answers "what is happening now"; the activity tab answers "what
+  // happened". Board-local state: it is a way of reading this screen, not a
+  // separate destination, so it stays out of the rail and out of the URL.
+  const [tab, setTab] = useState<'trucks' | 'activity'>('trucks')
   let list = trucks
   const isPmOverdue = (t: BoardTruck) => (t.pm_remaining != null && t.pm_remaining <= 0) || (t.pm_days_remaining != null && t.pm_days_remaining < 0)
   const needsPmPlanning = (t: BoardTruck) => (t.pm_remaining == null && t.pm_days_remaining == null) || pmState(t).cls === 'pm-soon'
@@ -159,6 +165,9 @@ export default function FleetBoard({
     odo: (a, b) => (b.odometer ?? 0) - (a.odometer ?? 0),
   }
   list = [...list].sort(sorters[sort])
+  // Action Now sits above the tab toggle, so it stays put across a tab switch:
+  // gating it on the tab would shift the toggle out from under the pointer that
+  // just clicked it. Only what is below the toggle changes.
   const showActionLane = filter === 'all' && !query.trim()
   const needsAction = list.filter((t) => {
     return isPmOverdue(t) || t.status === 'shop' || t.status === 'parts' || !!t.open_incident_count || !!t.warning_lights?.length
@@ -185,6 +194,22 @@ export default function FleetBoard({
 
       <div className="board-bar">
           <div className="board-bar-l">
+            <div className="board-tabs" role="tablist" aria-label="Board view">
+              {(['trucks', 'activity'] as const).map((value) => (
+                <button
+                  key={value}
+                  type="button"
+                  role="tab"
+                  aria-selected={tab === value}
+                  className={'board-tab' + (tab === value ? ' is-on' : '')}
+                  onClick={() => setTab(value)}
+                >
+                  {value === 'trucks' ? 'Trucks' : 'Activity'}
+                </button>
+              ))}
+            </div>
+            {tab === 'trucks' && (
+            <>
             <div className="fld-search">
               <Search size={16} />
               <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search unit, VIN, plate, driver, make…" />
@@ -195,7 +220,10 @@ export default function FleetBoard({
                 <span className="active-filter-clear" aria-hidden="true"><X size={13} strokeWidth={2.5} /></span>
               </button>
             )}
+            </>
+            )}
         </div>
+        {tab === 'trucks' && (
         <div className="board-bar-r">
           <span className="board-sort-lbl">Sort</span>
           <div className="board-sort-select">
@@ -208,20 +236,24 @@ export default function FleetBoard({
             <ChevronDown size={16} aria-hidden="true" />
           </div>
         </div>
+        )}
       </div>
 
-      {showActionLane && needsAction.length > 0 && (
+      {tab === 'activity' && <FleetActivity />}
+
+      {tab === 'trucks' && showActionLane && needsAction.length > 0 && (
         <section className="board-section">
           <SectionHeading title="Needs attention" count={needsAction.length} detail="Prioritized by service and PM urgency." />
           <div className="tgrid tgrid-attention">{needsAction.map((t) => <TruckCard key={t.id} t={t} onOpen={onOpen} onOpenWorkOrder={onOpenWorkOrder} />)}</div>
         </section>
       )}
-      {showActionLane && planning.length > 0 && (
+      {tab === 'trucks' && showActionLane && planning.length > 0 && (
         <section className="board-section">
           <SectionHeading title="Maintenance to plan" count={planning.length} detail="Schedule these before they become service interruptions." />
           <div className="tgrid">{planning.map((t) => <TruckCard key={t.id} t={t} onOpen={onOpen} onOpenWorkOrder={onOpenWorkOrder} />)}</div>
         </section>
       )}
+      {tab === 'trucks' && (
       <section className="board-section">
         <SectionHeading title={showActionLane ? 'Fleet overview' : activeFilter?.title || 'Matching trucks'} count={showActionLane ? remaining.length : list.length} detail={showActionLane ? 'Units without an immediate action queue.' : activeFilter?.detail || 'Search and filter results.'} />
         <div className="tgrid">
@@ -229,6 +261,7 @@ export default function FleetBoard({
           {list.length === 0 && <div className="tgrid-empty">No trucks match.</div>}
         </div>
       </section>
+      )}
     </div>
   )
 }

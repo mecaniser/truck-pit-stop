@@ -1440,3 +1440,47 @@
     transition-duration:1ms !important;
   }
 }
+
+/* ---- board tabs + activity feed ---- */
+/* Tabs sit at the same 42px as the search and sort controls beside them, so the
+   board bar reads as one row rather than a row with something bolted on. */
+.fleet-root .board-tabs{display:inline-flex;align-items:center;gap:4px;height:42px;padding:4px;
+  background:var(--surface);border:1px solid var(--line);border-radius:10px;}
+.fleet-root .board-tab{height:32px;padding:0 15px;border:none;border-radius:7px;background:none;
+  color:var(--muted-2);font-size:13.5px;font-weight:700;font-family:inherit;white-space:nowrap;cursor:pointer;
+  transition:color 140ms ease,background-color 140ms ease;}
+.fleet-root .board-tab:hover{color:var(--text);}
+.fleet-root .board-tab.is-on{background:var(--surface-2);color:var(--text);}
+.fleet-root .board-tab:focus-visible{outline:3px solid rgba(66,200,255,.42);outline-offset:2px;}
+
+.fleet-root .fleet-activity__list{display:flex;flex-direction:column;}
+/* A grid, not a table: the columns stay aligned down the feed so the eye can
+   scan one column at a time, which is how you read a log. */
+.fleet-root .fleet-activity__row{display:grid;grid-template-columns:26px 62px 92px 108px minmax(0,1fr) 130px;
+  align-items:baseline;gap:14px;padding:11px 4px;border-bottom:1px solid var(--line);font-size:13.5px;}
+/* The feed is a log, not a table of records: capping the line length keeps the
+   summary readable instead of stretching one sentence across a 1440px screen. */
+.fleet-root .fleet-activity__list{max-width:1080px;}
+.fleet-root .fleet-activity__row:last-child{border-bottom:none;}
+.fleet-root .fleet-activity__icon{align-self:center;display:inline-flex;align-items:center;justify-content:center;
+  width:26px;height:26px;border-radius:999px;background:var(--surface-2);color:var(--muted-2);}
+.fleet-root .fleet-activity__icon--incident{color:var(--red);}
+.fleet-root .fleet-activity__icon--membership{color:var(--yellow);}
+.fleet-root .fleet-activity__when{color:var(--muted-2);font-variant-numeric:tabular-nums;white-space:nowrap;}
+.fleet-root .fleet-activity__kind{color:var(--muted-2);font-size:12px;text-transform:uppercase;letter-spacing:1.2px;}
+.fleet-root .fleet-activity__truck{color:var(--text);font-weight:700;white-space:nowrap;}
+.fleet-root .fleet-activity__summary{color:var(--text);min-width:0;}
+.fleet-root .fleet-activity__severity{color:var(--muted-2);font-style:normal;}
+.fleet-root .fleet-activity__actor{color:var(--muted-2);font-size:12.5px;text-align:right;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.fleet-root .fleet-activity__sentinel{display:flex;align-items:center;justify-content:center;gap:9px;
+  min-height:36px;color:var(--muted-2);font-size:13px;}
+.fleet-root .fleet-activity__state{display:flex;align-items:center;gap:9px;padding:26px 4px;color:var(--muted-2);font-size:13.5px;}
+
+@media (max-width:820px){
+  .fleet-root .fleet-activity__row{grid-template-columns:26px 62px 1fr;row-gap:3px;}
+  .fleet-root .fleet-activity__kind,
+  .fleet-root .fleet-activity__actor{grid-column:2 / -1;}
+  .fleet-root .fleet-activity__truck,
+  .fleet-root .fleet-activity__summary{grid-column:3 / -1;}
+}

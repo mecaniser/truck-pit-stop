@@ -241,6 +241,33 @@ class BoardTruck(BaseModel):
     board_membership_company_name: Optional[str] = None
 
 
+class FleetActivityEntry(BaseModel):
+    """One thing that happened on the fleet board.
+
+    The board answers "what is happening now". This answers "what happened" —
+    the question nobody could ask before, and the reason a truck leaving a
+    fleet had nowhere to record why.
+    """
+
+    id: UUID
+    kind: str                       # 'inspection' | 'incident' | 'membership'
+    occurred_at: datetime
+    vehicle_id: Optional[UUID] = None
+    unit_number: Optional[str] = None
+    vehicle_label: Optional[str] = None
+    summary: str
+    actor: Optional[str] = None
+    severity: Optional[str] = None
+
+
+class FleetActivityPage(BaseModel):
+    items: List[FleetActivityEntry] = []
+    # The occurred_at to pass back as `before` for the next page. Null when the
+    # feed is exhausted, which is what stops the scroll asking for more.
+    next_before: Optional[datetime] = None
+    has_more: bool = False
+
+
 class FleetStats(BaseModel):
     total: int
     active: int

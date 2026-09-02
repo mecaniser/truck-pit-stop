@@ -308,6 +308,8 @@ async def end_fleet_membership(
     tenant_id: UUID,
     vehicle_id: UUID,
     fleet_customer_id: UUID,
+    reason: Optional[str] = None,
+    ended_by_user_id: Optional[UUID] = None,
 ) -> bool:
     membership = (await db.execute(
         select(FleetMembership).where(
@@ -321,6 +323,14 @@ async def end_fleet_membership(
     if not membership:
         return False
     membership.effective_to = datetime.now(timezone.utc)
+    # The reason is why the truck left, and the fleet activity feed reads it
+    # back as that event's summary. Callers that do not collect one (the
+    # customer-sync path, which ends memberships as a side effect) leave the
+    # existing note alone rather than blanking it.
+    if reason:
+        membership.notes = reason
+    if ended_by_user_id:
+        membership.ended_by_user_id = ended_by_user_id
     return True
 
 

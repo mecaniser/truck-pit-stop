@@ -78,6 +78,8 @@ from app.schemas.fleet import (
     FleetPhotoResponse,
     FleetCompanyOption,
     FleetMembershipCreate,
+    FleetActivityEntry,
+    FleetActivityPage,
     FleetTruckCreate,
 )
 from app.schemas.vehicle import VehicleResponse
@@ -381,14 +383,28 @@ async def add_fleet_membership(
 async def remove_fleet_membership(
     vehicle_id: UUID,
     fleet_customer_id: UUID,
+    # A reason is required: a truck vanishing from the board with no account of
+    # why is the gap that prompted the activity feed. It travels as a query
+    # parameter because DELETE bodies are unreliable across HTTP clients.
+    reason: str = Query(max_length=500),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_fleet_access),
 ):
+    # Strip before testing: "   " satisfies a min_length check but records
+    # nothing, which is the same blank history this endpoint exists to prevent.
+    reason = reason.strip()
+    if not reason:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="A reason is required to remove a truck from a fleet",
+        )
     ended = await end_fleet_membership(
         db,
         tenant_id=current_user.tenant_id,
         vehicle_id=vehicle_id,
         fleet_customer_id=fleet_customer_id,
+        reason=reason,
+        ended_by_user_id=current_user.id,
     )
     if not ended:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Active fleet membership not found")
@@ -1683,6 +1699,139 @@ def _derive_projected_status(vehicle: dict, urgent_work_order: Optional[dict]) -
         due = date.fromisoformat(pm_due_date) if isinstance(pm_due_date, str) else pm_due_date
         pm_due_soon = pm_due_soon or (due - date.today()).days <= PM_DUE_SOON_DAYS
     return "pm" if pm_due_soon else "active"
+
+
+@router.get("/activity", response_model=FleetActivityPage)
+async def fleet_activity(
+    vehicle_id: Optional[UUID] = Query(None),
+    kind: Optional[str] = Query(None, pattern="^(inspection|incident|membership)$"),
+    before: Optional[datetime] = Query(None),
+    limit: int = Query(25, ge=1, le=100),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_fleet_access),
+):
+    """What has happened on this fleet board, newest first.
+
+    Merged from the tables that already hold it rather than a new event log: a
+    log would be empty on the day it shipped, and the events worth reading —
+    including every truck that has already left a fleet — are on record now.
+
+    Repair orders are deliberately not here. There are ~200 of them against ~38
+    of everything else, so including them would bury the incidents, inspections
+    and membership changes that have no other home. Service history lives on
+    the truck.
+    """
+    tenant_id = current_user.tenant_id
+    entries: list[FleetActivityEntry] = []
+
+    def vehicle_bits(vehicle: Optional[Vehicle]) -> tuple[Optional[str], Optional[str]]:
+        if vehicle is None:
+            return None, None
+        label = " ".join(str(part) for part in (vehicle.year, vehicle.make, vehicle.model) if part)
+        return vehicle.unit_number, label or None
+
+    def actor_name(user: Optional[User]) -> Optional[str]:
+        if user is None:
+            return None
+        return f"{user.first_name or ''} {user.last_name or ''}".strip() or user.email
+
+    # Over-fetch each source by the page size: after the merge only `limit` rows
+    # survive, and any source could supply all of them.
+    fetch = limit + 1
+
+    if kind in (None, "inspection"):
+        query = (
+            select(FleetInspection)
+            .options(selectinload(FleetInspection.vehicle), selectinload(FleetInspection.inspector))
+            .where(FleetInspection.tenant_id == tenant_id, FleetInspection.deleted_at.is_(None))
+        )
+        if vehicle_id:
+            query = query.where(FleetInspection.vehicle_id == vehicle_id)
+        if before:
+            query = query.where(func.coalesce(FleetInspection.performed_at, FleetInspection.created_at) < before)
+        query = query.order_by(func.coalesce(FleetInspection.performed_at, FleetInspection.created_at).desc()).limit(fetch)
+        for inspection in (await db.execute(query)).scalars().all():
+            unit, label = vehicle_bits(inspection.vehicle)
+            result = getattr(inspection.result, "value", inspection.result)
+            status = getattr(inspection.status, "value", inspection.status)
+            entries.append(FleetActivityEntry(
+                id=inspection.id,
+                kind="inspection",
+                occurred_at=inspection.performed_at or inspection.created_at,
+                vehicle_id=inspection.vehicle_id,
+                unit_number=unit,
+                vehicle_label=label,
+                summary=f"Inspection {result or status}".strip(),
+                actor=actor_name(inspection.inspector),
+            ))
+
+    if kind in (None, "incident"):
+        query = (
+            select(FleetIncident)
+            .options(selectinload(FleetIncident.vehicle), selectinload(FleetIncident.reported_by))
+            .where(FleetIncident.tenant_id == tenant_id, FleetIncident.deleted_at.is_(None))
+        )
+        if vehicle_id:
+            query = query.where(FleetIncident.vehicle_id == vehicle_id)
+        if before:
+            query = query.where(FleetIncident.occurred_at < before)
+        query = query.order_by(FleetIncident.occurred_at.desc()).limit(fetch)
+        for incident in (await db.execute(query)).scalars().all():
+            unit, label = vehicle_bits(incident.vehicle)
+            entries.append(FleetActivityEntry(
+                id=incident.id,
+                kind="incident",
+                occurred_at=incident.occurred_at,
+                vehicle_id=incident.vehicle_id,
+                unit_number=unit,
+                vehicle_label=label,
+                summary=incident.description,
+                actor=actor_name(incident.reported_by),
+                severity=getattr(incident.severity, "value", incident.severity),
+            ))
+
+    if kind in (None, "membership"):
+        query = (
+            select(FleetMembership, Customer.company_name, Vehicle, User)
+            .join(Customer, Customer.id == FleetMembership.fleet_customer_id)
+            .join(Vehicle, Vehicle.id == FleetMembership.vehicle_id)
+            # Outer: memberships ended before this column existed, and those the
+            # customer-sync path ends, have no user to name. An inner join would
+            # drop those rows from the feed entirely.
+            .outerjoin(User, User.id == FleetMembership.ended_by_user_id)
+            .where(
+                FleetMembership.tenant_id == tenant_id,
+                FleetMembership.deleted_at.is_(None),
+                FleetMembership.effective_to.is_not(None),
+            )
+        )
+        if vehicle_id:
+            query = query.where(FleetMembership.vehicle_id == vehicle_id)
+        if before:
+            query = query.where(FleetMembership.effective_to < before)
+        query = query.order_by(FleetMembership.effective_to.desc()).limit(fetch)
+        for membership, company, vehicle, ended_by in (await db.execute(query)).all():
+            unit, label = vehicle_bits(vehicle)
+            entries.append(FleetActivityEntry(
+                id=membership.id,
+                kind="membership",
+                occurred_at=membership.effective_to,
+                vehicle_id=membership.vehicle_id,
+                unit_number=unit,
+                vehicle_label=label,
+                # The reason the operator gave, when one was recorded.
+                summary=membership.notes or f"Removed from {company or 'the fleet'}",
+                actor=actor_name(ended_by),
+            ))
+
+    entries.sort(key=lambda entry: entry.occurred_at, reverse=True)
+    page = entries[:limit]
+    has_more = len(entries) > limit
+    return FleetActivityPage(
+        items=page,
+        next_before=page[-1].occurred_at if page and has_more else None,
+        has_more=has_more,
+    )
 
 
 @router.get("/board", response_model=FleetBoardResponse)
