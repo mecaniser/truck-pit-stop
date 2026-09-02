@@ -233,6 +233,36 @@ describe('FleetPriceBuilderPanel', () => {
     expect(screen.queryByText(/\$10\.00|\$25\.00/)).not.toBeInTheDocument()
   })
 
+  it('keeps PM scope separate from work found during the PM', async () => {
+    apiMocks.get.mockImplementation((url: string) => {
+      if (url === `/repair-orders/${ORDER_ID}/detail`) {
+        return Promise.resolve({ data: { ...detail, is_pm: true } })
+      }
+      if (url === `/repair-orders/${ORDER_ID}/price-build`) return Promise.resolve({ data: summary })
+      if (url === '/fleet/pm-service-catalog') {
+        return Promise.resolve({
+          data: [{ service_id: 'svc-1', name: 'Oil & filter', duration_minutes: 60 }],
+        })
+      }
+      if (url === `/fleet/work-orders/${ORDER_ID}/pm-services`) {
+        return Promise.resolve({ data: [{ service_id: 'svc-1' }] })
+      }
+      if (url === '/fleet/mechanics') return Promise.resolve({ data: [] })
+      if (url === '/fleet/settings') {
+        return Promise.resolve({ data: { internal_labor_rate: 80, labor_rate: 100 } })
+      }
+      return Promise.resolve({ data: [] })
+    })
+
+    renderPanel()
+
+    // The PM's own scope, and the discovered work, are both present and distinct.
+    expect(await screen.findByText('PM scope')).toBeInTheDocument()
+    const pmService = await screen.findByText('Oil & filter')
+    expect(pmService.closest('button')).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByText('Replace air line')).toBeInTheDocument()
+  })
+
   it('does not offer editing once the order is frozen', async () => {
     mockQueries()
     apiMocks.get.mockImplementation((url: string) => {

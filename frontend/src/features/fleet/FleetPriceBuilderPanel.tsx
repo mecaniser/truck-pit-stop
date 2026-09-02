@@ -36,8 +36,9 @@ import { money } from './helpers'
 import {
   useAddAdHocPart, useAddPart, useApplyOperation, useAssignMechanic,
   useCompleteWork, useFleetMechanics, useOperationSearch, usePartSearch,
-  usePriceBuildSummary, useRemoveLine, useRemovePart, useRepairOrderDetail,
-  useStartWork, useUpdateLine, useUpdatePartQuantity,
+  usePmServiceCatalog, usePmServices, usePriceBuildSummary, useRemoveLine,
+  useRemovePart, useRepairOrderDetail, useSetPmServices, useStartWork,
+  useUpdateLine, useUpdatePartQuantity,
   type FleetHistoryEvent, type FleetPartOption, type FleetRepairOrderDetail,
 } from './priceBuild'
 
@@ -234,6 +235,16 @@ export default function FleetPriceBuilderPanel({ repairOrderId, onClose, onChang
 
         <div className="wo-builder-grid">
           <div className="wo-builder-main">
+            {/* PM scope is a curated package that drives the odometer roll
+                forward on completion, so it stays its own control. The list
+                below is for work found while doing the PM. */}
+            {detail.is_pm && (
+              <PmScopeSection
+                orderId={repairOrderId}
+                canEdit={detail.status === 'draft'}
+              />
+            )}
+
             {/* ---- work ---- */}
             <section>
               <div className="wo-draft-section-head">
@@ -425,6 +436,78 @@ function Shell({ title, onClose, footer, children }: {
     >
       {children}
     </SidekickPanel>
+  )
+}
+
+/**
+ * Which services this PM covers. Editable only while the order is a draft —
+ * the server rebuilds the PM's seeded labor and parts from this selection, and
+ * refuses to do so once work has started.
+ */
+function PmScopeSection({ orderId, canEdit }: { orderId: string; canEdit: boolean }) {
+  const { data: catalog } = usePmServiceCatalog(true)
+  const { data: current } = usePmServices(orderId, true)
+  const setPmServices = useSetPmServices(orderId)
+  const [draft, setDraft] = useState<string[] | null>(null)
+
+  const saved = (current ?? []).map((entry) => entry.service_id)
+  const selected = draft ?? saved
+  const dirty = draft != null
+    && (selected.length !== saved.length || selected.some((id) => !saved.includes(id)))
+
+  const toggle = (id: string) => setDraft(
+    selected.includes(id) ? selected.filter((x) => x !== id) : [...selected, id],
+  )
+
+  return (
+    <section>
+      <div className="wo-draft-section-head">
+        <h3>PM scope</h3>
+        <span>{selected.length} selected</span>
+      </div>
+      <div className="pm-svc-list">
+        {(catalog ?? []).length === 0 ? (
+          <div className="pm-svc-empty">No PM services in the catalog yet.</div>
+        ) : (catalog ?? []).map((service) => {
+          const on = selected.includes(service.service_id)
+          return (
+            <button
+              type="button"
+              key={service.service_id}
+              className={'pm-svc-row' + (on ? ' on' : '')}
+              disabled={!canEdit}
+              aria-pressed={on}
+              onClick={() => toggle(service.service_id)}
+            >
+              <span className="pm-svc-check">{on && <Check size={13} />}</span>
+              <span className="pm-svc-name">{service.name}</span>
+              {service.duration_minutes
+                ? <span className="pm-svc-dur">{service.duration_minutes}m</span>
+                : null}
+            </button>
+          )
+        })}
+      </div>
+      {canEdit ? (
+        dirty && (
+          <button
+            type="button"
+            className="dbtn dbtn-yellow"
+            style={{ marginTop: 10 }}
+            disabled={setPmServices.isPending}
+            onClick={() => setPmServices.mutate(selected, {
+              onSuccess: () => setDraft(null),
+            })}
+          >
+            {setPmServices.isPending ? <Spinner size="xs" /> : <Check size={15} />} Save PM scope
+          </button>
+        )
+      ) : (
+        <p className="wo-builder-empty-note">
+          PM scope is set before work starts. Anything found since goes in the list below.
+        </p>
+      )}
+    </section>
   )
 }
 

@@ -75,6 +75,7 @@ export const fleetPriceBuildKeys = {
   summary: (orderId: string) => ['fleet-price-build', orderId] as const,
   detail: (orderId: string) => ['fleet-ro-detail', orderId] as const,
   pmServices: (orderId: string) => ['fleet-wo-pm-services', orderId] as const,
+  pmCatalog: ['fleet-pm-catalog'] as const,
   partSearch: (term: string) => ['fleet-part-search', term] as const,
   mechanics: ['fleet-mechanics'] as const,
   settings: ['fleet-settings'] as const,
@@ -116,6 +117,15 @@ export function usePmServices(orderId: string, enabled: boolean) {
   return useQuery<PMServiceEntry[]>({
     queryKey: fleetPriceBuildKeys.pmServices(orderId),
     queryFn: async () => (await api.get(`/fleet/work-orders/${orderId}/pm-services`)).data,
+    enabled,
+  })
+}
+
+/** Only PM-category services can scope a PM. */
+export function usePmServiceCatalog(enabled: boolean) {
+  return useQuery<PMServiceEntry[]>({
+    queryKey: fleetPriceBuildKeys.pmCatalog,
+    queryFn: async () => (await api.get('/fleet/pm-service-catalog')).data,
     enabled,
   })
 }
