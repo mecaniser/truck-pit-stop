@@ -6,8 +6,7 @@ import toast from 'react-hot-toast'
 import {
   Gauge, Calendar, Wrench, AlertTriangle, History, Truck, User, Box, Map as MapIcon,
   Shield, Phone, ClipboardList, ClipboardCheck, Pencil, CheckCircle2, ChevronDown, Check, Info, Trash2, Camera, MoreHorizontal,
-  Archive, ArrowLeft, ArrowRight, Clock3, Combine, RotateCcw,
-} from 'lucide-react'
+  Archive, ArrowLeft, ArrowRight, Clock3, Combine, RotateCcw, LogOut } from 'lucide-react'
 import api from '../../lib/api'
 import { isSupportedPhotoFile, runPhotoUploadQueue, uploadDirectPhoto, type PhotoUploadStatus } from '@/lib/photoUpload'
 import type {
@@ -16,7 +15,7 @@ import type {
 } from './types'
 import { STATUS_META, fleetUnitLabel, fmt, money, fmtDate, pmState, initials } from './helpers'
 import FleetMap from './FleetMap'
-import { TruckEditModal, LogIncidentModal, EditIncidentModal, InspectionsSection, NewWorkOrderModal, WorkOrderPanel, AssignDriverModal, SchedulePMModal, Modal, SidekickPanel, invalidateFleetAndCockpit, type InspectionsSectionHandle } from './FleetModals'
+import { ConfirmModal, TruckEditModal, LogIncidentModal, EditIncidentModal, InspectionsSection, NewWorkOrderModal, WorkOrderPanel, AssignDriverModal, SchedulePMModal, Modal, SidekickPanel, invalidateFleetAndCockpit, type InspectionsSectionHandle } from './FleetModals'
 import { useAuthStore } from '../../stores/authStore'
 import { getWorkOSCapabilities, startWorkOSLogin, type WorkOSCapabilities } from '../../lib/workosAuth'
 
@@ -384,6 +383,25 @@ export default function TruckDetail({
   }
 
   const t = data?.truck || trucks.find((truck) => truck.id === truckId)
+
+  // Ending a truck's fleet membership. Confirmed rather than immediate: it is
+  // reversible (add the truck back) but it changes what a whole company sees
+  // on their board, so it should not happen on a single click.
+  const [confirmLeaveFleet, setConfirmLeaveFleet] = useState(false)
+  const removeFromFleet = useMutation({
+    mutationFn: async () => {
+      if (!t.fleet_customer_id) throw new Error('This truck has no fleet to leave')
+      await api.delete(`/fleet/memberships/${t.id}/${t.fleet_customer_id}`)
+    },
+    onSuccess: () => {
+      toast.success(`Removed from ${t.fleet_company_name || 'the fleet'}`)
+      setConfirmLeaveFleet(false)
+      setDetailsOpen(false)
+      invalidateFleetAndCockpit(qc)
+    },
+    onError: (e: AxiosError<{ detail?: string }>) =>
+      toast.error(e.response?.data?.detail || 'Could not remove this truck from the fleet'),
+  })
   if (!t) {
     if (truckQuery.isError) {
       return (
@@ -1053,6 +1071,16 @@ export default function TruckDetail({
         </div>
       )}
 
+      {confirmLeaveFleet && (
+        <ConfirmModal
+          title={`Remove from ${t.fleet_company_name || 'this fleet'}?`}
+          message={`${fleetUnitLabel(t)} comes off this fleet board. The truck, its service history and any open repair orders stay exactly as they are — this only ends the fleet membership. Add it back any time from Add truck.`}
+          confirmLabel="Remove from fleet"
+          pending={removeFromFleet.isPending}
+          onConfirm={() => removeFromFleet.mutate()}
+          onClose={() => setConfirmLeaveFleet(false)}
+        />
+      )}
       {data && detailsOpen && <TruckDetailsModal
         truck={t}
         detail={data}
@@ -1060,6 +1088,7 @@ export default function TruckDetail({
         onChangeDriver={() => setAssigningDriver(true)}
         onEdit={() => { setDetailsOpen(false); setEditing(true) }}
         onMerge={() => { setDetailsOpen(false); setMergeOpen(true) }}
+        onRemoveFromFleet={() => setConfirmLeaveFleet(true)}
         onClose={() => setDetailsOpen(false)}
       />}
       {mergeOpen && <MergeTruckModal
@@ -1372,8 +1401,8 @@ function TruckDriverSection({ truck, detail, onChangeDriver }: {
   )
 }
 
-function TruckDetailsModal({ truck, detail, canMerge, onChangeDriver, onEdit, onMerge, onClose }: {
-  truck: BoardTruck; detail: TruckDetailData; canMerge: boolean; onChangeDriver: () => void; onEdit: () => void; onMerge: () => void; onClose: () => void
+function TruckDetailsModal({ truck, detail, canMerge, onChangeDriver, onEdit, onMerge, onRemoveFromFleet, onClose }: {
+  truck: BoardTruck; detail: TruckDetailData; canMerge: boolean; onChangeDriver: () => void; onEdit: () => void; onMerge: () => void; onRemoveFromFleet: () => void; onClose: () => void
 }) {
   return (
     <SidekickPanel
@@ -1430,6 +1459,21 @@ function TruckDetailsModal({ truck, detail, canMerge, onChangeDriver, onEdit, on
           </div>
           <button type="button" className="dbtn dbtn-ghost" onClick={onMerge}>
             <Combine size={15} /> Merge duplicate
+          </button>
+        </div>
+      )}
+      {canMerge && truck.fleet_customer_id && (
+        <div className="truck-cleanup-actions">
+          <div>
+            <strong>Fleet membership</strong>
+            <span>
+              Removing this truck from {truck.fleet_company_name || 'this fleet'} takes it off the
+              board and leaves the truck, its history and its repair orders untouched. To delete the
+              truck itself, remove it from the customer that owns it.
+            </span>
+          </div>
+          <button type="button" className="dbtn dbtn-ghost" onClick={onRemoveFromFleet}>
+            <LogOut size={15} /> Remove from fleet
           </button>
         </div>
       )}
