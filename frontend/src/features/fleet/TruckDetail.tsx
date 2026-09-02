@@ -390,11 +390,12 @@ export default function TruckDetail({
   const [confirmLeaveFleet, setConfirmLeaveFleet] = useState(false)
   const removeFromFleet = useMutation({
     mutationFn: async () => {
-      if (!t.fleet_customer_id) throw new Error('This truck has no fleet to leave')
-      await api.delete(`/fleet/memberships/${t.id}/${t.fleet_customer_id}`)
+      const fleetId = t?.board_membership_customer_id || t?.fleet_customer_id
+      if (!t || !fleetId) throw new Error('This truck has no fleet to leave')
+      await api.delete(`/fleet/memberships/${t.id}/${fleetId}`)
     },
     onSuccess: () => {
-      toast.success(`Removed from ${t.fleet_company_name || 'the fleet'}`)
+      toast.success(`Removed from ${t?.board_membership_company_name || t?.fleet_company_name || 'the fleet'}`)
       setConfirmLeaveFleet(false)
       setDetailsOpen(false)
       invalidateFleetAndCockpit(qc)
@@ -1073,7 +1074,7 @@ export default function TruckDetail({
 
       {confirmLeaveFleet && (
         <ConfirmModal
-          title={`Remove from ${t.fleet_company_name || 'this fleet'}?`}
+          title={`Remove from ${t?.board_membership_company_name || t?.fleet_company_name || 'this fleet'}?`}
           message={`${fleetUnitLabel(t)} comes off this fleet board. The truck, its service history and any open repair orders stay exactly as they are — this only ends the fleet membership. Add it back any time from Add truck.`}
           confirmLabel="Remove from fleet"
           pending={removeFromFleet.isPending}
@@ -1462,12 +1463,12 @@ function TruckDetailsModal({ truck, detail, canMerge, onChangeDriver, onEdit, on
           </button>
         </div>
       )}
-      {canMerge && truck.fleet_customer_id && (
+      {canMerge && (truck.board_membership_customer_id || truck.fleet_customer_id) && (
         <div className="truck-cleanup-actions">
           <div>
             <strong>Fleet membership</strong>
             <span>
-              Removing this truck from {truck.fleet_company_name || 'this fleet'} takes it off the
+              Removing this truck from {truck.board_membership_company_name || truck.fleet_company_name || 'this fleet'} takes it off the
               board and leaves the truck, its history and its repair orders untouched. To delete the
               truck itself, remove it from the customer that owns it.
             </span>
