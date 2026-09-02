@@ -1091,6 +1091,15 @@ export default function TruckDetail({
         truck={t}
         detail={data}
         canMerge={user?.role === 'garage_owner' || user?.role === 'garage_admin'}
+        // Merging collapses two records into one and cannot be undone from the
+        // board, so it stays with the owner/admin. Removing a truck from a
+        // fleet is the fleet manager's daily work: operational, reversible via
+        // Add truck, and already permitted by the API's FLEET_ROLES guard.
+        canRemoveFromFleet={
+          user?.role === 'garage_owner'
+          || user?.role === 'garage_admin'
+          || user?.role === 'fleet_manager'
+        }
         onChangeDriver={() => setAssigningDriver(true)}
         onEdit={() => { setDetailsOpen(false); setEditing(true) }}
         onMerge={() => { setDetailsOpen(false); setMergeOpen(true) }}
@@ -1407,8 +1416,8 @@ function TruckDriverSection({ truck, detail, onChangeDriver }: {
   )
 }
 
-function TruckDetailsModal({ truck, detail, canMerge, onChangeDriver, onEdit, onMerge, onRemoveFromFleet, onClose }: {
-  truck: BoardTruck; detail: TruckDetailData; canMerge: boolean; onChangeDriver: () => void; onEdit: () => void; onMerge: () => void; onRemoveFromFleet: () => void; onClose: () => void
+function TruckDetailsModal({ truck, detail, canMerge, canRemoveFromFleet, onChangeDriver, onEdit, onMerge, onRemoveFromFleet, onClose }: {
+  truck: BoardTruck; detail: TruckDetailData; canMerge: boolean; canRemoveFromFleet: boolean; onChangeDriver: () => void; onEdit: () => void; onMerge: () => void; onRemoveFromFleet: () => void; onClose: () => void
 }) {
   return (
     <SidekickPanel
@@ -1468,7 +1477,7 @@ function TruckDetailsModal({ truck, detail, canMerge, onChangeDriver, onEdit, on
           </button>
         </div>
       )}
-      {canMerge && (truck.board_membership_customer_id || truck.fleet_customer_id) && (
+      {canRemoveFromFleet && (truck.board_membership_customer_id || truck.fleet_customer_id) && (
         <div className="truck-cleanup-actions">
           <div>
             <strong>Fleet membership</strong>
