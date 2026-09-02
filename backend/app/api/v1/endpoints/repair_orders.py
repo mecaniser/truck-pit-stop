@@ -54,6 +54,10 @@ from app.services.price_build_service import (
     validate_mechanic_labor_hours,
 )
 from app.services.repair_order_access import tenant_repair_order_statement
+from app.services.repair_order_status_sets import (
+    EDITABLE_RO_STATUSES,
+    INTERNAL_FROZEN_RO_STATUSES,
+)
 from app.services.pricing import apply_canonical_order_totals, get_order_total
 from app.services.internal_fleet import fleet_labor_uses_customer_rate, uses_internal_fleet_pricing
 from app.services.vehicle_identity import ensure_vehicle_relationship
@@ -116,16 +120,6 @@ price_build_service = PriceBuildService()
 # live work record, so parts/labor/pricing stay editable until manager review is
 # finalized into an invoice. Quotes are optional authorization snapshots and do
 # not freeze the underlying work record.
-EDITABLE_RO_STATUSES = (
-    RepairOrderStatus.DRAFT,
-    RepairOrderStatus.QUOTED,
-    RepairOrderStatus.DECLINED,
-    RepairOrderStatus.APPROVED,
-    RepairOrderStatus.ASSIGNED,
-    RepairOrderStatus.ACKNOWLEDGED,
-    RepairOrderStatus.IN_PROGRESS,
-    RepairOrderStatus.PENDING_REVIEW,
-)
 ASSIGNABLE_RO_STATUSES = (
     RepairOrderStatus.DRAFT,
     RepairOrderStatus.QUOTED,
@@ -157,13 +151,6 @@ DELETABLE_RO_STATUSES = DANGER_ACTION_RO_STATUSES + (RepairOrderStatus.CANCELLED
 # (approved, in_progress, completed, …) can be moved to cancelled/deleted so the
 # owner can clear stuck or wrong orders from the cockpit.
 FINANCIALLY_PROTECTED_STATUSES = (RepairOrderStatus.INVOICED, RepairOrderStatus.PAID)
-# Internal fleet WOs log labor/parts as work happens, so they stay editable
-# through the whole active flow — only terminal states freeze them.
-INTERNAL_FROZEN_RO_STATUSES = (
-    RepairOrderStatus.COMPLETED,
-    RepairOrderStatus.INVOICED,
-    RepairOrderStatus.CANCELLED,
-)
 PRICE_BUILD_EDIT_ROLES = (
     UserRole.GARAGE_OWNER,
     UserRole.GARAGE_ADMIN,

@@ -1413,3 +1413,59 @@ async def test_completed_inspection_items_are_locked(db_session):
             body=InspectionItemUpdate(result=InspectionItemResult.PASS),
             db=db_session, current_user=user)
     assert exc.value.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_changing_pm_services_keeps_separately_added_work(db_session):
+    """Re-scoping a PM must not discard work added through the price builder.
+
+    Both a PM-seeded line and a price-builder flat service carry a
+    source_service_id, so re-seeding on "source_service_id IS NOT NULL" used to
+    delete the added work along with the PM's own lines.
+    """
+    import sqlalchemy
+    from app.db.models.labor import Labor
+    from app.db.models.service import Service
+    from app.schemas.fleet import PMServicesUpdate, SchedulePMRequest
+    from app.services.price_build_service import PriceBuildService
+
+    tenant, vehicle, user = await _seed_fleet(db_session)
+    pm_a = Service(id=uuid4(), tenant_id=tenant.id, name="PM A",
+                   duration_minutes=60, is_active=True)
+    pm_b = Service(id=uuid4(), tenant_id=tenant.id, name="PM B",
+                   duration_minutes=30, is_active=True)
+    discovered = Service(id=uuid4(), tenant_id=tenant.id, name="Cracked Air Line",
+                         duration_minutes=45, is_active=True)
+    db_session.add_all([pm_a, pm_b, discovered])
+    await db_session.commit()
+
+    truck = await fleet.schedule_pm(
+        vehicle_id=vehicle.id, body=SchedulePMRequest(create_work_order=True),
+        db=db_session, current_user=user)
+    ro_id = truck.pm_work_order.repair_order_id
+
+    await fleet.set_wo_pm_services(
+        ro_id=ro_id, body=PMServicesUpdate(service_ids=[pm_a.id]),
+        db=db_session, current_user=user)
+
+    # The fleet manager finds extra work during the PM and adds it the same way
+    # the price builder does.
+    builder = PriceBuildService()
+    loaded = await builder.load_order(db_session, ro_id)
+    await builder.add_flat_service_line(db_session, loaded, discovered.id)
+    await db_session.commit()
+
+    # Re-scoping the PM rebuilds its own lines and leaves the added work alone.
+    await fleet.set_wo_pm_services(
+        ro_id=ro_id, body=PMServicesUpdate(service_ids=[pm_b.id]),
+        db=db_session, current_user=user)
+
+    sources = {
+        line.source_service_id
+        for line in (await db_session.execute(
+            sqlalchemy.select(Labor).where(Labor.repair_order_id == ro_id)
+        )).scalars().all()
+    }
+    assert discovered.id in sources, "price-builder work was discarded by the PM re-seed"
+    assert pm_b.id in sources, "the newly selected PM service was not seeded"
+    assert pm_a.id not in sources, "the deselected PM service was not cleared"

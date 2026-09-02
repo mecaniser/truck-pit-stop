@@ -34,6 +34,11 @@ from app.services.repair_operation_library import (
 from app.services.internal_fleet import fleet_labor_uses_customer_rate
 from app.services.parts_operations_service import apply_inventory_movement
 from app.services.pricing import compute_canonical_order_totals
+from app.services.repair_order_status_sets import (
+    EDITABLE_RO_STATUSES,
+    FINALIZED_STATUSES,
+    INTERNAL_FROZEN_RO_STATUSES,
+)
 from app.core.work_value_validation import validate_labor_hours, validate_part_quantity
 
 
@@ -65,26 +70,9 @@ class PriceBuildValidationError(PriceBuildError):
     pass
 
 
-EDITABLE_RO_STATUSES = {
-    RepairOrderStatus.DRAFT,
-    RepairOrderStatus.QUOTED,
-    RepairOrderStatus.DECLINED,
-    RepairOrderStatus.APPROVED,
-    RepairOrderStatus.ASSIGNED,
-    RepairOrderStatus.ACKNOWLEDGED,
-    RepairOrderStatus.IN_PROGRESS,
-    RepairOrderStatus.PENDING_REVIEW,
-}
-# Internal fleet work orders log labor/parts throughout their active flow (e.g.
-# an in-progress PM) and only freeze once completed/invoiced/paid/cancelled —
-# mirrors INTERNAL_FROZEN_RO_STATUSES in the repair_orders endpoints module.
-INTERNAL_FROZEN_STATUSES = {
-    RepairOrderStatus.COMPLETED,
-    RepairOrderStatus.INVOICED,
-    RepairOrderStatus.PAID,
-    RepairOrderStatus.CANCELLED,
-}
-FINALIZED_STATUSES = {RepairOrderStatus.INVOICED, RepairOrderStatus.PAID}
+# Kept as module-level names for the many existing references below; the sets
+# themselves are defined once in repair_order_status_sets.
+INTERNAL_FROZEN_STATUSES = INTERNAL_FROZEN_RO_STATUSES
 logger = get_logger(__name__)
 def validate_mechanic_labor_hours(value: Decimal) -> Decimal:
     """Return exact database-safe hours or reject the additive operation."""
