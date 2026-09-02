@@ -7,9 +7,10 @@ import api from '../../lib/api'
 import { Customer, Vehicle, Contact, RepairOrder, VINDecodeResult, CustomerWithVehicles } from '../../types'
 import { customerDisplayName, customerPersonalName } from '../../lib/customerName'
 import { vehicleDisplayLabel } from '../../lib/vehicleName'
-import { AlertTriangle, ArrowDown, ArrowRight, ArrowUp, Building2, ChevronDown, Combine, Mail, Pencil, Phone, Plus, Route, Search, Star, Trash2, Truck, User, Wrench, X, ChevronLeft } from 'lucide-react'
+import { AlertTriangle, ArrowDown, ArrowRight, ArrowUp, ChevronDown, Combine, Mail, Pencil, Phone, Plus, Search, Star, Trash2, Truck, User, Wrench, X } from 'lucide-react'
 import SlidePanel from '@/components/SlidePanel'
 import CustomerDetailPanel from './CustomerDetailPanel'
+import { useCustomerVehicleGroups } from './useCustomerVehicleGroups'
 import {
   balanceAmountLabel,
   balanceLabel,
@@ -435,9 +436,6 @@ export default function CustomersPage() {
   const customerRowRefs = useRef(new Map<string, HTMLElement>())
   const customerDetailsButtonRefs = useRef(new Map<string, HTMLButtonElement>())
   const selectionOriginRef = useRef<string | null>(null)
-  // Passed by whoever sent the operator here, so they can get back.
-  const returnTo = (location.state as { returnTo?: string } | null)?.returnTo
-  const returnLabel = (location.state as { returnLabel?: string } | null)?.returnLabel
   const selectedCustomerId = useMemo(() => {
     if (presentationVariant !== 'new') return null
     return new URLSearchParams(location.search).get('selected')
@@ -1773,63 +1771,24 @@ export default function CustomersPage() {
     }
   }
 
-  const vehicleCount = customerVehicles?.length || 0
-  const ownedVehicles = customerVehicles?.filter((vehicle) =>
-    vehicle.customer_relationship_types?.includes('owner') || vehicle.customer_id === selectedCustomer?.id
-  ) || []
-  const authorityVehicles = customerVehicles?.filter((vehicle) =>
-    vehicle.customer_relationship_types?.includes('operator')
-    && !vehicle.customer_relationship_types?.includes('owner')
-    && vehicle.customer_id !== selectedCustomer?.id
-  ) || []
-  const shouldShowVehicleSearch = vehicleCount > 3
-  const normalizedVehicleSearch = shouldShowVehicleSearch ? vehicleRelationshipSearch.trim().toLowerCase() : ''
-  const matchesVehicleSearch = (vehicle: Vehicle) => {
-    if (!normalizedVehicleSearch) return true
-    const searchable = [
-      vehicleDisplayLabel(vehicle), vehicle.unit_number, vehicle.vin, vehicle.license_plate,
-      vehicle.make, vehicle.model, vehicle.owner_company_name, vehicle.operating_authority_company_name,
-    ].filter(Boolean).join(' ').toLowerCase()
-    return normalizedVehicleSearch.split(/\s+/).every((term) => searchable.includes(term))
-  }
-  const customerVehicleGroups = [
-    {
-      key: 'owned',
-      title: `Owned by ${selectedCustomer ? customerDisplayName(selectedCustomer) : 'this company'}`,
-      description: 'Trucks this company owns or leases to another operating authority.',
-      vehicles: ownedVehicles,
-      visibleVehicles: ownedVehicles.filter(matchesVehicleSearch),
-      icon: Building2,
-    },
-    {
-      key: 'authority',
-      title: `Runs under ${selectedCustomer ? customerDisplayName(selectedCustomer) : 'this company'} authority`,
-      description: 'Trucks owned by another company that run under this company’s authority.',
-      vehicles: authorityVehicles,
-      visibleVehicles: authorityVehicles.filter(matchesVehicleSearch),
-      icon: Route,
-    },
-  ].filter((group) => group.vehicles.length > 0 && (vehicleRelationshipFilter === 'all' || vehicleRelationshipFilter === group.key))
-  const visibleCustomerVehicleGroups = customerVehicleGroups.filter((group) => group.visibleVehicles.length > 0)
-  const visibleVehicleCount = visibleCustomerVehicleGroups.reduce((count, group) => count + group.visibleVehicles.length, 0)
-  const showVehicleUnitColumn = customerVehicles?.some((vehicle) => !!vehicle.unit_number?.trim()) ?? false
-  const showVehicleVinColumn = customerVehicles?.some((vehicle) => !!vehicle.vin?.trim()) ?? false
-  const showVehiclePlateColumn = customerVehicles?.some((vehicle) => !!vehicle.license_plate?.trim()) ?? false
-  const vehicleTableColumnCount = 2 + Number(showVehicleUnitColumn) + Number(showVehicleVinColumn) + Number(showVehiclePlateColumn)
-
-  const vehicleRelationshipNote = (vehicle: Vehicle, groupKey: string) => {
-    if (groupKey === 'authority') {
-      return vehicle.owner_company_name ? `Owned by ${vehicle.owner_company_name}` : 'Owner / lessor not assigned'
-    }
-    if (
-      vehicle.operating_authority_company_name
-      && vehicle.operating_authority_customer_id !== selectedCustomer?.id
-    ) {
-      return `Runs under ${vehicle.operating_authority_company_name}`
-    }
-    if (vehicle.customer_relationship_types?.includes('operator')) return 'Owner + operating authority'
-    return 'Operating authority not assigned'
-  }
+  const {
+    vehicleCount,
+    ownedVehicles,
+    authorityVehicles,
+    shouldShowVehicleSearch,
+    visibleCustomerVehicleGroups,
+    visibleVehicleCount,
+    showVehicleUnitColumn,
+    showVehicleVinColumn,
+    showVehiclePlateColumn,
+    vehicleTableColumnCount,
+    vehicleRelationshipNote,
+  } = useCustomerVehicleGroups({
+    selectedCustomer,
+    customerVehicles,
+    vehicleRelationshipSearch,
+    vehicleRelationshipFilter,
+  })
 
   const renderCustomerForm = (onCancel: () => void) => (
     <form onSubmit={handleSubmit} className="p-6 space-y-6">
@@ -3131,19 +3090,6 @@ export default function CustomersPage() {
 
   return (
     <div className={`db-customers-workspace flex flex-col h-full min-h-0${presentationVariant === 'new' && selectedCustomerId ? ' db-customers-workspace--detail-open' : ''}`}>
-      {/* Arriving from a repair order, the way back is the first thing needed —
-          otherwise looking up a customer mid-job costs the operator their place
-          in the order they were working. */}
-      {returnTo && (
-        <button
-          type="button"
-          onClick={() => navigate(returnTo)}
-          className="mb-3 inline-flex w-fit items-center gap-1.5 rounded-lg px-2 py-1.5 text-sm font-semibold text-orange-700 hover:bg-orange-50"
-        >
-          <ChevronLeft className="h-4 w-4" />
-          Back to {returnLabel || 'the repair order'}
-        </button>
-      )}
       <div className={`flex flex-col sm:flex-row sm:items-center sm:justify-between mb-4 sm:mb-6 flex-shrink-0${presentationVariant === 'new' ? ' db-operating-page-header' : ''}`}>
         <div>
           <h1 className="text-xl sm:text-2xl font-bold text-white">Customers</h1>
