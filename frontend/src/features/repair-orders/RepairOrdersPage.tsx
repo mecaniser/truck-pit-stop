@@ -27,6 +27,7 @@ import { useWebSocket } from '../../hooks/useWebSocket'
 import { useAuthStore } from '@/stores/authStore'
 import CustomerDetailPanel from '../customers/CustomerDetailPanel'
 import CustomerDetailFooter from '../customers/CustomerDetailFooter'
+import CustomerFormModals, { type CustomerFormModalsHandle } from '../customers/CustomerFormModals'
 import CustomerContactModals, { type CustomerContactModalsHandle } from '../customers/CustomerContactModals'
 import CustomerVehicleModals, { type CustomerVehicleModalsHandle } from '../customers/CustomerVehicleModals'
 import { useCustomerVehicleGroups } from '../customers/useCustomerVehicleGroups'
@@ -709,6 +710,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
 
   const customerContactControls = useRef<CustomerContactModalsHandle | null>(null)
   const customerVehicleControls = useRef<CustomerVehicleModalsHandle | null>(null)
+  const customerFormControls = useRef<CustomerFormModalsHandle | null>(null)
   const [customerViewVehiclesMode, setCustomerViewVehiclesMode] = useState<ViewMode>('list')
   const [customerViewVehicleSearch, setCustomerViewVehicleSearch] = useState('')
   const [customerViewVehicleFilter, setCustomerViewVehicleFilter] = useState<'all' | 'owned' | 'authority'>('all')
@@ -4076,21 +4078,23 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                 handleDeleteVehicleClick={(vehicle) => customerVehicleControls.current?.requestDelete(vehicle)}
               />
             </div>
-            {/* Delete, Merge and Edit for the company itself. Edit and Merge
-                open the Customers tab on this customer: the customer form is
-                525 lines of page-owned state, and a button that looks live but
-                silently does nothing is worse than one that says where it
-                goes. Contacts and trucks are editable here, in place. */}
+            {/* Delete, Merge and Edit for the company itself, in place. */}
             <div className="border-t border-gray-200 px-5 py-3">
               <CustomerDetailFooter
                 selectedCustomer={customerViewRecord}
-                handleDeleteClick={() => navigate(`/dashboard/customers?selected=${customerViewRecord.id}`)}
-                onMerge={() => navigate(`/dashboard/customers?selected=${customerViewRecord.id}`)}
-                handleEditFromDetail={() => navigate(`/dashboard/customers?selected=${customerViewRecord.id}`)}
+                handleDeleteClick={(customer) => customerFormControls.current?.requestDelete(customer)}
+                onMerge={() => customerFormControls.current?.openMerge()}
+                handleEditFromDetail={() => customerFormControls.current?.openEdit(customerViewRecord)}
               />
             </div>
             <CustomerContactModals customer={customerViewRecord} controlsRef={customerContactControls} />
             <CustomerVehicleModals customer={customerViewRecord} controlsRef={customerVehicleControls} />
+            <CustomerFormModals
+              selectedCustomer={customerViewRecord}
+              controlsRef={customerFormControls}
+              onUpdated={() => queryClient.invalidateQueries({ queryKey: ['customer', customerViewId] })}
+              onDeleted={closeCustomerView}
+            />
           </div>
         )}
         {!customerViewId && selectedOrder && (!isOrderDetailLoading || !!orderDetail || priceBuilderOwnsShell) && (
