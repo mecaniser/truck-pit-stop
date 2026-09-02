@@ -215,21 +215,53 @@ export function SidekickPanel({
 }
 
 /* Centered confirmation modal (styled — replaces window.confirm). */
-export function ConfirmModal({ title, message, confirmLabel = 'Delete', pending, onConfirm, onClose }: {
-  title: string; message: string; confirmLabel?: string; pending?: boolean; onConfirm: () => void; onClose: () => void
+/**
+ * Confirm a destructive action, optionally requiring a written reason.
+ *
+ * `prompt` turns the dialog into one that will not proceed on a click alone:
+ * the reason it collects is the record of why the thing happened, which is the
+ * whole point when the action removes something from a shared board.
+ */
+export function ConfirmModal({ title, message, confirmLabel = 'Delete', pending, prompt, onConfirm, onClose }: {
+  title: string; message: string; confirmLabel?: string; pending?: boolean
+  prompt?: { label: string; placeholder?: string }
+  onConfirm: (reason: string) => void; onClose: () => void
 }) {
+  const [reason, setReason] = useState('')
+  const missingReason = !!prompt && !reason.trim()
   return (
     <Modal title={title} icon={<Trash2 size={17} />} onClose={onClose} width={420}>
-      <p style={{ fontSize: 14, color: 'var(--muted)', lineHeight: 1.5, marginBottom: 20 }}>{message}</p>
+      <p style={{ fontSize: 14, color: 'var(--muted)', lineHeight: 1.5, marginBottom: prompt ? 16 : 20 }}>{message}</p>
+      {prompt && (
+        <div style={{ marginBottom: 20 }}>
+          <Field label={prompt.label}>
+            <textarea
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+              placeholder={prompt.placeholder}
+              maxLength={500}
+              rows={3}
+              autoFocus
+              style={{
+                width: '100%', background: 'var(--ink)', border: '1px solid var(--line)',
+                borderRadius: 9, color: 'var(--text)', fontFamily: 'inherit', fontSize: 13.5,
+                padding: 10, outline: 'none', resize: 'vertical',
+              }}
+            />
+          </Field>
+        </div>
+      )}
       <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
         <button className="dbtn dbtn-ghost" onClick={onClose} disabled={pending}>Cancel</button>
         <button
-          onClick={onConfirm}
-          disabled={pending}
+          onClick={() => onConfirm(reason.trim())}
+          disabled={pending || missingReason}
           style={{
             display: 'inline-flex', alignItems: 'center', gap: 8, height: 42, padding: '0 17px',
             borderRadius: 10, fontSize: 13.5, fontWeight: 700, border: 'none',
-            background: 'var(--red)', color: '#fff', cursor: 'pointer', opacity: pending ? 0.6 : 1,
+            background: 'var(--red)', color: '#fff',
+            cursor: pending || missingReason ? 'not-allowed' : 'pointer',
+            opacity: pending || missingReason ? 0.6 : 1,
           }}
         >
           {pending ? <Spinner size="sm" /> : <Trash2 size={15} />} {confirmLabel}
