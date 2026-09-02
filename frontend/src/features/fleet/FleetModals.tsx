@@ -129,7 +129,10 @@ export function Modal({ title, icon, onClose, children, width = 480, scrollable 
 
   return (
     <div
-      style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.6)', zIndex: 60, display: 'grid', placeItems: 'center' }}
+      // 80: above SlidePanel's 70, so a confirm raised from inside Truck
+      // details is not rendered behind the panel that raised it; below
+      // BaseSelect's 100, so a dropdown inside this modal still opens over it.
+      style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.6)', zIndex: 80, display: 'grid', placeItems: 'center' }}
       onClick={(event) => { if (event.target === event.currentTarget) requestClose() }}
     >
       <div
