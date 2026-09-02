@@ -232,6 +232,13 @@ class BoardTruck(BaseModel):
     fleet_company_name: Optional[str] = None
     owner_customer_id: Optional[UUID] = None
     owner_company_name: Optional[str] = None
+    # Which membership actually puts this truck on the board. Distinct from
+    # fleet_customer_id, which is the operating authority and is deliberately
+    # left unset for the shop's own trucks and for trucks whose operator
+    # relationship has lapsed — both of which are still on the board and both
+    # of which have to be removable from it.
+    board_membership_customer_id: Optional[UUID] = None
+    board_membership_company_name: Optional[str] = None
 
 
 class FleetStats(BaseModel):

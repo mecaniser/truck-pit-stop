@@ -8,7 +8,7 @@ import { formatHoursMinutes } from '@/lib/durationFormat'
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import toast from 'react-hot-toast'
 import api from '../../lib/api'
-import { Customer, RepairOrder, RepairOrderDetail, RepairOrderHistoryEvent, RepairOrderStatus, Vehicle, PartsUsage, Labor, InventoryItem, Quote, Invoice, RecommendedService, RecommendedServicePriority, VINDecodeResult, PriceBuildWarning } from '../../types'
+import { Contact, Customer, RepairOrder, RepairOrderDetail, RepairOrderHistoryEvent, RepairOrderStatus, Vehicle, PartsUsage, Labor, InventoryItem, Quote, Invoice, RecommendedService, RecommendedServicePriority, VINDecodeResult, PriceBuildWarning } from '../../types'
 import { format } from 'date-fns'
 import { ArrowRight, FileText, Plus, TriangleAlert, Trash2, Wrench, ChevronDown, ChevronLeft, ChevronUp, RotateCcw, Search, X } from 'lucide-react'
 import SlidePanel from '@/components/SlidePanel'
@@ -25,6 +25,14 @@ import { useViewPreference } from '@/hooks/useViewPreference'
 import { useTheme } from '../../contexts/ThemeContext'
 import { useWebSocket } from '../../hooks/useWebSocket'
 import { useAuthStore } from '@/stores/authStore'
+import CustomerDetailPanel from '../customers/CustomerDetailPanel'
+import CustomerDetailFooter from '../customers/CustomerDetailFooter'
+import CustomerFormModals, { type CustomerFormModalsHandle } from '../customers/CustomerFormModals'
+import CustomerContactModals, { type CustomerContactModalsHandle } from '../customers/CustomerContactModals'
+import CustomerVehicleModals, { type CustomerVehicleModalsHandle } from '../customers/CustomerVehicleModals'
+import { useCustomerVehicleGroups } from '../customers/useCustomerVehicleGroups'
+import type { ViewMode } from '@/components/ViewToggle'
+import type { CustomerHistoryResponse } from '../customers/customerDetailFormat'
 import PriceBuilderPanel from './PriceBuilderPanel'
 import RepairOrdersLedger, { type RepairOrdersLedgerRow } from './RepairOrdersLedger'
 import SectionInfoTooltip from '@/components/SectionInfoTooltip'
@@ -657,6 +665,61 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
     setShowInvoiceCreateOptions(false)
     setWorkspaceHistoryRequested(false)
   }
+
+  // Looking up the carrier without losing the job. The company pill swaps this
+  // panel for the customer's record and swaps back — the operator never leaves
+  // Repair Orders, so the ledger keeps its place and there is one way back.
+  // The customer *list* lives on its own tab; this is the single-customer view.
+  const customerViewId = searchParams.get('customer')
+  const openCustomerView = (customerId: string) => {
+    const next = new URLSearchParams(searchParams)
+    next.set('customer', customerId)
+    setSearchParams(next, { replace: false })
+  }
+  const closeCustomerView = () => {
+    const next = new URLSearchParams(searchParams)
+    next.delete('customer')
+    setSearchParams(next, { replace: true })
+  }
+
+  // Same query keys the Customers screen uses, so the two share one cache: open
+  // a carrier from an order and their tab already has it, and an edit on either
+  // screen invalidates both.
+  const { data: customerViewRecord } = useQuery<Customer>({
+    queryKey: ['customer', customerViewId],
+    queryFn: async () => (await api.get(`/customers/${customerViewId}`)).data,
+    enabled: !!customerViewId,
+  })
+  const { data: customerViewVehicles, isLoading: customerViewVehiclesLoading } = useQuery<Vehicle[]>({
+    queryKey: ['customerVehicles', customerViewId],
+    queryFn: async () => (await api.get(`/customers/${customerViewId}/vehicles`)).data,
+    enabled: !!customerViewId,
+  })
+  const { data: customerViewContacts, isLoading: customerViewContactsLoading } = useQuery<Contact[]>({
+    queryKey: ['customerContacts', customerViewId],
+    queryFn: async () => (await api.get(`/customers/${customerViewId}/contacts`)).data,
+    enabled: !!customerViewId,
+  })
+  const [customerViewTab, setCustomerViewTab] = useState<'overview' | 'history'>('overview')
+  const [customerViewExpandedHistoryId, setCustomerViewExpandedHistoryId] = useState<string | null>(null)
+  const { data: customerViewHistory, isLoading: customerViewHistoryLoading } = useQuery<CustomerHistoryResponse>({
+    queryKey: ['customerHistory', customerViewId],
+    queryFn: async () => (await api.get(`/customers/${customerViewId}/history`)).data,
+    enabled: !!customerViewId && customerViewTab === 'history',
+  })
+
+  const customerContactControls = useRef<CustomerContactModalsHandle | null>(null)
+  const customerVehicleControls = useRef<CustomerVehicleModalsHandle | null>(null)
+  const customerFormControls = useRef<CustomerFormModalsHandle | null>(null)
+  const [customerViewVehiclesMode, setCustomerViewVehiclesMode] = useState<ViewMode>('list')
+  const [customerViewVehicleSearch, setCustomerViewVehicleSearch] = useState('')
+  const [customerViewVehicleFilter, setCustomerViewVehicleFilter] = useState<'all' | 'owned' | 'authority'>('all')
+  const customerViewGroups = useCustomerVehicleGroups({
+    selectedCustomer: customerViewRecord,
+    customerVehicles: customerViewVehicles,
+    vehicleRelationshipSearch: customerViewVehicleSearch,
+    vehicleRelationshipFilter: customerViewVehicleFilter,
+  })
 
   const closeDetail = () => {
     clearDetailState()
@@ -3966,7 +4029,75 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
             </div>
           </div>
         )}
-        {selectedOrder && (!isOrderDetailLoading || !!orderDetail || priceBuilderOwnsShell) && (
+        {/* The carrier's record, in the panel the order was in. Not a route
+            change: the ledger keeps its scroll position and its selection, and
+            there is exactly one way back — to the order. The customer *list*
+            is the left-hand tab's job, and it is deliberately not here. */}
+        {customerViewId && customerViewRecord && (
+          <div className="flex h-full min-h-0 flex-col">
+            <div className="flex items-center gap-3 border-b border-gray-200 px-5 py-3">
+              <button
+                type="button"
+                onClick={closeCustomerView}
+                className="db-inline-text-action inline-flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-sm font-semibold text-orange-700 hover:bg-orange-50"
+              >
+                <ChevronLeft className="h-4 w-4" />
+                Back to {selectedOrder ? `#${selectedOrder.order_number}` : 'the repair order'}
+              </button>
+              <span className="ml-auto truncate text-sm font-semibold text-gray-900">
+                {customerNameOf(customerViewRecord, 'Customer')}
+              </span>
+            </div>
+            <div className="min-h-0 flex-1 overflow-y-auto">
+              <CustomerDetailPanel
+                selectedCustomer={customerViewRecord}
+                detailTab={customerViewTab}
+                setDetailTab={setCustomerViewTab}
+                expandedHistoryId={customerViewExpandedHistoryId}
+                setExpandedHistoryId={setCustomerViewExpandedHistoryId}
+                HistoryRoDetail={() => null}
+                customerVehicles={customerViewVehicles}
+                customerContacts={customerViewContacts}
+                customerHistory={customerViewHistory}
+                isLoadingVehicles={customerViewVehiclesLoading}
+                isLoadingContacts={customerViewContactsLoading}
+                isLoadingHistory={customerViewHistoryLoading}
+                {...customerViewGroups}
+                vehiclesViewMode={customerViewVehiclesMode}
+                setVehiclesViewMode={setCustomerViewVehiclesMode}
+                vehicleRelationshipSearch={customerViewVehicleSearch}
+                setVehicleRelationshipSearch={setCustomerViewVehicleSearch}
+                vehicleRelationshipFilter={customerViewVehicleFilter}
+                setVehicleRelationshipFilter={setCustomerViewVehicleFilter}
+                setSelectedVehicleInPanel={() => undefined}
+                openAddContactModal={() => customerContactControls.current?.openAdd()}
+                openEditContactModal={(contact) => customerContactControls.current?.openEdit(contact)}
+                handleDeleteContactClick={(contact) => customerContactControls.current?.requestDelete(contact)}
+                openAddVehicleModal={() => customerVehicleControls.current?.openAdd()}
+                openEditVehicleModal={(vehicle) => customerVehicleControls.current?.openEdit(vehicle)}
+                handleDeleteVehicleClick={(vehicle) => customerVehicleControls.current?.requestDelete(vehicle)}
+              />
+            </div>
+            {/* Delete, Merge and Edit for the company itself, in place. */}
+            <div className="border-t border-gray-200 px-5 py-3">
+              <CustomerDetailFooter
+                selectedCustomer={customerViewRecord}
+                handleDeleteClick={(customer) => customerFormControls.current?.requestDelete(customer)}
+                onMerge={() => customerFormControls.current?.openMerge()}
+                handleEditFromDetail={() => customerFormControls.current?.openEdit(customerViewRecord)}
+              />
+            </div>
+            <CustomerContactModals customer={customerViewRecord} controlsRef={customerContactControls} />
+            <CustomerVehicleModals customer={customerViewRecord} controlsRef={customerVehicleControls} />
+            <CustomerFormModals
+              selectedCustomer={customerViewRecord}
+              controlsRef={customerFormControls}
+              onUpdated={() => queryClient.invalidateQueries({ queryKey: ['customer', customerViewId] })}
+              onDeleted={closeCustomerView}
+            />
+          </div>
+        )}
+        {!customerViewId && selectedOrder && (!isOrderDetailLoading || !!orderDetail || priceBuilderOwnsShell) && (
           <div className={priceBuilderOwnsShell
             ? `h-full min-h-0 ${presentationVariant === 'new' ? 'db-repair-order-price-shell-new' : ''}${
                 // Navy for a fleet member's work, copper for everyone else.
@@ -4395,12 +4526,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                     poNumber={selectedOrder.po_number}
                     isFleetMember={!!selectedOrderCustomer?.fleet_enabled}
                     onOpenCustomer={selectedOrder.customer_id
-                      ? () => navigate(
-                          `/dashboard/customers?selected=${selectedOrder.customer_id}`,
-                          // Where to come back to, so the customer screen can
-                          // return the operator to the order they left.
-                          { state: { returnTo: `/dashboard/repair-orders?selected=${selectedOrder.id}`, returnLabel: `#${selectedOrder.order_number}` } },
-                        )
+                      ? () => openCustomerView(selectedOrder.customer_id)
                       : undefined}
                     onSaveDescription={async (d) => { await saveDescriptionMutation.mutateAsync(d) }}
                     descriptionSaving={saveDescriptionMutation.isPending}

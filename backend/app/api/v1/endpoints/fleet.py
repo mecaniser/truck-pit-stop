@@ -1481,6 +1481,30 @@ async def _attach_account_context(
     )).all()
     _attach_account_context_rows(trucks, account_rows)
 
+    # Which membership actually puts each truck on this board. The operating
+    # authority above is a display fact and is legitimately absent for the
+    # shop's own trucks; this is the row that has to be ended to take a truck
+    # off the board, so it is resolved independently of that.
+    membership_rows = (await db.execute(
+        select(FleetMembership.vehicle_id, Customer.id, Customer.company_name,
+               Customer.first_name, Customer.last_name)
+        .join(Customer, Customer.id == FleetMembership.fleet_customer_id)
+        .where(
+            FleetMembership.tenant_id == tenant_id,
+            FleetMembership.vehicle_id.in_(vehicle_ids),
+            FleetMembership.effective_to.is_(None),
+            FleetMembership.deleted_at.is_(None),
+        )
+    )).all()
+    memberships = {
+        vehicle_id: (customer_id, company or f"{first or ''} {last or ''}".strip() or None)
+        for vehicle_id, customer_id, company, first, last in membership_rows
+    }
+    for truck in trucks:
+        found = memberships.get(truck.id)
+        if found:
+            truck.board_membership_customer_id, truck.board_membership_company_name = found
+
 
 def _attach_account_context_rows(
     trucks: list[BoardTruck],
@@ -1748,6 +1772,23 @@ async def truck_detail(
     )).all())
     board = _build_board_truck(vehicle, _most_urgent_ro(open_ros), 0, len(open_ros), pm_ro=_open_pm_ro(open_ros))
     _attach_account_context_rows([board], account_rows)
+    # Same as the board: the membership that holds this truck there, which is
+    # present even when the operating authority is not.
+    membership_row = (await db.execute(
+        select(Customer.id, Customer.company_name, Customer.first_name, Customer.last_name)
+        .join(FleetMembership, FleetMembership.fleet_customer_id == Customer.id)
+        .where(
+            FleetMembership.tenant_id == vehicle.tenant_id,
+            FleetMembership.vehicle_id == vehicle.id,
+            FleetMembership.effective_to.is_(None),
+            FleetMembership.deleted_at.is_(None),
+        )
+        .limit(1)
+    )).first()
+    if membership_row:
+        cid, company, first, last = membership_row
+        board.board_membership_customer_id = cid
+        board.board_membership_company_name = company or f"{first or ''} {last or ''}".strip() or None
     account_customers = {customer.id: customer for _, customer in account_rows}
     fleet_account = account_customers.get(board.fleet_customer_id)
 

@@ -6,8 +6,7 @@ import toast from 'react-hot-toast'
 import {
   Gauge, Calendar, Wrench, AlertTriangle, History, Truck, User, Box, Map as MapIcon,
   Shield, Phone, ClipboardList, ClipboardCheck, Pencil, CheckCircle2, ChevronDown, Check, Info, Trash2, Camera, MoreHorizontal,
-  Archive, ArrowLeft, ArrowRight, Clock3, Combine, RotateCcw,
-} from 'lucide-react'
+  Archive, ArrowLeft, ArrowRight, Clock3, Combine, RotateCcw, LogOut } from 'lucide-react'
 import api from '../../lib/api'
 import { isSupportedPhotoFile, runPhotoUploadQueue, uploadDirectPhoto, type PhotoUploadStatus } from '@/lib/photoUpload'
 import type {
@@ -16,7 +15,7 @@ import type {
 } from './types'
 import { STATUS_META, fleetUnitLabel, fmt, money, fmtDate, pmState, initials } from './helpers'
 import FleetMap from './FleetMap'
-import { TruckEditModal, LogIncidentModal, EditIncidentModal, InspectionsSection, NewWorkOrderModal, WorkOrderPanel, AssignDriverModal, SchedulePMModal, Modal, SidekickPanel, invalidateFleetAndCockpit, type InspectionsSectionHandle } from './FleetModals'
+import { ConfirmModal, TruckEditModal, LogIncidentModal, EditIncidentModal, InspectionsSection, NewWorkOrderModal, WorkOrderPanel, AssignDriverModal, SchedulePMModal, Modal, SidekickPanel, invalidateFleetAndCockpit, type InspectionsSectionHandle } from './FleetModals'
 import { useAuthStore } from '../../stores/authStore'
 import { getWorkOSCapabilities, startWorkOSLogin, type WorkOSCapabilities } from '../../lib/workosAuth'
 
@@ -226,17 +225,17 @@ export default function TruckDetail({
   const resolveIncident = useMutation({
     mutationFn: async (id: string) => (await api.patch(`/fleet/incidents/${id}`, { status: 'resolved' })).data,
     onSuccess: () => { toast.success('Incident resolved'); refresh() },
-    onError: (e: any) => toast.error(e.response?.data?.detail || 'Failed'),
+    onError: (e: AxiosError<{ detail?: string }>) => toast.error(e.response?.data?.detail || 'Failed'),
   })
   const repairFromIncident = useMutation({
     mutationFn: async (id: string) => (await api.post(`/fleet/incidents/${id}/create-repair`)).data,
     onSuccess: () => { toast.success('Internal repair order created'); refresh() },
-    onError: (e: any) => toast.error(e.response?.data?.detail || 'Failed'),
+    onError: (e: AxiosError<{ detail?: string }>) => toast.error(e.response?.data?.detail || 'Failed'),
   })
   const deleteIncident = useMutation({
     mutationFn: async (id: string) => (await api.delete(`/fleet/incidents/${id}`)).data,
     onSuccess: () => { toast.success('Incident deleted'); refresh() },
-    onError: (e: any) => toast.error(e.response?.data?.detail || 'Failed to delete incident'),
+    onError: (e: AxiosError<{ detail?: string }>) => toast.error(e.response?.data?.detail || 'Failed to delete incident'),
   })
   const deleteIncidentPhoto = useMutation({
     mutationFn: async ({ incidentId, photoId }: { incidentId: string; photoId: string }) => {
@@ -255,7 +254,7 @@ export default function TruckDetail({
       })
       refresh()
     },
-    onError: (e: any) => toast.error(e.response?.data?.detail || 'Failed to remove photo'),
+    onError: (e: AxiosError<{ detail?: string }>) => toast.error(e.response?.data?.detail || 'Failed to remove photo'),
   })
   const [editing, setEditing] = useState(false)
   const [logging, setLogging] = useState(false)
@@ -370,10 +369,11 @@ export default function TruckDetail({
         })
         setPendingIncidentPhotos((photos) => photos.filter((photo) => photo.id !== item.id))
         URL.revokeObjectURL(item.previewUrl)
-      } catch (error: any) {
+      } catch (error) {
+        const axiosError = error as AxiosError<{ detail?: string }>
         updatePendingIncidentPhoto(item.id, {
           status: 'error',
-          error: error.response?.data?.detail || error.message || 'Failed',
+          error: axiosError.response?.data?.detail || axiosError.message || 'Failed',
         })
       }
     })
@@ -384,6 +384,26 @@ export default function TruckDetail({
   }
 
   const t = data?.truck || trucks.find((truck) => truck.id === truckId)
+
+  // Ending a truck's fleet membership. Confirmed rather than immediate: it is
+  // reversible (add the truck back) but it changes what a whole company sees
+  // on their board, so it should not happen on a single click.
+  const [confirmLeaveFleet, setConfirmLeaveFleet] = useState(false)
+  const removeFromFleet = useMutation({
+    mutationFn: async () => {
+      const fleetId = t?.board_membership_customer_id || t?.fleet_customer_id
+      if (!t || !fleetId) throw new Error('This truck has no fleet to leave')
+      await api.delete(`/fleet/memberships/${t.id}/${fleetId}`)
+    },
+    onSuccess: () => {
+      toast.success(`Removed from ${t?.board_membership_company_name || t?.fleet_company_name || 'the fleet'}`)
+      setConfirmLeaveFleet(false)
+      setDetailsOpen(false)
+      invalidateFleetAndCockpit(qc)
+    },
+    onError: (e: AxiosError<{ detail?: string }>) =>
+      toast.error(e.response?.data?.detail || 'Could not remove this truck from the fleet'),
+  })
   if (!t) {
     if (truckQuery.isError) {
       return (
@@ -507,7 +527,7 @@ export default function TruckDetail({
                   ref={statusTriggerRef}
                   type="button"
                   className="dbadge"
-                  style={{ ['--st' as any]: meta.dot, cursor: 'pointer', border: 'none', font: 'inherit' }}
+                  style={{ ['--st' as string]: meta.dot, cursor: 'pointer', border: 'none', font: 'inherit' }}
                   onClick={() => setStatusMenuOpen((o) => !o)}
                   title="Change status"
                   aria-label={`Change truck status. Current status: ${meta.label}`}
@@ -562,7 +582,7 @@ export default function TruckDetail({
               {suppressedOverride && (
                 <span
                   className="dbadge"
-                  style={{ ['--st' as any]: suppressedOverride.dot, opacity: 0.75, fontSize: 11.5 }}
+                  style={{ ['--st' as string]: suppressedOverride.dot, opacity: 0.75, fontSize: 11.5 }}
                   title="Manual status saved — it takes over once the open repair order closes"
                 >
                   <i />Next: {suppressedOverride.label}
@@ -1053,6 +1073,16 @@ export default function TruckDetail({
         </div>
       )}
 
+      {confirmLeaveFleet && (
+        <ConfirmModal
+          title={`Remove from ${t?.board_membership_company_name || t?.fleet_company_name || 'this fleet'}?`}
+          message={`${fleetUnitLabel(t)} comes off this fleet board. The truck, its service history and any open repair orders stay exactly as they are — this only ends the fleet membership. Add it back any time from Add truck.`}
+          confirmLabel="Remove from fleet"
+          pending={removeFromFleet.isPending}
+          onConfirm={() => removeFromFleet.mutate()}
+          onClose={() => setConfirmLeaveFleet(false)}
+        />
+      )}
       {data && detailsOpen && <TruckDetailsModal
         truck={t}
         detail={data}
@@ -1060,6 +1090,7 @@ export default function TruckDetail({
         onChangeDriver={() => setAssigningDriver(true)}
         onEdit={() => { setDetailsOpen(false); setEditing(true) }}
         onMerge={() => { setDetailsOpen(false); setMergeOpen(true) }}
+        onRemoveFromFleet={() => setConfirmLeaveFleet(true)}
         onClose={() => setDetailsOpen(false)}
       />}
       {mergeOpen && <MergeTruckModal
@@ -1372,8 +1403,8 @@ function TruckDriverSection({ truck, detail, onChangeDriver }: {
   )
 }
 
-function TruckDetailsModal({ truck, detail, canMerge, onChangeDriver, onEdit, onMerge, onClose }: {
-  truck: BoardTruck; detail: TruckDetailData; canMerge: boolean; onChangeDriver: () => void; onEdit: () => void; onMerge: () => void; onClose: () => void
+function TruckDetailsModal({ truck, detail, canMerge, onChangeDriver, onEdit, onMerge, onRemoveFromFleet, onClose }: {
+  truck: BoardTruck; detail: TruckDetailData; canMerge: boolean; onChangeDriver: () => void; onEdit: () => void; onMerge: () => void; onRemoveFromFleet: () => void; onClose: () => void
 }) {
   return (
     <SidekickPanel
@@ -1430,6 +1461,25 @@ function TruckDetailsModal({ truck, detail, canMerge, onChangeDriver, onEdit, on
           </div>
           <button type="button" className="dbtn dbtn-ghost" onClick={onMerge}>
             <Combine size={15} /> Merge duplicate
+          </button>
+        </div>
+      )}
+      {canMerge && (truck.board_membership_customer_id || truck.fleet_customer_id) && (
+        <div className="truck-cleanup-actions">
+          <div>
+            <strong>Fleet membership</strong>
+            <span>
+              Removing this truck from {truck.board_membership_company_name || truck.fleet_company_name || 'this fleet'} takes it off the
+              board and leaves the truck, its history and its repair orders untouched. To delete the
+              truck itself, remove it from the customer that owns it.
+            </span>
+          </div>
+          {/* Danger styling, unlike Merge duplicate's ghost button beside it.
+              Merging fixes a records mistake and is reversible by merging back;
+              this changes what a whole company sees on their board. Two actions
+              that look identical read as equally safe, and these are not. */}
+          <button type="button" className="dbtn dbtn-danger" onClick={onRemoveFromFleet}>
+            <LogOut size={15} /> Remove from fleet
           </button>
         </div>
       )}

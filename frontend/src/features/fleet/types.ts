@@ -144,6 +144,11 @@ export interface BoardTruck {
   status_override?: string | null
   warning_lights?: string[]
   fleet_customer_id?: string | null
+  /** The membership that puts this truck on the board — present even when the
+      operating authority is not, which is the case for the shop's own trucks
+      and for trucks whose operator relationship has lapsed. */
+  board_membership_customer_id?: string | null
+  board_membership_company_name?: string | null
   fleet_company_name?: string | null
   owner_customer_id?: string | null
   owner_company_name?: string | null
