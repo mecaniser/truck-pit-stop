@@ -287,7 +287,6 @@ export default function CustomersPage() {
   // Detail panel state
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null)
   const [isDetailOpen, setIsDetailOpen] = useState(false)
-  const [isEditingInPanel, setIsEditingInPanel] = useState(false)
   const [vehiclesViewMode, setVehiclesViewMode] = useViewPreference('customer-vehicles')
   const [vehicleRelationshipSearch, setVehicleRelationshipSearch] = useState('')
   const [vehicleRelationshipFilter, setVehicleRelationshipFilter] = useState<'all' | 'owned' | 'authority'>('all')
@@ -392,7 +391,6 @@ export default function CustomersPage() {
       setIsDetailOpen(false)
       setSelectedCustomer(null)
       setSelectedVehicleInPanel(null)
-      setIsEditingInPanel(false)
       return
     }
 
@@ -400,7 +398,6 @@ export default function CustomersPage() {
     if (!customer) return
     setSelectedCustomer(customer)
     setIsDetailOpen(true)
-    setIsEditingInPanel(false)
     setDetailTab('overview')
     setSelectedVehicleInPanel(null)
   }, [customerOnCurrentPage, presentationVariant, selectedCustomerId, selectedCustomerRecord])
@@ -707,13 +704,8 @@ export default function CustomersPage() {
       queryClient.invalidateQueries({ queryKey: ['customers'] })
       queryClient.invalidateQueries({ queryKey: ['fleet-board'] })
       queryClient.invalidateQueries({ queryKey: ['fleet-companies'] })
-      if (isEditingInPanel) {
-        setSelectedCustomer(updatedCustomer)
-        setIsEditingInPanel(false)
-        resetForm()
-      } else {
-        closeModal()
-      }
+      setSelectedCustomer(updatedCustomer)
+      closeModal()
       toast.success('Customer updated')
     },
     onError: (error: any) => {
@@ -781,7 +773,6 @@ export default function CustomersPage() {
 
   const openCreateModal = () => {
     resetForm()
-    setIsEditingInPanel(false)
     setIsModalOpen(true)
   }
 
@@ -825,7 +816,6 @@ export default function CustomersPage() {
     selectionOriginRef.current = customer.id
     setSelectedCustomer(customer)
     setIsDetailOpen(true)
-    setIsEditingInPanel(false)
     setDetailTab('overview')
     setVehicleRelationshipSearch('')
     setVehicleRelationshipFilter('all')
@@ -852,7 +842,6 @@ export default function CustomersPage() {
     const restoreCustomerId = selectionOriginRef.current ?? selectedCustomer?.id ?? null
     setIsDetailOpen(false)
     setSelectedCustomer(null)
-    setIsEditingInPanel(false)
     setSelectedVehicleInPanel(null)
     setDetailTab('overview')
     setExpandedHistoryId(null)
@@ -867,10 +856,14 @@ export default function CustomersPage() {
     }
   }
 
+  // Editing the company happens in the modal, the same way it does from the
+  // list and from the repair-order workspace. It used to replace the detail
+  // body in place, which meant the form could only ever live on this page.
   const handleEditFromDetail = () => {
     if (selectedCustomer) {
       populateFormFromCustomer(selectedCustomer)
-      setIsEditingInPanel(true)
+      setEditingCustomer(selectedCustomer)
+      setIsModalOpen(true)
     }
   }
 
@@ -881,11 +874,6 @@ export default function CustomersPage() {
   // Vehicle form helpers
 
   // Contact form helpers
-
-  const cancelPanelEditing = () => {
-    setIsEditingInPanel(false)
-    resetForm()
-  }
 
   const confirmDelete = () => {
     if (deleteConfirmCustomer) {
@@ -2296,7 +2284,7 @@ export default function CustomersPage() {
                 </button>
               </div>
             </div>
-          ) : !isEditingInPanel && selectedCustomer ? (
+          ) : selectedCustomer ? (
             <CustomerDetailFooter
               selectedCustomer={selectedCustomer}
               handleDeleteClick={handleDeleteClick}
@@ -2443,24 +2431,6 @@ export default function CustomersPage() {
             </div>
 
           </div>
-        ) : isEditingInPanel ? (
-                <div className="p-6 space-y-4">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-xs text-gray-500 uppercase tracking-wide">Editing</p>
-                      <h3 className="text-xl font-bold text-gray-900">Customer Details</h3>
-                    </div>
-                    <button
-                      onClick={cancelPanelEditing}
-                      className="px-3 py-2 text-sm text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
-                    >
-                      Cancel
-                    </button>
-                  </div>
-                  <div className="bg-white rounded-xl border border-gray-200 shadow-sm">
-                    {renderCustomerForm(cancelPanelEditing)}
-                  </div>
-                </div>
               ) : (
                 <CustomerDetailPanel
                   selectedCustomer={selectedCustomer}
