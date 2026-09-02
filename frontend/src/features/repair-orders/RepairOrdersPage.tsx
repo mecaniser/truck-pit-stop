@@ -27,6 +27,7 @@ import { useWebSocket } from '../../hooks/useWebSocket'
 import { useAuthStore } from '@/stores/authStore'
 import CustomerDetailPanel from '../customers/CustomerDetailPanel'
 import CustomerContactModals, { type CustomerContactModalsHandle } from '../customers/CustomerContactModals'
+import CustomerVehicleModals, { type CustomerVehicleModalsHandle } from '../customers/CustomerVehicleModals'
 import { useCustomerVehicleGroups } from '../customers/useCustomerVehicleGroups'
 import type { ViewMode } from '@/components/ViewToggle'
 import type { CustomerHistoryResponse } from '../customers/customerDetailFormat'
@@ -706,6 +707,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
   })
 
   const customerContactControls = useRef<CustomerContactModalsHandle | null>(null)
+  const customerVehicleControls = useRef<CustomerVehicleModalsHandle | null>(null)
   const [customerViewVehiclesMode, setCustomerViewVehiclesMode] = useState<ViewMode>('list')
   const [customerViewVehicleSearch, setCustomerViewVehicleSearch] = useState('')
   const [customerViewVehicleFilter, setCustomerViewVehicleFilter] = useState<'all' | 'owned' | 'authority'>('all')
@@ -4068,12 +4070,13 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                 openAddContactModal={() => customerContactControls.current?.openAdd()}
                 openEditContactModal={(contact) => customerContactControls.current?.openEdit(contact)}
                 handleDeleteContactClick={(contact) => customerContactControls.current?.requestDelete(contact)}
-                openAddVehicleModal={() => undefined}
-                openEditVehicleModal={() => undefined}
-                handleDeleteVehicleClick={() => undefined}
+                openAddVehicleModal={() => customerVehicleControls.current?.openAdd()}
+                openEditVehicleModal={(vehicle) => customerVehicleControls.current?.openEdit(vehicle)}
+                handleDeleteVehicleClick={(vehicle) => customerVehicleControls.current?.requestDelete(vehicle)}
               />
             </div>
             <CustomerContactModals customer={customerViewRecord} controlsRef={customerContactControls} />
+            <CustomerVehicleModals customer={customerViewRecord} controlsRef={customerVehicleControls} />
           </div>
         )}
         {!customerViewId && selectedOrder && (!isOrderDetailLoading || !!orderDetail || priceBuilderOwnsShell) && (
