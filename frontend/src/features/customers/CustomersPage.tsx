@@ -7,9 +7,10 @@ import api from '../../lib/api'
 import { Customer, Vehicle, Contact, RepairOrder, VINDecodeResult, CustomerWithVehicles } from '../../types'
 import { customerDisplayName, customerPersonalName } from '../../lib/customerName'
 import { vehicleDisplayLabel } from '../../lib/vehicleName'
-import { AlertTriangle, ArrowDown, ArrowRight, ArrowUp, ChevronDown, Combine, Mail, Pencil, Phone, Plus, Search, Star, Trash2, Truck, User, Wrench, X } from 'lucide-react'
+import { AlertTriangle, ArrowDown, ArrowRight, ArrowUp, ChevronDown, Combine, Mail, Pencil, Phone, Plus, Search, Star, Trash2, Truck, Wrench, X } from 'lucide-react'
 import SlidePanel from '@/components/SlidePanel'
 import CustomerDetailPanel from './CustomerDetailPanel'
+import CustomerDetailFooter from './CustomerDetailFooter'
 import CustomerContactModals, { type CustomerContactModalsHandle } from './CustomerContactModals'
 import CustomerVehicleModals, { type CustomerVehicleModalsHandle } from './CustomerVehicleModals'
 import { useCustomerVehicleGroups } from './useCustomerVehicleGroups'
@@ -2296,31 +2297,12 @@ export default function CustomersPage() {
               </div>
             </div>
           ) : !isEditingInPanel && selectedCustomer ? (
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => handleDeleteClick(selectedCustomer)}
-                  className="px-4 py-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors text-sm font-medium flex items-center gap-2"
-                >
-                  <Trash2 className="w-4 h-4" />
-                  Delete
-                </button>
-                <button
-                  onClick={() => setIsMergeModalOpen(true)}
-                  className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg transition-colors text-sm font-medium flex items-center gap-2"
-                >
-                  <User className="w-4 h-4" />
-                  Merge
-                </button>
-              </div>
-              <button
-                onClick={handleEditFromDetail}
-                className="px-5 py-2.5 bg-amber-500 hover:bg-amber-600 text-white font-medium rounded-lg transition-colors flex items-center gap-2"
-              >
-                <Pencil className="w-4 h-4" />
-                Edit Customer
-              </button>
-            </div>
+            <CustomerDetailFooter
+              selectedCustomer={selectedCustomer}
+              handleDeleteClick={handleDeleteClick}
+              onMerge={() => setIsMergeModalOpen(true)}
+              handleEditFromDetail={handleEditFromDetail}
+            />
           ) : undefined
         }
       >

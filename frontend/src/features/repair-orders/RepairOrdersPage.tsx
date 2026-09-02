@@ -26,6 +26,7 @@ import { useTheme } from '../../contexts/ThemeContext'
 import { useWebSocket } from '../../hooks/useWebSocket'
 import { useAuthStore } from '@/stores/authStore'
 import CustomerDetailPanel from '../customers/CustomerDetailPanel'
+import CustomerDetailFooter from '../customers/CustomerDetailFooter'
 import CustomerContactModals, { type CustomerContactModalsHandle } from '../customers/CustomerContactModals'
 import CustomerVehicleModals, { type CustomerVehicleModalsHandle } from '../customers/CustomerVehicleModals'
 import { useCustomerVehicleGroups } from '../customers/useCustomerVehicleGroups'
@@ -4073,6 +4074,19 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                 openAddVehicleModal={() => customerVehicleControls.current?.openAdd()}
                 openEditVehicleModal={(vehicle) => customerVehicleControls.current?.openEdit(vehicle)}
                 handleDeleteVehicleClick={(vehicle) => customerVehicleControls.current?.requestDelete(vehicle)}
+              />
+            </div>
+            {/* Delete, Merge and Edit for the company itself. Edit and Merge
+                open the Customers tab on this customer: the customer form is
+                525 lines of page-owned state, and a button that looks live but
+                silently does nothing is worse than one that says where it
+                goes. Contacts and trucks are editable here, in place. */}
+            <div className="border-t border-gray-200 px-5 py-3">
+              <CustomerDetailFooter
+                selectedCustomer={customerViewRecord}
+                handleDeleteClick={() => navigate(`/dashboard/customers?selected=${customerViewRecord.id}`)}
+                onMerge={() => navigate(`/dashboard/customers?selected=${customerViewRecord.id}`)}
+                handleEditFromDetail={() => navigate(`/dashboard/customers?selected=${customerViewRecord.id}`)}
               />
             </div>
             <CustomerContactModals customer={customerViewRecord} controlsRef={customerContactControls} />
