@@ -15,7 +15,8 @@ import type {
 } from './types'
 import { STATUS_META, fleetUnitLabel, fmt, money, fmtDate, pmState, initials } from './helpers'
 import FleetMap from './FleetMap'
-import { ConfirmModal, TruckEditModal, LogIncidentModal, EditIncidentModal, InspectionsSection, NewWorkOrderModal, WorkOrderPanel, AssignDriverModal, SchedulePMModal, Modal, SidekickPanel, invalidateFleetAndCockpit, type InspectionsSectionHandle } from './FleetModals'
+import { ConfirmModal, TruckEditModal, LogIncidentModal, EditIncidentModal, InspectionsSection, AssignDriverModal, SchedulePMModal, Modal, SidekickPanel, invalidateFleetAndCockpit, type InspectionsSectionHandle } from './FleetModals'
+import FleetPriceBuilderPanel from './FleetPriceBuilderPanel'
 import { useAuthStore } from '../../stores/authStore'
 import { getWorkOSCapabilities, startWorkOSLogin, type WorkOSCapabilities } from '../../lib/workosAuth'
 
@@ -227,15 +228,38 @@ export default function TruckDetail({
     onSuccess: () => { toast.success('Incident resolved'); refresh() },
     onError: (e: AxiosError<{ detail?: string }>) => toast.error(e.response?.data?.detail || 'Failed'),
   })
+  // The incident already puts its description on the order; opening the builder
+  // straight away is the point — the manager is standing at the truck and the
+  // next thing they do is say what the work is.
   const repairFromIncident = useMutation({
     mutationFn: async (id: string) => (await api.post(`/fleet/incidents/${id}/create-repair`)).data,
-    onSuccess: () => { toast.success('Internal repair order created'); refresh() },
+    onSuccess: (incident: { repair_order_id?: string | null }) => {
+      toast.success('Repair order created')
+      refresh()
+      if (incident?.repair_order_id) setRoPanelId(incident.repair_order_id)
+    },
     onError: (e: AxiosError<{ detail?: string }>) => toast.error(e.response?.data?.detail || 'Failed'),
   })
   const deleteIncident = useMutation({
     mutationFn: async (id: string) => (await api.delete(`/fleet/incidents/${id}`)).data,
     onSuccess: () => { toast.success('Incident deleted'); refresh() },
     onError: (e: AxiosError<{ detail?: string }>) => toast.error(e.response?.data?.detail || 'Failed to delete incident'),
+  })
+  /**
+   * Open an empty repair order and go straight into the builder, rather than
+   * composing the whole thing in a modal and submitting it in one shot. The
+   * work record is then server-built from the first line onward, so every line
+   * goes through the same pricing the shop uses.
+   */
+  const createRepairOrder = useMutation({
+    mutationFn: async () => (await api.post(`/fleet/trucks/${truckId}/work-order`, {})).data,
+    onSuccess: (result: { created_work_order?: { repair_order_id: string } }) => {
+      refresh()
+      const created = result?.created_work_order
+      if (created) setRoPanelId(created.repair_order_id)
+      else toast.success('Repair order created')
+    },
+    onError: (e: any) => toast.error(e.response?.data?.detail || 'Failed to create repair order'),
   })
   const deleteIncidentPhoto = useMutation({
     mutationFn: async ({ incidentId, photoId }: { incidentId: string; photoId: string }) => {
@@ -263,8 +287,7 @@ export default function TruckDetail({
   const [incidentMenuOpenId, setIncidentMenuOpenId] = useState<string | null>(null)
   const [pendingIncidentPhotos, setPendingIncidentPhotos] = useState<PendingIncidentPhoto[]>([])
   const pendingIncidentPhotosRef = useRef<PendingIncidentPhoto[]>([])
-  const [newWOOpen, setNewWOOpen] = useState(false)
-  const [woPanelId, setWoPanelId] = useState<string | null>(null)
+  const [roPanelId, setRoPanelId] = useState<string | null>(null)
   const [assigningDriver, setAssigningDriver] = useState(false)
   const [schedulePMOpen, setSchedulePMOpen] = useState(false)
   const [detailsOpen, setDetailsOpen] = useState(false)
@@ -447,7 +470,7 @@ export default function TruckDetail({
         label: primaryWorkOrder.status === 'Draft' ? 'Continue safety repair draft' : 'Continue safety repair',
         reason: 'This truck has a safety condition and repair work is already open.',
         icon: <Wrench size={20} />,
-        onClick: () => setWoPanelId(primaryWorkOrder.repair_order_id),
+        onClick: () => setRoPanelId(primaryWorkOrder.repair_order_id),
         tone: 'danger',
       }
     }
@@ -461,7 +484,7 @@ export default function TruckDetail({
         icon: <AlertTriangle size={20} />,
         onClick: failedInspection
           ? () => inspectionsRef.current?.open(failedInspection.id)
-          : () => setNewWOOpen(true),
+          : () => createRepairOrder.mutate(),
         tone: 'danger',
       }
     }
@@ -471,7 +494,7 @@ export default function TruckDetail({
         label: primaryWorkOrder.status === 'Draft' ? 'Continue repair draft' : `Open ${primaryWorkOrder.status.toLowerCase()}`,
         reason: `${primaryWorkOrder.id} is the current repair order for this truck.`,
         icon: <ClipboardList size={20} />,
-        onClick: () => setWoPanelId(primaryWorkOrder.repair_order_id),
+        onClick: () => setRoPanelId(primaryWorkOrder.repair_order_id),
         tone: 'work',
       }
     }
@@ -508,8 +531,7 @@ export default function TruckDetail({
     editing
     || logging
     || editingIncident
-    || newWOOpen
-    || woPanelId
+    || roPanelId
     || assigningDriver
     || schedulePMOpen
     || detailsOpen
@@ -661,8 +683,8 @@ export default function TruckDetail({
                 <span>{scheduledInspection ? 'Open scheduled inspection' : 'Start inspection'}</span>
               </button>
               <button className="yard-tool" onClick={() => primaryWorkOrder
-                ? setWoPanelId(primaryWorkOrder.repair_order_id)
-                : setNewWOOpen(true)}>
+                ? setRoPanelId(primaryWorkOrder.repair_order_id)
+                : createRepairOrder.mutate()}>
                 <Wrench size={17} />
                 <span>{primaryWorkOrder ? 'Continue repair order' : 'Create repair order'}</span>
               </button>
@@ -713,7 +735,7 @@ export default function TruckDetail({
           {data.open_work_orders.length > 0 && <Section title="Open repair orders" icon={<ClipboardList size={17} />} count={data.open_work_orders.length} className="dsec-operation dsec-work-orders">
               <div className="list-rows">
                 {data.open_work_orders.map((wo) => (
-                  <button key={wo.repair_order_id} className="lrow lrow-action" onClick={() => setWoPanelId(wo.repair_order_id)}>
+                  <button key={wo.repair_order_id} className="lrow lrow-action" onClick={() => setRoPanelId(wo.repair_order_id)}>
                     <span className="lrow-mono">{wo.id}</span>
                     <span className="lrow-tx">{wo.summary || 'No complaint recorded'}</span>
                     <span className="lrow-r">
@@ -929,7 +951,7 @@ export default function TruckDetail({
             )}
           </Section>}
 
-              <InspectionsSection ref={inspectionsRef} vehicleId={t.id} truckId={t.id} currentOdometer={t.odometer} className="dsec-operation dsec-inspections" hideWhenIdle />
+              <InspectionsSection ref={inspectionsRef} vehicleId={t.id} truckId={t.id} currentOdometer={t.odometer} className="dsec-operation dsec-inspections" hideWhenIdle onOpenRepairOrder={setRoPanelId} />
             </div>
           </section>
 
@@ -1129,14 +1151,7 @@ export default function TruckDetail({
       {assigningDriver && <AssignDriverModal truck={t} driverPhone={t.driver_phone} onClose={() => setAssigningDriver(false)} />}
       {logging && <LogIncidentModal vehicleId={t.id} truckId={t.id} onClose={() => setLogging(false)} />}
       {editingIncident && <EditIncidentModal incident={editingIncident} truckId={t.id} onClose={() => setEditingIncident(null)} />}
-      {newWOOpen && (
-        <NewWorkOrderModal
-          truck={t}
-          onClose={() => setNewWOOpen(false)}
-          onCreated={() => refresh()}
-        />
-      )}
-      {woPanelId && <WorkOrderPanel repairOrderId={woPanelId} onClose={() => setWoPanelId(null)} onChanged={refresh} />}
+      {roPanelId && <FleetPriceBuilderPanel repairOrderId={roPanelId} onClose={() => setRoPanelId(null)} onChanged={refresh} />}
     </div>
   )
 }

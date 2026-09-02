@@ -43,7 +43,7 @@ function SectionHeading({ title, count, detail }: { title: string; count?: numbe
   )
 }
 
-function TruckCard({ t, onOpen, onOpenWorkOrder }: { t: BoardTruck; onOpen: (t: BoardTruck) => void; onOpenWorkOrder: (repairOrderId: string) => void }) {
+function TruckCard({ t, onOpen, onOpenRepairOrder }: { t: BoardTruck; onOpen: (t: BoardTruck) => void; onOpenRepairOrder: (repairOrderId: string) => void }) {
   const meta = STATUS_META[t.status]
   const pm = pmState(t)
   return (
@@ -94,7 +94,7 @@ function TruckCard({ t, onOpen, onOpenWorkOrder }: { t: BoardTruck; onOpen: (t: 
         <button
           type="button"
           className="tcard-wo tcard-wo--action"
-          onClick={(event) => { event.stopPropagation(); onOpenWorkOrder(t.work_order!.repair_order_id) }}
+          onClick={(event) => { event.stopPropagation(); onOpenRepairOrder(t.work_order!.repair_order_id) }}
           aria-label={`Open work order ${t.work_order.id} for ${fleetUnitLabel(t)}`}
         >
           <Wrench size={13} />
@@ -118,10 +118,10 @@ function TruckCard({ t, onOpen, onOpenWorkOrder }: { t: BoardTruck; onOpen: (t: 
 }
 
 export default function FleetBoard({
-  data, onOpen, onOpenWorkOrder, filter, setFilter, query, setQuery, sort, setSort,
+  data, onOpen, onOpenRepairOrder, filter, setFilter, query, setQuery, sort, setSort,
 }: {
   data: FleetBoardData; onOpen: (t: BoardTruck) => void
-  onOpenWorkOrder: (repairOrderId: string) => void
+  onOpenRepairOrder: (repairOrderId: string) => void
   filter: Filter; setFilter: (f: Filter) => void
   query: string; setQuery: (q: string) => void
   sort: Sort; setSort: (s: Sort) => void
@@ -244,20 +244,20 @@ export default function FleetBoard({
       {tab === 'trucks' && showActionLane && needsAction.length > 0 && (
         <section className="board-section">
           <SectionHeading title="Needs attention" count={needsAction.length} detail="Prioritized by service and PM urgency." />
-          <div className="tgrid tgrid-attention">{needsAction.map((t) => <TruckCard key={t.id} t={t} onOpen={onOpen} onOpenWorkOrder={onOpenWorkOrder} />)}</div>
+          <div className="tgrid tgrid-attention">{needsAction.map((t) => <TruckCard key={t.id} t={t} onOpen={onOpen} onOpenRepairOrder={onOpenRepairOrder} />)}</div>
         </section>
       )}
       {tab === 'trucks' && showActionLane && planning.length > 0 && (
         <section className="board-section">
           <SectionHeading title="Maintenance to plan" count={planning.length} detail="Schedule these before they become service interruptions." />
-          <div className="tgrid">{planning.map((t) => <TruckCard key={t.id} t={t} onOpen={onOpen} onOpenWorkOrder={onOpenWorkOrder} />)}</div>
+          <div className="tgrid">{planning.map((t) => <TruckCard key={t.id} t={t} onOpen={onOpen} onOpenRepairOrder={onOpenRepairOrder} />)}</div>
         </section>
       )}
       {tab === 'trucks' && (
       <section className="board-section">
         <SectionHeading title={showActionLane ? 'Fleet overview' : activeFilter?.title || 'Matching trucks'} count={showActionLane ? remaining.length : list.length} detail={showActionLane ? 'Units without an immediate action queue.' : activeFilter?.detail || 'Search and filter results.'} />
         <div className="tgrid">
-          {(showActionLane ? remaining : list).map((t) => <TruckCard key={t.id} t={t} onOpen={onOpen} onOpenWorkOrder={onOpenWorkOrder} />)}
+          {(showActionLane ? remaining : list).map((t) => <TruckCard key={t.id} t={t} onOpen={onOpen} onOpenRepairOrder={onOpenRepairOrder} />)}
           {list.length === 0 && <div className="tgrid-empty">No trucks match.</div>}
         </div>
       </section>

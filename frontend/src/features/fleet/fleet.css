@@ -1432,6 +1432,88 @@
    PM stat has a third line, so centring pushed its value out of alignment. */
 .fleet-root .dhead-stat{align-items:start;}
 
+/* ===========================================================
+   Fleet repair-order builder
+   The yard-side counterpart to the shop's price builder. A fleet manager
+   scopes work here — hours and quantities — so no row carries a price; the
+   footer carries the one number that matters, what the visit cost.
+   =========================================================== */
+
+/* Cost total + the single status action, pinned under the scrolling body.
+   Lives in the panel footer rather than fixed to the viewport so it travels
+   with the drawer instead of fighting it. */
+.fleet-root .fleet-ro-dock{display:flex;align-items:center;justify-content:space-between;gap:14px;}
+.fleet-root .fleet-ro-dock-total{display:flex;flex-direction:column;gap:2px;min-width:0;}
+.fleet-root .fleet-ro-dock-total small{font-size:10px;font-weight:750;letter-spacing:.9px;
+  text-transform:uppercase;color:var(--muted-2);}
+.fleet-root .fleet-ro-dock-total strong{font-family:var(--display);font-size:26px;line-height:1;
+  color:var(--yellow);font-variant-numeric:tabular-nums;}
+.fleet-root .fleet-ro-dock .dbtn{flex:0 0 auto;height:46px;padding:0 20px;}
+
+/* A work line opens to reveal its labor time and parts. The whole summary is
+   the target — a chevron alone is too small for a thumb. */
+.fleet-root .fleet-ro-line-open{display:block;width:100%;padding:0;border:0;background:none;text-align:left;}
+.fleet-root .fleet-ro-line-open strong{display:block;overflow:hidden;text-overflow:ellipsis;
+  white-space:nowrap;font-size:14px;color:var(--text);}
+.fleet-root .fleet-ro-line-open small{display:block;margin-top:3px;font-size:12px;color:var(--muted-2);}
+.fleet-root .fleet-ro-line-body{display:grid;gap:12px;padding:12px 0 14px 12px;
+  border-bottom:1px solid var(--line);}
+
+.fleet-root .fleet-ro-field{display:grid;gap:7px;}
+.fleet-root .fleet-ro-field>span{font-size:11px;font-weight:750;letter-spacing:.06em;
+  text-transform:uppercase;color:var(--muted-2);}
+.fleet-root .fleet-ro-field>span small{font-weight:600;letter-spacing:0;text-transform:none;color:var(--muted-3);}
+.fleet-root .fleet-ro-field input{height:46px;padding:0 13px;border:1px solid var(--line);border-radius:9px;
+  background:var(--ink);color:var(--text);font:inherit;font-size:14px;}
+.fleet-root .fleet-ro-field input::placeholder{color:var(--muted-3);}
+
+/* Search results: identity and availability, never price. */
+.fleet-root .fleet-ro-results{list-style:none;margin:10px 0 0;padding:0;display:grid;}
+.fleet-root .fleet-ro-results li{display:flex;align-items:center;justify-content:space-between;gap:12px;
+  min-height:58px;padding:8px 0;border-bottom:1px solid var(--line);}
+.fleet-root .fleet-ro-results li>div{min-width:0;}
+.fleet-root .fleet-ro-results strong{display:block;overflow:hidden;text-overflow:ellipsis;
+  white-space:nowrap;font-size:14px;color:var(--text);}
+.fleet-root .fleet-ro-results small{display:block;margin-top:3px;font-size:12px;color:var(--muted-2);}
+.fleet-root .fleet-ro-results .dbtn{flex:0 0 auto;}
+
+.fleet-root .fleet-ro-history{list-style:none;margin:0;padding:0;display:grid;}
+.fleet-root .fleet-ro-history li{display:grid;gap:3px;padding:11px 0;border-bottom:1px solid var(--line);}
+.fleet-root .fleet-ro-history strong{font-size:13.5px;color:var(--text);}
+.fleet-root .fleet-ro-history small{font-size:12px;line-height:1.45;color:var(--muted-2);}
+
+/* Bottom sheet. The shop builder anchors its editors to the cell they belong
+   to and closes them on scroll; on a tablet that a thumb flicks, a momentum
+   scroll would throw away a half-typed part. These slide up, stay put, and
+   close only when asked. */
+.fleet-root .fleet-sheet-backdrop{position:fixed;inset:0;z-index:80;display:flex;align-items:flex-end;
+  justify-content:center;background:rgba(4,8,12,.6);animation:fleet-sheet-fade 160ms var(--ease-out);}
+.fleet-root .fleet-sheet{width:min(560px,100%);max-height:82vh;display:flex;flex-direction:column;
+  border:1px solid var(--line);border-bottom:0;border-radius:16px 16px 0 0;background:var(--surface);
+  box-shadow:0 -18px 48px rgba(0,0,0,.5);animation:fleet-sheet-rise 220ms var(--ease-out);}
+.fleet-root .fleet-sheet-head{display:flex;align-items:center;justify-content:space-between;gap:12px;
+  padding:14px 16px;border-bottom:1px solid var(--line);}
+.fleet-root .fleet-sheet-head strong{font-size:15px;color:var(--text);}
+.fleet-root .fleet-sheet-head .icon-hit{display:grid;place-items:center;min-width:44px;min-height:44px;
+  border:0;background:transparent;color:var(--muted-2);}
+.fleet-root .fleet-sheet-body{display:grid;gap:16px;padding:16px;overflow-y:auto;
+  padding-bottom:max(16px,env(safe-area-inset-bottom));
+  -webkit-overflow-scrolling:touch;overscroll-behavior-y:contain;}
+.fleet-root .fleet-sheet-body button{min-height:44px;}
+
+@keyframes fleet-sheet-fade{from{opacity:0}to{opacity:1}}
+@keyframes fleet-sheet-rise{from{transform:translateY(12px)}to{transform:translateY(0)}}
+
+/* Roomier rows at arm's length; the sheet centres once there is space for it. */
+@media (min-width:681px) and (max-width:1024px){
+  .fleet-root .fleet-ro-results li{min-height:62px;}
+  .fleet-root .fleet-ro-dock-total strong{font-size:28px;}
+}
+@media (min-width:721px){
+  .fleet-root .fleet-sheet-backdrop{align-items:center;}
+  .fleet-root .fleet-sheet{border-bottom:1px solid var(--line);border-radius:16px;}
+}
+
 @media (prefers-reduced-motion: reduce){
   .fleet-root *, .fleet-root *::before, .fleet-root *::after{
     animation-duration:1ms !important;
