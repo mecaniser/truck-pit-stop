@@ -120,8 +120,9 @@ authorized invoice revision already removed that obligation.
 
 ## 3. Persistence contract
 
-Migration `133_invoice_partial_payments` is additive after
-`132_payment_source_step_up` and must leave one Alembic head.
+Migration `135_invoice_partial_payments` is additive after
+`134_fleet_membership_ended_by`; `136_invoice_payment_projection` refreshes the
+invoice read model and leaves one Alembic head.
 
 ### 3.1 `invoice_settlements`
 

@@ -1,15 +1,15 @@
 """Add DB-048 partial invoice settlement and immutable payment audit.
 
-Revision ID: 133_invoice_partial_payments
-Revises: 132_payment_source_step_up
+Revision ID: 135_invoice_partial_payments
+Revises: 134_fleet_membership_ended_by
 """
 from alembic import op
 import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
 
-revision = "133_invoice_partial_payments"
-down_revision = "132_payment_source_step_up"
+revision = "135_invoice_partial_payments"
+down_revision = "134_fleet_membership_ended_by"
 branch_labels = None
 depends_on = None
 

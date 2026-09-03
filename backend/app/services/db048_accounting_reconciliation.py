@@ -4479,6 +4479,11 @@ def _qbo_ref_value(entity: dict[str, Any], field: str) -> str:
     return str(reference.get("value") or "") if isinstance(reference, dict) else ""
 
 
+def _qbo_ref_name(entity: dict[str, Any], field: str) -> str:
+    reference = entity.get(field)
+    return str(reference.get("name") or "") if isinstance(reference, dict) else ""
+
+
 def _qbo_linked_payment_ids(deposit: dict[str, Any]) -> list[str]:
     linked_ids: list[str] = []
     for line in deposit.get("Line") or []:
@@ -4688,9 +4693,17 @@ async def reconcile_qbp_native_settlements(
         if len(checking_accounts) != 1 or "" in checking_accounts:
             causes.append("mixed_or_missing_checking_accounts")
         deposit_account = group_key[1]
+        deposit_account_name = _qbo_ref_name(deposit, "DepositToAccountRef")
         if not deposit_account:
             causes.append("deposit_account_missing")
-        elif checking_accounts and deposit_account not in checking_accounts:
+        elif checking_accounts and not any(
+            configured == deposit_account
+            or (
+                deposit_account_name
+                and configured.casefold() == deposit_account_name.casefold()
+            )
+            for configured in checking_accounts
+        ):
             causes.append("deposit_account_mismatch")
 
         if fee_missing:

@@ -1835,7 +1835,7 @@ async def test_qbp_native_deposit_imports_exact_fee_and_is_idempotent(db_session
         "Id": "qbo-deposit-100",
         "TotalAmt": 103.0,
         "TxnDate": "2026-09-03",
-        "DepositToAccountRef": {"value": "bank-qbp"},
+        "DepositToAccountRef": {"value": "35", "name": "bank-qbp"},
         "Line": [{
             "LinkedTxn": [{"TxnId": "qbo-payment-100", "TxnType": "Payment"}],
         }],
@@ -1844,7 +1844,7 @@ async def test_qbp_native_deposit_imports_exact_fee_and_is_idempotent(db_session
         "Id": "qbo-fee-100",
         "TotalAmt": 2.99,
         "TxnDate": "2026-09-03",
-        "AccountRef": {"value": "bank-qbp"},
+        "AccountRef": {"value": "35", "name": "bank-qbp"},
         "PrivateNote": "System-recorded fee for QuickBooks Payments",
     }
 

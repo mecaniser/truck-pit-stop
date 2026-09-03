@@ -1,13 +1,13 @@
 """Keep paid-invoice read models aligned with PaymentSummary.
 
-Revision ID: 134_invoice_payment_projection
-Revises: 133_invoice_partial_payments
+Revision ID: 136_invoice_payment_projection
+Revises: 135_invoice_partial_payments
 """
 from alembic import op
 
 
-revision = "134_invoice_payment_projection"
-down_revision = "133_invoice_partial_payments"
+revision = "136_invoice_payment_projection"
+down_revision = "135_invoice_partial_payments"
 branch_labels = None
 depends_on = None
 
