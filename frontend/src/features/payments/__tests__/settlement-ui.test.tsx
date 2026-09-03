@@ -149,6 +149,58 @@ describe('SettlementPaymentPanel', () => {
     expect(screen.getByText('INV-48')).toBeInTheDocument()
   })
 
+  it('keeps the remaining balance payable after a partial Zelle reservation', async () => {
+    const user = userEvent.setup()
+    const summary = DB048_SETTLEMENT_FIXTURES.unpaid.summary
+    paymentApi.createPaymentAttempt.mockResolvedValue({
+      attempt_id: 'attempt-zelle-partial',
+      invoice_id: summary.invoice_id,
+      principal_amount: '500.00',
+      card_fee_amount: '0.00',
+      card_fee_tax_amount: '0.00',
+      provider_charge_amount: '500.00',
+      state: 'pending',
+      expires_at: '2026-08-31T12:00:00Z',
+      rail: 'zelle',
+      provider: 'manual',
+      provider_configuration_version: 2,
+      attempt_version: 1,
+      settlement: {
+        ...summary,
+        active_pending_principal: '500.00',
+        allocatable_balance: '334.00',
+        state: 'payment_pending',
+        version: 2,
+      },
+    })
+
+    function PartialZelleHarness() {
+      const [current, setCurrent] = useState(summary)
+      return (
+        <SettlementPaymentPanel
+          access={{ kind: 'authenticated', invoiceId: current.invoice_id }}
+          summary={current}
+          audience="customer"
+          tone="light"
+          zelleRecipient={{ display: 'pay@example.com', memo: 'INV-48' }}
+          onUpdated={setCurrent}
+        />
+      )
+    }
+
+    renderWithQuery(<PartialZelleHarness />)
+    await user.click(screen.getByRole('radio', { name: /zelle/i }))
+    const amount = screen.getByLabelText(/amount applied/i)
+    await user.clear(amount)
+    await user.type(amount, '500')
+    await user.click(screen.getByRole('button', { name: /reserve zelle amount/i }))
+
+    const continueButton = await screen.findByRole('button', { name: /make another payment.*\$334\.00 available/i })
+    await user.click(continueButton)
+    expect(screen.getByRole('heading', { name: /choose an amount and tender/i })).toBeInTheDocument()
+    expect(screen.getByLabelText(/amount applied/i)).toHaveValue('334.00')
+  })
+
   it('requires staff evidence and never offers cash or fleet payment', async () => {
     const user = userEvent.setup()
     const summary = {

@@ -68,6 +68,11 @@ from app.services.quickbooks_payments_service import (
     is_successful_charge as is_successful_quickbooks_charge,
     refund_charge as refund_quickbooks_charge,
 )
+from app.services.quickbooks_service import (
+    QuickBooksOAuthError,
+    refresh_access_token,
+    save_token_set,
+)
 from app.services.stripe_payment_finalization import (
     validate_db048_stripe_payment_intent,
 )
@@ -97,6 +102,42 @@ class DB048ReconciliationError(RuntimeError):
     def __init__(self, message: str, *, retryable: bool = False):
         super().__init__(message)
         self.retryable = retryable
+
+
+async def _refresh_accounting_connection_if_needed(
+    db: AsyncSession,
+    connection: QuickBooksConnection,
+) -> None:
+    """Persist rotated QBO credentials before an accounting provider call.
+
+    Intuit access tokens expire after roughly one hour.  DB-048 outbox work can
+    legitimately run later than the mutation that enqueued it, so using the
+    snapshotted connection without refreshing turns a healthy refresh token
+    into a terminal HTTP 401.  Persisting the rotated token set before the QBO
+    write also closes the crash window that would otherwise discard Intuit's
+    newly rotated refresh token.
+    """
+    expires = connection.access_token_expires_at
+    now = datetime.now(timezone.utc)
+    if expires and expires > now + timedelta(minutes=5):
+        return
+    try:
+        token_set = await refresh_access_token(connection)
+        save_token_set(
+            connection,
+            realm_id=connection.realm_id or "",
+            token_set=token_set,
+            now=now,
+        )
+    except QuickBooksOAuthError as exc:
+        connection.last_token_refresh_error = str(exc)[:500]
+        raise DB048ReconciliationError(
+            "QuickBooks credentials could not be refreshed",
+            retryable=True,
+        ) from exc
+    connection.last_token_refresh_at = now
+    connection.last_token_refresh_error = None
+    await db.commit()
 
 
 @dataclass(frozen=True)
@@ -449,18 +490,18 @@ def db048_qbo_invoice_payload(
     qbo_customer_id: str,
     qbo_item_id: str,
     principal_total: Decimal,
+    tenant_name: Optional[str] = None,
 ) -> dict[str, Any]:
     """Build the canonical A/R invoice excluding card surcharge money."""
     principal = money(principal_total)
-    memo = quickbooks_invoice_memo(invoice)
+    memo = quickbooks_invoice_memo(invoice, tenant_name=tenant_name)
+    document_number = _qbo_invoice_document_number(invoice)
     return {
-        "DocNumber": invoice.invoice_number[:21],
+        "DocNumber": document_number,
         "CustomerRef": {"value": qbo_customer_id},
         "TxnDate": (invoice.created_at or datetime.now(timezone.utc)).date().isoformat(),
         "DueDate": invoice.due_date.date().isoformat() if invoice.due_date else None,
-        "PrivateNote": (
-            f"{memo}; DB-048 invoice={invoice.id}; principal-only A/R"
-        ),
+        "PrivateNote": memo,
         "CustomerMemo": {"value": memo},
         "Line": [{
             "Amount": float(principal),
@@ -475,6 +516,232 @@ def db048_qbo_invoice_payload(
     }
 
 
+def db048_qbo_payment_reference(
+    *,
+    attempt: Optional[InvoicePaymentAttempt],
+    payment: Payment,
+) -> str:
+    """Choose the strongest CPA-facing trace that fits QBO PaymentRefNum."""
+    reference: object = getattr(payment, "payment_number", "")
+    if attempt is not None:
+        provider = str(getattr(attempt, "provider", None) or "").strip()
+        rail = str(getattr(attempt, "rail", None) or "").strip().lower()
+        if (
+            provider == "quickbooks_payments"
+            and getattr(attempt, "provider_charge_id", None)
+        ):
+            reference = f"QBP {attempt.provider_charge_id}"
+        elif provider == "stripe_connect" and getattr(attempt, "provider_charge_id", None):
+            reference = f"Stripe {attempt.provider_charge_id}"
+        elif (
+            rail in {"zelle", "check", "ach"}
+            and getattr(attempt, "provider_reference", None)
+        ):
+            provider_reference = str(attempt.provider_reference).strip()
+            if rail == "zelle":
+                parts = provider_reference.upper().split("-")
+                invoice_part = next(
+                    (part for part in parts if part.startswith("ETSINV")),
+                    None,
+                )
+                if invoice_part:
+                    part_index = parts.index(invoice_part)
+                    amount_part = (
+                        parts[part_index + 1]
+                        if len(parts) > part_index + 1
+                        else ""
+                    )
+                    invoice_suffix = invoice_part.removeprefix("ETSINV")
+                    reference = " ".join(
+                        segment
+                        for segment in (
+                            "Zelle",
+                            invoice_suffix,
+                            f"${amount_part}" if amount_part else "",
+                        )
+                        if segment
+                    )
+                else:
+                    reference = (
+                        provider_reference
+                        if provider_reference.casefold().startswith(rail)
+                        else f"Zelle {provider_reference}"
+                    )
+            else:
+                reference = (
+                    provider_reference
+                    if provider_reference.casefold().startswith(rail)
+                    else f"{rail.upper() if rail == 'ach' else rail.title()} "
+                    f"{provider_reference}"
+                )
+    resolved = str(reference or "").strip()
+    if not resolved:
+        raise DB048ReconciliationError("QuickBooks payment reference is missing")
+    return resolved[:21]
+
+
+def db048_qbo_payment_memo(
+    *,
+    attempt: Optional[InvoicePaymentAttempt],
+    payment: Payment,
+    invoice: Invoice,
+) -> str:
+    """Return a concise memo a bookkeeper can understand without internal IDs."""
+    provider = str(getattr(attempt, "provider", None) or "").strip()
+    rail = str(
+        getattr(attempt, "rail", None)
+        or getattr(payment, "method", None)
+        or "payment"
+    ).strip().lower()
+    if provider == "quickbooks_payments":
+        label = "QuickBooks card payment"
+    elif provider == "stripe_connect":
+        label = "Stripe card payment"
+    elif rail == "zelle":
+        label = "Zelle payment"
+    elif rail == "check":
+        label = "Check payment"
+    elif rail == "ach":
+        label = "ACH payment"
+    else:
+        label = "Invoice payment"
+    full_reference = db048_qbo_payment_reference(attempt=attempt, payment=payment)
+    if attempt is not None:
+        if provider == "quickbooks_payments" and getattr(
+            attempt, "provider_charge_id", None
+        ):
+            full_reference = f"QBP {attempt.provider_charge_id}"
+        elif provider == "stripe_connect" and getattr(
+            attempt, "provider_charge_id", None
+        ):
+            full_reference = f"Stripe {attempt.provider_charge_id}"
+        elif rail in {"zelle", "check", "ach"} and getattr(
+            attempt, "provider_reference", None
+        ):
+            full_reference = str(attempt.provider_reference).strip()
+    return (
+        f"{label} for invoice {invoice.invoice_number}; "
+        f"reference {full_reference}"
+    )
+
+
+def _qbo_payment_note_matches(
+    note: object,
+    *,
+    attempt: InvoicePaymentAttempt,
+    payment: Payment,
+    invoice: Optional[Invoice],
+    payment_id: Optional[str] = None,
+) -> bool:
+    """Accept current CPA-facing notes and legacy identity markers."""
+    resolved = str(note or "")
+    current_memo_matches = (
+        resolved == db048_qbo_payment_memo(
+            attempt=attempt,
+            payment=payment,
+            invoice=invoice,
+        )
+        if invoice is not None
+        else resolved.endswith(
+            f"reference {db048_qbo_payment_reference(attempt=attempt, payment=payment)}"
+        )
+    )
+    return (
+        current_memo_matches
+        or f"attempt={attempt.id}" in resolved
+        or (payment_id is not None and f"credit-source={payment_id}" in resolved)
+    )
+
+
+async def reconcile_qbo_payment_presentation(
+    connection: QuickBooksConnection,
+    *,
+    qbo_payment_id: str,
+    attempt: InvoicePaymentAttempt,
+    payment: Payment,
+    invoice: Invoice,
+    qbo_customer_id: str,
+    received_principal: Decimal,
+) -> None:
+    """Refresh only CPA-facing metadata on an existing validated QBO payment."""
+    current = await _request(connection, "GET", f"payment/{qbo_payment_id}")
+    qbo_payment = current.get("Payment") if isinstance(current, dict) else None
+    if not isinstance(qbo_payment, dict) or str(qbo_payment.get("Id") or "") != str(
+        qbo_payment_id
+    ):
+        raise DB048ReconciliationError("Existing QuickBooks payment could not be loaded")
+    legacy_reference = str(getattr(payment, "payment_number", "") or "")[:21]
+    expected_reference = db048_qbo_payment_reference(attempt=attempt, payment=payment)
+    current_reference = str(qbo_payment.get("PaymentRefNum") or "")
+    current_note = str(qbo_payment.get("PrivateNote") or "")
+    prior_readable_note = (
+        f"invoice {invoice.invoice_number}" in current_note
+        and current_note.endswith(f"reference {current_reference}")
+    )
+    if (
+        str((qbo_payment.get("CustomerRef") or {}).get("value") or "")
+        != str(qbo_customer_id)
+        or money(qbo_payment.get("TotalAmt")) != money(received_principal)
+        or current_reference
+        not in {
+            expected_reference,
+            legacy_reference,
+            str(getattr(attempt, "provider_charge_id", "") or "")[:21],
+            str(getattr(attempt, "provider_reference", "") or "")[:21],
+        }
+        or (
+            not prior_readable_note
+            and not _qbo_payment_note_matches(
+                current_note,
+                attempt=attempt,
+                payment=payment,
+                invoice=invoice,
+                payment_id=qbo_payment_id,
+            )
+        )
+    ):
+        raise DB048ReconciliationError(
+            "QuickBooks payment identity does not match the local receipt"
+        )
+    expected_note = db048_qbo_payment_memo(
+        attempt=attempt,
+        payment=payment,
+        invoice=invoice,
+    )
+    if current_reference == expected_reference and str(
+        qbo_payment.get("PrivateNote") or ""
+    ) == expected_note:
+        return
+    sync_token = qbo_payment.get("SyncToken")
+    if sync_token is None:
+        raise DB048ReconciliationError(
+            "Existing QuickBooks payment cannot be updated safely"
+        )
+    response = await _request(
+        connection,
+        "POST",
+        "payment",
+        params={
+            "operation": "update",
+            "requestid": _qbo_request_id("paymeta", attempt.id),
+        },
+        json={
+            "Id": str(qbo_payment_id),
+            "SyncToken": str(sync_token),
+            "sparse": True,
+            "PaymentRefNum": expected_reference,
+            "PrivateNote": expected_note,
+        },
+    )
+    updated = response.get("Payment") if isinstance(response, dict) else None
+    if not isinstance(updated, dict) or str(updated.get("Id") or "") != str(
+        qbo_payment_id
+    ):
+        raise QuickBooksAccountingError(
+            "QuickBooks did not update the payment presentation"
+        )
+
+
 def db048_qbo_payment_payload(
     *,
     payment: Payment,
@@ -484,6 +751,9 @@ def db048_qbo_payment_payload(
     principal_amount: Decimal,
     deposit_account: str,
     received_principal_amount: Optional[Decimal] = None,
+    attempt: Optional[InvoicePaymentAttempt] = None,
+    tenant_name: Optional[str] = None,
+    customer_name: Optional[str] = None,
 ) -> dict[str, Any]:
     """Build one QBO receipt with only applied principal linked to A/R.
 
@@ -503,14 +773,16 @@ def db048_qbo_payment_payload(
         raise DB048ReconciliationError(
             "QuickBooks payment receipt is smaller than its invoice allocation"
         )
+    reference = db048_qbo_payment_reference(attempt=attempt, payment=payment)
     payload: dict[str, Any] = {
         "CustomerRef": {"value": qbo_customer_id},
         "TotalAmt": float(received),
-        "PaymentRefNum": payment.payment_number[:21],
+        "PaymentRefNum": reference,
         "DepositToAccountRef": {"value": deposit_account},
-        "PrivateNote": (
-            f"{quickbooks_invoice_memo(invoice)} DB-048 attempt={payment.invoice_payment_attempt_id}; "
-            f"receipt={payment.payment_number}; unapplied={money(received - principal)}"
+        "PrivateNote": db048_qbo_payment_memo(
+            attempt=attempt,
+            payment=payment,
+            invoice=invoice,
         ),
         "Line": [],
     }
@@ -1050,10 +1322,62 @@ async def _qbo_find_by_doc_number(
     return rows[0] if rows else None
 
 
+async def _resolve_qbo_account_reference(
+    connection: QuickBooksConnection,
+    configured_reference: object,
+) -> str:
+    """Resolve a tenant mapping to the account ID required by QBO refs.
+
+    Existing DB-048 configuration accepts the account picker value as a
+    string, and early local configurations stored the visible QBO account name
+    rather than its provider ID. QBO write payloads require the ID in the
+    ``value`` field, so resolve both representations against the active realm
+    before any accounting mutation.
+    """
+    reference = str(configured_reference or "").strip()
+    if not reference:
+        raise DB048ReconciliationError("QuickBooks account mapping is missing")
+
+    if reference.isdigit():
+        rows = await _query(
+            connection,
+            f"select * from Account where Id = '{_escape_query(reference)}' maxresults 1",
+        )
+    else:
+        rows = await _query(
+            connection,
+            f"select * from Account where Name = '{_escape_query(reference)}' maxresults 2",
+        )
+    matches = [
+        row for row in rows
+        if row.get("Id")
+        and row.get("Active") is not False
+        and (
+            str(row.get("Id")) == reference
+            if reference.isdigit()
+            else str(row.get("Name") or "") == reference
+        )
+    ]
+    if len(matches) != 1:
+        raise DB048ReconciliationError(
+            f"QuickBooks account mapping '{reference}' was not found in the connected company"
+        )
+    return str(matches[0]["Id"])
+
+
 def _qbo_request_id(kind: str, identity: object) -> str:
     """Stable Intuit requestid used as the provider-side idempotency fence."""
     digest = hashlib.sha256(f"db048:{kind}:{identity}".encode()).hexdigest()[:32]
     return f"db048-{kind[:8]}-{digest}"[:50]
+
+
+def _qbo_invoice_document_number(invoice: Invoice) -> str:
+    document_number = str(invoice.invoice_number or "")
+    if not document_number or len(document_number) > 21:
+        raise DB048ReconciliationError(
+            "Invoice number is not valid for QuickBooks synchronization"
+        )
+    return document_number
 
 
 def _validate_qbo_invoice_identity(
@@ -1062,18 +1386,31 @@ def _validate_qbo_invoice_identity(
     qbo_customer_id: str,
     invoice: Invoice,
     discovered_by_doc_number: bool,
+    tenant_name: Optional[str] = None,
 ) -> None:
+    expected_doc_number = _qbo_invoice_document_number(invoice)
+    actual_doc_number = str(qbo_invoice.get("DocNumber") or "")
+    if actual_doc_number != expected_doc_number:
+        raise DB048ReconciliationError(
+            "Existing QuickBooks invoice number does not match the local invoice"
+        )
     customer_ref = qbo_invoice.get("CustomerRef") or {}
     if str(customer_ref.get("value") or "") != str(qbo_customer_id):
         raise DB048ReconciliationError(
             "Existing QuickBooks invoice belongs to a different customer"
         )
-    marker = f"DB-048 invoice={invoice.id}; principal-only A/R"
     private_note = str(qbo_invoice.get("PrivateNote") or "")
-    # A locally persisted QBO ID may predate DB-048 and can be upgraded after
-    # customer validation. A DocNumber-only discovery has no local identity
-    # proof, so an exact DB-048 marker is required or it is a collision.
-    if discovered_by_doc_number and marker not in private_note:
+    # A locally persisted QBO ID may predate DB-048 and can be upgraded only
+    # after both invoice number and customer identity are validated. A
+    # DocNumber-only discovery must additionally carry either the current
+    # shop-facing memo or the legacy DB-048 marker.
+    expected_memo = quickbooks_invoice_memo(invoice, tenant_name=tenant_name)
+    legacy_marker = f"DB-048 invoice={invoice.id}; principal-only A/R"
+    if (
+        discovered_by_doc_number
+        and expected_memo not in private_note
+        and legacy_marker not in private_note
+    ):
         raise DB048ReconciliationError(
             "QuickBooks invoice number collides with an unrelated record"
         )
@@ -1085,53 +1422,78 @@ async def _ensure_db048_qbo_invoice(
     invoice: Invoice,
     customer: Customer,
     principal_total: Decimal,
+    tenant_name: Optional[str] = None,
 ) -> tuple[str, str]:
     """Return canonical customer/invoice IDs for principal-only DB-048 A/R."""
     principal = money(principal_total)
-    customer_id = await ensure_customer(connection, customer)
+    customer_id = await ensure_customer(
+        connection,
+        customer,
+        tenant_name=tenant_name,
+    )
     qbo_invoice_id = invoice.quickbooks_invoice_id
     if qbo_invoice_id:
-        current = await _request(connection, "GET", f"invoice/{qbo_invoice_id}")
-        current_invoice = current.get("Invoice") if isinstance(current, dict) else None
-        if not isinstance(current_invoice, dict):
-            raise DB048ReconciliationError("Existing QBO invoice could not be loaded")
-        _validate_qbo_invoice_identity(
-            current_invoice,
-            qbo_customer_id=customer_id,
-            invoice=invoice,
-            discovered_by_doc_number=False,
-        )
-        marker = f"DB-048 invoice={invoice.id}; principal-only A/R"
-        needs_db048_upgrade = (
-            money(current_invoice.get("TotalAmt")) != principal
-            or marker not in str(current_invoice.get("PrivateNote") or "")
-        )
-        if needs_db048_upgrade:
-            sync_token = current_invoice.get("SyncToken")
-            if sync_token is None:
-                raise DB048ReconciliationError("Existing QBO invoice cannot be reconciled to DB-048 principal A/R")
-            item_id = await _ensure_service_item(connection)
-            payload = db048_qbo_invoice_payload(
-                invoice=invoice,
+        try:
+            current = await _request(connection, "GET", f"invoice/{qbo_invoice_id}")
+        except QuickBooksAccountingError as exc:
+            # QBO entity IDs are company/realm scoped. A tenant can reconnect
+            # a different sandbox or company while the local invoice still
+            # carries the previous realm's ID. Only an explicit provider
+            # missing/invalid-ID response may clear that stale identity; all
+            # transient provider failures must fail closed to avoid duplicates.
+            if exc.status_code not in {400, 404}:
+                raise
+            invoice.quickbooks_invoice_id = None
+            qbo_invoice_id = None
+            current = None
+        if current is not None:
+            current_invoice = current.get("Invoice") if isinstance(current, dict) else None
+            if not isinstance(current_invoice, dict):
+                raise DB048ReconciliationError("Existing QBO invoice could not be loaded")
+            _validate_qbo_invoice_identity(
+                current_invoice,
                 qbo_customer_id=customer_id,
-                qbo_item_id=item_id,
-                principal_total=principal,
+                invoice=invoice,
+                discovered_by_doc_number=False,
+                tenant_name=tenant_name,
             )
-            payload.update({"Id": str(qbo_invoice_id), "SyncToken": str(sync_token)})
-            response = await _request(
-                connection,
-                "POST",
-                "invoice?operation=update",
-                json=payload,
-                params={"requestid": _qbo_request_id("invoice", invoice.id)},
+            expected_memo = quickbooks_invoice_memo(
+                invoice,
+                tenant_name=tenant_name,
             )
-            updated = response.get("Invoice") if isinstance(response, dict) else None
-            if not isinstance(updated, dict) or str(updated.get("Id")) != str(qbo_invoice_id):
-                raise QuickBooksAccountingError("QuickBooks did not reconcile the DB-048 principal invoice")
-        return customer_id, str(qbo_invoice_id)
+            needs_db048_upgrade = (
+                money(current_invoice.get("TotalAmt")) != principal
+                or str(current_invoice.get("PrivateNote") or "") != expected_memo
+            )
+            if needs_db048_upgrade:
+                sync_token = current_invoice.get("SyncToken")
+                if sync_token is None:
+                    raise DB048ReconciliationError("Existing QBO invoice cannot be reconciled to DB-048 principal A/R")
+                item_id = await _ensure_service_item(connection)
+                payload = db048_qbo_invoice_payload(
+                    invoice=invoice,
+                    qbo_customer_id=customer_id,
+                    qbo_item_id=item_id,
+                    principal_total=principal,
+                    tenant_name=tenant_name,
+                )
+                payload.update({"Id": str(qbo_invoice_id), "SyncToken": str(sync_token)})
+                response = await _request(
+                    connection,
+                    "POST",
+                    "invoice?operation=update",
+                    json=payload,
+                    params={"requestid": _qbo_request_id("invoice", invoice.id)},
+                )
+                updated = response.get("Invoice") if isinstance(response, dict) else None
+                if not isinstance(updated, dict) or str(updated.get("Id")) != str(qbo_invoice_id):
+                    raise QuickBooksAccountingError("QuickBooks did not reconcile the DB-048 principal invoice")
+            return customer_id, str(qbo_invoice_id)
+        # An explicit invalid/missing-ID response continues through the
+        # current-realm DocNumber collision fence and deterministic create path.
 
     existing_invoice = await _qbo_find_by_doc_number(
-        connection, "Invoice", invoice.invoice_number[:21],
+        connection, "Invoice", _qbo_invoice_document_number(invoice),
     )
     if existing_invoice:
         _validate_qbo_invoice_identity(
@@ -1139,9 +1501,17 @@ async def _ensure_db048_qbo_invoice(
             qbo_customer_id=customer_id,
             invoice=invoice,
             discovered_by_doc_number=True,
+            tenant_name=tenant_name,
         )
         qbo_invoice_id = str(existing_invoice["Id"])
-        if money(existing_invoice.get("TotalAmt")) != principal:
+        expected_memo = quickbooks_invoice_memo(
+            invoice,
+            tenant_name=tenant_name,
+        )
+        if (
+            money(existing_invoice.get("TotalAmt")) != principal
+            or str(existing_invoice.get("PrivateNote") or "") != expected_memo
+        ):
             sync_token = existing_invoice.get("SyncToken")
             if sync_token is None:
                 raise DB048ReconciliationError("Existing QBO invoice cannot be reconciled to DB-048 principal A/R")
@@ -1151,6 +1521,7 @@ async def _ensure_db048_qbo_invoice(
                 qbo_customer_id=customer_id,
                 qbo_item_id=item_id,
                 principal_total=principal,
+                tenant_name=tenant_name,
             )
             payload.update({"Id": qbo_invoice_id, "SyncToken": str(sync_token)})
             response = await _request(
@@ -1174,6 +1545,7 @@ async def _ensure_db048_qbo_invoice(
                 qbo_customer_id=customer_id,
                 qbo_item_id=item_id,
                 principal_total=principal,
+                tenant_name=tenant_name,
             ),
             params={"requestid": _qbo_request_id("invoice", invoice.id)},
         )
@@ -1213,6 +1585,7 @@ async def sync_db048_payment(envelope: AccountingEnvelope) -> str:
         invoice=envelope.invoice,
         customer=envelope.customer,
         principal_total=principal_total,
+        tenant_name=envelope.tenant.name,
     )
 
     mappings = envelope.link.account_mapping_snapshot or {}
@@ -1226,6 +1599,10 @@ async def sync_db048_payment(envelope: AccountingEnvelope) -> str:
         deposit_account = mappings.get("zelle_ach_account")
     if not deposit_account:
         raise DB048ReconciliationError("Payment deposit account mapping is missing")
+    deposit_account = await _resolve_qbo_account_reference(
+        envelope.connection,
+        deposit_account,
+    )
 
     receipt_principal = money(
         envelope.attempt.received_amount
@@ -1236,8 +1613,21 @@ async def sync_db048_payment(envelope: AccountingEnvelope) -> str:
     if receipt_principal < applied_principal or receipt_principal <= ZERO:
         raise DB048ReconciliationError("DB-048 payment principal receipt is invalid")
     payment_id: Optional[str] = envelope.payment.quickbooks_payment_id
-    if not payment_id:
-        reference = envelope.payment.payment_number[:21]
+    if payment_id:
+        await reconcile_qbo_payment_presentation(
+            envelope.connection,
+            qbo_payment_id=str(payment_id),
+            attempt=envelope.attempt,
+            payment=envelope.payment,
+            invoice=envelope.invoice,
+            qbo_customer_id=customer_id,
+            received_principal=receipt_principal,
+        )
+    else:
+        reference = db048_qbo_payment_reference(
+            attempt=envelope.attempt,
+            payment=envelope.payment,
+        )
         matches = await _query(
             envelope.connection,
             f"select * from Payment where PaymentRefNum = '{_escape_query(reference)}' maxresults 1",
@@ -1248,7 +1638,12 @@ async def sync_db048_payment(envelope: AccountingEnvelope) -> str:
                 str((candidate.get("CustomerRef") or {}).get("value") or "")
                 != str(customer_id)
                 or money(candidate.get("TotalAmt")) != receipt_principal
-                or f"attempt={envelope.attempt.id}" not in str(candidate.get("PrivateNote") or "")
+                or not _qbo_payment_note_matches(
+                    candidate.get("PrivateNote"),
+                    attempt=envelope.attempt,
+                    payment=envelope.payment,
+                    invoice=envelope.invoice,
+                )
             ):
                 raise DB048ReconciliationError(
                     "QuickBooks payment reference collides with an unrelated receipt"
@@ -1267,6 +1662,12 @@ async def sync_db048_payment(envelope: AccountingEnvelope) -> str:
                     principal_amount=applied_principal,
                     received_principal_amount=receipt_principal,
                     deposit_account=deposit_account,
+                    attempt=envelope.attempt,
+                    tenant_name=envelope.tenant.name,
+                    customer_name=(
+                        envelope.customer.company_name
+                        or f"{envelope.customer.first_name} {envelope.customer.last_name}"
+                    ).strip(),
                 ),
                 params={"requestid": _qbo_request_id("payment", envelope.attempt.id)},
             )
@@ -1332,18 +1733,26 @@ async def sync_db048_credit_application(
         raise DB048ReconciliationError(
             "Original unapplied QuickBooks payment is unavailable", retryable=True,
         )
-    source_note = str(source_qbo_payment.get("PrivateNote") or "")
-    expected_reference = envelope.source_payment.payment_number[:21]
+    expected_references = {
+        envelope.source_payment.payment_number[:21],
+        db048_qbo_payment_reference(
+            attempt=envelope.source_attempt,
+            payment=envelope.source_payment,
+        ),
+    }
     if (
-        str(source_qbo_payment.get("PaymentRefNum") or "") != expected_reference
+        str(source_qbo_payment.get("PaymentRefNum") or "") not in expected_references
         or money(source_qbo_payment.get("TotalAmt"))
         != money(
             envelope.source_attempt.received_amount
             or envelope.source_attempt.principal_amount
         )
-        or (
-            f"attempt={envelope.source_attempt.id}" not in source_note
-            and f"credit-source={source_qbo_payment_id}" not in source_note
+        or not _qbo_payment_note_matches(
+            source_qbo_payment.get("PrivateNote"),
+            attempt=envelope.source_attempt,
+            payment=envelope.source_payment,
+            invoice=None,
+            payment_id=str(source_qbo_payment_id),
         )
     ):
         raise DB048ReconciliationError(
@@ -1415,6 +1824,7 @@ async def sync_db048_credit_application(
             invoice=target_invoice,
             customer=target_customer,
             principal_total=target_settlement.principal_total,
+            tenant_name=envelope.tenant.name,
         )
         source_customer_ref = source_qbo_payment.get("CustomerRef") or {}
         if str(source_customer_ref.get("value")) != str(qbo_customer_id):
@@ -1663,6 +2073,7 @@ async def _dispute_credit_qbo_deltas(
             invoice=target_invoice,
             customer=target_customer,
             principal_total=target_settlement.principal_total,
+            tenant_name=envelope.tenant.name,
         )
         if str(target_customer_id) != str(qbo_customer_id):
             raise DB048ReconciliationError(
@@ -1847,6 +2258,7 @@ async def sync_db048_dispute(
         invoice=envelope.invoice,
         customer=envelope.customer,
         principal_total=envelope.settlement.principal_total,
+        tenant_name=envelope.tenant.name,
     )
     if str((qbo_payment.get("CustomerRef") or {}).get("value") or "") != str(customer_id):
         raise DB048ReconciliationError("Dispute QuickBooks customer does not match")
@@ -1925,6 +2337,16 @@ async def sync_db048_reversal(envelope: AccountingEnvelope) -> str:
     )
     if unapplied_payment_id and str(unapplied_payment_id) not in payment_ids:
         payment_ids.append(str(unapplied_payment_id))
+    expected_customer_id = await ensure_customer(
+        envelope.connection,
+        envelope.customer,
+        tenant_name=envelope.tenant.name,
+    )
+    expected_total = money(
+        envelope.attempt.received_amount
+        if envelope.attempt.received_amount is not None
+        else envelope.attempt.principal_amount
+    )
     for qbo_payment_id in payment_ids:
         current = await _request(
             envelope.connection, "GET", f"payment/{qbo_payment_id}",
@@ -1935,13 +2357,30 @@ async def sync_db048_reversal(envelope: AccountingEnvelope) -> str:
                 "Original QuickBooks payment is unavailable", retryable=True,
             )
         reference = str(payment.get("PaymentRefNum") or "")
-        note = str(payment.get("PrivateNote") or "")
-        expected_reference = envelope.payment.payment_number[:21]
+        legacy_reference = envelope.payment.payment_number[:21]
+        expected_reference = db048_qbo_payment_reference(
+            attempt=envelope.attempt,
+            payment=envelope.payment,
+        )
         if (
-            reference not in {expected_reference, f"U-{expected_reference}"[:21]}
+            str((payment.get("CustomerRef") or {}).get("value") or "")
+            != str(expected_customer_id)
             or (
-                f"attempt={envelope.attempt.id}" not in note
-                and f"credit-source={qbo_payment_id}" not in note
+                str(payment.get("TxnStatus", "")).casefold() != "voided"
+                and money(payment.get("TotalAmt")) != expected_total
+            )
+            or
+            reference not in {
+                expected_reference,
+                legacy_reference,
+                f"U-{legacy_reference}"[:21],
+            }
+            or not _qbo_payment_note_matches(
+                payment.get("PrivateNote"),
+                attempt=envelope.attempt,
+                payment=envelope.payment,
+                invoice=getattr(envelope, "invoice", None),
+                payment_id=qbo_payment_id,
             )
         ):
             raise DB048ReconciliationError(
@@ -4004,6 +4443,407 @@ async def reconcile_stripe_payout(
     return batch
 
 
+QBP_NATIVE_FEE_MARKERS = (
+    "quickbooks payments fee",
+    "system-recorded fee for quickbooks payments",
+    "quickbooks payment fee",
+)
+QBP_FEE_SETTLEMENT_GRACE_DAYS = 7
+
+
+def _qbo_native_occurred_at(entity: dict[str, Any]) -> datetime:
+    metadata = entity.get("MetaData") if isinstance(entity.get("MetaData"), dict) else {}
+    raw = metadata.get("LastUpdatedTime") or metadata.get("CreateTime")
+    if raw:
+        value = str(raw)
+        try:
+            parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+            return (
+                parsed.replace(tzinfo=timezone.utc)
+                if parsed.tzinfo is None
+                else parsed.astimezone(timezone.utc)
+            )
+        except ValueError:
+            pass
+    txn_date = str(entity.get("TxnDate") or "")
+    try:
+        return datetime.fromisoformat(txn_date).replace(tzinfo=timezone.utc)
+    except ValueError as exc:
+        raise DB048ReconciliationError(
+            "QuickBooks settlement record has no valid occurrence time"
+        ) from exc
+
+
+def _qbo_ref_value(entity: dict[str, Any], field: str) -> str:
+    reference = entity.get(field)
+    return str(reference.get("value") or "") if isinstance(reference, dict) else ""
+
+
+def _qbo_linked_payment_ids(deposit: dict[str, Any]) -> list[str]:
+    linked_ids: list[str] = []
+    for line in deposit.get("Line") or []:
+        if not isinstance(line, dict):
+            continue
+        for linked in line.get("LinkedTxn") or []:
+            if (
+                isinstance(linked, dict)
+                and str(linked.get("TxnType") or "").casefold() == "payment"
+                and linked.get("TxnId")
+            ):
+                linked_ids.append(str(linked["TxnId"]))
+    return list(dict.fromkeys(linked_ids))
+
+
+def _qbo_payment_charge_id(payment: dict[str, Any]) -> str:
+    card = payment.get("CreditCardPayment")
+    response = card.get("CreditChargeResponse") if isinstance(card, dict) else None
+    if isinstance(response, dict) and response.get("CCTransId"):
+        return str(response["CCTransId"]).strip()
+    reference = str(payment.get("PaymentRefNum") or "").strip()
+    if reference.casefold().startswith("qbp "):
+        return reference[4:].strip()
+    return reference
+
+
+def _qbo_is_native_qbp_fee(purchase: dict[str, Any]) -> bool:
+    searchable = [
+        str(purchase.get("PrivateNote") or ""),
+        str((purchase.get("EntityRef") or {}).get("name") or ""),
+    ]
+    for line in purchase.get("Line") or []:
+        if isinstance(line, dict):
+            searchable.append(str(line.get("Description") or ""))
+    normalized = " ".join(searchable).casefold()
+    return any(marker in normalized for marker in QBP_NATIVE_FEE_MARKERS)
+
+
+async def _qbp_attempt_and_configuration(
+    db: AsyncSession,
+    *,
+    tenant_id: UUID,
+    realm_id: str,
+    charge_id: str,
+) -> tuple[Optional[InvoicePaymentAttempt], Optional[TenantPaymentProviderConfiguration]]:
+    if not charge_id:
+        return None, None
+    attempt = await db.scalar(select(InvoicePaymentAttempt).where(
+        InvoicePaymentAttempt.tenant_id == tenant_id,
+        InvoicePaymentAttempt.provider == "quickbooks_payments",
+        InvoicePaymentAttempt.provider_charge_id == charge_id,
+        InvoicePaymentAttempt.state.in_(("confirmed", "refunded", "reversed")),
+    ))
+    if attempt is None:
+        return None, None
+    config = await db.scalar(select(TenantPaymentProviderConfiguration).where(
+        TenantPaymentProviderConfiguration.tenant_id == tenant_id,
+        TenantPaymentProviderConfiguration.version
+        == attempt.provider_configuration_version,
+        TenantPaymentProviderConfiguration.selected_provider
+        == "quickbooks_payments",
+        TenantPaymentProviderConfiguration.qbo_realm_snapshot == realm_id,
+        TenantPaymentProviderConfiguration.deleted_at.is_(None),
+    ))
+    return (attempt, config) if config is not None else (attempt, None)
+
+
+async def reconcile_qbp_native_settlements(
+    db: AsyncSession,
+    *,
+    connection: QuickBooksConnection,
+    deposits: list[dict[str, Any]],
+    payments: list[dict[str, Any]],
+    purchases: list[dict[str, Any]],
+) -> dict[str, int]:
+    """Import QBO-native QBP deposits and exact fees without creating QBO rows.
+
+    A payout is attributed to DieselBridge only when at least one linked QBO
+    Payment resolves to an exact local QBP charge. Mixed or incomplete batches
+    remain visible for a CPA but never enter fee-recovery analytics as matched.
+    """
+    if not connection.tenant_id or not connection.realm_id:
+        raise DB048ReconciliationError(
+            "QuickBooks settlement import requires a tenant and company realm"
+        )
+    tenant_id = connection.tenant_id
+    realm_id = str(connection.realm_id)
+    payment_by_id = {
+        str(payment.get("Id")): payment
+        for payment in payments
+        if isinstance(payment, dict) and payment.get("Id")
+    }
+    qbp_fees = [
+        purchase
+        for purchase in purchases
+        if isinstance(purchase, dict)
+        and purchase.get("Id")
+        and _qbo_is_native_qbp_fee(purchase)
+    ]
+    deposits_per_group: dict[tuple[str, str], int] = {}
+    fees_per_group: dict[tuple[str, str], list[dict[str, Any]]] = {}
+    for deposit in deposits:
+        if not isinstance(deposit, dict):
+            continue
+        key = (
+            str(deposit.get("TxnDate") or ""),
+            _qbo_ref_value(deposit, "DepositToAccountRef"),
+        )
+        deposits_per_group[key] = deposits_per_group.get(key, 0) + 1
+    for purchase in qbp_fees:
+        key = (
+            str(purchase.get("TxnDate") or ""),
+            _qbo_ref_value(purchase, "AccountRef"),
+        )
+        fees_per_group.setdefault(key, []).append(purchase)
+
+    result = {
+        "batches": 0,
+        "matched": 0,
+        "manual": 0,
+        "deferred": 0,
+        "skipped": 0,
+    }
+    for deposit in deposits:
+        if not isinstance(deposit, dict) or not deposit.get("Id"):
+            continue
+        deposit_id = str(deposit["Id"])
+        linked_payment_ids = _qbo_linked_payment_ids(deposit)
+        if not linked_payment_ids:
+            result["skipped"] += 1
+            continue
+        linked_payments: list[dict[str, Any]] = []
+        for payment_id in linked_payment_ids:
+            payment = payment_by_id.get(payment_id)
+            if payment is None:
+                response = await _request(connection, "GET", f"payment/{payment_id}")
+                candidate = response.get("Payment") if isinstance(response, dict) else None
+                if isinstance(candidate, dict):
+                    payment = candidate
+                    payment_by_id[payment_id] = payment
+            if payment is not None:
+                linked_payments.append(payment)
+
+        causes: list[str] = []
+        if len(linked_payments) != len(linked_payment_ids):
+            causes.append("linked_qbo_payment_missing")
+        resolved: list[
+            tuple[
+                dict[str, Any],
+                Optional[InvoicePaymentAttempt],
+                Optional[TenantPaymentProviderConfiguration],
+            ]
+        ] = []
+        for payment in linked_payments:
+            charge_id = _qbo_payment_charge_id(payment)
+            attempt, config = await _qbp_attempt_and_configuration(
+                db,
+                tenant_id=tenant_id,
+                realm_id=realm_id,
+                charge_id=charge_id,
+            )
+            resolved.append((payment, attempt, config))
+            if attempt is None:
+                causes.append("unmatched_qbo_payment")
+            elif config is None:
+                causes.append("configuration_snapshot_missing")
+            elif money(payment.get("TotalAmt")) != money(attempt.provider_charge_amount):
+                causes.append("qbo_payment_amount_mismatch")
+        matched_configs = [config for _, attempt, config in resolved if attempt and config]
+        if not matched_configs:
+            result["skipped"] += 1
+            continue
+
+        deposit_total = money(deposit.get("TotalAmt"))
+        payment_total = sum(
+            (money(payment.get("TotalAmt")) for payment, _, _ in resolved),
+            ZERO,
+        )
+        if deposit_total <= ZERO:
+            causes.append("invalid_deposit_amount")
+        if payment_total != deposit_total:
+            causes.append("deposit_payment_amount_mismatch")
+
+        group_key = (
+            str(deposit.get("TxnDate") or ""),
+            _qbo_ref_value(deposit, "DepositToAccountRef"),
+        )
+        fee_candidates = fees_per_group.get(group_key, [])
+        fee_purchase: Optional[dict[str, Any]] = None
+        fee_missing = False
+        if deposits_per_group.get(group_key) == 1 and len(fee_candidates) == 1:
+            fee_purchase = fee_candidates[0]
+        elif not fee_candidates:
+            fee_missing = True
+        else:
+            causes.append("fee_purchase_ambiguous")
+
+        versions = {config.version for config in matched_configs}
+        realms = {str(config.qbo_realm_snapshot or "") for config in matched_configs}
+        checking_accounts = {
+            str(config.checking_account or "") for config in matched_configs
+        }
+        if len(versions) != 1:
+            causes.append("mixed_configuration_versions")
+        if realms != {realm_id}:
+            causes.append("mixed_or_foreign_qbo_realms")
+        if len(checking_accounts) != 1 or "" in checking_accounts:
+            causes.append("mixed_or_missing_checking_accounts")
+        deposit_account = group_key[1]
+        if not deposit_account:
+            causes.append("deposit_account_missing")
+        elif checking_accounts and deposit_account not in checking_accounts:
+            causes.append("deposit_account_mismatch")
+
+        if fee_missing:
+            try:
+                deposit_date = datetime.fromisoformat(group_key[0]).date()
+            except ValueError:
+                causes.append("deposit_date_invalid")
+                deposit_date = None
+            grace_start = (
+                datetime.now(timezone.utc) - timedelta(
+                    days=QBP_FEE_SETTLEMENT_GRACE_DAYS
+                )
+            ).date()
+            if not causes and deposit_date is not None and deposit_date > grace_start:
+                # QBO can publish the Deposit before its companion fee Purchase.
+                # Leave no immutable partial manifest; the overlapping daily
+                # query will retry this deposit with the completed native set.
+                result["deferred"] += 1
+                continue
+            causes.append("fee_purchase_missing")
+
+        unique_causes = list(dict.fromkeys(causes))
+        state = "matched" if not unique_causes else "manual_reconciliation_required"
+        fee_amount = money(fee_purchase.get("TotalAmt")) if fee_purchase else ZERO
+        net_payout = money(deposit_total - fee_amount) if fee_purchase else ZERO
+        config = matched_configs[0]
+        mappings = _payout_mapping_snapshot(config)
+        mapping_hash = _canonical_json_hash(mappings)
+        occurred_at = _qbo_native_occurred_at(deposit)
+        normalized_entries: list[dict[str, Any]] = []
+        for payment, attempt, payment_config in resolved:
+            entry_config = payment_config or config
+            entry_mappings = _payout_mapping_snapshot(entry_config)
+            payment_id = str(payment.get("Id") or "")
+            normalized_entries.append({
+                "id": f"payment:{payment_id}",
+                "type": "qbp_payment",
+                "amount": money(payment.get("TotalAmt")),
+                "attempt_id": attempt.id if attempt else None,
+                "refund_id": None,
+                "dispute_id": None,
+                "occurred_at": _qbo_native_occurred_at(payment),
+                "provider_configuration_version": entry_config.version,
+                "qbo_realm_snapshot": realm_id,
+                "owning_writer": entry_config.writer_strategy,
+                "account_mapping_snapshot": entry_mappings,
+                "account_mapping_hash": _canonical_json_hash(entry_mappings),
+                "safe_payload_hash": _canonical_json_hash({
+                    "qbo_payment_id": payment_id,
+                    "charge_id": _qbo_payment_charge_id(payment),
+                    "amount": str(money(payment.get("TotalAmt"))),
+                }),
+            })
+        if fee_purchase:
+            normalized_entries.append({
+                "id": f"fee:{fee_purchase['Id']}",
+                "type": "qbp_fee_purchase",
+                "amount": fee_amount,
+                "attempt_id": None,
+                "refund_id": None,
+                "dispute_id": None,
+                "occurred_at": _qbo_native_occurred_at(fee_purchase),
+                "provider_configuration_version": config.version,
+                "qbo_realm_snapshot": realm_id,
+                "owning_writer": config.writer_strategy,
+                "account_mapping_snapshot": mappings,
+                "account_mapping_hash": mapping_hash,
+                "safe_payload_hash": _canonical_json_hash({
+                    "qbo_purchase_id": str(fee_purchase["Id"]),
+                    "amount": str(fee_amount),
+                }),
+            })
+        manifest_hash = _payout_manifest(normalized_entries)
+        existing = await db.scalar(select(ProviderSettlementBatch).where(
+            ProviderSettlementBatch.provider == "quickbooks_payments",
+            ProviderSettlementBatch.provider_account_id == realm_id,
+            ProviderSettlementBatch.provider_batch_id == deposit_id,
+        ))
+        if existing:
+            if (
+                existing.tenant_id != tenant_id
+                or existing.entry_manifest_hash != manifest_hash
+                or money(existing.net_payout) != net_payout
+            ):
+                raise DB048ReconciliationError(
+                    "QuickBooks payout replay does not match its immutable manifest"
+                )
+            result["batches"] += 1
+            result["matched" if existing.reconciliation_state == "matched" else "manual"] += 1
+            continue
+
+        customer_fees = sum(
+            (money(attempt.applied_card_fee_amount) for _, attempt, _ in resolved if attempt),
+            ZERO,
+        )
+        fee_tax = sum(
+            (
+                money(attempt.applied_card_fee_tax_amount)
+                for _, attempt, _ in resolved
+                if attempt
+            ),
+            ZERO,
+        )
+        gross_receipts = money(deposit_total - customer_fees - fee_tax)
+        batch = ProviderSettlementBatch(
+            tenant_id=tenant_id,
+            provider="quickbooks_payments",
+            provider_account_id=realm_id,
+            provider_batch_id=deposit_id,
+            qbo_realm_snapshot=realm_id,
+            currency="USD",
+            gross_receipts=gross_receipts,
+            customer_card_fees=money(customer_fees),
+            card_fee_tax=money(fee_tax),
+            refunds=ZERO,
+            disputes=ZERO,
+            processor_fees=fee_amount,
+            net_payout=net_payout,
+            entry_manifest_hash=manifest_hash,
+            reconciliation_state=state,
+            qbo_deposit_id=deposit_id,
+            mismatch_reason=",".join(unique_causes) or None,
+            settled_at=occurred_at,
+        )
+        db.add(batch)
+        await db.flush()
+        for entry in normalized_entries:
+            db.add(ProviderSettlementEntry(
+                tenant_id=tenant_id,
+                batch_id=batch.id,
+                provider="quickbooks_payments",
+                provider_account_id=realm_id,
+                provider_entry_id=str(entry["id"]),
+                entry_type=str(entry["type"]),
+                amount=money(entry["amount"]),
+                attempt_id=entry["attempt_id"],
+                refund_id=None,
+                dispute_id=None,
+                provider_configuration_version=int(
+                    entry["provider_configuration_version"]
+                ),
+                qbo_realm_snapshot=realm_id,
+                owning_writer=str(entry["owning_writer"]),
+                account_mapping_snapshot=entry["account_mapping_snapshot"],
+                account_mapping_hash=str(entry["account_mapping_hash"]),
+                occurred_at=entry["occurred_at"],
+                safe_payload_hash=str(entry["safe_payload_hash"]),
+            ))
+        result["batches"] += 1
+        result["matched" if state == "matched" else "manual"] += 1
+    return result
+
+
 def _stripe_value(value: Any, key: str, default: Any = None) -> Any:
     if isinstance(value, dict):
         return value.get(key, default)
@@ -4469,9 +5309,17 @@ async def process_due_db048_outbox_events(
                     provider_id = await _process_stripe_payout_event(db, event)
                 elif event.event_type == CREDIT_ACCOUNTING_EVENT:
                     credit_envelope = await load_credit_accounting_envelope(db, event)
+                    await _refresh_accounting_connection_if_needed(
+                        db,
+                        credit_envelope.connection,
+                    )
                     provider_id = await deliver_credit_accounting_envelope(db, credit_envelope)
                 else:
                     envelope = await load_accounting_envelope(db, event)
+                    await _refresh_accounting_connection_if_needed(
+                        db,
+                        envelope.connection,
+                    )
                     provider_id = await deliver_accounting_envelope(db, envelope)
                 # Provider calls can outlive a lease. Do not let an expired
                 # worker commit stale local projections after another worker

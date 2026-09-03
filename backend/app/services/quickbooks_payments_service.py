@@ -128,6 +128,16 @@ def is_successful_charge(charge: QuickBooksCharge) -> bool:
     return charge.status in {"CAPTURED", "SUCCEEDED", "COMPLETED"}
 
 
+def charge_client_transaction_id(charge: QuickBooksCharge) -> str | None:
+    """Return Intuit's merchant-facing client trace without persisting raw data."""
+    raw = getattr(charge, "raw", None)
+    context = raw.get("context") if isinstance(raw, dict) else None
+    value = context.get("clientTransID") if isinstance(context, dict) else None
+    if value is None:
+        return None
+    return str(value).strip() or None
+
+
 async def get_charge(*, connection: QuickBooksConnection, charge_id: str) -> QuickBooksCharge:
     if not connection.encrypted_access_token or not charge_id:
         raise QuickBooksPaymentError("QuickBooks charge is unavailable")

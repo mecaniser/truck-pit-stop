@@ -1,6 +1,6 @@
 # DB-048 Partial invoice payments, provider reconciliation, and customer credits
 
-- Version: 1.0.6
+- Version: 1.0.7
 - Status: Implementation reconciled; independent gates pending
 - Accountable implementation owner: Backend & Integrations
 - Contract owner: Architecture & API Contracts
@@ -9,12 +9,13 @@
 - Currency: USD only
 - Delivery lane: High risk
 
-Version 1.0.6 does not expand the frozen product scope. It preserves the 1.0.5
+Version 1.0.7 does not expand the frozen product scope. It preserves the 1.0.6
 Security and accounting corrections and reconciles the verified distinction
 between a production-disabled QBP gate and an explicitly authorized sandbox
 with payment scope. QBP partial attempts now use direct Intuit tokenization and
 an attempt-stable provider idempotency identity instead of silently falling
-back to Stripe.
+back to Stripe. Every confirmed allocation is now required to carry a
+CPA-searchable provider or manual trace into the one canonical QBO invoice.
 
 ## 1. Product and accounting boundary
 
@@ -461,7 +462,30 @@ operation version. A realm mismatch is never retried against a different realm.
 
 ### 8.3 Posting rules
 
+- New invoice numbers use up to five characters of the tenant-owned shop prefix
+  and the existing globally unique sequence format so the complete identifier
+  fits QBO's 21-character `DocNumber` limit without truncating sequence digits.
+  Existing issued/imported numbers, including legacy `ETSINV-*` records, remain
+  immutable and are never silently renumbered; an incompatible number fails
+  closed instead of being truncated during synchronization.
+- A QBO customer's ordinary `DisplayName` is the natural customer or company
+  name. Platform names and local UUID fragments are not part of the normal
+  display. Only a genuine QBO name collision may add a deterministic,
+  tenant-branded disambiguator. A natural/company-name match is insufficient
+  when either side carries an email; both emails must be present and equal.
+  Legacy platform UUID notes are removed during a safely identified sparse
+  customer update.
 - Confirmed principal: one QBO Payment linked to the single QBO Invoice.
+- Every QBO Payment uses a rail-labelled, QBO-length-safe provider or bank
+  reference: `QBP <charge>`, `Stripe <charge>`, `Zelle <trace>`, `Check
+  <number>`, or `ACH <trace>`. QBO `PrivateNote` is a concise CPA-readable
+  sentence naming the rail and invoice; it does not contain tenant IDs, UUIDs,
+  configuration versions, idempotency keys, or serialized correlation data.
+  Those immutable technical identities remain in DieselBridge's allocation,
+  accounting-link, and outbox records.
+- Three confirmed cards and one confirmed Zelle payment therefore produce four
+  independently traceable QBO Payments against the same QBO Invoice. A pending
+  Zelle reservation produces no QBO Payment and does not reduce QBO A/R.
 - Pending payment: no QBO Payment and no A/R reduction.
 - Overpayment: QBO Payment records full money received, links only applied
   principal to the invoice, and leaves the remainder unapplied.
@@ -475,9 +499,79 @@ operation version. A realm mismatch is never retried against a different realm.
 - Provider processor fee: mapped expense.
 - Refund/dispute: reverses the matching clearing/customer-credit entries and
   never creates a second sale.
+- Before voiding a QBO Payment, reversal verifies its exact stored provider ID,
+  customer, received total, reference, and current-or-legacy memo identity.
 - Stripe payout: groups provider balance transactions into one net transfer or
   deposit from Stripe Clearing to checking.
 - Bank feed: matches that prepared net deposit only.
+
+The QBP v4 charge response is not, by itself, authoritative settlement
+evidence: it supplies the charge identity and capture result but may omit the
+merchant fee, settlement batch, and bank-deposit identity. DieselBridge must
+not estimate those values, zero QBP Clearing, or claim a bank match from the
+charge response alone. QBP principal remains in QBP Clearing until an
+authoritative Intuit-native Payment/Deposit/Fee record or merchant-settlement
+source is imported and reconciled under the configured single-writer strategy.
+Absence of that evidence is a visible reconciliation-pending state, not a
+failed customer payment and not permission to manufacture accounting entries.
+
+For QuickBooks Payments settlement ingestion, the QBO Accounting API is the
+settled payout authority regardless of which approved writer owns the linked
+invoice Payment. DieselBridge imports, but never recreates, the native QBO
+objects:
+
+- a `Deposit` is the payout batch and supplies the gross amount, bank account,
+  linked QBO Payment IDs, transaction date, and stable deposit ID;
+- each linked QBO `Payment` is resolved to a DB-048 card allocation first by
+  `CreditCardPayment.CreditChargeResponse.CCTransId`, then by the exact
+  `QBP <charge>` payment reference written by DieselBridge;
+- the system-recorded QuickBooks Payments fee `Purchase` supplies the exact
+  processor expense. No advertised percentage or observed historical rate is
+  an accounting input;
+- the bank-feed match target is `Deposit.TotalAmt - Purchase.TotalAmt`, adjusted
+  only by authoritative refund/dispute records when those are present.
+
+The import is tenant- and realm-scoped and idempotent by QBO realm plus native
+Deposit, Payment, and Purchase IDs. A batch becomes `matched` only when every
+linked Payment maps to one eligible local allocation, gross amounts agree, and
+one unambiguous system-recorded fee belongs to the deposit grouping. Missing or
+ambiguous fee objects, unknown Payments, mixed configuration snapshots, amount
+differences, or foreign realm/account identities never trigger a guessed fee,
+a new QBO Deposit/Purchase/JournalEntry, or a false bank match. Deposit and
+Purchase are fetched in the same paginated seven-day-overlap window rather
+than relying on provider delivery order. A recent deposit with no fee Purchase
+is deferred without freezing a partial manifest; after the bounded grace period
+it becomes `manual_reconciliation_required`. Native QBO transactions with no
+DB-048 payment identity are not attributed to DieselBridge revenue.
+
+### 8.4 Verified sandbox acceptance — 2026-09-03
+
+Product-authorized sandbox acceptance proved both required allocation shapes
+without any production money or accounting mutation:
+
+- QBO Invoice `145`: one `$1,636.00` QBP allocation plus one `$500.00`
+  confirmed Zelle allocation, final QBO balance `$0.00`.
+- QBO Invoice `148`: three separate `$40.00` QBP charges plus one `$52.72`
+  confirmed Zelle allocation, final QBO balance `$0.00`, with exactly four
+  linked QBO Payments `149`–`152`.
+- Each card Payment uses `QBP <MT charge>` as `PaymentRefNum`; Zelle uses a
+  compact invoice-and-amount reference while retaining its full confirmation
+  trace in a CPA-readable `PrivateNote`.
+- Replaying the four failed-closed accounting outboxes after current-realm
+  identity repair succeeded `4/4`; immediately rerunning the worker claimed
+  `0`, so no duplicate QBO Payment or additional provider charge was created.
+
+The acceptance also reproduced and corrected two operational boundaries. QBO
+access tokens are refreshed and rotated credentials persisted before delayed
+outbox writes. A persisted QBO invoice ID that returns an explicit `400/404`
+in the active company is treated as stale cross-realm identity and recovered
+through the current-realm document-number collision fence plus deterministic
+create request. Transient provider failures never clear the stored identity or
+enter creation.
+
+This evidence clears multi-tender invoice-to-payment traceability only. It does
+not clear QBP merchant-settlement reconciliation because the charge response
+does not identify authoritative fee, settlement batch, or bank deposit data.
 
 Payout ingestion preflights every entry before inserting anything. Charge,
 refund, and dispute rows resolve through their exact attempt and historical

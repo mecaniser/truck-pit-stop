@@ -35,7 +35,11 @@ from app.db.models.user import User, UserRole
 from app.db.models.vehicle import Vehicle
 from app.services.quickbooks_sync_service import QUICKBOOKS_INVOICE_SYNC_EVENT
 from app.services.quickbooks_service import QuickBooksTokenSet
-from app.services.quickbooks_payments_service import payments_base_url
+from app.services.quickbooks_payments_service import (
+    QuickBooksCharge,
+    charge_client_transaction_id,
+    payments_base_url,
+)
 
 
 async def _owner_with_token(db_session, *, suffix: str = "one"):
@@ -95,6 +99,20 @@ def test_quickbooks_payment_charge_request_accepts_only_an_opaque_token(monkeypa
 
     monkeypatch.setattr(quickbooks.settings, "QUICKBOOKS_PAYMENTS_ENVIRONMENT", "sandbox")
     assert payments_base_url() == "https://sandbox.api.intuit.com"
+
+
+def test_quickbooks_charge_exposes_only_the_safe_client_transaction_trace():
+    charge = QuickBooksCharge(
+        id="MT6876262727",
+        status="CAPTURED",
+        amount=Decimal("1636.00"),
+        raw={
+            "context": {"clientTransID": "a00019xvcaxv"},
+            "card": {"number": "************4242"},
+        },
+    )
+
+    assert charge_client_transaction_id(charge) == "a00019xvcaxv"
 
 
 @pytest.mark.asyncio

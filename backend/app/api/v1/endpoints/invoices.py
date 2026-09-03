@@ -479,14 +479,25 @@ def _require_staff(current_user: User) -> None:
 
 
 async def generate_invoice_number(db: AsyncSession, tenant_id: UUID) -> str:
-    """Generate unique invoice number using MAX approach."""
-    from app.core.unique_id import generate_unique_number
+    """Generate a tenant-branded invoice number using the shared shop prefix."""
+    from app.core.unique_id import derive_order_number_prefix, generate_unique_number
+
+    tenant = (
+        await db.execute(select(Tenant).where(Tenant.id == tenant_id))
+    ).scalar_one_or_none()
+    prefix = (
+        tenant.order_number_prefix if tenant else None
+    ) or derive_order_number_prefix(tenant.name if tenant else "")
+    # QBO DocNumber is capped at 21 characters. The shared generator adds an
+    # eight-character tenant key and a six-digit sequence (plus separators),
+    # leaving at most five characters for the shop-owned prefix.
+    prefix = prefix[:5]
     return await generate_unique_number(
         db=db,
         model_class=Invoice,
         number_column=Invoice.invoice_number,
         tenant_id=tenant_id,
-        prefix="INV-",
+        prefix=f"{prefix}-",
     )
 
 

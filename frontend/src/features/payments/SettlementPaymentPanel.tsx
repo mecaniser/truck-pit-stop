@@ -287,6 +287,7 @@ export default function SettlementPaymentPanel({
         <QuickBooksPaymentPanel
           tokenUrl={attempt.provider_token_url}
           submitLabel={`Pay ${formatMoney(attempt.provider_charge_amount)} with card`}
+          tone={tone}
           onToken={token => quickBooksMutation.mutateAsync(token).then(() => undefined)}
           onSuccess={() => undefined}
         />
@@ -393,6 +394,15 @@ export default function SettlementPaymentPanel({
           {attempt.expires_at ? `Reservation expires ${new Date(attempt.expires_at).toLocaleString()}. ` : ''}
           The invoice changes only after the shop confirms receipt.
         </p>
+        {isPositiveMoney(summary.allocatable_balance) && (
+          <button
+            type="button"
+            onClick={() => setAttempt(null)}
+            className="mt-4 flex min-h-[48px] w-full items-center justify-center rounded-xl border border-current px-4 text-sm font-extrabold"
+          >
+            Make another payment · {formatMoney(summary.allocatable_balance)} available
+          </button>
+        )}
       </section>
     )
   }

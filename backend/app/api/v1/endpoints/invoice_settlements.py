@@ -58,6 +58,7 @@ from app.services.stripe_platform_fee import platform_fee_amount_cents, platform
 from app.services.quickbooks_accounting_service import quickbooks_invoice_memo
 from app.services.quickbooks_payments_service import (
     QuickBooksPaymentError,
+    charge_client_transaction_id,
     create_charge as create_quickbooks_charge,
     get_charge as get_quickbooks_charge,
     is_successful_charge as is_successful_quickbooks_charge,
@@ -692,7 +693,10 @@ async def charge_quickbooks_settlement_attempt(
                 connection=connection,
                 token=payment_token,
                 amount=money(attempt.provider_charge_amount),
-                description=quickbooks_invoice_memo(invoice),
+                description=quickbooks_invoice_memo(
+                    invoice,
+                    tenant_name=tenant.name,
+                ),
                 # The provider idempotency identity belongs to the immutable
                 # attempt, not a browser retry header.
                 request_id=f"db048-attempt-{attempt.id}"[:255],
@@ -816,6 +820,7 @@ async def charge_quickbooks_settlement_attempt(
         expected_attempt_version=attempt.version,
         idempotency_key=idempotency_key,
         received_principal=attempt.principal_amount,
+        reference=charge_client_transaction_id(charge),
         provider_charge_id=charge.id,
     )
     await db.commit()
@@ -1640,7 +1645,6 @@ async def read_payout_reconciliations(
         raise SettlementDomainError("invoice_not_found", "Invoice not found.", status_code=404)
     rows = (await db.execute(select(ProviderSettlementBatch).where(
         ProviderSettlementBatch.tenant_id == current_user.tenant_id,
-        ProviderSettlementBatch.provider == "stripe_connect",
     ).order_by(ProviderSettlementBatch.created_at.desc()).limit(limit))).scalars().all()
     outbox_rows = (await db.execute(select(ProviderOutboxEvent).where(
         ProviderOutboxEvent.tenant_id == current_user.tenant_id,
@@ -1659,6 +1663,7 @@ async def read_payout_reconciliations(
         ProviderSettlementEntry.batch_id.in_(batch_ids),
     ))).scalars().all() if batch_ids else []
     partitions_by_batch: dict[UUID, dict[tuple[int, str, str, str], int]] = {}
+    fee_purchase_ids_by_batch: dict[UUID, list[str]] = {}
     for entry in payout_entries:
         key = (
             entry.provider_configuration_version,
@@ -1668,7 +1673,12 @@ async def read_payout_reconciliations(
         )
         partitions = partitions_by_batch.setdefault(entry.batch_id, {})
         partitions[key] = partitions.get(key, 0) + 1
+        if entry.entry_type == "qbp_fee_purchase":
+            fee_purchase_ids_by_batch.setdefault(entry.batch_id, []).append(
+                entry.provider_entry_id.removeprefix("fee:")
+            )
     return [{
+        "provider": row.provider,
         "payout_id": row.provider_batch_id,
         "provider_account_id": row.provider_account_id,
         "qbo_realm_snapshot": row.qbo_realm_snapshot,
@@ -1686,10 +1696,17 @@ async def read_payout_reconciliations(
                 key=lambda item: item[0],
             )
         ],
+        "gross_receipts": str(money(row.gross_receipts)),
+        "customer_card_fees": str(money(row.customer_card_fees)),
+        "card_fee_tax": str(money(row.card_fee_tax)),
+        "processor_fees": str(money(row.processor_fees)),
         "net_payout": str(money(row.net_payout)),
         "state": row.reconciliation_state,
         "mismatch_reason": row.mismatch_reason,
         "qbo_deposit_id": row.qbo_deposit_id,
+        "qbo_fee_purchase_ids": sorted(
+            fee_purchase_ids_by_batch.get(row.id, [])
+        ),
         "settled_at": row.settled_at,
         "operation_id": (
             str(operation.id)
@@ -1699,7 +1716,8 @@ async def read_payout_reconciliations(
         ),
         "operation_state": operation.status if operation else None,
         "retryable": bool(
-            operation
+            row.provider == "stripe_connect"
+            and operation
             and operation.status == ProviderOutboxStatus.DEAD.value
             and row.reconciliation_state == "accounting_failed"
         ),

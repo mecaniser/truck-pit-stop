@@ -62,12 +62,61 @@ def _ids() -> dict[str, object]:
         "payment_backfill": uuid4(),
         "payment_cross_invoice": uuid4(),
         "payment_cross_tenant": uuid4(),
+        "payment_projection": uuid4(),
         "ledger_a": uuid4(),
         "batch_a": uuid4(),
         "link_a": uuid4(),
         "link_realm_mismatch": uuid4(),
         "entry_a": uuid4(),
     }
+
+
+@pytest.mark.asyncio
+async def test_paid_invoice_read_model_includes_required_payment_identity():
+    engine = create_async_engine(os.environ[POSTGRES_URL])
+    ids = _ids()
+    suffix = uuid4().hex
+    try:
+        await _seed_financial_identity(engine, ids, suffix)
+        await _execute(
+            engine,
+            """
+            INSERT INTO payments (
+              id, tenant_id, invoice_id, payment_number, amount, method,
+              status, quickbooks_charge_status, quickbooks_reconciled_at
+            ) VALUES (
+              :payment_projection, :tenant_a, :invoice_a,
+              :payment_number, 100, 'quickbooks', 'completed', 'CAPTURED',
+              '2026-09-01T12:00:00+00:00'
+            );
+            UPDATE invoices
+            SET status='paid', paid_at='2026-09-01T12:00:00+00:00'
+            WHERE id=:invoice_a
+            """,
+            {
+                **ids,
+                "payment_number": f"DB048-PROJECTION-{suffix}",
+            },
+        )
+
+        async with engine.connect() as connection:
+            payment = (
+                await connection.execute(
+                    text(
+                        "SELECT payload->'payment' "
+                        "FROM invoice_read_models WHERE invoice_id=:invoice_a"
+                    ),
+                    ids,
+                )
+            ).scalar_one()
+
+        assert payment["id"] == str(ids["payment_projection"])
+        assert payment["amount"] == 100
+        assert payment["method"] == "quickbooks"
+        assert payment["quickbooks_charge_status"] == "CAPTURED"
+        assert payment["quickbooks_reconciled_at"] == "2026-09-01T12:00:00+00:00"
+    finally:
+        await engine.dispose()
 
 
 async def _execute(engine: AsyncEngine, sql: str, params: dict[str, object]) -> None:

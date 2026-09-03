@@ -7,11 +7,13 @@ from uuid import uuid4
 import pytest
 
 from app.api.v1.endpoints.reports import (
+    get_reports_fees,
     get_reports_internal,
     get_reports_service_types,
 )
 from app.db.models.customer import Customer
 from app.db.models.invoice import Invoice, InvoiceStatus
+from app.db.models.invoice_settlement import ProviderSettlementBatch
 from app.db.models.labor import Labor, LaborLineType
 from app.db.models.repair_order import RepairOrder, RepairOrderStatus
 from app.db.models.service import Service
@@ -156,3 +158,150 @@ async def test_report_service_joins_never_resolve_cross_tenant_source_names(db_s
 
     assert [row.name for row in external.rows] == ["Tenant external labor"]
     assert [row.name for row in internal.service_rows] == ["Tenant internal labor"]
+
+
+@pytest.mark.asyncio
+async def test_fees_report_uses_only_matched_tenant_processor_costs(db_session):
+    suffix = uuid4().hex
+    tenant = Tenant(name="Fee report shop", slug=f"fees-{suffix}", timezone="UTC")
+    foreign_tenant = Tenant(
+        name="Foreign fee shop",
+        slug=f"foreign-fees-{suffix}",
+        timezone="UTC",
+    )
+    db_session.add_all([tenant, foreign_tenant])
+    await db_session.flush()
+    owner = User(
+        tenant_id=tenant.id,
+        email=f"fee-owner-{suffix}@example.com",
+        hashed_password="hashed-password",
+        first_name="Fee",
+        last_name="Owner",
+        role=UserRole.GARAGE_OWNER,
+        is_active=True,
+        is_verified=True,
+    )
+    customer = Customer(
+        tenant_id=tenant.id,
+        first_name="Fee",
+        last_name="Customer",
+        email=f"fee-customer-{suffix}@example.com",
+    )
+    db_session.add_all([owner, customer])
+    await db_session.flush()
+    vehicle = Vehicle(
+        tenant_id=tenant.id,
+        customer_id=customer.id,
+        make="Volvo",
+        model="VNL",
+        year=2024,
+    )
+    db_session.add(vehicle)
+    await db_session.flush()
+    order = RepairOrder(
+        tenant_id=tenant.id,
+        customer_id=customer.id,
+        vehicle_id=vehicle.id,
+        order_number=f"RO-FEE-{suffix[:8]}",
+        status=RepairOrderStatus.PAID,
+        is_internal=False,
+        total_labor_cost=Decimal("100.00"),
+        total_parts_cost=Decimal("0.00"),
+        total_cost=Decimal("103.00"),
+    )
+    db_session.add(order)
+    await db_session.flush()
+    now = datetime.now(timezone.utc)
+    db_session.add_all([
+        Invoice(
+            tenant_id=tenant.id,
+            repair_order_id=order.id,
+            invoice_number=f"INV-FEE-{suffix[:8]}",
+            status=InvoiceStatus.PAID,
+            is_internal=False,
+            subtotal=Decimal("100.00"),
+            service_fee_amount=Decimal("3.00"),
+            total_amount=Decimal("103.00"),
+            paid_at=now,
+        ),
+        ProviderSettlementBatch(
+            tenant_id=tenant.id,
+            provider="quickbooks_payments",
+            provider_account_id="realm-fees",
+            provider_batch_id="deposit-fees",
+            qbo_realm_snapshot="realm-fees",
+            currency="USD",
+            gross_receipts=Decimal("100.00"),
+            customer_card_fees=Decimal("3.00"),
+            card_fee_tax=Decimal("0.00"),
+            refunds=Decimal("0.00"),
+            disputes=Decimal("0.00"),
+            processor_fees=Decimal("2.99"),
+            net_payout=Decimal("100.01"),
+            entry_manifest_hash="a" * 64,
+            reconciliation_state="matched",
+            qbo_deposit_id="deposit-fees",
+            settled_at=now,
+        ),
+        ProviderSettlementBatch(
+            tenant_id=tenant.id,
+            provider="quickbooks_payments",
+            provider_account_id="realm-fees",
+            provider_batch_id="deposit-manual",
+            qbo_realm_snapshot="realm-fees",
+            currency="USD",
+            gross_receipts=Decimal("50.00"),
+            customer_card_fees=Decimal("1.50"),
+            card_fee_tax=Decimal("0.00"),
+            refunds=Decimal("0.00"),
+            disputes=Decimal("0.00"),
+            processor_fees=Decimal("1.49"),
+            net_payout=Decimal("50.01"),
+            entry_manifest_hash="b" * 64,
+            reconciliation_state="manual_reconciliation_required",
+            mismatch_reason="fee_purchase_ambiguous",
+            settled_at=now,
+        ),
+        ProviderSettlementBatch(
+            tenant_id=foreign_tenant.id,
+            provider="quickbooks_payments",
+            provider_account_id="foreign-realm",
+            provider_batch_id="foreign-deposit",
+            qbo_realm_snapshot="foreign-realm",
+            currency="USD",
+            gross_receipts=Decimal("999.00"),
+            customer_card_fees=Decimal("30.00"),
+            card_fee_tax=Decimal("0.00"),
+            refunds=Decimal("0.00"),
+            disputes=Decimal("0.00"),
+            processor_fees=Decimal("29.99"),
+            net_payout=Decimal("999.01"),
+            entry_manifest_hash="c" * 64,
+            reconciliation_state="matched",
+            settled_at=now,
+        ),
+    ])
+    await db_session.commit()
+
+    report = await get_reports_fees(
+        range="this_month",
+        from_date=None,
+        to_date=None,
+        db=db_session,
+        current_user=owner,
+    )
+
+    assert report.customer_card_fees_collected == "3.00"
+    assert report.provider_fees_paid == "2.99"
+    assert report.net_fee_recovery == "0.01"
+    assert report.settlement_batches == 1
+    assert report.reconciliation_attention == 1
+    assert [row.model_dump() for row in report.provider_expenses] == [{
+        "provider": "quickbooks_payments",
+        "settlement_batches": 1,
+        "gross_processed": "103.00",
+        "customer_card_fees_collected": "3.00",
+        "processing_fees": "2.99",
+        "net_fee_recovery": "0.01",
+        "net_payout": "100.01",
+    }]

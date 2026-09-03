@@ -23,12 +23,17 @@ from app.services.quickbooks_accounting_service import (
     QuickBooksAccountingError,
     change_data_capture,
     create_refund_receipt,
+    qbp_settlement_window,
     sync_invoice,
     sync_payment,
 )
 from app.services.quickbooks_payments_service import QuickBooksPaymentError, get_charge, is_successful_charge
 from app.services.quickbooks_service import QuickBooksOAuthError, refresh_access_token, save_token_set
-from app.services.db048_accounting_reconciliation import sync_db048_principal_invoice
+from app.services.db048_accounting_reconciliation import (
+    DB048ReconciliationError,
+    reconcile_qbp_native_settlements,
+    sync_db048_principal_invoice,
+)
 
 
 QUICKBOOKS_INVOICE_SYNC_EVENT = "quickbooks.invoice.sync.v1"
@@ -399,7 +404,14 @@ async def backfill_quickbooks_cdc(
     session_factory: async_sessionmaker[AsyncSession] = AsyncSessionLocal,
 ) -> dict[str, int]:
     """Daily recovery for missed QBO webhooks and provider-side changes."""
-    results = {"connections": 0, "entities": 0, "failed": 0}
+    results = {
+        "connections": 0,
+        "entities": 0,
+        "settlement_batches": 0,
+        "settlement_deferred": 0,
+        "settlement_manual": 0,
+        "failed": 0,
+    }
     async with session_factory() as db:
         connections = (await db.execute(
             select(QuickBooksConnection).where(
@@ -413,6 +425,15 @@ async def backfill_quickbooks_cdc(
             try:
                 await _refresh_if_needed(connection)
                 changes = await change_data_capture(connection, changed_since=changed_since)
+                overlap_start = min(
+                    changed_since.date(),
+                    (_now() - timedelta(days=7)).date(),
+                )
+                settlement_records = await qbp_settlement_window(
+                    connection,
+                    date_from=overlap_start,
+                    date_to=_now().date(),
+                )
                 for entity in changes.get("Invoice", []):
                     provider_id = str(entity.get("Id") or "")
                     invoice = (await db.execute(
@@ -440,10 +461,27 @@ async def backfill_quickbooks_cdc(
                         if payment:
                             payment.quickbooks_reconciled_at = _now()
                             payment.quickbooks_sync_error = None
-                results["entities"] += sum(len(items) for items in changes.values())
+                settlement_result = await reconcile_qbp_native_settlements(
+                    db,
+                    connection=connection,
+                    deposits=settlement_records["Deposit"],
+                    payments=changes.get("Payment", []),
+                    purchases=settlement_records["Purchase"],
+                )
+                results["settlement_batches"] += settlement_result["batches"]
+                results["settlement_deferred"] += settlement_result["deferred"]
+                results["settlement_manual"] += settlement_result["manual"]
+                results["entities"] += (
+                    sum(len(items) for items in changes.values())
+                    + sum(len(items) for items in settlement_records.values())
+                )
                 connection.last_cdc_at = _now()
                 connection.last_cdc_error = None
-            except (QuickBooksAccountingError, QuickBooksOAuthError) as exc:
+            except (
+                DB048ReconciliationError,
+                QuickBooksAccountingError,
+                QuickBooksOAuthError,
+            ) as exc:
                 connection.last_cdc_error = str(exc)
                 results["failed"] += 1
         await db.commit()

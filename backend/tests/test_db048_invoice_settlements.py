@@ -1052,6 +1052,7 @@ async def test_quickbooks_payments_partial_attempt_uses_scoped_provider_and_conf
             id="qbp-charge-partial-25",
             amount=kwargs["amount"],
             status="CAPTURED",
+            raw={"context": {"clientTransID": "intuit-client-partial-25"}},
         )
 
     monkeypatch.setattr(settlement_endpoints, "_refresh_connection_if_needed", refresh_noop)
@@ -1072,13 +1073,18 @@ async def test_quickbooks_payments_partial_attempt_uses_scoped_provider_and_conf
     assert confirmed.attempt.state == "confirmed"
     assert confirmed.attempt.provider == "quickbooks_payments"
     assert confirmed.attempt.provider_charge_id == "qbp-charge-partial-25"
+    assert confirmed.attempt.provider_reference == "intuit-client-partial-25"
     assert money(confirmed.settlement.confirmed_principal) == Decimal("25.00")
     assert observed["token"] == "opaque-browser-token"
     assert observed["request_id"] == f"db048-attempt-{creation.attempt.id}"
+    assert observed["description"] == (
+        f"{tenant.name} invoice {invoice.invoice_number}"
+    )
     payment = await db_session.scalar(select(Payment).where(
         Payment.invoice_payment_attempt_id == confirmed.attempt.id,
     ))
     assert payment.method == PaymentMethod.QUICKBOOKS
+    assert payment.reference_number == "intuit-client-partial-25"
     assert "opaque-browser-token" not in str(confirmed.attempt.manual_evidence)
     ledger_payloads = (await db_session.execute(select(
         InvoicePaymentLedgerEvent.money_snapshot,
