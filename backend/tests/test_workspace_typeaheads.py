@@ -292,3 +292,44 @@ async def test_workspace_typeaheads_preserve_customer_and_fleet_scopes(client, w
     fleet_vehicles = await client.get("/api/v1/vehicles/typeahead", headers=fleet_headers)
     assert fleet_vehicles.status_code == 200
     assert [item["id"] for item in fleet_vehicles.json()] == [str(ctx["internal_vehicle"].id)]
+
+
+@pytest.mark.asyncio
+async def test_inventory_typeahead_ranks_usable_parts_above_placeholders(
+    client, db_session, workspace_typeahead_context
+):
+    """A stocked part must not fall past the limit behind unstocked placeholders.
+
+    Imported catalogues carry hundreds of zero-stock placeholder rows, and under
+    a plain A-Z sort a search for "tire" returned six spellings of an unstocked
+    "Brand new tire" while the one part with 12 on the shelf sat past the cut —
+    indistinguishable, at the truck, from the part not existing.
+    """
+    ctx = workspace_typeahead_context
+    tenant_id = ctx["inventory"].tenant_id
+    suffix = uuid4().hex[:6]
+
+    # Placeholders that sort first alphabetically, and the stocked part last.
+    for index, name in enumerate(["Aaa tire brand new", "Aab tire drive", "Aac tire steer"]):
+        db_session.add(Inventory(
+            tenant_id=tenant_id, sku=f"PH-{suffix}-{index}", name=name,
+            stock_quantity=0, is_placeholder=True,
+            cost=Decimal("0.00"), selling_price=Decimal("0.00"),
+        ))
+    stocked = Inventory(
+        tenant_id=tenant_id, sku=f"TIR-{suffix}", name="Zzz tire TOYO",
+        stock_quantity=12, is_placeholder=False,
+        cost=Decimal("250.00"), selling_price=Decimal("410.00"),
+    )
+    db_session.add(stocked)
+    await db_session.commit()
+
+    response = await client.get(
+        "/api/v1/inventory/typeahead",
+        params={"q": "tire", "in_stock": "false", "limit": 2},
+        headers=_auth(ctx["owner_token"]),
+    )
+    assert response.status_code == 200
+    returned = [item["id"] for item in response.json()]
+    assert str(stocked.id) in returned, "the stocked part was crowded out by placeholders"
+    assert returned[0] == str(stocked.id)

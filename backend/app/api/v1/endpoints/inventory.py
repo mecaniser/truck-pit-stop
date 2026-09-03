@@ -409,10 +409,21 @@ async def inventory_typeahead(
             )
         )
 
+    # Rank what the picker can actually use before ranking it alphabetically.
+    # A catalogue this size holds hundreds of zero-stock placeholder rows
+    # imported from Easy Truck Shop, and under a plain A-Z sort they filled the
+    # whole limit: searching "tire" returned six spellings of an unstocked
+    # "Brand new tire" while the stocked part sat past the cut. Sort stocked
+    # parts first, then real catalogue rows over placeholders.
     result = await db.execute(
         select(Inventory)
         .where(*filters)
-        .order_by(func.lower(Inventory.name), Inventory.id)
+        .order_by(
+            (Inventory.stock_quantity > 0).desc(),
+            Inventory.is_placeholder.asc(),
+            func.lower(Inventory.name),
+            Inventory.id,
+        )
         .limit(limit)
     )
     return [
