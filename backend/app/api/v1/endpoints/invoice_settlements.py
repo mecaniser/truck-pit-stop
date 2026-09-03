@@ -1582,7 +1582,17 @@ async def update_card_provider_configuration(
         readiness_state="pending_readiness_check", is_active=True,
         actor_user_id=actor.id,
         actor_name_snapshot=f"{actor.first_name} {actor.last_name}".strip(),
-        provider_account_snapshot=tenant.stripe_account_id if selected_provider == "stripe_connect" else None,
+        # QBP settlement rows are partitioned by the connected Intuit company
+        # realm. Freeze that same provider identity on the configuration so
+        # attempts and later Deposit/Payment/Purchase imports share one
+        # database-enforced identity boundary.
+        provider_account_snapshot=(
+            tenant.stripe_account_id
+            if selected_provider == "stripe_connect"
+            else str(qbo_connection.realm_id)
+            if qbo_connection and qbo_connection.realm_id
+            else None
+        ),
         qbo_realm_snapshot=qbo_connection.realm_id if qbo_connection else None,
         writer_strategy=writer_strategy,
         idempotency_key=idempotency_key,

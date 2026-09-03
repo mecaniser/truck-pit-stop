@@ -347,11 +347,19 @@ async def provider_readiness(
             reasons.append("stripe_connect_onboarding_incomplete")
     elif provider == "quickbooks_payments":
         provider_gate = bool(settings.QUICKBOOKS_PAYMENTS_INVOICE_PAYMENTS_APPROVED)
-        onboarding = qbp_scope_ready
+        qbp_provider_identity_ready = bool(
+            config
+            and qbo
+            and qbo.realm_id
+            and config.provider_account_snapshot == str(qbo.realm_id)
+        )
+        onboarding = qbp_scope_ready and qbp_provider_identity_ready
         if not provider_gate:
             reasons.append("quickbooks_payments_platform_approval_missing")
-        if not onboarding:
+        if not qbp_scope_ready:
             reasons.append("quickbooks_payments_onboarding_incomplete")
+        if not qbp_provider_identity_ready:
+            reasons.append("quickbooks_payments_provider_identity_missing")
     else:
         reasons.append("provider_not_selected")
 

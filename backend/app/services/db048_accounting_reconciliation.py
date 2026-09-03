@@ -4448,6 +4448,11 @@ QBP_NATIVE_FEE_MARKERS = (
     "system-recorded fee for quickbooks payments",
     "quickbooks payment fee",
 )
+QBP_NATIVE_VENDOR_MARKERS = (
+    "intuit",
+    "quickbooks payments",
+    "quickbooks payment",
+)
 QBP_FEE_SETTLEMENT_GRACE_DAYS = 7
 
 
@@ -4507,7 +4512,55 @@ def _qbo_payment_charge_id(payment: dict[str, Any]) -> str:
     reference = str(payment.get("PaymentRefNum") or "").strip()
     if reference.casefold().startswith("qbp "):
         return reference[4:].strip()
-    return reference
+    # An ordinary QBO reference is user-controlled bookkeeping text. It may
+    # collide with a provider charge ID and is not native QBP identity.
+    return ""
+
+
+def _qbo_linked_invoice_ids(payment: dict[str, Any]) -> set[str]:
+    linked_ids: set[str] = set()
+    for line in payment.get("Line") or []:
+        if not isinstance(line, dict):
+            continue
+        for linked in line.get("LinkedTxn") or []:
+            if (
+                isinstance(linked, dict)
+                and str(linked.get("TxnType") or "").casefold() == "invoice"
+                and linked.get("TxnId")
+            ):
+                linked_ids.add(str(linked["TxnId"]))
+    return linked_ids
+
+
+def _qbo_purchase_expense_account_refs(
+    purchase: dict[str, Any],
+) -> set[tuple[str, str]]:
+    references: set[tuple[str, str]] = set()
+    for line in purchase.get("Line") or []:
+        if not isinstance(line, dict):
+            continue
+        detail = line.get("AccountBasedExpenseLineDetail")
+        if not isinstance(detail, dict):
+            continue
+        reference = detail.get("AccountRef")
+        if isinstance(reference, dict):
+            references.add((
+                str(reference.get("value") or ""),
+                str(reference.get("name") or ""),
+            ))
+    return references
+
+
+def _qbo_reference_matches_configured_account(
+    references: set[tuple[str, str]],
+    configured: str,
+) -> bool:
+    expected = configured.strip().casefold()
+    return bool(expected) and any(
+        expected == value.strip().casefold()
+        or expected == name.strip().casefold()
+        for value, name in references
+    )
 
 
 def _qbo_is_native_qbp_fee(purchase: dict[str, Any]) -> bool:
@@ -4522,6 +4575,17 @@ def _qbo_is_native_qbp_fee(purchase: dict[str, Any]) -> bool:
     return any(marker in normalized for marker in QBP_NATIVE_FEE_MARKERS)
 
 
+def _qbo_has_native_qbp_vendor(purchase: dict[str, Any]) -> bool:
+    entity = purchase.get("EntityRef")
+    if not isinstance(entity, dict):
+        return False
+    vendor = " ".join((
+        str(entity.get("name") or ""),
+        str(entity.get("value") or ""),
+    )).casefold()
+    return any(marker in vendor for marker in QBP_NATIVE_VENDOR_MARKERS)
+
+
 async def _qbp_attempt_and_configuration(
     db: AsyncSession,
     *,
@@ -4534,6 +4598,7 @@ async def _qbp_attempt_and_configuration(
     attempt = await db.scalar(select(InvoicePaymentAttempt).where(
         InvoicePaymentAttempt.tenant_id == tenant_id,
         InvoicePaymentAttempt.provider == "quickbooks_payments",
+        InvoicePaymentAttempt.provider_account_id == realm_id,
         InvoicePaymentAttempt.provider_charge_id == charge_id,
         InvoicePaymentAttempt.state.in_(("confirmed", "refunded", "reversed")),
     ))
@@ -4545,6 +4610,7 @@ async def _qbp_attempt_and_configuration(
         == attempt.provider_configuration_version,
         TenantPaymentProviderConfiguration.selected_provider
         == "quickbooks_payments",
+        TenantPaymentProviderConfiguration.provider_account_snapshot == realm_id,
         TenantPaymentProviderConfiguration.qbo_realm_snapshot == realm_id,
         TenantPaymentProviderConfiguration.deleted_at.is_(None),
     ))
@@ -4652,6 +4718,43 @@ async def reconcile_qbp_native_settlements(
                 causes.append("configuration_snapshot_missing")
             elif money(payment.get("TotalAmt")) != money(attempt.provider_charge_amount):
                 causes.append("qbo_payment_amount_mismatch")
+            else:
+                local_payment = await db.scalar(select(Payment).where(
+                    Payment.tenant_id == tenant_id,
+                    Payment.id == attempt.payment_id,
+                    Payment.invoice_id == attempt.invoice_id,
+                    Payment.invoice_payment_attempt_id == attempt.id,
+                    Payment.quickbooks_charge_id == charge_id,
+                ))
+                local_invoice = await db.scalar(select(Invoice).where(
+                    Invoice.tenant_id == tenant_id,
+                    Invoice.id == attempt.invoice_id,
+                ))
+                local_customer = await db.scalar(select(Customer).where(
+                    Customer.tenant_id == tenant_id,
+                    Customer.id == attempt.customer_id,
+                ))
+                qbo_payment_id = str(payment.get("Id") or "")
+                if (
+                    local_payment is None
+                    or not local_payment.quickbooks_payment_id
+                    or str(local_payment.quickbooks_payment_id) != qbo_payment_id
+                ):
+                    causes.append("qbo_payment_identity_mismatch")
+                customer_ref = _qbo_ref_value(payment, "CustomerRef")
+                if (
+                    local_customer is None
+                    or not local_customer.quickbooks_customer_id
+                    or str(local_customer.quickbooks_customer_id) != customer_ref
+                ):
+                    causes.append("qbo_payment_customer_mismatch")
+                linked_invoice_ids = _qbo_linked_invoice_ids(payment)
+                if (
+                    local_invoice is None
+                    or not local_invoice.quickbooks_invoice_id
+                    or linked_invoice_ids != {str(local_invoice.quickbooks_invoice_id)}
+                ):
+                    causes.append("qbo_payment_invoice_mismatch")
         matched_configs = [config for _, attempt, config in resolved if attempt and config]
         if not matched_configs:
             result["skipped"] += 1
@@ -4706,6 +4809,20 @@ async def reconcile_qbp_native_settlements(
         ):
             causes.append("deposit_account_mismatch")
 
+        config = matched_configs[0]
+        if fee_purchase:
+            configured_expense = str(config.processor_fee_expense_account or "")
+            if not _qbo_reference_matches_configured_account(
+                _qbo_purchase_expense_account_refs(fee_purchase),
+                configured_expense,
+            ):
+                causes.append("fee_expense_account_mismatch")
+            if not _qbo_has_native_qbp_vendor(fee_purchase):
+                causes.append("fee_vendor_identity_mismatch")
+            fee_value = money(fee_purchase.get("TotalAmt"))
+            if fee_value <= ZERO or fee_value >= deposit_total:
+                causes.append("fee_amount_implausible")
+
         if fee_missing:
             try:
                 deposit_date = datetime.fromisoformat(group_key[0]).date()
@@ -4729,7 +4846,6 @@ async def reconcile_qbp_native_settlements(
         state = "matched" if not unique_causes else "manual_reconciliation_required"
         fee_amount = money(fee_purchase.get("TotalAmt")) if fee_purchase else ZERO
         net_payout = money(deposit_total - fee_amount) if fee_purchase else ZERO
-        config = matched_configs[0]
         mappings = _payout_mapping_snapshot(config)
         mapping_hash = _canonical_json_hash(mappings)
         occurred_at = _qbo_native_occurred_at(deposit)

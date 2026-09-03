@@ -24,6 +24,7 @@ from app.db.models.invoice_settlement import (
     TenantPaymentProviderConfiguration,
 )
 from app.db.models.provider_outbox import ProviderOutboxEvent, ProviderOutboxStatus
+from app.db.models.payment import Payment, PaymentMethod, PaymentStatus
 from app.db.models.quickbooks_connection import QuickBooksConnection
 from app.db.models.repair_order import RepairOrder, RepairOrderStatus
 from app.db.models.tenant import Tenant
@@ -1766,13 +1767,84 @@ async def _qbp_payout_attempt(
     charge_id: str,
     gross: Decimal,
     customer_fee: Decimal = Decimal("0.00"),
+    qbo_payment_id: str,
+    qbo_customer_id: str = "qbo-customer-qbp",
+    qbo_invoice_id: str = "qbo-invoice-qbp",
 ) -> InvoicePaymentAttempt:
     principal = gross - customer_fee
+    customer = Customer(
+        tenant_id=tenant.id,
+        first_name="QBP",
+        last_name="Customer",
+        email=f"qbp-{uuid4().hex}@example.com",
+        quickbooks_customer_id=qbo_customer_id,
+    )
+    db_session.add(customer)
+    await db_session.flush()
+    vehicle = Vehicle(
+        tenant_id=tenant.id,
+        customer_id=customer.id,
+        make="Volvo",
+        model="VNL",
+    )
+    db_session.add(vehicle)
+    await db_session.flush()
+    order = RepairOrder(
+        tenant_id=tenant.id,
+        customer_id=customer.id,
+        vehicle_id=vehicle.id,
+        order_number=f"RO-QBP-{uuid4().hex[:10]}",
+        status=RepairOrderStatus.INVOICED,
+        total_parts_cost=Decimal("0.00"),
+        total_labor_cost=principal,
+        total_cost=principal,
+    )
+    db_session.add(order)
+    await db_session.flush()
+    invoice = Invoice(
+        tenant_id=tenant.id,
+        repair_order_id=order.id,
+        invoice_number=f"INV-QBP-{uuid4().hex[:10]}",
+        status=InvoiceStatus.PAID,
+        subtotal=principal,
+        shop_supplies_amount=Decimal("0.00"),
+        service_fee_amount=Decimal("0.00"),
+        tax_amount=Decimal("0.00"),
+        discount_amount=Decimal("0.00"),
+        total_amount=principal,
+        quickbooks_invoice_id=qbo_invoice_id,
+        quickbooks_sync_status="synced",
+    )
+    db_session.add(invoice)
+    await db_session.flush()
+    settlement = InvoiceSettlement(
+        tenant_id=tenant.id,
+        invoice_id=invoice.id,
+        customer_id=customer.id,
+        principal_total=principal,
+        max_card_fee=customer_fee,
+        max_card_fee_tax=Decimal("0.00"),
+        sales_tax_rate_snapshot=Decimal("0.00"),
+        card_fee_rate_snapshot=Decimal("0.00"),
+        confirmed_principal=principal,
+        active_pending_principal=Decimal("0.00"),
+        unapplied_credit=Decimal("0.00"),
+        refund_pending=Decimal("0.00"),
+        state="paid",
+        currency="USD",
+        version=1,
+        last_event_sequence=0,
+        accounting_sync_status="synced",
+        qbo_realm_snapshot=realm,
+        initial_provider_configuration_version=1,
+    )
+    db_session.add(settlement)
+    await db_session.flush()
     attempt = InvoicePaymentAttempt(
         tenant_id=tenant.id,
-        invoice_id=uuid4(),
-        settlement_id=uuid4(),
-        customer_id=uuid4(),
+        invoice_id=invoice.id,
+        settlement_id=settlement.id,
+        customer_id=customer.id,
         source="customer_portal",
         rail="card",
         provider="quickbooks_payments",
@@ -1801,6 +1873,23 @@ async def _qbp_payout_attempt(
     )
     db_session.add(attempt)
     await db_session.flush()
+    payment = Payment(
+        tenant_id=tenant.id,
+        invoice_id=invoice.id,
+        payment_number=f"PAY-QBP-{uuid4().hex[:10]}",
+        amount=principal,
+        method=PaymentMethod.QUICKBOOKS,
+        status=PaymentStatus.COMPLETED,
+        quickbooks_charge_id=charge_id,
+        quickbooks_charge_status="CAPTURED",
+        quickbooks_payment_id=qbo_payment_id,
+        payment_provider="quickbooks_payments",
+        invoice_payment_attempt_id=attempt.id,
+    )
+    db_session.add(payment)
+    await db_session.flush()
+    attempt.payment_id = payment.id
+    await db_session.flush()
     return attempt
 
 
@@ -1814,6 +1903,7 @@ async def test_qbp_native_deposit_imports_exact_fee_and_is_idempotent(db_session
         charge_id="MT-QBP-100",
         gross=Decimal("103.00"),
         customer_fee=Decimal("3.00"),
+        qbo_payment_id="qbo-payment-100",
     )
     connection = QuickBooksConnection(
         tenant_id=tenant.id,
@@ -1826,6 +1916,10 @@ async def test_qbp_native_deposit_imports_exact_fee_and_is_idempotent(db_session
         "Id": "qbo-payment-100",
         "TotalAmt": 103.0,
         "PaymentRefNum": "QBP MT-QBP-100",
+        "CustomerRef": {"value": "qbo-customer-qbp"},
+        "Line": [{"LinkedTxn": [{
+            "TxnId": "qbo-invoice-qbp", "TxnType": "Invoice",
+        }]}],
         "TxnDate": "2026-09-03",
         "CreditCardPayment": {
             "CreditChargeResponse": {"CCTransId": "MT-QBP-100"},
@@ -1845,7 +1939,14 @@ async def test_qbp_native_deposit_imports_exact_fee_and_is_idempotent(db_session
         "TotalAmt": 2.99,
         "TxnDate": "2026-09-03",
         "AccountRef": {"value": "35", "name": "bank-qbp"},
+        "EntityRef": {"value": "vendor-intuit", "name": "Intuit Payment Solutions"},
         "PrivateNote": "System-recorded fee for QuickBooks Payments",
+        "Line": [{
+            "Description": "QuickBooks Payments fee",
+            "AccountBasedExpenseLineDetail": {
+                "AccountRef": {"value": "expense-1", "name": "Processor Fees"},
+            },
+        }],
     }
 
     first = await reconcile_qbp_native_settlements(
@@ -1939,6 +2040,227 @@ async def test_qbp_native_deposit_imports_exact_fee_and_is_idempotent(db_session
 
 
 @pytest.mark.asyncio
+async def test_qbp_native_deposit_rejects_unprefixed_reference_collision(
+    db_session,
+) -> None:
+    tenant = await _tenant_with_qbp_configuration(db_session)
+    await _qbp_payout_attempt(
+        db_session,
+        tenant=tenant,
+        realm="realm-qbp",
+        charge_id="MT-QBP-COLLISION",
+        gross=Decimal("40.00"),
+        qbo_payment_id="qbo-payment-collision",
+    )
+    connection = QuickBooksConnection(
+        tenant_id=tenant.id,
+        realm_id="realm-qbp",
+        status="connected",
+        scopes="com.intuit.quickbooks.accounting",
+        encrypted_access_token="test",
+    )
+    result = await reconcile_qbp_native_settlements(
+        db_session,
+        connection=connection,
+        deposits=[{
+            "Id": "qbo-deposit-collision",
+            "TotalAmt": 40.0,
+            "TxnDate": "2026-09-03",
+            "DepositToAccountRef": {"value": "bank-qbp"},
+            "Line": [{"LinkedTxn": [{
+                "TxnId": "qbo-payment-collision", "TxnType": "Payment",
+            }]}],
+        }],
+        payments=[{
+            "Id": "qbo-payment-collision",
+            "TotalAmt": 40.0,
+            # This is ordinary bookkeeping text, not native QBP identity.
+            "PaymentRefNum": "MT-QBP-COLLISION",
+            "CustomerRef": {"value": "qbo-customer-qbp"},
+            "Line": [{"LinkedTxn": [{
+                "TxnId": "qbo-invoice-qbp", "TxnType": "Invoice",
+            }]}],
+            "TxnDate": "2026-09-03",
+        }],
+        purchases=[],
+    )
+    assert result == {
+        "batches": 0,
+        "matched": 0,
+        "manual": 0,
+        "deferred": 0,
+        "skipped": 1,
+    }
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("mismatch", "expected_cause"),
+    (
+        ("payment_id", "qbo_payment_identity_mismatch"),
+        ("customer", "qbo_payment_customer_mismatch"),
+        ("invoice", "qbo_payment_invoice_mismatch"),
+    ),
+)
+async def test_qbp_native_payment_requires_persisted_qbo_identity(
+    db_session,
+    mismatch: str,
+    expected_cause: str,
+) -> None:
+    tenant = await _tenant_with_qbp_configuration(db_session)
+    await _qbp_payout_attempt(
+        db_session,
+        tenant=tenant,
+        realm="realm-qbp",
+        charge_id="MT-QBP-IDENTITY",
+        gross=Decimal("40.00"),
+        qbo_payment_id="qbo-payment-identity",
+    )
+    connection = QuickBooksConnection(
+        tenant_id=tenant.id,
+        realm_id="realm-qbp",
+        status="connected",
+        scopes="com.intuit.quickbooks.accounting",
+        encrypted_access_token="test",
+    )
+    payment = {
+        "Id": (
+            "qbo-payment-wrong"
+            if mismatch == "payment_id"
+            else "qbo-payment-identity"
+        ),
+        "TotalAmt": 40.0,
+        "PaymentRefNum": "QBP MT-QBP-IDENTITY",
+        "CustomerRef": {"value": (
+            "qbo-customer-wrong"
+            if mismatch == "customer"
+            else "qbo-customer-qbp"
+        )},
+        "Line": [{"LinkedTxn": [{
+            "TxnId": (
+                "qbo-invoice-wrong"
+                if mismatch == "invoice"
+                else "qbo-invoice-qbp"
+            ),
+            "TxnType": "Invoice",
+        }]}],
+        "TxnDate": "2026-09-03",
+    }
+    deposit = {
+        "Id": f"qbo-deposit-{mismatch}",
+        "TotalAmt": 40.0,
+        "TxnDate": "2026-09-03",
+        "DepositToAccountRef": {"value": "bank-qbp"},
+        "Line": [{"LinkedTxn": [{
+            "TxnId": payment["Id"], "TxnType": "Payment",
+        }]}],
+    }
+    purchase = {
+        "Id": f"qbo-fee-{mismatch}",
+        "TotalAmt": 1.20,
+        "TxnDate": "2026-09-03",
+        "AccountRef": {"value": "bank-qbp"},
+        "EntityRef": {"value": "vendor-intuit", "name": "Intuit Payment Solutions"},
+        "PrivateNote": "System-recorded fee for QuickBooks Payments",
+        "Line": [{"AccountBasedExpenseLineDetail": {
+            "AccountRef": {"value": "expense-1", "name": "Processor Fees"},
+        }}],
+    }
+    result = await reconcile_qbp_native_settlements(
+        db_session,
+        connection=connection,
+        deposits=[deposit],
+        payments=[payment],
+        purchases=[purchase],
+    )
+    batch = await db_session.scalar(select(ProviderSettlementBatch).where(
+        ProviderSettlementBatch.provider_batch_id == deposit["Id"],
+    ))
+    assert result["manual"] == 1
+    assert batch is not None
+    assert expected_cause in str(batch.mismatch_reason)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("mismatch", "expected_cause"),
+    (
+        ("expense", "fee_expense_account_mismatch"),
+        ("vendor", "fee_vendor_identity_mismatch"),
+        ("amount", "fee_amount_implausible"),
+    ),
+)
+async def test_qbp_native_fee_requires_account_vendor_and_plausible_amount(
+    db_session,
+    mismatch: str,
+    expected_cause: str,
+) -> None:
+    tenant = await _tenant_with_qbp_configuration(db_session)
+    await _qbp_payout_attempt(
+        db_session,
+        tenant=tenant,
+        realm="realm-qbp",
+        charge_id="MT-QBP-FEE-FENCE",
+        gross=Decimal("40.00"),
+        qbo_payment_id="qbo-payment-fee-fence",
+    )
+    connection = QuickBooksConnection(
+        tenant_id=tenant.id,
+        realm_id="realm-qbp",
+        status="connected",
+        scopes="com.intuit.quickbooks.accounting",
+        encrypted_access_token="test",
+    )
+    payment = {
+        "Id": "qbo-payment-fee-fence",
+        "TotalAmt": 40.0,
+        "PaymentRefNum": "QBP MT-QBP-FEE-FENCE",
+        "CustomerRef": {"value": "qbo-customer-qbp"},
+        "Line": [{"LinkedTxn": [{
+            "TxnId": "qbo-invoice-qbp", "TxnType": "Invoice",
+        }]}],
+        "TxnDate": "2026-09-03",
+    }
+    deposit = {
+        "Id": f"qbo-deposit-fee-{mismatch}",
+        "TotalAmt": 40.0,
+        "TxnDate": "2026-09-03",
+        "DepositToAccountRef": {"value": "bank-qbp"},
+        "Line": [{"LinkedTxn": [{
+            "TxnId": payment["Id"], "TxnType": "Payment",
+        }]}],
+    }
+    purchase = {
+        "Id": f"qbo-fee-fence-{mismatch}",
+        "TotalAmt": 40.0 if mismatch == "amount" else 1.20,
+        "TxnDate": "2026-09-03",
+        "AccountRef": {"value": "bank-qbp"},
+        "EntityRef": {
+            "value": "vendor-other" if mismatch == "vendor" else "vendor-intuit",
+            "name": "Other Vendor" if mismatch == "vendor" else "Intuit Payment Solutions",
+        },
+        "PrivateNote": "System-recorded fee for QuickBooks Payments",
+        "Line": [{"AccountBasedExpenseLineDetail": {"AccountRef": {
+            "value": "expense-wrong" if mismatch == "expense" else "expense-1",
+            "name": "Other Expense" if mismatch == "expense" else "Processor Fees",
+        }}}],
+    }
+    result = await reconcile_qbp_native_settlements(
+        db_session,
+        connection=connection,
+        deposits=[deposit],
+        payments=[payment],
+        purchases=[purchase],
+    )
+    batch = await db_session.scalar(select(ProviderSettlementBatch).where(
+        ProviderSettlementBatch.provider_batch_id == deposit["Id"],
+    ))
+    assert result["manual"] == 1
+    assert batch is not None
+    assert expected_cause in str(batch.mismatch_reason)
+
+
+@pytest.mark.asyncio
 async def test_qbp_native_deposit_missing_fee_requires_manual_reconciliation(
     db_session,
 ) -> None:
@@ -1949,6 +2271,7 @@ async def test_qbp_native_deposit_missing_fee_requires_manual_reconciliation(
         realm="realm-qbp",
         charge_id="MT-QBP-MISSING-FEE",
         gross=Decimal("40.00"),
+        qbo_payment_id="qbo-payment-missing-fee",
     )
     connection = QuickBooksConnection(
         tenant_id=tenant.id,
@@ -1974,6 +2297,10 @@ async def test_qbp_native_deposit_missing_fee_requires_manual_reconciliation(
             "Id": "qbo-payment-missing-fee",
             "TotalAmt": 40.0,
             "PaymentRefNum": "QBP MT-QBP-MISSING-FEE",
+            "CustomerRef": {"value": "qbo-customer-qbp"},
+            "Line": [{"LinkedTxn": [{
+                "TxnId": "qbo-invoice-qbp", "TxnType": "Invoice",
+            }]}],
             "TxnDate": "2026-08-01",
         }],
         purchases=[],
@@ -2001,6 +2328,7 @@ async def test_qbp_native_deposit_waits_for_late_fee_before_freezing_manifest(
         charge_id="MT-QBP-LATE-FEE",
         gross=Decimal("103.00"),
         customer_fee=Decimal("3.00"),
+        qbo_payment_id="qbo-payment-late-fee",
     )
     connection = QuickBooksConnection(
         tenant_id=tenant.id,
@@ -2014,6 +2342,10 @@ async def test_qbp_native_deposit_waits_for_late_fee_before_freezing_manifest(
         "Id": "qbo-payment-late-fee",
         "TotalAmt": 103.0,
         "PaymentRefNum": "QBP MT-QBP-LATE-FEE",
+        "CustomerRef": {"value": "qbo-customer-qbp"},
+        "Line": [{"LinkedTxn": [{
+            "TxnId": "qbo-invoice-qbp", "TxnType": "Invoice",
+        }]}],
         "TxnDate": txn_date,
     }
     deposit = {
@@ -2055,7 +2387,14 @@ async def test_qbp_native_deposit_waits_for_late_fee_before_freezing_manifest(
             "TotalAmt": 2.99,
             "TxnDate": txn_date,
             "AccountRef": {"value": "bank-qbp"},
+            "EntityRef": {"value": "vendor-intuit", "name": "Intuit Payment Solutions"},
             "PrivateNote": "System-recorded fee for QuickBooks Payments",
+            "Line": [{
+                "Description": "QuickBooks Payments fee",
+                "AccountBasedExpenseLineDetail": {
+                    "AccountRef": {"value": "expense-1", "name": "Processor Fees"},
+                },
+            }],
         }],
     )
     await db_session.flush()

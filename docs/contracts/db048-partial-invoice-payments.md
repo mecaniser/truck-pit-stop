@@ -524,11 +524,16 @@ objects:
 - a `Deposit` is the payout batch and supplies the gross amount, bank account,
   linked QBO Payment IDs, transaction date, and stable deposit ID;
 - each linked QBO `Payment` is resolved to a DB-048 card allocation first by
-  `CreditCardPayment.CreditChargeResponse.CCTransId`, then by the exact
-  `QBP <charge>` payment reference written by DieselBridge;
+  `CreditCardPayment.CreditChargeResponse.CCTransId`, then only by the exact
+  `QBP <charge>` payment reference written by DieselBridge. Its native QBO ID,
+  customer, and sole linked invoice must equal the persisted tenant-scoped
+  Payment, Customer, and Invoice identities before it can match;
 - the system-recorded QuickBooks Payments fee `Purchase` supplies the exact
-  processor expense. No advertised percentage or observed historical rate is
-  an accounting input;
+  processor expense. It must carry native Intuit/QuickBooks Payments vendor
+  identity, post against the snapshotted processor-fee expense account and
+  payout bank account, and be positive but smaller than the deposit. No
+  advertised percentage, ordinary free-text reference, or observed historical
+  rate is an accounting input;
 - the bank-feed match target is `Deposit.TotalAmt - Purchase.TotalAmt`, adjusted
   only by authoritative refund/dispute records when those are present.
 

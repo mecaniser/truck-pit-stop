@@ -985,6 +985,93 @@ async def test_quickbooks_payments_provider_setting_is_dormant_and_nonmutating(
 
 
 @pytest.mark.asyncio
+async def test_quickbooks_payments_provider_setting_freezes_connected_realm(
+    db_session,
+    monkeypatch,
+):
+    tenant, owner, _customer, _invoice = await _financial_context(
+        db_session, monkeypatch,
+    )
+    monkeypatch.setattr(
+        settings, "QUICKBOOKS_PAYMENTS_INVOICE_PAYMENTS_APPROVED", True,
+    )
+    connection = await db_session.scalar(select(QuickBooksConnection).where(
+        QuickBooksConnection.tenant_id == tenant.id,
+    ))
+    connection.scopes = (
+        "com.intuit.quickbooks.accounting com.intuit.quickbooks.payment"
+    )
+    active_before = await load_active_configuration(db_session, tenant.id)
+
+    readiness = await update_card_provider_configuration(
+        body=CardProviderConfigurationUpdate(
+            selected_provider="quickbooks_payments",
+            expected_version=active_before.version,
+        ),
+        idempotency_header="qbp-provider-realm-snapshot",
+        db=db_session,
+        current_user=owner,
+    )
+    active_after = await load_active_configuration(db_session, tenant.id)
+
+    assert active_after.provider_account_snapshot == str(connection.realm_id)
+    assert active_after.qbo_realm_snapshot == str(connection.realm_id)
+    assert readiness.provider_onboarding_ready is True
+    assert "quickbooks_payments_provider_identity_missing" not in readiness.reasons
+
+
+@pytest.mark.asyncio
+async def test_quickbooks_payments_legacy_null_provider_identity_is_not_ready(
+    db_session,
+    monkeypatch,
+):
+    tenant, owner, _customer, _invoice = await _financial_context(
+        db_session, monkeypatch,
+    )
+    monkeypatch.setattr(
+        settings, "QUICKBOOKS_PAYMENTS_INVOICE_PAYMENTS_APPROVED", True,
+    )
+    connection = await db_session.scalar(select(QuickBooksConnection).where(
+        QuickBooksConnection.tenant_id == tenant.id,
+    ))
+    connection.scopes = (
+        "com.intuit.quickbooks.accounting com.intuit.quickbooks.payment"
+    )
+    previous = await load_active_configuration(db_session, tenant.id, lock=True)
+    previous.is_active = False
+    previous.deactivated_at = datetime.now(timezone.utc)
+    legacy = TenantPaymentProviderConfiguration(
+        tenant_id=tenant.id,
+        version=previous.version + 1,
+        selected_provider="quickbooks_payments",
+        readiness_state="ready",
+        is_active=True,
+        actor_user_id=owner.id,
+        actor_name_snapshot="Garage Owner",
+        provider_account_snapshot=None,
+        qbo_realm_snapshot=connection.realm_id,
+        writer_strategy="dieselbridge",
+        idempotency_key="qbp-legacy-null-provider-identity",
+        request_hash="n" * 64,
+        stripe_clearing_account="Stripe Clearing",
+        qbp_clearing_account="QBP Clearing",
+        check_deposit_account="Undeposited Funds",
+        zelle_ach_account="Zelle Clearing",
+        card_fee_income_account="Card Fee Income",
+        processor_fee_expense_account="Processor Fees",
+        sales_tax_liability_account="Sales Tax Payable",
+        checking_account="Checking",
+    )
+    db_session.add(legacy)
+    await db_session.flush()
+
+    readiness = await provider_readiness(db_session, tenant, legacy)
+
+    assert readiness.provider_onboarding_ready is False
+    assert "quickbooks_payments_provider_identity_missing" in readiness.reasons
+
+
+@pytest.mark.asyncio
 async def test_quickbooks_payments_partial_attempt_uses_scoped_provider_and_confirms(
     db_session, monkeypatch,
 ):
@@ -1007,6 +1094,7 @@ async def test_quickbooks_payments_partial_attempt_uses_scoped_provider_and_conf
         is_active=True,
         actor_user_id=owner.id,
         actor_name_snapshot="Garage Owner",
+        provider_account_snapshot=str(connection.realm_id),
         qbo_realm_snapshot=connection.realm_id,
         writer_strategy="dieselbridge",
         idempotency_key="qbp-partial-provider-config",
@@ -1131,6 +1219,7 @@ async def test_quickbooks_payments_unknown_outcome_stays_pending_and_reconciles_
         is_active=True,
         actor_user_id=owner.id,
         actor_name_snapshot="Garage Owner",
+        provider_account_snapshot=str(connection.realm_id),
         qbo_realm_snapshot=connection.realm_id,
         writer_strategy="dieselbridge",
         idempotency_key="qbp-unknown-provider-config",
@@ -1258,6 +1347,7 @@ async def test_quickbooks_amount_mismatch_queues_and_completes_full_provider_ref
         is_active=True,
         actor_user_id=owner.id,
         actor_name_snapshot="Garage Owner",
+        provider_account_snapshot=str(connection.realm_id),
         qbo_realm_snapshot=connection.realm_id,
         writer_strategy="dieselbridge",
         idempotency_key="qbp-mismatch-provider-config",
@@ -1402,6 +1492,7 @@ async def test_legacy_quickbooks_charge_route_delegates_to_db048_attempt(
         is_active=True,
         actor_user_id=previous.actor_user_id,
         actor_name_snapshot="Garage Owner",
+        provider_account_snapshot=str(connection.realm_id),
         qbo_realm_snapshot=connection.realm_id,
         writer_strategy="dieselbridge",
         idempotency_key="legacy-qbp-adapter-provider-config",
