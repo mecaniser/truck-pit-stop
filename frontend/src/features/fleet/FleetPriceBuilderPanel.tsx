@@ -506,7 +506,12 @@ function ComplaintSection({ orderId, description, canEdit }: {
           aria-label="Complaint"
         />
       </div>
-      <div className="wo-chips">
+      {/* One scrollable row that fades at the edge, matching the shop's service
+          quick-pick: a second row of chips competes with the box above it, and
+          the fade is what says the row continues. About seven fit before the
+          fade; the rest are reached by scrolling, so none are dropped — unlike
+          the shop's list, these are a fixed set with no search to fall back on. */}
+      <div className="wo-chips wo-chips-scroll">
         {COMPLAINT_CHIPS.map((chip) => (
           <button
             type="button"

@@ -286,6 +286,22 @@ describe('FleetPriceBuilderPanel', () => {
     ))
   })
 
+  it('keeps every complaint suggestion reachable in one scrolling row', async () => {
+    // The chips are a fixed set with no search behind them, so capping the
+    // rendered count would make the tail unreachable. One row that scrolls,
+    // faded at the edge, is what says it continues.
+    mockQueries({ description: null })
+    const { container } = renderPanel()
+    await screen.findByLabelText('Complaint')
+
+    const row = container.querySelector('.wo-chips-scroll')
+    expect(row).not.toBeNull()
+    expect(row!.querySelectorAll('.wo-chip')).toHaveLength(10)
+    for (const chip of ['Air leak', 'Oil leak', "Won't start"]) {
+      expect(within(row as HTMLElement).getByText(chip)).toBeInTheDocument()
+    }
+  })
+
   it('puts the add bar above the list it fills', async () => {
     mockQueries()
     const { container } = renderPanel()

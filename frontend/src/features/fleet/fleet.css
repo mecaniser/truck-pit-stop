@@ -414,6 +414,13 @@
 .fleet-root .fleet-sidekick-shell input:focus-visible,
 .fleet-root .fleet-sidekick-shell select:focus-visible,
 .fleet-root .fleet-sidekick-shell textarea:focus-visible{outline:3px solid rgba(66,200,255,.5);outline-offset:2px;}
+/* Exception: inputs whose wrapper already draws the focus ring. The blanket
+   rule above is the right default for a bare field, but on a composed control
+   it paints a second rectangle inside the bar and leaves the icon outside the
+   thing that reads as focused. The wrapper's :focus-within carries it instead,
+   so the whole control lights up as one field. */
+.fleet-root .fleet-sidekick-shell .wo-svc-search input:focus-visible,
+.fleet-root .fleet-sidekick-shell .fld-search input:focus-visible{outline:none;}
 .fleet-root .fleet-field-group{min-width:0;margin:0;padding:0;border:0;}
 .fleet-root .fleet-field-group>legend{display:block;width:100%;margin-bottom:5px;}
 .fleet-root .fleet-form-grid{display:grid;gap:var(--sidekick-field-gap);min-width:0;}
@@ -1161,9 +1168,16 @@
 .fleet-root .wo-chip.is-selected:active{transform:none;}
 
 .fleet-root .wo-svc-search{display:flex;align-items:center;gap:9px;height:46px;padding:0 13px;margin-bottom:8px;
-  background:var(--ink);border:1px solid var(--line);border-radius:9px;color:var(--muted-2);}
+  background:var(--ink);border:1px solid var(--line);border-radius:9px;color:var(--muted-2);
+  transition:border-color 140ms ease-out,box-shadow 140ms ease-out;}
+/* The field is the whole bar, icon included, so focus has to be drawn on the
+   bar. Left on the bare input it landed inside the container — a second, inset
+   rectangle with the search icon stranded outside the thing that looked focused. */
+.fleet-root .wo-svc-search:focus-within{border-color:var(--st-shop);
+  box-shadow:0 0 0 3px rgba(66,200,255,.22);}
 .fleet-root .wo-svc-search input{flex:1;min-width:0;height:100%;background:none;border:none;outline:none;
   color:var(--text);font:inherit;font-size:14px;}
+.fleet-root .wo-svc-search input:focus{outline:none;box-shadow:none;}
 .fleet-root .wo-service-search-empty{padding:12px 2px 2px;font-size:12.5px;line-height:1.5;color:var(--muted-2);}
 .fleet-root .wo-svc-list{max-height:290px;}
 /* The catalog is a reach target on glass, not a dense desktop list. */
@@ -1466,6 +1480,19 @@
 .fleet-root .fleet-ro-field input{height:46px;padding:0 13px;border:1px solid var(--line);border-radius:9px;
   background:var(--ink);color:var(--text);font:inherit;font-size:14px;}
 .fleet-root .fleet-ro-field input::placeholder{color:var(--muted-3);}
+
+/* Complaint suggestions: one row that scrolls, faded at the trailing edge so
+   the row visibly continues rather than looking truncated. Same pattern as the
+   shop's service quick-pick (.db-service-quickpick), kept at the fleet's touch
+   height — /fleet is a tablet held one-handed, where the shop's 28px chip would
+   be the wrong posture, not a consistency win. */
+.fleet-root .wo-chips-scroll{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;
+  padding-block:2px;
+  -webkit-overflow-scrolling:touch;overscroll-behavior-x:contain;
+  mask-image:linear-gradient(to right,#000 calc(100% - 28px),transparent 100%);
+  -webkit-mask-image:linear-gradient(to right,#000 calc(100% - 28px),transparent 100%);}
+.fleet-root .wo-chips-scroll::-webkit-scrollbar{display:none;}
+.fleet-root .wo-chips-scroll .wo-chip{flex:0 0 auto;}
 
 /* The complaint: a few lines of prose, sized for a thumb keyboard. */
 .fleet-root .fleet-ro-complaint{width:100%;min-height:88px;padding:12px 13px;resize:vertical;
