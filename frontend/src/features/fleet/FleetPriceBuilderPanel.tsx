@@ -292,7 +292,7 @@ export default function FleetPriceBuilderPanel({ repairOrderId, onClose, onChang
                     term={debouncedTerm}
                     candidates={candidates}
                     pending={applyOperation.isPending}
-                    onAdd={(candidate) => applyOperation.mutate(candidate)}
+                    onAdd={(candidate, hours) => applyOperation.mutate({ candidate, hours })}
                   />
                 ) : (
                   <PartResults
@@ -762,7 +762,7 @@ function OperationResults({ term, candidates, pending, onAdd }: {
   term: string
   candidates: RepairOperationCandidate[]
   pending: boolean
-  onAdd: (candidate: RepairOperationCandidate) => void
+  onAdd: (candidate: RepairOperationCandidate, hours: number) => void
 }) {
   if (term.trim().length < 2) {
     return <p className="wo-service-search-empty">Type at least two characters to search.</p>
@@ -773,17 +773,63 @@ function OperationResults({ term, candidates, pending, onAdd }: {
   return (
     <ul className="fleet-ro-results">
       {candidates.map((candidate) => (
-        <li key={candidate.operation_id}>
-          <div>
-            <strong>{candidate.name}</strong>
-            <small>{formatHoursMinutes(num(candidate.estimated_hours))} book time</small>
-          </div>
-          <button type="button" className="dbtn dbtn-ghost" disabled={pending} onClick={() => onAdd(candidate)}>
-            <Plus size={15} /> Add
-          </button>
-        </li>
+        <OperationResult
+          key={candidate.operation_id}
+          candidate={candidate}
+          pending={pending}
+          onAdd={onAdd}
+        />
       ))}
     </ul>
+  )
+}
+
+/**
+ * One search result.
+ *
+ * Work the shop has done before arrives with book time and adds in one tap.
+ * Work it has not seen arrives with none — the server offers it as a custom
+ * operation and asks for the hours, which it then remembers for next time. So a
+ * candidate with no hours gets a stepper here rather than an Add button that
+ * would post 0.00 and be refused (labor must be at least 0.01).
+ */
+function OperationResult({ candidate, pending, onAdd }: {
+  candidate: RepairOperationCandidate
+  pending: boolean
+  onAdd: (candidate: RepairOperationCandidate, hours: number) => void
+}) {
+  const bookTime = num(candidate.estimated_hours)
+  const isCustom = bookTime <= 0
+  const [hours, setHours] = useState(0.5)
+
+  return (
+    <li className={isCustom ? 'is-custom' : undefined}>
+      <div>
+        <strong>{candidate.name}</strong>
+        <small>
+          {isCustom
+            ? 'New to the shop — set how long it takes'
+            : `${formatHoursMinutes(bookTime)} book time`}
+        </small>
+      </div>
+      {isCustom && (
+        <DurationStepper
+          hours={hours}
+          onChange={setHours}
+          theme="dark"
+          size="lg"
+          ariaLabel={`Labor time for ${candidate.name}`}
+        />
+      )}
+      <button
+        type="button"
+        className="dbtn dbtn-ghost"
+        disabled={pending}
+        onClick={() => onAdd(candidate, isCustom ? hours : bookTime)}
+      >
+        <Plus size={15} /> Add
+      </button>
+    </li>
   )
 }
 

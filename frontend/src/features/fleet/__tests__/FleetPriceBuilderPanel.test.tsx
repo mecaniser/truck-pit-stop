@@ -320,6 +320,50 @@ describe('FleetPriceBuilderPanel', () => {
       .toBe(Node.DOCUMENT_POSITION_FOLLOWING)
   })
 
+  it('asks for hours on work the shop has never done, then sends them', async () => {
+    // A custom operation comes back with estimated_hours 0.00, and the server
+    // requires at least 0.01 — so forwarding the candidate's own hours was
+    // refused with a 422 the panel surfaced nowhere. Add read as a dead button.
+    mockQueries()
+    apiMocks.post.mockImplementation((url) => {
+      if (url.endsWith('/repair-ops/search')) {
+        return Promise.resolve({
+          data: {
+            candidates: [{
+              operation_id: 'custom:weld-bracket',
+              name: 'Weld Bracket',
+              description: 'New custom repair operation.',
+              estimated_hours: '0.00',
+              provider: 'internal_library',
+            }],
+            warnings: [],
+          },
+        })
+      }
+      return Promise.resolve({ data: {} })
+    })
+
+    const user = userEvent.setup()
+    renderPanel()
+
+    await user.type(await screen.findByLabelText('Search operations'), 'weld bracket')
+    expect(await screen.findByText('Weld Bracket')).toBeInTheDocument()
+    // It says why it needs input rather than claiming '0m book time'.
+    expect(screen.getByText(/set how long it takes/i)).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: /Increase duration/ }))
+    await user.click(screen.getByRole('button', { name: /^Add$/ }))
+
+    await waitFor(() => {
+      const applyCall = apiMocks.post.mock.calls.find(
+        (call) => String(call[0]).endsWith('/repair-ops/apply'),
+      )
+      expect(applyCall).toBeTruthy()
+      // Whatever the operator entered — never the candidate's unusable 0.00.
+      expect(Number(applyCall[1].estimated_hours)).toBeGreaterThan(0)
+    })
+  })
+
   it('does not offer editing once the order is frozen', async () => {
     mockQueries()
     apiMocks.get.mockImplementation((url: string) => {

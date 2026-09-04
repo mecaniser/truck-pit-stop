@@ -92,9 +92,23 @@ export function invalidateOrder(qc: QueryClient, orderId: string) {
   invalidateFleetAndCockpit(qc)
 }
 
+type ApiErrorDetail = string | { msg?: string }[] | undefined
+
+/**
+ * FastAPI reports a plain refusal as a string `detail`, but a validation
+ * failure as an array of field errors. Reading only the string meant a 422
+ * surfaced as nothing at all — the request failed and the panel said so
+ * nowhere, which is how "add a custom operation" looked like a dead button.
+ */
 function errorMessage(error: unknown, fallback: string): string {
-  const detail = (error as { response?: { data?: { detail?: string } } })?.response?.data?.detail
-  return detail || fallback
+  const detail = (error as { response?: { data?: { detail?: ApiErrorDetail } } })
+    ?.response?.data?.detail
+  if (typeof detail === 'string' && detail.trim()) return detail
+  if (Array.isArray(detail)) {
+    const messages = detail.map((item) => item?.msg).filter(Boolean)
+    if (messages.length) return messages.join('. ')
+  }
+  return fallback
 }
 
 /* ---------- reads ---------- */
@@ -170,15 +184,24 @@ export function useOperationSearch(orderId: string) {
   })
 }
 
+/**
+ * Add an operation to the order.
+ *
+ * `hours` is passed explicitly rather than taken from the candidate: a custom
+ * operation the shop has not done before comes back with estimated_hours 0.00,
+ * and the server requires at least 0.01 — so the caller supplies what the
+ * operator entered. Applying it also teaches the labor memory, which is why
+ * the next matching job arrives with book time already filled in.
+ */
 export function useApplyOperation(orderId: string, onDone?: () => void) {
   const qc = useQueryClient()
-  return useMutation<unknown, unknown, RepairOperationCandidate>({
-    mutationFn: async (candidate) =>
+  return useMutation<unknown, unknown, { candidate: RepairOperationCandidate; hours: number }>({
+    mutationFn: async ({ candidate, hours }) =>
       (await api.post(`/repair-orders/${orderId}/price-build/repair-ops/apply`, {
         operation_id: candidate.operation_id,
         name: candidate.name,
         description: candidate.description,
-        estimated_hours: candidate.estimated_hours,
+        estimated_hours: hours,
         provider: candidate.provider,
         auto_recalc_enabled: true,
       })).data,
