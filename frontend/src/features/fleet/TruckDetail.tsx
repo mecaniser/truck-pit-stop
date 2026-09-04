@@ -259,7 +259,7 @@ export default function TruckDetail({
       if (created) setRoPanelId(created.repair_order_id)
       else toast.success('Repair order created')
     },
-    onError: (e: any) => toast.error(e.response?.data?.detail || 'Failed to create repair order'),
+    onError: (e: AxiosError<{ detail?: string }>) => toast.error(e.response?.data?.detail || 'Failed to create repair order'),
   })
   const deleteIncidentPhoto = useMutation({
     mutationFn: async ({ incidentId, photoId }: { incidentId: string; photoId: string }) => {

@@ -318,7 +318,7 @@ describe('FleetPriceBuilderPanel', () => {
 
   it('puts the add bar above the list it fills', async () => {
     mockQueries()
-    const { container } = renderPanel()
+    renderPanel()
     await screen.findByText('Replace air line')
 
     const addWork = screen.getByRole('heading', { name: 'Add work' })
