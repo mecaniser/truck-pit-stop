@@ -88,6 +88,8 @@ export interface BoardWorkOrder {
   summary?: string | null
   mechanic?: string | null
   is_pm?: boolean
+  /** When the visit opened. Null until 133_fleet_board_opened_at has run. */
+  opened_at?: string | null
 }
 
 export interface PMServiceEntry {

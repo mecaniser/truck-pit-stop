@@ -267,6 +267,11 @@
 .fleet-root .tcard-wo--clear svg{color:var(--st-active);}
 .fleet-root .tcard-wo--action{width:100%;font-family:inherit;text-align:left;cursor:pointer;transition:border-color 140ms ease,background-color 140ms ease,transform 140ms var(--ease-out);}
 .fleet-root .tcard-wo--action .tcard-wo-st + .tcard-wo-st{margin-left:0;}
+/* How long the visit has been open. Quiet while it is a normal stop; red once
+   it has run long enough to be work that finished without anyone closing it. */
+.fleet-root .tcard-wo-age{font-weight:600;color:var(--muted-2);font-variant-numeric:tabular-nums;}
+.fleet-root .tcard-wo-st + .tcard-wo-age{margin-left:0;}
+.fleet-root .tcard-wo-age.is-stale{color:var(--red);}
 .fleet-root .tcard-wo-go{margin-left:2px;color:var(--muted-2) !important;}
 .fleet-root .tcard-wo--action:focus-visible{outline:3px solid rgba(66,200,255,.42);outline-offset:2px;}
 .fleet-root .tcard-wo--action:active{transform:scale(.985);}

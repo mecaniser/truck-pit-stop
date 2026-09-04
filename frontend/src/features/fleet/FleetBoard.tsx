@@ -1,17 +1,21 @@
 import { useState } from 'react'
 import { Wrench, Gauge, ClipboardList, MapPin, User, Search, ChevronDown, ChevronRight, Check, AlertTriangle, X } from 'lucide-react'
 import type { BoardTruck, FleetBoard as FleetBoardData, TruckStatus } from './types'
-import { STATUS_META, fleetUnitLabel, fmt, pmState, rank } from './helpers'
+import { STATUS_META, VISIT_STALE_AFTER_DAYS, fleetUnitLabel, fmt, pmState, rank, visitAge, visitIsStale } from './helpers'
 import { formatUSPhone } from '@/utils/phone'
 import FleetActivity from './FleetActivity'
 
-type QueueFilter = 'pm_planning' | 'open_work_orders'
+type QueueFilter = 'pm_planning' | 'open_work_orders' | 'visits_to_close'
 type Filter = 'all' | TruckStatus | QueueFilter
 type Sort = 'attention' | 'unit' | 'pm' | 'odo'
 
 const FILTER_COPY: Partial<Record<Filter, { title: string; detail: string }>> = {
   pm_planning: { title: 'PM to plan', detail: 'Maintenance that is due soon or has not been scheduled.' },
   open_work_orders: { title: 'Open repair orders', detail: 'Trucks with active repair work.' },
+  visits_to_close: {
+    title: 'Repair orders to close',
+    detail: `Visits open more than ${VISIT_STALE_AFTER_DAYS} days. The truck reads as in the shop, here and in the shop's queue, until one is closed.`,
+  },
   shop: { title: 'In the shop', detail: 'Units currently assigned to the service bay.' },
 }
 
@@ -100,6 +104,14 @@ function TruckCard({ t, onOpen, onOpenRepairOrder }: { t: BoardTruck; onOpen: (t
           <Wrench size={13} />
           <span className="tcard-wo-id">{t.work_order.id}</span>
           <span className="tcard-wo-st">{t.work_order.status}</span>
+          {/* How long this visit has been open. A stop that has run for days is
+              usually work that finished without anyone closing the order, and
+              nothing else on the board says so. */}
+          {visitAge(t.work_order.opened_at) && (
+            <span className={'tcard-wo-age' + (visitIsStale(t.work_order.opened_at) ? ' is-stale' : '')}>
+              open {visitAge(t.work_order.opened_at)!.label}
+            </span>
+          )}
           {t.open_work_order_count > 1 && <span className="tcard-wo-st">+{t.open_work_order_count - 1} more</span>}
           <ChevronRight className="tcard-wo-go" size={15} aria-hidden="true" />
         </button>
@@ -138,6 +150,8 @@ export default function FleetBoard({
     list = list.filter(needsPmPlanning)
   } else if (filter === 'open_work_orders') {
     list = list.filter((t) => !!t.work_order || t.open_work_order_count > 0)
+  } else if (filter === 'visits_to_close') {
+    list = list.filter((t) => visitIsStale(t.work_order?.opened_at))
   } else if (filter !== 'all') {
     list = list.filter((t) => t.status === filter)
   }
@@ -177,6 +191,7 @@ export default function FleetBoard({
   const planningIds = new Set(planning.map((t) => t.id))
   const remaining = list.filter((t) => !actionIds.has(t.id) && !planningIds.has(t.id))
   const pmPlanning = trucks.filter(needsPmPlanning).length
+  const staleVisits = trucks.filter((t) => visitIsStale(t.work_order?.opened_at)).length
   const activeFilter = filter === 'all' ? null : FILTER_COPY[filter] || { title: STATUS_META[filter as TruckStatus]?.label || 'Filtered trucks', detail: 'Filtered fleet results.' }
 
   return (
@@ -188,6 +203,19 @@ export default function FleetBoard({
             <ActionQueue icon={<Wrench size={20} />} value={stats.shop} label="In the shop" detail="Units at the service bay" tone="var(--st-shop)" active={false} onClick={() => setFilter('shop')} />
             <ActionQueue icon={<ClipboardList size={20} />} value={stats.open_wo} label="Open repair orders" detail="Review active repair work" tone="var(--st-parts)" active={false} onClick={() => { setFilter('open_work_orders'); setSort('attention') }} />
             <ActionQueue icon={<Gauge size={20} />} value={pmPlanning} label="PM to plan" detail="Due soon or not scheduled" tone="var(--yellow)" active={false} onClick={() => setFilter('pm_planning')} />
+            {/* Only when there is something to close. A queue that always reads
+                zero teaches people to stop looking at it. */}
+            {staleVisits > 0 && (
+              <ActionQueue
+                icon={<AlertTriangle size={20} />}
+                value={staleVisits}
+                label="Repair orders to close"
+                detail={`Open more than ${VISIT_STALE_AFTER_DAYS} days`}
+                tone="var(--red)"
+                active={false}
+                onClick={() => { setFilter('visits_to_close'); setSort('attention') }}
+              />
+            )}
           </div>
         </section>
       )}

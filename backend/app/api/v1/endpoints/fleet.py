@@ -1714,6 +1714,9 @@ async def _fleet_board_from_projection(
                 summary=payload.get("description"),
                 mechanic=mechanics.get(UUID(mechanic_id)) if mechanic_id else None,
                 is_pm=bool(payload.get("is_pm")),
+                # Absent until 133_fleet_board_opened_at has run and refreshed
+                # the rows; the card simply shows no age until then.
+                opened_at=payload.get("opened_at"),
             )
 
         urgent = work_order(row.urgent_work_order)
