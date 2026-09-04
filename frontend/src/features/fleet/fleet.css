@@ -1502,6 +1502,11 @@
   background:var(--ink);color:var(--text);font:inherit;font-size:14px;}
 .fleet-root .fleet-ro-field input::placeholder{color:var(--muted-3);}
 
+/* A PM is one tier, not a basket, so its marker is round: the shape says
+   "choose one" before anyone reads the labels. */
+.fleet-root .pm-svc-radio{border-radius:999px;}
+.fleet-root .pm-svc-row[disabled]{opacity:.55;cursor:default;}
+
 /* In the bay. The panel stops asking for input and reports where the truck is,
    because the manager who opens it now is checking on a job, not building one. */
 .fleet-root .fleet-ro-inbay{display:flex;align-items:center;justify-content:space-between;

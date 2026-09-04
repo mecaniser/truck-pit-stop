@@ -37,6 +37,7 @@ import {
   useAddAdHocPart, useAddPart, useApplyOperation, useAssignMechanic,
   useCompleteWork, useFleetMechanics, useOperationSearch, usePartSearch,
   usePmServiceCatalog, usePmServices, usePriceBuildSummary, useRemoveLine,
+  useSaveTruckPmDefault, useTruckPmDefault,
   useRemovePart, useRepairOrderDetail, useSaveDescription, useSetPmServices, useStartWork,
   useUpdateLine, useUpdatePartQuantity,
   type FleetHistoryEvent, type FleetPartOption, type FleetRepairOrderDetail,
@@ -255,6 +256,7 @@ export default function FleetPriceBuilderPanel({ repairOrderId, onClose, onChang
             {detail.is_pm && (
               <PmScopeSection
                 orderId={repairOrderId}
+                vehicleId={detail.vehicle_id}
                 canEdit={detail.status === 'draft'}
               />
             )}
@@ -615,46 +617,62 @@ function ComplaintSection({ orderId, description, canEdit }: {
 }
 
 /**
- * Which services this PM covers. Editable only while the order is a draft —
- * the server rebuilds the PM's seeded labor and parts from this selection, and
- * refuses to do so once work has started.
+ * Which PM this visit is.
+ *
+ * The API takes a list, because a PM package can in principle be composed of
+ * several services. This shop's catalog is tiers — Level A/B/C, Oil Change Only
+ * — which are mutually exclusive, so the control is a radio and sends a list of
+ * one. The contract stays list-shaped, so a composed package remains possible
+ * without changing it.
+ *
+ * Editable only while the order is a draft: re-selecting rebuilds the PM's
+ * seeded labor and parts, which mid-job would discard what a mechanic has
+ * already done. What the PM *contains* — a different filter, a different oil —
+ * stays editable throughout, on the part lines below.
  */
-function PmScopeSection({ orderId, canEdit }: { orderId: string; canEdit: boolean }) {
+function PmScopeSection({ orderId, vehicleId, canEdit }: {
+  orderId: string
+  vehicleId: string
+  canEdit: boolean
+}) {
   const { data: catalog } = usePmServiceCatalog(true)
   const { data: current } = usePmServices(orderId, true)
+  const { data: truckDefault } = useTruckPmDefault(vehicleId, canEdit)
   const setPmServices = useSetPmServices(orderId)
-  const [draft, setDraft] = useState<string[] | null>(null)
+  const saveDefault = useSaveTruckPmDefault(vehicleId)
+  const [draft, setDraft] = useState<string | null>(null)
 
-  const saved = (current ?? []).map((entry) => entry.service_id)
+  const saved = (current ?? [])[0]?.service_id ?? null
   const selected = draft ?? saved
-  const dirty = draft != null
-    && (selected.length !== saved.length || selected.some((id) => !saved.includes(id)))
+  const dirty = draft != null && draft !== saved
 
-  const toggle = (id: string) => setDraft(
-    selected.includes(id) ? selected.filter((x) => x !== id) : [...selected, id],
-  )
+  const defaultId = (truckDefault ?? [])[0]?.service_id ?? null
+  // Offer the default only when it would change something — the same rule the
+  // PM scheduling modal uses, so the option appears when it means anything.
+  const differsFromDefault = selected != null && selected !== defaultId
 
   return (
     <section>
       <div className="wo-draft-section-head">
         <h3>PM scope</h3>
-        <span>{selected.length} selected</span>
+        <span>{selected ? '1 selected' : 'none selected'}</span>
       </div>
-      <div className="pm-svc-list">
+      <div className="pm-svc-list" role="radiogroup" aria-label="PM scope">
         {(catalog ?? []).length === 0 ? (
           <div className="pm-svc-empty">No PM services in the catalog yet.</div>
         ) : (catalog ?? []).map((service) => {
-          const on = selected.includes(service.service_id)
+          const on = selected === service.service_id
           return (
             <button
               type="button"
               key={service.service_id}
+              role="radio"
+              aria-checked={on}
               className={'pm-svc-row' + (on ? ' on' : '')}
               disabled={!canEdit}
-              aria-pressed={on}
-              onClick={() => toggle(service.service_id)}
+              onClick={() => setDraft(service.service_id)}
             >
-              <span className="pm-svc-check">{on && <Check size={13} />}</span>
+              <span className="pm-svc-check pm-svc-radio">{on && <Check size={13} />}</span>
               <span className="pm-svc-name">{service.name}</span>
               {service.duration_minutes
                 ? <span className="pm-svc-dur">{service.duration_minutes}m</span>
@@ -664,19 +682,33 @@ function PmScopeSection({ orderId, canEdit }: { orderId: string; canEdit: boolea
         })}
       </div>
       {canEdit ? (
-        dirty && (
-          <button
-            type="button"
-            className="dbtn dbtn-yellow"
-            style={{ marginTop: 10 }}
-            disabled={setPmServices.isPending}
-            onClick={() => setPmServices.mutate(selected, {
-              onSuccess: () => setDraft(null),
-            })}
-          >
-            {setPmServices.isPending ? <Spinner size="xs" /> : <Check size={15} />} Save PM scope
-          </button>
-        )
+        <>
+          {dirty && (
+            <button
+              type="button"
+              className="dbtn dbtn-yellow"
+              style={{ marginTop: 10 }}
+              disabled={setPmServices.isPending}
+              onClick={() => setPmServices.mutate(selected ? [selected] : [], {
+                onSuccess: () => setDraft(null),
+              })}
+            >
+              {setPmServices.isPending ? <Spinner size="xs" /> : <Check size={15} />} Save PM scope
+            </button>
+          )}
+          {!dirty && differsFromDefault && (
+            <button
+              type="button"
+              className="dbtn dbtn-ghost"
+              style={{ marginTop: 10 }}
+              disabled={saveDefault.isPending}
+              onClick={() => saveDefault.mutate(selected ? [selected] : [])}
+            >
+              {saveDefault.isPending ? <Spinner size="xs" /> : <Check size={15} />}
+              {" Make this the truck's default PM"}
+            </button>
+          )}
+        </>
       ) : (
         <p className="wo-builder-empty-note">
           PM scope is set before work starts. Anything found since goes in the list below.

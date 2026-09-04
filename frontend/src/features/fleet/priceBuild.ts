@@ -32,6 +32,7 @@ export type FleetRepairOrderDetail = {
   is_fleet_work: boolean
   is_pm: boolean
   bill_labor_at_customer_rate: boolean
+  vehicle_id: string
   assigned_mechanic_id: string | null
   mileage_in: number | null
   mileage_out: number | null
@@ -76,6 +77,7 @@ export const fleetPriceBuildKeys = {
   detail: (orderId: string) => ['fleet-ro-detail', orderId] as const,
   pmServices: (orderId: string) => ['fleet-wo-pm-services', orderId] as const,
   pmCatalog: ['fleet-pm-catalog'] as const,
+  truckPmDefault: (vehicleId: string) => ['fleet-truck-pm-default', vehicleId] as const,
   partSearch: (term: string) => ['fleet-part-search', term] as const,
   mechanics: ['fleet-mechanics'] as const,
   settings: ['fleet-settings'] as const,
@@ -141,6 +143,34 @@ export function usePmServiceCatalog(enabled: boolean) {
     queryKey: fleetPriceBuildKeys.pmCatalog,
     queryFn: async () => (await api.get('/fleet/pm-service-catalog')).data,
     enabled,
+  })
+}
+
+/** The truck's standing PM package: what a PM defaults to when none is picked. */
+export function useTruckPmDefault(vehicleId: string | null, enabled: boolean) {
+  return useQuery<PMServiceEntry[]>({
+    queryKey: fleetPriceBuildKeys.truckPmDefault(vehicleId ?? 'none'),
+    queryFn: async () => (await api.get(`/fleet/trucks/${vehicleId}/pm-services`)).data,
+    enabled: enabled && !!vehicleId,
+  })
+}
+
+/**
+ * Save this selection as the truck's standing PM package, so the next PM needs
+ * no picking. Copies onto each PM as RepairOrderPMService, which stays
+ * adjustable per visit without touching this default.
+ */
+export function useSaveTruckPmDefault(vehicleId: string | null) {
+  const qc = useQueryClient()
+  return useMutation<PMServiceEntry[], unknown, string[]>({
+    mutationFn: async (serviceIds) =>
+      (await api.put(`/fleet/trucks/${vehicleId}/pm-services`, { service_ids: serviceIds })).data,
+    onSuccess: () => {
+      toast.success("Saved as this truck's default PM")
+      qc.invalidateQueries({ queryKey: fleetPriceBuildKeys.truckPmDefault(vehicleId ?? 'none') })
+      invalidateFleetAndCockpit(qc)
+    },
+    onError: (error) => toast.error(errorMessage(error, 'Unable to save the default')),
   })
 }
 

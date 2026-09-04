@@ -39,6 +39,7 @@ const detail = {
   is_fleet_work: true,
   is_pm: false,
   bill_labor_at_customer_rate: false,
+  vehicle_id: 'veh-1',
   assigned_mechanic_id: null,
   mileage_in: 621_565,
   mileage_out: null,
@@ -253,6 +254,9 @@ describe('FleetPriceBuilderPanel', () => {
       if (url === `/fleet/work-orders/${ORDER_ID}/pm-services`) {
         return Promise.resolve({ data: [{ service_id: 'svc-1' }] })
       }
+      if (url === '/fleet/trucks/veh-1/pm-services') {
+        return Promise.resolve({ data: [{ service_id: 'svc-1' }] })
+      }
       if (url === '/fleet/mechanics') return Promise.resolve({ data: [] })
       if (url === '/fleet/settings') {
         return Promise.resolve({ data: { internal_labor_rate: 80, labor_rate: 100 } })
@@ -265,7 +269,11 @@ describe('FleetPriceBuilderPanel', () => {
     // The PM's own scope, and the discovered work, are both present and distinct.
     expect(await screen.findByText('PM scope')).toBeInTheDocument()
     const pmService = await screen.findByText('Oil & filter')
-    expect(pmService.closest('button')).toHaveAttribute('aria-pressed', 'true')
+    // A PM is one tier, not a basket: radio semantics, not checkbox.
+    const row = pmService.closest('button')!
+    expect(row).toHaveAttribute('role', 'radio')
+    expect(row).toHaveAttribute('aria-checked', 'true')
+    expect(screen.getByRole('radiogroup', { name: 'PM scope' })).toBeInTheDocument()
     expect(screen.getByText('Replace air line')).toBeInTheDocument()
   })
 
@@ -361,6 +369,57 @@ describe('FleetPriceBuilderPanel', () => {
       expect(applyCall).toBeTruthy()
       // Whatever the operator entered — never the candidate's unusable 0.00.
       expect(Number(applyCall[1].estimated_hours)).toBeGreaterThan(0)
+    })
+  })
+
+  it('picks one PM, replacing rather than accumulating', async () => {
+    // The API takes a list because a package could be composed, but this
+    // catalog is tiers — Level A/B/C — so choosing one must deselect the other.
+    apiMocks.get.mockImplementation((url: string) => {
+      if (url === `/repair-orders/${ORDER_ID}/detail`) {
+        return Promise.resolve({ data: { ...detail, is_pm: true, status: 'draft' } })
+      }
+      if (url === `/repair-orders/${ORDER_ID}/price-build`) return Promise.resolve({ data: summary })
+      if (url === '/fleet/pm-service-catalog') {
+        return Promise.resolve({
+          data: [
+            { service_id: 'svc-a', name: 'PM Level A', duration_minutes: 90 },
+            { service_id: 'svc-b', name: 'PM Level B', duration_minutes: 120 },
+          ],
+        })
+      }
+      if (url === `/fleet/work-orders/${ORDER_ID}/pm-services`) {
+        return Promise.resolve({ data: [{ service_id: 'svc-a' }] })
+      }
+      if (url === '/fleet/trucks/veh-1/pm-services') {
+        return Promise.resolve({ data: [{ service_id: 'svc-a' }] })
+      }
+      if (url === '/fleet/mechanics') return Promise.resolve({ data: [] })
+      if (url === '/fleet/settings') {
+        return Promise.resolve({ data: { internal_labor_rate: 80, labor_rate: 100 } })
+      }
+      return Promise.resolve({ data: [] })
+    })
+    apiMocks.put.mockResolvedValue({ data: [] })
+
+    const user = userEvent.setup()
+    renderPanel()
+
+    const levelA = (await screen.findByText('PM Level A')).closest('button')!
+    expect(levelA).toHaveAttribute('aria-checked', 'true')
+
+    await user.click(screen.getByText('PM Level B').closest('button')!)
+    expect(screen.getByText('PM Level B').closest('button')!).toHaveAttribute('aria-checked', 'true')
+    expect(screen.getByText('PM Level A').closest('button')!).toHaveAttribute('aria-checked', 'false')
+
+    // Saving sends exactly one id, not both.
+    await user.click(screen.getByRole('button', { name: /Save PM scope/ }))
+    await waitFor(() => {
+      const call = apiMocks.put.mock.calls.find(
+        (c) => String(c[0]).includes('/work-orders/') && String(c[0]).endsWith('/pm-services'),
+      )
+      expect(call).toBeTruthy()
+      expect(call[1].service_ids).toEqual(['svc-b'])
     })
   })
 
