@@ -36,6 +36,7 @@ import SuggestingInput from '@/components/SuggestingInput'
 import RecentActivityFeed from './RecentActivityFeed'
 import ShopCockpitActionLedger, { type ActionQueueLane } from './ShopCockpitActionLedger'
 import RepairOrdersPage from '../repair-orders/RepairOrdersPage'
+import { elapsedSince, shortDuration } from '@/lib/elapsed'
 
 interface StatusCount {
   status: string
@@ -142,13 +143,8 @@ interface DashboardStats {
 }
 
 function timeAgo(dateStr: string): string {
-  const diff = Date.now() - new Date(dateStr).getTime()
-  const mins = Math.floor(diff / 60000)
-  if (mins < 60) return `${mins}m ago`
-  const hrs = Math.floor(mins / 60)
-  if (hrs < 24) return `${hrs}h ago`
-  const days = Math.floor(hrs / 24)
-  return `${days}d ago`
+  const elapsed = elapsedSince(dateStr)
+  return elapsed == null ? '' : `${shortDuration(elapsed)} ago`
 }
 
 function filterQueueOrders(orders: RecentOrder[], query: string): RecentOrder[] {

@@ -19,7 +19,8 @@ import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 import FleetBoard from './FleetBoard'
 import TruckDetail from './TruckDetail'
 import FleetMap from './FleetMap'
-import { SchedulePMModal, SidekickPanel, WorkOrderPanel, invalidateFleetAndCockpit } from './FleetModals'
+import { SchedulePMModal, SidekickPanel, invalidateFleetAndCockpit } from './FleetModals'
+import FleetPriceBuilderPanel from './FleetPriceBuilderPanel'
 import './fleet.css'
 
 type View = 'board' | 'map' | 'detail'
@@ -60,7 +61,7 @@ export default function FleetApp() {
   const [filter, setFilter] = useState(init.filter)
   const [query, setQuery] = useState('')
   const [sort, setSort] = useState(init.sort)
-  const [woPanelId, setWoPanelId] = useState<string | null>(null)
+  const [roPanelId, setRoPanelId] = useState<string | null>(null)
   const [adding, setAdding] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [profileMenuOpen, setProfileMenuOpen] = useState(false)
@@ -279,11 +280,11 @@ export default function FleetApp() {
               ) : view === 'detail' && selId ? (
                 <TruckDetail truckId={selId} trucks={trucks} onOpen={openTruck} />
               ) : view === 'board' ? (
-                <FleetBoard data={data} onOpen={(t) => openTruck(t.id)} onOpenWorkOrder={setWoPanelId} filter={filter} setFilter={setFilter} query={query} setQuery={setQuery} sort={sort} setSort={setSort} />
+                <FleetBoard data={data} onOpen={(t) => openTruck(t.id)} onOpenRepairOrder={setRoPanelId} filter={filter} setFilter={setFilter} query={query} setQuery={setQuery} sort={sort} setSort={setSort} />
               ) : view === 'map' ? (
                 <MapPage trucks={trucks} onOpen={openTruck} />
               ) : (
-                <FleetBoard data={data} onOpen={(t) => openTruck(t.id)} onOpenWorkOrder={setWoPanelId} filter={filter} setFilter={setFilter} query={query} setQuery={setQuery} sort={sort} setSort={setSort} />
+                <FleetBoard data={data} onOpen={(t) => openTruck(t.id)} onOpenRepairOrder={setRoPanelId} filter={filter} setFilter={setFilter} query={query} setQuery={setQuery} sort={sort} setSort={setSort} />
               )}
             </div>
           </div>
@@ -292,7 +293,7 @@ export default function FleetApp() {
 
       {adding && <AddTruckModal onClose={() => setAdding(false)} />}
       {settingsOpen && <FleetSettingsModal onClose={() => setSettingsOpen(false)} />}
-      {woPanelId && <WorkOrderPanel repairOrderId={woPanelId} onClose={() => setWoPanelId(null)} onChanged={refetch} />}
+      {roPanelId && <FleetPriceBuilderPanel repairOrderId={roPanelId} onClose={() => setRoPanelId(null)} onChanged={refetch} />}
     </div>
   )
 }
@@ -346,7 +347,7 @@ function SchedulePage({ trucks, onOpen }: { trucks: BoardTruck[]; onOpen: (id: s
 
 // The four PM lifecycle stages a schedule card can be in. The card exposes only
 // the transitions valid from the current stage; the full work order (parts,
-// labor, mechanic) still opens via the WorkOrderPanel.
+// labor, mechanic) still opens via the repair-order builder.
 type PmStage = 'none' | 'scheduled' | 'ready' | 'progress'
 
 function pmStage(t: BoardTruck): PmStage {
@@ -371,7 +372,7 @@ function PmCard({ truck: t, onOpen }: { truck: BoardTruck; onOpen: (id: string) 
   // null = closed; 'reschedule' = adjust schedule only; 'create' = pick services
   // and create the work order in one step (Schedule PM modal pre-set to create).
   const [scheduleMode, setScheduleMode] = useState<null | 'reschedule' | 'create'>(null)
-  const [woPanelId, setWoPanelId] = useState<string | null>(null)
+  const [roPanelId, setRoPanelId] = useState<string | null>(null)
 
   const pm = pmState(t)
   const ucls = pm.cls === 'pm-over' ? 'u-over' : pm.cls === 'pm-soon' ? 'u-soon' : 'u-ok'
@@ -430,7 +431,7 @@ function PmCard({ truck: t, onOpen }: { truck: BoardTruck; onOpen: (id: string) 
         )}
         {stage === 'ready' && (
           <>
-            <button className="sbtn" onClick={() => setWoPanelId(t.pm_work_order!.repair_order_id)}>
+            <button className="sbtn" onClick={() => setRoPanelId(t.pm_work_order!.repair_order_id)}>
               <Wrench size={14} /> Open RO
             </button>
             <button className="sbtn sbtn-yellow" disabled={startPM.isPending} onClick={() => startPM.mutate()}>
@@ -439,7 +440,7 @@ function PmCard({ truck: t, onOpen }: { truck: BoardTruck; onOpen: (id: string) 
           </>
         )}
         {stage === 'progress' && (
-          <button className="sbtn sbtn-yellow" onClick={() => setWoPanelId(t.pm_work_order!.repair_order_id)}>
+          <button className="sbtn sbtn-yellow" onClick={() => setRoPanelId(t.pm_work_order!.repair_order_id)}>
             <Flag size={14} /> Complete PM
           </button>
         )}
@@ -454,7 +455,7 @@ function PmCard({ truck: t, onOpen }: { truck: BoardTruck; onOpen: (id: string) 
           onDone={refresh}
         />
       )}
-      {woPanelId && <WorkOrderPanel repairOrderId={woPanelId} onClose={() => setWoPanelId(null)} onChanged={refresh} />}
+      {roPanelId && <FleetPriceBuilderPanel repairOrderId={roPanelId} onClose={() => setRoPanelId(null)} onChanged={refresh} />}
     </div>
   )
 }

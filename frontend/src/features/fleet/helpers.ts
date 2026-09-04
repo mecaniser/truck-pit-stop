@@ -1,3 +1,4 @@
+import { elapsedSince, shortDuration } from '@/lib/elapsed'
 import type { TruckStatus, BoardTruck } from './types'
 
 export const STATUS_META: Record<TruckStatus, { label: string; short: string; dot: string; cssVar: string }> = {
@@ -61,4 +62,26 @@ export function rank(t: BoardTruck): number {
 export function initials(name?: string | null): string {
   if (!name) return '—'
   return name.split(/\s+/).map((p) => p[0]).join('').slice(0, 2).toUpperCase()
+}
+
+/**
+ * A visit is a stop at the shop, so an order still open after this long has
+ * almost certainly finished without anyone closing it. The board carries it
+ * either way — and so does the shop's cockpit, since both read one table.
+ *
+ * Three days rather than one: a truck can legitimately sit over a weekend
+ * waiting on a part.
+ */
+export const VISIT_STALE_AFTER_DAYS = 3
+
+/** How long this visit has been open, or null when the age is unknown. */
+export function visitAge(openedAt?: string | null): { label: string; days: number } | null {
+  const elapsed = elapsedSince(openedAt)
+  if (elapsed == null) return null
+  return { label: shortDuration(elapsed), days: Math.max(Math.floor(elapsed / 86_400_000), 0) }
+}
+
+export function visitIsStale(openedAt?: string | null): boolean {
+  const age = visitAge(openedAt)
+  return age != null && age.days >= VISIT_STALE_AFTER_DAYS
 }

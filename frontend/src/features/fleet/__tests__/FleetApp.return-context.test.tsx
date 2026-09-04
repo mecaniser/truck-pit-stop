@@ -17,9 +17,9 @@ vi.mock('../FleetModals', () => ({
   AddTruckModal: () => null,
   SchedulePMModal: () => null,
   SidekickPanel: () => null,
-  WorkOrderPanel: () => null,
   invalidateFleetAndCockpit: vi.fn(),
 }))
+vi.mock('../FleetPriceBuilderPanel', () => ({ default: () => null }))
 
 import FleetApp from '../FleetApp'
 

@@ -7,6 +7,7 @@ import {
   Search,
   Zap,
 } from 'lucide-react'
+import { elapsedSince, shortDuration } from '@/lib/elapsed'
 
 export type ActionQueueLane = 'needs_action' | 'on_floor' | 'ready_to_close' | 'closed_today'
 type ActionQueueFilter = 'all' | ActionQueueLane
@@ -67,14 +68,10 @@ const statusLabel = (order: ActionQueueOrder) => {
 }
 
 const updatedLabel = (value: string) => {
-  const elapsed = Date.now() - new Date(value).getTime()
-  if (!Number.isFinite(elapsed) || elapsed < 0) return 'Updated recently'
-  const minutes = Math.floor(elapsed / 60000)
-  if (minutes < 1) return 'Updated just now'
-  if (minutes < 60) return `Updated ${minutes}m ago`
-  const hours = Math.floor(minutes / 60)
-  if (hours < 24) return `Updated ${hours}h ago`
-  return `Updated ${Math.floor(hours / 24)}d ago`
+  const elapsed = elapsedSince(value)
+  if (elapsed == null || elapsed < 0) return 'Updated recently'
+  if (elapsed < 60_000) return 'Updated just now'
+  return `Updated ${shortDuration(elapsed)} ago`
 }
 
 const currency = (value: string) => {

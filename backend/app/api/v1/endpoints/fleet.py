@@ -833,10 +833,16 @@ async def create_work_order_for_inspection(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="This inspection has no failed items to fix")
 
     when = insp.performed_at.date().isoformat() if insp.performed_at else insp.scheduled_for.isoformat()
-    description = f"From {when} inspection: " + ", ".join(failed)
-    ro = await _spawn_internal_ro(
-        db, current_user.tenant_id, insp.vehicle, is_pm=False, description=description[:480],
-    )
+    description = (f"From {when} inspection: " + ", ".join(failed))[:480]
+    # Same rule as an incident: failed items found while the truck is already in
+    # the shop join the visit underway rather than opening a second one.
+    ro = await _open_visit_for_vehicle(db, current_user.tenant_id, insp.vehicle_id)
+    if ro is not None:
+        _append_to_visit(ro, description)
+    else:
+        ro = await _spawn_internal_ro(
+            db, current_user.tenant_id, insp.vehicle, is_pm=False, description=description,
+        )
     insp.repair_order_id = ro.id
     await db.commit()
     return await _load_inspection_detail(db, current_user.tenant_id, inspection_id)
@@ -1162,13 +1168,22 @@ async def create_repair_for_incident(
     vehicle = await _load_fleet_vehicle_or_404(
         db, current_user.tenant_id, incident.vehicle_id
     )
-    ro = await _spawn_internal_ro(
-        db,
-        current_user.tenant_id,
-        vehicle,
-        is_pm=False,
-        description=f"Incident repair: {incident.description[:240]}",
-    )
+    complaint = f"Incident repair: {incident.description[:240]}"
+    # One visit, one order. If the truck is already in the shop this belongs to
+    # the visit underway; opening a second order beside it splits one stop into
+    # two records that both have to be closed, and the fleet board carries the
+    # pair for as long as nobody notices.
+    ro = await _open_visit_for_vehicle(db, current_user.tenant_id, vehicle.id)
+    if ro is not None:
+        _append_to_visit(ro, complaint)
+    else:
+        ro = await _spawn_internal_ro(
+            db,
+            current_user.tenant_id,
+            vehicle,
+            is_pm=False,
+            description=complaint,
+        )
     incident.repair_order_id = ro.id
     if incident.status == IncidentStatus.OPEN:
         incident.status = IncidentStatus.IN_PROGRESS
@@ -1283,6 +1298,7 @@ def _board_work_order(ro: RepairOrder) -> BoardWorkOrder:
         summary=ro.description,
         mechanic=_mechanic_name(ro.assigned_mechanic),
         is_pm=bool(ro.is_pm),
+        opened_at=ro.created_at,
     )
 
 
@@ -1452,6 +1468,46 @@ async def _open_ros_by_vehicle(db: AsyncSession, vehicle_ids: list[UUID]) -> dic
     for ro in result.scalars().all():
         out.setdefault(ro.vehicle_id, []).append(ro)
     return out
+
+
+async def _open_visit_for_vehicle(
+    db: AsyncSession, tenant_id: UUID, vehicle_id: UUID
+) -> Optional[RepairOrder]:
+    """The truck's current visit, if it is already in the shop.
+
+    A repair order is a visit, not a job: while a truck is here, work found on
+    it belongs to the order that is already open rather than to a second one
+    opened alongside. PM orders are excluded — a PM has a curated scope and
+    completing it rolls the odometer target forward, so unrelated repairs must
+    not be folded into it.
+
+    Returns the oldest open non-PM order, which is the visit in progress when
+    more than one somehow exists.
+    """
+    result = await db.execute(
+        select(RepairOrder)
+        .where(
+            and_(
+                RepairOrder.tenant_id == tenant_id,
+                RepairOrder.vehicle_id == vehicle_id,
+                RepairOrder.is_pm.is_(False),
+                RepairOrder.status.notin_(list(TERMINAL_RO_STATUSES)),
+                RepairOrder.deleted_at.is_(None),
+            )
+        )
+        .order_by(RepairOrder.created_at.asc())
+        .limit(1)
+    )
+    return result.scalar_one_or_none()
+
+
+def _append_to_visit(ro: RepairOrder, addition: str) -> None:
+    """Add a newly found complaint to the visit already underway."""
+    existing = (ro.description or "").strip()
+    if not existing:
+        ro.description = addition
+    elif addition.lower() not in existing.lower():
+        ro.description = f"{existing}; {addition}"
 
 
 async def _open_incident_counts(db: AsyncSession, vehicle_ids: list[UUID]) -> dict[UUID, int]:
@@ -1658,6 +1714,9 @@ async def _fleet_board_from_projection(
                 summary=payload.get("description"),
                 mechanic=mechanics.get(UUID(mechanic_id)) if mechanic_id else None,
                 is_pm=bool(payload.get("is_pm")),
+                # Absent until 133_fleet_board_opened_at has run and refreshed
+                # the rows; the card simply shows no age until then.
+                opened_at=payload.get("opened_at"),
             )
 
         urgent = work_order(row.urgent_work_order)
@@ -2803,11 +2862,14 @@ async def _apply_pm_services_to_ro(
     # mutating any repair-order data.
     validated_values = _validated_service_work_values(services)
 
-    # 1) Replace the per-PM service rows.
+    # 1) Replace the per-PM service rows, remembering which services this PM had
+    # so step 2 can tell PM-seeded lines apart from separately added work.
     existing = await db.execute(
         select(RepairOrderPMService).where(RepairOrderPMService.repair_order_id == ro.id)
     )
-    for row in existing.scalars().all():
+    existing_rows = list(existing.scalars().all())
+    prior_pm_service_ids = {row.service_id for row in existing_rows}
+    for row in existing_rows:
         await db.delete(row)
     for i, s in enumerate(services):
         db.add(RepairOrderPMService(
@@ -2815,24 +2877,29 @@ async def _apply_pm_services_to_ro(
             service_id=s.id, sort_order=i,
         ))
 
-    # 2) Clear previously seeded (service-sourced) labor & parts lines. Manually
-    # added lines (source_service_id IS NULL) are left untouched.
-    old_labor = await db.execute(
-        select(Labor).where(and_(
-            Labor.repair_order_id == ro.id,
-            Labor.source_service_id.isnot(None),
-        ))
-    )
-    for row in old_labor.scalars().all():
-        await db.delete(row)
-    old_parts = await db.execute(
-        select(PartsUsage).where(and_(
-            PartsUsage.repair_order_id == ro.id,
-            PartsUsage.source_service_id.isnot(None),
-        ))
-    )
-    for row in old_parts.scalars().all():
-        await db.delete(row)
+    # 2) Clear the lines this PM previously seeded, so they can be rebuilt from
+    # the new selection. Scope the delete to the PM's own services: a flat
+    # service added through the price builder also carries a source_service_id,
+    # and deleting on "source_service_id IS NOT NULL" would silently discard
+    # work someone added to the PM. Manual lines (NULL) were never in scope.
+    reseeded_service_ids = prior_pm_service_ids | {s.id for s in services}
+    if reseeded_service_ids:
+        old_labor = await db.execute(
+            select(Labor).where(and_(
+                Labor.repair_order_id == ro.id,
+                Labor.source_service_id.in_(reseeded_service_ids),
+            ))
+        )
+        for row in old_labor.scalars().all():
+            await db.delete(row)
+        old_parts = await db.execute(
+            select(PartsUsage).where(and_(
+                PartsUsage.repair_order_id == ro.id,
+                PartsUsage.source_service_id.in_(reseeded_service_ids),
+            ))
+        )
+        for row in old_parts.scalars().all():
+            await db.delete(row)
 
     # 3) Manager-facing scope: PM description lists the selected service names.
     #    When no services are selected, keep whatever description the spawn set.
@@ -3045,7 +3112,15 @@ async def add_service_to_work_order(
     """Add a single catalog service to a non-PM internal work order. Seeds one
     labor line (service duration × in-house rate) plus the service's parts at
     internal cost — the same costing PM services use. PM work orders are scoped
-    through their service picker instead, so this is rejected for them."""
+    through their service picker instead, so this is rejected for them.
+
+    DEPRECATED. This duplicates PriceBuildService.add_flat_service_line and can
+    drift from it — the two already compute the same labor/parts seeding in two
+    places. The FleetBoard price builder calls
+    POST /repair-orders/{id}/price-build/flat-service instead, which is the
+    canonical implementation and is already open to fleet managers. Remove this
+    route once no client calls it.
+    """
     from decimal import Decimal
     from app.api.v1.endpoints.repair_orders import (
         _load_pricing_order_for_update,
@@ -3240,6 +3315,18 @@ async def new_work_order(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_fleet_access),
 ):
+    """Open an internal repair order for a fleet truck.
+
+    Called with no body (or description only) this creates an empty draft the
+    FleetBoard price builder then fills in, which is the supported path.
+
+    The `service_ids` / `labor_lines` / `part_lines` staging parameters are
+    DEPRECATED: they exist for the old fleet modal that composed a whole work
+    order client-side before submitting it. The price builder adds lines through
+    /repair-orders/{id}/price-build/* instead, so the work record is server-built
+    and every line goes through one pricing implementation. Remove the staging
+    parameters once no client sends them.
+    """
     body = body or WorkOrderCreate()
     try:
         for line in body.labor_lines:
@@ -3290,8 +3377,12 @@ async def new_work_order(
                     detail=f"Not enough stock for {item.name}. Available: {item.stock_quantity or 0}.",
                 )
 
-    # A truck can carry several open work orders at once, so no single-open guard.
-    description = (body.description.strip() if body.description else "") or "Fleet work order"
+    # A truck can carry several open repair orders at once, so no single-open guard.
+    # No placeholder description: the field holds the complaint — what is wrong
+    # with this truck — and stamping "Fleet work order" into it told a mechanic
+    # nothing while looking like someone had already written one. An order opened
+    # empty from the yard gets its complaint in the builder instead.
+    description = (body.description.strip() if body.description else "") or None
     ro = await _spawn_internal_ro(
         db,
         current_user.tenant_id,

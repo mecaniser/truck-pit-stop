@@ -1,0 +1,1108 @@
+/**
+ * The FleetBoard repair-order builder.
+ *
+ * Same job as the shop's price builder — scope the work, pick the parts,
+ * estimate the labor — and the same server: every mutation here goes through
+ * the /repair-orders/{id}/price-build/* endpoints, so operation search, learned
+ * book time, at-cost fleet parts and the internal labor rate are the shop's
+ * implementations, not second copies.
+ *
+ * Two things make it a different component rather than a mode on the other one:
+ *
+ *  - The scene. /fleet is an iPad held one-handed next to a truck (PRODUCT.md,
+ *    confirmed 2026-08-28). Touch targets clear 44px, overlays are bottom
+ *    sheets rather than anchored popovers that a momentum scroll would dismiss,
+ *    and nothing depends on hover or a keyboard.
+ *  - The money. A fleet manager scopes work; they do not set prices. Lines show
+ *    hours and quantities, and the dock shows one cost total for the visit.
+ *    There are no per-line prices, no rates, and no discount controls.
+ */
+import { useEffect, useMemo, useRef, useState } from 'react'
+import {
+  AlertTriangle, Box, Check, ClipboardList, Play, Plus,
+  RotateCcw, Search, Trash2, X,
+} from 'lucide-react'
+import { Spinner } from '@/components/ui'
+
+import BaseSelect from '@/components/BaseSelect'
+import DurationStepper from '@/components/DurationStepper'
+import QuantityStepper from '@/components/QuantityStepper'
+import { formatHoursMinutes } from '@/lib/durationFormat'
+import { useDebouncedValue } from '@/hooks/useDebouncedValue'
+import type { PartsUsage, PriceBuildLine, RepairOperationCandidate } from '@/types'
+
+import { ConfirmModal, SidekickPanel, WO_DRAWER_WIDTH, WO_STATUS_LABEL } from './FleetModals'
+import { money } from './helpers'
+import {
+  useAddAdHocPart, useAddPart, useApplyOperation, useAssignMechanic,
+  useCompleteWork, useFleetMechanics, useOperationSearch, usePartSearch,
+  usePmServiceCatalog, usePmServices, usePriceBuildSummary, useRemoveLine,
+  useDeleteOrder, useSaveTruckPmDefault, useTruckPmDefault,
+  useRemovePart, useRepairOrderDetail, useSaveDescription, useSetPmServices, useStartWork,
+  useUpdateLine, useUpdatePartQuantity,
+  type FleetHistoryEvent, type FleetPartOption, type FleetRepairOrderDetail,
+} from './priceBuild'
+
+const num = (value: number | string | null | undefined): number =>
+  value == null ? 0 : Number(value)
+
+/**
+ * Which pricing the truck is on. Both shapes bill parts at cost; they differ
+ * only in the labor rate, and that is a per-truck policy set in truck settings,
+ * so this is a statement of fact rather than a control.
+ */
+function pricingChip(detail: FleetRepairOrderDetail): { label: string; tone: string } {
+  if (!detail.is_internal) {
+    const carrier = detail.customer_company_name
+      || [detail.customer_first_name, detail.customer_last_name].filter(Boolean).join(' ')
+    return { label: `Billed to ${carrier || 'customer'}`, tone: 'var(--st-shop)' }
+  }
+  if (detail.bill_labor_at_customer_rate) {
+    return { label: 'At-cost parts · customer labor rate', tone: 'var(--yellow)' }
+  }
+  return { label: 'House account · at cost', tone: 'var(--yellow)' }
+}
+
+/** A bottom sheet. Overlays on a scrolling touch surface must not be anchored. */
+function Sheet({ title, onClose, children }: {
+  title: string; onClose: () => void; children: React.ReactNode
+}) {
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => { if (event.key === 'Escape') onClose() }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onClose])
+
+  return (
+    <div className="fleet-sheet-backdrop" role="presentation" onClick={onClose}>
+      <div
+        className="fleet-sheet"
+        role="dialog"
+        aria-modal="true"
+        aria-label={title}
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="fleet-sheet-head">
+          <strong>{title}</strong>
+          <button type="button" className="icon-hit" onClick={onClose} aria-label="Close">
+            <X size={18} />
+          </button>
+        </div>
+        <div className="fleet-sheet-body">{children}</div>
+      </div>
+    </div>
+  )
+}
+
+type AddMode = 'operation' | 'part'
+
+export default function FleetPriceBuilderPanel({ repairOrderId, onClose, onChanged }: {
+  repairOrderId: string
+  onClose: () => void
+  onChanged: () => void
+}) {
+  const detailQuery = useRepairOrderDetail(repairOrderId)
+  const summaryQuery = usePriceBuildSummary(repairOrderId)
+  const { data: mechanics } = useFleetMechanics()
+
+  const detail = detailQuery.data
+  const summary = summaryQuery.data
+
+  const [addMode, setAddMode] = useState<AddMode>('operation')
+  const [term, setTerm] = useState('')
+  const [adHocOpen, setAdHocOpen] = useState(false)
+  const [view, setView] = useState<'work' | 'activity'>('work')
+  const [completeOpen, setCompleteOpen] = useState(false)
+  // Extra work found after the job started, opened on request.
+  const [addOpen, setAddOpen] = useState(false)
+  const [confirmDelete, setConfirmDelete] = useState(false)
+  // What the manager asked to remove, held until they confirm. Only used once
+  // work has started: on a draft the list is still being composed, but on a job
+  // in the bay a line is what a mechanic is working from, and removing it may
+  // discard something already done.
+  const [pendingRemoval, setPendingRemoval] = useState<
+    { kind: 'line' | 'part'; id: string; label: string } | null
+  >(null)
+
+  const debouncedTerm = useDebouncedValue(term, 250)
+
+  const notify = () => onChanged()
+
+  const operationSearch = useOperationSearch(repairOrderId)
+  const partResults = usePartSearch(addMode === 'part' ? debouncedTerm : '')
+  const applyOperation = useApplyOperation(repairOrderId, () => { setTerm(''); notify() })
+  const addPart = useAddPart(repairOrderId, () => { setTerm(''); notify() })
+  const addAdHoc = useAddAdHocPart(repairOrderId, () => { setAdHocOpen(false); notify() })
+  const updateLine = useUpdateLine(repairOrderId)
+  const removeLine = useRemoveLine(repairOrderId)
+  const updatePart = useUpdatePartQuantity(repairOrderId)
+  const removePart = useRemovePart(repairOrderId)
+  const assignMechanic = useAssignMechanic(repairOrderId)
+  // Starting work is a handoff, not a step in building the order: the truck is
+  // in the bay and the manager is walking to the next one. Close the panel and
+  // put them back on the board rather than leaving them on a builder they are
+  // done with, staring at a Complete button they cannot honestly press yet.
+  const startWork = useStartWork(repairOrderId, () => { notify(); onClose() })
+  const completeWork = useCompleteWork(repairOrderId, () => { notify(); onClose() })
+  const deleteOrder = useDeleteOrder(repairOrderId, () => { notify(); onClose() })
+
+  // Operation search is a POST, so it runs on a settled term rather than on
+  // every keystroke.
+  const searchRef = useRef(operationSearch)
+  searchRef.current = operationSearch
+  useEffect(() => {
+    if (addMode !== 'operation') return
+    const query = debouncedTerm.trim()
+    if (query.length < 2) return
+    searchRef.current.mutate(query)
+  }, [debouncedTerm, addMode])
+
+  const candidates: RepairOperationCandidate[] = operationSearch.data?.candidates ?? []
+  const canEdit = summary?.can_edit_work ?? false
+  const lines = summary?.lines ?? []
+  const parts = summary?.parts ?? []
+
+  /** Parts hang off the line they were added for; the rest stand alone. */
+  const partsByLine = useMemo(() => {
+    const grouped = new Map<string | null, PartsUsage[]>()
+    for (const part of summary?.parts ?? []) {
+      const key = part.source_line_id ?? null
+      grouped.set(key, [...(grouped.get(key) ?? []), part])
+    }
+    return grouped
+  }, [summary?.parts])
+
+  const loose = partsByLine.get(null) ?? []
+  const itemCount = lines.length + parts.length
+
+  if (detailQuery.isLoading || summaryQuery.isLoading) {
+    return (
+      <Shell title="Repair order" onClose={onClose}>
+        <div className="loader"><Spinner size="sm" /></div>
+      </Shell>
+    )
+  }
+
+  if (detailQuery.isError || summaryQuery.isError || !detail || !summary) {
+    return (
+      <Shell title="Repair order" onClose={onClose}>
+        <div className="query-failure" role="alert">
+          <AlertTriangle size={20} aria-hidden="true" />
+          <div className="query-failure-copy">
+            <strong>Repair order could not be loaded</strong>
+            <span>Your work was not changed. Check the connection and try again.</span>
+          </div>
+          <button
+            type="button"
+            className="query-retry"
+            onClick={() => { void detailQuery.refetch(); void summaryQuery.refetch() }}
+          >
+            <RotateCcw size={14} /> Try again
+          </button>
+        </div>
+      </Shell>
+    )
+  }
+
+  const chip = pricingChip(detail)
+
+  /**
+   * Removing from a draft is composition; removing from a job in the bay is a
+   * change to work someone may already have done, so that one is confirmed.
+   */
+  const requestRemoval = (kind: 'line' | 'part', id: string, label: string) => {
+    if (!started) {
+      if (kind === 'line') removeLine.mutate(id)
+      else removePart.mutate(id)
+      return
+    }
+    setPendingRemoval({ kind, id, label })
+  }
+  const started = !['draft', 'quoted'].includes(detail.status)
+  const historyEvents: FleetHistoryEvent[] = detail.history_events ?? []
+
+  return (
+    <Shell
+      title={`${detail.order_number}${detail.is_pm ? ' · PM' : ''}`}
+      onClose={onClose}
+      footer={(
+        // One number: what this visit costs. No per-line money anywhere above.
+        <div className="fleet-ro-dock">
+          <div className="fleet-ro-dock-total">
+            <small>This visit</small>
+            <strong>{money(num(summary.total_cost))}</strong>
+          </div>
+          {!started ? (
+            <button
+              type="button"
+              className="dbtn dbtn-yellow"
+              disabled={startWork.isPending}
+              onClick={() => startWork.mutate()}
+            >
+              {startWork.isPending ? <Spinner size="xs" /> : <Play size={16} />} Start work
+            </button>
+          ) : detail.status === 'in_progress' ? (
+            <button
+              type="button"
+              className="dbtn dbtn-yellow"
+              onClick={() => setCompleteOpen(true)}
+            >
+              <Check size={16} /> Complete
+            </button>
+          ) : null}
+        </div>
+      )}
+    >
+      <div className="wo-drawer-body">
+        {/* Which pricing applies, stated where the work is being scoped. */}
+        <div className="wo-truckstrip">
+          <span style={{ color: chip.tone, fontWeight: 700 }}>{chip.label}</span>
+          <span>{WO_STATUS_LABEL[detail.status] || detail.status}</span>
+          {detail.vehicle_unit_number && <span>Unit {detail.vehicle_unit_number}</span>}
+        </div>
+
+        <div className="wo-builder-grid">
+          <div className="wo-builder-main">
+            {/* What is wrong with the truck, first — an order opened from the
+                yard arrives with nothing said, and the complaint is what the
+                mechanic reads before any of the work lines. */}
+            <ComplaintSection
+              orderId={repairOrderId}
+              description={detail.description}
+              canEdit={canEdit}
+            />
+
+            {/* PM scope is a curated package that drives the odometer roll
+                forward on completion, so it stays its own control. The list
+                below is for work found while doing the PM. */}
+            {detail.is_pm && (
+              <PmScopeSection
+                orderId={repairOrderId}
+                vehicleId={detail.vehicle_id}
+                canEdit={detail.status === 'draft'}
+              />
+            )}
+
+            {/* ---- add ---- */}
+            {/* Only while the order is still being composed. Reopening a truck
+                that is already in the bay is a check-in, not a build session —
+                leading with a search box there asks the wrong question. Work
+                discovered mid-job is added from "Add more work" below. */}
+            {canEdit && (!started || addOpen) && (
+              <section className="wo-builder-add">
+                <div className="wo-builder-section-head">
+                  <h3>Add work</h3>
+                  <div className="wo-builder-tabs" role="tablist" aria-label="What to add">
+                    {(['operation', 'part'] as AddMode[]).map((mode) => (
+                      <button
+                        key={mode}
+                        type="button"
+                        role="tab"
+                        aria-selected={addMode === mode}
+                        className={addMode === mode ? 'is-active' : undefined}
+                        onClick={() => { setAddMode(mode); setTerm('') }}
+                      >
+                        {mode === 'operation' ? 'Operation' : 'Part'}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="wo-svc-search">
+                  <Search size={16} aria-hidden="true" />
+                  <input
+                    value={term}
+                    onChange={(event) => setTerm(event.target.value)}
+                    placeholder={addMode === 'operation'
+                      ? 'Search operations — brake change, EGR…'
+                      : 'Search parts by name or number'}
+                    aria-label={addMode === 'operation' ? 'Search operations' : 'Search parts'}
+                  />
+                  {(operationSearch.isPending || partResults.isFetching) && <Spinner size="xs" />}
+                </div>
+
+                {addMode === 'operation' ? (
+                  <OperationResults
+                    term={debouncedTerm}
+                    candidates={candidates}
+                    pending={applyOperation.isPending}
+                    onAdd={(candidate, hours) => applyOperation.mutate({ candidate, hours })}
+                  />
+                ) : (
+                  <PartResults
+                    term={debouncedTerm}
+                    options={partResults.data ?? []}
+                    pending={addPart.isPending}
+                    onAdd={(option) => addPart.mutate({
+                      inventoryId: option.id,
+                      quantity: 1,
+                      // A fleet manager standing at the truck can hold a part the
+                      // count does not know about; the shortage is recorded, and
+                      // stock is still never driven negative.
+                      allowStockShortage: option.stock_quantity <= 0,
+                    })}
+                    onAdHoc={() => setAdHocOpen(true)}
+                  />
+                )}
+              </section>
+            )}
+
+            {/* In the bay: report the state instead of implying more input is
+                wanted. Adding work is still possible — it is just no longer the
+                first thing the screen asks for. */}
+            {started && detail.status === 'in_progress' && (
+              <section className="fleet-ro-inbay">
+                <div>
+                  <strong>In the bay</strong>
+                  <small>
+                    {detail.assigned_mechanic_id
+                      ? 'Work is underway.'
+                      : 'Work is underway, no mechanic assigned.'}
+                  </small>
+                </div>
+                {canEdit && !addOpen && (
+                  <button
+                    type="button"
+                    className="dbtn dbtn-ghost"
+                    onClick={() => setAddOpen(true)}
+                  >
+                    <Plus size={15} /> Add more work
+                  </button>
+                )}
+              </section>
+            )}
+
+            {/* ---- work / activity ---- */}
+            {/* Activity is a second view of this order, not a setting on it, so
+                it sits beside the work as a peer and takes the same room. Under
+                Assignment it read as a property of the mechanic. */}
+            <section>
+              <div className="wo-draft-section-head">
+                <div className="fleet-ro-viewtabs" role="tablist" aria-label="Repair order view">
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={view === 'work'}
+                    className={view === 'work' ? 'is-active' : undefined}
+                    onClick={() => setView('work')}
+                  >
+                    Work &amp; parts
+                    <span>{itemCount}</span>
+                  </button>
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={view === 'activity'}
+                    className={view === 'activity' ? 'is-active' : undefined}
+                    onClick={() => setView('activity')}
+                  >
+                    Activity
+                    {historyEvents.length > 0 && <span>{historyEvents.length}</span>}
+                  </button>
+                </div>
+              </div>
+
+              {view === 'activity' ? (
+                historyEvents.length === 0 ? (
+                  <div className="wo-builder-empty">
+                    Nothing has happened on this order yet.
+                  </div>
+                ) : (
+                  <ul className="fleet-ro-history">
+                    {historyEvents.map((event) => (
+                      <li key={event.id}>
+                        <strong>{event.label}</strong>
+                        {event.detail && <small>{event.detail}</small>}
+                        <small>
+                          {[event.actor_name, new Date(event.created_at).toLocaleString('en-US', {
+                            month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit',
+                          })].filter(Boolean).join(' · ')}
+                        </small>
+                      </li>
+                    ))}
+                  </ul>
+                )
+              ) : itemCount === 0 ? (
+                <div className="wo-builder-empty">
+                  Nothing added yet. Work you add above lands here.
+                </div>
+              ) : (
+                <div className="wo-builder-lines">
+                  {lines.map((line: PriceBuildLine) => (
+                    <LineRow
+                      key={line.id}
+                      line={line}
+                      parts={partsByLine.get(line.id) ?? []}
+                      canEdit={canEdit}
+                      onHours={(hours) => updateLine.mutate({ lineId: line.id, hours })}
+                      onRemove={() => requestRemoval('line', line.id, line.description)}
+                      onPartQuantity={(partUsageId, quantity) =>
+                        updatePart.mutate({ partUsageId, quantity })}
+                      onPartRemove={(partUsageId, name) => requestRemoval('part', partUsageId, name)}
+                    />
+                  ))}
+                  {loose.map((part) => (
+                    <PartRow
+                      key={part.id}
+                      part={part}
+                      canEdit={canEdit}
+                      onQuantity={(quantity) =>
+                        updatePart.mutate({ partUsageId: part.id, quantity })}
+                      onRemove={() => requestRemoval('part', part.id, part.inventory_name)}
+                    />
+                  ))}
+                </div>
+              )}
+            </section>
+
+            {/* ---- who / when ---- */}
+            <section className="wo-builder-scope">
+              <div className="wo-builder-section-head">
+                <h3>Assignment</h3>
+              </div>
+              <div className="fleet-ro-field">
+                <span id="fleet-ro-mechanic-label">Mechanic</span>
+                <div aria-labelledby="fleet-ro-mechanic-label">
+                  <BaseSelect
+                    variant="dark"
+                    value={detail.assigned_mechanic_id || ''}
+                    onChange={(value) => assignMechanic.mutate(value)}
+                    options={[
+                      { value: '', label: 'Unassigned' },
+                      ...(mechanics ?? []).map((m) => ({ value: m.id, label: m.name })),
+                    ]}
+                  />
+                </div>
+              </div>
+            </section>
+
+            {/* A change of mind needs a way out. Without it an abandoned visit
+                stays open on the board and in the shop's queue until someone
+                closes it by hand — emptying the work and parts is not enough.
+                Soft delete, so the record survives and can be restored. */}
+            {canEdit && (
+              <section className="fleet-ro-abandon">
+                <button
+                  type="button"
+                  className="dbtn dbtn-danger"
+                  onClick={() => setConfirmDelete(true)}
+                >
+                  <Trash2 size={15} /> Delete this repair order
+                </button>
+              </section>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {adHocOpen && (
+        <AdHocPartSheet
+          pending={addAdHoc.isPending}
+          onClose={() => setAdHocOpen(false)}
+          onSubmit={(draft) => addAdHoc.mutate(draft)}
+        />
+      )}
+
+      {pendingRemoval && (
+        <ConfirmModal
+          title={pendingRemoval.kind === 'line' ? 'Remove this work?' : 'Remove this part?'}
+          message={`This repair order is in progress. Removing ${pendingRemoval.label} changes what the shop is working from, and any of it already done will not be recorded.`}
+          confirmLabel="Remove"
+          pending={removeLine.isPending || removePart.isPending}
+          onConfirm={() => {
+            if (pendingRemoval.kind === 'line') removeLine.mutate(pendingRemoval.id)
+            else removePart.mutate(pendingRemoval.id)
+            setPendingRemoval(null)
+          }}
+          onClose={() => setPendingRemoval(null)}
+        />
+      )}
+
+      {confirmDelete && (
+        <ConfirmModal
+          title="Delete this repair order"
+          message={started
+            ? 'Work has already started on this truck. Deleting discards what has been recorded so far. The order can be restored afterwards.'
+            : 'The truck stops reading as in the shop. The order can be restored afterwards.'}
+          confirmLabel="Delete repair order"
+          pending={deleteOrder.isPending}
+          onConfirm={() => deleteOrder.mutate()}
+          onClose={() => setConfirmDelete(false)}
+        />
+      )}
+
+      {completeOpen && (
+        <CompleteSheet
+          currentMileage={detail.mileage_in}
+          pending={completeWork.isPending}
+          onClose={() => setCompleteOpen(false)}
+          onSubmit={(mileageOut) => completeWork.mutate(mileageOut)}
+        />
+      )}
+    </Shell>
+  )
+}
+
+function Shell({ title, onClose, footer, children }: {
+  title: string; onClose: () => void; footer?: React.ReactNode; children: React.ReactNode
+}) {
+  return (
+    <SidekickPanel
+      onClose={onClose}
+      width={WO_DRAWER_WIDTH}
+      subtitle="Repair order"
+      title={title}
+      icon={<ClipboardList size={18} className="text-[var(--yellow)]" />}
+      variant="builder"
+      tone="repair"
+      footer={footer}
+    >
+      {children}
+    </SidekickPanel>
+  )
+}
+
+/* Complaints a fleet manager writes over and over, standing at the truck.
+   Tapping one beats spelling it out on a tablet keyboard; all stay editable. */
+const COMPLAINT_CHIPS = [
+  'Air leak', 'Brakes', 'Check engine light', 'DOT inspection due', 'Tires',
+  'Lights out', 'Coolant leak', 'A/C not cooling', "Won't start", 'Oil leak',
+]
+
+/**
+ * The complaint: what is wrong with this truck.
+ *
+ * An order opened from the yard arrives with none — the server no longer
+ * stamps a placeholder into the field, because a placeholder looks like
+ * someone already described the problem when nobody has.
+ */
+function ComplaintSection({ orderId, description, canEdit }: {
+  orderId: string
+  description: string | null
+  canEdit: boolean
+}) {
+  const saveDescription = useSaveDescription(orderId)
+  const [draft, setDraft] = useState<string | null>(null)
+  const value = draft ?? description ?? ''
+  const dirty = draft != null && draft.trim() !== (description ?? '').trim()
+
+  // Which way the row can still scroll, so each edge fades only when it hides
+  // something. Written to the DOM rather than through state: this fires on every
+  // scroll frame, and re-rendering the row on each one would be wasteful.
+  const chipRowRef = useRef<HTMLDivElement | null>(null)
+  useEffect(() => {
+    const row = chipRowRef.current
+    if (!row) return
+    const sync = () => {
+      const maxScroll = row.scrollWidth - row.clientWidth
+      row.dataset.atStart = String(row.scrollLeft <= 1)
+      row.dataset.atEnd = String(maxScroll <= 1 || row.scrollLeft >= maxScroll - 1)
+    }
+    sync()
+    row.addEventListener('scroll', sync, { passive: true })
+    // ResizeObserver is absent in jsdom and in older browsers; the fade is a
+    // refinement, so fall back to resize events rather than taking the panel
+    // down with a ReferenceError.
+    const observer = typeof ResizeObserver === 'function' ? new ResizeObserver(sync) : null
+    observer?.observe(row)
+    if (!observer) window.addEventListener('resize', sync)
+    return () => {
+      row.removeEventListener('scroll', sync)
+      observer?.disconnect()
+      if (!observer) window.removeEventListener('resize', sync)
+    }
+  }, [])
+
+  const append = (chip: string) => setDraft((current) => {
+    const base = (current ?? description ?? '').trim()
+    const already = base.split(/[;,\n]+/).some(
+      (token) => token.trim().toLocaleLowerCase() === chip.toLocaleLowerCase(),
+    )
+    if (already) return base
+    return base ? `${base}; ${chip}` : chip
+  })
+
+  if (!canEdit) {
+    if (!description) return null
+    return (
+      <section>
+        <div className="wo-draft-section-head"><h3>Complaint</h3></div>
+        <p className="fleet-ro-complaint-read">{description}</p>
+      </section>
+    )
+  }
+
+  return (
+    <section>
+      <div className="wo-draft-section-head">
+        <h3>Complaint</h3>
+        {dirty && <span>Unsaved</span>}
+      </div>
+      <div className="fleet-ro-field">
+        <textarea
+          className="fleet-ro-complaint"
+          value={value}
+          onChange={(event) => setDraft(event.target.value)}
+          placeholder="What is wrong with this truck?"
+          rows={3}
+          aria-label="Complaint"
+        />
+      </div>
+      {/* One scrollable row that fades at its edges, matching the shop's service
+          quick-pick: a second row of chips competes with the box above it, and
+          the fade is what says the row continues. About seven fit before the
+          fade; the rest are reached by scrolling, so none are dropped — unlike
+          the shop's list, these are a fixed set with no search to fall back on. */}
+      <div ref={chipRowRef} className="wo-chips wo-chips-scroll" data-at-start="true" data-at-end="false">
+        {COMPLAINT_CHIPS.map((chip) => (
+          <button
+            type="button"
+            key={chip}
+            className="wo-chip"
+            onClick={() => append(chip)}
+          >
+            <Plus size={13} /> {chip}
+          </button>
+        ))}
+      </div>
+      {dirty && (
+        <button
+          type="button"
+          className="dbtn dbtn-yellow"
+          style={{ marginTop: 10 }}
+          disabled={saveDescription.isPending}
+          onClick={() => saveDescription.mutate(value, {
+            onSuccess: () => setDraft(null),
+          })}
+        >
+          {saveDescription.isPending ? <Spinner size="xs" /> : <Check size={15} />} Save complaint
+        </button>
+      )}
+    </section>
+  )
+}
+
+/**
+ * Which PM this visit is.
+ *
+ * The API takes a list, because a PM package can in principle be composed of
+ * several services. This shop's catalog is tiers — Level A/B/C, Oil Change Only
+ * — which are mutually exclusive, so the control is a radio and sends a list of
+ * one. The contract stays list-shaped, so a composed package remains possible
+ * without changing it.
+ *
+ * Editable only while the order is a draft: re-selecting rebuilds the PM's
+ * seeded labor and parts, which mid-job would discard what a mechanic has
+ * already done. What the PM *contains* — a different filter, a different oil —
+ * stays editable throughout, on the part lines below.
+ */
+function PmScopeSection({ orderId, vehicleId, canEdit }: {
+  orderId: string
+  vehicleId: string
+  canEdit: boolean
+}) {
+  const { data: catalog } = usePmServiceCatalog(true)
+  const { data: current } = usePmServices(orderId, true)
+  const { data: truckDefault } = useTruckPmDefault(vehicleId, canEdit)
+  const setPmServices = useSetPmServices(orderId)
+  const saveDefault = useSaveTruckPmDefault(vehicleId)
+  const [draft, setDraft] = useState<string | null>(null)
+
+  const saved = (current ?? [])[0]?.service_id ?? null
+  const selected = draft ?? saved
+  const dirty = draft != null && draft !== saved
+
+  const defaultId = (truckDefault ?? [])[0]?.service_id ?? null
+  // Offer the default only when it would change something — the same rule the
+  // PM scheduling modal uses, so the option appears when it means anything.
+  const differsFromDefault = selected != null && selected !== defaultId
+
+  return (
+    <section>
+      <div className="wo-draft-section-head">
+        <h3>PM scope</h3>
+        <span>{selected ? '1 selected' : 'none selected'}</span>
+      </div>
+      <div className="pm-svc-list" role="radiogroup" aria-label="PM scope">
+        {(catalog ?? []).length === 0 ? (
+          <div className="pm-svc-empty">No PM services in the catalog yet.</div>
+        ) : (catalog ?? []).map((service) => {
+          const on = selected === service.service_id
+          return (
+            <button
+              type="button"
+              key={service.service_id}
+              role="radio"
+              aria-checked={on}
+              className={'pm-svc-row' + (on ? ' on' : '')}
+              disabled={!canEdit}
+              onClick={() => setDraft(service.service_id)}
+            >
+              <span className="pm-svc-check pm-svc-radio">{on && <Check size={13} />}</span>
+              <span className="pm-svc-name">{service.name}</span>
+              {service.duration_minutes
+                ? <span className="pm-svc-dur">{service.duration_minutes}m</span>
+                : null}
+            </button>
+          )
+        })}
+      </div>
+      {canEdit ? (
+        <>
+          {dirty && (
+            <button
+              type="button"
+              className="dbtn dbtn-yellow"
+              style={{ marginTop: 10 }}
+              disabled={setPmServices.isPending}
+              onClick={() => setPmServices.mutate(selected ? [selected] : [], {
+                onSuccess: () => setDraft(null),
+              })}
+            >
+              {setPmServices.isPending ? <Spinner size="xs" /> : <Check size={15} />} Save PM scope
+            </button>
+          )}
+          {!dirty && differsFromDefault && (
+            <button
+              type="button"
+              className="dbtn dbtn-ghost"
+              style={{ marginTop: 10 }}
+              disabled={saveDefault.isPending}
+              onClick={() => saveDefault.mutate(selected ? [selected] : [])}
+            >
+              {saveDefault.isPending ? <Spinner size="xs" /> : <Check size={15} />}
+              {" Make this the truck's default PM"}
+            </button>
+          )}
+        </>
+      ) : (
+        <p className="wo-builder-empty-note">
+          PM scope is set before work starts. Anything found since goes in the list below.
+        </p>
+      )}
+    </section>
+  )
+}
+
+function LineRow({ line, parts, canEdit, onHours, onRemove, onPartQuantity, onPartRemove }: {
+  line: PriceBuildLine
+  parts: PartsUsage[]
+  canEdit: boolean
+  onHours: (hours: number) => void
+  onRemove: () => void
+  onPartQuantity: (partUsageId: string, quantity: number) => void
+  onPartRemove: (partUsageId: string, name: string) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const hours = num(line.hours)
+
+  return (
+    <div>
+      <div className="wo-builder-line">
+        <span className="wo-builder-kind">Work</span>
+        <div>
+          <button
+            type="button"
+            className="fleet-ro-line-open"
+            onClick={() => setOpen((value) => !value)}
+            aria-expanded={open}
+          >
+            <strong>{line.description}</strong>
+            <small>
+              {formatHoursMinutes(hours)}
+              {parts.length > 0 && ` · ${parts.length} part${parts.length === 1 ? '' : 's'}`}
+            </small>
+          </button>
+        </div>
+        <b>{formatHoursMinutes(hours)}</b>
+        {canEdit ? (
+          <button type="button" className="icon-hit" onClick={onRemove} aria-label={`Remove ${line.description}`}>
+            <Trash2 size={16} />
+          </button>
+        ) : <span />}
+      </div>
+
+      {open && (
+        <div className="fleet-ro-line-body">
+          {canEdit && (
+            <div className="fleet-ro-field">
+              <span>Labor time</span>
+              {/* Debounced: a flurry of taps on glass becomes one request. */}
+              <DurationStepper
+                hours={hours}
+                onChange={onHours}
+                theme="dark"
+                size="lg"
+                commitDebounceMs={600}
+                ariaLabel={`Labor time for ${line.description}`}
+              />
+            </div>
+          )}
+          {parts.map((part) => (
+            <PartRow
+              key={part.id}
+              part={part}
+              canEdit={canEdit}
+              nested
+              onQuantity={(quantity) => onPartQuantity(part.id, quantity)}
+              onRemove={() => onPartRemove(part.id, part.inventory_name)}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function PartRow({ part, canEdit, nested, onQuantity, onRemove }: {
+  part: PartsUsage
+  canEdit: boolean
+  nested?: boolean
+  onQuantity: (quantity: number) => void
+  onRemove: () => void
+}) {
+  return (
+    <div className="wo-builder-line" style={nested ? { paddingLeft: 12 } : undefined}>
+      <span className="wo-builder-kind">Part</span>
+      <div>
+        <strong>{part.inventory_name}</strong>
+        <small>{part.inventory_sku}</small>
+      </div>
+      {canEdit ? (
+        <QuantityStepper
+          value={num(part.quantity)}
+          onChange={onQuantity}
+          theme="dark"
+          size="lg"
+          commitDebounceMs={600}
+          // Fluids are measured, not counted, so they step fractionally.
+          step={part.unit_type === 'each' ? 1 : 0.25}
+          ariaLabel={`Quantity of ${part.inventory_name}`}
+        />
+      ) : (
+        <b>{num(part.quantity)}</b>
+      )}
+      {canEdit ? (
+        <button type="button" className="icon-hit" onClick={onRemove} aria-label={`Remove ${part.inventory_name}`}>
+          <Trash2 size={16} />
+        </button>
+      ) : <span />}
+    </div>
+  )
+}
+
+function OperationResults({ term, candidates, pending, onAdd }: {
+  term: string
+  candidates: RepairOperationCandidate[]
+  pending: boolean
+  onAdd: (candidate: RepairOperationCandidate, hours: number) => void
+}) {
+  if (term.trim().length < 2) {
+    return <p className="wo-service-search-empty">Type at least two characters to search.</p>
+  }
+  if (candidates.length === 0) {
+    return <p className="wo-service-search-empty">No operations matched.</p>
+  }
+  return (
+    <ul className="fleet-ro-results">
+      {candidates.map((candidate) => (
+        <OperationResult
+          key={candidate.operation_id}
+          candidate={candidate}
+          pending={pending}
+          onAdd={onAdd}
+        />
+      ))}
+    </ul>
+  )
+}
+
+/**
+ * One search result.
+ *
+ * Work the shop has done before arrives with book time and adds in one tap.
+ * Work it has not seen arrives with none — the server offers it as a custom
+ * operation and asks for the hours, which it then remembers for next time. So a
+ * candidate with no hours gets a stepper here rather than an Add button that
+ * would post 0.00 and be refused (labor must be at least 0.01).
+ */
+function OperationResult({ candidate, pending, onAdd }: {
+  candidate: RepairOperationCandidate
+  pending: boolean
+  onAdd: (candidate: RepairOperationCandidate, hours: number) => void
+}) {
+  const bookTime = num(candidate.estimated_hours)
+  const isCustom = bookTime <= 0
+  const [hours, setHours] = useState(0.5)
+
+  return (
+    <li className={isCustom ? 'is-custom' : undefined}>
+      <div>
+        <strong>{candidate.name}</strong>
+        <small>
+          {isCustom
+            ? 'New to the shop — set how long it takes'
+            : `${formatHoursMinutes(bookTime)} book time`}
+        </small>
+      </div>
+      {isCustom && (
+        <DurationStepper
+          hours={hours}
+          onChange={setHours}
+          theme="dark"
+          size="lg"
+          ariaLabel={`Labor time for ${candidate.name}`}
+        />
+      )}
+      <button
+        type="button"
+        className="dbtn dbtn-ghost"
+        disabled={pending}
+        onClick={() => onAdd(candidate, isCustom ? hours : bookTime)}
+      >
+        <Plus size={15} /> Add
+      </button>
+    </li>
+  )
+}
+
+function PartResults({ term, options, pending, onAdd, onAdHoc }: {
+  term: string
+  options: FleetPartOption[]
+  pending: boolean
+  onAdd: (option: FleetPartOption) => void
+  onAdHoc: () => void
+}) {
+  return (
+    <>
+      {term.trim().length < 2 ? (
+        <p className="wo-service-search-empty">Type at least two characters to search.</p>
+      ) : options.length === 0 ? (
+        <p className="wo-service-search-empty">No parts matched.</p>
+      ) : (
+        <ul className="fleet-ro-results">
+          {options.map((option) => (
+            <li key={option.id}>
+              <div>
+                <strong>{option.name}</strong>
+                {/* Availability, not price: it says whether work can start today. */}
+                <small>
+                  {option.sku} · {option.stock_quantity > 0
+                    ? `${option.stock_quantity} on hand`
+                    : option.on_order_quantity > 0
+                      ? `on order (${option.on_order_quantity})`
+                      : 'none on hand'}
+                </small>
+              </div>
+              <button type="button" className="dbtn dbtn-ghost" disabled={pending} onClick={() => onAdd(option)}>
+                <Plus size={15} /> Add
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+      <button type="button" className="dbtn dbtn-ghost" style={{ marginTop: 10 }} onClick={onAdHoc}>
+        <Box size={15} /> Part not in inventory
+      </button>
+    </>
+  )
+}
+
+function AdHocPartSheet({ pending, onClose, onSubmit }: {
+  pending: boolean
+  onClose: () => void
+  onSubmit: (draft: { name: string; sku?: string | null; quantity: number; cost: number }) => void
+}) {
+  const [name, setName] = useState('')
+  const [sku, setSku] = useState('')
+  const [quantity, setQuantity] = useState(1)
+  const [cost, setCost] = useState('')
+
+  const costValue = Number(cost)
+  const valid = name.trim().length > 0 && quantity > 0 && cost.trim() !== ''
+    && Number.isFinite(costValue) && costValue >= 0
+
+  return (
+    <Sheet title="Part not in inventory" onClose={onClose}>
+      <label className="fleet-ro-field">
+        <span>Part name</span>
+        <input value={name} onChange={(event) => setName(event.target.value)} placeholder="Air line fitting" />
+      </label>
+      <label className="fleet-ro-field">
+        <span>Part number <small>optional</small></span>
+        <input value={sku} onChange={(event) => setSku(event.target.value)} placeholder="e.g. 0532668000" />
+      </label>
+      <div className="fleet-ro-field">
+        <span>Quantity</span>
+        <QuantityStepper
+          value={quantity}
+          onChange={setQuantity}
+          theme="dark"
+          size="lg"
+          align="start"
+          ariaLabel="Quantity"
+        />
+      </div>
+      <label className="fleet-ro-field">
+        {/* This creates a real catalogue row, so the number has to be the real
+            one — a zero would leave a zero-priced part behind for whoever uses
+            it next, and understate what this truck cost. */}
+        <span>What it cost</span>
+        <input
+          value={cost}
+          onChange={(event) => setCost(event.target.value)}
+          inputMode="decimal"
+          placeholder="0.00"
+        />
+      </label>
+      <button
+        type="button"
+        className="dbtn dbtn-yellow"
+        style={{ width: '100%', marginTop: 8 }}
+        disabled={!valid || pending}
+        onClick={() => onSubmit({
+          name, sku: sku || null, quantity, cost: costValue,
+        })}
+      >
+        {pending ? <Spinner size="xs" /> : <Plus size={16} />} Add part
+      </button>
+    </Sheet>
+  )
+}
+
+function CompleteSheet({ currentMileage, pending, onClose, onSubmit }: {
+  currentMileage: number | null
+  pending: boolean
+  onClose: () => void
+  onSubmit: (mileageOut: number | null) => void
+}) {
+  const [mileage, setMileage] = useState('')
+  const parsed = mileage.trim() === '' ? null : Number(mileage)
+  const invalid = parsed != null && (!Number.isFinite(parsed) || parsed < 0)
+
+  return (
+    <Sheet title="Complete repair order" onClose={onClose}>
+      <label className="fleet-ro-field">
+        <span>
+          Odometer out <small>optional</small>
+        </span>
+        <input
+          value={mileage}
+          onChange={(event) => setMileage(event.target.value)}
+          inputMode="numeric"
+          placeholder={currentMileage != null ? String(currentMileage) : 'Miles'}
+        />
+      </label>
+      {invalid && <p className="wo-builder-empty-note">Enter a whole number of miles.</p>}
+      <button
+        type="button"
+        className="dbtn dbtn-yellow"
+        style={{ width: '100%', marginTop: 8 }}
+        disabled={pending || invalid}
+        onClick={() => onSubmit(parsed)}
+      >
+        {pending ? <Spinner size="xs" /> : <Check size={16} />} Complete
+      </button>
+    </Sheet>
+  )
+}

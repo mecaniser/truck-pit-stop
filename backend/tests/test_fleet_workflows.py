@@ -551,14 +551,21 @@ async def test_new_work_order_uses_description(db_session):
 
 
 @pytest.mark.asyncio
-async def test_new_work_order_defaults_blank_description(db_session):
+async def test_new_work_order_leaves_a_blank_description_empty(db_session):
+    """A blank complaint stays blank rather than becoming a placeholder.
+
+    The description field holds what is wrong with the truck. Filling it with
+    "Fleet work order" told a mechanic nothing and, worse, read as though
+    someone had already described the problem. An order opened from the yard
+    gets its complaint written in the builder instead.
+    """
     _, vehicle, user = await _seed_fleet(db_session)
     await fleet.new_work_order(vehicle_id=vehicle.id, body=WorkOrderCreate(description="   "),
                                db=db_session, current_user=user)
     ro = (await db_session.execute(
         __import__("sqlalchemy").select(RepairOrder).where(RepairOrder.vehicle_id == vehicle.id)
     )).scalar_one()
-    assert ro.description == "Fleet work order"
+    assert ro.description is None
 
 
 @pytest.mark.asyncio
@@ -1413,3 +1420,145 @@ async def test_completed_inspection_items_are_locked(db_session):
             body=InspectionItemUpdate(result=InspectionItemResult.PASS),
             db=db_session, current_user=user)
     assert exc.value.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_changing_pm_services_keeps_separately_added_work(db_session):
+    """Re-scoping a PM must not discard work added through the price builder.
+
+    Both a PM-seeded line and a price-builder flat service carry a
+    source_service_id, so re-seeding on "source_service_id IS NOT NULL" used to
+    delete the added work along with the PM's own lines.
+    """
+    import sqlalchemy
+    from app.db.models.labor import Labor
+    from app.db.models.service import Service
+    from app.schemas.fleet import PMServicesUpdate, SchedulePMRequest
+    from app.services.price_build_service import PriceBuildService
+
+    tenant, vehicle, user = await _seed_fleet(db_session)
+    pm_a = Service(id=uuid4(), tenant_id=tenant.id, name="PM A",
+                   duration_minutes=60, is_active=True)
+    pm_b = Service(id=uuid4(), tenant_id=tenant.id, name="PM B",
+                   duration_minutes=30, is_active=True)
+    discovered = Service(id=uuid4(), tenant_id=tenant.id, name="Cracked Air Line",
+                         duration_minutes=45, is_active=True)
+    db_session.add_all([pm_a, pm_b, discovered])
+    await db_session.commit()
+
+    truck = await fleet.schedule_pm(
+        vehicle_id=vehicle.id, body=SchedulePMRequest(create_work_order=True),
+        db=db_session, current_user=user)
+    ro_id = truck.pm_work_order.repair_order_id
+
+    await fleet.set_wo_pm_services(
+        ro_id=ro_id, body=PMServicesUpdate(service_ids=[pm_a.id]),
+        db=db_session, current_user=user)
+
+    # The fleet manager finds extra work during the PM and adds it the same way
+    # the price builder does.
+    builder = PriceBuildService()
+    loaded = await builder.load_order(db_session, ro_id)
+    await builder.add_flat_service_line(db_session, loaded, discovered.id)
+    await db_session.commit()
+
+    # Re-scoping the PM rebuilds its own lines and leaves the added work alone.
+    await fleet.set_wo_pm_services(
+        ro_id=ro_id, body=PMServicesUpdate(service_ids=[pm_b.id]),
+        db=db_session, current_user=user)
+
+    sources = {
+        line.source_service_id
+        for line in (await db_session.execute(
+            sqlalchemy.select(Labor).where(Labor.repair_order_id == ro_id)
+        )).scalars().all()
+    }
+    assert discovered.id in sources, "price-builder work was discarded by the PM re-seed"
+    assert pm_b.id in sources, "the newly selected PM service was not seeded"
+    assert pm_a.id not in sources, "the deselected PM service was not cleared"
+
+@pytest.mark.asyncio
+async def test_incident_joins_the_visit_already_underway(db_session):
+    """One visit, one order.
+
+    A truck already in the shop that turns up another fault should not acquire a
+    second open order: that splits one stop into two records, both of which have
+    to be found and closed, and the board carries the pair until someone
+    notices. The complaint joins the visit instead.
+    """
+    import sqlalchemy
+    _, vehicle, user = await _seed_fleet(db_session)
+
+    truck = await fleet.new_work_order(
+        vehicle_id=vehicle.id, body=WorkOrderCreate(description="Tire change"),
+        db=db_session, current_user=user)
+    open_ro_id = truck.work_order.repair_order_id
+
+    incident = await fleet.create_incident(
+        body=IncidentCreate(vehicle_id=vehicle.id, description="Air line blew",
+                            occurred_at=datetime.now(timezone.utc),
+                            severity=IncidentSeverity.HIGH),
+        db=db_session, current_user=user)
+    await fleet.create_repair_for_incident(
+        incident_id=incident.id, db=db_session, current_user=user)
+
+    open_ros = (await db_session.execute(
+        sqlalchemy.select(RepairOrder).where(
+            RepairOrder.vehicle_id == vehicle.id,
+            RepairOrder.status == RepairOrderStatus.DRAFT,
+        )
+    )).scalars().all()
+    assert len(open_ros) == 1, "the incident opened a second order for one visit"
+    assert open_ros[0].id == open_ro_id
+    # The visit now carries both complaints.
+    assert "Tire change" in open_ros[0].description
+    assert "Air line blew" in open_ros[0].description
+
+
+@pytest.mark.asyncio
+async def test_incident_opens_a_visit_when_the_truck_is_not_in_the_shop(db_session):
+    """The joining rule must not stop a truck with no open visit getting one."""
+    import sqlalchemy
+    _, vehicle, user = await _seed_fleet(db_session)
+
+    incident = await fleet.create_incident(
+        body=IncidentCreate(vehicle_id=vehicle.id, description="Brake fault",
+                            occurred_at=datetime.now(timezone.utc),
+                            severity=IncidentSeverity.HIGH),
+        db=db_session, current_user=user)
+    await fleet.create_repair_for_incident(
+        incident_id=incident.id, db=db_session, current_user=user)
+
+    ros = (await db_session.execute(
+        sqlalchemy.select(RepairOrder).where(RepairOrder.vehicle_id == vehicle.id)
+    )).scalars().all()
+    assert len(ros) == 1
+    assert "Brake fault" in ros[0].description
+
+
+@pytest.mark.asyncio
+async def test_incident_does_not_fold_into_a_pm(db_session):
+    """A PM keeps its curated scope: completing one rolls the odometer target
+    forward, so unrelated repair work must not ride along inside it."""
+    import sqlalchemy
+    from app.schemas.fleet import SchedulePMRequest
+    _, vehicle, user = await _seed_fleet(db_session)
+
+    await fleet.schedule_pm(
+        vehicle_id=vehicle.id, body=SchedulePMRequest(create_work_order=True),
+        db=db_session, current_user=user)
+
+    incident = await fleet.create_incident(
+        body=IncidentCreate(vehicle_id=vehicle.id, description="Cracked mirror",
+                            occurred_at=datetime.now(timezone.utc),
+                            severity=IncidentSeverity.LOW),
+        db=db_session, current_user=user)
+    await fleet.create_repair_for_incident(
+        incident_id=incident.id, db=db_session, current_user=user)
+
+    ros = (await db_session.execute(
+        sqlalchemy.select(RepairOrder).where(RepairOrder.vehicle_id == vehicle.id)
+    )).scalars().all()
+    assert len(ros) == 2, "the incident should get its own order beside the PM"
+    pm = next(r for r in ros if r.is_pm)
+    assert "Cracked mirror" not in (pm.description or "")
