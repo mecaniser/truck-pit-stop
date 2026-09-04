@@ -31,13 +31,13 @@ import { formatHoursMinutes } from '@/lib/durationFormat'
 import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 import type { PartsUsage, PriceBuildLine, RepairOperationCandidate } from '@/types'
 
-import { SidekickPanel, WO_DRAWER_WIDTH, WO_STATUS_LABEL } from './FleetModals'
+import { ConfirmModal, SidekickPanel, WO_DRAWER_WIDTH, WO_STATUS_LABEL } from './FleetModals'
 import { money } from './helpers'
 import {
   useAddAdHocPart, useAddPart, useApplyOperation, useAssignMechanic,
   useCompleteWork, useFleetMechanics, useOperationSearch, usePartSearch,
   usePmServiceCatalog, usePmServices, usePriceBuildSummary, useRemoveLine,
-  useSaveTruckPmDefault, useTruckPmDefault,
+  useDeleteOrder, useSaveTruckPmDefault, useTruckPmDefault,
   useRemovePart, useRepairOrderDetail, useSaveDescription, useSetPmServices, useStartWork,
   useUpdateLine, useUpdatePartQuantity,
   type FleetHistoryEvent, type FleetPartOption, type FleetRepairOrderDetail,
@@ -115,6 +115,14 @@ export default function FleetPriceBuilderPanel({ repairOrderId, onClose, onChang
   const [completeOpen, setCompleteOpen] = useState(false)
   // Extra work found after the job started, opened on request.
   const [addOpen, setAddOpen] = useState(false)
+  const [confirmDelete, setConfirmDelete] = useState(false)
+  // What the manager asked to remove, held until they confirm. Only used once
+  // work has started: on a draft the list is still being composed, but on a job
+  // in the bay a line is what a mechanic is working from, and removing it may
+  // discard something already done.
+  const [pendingRemoval, setPendingRemoval] = useState<
+    { kind: 'line' | 'part'; id: string; label: string } | null
+  >(null)
 
   const debouncedTerm = useDebouncedValue(term, 250)
 
@@ -136,6 +144,7 @@ export default function FleetPriceBuilderPanel({ repairOrderId, onClose, onChang
   // done with, staring at a Complete button they cannot honestly press yet.
   const startWork = useStartWork(repairOrderId, () => { notify(); onClose() })
   const completeWork = useCompleteWork(repairOrderId, () => { notify(); onClose() })
+  const deleteOrder = useDeleteOrder(repairOrderId, () => { notify(); onClose() })
 
   // Operation search is a POST, so it runs on a settled term rather than on
   // every keystroke.
@@ -196,6 +205,19 @@ export default function FleetPriceBuilderPanel({ repairOrderId, onClose, onChang
   }
 
   const chip = pricingChip(detail)
+
+  /**
+   * Removing from a draft is composition; removing from a job in the bay is a
+   * change to work someone may already have done, so that one is confirmed.
+   */
+  const requestRemoval = (kind: 'line' | 'part', id: string, label: string) => {
+    if (!started) {
+      if (kind === 'line') removeLine.mutate(id)
+      else removePart.mutate(id)
+      return
+    }
+    setPendingRemoval({ kind, id, label })
+  }
   const started = !['draft', 'quoted'].includes(detail.status)
   const historyEvents: FleetHistoryEvent[] = detail.history_events ?? []
 
@@ -413,10 +435,10 @@ export default function FleetPriceBuilderPanel({ repairOrderId, onClose, onChang
                       parts={partsByLine.get(line.id) ?? []}
                       canEdit={canEdit}
                       onHours={(hours) => updateLine.mutate({ lineId: line.id, hours })}
-                      onRemove={() => removeLine.mutate(line.id)}
+                      onRemove={() => requestRemoval('line', line.id, line.description)}
                       onPartQuantity={(partUsageId, quantity) =>
                         updatePart.mutate({ partUsageId, quantity })}
-                      onPartRemove={(partUsageId) => removePart.mutate(partUsageId)}
+                      onPartRemove={(partUsageId, name) => requestRemoval('part', partUsageId, name)}
                     />
                   ))}
                   {loose.map((part) => (
@@ -426,7 +448,7 @@ export default function FleetPriceBuilderPanel({ repairOrderId, onClose, onChang
                       canEdit={canEdit}
                       onQuantity={(quantity) =>
                         updatePart.mutate({ partUsageId: part.id, quantity })}
-                      onRemove={() => removePart.mutate(part.id)}
+                      onRemove={() => requestRemoval('part', part.id, part.inventory_name)}
                     />
                   ))}
                 </div>
@@ -453,6 +475,22 @@ export default function FleetPriceBuilderPanel({ repairOrderId, onClose, onChang
                 </div>
               </div>
             </section>
+
+            {/* A change of mind needs a way out. Without it an abandoned visit
+                stays open on the board and in the shop's queue until someone
+                closes it by hand — emptying the work and parts is not enough.
+                Soft delete, so the record survives and can be restored. */}
+            {canEdit && (
+              <section className="fleet-ro-abandon">
+                <button
+                  type="button"
+                  className="dbtn dbtn-danger"
+                  onClick={() => setConfirmDelete(true)}
+                >
+                  <Trash2 size={15} /> Delete this repair order
+                </button>
+              </section>
+            )}
           </div>
         </div>
       </div>
@@ -462,6 +500,34 @@ export default function FleetPriceBuilderPanel({ repairOrderId, onClose, onChang
           pending={addAdHoc.isPending}
           onClose={() => setAdHocOpen(false)}
           onSubmit={(draft) => addAdHoc.mutate(draft)}
+        />
+      )}
+
+      {pendingRemoval && (
+        <ConfirmModal
+          title={pendingRemoval.kind === 'line' ? 'Remove this work?' : 'Remove this part?'}
+          message={`This repair order is in progress. Removing ${pendingRemoval.label} changes what the shop is working from, and any of it already done will not be recorded.`}
+          confirmLabel="Remove"
+          pending={removeLine.isPending || removePart.isPending}
+          onConfirm={() => {
+            if (pendingRemoval.kind === 'line') removeLine.mutate(pendingRemoval.id)
+            else removePart.mutate(pendingRemoval.id)
+            setPendingRemoval(null)
+          }}
+          onClose={() => setPendingRemoval(null)}
+        />
+      )}
+
+      {confirmDelete && (
+        <ConfirmModal
+          title="Delete this repair order"
+          message={started
+            ? 'Work has already started on this truck. Deleting discards what has been recorded so far. The order can be restored afterwards.'
+            : 'The truck stops reading as in the shop. The order can be restored afterwards.'}
+          confirmLabel="Delete repair order"
+          pending={deleteOrder.isPending}
+          onConfirm={() => deleteOrder.mutate()}
+          onClose={() => setConfirmDelete(false)}
         />
       )}
 
@@ -725,7 +791,7 @@ function LineRow({ line, parts, canEdit, onHours, onRemove, onPartQuantity, onPa
   onHours: (hours: number) => void
   onRemove: () => void
   onPartQuantity: (partUsageId: string, quantity: number) => void
-  onPartRemove: (partUsageId: string) => void
+  onPartRemove: (partUsageId: string, name: string) => void
 }) {
   const [open, setOpen] = useState(false)
   const hours = num(line.hours)
@@ -779,7 +845,7 @@ function LineRow({ line, parts, canEdit, onHours, onRemove, onPartQuantity, onPa
               canEdit={canEdit}
               nested
               onQuantity={(quantity) => onPartQuantity(part.id, quantity)}
-              onRemove={() => onPartRemove(part.id)}
+              onRemove={() => onPartRemove(part.id, part.inventory_name)}
             />
           ))}
         </div>

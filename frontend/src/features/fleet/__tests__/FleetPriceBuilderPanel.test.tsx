@@ -423,6 +423,37 @@ describe('FleetPriceBuilderPanel', () => {
     })
   })
 
+  it('lets a manager abandon a visit they changed their mind about', async () => {
+    // Emptying the work and parts is not enough: the order stays open, on the
+    // board and in the shop's queue, until it is deleted or closed.
+    mockQueries()
+    apiMocks.delete.mockResolvedValue({ data: {} })
+    const onClose = vi.fn()
+    const user = userEvent.setup()
+
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    })
+    render(
+      <ThemeProvider>
+        <QueryClientProvider client={queryClient}>
+          <FleetPriceBuilderPanel repairOrderId={ORDER_ID} onClose={onClose} onChanged={vi.fn()} />
+        </QueryClientProvider>
+      </ThemeProvider>,
+    )
+
+    await user.click(await screen.findByRole('button', { name: /Delete this repair order/ }))
+    // Deleting is confirmed, never a single tap on a touch surface.
+    const dialog = await screen.findByRole('dialog', { name: /Delete this repair order/ })
+    await user.click(within(dialog).getByRole('button', { name: 'Delete repair order' }))
+
+    await waitFor(() => {
+      expect(apiMocks.delete).toHaveBeenCalledWith(`/repair-orders/${ORDER_ID}`)
+      // The panel closes: the visit it was showing no longer exists.
+      expect(onClose).toHaveBeenCalled()
+    })
+  })
+
   it('does not offer editing once the order is frozen', async () => {
     mockQueries()
     apiMocks.get.mockImplementation((url: string) => {

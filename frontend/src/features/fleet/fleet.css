@@ -1502,6 +1502,10 @@
   background:var(--ink);color:var(--text);font:inherit;font-size:14px;}
 .fleet-root .fleet-ro-field input::placeholder{color:var(--muted-3);}
 
+/* Abandoning a visit sits apart from building one, at the end, so it is
+   reachable without being in the way of the work. */
+.fleet-root .fleet-ro-abandon{border-top:1px solid var(--line);padding-top:18px;}
+
 /* A PM is one tier, not a basket, so its marker is round: the shape says
    "choose one" before anyone reads the labels. */
 .fleet-root .pm-svc-radio{border-radius:999px;}

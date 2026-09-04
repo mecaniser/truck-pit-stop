@@ -146,3 +146,42 @@ async def test_member_truck_bills_labor_at_customer_rate_but_parts_stay_at_cost(
     loaded = await PriceBuildService().load_order(db_session, order.id)
     assert loaded.labor_items[0].hourly_rate == Decimal("100.00")  # customer rate
     assert loaded.parts_usage[0].unit_price == Decimal("10.00")    # still at cost
+
+
+@pytest.mark.asyncio
+async def test_work_lines_leave_a_trail(db_session):
+    """Adding and removing work is recorded, not just parts.
+
+    The price-build routes recorded nothing, so a repair order's activity
+    showed parts appearing and never showed the work itself — the one thing a
+    manager most wants to see when asking who changed this job and when.
+    """
+    import sqlalchemy
+    from app.db.models.repair_order_history import RepairOrderHistoryEvent
+
+    _, manager, order, _, service = await _seed(db_session)
+
+    await ro_endpoints.add_price_build_flat_service(
+        order_id=order.id,
+        body=PriceBuildFlatServiceRequest(service_id=service.id),
+        db=db_session, current_user=manager)
+
+    loaded = await PriceBuildService().load_order(db_session, order.id)
+    line_id = loaded.labor_items[0].id
+    await ro_endpoints.delete_price_build_line(
+        order_id=order.id, line_id=line_id, db=db_session, current_user=manager)
+
+    events = (await db_session.execute(
+        sqlalchemy.select(RepairOrderHistoryEvent)
+        .where(RepairOrderHistoryEvent.repair_order_id == order.id)
+        .order_by(RepairOrderHistoryEvent.created_at)
+    )).scalars().all()
+    kinds = [e.event_type for e in events]
+    assert "work_added" in kinds
+    assert "work_removed" in kinds
+
+    # The trail names the work, and who did it — "something was removed" is not
+    # an answer to "what happened to this job".
+    removed = next(e for e in events if e.event_type == "work_removed")
+    assert removed.detail == "Oil Change"
+    assert removed.actor_name

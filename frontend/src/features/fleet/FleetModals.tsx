@@ -685,8 +685,12 @@ export function SchedulePMModal({ truck, onClose, onDone, createMode = false }: 
     queryFn: async () => (await api.get('/fleet/pm-service-catalog')).data,
   })
   const activeServices = services || []
-  const toggle = (id: string) =>
-    setSelected((cur) => (cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id]))
+  // One PM, not a basket. A PM service already carries its own time, labor and
+  // parts for a given truck; picking two would mean claiming a Freightliner
+  // package and a Volvo one describe the same visit. The request stays
+  // list-shaped so a composed package remains possible without a contract
+  // change, but this control sends exactly one.
+  const choose = (id: string) => setSelected([id])
 
   const save = useMutation({
     mutationFn: async () => (await api.post(`/fleet/trucks/${truck.id}/schedule-pm`, {
@@ -785,8 +789,8 @@ export function SchedulePMModal({ truck, onClose, onDone, createMode = false }: 
           </Field>
         )}
 
-        <FieldGroup label={`PM services${selected.length ? ` · ${selected.length} selected` : ''}`}>
-          <div className="pm-svc-list">
+        <FieldGroup label="PM service">
+          <div className="pm-svc-list" role="radiogroup" aria-label="PM service">
             {activeServices.length === 0 ? (
               <div className="pm-svc-empty">No PM services in the catalog yet.</div>
             ) : (
@@ -796,10 +800,12 @@ export function SchedulePMModal({ truck, onClose, onDone, createMode = false }: 
                   <button
                     type="button"
                     key={s.service_id}
+                    role="radio"
+                    aria-checked={on}
                     className={'pm-svc-row' + (on ? ' on' : '')}
-                    onClick={() => toggle(s.service_id)}
+                    onClick={() => choose(s.service_id)}
                   >
-                    <span className="pm-svc-check">{on && <Check size={13} />}</span>
+                    <span className="pm-svc-check pm-svc-radio">{on && <Check size={13} />}</span>
                     <span className="pm-svc-name">{s.name}</span>
                     {s.duration_minutes ? <span className="pm-svc-dur">{s.duration_minutes}m</span> : null}
                   </button>
@@ -812,7 +818,7 @@ export function SchedulePMModal({ truck, onClose, onDone, createMode = false }: 
         {changedFromDefault && (
           <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--text)', cursor: 'pointer' }}>
             <input type="checkbox" checked={saveAsDefault} onChange={(e) => setSaveAsDefault(e.target.checked)} style={{ width: 'auto' }} />
-            Save these services as this truck's default PM package
+            Save this as this truck's default PM
           </label>
         )}
         {/* In create mode the work order is always created — no need to offer it

@@ -3633,6 +3633,19 @@ async def add_price_build_flat_service(
                 current_user.id if current_user.role == UserRole.MECHANIC else None
             ),
         )
+        _record_repair_order_history_event(
+            db,
+            order=result.order,
+            current_user=current_user,
+            event_type="work_added",
+            label="Work added to repair order",
+            detail=next(
+                (li.description for li in result.order.labor_items
+                 if li.source_service_id == body.service_id),
+                "Service",
+            ),
+        )
+        await db.commit()
         return _to_price_build_summary(
             result.order,
             warnings=[PriceBuildWarning(code=w.code, message=w.message, line_id=w.line_id) for w in result.warnings],
@@ -3700,6 +3713,15 @@ async def apply_price_build_repair_operation(
                 current_user.id if current_user.role == UserRole.MECHANIC else None
             ),
         )
+        _record_repair_order_history_event(
+            db,
+            order=result.order,
+            current_user=current_user,
+            event_type="work_added",
+            label="Work added to repair order",
+            detail=body.name or "Repair operation",
+        )
+        await db.commit()
         return _to_price_build_summary(
             result.order,
             warnings=[PriceBuildWarning(code=w.code, message=w.message, line_id=w.line_id) for w in result.warnings],
@@ -3746,7 +3768,21 @@ async def delete_price_build_line(
     try:
         order = await _load_tenant_price_build_order(db, order_id, current_user)
         _check_ro_access(current_user, order)
+        # Read the description before the row goes, so the trail says what was
+        # removed rather than only that something was.
+        removed = next((li for li in order.labor_items if li.id == line_id), None)
+        removed_label = removed.description if removed else None
         result = await price_build_service.remove_line(db, order, line_id=line_id)
+        _record_repair_order_history_event(
+            db,
+            order=result.order,
+            current_user=current_user,
+            event_type="work_removed",
+            label="Work removed from repair order",
+            detail=removed_label or "Work line",
+            entity_id=line_id,
+        )
+        await db.commit()
         return _to_price_build_summary(
             result.order,
             warnings=[PriceBuildWarning(code=w.code, message=w.message, line_id=w.line_id) for w in result.warnings],

@@ -412,6 +412,32 @@ export function useCompleteWork(orderId: string, onDone?: () => void) {
   })
 }
 
+/**
+ * Abandon this visit.
+ *
+ * Soft delete: the order is hidden and restorable, and its history is kept, so
+ * a change of mind does not destroy the record of what was planned. The server
+ * gives back any stock the order was holding when it never reached the floor,
+ * and refuses once an order is invoiced or paid — by then it is a financial
+ * record.
+ *
+ * Without this a manager who changed their mind had no way out: emptying the
+ * work and parts leaves the order open, on the board and in the shop's queue,
+ * until someone closes it by hand.
+ */
+export function useDeleteOrder(orderId: string, onDone?: () => void) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async () => (await api.delete(`/repair-orders/${orderId}`)).data,
+    onSuccess: () => {
+      toast.success('Repair order deleted')
+      invalidateOrder(qc, orderId)
+      onDone?.()
+    },
+    onError: (error) => toast.error(errorMessage(error, 'Unable to delete this repair order')),
+  })
+}
+
 export function useSetPmServices(orderId: string) {
   const qc = useQueryClient()
   return useMutation<PMServiceEntry[], unknown, string[]>({
