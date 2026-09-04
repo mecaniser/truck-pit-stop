@@ -1497,6 +1497,19 @@
   background:var(--ink);color:var(--text);font:inherit;font-size:14px;}
 .fleet-root .fleet-ro-field input::placeholder{color:var(--muted-3);}
 
+/* Work / Activity: two views of the same order, so they read as peers on one
+   line rather than as a heading with a button hung off it. */
+.fleet-root .fleet-ro-viewtabs{display:flex;align-items:center;gap:4px;min-width:0;}
+.fleet-root .fleet-ro-viewtabs button{display:inline-flex;align-items:center;gap:7px;
+  min-height:38px;padding:0 13px;border:0;border-radius:9px;background:transparent;
+  color:var(--muted-2);font:inherit;font-size:15px;font-weight:700;cursor:pointer;
+  transition:background 140ms ease-out,color 140ms ease-out;}
+.fleet-root .fleet-ro-viewtabs button>span{display:inline-grid;place-items:center;
+  min-width:20px;height:20px;padding:0 6px;border-radius:999px;background:var(--surface-3);
+  color:var(--muted);font-size:11px;font-weight:700;font-variant-numeric:tabular-nums;}
+.fleet-root .fleet-ro-viewtabs button.is-active{background:var(--surface-2);color:var(--text);}
+.fleet-root .fleet-ro-viewtabs button.is-active>span{background:rgba(255,196,0,.16);color:var(--yellow);}
+
 /* Complaint suggestions: one row that scrolls, faded at the trailing edge so
    the row visibly continues rather than looking truncated. Same pattern as the
    shop's service quick-pick (.db-service-quickpick), kept at the fleet's touch
@@ -1507,10 +1520,19 @@
    content width to its parent and widens the whole panel instead of
    scrolling itself — the section headers then slide off the left edge. */
 .fleet-root .wo-chips-scroll{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;
-  min-width:0;max-width:100%;padding-block:2px;
+  min-width:0;max-width:100%;margin-top:12px;padding-block:2px;
   -webkit-overflow-scrolling:touch;overscroll-behavior-x:contain;
-  mask-image:linear-gradient(to right,#000 calc(100% - 28px),transparent 100%);
-  -webkit-mask-image:linear-gradient(to right,#000 calc(100% - 28px),transparent 100%);}
+  /* Fade both ends: the row scrolls in two directions, and a hard left edge
+     mid-scroll reads as a chip sliced in half rather than as more to come.
+     Each side's fade is switched on only once there is something hidden that
+     way, so a row scrolled to the start is not dimmed against nothing. */
+  --fade-start:0px;--fade-end:28px;
+  mask-image:linear-gradient(to right,transparent 0,#000 var(--fade-start),
+    #000 calc(100% - var(--fade-end)),transparent 100%);
+  -webkit-mask-image:linear-gradient(to right,transparent 0,#000 var(--fade-start),
+    #000 calc(100% - var(--fade-end)),transparent 100%);}
+.fleet-root .wo-chips-scroll[data-at-start="false"]{--fade-start:28px;}
+.fleet-root .wo-chips-scroll[data-at-end="true"]{--fade-end:0px;}
 .fleet-root .wo-chips-scroll::-webkit-scrollbar{display:none;}
 .fleet-root .wo-chips-scroll .wo-chip{flex:0 0 auto;}
 

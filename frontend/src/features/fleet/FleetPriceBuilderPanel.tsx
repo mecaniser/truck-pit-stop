@@ -19,7 +19,7 @@
  */
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {
-  AlertTriangle, Box, Check, ClipboardList, History, Play, Plus,
+  AlertTriangle, Box, Check, ClipboardList, Play, Plus,
   RotateCcw, Search, Trash2, X,
 } from 'lucide-react'
 import { Spinner } from '@/components/ui'
@@ -110,7 +110,7 @@ export default function FleetPriceBuilderPanel({ repairOrderId, onClose, onChang
   const [addMode, setAddMode] = useState<AddMode>('operation')
   const [term, setTerm] = useState('')
   const [adHocOpen, setAdHocOpen] = useState(false)
-  const [historyOpen, setHistoryOpen] = useState(false)
+  const [view, setView] = useState<'work' | 'activity'>('work')
   const [completeOpen, setCompleteOpen] = useState(false)
 
   const debouncedTerm = useDebouncedValue(term, 250)
@@ -313,14 +313,57 @@ export default function FleetPriceBuilderPanel({ repairOrderId, onClose, onChang
               </section>
             )}
 
-            {/* ---- work ---- */}
+            {/* ---- work / activity ---- */}
+            {/* Activity is a second view of this order, not a setting on it, so
+                it sits beside the work as a peer and takes the same room. Under
+                Assignment it read as a property of the mechanic. */}
             <section>
               <div className="wo-draft-section-head">
-                <h3>Work &amp; parts</h3>
-                <span>{itemCount} item{itemCount === 1 ? '' : 's'}</span>
+                <div className="fleet-ro-viewtabs" role="tablist" aria-label="Repair order view">
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={view === 'work'}
+                    className={view === 'work' ? 'is-active' : undefined}
+                    onClick={() => setView('work')}
+                  >
+                    Work &amp; parts
+                    <span>{itemCount}</span>
+                  </button>
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={view === 'activity'}
+                    className={view === 'activity' ? 'is-active' : undefined}
+                    onClick={() => setView('activity')}
+                  >
+                    Activity
+                    {historyEvents.length > 0 && <span>{historyEvents.length}</span>}
+                  </button>
+                </div>
               </div>
 
-              {itemCount === 0 ? (
+              {view === 'activity' ? (
+                historyEvents.length === 0 ? (
+                  <div className="wo-builder-empty">
+                    Nothing has happened on this order yet.
+                  </div>
+                ) : (
+                  <ul className="fleet-ro-history">
+                    {historyEvents.map((event) => (
+                      <li key={event.id}>
+                        <strong>{event.label}</strong>
+                        {event.detail && <small>{event.detail}</small>}
+                        <small>
+                          {[event.actor_name, new Date(event.created_at).toLocaleString('en-US', {
+                            month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit',
+                          })].filter(Boolean).join(' · ')}
+                        </small>
+                      </li>
+                    ))}
+                  </ul>
+                )
+              ) : itemCount === 0 ? (
                 <div className="wo-builder-empty">
                   Nothing added yet. Work you add above lands here.
                 </div>
@@ -372,15 +415,6 @@ export default function FleetPriceBuilderPanel({ repairOrderId, onClose, onChang
                   />
                 </div>
               </div>
-              <button
-                type="button"
-                className="dbtn dbtn-ghost"
-                style={{ marginTop: 12 }}
-                onClick={() => setHistoryOpen(true)}
-              >
-                <History size={15} /> History
-                {historyEvents.length > 0 && ` · ${historyEvents.length}`}
-              </button>
             </section>
           </div>
         </div>
@@ -392,28 +426,6 @@ export default function FleetPriceBuilderPanel({ repairOrderId, onClose, onChang
           onClose={() => setAdHocOpen(false)}
           onSubmit={(draft) => addAdHoc.mutate(draft)}
         />
-      )}
-
-      {historyOpen && (
-        <Sheet title="History" onClose={() => setHistoryOpen(false)}>
-          {historyEvents.length === 0 ? (
-            <p className="wo-builder-empty-note">Nothing has happened on this order yet.</p>
-          ) : (
-            <ul className="fleet-ro-history">
-              {historyEvents.map((event) => (
-                <li key={event.id}>
-                  <strong>{event.label}</strong>
-                  {event.detail && <small>{event.detail}</small>}
-                  <small>
-                    {[event.actor_name, new Date(event.created_at).toLocaleString('en-US', {
-                      month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit',
-                    })].filter(Boolean).join(' · ')}
-                  </small>
-                </li>
-              ))}
-            </ul>
-          )}
-        </Sheet>
       )}
 
       {completeOpen && (
@@ -471,6 +483,33 @@ function ComplaintSection({ orderId, description, canEdit }: {
   const value = draft ?? description ?? ''
   const dirty = draft != null && draft.trim() !== (description ?? '').trim()
 
+  // Which way the row can still scroll, so each edge fades only when it hides
+  // something. Written to the DOM rather than through state: this fires on every
+  // scroll frame, and re-rendering the row on each one would be wasteful.
+  const chipRowRef = useRef<HTMLDivElement | null>(null)
+  useEffect(() => {
+    const row = chipRowRef.current
+    if (!row) return
+    const sync = () => {
+      const maxScroll = row.scrollWidth - row.clientWidth
+      row.dataset.atStart = String(row.scrollLeft <= 1)
+      row.dataset.atEnd = String(maxScroll <= 1 || row.scrollLeft >= maxScroll - 1)
+    }
+    sync()
+    row.addEventListener('scroll', sync, { passive: true })
+    // ResizeObserver is absent in jsdom and in older browsers; the fade is a
+    // refinement, so fall back to resize events rather than taking the panel
+    // down with a ReferenceError.
+    const observer = typeof ResizeObserver === 'function' ? new ResizeObserver(sync) : null
+    observer?.observe(row)
+    if (!observer) window.addEventListener('resize', sync)
+    return () => {
+      row.removeEventListener('scroll', sync)
+      observer?.disconnect()
+      if (!observer) window.removeEventListener('resize', sync)
+    }
+  }, [])
+
   const append = (chip: string) => setDraft((current) => {
     const base = (current ?? description ?? '').trim()
     const already = base.split(/[;,\n]+/).some(
@@ -506,12 +545,12 @@ function ComplaintSection({ orderId, description, canEdit }: {
           aria-label="Complaint"
         />
       </div>
-      {/* One scrollable row that fades at the edge, matching the shop's service
+      {/* One scrollable row that fades at its edges, matching the shop's service
           quick-pick: a second row of chips competes with the box above it, and
           the fade is what says the row continues. About seven fit before the
           fade; the rest are reached by scrolling, so none are dropped — unlike
           the shop's list, these are a fixed set with no search to fall back on. */}
-      <div className="wo-chips wo-chips-scroll">
+      <div ref={chipRowRef} className="wo-chips wo-chips-scroll" data-at-start="true" data-at-end="false">
         {COMPLAINT_CHIPS.map((chip) => (
           <button
             type="button"

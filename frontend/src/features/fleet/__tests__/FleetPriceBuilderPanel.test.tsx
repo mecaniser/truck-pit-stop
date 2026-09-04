@@ -188,16 +188,22 @@ describe('FleetPriceBuilderPanel', () => {
     expect(await screen.findByText('Billed to Elis Logistics')).toBeInTheDocument()
   })
 
-  it('shows who did what and when', async () => {
+  it('shows who did what and when, beside the work rather than under it', async () => {
+    // Activity is a second view of the order, so it is a peer of the work list
+    // and takes the same room — not a button parked under the mechanic.
     mockQueries()
     const user = userEvent.setup()
     renderPanel()
 
-    await user.click(await screen.findByRole('button', { name: /History/ }))
+    await user.click(await screen.findByRole('tab', { name: /Activity/ }))
 
-    const dialog = await screen.findByRole('dialog', { name: 'History' })
-    expect(within(dialog).getByText('Part added')).toBeInTheDocument()
-    expect(within(dialog).getByText(/Dana Fleet/)).toBeInTheDocument()
+    expect(await screen.findByText('Part added')).toBeInTheDocument()
+    expect(screen.getByText(/Dana Fleet/)).toBeInTheDocument()
+    // Switching views replaces the work list rather than stacking below it.
+    expect(screen.queryByText('Replace air line')).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('tab', { name: /Work & parts/ }))
+    expect(await screen.findByText('Replace air line')).toBeInTheDocument()
   })
 
   it('offers availability, not price, when searching parts', async () => {
@@ -307,11 +313,11 @@ describe('FleetPriceBuilderPanel', () => {
     const { container } = renderPanel()
     await screen.findByText('Replace air line')
 
-    const headings = [...container.querySelectorAll('h3')].map((h) => h.textContent)
-    expect(headings).toContain('Add work')
-    expect(headings).toContain('Work & parts')
+    const addWork = screen.getByRole('heading', { name: 'Add work' })
+    const workTab = screen.getByRole('tab', { name: /Work & parts/ })
     // You add work, then you see it accumulate — not the reverse.
-    expect(headings.indexOf('Add work')).toBeLessThan(headings.indexOf('Work & parts'))
+    expect(addWork.compareDocumentPosition(workTab))
+      .toBe(Node.DOCUMENT_POSITION_FOLLOWING)
   })
 
   it('does not offer editing once the order is frozen', async () => {
