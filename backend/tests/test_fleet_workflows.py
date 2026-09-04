@@ -1476,3 +1476,89 @@ async def test_changing_pm_services_keeps_separately_added_work(db_session):
     assert discovered.id in sources, "price-builder work was discarded by the PM re-seed"
     assert pm_b.id in sources, "the newly selected PM service was not seeded"
     assert pm_a.id not in sources, "the deselected PM service was not cleared"
+
+@pytest.mark.asyncio
+async def test_incident_joins_the_visit_already_underway(db_session):
+    """One visit, one order.
+
+    A truck already in the shop that turns up another fault should not acquire a
+    second open order: that splits one stop into two records, both of which have
+    to be found and closed, and the board carries the pair until someone
+    notices. The complaint joins the visit instead.
+    """
+    import sqlalchemy
+    _, vehicle, user = await _seed_fleet(db_session)
+
+    truck = await fleet.new_work_order(
+        vehicle_id=vehicle.id, body=WorkOrderCreate(description="Tire change"),
+        db=db_session, current_user=user)
+    open_ro_id = truck.work_order.repair_order_id
+
+    incident = await fleet.create_incident(
+        body=IncidentCreate(vehicle_id=vehicle.id, description="Air line blew",
+                            occurred_at=datetime.now(timezone.utc),
+                            severity=IncidentSeverity.HIGH),
+        db=db_session, current_user=user)
+    await fleet.create_repair_for_incident(
+        incident_id=incident.id, db=db_session, current_user=user)
+
+    open_ros = (await db_session.execute(
+        sqlalchemy.select(RepairOrder).where(
+            RepairOrder.vehicle_id == vehicle.id,
+            RepairOrder.status == RepairOrderStatus.DRAFT,
+        )
+    )).scalars().all()
+    assert len(open_ros) == 1, "the incident opened a second order for one visit"
+    assert open_ros[0].id == open_ro_id
+    # The visit now carries both complaints.
+    assert "Tire change" in open_ros[0].description
+    assert "Air line blew" in open_ros[0].description
+
+
+@pytest.mark.asyncio
+async def test_incident_opens_a_visit_when_the_truck_is_not_in_the_shop(db_session):
+    """The joining rule must not stop a truck with no open visit getting one."""
+    import sqlalchemy
+    _, vehicle, user = await _seed_fleet(db_session)
+
+    incident = await fleet.create_incident(
+        body=IncidentCreate(vehicle_id=vehicle.id, description="Brake fault",
+                            occurred_at=datetime.now(timezone.utc),
+                            severity=IncidentSeverity.HIGH),
+        db=db_session, current_user=user)
+    await fleet.create_repair_for_incident(
+        incident_id=incident.id, db=db_session, current_user=user)
+
+    ros = (await db_session.execute(
+        sqlalchemy.select(RepairOrder).where(RepairOrder.vehicle_id == vehicle.id)
+    )).scalars().all()
+    assert len(ros) == 1
+    assert "Brake fault" in ros[0].description
+
+
+@pytest.mark.asyncio
+async def test_incident_does_not_fold_into_a_pm(db_session):
+    """A PM keeps its curated scope: completing one rolls the odometer target
+    forward, so unrelated repair work must not ride along inside it."""
+    import sqlalchemy
+    from app.schemas.fleet import SchedulePMRequest
+    _, vehicle, user = await _seed_fleet(db_session)
+
+    await fleet.schedule_pm(
+        vehicle_id=vehicle.id, body=SchedulePMRequest(create_work_order=True),
+        db=db_session, current_user=user)
+
+    incident = await fleet.create_incident(
+        body=IncidentCreate(vehicle_id=vehicle.id, description="Cracked mirror",
+                            occurred_at=datetime.now(timezone.utc),
+                            severity=IncidentSeverity.LOW),
+        db=db_session, current_user=user)
+    await fleet.create_repair_for_incident(
+        incident_id=incident.id, db=db_session, current_user=user)
+
+    ros = (await db_session.execute(
+        sqlalchemy.select(RepairOrder).where(RepairOrder.vehicle_id == vehicle.id)
+    )).scalars().all()
+    assert len(ros) == 2, "the incident should get its own order beside the PM"
+    pm = next(r for r in ros if r.is_pm)
+    assert "Cracked mirror" not in (pm.description or "")

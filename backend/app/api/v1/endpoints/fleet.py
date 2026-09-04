@@ -833,10 +833,16 @@ async def create_work_order_for_inspection(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="This inspection has no failed items to fix")
 
     when = insp.performed_at.date().isoformat() if insp.performed_at else insp.scheduled_for.isoformat()
-    description = f"From {when} inspection: " + ", ".join(failed)
-    ro = await _spawn_internal_ro(
-        db, current_user.tenant_id, insp.vehicle, is_pm=False, description=description[:480],
-    )
+    description = (f"From {when} inspection: " + ", ".join(failed))[:480]
+    # Same rule as an incident: failed items found while the truck is already in
+    # the shop join the visit underway rather than opening a second one.
+    ro = await _open_visit_for_vehicle(db, current_user.tenant_id, insp.vehicle_id)
+    if ro is not None:
+        _append_to_visit(ro, description)
+    else:
+        ro = await _spawn_internal_ro(
+            db, current_user.tenant_id, insp.vehicle, is_pm=False, description=description,
+        )
     insp.repair_order_id = ro.id
     await db.commit()
     return await _load_inspection_detail(db, current_user.tenant_id, inspection_id)
@@ -1162,13 +1168,22 @@ async def create_repair_for_incident(
     vehicle = await _load_fleet_vehicle_or_404(
         db, current_user.tenant_id, incident.vehicle_id
     )
-    ro = await _spawn_internal_ro(
-        db,
-        current_user.tenant_id,
-        vehicle,
-        is_pm=False,
-        description=f"Incident repair: {incident.description[:240]}",
-    )
+    complaint = f"Incident repair: {incident.description[:240]}"
+    # One visit, one order. If the truck is already in the shop this belongs to
+    # the visit underway; opening a second order beside it splits one stop into
+    # two records that both have to be closed, and the fleet board carries the
+    # pair for as long as nobody notices.
+    ro = await _open_visit_for_vehicle(db, current_user.tenant_id, vehicle.id)
+    if ro is not None:
+        _append_to_visit(ro, complaint)
+    else:
+        ro = await _spawn_internal_ro(
+            db,
+            current_user.tenant_id,
+            vehicle,
+            is_pm=False,
+            description=complaint,
+        )
     incident.repair_order_id = ro.id
     if incident.status == IncidentStatus.OPEN:
         incident.status = IncidentStatus.IN_PROGRESS
@@ -1283,6 +1298,7 @@ def _board_work_order(ro: RepairOrder) -> BoardWorkOrder:
         summary=ro.description,
         mechanic=_mechanic_name(ro.assigned_mechanic),
         is_pm=bool(ro.is_pm),
+        opened_at=ro.created_at,
     )
 
 
@@ -1452,6 +1468,46 @@ async def _open_ros_by_vehicle(db: AsyncSession, vehicle_ids: list[UUID]) -> dic
     for ro in result.scalars().all():
         out.setdefault(ro.vehicle_id, []).append(ro)
     return out
+
+
+async def _open_visit_for_vehicle(
+    db: AsyncSession, tenant_id: UUID, vehicle_id: UUID
+) -> Optional[RepairOrder]:
+    """The truck's current visit, if it is already in the shop.
+
+    A repair order is a visit, not a job: while a truck is here, work found on
+    it belongs to the order that is already open rather than to a second one
+    opened alongside. PM orders are excluded — a PM has a curated scope and
+    completing it rolls the odometer target forward, so unrelated repairs must
+    not be folded into it.
+
+    Returns the oldest open non-PM order, which is the visit in progress when
+    more than one somehow exists.
+    """
+    result = await db.execute(
+        select(RepairOrder)
+        .where(
+            and_(
+                RepairOrder.tenant_id == tenant_id,
+                RepairOrder.vehicle_id == vehicle_id,
+                RepairOrder.is_pm.is_(False),
+                RepairOrder.status.notin_(list(TERMINAL_RO_STATUSES)),
+                RepairOrder.deleted_at.is_(None),
+            )
+        )
+        .order_by(RepairOrder.created_at.asc())
+        .limit(1)
+    )
+    return result.scalar_one_or_none()
+
+
+def _append_to_visit(ro: RepairOrder, addition: str) -> None:
+    """Add a newly found complaint to the visit already underway."""
+    existing = (ro.description or "").strip()
+    if not existing:
+        ro.description = addition
+    elif addition.lower() not in existing.lower():
+        ro.description = f"{existing}; {addition}"
 
 
 async def _open_incident_counts(db: AsyncSession, vehicle_ids: list[UUID]) -> dict[UUID, int]:

@@ -190,6 +190,11 @@ class BoardWorkOrder(BaseModel):
     summary: Optional[str] = None
     mechanic: Optional[str] = None
     is_pm: bool = False      # this work order is the truck's preventive-maintenance job
+    # When the visit opened. A repair order is a visit, so its age is how long
+    # the truck has been in the shop — the signal that says a visit never
+    # closed. Distinct from "updated 2h ago", which a stale order can still
+    # show after someone glances at it.
+    opened_at: Optional[datetime] = None
 
 
 class BoardTruck(BaseModel):
