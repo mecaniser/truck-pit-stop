@@ -112,6 +112,8 @@ export default function FleetPriceBuilderPanel({ repairOrderId, onClose, onChang
   const [adHocOpen, setAdHocOpen] = useState(false)
   const [view, setView] = useState<'work' | 'activity'>('work')
   const [completeOpen, setCompleteOpen] = useState(false)
+  // Extra work found after the job started, opened on request.
+  const [addOpen, setAddOpen] = useState(false)
 
   const debouncedTerm = useDebouncedValue(term, 250)
 
@@ -127,7 +129,11 @@ export default function FleetPriceBuilderPanel({ repairOrderId, onClose, onChang
   const updatePart = useUpdatePartQuantity(repairOrderId)
   const removePart = useRemovePart(repairOrderId)
   const assignMechanic = useAssignMechanic(repairOrderId)
-  const startWork = useStartWork(repairOrderId)
+  // Starting work is a handoff, not a step in building the order: the truck is
+  // in the bay and the manager is walking to the next one. Close the panel and
+  // put them back on the board rather than leaving them on a builder they are
+  // done with, staring at a Complete button they cannot honestly press yet.
+  const startWork = useStartWork(repairOrderId, () => { notify(); onClose() })
   const completeWork = useCompleteWork(repairOrderId, () => { notify(); onClose() })
 
   // Operation search is a POST, so it runs on a settled term rather than on
@@ -254,7 +260,11 @@ export default function FleetPriceBuilderPanel({ repairOrderId, onClose, onChang
             )}
 
             {/* ---- add ---- */}
-            {canEdit && (
+            {/* Only while the order is still being composed. Reopening a truck
+                that is already in the bay is a check-in, not a build session —
+                leading with a search box there asks the wrong question. Work
+                discovered mid-job is added from "Add more work" below. */}
+            {canEdit && (!started || addOpen) && (
               <section className="wo-builder-add">
                 <div className="wo-builder-section-head">
                   <h3>Add work</h3>
@@ -309,6 +319,31 @@ export default function FleetPriceBuilderPanel({ repairOrderId, onClose, onChang
                     })}
                     onAdHoc={() => setAdHocOpen(true)}
                   />
+                )}
+              </section>
+            )}
+
+            {/* In the bay: report the state instead of implying more input is
+                wanted. Adding work is still possible — it is just no longer the
+                first thing the screen asks for. */}
+            {started && detail.status === 'in_progress' && (
+              <section className="fleet-ro-inbay">
+                <div>
+                  <strong>In the bay</strong>
+                  <small>
+                    {detail.assigned_mechanic_id
+                      ? 'Work is underway.'
+                      : 'Work is underway, no mechanic assigned.'}
+                  </small>
+                </div>
+                {canEdit && !addOpen && (
+                  <button
+                    type="button"
+                    className="dbtn dbtn-ghost"
+                    onClick={() => setAddOpen(true)}
+                  >
+                    <Plus size={15} /> Add more work
+                  </button>
                 )}
               </section>
             )}

@@ -1497,6 +1497,17 @@
   background:var(--ink);color:var(--text);font:inherit;font-size:14px;}
 .fleet-root .fleet-ro-field input::placeholder{color:var(--muted-3);}
 
+/* In the bay. The panel stops asking for input and reports where the truck is,
+   because the manager who opens it now is checking on a job, not building one. */
+.fleet-root .fleet-ro-inbay{display:flex;align-items:center;justify-content:space-between;
+  gap:14px;flex-wrap:wrap;padding:14px 16px;border-radius:12px;
+  border:1px solid color-mix(in srgb,var(--st-shop) 42%,var(--line));
+  background:color-mix(in srgb,var(--st-shop) 10%,var(--surface));}
+.fleet-root .fleet-ro-inbay>div{display:grid;gap:3px;min-width:0;}
+.fleet-root .fleet-ro-inbay strong{font-size:15px;color:var(--st-shop);}
+.fleet-root .fleet-ro-inbay small{font-size:12.5px;line-height:1.45;color:var(--muted);}
+.fleet-root .fleet-ro-inbay .dbtn{flex:0 0 auto;}
+
 /* Work / Activity: two views of the same order, so they read as peers on one
    line rather than as a heading with a button hung off it. */
 .fleet-root .fleet-ro-viewtabs{display:flex;align-items:center;gap:4px;min-width:0;}

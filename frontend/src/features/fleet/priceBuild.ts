@@ -357,11 +357,15 @@ export function useAssignMechanic(orderId: string) {
  * forward (advance_vehicle_pm) and mileage-out capture that the generic
  * repair-order transitions do not.
  */
-export function useStartWork(orderId: string) {
+export function useStartWork(orderId: string, onDone?: () => void) {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: async () => (await api.post(`/fleet/work-orders/${orderId}/start`)).data,
-    onSuccess: () => { toast.success('Work started'); invalidateOrder(qc, orderId) },
+    onSuccess: () => {
+      toast.success('Work started — the truck is in the bay')
+      invalidateOrder(qc, orderId)
+      onDone?.()
+    },
     onError: (error) => toast.error(errorMessage(error, 'Unable to start work')),
   })
 }
