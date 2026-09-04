@@ -6,14 +6,14 @@ reads its cards from this projection, and the payload carried
 `work_started_at`, which is null for a draft: precisely the orders that go
 stale unnoticed. Carry `created_at` as `opened_at` so age can be shown.
 
-Revision ID: 133_fleet_board_opened_at
-Revises: 132_payment_source_step_up
+Revision ID: 135_fleet_board_opened_at
+Revises: 134_fleet_membership_ended_by
 """
 from alembic import op
 
 
-revision = "133_fleet_board_opened_at"
-down_revision = "132_payment_source_step_up"
+revision = "135_fleet_board_opened_at"
+down_revision = "134_fleet_membership_ended_by"
 branch_labels = None
 depends_on = None
 
