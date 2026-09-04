@@ -263,6 +263,41 @@ describe('FleetPriceBuilderPanel', () => {
     expect(screen.getByText('Replace air line')).toBeInTheDocument()
   })
 
+  it('lets the manager write the complaint an empty order arrives without', async () => {
+    // An order opened from the yard has no description: the server stopped
+    // stamping a placeholder, so the field is genuinely empty until someone
+    // says what is wrong.
+    mockQueries({ description: null })
+    apiMocks.put.mockResolvedValue({ data: {} })
+    const user = userEvent.setup()
+    renderPanel()
+
+    const box = await screen.findByLabelText('Complaint')
+    expect(box).toHaveValue('')
+
+    // Chips beat spelling it out on a tablet keyboard.
+    await user.click(screen.getByRole('button', { name: /Air leak/ }))
+    expect(box).toHaveValue('Air leak')
+
+    await user.click(screen.getByRole('button', { name: /Save complaint/ }))
+    await waitFor(() => expect(apiMocks.put).toHaveBeenCalledWith(
+      `/repair-orders/${ORDER_ID}`,
+      { description: 'Air leak' },
+    ))
+  })
+
+  it('puts the add bar above the list it fills', async () => {
+    mockQueries()
+    const { container } = renderPanel()
+    await screen.findByText('Replace air line')
+
+    const headings = [...container.querySelectorAll('h3')].map((h) => h.textContent)
+    expect(headings).toContain('Add work')
+    expect(headings).toContain('Work & parts')
+    // You add work, then you see it accumulate — not the reverse.
+    expect(headings.indexOf('Add work')).toBeLessThan(headings.indexOf('Work & parts'))
+  })
+
   it('does not offer editing once the order is frozen', async () => {
     mockQueries()
     apiMocks.get.mockImplementation((url: string) => {

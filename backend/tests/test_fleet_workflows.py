@@ -551,14 +551,21 @@ async def test_new_work_order_uses_description(db_session):
 
 
 @pytest.mark.asyncio
-async def test_new_work_order_defaults_blank_description(db_session):
+async def test_new_work_order_leaves_a_blank_description_empty(db_session):
+    """A blank complaint stays blank rather than becoming a placeholder.
+
+    The description field holds what is wrong with the truck. Filling it with
+    "Fleet work order" told a mechanic nothing and, worse, read as though
+    someone had already described the problem. An order opened from the yard
+    gets its complaint written in the builder instead.
+    """
     _, vehicle, user = await _seed_fleet(db_session)
     await fleet.new_work_order(vehicle_id=vehicle.id, body=WorkOrderCreate(description="   "),
                                db=db_session, current_user=user)
     ro = (await db_session.execute(
         __import__("sqlalchemy").select(RepairOrder).where(RepairOrder.vehicle_id == vehicle.id)
     )).scalar_one()
-    assert ro.description == "Fleet work order"
+    assert ro.description is None
 
 
 @pytest.mark.asyncio

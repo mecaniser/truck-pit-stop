@@ -3318,8 +3318,12 @@ async def new_work_order(
                     detail=f"Not enough stock for {item.name}. Available: {item.stock_quantity or 0}.",
                 )
 
-    # A truck can carry several open work orders at once, so no single-open guard.
-    description = (body.description.strip() if body.description else "") or "Fleet work order"
+    # A truck can carry several open repair orders at once, so no single-open guard.
+    # No placeholder description: the field holds the complaint — what is wrong
+    # with this truck — and stamping "Fleet work order" into it told a mechanic
+    # nothing while looking like someone had already written one. An order opened
+    # empty from the yard gets its complaint in the builder instead.
+    description = (body.description.strip() if body.description else "") or None
     ro = await _spawn_internal_ro(
         db,
         current_user.tenant_id,

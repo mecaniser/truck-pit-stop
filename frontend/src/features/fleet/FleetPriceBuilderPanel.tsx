@@ -37,7 +37,7 @@ import {
   useAddAdHocPart, useAddPart, useApplyOperation, useAssignMechanic,
   useCompleteWork, useFleetMechanics, useOperationSearch, usePartSearch,
   usePmServiceCatalog, usePmServices, usePriceBuildSummary, useRemoveLine,
-  useRemovePart, useRepairOrderDetail, useSetPmServices, useStartWork,
+  useRemovePart, useRepairOrderDetail, useSaveDescription, useSetPmServices, useStartWork,
   useUpdateLine, useUpdatePartQuantity,
   type FleetHistoryEvent, type FleetPartOption, type FleetRepairOrderDetail,
 } from './priceBuild'
@@ -230,11 +230,19 @@ export default function FleetPriceBuilderPanel({ repairOrderId, onClose, onChang
           <span style={{ color: chip.tone, fontWeight: 700 }}>{chip.label}</span>
           <span>{WO_STATUS_LABEL[detail.status] || detail.status}</span>
           {detail.vehicle_unit_number && <span>Unit {detail.vehicle_unit_number}</span>}
-          {detail.description && <span>{detail.description}</span>}
         </div>
 
         <div className="wo-builder-grid">
           <div className="wo-builder-main">
+            {/* What is wrong with the truck, first — an order opened from the
+                yard arrives with nothing said, and the complaint is what the
+                mechanic reads before any of the work lines. */}
+            <ComplaintSection
+              orderId={repairOrderId}
+              description={detail.description}
+              canEdit={canEdit}
+            />
+
             {/* PM scope is a curated package that drives the odometer roll
                 forward on completion, so it stays its own control. The list
                 below is for work found while doing the PM. */}
@@ -244,46 +252,6 @@ export default function FleetPriceBuilderPanel({ repairOrderId, onClose, onChang
                 canEdit={detail.status === 'draft'}
               />
             )}
-
-            {/* ---- work ---- */}
-            <section>
-              <div className="wo-draft-section-head">
-                <h3>Work &amp; parts</h3>
-                <span>{itemCount} item{itemCount === 1 ? '' : 's'}</span>
-              </div>
-
-              {itemCount === 0 ? (
-                <div className="wo-builder-empty">
-                  Start by adding an operation or a part.
-                </div>
-              ) : (
-                <div className="wo-builder-lines">
-                  {lines.map((line: PriceBuildLine) => (
-                    <LineRow
-                      key={line.id}
-                      line={line}
-                      parts={partsByLine.get(line.id) ?? []}
-                      canEdit={canEdit}
-                      onHours={(hours) => updateLine.mutate({ lineId: line.id, hours })}
-                      onRemove={() => removeLine.mutate(line.id)}
-                      onPartQuantity={(partUsageId, quantity) =>
-                        updatePart.mutate({ partUsageId, quantity })}
-                      onPartRemove={(partUsageId) => removePart.mutate(partUsageId)}
-                    />
-                  ))}
-                  {loose.map((part) => (
-                    <PartRow
-                      key={part.id}
-                      part={part}
-                      canEdit={canEdit}
-                      onQuantity={(quantity) =>
-                        updatePart.mutate({ partUsageId: part.id, quantity })}
-                      onRemove={() => removePart.mutate(part.id)}
-                    />
-                  ))}
-                </div>
-              )}
-            </section>
 
             {/* ---- add ---- */}
             {canEdit && (
@@ -344,6 +312,46 @@ export default function FleetPriceBuilderPanel({ repairOrderId, onClose, onChang
                 )}
               </section>
             )}
+
+            {/* ---- work ---- */}
+            <section>
+              <div className="wo-draft-section-head">
+                <h3>Work &amp; parts</h3>
+                <span>{itemCount} item{itemCount === 1 ? '' : 's'}</span>
+              </div>
+
+              {itemCount === 0 ? (
+                <div className="wo-builder-empty">
+                  Nothing added yet. Work you add above lands here.
+                </div>
+              ) : (
+                <div className="wo-builder-lines">
+                  {lines.map((line: PriceBuildLine) => (
+                    <LineRow
+                      key={line.id}
+                      line={line}
+                      parts={partsByLine.get(line.id) ?? []}
+                      canEdit={canEdit}
+                      onHours={(hours) => updateLine.mutate({ lineId: line.id, hours })}
+                      onRemove={() => removeLine.mutate(line.id)}
+                      onPartQuantity={(partUsageId, quantity) =>
+                        updatePart.mutate({ partUsageId, quantity })}
+                      onPartRemove={(partUsageId) => removePart.mutate(partUsageId)}
+                    />
+                  ))}
+                  {loose.map((part) => (
+                    <PartRow
+                      key={part.id}
+                      part={part}
+                      canEdit={canEdit}
+                      onQuantity={(quantity) =>
+                        updatePart.mutate({ partUsageId: part.id, quantity })}
+                      onRemove={() => removePart.mutate(part.id)}
+                    />
+                  ))}
+                </div>
+              )}
+            </section>
 
             {/* ---- who / when ---- */}
             <section className="wo-builder-scope">
@@ -436,6 +444,94 @@ function Shell({ title, onClose, footer, children }: {
     >
       {children}
     </SidekickPanel>
+  )
+}
+
+/* Complaints a fleet manager writes over and over, standing at the truck.
+   Tapping one beats spelling it out on a tablet keyboard; all stay editable. */
+const COMPLAINT_CHIPS = [
+  'Air leak', 'Brakes', 'Check engine light', 'DOT inspection due', 'Tires',
+  'Lights out', 'Coolant leak', 'A/C not cooling', "Won't start", 'Oil leak',
+]
+
+/**
+ * The complaint: what is wrong with this truck.
+ *
+ * An order opened from the yard arrives with none — the server no longer
+ * stamps a placeholder into the field, because a placeholder looks like
+ * someone already described the problem when nobody has.
+ */
+function ComplaintSection({ orderId, description, canEdit }: {
+  orderId: string
+  description: string | null
+  canEdit: boolean
+}) {
+  const saveDescription = useSaveDescription(orderId)
+  const [draft, setDraft] = useState<string | null>(null)
+  const value = draft ?? description ?? ''
+  const dirty = draft != null && draft.trim() !== (description ?? '').trim()
+
+  const append = (chip: string) => setDraft((current) => {
+    const base = (current ?? description ?? '').trim()
+    const already = base.split(/[;,\n]+/).some(
+      (token) => token.trim().toLocaleLowerCase() === chip.toLocaleLowerCase(),
+    )
+    if (already) return base
+    return base ? `${base}; ${chip}` : chip
+  })
+
+  if (!canEdit) {
+    if (!description) return null
+    return (
+      <section>
+        <div className="wo-draft-section-head"><h3>Complaint</h3></div>
+        <p className="fleet-ro-complaint-read">{description}</p>
+      </section>
+    )
+  }
+
+  return (
+    <section>
+      <div className="wo-draft-section-head">
+        <h3>Complaint</h3>
+        {dirty && <span>Unsaved</span>}
+      </div>
+      <div className="fleet-ro-field">
+        <textarea
+          className="fleet-ro-complaint"
+          value={value}
+          onChange={(event) => setDraft(event.target.value)}
+          placeholder="What is wrong with this truck?"
+          rows={3}
+          aria-label="Complaint"
+        />
+      </div>
+      <div className="wo-chips">
+        {COMPLAINT_CHIPS.map((chip) => (
+          <button
+            type="button"
+            key={chip}
+            className="wo-chip"
+            onClick={() => append(chip)}
+          >
+            <Plus size={13} /> {chip}
+          </button>
+        ))}
+      </div>
+      {dirty && (
+        <button
+          type="button"
+          className="dbtn dbtn-yellow"
+          style={{ marginTop: 10 }}
+          disabled={saveDescription.isPending}
+          onClick={() => saveDescription.mutate(value, {
+            onSuccess: () => setDraft(null),
+          })}
+        >
+          {saveDescription.isPending ? <Spinner size="xs" /> : <Check size={15} />} Save complaint
+        </button>
+      )}
+    </section>
   )
 }
 
