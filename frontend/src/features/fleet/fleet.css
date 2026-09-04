@@ -408,6 +408,10 @@
 .fleet-root .fleet-sidekick-actions .dbtn:last-child{min-width:180px;justify-content:center;}
 .fleet-root .fleet-sidekick-actions-three .dbtn:first-child{margin-right:auto;}
 .fleet-root .fleet-sidekick-shell button{min-height:44px;}
+/* Suggestion chips opt out of the 44px floor: they type a word into the field
+   above them rather than performing an action, and at button height a row of
+   them outweighs the box they serve. */
+.fleet-root .fleet-sidekick-shell .wo-chip{min-height:30px;}
 .fleet-root .fleet-sidekick-shell button[aria-label],.fleet-root .fleet-sidekick-shell .icon-hit,.fleet-root .fleet-sidekick-shell .person-call{min-width:44px;min-height:44px;}
 .fleet-root .fleet-sidekick-shell button:focus-visible,
 .fleet-root .fleet-sidekick-shell a:focus-visible,
@@ -1142,6 +1146,7 @@
   container-type:inline-size;container-name:wo-drawer;}
 .fleet-root .wo-drawer-actions{display:flex;gap:10px;justify-content:flex-end;}
 .fleet-root .wo-drawer-actions .dbtn{height:46px;padding:0 20px;font-size:14px;}
+.fleet-root .wo-drawer-body .wo-chip{min-height:30px;}
 .fleet-root .wo-drawer-body button,
 .fleet-root .wo-drawer-body select{min-height:44px;}
 .fleet-root .wo-drawer-body .icon-hit{min-width:44px;min-height:44px;}
@@ -1157,10 +1162,15 @@
 .fleet-root .wo-complaint-shortcuts-head span{font-size:11px;font-weight:750;letter-spacing:.06em;text-transform:uppercase;color:var(--muted-2);}
 .fleet-root .wo-complaint-shortcuts-head small{font-size:11px;color:var(--muted-2);}
 .fleet-root .wo-chips{display:flex;flex-wrap:wrap;gap:8px;}
-.fleet-root .wo-chip{display:inline-flex;align-items:center;gap:5px;min-height:38px;padding:0 13px;
+/* Sized against the shop's service quick-pick rather than against the fleet's
+   primary controls. These append a word to the complaint box — a suggestion,
+   not an action — so they read as secondary and stay clear of WCAG's 24px
+   target minimum without taking a button's worth of room. */
+.fleet-root .wo-chip{display:inline-flex;align-items:center;gap:4px;min-height:30px;padding:0 10px;
   border-radius:999px;border:1px solid var(--line);background:var(--surface-2);color:var(--muted);
-  font-size:13px;font-weight:600;cursor:pointer;
+  font-size:12px;font-weight:600;line-height:1.2;cursor:pointer;
   transition:background 140ms ease-out,color 140ms ease-out,border-color 140ms ease-out;}
+.fleet-root .wo-chip>svg{width:12px;height:12px;flex:0 0 auto;}
 .fleet-root .wo-chip:hover{background:var(--surface-3);color:var(--text);border-color:var(--line-2);}
 .fleet-root .wo-chip:active{transform:scale(.97);}
 .fleet-root .wo-chip.is-selected{background:rgba(255,183,0,.10);border-color:rgba(255,183,0,.34);color:var(--yellow);cursor:default;}
@@ -1409,7 +1419,13 @@
   .fleet-root .dhead-r .dbtn{height:44px;}
   .fleet-root .dback{min-height:44px;display:inline-flex;align-items:center;}
   .fleet-root .pm-svc-row{min-height:44px;}
-  .fleet-root .wo-chip{min-height:44px;}
+  /* Suggestion chips keep their compact size at tablet width; the 44px floor
+     belongs to controls that do something, not to ones that type a word for
+     you. They still clear the 24px target minimum. Selectors match the
+     shell/drawer exemptions above so this actually wins at arm's length. */
+  .fleet-root .fleet-sidekick-shell .wo-chip,
+  .fleet-root .wo-drawer-body .wo-chip,
+  .fleet-root .wo-chip{min-height:32px;}
   /* Icon-sized destructive controls: the glyph stays small, the button grows
      to the touch floor around it. Sized on the element itself rather than a
      pseudo-element, so what a thumb hits is what the box reports. */
@@ -1486,13 +1502,21 @@
    shop's service quick-pick (.db-service-quickpick), kept at the fleet's touch
    height — /fleet is a tablet held one-handed, where the shop's 28px chip would
    be the wrong posture, not a consistency win. */
+/* min-width:0 is what keeps the scroll inside this row. A grid/flex item
+   defaults to min-width:auto, so a nowrap row of chips reports its full
+   content width to its parent and widens the whole panel instead of
+   scrolling itself — the section headers then slide off the left edge. */
 .fleet-root .wo-chips-scroll{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;
-  padding-block:2px;
+  min-width:0;max-width:100%;padding-block:2px;
   -webkit-overflow-scrolling:touch;overscroll-behavior-x:contain;
   mask-image:linear-gradient(to right,#000 calc(100% - 28px),transparent 100%);
   -webkit-mask-image:linear-gradient(to right,#000 calc(100% - 28px),transparent 100%);}
 .fleet-root .wo-chips-scroll::-webkit-scrollbar{display:none;}
 .fleet-root .wo-chips-scroll .wo-chip{flex:0 0 auto;}
+
+/* Every builder section is a grid item, and any one of them containing an
+   overflowing child must be allowed to shrink or it widens the panel. */
+.fleet-root .wo-builder-main>section{min-width:0;}
 
 /* The complaint: a few lines of prose, sized for a thumb keyboard. */
 .fleet-root .fleet-ro-complaint{width:100%;min-height:88px;padding:12px 13px;resize:vertical;
