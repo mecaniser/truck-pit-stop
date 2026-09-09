@@ -2040,6 +2040,97 @@ async def test_qbp_native_deposit_imports_exact_fee_and_is_idempotent(db_session
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("ownership", ["local", "mixed", "legacy", "foreign", "ambiguous_fee"])
+async def test_qbp_native_provider_shaped_two_payment_batch(db_session, monkeypatch, ownership):
+    """Sanitized shape observed via live GETs; no real IDs, card data or API calls.
+
+    QBO exposes a gross Deposit and a separate daily fee Purchase without an
+    explicit link. Per-card fees seen in the merchant UI are deliberately absent.
+    """
+    async def no_provider_request(*args, **kwargs):
+        pytest.fail("Provider-shaped acceptance must not access Intuit")
+
+    monkeypatch.setattr("app.services.db048_accounting_reconciliation._request", no_provider_request)
+    tenant = await _tenant_with_qbp_configuration(db_session)
+    foreign = await _tenant_with_qbp_configuration(db_session) if ownership == "foreign" else None
+    payments = []
+    for index, amount in enumerate(("382.48", "876.60")):
+        if ownership != "legacy" and not (ownership == "mixed" and index == 0):
+            await _qbp_payout_attempt(
+                db_session, tenant=foreign if foreign and index == 0 else tenant,
+                realm="realm-qbp", charge_id=f"native-charge-{index}",
+                gross=Decimal(amount), qbo_payment_id=f"native-payment-{index}",
+                qbo_customer_id=f"native-customer-{index}", qbo_invoice_id=f"native-invoice-{index}",
+            )
+        payments.append({
+            "Id": f"native-payment-{index}", "TotalAmt": float(amount),
+            "TxnDate": "2026-09-03",
+            "CustomerRef": {"value": f"native-customer-{index}"},
+            "CreditCardPayment": {"CreditChargeResponse": {
+                "CCTransId": f"native-charge-{index}", "Status": "Completed",
+            }},
+            "LinkedTxn": [{"TxnId": "native-deposit", "TxnType": "Deposit"}],
+            "Line": [{"Amount": float(amount), "LinkedTxn": [{
+                "TxnId": f"native-invoice-{index}", "TxnType": "Invoice",
+            }]}],
+        })
+    deposit = {
+        "Id": "native-deposit", "TotalAmt": 1259.08, "TxnDate": "2026-09-03",
+        "DepositToAccountRef": {"value": "35", "name": "bank-qbp"},
+        "PrivateNote": "System-recorded deposit for QuickBooks Payments",
+        "Line": [{"Amount": p["TotalAmt"], "LinkedTxn": [{
+            "TxnId": p["Id"], "TxnType": "Payment", "TxnLineId": "0",
+        }]} for p in payments],
+    }
+    fee = {
+        "Id": "native-fee", "TotalAmt": 35.77, "TxnDate": "2026-09-03",
+        "AccountRef": {"value": "35", "name": "bank-qbp"},
+        "EntityRef": {"value": "native-vendor", "name": "QuickBooks Payments", "type": "Vendor"},
+        "PrivateNote": "System-recorded fee for QuickBooks Payments. Fee-name: DiscountRateFee, fee-type: Daily.",
+        "Line": [{"Amount": 35.77, "DetailType": "AccountBasedExpenseLineDetail",
+                  "AccountBasedExpenseLineDetail": {"AccountRef": {
+                      "value": "expense-1", "name": "Processor Fees",
+                  }}}],
+    }
+    purchases = [fee]
+    if ownership == "ambiguous_fee":
+        purchases.append({**fee, "Id": "second-daily-fee"})
+    connection = QuickBooksConnection(tenant_id=tenant.id, realm_id="realm-qbp", status="connected")
+    kwargs = dict(connection=connection, deposits=[deposit], payments=payments, purchases=purchases)
+    first = await reconcile_qbp_native_settlements(db_session, **kwargs)
+    await db_session.flush()
+    assert await reconcile_qbp_native_settlements(db_session, **kwargs) == first
+    batches = list((await db_session.scalars(select(ProviderSettlementBatch))).all())
+    if ownership == "legacy":
+        assert first["skipped"] == 1
+        assert batches == []
+        return
+    assert len(batches) == 1
+    batch = batches[0]
+    assert batch.tenant_id == tenant.id
+    assert batch.qbo_deposit_id == "native-deposit"
+    if ownership == "local":
+        assert first["matched"] == 1
+        assert batch.processor_fees == Decimal("35.77")
+        assert batch.net_payout == Decimal("1223.31")
+        assert await db_session.scalar(select(func.count()).select_from(ProviderSettlementEntry)) == 3
+        entries = list((await db_session.scalars(select(ProviderSettlementEntry))).all())
+        assert sum(e.entry_type == "qbp_fee_purchase" for e in entries) == 1
+        assert all(e.attempt_id is None for e in entries if e.entry_type == "qbp_fee_purchase")
+        fee["TotalAmt"] = 36.77
+        fee["Line"][0]["Amount"] = 36.77
+        with pytest.raises(DB048ReconciliationError, match="immutable manifest"):
+            await reconcile_qbp_native_settlements(db_session, **kwargs)
+        assert batch.processor_fees == Decimal("35.77")
+        assert await db_session.scalar(select(func.count()).select_from(ProviderSettlementEntry)) == 3
+    else:
+        assert first["matched"] == 0
+        assert first["manual"] == 1
+        expected = "fee_purchase_ambiguous" if ownership == "ambiguous_fee" else "unmatched_qbo_payment"
+        assert expected in batch.mismatch_reason
+
+
+@pytest.mark.asyncio
 async def test_qbp_native_deposit_rejects_unprefixed_reference_collision(
     db_session,
 ) -> None:
