@@ -37,6 +37,7 @@ from app.api.v1.endpoints.invoice_settlements import (
 from app.services.db048_accounting_reconciliation import (
     CREDIT_ACCOUNTING_EVENT,
     DB048ReconciliationError,
+    deliver_accounting_envelope,
     _ensure_db048_qbo_invoice,
     _refresh_accounting_connection_if_needed,
     _book_stripe_payout_batch,
@@ -65,6 +66,31 @@ from app.services.invoice_settlement_service import (
     SettlementDomainError,
     bind_settlement_accounting_realm,
 )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("kind", [
+    "payment", "refund", "payment_reversal", "payment_dispute",
+    "payment_dispute_recovery", "credit_application",
+])
+async def test_native_accounting_non_owner_never_dispatches_writes(monkeypatch, kind):
+    """The dormant native writer must fail closed before DB/provider access."""
+    async def forbidden(*args, **kwargs):
+        pytest.fail("Non-owner reached an accounting writer")
+
+    for name in ("_request", "sync_db048_payment", "sync_db048_refund",
+                 "sync_db048_reversal", "sync_db048_dispute"):
+        monkeypatch.setattr(f"app.services.db048_accounting_reconciliation.{name}", forbidden)
+    envelope = SimpleNamespace(
+        config=SimpleNamespace(writer_strategy="intuit_native"),
+        link=SimpleNamespace(sync_state="pending", financial_object_type=kind),
+    )
+    with pytest.raises(DB048ReconciliationError, match="imported, not created"):
+        if kind == "credit_application":
+            await sync_db048_credit_application(None, envelope)
+        else:
+            await deliver_accounting_envelope(None, envelope)
+    assert envelope.link.sync_state == "awaiting_native_import"
 
 
 def _invoice(*, principal: Decimal = Decimal("100.00")) -> SimpleNamespace:
@@ -2040,7 +2066,7 @@ async def test_qbp_native_deposit_imports_exact_fee_and_is_idempotent(db_session
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("ownership", ["local", "mixed", "legacy", "foreign", "ambiguous_fee"])
+@pytest.mark.parametrize("ownership", ["local", "mixed", "legacy", "foreign", "ambiguous_fee", "writer_zero_fee", "writer_surcharge"])
 async def test_qbp_native_provider_shaped_two_payment_batch(db_session, monkeypatch, ownership):
     """Sanitized shape observed via live GETs; no real IDs, card data or API calls.
 
@@ -2055,11 +2081,13 @@ async def test_qbp_native_provider_shaped_two_payment_batch(db_session, monkeypa
     foreign = await _tenant_with_qbp_configuration(db_session) if ownership == "foreign" else None
     payments = []
     for index, amount in enumerate(("382.48", "876.60")):
+        attempt = None
         if ownership != "legacy" and not (ownership == "mixed" and index == 0):
-            await _qbp_payout_attempt(
+            attempt = await _qbp_payout_attempt(
                 db_session, tenant=foreign if foreign and index == 0 else tenant,
                 realm="realm-qbp", charge_id=f"native-charge-{index}",
                 gross=Decimal(amount), qbo_payment_id=f"native-payment-{index}",
+                customer_fee=Decimal("3.00") if ownership == "writer_surcharge" else Decimal("0.00"),
                 qbo_customer_id=f"native-customer-{index}", qbo_invoice_id=f"native-invoice-{index}",
             )
         payments.append({
@@ -2074,6 +2102,21 @@ async def test_qbp_native_provider_shaped_two_payment_batch(db_session, monkeypa
                 "TxnId": f"native-invoice-{index}", "TxnType": "Invoice",
             }]}],
         })
+        if ownership.startswith("writer_"):
+            # Compose the real outbound builder with the importer. Adding native
+            # identity is a fixture assumption, not evidence that Intuit adopts
+            # our externally-created Payment into its settlement batch.
+            local_payment = await db_session.get(Payment, attempt.payment_id)
+            local_invoice = await db_session.get(Invoice, attempt.invoice_id)
+            outbound = db048_qbo_payment_payload(
+                payment=local_payment, invoice=local_invoice, attempt=attempt,
+                qbo_customer_id=f"native-customer-{index}",
+                qbo_invoice_id=f"native-invoice-{index}",
+                principal_amount=attempt.applied_principal_amount,
+                received_principal_amount=attempt.received_amount,
+                deposit_account="QBP Clearing",
+            )
+            payments[-1].update(outbound)
     deposit = {
         "Id": "native-deposit", "TotalAmt": 1259.08, "TxnDate": "2026-09-03",
         "DepositToAccountRef": {"value": "35", "name": "bank-qbp"},
@@ -2109,7 +2152,7 @@ async def test_qbp_native_provider_shaped_two_payment_batch(db_session, monkeypa
     batch = batches[0]
     assert batch.tenant_id == tenant.id
     assert batch.qbo_deposit_id == "native-deposit"
-    if ownership == "local":
+    if ownership in ("local", "writer_zero_fee"):
         assert first["matched"] == 1
         assert batch.processor_fees == Decimal("35.77")
         assert batch.net_payout == Decimal("1223.31")
@@ -2126,8 +2169,16 @@ async def test_qbp_native_provider_shaped_two_payment_batch(db_session, monkeypa
     else:
         assert first["matched"] == 0
         assert first["manual"] == 1
-        expected = "fee_purchase_ambiguous" if ownership == "ambiguous_fee" else "unmatched_qbo_payment"
+        expected = (
+            "fee_purchase_ambiguous" if ownership == "ambiguous_fee"
+            else "qbo_payment_amount_mismatch" if ownership == "writer_surcharge"
+            else "unmatched_qbo_payment"
+        )
         assert expected in batch.mismatch_reason
+        if ownership == "writer_surcharge":
+            # Gross Deposit is deliberately synthetic: provider adoption and
+            # explicit surcharge components still require external evidence.
+            assert "deposit_payment_amount_mismatch" in batch.mismatch_reason
 
 
 @pytest.mark.asyncio

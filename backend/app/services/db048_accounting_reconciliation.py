@@ -11,7 +11,7 @@ import hashlib
 import json
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from typing import Any, Awaitable, Callable, Optional
 from uuid import UUID, uuid4
 
@@ -1577,8 +1577,102 @@ async def sync_db048_principal_invoice(
     return qbo_invoice_id
 
 
+def _fee_journal_semantics(payload: dict[str, Any]) -> tuple:
+    """Ignore provider metadata, never ignore monetary or posting identity."""
+    currency = payload.get("CurrencyRef")
+    if currency is not None and (not isinstance(currency, dict) or currency.get("value") != "USD"):
+        raise DB048ReconciliationError("Customer fee journal currency conflict")
+    if payload.get("ExchangeRate") is not None:
+        try:
+            rate = Decimal(str(payload["ExchangeRate"]))
+        except (InvalidOperation, ValueError):
+            raise DB048ReconciliationError("Customer fee journal exchange rate conflict")
+        if not rate.is_finite() or rate != Decimal("1"):
+            raise DB048ReconciliationError("Customer fee journal exchange rate conflict")
+    lines = []
+    raw_lines = payload.get("Line")
+    if not isinstance(raw_lines, list):
+        raise DB048ReconciliationError("Customer fee journal contents conflict")
+    for line in raw_lines:
+        if not isinstance(line, dict):
+            raise DB048ReconciliationError("Customer fee journal contents conflict")
+        detail = line.get("JournalEntryLineDetail") or {}
+        if not isinstance(detail, dict) or not isinstance(detail.get("AccountRef"), dict):
+            raise DB048ReconciliationError("Customer fee journal contents conflict")
+        if line.get("DetailType") != "JournalEntryLineDetail" or detail.get("Entity"):
+            raise DB048ReconciliationError("Customer fee journal contents conflict")
+        lines.append((str(detail.get("PostingType") or ""),
+                      str((detail.get("AccountRef") or {}).get("value") or ""),
+                      money(line.get("Amount"))))
+    return (payload.get("DocNumber"), payload.get("PrivateNote"), sorted(lines))
+
+
+def _validate_adjustment_owner(envelope: AccountingEnvelope) -> None:
+    realm = getattr(envelope.link, "qbo_realm_snapshot", None)
+    if not realm or realm != getattr(envelope.connection, "realm_id", None):
+        raise DB048ReconciliationError("Customer fee journal realm mismatch")
+    if (envelope.link.tenant_id != envelope.attempt.tenant_id
+            or envelope.link.tenant_id != envelope.connection.tenant_id
+            or envelope.link.attempt_id != envelope.attempt.id):
+        raise DB048ReconciliationError("Customer fee journal ownership mismatch")
+
+
+def _validate_customer_fee_identity(envelope: AccountingEnvelope) -> None:
+    customer_fee = money(envelope.attempt.applied_card_fee_amount) + money(envelope.attempt.applied_card_fee_tax_amount)
+    if customer_fee == ZERO and getattr(envelope.link, "provider_fee_journal_id", None):
+        raise DB048ReconciliationError("Customer fee journal exists for a zero fee")
+
+
+async def _sync_db048_adjustment_journals(envelope: AccountingEnvelope) -> None:
+    _validate_customer_fee_identity(envelope)
+    payloads = db048_qbo_adjustment_payloads(
+        attempt=envelope.attempt, payment=envelope.payment,
+        mappings=envelope.link.account_mapping_snapshot or {},
+    )
+    if not payloads:
+        return
+    _validate_adjustment_owner(envelope)
+    for document_number, payload in payloads:
+        is_customer_fee = document_number.startswith("F-")
+        if is_customer_fee:
+            payload["PrivateNote"] += f"; attempt={envelope.attempt.id}"
+        for line in payload["Line"]:
+            ref = line["JournalEntryLineDetail"]["AccountRef"]
+            ref["value"] = await _resolve_qbo_account_reference(envelope.connection, ref["value"])
+        saved_id = getattr(envelope.link, "provider_fee_journal_id", None) if is_customer_fee else None
+        if saved_id:
+            result = await _request(envelope.connection, "GET", f"journalentry/{saved_id}")
+            existing = result.get("JournalEntry") if isinstance(result, dict) else None
+            if not isinstance(existing, dict) or str(existing.get("Id")) != saved_id:
+                raise DB048ReconciliationError("Customer fee journal identity conflict")
+        else:
+            rows = await _query(envelope.connection,
+                f"select * from JournalEntry where DocNumber = '{_escape_query(document_number)}' maxresults 2")
+            if len(rows) > 1:
+                raise DB048ReconciliationError("Customer fee journal identity is ambiguous")
+            existing = rows[0] if rows else None
+        if existing:
+            if not existing.get("Id") or _fee_journal_semantics(existing) != _fee_journal_semantics(payload):
+                raise DB048ReconciliationError("Customer fee journal contents conflict")
+            journal_id = str(existing["Id"])
+        else:
+            response = await _request(envelope.connection, "POST", "journalentry", json=payload,
+                params={"requestid": _qbo_request_id("journal", document_number)})
+            journal = response.get("JournalEntry") if isinstance(response, dict) else None
+            if not isinstance(journal, dict) or not journal.get("Id"):
+                raise QuickBooksAccountingError("QuickBooks did not return the DB-048 adjustment")
+            if _fee_journal_semantics(journal) != _fee_journal_semantics(payload):
+                raise DB048ReconciliationError("Customer fee journal response contents conflict")
+            journal_id = str(journal["Id"])
+        if is_customer_fee:
+            envelope.link.provider_fee_journal_id = journal_id
+
+
 async def sync_db048_payment(envelope: AccountingEnvelope) -> str:
     """Create principal-only A/R and one full-principal receipt, exactly once."""
+    _validate_customer_fee_identity(envelope)
+    if money(envelope.attempt.applied_card_fee_amount) + money(envelope.attempt.applied_card_fee_tax_amount) > ZERO:
+        _validate_adjustment_owner(envelope)
     principal_total = money(envelope.settlement.principal_total)
     customer_id, qbo_invoice_id = await _ensure_db048_qbo_invoice(
         connection=envelope.connection,
@@ -1684,24 +1778,7 @@ async def sync_db048_payment(envelope: AccountingEnvelope) -> str:
     if receipt_principal > applied_principal:
         envelope.link.provider_deposit_id = payment_id
 
-    for document_number, payload in db048_qbo_adjustment_payloads(
-        attempt=envelope.attempt,
-        payment=envelope.payment,
-        mappings=envelope.link.account_mapping_snapshot or {},
-    ):
-        existing = await _qbo_find_by_doc_number(envelope.connection, "JournalEntry", document_number)
-        if existing:
-            continue
-        response = await _request(
-            envelope.connection,
-            "POST",
-            "journalentry",
-            json=payload,
-            params={"requestid": _qbo_request_id("journal", document_number)},
-        )
-        journal = response.get("JournalEntry") if isinstance(response, dict) else None
-        if not isinstance(journal, dict) or not journal.get("Id"):
-            raise QuickBooksAccountingError("QuickBooks did not return the DB-048 adjustment")
+    await _sync_db048_adjustment_journals(envelope)
     await _sync_db048_unearned_surcharge(
         envelope,
         qbo_customer_id=customer_id,

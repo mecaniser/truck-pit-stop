@@ -473,6 +473,7 @@ class PaymentAccountingLink(BaseModel):
     sync_state = Column(String(32), nullable=False, default="pending", index=True)
     provider_object_id = Column(String(255), nullable=True)
     provider_deposit_id = Column(String(255), nullable=True)
+    provider_fee_journal_id = Column(String(255), nullable=True)
     sync_error = Column(Text, nullable=True)
     synced_at = Column(DateTime(timezone=True), nullable=True)
 

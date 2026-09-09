@@ -430,10 +430,49 @@ Before QBP can be globally approved, sandbox evidence must freeze one writer:
 
 - `intuit_native`: Intuit creates Payment/Deposit/Fee objects and DieselBridge
   imports/reconciles them; or
-- `dieselbridge`: DieselBridge creates them through the outbox.
+- `dieselbridge`: DieselBridge creates invoice Payments and customer-fee/tax
+  adjustment journals through the outbox. Intuit-native settlement Deposits and
+  processing-fee Purchases remain import-only under section 8.3; this setting
+  does not authorize recreating them.
 
 The configuration cannot be active if the writer strategy is unknown. The
 non-owner rejects creation and only reconciles provider IDs.
+
+Operational verification hold (2026-09-09): the supported DieselBridge writer
+posts principal-only Payments plus separate customer-fee/tax journals, but the
+native settlement importer currently requires each Payment total to equal the
+gross provider charge. The composed surcharge regression fails closed into
+manual reconciliation. Do not treat zero-fee fixture acceptance as clearance
+for surcharge-bearing payouts, relax exact identity/amount checks, or estimate
+settled fees. Before activation, establish how Intuit links the externally
+created Payment and fee/tax components to its native Deposit, then implement
+and independently verify that exact composition without duplicate accounting
+objects. The `intuit_native` writer remains unavailable pending its own adoption
+and manual-rail ownership implementation.
+
+#### Surcharge identity prerequisite (2026-09-09)
+
+The accounting link must persist a dedicated `provider_fee_journal_id` for the
+customer-fee/tax journal, bound by its existing tenant, realm, and payment-attempt
+identity. It must not reuse `provider_deposit_id`, which already identifies the
+overpayment receipt. The additive field is nullable for existing records; no
+historical journal is adopted solely because its document number matches.
+Adoption verifies the journal's exact document/source marker and balanced
+account, posting-direction, and amount components against the snapshotted
+customer fee/tax payload. Resolved account IDs are used for comparison. A retry
+must retain the same verified journal ID; a conflict fails closed. This adds no
+new Payment, Deposit, or expense writer and does not change principal-only A/R.
+New journals carry an attempt-specific source marker. Legacy journals with only
+the old generic marker are deliberately not auto-adopted, even when the amounts
+match; they require an audited identity reconciliation before retry can succeed.
+The migration does not backfill or change those provider records. Downgrade
+refuses to discard any stored fee-journal identity; application rollback should
+retain the additive column.
+
+This prerequisite does not authorize matching a payout by adding an inferred
+surcharge difference. A future explicit-component matcher requires provider
+Deposit links to verified journal components and one-time attribution of every
+component, or a separately verified alternative native accounting contract.
 
 ### 8.2 Durable operations
 
