@@ -1,9 +1,10 @@
-import { useState } from 'react'
+import { useState, type CSSProperties } from 'react'
 import { Wrench, Gauge, ClipboardList, MapPin, User, Search, ChevronDown, ChevronRight, Check, AlertTriangle, X } from 'lucide-react'
 import type { BoardTruck, FleetBoard as FleetBoardData, TruckStatus } from './types'
 import { STATUS_META, VISIT_STALE_AFTER_DAYS, fleetUnitLabel, fmt, pmState, rank, visitAge, visitIsStale } from './helpers'
 import { formatUSPhone } from '@/utils/phone'
 import FleetActivity from './FleetActivity'
+import ClosedRepairOrders from './ClosedRepairOrders'
 
 type QueueFilter = 'pm_planning' | 'open_work_orders' | 'visits_to_close'
 type Filter = 'all' | TruckStatus | QueueFilter
@@ -11,10 +12,10 @@ type Sort = 'attention' | 'unit' | 'pm' | 'odo'
 
 const FILTER_COPY: Partial<Record<Filter, { title: string; detail: string }>> = {
   pm_planning: { title: 'PM to plan', detail: 'Maintenance that is due soon or has not been scheduled.' },
-  open_work_orders: { title: 'Open repair orders', detail: 'Trucks with active repair work.' },
+  open_work_orders: { title: 'Repair orders', detail: 'Open work and closed service history.' },
   visits_to_close: {
-    title: 'Repair orders to close',
-    detail: `Visits open more than ${VISIT_STALE_AFTER_DAYS} days. The truck reads as in the shop, here and in the shop's queue, until one is closed.`,
+    title: 'Repair orders',
+    detail: `Open ${VISIT_STALE_AFTER_DAYS}+ days. Review progress; age alone does not mean work is ready to close.`,
   },
   shop: { title: 'In the shop', detail: 'Units currently assigned to the service bay.' },
 }
@@ -23,7 +24,7 @@ function ActionQueue({ icon, value, label, detail, tone, active, onClick }: {
   icon: React.ReactNode; value: number; label: string; detail: string; tone: string; active: boolean; onClick: () => void
 }) {
   return (
-    <button className={'action-queue' + (active ? ' is-active' : '')} style={{ ['--queue' as any]: tone }} onClick={onClick}>
+    <button className={'action-queue' + (active ? ' is-active' : '')} style={{ '--queue': tone } as CSSProperties} onClick={onClick}>
       <span className="action-queue-icon">{icon}</span>
       <span className="action-queue-copy">
         <span className="action-queue-label">{label}</span>
@@ -53,7 +54,7 @@ function TruckCard({ t, onOpen, onOpenRepairOrder }: { t: BoardTruck; onOpen: (t
   return (
     <article
       className="tcard"
-      style={{ ['--st' as any]: meta.dot }}
+      style={{ '--st': meta.dot } as CSSProperties}
       role="button"
       tabIndex={0}
       onClick={() => onOpen(t)}
@@ -143,6 +144,8 @@ export default function FleetBoard({
   // happened". Board-local state: it is a way of reading this screen, not a
   // separate destination, so it stays out of the rail and out of the URL.
   const [tab, setTab] = useState<'trucks' | 'activity'>('trucks')
+  const [orderView, setOrderView] = useState<'open' | 'closed'>('open')
+  const ordersActive = filter === 'open_work_orders' || filter === 'visits_to_close'
   let list = trucks
   const isPmOverdue = (t: BoardTruck) => (t.pm_remaining != null && t.pm_remaining <= 0) || (t.pm_days_remaining != null && t.pm_days_remaining < 0)
   const needsPmPlanning = (t: BoardTruck) => (t.pm_remaining == null && t.pm_days_remaining == null) || pmState(t).cls === 'pm-soon'
@@ -201,21 +204,8 @@ export default function FleetBoard({
           <SectionHeading title="Action now" detail="Work that needs a decision or follow-through." />
           <div className="action-queues">
             <ActionQueue icon={<Wrench size={20} />} value={stats.shop} label="In the shop" detail="Units at the service bay" tone="var(--st-shop)" active={false} onClick={() => setFilter('shop')} />
-            <ActionQueue icon={<ClipboardList size={20} />} value={stats.open_wo} label="Open repair orders" detail="Review active repair work" tone="var(--st-parts)" active={false} onClick={() => { setFilter('open_work_orders'); setSort('attention') }} />
+            <ActionQueue icon={<ClipboardList size={20} />} value={stats.open_wo} label="Repair orders" detail={`${stats.open_wo} open${staleVisits ? ` · ${staleVisits} trucks with work open ${VISIT_STALE_AFTER_DAYS}+ days` : ' · View closed history'}`} tone="var(--st-parts)" active={false} onClick={() => { setFilter('open_work_orders'); setSort('attention'); setTab('trucks'); setOrderView('open') }} />
             <ActionQueue icon={<Gauge size={20} />} value={pmPlanning} label="PM to plan" detail="Due soon or not scheduled" tone="var(--yellow)" active={false} onClick={() => setFilter('pm_planning')} />
-            {/* Only when there is something to close. A queue that always reads
-                zero teaches people to stop looking at it. */}
-            {staleVisits > 0 && (
-              <ActionQueue
-                icon={<AlertTriangle size={20} />}
-                value={staleVisits}
-                label="Repair orders to close"
-                detail={`Open more than ${VISIT_STALE_AFTER_DAYS} days`}
-                tone="var(--red)"
-                active={false}
-                onClick={() => { setFilter('visits_to_close'); setSort('attention') }}
-              />
-            )}
           </div>
         </section>
       )}
@@ -238,10 +228,10 @@ export default function FleetBoard({
             </div>
             {tab === 'trucks' && (
             <>
-            <div className="fld-search">
+            {!(ordersActive && orderView === 'closed') && <div className="fld-search">
               <Search size={16} />
               <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search unit, VIN, plate, driver, make…" />
-            </div>
+            </div>}
             {activeFilter && (
               <button className="active-filter" onClick={() => setFilter('all')} aria-label={`Clear ${activeFilter.title} filter`}>
                 <span className="active-filter-label">{activeFilter.title}</span>
@@ -251,7 +241,7 @@ export default function FleetBoard({
             </>
             )}
         </div>
-        {tab === 'trucks' && (
+        {tab === 'trucks' && !(ordersActive && orderView === 'closed') && (
         <div className="board-bar-r">
           <span className="board-sort-lbl">Sort</span>
           <div className="board-sort-select">
@@ -269,6 +259,18 @@ export default function FleetBoard({
 
       {tab === 'activity' && <FleetActivity />}
 
+      {tab === 'trucks' && ordersActive && (
+        <section className="board-section" aria-label="Repair order views">
+          <div className="board-bar">
+            <div className="board-tabs" role="tablist" aria-label="Repair order state">
+              {(['open', 'closed'] as const).map((view) => <button key={view} type="button" role="tab" aria-selected={orderView === view} className={'board-tab' + (orderView === view ? ' is-on' : '')} onClick={() => setOrderView(view)}>{view === 'open' ? 'Open' : 'Closed'}</button>)}
+            </div>
+            {orderView === 'open' && <button type="button" className="active-filter" aria-pressed={filter === 'visits_to_close'} onClick={() => setFilter(filter === 'visits_to_close' ? 'open_work_orders' : 'visits_to_close')}>Open {VISIT_STALE_AFTER_DAYS}+ days · {staleVisits} trucks</button>}
+          </div>
+          {orderView === 'closed' && <ClosedRepairOrders trucks={trucks} onOpenRepairOrder={onOpenRepairOrder} />}
+        </section>
+      )}
+
       {tab === 'trucks' && showActionLane && needsAction.length > 0 && (
         <section className="board-section">
           <SectionHeading title="Needs attention" count={needsAction.length} detail="Prioritized by service and PM urgency." />
@@ -281,7 +283,7 @@ export default function FleetBoard({
           <div className="tgrid">{planning.map((t) => <TruckCard key={t.id} t={t} onOpen={onOpen} onOpenRepairOrder={onOpenRepairOrder} />)}</div>
         </section>
       )}
-      {tab === 'trucks' && (
+      {tab === 'trucks' && !(ordersActive && orderView === 'closed') && (
       <section className="board-section">
         <SectionHeading title={showActionLane ? 'Fleet overview' : activeFilter?.title || 'Matching trucks'} count={showActionLane ? remaining.length : list.length} detail={showActionLane ? 'Units without an immediate action queue.' : activeFilter?.detail || 'Search and filter results.'} />
         <div className="tgrid">
