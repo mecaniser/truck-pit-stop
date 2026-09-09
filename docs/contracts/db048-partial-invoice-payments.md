@@ -474,6 +474,28 @@ surcharge difference. A future explicit-component matcher requires provider
 Deposit links to verified journal components and one-time attribution of every
 component, or a separately verified alternative native accounting contract.
 
+#### Explicit payout components (local acceptance contract)
+
+The importer may accept a principal-only Payment with customer surcharge only
+when the Deposit explicitly links the exact persisted fee JournalEntry and its
+clearing debit line (`TxnLineId`), with the exact component amount. Journal
+contents must match the attempt-specific source, resolved snapshotted accounts,
+fee/tax amounts, posting directions, and USD semantics. Optional preloaded
+journals are only a fetch optimization; normal callers use GET for referenced
+journals. The importer never calls the journal writer or creates provider rows.
+
+Acceptance requires both equations independently: principal Payment plus verified
+fee/tax component equals captured charge; every explicit deposit component sums
+to the gross Deposit. Unknown, duplicate, partially linked, cross-tenant/realm,
+reused, or missing components remain manual. Gross native Payments must not also
+count a surcharge journal. This path supports confirmed DieselBridge-owned
+attempts only; refund/reversal/overpayment and unimplemented native writer
+compositions remain manual. Component identities participate in immutable replay
+and one-time attribution; existing historical manifests are never rewritten.
+
+Provider-generated linkage evidence remains distinct from passing this local
+contract. Synthetic fixtures must not be described as Intuit-native adoption.
+
 ### 8.2 Durable operations
 
 Outbox event types are:

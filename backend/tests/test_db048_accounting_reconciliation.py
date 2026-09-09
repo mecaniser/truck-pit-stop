@@ -1793,11 +1793,12 @@ async def _qbp_payout_attempt(
     charge_id: str,
     gross: Decimal,
     customer_fee: Decimal = Decimal("0.00"),
+    customer_fee_tax: Decimal = Decimal("0.00"),
     qbo_payment_id: str,
     qbo_customer_id: str = "qbo-customer-qbp",
     qbo_invoice_id: str = "qbo-invoice-qbp",
 ) -> InvoicePaymentAttempt:
-    principal = gross - customer_fee
+    principal = gross - customer_fee - customer_fee_tax
     customer = Customer(
         tenant_id=tenant.id,
         first_name="QBP",
@@ -1849,7 +1850,7 @@ async def _qbp_payout_attempt(
         customer_id=customer.id,
         principal_total=principal,
         max_card_fee=customer_fee,
-        max_card_fee_tax=Decimal("0.00"),
+        max_card_fee_tax=customer_fee_tax,
         sales_tax_rate_snapshot=Decimal("0.00"),
         card_fee_rate_snapshot=Decimal("0.00"),
         confirmed_principal=principal,
@@ -1877,9 +1878,9 @@ async def _qbp_payout_attempt(
         state="confirmed",
         principal_amount=principal,
         card_fee_amount=customer_fee,
-        card_fee_tax_amount=Decimal("0.00"),
+        card_fee_tax_amount=customer_fee_tax,
         applied_card_fee_amount=customer_fee,
-        applied_card_fee_tax_amount=Decimal("0.00"),
+        applied_card_fee_tax_amount=customer_fee_tax,
         provider_charge_amount=gross,
         received_amount=principal,
         applied_principal_amount=principal,

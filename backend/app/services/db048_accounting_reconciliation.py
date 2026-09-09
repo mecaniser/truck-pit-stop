@@ -4694,6 +4694,80 @@ async def _qbp_attempt_and_configuration(
     return (attempt, config) if config is not None else (attempt, None)
 
 
+async def _qbp_explicit_customer_fee(
+    db: AsyncSession, *, connection: QuickBooksConnection, deposit: dict[str, Any],
+    payment: dict[str, Any], attempt: InvoicePaymentAttempt,
+    config: TenantPaymentProviderConfiguration,
+    journals: dict[str, dict[str, Any]],
+) -> dict[str, Any]:
+    """Accept only a persisted, explicitly deposited surcharge debit; never a delta."""
+    fee = money(attempt.applied_card_fee_amount) + money(attempt.applied_card_fee_tax_amount)
+    principal = money(attempt.applied_principal_amount)
+    if (attempt.state != "confirmed" or money(attempt.unapplied_amount) != ZERO
+            or money(attempt.received_amount) != principal or fee <= ZERO
+            or money(payment.get("TotalAmt")) != principal
+            or principal + fee != money(attempt.provider_charge_amount)):
+        raise DB048ReconciliationError("qbo_explicit_component_amount_mismatch")
+    links = list((await db.scalars(select(PaymentAccountingLink).where(
+        PaymentAccountingLink.tenant_id == connection.tenant_id,
+        PaymentAccountingLink.attempt_id == attempt.id,
+        PaymentAccountingLink.invoice_id == attempt.invoice_id,
+        PaymentAccountingLink.financial_object_type == "payment",
+        PaymentAccountingLink.qbo_realm_snapshot == connection.realm_id,
+    ))).all())
+    if len(links) != 1 or not links[0].provider_fee_journal_id or links[0].owning_writer != "dieselbridge":
+        raise DB048ReconciliationError("qbo_explicit_component_identity_missing")
+    link = links[0]
+    for key in ("qbp_clearing_account", "card_fee_income_account", "sales_tax_liability_account"):
+        if not (link.account_mapping_snapshot or {}).get(key) or link.account_mapping_snapshot[key] != getattr(config, key):
+            raise DB048ReconciliationError("qbo_explicit_component_mapping_mismatch")
+    journal_id = str(link.provider_fee_journal_id)
+    deposit_lines = [(line, txn) for line in deposit.get("Line", [])
+                     for txn in line.get("LinkedTxn", [])
+                     if txn.get("TxnType") == "JournalEntry" and str(txn.get("TxnId")) == journal_id]
+    if len(deposit_lines) != 1:
+        raise DB048ReconciliationError("qbo_explicit_component_link_mismatch")
+    journal = journals.get(journal_id)
+    if journal is None:
+        response = await _request(connection, "GET", f"journalentry/{journal_id}")
+        journal = response.get("JournalEntry") if isinstance(response, dict) else None
+    if not isinstance(journal, dict) or str(journal.get("Id")) != journal_id:
+        raise DB048ReconciliationError("qbo_explicit_component_identity_mismatch")
+    journal_occurred_at = _qbo_native_occurred_at({"TxnDate": journal.get("TxnDate")})
+    local_payment = await db.get(Payment, attempt.payment_id)
+    if (local_payment is None or local_payment.tenant_id != connection.tenant_id
+            or local_payment.invoice_payment_attempt_id != attempt.id
+            or local_payment.invoice_id != attempt.invoice_id):
+        raise DB048ReconciliationError("qbo_explicit_component_payment_identity_mismatch")
+    expected = next((body for number, body in db048_qbo_adjustment_payloads(
+        attempt=attempt, payment=local_payment, mappings=link.account_mapping_snapshot or {},
+    ) if number.startswith("F-")), None)
+    if expected is None:
+        raise DB048ReconciliationError("qbo_explicit_component_identity_missing")
+    expected["PrivateNote"] += f"; attempt={attempt.id}"
+    for line in expected["Line"]:
+        ref = line["JournalEntryLineDetail"]["AccountRef"]
+        ref["value"] = await _resolve_qbo_account_reference(connection, ref["value"])
+    if _fee_journal_semantics(journal) != _fee_journal_semantics(expected):
+        raise DB048ReconciliationError("qbo_explicit_component_semantics_mismatch")
+    debit_lines = [line for line in journal["Line"]
+                   if line["JournalEntryLineDetail"]["PostingType"] == "Debit"]
+    deposit_line, txn = deposit_lines[0]
+    if (len(debit_lines) != 1 or not debit_lines[0].get("Id")
+            or str(txn.get("TxnLineId") or "") != str(debit_lines[0]["Id"])
+            or money(deposit_line.get("Amount")) != fee):
+        raise DB048ReconciliationError("qbo_explicit_component_debit_mismatch")
+    return {"journal_id": journal_id, "line_id": str(debit_lines[0]["Id"]),
+            "amount": fee, "journal": journal, "attempt": attempt, "occurred_at": journal_occurred_at,
+            "semantic_hash": _canonical_json_hash({
+                "id": journal_id, "line_id": str(debit_lines[0]["Id"]),
+                "doc": expected["DocNumber"], "note": expected["PrivateNote"],
+                "lines": [(line["JournalEntryLineDetail"]["PostingType"],
+                           line["JournalEntryLineDetail"]["AccountRef"]["value"],
+                           str(money(line["Amount"]))) for line in expected["Line"]],
+            })}
+
+
 async def reconcile_qbp_native_settlements(
     db: AsyncSession,
     *,
@@ -4701,6 +4775,7 @@ async def reconcile_qbp_native_settlements(
     deposits: list[dict[str, Any]],
     payments: list[dict[str, Any]],
     purchases: list[dict[str, Any]],
+    journals: Optional[list[dict[str, Any]]] = None,
 ) -> dict[str, int]:
     """Import QBO-native QBP deposits and exact fees without creating QBO rows.
 
@@ -4714,6 +4789,7 @@ async def reconcile_qbp_native_settlements(
         )
     tenant_id = connection.tenant_id
     realm_id = str(connection.realm_id)
+    journal_by_id = {str(j["Id"]): j for j in journals or [] if isinstance(j, dict) and j.get("Id")}
     payment_by_id = {
         str(payment.get("Id")): payment
         for payment in payments
@@ -4771,6 +4847,9 @@ async def reconcile_qbp_native_settlements(
                 linked_payments.append(payment)
 
         causes: list[str] = []
+        explicit_components: list[dict[str, Any]] = []
+        journal_links = [txn for line in deposit.get("Line", []) for txn in line.get("LinkedTxn", [])
+                         if txn.get("TxnType") == "JournalEntry"]
         if len(linked_payments) != len(linked_payment_ids):
             causes.append("linked_qbo_payment_missing")
         resolved: list[
@@ -4793,9 +4872,24 @@ async def reconcile_qbp_native_settlements(
                 causes.append("unmatched_qbo_payment")
             elif config is None:
                 causes.append("configuration_snapshot_missing")
-            elif money(payment.get("TotalAmt")) != money(attempt.provider_charge_amount):
-                causes.append("qbo_payment_amount_mismatch")
             else:
+                if money(payment.get("TotalAmt")) != money(attempt.provider_charge_amount):
+                    if journal_links:
+                        try:
+                            if config.writer_strategy != "dieselbridge":
+                                raise DB048ReconciliationError("qbo_explicit_component_writer_mismatch")
+                            component = await _qbp_explicit_customer_fee(
+                                db, connection=connection, deposit=deposit, payment=payment,
+                                attempt=attempt, config=config, journals=journal_by_id,
+                            )
+                            component["config"] = config
+                            explicit_components.append(component)
+                        except DB048ReconciliationError as exc:
+                            causes.append(str(exc))
+                        except (InvalidOperation, TypeError, ValueError):
+                            causes.append("qbo_explicit_component_malformed")
+                    else:
+                        causes.append("qbo_payment_amount_mismatch")
                 local_payment = await db.scalar(select(Payment).where(
                     Payment.tenant_id == tenant_id,
                     Payment.id == attempt.payment_id,
@@ -4844,7 +4938,30 @@ async def reconcile_qbp_native_settlements(
         )
         if deposit_total <= ZERO:
             causes.append("invalid_deposit_amount")
-        if payment_total != deposit_total:
+        component_total = sum((item["amount"] for item in explicit_components), ZERO)
+        if journal_links:
+            seen = set()
+            line_total = ZERO
+            for line in deposit.get("Line", []):
+                txns = line.get("LinkedTxn", [])
+                if len(txns) != 1 or txns[0].get("TxnType") not in ("Payment", "JournalEntry"):
+                    causes.append("qbo_explicit_component_unknown_line")
+                    continue
+                txn = txns[0]
+                identity = (txn.get("TxnType"), str(txn.get("TxnId")))
+                if identity in seen:
+                    causes.append("qbo_explicit_component_duplicate")
+                seen.add(identity)
+                if txn.get("TxnType") == "Payment":
+                    linked = payment_by_id.get(str(txn.get("TxnId")))
+                    if linked is None or money(line.get("Amount")) != money(linked.get("TotalAmt")):
+                        causes.append("qbo_explicit_component_payment_line_mismatch")
+                line_total += money(line.get("Amount"))
+            if len(journal_links) != len(explicit_components):
+                causes.append("qbo_explicit_component_unmatched_journal")
+            if line_total != deposit_total:
+                causes.append("qbo_explicit_component_deposit_mismatch")
+        if payment_total + component_total != deposit_total:
             causes.append("deposit_payment_amount_mismatch")
 
         group_key = (
@@ -4887,6 +5004,21 @@ async def reconcile_qbp_native_settlements(
             causes.append("deposit_account_mismatch")
 
         config = matched_configs[0]
+        normalized_entries: list[dict[str, Any]] = []
+        for component in explicit_components:
+            entry_config = component["config"]
+            entry_mappings = _payout_mapping_snapshot(entry_config)
+            normalized_entries.append({
+                "id": f"journal:{component['journal_id']}:{component['line_id']}",
+                "type": "qbp_customer_fee_journal", "amount": component["amount"],
+                "attempt_id": component["attempt"].id, "refund_id": None, "dispute_id": None,
+                "occurred_at": component["occurred_at"],
+                "provider_configuration_version": entry_config.version,
+                "qbo_realm_snapshot": realm_id, "owning_writer": entry_config.writer_strategy,
+                "account_mapping_snapshot": entry_mappings,
+                "account_mapping_hash": _canonical_json_hash(entry_mappings),
+                "safe_payload_hash": component["semantic_hash"],
+            })
         if fee_purchase:
             configured_expense = str(config.processor_fee_expense_account or "")
             if not _qbo_reference_matches_configured_account(
@@ -4926,7 +5058,6 @@ async def reconcile_qbp_native_settlements(
         mappings = _payout_mapping_snapshot(config)
         mapping_hash = _canonical_json_hash(mappings)
         occurred_at = _qbo_native_occurred_at(deposit)
-        normalized_entries: list[dict[str, Any]] = []
         for payment, attempt, payment_config in resolved:
             entry_config = payment_config or config
             entry_mappings = _payout_mapping_snapshot(entry_config)
@@ -4970,6 +5101,21 @@ async def reconcile_qbp_native_settlements(
                 }),
             })
         manifest_hash = _payout_manifest(normalized_entries)
+        if journal_links:
+            # Deposit links are part of the evidence, even zero-value/unknown
+            # lines. Do not let an unchanged monetary manifest hide tampering.
+            manifest_hash = _canonical_json_hash({
+                "entries": manifest_hash,
+                "deposit_components": sorted(
+                    (_canonical_json_hash({
+                        "amount": str(money(line.get("Amount"))),
+                        "links": sorted((str(txn.get("TxnType") or ""),
+                                         str(txn.get("TxnId") or ""),
+                                         str(txn.get("TxnLineId") or ""))
+                                        for txn in line.get("LinkedTxn", [])),
+                    }) for line in deposit.get("Line", [])),
+                ),
+            })
         existing = await db.scalar(select(ProviderSettlementBatch).where(
             ProviderSettlementBatch.provider == "quickbooks_payments",
             ProviderSettlementBatch.provider_account_id == realm_id,
@@ -4980,6 +5126,7 @@ async def reconcile_qbp_native_settlements(
                 existing.tenant_id != tenant_id
                 or existing.entry_manifest_hash != manifest_hash
                 or money(existing.net_payout) != net_payout
+                or (existing.reconciliation_state == "matched" and state != "matched")
             ):
                 raise DB048ReconciliationError(
                     "QuickBooks payout replay does not match its immutable manifest"
@@ -4987,6 +5134,15 @@ async def reconcile_qbp_native_settlements(
             result["batches"] += 1
             result["matched" if existing.reconciliation_state == "matched" else "manual"] += 1
             continue
+
+        reused_ids = set((await db.scalars(select(ProviderSettlementEntry.provider_entry_id).where(
+            ProviderSettlementEntry.provider == "quickbooks_payments",
+            ProviderSettlementEntry.provider_account_id == realm_id,
+            ProviderSettlementEntry.provider_entry_id.in_([entry["id"] for entry in normalized_entries]),
+        ))).all())
+        if reused_ids:
+            unique_causes.append("qbo_settlement_component_already_used")
+            state = "manual_reconciliation_required"
 
         customer_fees = sum(
             (money(attempt.applied_card_fee_amount) for _, attempt, _ in resolved if attempt),
@@ -5024,6 +5180,8 @@ async def reconcile_qbp_native_settlements(
         db.add(batch)
         await db.flush()
         for entry in normalized_entries:
+            if entry["id"] in reused_ids:
+                continue
             db.add(ProviderSettlementEntry(
                 tenant_id=tenant_id,
                 batch_id=batch.id,
