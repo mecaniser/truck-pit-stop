@@ -1,4 +1,3 @@
-import { useState } from 'react'
 import { Spinner } from '@/components/ui'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
@@ -13,27 +12,10 @@ import {
   ChartCard, ProfitabilityScatter, QuoteFunnel, RankedBar, ParetoChart,
 } from '../analytics/ChartKit'
 import { TAB_ACCENT } from '../analytics/chartTheme'
+import ReportingDatePicker from './ReportingDatePicker'
+import { readReportRange, type ReportRange } from './reportRange'
 
 // ============ SHARED TYPES ============
-
-type DateRangePreset =
-  | 'this_year' | 'last_year'
-  | 'this_quarter' | 'last_quarter'
-  | 'this_month' | 'last_month'
-  | 'this_week' | 'last_week'
-  | 'custom'
-
-const RANGE_LABELS: Record<DateRangePreset, string> = {
-  this_year: 'This Year',
-  last_year: 'Last Year',
-  this_quarter: 'This Quarter',
-  last_quarter: 'Last Quarter',
-  this_month: 'This Month',
-  last_month: 'Last Month',
-  this_week: 'This Week',
-  last_week: 'Last Week',
-  custom: 'Custom',
-}
 
 interface TrendPoint {
   label: string
@@ -229,57 +211,6 @@ function exportRowsToCsv(filename: string, headers: string[], rows: (string | nu
   URL.revokeObjectURL(url)
 }
 
-// ============ DATE RANGE PICKER ============
-
-function DateRangePicker({
-  value,
-  onChange,
-}: {
-  value: DateRangePreset
-  onChange: (preset: DateRangePreset) => void
-}) {
-  const [isOpen, setIsOpen] = useState(false)
-  const options: DateRangePreset[] = [
-    'this_year', 'last_year', 'this_quarter', 'last_quarter',
-    'this_month', 'last_month', 'this_week', 'last_week',
-  ]
-
-  return (
-    <div className="relative">
-      <button
-        type="button"
-        onClick={() => setIsOpen((o) => !o)}
-        className="db-analytics-quiet-action flex items-center gap-2 h-10 px-4 rounded-lg bg-white/10 text-white text-sm font-medium hover:bg-white/15 transition-colors"
-      >
-        {RANGE_LABELS[value]}
-      </button>
-      {isOpen && (
-        <>
-          <div className="fixed inset-0 z-40" onClick={() => setIsOpen(false)} />
-          <div className="db-analytics-range-menu absolute z-50 mt-1 w-44 rounded-lg bg-gray-900 border border-white/20 shadow-xl py-1">
-            {options.map((opt) => (
-              <button
-                key={opt}
-                type="button"
-                onClick={() => {
-                  onChange(opt)
-                  setIsOpen(false)
-                }}
-                className={`w-full text-left px-4 py-2 text-sm transition-colors ${
-                  opt === value ? 'text-white bg-white/10' : 'text-gray-200 hover:bg-white/5'
-                }`}
-              >
-                {RANGE_LABELS[opt]}
-              </button>
-            ))}
-          </div>
-        </>
-      )}
-    </div>
-  )
-}
-
-
 function LoadingBlock() {
   return (
     <div className="flex items-center justify-center gap-2 text-white/50 text-sm py-16">
@@ -366,11 +297,11 @@ function DetailTable({ title, count, onExport, children }: {
 
 // ============ TAB: DASHBOARD ============
 
-function DashboardTab({ range }: { range: DateRangePreset }) {
+function DashboardTab({ range }: { range: ReportRange }) {
   const { accentColors } = useTheme()
   const { data, isLoading } = useQuery<ReportsDashboardResponse>({
     queryKey: ['reports-dashboard', range],
-    queryFn: async () => (await api.get('/reports/dashboard', { params: { range } })).data,
+    queryFn: async () => (await api.get('/reports/dashboard', { params: range })).data,
   })
 
   if (isLoading || !data) return <LoadingBlock />
@@ -433,22 +364,22 @@ interface AccountsResp { accounts: { name: string; revenue: number; marginPct: n
 interface FunnelResp { sent: number; approved: number; invoiced: number }
 interface TruckCostResp { trucks: { unit: string; ytdCost: number }[] }
 
-function InsightsSection({ range }: { range: DateRangePreset }) {
+function InsightsSection({ range }: { range: ReportRange }) {
   const profit = useQuery<ProfitabilityResp>({
     queryKey: ['analytics-profitability', range],
-    queryFn: async () => (await api.get('/reports/analytics/profitability', { params: { range } })).data,
+    queryFn: async () => (await api.get('/reports/analytics/profitability', { params: range })).data,
   })
   const accounts = useQuery<AccountsResp>({
     queryKey: ['analytics-accounts', range],
-    queryFn: async () => (await api.get('/reports/analytics/accounts', { params: { range } })).data,
+    queryFn: async () => (await api.get('/reports/analytics/accounts', { params: range })).data,
   })
   const funnel = useQuery<FunnelResp>({
     queryKey: ['analytics-funnel', range],
-    queryFn: async () => (await api.get('/reports/analytics/quote-funnel', { params: { range } })).data,
+    queryFn: async () => (await api.get('/reports/analytics/quote-funnel', { params: range })).data,
   })
   const trucks = useQuery<TruckCostResp>({
     queryKey: ['analytics-trucks', range],
-    queryFn: async () => (await api.get('/reports/analytics/truck-costs', { params: { range } })).data,
+    queryFn: async () => (await api.get('/reports/analytics/truck-costs', { params: range })).data,
   })
 
   const hasProfit = (profit.data?.ros.length ?? 0) > 0
@@ -495,10 +426,10 @@ function EmptyChart({ loading }: { loading: boolean }) {
 
 // ============ TAB: SALES ============
 
-function SalesTab({ range }: { range: DateRangePreset }) {
+function SalesTab({ range }: { range: ReportRange }) {
   const { data, isLoading } = useQuery<ReportsSalesResponse>({
     queryKey: ['reports-sales', range],
-    queryFn: async () => (await api.get('/reports/sales', { params: { range } })).data,
+    queryFn: async () => (await api.get('/reports/sales', { params: range })).data,
   })
 
   if (isLoading || !data) return <LoadingBlock />
@@ -583,10 +514,10 @@ function SalesTab({ range }: { range: DateRangePreset }) {
 
 // ============ TAB: FEES ============
 
-function FeesTab({ range }: { range: DateRangePreset }) {
+function FeesTab({ range }: { range: ReportRange }) {
   const { data, isLoading } = useQuery<ReportsFeesResponse>({
     queryKey: ['reports-fees', range],
-    queryFn: async () => (await api.get('/reports/fees', { params: { range } })).data,
+    queryFn: async () => (await api.get('/reports/fees', { params: range })).data,
   })
 
   if (isLoading || !data) return <LoadingBlock />
@@ -704,10 +635,10 @@ function FeesTab({ range }: { range: DateRangePreset }) {
 
 // ============ TAB: SALES TAX ============
 
-function TaxTab({ range }: { range: DateRangePreset }) {
+function TaxTab({ range }: { range: ReportRange }) {
   const { data, isLoading } = useQuery<ReportsTaxResponse>({
     queryKey: ['reports-tax', range],
-    queryFn: async () => (await api.get('/reports/tax', { params: { range } })).data,
+    queryFn: async () => (await api.get('/reports/tax', { params: range })).data,
   })
 
   if (isLoading || !data) return <LoadingBlock />
@@ -776,10 +707,10 @@ function TaxTab({ range }: { range: DateRangePreset }) {
 /** The margin this shop prices parts to hit. Under it is money left behind. */
 const TARGET_PARTS_MARGIN_PCT = 40
 
-function PartsTab({ range }: { range: DateRangePreset }) {
+function PartsTab({ range }: { range: ReportRange }) {
   const { data, isLoading } = useQuery<ReportsPartsResponse>({
     queryKey: ['reports-parts', range],
-    queryFn: async () => (await api.get('/reports/parts', { params: { range } })).data,
+    queryFn: async () => (await api.get('/reports/parts', { params: range })).data,
   })
 
   if (isLoading || !data) return <LoadingBlock />
@@ -980,10 +911,10 @@ function InventoryTab() {
 
 // ============ TAB: SERVICE TYPES ============
 
-function ServiceTypesTab({ range }: { range: DateRangePreset }) {
+function ServiceTypesTab({ range }: { range: ReportRange }) {
   const { data, isLoading } = useQuery<ReportsServiceTypesResponse>({
     queryKey: ['reports-service-types', range],
-    queryFn: async () => (await api.get('/reports/service-types', { params: { range } })).data,
+    queryFn: async () => (await api.get('/reports/service-types', { params: range })).data,
   })
 
   if (isLoading || !data) return <LoadingBlock />
@@ -1060,11 +991,11 @@ function ServiceTypesTab({ range }: { range: DateRangePreset }) {
 
 // ============ TAB: INTERNAL FLEET COSTS ============
 
-function InternalFleetCostsTab({ range }: { range: DateRangePreset }) {
+function InternalFleetCostsTab({ range }: { range: ReportRange }) {
   const navigate = useNavigate()
   const { data, isLoading } = useQuery<ReportsInternalResponse>({
     queryKey: ['reports-internal', range],
-    queryFn: async () => (await api.get('/reports/internal', { params: { range } })).data,
+    queryFn: async () => (await api.get('/reports/internal', { params: range })).data,
   })
 
   if (isLoading || !data) return <LoadingBlock />
@@ -1188,7 +1119,25 @@ export default function GarageAnalyticsPage() {
       return next
     })
   }
-  const [range, setRange] = useState<DateRangePreset>('this_month')
+  const range = readReportRange(searchParams)
+  const setRange = (selection: ReportRange) => setSearchParams(previous => {
+    const next = new URLSearchParams(previous)
+    next.set('range', selection.range)
+    next.delete('from_date')
+    next.delete('to_date')
+    if (selection.range === 'custom') {
+      next.set('from_date', selection.from_date)
+      next.set('to_date', selection.to_date)
+    }
+    return next
+  })
+  // Share the dashboard cache to show server-resolved shop-local dates on every tab.
+  const period = useQuery<ReportsDashboardResponse>({
+    queryKey: ['reports-dashboard', range],
+    queryFn: async () => (await api.get('/reports/dashboard', { params: range })).data,
+    enabled: DATE_FILTERED_TABS.includes(activeTab),
+    staleTime: 60_000,
+  })
 
   return (
     <div className="db-garage-analytics db-operating-surface">
@@ -1197,7 +1146,7 @@ export default function GarageAnalyticsPage() {
           <h1 className="text-xl sm:text-2xl font-bold text-white">Shop Analytics</h1>
           <p className="text-sm text-white/50">Performance overview and insights</p>
         </div>
-        {DATE_FILTERED_TABS.includes(activeTab) && <DateRangePicker value={range} onChange={setRange} />}
+        {DATE_FILTERED_TABS.includes(activeTab) && <ReportingDatePicker value={range} resolved={period.data} onChange={setRange} />}
       </div>
 
       <div className="db-analytics-tabs mb-4 flex-shrink-0 flex gap-1 overflow-x-auto scrollbar-hide border-b border-white/10">

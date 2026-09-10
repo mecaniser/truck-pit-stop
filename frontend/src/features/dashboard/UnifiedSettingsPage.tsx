@@ -1286,7 +1286,7 @@ function PaymentSourceStepUpDialog({
           </div>
           <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
             <button type="button" className={industrialStyles.btnSecondary} onClick={onCancel} disabled={grantMutation.isPending}>Cancel</button>
-            <button type="submit" className={industrialStyles.btnDanger} disabled={!password || grantMutation.isPending}>{grantMutation.isPending ? 'Verifying...' : 'Verify and continue'}</button>
+            <button type="submit" className={`${industrialStyles.btnDanger} db-payment-dialog__verify-action`} disabled={!password || grantMutation.isPending}>{grantMutation.isPending ? 'Verifying...' : 'Verify and continue'}</button>
           </div>
         </form>
       </div>
