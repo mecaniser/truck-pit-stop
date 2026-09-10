@@ -17,7 +17,7 @@ from app.schemas.invoice_settlement import CardProviderConfigurationUpdate
 from app.services.invoice_settlement_service import (
     SettlementDomainError, create_attempt, get_or_create_settlement, load_active_configuration, provider_readiness,
 )
-from test_db048_invoice_settlements import _financial_context
+from test_db048_invoice_settlements import _financial_context, _provider_step_up_context
 
 
 @pytest.mark.parametrize("environment,payment_environment,allowlist,approved,expected", [
@@ -102,7 +102,7 @@ async def test_pending_canonical_and_guest_charge_cannot_bypass_revoked_admissio
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("subject_type", ["customer", "guest"])
-async def test_two_tenant_readiness_and_attempt_preparation(db_session, monkeypatch, subject_type):
+async def test_two_tenant_readiness_and_attempt_preparation(db_session, monkeypatch, subject_type, client):
     contexts = [await _financial_context(db_session, monkeypatch) for _ in range(2)]
     pilot = contexts[0][0]
     monkeypatch.setattr(settings, "ENVIRONMENT", "production")
@@ -140,6 +140,7 @@ async def test_two_tenant_readiness_and_attempt_preparation(db_session, monkeypa
                 await invoice_settlements.update_card_provider_configuration(
                     CardProviderConfigurationUpdate(selected_provider="quickbooks_payments", expected_version=config.version),
                     idempotency_header=f"select-{tenant.id}", db=db_session, current_user=owner,
+                    step_up_context=await _provider_step_up_context(db_session, owner),
                 )
             assert exc.value.code == "quickbooks_payments_platform_approval_missing"
 

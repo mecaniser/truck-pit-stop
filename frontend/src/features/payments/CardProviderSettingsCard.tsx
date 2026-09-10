@@ -25,7 +25,9 @@ const STATUS_LABELS = {
   feature_disabled: 'Partial payments disabled',
 } as const
 
-export default function CardProviderSettingsCard() {
+export default function CardProviderSettingsCard({ requestVerification }: {
+  requestVerification: (onGranted: (grantToken: string) => void) => void
+}) {
   const queryClient = useQueryClient()
   const readiness = useQuery({
     queryKey: ['invoice-card-provider-readiness'],
@@ -35,7 +37,7 @@ export default function CardProviderSettingsCard() {
   const [pendingProvider, setPendingProvider] = useState<CardProvider | null>(null)
 
   const updateMutation = useMutation({
-    mutationFn: (provider: CardProvider) => updateCardProvider(provider, readiness.data!, createIdempotencyKey()),
+    mutationFn: ({ provider, grantToken }: { provider: CardProvider; grantToken: string }) => updateCardProvider(provider, readiness.data!, createIdempotencyKey(), grantToken),
     onSuccess: data => {
       queryClient.setQueryData(['invoice-card-provider-readiness'], data)
       setPendingProvider(null)
@@ -101,7 +103,7 @@ export default function CardProviderSettingsCard() {
       {pendingProvider && pendingProvider !== data.selected_provider && (
         <div className="mt-4 flex flex-wrap items-center justify-end gap-3 border-t border-zinc-800 pt-4">
           <button type="button" onClick={() => setPendingProvider(null)} className="min-h-[44px] px-3 text-sm font-bold text-zinc-400 hover:text-white">Cancel</button>
-          <button type="button" disabled={updateMutation.isPending || (pendingProvider === 'stripe_connect' ? data.stripe_connect.status !== 'ready' : data.quickbooks_payments.status !== 'ready')} onClick={() => updateMutation.mutate(pendingProvider)} className="min-h-[44px] rounded-xl bg-[#b9472f] px-4 text-sm font-extrabold text-white hover:brightness-110 disabled:opacity-50">
+          <button type="button" disabled={updateMutation.isPending || (pendingProvider === 'stripe_connect' ? data.stripe_connect.status !== 'ready' : data.quickbooks_payments.status !== 'ready')} onClick={() => requestVerification((grantToken) => updateMutation.mutate({ provider: pendingProvider, grantToken }))} className="min-h-[44px] rounded-xl bg-[#b9472f] px-4 text-sm font-extrabold text-white hover:brightness-110 disabled:opacity-50">
             {updateMutation.isPending ? 'Saving…' : `Use ${pendingProvider === 'stripe_connect' ? 'Stripe' : 'QuickBooks'} for new attempts`}
           </button>
         </div>

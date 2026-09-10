@@ -18,6 +18,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.config import settings
+from app.core.payment_step_up import (
+    PaymentStepUpContext, PaymentStepUpScope, authorize_step_up,
+    get_payment_step_up_context, payment_step_up_mutation_result,
+)
 from app.core.quickbooks_payment_gate import quickbooks_payments_enabled_for_tenant
 from app.core.dependencies import CurrentUser, get_current_active_user, get_db, identity_user, user_has_permission
 from app.db.models.customer import Customer
@@ -1515,10 +1519,14 @@ async def update_card_provider_configuration(
     idempotency_header: Optional[str] = Header(default=None, alias="Idempotency-Key"),
     db: AsyncSession = Depends(get_db),
     current_user: CurrentUser = Depends(get_current_active_user),
+    step_up_context: PaymentStepUpContext = Depends(get_payment_step_up_context),
 ):
     idempotency_key = _idempotency_key(idempotency_header)
     if not _can_manage_money(current_user):
         raise SettlementDomainError("invoice_not_found", "Invoice not found.", status_code=404)
+    grant = await authorize_step_up(
+        db, context=step_up_context, required_scope=PaymentStepUpScope.MANAGE,
+    )
     tenant = (await db.execute(select(Tenant).where(Tenant.id == current_user.tenant_id))).scalar_one()
     request_hash = hashlib.sha256(json.dumps(body.model_dump(mode="json"), sort_keys=True, separators=(",", ":")).encode()).hexdigest()
     replay = (await db.execute(select(TenantPaymentProviderConfiguration).where(
@@ -1532,7 +1540,14 @@ async def update_card_provider_configuration(
                 "The Idempotency-Key was already used with a different request.",
                 status_code=409,
             )
-        return await _readiness_response(db, tenant, current_user, replay)
+        response = await _readiness_response(db, tenant, current_user, replay)
+        db.add(payment_step_up_mutation_result(
+            context=step_up_context, scope=PaymentStepUpScope.MANAGE,
+            grant=grant, succeeded=True, provider=replay.selected_provider,
+            metadata={"action": "card_provider.update", "replayed": True},
+        ))
+        await db.commit()
+        return response
     current = await load_active_configuration(db, tenant.id, lock=True)
     current_version = current.version if current else 0
     if body.expected_version is not None and body.expected_version != current_version:
@@ -1613,6 +1628,11 @@ async def update_card_provider_configuration(
     # in place after a flush.
     config.readiness_state = (await provider_readiness(db, tenant, config)).status
     db.add(config)
+    db.add(payment_step_up_mutation_result(
+        context=step_up_context, scope=PaymentStepUpScope.MANAGE,
+        grant=grant, succeeded=True, provider=selected_provider,
+        metadata={"action": "card_provider.update", "configuration_version": config.version},
+    ))
     await db.commit()
     return await _readiness_response(db, tenant, current_user)
 

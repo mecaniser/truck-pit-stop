@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { useState } from 'react'
-import { render, screen } from '@testing-library/react'
+import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { AxiosError } from 'axios'
@@ -373,9 +373,29 @@ describe('PendingManualPaymentPanel', () => {
 })
 
 describe('CardProviderSettingsCard', () => {
+  it('does not switch routing until the scoped verification callback grants authorization', async () => {
+    const user = userEvent.setup()
+    const readiness = {
+      ...DB048_PROVIDER_READINESS,
+      quickbooks_payments: { approved: true, tenant_ready: true, status: 'ready' as const },
+    }
+    paymentApi.fetchCardProviderReadiness.mockResolvedValue(readiness)
+    paymentApi.updateCardProvider.mockResolvedValue({ ...readiness, selected_provider: 'quickbooks_payments' })
+    const requestVerification = vi.fn()
+    renderWithQuery(<CardProviderSettingsCard requestVerification={requestVerification} />)
+    await user.click(await screen.findByRole('radio', { name: /quickbooks payments/i }))
+    await user.click(screen.getByRole('button', { name: /use quickbooks for new attempts/i }))
+    expect(requestVerification).toHaveBeenCalledTimes(1)
+    expect(paymentApi.updateCardProvider).not.toHaveBeenCalled()
+    act(() => requestVerification.mock.calls[0][0]('scoped-manage-grant'))
+    await waitFor(() => expect(paymentApi.updateCardProvider).toHaveBeenCalledWith(
+      'quickbooks_payments', readiness, expect.any(String), 'scoped-manage-grant',
+    ))
+  })
+
   it('shows exactly one ready provider and keeps an unapproved QBP environment unavailable', async () => {
     paymentApi.fetchCardProviderReadiness.mockResolvedValue(DB048_PROVIDER_READINESS)
-    renderWithQuery(<CardProviderSettingsCard />)
+    renderWithQuery(<CardProviderSettingsCard requestVerification={vi.fn()} />)
     expect(await screen.findByRole('radio', { name: /stripe connect/i })).toBeChecked()
     expect(screen.getByRole('radio', { name: /quickbooks payments/i })).toBeDisabled()
     expect(screen.getByText(/external intuit approval pending/i)).toBeInTheDocument()
@@ -387,7 +407,7 @@ describe('CardProviderSettingsCard', () => {
       ...DB048_PROVIDER_READINESS,
       quickbooks_payments: { approved: true, tenant_ready: true, status: 'ready' },
     })
-    renderWithQuery(<CardProviderSettingsCard />)
+    renderWithQuery(<CardProviderSettingsCard requestVerification={vi.fn()} />)
     const option = await screen.findByRole('radio', { name: /quickbooks payments/i })
     expect(option).toBeEnabled()
     await user.click(option)

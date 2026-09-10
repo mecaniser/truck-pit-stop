@@ -11,6 +11,7 @@ import stripe
 from sqlalchemy import func, select
 
 from app.core.config import settings
+from app.core.payment_step_up import PaymentStepUpContext, PaymentStepUpScope, issue_step_up_grant
 from app.db.models.customer import Customer
 from app.db.models.invoice import Invoice, InvoiceStatus
 from app.db.models.invoice_settlement import (
@@ -83,6 +84,20 @@ def test_guest_invoice_token_has_no_customer_wallet_routes():
     assert "/eligible-credits" not in paths
     assert "/customer-credits/{credit_id}/applications" not in paths
     assert "/overpayments/{overpayment_id}/credit-consent" in paths
+
+
+async def _provider_step_up_context(db, owner):
+    context = PaymentStepUpContext(
+        raw_grant=None, session_jti="provider-settings-session", token_version=0,
+        current_user=owner, correlation_id="provider-settings-test",
+    )
+    grant, raw = issue_step_up_grant(context=context, scope=PaymentStepUpScope.MANAGE, target_tenant_id=None)
+    db.add(grant)
+    await db.flush()
+    return PaymentStepUpContext(
+        raw_grant=raw, session_jti=context.session_jti, token_version=0,
+        current_user=owner, correlation_id=context.correlation_id,
+    )
 
 
 async def _financial_context(db, monkeypatch, *, principal=Decimal("100.00"), fee=Decimal("3.00")):
@@ -918,7 +933,7 @@ async def test_confirmed_attempt_replay_rechecks_lifecycle_before_returning_mone
 
 
 @pytest.mark.asyncio
-async def test_provider_settings_mutation_replays_and_rejects_key_reuse(db_session, monkeypatch):
+async def test_provider_settings_mutation_replays_and_rejects_key_reuse(db_session, monkeypatch, client):
     tenant, owner, _customer, _invoice = await _financial_context(db_session, monkeypatch)
     body = CardProviderConfigurationUpdate(
         selected_provider="stripe_connect",
@@ -930,12 +945,14 @@ async def test_provider_settings_mutation_replays_and_rejects_key_reuse(db_sessi
         idempotency_header="settings-change-1",
         db=db_session,
         current_user=owner,
+        step_up_context=await _provider_step_up_context(db_session, owner),
     )
     replay = await update_card_provider_configuration(
         body=body,
         idempotency_header="settings-change-1",
         db=db_session,
         current_user=owner,
+        step_up_context=await _provider_step_up_context(db_session, owner),
     )
     assert first.configuration_version == replay.configuration_version == 2
     assert first.selected_provider == replay.selected_provider == "stripe_connect"
@@ -949,13 +966,14 @@ async def test_provider_settings_mutation_replays_and_rejects_key_reuse(db_sessi
             idempotency_header="settings-change-1",
             db=db_session,
             current_user=owner,
+            step_up_context=await _provider_step_up_context(db_session, owner),
         )
     assert error.value.code == "idempotency_key_reused"
 
 
 @pytest.mark.asyncio
 async def test_quickbooks_payments_provider_setting_is_dormant_and_nonmutating(
-    db_session, monkeypatch,
+    db_session, monkeypatch, client,
 ):
     tenant, owner, _customer, _invoice = await _financial_context(
         db_session, monkeypatch,
@@ -974,6 +992,7 @@ async def test_quickbooks_payments_provider_setting_is_dormant_and_nonmutating(
             idempotency_header="qbp-remains-dormant",
             db=db_session,
             current_user=owner,
+            step_up_context=await _provider_step_up_context(db_session, owner),
         )
     assert error.value.code == "quickbooks_payments_platform_approval_missing"
     assert await db_session.scalar(select(func.count(
@@ -988,6 +1007,7 @@ async def test_quickbooks_payments_provider_setting_is_dormant_and_nonmutating(
 async def test_quickbooks_payments_provider_setting_freezes_connected_realm(
     db_session,
     monkeypatch,
+    client,
 ):
     tenant, owner, _customer, _invoice = await _financial_context(
         db_session, monkeypatch,
@@ -1011,6 +1031,7 @@ async def test_quickbooks_payments_provider_setting_freezes_connected_realm(
         idempotency_header="qbp-provider-realm-snapshot",
         db=db_session,
         current_user=owner,
+        step_up_context=await _provider_step_up_context(db_session, owner),
     )
     active_after = await load_active_configuration(db_session, tenant.id)
 
