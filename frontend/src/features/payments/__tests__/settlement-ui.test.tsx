@@ -238,6 +238,18 @@ describe('SettlementPaymentPanel', () => {
     )
   })
 
+  it('shows the server payment hold reason without amount or tender entry', () => {
+    const summary = { ...DB048_SETTLEMENT_FIXTURES.unpaid.summary,
+      allowed_actions: { create_attempt: false, rails: [],
+        payment_unavailable_reason: 'Non-cash payments are paused for this historical invoice until accounting review is complete.' } }
+    renderWithQuery(<SettlementPaymentPanel access={{ kind: 'authenticated', invoiceId: summary.invoice_id }}
+      summary={summary} audience="staff" tone="light" onUpdated={vi.fn()} />)
+    expect(screen.getByText(summary.allowed_actions.payment_unavailable_reason)).toBeInTheDocument()
+    expect(screen.queryByLabelText('Amount applied to invoice')).not.toBeInTheDocument()
+    expect(screen.queryByText('Choose an amount and tender')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Continue/ })).not.toBeInTheDocument()
+  })
+
   it('routes a QuickBooks card attempt into direct Intuit tokenization', async () => {
     const user = userEvent.setup()
     const summary = {

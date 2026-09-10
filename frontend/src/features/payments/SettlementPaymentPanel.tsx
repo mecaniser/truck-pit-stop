@@ -411,7 +411,7 @@ export default function SettlementPaymentPanel({
     return (
       <div className={`rounded-2xl border p-4 text-sm ${panel}`} role="status">
         <p className="font-bold">No new payment can be started right now.</p>
-        <p className={`mt-1 ${quiet}`}>Existing payments and pending reconciliation remain visible above. Contact the shop if this balance needs attention.</p>
+        <p className={`mt-1 ${quiet}`}>{summary.allowed_actions?.payment_unavailable_reason ?? 'Existing payments and pending reconciliation remain visible above. Contact the shop if this balance needs attention.'}</p>
       </div>
     )
   }

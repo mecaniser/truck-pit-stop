@@ -32,6 +32,7 @@ export interface SettlementAllowedActions {
   configure_provider?: boolean
   confirm_cash?: boolean
   cash_unavailable_reason?: string | null
+  payment_unavailable_reason?: string | null
 }
 
 export interface InvoiceSettlementSummary {

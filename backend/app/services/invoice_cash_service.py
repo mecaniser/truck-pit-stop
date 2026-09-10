@@ -1,10 +1,13 @@
 """Exact full-cash receipts. Never sends a financial write to a provider."""
 from datetime import datetime, timezone
+from hashlib import sha256
+import json
+from uuid import UUID
 from sqlalchemy import select
 from app.core.config import settings
 from app.core.dependencies import user_has_permission
 from app.db.models.invoice import Invoice, InvoiceStatus
-from app.db.models.invoice_settlement import InvoicePaymentAttempt, PaymentAccountingLink, InvoicePaymentLedgerEvent
+from app.db.models.invoice_settlement import InvoicePaymentAttempt, PaymentAccountingLink, InvoicePaymentLedgerEvent, InvoiceSettlement
 from app.db.models.payment import Payment, PaymentMethod, PaymentStatus
 from app.db.models.provider_outbox import ProviderOutboxEvent
 from app.db.models.quickbooks_connection import QuickBooksConnection
@@ -17,9 +20,128 @@ from app.services.invoice_settlement_service import (
 )
 
 
+CASH_REVIEW_KEY = "cash_nonproduction_review"
+
+
+def event_history_digest(event):
+    """Bind review to every original column except ordinary update metadata."""
+    values = {}
+    for column in event.__table__.columns:
+        if column.name == "updated_at":
+            continue
+        value = getattr(event, column.name)
+        if column.name == "payload":
+            value = None if value is None else {key: item for key, item in value.items() if key != CASH_REVIEW_KEY}
+        if isinstance(value, datetime):
+            value = (value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value.astimezone(timezone.utc)).isoformat()
+        values[column.name] = value
+    return sha256(json.dumps(values, sort_keys=True, default=str, separators=(",", ":")).encode()).hexdigest()
+
+
+def valid_sandbox_cash_review(event, invoice):
+    review = (event.payload or {}).get(CASH_REVIEW_KEY)
+    if not isinstance(review, dict):
+        return False
+    try:
+        reviewed_at = datetime.fromisoformat(review["reviewed_at"])
+        chain = review.get("supersedes_chain", [])
+        ancestors = review.get("ancestor_reviews", [])
+        if (not isinstance(chain, list) or not isinstance(ancestors, list)
+                or any(not isinstance(item, str) for item in chain)
+                or len(set(chain)) != len(chain)
+                or any(not isinstance(item, dict) or item.get("invoice_id") not in chain for item in ancestors)):
+            return False
+        for item in chain:
+            UUID(item)
+        return bool(
+            review["schema"] == "db048-sandbox-cash-review-v1"
+            and review["tenant_id"] == str(invoice.tenant_id) == str(event.tenant_id)
+            and review["invoice_id"] == str(invoice.id) == str(event.aggregate_id)
+            and review["event_id"] == str(event.id)
+            and review["event_type"] == event.event_type == "quickbooks.invoice.sync.v1"
+            and review["event_status"] == event.status == "dead"
+            and review["attempt_count"] == event.attempt_count and event.attempt_count > 0
+            and review["original_history_sha256"] == event_history_digest(event)
+            and review["observed_environment"] == "sandbox"
+            and review["confirmation_environment"] == "production"
+            and isinstance(review["confirmation_realm_id"], str) and review["confirmation_realm_id"].strip()
+            and len(review["evidence_manifest_sha256"]) == 64
+            and all(c in "0123456789abcdef" for c in review["evidence_manifest_sha256"])
+            and reviewed_at.tzinfo is not None and reviewed_at <= datetime.now(timezone.utc)
+            and isinstance(review["reviewer"], str) and review["reviewer"].strip()
+            and not event.lock_token and not event.locked_until and not event.provider_message_id
+        )
+    except (KeyError, TypeError, ValueError):
+        return False
+
+
 def cash_staff(actor):
     return bool(actor and actor.role in {UserRole.GARAGE_OWNER, UserRole.GARAGE_ADMIN, UserRole.RECEPTIONIST}
                 and user_has_permission(actor, "payments"))
+
+
+async def ancestor_financial_events(db, parent, *, lock=False):
+    from app.services.provider_outbox_service import EMAIL_NOTIFICATION_EVENT
+    query = select(ProviderOutboxEvent).where(ProviderOutboxEvent.tenant_id == parent.tenant_id,
+        ProviderOutboxEvent.aggregate_id == parent.id, ProviderOutboxEvent.event_type != EMAIL_NOTIFICATION_EVENT)
+    if lock:
+        query = query.with_for_update(nowait=True)
+    return list((await db.scalars(query.execution_options(populate_existing=True))).all())
+
+
+async def local_void_ancestor_snapshot(db, parent, *, lock=False):
+    events = await ancestor_financial_events(db, parent, lock=lock)
+    if (getattr(parent.status, "value", parent.status) != "cancelled" or not parent.voided_at
+            or parent.quickbooks_invoice_id or parent.quickbooks_sync_status != "voided"
+            or not parent.quickbooks_synced_at or not events
+            or any(e.event_type != "quickbooks.invoice.sync.v1" or e.status != "succeeded"
+                or e.provider_message_id or e.lock_token or e.locked_until for e in events)):
+        return None
+    return {"invoice_id": str(parent.id), "invoice_sha256": event_history_digest(parent),
+        "events": [{"event_id": str(e.id), "history_sha256": event_history_digest(e)}
+                   for e in sorted(events, key=lambda item: str(item.id))]}
+
+
+async def reviewed_cash_ancestry_reason(db, invoice, *, lock=False, reviews=None):
+    seen = {invoice.id}
+    parent_id = invoice.supersedes_invoice_id
+    chain = []
+    while parent_id:
+        if parent_id in seen:
+            return "Invoice replacement history requires review before local cash."
+        seen.add(parent_id)
+        chain.append(str(parent_id))
+        parent = await db.scalar(select(Invoice).where(Invoice.id == parent_id,
+            Invoice.tenant_id == invoice.tenant_id).execution_options(populate_existing=True))
+        if parent is None:
+            return "Invoice replacement history requires review before local cash."
+        if lock:
+            await locked_policy(db, parent, nowait=True)
+            await db.refresh(parent, attribute_names=[column.name for column in Invoice.__table__.columns])
+        if parent.quickbooks_invoice_id or parent.quickbooks_synced_at:
+            snapshot = await local_void_ancestor_snapshot(db, parent, lock=lock)
+            proofs = [proof for review in (reviews or []) for proof in review.get("ancestor_reviews", [])
+                if isinstance(proof, dict) and proof.get("invoice_id") == str(parent.id)]
+            if not snapshot or len(proofs) != len(reviews or []) or not proofs or any(
+                    proof.get("schema") != "db048-local-void-ancestor-review-v1"
+                    or proof.get("snapshot") != snapshot
+                    or proof.get("confirmation_realm_id") != review.get("confirmation_realm_id")
+                    or proof.get("evidence_manifest_sha256") != review.get("evidence_manifest_sha256")
+                    for review, proof in zip(reviews, proofs)):
+                return "A replaced invoice has QuickBooks accounting history. Review it before local cash."
+        for model in (InvoicePaymentAttempt, Payment, PaymentAccountingLink, InvoicePaymentLedgerEvent):
+            if await db.scalar(select(model.id).where(model.tenant_id == invoice.tenant_id,
+                    model.invoice_id == parent.id).limit(1)):
+                return "A replaced invoice has payment activity. Resolve it before local cash."
+        settlement = await db.scalar(select(InvoiceSettlement).where(InvoiceSettlement.tenant_id == invoice.tenant_id,
+            InvoiceSettlement.invoice_id == parent.id).execution_options(populate_existing=True))
+        if settlement and (settlement.last_event_sequence or any(money(getattr(settlement, name)) != 0
+                for name in ("confirmed_principal", "active_pending_principal", "unapplied_credit", "refund_pending"))):
+            return "A replaced invoice has payment activity. Resolve it before local cash."
+        parent_id = parent.supersedes_invoice_id
+    if reviews and any(review.get("supersedes_chain", []) != chain for review in reviews):
+        return "Invoice replacement history changed after review. Accounting review is required before cash."
+    return None
 
 
 async def cash_eligibility(db, invoice, settlement, *, lock=False):
@@ -54,6 +176,8 @@ async def cash_eligibility(db, invoice, settlement, *, lock=False):
     if not events and invoice.quickbooks_sync_status not in {None, "pending", "not_synced", "not_required", "awaiting_payment"}:
         return "Previous accounting activity must be reviewed before local cash.", events
     for event in events:
+        if CASH_REVIEW_KEY in (event.payload or {}) and not valid_sandbox_cash_review(event, invoice):
+            return "The reviewed export history changed. Accounting review is required before cash.", events
         if event.event_type != "quickbooks.invoice.sync.v1":
             return "Existing invoice delivery activity requires review before local cash.", events
         if event.status == "processing" or event.lock_token:
@@ -62,15 +186,21 @@ async def cash_eligibility(db, invoice, settlement, *, lock=False):
             return "This invoice already has QuickBooks export history.", events
         if event.status not in {"pending", "dead", "suppressed", "deferred"}:
             return "The invoice export outcome requires review.", events
-        if ((event.payload or {}).get("cash_export_ambiguous")
+        if not valid_sandbox_cash_review(event, invoice) and ((event.payload or {}).get("cash_export_ambiguous")
                 or event.attempt_count and not (event.payload or {}).get("cash_no_dispatch")
                 and (event.payload or {}).get("cash_export_ambiguous", True)):
             return "Previous export attempts have an unverified outcome. Accounting review is required before cash.", events
+    if any(valid_sandbox_cash_review(event, invoice) for event in events):
+        reviews = [event.payload[CASH_REVIEW_KEY] for event in events if valid_sandbox_cash_review(event, invoice)]
+        reason = await reviewed_cash_ancestry_reason(db, invoice, lock=lock, reviews=reviews)
+        if reason:
+            return reason, events
     return None, events
 
 
 async def reconcile_export_absence(db, invoice, events):
-    attempted = [event for event in events if event.attempt_count and not (event.payload or {}).get("cash_no_dispatch")]
+    attempted = [event for event in events if valid_sandbox_cash_review(event, invoice)
+        or event.attempt_count and not (event.payload or {}).get("cash_no_dispatch")]
     if not attempted:
         return
     from app.services.quickbooks_accounting_service import _request, _escape_query
@@ -78,17 +208,29 @@ async def reconcile_export_absence(db, invoice, events):
     connection = await db.scalar(select(QuickBooksConnection).where(
         QuickBooksConnection.tenant_id == invoice.tenant_id,
         QuickBooksConnection.status == "connected").with_for_update())
-    if not connection or not connection.realm_id or any(
-        event.payload.get("cash_export_realm") != connection.realm_id
-        or event.payload.get("cash_export_environment") != settings.QUICKBOOKS_ACCOUNTING_ENVIRONMENT
-        for event in attempted
-    ):
+    def matches_context(event):
+        if valid_sandbox_cash_review(event, invoice):
+            review = event.payload[CASH_REVIEW_KEY]
+            return (settings.QUICKBOOKS_ACCOUNTING_ENVIRONMENT == "production"
+                and review["confirmation_realm_id"] == connection.realm_id)
+        return (event.payload.get("cash_export_realm") == connection.realm_id
+            and event.payload.get("cash_export_environment") == settings.QUICKBOOKS_ACCOUNTING_ENVIRONMENT)
+    if not connection or not connection.realm_id or any(not matches_context(event) for event in attempted):
         raise SettlementDomainError("cash_export_unverified", "The original QuickBooks company must be verified before cash.")
     try:
         await _refresh_if_needed(connection)
         # Legacy writers truncate DocNumber to 21 characters; search BOTH shapes.
         # Any collision blocks conversion, even if customer/source markers differ.
-        for number in {invoice.invoice_number, invoice.invoice_number[:21]}:
+        numbers = {invoice.invoice_number, invoice.invoice_number[:21]}
+        for event in attempted:
+            if valid_sandbox_cash_review(event, invoice):
+                for ancestor_id in event.payload[CASH_REVIEW_KEY].get("supersedes_chain", []):
+                    parent = await db.scalar(select(Invoice).where(Invoice.id == UUID(ancestor_id),
+                        Invoice.tenant_id == invoice.tenant_id))
+                    if parent is None:
+                        raise SettlementDomainError("cash_export_unverified", "Invoice replacement history changed.")
+                    numbers.update({parent.invoice_number, parent.invoice_number[:21]})
+        for number in numbers:
             payload = await _request(connection, "GET", "query", params={"query":
                 f"select * from Invoice where DocNumber = '{_escape_query(number)}' maxresults 2"})
             query = payload.get("QueryResponse")
@@ -126,7 +268,7 @@ async def confirm_full_cash(db, *, invoice, tenant, customer_id, actor,
     # Refresh after acquiring serialization, not from the earlier endpoint read.
     await db.refresh(invoice, attribute_names=["accounting_policy", "status", "deleted_at", "voided_at",
         "quickbooks_invoice_id", "quickbooks_synced_at", "quickbooks_sync_status", "is_internal", "zelle_pending_submitted_at",
-        "cash_export_review_required"])
+        "cash_export_review_required", "supersedes_invoice_id"])
     existing = await db.scalar(select(InvoicePaymentAttempt).where(
         InvoicePaymentAttempt.tenant_id == tenant.id, InvoicePaymentAttempt.idempotency_key == idempotency_key))
     if existing:
