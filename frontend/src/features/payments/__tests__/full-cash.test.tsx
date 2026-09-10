@@ -40,6 +40,14 @@ describe('Staff full-cash confirmation', () => {
     expect(confirmCash).not.toHaveBeenCalled()
   })
 
+  it('keeps eligible full cash available when non-cash payments are held', () => {
+    show({ ...eligible, allowed_actions: { ...eligible.allowed_actions, create_attempt: false, rails: [],
+      payment_unavailable_reason: 'Non-cash payments are paused for this historical invoice until accounting review is complete.' } })
+    expect(screen.getByRole('button', { name: /Cash/ })).toBeEnabled()
+    expect(screen.getByText('Choose cash')).toBeInTheDocument()
+    expect(confirmCash).not.toHaveBeenCalled()
+  })
+
   it('never offers cash using another invoice’s stale summary during navigation', () => {
     render(<QueryClientProvider client={new QueryClient()}><FullCashPaymentPanel invoiceId="different-invoice" summary={eligible} onUpdated={vi.fn()} onChoosingChange={vi.fn()} /></QueryClientProvider>)
     expect(screen.queryByText('Choose cash')).not.toBeInTheDocument()

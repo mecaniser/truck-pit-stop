@@ -31,6 +31,7 @@ class SettlementAllowedActions(BaseModel):
     configure_provider: bool = False
     confirm_cash: bool = False
     cash_unavailable_reason: Optional[str] = None
+    payment_unavailable_reason: Optional[str] = None
 
 
 class InvoiceSettlementSummary(BaseModel):

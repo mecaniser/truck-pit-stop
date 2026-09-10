@@ -194,11 +194,26 @@ async def settlement_summary(
     feature_enabled = readiness.split_payment_global_gate and readiness.split_payment_tenant_gate
     actions = _allowed_actions(settlement=settlement, readiness=readiness, audience=audience, current_user=current_user)
     from app.services.invoice_cash_service import cash_eligibility, cash_staff
-    from app.services.invoice_accounting_policy import LOCAL_CASH_SYNC
+    from app.services.invoice_accounting_policy import LOCAL_CASH_SYNC, HISTORICAL_HOLD
+    invoice = await db.scalar(select(Invoice).where(
+        Invoice.id == settlement.invoice_id, Invoice.tenant_id == tenant.id,
+    ).execution_options(populate_existing=True))
+    if invoice is None or settlement.tenant_id != tenant.id:
+        raise SettlementDomainError("invoice_not_found", "Invoice not found.", status_code=404)
+    if invoice and invoice.accounting_policy == HISTORICAL_HOLD:
+        actions.create_attempt = False
+        actions.rails = []
+        actions.confirm_manual = False
+        actions.apply_customer_credit = False
+        actions.retry_accounting = False
+        actions.payment_unavailable_reason = (
+            "Non-cash payments are paused for this historical invoice until accounting review is complete."
+            if audience == "staff" else
+            "Payment is unavailable for this invoice. Please contact the shop."
+        )
     if settlement.accounting_sync_status == LOCAL_CASH_SYNC:
         actions = SettlementAllowedActions(configure_provider=actions.configure_provider)
     elif feature_enabled and audience == "staff" and cash_staff(current_user):
-        invoice = await db.get(Invoice, settlement.invoice_id)
         if invoice and invoice.tenant_id == tenant.id:
             reason, _events = await cash_eligibility(db, invoice, settlement)
             actions.confirm_cash = reason is None
