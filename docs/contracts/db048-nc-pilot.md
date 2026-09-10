@@ -16,6 +16,10 @@ Wisconsin tenant2b45a36a-8630-48ec-aed3-3a9c5a752706 remains unchanged.
 - Negative tests cover a second connected tenant, missing identity, invalid list
   and global-off. Existing durable reconciliation is not disabled by rollout gates.
 - Independent Security/QA approval, protected CI and deployed exact SHA required.
+- Canonical attempt-linked payments must be excluded from legacy scheduled and
+  manual reconciliation before provider calls or status changes; the legacy
+  accounting writer must refuse them. Existing unlinked legacy payments retain
+  their prior reconciliation path.
 - NC configuration uses verified live realm/account/item/tax-code identities,
   one accounting writer, immutable versioned configuration and verified factual
   historical baseline. Do not infer rates or manufacture payment details.
@@ -53,3 +57,12 @@ verified; no restore or destructive cleanup performed.
 Rollback: remove NC from the production approval allowlist and disable its tenant
 rollout flag to stop new admission. Preserve durable charge/refund reconciliation,
 configuration versions, provider objects, baseline and audit history.
+
+Final NC-only activation runner independently reviewed at SHA256
+`36af4f01b8f95ba53cb065a9b1ed9e0d47067bdb463277d7663f6fcb9ddd1097`.
+It requires actual production flags and an exact single-tenant allowlist, checks
+prospective readiness, commits only the NC flag when explicitly applied, then
+reads NC readiness and nonpilot denial in a new session. No provider operations.
+ETS imports remain untouched; future newly imported legacy sources can correctly
+close readiness until their factual baseline is refreshed. This is not evidence
+of a second external accounting writer.

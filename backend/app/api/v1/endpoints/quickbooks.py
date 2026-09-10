@@ -923,6 +923,11 @@ async def reconcile_quickbooks_payment(
     payment = await db.get(Payment, payment_id)
     if not payment or payment.tenant_id != current_user.tenant_id or not payment.quickbooks_charge_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="QuickBooks payment was not found")
+    if payment.invoice_payment_attempt_id is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Use settlement reconciliation for this payment",
+        )
     connection = await _get_connection(db, payment.tenant_id)
     if not connection:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="QuickBooks is not connected")
