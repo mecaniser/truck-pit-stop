@@ -1426,6 +1426,8 @@ async def _ensure_db048_qbo_invoice(
     tenant_name: Optional[str] = None,
 ) -> tuple[str, str]:
     """Return canonical customer/invoice IDs for principal-only DB-048 A/R."""
+    from app.services.invoice_accounting_policy import require_exportable_invoice
+    await require_exportable_invoice(invoice)
     # Every legacy caller (principal sync, credit target, dispute) must respect
     # the persisted composition. Never replace earned gross fee lines with a
     # principal-only payload simply because a different entry point ran.

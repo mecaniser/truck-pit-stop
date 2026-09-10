@@ -638,6 +638,9 @@ async def settlement_for_compatibility_route(
         InvoiceSettlement.invoice_id == invoice.id,
         InvoiceSettlement.customer_id == customer_id,
     )
+    from app.services.invoice_accounting_policy import LOCAL_CASH
+    if getattr(invoice, "accounting_policy", "standard") == LOCAL_CASH:
+        raise SettlementDomainError("local_cash_only", "This invoice is cash-only; legacy payment actions are unavailable.")
     if lock:
         query = query.with_for_update()
     existing = await db.scalar(query)
@@ -996,6 +999,8 @@ async def create_attempt(
             retryable=True,
             current_version=settlement.version,
         )
+    from app.services.invoice_accounting_policy import require_standard_payment
+    await require_standard_payment(db, invoice)
     available = allocatable_balance(settlement)
     if amount > available:
         raise SettlementDomainError(
@@ -1250,6 +1255,8 @@ async def confirm_attempt(
     # Enforce lifecycle before replay lookup, manual-reference normalization,
     # money projection, accounting enqueue, or paid/order state mutation.
     invoice = await locked_accessible_invoice_for_attempt(db, attempt)
+    from app.services.invoice_accounting_policy import require_standard_payment
+    await require_standard_payment(db, invoice)
 
     if attempt.state == "confirmed":
         payment = await db.get(Payment, attempt.payment_id) if attempt.payment_id else None
@@ -1623,6 +1630,8 @@ async def create_refund(
 ) -> PaymentRefund:
     if attempt.tenant_id != tenant_id:
         raise SettlementDomainError("invoice_not_found", "Invoice not found.", status_code=404)
+    if attempt.rail == "cash":
+        raise SettlementDomainError("cash_refund_unavailable", "Local cash refunds require a separate supported reversal workflow.")
     amount = money(amount)
     reason = reason.strip()
     request_hash = _canonical_hash({
@@ -2054,6 +2063,8 @@ async def apply_customer_credit(
         ))
     ).scalar_one_or_none()
     settlement = await get_or_create_settlement(db, invoice=invoice, customer_id=customer_id, tenant=tenant, lock=True)
+    from app.services.invoice_accounting_policy import require_standard_payment
+    await require_standard_payment(db, invoice)
     if existing:
         if existing.request_hash != request_hash:
             raise SettlementDomainError(

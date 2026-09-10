@@ -17,6 +17,7 @@ const RAIL_LABELS: Record<PaymentAllocation['rail'], string> = {
   zelle: 'Zelle',
   check: 'Check',
   ach: 'ACH',
+  cash: 'Cash',
 }
 
 export default function SettlementSummaryCard({
@@ -47,7 +48,7 @@ export default function SettlementSummaryCard({
           <p className={`text-[11px] font-extrabold uppercase tracking-[0.12em] ${quiet}`}>Invoice settlement</p>
           <h2 id={`settlement-${summary.invoice_id}`} className="mt-1 flex items-center gap-2 text-sm font-extrabold">
             {paid ? <CheckCircle2 className="h-4 w-4 text-emerald-500" /> : pending ? <Clock3 className="h-4 w-4 text-amber-500" /> : <RefreshCw className="h-4 w-4 text-sky-500" />}
-            {STATE_LABELS[summary.state]}
+            {paid && summary.accounting_sync_status === 'not_applicable_local_cash' ? 'Paid in cash' : STATE_LABELS[summary.state]}
           </h2>
         </div>
         <p className="text-right">
@@ -82,6 +83,7 @@ export default function SettlementSummaryCard({
       )}
 
       {summary.accounting_sync_status !== 'synced'
+        && summary.accounting_sync_status !== 'not_applicable_local_cash'
         && summary.accounting_sync_status !== 'not_started'
         && summary.accounting_sync_status !== 'not_required' && (
         <div className={`border-t px-3 py-2.5 text-xs ${divider} ${summary.accounting_sync_status === 'pending' ? quiet : 'text-red-500'}`} role={summary.accounting_sync_status === 'pending' ? 'status' : 'alert'}>
@@ -89,6 +91,10 @@ export default function SettlementSummaryCard({
             ? 'Payment recorded. QuickBooks accounting sync is pending; no duplicate payment is needed.'
             : 'QuickBooks accounting sync needs staff attention. The payment remains recorded in DieselBridge.'}
         </div>
+      )}
+
+      {summary.accounting_sync_status === 'not_applicable_local_cash' && (
+        <p className={`border-t px-3 py-2.5 text-xs ${divider} ${quiet}`}>Cash recorded locally. Not synced to QuickBooks.</p>
       )}
 
       {allocations.length > 0 && (

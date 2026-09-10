@@ -1198,6 +1198,13 @@ async def void_invoice(
             detail="Void reason cannot exceed 1000 characters",
         )
     
+    # Match settlement/payment/export lock order before locking the invoice.
+    # The tenant predicate prevents locking another shop's settlement.
+    from app.db.models.invoice_settlement import InvoiceSettlement
+    await db.scalar(select(InvoiceSettlement.id).where(
+        InvoiceSettlement.invoice_id == invoice_id,
+        InvoiceSettlement.tenant_id == current_user.tenant_id,
+    ).with_for_update())
     result = await db.execute(
         select(Invoice)
         .options(selectinload(Invoice.repair_order))

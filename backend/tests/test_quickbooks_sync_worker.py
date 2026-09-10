@@ -420,6 +420,7 @@ async def test_quickbooks_worker_retries_when_connection_is_missing(
     assert result["retried"] == 1
     assert event.status == ProviderOutboxStatus.PENDING.value
     assert event.last_error == "QuickBooks is not connected"
+    assert event.payload["cash_no_dispatch"] is True
     assert event.lock_token is None
     assert event.locked_until is None
 
@@ -445,6 +446,8 @@ async def test_quickbooks_worker_reclaims_an_expired_processing_lease(
     assert claim[1] != "expired-token"
     assert event.status == ProviderOutboxStatus.PROCESSING.value
     assert event.attempt_count == 3
+    assert event.payload["cash_no_dispatch"] is False
+    assert event.payload["cash_export_ambiguous"] is True
     assert event.lock_token == claim[1]
     assert event.locked_at is not None
     assert event.locked_until is not None

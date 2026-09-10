@@ -280,6 +280,8 @@ async def _fee_line(connection, member, mapping):
 
 async def ensure_gross_invoice(db, *, connection, invoice, customer, settlement, tenant_name=None,
                                original_attempt_id=None):
+    from app.services.invoice_accounting_policy import require_exportable_invoice
+    await require_exportable_invoice(invoice)
     r = _r()
     settlement = await _locked_settlement(db, settlement)
     if (settlement.qbo_realm_snapshot != connection.realm_id

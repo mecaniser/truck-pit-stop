@@ -471,6 +471,8 @@ async def sync_invoice(
     invoice: Invoice,
     customer: Customer,
 ) -> str:
+    from app.services.invoice_accounting_policy import require_exportable_invoice
+    await require_exportable_invoice(invoice)
     invoice_status = getattr(invoice.status, "value", invoice.status)
     if invoice_status == "cancelled":
         if not invoice.quickbooks_invoice_id:
@@ -600,6 +602,8 @@ async def create_refund_receipt(
     refund_id: str,
     amount: Decimal,
 ) -> str:
+    from app.services.invoice_accounting_policy import require_exportable_invoice
+    await require_exportable_invoice(invoice)
     if payment.quickbooks_refund_receipt_id:
         return payment.quickbooks_refund_receipt_id
     document_number = f"R-{payment.payment_number}"[:21]

@@ -39,6 +39,7 @@ from app.db.models.repair_order import RepairOrder, RepairOrderStatus
 from app.db.models.tenant import Tenant
 from app.db.models.user import UserRole
 from app.schemas.invoice_settlement import (
+    CashConfirmationCreate, CashConfirmationResponse,
     AccountingReconciliationRead, AccountingRetryResponse,
     CardProviderConfigurationRead, CardProviderConfigurationUpdate,
     CardProviderReadiness, CreditAgingItem, CreditApplicationCreate,
@@ -191,6 +192,17 @@ async def settlement_summary(
 ) -> InvoiceSettlementSummary:
     readiness = await provider_readiness(db, tenant)
     feature_enabled = readiness.split_payment_global_gate and readiness.split_payment_tenant_gate
+    actions = _allowed_actions(settlement=settlement, readiness=readiness, audience=audience, current_user=current_user)
+    from app.services.invoice_cash_service import cash_eligibility, cash_staff
+    from app.services.invoice_accounting_policy import LOCAL_CASH_SYNC
+    if settlement.accounting_sync_status == LOCAL_CASH_SYNC:
+        actions = SettlementAllowedActions(configure_provider=actions.configure_provider)
+    elif feature_enabled and audience == "staff" and cash_staff(current_user):
+        invoice = await db.get(Invoice, settlement.invoice_id)
+        if invoice and invoice.tenant_id == tenant.id:
+            reason, _events = await cash_eligibility(db, invoice, settlement)
+            actions.confirm_cash = reason is None
+            actions.cash_unavailable_reason = reason
     return InvoiceSettlementSummary(
         invoice_id=settlement.invoice_id,
         currency=settlement.currency,
@@ -210,12 +222,7 @@ async def settlement_summary(
         card_provider_status=_public_provider_status(readiness),
         accounting_sync_status=settlement.accounting_sync_status,
         feature_enabled=feature_enabled,
-        allowed_actions=_allowed_actions(
-            settlement=settlement,
-            readiness=readiness,
-            audience=audience,
-            current_user=current_user,
-        ),
+        allowed_actions=actions,
     )
 
 
@@ -874,6 +881,27 @@ async def charge_quickbooks_payment_attempt(
         audience=audience,
         current_user=current_user,
     )
+
+
+@router.post("/invoices/{invoice_id}/cash-confirmation", response_model=CashConfirmationResponse)
+async def confirm_invoice_cash(
+    invoice_id: UUID,
+    body: CashConfirmationCreate,
+    idempotency_header: Optional[str] = Header(default=None, alias="Idempotency-Key"),
+    db: AsyncSession = Depends(get_db),
+    current_user: CurrentUser = Depends(get_current_active_user),
+):
+    from app.services.invoice_cash_service import cash_staff, confirm_full_cash
+    if not cash_staff(current_user):
+        raise SettlementDomainError("invoice_not_found", "Invoice not found.", status_code=404)
+    invoice, tenant, customer_id = await invoice_for_principal(db, invoice_id, current_user)
+    payment_id, settlement = await confirm_full_cash(db, invoice=invoice, tenant=tenant,
+        customer_id=customer_id, actor=current_user,
+        expected_settlement_version=body.expected_settlement_version,
+        idempotency_key=_idempotency_key(idempotency_header), note=body.note)
+    await db.commit()
+    return CashConfirmationResponse(payment_id=payment_id,
+        settlement=await settlement_summary(db, settlement, tenant, audience="staff", current_user=current_user))
 
 
 @router.post("/attempts/{attempt_id}/confirm", response_model=PaymentAttemptResponse)

@@ -231,31 +231,31 @@ async def _reset_accounting_links_for_realm_change(
         .where(
             Invoice.tenant_id == tenant_id,
             Invoice.status.in_([InvoiceStatus.SENT, InvoiceStatus.PAID]),
+            Invoice.accounting_policy != "local_cash_only",
         )
         .values(
             quickbooks_invoice_id=None,
             quickbooks_sync_status="pending",
             quickbooks_synced_at=None,
             quickbooks_sync_error=None,
+            cash_export_review_required=True,
         )
     )
-    await db.execute(
-        update(ProviderOutboxEvent)
-        .where(
+    events = (await db.scalars(select(ProviderOutboxEvent).where(
             ProviderOutboxEvent.tenant_id == tenant_id,
             ProviderOutboxEvent.event_type == QUICKBOOKS_INVOICE_SYNC_EVENT,
-        )
-        .values(
-            status=ProviderOutboxStatus.PENDING.value,
-            attempt_count=0,
-            available_at=now,
-            locked_at=None,
-            locked_until=None,
-            lock_token=None,
-            completed_at=None,
-            last_error=None,
-        )
-    )
+            ProviderOutboxEvent.aggregate_id.in_(select(Invoice.id).where(
+                Invoice.tenant_id == tenant_id, Invoice.accounting_policy != "local_cash_only")),
+        ).with_for_update())).all()
+    for event in events:
+        event.payload = {**(event.payload or {}), "cash_export_ambiguous": True,
+                         "prior_realm_attempt_count": event.attempt_count,
+                         "prior_realm_error": event.last_error}
+        event.status = ProviderOutboxStatus.PENDING.value
+        event.attempt_count = 0
+        event.available_at = now
+        event.locked_at = event.locked_until = event.lock_token = None
+        event.completed_at = event.last_error = None
 
 
 class QuickBooksAuthorizationResponse(BaseModel):
@@ -596,7 +596,7 @@ async def sync_quickbooks_invoice_now(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
-    """Idempotently create the customer and finalized invoice in QBO."""
+    """Queue a durable export; only the leased worker dispatches invoice writes."""
     _require_quickbooks_admin(current_user)
     invoice, _order, customer = await _invoice_accounting_context(db, invoice_id)
     if invoice.tenant_id != current_user.tenant_id:
@@ -606,36 +606,15 @@ async def sync_quickbooks_invoice_now(
     connection = await _get_connection(db, invoice.tenant_id)
     if not connection:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="QuickBooks is not connected")
-    await _refresh_connection_if_needed(db, connection)
-    try:
-        settlement = await db.scalar(
-            select(InvoiceSettlement).where(
-                InvoiceSettlement.tenant_id == invoice.tenant_id,
-                InvoiceSettlement.invoice_id == invoice.id,
-                InvoiceSettlement.deleted_at.is_(None),
-            )
-        )
-        qbo_id = (
-            await sync_db048_principal_invoice(
-                connection=connection,
-                invoice=invoice,
-                customer=customer,
-                settlement=settlement,
-            )
-            if settlement
-            else await sync_invoice(connection, invoice, customer)
-        )
-        await db.commit()
-        return QuickBooksAccountingSyncResponse(
-            invoice_id=invoice.id,
-            quickbooks_invoice_id=qbo_id,
-            status="synced",
-        )
-    except QuickBooksAccountingError as exc:
-        invoice.quickbooks_sync_status = "error"
-        invoice.quickbooks_sync_error = str(exc)
-        await db.commit()
-        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+    event = await enqueue_quickbooks_invoice_sync(db, invoice=invoice)
+    if event is None:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Local cash invoices are excluded from QuickBooks")
+    if event.status in {"dead", "suppressed"}:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="This export requires accounting review before retry")
+    await db.commit()
+    return QuickBooksAccountingSyncResponse(invoice_id=invoice.id,
+        quickbooks_invoice_id=invoice.quickbooks_invoice_id or "",
+        status="synced" if event.status == "succeeded" and invoice.quickbooks_invoice_id else "pending")
 
 
 @router.post("/payments/charge", response_model=QuickBooksChargeResponse)
