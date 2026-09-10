@@ -1,8 +1,9 @@
 """Durable QuickBooks invoice sync and payment reconciliation workers."""
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
+import json
 from uuid import UUID, uuid4
 
 from sqlalchemy import or_, select
@@ -13,7 +14,7 @@ from sqlalchemy.orm import selectinload
 from app.core.config import settings
 from app.db.models.customer import Customer
 from app.db.models.invoice import Invoice
-from app.db.models.invoice_settlement import InvoiceSettlement
+from app.db.models.invoice_settlement import InvoicePaymentAttempt, InvoiceSettlement
 from app.db.models.payment import Payment, PaymentMethod, PaymentStatus
 from app.db.models.provider_outbox import ProviderOutboxEvent, ProviderOutboxStatus
 from app.db.models.quickbooks_connection import QuickBooksConnection
@@ -410,6 +411,7 @@ async def backfill_quickbooks_cdc(
         "settlement_batches": 0,
         "settlement_deferred": 0,
         "settlement_manual": 0,
+        "settlement_failed": 0,
         "failed": 0,
     }
     async with session_factory() as db:
@@ -422,18 +424,13 @@ async def backfill_quickbooks_cdc(
         for connection in connections:
             results["connections"] += 1
             changed_since = connection.last_cdc_at or (_now() - timedelta(days=1))
+            retry_from = _settlement_retry_from(connection.last_cdc_error, connection.realm_id)
+            overlap_start = min(changed_since.date(), (_now() - timedelta(days=7)).date())
+            if retry_from is not None:
+                overlap_start = min(overlap_start, retry_from)
             try:
                 await _refresh_if_needed(connection)
                 changes = await change_data_capture(connection, changed_since=changed_since)
-                overlap_start = min(
-                    changed_since.date(),
-                    (_now() - timedelta(days=7)).date(),
-                )
-                settlement_records = await qbp_settlement_window(
-                    connection,
-                    date_from=overlap_start,
-                    date_to=_now().date(),
-                )
                 for entity in changes.get("Invoice", []):
                     provider_id = str(entity.get("Id") or "")
                     invoice = (await db.execute(
@@ -461,28 +458,86 @@ async def backfill_quickbooks_cdc(
                         if payment:
                             payment.quickbooks_reconciled_at = _now()
                             payment.quickbooks_sync_error = None
-                settlement_result = await reconcile_qbp_native_settlements(
-                    db,
-                    connection=connection,
-                    deposits=settlement_records["Deposit"],
-                    payments=changes.get("Payment", []),
-                    purchases=settlement_records["Purchase"],
-                )
-                results["settlement_batches"] += settlement_result["batches"]
-                results["settlement_deferred"] += settlement_result["deferred"]
-                results["settlement_manual"] += settlement_result["manual"]
-                results["entities"] += (
-                    sum(len(items) for items in changes.values())
-                    + sum(len(items) for items in settlement_records.values())
-                )
+                results["entities"] += sum(len(items) for items in changes.values())
                 connection.last_cdc_at = _now()
-                connection.last_cdc_error = None
+                if retry_from is None:
+                    connection.last_cdc_error = None
             except (
                 DB048ReconciliationError,
                 QuickBooksAccountingError,
                 QuickBooksOAuthError,
             ) as exc:
-                connection.last_cdc_error = str(exc)
+                connection.last_cdc_error = (
+                    _settlement_retry_error(connection.realm_id, retry_from, "legacy")
+                    if retry_from is not None else "QuickBooks legacy CDC failed"
+                )
+                results["failed"] += 1
+                continue
+            # The additive DB-048 importer must not gate legacy CDC progress.
+            # A savepoint preserves those updates and rolls back any partial
+            # settlement import, including failures after an importer flush.
+            try:
+                async with db.begin_nested():
+                    relevant = await db.scalar(select(InvoicePaymentAttempt.id).where(
+                        InvoicePaymentAttempt.tenant_id == connection.tenant_id,
+                        InvoicePaymentAttempt.provider == "quickbooks_payments",
+                        InvoicePaymentAttempt.provider_account_id == connection.realm_id,
+                        InvoicePaymentAttempt.provider_charge_id.is_not(None),
+                        InvoicePaymentAttempt.provider_charge_id != "",
+                        InvoicePaymentAttempt.state.in_(("confirmed", "refunded", "reversed")),
+                    ).limit(1))
+                    if relevant is None:
+                        continue
+                    # Persisted history still needs reconciliation when the
+                    # new-payment flags are off. No history means no new reads.
+                    settlement_records = await qbp_settlement_window(
+                        connection, date_from=overlap_start, date_to=_now().date(),
+                    )
+                    settlement_result = await reconcile_qbp_native_settlements(
+                        db, connection=connection, deposits=settlement_records["Deposit"],
+                        payments=changes.get("Payment", []), purchases=settlement_records["Purchase"],
+                    )
+                    batch_count = settlement_result["batches"]
+                    deferred_count = settlement_result["deferred"]
+                    manual_count = settlement_result["manual"]
+                    entity_count = sum(len(items) for items in settlement_records.values())
+                    if any(type(count) is not int or count < 0 for count in (batch_count, deferred_count, manual_count)):
+                        raise ValueError("Invalid settlement import counters")
+                results["settlement_batches"] += batch_count
+                results["settlement_deferred"] += deferred_count
+                results["settlement_manual"] += manual_count
+                results["entities"] += entity_count
+                connection.last_cdc_error = None
+            except Exception as exc:
+                # Do not hide unexpected importer failures or echo provider
+                # payloads. last_cdc_at still records successful legacy CDC.
+                connection.last_cdc_error = _settlement_retry_error(connection.realm_id, overlap_start, "settlement")
+                results["settlement_failed"] += 1
                 results["failed"] += 1
         await db.commit()
     return results
+
+
+_SETTLEMENT_RETRY_PREFIX = "DB048_SETTLEMENT_RETRY_V1:"
+
+
+def _settlement_retry_error(realm_id, retry_from, failure):
+    return _SETTLEMENT_RETRY_PREFIX + json.dumps({
+        "realm": str(realm_id), "retry_from": retry_from.isoformat(), "failure": failure,
+    }, sort_keys=True, separators=(",", ":"))
+
+
+def _settlement_retry_from(error, realm_id):
+    """Only our bounded, realm-bound marker can extend an importer retry window."""
+    if not isinstance(error, str) or len(error) > 256 or not error.startswith(_SETTLEMENT_RETRY_PREFIX):
+        return None
+    try:
+        marker = json.loads(error[len(_SETTLEMENT_RETRY_PREFIX):])
+        if (not isinstance(marker, dict) or set(marker) != {"realm", "retry_from", "failure"}
+                or marker["realm"] != str(realm_id) or marker["failure"] not in {"settlement", "legacy"}
+                or not isinstance(marker["retry_from"], str) or len(marker["retry_from"]) != 10):
+            return None
+        parsed = date.fromisoformat(marker["retry_from"])
+        return parsed if date(1970, 1, 1) <= parsed <= _now().date() and parsed.isoformat() == marker["retry_from"] else None
+    except (ValueError, TypeError):
+        return None
