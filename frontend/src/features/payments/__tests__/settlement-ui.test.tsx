@@ -393,12 +393,67 @@ describe('CardProviderSettingsCard', () => {
     ))
   })
 
-  it('shows exactly one ready provider and keeps an unapproved QBP environment unavailable', async () => {
+  it('only offers ready providers and omits an unapproved alternative from routing', async () => {
     paymentApi.fetchCardProviderReadiness.mockResolvedValue(DB048_PROVIDER_READINESS)
     renderWithQuery(<CardProviderSettingsCard requestVerification={vi.fn()} />)
     expect(await screen.findByRole('radio', { name: /stripe connect/i })).toBeChecked()
-    expect(screen.getByRole('radio', { name: /quickbooks payments/i })).toBeDisabled()
+    expect(screen.queryByRole('radio', { name: /quickbooks payments/i })).not.toBeInTheDocument()
+    expect(screen.getAllByRole('radio')).toHaveLength(1)
+  })
+
+  it('shows active QuickBooks first without offering unconfigured Stripe', async () => {
+    paymentApi.fetchCardProviderReadiness.mockResolvedValue({
+      ...DB048_PROVIDER_READINESS,
+      selected_provider: 'quickbooks_payments',
+      stripe_connect: { ...DB048_PROVIDER_READINESS.stripe_connect, status: 'not_configured' },
+      quickbooks_payments: { approved: true, tenant_ready: true, status: 'ready' },
+    })
+    renderWithQuery(<CardProviderSettingsCard requestVerification={vi.fn()} />)
+    const active = await screen.findByRole('radio', { name: /quickbooks payments active for invoice payments/i })
+    expect(active).toBeChecked()
+    expect(active).toHaveAttribute('data-state', 'active')
+    expect(screen.queryByRole('radio', { name: /stripe/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /use .* for new attempts/i })).not.toBeInTheDocument()
+  })
+
+  it('retains a selected unavailable provider as a warning, never active green', async () => {
+    paymentApi.fetchCardProviderReadiness.mockResolvedValue({
+      ...DB048_PROVIDER_READINESS,
+      selected_provider: 'quickbooks_payments',
+    })
+    renderWithQuery(<CardProviderSettingsCard requestVerification={vi.fn()} />)
+    const selected = await screen.findByRole('radio', { name: /quickbooks payments/i })
+    expect(selected).toBeChecked()
+    expect(selected).toBeDisabled()
+    expect(selected).toHaveAttribute('data-state', 'unavailable')
     expect(screen.getByText(/external intuit approval pending/i)).toBeInTheDocument()
+    expect(screen.queryByText('Active for invoice payments')).not.toBeInTheDocument()
+  })
+
+  it('keeps the saved provider active while distinguishing unsaved selection', async () => {
+    const user = userEvent.setup()
+    paymentApi.fetchCardProviderReadiness.mockResolvedValue({
+      ...DB048_PROVIDER_READINESS,
+      quickbooks_payments: { approved: true, tenant_ready: true, status: 'ready' },
+    })
+    renderWithQuery(<CardProviderSettingsCard requestVerification={vi.fn()} />)
+    await user.click(await screen.findByRole('radio', { name: /quickbooks payments/i }))
+    expect(screen.getByRole('radio', { name: /quickbooks payments/i })).toHaveAttribute('data-state', 'pending')
+    expect(screen.getByRole('radio', { name: /stripe connect/i })).toHaveAttribute('data-state', 'active')
+    expect(screen.getByText('Selected — save to activate')).toBeInTheDocument()
+  })
+
+  it('does not imply activation when the feature is off or allow a read-only change', async () => {
+    paymentApi.fetchCardProviderReadiness.mockResolvedValue({
+      ...DB048_PROVIDER_READINESS,
+      feature_enabled: false,
+      allowed_actions: { configure_provider: false },
+    })
+    renderWithQuery(<CardProviderSettingsCard requestVerification={vi.fn()} />)
+    const selected = await screen.findByRole('radio', { name: /stripe connect/i })
+    expect(selected).toBeDisabled()
+    expect(selected).not.toHaveAttribute('data-state', 'active')
+    expect(screen.queryByText('Active for invoice payments')).not.toBeInTheDocument()
   })
 
   it('allows an approved payment-scoped sandbox connection to be selected', async () => {

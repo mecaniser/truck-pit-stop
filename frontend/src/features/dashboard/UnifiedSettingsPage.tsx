@@ -1323,7 +1323,7 @@ function PaymentsSection() {
   const [isRedirecting, setIsRedirecting] = useState(false)
   const [disconnectKind, setDisconnectKind] = useState<'current' | 'legacy' | null>(null)
   const [stripeDisconnectGrant, setStripeDisconnectGrant] = useState<string | null>(null)
-  const [openPaymentPanel, setOpenPaymentPanel] = useState<'stripe' | 'zelle' | 'quickbooks' | null>('stripe')
+  const [requestedPaymentPanel, setOpenPaymentPanel] = useState<'stripe' | 'zelle' | 'quickbooks' | null | undefined>(undefined)
   const [destructivePrompt, setDestructivePrompt] = useState<DestructiveStepUpPrompt | null>(null)
   const [searchParams, setSearchParams] = useSearchParams()
   const requestDestructiveStepUp = (prompt: DestructiveStepUpPrompt) => setDestructivePrompt(prompt)
@@ -1336,6 +1336,25 @@ function PaymentsSection() {
     },
     refetchInterval: 30_000,
   })
+  // Shared query keys keep ordering in sync with each integration's existing status.
+  const { data: quickBooksStatus } = useQuery<QuickBooksConnectionStatus>({
+    queryKey: ['quickbooks-status'],
+    queryFn: async () => (await api.get('/quickbooks/status')).data,
+    enabled: false,
+  })
+  const { data: zelleStatus } = useQuery<ZelleSettings>({
+    queryKey: ['zelle-settings'],
+    queryFn: async () => (await api.get('/admin/zelle-settings')).data,
+    enabled: false,
+  })
+  const integrationOrder = [
+    { id: 'quickbooks' as const, configured: Boolean(quickBooksStatus?.is_connected) },
+    { id: 'stripe' as const, configured: Boolean(status?.is_connected) },
+    { id: 'zelle' as const, configured: Boolean(zelleStatus?.zelle_email || zelleStatus?.zelle_phone) },
+  ].sort((a, b) => Number(b.configured) - Number(a.configured))
+  const openPaymentPanel = requestedPaymentPanel === undefined
+    ? integrationOrder.find(integration => integration.configured)?.id ?? null
+    : requestedPaymentPanel
 
   useEffect(() => {
     const result = searchParams.get('stripe')
@@ -1437,18 +1456,7 @@ function PaymentsSection() {
     ? `${status.account_id.slice(0, 8)}...${status.account_id.slice(-4)}`
     : 'Not connected'
 
-  return (
-    <div className="db-settings-payments space-y-8 animate-[fadeIn_0.4s_ease-out]">
-      <div className="rounded-xl border border-zinc-800 bg-zinc-950/40 px-4 py-3 text-sm text-zinc-400">
-        Manage card-payment connections, staff-confirmed Zelle, and QuickBooks accounting sync. Customer-facing charges are in Taxes &amp; Fees when your role has access.
-      </div>
-      <CardProviderSettingsCard requestVerification={(onGranted) => requestDestructiveStepUp({
-        scope: 'payment_sources.manage',
-        title: 'Verify invoice card routing',
-        description: 'Enter your current password to change the card provider for new payment attempts.',
-        onGranted,
-      })} />
-      <CustomerCreditAgingCard />
+  const stripePanel = (
       <PaymentIntegrationPanel
         icon={<CreditCard className="h-5 w-5" />}
         title="Stripe Payments"
@@ -1617,6 +1625,35 @@ function PaymentsSection() {
           )}
         </div>
       </PaymentIntegrationPanel>
+  )
+
+  const integrationPanels = {
+    stripe: stripePanel,
+    zelle: <ZelleSection
+      open={openPaymentPanel === 'zelle'}
+      onOpenChange={(nextOpen) => setOpenPaymentPanel(nextOpen ? 'zelle' : null)}
+      requestDestructiveStepUp={requestDestructiveStepUp}
+    />,
+    quickbooks: <QuickBooksIntegrationCard
+      open={openPaymentPanel === 'quickbooks'}
+      onOpenChange={(nextOpen) => setOpenPaymentPanel(nextOpen ? 'quickbooks' : null)}
+      requestDestructiveStepUp={requestDestructiveStepUp}
+    />,
+  }
+
+  return (
+    <div className="db-settings-payments space-y-8 animate-[fadeIn_0.4s_ease-out]">
+      <div className="rounded-xl border border-zinc-800 bg-zinc-950/40 px-4 py-3 text-sm text-zinc-400">
+        Manage card-payment connections, staff-confirmed Zelle, and QuickBooks accounting sync. Customer-facing charges are in Taxes &amp; Fees when your role has access.
+      </div>
+      <CardProviderSettingsCard requestVerification={(onGranted) => requestDestructiveStepUp({
+        scope: 'payment_sources.manage',
+        title: 'Verify invoice card routing',
+        description: 'Enter your current password to change the card provider for new payment attempts.',
+        onGranted,
+      })} />
+      <CustomerCreditAgingCard />
+      {integrationOrder.map(integration => <div key={integration.id} data-payment-source={integration.id}>{integrationPanels[integration.id]}</div>)}
       {disconnectKind && (
         <PaymentSourceDisconnectDialog
           title={disconnectKind === 'legacy' ? 'Disconnect legacy Stripe connection?' : 'Disconnect Stripe account?'}
@@ -1632,16 +1669,6 @@ function PaymentsSection() {
           onConfirm={() => stripeDisconnectGrant && disconnectMutation.mutate(stripeDisconnectGrant)}
         />
       )}
-      <ZelleSection
-        open={openPaymentPanel === 'zelle'}
-        onOpenChange={(nextOpen) => setOpenPaymentPanel(nextOpen ? 'zelle' : null)}
-        requestDestructiveStepUp={requestDestructiveStepUp}
-      />
-      <QuickBooksIntegrationCard
-        open={openPaymentPanel === 'quickbooks'}
-        onOpenChange={(nextOpen) => setOpenPaymentPanel(nextOpen ? 'quickbooks' : null)}
-        requestDestructiveStepUp={requestDestructiveStepUp}
-      />
       {destructivePrompt && <PaymentSourceStepUpDialog prompt={destructivePrompt} onCancel={() => setDestructivePrompt(null)} />}
     </div>
   )

@@ -55,44 +55,45 @@ export default function CardProviderSettingsCard({ requestVerification }: {
   const data = readiness.data
   const selected = pendingProvider ?? data.selected_provider
   const canConfigure = data.allowed_actions?.configure_provider === true
+  const providers = [
+    { id: 'stripe_connect' as const, name: 'Stripe Connect', status: data.stripe_connect.status, ready: data.stripe_connect.status === 'ready' },
+    { id: 'quickbooks_payments' as const, name: 'QuickBooks Payments', status: data.quickbooks_payments.status, ready: data.quickbooks_payments.status === 'ready' && data.quickbooks_payments.approved && data.quickbooks_payments.tenant_ready },
+  ].filter(provider => provider.ready || provider.id === data.selected_provider)
+    .sort((a, b) => Number(b.id === data.selected_provider) - Number(a.id === data.selected_provider))
 
   return (
     <section className="rounded-2xl border border-zinc-800 bg-zinc-950/40 p-4 sm:p-5" aria-labelledby="invoice-card-provider-heading">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <p className="text-[11px] font-extrabold uppercase tracking-[0.12em] text-zinc-500">Invoice card routing</p>
-          <h3 id="invoice-card-provider-heading" className="mt-1 flex items-center gap-2 font-extrabold text-zinc-100"><CreditCard className="h-4 w-4" />One provider for every customer</h3>
-          <p className="mt-1 max-w-2xl text-sm text-zinc-400">Customer portal, guest links, and staff checkout use the same server-selected provider. Switching affects new attempts only.</p>
+          <h3 id="invoice-card-provider-heading" className="mt-1 flex items-center gap-2 font-extrabold text-zinc-100"><CreditCard className="h-4 w-4" />Your invoice card processor</h3>
+          <p className="mt-1 max-w-2xl text-sm text-zinc-400">Your shop chooses the processor. Customers pay by card without choosing a provider. Changes apply to new payment attempts only.</p>
         </div>
-        <span className={`rounded-full border px-2.5 py-1 text-xs font-bold ${data.feature_enabled ? 'border-emerald-700/50 bg-emerald-950/30 text-emerald-300' : 'border-amber-700/50 bg-amber-950/30 text-amber-300'}`}>
+        <span className={`rounded-full border px-2.5 py-1 text-xs font-bold ${data.feature_enabled ? 'db-card-provider-enabled' : 'border-amber-700/50 bg-amber-950/30 text-amber-300'}`}>
           {data.feature_enabled ? 'Partial payments enabled' : 'Feature gate off'}
         </span>
       </div>
 
-      <div className="mt-4 grid gap-3 sm:grid-cols-2" role="radiogroup" aria-label="Invoice card provider">
-        <button
-          type="button"
-          role="radio"
-          aria-checked={selected === 'stripe_connect'}
-          disabled={!canConfigure}
-          onClick={() => setPendingProvider('stripe_connect')}
-          className={`min-h-[72px] rounded-xl border p-3 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#d25d43] disabled:cursor-not-allowed disabled:opacity-70 ${selected === 'stripe_connect' ? 'border-[#d25d43] bg-[#d25d43]/10' : 'border-zinc-800 bg-zinc-950/30'}`}
-        >
-          <span className="flex items-center justify-between gap-2"><span className="font-bold text-zinc-100">Stripe Connect</span>{data.stripe_connect.status === 'ready' ? <CheckCircle2 className="h-4 w-4 text-emerald-400" /> : <AlertTriangle className="h-4 w-4 text-amber-400" />}</span>
-          <span className="mt-1 block text-xs text-zinc-400">{STATUS_LABELS[data.stripe_connect.status]}</span>
-        </button>
-        <button
-          type="button"
-          role="radio"
-          aria-checked={selected === 'quickbooks_payments'}
-          disabled={!canConfigure || !data.quickbooks_payments.approved || !data.quickbooks_payments.tenant_ready}
-          onClick={() => setPendingProvider('quickbooks_payments')}
-          className={`min-h-[72px] rounded-xl border p-3 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#d25d43] disabled:cursor-not-allowed disabled:opacity-70 ${selected === 'quickbooks_payments' ? 'border-[#d25d43] bg-[#d25d43]/10' : 'border-zinc-800 bg-zinc-950/30'}`}
-        >
-          <span className="flex items-center justify-between gap-2"><span className="font-bold text-zinc-100">QuickBooks Payments</span>{data.quickbooks_payments.status === 'ready' ? <CheckCircle2 className="h-4 w-4 text-emerald-400" /> : <AlertTriangle className="h-4 w-4 text-amber-400" />}</span>
-          <span className="mt-1 block text-xs text-zinc-400">{STATUS_LABELS[data.quickbooks_payments.status]}</span>
-        </button>
+      <div className={`mt-4 grid gap-3 ${providers.length > 1 ? 'sm:grid-cols-2' : ''}`} role="radiogroup" aria-label="Invoice card provider">
+        {providers.map(provider => {
+          const active = provider.id === data.selected_provider && provider.ready && data.feature_enabled && data.accounting_ready
+          const pending = provider.id === pendingProvider && provider.id !== data.selected_provider
+          return <button
+            key={provider.id}
+            type="button"
+            role="radio"
+            aria-checked={selected === provider.id}
+            disabled={!canConfigure || !provider.ready}
+            onClick={() => setPendingProvider(provider.id)}
+            data-state={active ? 'active' : pending ? 'pending' : !provider.ready ? 'unavailable' : 'available'}
+            className="db-card-provider-option min-h-[72px] rounded-xl border p-3 text-left disabled:cursor-not-allowed"
+          >
+            <span className="flex items-center justify-between gap-2"><span className="font-bold">{provider.name}</span>{active ? <CheckCircle2 className="h-4 w-4" aria-hidden="true" /> : !provider.ready ? <AlertTriangle className="h-4 w-4" aria-hidden="true" /> : null}</span>
+            <span className="mt-1 block text-xs">{active ? 'Active for invoice payments' : pending ? 'Selected — save to activate' : provider.id === data.selected_provider ? `Selected · ${!data.feature_enabled ? 'Partial payments disabled' : !data.accounting_ready ? 'Accounting setup required' : STATUS_LABELS[provider.status]}` : 'Ready to use'}</span>
+          </button>
+        })}
       </div>
+      {providers.length === 0 && <p className="mt-3 text-sm text-zinc-400">No card processor is ready. Complete a connection below to accept card payments.</p>}
 
       {!data.accounting_ready && (
         <p className="mt-3 rounded-xl border border-amber-800/40 bg-amber-950/20 p-3 text-sm text-amber-200">

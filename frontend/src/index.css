@@ -1509,6 +1509,38 @@ html::-webkit-scrollbar-thumb:hover {
 
 /* Payment integrations retain the shared contained elevation while their
    utility fill resolves through the selected appearance surface. */
+/* Provider state is operational, never the shop's decorative accent. */
+.db-settings-payments .db-card-provider-option {
+  background: var(--surface-raised, #18181b) !important;
+  border-color: var(--border-subtle, #3f3f46) !important;
+  color: var(--text-primary, #f4f4f5) !important;
+}
+.db-settings-payments .db-card-provider-option[data-state='active'] {
+  background: color-mix(in srgb, #10b981 12%, var(--surface-raised, #18181b)) !important;
+  border-color: #10b981 !important;
+}
+.db-settings-payments .db-card-provider-enabled {
+  background: color-mix(in srgb, #10b981 12%, var(--surface-raised, #18181b)) !important;
+  border-color: #10b981 !important;
+  color: var(--parts-status-success, #10b981) !important;
+}
+.db-settings-payments .db-card-provider-option[data-state='active'] > span:last-child,
+.db-settings-payments .db-card-provider-option[data-state='active'] svg {
+  color: var(--parts-status-success, #10b981) !important;
+}
+.db-settings-payments .db-card-provider-option[data-state='pending'] {
+  border-color: #3b82f6 !important;
+  background: color-mix(in srgb, #3b82f6 10%, var(--surface-raised, #18181b)) !important;
+}
+.db-settings-payments .db-card-provider-option[data-state='unavailable'] {
+  border-color: var(--semantic-warning-500, #f59e0b) !important;
+}
+.db-settings-payments .db-card-provider-option:focus-visible {
+  outline: 2px solid var(--text-primary, #f4f4f5);
+  outline-offset: 3px;
+}
+.db-settings-payments .db-card-provider-option:active:not(:disabled) { transform: scale(.99); }
+
 .db-presentation-new .db-settings-payments .db-settings-payment-card {
   background-color: var(--surface-raised) !important;
 }
