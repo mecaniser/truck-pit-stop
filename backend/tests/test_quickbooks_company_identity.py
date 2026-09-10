@@ -1,5 +1,6 @@
 from unittest.mock import AsyncMock
 from types import SimpleNamespace
+from datetime import datetime, timedelta, timezone
 
 import pytest
 from sqlalchemy import select
@@ -145,3 +146,64 @@ async def test_identity_never_commits_flushes_or_refreshes(monkeypatch, fails):
     db.commit.assert_not_awaited()
     db.flush.assert_not_awaited()
     db.refresh.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("scenario", ["expired", "healthy", "renewed_by_other_request", "refresh_failed"])
+async def test_company_lookup_uses_serialized_token_lifecycle(monkeypatch, scenario):
+    now = datetime.now(timezone.utc)
+    connection = QuickBooksConnection(
+        realm_id="123", status="connected", scopes=quickbooks.QUICKBOOKS_ACCOUNTING_SCOPE,
+        encrypted_access_token="old-access", encrypted_refresh_token="old-refresh",
+        access_token_expires_at=now + timedelta(hours=1) if scenario == "healthy" else now - timedelta(minutes=1),
+        refresh_token_expires_at=now + timedelta(days=10),
+    )
+    events = []
+
+    async def lock(record, *, with_for_update):
+        assert record is connection and with_for_update is True
+        events.append("lock")
+        if scenario == "renewed_by_other_request":
+            record.access_token_expires_at = now + timedelta(hours=1)
+            record.encrypted_access_token = "concurrent-access"
+
+    async def renew(record):
+        assert events == ["lock"]
+        events.append("renew")
+        if scenario == "refresh_failed":
+            raise quickbooks.QuickBooksOAuthError("Intuit rejected renewal")
+        return "new-token-set"
+
+    def save(record, *, realm_id, token_set):
+        assert record is connection and realm_id == "123" and token_set == "new-token-set"
+        record.encrypted_access_token = "new-access"
+        record.encrypted_refresh_token = "new-refresh"
+        record.access_token_expires_at = now + timedelta(hours=1)
+
+    async def commit():
+        events.append("commit")
+
+    async def identity(record):
+        expected = {"expired": "new-access", "healthy": "old-access", "renewed_by_other_request": "concurrent-access"}
+        assert record.encrypted_access_token == expected[scenario]
+        events.append("lookup")
+        return {"name": "Truck Pit Stop"}
+
+    db = SimpleNamespace(refresh=AsyncMock(side_effect=lock), commit=AsyncMock(side_effect=commit))
+    provider = AsyncMock(side_effect=identity)
+    refresh = AsyncMock(side_effect=renew)
+    monkeypatch.setattr(quickbooks, "_get_connection", AsyncMock(return_value=connection))
+    monkeypatch.setattr(quickbooks, "refresh_access_token", refresh)
+    monkeypatch.setattr(quickbooks, "save_token_set", save)
+    monkeypatch.setattr(quickbooks, "get_company_identity", provider)
+    result = await quickbooks.quickbooks_company_identity(db, SimpleNamespace(role=UserRole.GARAGE_OWNER, tenant_id="owned"))
+    if scenario == "refresh_failed":
+        assert result.status == "unavailable" and result.company is None
+        assert events == ["lock", "renew", "commit"]
+        provider.assert_not_awaited()
+        assert connection.encrypted_access_token == "old-access"
+        assert connection.encrypted_refresh_token == "old-refresh"
+    else:
+        assert result.status == "available"
+        assert events == {"expired": ["lock", "renew", "commit", "lookup"], "healthy": ["lookup"], "renewed_by_other_request": ["lock", "lookup"]}[scenario]
+    assert connection.status == "connected" and connection.realm_id == "123"

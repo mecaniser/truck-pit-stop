@@ -509,9 +509,15 @@ async def quickbooks_company_identity(
     if QUICKBOOKS_ACCOUNTING_SCOPE not in (connection.scopes or "").split():
         return response
     try:
+        await _refresh_connection_if_needed(db, connection)
+    except HTTPException as exc:
+        if exc.status_code != status.HTTP_409_CONFLICT:
+            raise
+        return response
+    try:
         response.company = QuickBooksCompanyIdentity(**await get_company_identity(connection))
     except QuickBooksAccountingError:
-        # Read-only: do not refresh credentials or overwrite connection health.
+        # CompanyInfo failures do not overwrite the shared refresh health state.
         return response
     response.status = "available"
     return response
