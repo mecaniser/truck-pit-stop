@@ -47,6 +47,15 @@ Provider calls are mocked. Frozen source hashes: receipt authorization
 `3da4e3c87fd9202ce69dfe3e8d58eadd9fb9e0a1`, settlement service
 `25d85395a3e0afce0493d76cc064615709f466b8`.
 
+Independent review of `cb4335d0` reproduced two initial legacy-admission defects:
+unknown existing QBO provenance and invoice/settlement amount drift. Backend
+corrected both before release, adding eight regressions; successor combined
+authorization/gross/cash-panel suite **106/106** passes. Corrected receipt helper
+blob `45e30d876205f9babbd6271bb28891b648390c61`, test blob
+`f4c7a50ec9814974712cc535f3f0049c8b27941e`. Independent successor re-gate pending.
+Live read-only invoice-money snapshots match the two target settlement amounts.
+PR and release evidence: https://github.com/mecaniser/truck-pit-stop/pull/374.
+
 Local presentation verification: existing full-cash and settlement tests **36/36**;
 new actual staff-dialog choice/cancel regressions **2/2**; changed-test ESLint and
 TypeScript pass. These prove presentation, not backend admission or settlement.

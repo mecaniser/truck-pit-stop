@@ -73,10 +73,27 @@ async def require_clean_historical_balance(db, invoice):
     payments = list((await db.scalars(select(Payment).where(Payment.tenant_id == invoice.tenant_id,
         Payment.invoice_id == invoice.id, Payment.status == PaymentStatus.COMPLETED))).all())
     authorized = {attempt.id for attempt in attempts}
+    links = list((await db.scalars(select(PaymentAccountingLink).where(
+        PaymentAccountingLink.tenant_id == invoice.tenant_id,
+        PaymentAccountingLink.invoice_id == invoice.id))).all())
+    # A clean first receipt cannot adopt an unknown remote balance. Subsequent
+    # receipts may use only the accounting lineage authorized by this flow.
+    if (not authorized and (invoice.quickbooks_invoice_id or invoice.quickbooks_synced_at
+            or invoice.quickbooks_sync_status == "synced")) or any(
+            link.attempt_id not in authorized for link in links):
+        deny("historical_accounting_balance_review", "Existing QuickBooks accounting history needs balance review before a new payment can be collected.")
     if any(payment.invoice_payment_attempt_id not in authorized for payment in payments):
         deny("historical_payment_balance_review", "Existing historical payments need balance review before a new payment can be collected.")
     settlement = await db.scalar(select(InvoiceSettlement).where(InvoiceSettlement.invoice_id == invoice.id,
         InvoiceSettlement.tenant_id == invoice.tenant_id))
+    if settlement:
+        from app.services.invoice_settlement_service import invoice_money_snapshot, money
+        principal, fee, fee_tax, _, _ = invoice_money_snapshot(invoice)
+        if (principal != money(settlement.principal_total)
+                or fee != money(settlement.max_card_fee)
+                or fee_tax != money(settlement.max_card_fee_tax)
+                or settlement.currency != "USD"):
+            deny("historical_invoice_snapshot_review", "Invoice amounts differ from the payment snapshot. Review the balance before collecting a new payment.")
     if settlement and settlement.confirmed_principal > sum((attempt.applied_principal_amount for attempt in attempts), 0):
         deny("historical_payment_balance_review", "Existing historical balance needs review before a new payment can be collected.")
     seen, parent_id = {invoice.id}, invoice.supersedes_invoice_id

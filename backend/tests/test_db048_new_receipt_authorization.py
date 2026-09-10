@@ -96,6 +96,53 @@ async def test_new_confirmation_does_not_release_old_invoice_jobs(db_session, mo
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("history", ["invoice_id", "synced_at", "synced_status", "accounting_link"])
+async def test_first_receipt_rejects_unapproved_accounting_history(db_session, monkeypatch, history):
+    ctx = await held(db_session, monkeypatch)
+    if history == "invoice_id":
+        ctx[3].quickbooks_invoice_id = "preexisting-unapproved-qbo-invoice"
+    elif history == "synced_at":
+        ctx[3].quickbooks_synced_at = datetime.now(timezone.utc)
+    elif history == "synced_status":
+        ctx[3].quickbooks_sync_status = "synced"
+    else:
+        db_session.add(PaymentAccountingLink(tenant_id=ctx[0].id, invoice_id=ctx[3].id,
+            financial_object_type="payment", financial_object_id=uuid4(), owning_writer="dieselbridge",
+            provider_object_id="old-provider-payment"))
+    await db_session.flush()
+    with pytest.raises(SettlementDomainError, match="QuickBooks accounting history"):
+        await create(db_session, ctx, rail="card")
+    assert not list((await db_session.scalars(select(InvoicePaymentAttempt).where(
+        InvoicePaymentAttempt.invoice_id == ctx[3].id))).all())
+
+
+@pytest.mark.asyncio
+async def test_subsequent_authorized_receipt_accepts_own_accounting_history(db_session, monkeypatch):
+    ctx = await held(db_session, monkeypatch)
+    first = await create(db_session, ctx)
+    await confirm_attempt(db_session, attempt_id=first.attempt.id, tenant=ctx[0], actor=ctx[1],
+        expected_attempt_version=first.attempt.version, idempotency_key="first-confirm", reference="first-zelle")
+    ctx[3].quickbooks_invoice_id = "new-authorized-invoice"
+    ctx[3].quickbooks_synced_at = datetime.now(timezone.utc)
+    ctx[3].quickbooks_sync_status = "synced"
+    await db_session.flush()
+    second = await create(db_session, ctx, key="second")
+    assert second.attempt.new_receipt_accounting_authorization is not None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("field", ["total_amount", "service_fee_amount", "tax_amount"])
+async def test_invoice_snapshot_drift_denied_before_new_receipt(db_session, monkeypatch, field):
+    ctx = await held(db_session, monkeypatch)
+    setattr(ctx[3], field, getattr(ctx[3], field) + Decimal("100"))
+    await db_session.flush()
+    with pytest.raises(SettlementDomainError, match="amounts differ from the payment snapshot"):
+        await create(db_session, ctx, rail="card")
+    assert not list((await db_session.scalars(select(InvoicePaymentAttempt).where(
+        InvoicePaymentAttempt.invoice_id == ctx[3].id))).all())
+
+
+@pytest.mark.asyncio
 async def test_parent_pending_reservation_denies_new_collection(db_session, monkeypatch):
     ctx = await held(db_session, monkeypatch)
     parent = Invoice(tenant_id=ctx[0].id, repair_order_id=ctx[3].repair_order_id, invoice_number="OLD",
