@@ -1573,10 +1573,48 @@ html::-webkit-scrollbar-thumb:hover {
   color: color-mix(in srgb, var(--semantic-warning-500) 46%, var(--workspace-text));
 }
 
+/* Verification guards a destructive payment-source action, but does not
+   perform it. Keep its action treatment semantic and theme-stable instead of
+   inheriting the generic red-on-red utility pairing. */
+.db-presentation-new .db-payment-dialog__verify-action {
+  display: inline-flex;
+  min-height: 44px;
+  align-items: center;
+  justify-content: center;
+  padding: 0.75rem 1.5rem;
+  border: 1px solid color-mix(in srgb, var(--semantic-danger-500) 78%, #000);
+  border-radius: 0.75rem;
+  background: color-mix(in srgb, var(--semantic-danger-500) 68%, #000);
+  color: var(--product-road-white) !important;
+  font-size: calc(var(--font-size-body) * 0.875);
+  font-weight: 650;
+  line-height: 1.25;
+  cursor: pointer;
+  transition: background-color 120ms ease, border-color 120ms ease;
+}
+
+.db-presentation-new .db-payment-dialog__verify-action:focus-visible {
+  outline: 3px solid var(--workspace-text);
+  outline-offset: 3px;
+}
+
+.db-presentation-new .db-payment-dialog__verify-action:disabled {
+  border-color: color-mix(in srgb, var(--semantic-danger-500) 58%, #000);
+  background: color-mix(in srgb, var(--semantic-danger-500) 52%, #000);
+  color: var(--product-road-white) !important;
+  cursor: not-allowed;
+  filter: saturate(0.65);
+}
+
 @media (hover: hover) and (pointer: fine) {
   .db-presentation-new .db-payment-dialog__close:hover {
     background: var(--surface-overlay);
     color: var(--workspace-text);
+  }
+
+  .db-presentation-new .db-payment-dialog__verify-action:hover:not(:disabled) {
+    border-color: color-mix(in srgb, var(--semantic-danger-500) 86%, #000);
+    background: color-mix(in srgb, var(--semantic-danger-500) 76%, #000);
   }
 }
 
@@ -1585,6 +1623,28 @@ html::-webkit-scrollbar-thumb:hover {
 .db-presentation-new[data-appearance-mode='high_contrast'] .db-payment-dialog__notice {
   border-color: var(--workspace-border);
   box-shadow: none;
+}
+
+.db-presentation-new[data-appearance-mode='high_contrast'] .db-payment-dialog__verify-action {
+  border-color: var(--workspace-text);
+  background: var(--workspace-text);
+  color: var(--workspace-canvas) !important;
+  filter: none;
+}
+
+@media (forced-colors: active) {
+  .db-presentation-new .db-payment-dialog__verify-action {
+    border-color: ButtonText;
+    background: ButtonFace;
+    color: ButtonText !important;
+    filter: none;
+    forced-color-adjust: auto;
+  }
+
+  .db-presentation-new .db-payment-dialog__verify-action:focus-visible {
+    outline: 3px solid Highlight;
+    outline-offset: 3px;
+  }
 }
 
 /* Shop Profile retains its canonical content, but its old zinc panels need

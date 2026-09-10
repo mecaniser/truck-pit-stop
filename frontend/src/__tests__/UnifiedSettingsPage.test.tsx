@@ -524,8 +524,12 @@ describe('UnifiedSettingsPage payment disclosures', () => {
     const stepUp = await screen.findByRole('alertdialog', { name: 'Verify QuickBooks disconnection' })
     expect(stepUp).toHaveClass('db-payment-dialog__panel')
     expect(apiMocks.post).not.toHaveBeenCalledWith('/quickbooks/disconnect', expect.anything(), expect.anything())
+    const verifyAction = within(stepUp).getByRole('button', { name: 'Verify and continue' })
+    expect(verifyAction).toHaveClass('db-payment-dialog__verify-action')
+    expect(verifyAction).toBeDisabled()
     await user.type(within(stepUp).getByLabelText('Your current password'), 'fresh-password')
-    await user.click(within(stepUp).getByRole('button', { name: 'Verify and continue' }))
+    expect(verifyAction).toBeEnabled()
+    await user.click(verifyAction)
 
     const confirmation = await screen.findByRole('alertdialog', { name: 'Disconnect QuickBooks?' })
     expect(confirmation).toHaveClass('db-payment-dialog__panel')
