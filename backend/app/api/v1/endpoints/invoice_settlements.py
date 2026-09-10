@@ -18,6 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.config import settings
+from app.core.quickbooks_payment_gate import quickbooks_payments_enabled_for_tenant
 from app.core.dependencies import CurrentUser, get_current_active_user, get_db, identity_user, user_has_permission
 from app.db.models.customer import Customer
 from app.db.models.invoice import Invoice, InvoiceStatus
@@ -661,6 +662,11 @@ async def charge_quickbooks_settlement_attempt(
         )
     if attempt.state != "pending":
         raise SettlementDomainError("attempt_transition_conflict", "This payment attempt cannot be charged.")
+    if not attempt.provider_charge_id and not quickbooks_payments_enabled_for_tenant(tenant.id):
+        raise SettlementDomainError(
+            "quickbooks_payments_platform_approval_missing",
+            "QuickBooks Payments is not approved for this shop.",
+        )
     config = await db.scalar(select(TenantPaymentProviderConfiguration).where(
         TenantPaymentProviderConfiguration.tenant_id == tenant.id,
         TenantPaymentProviderConfiguration.version == attempt.provider_configuration_version,
@@ -1402,7 +1408,7 @@ async def _readiness_response(
         QuickBooksConnection.status == "connected",
         QuickBooksConnection.deleted_at.is_(None),
     ))
-    qbp_approved = bool(settings.QUICKBOOKS_PAYMENTS_INVOICE_PAYMENTS_APPROVED)
+    qbp_approved = quickbooks_payments_enabled_for_tenant(tenant.id)
     qbp_tenant_ready = bool(
         qbo_connection
         and qbo_connection.realm_id
@@ -1533,7 +1539,7 @@ async def update_card_provider_configuration(
         raise SettlementDomainError("stale_provider_configuration", "The provider configuration changed.", current_version=current_version)
     selected_provider = body.resolved_provider
     if selected_provider == "quickbooks_payments":
-        if not settings.QUICKBOOKS_PAYMENTS_INVOICE_PAYMENTS_APPROVED:
+        if not quickbooks_payments_enabled_for_tenant(tenant.id):
             raise SettlementDomainError(
                 "quickbooks_payments_platform_approval_missing",
                 "QuickBooks Payments is not approved for this environment.",

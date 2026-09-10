@@ -71,6 +71,9 @@ class Settings(BaseSettings):
     DB048_GROSS_QBO_ACCOUNTING_ENABLED: bool = False
     STRIPE_CONNECT_INVOICE_PAYMENTS_APPROVED: bool = False
     QUICKBOOKS_PAYMENTS_INVOICE_PAYMENTS_APPROVED: bool = False
+    # Comma-separated tenant UUIDs allowed to initiate QBP charges. Empty is
+    # permitted only for explicit sandbox use outside production.
+    QUICKBOOKS_PAYMENTS_APPROVED_TENANT_IDS: str = ""
 
     # WorkOS is introduced alongside (not in place of) legacy JWT login. Keep
     # this disabled until a tenant has completed the audited dual-run cutover.

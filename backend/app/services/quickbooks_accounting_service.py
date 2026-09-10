@@ -517,6 +517,10 @@ async def sync_payment(
     invoice: Invoice,
     customer: Customer,
 ) -> str:
+    if payment.invoice_payment_attempt_id is not None:
+        raise QuickBooksAccountingError(
+            "Canonical invoice payments must use their settlement accounting writer"
+        )
     if payment.quickbooks_payment_id:
         return payment.quickbooks_payment_id
     invoice_id = await sync_invoice(connection, invoice, customer)

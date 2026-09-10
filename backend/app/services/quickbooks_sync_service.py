@@ -314,6 +314,8 @@ async def reconcile_quickbooks_payments(
             .where(
                 Payment.method == PaymentMethod.QUICKBOOKS,
                 Payment.quickbooks_charge_id.is_not(None),
+                # Canonical attempts own provider state and gross accounting.
+                Payment.invoice_payment_attempt_id.is_(None),
                 Payment.status.in_([PaymentStatus.PENDING, PaymentStatus.COMPLETED]),
                 or_(
                     Payment.quickbooks_reconciled_at.is_(None),
@@ -362,6 +364,7 @@ async def reconcile_quickbooks_payments(
             .where(
                 Payment.method == PaymentMethod.QUICKBOOKS,
                 Payment.quickbooks_refund_id.is_not(None),
+                Payment.invoice_payment_attempt_id.is_(None),
                 Payment.quickbooks_refund_receipt_id.is_(None),
                 Payment.status == PaymentStatus.COMPLETED,
             )
