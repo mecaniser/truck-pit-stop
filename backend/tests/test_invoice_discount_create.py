@@ -4,6 +4,7 @@ from contextlib import asynccontextmanager
 from datetime import date, datetime, timezone
 from decimal import Decimal
 from uuid import uuid4
+from unittest.mock import AsyncMock
 
 import pytest
 from fastapi import HTTPException
@@ -155,6 +156,10 @@ async def test_create_invoice_applies_discount_amount(monkeypatch):
     monkeypatch.setattr(invoices, "send_email", _noop_async)
     monkeypatch.setattr(invoices, "enqueue_invoice_created_email", _no_email_queue)
     monkeypatch.setattr(invoices, "_load_line_items", _no_line_items)
+    # Export locking has dedicated service tests; this unit test owns discount
+    # calculation and verifies that the resulting invoice is handed to export.
+    enqueue_sync = AsyncMock()
+    monkeypatch.setattr(invoices, "enqueue_quickbooks_invoice_sync", enqueue_sync)
 
     response = await invoices.create_invoice(
         invoices.InvoiceCreate(
@@ -170,6 +175,9 @@ async def test_create_invoice_applies_discount_amount(monkeypatch):
     assert response.total_amount == Decimal("140.00")
     assert order.status == RepairOrderStatus.INVOICED
     assert fake_db.commit_count == 1
+    enqueue_sync.assert_awaited_once()
+    assert enqueue_sync.call_args.args == (fake_db,)
+    assert enqueue_sync.call_args.kwargs["invoice"].id == response.id
     settlements = [row for row in fake_db.added if isinstance(row, InvoiceSettlement)]
     assert len(settlements) == 1
     assert settlements[0].invoice_id == response.id
