@@ -2,7 +2,8 @@ import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeAll, describe, expect, it, vi } from 'vitest'
 import ReportingDatePicker from '../ReportingDatePicker'
-import { readReportRange, rangeError } from '../reportRange'
+import { readReportRange, rangeError, REPORT_PRESETS } from '../reportRange'
+import type { ReportPreset, ResolvedRange } from '../reportRange'
 
 beforeAll(() => {
   window.matchMedia = vi.fn().mockReturnValue({ matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn() })
@@ -10,15 +11,45 @@ beforeAll(() => {
   HTMLDialogElement.prototype.close = function () { this.removeAttribute('open') }
 })
 const resolved = { range_start: '2026-09-01', range_end: '2026-09-10' }
-async function setup() {
+async function setup(resolvePreset: (preset: ReportPreset) => Promise<ResolvedRange> = async () => resolved) {
   const onChange = vi.fn()
   const user = userEvent.setup()
-  render(<ReportingDatePicker value={{ range: 'this_month' }} resolved={resolved} onChange={onChange} />)
+  render(<ReportingDatePicker value={{ range: 'this_month' }} resolved={resolved} onChange={onChange} resolvePreset={resolvePreset} />)
   const trigger = screen.getByRole('button', { name: /This month/ })
   await user.click(trigger)
   return { user, onChange, trigger, panel: within(screen.getByRole('dialog')) }
 }
 describe('reporting date picker', () => {
+  it.each([
+    ['this_week', '2026-09-07', '2026-09-10'], ['last_week', '2026-08-31', '2026-09-06'],
+    ['this_month', '2026-09-01', '2026-09-10'], ['last_month', '2026-08-01', '2026-08-31'],
+    ['this_quarter', '2026-07-01', '2026-09-10'], ['last_quarter', '2026-04-01', '2026-06-30'],
+    ['this_year', '2026-01-01', '2026-09-10'], ['last_year', '2025-01-01', '2025-12-31'],
+  ] as const)('previews server shop-local dates for %s', async (preset, start, end) => {
+    const resolver = vi.fn().mockResolvedValue({ range_start: start, range_end: end })
+    const { user, panel, onChange } = await setup(resolver)
+    await user.click(panel.getByRole('button', { name: REPORT_PRESETS[preset], exact: true }))
+    expect(resolver).toHaveBeenCalledWith(preset)
+    expect(panel.getByLabelText('Start date')).toHaveValue(start)
+    expect(panel.getByLabelText('End date')).toHaveValue(end)
+    expect(document.querySelector('[data-day="' + start + '"]')).toHaveClass('is-endpoint')
+    expect(onChange).not.toHaveBeenCalled()
+  })
+  it('does not overwrite custom typing with a late preset response', async () => {
+    let finish!: (dates: ResolvedRange) => void
+    const { user, panel } = await setup(() => new Promise(resolve => { finish = resolve }))
+    await user.click(panel.getByRole('button', { name: 'This year', exact: true }))
+    expect(panel.getByRole('button', { name: 'Apply period' })).toBeDisabled()
+    fireEvent.change(panel.getByLabelText('Start date'), { target: { value: '2024-02-29' } })
+    await act(async () => finish(resolved))
+    expect(panel.getByLabelText('Start date')).toHaveValue('2024-02-29')
+  })
+  it('highlights the resolved preset range immediately', async () => {
+    const { panel } = await setup()
+    expect(panel.getByRole('button', { name: 'Sep 1, 2026' })).toHaveClass('is-endpoint')
+    expect(panel.getByRole('button', { name: 'Sep 5, 2026' })).toHaveClass('is-in-range')
+    expect(panel.getByRole('button', { name: 'Sep 10, 2026' })).toHaveClass('is-endpoint')
+  })
   it('keeps preset changes as drafts until applied and sends no custom dates', async () => {
     const { user, panel, onChange, trigger } = await setup()
     await user.click(panel.getByRole('button', { name: 'Last quarter' }))
