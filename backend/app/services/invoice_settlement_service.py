@@ -21,6 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.config import settings
+from app.core.quickbooks_payment_gate import quickbooks_payments_enabled_for_tenant
 from app.core.dependencies import CurrentUser, identity_user, user_has_permission
 from app.db.models.customer import Customer
 from app.db.models.invoice import Invoice, InvoiceStatus
@@ -348,7 +349,7 @@ async def provider_readiness(
         if not onboarding:
             reasons.append("stripe_connect_onboarding_incomplete")
     elif provider == "quickbooks_payments":
-        provider_gate = bool(settings.QUICKBOOKS_PAYMENTS_INVOICE_PAYMENTS_APPROVED)
+        provider_gate = quickbooks_payments_enabled_for_tenant(tenant.id)
         qbp_provider_identity_ready = bool(
             config
             and qbo

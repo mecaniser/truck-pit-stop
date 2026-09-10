@@ -25,6 +25,7 @@ from sqlalchemy.orm import selectinload
 from uuid import UUID
 
 from app.core.config import settings
+from app.core.quickbooks_payment_gate import quickbooks_payments_enabled_for_tenant
 from app.core.dependencies import get_current_active_user, get_db, user_has_permission
 from app.core.logging import get_logger
 from app.core.payment_step_up import (
@@ -503,7 +504,7 @@ async def quickbooks_payment_availability(
     """Return the direct-to-Intuit token endpoint only for an eligible invoice."""
     if current_user.role != UserRole.CUSTOMER or not current_user.customer_id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only customers can pay invoices")
-    if not settings.QUICKBOOKS_PAYMENTS_INVOICE_PAYMENTS_APPROVED:
+    if not quickbooks_payments_enabled_for_tenant(current_user.tenant_id):
         return QuickBooksPaymentAvailabilityResponse(
             available=False,
             message="QuickBooks Payments is not approved for this environment",
@@ -600,6 +601,11 @@ async def charge_quickbooks_invoice(
     if current_user.role != UserRole.CUSTOMER or not current_user.customer_id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only customers can pay invoices")
     _require_quickbooks_payments_approved_release()
+    if not quickbooks_payments_enabled_for_tenant(current_user.tenant_id):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="QuickBooks Payments is not approved for this shop",
+        )
     invoice = (await db.execute(
         select(Invoice)
         .join(RepairOrder, RepairOrder.id == Invoice.repair_order_id)
@@ -768,6 +774,11 @@ async def refund_quickbooks_payment(
     """Refund or void an Intuit charge and record the QBO refund receipt."""
     _require_quickbooks_admin(current_user)
     _require_quickbooks_payments_approved_release()
+    if not quickbooks_payments_enabled_for_tenant(current_user.tenant_id):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="QuickBooks Payments is not approved for this shop",
+        )
     payment = (await db.execute(
         select(Payment).options(selectinload(Payment.invoice)).where(Payment.id == payment_id)
     )).scalar_one_or_none()
