@@ -16,7 +16,9 @@
 .db-presentation-new[data-appearance-mode='light'] .db-report-picker { color-scheme: light; }
 .db-report-picker::backdrop { background: rgb(7 16 29 / 60%); }
 .db-report-picker__content { display: flex; flex-direction: column; max-height: calc(100dvh - 34px); }
-.db-report-picker button { min-height: 44px; min-width: 44px; border-radius: 8px; font-size: 14px; color: inherit; }
+.db-report-picker button { min-height: 44px; min-width: 44px; border-radius: 8px; font-size: 14px; color: inherit; font-family: inherit; font-style: normal; }
+.db-report-picker aside button svg { flex-shrink: 0; visibility: hidden; }
+.db-report-picker aside [aria-pressed='true'] svg { visibility: visible; }
 .db-report-picker header { display: flex; flex-shrink: 0; justify-content: space-between; align-items: start; gap: 16px; padding: 20px 24px; border-bottom: 1px solid var(--workspace-border, #40536c); }
 .db-report-picker h2 { font-size: 20px; font-weight: 650; margin: 0; }
 .db-report-picker p { font-size: 13px; margin: 6px 0 0; }
@@ -46,7 +48,7 @@
 .db-report-calendar__week, .db-report-calendar__days { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); text-align: center; }
 .db-report-calendar__week { font-size: 11px; margin-bottom: 6px; }
 .db-report-calendar__days button { min-width: 0; min-height: 44px; border-radius: 0; font-variant-numeric: tabular-nums; }
-.db-report-calendar__days .is-in-range { background: var(--surface-raised, #23354a); text-decoration: underline; text-underline-offset: 4px; }
+.db-report-calendar__days .is-in-range { background: color-mix(in srgb, var(--workspace-text, #f6f8fb) 14%, var(--surface-overlay, #111f33)); }
 .db-report-calendar__days .is-endpoint { background: var(--workspace-text, #f6f8fb); color: var(--surface-overlay, #111f33); border-radius: 8px; font-weight: 700; }
 .db-report-picker .db-report-picker__summary { margin-top: 16px; min-height: 38px; }
 .db-report-picker footer { display: flex; flex-shrink: 0; justify-content: space-between; align-items: center; gap: 20px; padding: 16px 24px; border-top: 1px solid var(--workspace-border, #40536c); }
@@ -56,12 +58,12 @@
 .db-report-picker .db-report-picker__apply { background: var(--workspace-text, #f6f8fb); color: var(--surface-overlay, #111f33); font-weight: 650; }
 .db-report-picker button:disabled { opacity: .5; cursor: not-allowed; }
 .db-report-period :focus-visible { outline: 2px solid var(--workspace-text, #f6f8fb); outline-offset: 2px; }
-@media (hover: hover) { .db-report-picker button:not(:disabled):hover { text-decoration: underline; text-underline-offset: 4px; } }
+@media (hover: hover) { .db-report-picker button:not(:disabled):hover { box-shadow: inset 0 0 0 1px currentColor; } }
 @media (max-width: 900px) {
   .db-report-picker__body { grid-template-columns: 1fr; }
   .db-report-picker aside { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; padding: 12px; border-right: 0; border-bottom: 1px solid var(--workspace-border, #40536c); }
   .db-report-picker aside h3 { grid-column: 1 / -1; margin: 0 0 4px; }
-  .db-report-picker aside button { display: block; padding: 6px; font-size: 12px; }
+  .db-report-picker aside button { padding: 6px; gap: 2px; font-size: 12px; }
   .db-report-picker aside small { display: block; }
   .db-report-picker__months { grid-template-columns: 1fr; }
   .db-report-calendar--second { display: none; }

@@ -8,6 +8,12 @@ reviewed, merged, and released. Reconcile this board whenever newer evidence exi
 
 ## Operating rules
 
+### DB-058 Product correction — September 10, 2026
+
+Delivery authorized: user explicitly requested commit, push, PR and merge. Only the five calendar/board paths are included; local screenshots remain outside the commit. Protected PR checks must pass before merge; deployment verification remains a separate recorded result.
+
+Frontend & UX owns the focused preset-preview/selection correction on `codex/db058-preset-preview`, based on deployed merge `77c256bc5f828539692ec85ebf1eebfd8cc06fae`. Presets now preview server-resolved shop-local start/end dates without applying the report; calendar highlights those dates, stale responses cannot overwrite custom typing, and selected periods use a checkmark and continuous range band. No backend, calculation, auth, dependency, or data change. Local implementation: 31/31 focused tests, production build, changed-source lint, diff-check PASS; Impeccable layout detector `[]`. Isolated 5181 synthetic authenticated browser checks passed light/dark 1280, dark390, high-contrast/forced-colors320, custom Apply/URL retention and keyboard resize, with zero runtime errors and 44.28px minimum day targets. Captures: `output/playwright/db058/`. This correction is uncommitted and not deployed; prior delivery history below remains historical.
+
 - One item has one accountable owner, even when several roles contribute.
 - `Done` requires merge/release and acceptance evidence; “implemented in a task”
   is not sufficient.
