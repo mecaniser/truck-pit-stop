@@ -508,6 +508,8 @@ async def _persist_and_bind_stripe_intent(
     """
     attempt_id = attempt.id
     tenant_id = tenant.id
+    from app.services.invoice_accounting_policy import require_standard_payment
+    await require_standard_payment(db, invoice)
     await db.commit()
     persisted = (
         await db.execute(
@@ -673,6 +675,8 @@ async def charge_quickbooks_settlement_attempt(
         )
     if attempt.state != "pending":
         raise SettlementDomainError("attempt_transition_conflict", "This payment attempt cannot be charged.")
+    from app.services.invoice_accounting_policy import require_standard_payment
+    await require_standard_payment(db, invoice)
     if not attempt.provider_charge_id and not quickbooks_payments_enabled_for_tenant(tenant.id):
         raise SettlementDomainError(
             "quickbooks_payments_platform_approval_missing",

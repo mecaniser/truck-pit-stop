@@ -5,6 +5,7 @@ from app.db.models.invoice import Invoice
 
 LOCAL_CASH = "local_cash_only"
 LOCAL_CASH_SYNC = "not_applicable_local_cash"
+HISTORICAL_HOLD = "historical_export_hold"
 AWAITING_PAYMENT = "awaiting_payment"
 
 
@@ -93,11 +94,16 @@ async def require_exportable_invoice(invoice):
     policy = await locked_policy(db, invoice) if db else getattr(invoice, "accounting_policy", "standard")
     if policy == LOCAL_CASH:
         raise QuickBooksAccountingError("Local cash invoices are excluded from QuickBooks")
+    if policy == HISTORICAL_HOLD:
+        raise QuickBooksAccountingError("Historical invoice export is held for individual review")
     if db and await first_export_awaits_payment(db, invoice):
         raise QuickBooksAccountingError("Invoice export awaits a confirmed noncash payment")
 
 
-async def require_standard_payment(db, invoice):
+async def require_standard_payment(db, invoice, *, verified_provider_fact=False):
     from app.services.invoice_settlement_service import SettlementDomainError
-    if await locked_policy(db, invoice) == LOCAL_CASH:
+    policy = await locked_policy(db, invoice)
+    if policy == HISTORICAL_HOLD and not verified_provider_fact:
+        raise SettlementDomainError("historical_export_hold", "This historical invoice requires individual accounting review before accepting a noncash payment.")
+    if policy == LOCAL_CASH:
         raise SettlementDomainError("local_cash_only", "This invoice is cash-only and cannot use this payment action.")

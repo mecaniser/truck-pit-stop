@@ -17,7 +17,7 @@ class InvoiceStatus(str, enum.Enum):
 class Invoice(BaseModel):
     __tablename__ = "invoices"
     __table_args__ = (
-        CheckConstraint("accounting_policy IN ('standard','local_cash_only')", name="ck_invoice_accounting_policy"),
+        CheckConstraint("accounting_policy IN ('standard','local_cash_only','historical_export_hold')", name="ck_invoice_accounting_policy"),
         Index(
             "ux_invoices_active_repair_order_id",
             "repair_order_id",

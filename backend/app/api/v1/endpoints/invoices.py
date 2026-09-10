@@ -669,6 +669,10 @@ async def auto_create_invoice_for_order(
     if latest_invoice and latest_invoice.status != InvoiceStatus.CANCELLED:
         return None
     supersedes_invoice_id = latest_invoice.id if latest_invoice else None
+    if latest_invoice:
+        from app.services.invoice_accounting_policy import locked_policy, HISTORICAL_HOLD
+        if await locked_policy(db, latest_invoice) == HISTORICAL_HOLD:
+            raise HTTPException(status_code=409, detail="Historical invoice requires individual review before reissuing")
 
     # Capture relationships before any subsequent commits
     customer = order.customer
@@ -811,6 +815,10 @@ async def create_invoice(
             detail="An invoice already exists for this repair order",
         )
     supersedes_invoice_id = latest_invoice.id if latest_invoice else None
+    if latest_invoice:
+        from app.services.invoice_accounting_policy import locked_policy, HISTORICAL_HOLD
+        if await locked_policy(db, latest_invoice) == HISTORICAL_HOLD:
+            raise HTTPException(status_code=409, detail="Historical invoice requires individual review before reissuing")
 
     if body.bill_to_customer_id and body.bill_to_customer_id != order.customer_id:
         recipient = (await db.execute(select(Customer).where(

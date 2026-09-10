@@ -638,9 +638,8 @@ async def settlement_for_compatibility_route(
         InvoiceSettlement.invoice_id == invoice.id,
         InvoiceSettlement.customer_id == customer_id,
     )
-    from app.services.invoice_accounting_policy import LOCAL_CASH
-    if getattr(invoice, "accounting_policy", "standard") == LOCAL_CASH:
-        raise SettlementDomainError("local_cash_only", "This invoice is cash-only; legacy payment actions are unavailable.")
+    from app.services.invoice_accounting_policy import require_standard_payment
+    await require_standard_payment(db, invoice)
     if lock:
         query = query.with_for_update()
     existing = await db.scalar(query)
@@ -1209,6 +1208,13 @@ async def _enqueue_accounting(
     )
     db.add(outbox)
     settlement.accounting_sync_status = "accounting_sync_pending"
+    from app.services.invoice_accounting_policy import locked_policy, HISTORICAL_HOLD
+    invoice = await db.get(Invoice, settlement.invoice_id)
+    if await locked_policy(db, invoice) == HISTORICAL_HOLD:
+        link.sync_state = HISTORICAL_HOLD
+        settlement.accounting_sync_status = HISTORICAL_HOLD
+        outbox.status = "suppressed"
+        outbox.payload = {**outbox.payload, "suppression_reason": HISTORICAL_HOLD}
     return link
 
 
@@ -1225,6 +1231,7 @@ async def confirm_attempt(
     provider_charge_id: Optional[str] = None,
     provider_event_id: Optional[str] = None,
     processor_fee: Decimal = ZERO,
+    verified_provider_fact: bool = False,
 ) -> AttemptConfirmation:
     settlement_id = (
         await db.execute(
@@ -1256,7 +1263,10 @@ async def confirm_attempt(
     # money projection, accounting enqueue, or paid/order state mutation.
     invoice = await locked_accessible_invoice_for_attempt(db, attempt)
     from app.services.invoice_accounting_policy import require_standard_payment
-    await require_standard_payment(db, invoice)
+    await require_standard_payment(db, invoice, verified_provider_fact=(
+        verified_provider_fact and actor is None and attempt.rail == "card"
+        and attempt.provider in {"stripe_connect", "quickbooks_payments"}
+        and bool(provider_charge_id or provider_event_id)))
 
     if attempt.state == "confirmed":
         payment = await db.get(Payment, attempt.payment_id) if attempt.payment_id else None
@@ -1657,6 +1667,11 @@ async def create_refund(
     settlement = (
         await db.execute(select(InvoiceSettlement).where(InvoiceSettlement.id == attempt.settlement_id).with_for_update())
     ).scalar_one()
+    from app.services.invoice_accounting_policy import require_standard_payment
+    invoice = await db.scalar(select(Invoice).where(Invoice.id == attempt.invoice_id, Invoice.tenant_id == tenant_id))
+    if invoice is None:
+        raise SettlementDomainError("invoice_not_found", "Invoice not found.", status_code=404)
+    await require_standard_payment(db, invoice)
     overpayment = (
         await db.execute(select(PaymentOverpayment).where(
             PaymentOverpayment.tenant_id == tenant_id,
@@ -2125,6 +2140,11 @@ async def apply_customer_credit(
             "credit_accounting_source_missing",
             "The customer credit accounting source is unavailable.",
         )
+    source_invoice = await db.scalar(select(Invoice).where(
+        Invoice.id == source_attempt.invoice_id, Invoice.tenant_id == tenant.id))
+    if source_invoice is None:
+        raise SettlementDomainError("invoice_not_found", "Invoice not found.", status_code=404)
+    await require_standard_payment(db, source_invoice)
     # A customer credit remains accounting money from its original receipt.
     # Applying it to another invoice cannot move that invoice into a different
     # QuickBooks company.
