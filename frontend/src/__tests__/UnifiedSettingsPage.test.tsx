@@ -453,6 +453,35 @@ describe('UnifiedSettingsPage payment disclosures', () => {
     expect(screen.queryByRole('region', { name: /Zelle Payments/i })).not.toBeInTheDocument()
   })
 
+  it('puts connected QuickBooks and configured Zelle before unused Stripe in DOM order', async () => {
+    const user = userEvent.setup()
+    const originalGet = apiMocks.get.getMockImplementation()!
+    apiMocks.get.mockImplementation((path: string) => {
+      if (path === '/stripe/connect/status') return Promise.resolve({ data: { ...stripeConnection, is_connected: false } })
+      if (path === '/quickbooks/status') return Promise.resolve({ data: { ...quickBooksConnection, is_connected: true, token_health: 'healthy' } })
+      return originalGet(path)
+    })
+    const page = renderPage()
+    await user.click(screen.getByRole('button', { name: 'Payments & Accounting' }))
+    await screen.findByRole('button', { name: /QuickBooks Online.*ACTIVE/i })
+    expect(Array.from(page.container.querySelectorAll('[data-payment-source]')).map(element => element.getAttribute('data-payment-source'))).toEqual(['quickbooks', 'zelle', 'stripe'])
+    expect(screen.getByRole('button', { name: /Stripe Payments/i })).toHaveAttribute('aria-expanded', 'false')
+    expect(screen.getByRole('button', { name: /QuickBooks Online/i })).toHaveAttribute('aria-expanded', 'true')
+    await user.click(screen.getByRole('button', { name: /Stripe Payments/i }))
+    expect(screen.getByRole('button', { name: 'Set Up Stripe Payments' })).toBeEnabled()
+    expect(apiMocks.post).not.toHaveBeenCalled()
+  })
+
+  it('keeps connected Stripe above unused QuickBooks without changing provider settings', async () => {
+    const user = userEvent.setup()
+    const page = renderPage()
+    await user.click(screen.getByRole('button', { name: 'Payments & Accounting' }))
+    await screen.findByRole('button', { name: /Stripe Payments/i })
+    expect(Array.from(page.container.querySelectorAll('[data-payment-source]')).map(element => element.getAttribute('data-payment-source'))).toEqual(['stripe', 'zelle', 'quickbooks'])
+    expect(apiMocks.put).not.toHaveBeenCalled()
+    expect(apiMocks.post).not.toHaveBeenCalled()
+  })
+
   it('blocks a failed password, supports cancellation, and verifies each later save again', async () => {
     const user = userEvent.setup()
     renderPage()
@@ -491,6 +520,7 @@ describe('UnifiedSettingsPage payment disclosures', () => {
       ? Promise.resolve(grant) : new Promise(() => {}))
     renderPage()
     await user.click(screen.getByRole('button', { name: 'Payments & Accounting' }))
+    await user.click(await screen.findByRole('button', { name: /Stripe Payments.*NOT SET UP/i }))
     await user.click(await screen.findByRole('button', { name: /Set Up Stripe Payments/i }))
     expect(apiMocks.post).not.toHaveBeenCalled()
     await verifyPaymentChange(user)
@@ -715,7 +745,6 @@ describe('UnifiedSettingsPage payment disclosures', () => {
     renderPage()
 
     await user.click(screen.getByRole('button', { name: 'Payments & Accounting' }))
-    await user.click(screen.getByRole('button', { name: /QuickBooks Online/i }))
     await user.click(await screen.findByRole('button', { name: 'Disconnect QuickBooks' }))
 
     expect(screen.queryByRole('alertdialog', { name: 'Disconnect QuickBooks?' })).not.toBeInTheDocument()
@@ -760,7 +789,6 @@ describe('UnifiedSettingsPage payment disclosures', () => {
     renderPage()
 
     await user.click(screen.getByRole('button', { name: 'Payments & Accounting' }))
-    await user.click(screen.getByRole('button', { name: /QuickBooks Online/i }))
 
     const openConfirmation = async () => {
       await user.click(await screen.findByRole('button', { name: 'Disconnect QuickBooks' }))
