@@ -20,7 +20,9 @@ from app.core.dependencies import get_current_active_user, get_db
 from app.core.rate_limit import limiter
 from app.db.models.customer import Customer
 from app.db.models.invoice import Invoice, InvoiceStatus
+from app.db.models.invoice_settlement import InvoiceSettlement
 from app.db.models.repair_order import RepairOrder, RepairOrderStatus
+from app.db.models.tenant import Tenant
 from app.db.models.user import User, UserRole
 
 
@@ -35,14 +37,39 @@ class _ScalarResult:
 class _FakePaymentsSession:
     def __init__(self, invoice: Invoice):
         self.invoice = invoice
+        self.tenant = Tenant(
+            id=invoice.tenant_id,
+            name="Zelle Garage",
+            slug=f"zelle-{invoice.tenant_id}",
+            is_active=True,
+            invoice_split_payments_enabled=False,
+        )
+        self.queried_entities = []
         self.committed = False
 
     async def execute(self, statement):
         entity = statement.column_descriptions[0].get("entity")
+        self.queried_entities.append(entity)
         if entity is Invoice:
             return _ScalarResult(self.invoice)
+        if entity is Tenant:
+            assert self.invoice.tenant_id in statement.compile().params.values()
+            return _ScalarResult(self.tenant)
         raise AssertionError(f"Unexpected query entity: {entity}")
 
+    async def scalar(self, statement):
+        entity = statement.column_descriptions[0].get("entity")
+        self.queried_entities.append(entity)
+        assert entity is InvoiceSettlement, f"Unexpected scalar query entity: {entity}"
+        assert {
+            self.invoice.tenant_id,
+            self.invoice.id,
+            self.invoice.repair_order.customer_id,
+        }.issubset(set(statement.compile().params.values()))
+        # These tests exercise a clean legacy invoice, not a gate-off invoice
+        # with existing DB-048 activity. Keep the real compatibility resolver.
+        return None
+
     async def commit(self):
         self.committed = True
 
@@ -50,15 +77,8 @@ class _FakePaymentsSession:
         return None
 
 
-class _FakeInvoiceAccessSession:
-    def __init__(self):
-        self.committed = False
-
-    async def commit(self):
-        self.committed = True
-
-    async def refresh(self, _obj):
-        return None
+class _FakeInvoiceAccessSession(_FakePaymentsSession):
+    """Guest context uses the same active tenant and empty settlement fixture."""
 
 
 def _build_context():
@@ -163,6 +183,8 @@ async def test_customer_submit_zelle_broadcasts_repair_order_update(monkeypatch)
     assert response.status_code == 200
     assert response.json()["pending_zelle_confirmation"] is True
     assert fake_db.committed is True
+    assert Tenant in fake_db.queried_entities
+    assert InvoiceSettlement in fake_db.queried_entities
     assert invoice.zelle_pending_submitted_at is not None
     assert len(broadcast_calls) == 1
     assert broadcast_calls[0]["tenant_id"] == str(invoice.tenant_id)
@@ -177,7 +199,7 @@ async def test_customer_submit_zelle_broadcasts_repair_order_update(monkeypatch)
 @pytest.mark.asyncio
 async def test_guest_submit_zelle_broadcasts_repair_order_update(monkeypatch):
     invoice, order, customer, _user = _build_context()
-    fake_db = _FakeInvoiceAccessSession()
+    fake_db = _FakeInvoiceAccessSession(invoice=invoice)
     broadcast_calls: list[dict] = []
     alert_calls: list[dict] = []
     payload = {
@@ -228,6 +250,8 @@ async def test_guest_submit_zelle_broadcasts_repair_order_update(monkeypatch):
     assert response.status_code == 200
     assert response.json()["pending_zelle_confirmation"] is True
     assert fake_db.committed is True
+    assert Tenant in fake_db.queried_entities
+    assert InvoiceSettlement in fake_db.queried_entities
     assert invoice.zelle_pending_submitted_at is not None
     assert len(broadcast_calls) == 1
     assert broadcast_calls[0]["tenant_id"] == str(invoice.tenant_id)
@@ -281,6 +305,8 @@ async def test_customer_resubmit_pending_zelle_does_not_send_staff_alert(monkeyp
 
     assert response.status_code == 200
     assert response.json()["pending_zelle_confirmation"] is True
+    assert Tenant in fake_db.queried_entities
+    assert InvoiceSettlement in fake_db.queried_entities
     assert len(alert_calls) == 0
 
 
@@ -288,7 +314,7 @@ async def test_customer_resubmit_pending_zelle_does_not_send_staff_alert(monkeyp
 async def test_guest_resubmit_pending_zelle_does_not_send_staff_alert(monkeypatch):
     invoice, order, customer, _user = _build_context()
     invoice.zelle_pending_submitted_at = datetime.now(timezone.utc)
-    fake_db = _FakeInvoiceAccessSession()
+    fake_db = _FakeInvoiceAccessSession(invoice=invoice)
     alert_calls: list[dict] = []
     payload = {
         "invoice_id": str(invoice.id),
@@ -335,4 +361,6 @@ async def test_guest_resubmit_pending_zelle_does_not_send_staff_alert(monkeypatc
 
     assert response.status_code == 200
     assert response.json()["pending_zelle_confirmation"] is True
+    assert Tenant in fake_db.queried_entities
+    assert InvoiceSettlement in fake_db.queried_entities
     assert len(alert_calls) == 0
