@@ -29,6 +29,8 @@ class SettlementAllowedActions(BaseModel):
     authorize_early_release: bool = False
     retry_accounting: bool = False
     configure_provider: bool = False
+    confirm_cash: bool = False
+    cash_unavailable_reason: Optional[str] = None
 
 
 class InvoiceSettlementSummary(BaseModel):
@@ -147,6 +149,17 @@ class PaymentAllocationItem(BaseModel):
 class PaymentAllocationPage(BaseModel):
     items: list[PaymentAllocationItem]
     next_cursor: Optional[str] = None
+
+
+class CashConfirmationCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    expected_settlement_version: int = Field(ge=1)
+    note: Optional[str] = Field(default=None, max_length=1000)
+
+
+class CashConfirmationResponse(BaseModel):
+    payment_id: UUID
+    settlement: InvoiceSettlementSummary
 
 
 class PaymentAttemptConfirm(BaseModel):

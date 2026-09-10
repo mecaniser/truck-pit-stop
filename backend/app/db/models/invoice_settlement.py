@@ -211,7 +211,7 @@ class InvoicePaymentAttempt(BaseModel):
         ),
         CheckConstraint("provider_charge_amount > 0", name="ck_invoice_payment_attempt_charge"),
         CheckConstraint("processor_fee_amount >= 0", name="ck_invoice_payment_attempt_processor_fee"),
-        CheckConstraint("rail IN ('card','zelle','check','ach')", name="ck_invoice_payment_attempt_rail"),
+        CheckConstraint("rail IN ('card','zelle','check','ach','cash')", name="ck_invoice_payment_attempt_rail"),
         CheckConstraint(
             "provider IN ('stripe_connect','quickbooks_payments','manual')",
             name="ck_invoice_payment_attempt_provider",

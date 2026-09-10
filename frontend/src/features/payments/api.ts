@@ -86,6 +86,15 @@ export async function fetchSettlement(access: SettlementAccess): Promise<Invoice
   return (data.settlement ?? data) as InvoiceSettlementSummary
 }
 
+export async function confirmFullCashPayment(
+  invoiceId: string,
+  body: { expected_settlement_version: number; note?: string },
+  idempotencyKey: string,
+): Promise<{ payment_id: string; settlement: InvoiceSettlementSummary }> {
+  const { data } = await api.post(`/payments/invoices/${invoiceId}/cash-confirmation`, body, idempotencyHeaders(idempotencyKey))
+  return data
+}
+
 export async function fetchAllocations(
   access: SettlementAccess,
   cursor?: string | null,

@@ -63,7 +63,11 @@ async def enqueue_quickbooks_invoice_sync(
     *,
     invoice: Invoice,
     operation: str = "sync",
-) -> ProviderOutboxEvent:
+) -> ProviderOutboxEvent | None:
+    from app.services.invoice_accounting_policy import locked_policy, LOCAL_CASH, LOCAL_CASH_SYNC
+    if await locked_policy(db, invoice) == LOCAL_CASH:
+        invoice.quickbooks_sync_status = LOCAL_CASH_SYNC
+        return None
     event = ProviderOutboxEvent(
         tenant_id=invoice.tenant_id,
         event_type=QUICKBOOKS_INVOICE_SYNC_EVENT,
@@ -158,6 +162,14 @@ async def _claim_next_quickbooks_sync_event(
         await db.rollback()
         return None
     token = uuid4().hex
+    evidence = dict(event.payload or {})
+    if event.status == ProviderOutboxStatus.PROCESSING.value:
+        # Reclaimed leases may have sent a request before their process died.
+        # Never carry a previously optimistic no-dispatch marker across this.
+        evidence.update(cash_no_dispatch=False, cash_export_ambiguous=True)
+    elif event.attempt_count == 0 and not evidence.get("cash_export_ambiguous"):
+        evidence["cash_no_dispatch"] = True
+    event.payload = evidence
     event.status = ProviderOutboxStatus.PROCESSING.value
     event.attempt_count += 1
     event.locked_at = claim_now
@@ -224,6 +236,39 @@ async def process_quickbooks_invoice_sync_events(
                 results["dead"] += 1
                 await db.commit()
                 continue
+            from app.services.invoice_accounting_policy import locked_policy, LOCAL_CASH, LOCAL_CASH_SYNC
+            from app.services.invoice_settlement_service import SettlementDomainError
+            try:
+                policy = await locked_policy(db, invoice)
+            except SettlementDomainError as exc:
+                if exc.code != "invoice_busy":
+                    raise
+                await db.rollback()
+                # No provider call was dispatched. Retain the original durable
+                # history, and retry only if this worker still owns the lease.
+                event = await db.get(ProviderOutboxEvent, event_id)
+                if event and event.lock_token == lock_token and event.status == "processing":
+                    event.status = "pending"
+                    event.available_at = _now() + timedelta(seconds=30)
+                    event.lock_token = None
+                    event.locked_until = None
+                    await db.commit()
+                results["retried"] += 1
+                continue
+            if policy == LOCAL_CASH:
+                event.status = "suppressed"
+                event.payload = {**(event.payload or {}), "suppression_reason": LOCAL_CASH_SYNC}
+                event.completed_at = _now()
+                event.locked_until = None
+                event.lock_token = None
+                invoice.quickbooks_sync_status = LOCAL_CASH_SYNC
+                results["skipped"] += 1
+                await db.commit()
+                continue
+            if not await _quickbooks_claim_is_current(db, event_id=event_id, lock_token=lock_token):
+                await db.rollback()
+                results["skipped"] += 1
+                continue
             if not connection:
                 # A garage can finalize invoices before choosing QuickBooks.
                 # Keep the event retryable so connecting later backfills them.
@@ -236,6 +281,9 @@ async def process_quickbooks_invoice_sync_events(
                 await db.commit()
                 continue
             try:
+                # Committed with every resolved outcome. A crash leaves a
+                # PROCESSING lease; reclaim above makes that outcome ambiguous.
+                event.payload = {**(event.payload or {}), "cash_no_dispatch": False}
                 await _refresh_if_needed(connection)
                 settlement = await db.scalar(
                     select(InvoiceSettlement).where(
@@ -277,6 +325,15 @@ async def process_quickbooks_invoice_sync_events(
                     results["skipped"] += 1
                     continue
                 invoice.quickbooks_sync_status = "error"
+                # Historical/transport-ambiguous attempts cannot authorize local
+                # conversion merely because no provider ID was saved.
+                event.last_response_code = getattr(exc, "status_code", None)
+                event.payload = {**(event.payload or {}),
+                    "cash_export_ambiguous": bool((event.payload or {}).get("cash_export_ambiguous", event.attempt_count > 1))
+                    or event.last_response_code not in {400, 401, 403, 404, 422},
+                    "cash_export_realm": connection.realm_id,
+                    "cash_export_environment": settings.QUICKBOOKS_ACCOUNTING_ENVIRONMENT,
+                }
                 invoice.quickbooks_sync_error = str(exc)
                 event.last_error = f"{type(exc).__name__}: {str(exc)[:500]}"
                 if event.attempt_count >= settings.PROVIDER_OUTBOX_MAX_ATTEMPTS:

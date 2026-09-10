@@ -18,7 +18,7 @@ export type CardProviderStatus =
   | 'unavailable_external_approval'
   | 'feature_disabled'
 
-export type AccountingSyncStatus = 'not_started' | 'not_required' | 'pending' | 'synced' | 'failed' | 'dead_letter'
+export type AccountingSyncStatus = 'not_started' | 'not_required' | 'not_applicable_local_cash' | 'pending' | 'synced' | 'failed' | 'dead_letter'
 export type PaymentAttemptState = 'pending' | 'confirmed' | 'failed' | 'expired' | 'refunded' | 'reversed'
 
 export interface SettlementAllowedActions {
@@ -30,6 +30,8 @@ export interface SettlementAllowedActions {
   authorize_early_release?: boolean
   retry_accounting?: boolean
   configure_provider?: boolean
+  confirm_cash?: boolean
+  cash_unavailable_reason?: string | null
 }
 
 export interface InvoiceSettlementSummary {
@@ -86,7 +88,7 @@ export interface PaymentAllocation {
   id: string
   attempt_id: string
   attempt_version?: number
-  rail: PaymentRail
+  rail: PaymentRail | 'cash'
   provider: CardProvider | 'manual'
   principal_amount: string
   applied_principal_amount: string

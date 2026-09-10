@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, DateTime, Date, ForeignKey, Numeric, Text, Enum as SQLEnum, Integer, Boolean, Index, text
+from sqlalchemy import Column, String, DateTime, Date, ForeignKey, Numeric, Text, Enum as SQLEnum, Integer, Boolean, Index, text, CheckConstraint
 from sqlalchemy.orm import relationship
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 import enum
@@ -17,6 +17,7 @@ class InvoiceStatus(str, enum.Enum):
 class Invoice(BaseModel):
     __tablename__ = "invoices"
     __table_args__ = (
+        CheckConstraint("accounting_policy IN ('standard','local_cash_only')", name="ck_invoice_accounting_policy"),
         Index(
             "ux_invoices_active_repair_order_id",
             "repair_order_id",
@@ -33,6 +34,8 @@ class Invoice(BaseModel):
     repair_order = relationship("RepairOrder", back_populates="invoices")
     
     invoice_number = Column(String(50), unique=True, nullable=False, index=True)
+    accounting_policy = Column(String(32), nullable=False, default="standard", server_default="standard")
+    cash_export_review_required = Column(Boolean, nullable=False, default=False, server_default=text("false"))
     # Internal fleet invoice: a cost record for the garage's own work orders —
     # no customer billing, tax, or markup.
     is_internal = Column(Boolean, default=False, nullable=False, index=True)

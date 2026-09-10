@@ -556,6 +556,9 @@ async def _classify_existing_payment_links(
             if invoice is not None and invoice.repair_order is not None else None
         )
         rail, provider, provider_account = _legacy_rail(payment)
+        if (invoice is not None and getattr(invoice, "accounting_policy", "standard") == "local_cash_only"
+                and explicit.source == "staff_cash" and payment.method == PaymentMethod.CASH):
+            rail, provider, provider_account = "cash", "manual", None
         if (
             invoice is None
             or settlement is None
