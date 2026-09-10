@@ -23,6 +23,7 @@ from app.db.models.invoice import Invoice, InvoiceStatus
 from app.db.models.invoice_settlement import InvoiceSettlement
 from app.db.models.repair_order import RepairOrder, RepairOrderStatus
 from app.db.models.tenant import Tenant
+from app.db.models.quickbooks_shop_activation import QuickBooksShopActivation
 from app.db.models.user import User, UserRole
 
 
@@ -61,6 +62,9 @@ class _FakePaymentsSession:
         entity = statement.column_descriptions[0].get("entity")
         self.queried_entities.append(entity)
         selected = statement.column_descriptions[0].get("name")
+        if entity is QuickBooksShopActivation:
+            assert self.invoice.tenant_id in statement.compile().params.values()
+            return None
         if entity is Invoice and selected == "accounting_policy":
             assert {self.invoice.tenant_id, self.invoice.id}.issubset(set(statement.compile().params.values()))
             assert statement._for_update_arg is not None

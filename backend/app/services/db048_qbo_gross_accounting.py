@@ -13,6 +13,7 @@ from datetime import datetime, timezone
 from decimal import Decimal, ROUND_HALF_UP
 
 from sqlalchemy import select
+from app.services.quickbooks_shop_activation import accounting_operation
 
 from app.db.models.invoice_settlement import (
     InvoiceSettlement, InvoicePaymentAttempt, PaymentAccountingLink,
@@ -282,6 +283,7 @@ async def _fee_line(connection, member, mapping):
                 "UnitPrice": float(member.fee), "TaxCodeRef": {"value": "TAX" if tax_line else "NON"}}}, tax_line
 
 
+@accounting_operation
 async def ensure_gross_invoice(db, *, connection, invoice, customer, settlement, tenant_name=None,
                                original_attempt_id=None):
     from app.services.invoice_accounting_policy import require_exportable_invoice
@@ -423,7 +425,10 @@ async def _deposit_account(envelope):
     return await _r()._resolve_qbo_account_reference(envelope.connection, (envelope.link.account_mapping_snapshot or {}).get(key))
 
 
+@accounting_operation
 async def sync_gross_payment(db, envelope):
+    from app.services.invoice_accounting_policy import require_exportable_invoice
+    await require_exportable_invoice(envelope.invoice)
     r = _r()
     await _locked_settlement(db,envelope.settlement)
     from sqlalchemy import inspect
@@ -531,8 +536,11 @@ async def _gross_source(db, envelope, *, allow_empty_zero_deposit=False):
     return source, entity, str(customer_id)
 
 
+@accounting_operation
 async def sync_gross_refund(db, envelope):
     """Return only genuine excess; earned invoice income is never reversed."""
+    from app.services.invoice_accounting_policy import require_exportable_invoice
+    await require_exportable_invoice(envelope.invoice)
     r = _r()
     await _locked_settlement(db,envelope.settlement)
     refund = envelope.refund
@@ -620,7 +628,10 @@ def _payment_state(entity):
             "unapplied": str(_amount(entity.get("UnappliedAmt", 0)))}
 
 
+@accounting_operation
 async def sync_gross_adjustment(db, envelope, *, reversal=False):
+    from app.services.invoice_accounting_policy import require_exportable_invoice
+    await require_exportable_invoice(envelope.invoice)
     """Absolute receipt state makes duplicate/out-of-order deliveries converge.
 
     No delta is blindly replayed and no fee income journal is emitted. The
@@ -748,6 +759,7 @@ async def sync_gross_adjustment(db, envelope, *, reversal=False):
     return str(current["Id"])
 
 
+@accounting_operation
 async def deliver_gross_envelope(db, envelope):
     if envelope.config.writer_strategy != "dieselbridge" or envelope.link.owning_writer != "dieselbridge":
         _fail("Gross accounting requires the persisted DieselBridge writer")

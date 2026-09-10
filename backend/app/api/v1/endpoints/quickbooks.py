@@ -606,6 +606,8 @@ async def sync_quickbooks_invoice_now(
     from app.services.invoice_accounting_policy import locked_policy, HISTORICAL_HOLD
     if await locked_policy(db, invoice) == HISTORICAL_HOLD:
         raise HTTPException(status_code=409, detail="Historical invoice export is held for individual review")
+    from app.services.quickbooks_shop_activation import require_shop_invoice_admission
+    await require_shop_invoice_admission(db, invoice)
     connection = await _get_connection(db, invoice.tenant_id)
     if not connection:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="QuickBooks is not connected")

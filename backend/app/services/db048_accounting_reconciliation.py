@@ -2537,8 +2537,10 @@ async def sync_db048_reversal(envelope: AccountingEnvelope) -> str:
 
 
 from app.services.new_receipt_accounting import receipt_accounting_operation
+from app.services.quickbooks_shop_activation import accounting_operation
 
 
+@accounting_operation
 @receipt_accounting_operation
 async def deliver_accounting_envelope(
     db: AsyncSession,
@@ -2672,6 +2674,10 @@ async def _submit_stripe_refund(db: AsyncSession, event: ProviderOutboxEvent) ->
     if source_invoice is None:
         raise DB048ReconciliationError("Refund invoice is unavailable")
     await require_standard_payment(db, source_invoice, attempt=attempt)
+    from app.services.quickbooks_shop_activation import require_shop_invoice_admission
+    await require_shop_invoice_admission(
+        db, source_invoice, payment=True, payment_provider=attempt.provider,
+    )
     if attempt.provider == "quickbooks_payments":
         if refund.state != "pending":
             raise DB048ReconciliationError("QuickBooks refund requires explicit state reconciliation")

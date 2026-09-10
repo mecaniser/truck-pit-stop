@@ -721,6 +721,8 @@ async def auto_create_invoice_for_order(
             supersedes_invoice_id=supersedes_invoice_id,
         )
         stamp_invoice(inv, tax_default, taxable_checkout, created_by_user_id)
+        from app.services.quickbooks_shop_activation import enroll_new_invoice
+        await enroll_new_invoice(db, inv)
         db.add(inv)
         if order.pricing_locked_at is None:
             order.pricing_locked_at = datetime.now(timezone.utc)
@@ -927,6 +929,8 @@ async def create_invoice(
             supersedes_invoice_id=supersedes_invoice_id,
         )
         stamp_invoice(invoice, tax_default, taxable_checkout, current_user.id)
+        from app.services.quickbooks_shop_activation import enroll_new_invoice
+        await enroll_new_invoice(db, invoice)
         db.add(invoice)
         if order.pricing_locked_at is None:
             order.pricing_locked_at = datetime.now(timezone.utc)

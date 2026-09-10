@@ -97,6 +97,9 @@ async def require_exportable_invoice(invoice):
     from app.services.new_receipt_accounting import scoped_invoice
     if policy == HISTORICAL_HOLD and not scoped_invoice(invoice):
         raise QuickBooksAccountingError("Historical invoice export is held for individual review")
+    if db:
+        from app.services.quickbooks_shop_activation import require_shop_invoice_admission
+        await require_shop_invoice_admission(db, invoice)
     if db and await first_export_awaits_payment(db, invoice):
         raise QuickBooksAccountingError("Invoice export awaits a confirmed noncash payment")
 
@@ -112,3 +115,6 @@ async def require_standard_payment(db, invoice, *, verified_provider_fact=False,
             raise SettlementDomainError("historical_export_hold", "This historical payment requires individual accounting review.")
     if policy == LOCAL_CASH:
         raise SettlementDomainError("local_cash_only", "This invoice is cash-only and cannot use this payment action.")
+    if not verified_provider_fact:
+        from app.services.quickbooks_shop_activation import require_shop_invoice_admission
+        await require_shop_invoice_admission(db, invoice, payment=True)
