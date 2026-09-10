@@ -219,7 +219,7 @@ async def test_realm_reset_cannot_erase_prior_export_evidence(db_session, monkey
     await _reset_accounting_links_for_realm_change(db_session, tenant_id=ctx[0].id, now=datetime.now(timezone.utc))
     await db_session.flush()
     assert invoice.cash_export_review_required
-    with pytest.raises(SettlementDomainError, match="company changes"):
+    with pytest.raises(SettlementDomainError, match="accounting activity"):
         await pay(db_session, ctx)
     assert invoice.status != InvoiceStatus.PAID
 

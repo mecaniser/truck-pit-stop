@@ -211,6 +211,50 @@ async def test_legacy_export_and_existing_links_remain_supported(db_session, mon
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("unlock", ["receipt", "nonpilot", "global_off"])
+async def test_eligible_deferred_event_is_reactivated_without_erasing_history(db_session, monkeypatch, unlock):
+    ctx = await context(db_session, monkeypatch)
+    queued = event(ctx[3], attempts=5, status="deferred", payload={"cash_export_ambiguous": True})
+    queued.idempotency_key = f"quickbooks-invoice:{ctx[3].id}:sync:v1"
+    db_session.add(queued)
+    await db_session.flush()
+    if unlock == "receipt":
+        db_session.add(Payment(tenant_id=ctx[0].id, invoice_id=ctx[3].id, payment_number=f"PAY-{uuid4()}",
+            amount=Decimal("20"), method=PaymentMethod.CHECK, status=PaymentStatus.COMPLETED))
+    elif unlock == "nonpilot":
+        ctx[0].invoice_split_payments_enabled = False
+    else:
+        monkeypatch.setattr(settings, "INVOICE_SPLIT_PAYMENTS_ENABLED", False)
+    await db_session.flush()
+    result = await sync.enqueue_quickbooks_invoice_sync(db_session, invoice=ctx[3])
+    assert result.id == queued.id and result.status == "pending"
+    assert result.attempt_count == 5 and result.payload == {"cash_export_ambiguous": True}
+    if unlock == "receipt":
+        from app.api.v1.endpoints import quickbooks as endpoint
+        async def accounting_context(_db, _id): return ctx[3], ctx[3].repair_order, ctx[2]
+        monkeypatch.setattr(endpoint, "_invoice_accounting_context", accounting_context)
+        response = await endpoint.sync_quickbooks_invoice_now(ctx[3].id, db_session, ctx[1])
+        assert response.status == "pending"
+        await db_session.refresh(queued)
+        assert queued.status == "pending" and queued.attempt_count == 5
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("status", ["dead", "suppressed", "deferred"])
+async def test_export_eligibility_does_not_resurrect_terminal_events(db_session, monkeypatch, status):
+    ctx = await context(db_session, monkeypatch)
+    ctx[0].invoice_split_payments_enabled = False
+    queued = event(ctx[3], status=status)
+    if status == "deferred":
+        queued.lock_token = "another-owner"
+    queued.idempotency_key = f"quickbooks-invoice:{ctx[3].id}:sync:v1"
+    db_session.add(queued)
+    await db_session.flush()
+    result = await sync.enqueue_quickbooks_invoice_sync(db_session, invoice=ctx[3])
+    assert result.status == status
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("method,status,allowed", [(PaymentMethod.CHECK, PaymentStatus.COMPLETED, True),
     (PaymentMethod.CASH, PaymentStatus.COMPLETED, False), (PaymentMethod.ACH, PaymentStatus.PENDING, False)])
 async def test_legacy_noncash_receipt_predicate(db_session, monkeypatch, method, status, allowed):

@@ -100,6 +100,13 @@ async def enqueue_quickbooks_invoice_sync(
         )).scalar_one_or_none()
         if existing is None:
             raise
+        if existing.status == "deferred" and not existing.lock_token and not existing.locked_until:
+            # The shared invoice lock and eligibility check above authorize
+            # only this parked issuance event. Preserve all prior dispatch
+            # evidence; never resurrect dead/suppressed financial operations.
+            existing.status = ProviderOutboxStatus.PENDING.value
+            existing.available_at = _now()
+            existing.completed_at = None
         return existing
     return event
 

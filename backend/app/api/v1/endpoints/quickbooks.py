@@ -613,7 +613,7 @@ async def sync_quickbooks_invoice_now(
             return QuickBooksAccountingSyncResponse(invoice_id=invoice.id,
                 quickbooks_invoice_id=None, status="awaiting_payment")
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Local cash invoices are excluded from QuickBooks")
-    if event.status in {"dead", "suppressed"}:
+    if event.status in {"dead", "suppressed", "deferred"}:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="This export requires accounting review before retry")
     await db.commit()
     return QuickBooksAccountingSyncResponse(invoice_id=invoice.id,
