@@ -16,6 +16,7 @@ from app.core.vehicle_display import vehicle_display_label
 from app.db.models.user import User, UserRole
 from app.db.models.repair_order import RepairOrder, RepairOrderStatus
 from app.db.models.invoice import Invoice, InvoiceStatus
+from app.db.models.invoice_settlement import InvoiceSettlement
 from app.db.models.invoice_read_model import InvoiceReadModel
 from app.db.models.payment import Payment, PaymentStatus
 from app.db.models.customer import Customer
@@ -31,6 +32,7 @@ from app.services.invoice_access_service import generate_invoice_access_link
 from app.services.pdf_service import generate_invoice_pdf
 from app.services.provider_outbox_service import enqueue_email_notification
 from app.services.quickbooks_sync_service import enqueue_quickbooks_invoice_sync
+from app.services.invoice_settlement_service import invoice_money_snapshot
 from sqlalchemy.orm import selectinload
 from app.core.websocket import broadcast_invoice_created, broadcast_repair_order_update
 
@@ -39,6 +41,40 @@ logger = get_logger(__name__)
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
+
+
+def _add_native_invoice_settlement(
+    db: AsyncSession,
+    *,
+    invoice: Invoice,
+    customer_id: UUID,
+) -> InvoiceSettlement:
+    """Shadow every native invoice with its DB-048 projection atomically.
+
+    This write is intentionally independent of rollout gates. It distinguishes
+    normal post-cutoff invoices from out-of-band legacy drift without making a
+    first settlement read depend on readiness that the read itself must create.
+    """
+    principal, fee, fee_tax, tax_rate, fee_rate = invoice_money_snapshot(invoice)
+    settlement = InvoiceSettlement(
+        tenant_id=invoice.tenant_id,
+        invoice_id=invoice.id,
+        customer_id=customer_id,
+        principal_total=principal,
+        max_card_fee=fee,
+        max_card_fee_tax=fee_tax,
+        sales_tax_rate_snapshot=tax_rate,
+        card_fee_rate_snapshot=fee_rate,
+        confirmed_principal=Decimal("0.00"),
+        active_pending_principal=Decimal("0.00"),
+        unapplied_credit=Decimal("0.00"),
+        refund_pending=Decimal("0.00"),
+        state="unpaid",
+        accounting_sync_status="not_required",
+        legacy_reconciliation_status="native",
+    )
+    db.add(settlement)
+    return settlement
 
 async def _load_line_items(db: AsyncSession, repair_order_id, invoice: Optional[Invoice] = None):
     """Return (labor_items, parts_items) as plain dicts for PDF / email."""
@@ -443,14 +479,25 @@ def _require_staff(current_user: User) -> None:
 
 
 async def generate_invoice_number(db: AsyncSession, tenant_id: UUID) -> str:
-    """Generate unique invoice number using MAX approach."""
-    from app.core.unique_id import generate_unique_number
+    """Generate a tenant-branded invoice number using the shared shop prefix."""
+    from app.core.unique_id import derive_order_number_prefix, generate_unique_number
+
+    tenant = (
+        await db.execute(select(Tenant).where(Tenant.id == tenant_id))
+    ).scalar_one_or_none()
+    prefix = (
+        tenant.order_number_prefix if tenant else None
+    ) or derive_order_number_prefix(tenant.name if tenant else "")
+    # QBO DocNumber is capped at 21 characters. The shared generator adds an
+    # eight-character tenant key and a six-digit sequence (plus separators),
+    # leaving at most five characters for the shop-owned prefix.
+    prefix = prefix[:5]
     return await generate_unique_number(
         db=db,
         model_class=Invoice,
         number_column=Invoice.invoice_number,
         tenant_id=tenant_id,
-        prefix="INV-",
+        prefix=f"{prefix}-",
     )
 
 
@@ -680,6 +727,11 @@ async def auto_create_invoice_for_order(
     )
     await db.refresh(invoice)
     await db.refresh(order)
+    _add_native_invoice_settlement(
+        db,
+        invoice=invoice,
+        customer_id=order.customer_id,
+    )
     await enqueue_quickbooks_invoice_sync(db, invoice=invoice)
 
     if not commit:
@@ -875,6 +927,11 @@ async def create_invoice(
     )
     await db.refresh(invoice)
     await db.refresh(order)
+    _add_native_invoice_settlement(
+        db,
+        invoice=invoice,
+        customer_id=order.customer_id,
+    )
     await enqueue_quickbooks_invoice_sync(db, invoice=invoice)
 
     email_queued = await enqueue_invoice_created_email(

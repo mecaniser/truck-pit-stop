@@ -14,6 +14,15 @@ import { getPasswordValidationError } from '../../lib/passwordPolicy'
 import { useAuthStore } from '../../stores/authStore'
 import TenantBrandLogo from '@/components/brand/TenantBrandLogo'
 import { formatUSPhone } from '../../utils/phone'
+import {
+  SettlementPaymentPanel,
+  SettlementResolutionPanel,
+  SettlementSummaryCard,
+  isSettlementUnavailable,
+  paymentApiError,
+  useInvoiceAllocations,
+  useInvoiceSettlement,
+} from '@/features/payments'
 
 interface InvoiceAccessResolve {
   invoice_id: string
@@ -270,8 +279,14 @@ export default function InvoiceAccessPage() {
     retry: false,
   })
 
+  const settlementAccess = token ? { kind: 'guest' as const, token, invoiceId: invoice?.invoice_id } : null
+  const settlementQuery = useInvoiceSettlement(settlementAccess)
+  const allocationQuery = useInvoiceAllocations(settlementAccess, Boolean(settlementQuery.data))
+  const splitSettlement = settlementQuery.data?.feature_enabled === false ? null : settlementQuery.data
+  const settlementFailure = settlementQuery.error && !isSettlementUnavailable(settlementQuery.error)
+
   const paidInThisSession = paymentResult !== null
-  const isPaid = !!invoice && (invoice.is_paid || paidInThisSession)
+  const isPaid = !!invoice && (splitSettlement?.state === 'paid' || invoice.is_paid || paidInThisSession)
   const paidAt = paymentResult?.paidAt ?? invoice?.paid_at ?? null
   const portalTokenForCreate = paidInThisSession
     ? paymentResult?.portalEnrollmentToken ?? null
@@ -612,7 +627,7 @@ export default function InvoiceAccessPage() {
           <div className="bg-amber-50 border border-amber-100 rounded-xl p-4 mb-6">
             <div className="flex items-center justify-between">
               <span className="text-gray-700 font-medium">Amount Due</span>
-              <span className="text-3xl font-bold text-gray-900">{formatMoney(invoice.amount_due)}</span>
+              <span className="text-3xl font-bold text-gray-900">{formatMoney(splitSettlement?.outstanding_balance ?? invoice.amount_due)}</span>
             </div>
             <p className="text-xs text-gray-500 mt-2">Status: {invoice.status.replace('_', ' ')}</p>
           </div>
@@ -670,6 +685,59 @@ export default function InvoiceAccessPage() {
                 showTokenWarning={paidInThisSession && !portalTokenForCreate}
               />
             </section>
+          ) : splitSettlement && settlementAccess ? (
+            <div className="space-y-4">
+              <SettlementSummaryCard
+                summary={splitSettlement}
+                allocations={allocationQuery.data?.items ?? []}
+                tone="light"
+              />
+              <SettlementResolutionPanel
+                access={settlementAccess}
+                summary={splitSettlement}
+                allocations={allocationQuery.data?.items ?? []}
+                audience="guest"
+                tone="light"
+                onUpdated={next => {
+                  queryClient.setQueryData(['invoice-settlement', 'guest', token], next)
+                  queryClient.invalidateQueries({ queryKey: ['invoice-access', token] })
+                }}
+              />
+              <SettlementPaymentPanel
+                access={settlementAccess}
+                summary={splitSettlement}
+                audience="guest"
+                tone="light"
+                zelleRecipient={(invoice.zelle_phone || invoice.zelle_email)
+                  ? { display: invoice.zelle_phone || invoice.zelle_email!, memo: `#${invoice.invoice_number}` }
+                  : null}
+                onUpdated={next => {
+                  queryClient.setQueryData(['invoice-settlement', 'guest', token], next)
+                  queryClient.invalidateQueries({ queryKey: ['invoice-access', token] })
+                }}
+              />
+              {!invoice.has_portal_account && (
+                <PortalEnrollmentSection
+                  hasPortalAccount={false}
+                  isPending={createPortalMutation.isPending}
+                  canUsePortalToken={!!portalTokenForCreate}
+                  password={password}
+                  passwordValidationError={passwordValidationError}
+                  onPasswordChange={setPassword}
+                  onOpenPortal={() => openPortalFromCurrentFlow()}
+                  onCreatePortal={() => openPortalFromCurrentFlow(password)}
+                />
+              )}
+            </div>
+          ) : settlementQuery.isLoading ? (
+            <div className="flex min-h-36 items-center justify-center rounded-xl border border-gray-200 bg-white">
+              <Spinner size="lg" />
+            </div>
+          ) : settlementFailure ? (
+            <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">
+              <p className="font-bold">Payment details could not be loaded.</p>
+              <p className="mt-1">{paymentApiError(settlementQuery.error, 'Refresh before trying to pay. No payment was started.').message}</p>
+            </div>
           ) : (
             <div className="space-y-5">
               {invoice.has_portal_account ? (

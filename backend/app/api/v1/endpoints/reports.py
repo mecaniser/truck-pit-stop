@@ -19,6 +19,7 @@ from app.db.models.customer import Customer
 from app.db.models.inventory import Inventory, PartsUsage
 from app.db.models.invoice import Invoice, InvoiceStatus
 from app.db.models.payment import Payment, PaymentStatus
+from app.db.models.invoice_settlement import ProviderSettlementBatch
 from app.db.models.labor import Labor
 from app.db.models.repair_order import RepairOrder
 from app.db.models.service import Service
@@ -446,13 +447,29 @@ class FeeRow(BaseModel):
     total_charged: str
 
 
+class ProviderExpenseRow(BaseModel):
+    provider: str
+    settlement_batches: int
+    gross_processed: str
+    customer_card_fees_collected: str
+    processing_fees: str
+    net_fee_recovery: str
+    net_payout: str
+
+
 class ReportsFeesResponse(BaseModel):
     range_start: date
     range_end: date
     times_added: int
     average_charge: str
     total_charged: str
+    customer_card_fees_collected: str
+    provider_fees_paid: str
+    net_fee_recovery: str
+    settlement_batches: int
+    reconciliation_attention: int
     rows: List[FeeRow]
+    provider_expenses: List[ProviderExpenseRow]
 
 
 @router.get("/fees", response_model=ReportsFeesResponse)
@@ -508,13 +525,91 @@ async def get_reports_fees(
         ))
     fee_rows.sort(key=lambda r: Decimal(r.total_charged), reverse=True)
 
+    provider_result = await db.execute(
+        select(
+            ProviderSettlementBatch.provider,
+            func.count(ProviderSettlementBatch.id),
+            func.coalesce(func.sum(
+                ProviderSettlementBatch.gross_receipts
+                + ProviderSettlementBatch.customer_card_fees
+                + ProviderSettlementBatch.card_fee_tax
+            ), 0),
+            func.coalesce(func.sum(
+                ProviderSettlementBatch.customer_card_fees
+            ), 0),
+            func.coalesce(func.sum(ProviderSettlementBatch.processor_fees), 0),
+            func.coalesce(func.sum(ProviderSettlementBatch.net_payout), 0),
+        ).where(
+            ProviderSettlementBatch.tenant_id == tenant_id,
+            ProviderSettlementBatch.reconciliation_state.in_(("matched", "synced")),
+            func.date(ProviderSettlementBatch.settled_at) >= rng.start,
+            func.date(ProviderSettlementBatch.settled_at) <= rng.end,
+        ).group_by(ProviderSettlementBatch.provider)
+    )
+    provider_expenses = [
+        ProviderExpenseRow(
+            provider=provider,
+            settlement_batches=int(batch_count or 0),
+            gross_processed=str(_money(gross_processed)),
+            customer_card_fees_collected=str(_money(customer_fees_collected)),
+            processing_fees=str(_money(processing_fees)),
+            net_fee_recovery=str(_money(
+                _money(customer_fees_collected) - _money(processing_fees)
+            )),
+            net_payout=str(_money(net_payout)),
+        )
+        for (
+            provider,
+            batch_count,
+            gross_processed,
+            customer_fees_collected,
+            processing_fees,
+            net_payout,
+        )
+        in provider_result.all()
+    ]
+    provider_expenses.sort(key=lambda row: row.provider)
+    provider_fees_paid = sum(
+        (Decimal(row.processing_fees) for row in provider_expenses),
+        Decimal("0.00"),
+    )
+    settlement_batches = sum(row.settlement_batches for row in provider_expenses)
+    # Compare collections and processor expense from the same authoritative
+    # settlement window. Invoice-paid dates and payout dates can differ, so
+    # mixing those periods would manufacture a false recovery gain/loss.
+    customer_card_fees = sum(
+        (
+            Decimal(row.customer_card_fees_collected)
+            for row in provider_expenses
+        ),
+        Decimal("0.00"),
+    )
+    reconciliation_attention = int(await db.scalar(
+        select(func.count(ProviderSettlementBatch.id)).where(
+            ProviderSettlementBatch.tenant_id == tenant_id,
+            ProviderSettlementBatch.reconciliation_state.in_((
+                "mismatch",
+                "manual_reconciliation_required",
+                "accounting_failed",
+            )),
+            func.date(ProviderSettlementBatch.settled_at) >= rng.start,
+            func.date(ProviderSettlementBatch.settled_at) <= rng.end,
+        )
+    ) or 0)
+
     return ReportsFeesResponse(
         range_start=rng.start,
         range_end=rng.end,
         times_added=grand_count,
         average_charge=str((grand_total / grand_count).quantize(Decimal("0.01"))) if grand_count else "0.00",
         total_charged=str(grand_total),
+        customer_card_fees_collected=str(_money(customer_card_fees)),
+        provider_fees_paid=str(_money(provider_fees_paid)),
+        net_fee_recovery=str(_money(customer_card_fees - provider_fees_paid)),
+        settlement_batches=settlement_batches,
+        reconciliation_attention=reconciliation_attention,
         rows=fee_rows,
+        provider_expenses=provider_expenses,
     )
 
 

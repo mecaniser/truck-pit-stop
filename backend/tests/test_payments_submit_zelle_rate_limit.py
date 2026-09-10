@@ -19,6 +19,7 @@ from app.core.dependencies import get_current_active_user, get_db
 from app.core.rate_limit import limiter
 from app.db.models.invoice import Invoice, InvoiceStatus
 from app.db.models.repair_order import RepairOrder, RepairOrderStatus
+from app.db.models.tenant import Tenant
 from app.db.models.user import User, UserRole
 
 
@@ -33,11 +34,19 @@ class _ScalarResult:
 class _FakeAsyncSession:
     def __init__(self, invoice: Invoice):
         self.invoice = invoice
+        self.tenant = Tenant(
+            id=invoice.tenant_id,
+            name="Zelle Garage",
+            slug=f"zelle-{invoice.tenant_id}",
+            is_active=True,
+        )
 
     async def execute(self, statement):
         entity = statement.column_descriptions[0].get("entity")
         if entity is Invoice:
             return _ScalarResult(self.invoice)
+        if entity is Tenant:
+            return _ScalarResult(self.tenant)
         raise AssertionError(f"Unexpected query entity: {entity}")
 
     async def commit(self):
@@ -110,8 +119,14 @@ async def test_submit_customer_zelle_allows_normal_single_request(monkeypatch):
     async def _noop_async(**_kwargs):
         return None
 
+    async def _legacy_compatibility_route(*_args, **_kwargs):
+        return None
+
     monkeypatch.setattr(payments, "broadcast_repair_order_update", _noop_async)
     monkeypatch.setattr(payments, "send_pending_zelle_submission_alert", _noop_async)
+    monkeypatch.setattr(
+        payments, "settlement_for_compatibility_route", _legacy_compatibility_route,
+    )
 
     app = FastAPI()
     limiter.reset()

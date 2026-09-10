@@ -39,6 +39,7 @@ from app.db.session import engine
 from app.core.redis import close_redis, get_redis
 from app.db.models.error_log import ErrorCategory, ErrorSeverity
 from app.services import error_service
+from app.services.invoice_settlement_service import SettlementDomainError
 
 # Initialize structured logging
 setup_logging()
@@ -215,6 +216,29 @@ def _error_log_background(
 
 
 # ============ Global Exception Handlers ============
+
+@app.exception_handler(SettlementDomainError)
+async def settlement_domain_exception_handler(
+    _request: Request,
+    exc: SettlementDomainError,
+) -> JSONResponse:
+    """Preserve DB-048's stable error envelope instead of leaking a 500.
+
+    Domain errors are intentionally safe, bounded strings. Provider payloads,
+    account data, tokens, and evidence never enter this response.
+    """
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={
+            "error": {
+                "code": exc.code,
+                "message": exc.message,
+                "retryable": exc.retryable,
+                "current_version": exc.current_version,
+            }
+        },
+    )
+
 
 @app.exception_handler(HTTPException)
 async def http_exception_handler(request: Request, exc: HTTPException):

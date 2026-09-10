@@ -8,6 +8,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from decimal import Decimal
 from typing import Any
+import re
 
 import httpx
 
@@ -18,6 +19,10 @@ from app.db.models.quickbooks_connection import QuickBooksConnection
 
 class QuickBooksPaymentError(RuntimeError):
     """QuickBooks could not create, refund, or retrieve a payment."""
+
+    def __init__(self, message: str, *, outcome_unknown: bool = False) -> None:
+        super().__init__(message)
+        self.outcome_unknown = outcome_unknown
 
 
 @dataclass(frozen=True)
@@ -94,18 +99,44 @@ async def create_charge(
                 },
             )
     except httpx.HTTPError as exc:
-        raise QuickBooksPaymentError("Could not reach QuickBooks Payments") from exc
+        # The provider may have captured the charge before the connection
+        # failed. Callers must keep the attempt pending and retry with the same
+        # immutable Request-Id instead of treating this as a decline.
+        raise QuickBooksPaymentError(
+            "Could not reach QuickBooks Payments",
+            outcome_unknown=True,
+        ) from exc
 
     if response.status_code >= 400:
+        if response.status_code in {408, 425, 429} or response.status_code >= 500:
+            raise QuickBooksPaymentError(
+                "QuickBooks payment outcome is not yet known",
+                outcome_unknown=True,
+            )
         raise QuickBooksPaymentError("QuickBooks declined or rejected this payment")
     try:
         return _parse_charge(response.json())
-    except ValueError as exc:
-        raise QuickBooksPaymentError("Intuit returned an invalid payment response") from exc
+    except (ValueError, QuickBooksPaymentError) as exc:
+        # A successful HTTP response with an unreadable body can still
+        # represent a captured charge. Preserve the attempt for reconciliation.
+        raise QuickBooksPaymentError(
+            "Intuit returned an invalid payment response",
+            outcome_unknown=True,
+        ) from exc
 
 
 def is_successful_charge(charge: QuickBooksCharge) -> bool:
     return charge.status in {"CAPTURED", "SUCCEEDED", "COMPLETED"}
+
+
+def charge_client_transaction_id(charge: QuickBooksCharge) -> str | None:
+    """Return Intuit's merchant-facing client trace without persisting raw data."""
+    raw = getattr(charge, "raw", None)
+    context = raw.get("context") if isinstance(raw, dict) else None
+    value = context.get("clientTransID") if isinstance(context, dict) else None
+    if value is None:
+        return None
+    return str(value).strip() or None
 
 
 async def get_charge(*, connection: QuickBooksConnection, charge_id: str) -> QuickBooksCharge:
@@ -119,13 +150,22 @@ async def get_charge(*, connection: QuickBooksConnection, charge_id: str) -> Qui
                 headers={"Authorization": f"Bearer {access_token}", "Accept": "application/json"},
             )
     except httpx.HTTPError as exc:
-        raise QuickBooksPaymentError("Could not retrieve the QuickBooks payment") from exc
+        raise QuickBooksPaymentError(
+            "Could not retrieve the QuickBooks payment",
+            outcome_unknown=True,
+        ) from exc
     if response.status_code >= 400:
-        raise QuickBooksPaymentError("QuickBooks payment could not be retrieved")
+        raise QuickBooksPaymentError(
+            "QuickBooks payment could not be retrieved",
+            outcome_unknown=True,
+        )
     try:
         return _parse_charge(response.json())
-    except ValueError as exc:
-        raise QuickBooksPaymentError("Intuit returned an invalid payment response") from exc
+    except (ValueError, QuickBooksPaymentError) as exc:
+        raise QuickBooksPaymentError(
+            "Intuit returned an invalid payment response",
+            outcome_unknown=True,
+        ) from exc
 
 
 async def refund_charge(
@@ -152,22 +192,72 @@ async def refund_charge(
                 json={"amount": str(amount.quantize(Decimal("0.01"))), "description": description[:400]},
             )
     except httpx.HTTPError as exc:
-        raise QuickBooksPaymentError("Could not reach QuickBooks Payments for the refund") from exc
+        # Intuit may have accepted the refund before the connection failed.
+        # The durable worker must replay the same Request-Id rather than mark
+        # money failed or issue a second refund.
+        raise QuickBooksPaymentError(
+            "Could not reach QuickBooks Payments for the refund",
+            outcome_unknown=True,
+        ) from exc
     if response.status_code >= 400:
+        if response.status_code in {408, 425, 429} or response.status_code >= 500:
+            raise QuickBooksPaymentError(
+                "QuickBooks refund outcome is not yet known",
+                outcome_unknown=True,
+            )
         raise QuickBooksPaymentError("QuickBooks rejected the refund")
     try:
         payload = response.json()
     except ValueError as exc:
-        raise QuickBooksPaymentError("Intuit returned an invalid refund response") from exc
+        raise QuickBooksPaymentError(
+            "Intuit returned an invalid refund response",
+            outcome_unknown=True,
+        ) from exc
     if not isinstance(payload, dict) or not payload.get("id") or not payload.get("status"):
-        raise QuickBooksPaymentError("Intuit returned an incomplete refund response")
+        raise QuickBooksPaymentError(
+            "Intuit returned an incomplete refund response",
+            outcome_unknown=True,
+        )
     try:
         refunded_amount = Decimal(str(payload.get("amount"))).quantize(Decimal("0.01"))
     except Exception as exc:
-        raise QuickBooksPaymentError("Intuit returned an invalid refund amount") from exc
+        raise QuickBooksPaymentError(
+            "Intuit returned an invalid refund amount",
+            outcome_unknown=True,
+        ) from exc
     return QuickBooksRefund(
         id=str(payload["id"]),
         status=str(payload["status"]).upper(),
         amount=refunded_amount,
         raw=payload,
     )
+
+
+async def get_refund(
+    *, connection: QuickBooksConnection, charge_id: str, refund_id: str,
+) -> QuickBooksRefund:
+    """Retrieve a known refund under its original charge; never resubmit money."""
+    if not connection.encrypted_access_token or any(
+        not isinstance(value, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,255}", value)
+        for value in (charge_id, refund_id)
+    ):
+        raise QuickBooksPaymentError("QuickBooks refund identity is invalid", outcome_unknown=True)
+    access_token = decrypt_quickbooks_token(connection.encrypted_access_token)
+    try:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(settings.QUICKBOOKS_HTTP_TIMEOUT_SECONDS)) as client:
+            response = await client.get(
+                f"{payments_base_url()}/quickbooks/v4/payments/charges/{charge_id}/refunds/{refund_id}",
+                headers={"Authorization": f"Bearer {access_token}", "Accept": "application/json"},
+            )
+        if response.status_code >= 400:
+            raise QuickBooksPaymentError("QuickBooks refund could not be retrieved", outcome_unknown=True)
+        payload = response.json()
+        if (not isinstance(payload, dict) or payload.get("id") != refund_id
+                or not isinstance(payload.get("status"), str) or not payload["status"]):
+            raise ValueError("refund identity")
+        amount = Decimal(str(payload.get("amount")))
+        if not amount.is_finite() or amount <= 0 or amount != amount.quantize(Decimal("0.01")):
+            raise ValueError("refund amount")
+        return QuickBooksRefund(id=refund_id, status=str(payload["status"]).upper(), amount=amount, raw=payload)
+    except (httpx.HTTPError, ValueError, ArithmeticError) as exc:
+        raise QuickBooksPaymentError("QuickBooks refund readback is unavailable", outcome_unknown=True) from exc

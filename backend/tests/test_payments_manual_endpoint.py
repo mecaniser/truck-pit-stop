@@ -31,6 +31,12 @@ class _ScalarResult:
 class _FakeAsyncSession:
     def __init__(self, invoice: Invoice, customer: Customer, conflict_customer: Customer):
         self.invoice = invoice
+        self.tenant = Tenant(
+            id=invoice.tenant_id,
+            name="Manual Payment Garage",
+            slug=f"manual-{invoice.tenant_id}",
+            is_active=True,
+        )
         self.customer = customer
         self.conflict_customer = conflict_customer
         self.execute_calls = 0
@@ -45,7 +51,7 @@ class _FakeAsyncSession:
             return _ScalarResult(self.invoice)
         if self.execute_calls == 2:
             assert entity is Tenant
-            return _ScalarResult(None)
+            return _ScalarResult(self.tenant)
         if self.execute_calls == 3:
             assert entity is Customer
             return _ScalarResult(self.customer)
@@ -152,6 +158,9 @@ async def test_record_manual_payment_returns_warning_when_sender_email_conflicts
     async def _noop_async(**_kwargs):
         return None
 
+    async def _legacy_compatibility_route(*_args, **_kwargs):
+        return None
+
     enqueued = []
 
     async def _capture_webhook(_db, **kwargs):
@@ -164,6 +173,9 @@ async def test_record_manual_payment_returns_warning_when_sender_email_conflicts
     monkeypatch.setattr(payments, "send_invoice_payment_confirmation_email", _noop_async)
     monkeypatch.setattr(payments, "record_payment", lambda **_kwargs: None)
     monkeypatch.setattr(payments, "enqueue_paid_invoice_webhook", _capture_webhook)
+    monkeypatch.setattr(
+        payments, "settlement_for_compatibility_route", _legacy_compatibility_route,
+    )
 
     app = FastAPI()
     app.include_router(payments.router, prefix="/api/v1/payments")

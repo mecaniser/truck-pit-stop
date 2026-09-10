@@ -43,6 +43,12 @@ from app.db.models.quickbooks_connection import (
 )
 from app.db.models.customer import Customer
 from app.db.models.invoice import Invoice, InvoiceStatus
+from app.db.models.invoice_settlement import (
+    InvoicePaymentAttempt,
+    InvoiceSettlement,
+    PaymentAccountingLink,
+    TenantPaymentProviderConfiguration,
+)
 from app.db.models.payment import Payment, PaymentMethod, PaymentStatus
 from app.db.models.provider_outbox import ProviderOutboxEvent, ProviderOutboxStatus
 from app.db.models.repair_order import RepairOrder, RepairOrderStatus
@@ -83,6 +89,14 @@ from app.services.payment_number_service import allocate_next_payment_number
 from app.services.quickbooks_sync_service import (
     QUICKBOOKS_INVOICE_SYNC_EVENT,
     enqueue_quickbooks_invoice_sync,
+)
+from app.services.db048_accounting_reconciliation import sync_db048_principal_invoice
+from app.services.invoice_settlement_service import (
+    allocatable_balance,
+    create_attempt,
+    create_refund as create_settlement_refund,
+    money,
+    settlement_for_compatibility_route,
 )
 
 
@@ -311,6 +325,15 @@ def _require_quickbooks_admin(current_user: User) -> None:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="User must be associated with a tenant")
 
 
+def _require_quickbooks_payments_approved_release() -> None:
+    """Keep QBP fail-closed unless the platform release gate is explicit."""
+    if not settings.QUICKBOOKS_PAYMENTS_INVOICE_PAYMENTS_APPROVED:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="QuickBooks Payments is not approved for this environment",
+        )
+
+
 def _state_hash(state_value: str) -> str:
     return sha256(state_value.encode("utf-8")).hexdigest()
 
@@ -480,23 +503,40 @@ async def quickbooks_payment_availability(
     """Return the direct-to-Intuit token endpoint only for an eligible invoice."""
     if current_user.role != UserRole.CUSTOMER or not current_user.customer_id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only customers can pay invoices")
-    invoice = (await db.execute(select(Invoice).where(Invoice.id == invoice_id))).scalar_one_or_none()
-    if not invoice or invoice.tenant_id is None:
+    if not settings.QUICKBOOKS_PAYMENTS_INVOICE_PAYMENTS_APPROVED:
+        return QuickBooksPaymentAvailabilityResponse(
+            available=False,
+            message="QuickBooks Payments is not approved for this environment",
+        )
+    invoice = (await db.execute(
+        select(Invoice)
+        .join(RepairOrder, RepairOrder.id == Invoice.repair_order_id)
+        .where(
+            Invoice.id == invoice_id,
+            Invoice.tenant_id == current_user.tenant_id,
+            RepairOrder.customer_id == current_user.customer_id,
+            Invoice.deleted_at.is_(None),
+        )
+    )).scalar_one_or_none()
+    if not invoice:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Invoice not found")
-    owner = (await db.execute(select(RepairOrder.customer_id).where(RepairOrder.id == invoice.repair_order_id))).scalar_one_or_none()
-    if owner != current_user.customer_id:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
-    if invoice.status == InvoiceStatus.PAID:
-        return QuickBooksPaymentAvailabilityResponse(available=False, message="Invoice already paid")
-    if await _invoice_outstanding_amount(db, invoice) <= Decimal("0.00"):
-        return QuickBooksPaymentAvailabilityResponse(available=False, message="Invoice has no balance due")
     connection = await _get_connection(db, invoice.tenant_id)
-    if not connection or _connection_token_health(connection) in {"not_connected", "reconnect_required"}:
-        return QuickBooksPaymentAvailabilityResponse(available=False, message="This shop has not finished QuickBooks Payments setup")
-    try:
-        return QuickBooksPaymentAvailabilityResponse(available=True, token_url=_quickbooks_payments_token_url())
-    except QuickBooksPaymentError:
-        return QuickBooksPaymentAvailabilityResponse(available=False, message="QuickBooks Payments is not configured for this environment")
+    payment_scope = bool(
+        connection
+        and connection.status == "connected"
+        and connection.realm_id
+        and "com.intuit.quickbooks.payment" in (connection.scopes or "").split()
+    )
+    if not payment_scope or _connection_token_health(connection) in {"not_connected", "reconnect_required"}:
+        return QuickBooksPaymentAvailabilityResponse(
+            available=False,
+            message="QuickBooks Payments setup is incomplete for this shop",
+        )
+    return QuickBooksPaymentAvailabilityResponse(
+        available=True,
+        token_url=_quickbooks_payments_token_url(),
+        message="QuickBooks Payments is ready",
+    )
 
 
 @router.post("/accounting/invoices/{invoice_id}/sync", response_model=QuickBooksAccountingSyncResponse)
@@ -517,7 +557,23 @@ async def sync_quickbooks_invoice_now(
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="QuickBooks is not connected")
     await _refresh_connection_if_needed(db, connection)
     try:
-        qbo_id = await sync_invoice(connection, invoice, customer)
+        settlement = await db.scalar(
+            select(InvoiceSettlement).where(
+                InvoiceSettlement.tenant_id == invoice.tenant_id,
+                InvoiceSettlement.invoice_id == invoice.id,
+                InvoiceSettlement.deleted_at.is_(None),
+            )
+        )
+        qbo_id = (
+            await sync_db048_principal_invoice(
+                connection=connection,
+                invoice=invoice,
+                customer=customer,
+                settlement=settlement,
+            )
+            if settlement
+            else await sync_invoice(connection, invoice, customer)
+        )
         await db.commit()
         return QuickBooksAccountingSyncResponse(
             invoice_id=invoice.id,
@@ -543,20 +599,87 @@ async def charge_quickbooks_invoice(
     """
     if current_user.role != UserRole.CUSTOMER or not current_user.customer_id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only customers can pay invoices")
+    _require_quickbooks_payments_approved_release()
     invoice = (await db.execute(
         select(Invoice)
+        .join(RepairOrder, RepairOrder.id == Invoice.repair_order_id)
         .options(
             selectinload(Invoice.tenant),
             selectinload(Invoice.repair_order).selectinload(RepairOrder.customer),
             selectinload(Invoice.repair_order).selectinload(RepairOrder.vehicle),
         )
-        .where(Invoice.id == body.invoice_id)
+        .where(
+            Invoice.id == body.invoice_id,
+            Invoice.tenant_id == current_user.tenant_id,
+            Invoice.deleted_at.is_(None),
+            Invoice.voided_at.is_(None),
+            Invoice.status.in_([InvoiceStatus.SENT, InvoiceStatus.OVERDUE]),
+            RepairOrder.tenant_id == current_user.tenant_id,
+            RepairOrder.customer_id == current_user.customer_id,
+            RepairOrder.deleted_at.is_(None),
+            RepairOrder.status != RepairOrderStatus.CANCELLED,
+        )
         .with_for_update()
     )).scalar_one_or_none()
     if not invoice or not invoice.repair_order:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Invoice not found")
-    if invoice.repair_order.customer_id != current_user.customer_id:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+
+    tenant = invoice.tenant or await db.get(Tenant, invoice.tenant_id)
+    settlement = await settlement_for_compatibility_route(
+        db,
+        invoice=invoice,
+        tenant=tenant,
+        customer_id=current_user.customer_id,
+    )
+    if settlement is not None:
+        # Compatibility adapter: legacy clients still submit the old full-
+        # balance DTO, but money authority belongs to the DB-048 attempt and
+        # its immutable provider/configuration snapshot.
+        amount = money(allocatable_balance(settlement))
+        if amount <= Decimal("0.00"):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="No unreserved invoice balance remains to pay",
+            )
+        creation = await create_attempt(
+            db,
+            invoice=invoice,
+            tenant=tenant,
+            customer_id=current_user.customer_id,
+            actor=current_user,
+            amount=amount,
+            rail="card",
+            expected_settlement_version=settlement.version,
+            idempotency_key=body.idempotency_key,
+            source="customer_portal_compatibility",
+            subject_type="customer",
+            subject_id=current_user.id,
+        )
+        # Imported lazily to avoid coupling router module initialization in a
+        # cycle. The helper performs the attempt-stable Intuit Request-Id,
+        # ambiguous-outcome handling, allocation, ledger, and accounting
+        # enqueue used by the canonical DB-048 route.
+        from app.api.v1.endpoints.invoice_settlements import (
+            charge_quickbooks_settlement_attempt,
+        )
+
+        confirmation = await charge_quickbooks_settlement_attempt(
+            db,
+            attempt=creation.attempt,
+            invoice=invoice,
+            tenant=tenant,
+            actor=current_user,
+            payment_token=body.token,
+            expected_attempt_version=creation.attempt.version,
+            idempotency_key=body.idempotency_key,
+        )
+        refreshed = await db.get(InvoicePaymentAttempt, creation.attempt.id)
+        return QuickBooksChargeResponse(
+            status="CAPTURED" if confirmation else "PENDING",
+            charge_id=refreshed.provider_charge_id or "",
+            payment_id=refreshed.payment_id,
+            message="Payment successful" if confirmation else "Payment is processing",
+        )
 
     existing = await find_quickbooks_payment(db, body.idempotency_key)
     if existing:
@@ -644,6 +767,7 @@ async def refund_quickbooks_payment(
 ):
     """Refund or void an Intuit charge and record the QBO refund receipt."""
     _require_quickbooks_admin(current_user)
+    _require_quickbooks_payments_approved_release()
     payment = (await db.execute(
         select(Payment).options(selectinload(Payment.invoice)).where(Payment.id == payment_id)
     )).scalar_one_or_none()
@@ -654,6 +778,55 @@ async def refund_quickbooks_payment(
         or not payment.quickbooks_charge_id
     ):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="QuickBooks payment was not found")
+
+    settlement = await db.scalar(
+        select(InvoiceSettlement)
+        .where(
+            InvoiceSettlement.tenant_id == payment.tenant_id,
+            InvoiceSettlement.invoice_id == payment.invoice_id,
+            InvoiceSettlement.deleted_at.is_(None),
+        )
+        .with_for_update()
+    )
+    tenant = await db.get(Tenant, payment.tenant_id)
+    if settlement is not None or (
+        settings.INVOICE_SPLIT_PAYMENTS_ENABLED
+        and bool(tenant and tenant.invoice_split_payments_enabled)
+    ):
+        attempt = await db.scalar(
+            select(InvoicePaymentAttempt)
+            .where(
+                InvoicePaymentAttempt.tenant_id == payment.tenant_id,
+                InvoicePaymentAttempt.invoice_id == payment.invoice_id,
+                InvoicePaymentAttempt.payment_id == payment.id,
+                InvoicePaymentAttempt.deleted_at.is_(None),
+            )
+            .with_for_update()
+        )
+        if not attempt:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="The settlement backfill must reconcile this payment before it can be refunded",
+            )
+        refund = await create_settlement_refund(
+            db,
+            attempt=attempt,
+            tenant_id=payment.tenant_id,
+            actor=current_user,
+            amount=body.amount or Decimal(payment.amount),
+            reason=body.reason,
+            idempotency_key=(
+                f"legacy-qbp-refund:{payment.id}:{body.amount or payment.amount}:"
+                f"{sha256(body.reason.encode()).hexdigest()[:24]}"
+            ),
+        )
+        await db.commit()
+        return QuickBooksChargeResponse(
+            status=refund.state.upper(),
+            charge_id=refund.provider_reference or "",
+            payment_id=payment.id,
+            message="QuickBooks refund queued through invoice settlement",
+        )
     if payment.quickbooks_refunded_amount and payment.quickbooks_refunded_amount >= payment.amount:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Payment is already fully refunded")
 
@@ -735,6 +908,7 @@ async def reconcile_quickbooks_payment(
 ):
     """Refresh provider state and retry the linked QBO accounting payment."""
     _require_quickbooks_admin(current_user)
+    _require_quickbooks_payments_approved_release()
     payment = await db.get(Payment, payment_id)
     if not payment or payment.tenant_id != current_user.tenant_id or not payment.quickbooks_charge_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="QuickBooks payment was not found")
@@ -942,6 +1116,57 @@ async def quickbooks_oauth_callback(
     )
     connection = await _get_connection(db, tenant_id)
     previous_realm_id = connection.realm_id if connection else None
+
+    # A DB-048 invoice keeps one accounting realm for its entire payment,
+    # refund, dispute, and payout lifecycle. A reconnect to another company
+    # may not silently move old money or reset its durable accounting work.
+    attempt_realms = set((await db.scalars(
+        select(TenantPaymentProviderConfiguration.qbo_realm_snapshot)
+        .join(
+            InvoicePaymentAttempt,
+            (
+                InvoicePaymentAttempt.tenant_id
+                == TenantPaymentProviderConfiguration.tenant_id
+            )
+            & (
+                InvoicePaymentAttempt.provider_configuration_version
+                == TenantPaymentProviderConfiguration.version
+            ),
+        )
+        .where(
+            InvoicePaymentAttempt.tenant_id == tenant_id,
+            InvoicePaymentAttempt.deleted_at.is_(None),
+            TenantPaymentProviderConfiguration.deleted_at.is_(None),
+            TenantPaymentProviderConfiguration.qbo_realm_snapshot.is_not(None),
+        )
+    )).all())
+    link_realms = set((await db.scalars(
+        select(PaymentAccountingLink.qbo_realm_snapshot).where(
+            PaymentAccountingLink.tenant_id == tenant_id,
+            PaymentAccountingLink.deleted_at.is_(None),
+            PaymentAccountingLink.qbo_realm_snapshot.is_not(None),
+        )
+    )).all())
+    frozen_realms = attempt_realms | link_realms
+    if frozen_realms and (len(frozen_realms) != 1 or realm_id not in frozen_realms):
+        if step_up_grant_id is not None:
+            db.add(
+                _quickbooks_callback_audit(
+                    tenant_id=tenant_id,
+                    user_id=initiated_by_user_id,
+                    grant_id=step_up_grant_id,
+                    succeeded=False,
+                    reason="realm_change_blocked",
+                )
+            )
+            await db.commit()
+        logger.warning(
+            "quickbooks_realm_change_blocked_by_db048_history",
+            tenant_id=str(tenant_id),
+            previous_realm_id=previous_realm_id,
+            requested_realm_id=realm_id,
+        )
+        return _callback_redirect("realm-change-blocked")
     if not connection:
         connection = QuickBooksConnection(tenant_id=tenant_id)
         db.add(connection)

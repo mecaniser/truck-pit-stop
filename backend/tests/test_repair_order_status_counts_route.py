@@ -6,7 +6,14 @@ literal ever moves below a path-parameter route, "status-counts" is parsed as an
 order id and the filters lose their counts with a 422 rather than an error that
 points at the cause.
 """
+from types import SimpleNamespace
+from uuid import uuid4
+
+import pytest
+
 from app.main import app
+from app.api.v1.endpoints.repair_orders import repair_order_status_counts
+from app.db.models.user import UserRole
 
 
 def _repair_order_paths() -> list[str]:
@@ -29,3 +36,27 @@ def test_status_counts_is_declared_before_any_order_id_route():
     assert literal < min(parameterised), (
         "status-counts must be declared before the {order_id} routes or it will be shadowed"
     )
+
+
+@pytest.mark.asyncio
+async def test_status_counts_uses_the_projection_primary_key():
+    class Result:
+        def all(self):
+            return [("invoiced", 3), ("paid", 2)]
+
+    class DB:
+        async def execute(self, _statement):
+            return Result()
+
+    counts = await repair_order_status_counts(
+        customer_id=None,
+        vehicle_id=None,
+        search=None,
+        deleted=False,
+        db=DB(),
+        current_user=SimpleNamespace(
+            role=UserRole.GARAGE_OWNER,
+            tenant_id=uuid4(),
+        ),
+    )
+    assert counts == {"invoiced": 3, "paid": 2, "all": 5}

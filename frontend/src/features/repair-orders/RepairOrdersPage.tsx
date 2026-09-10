@@ -41,6 +41,7 @@ import { buildPartHistoryEvents } from './repairOrderHistory'
 import { REPAIR_ORDERS_QUEUE_LABEL } from './repairOrdersPresentation'
 import type { ActionQueueOrder } from '../dashboard/ShopCockpitActionLedger'
 import { AuthorizationSummary } from '@/features/quotes/AuthorizationSummary'
+import { StaffSettlementDialog, isSettlementUnavailable, useInvoiceSettlement } from '@/features/payments'
 import {
   AUTHORIZATION_CONFLICT_MESSAGE,
   type AuthorizationHistory,
@@ -405,6 +406,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
   const [invoiceRecipientId, setInvoiceRecipientId] = useState('')
   const [showInvoiceCreateOptions, setShowInvoiceCreateOptions] = useState(false)
   const [showInvoicePaymentOptions, setShowInvoicePaymentOptions] = useState(false)
+  const [showSettlementDialog, setShowSettlementDialog] = useState(false)
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<string>('')
   const [showManualPaymentConfirmation, setShowManualPaymentConfirmation] = useState(false)
   const [manualPaymentReference, setManualPaymentReference] = useState('')
@@ -933,6 +935,14 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
     },
     enabled: !!(selectedOrder?.id && isDetailOpen && ['invoiced', 'paid'].includes(selectedOrder?.status || '')),
   })
+
+  const settlementAccess = invoiceForOrder?.id
+    ? { kind: 'authenticated' as const, invoiceId: invoiceForOrder.id }
+    : null
+  const invoiceSettlementQuery = useInvoiceSettlement(settlementAccess)
+  const invoiceSettlement = invoiceSettlementQuery.data?.feature_enabled === false
+    ? null
+    : invoiceSettlementQuery.data
 
   const { data: truckRecipientConnections = [] } = useQuery<TruckInvoiceRecipientConnection[]>({
     queryKey: ['vehicle-account-relationships', selectedOrder?.vehicle_id],
@@ -4612,6 +4622,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                       billToCustomerId,
                     })}
                     invoice={invoiceForOrder ?? null}
+                    invoiceSettlement={invoiceSettlement ?? null}
                     invoiceActionPending={
                       resendInvoiceMutation.isPending ||
                       voidInvoiceMutation.isPending ||
@@ -4624,6 +4635,12 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                       }
                     }}
                     onRecordPayment={() => {
+                      if (invoiceSettlement
+                        || invoiceSettlementQuery.isLoading
+                        || (invoiceSettlementQuery.error && !isSettlementUnavailable(invoiceSettlementQuery.error))) {
+                        setShowSettlementDialog(true)
+                        return
+                      }
                       if (invoiceForOrder?.pending_zelle_confirmation) {
                         openZellePaymentModal('confirm_pending')
                         return
@@ -6223,6 +6240,20 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
           </div>
         )
       })()}
+
+      {invoiceForOrder && (
+        <StaffSettlementDialog
+          invoiceId={invoiceForOrder.id}
+          invoiceNumber={invoiceForOrder.invoice_number}
+          open={showSettlementDialog}
+          onClose={() => setShowSettlementDialog(false)}
+          onUpdated={() => {
+            queryClient.invalidateQueries({ queryKey: ['invoice-for-order', selectedOrder?.id] })
+            queryClient.invalidateQueries({ queryKey: ['repair-order-detail', selectedOrder?.id] })
+            queryClient.invalidateQueries({ queryKey: ['repair-orders'] })
+          }}
+        />
+      )}
 
       {canVoidInvoices && showVoidInvoiceConfirm && invoiceForOrder && (
         <div className="fixed inset-0 z-[60] overflow-y-auto">

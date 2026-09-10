@@ -89,6 +89,13 @@ class RepairOrder(BaseModel):
     work_started_at = Column(DateTime(timezone=True), nullable=True)
     work_completed_at = Column(DateTime(timezone=True), nullable=True)
 
+    # Operational custody release is distinct from work completion and
+    # financial settlement. DB-048 records the actual release boundary so an
+    # unpaid vehicle cannot leave on a free-floating UI acknowledgement.
+    vehicle_released_at = Column(DateTime(timezone=True), nullable=True, index=True)
+    vehicle_released_by_user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
+    vehicle_release_reason = Column(Text, nullable=True)
+
     # Hold / pause sub-state (while status remains IN_PROGRESS)
     hold_reason = Column(String(100), nullable=True)
     held_at = Column(DateTime(timezone=True), nullable=True)

@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from decimal import Decimal
 from uuid import uuid4
 
@@ -51,6 +51,23 @@ def _invoice(tenant_id) -> Invoice:
     return invoice
 
 
+def test_customer_match_rejects_same_company_with_different_email() -> None:
+    connection = _connection()
+    customer = _customer(connection.tenant_id)
+    candidate = {
+        "Id": "99",
+        "DisplayName": "Sergio Trucking",
+        "CompanyName": "Sergio Trucking",
+        "PrimaryEmailAddr": {"Address": "other-owner@example.com"},
+    }
+
+    assert accounting._qbo_customer_matches(
+        customer,
+        candidate,
+        tenant_name="Truck Pit Stop",
+    ) is False
+
+
 @pytest.mark.asyncio
 async def test_invoice_and_payment_sync_are_idempotent_and_linked(monkeypatch):
     connection = _connection()
@@ -59,6 +76,8 @@ async def test_invoice_and_payment_sync_are_idempotent_and_linked(monkeypatch):
     calls = []
 
     async def fake_query(_connection, statement):
+        if "from Customer where Id" in statement:
+            return [{"Id": "41", "DisplayName": "Sergio Trucking · DB-" + str(customer.id)[:8]}]
         if "from Invoice" in statement or "from Payment" in statement:
             return []
         if "from Item" in statement:
@@ -110,6 +129,108 @@ async def test_invoice_and_payment_sync_are_idempotent_and_linked(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_customer_sync_replaces_stale_cross_realm_id(monkeypatch):
+    connection = _connection()
+    customer = _customer(connection.tenant_id)
+    customer.quickbooks_customer_id = "76"
+    expected_name = "Sergio Trucking"
+    queries = []
+
+    async def fake_query(_connection, statement):
+        queries.append(statement)
+        if "where Id = '76'" in statement:
+            return []
+        if "where DisplayName" in statement:
+            return []
+        raise AssertionError(statement)
+
+    async def fake_request(_connection, method, resource, **kwargs):
+        assert method == "POST"
+        assert resource == "customer"
+        assert kwargs["json"]["DisplayName"] == expected_name
+        assert "Notes" not in kwargs["json"]
+        assert kwargs["params"] == {"requestid": f"customer-{customer.id}"[:50]}
+        return {"Customer": {"Id": "30", "DisplayName": expected_name}}
+
+    monkeypatch.setattr(accounting, "_query", fake_query)
+    monkeypatch.setattr(accounting, "_request", fake_request)
+
+    assert await accounting.ensure_customer(connection, customer) == "30"
+    assert customer.quickbooks_customer_id == "30"
+    assert "where Id = '76'" in queries[0]
+
+
+@pytest.mark.asyncio
+async def test_customer_sync_rejects_cross_realm_id_collision(monkeypatch):
+    connection = _connection()
+    customer = _customer(connection.tenant_id)
+    customer.quickbooks_customer_id = "12"
+    expected_name = f"Sergio Trucking · DB-{str(customer.id)[:8]}"
+
+    async def fake_query(_connection, statement):
+        if "where Id = '12'" in statement:
+            return [{"Id": "12", "DisplayName": "Unrelated sandbox customer"}]
+        if "where DisplayName" in statement:
+            return [{"Id": "29", "DisplayName": expected_name}]
+        raise AssertionError(statement)
+
+    monkeypatch.setattr(accounting, "_query", fake_query)
+
+    assert await accounting.ensure_customer(connection, customer) == "29"
+    assert customer.quickbooks_customer_id == "29"
+
+
+@pytest.mark.asyncio
+async def test_customer_sync_replaces_legacy_platform_suffix(monkeypatch):
+    connection = _connection()
+    customer = _customer(connection.tenant_id)
+    legacy_name = f"Sergio Trucking · DB-{str(customer.id)[:8]}"
+    calls = []
+
+    async def fake_query(_connection, statement):
+        if "where Id = '41'" in statement:
+            return [{
+                "Id": "41",
+                "SyncToken": "3",
+                "DisplayName": legacy_name,
+                "Notes": f"DieselBridge customer {customer.id}",
+            }]
+        if "where DisplayName = 'Sergio Trucking'" in statement:
+            return []
+        raise AssertionError(statement)
+
+    async def fake_request(_connection, method, resource, **kwargs):
+        calls.append((method, resource, kwargs))
+        return {"Customer": {"Id": "41", "DisplayName": "Sergio Trucking"}}
+
+    monkeypatch.setattr(accounting, "_query", fake_query)
+    monkeypatch.setattr(accounting, "_request", fake_request)
+
+    assert await accounting.ensure_customer(
+        connection,
+        customer,
+        tenant_name="Truck Pit Stop",
+    ) == "41"
+    assert calls == [(
+        "POST",
+        "customer",
+        {
+            "params": {
+                "operation": "update",
+                "requestid": f"customer-name-{customer.id}"[:50],
+            },
+            "json": {
+                "Id": "41",
+                "SyncToken": "3",
+                "sparse": True,
+                "DisplayName": "Sergio Trucking",
+                "Notes": "",
+            },
+        },
+    )]
+
+
+@pytest.mark.asyncio
 async def test_cancelled_invoice_is_voided_in_qbo(monkeypatch):
     connection = _connection()
     customer = _customer(connection.tenant_id)
@@ -139,7 +260,9 @@ async def test_change_data_capture_flattens_supported_entities(monkeypatch):
     async def fake_request(_connection, method, resource, **kwargs):
         assert method == "GET"
         assert resource == "cdc"
-        assert kwargs["params"]["entities"] == "Customer,Invoice,Payment,RefundReceipt,Deposit"
+        assert kwargs["params"]["entities"] == (
+            "Customer,Invoice,Payment,RefundReceipt"
+        )
         return {
             "CDCResponse": [{
                 "QueryResponse": {
@@ -158,3 +281,37 @@ async def test_change_data_capture_flattens_supported_entities(monkeypatch):
         "Invoice": [{"Id": "501"}],
         "Payment": [{"Id": "601"}],
     }
+
+
+@pytest.mark.asyncio
+async def test_qbp_settlement_window_queries_deposits_and_purchases_together(
+    monkeypatch,
+) -> None:
+    connection = _connection()
+    statements: list[str] = []
+
+    async def fake_query(_connection, statement):
+        statements.append(statement)
+        if "from Deposit" in statement:
+            return [{"Id": "deposit-1"}]
+        if "from Purchase" in statement:
+            return [{"Id": "fee-1"}]
+        raise AssertionError(statement)
+
+    monkeypatch.setattr(accounting, "_query", fake_query)
+    result = await accounting.qbp_settlement_window(
+        connection,
+        date_from=date(2026, 8, 28),
+        date_to=date(2026, 9, 3),
+    )
+
+    assert result == {
+        "Deposit": [{"Id": "deposit-1"}],
+        "Purchase": [{"Id": "fee-1"}],
+    }
+    assert statements == [
+        "select * from Deposit where TxnDate >= '2026-08-28' "
+        "and TxnDate <= '2026-09-03' startposition 1 maxresults 1000",
+        "select * from Purchase where TxnDate >= '2026-08-28' "
+        "and TxnDate <= '2026-09-03' startposition 1 maxresults 1000",
+    ]

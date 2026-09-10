@@ -75,7 +75,21 @@ interface ReportsFeesResponse {
   times_added: number
   average_charge: string
   total_charged: string
+  customer_card_fees_collected: string
+  provider_fees_paid: string
+  net_fee_recovery: string
+  settlement_batches: number
+  reconciliation_attention: number
   rows: FeeRow[]
+  provider_expenses: Array<{
+    provider: string
+    settlement_batches: number
+    gross_processed: string
+    customer_card_fees_collected: string
+    processing_fees: string
+    net_fee_recovery: string
+    net_payout: string
+  }>
 }
 
 interface TaxRow {
@@ -519,6 +533,10 @@ function FeesTab({ range }: { range: ReportRange }) {
   const accent = TAB_ACCENT.fees
   const ranked = [...data.rows].sort((a, b) => parseFloat(b.total_charged) - parseFloat(a.total_charged))
   const top = ranked[0]
+  const providerLabel = (provider: string) => (
+    provider === 'quickbooks_payments' ? 'QuickBooks Payments' :
+      provider === 'stripe_connect' ? 'Stripe' : provider
+  )
 
   return (
     <div className="space-y-4">
@@ -542,10 +560,17 @@ function FeesTab({ range }: { range: ReportRange }) {
       </Hero>
 
       <StatStrip stats={[
-        { label: 'Times Added', value: fmtNumber(data.times_added) },
-        { label: 'Average Charge', value: fmtMoney(data.average_charge) },
-        { label: 'Total Charged', value: fmtMoney(data.total_charged) },
+        { label: 'Card fees collected', value: fmtMoney(data.customer_card_fees_collected) },
+        { label: 'Processor cost', value: fmtMoney(data.provider_fees_paid) },
+        { label: 'Net fee recovery', value: fmtMoney(data.net_fee_recovery) },
+        { label: 'Settled batches', value: fmtNumber(data.settlement_batches) },
       ]} />
+
+      {data.reconciliation_attention > 0 && (
+        <div className="rounded-xl border border-amber-400/20 bg-amber-400/[0.06] px-4 py-3 text-[13px] text-amber-100/80">
+          {fmtNumber(data.reconciliation_attention)} settlement {data.reconciliation_attention === 1 ? 'batch needs' : 'batches need'} reconciliation review before its processor cost is included.
+        </div>
+      )}
 
       <DetailTable title="All fees" count={data.rows.length} onExport={handleExport}>
         <table className="w-full text-sm">
@@ -568,6 +593,38 @@ function FeesTab({ range }: { range: ReportRange }) {
             ))}
             {data.rows.length === 0 && (
               <tr><td colSpan={4} className="px-4 py-8 text-center text-white/40">No fees charged in this range</td></tr>
+            )}
+          </tbody>
+        </table>
+      </DetailTable>
+
+      <DetailTable title="Processor settlement costs" count={data.provider_expenses.length}>
+        <table className="w-full text-sm">
+          <thead className="text-white/35 text-[11px] uppercase tracking-wider">
+            <tr>
+              <th className="px-4 py-2.5 text-left font-medium">Provider</th>
+              <th className="px-4 py-2.5 text-right font-medium">Batches</th>
+              <th className="px-4 py-2.5 text-right font-medium">Gross processed</th>
+              <th className="px-4 py-2.5 text-right font-medium">Card fees collected</th>
+              <th className="px-4 py-2.5 text-right font-medium">Processor cost</th>
+              <th className="px-4 py-2.5 text-right font-medium">Recovery</th>
+              <th className="px-4 py-2.5 text-right font-medium">Net payout</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-white/[0.06]">
+            {data.provider_expenses.map((row) => (
+              <tr key={row.provider} className="hover:bg-white/[0.03]">
+                <td className="px-4 py-2.5 text-[13px] font-medium text-white/85">{providerLabel(row.provider)}</td>
+                <td className="px-4 py-2.5 text-right text-[13px] text-white/55">{fmtNumber(row.settlement_batches)}</td>
+                <td className="px-4 py-2.5 text-right text-[13px] text-white/55">{fmtMoney(row.gross_processed)}</td>
+                <td className="px-4 py-2.5 text-right text-[13px] text-white/55">{fmtMoney(row.customer_card_fees_collected)}</td>
+                <td className="px-4 py-2.5 text-right text-[13px] font-medium text-white/85">{fmtMoney(row.processing_fees)}</td>
+                <td className="px-4 py-2.5 text-right text-[13px] font-medium text-white/85">{fmtMoney(row.net_fee_recovery)}</td>
+                <td className="px-4 py-2.5 text-right text-[13px] text-white/55">{fmtMoney(row.net_payout)}</td>
+              </tr>
+            ))}
+            {data.provider_expenses.length === 0 && (
+              <tr><td colSpan={7} className="px-4 py-8 text-center text-white/40">No matched processor settlements in this range</td></tr>
             )}
           </tbody>
         </table>

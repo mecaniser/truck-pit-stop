@@ -6,7 +6,7 @@ from decimal import Decimal
 from typing import List, Optional
 from uuid import UUID, uuid4
 from datetime import date, datetime, timedelta, timezone
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status, Query, Response
+from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, UploadFile, status, Query, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_, exists, or_, func, literal_column, case
 from sqlalchemy.orm import joinedload, selectinload
@@ -2894,12 +2894,19 @@ async def admin_complete_unassigned_work(
 class ApproveCompletionRequest(BaseModel):
     review_notes: Optional[str] = None
     mileage_out: Optional[int] = None  # odometer at completion
+    # Completion normally means ready for pickup, not custody release. When
+    # the shop performs both transitions together DB-048 requires an explicit
+    # request so unpaid release cannot happen implicitly.
+    release_vehicle: bool = False
+    early_release_reason: Optional[str] = None
+    expected_settlement_version: Optional[int] = None
 
 
 @router.post("/{order_id}/approve-completion", response_model=RepairOrderResponse)
 async def approve_completion(
     order_id: UUID,
     body: Optional[ApproveCompletionRequest] = None,
+    idempotency_key: Optional[str] = Header(default=None, alias="Idempotency-Key"),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role(
         UserRole.GARAGE_OWNER,
@@ -3071,6 +3078,51 @@ async def approve_completion(
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Unable to finalize the repair order. No changes were saved; please try again.",
+            ) from error
+
+    if body and body.release_vehicle:
+        if invoice is None or invoice_tenant is None:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail={"code": "vehicle_release_requires_customer_invoice"},
+            )
+        if not idempotency_key or not idempotency_key.strip():
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail={"code": "idempotency_key_required"},
+            )
+        if body.expected_settlement_version is None:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail={"code": "settlement_version_required"},
+            )
+        try:
+            from app.services.invoice_settlement_service import (
+                SettlementDomainError,
+                authorize_early_release,
+                require_feature_ready,
+            )
+
+            await require_feature_ready(db, invoice_tenant)
+            await authorize_early_release(
+                db,
+                invoice=invoice,
+                tenant=invoice_tenant,
+                actor=current_user,
+                reason=body.early_release_reason or "",
+                expected_settlement_version=body.expected_settlement_version,
+                idempotency_key=idempotency_key.strip(),
+            )
+        except SettlementDomainError as error:
+            await db.rollback()
+            raise HTTPException(
+                status_code=error.status_code,
+                detail={
+                    "code": error.code,
+                    "message": error.message,
+                    "retryable": error.retryable,
+                    "current_version": error.current_version,
+                },
             ) from error
 
     # One commit owns the manager review, PM update, pricing lock, immutable

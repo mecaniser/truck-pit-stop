@@ -1,0 +1,3326 @@
+from __future__ import annotations
+
+from datetime import datetime, timedelta, timezone
+from decimal import Decimal
+from types import SimpleNamespace
+from uuid import uuid4
+
+import pytest
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import async_sessionmaker
+
+from app.core.config import settings
+from app.db.models.customer import Customer
+from app.db.models.invoice import Invoice, InvoiceStatus
+from app.db.models.invoice_settlement import (
+    CustomerCreditEntry,
+    InvoicePaymentAttempt,
+    InvoiceSettlement,
+    PaymentAccountingLink,
+    PaymentOverpayment,
+    PaymentRefund,
+    ProviderSettlementBatch,
+    ProviderSettlementEntry,
+    TenantPaymentProviderConfiguration,
+)
+from app.db.models.provider_outbox import ProviderOutboxEvent, ProviderOutboxStatus
+from app.db.models.payment import Payment, PaymentMethod, PaymentStatus
+from app.db.models.quickbooks_connection import QuickBooksConnection
+from app.db.models.repair_order import RepairOrder, RepairOrderStatus
+from app.db.models.tenant import Tenant
+from app.db.models.user import User, UserRole
+from app.db.models.vehicle import Vehicle
+from app.api.v1.endpoints.invoice_settlements import (
+    read_payout_reconciliations,
+    retry_payout_reconciliation,
+)
+from app.services.db048_accounting_reconciliation import (
+    CREDIT_ACCOUNTING_EVENT,
+    DB048ReconciliationError,
+    deliver_accounting_envelope,
+    _ensure_db048_qbo_invoice,
+    _refresh_accounting_connection_if_needed,
+    _book_stripe_payout_batch,
+    _payment_lines_with_delta,
+    _project_accounting_dead_letter,
+    _qbo_request_id,
+    db048_qbo_adjustment_payloads,
+    db048_qbo_credit_application_payload,
+    db048_qbo_invoice_payload,
+    db048_qbo_overpayment_refund_payload,
+    db048_qbo_payment_payload,
+    db048_qbo_unapplied_payment_payload,
+    finalize_provider_refund,
+    process_due_db048_outbox_events,
+    reconcile_qbp_native_settlements,
+    reconcile_stripe_payout,
+    reconcile_qbo_payment_presentation,
+    stripe_payout_equation,
+    sync_db048_payment,
+    sync_db048_credit_application,
+    sync_db048_refund,
+    sync_db048_reversal,
+)
+from app.services.quickbooks_accounting_service import QuickBooksAccountingError
+from app.services.invoice_settlement_service import (
+    SettlementDomainError,
+    bind_settlement_accounting_realm,
+)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("kind", [
+    "payment", "refund", "payment_reversal", "payment_dispute",
+    "payment_dispute_recovery", "credit_application",
+])
+async def test_native_accounting_non_owner_never_dispatches_writes(monkeypatch, kind):
+    """The dormant native writer must fail closed before DB/provider access."""
+    async def forbidden(*args, **kwargs):
+        pytest.fail("Non-owner reached an accounting writer")
+
+    for name in ("_request", "sync_db048_payment", "sync_db048_refund",
+                 "sync_db048_reversal", "sync_db048_dispute"):
+        monkeypatch.setattr(f"app.services.db048_accounting_reconciliation.{name}", forbidden)
+    envelope = SimpleNamespace(
+        config=SimpleNamespace(writer_strategy="intuit_native"),
+        link=SimpleNamespace(sync_state="pending", financial_object_type=kind),
+    )
+    with pytest.raises(DB048ReconciliationError, match="imported, not created"):
+        if kind == "credit_application":
+            await sync_db048_credit_application(None, envelope)
+        else:
+            await deliver_accounting_envelope(None, envelope)
+    assert envelope.link.sync_state == "awaiting_native_import"
+
+
+def _invoice(*, principal: Decimal = Decimal("100.00")) -> SimpleNamespace:
+    return SimpleNamespace(
+        id=uuid4(),
+        invoice_number="INV-DB048-1001",
+        created_at=datetime(2026, 8, 30, 12, 0, tzinfo=timezone.utc),
+        due_date=datetime(2026, 9, 29, 12, 0, tzinfo=timezone.utc),
+        subtotal=principal,
+        tax_amount=Decimal("0.00"),
+        service_fee_amount=Decimal("3.15"),
+        total_amount=principal + Decimal("3.15"),
+        tenant=SimpleNamespace(name="DB048 Garage"),
+    )
+
+
+def _payment(number: str, amount: Decimal) -> SimpleNamespace:
+    return SimpleNamespace(
+        payment_number=number,
+        amount=amount,
+        invoice_payment_attempt_id=uuid4(),
+    )
+
+
+def _attempt(
+    *,
+    provider: str,
+    rail: str,
+    charge_id: str | None = None,
+    reference: str | None = None,
+) -> SimpleNamespace:
+    return SimpleNamespace(
+        id=uuid4(),
+        provider=provider,
+        rail=rail,
+        provider_charge_id=charge_id,
+        provider_reference=reference,
+    )
+
+
+def test_canonical_qbo_invoice_contains_principal_only() -> None:
+    invoice = _invoice()
+
+    payload = db048_qbo_invoice_payload(
+        invoice=invoice,
+        qbo_customer_id="qbo-customer-1",
+        qbo_item_id="qbo-item-1",
+        principal_total=Decimal("100.00"),
+    )
+
+    assert payload["DocNumber"] == invoice.invoice_number
+    assert payload["CustomerRef"] == {"value": "qbo-customer-1"}
+    assert payload["Line"] == [
+        {
+            "Amount": 100.0,
+            "Description": "DB048 Garage invoice INV-DB048-1001",
+            "DetailType": "SalesItemLineDetail",
+            "SalesItemLineDetail": {
+                "ItemRef": {"value": "qbo-item-1"},
+                "Qty": 1,
+                "UnitPrice": 100.0,
+            },
+        }
+    ]
+    assert payload["Line"][0]["Amount"] != float(invoice.total_amount)
+    assert payload["PrivateNote"] == "DB048 Garage invoice INV-DB048-1001"
+
+
+def test_multiple_qbo_payments_link_to_one_invoice_and_sum_principal() -> None:
+    invoice = _invoice()
+    tenders = [
+        ("PAY-CARD-1", Decimal("500.00"), _attempt(
+            provider="quickbooks_payments", rail="card",
+            charge_id="MT-card-500", reference="client-card-500",
+        ), "qbp-clearing"),
+        ("PAY-CARD-2", Decimal("600.00"), _attempt(
+            provider="quickbooks_payments", rail="card",
+            charge_id="MT-card-600", reference="client-card-600",
+        ), "qbp-clearing"),
+        ("PAY-CARD-3", Decimal("700.00"), _attempt(
+            provider="quickbooks_payments", rail="card",
+            charge_id="MT-card-700", reference="client-card-700",
+        ), "qbp-clearing"),
+        ("PAY-ZELLE", Decimal("336.00"), _attempt(
+            provider="manual", rail="zelle", reference="ZELLE-TRACE-336",
+        ), "zelle-clearing"),
+    ]
+    payments = [
+        db048_qbo_payment_payload(
+            payment=_payment(number, amount),
+            invoice=invoice,
+            qbo_customer_id="qbo-customer-1",
+            qbo_invoice_id="qbo-invoice-1",
+            principal_amount=amount,
+            deposit_account=deposit_account,
+            attempt=attempt,
+            tenant_name="Truck Pit Stop Wisconsin",
+            customer_name="ELIS LOGISTICS LLC",
+        )
+        for number, amount, attempt, deposit_account in tenders
+    ]
+
+    assert sum(Decimal(str(payload["TotalAmt"])) for payload in payments) == Decimal("2136.00")
+    assert [payload["DepositToAccountRef"]["value"] for payload in payments] == [
+        "qbp-clearing",
+        "qbp-clearing",
+        "qbp-clearing",
+        "zelle-clearing",
+    ]
+    assert [payload["PaymentRefNum"] for payload in payments] == [
+        "QBP MT-card-500",
+        "QBP MT-card-600",
+        "QBP MT-card-700",
+        "ZELLE-TRACE-336",
+    ]
+    expected_labels = [
+        "QuickBooks card payment",
+        "QuickBooks card payment",
+        "QuickBooks card payment",
+        "Zelle payment",
+    ]
+    for payload, label in zip(payments, expected_labels, strict=True):
+        assert payload["Line"][0]["Amount"] == payload["TotalAmt"]
+        assert payload["Line"][0]["LinkedTxn"] == [
+            {"TxnId": "qbo-invoice-1", "TxnType": "Invoice"}
+        ]
+        assert payload["PrivateNote"].startswith(label)
+        assert f"invoice {invoice.invoice_number}" in payload["PrivateNote"]
+        assert "tenant=" not in payload["PrivateNote"]
+        assert "attempt=" not in payload["PrivateNote"]
+
+
+def test_long_sandbox_zelle_reference_is_compact_but_memo_keeps_trace() -> None:
+    invoice = _invoice()
+    payment = _payment("PAY-ZELLE", Decimal("52.72"))
+    attempt = _attempt(
+        provider="manual",
+        rail="zelle",
+        reference="ZELLE-SBX-ETSINV1270-52.72-20260903",
+    )
+
+    payload = db048_qbo_payment_payload(
+        payment=payment,
+        invoice=invoice,
+        qbo_customer_id="59",
+        qbo_invoice_id="148",
+        principal_amount=Decimal("52.72"),
+        deposit_account="zelle-clearing",
+        attempt=attempt,
+    )
+
+    assert payload["PaymentRefNum"] == "Zelle 1270 $52.72"
+    assert payload["PrivateNote"] == (
+        "Zelle payment for invoice INV-DB048-1001; "
+        "reference ZELLE-SBX-ETSINV1270-52.72-20260903"
+    )
+
+
+@pytest.mark.asyncio
+async def test_existing_qbo_payment_gets_cpa_readable_presentation(monkeypatch) -> None:
+    invoice = _invoice()
+    payment = _payment("PAY-LEGACY-1", Decimal("40.00"))
+    attempt = _attempt(
+        provider="quickbooks_payments",
+        rail="card",
+        charge_id="MT6004233099",
+    )
+    calls = []
+
+    async def fake_request(_connection, method, resource, **kwargs):
+        calls.append((method, resource, kwargs))
+        if method == "GET":
+            return {"Payment": {
+                "Id": "149",
+                "SyncToken": "0",
+                "CustomerRef": {"value": "59"},
+                "TotalAmt": 40.0,
+                "PaymentRefNum": "MT6004233099",
+                "PrivateNote": f"DB-048 attempt={attempt.id}",
+            }}
+        return {"Payment": {"Id": "149", "SyncToken": "1"}}
+
+    monkeypatch.setattr(
+        "app.services.db048_accounting_reconciliation._request",
+        fake_request,
+    )
+
+    await reconcile_qbo_payment_presentation(
+        SimpleNamespace(),
+        qbo_payment_id="149",
+        attempt=attempt,
+        payment=payment,
+        invoice=invoice,
+        qbo_customer_id="59",
+        received_principal=Decimal("40.00"),
+    )
+
+    assert calls[1] == (
+        "POST",
+        "payment",
+        {
+            "params": {
+                "operation": "update",
+                "requestid": _qbo_request_id("paymeta", attempt.id),
+            },
+            "json": {
+                "Id": "149",
+                "SyncToken": "0",
+                "sparse": True,
+                "PaymentRefNum": "QBP MT6004233099",
+                "PrivateNote": (
+                    "QuickBooks card payment for invoice INV-DB048-1001; "
+                    "reference QBP MT6004233099"
+                ),
+            },
+        },
+    )
+
+
+@pytest.mark.asyncio
+async def test_accounting_worker_refreshes_and_persists_expired_qbo_token_before_delivery(
+    monkeypatch,
+) -> None:
+    connection = SimpleNamespace(
+        realm_id="9341457819957473",
+        access_token_expires_at=datetime.now(timezone.utc) - timedelta(minutes=1),
+        last_token_refresh_at=None,
+        last_token_refresh_error="previous error",
+    )
+    token_set = SimpleNamespace(access_token="new-access", refresh_token="new-refresh")
+    calls: list[tuple] = []
+
+    async def fake_refresh(candidate):
+        calls.append(("refresh", candidate))
+        return token_set
+
+    def fake_save(candidate, *, realm_id, token_set, now):
+        calls.append(("save", candidate, realm_id, token_set, now))
+        candidate.access_token_expires_at = now + timedelta(hours=1)
+
+    class FakeSession:
+        async def commit(self):
+            calls.append(("commit",))
+
+    monkeypatch.setattr(
+        "app.services.db048_accounting_reconciliation.refresh_access_token",
+        fake_refresh,
+    )
+    monkeypatch.setattr(
+        "app.services.db048_accounting_reconciliation.save_token_set",
+        fake_save,
+    )
+
+    await _refresh_accounting_connection_if_needed(FakeSession(), connection)
+
+    assert [call[0] for call in calls] == ["refresh", "save", "commit"]
+    assert calls[1][2] == "9341457819957473"
+    assert calls[1][3] is token_set
+    assert connection.last_token_refresh_at is not None
+    assert connection.last_token_refresh_error is None
+
+
+@pytest.mark.asyncio
+async def test_qbo_invoice_replaces_stale_cross_realm_id(monkeypatch) -> None:
+    invoice = _invoice()
+    invoice.quickbooks_invoice_id = "219"
+    invoice.quickbooks_sync_status = "failed"
+    invoice.quickbooks_synced_at = None
+    invoice.quickbooks_sync_error = "stale company identity"
+    customer = SimpleNamespace()
+    calls: list[tuple[str, str]] = []
+
+    async def fake_ensure_customer(_connection, candidate, **_kwargs):
+        assert candidate is customer
+        return "qbo-customer-current-realm"
+
+    async def fake_request(_connection, method, path, **kwargs):
+        calls.append((method, path))
+        if method == "GET" and path == "invoice/219":
+            raise QuickBooksAccountingError(
+                "QuickBooks Accounting returned HTTP 400",
+                status_code=400,
+            )
+        if method == "POST" and path == "invoice":
+            assert kwargs["json"]["CustomerRef"] == {
+                "value": "qbo-customer-current-realm"
+            }
+            return {"Invoice": {"Id": "301"}}
+        raise AssertionError(f"Unexpected QBO call: {method} {path}")
+
+    async def fake_find(_connection, entity, doc_number):
+        assert entity == "Invoice"
+        assert doc_number == invoice.invoice_number
+        return None
+
+    async def fake_item(_connection):
+        return "qbo-item-current-realm"
+
+    monkeypatch.setattr(
+        "app.services.db048_accounting_reconciliation.ensure_customer",
+        fake_ensure_customer,
+    )
+    monkeypatch.setattr(
+        "app.services.db048_accounting_reconciliation._request",
+        fake_request,
+    )
+    monkeypatch.setattr(
+        "app.services.db048_accounting_reconciliation._qbo_find_by_doc_number",
+        fake_find,
+    )
+    monkeypatch.setattr(
+        "app.services.db048_accounting_reconciliation._ensure_service_item",
+        fake_item,
+    )
+
+    customer_id, invoice_id = await _ensure_db048_qbo_invoice(
+        connection=SimpleNamespace(),
+        invoice=invoice,
+        customer=customer,
+        principal_total=Decimal("100.00"),
+        tenant_name="Truck Pit Stop Wisconsin",
+    )
+
+    assert (customer_id, invoice_id) == ("qbo-customer-current-realm", "301")
+    assert invoice.quickbooks_invoice_id == "301"
+    assert invoice.quickbooks_sync_status == "synced"
+    assert invoice.quickbooks_sync_error is None
+    assert calls == [("GET", "invoice/219"), ("POST", "invoice")]
+
+
+@pytest.mark.asyncio
+async def test_qbo_invoice_stale_id_recovery_fails_closed_on_transient_error(
+    monkeypatch,
+) -> None:
+    invoice = _invoice()
+    invoice.quickbooks_invoice_id = "219"
+    customer = SimpleNamespace()
+
+    async def fake_ensure_customer(_connection, _candidate, **_kwargs):
+        return "qbo-customer-current-realm"
+
+    async def fake_request(_connection, method, path, **_kwargs):
+        assert (method, path) == ("GET", "invoice/219")
+        raise QuickBooksAccountingError(
+            "QuickBooks Accounting returned HTTP 503",
+            retryable=True,
+            status_code=503,
+        )
+
+    async def unexpected_find(*_args, **_kwargs):
+        raise AssertionError("Transient failures must not enter invoice creation")
+
+    monkeypatch.setattr(
+        "app.services.db048_accounting_reconciliation.ensure_customer",
+        fake_ensure_customer,
+    )
+    monkeypatch.setattr(
+        "app.services.db048_accounting_reconciliation._request",
+        fake_request,
+    )
+    monkeypatch.setattr(
+        "app.services.db048_accounting_reconciliation._qbo_find_by_doc_number",
+        unexpected_find,
+    )
+
+    with pytest.raises(QuickBooksAccountingError) as exc_info:
+        await _ensure_db048_qbo_invoice(
+            connection=SimpleNamespace(),
+            invoice=invoice,
+            customer=customer,
+            principal_total=Decimal("100.00"),
+        )
+
+    assert exc_info.value.status_code == 503
+    assert invoice.quickbooks_invoice_id == "219"
+
+
+@pytest.mark.asyncio
+async def test_qbo_invoice_persisted_id_rejects_same_customer_wrong_invoice(
+    monkeypatch,
+) -> None:
+    invoice = _invoice()
+    invoice.quickbooks_invoice_id = "219"
+    customer = SimpleNamespace()
+
+    async def fake_ensure_customer(_connection, _candidate, **_kwargs):
+        return "qbo-customer-current-realm"
+
+    async def fake_request(_connection, method, path, **_kwargs):
+        assert (method, path) == ("GET", "invoice/219")
+        return {
+            "Invoice": {
+                "Id": "219",
+                "SyncToken": "4",
+                "DocNumber": "INV-DIFFERENT",
+                "CustomerRef": {"value": "qbo-customer-current-realm"},
+                "TotalAmt": 999.0,
+            }
+        }
+
+    monkeypatch.setattr(
+        "app.services.db048_accounting_reconciliation.ensure_customer",
+        fake_ensure_customer,
+    )
+    monkeypatch.setattr(
+        "app.services.db048_accounting_reconciliation._request",
+        fake_request,
+    )
+
+    with pytest.raises(
+        DB048ReconciliationError,
+        match="invoice number does not match",
+    ):
+        await _ensure_db048_qbo_invoice(
+            connection=SimpleNamespace(),
+            invoice=invoice,
+            customer=customer,
+            principal_total=Decimal("100.00"),
+            tenant_name="Truck Pit Stop Wisconsin",
+        )
+
+
+def test_card_fee_tax_is_separate_and_processor_expense_waits_for_payout_evidence() -> None:
+    attempt = SimpleNamespace(
+        provider="stripe_connect",
+        card_fee_amount=Decimal("3.00"),
+        card_fee_tax_amount=Decimal("0.15"),
+        applied_card_fee_amount=Decimal("3.00"),
+        applied_card_fee_tax_amount=Decimal("0.15"),
+        processor_fee_amount=Decimal("2.75"),
+    )
+
+    payloads = db048_qbo_adjustment_payloads(
+        attempt=attempt,
+        payment=_payment("PAY-CARD-100", Decimal("100.00")),
+        mappings={
+            "stripe_clearing_account": "Stripe Clearing",
+            "card_fee_income_account": "Card Fee Income",
+            "sales_tax_liability_account": "Sales Tax Payable",
+            "processor_fee_expense_account": "Processor Fees",
+        },
+    )
+
+    assert [document_number for document_number, _payload in payloads] == [
+        "F-PAY-CARD-100",
+    ]
+    fee_lines = payloads[0][1]["Line"]
+    assert [(line["Amount"], line["JournalEntryLineDetail"]["PostingType"]) for line in fee_lines] == [
+        (3.15, "Debit"),
+        (3.0, "Credit"),
+        (0.15, "Credit"),
+    ]
+    assert [line["JournalEntryLineDetail"]["AccountRef"]["value"] for line in fee_lines] == [
+        "Stripe Clearing",
+        "Card Fee Income",
+        "Sales Tax Payable",
+    ]
+    # The attempt snapshot is not authoritative settlement evidence for the
+    # processor fee. It is booked exactly once from Stripe balance/payout data.
+    assert attempt.processor_fee_amount == Decimal("2.75")
+
+
+@pytest.mark.asyncio
+async def test_qbo_account_mapping_resolves_visible_name_to_provider_id(monkeypatch) -> None:
+    async def fake_query(_connection, statement):
+        assert "where Name = 'QuickBooks Payments Clearing'" in statement
+        return [{
+            "Id": "42",
+            "Name": "QuickBooks Payments Clearing",
+            "Active": True,
+        }]
+
+    monkeypatch.setattr(
+        "app.services.db048_accounting_reconciliation._query",
+        fake_query,
+    )
+    from app.services.db048_accounting_reconciliation import _resolve_qbo_account_reference
+
+    assert await _resolve_qbo_account_reference(
+        SimpleNamespace(),
+        "QuickBooks Payments Clearing",
+    ) == "42"
+
+
+@pytest.mark.asyncio
+async def test_qbo_account_mapping_rejects_stale_or_missing_reference(monkeypatch) -> None:
+    async def fake_query(_connection, statement):
+        assert "where Id = '76'" in statement
+        return []
+
+    monkeypatch.setattr(
+        "app.services.db048_accounting_reconciliation._query",
+        fake_query,
+    )
+    from app.services.db048_accounting_reconciliation import _resolve_qbo_account_reference
+
+    with pytest.raises(DB048ReconciliationError, match="was not found"):
+        await _resolve_qbo_account_reference(SimpleNamespace(), "76")
+
+
+@pytest.mark.asyncio
+async def test_zero_applied_late_card_success_skips_qbo_ar_and_books_full_gross_unapplied(
+    monkeypatch,
+) -> None:
+    calls: list[tuple[str, str, dict | None]] = []
+
+    async def fake_ensure(**_kwargs):
+        return "qbo-customer-1", "qbo-invoice-1"
+
+    async def fake_query(_connection, _query_text):
+        if "from Account" in _query_text:
+            return [{
+                "Id": "qbo-ar",
+                "Name": "Stripe Clearing",
+                "Active": True,
+            }]
+        return []
+
+    async def fake_request(_connection, method: str, path: str, json=None, params=None):
+        calls.append((method, path, json))
+        if method == "POST" and path == "payment":
+            return {"Payment": {"Id": "qbo-unapplied-full-gross"}}
+        if method == "POST" and path == "journalentry":
+            return {"JournalEntry": {"Id": "qbo-unearned-surcharge"}}
+        raise AssertionError(f"Unexpected QBO call: {method} {path}")
+
+    monkeypatch.setattr(
+        "app.services.db048_accounting_reconciliation._ensure_db048_qbo_invoice",
+        fake_ensure,
+    )
+    monkeypatch.setattr(
+        "app.services.db048_accounting_reconciliation._query",
+        fake_query,
+    )
+    monkeypatch.setattr(
+        "app.services.db048_accounting_reconciliation._request",
+        fake_request,
+    )
+    payment = SimpleNamespace(
+        invoice_payment_attempt_id=uuid4(),
+        payment_number="PAY-LATE-100",
+        quickbooks_payment_id=None,
+        quickbooks_reconciled_at=None,
+        quickbooks_sync_error=None,
+    )
+    link = SimpleNamespace(
+        account_mapping_snapshot={
+            "stripe_clearing_account": "Stripe Clearing",
+            "card_fee_income_account": "Card Fee Income",
+            "sales_tax_liability_account": "Sales Tax Payable",
+            "processor_fee_expense_account": "Processor Fees",
+        },
+        provider_deposit_id=None,
+    )
+    envelope = SimpleNamespace(
+        settlement=SimpleNamespace(principal_total=Decimal("100.00")),
+        connection=SimpleNamespace(),
+        tenant=SimpleNamespace(name="DB048 Garage"),
+        invoice=_invoice(),
+        customer=SimpleNamespace(
+            company_name="ELIS LOGISTICS LLC",
+            first_name="",
+            last_name="",
+        ),
+        payment=payment,
+        link=link,
+        attempt=SimpleNamespace(
+            id=payment.invoice_payment_attempt_id,
+            provider="stripe_connect",
+            rail="card",
+            provider_charge_amount=Decimal("103.15"),
+            received_amount=Decimal("100.00"),
+            principal_amount=Decimal("100.00"),
+            applied_principal_amount=Decimal("0.00"),
+            unapplied_amount=Decimal("103.15"),
+            card_fee_amount=Decimal("3.00"),
+            card_fee_tax_amount=Decimal("0.15"),
+            applied_card_fee_amount=Decimal("0.00"),
+            applied_card_fee_tax_amount=Decimal("0.00"),
+            processor_fee_amount=Decimal("0.00"),
+        ),
+    )
+
+    provider_object_id = await sync_db048_payment(envelope)
+
+    assert provider_object_id == "qbo-unapplied-full-gross"
+    assert payment.quickbooks_payment_id == "qbo-unapplied-full-gross"
+    assert link.provider_deposit_id == "qbo-unapplied-full-gross"
+    assert calls[0][0:2] == ("POST", "payment")
+    payment_payload = calls[0][2]
+    assert payment_payload["CustomerRef"] == {"value": "qbo-customer-1"}
+    assert payment_payload["TotalAmt"] == 100.0
+    assert payment_payload["PaymentRefNum"] == "PAY-LATE-100"
+    assert payment_payload["DepositToAccountRef"] == {"value": "qbo-ar"}
+    assert payment_payload["Line"] == []
+    assert payment_payload["PrivateNote"] == (
+        "Stripe card payment for invoice INV-DB048-1001; "
+        "reference PAY-LATE-100"
+    )
+    assert str(payment.invoice_payment_attempt_id) not in payment_payload["PrivateNote"]
+    assert calls[1][0:2] == ("POST", "journalentry")
+    assert calls[1][2]["DocNumber"] == "UF-PAY-LATE-100"
+    assert [line["Amount"] for line in calls[1][2]["Line"]] == [3.15, 3.15]
+    assert db048_qbo_adjustment_payloads(
+        attempt=envelope.attempt,
+        payment=payment,
+        mappings=link.account_mapping_snapshot,
+    ) == []
+
+
+def test_unapplied_overpayment_is_customer_payment_without_revenue_lines() -> None:
+    payload = db048_qbo_unapplied_payment_payload(
+        payment=_payment("PAY-OVER-20", Decimal("20.00")),
+        qbo_customer_id="qbo-customer-1",
+        amount=Decimal("20.00"),
+        deposit_account="Stripe Clearing",
+    )
+
+    assert payload == {
+        "CustomerRef": {"value": "qbo-customer-1"},
+        "TotalAmt": 20.0,
+        "PaymentRefNum": "U-PAY-OVER-20",
+        "DepositToAccountRef": {"value": "Stripe Clearing"},
+        "PrivateNote": "DB-048 unapplied customer overpayment pending refund or explicit credit consent",
+        "Line": [],
+    }
+    serialized = repr(payload)
+    assert "CreditMemo" not in serialized
+    assert "SalesItemLineDetail" not in serialized
+    assert "Income" not in serialized
+
+
+def test_consented_credit_stays_the_same_unapplied_qbo_payment() -> None:
+    unapplied = db048_qbo_unapplied_payment_payload(
+        payment=_payment("PAY-CREDIT-100", Decimal("100.00")),
+        qbo_customer_id="qbo-customer-1",
+        amount=Decimal("100.00"),
+        deposit_account="Stripe Clearing",
+    )
+    source_payment = {
+        "Id": "qbo-unapplied-payment-1",
+        "SyncToken": "4",
+        **unapplied,
+    }
+
+    payload = db048_qbo_credit_application_payload(
+        source_payment=source_payment,
+        applications=[],
+    )
+
+    assert {
+        key: payload[key]
+        for key in (
+            "Id",
+            "SyncToken",
+            "CustomerRef",
+            "TotalAmt",
+            "PaymentRefNum",
+            "DepositToAccountRef",
+        )
+    } == {
+        key: source_payment[key]
+        for key in (
+            "Id",
+            "SyncToken",
+            "CustomerRef",
+            "TotalAmt",
+            "PaymentRefNum",
+            "DepositToAccountRef",
+        )
+    }
+    assert payload["Line"] == []
+    assert payload["PrivateNote"] == (
+        "DB-048 credit-source=qbo-unapplied-payment-1; customer-approved "
+        "store credit applications; no new receipt or revenue"
+    )
+    serialized = repr(payload).lower()
+    assert "creditmemo" not in serialized
+    assert "income" not in serialized
+    assert "salesitemlinedetail" not in serialized
+
+
+def test_credit_applications_aggregate_per_invoice_and_preserve_source_payment() -> None:
+    source_payment = {
+        "Id": "qbo-unapplied-payment-1",
+        "SyncToken": "4",
+        "CustomerRef": {"value": "qbo-customer-1"},
+        "TotalAmt": 100.0,
+        "PaymentRefNum": "U-PAY-CREDIT-100",
+        "DepositToAccountRef": {"value": "Stripe Clearing"},
+        "PrivateNote": "provider-owned note is not part of the required sparse update",
+        "Line": [{"Amount": 1.0, "LinkedTxn": [{"TxnId": "stale", "TxnType": "Invoice"}]}],
+    }
+    applications = [
+        ("qbo-invoice-b", Decimal("25.00")),
+        ("qbo-invoice-a", Decimal("30.00")),
+        ("qbo-invoice-a", Decimal("20.00")),
+    ]
+
+    payload = db048_qbo_credit_application_payload(
+        source_payment=source_payment,
+        applications=applications,
+    )
+    replay = db048_qbo_credit_application_payload(
+        source_payment=source_payment,
+        applications=applications,
+    )
+
+    assert payload == replay
+    assert payload == {
+        "Id": "qbo-unapplied-payment-1",
+        "SyncToken": "4",
+        "CustomerRef": {"value": "qbo-customer-1"},
+        "TotalAmt": 100.0,
+        "PaymentRefNum": "U-PAY-CREDIT-100",
+        "DepositToAccountRef": {"value": "Stripe Clearing"},
+        "PrivateNote": (
+            "DB-048 credit-source=qbo-unapplied-payment-1; customer-approved "
+            "store credit applications; no new receipt or revenue"
+        ),
+        "Line": [
+            {
+                "Amount": 50.0,
+                "LinkedTxn": [{"TxnId": "qbo-invoice-a", "TxnType": "Invoice"}],
+            },
+            {
+                "Amount": 25.0,
+                "LinkedTxn": [{"TxnId": "qbo-invoice-b", "TxnType": "Invoice"}],
+            },
+        ],
+    }
+    assert sum(Decimal(str(line["Amount"])) for line in payload["Line"]) == Decimal("75.00")
+    assert sum(Decimal(str(line["Amount"])) for line in payload["Line"]) <= Decimal(
+        str(payload["TotalAmt"])
+    )
+    assert "stale" not in repr(payload)
+
+
+def test_credit_application_can_consume_exact_source_ceiling() -> None:
+    source_payment = {
+        "Id": "qbo-unapplied-payment-1",
+        "SyncToken": "4",
+        "CustomerRef": {"value": "qbo-customer-1"},
+        "TotalAmt": 100.0,
+        "PaymentRefNum": "U-PAY-CREDIT-100",
+        "DepositToAccountRef": {"value": "Stripe Clearing"},
+        "Line": [],
+    }
+
+    payload = db048_qbo_credit_application_payload(
+        source_payment=source_payment,
+        applications=[("qbo-invoice-1", Decimal("100.00"))],
+    )
+
+    assert payload["TotalAmt"] == 100.0
+    assert payload["Line"] == [
+        {
+            "Amount": 100.0,
+            "LinkedTxn": [{"TxnId": "qbo-invoice-1", "TxnType": "Invoice"}],
+        }
+    ]
+
+
+def test_credit_application_rejects_source_overallocation() -> None:
+    source_payment = {
+        "Id": "qbo-unapplied-payment-1",
+        "SyncToken": "4",
+        "CustomerRef": {"value": "qbo-customer-1"},
+        "TotalAmt": 100.0,
+        "PaymentRefNum": "U-PAY-CREDIT-100",
+        "DepositToAccountRef": {"value": "Stripe Clearing"},
+        "Line": [],
+    }
+
+    with pytest.raises(DB048ReconciliationError, match="exceed"):
+        db048_qbo_credit_application_payload(
+            source_payment=source_payment,
+            applications=[
+                ("qbo-invoice-1", Decimal("90.00")),
+                ("qbo-invoice-2", Decimal("10.01")),
+            ],
+        )
+
+
+@pytest.mark.parametrize("missing_key", ["Id", "SyncToken", "CustomerRef", "TotalAmt"])
+def test_credit_application_rejects_missing_source_identity(missing_key: str) -> None:
+    source_payment = {
+        "Id": "qbo-unapplied-payment-1",
+        "SyncToken": "4",
+        "CustomerRef": {"value": "qbo-customer-1"},
+        "TotalAmt": 100.0,
+        "PaymentRefNum": "U-PAY-CREDIT-100",
+        "DepositToAccountRef": {"value": "Stripe Clearing"},
+        "Line": [],
+    }
+    source_payment.pop(missing_key)
+
+    with pytest.raises(DB048ReconciliationError, match="identity"):
+        db048_qbo_credit_application_payload(
+            source_payment=source_payment,
+            applications=[("qbo-invoice-1", Decimal("10.00"))],
+        )
+
+
+def test_overpayment_refund_reverses_customer_money_without_sales_income() -> None:
+    payload = db048_qbo_overpayment_refund_payload(
+        refund=SimpleNamespace(id=uuid4(), amount=Decimal("20.00")),
+        qbo_customer_id="qbo-customer-1",
+        receivable_account="Accounts Receivable",
+        source_account="Stripe Clearing",
+    )
+
+    lines = payload["Line"]
+    assert [(line["Amount"], line["JournalEntryLineDetail"]["PostingType"]) for line in lines] == [
+        (20.0, "Debit"),
+        (20.0, "Credit"),
+    ]
+    assert lines[0]["JournalEntryLineDetail"]["AccountRef"] == {
+        "value": "Accounts Receivable"
+    }
+    assert lines[0]["JournalEntryLineDetail"]["Entity"] == {
+        "Type": "Customer",
+        "EntityRef": {"value": "qbo-customer-1"},
+    }
+    assert lines[1]["JournalEntryLineDetail"]["AccountRef"] == {
+        "value": "Stripe Clearing"
+    }
+    assert "income" not in repr(payload).lower()
+    assert "creditmemo" not in repr(payload).lower()
+
+
+@pytest.mark.asyncio
+async def test_qbo_reversal_voids_original_payment_to_reopen_accounts_receivable(monkeypatch) -> None:
+    calls: list[tuple[str, str, dict | None, dict | None]] = []
+    attempt_id = uuid4()
+    financial_object_id = uuid4()
+
+    async def fake_request(_connection, method: str, path: str, json=None, params=None):
+        calls.append((method, path, json, params))
+        if method == "GET":
+            return {
+                "Payment": {
+                    "Id": "qbo-payment-1",
+                    "SyncToken": "7",
+                    "TxnStatus": "Paid",
+                    "TotalAmt": 40.0,
+                    "CustomerRef": {"value": "qbo-customer-1"},
+                    "PaymentRefNum": "PAY-REVERSAL",
+                    "PrivateNote": f"DB-048 attempt={attempt_id}",
+                }
+            }
+        return {
+            "Payment": {
+                "Id": "qbo-payment-1",
+                "SyncToken": "8",
+                "TxnStatus": "Voided",
+                "TotalAmt": 0.0,
+            }
+        }
+
+    async def fake_ensure_customer(_connection, _customer, **_kwargs):
+        return "qbo-customer-1"
+
+    monkeypatch.setattr(
+        "app.services.db048_accounting_reconciliation._request",
+        fake_request,
+    )
+    monkeypatch.setattr(
+        "app.services.db048_accounting_reconciliation.ensure_customer",
+        fake_ensure_customer,
+    )
+    envelope = SimpleNamespace(
+        payment=SimpleNamespace(
+            quickbooks_payment_id="qbo-payment-1",
+            payment_number="PAY-REVERSAL",
+        ),
+        attempt=SimpleNamespace(
+            id=attempt_id,
+            received_amount=Decimal("40.00"),
+            principal_amount=Decimal("40.00"),
+        ),
+        link=SimpleNamespace(
+            provider_deposit_id=None,
+            financial_object_id=financial_object_id,
+        ),
+        connection=SimpleNamespace(realm_id="realm-1"),
+        customer=SimpleNamespace(),
+        tenant=SimpleNamespace(name="Truck Pit Stop"),
+    )
+
+    result = await sync_db048_reversal(envelope)
+
+    assert result == "qbo-payment-1"
+    assert calls == [
+        ("GET", "payment/qbo-payment-1", None, None),
+        (
+            "POST",
+            "payment?operation=void",
+            {"Id": "qbo-payment-1", "SyncToken": "7"},
+            {
+                "requestid": _qbo_request_id(
+                    "reversal", f"{financial_object_id}:qbo-payment-1"
+                )
+            },
+        ),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_qbo_reversal_also_voids_unapplied_payment_with_credit_links(monkeypatch) -> None:
+    calls: list[tuple[str, str, dict | None, dict | None]] = []
+    attempt_id = uuid4()
+    financial_object_id = uuid4()
+
+    async def fake_request(_connection, method: str, path: str, json=None, params=None):
+        calls.append((method, path, json, params))
+        payment_id = path.rsplit("/", 1)[-1] if method == "GET" else str(json["Id"])
+        return {
+            "Payment": {
+                "Id": payment_id,
+                "SyncToken": "4",
+                "TxnStatus": "Paid" if method == "GET" else "Voided",
+                "TotalAmt": 10.0 if method == "GET" else 0.0,
+                "CustomerRef": {"value": "qbo-customer-1"},
+                "PaymentRefNum": "PAY-CREDIT",
+                "PrivateNote": f"DB-048 attempt={attempt_id}",
+            }
+        }
+
+    async def fake_ensure_customer(_connection, _customer, **_kwargs):
+        return "qbo-customer-1"
+
+    monkeypatch.setattr(
+        "app.services.db048_accounting_reconciliation._request",
+        fake_request,
+    )
+    monkeypatch.setattr(
+        "app.services.db048_accounting_reconciliation.ensure_customer",
+        fake_ensure_customer,
+    )
+    envelope = SimpleNamespace(
+        payment=SimpleNamespace(
+            quickbooks_payment_id="qbo-principal-payment",
+            payment_number="PAY-CREDIT",
+        ),
+        attempt=SimpleNamespace(
+            id=attempt_id,
+            received_amount=Decimal("10.00"),
+            principal_amount=Decimal("10.00"),
+        ),
+        link=SimpleNamespace(
+            provider_deposit_id="qbo-unapplied-payment",
+            financial_object_id=financial_object_id,
+        ),
+        connection=SimpleNamespace(realm_id="realm-1"),
+        customer=SimpleNamespace(),
+        tenant=SimpleNamespace(name="Truck Pit Stop"),
+    )
+
+    result = await sync_db048_reversal(envelope)
+
+    assert result == "qbo-principal-payment"
+    assert [call[:2] for call in calls] == [
+        ("GET", "payment/qbo-principal-payment"),
+        ("POST", "payment?operation=void"),
+        ("GET", "payment/qbo-unapplied-payment"),
+        ("POST", "payment?operation=void"),
+    ]
+    assert calls[1][2]["Id"] == "qbo-principal-payment"
+    assert calls[3][2]["Id"] == "qbo-unapplied-payment"
+
+
+@pytest.mark.asyncio
+async def test_qbo_reversal_rejects_wrong_customer_or_amount(monkeypatch) -> None:
+    calls: list[tuple[str, str]] = []
+    attempt_id = uuid4()
+
+    async def fake_request(_connection, method: str, path: str, **_kwargs):
+        calls.append((method, path))
+        return {
+            "Payment": {
+                "Id": "qbo-payment-1",
+                "SyncToken": "7",
+                "TxnStatus": "Paid",
+                "TotalAmt": 999.99,
+                "CustomerRef": {"value": "different-customer"},
+                "PaymentRefNum": "PAY-REVERSAL",
+                "PrivateNote": f"DB-048 attempt={attempt_id}",
+            }
+        }
+
+    async def fake_ensure_customer(_connection, _customer, **_kwargs):
+        return "qbo-customer-1"
+
+    monkeypatch.setattr(
+        "app.services.db048_accounting_reconciliation._request",
+        fake_request,
+    )
+    monkeypatch.setattr(
+        "app.services.db048_accounting_reconciliation.ensure_customer",
+        fake_ensure_customer,
+    )
+    envelope = SimpleNamespace(
+        payment=SimpleNamespace(
+            quickbooks_payment_id="qbo-payment-1",
+            payment_number="PAY-REVERSAL",
+        ),
+        attempt=SimpleNamespace(
+            id=attempt_id,
+            received_amount=Decimal("40.00"),
+            principal_amount=Decimal("40.00"),
+        ),
+        link=SimpleNamespace(
+            provider_deposit_id=None,
+            financial_object_id=uuid4(),
+        ),
+        connection=SimpleNamespace(realm_id="realm-1"),
+        customer=SimpleNamespace(),
+        tenant=SimpleNamespace(name="Truck Pit Stop"),
+    )
+
+    with pytest.raises(DB048ReconciliationError, match="collides"):
+        await sync_db048_reversal(envelope)
+
+    assert calls == [("GET", "payment/qbo-payment-1")]
+
+
+def test_stripe_payout_equation_reconciles_gross_fees_refunds_and_expense() -> None:
+    assert stripe_payout_equation(
+        gross_receipts=Decimal("1000.00"),
+        customer_card_fees=Decimal("30.00"),
+        card_fee_tax=Decimal("1.50"),
+        refunds=Decimal("100.00"),
+        disputes=Decimal("25.00"),
+        processor_fees=Decimal("29.30"),
+    ) == Decimal("877.20")
+
+
+def test_dispute_payment_lines_reverse_and_restore_exact_credit_targets() -> None:
+    source = {
+        "Line": [
+            {
+                "Amount": 100.0,
+                "LinkedTxn": [{"TxnId": "qbo-source", "TxnType": "Invoice"}],
+            },
+            {
+                "Amount": 6.0,
+                "LinkedTxn": [{"TxnId": "qbo-target-a", "TxnType": "Invoice"}],
+            },
+            {
+                "Amount": 9.0,
+                "LinkedTxn": [{"TxnId": "qbo-target-b", "TxnType": "Invoice"}],
+            },
+        ]
+    }
+    reversed_lines = _payment_lines_with_delta(
+        source,
+        source_invoice_id="qbo-source",
+        source_principal_delta=Decimal("-100.00"),
+        allocation_deltas={"qbo-target-a": Decimal("-6.00")},
+    )
+    assert reversed_lines == [{
+        "Amount": 9.0,
+        "LinkedTxn": [{"TxnId": "qbo-target-b", "TxnType": "Invoice"}],
+    }]
+    restored_lines = _payment_lines_with_delta(
+        {"Line": reversed_lines},
+        source_invoice_id="qbo-source",
+        source_principal_delta=Decimal("100.00"),
+        allocation_deltas={"qbo-target-a": Decimal("3.00")},
+    )
+    assert restored_lines == [
+        {
+            "Amount": 100.0,
+            "LinkedTxn": [{"TxnId": "qbo-source", "TxnType": "Invoice"}],
+        },
+        {
+            "Amount": 3.0,
+            "LinkedTxn": [{"TxnId": "qbo-target-a", "TxnType": "Invoice"}],
+        },
+        {
+            "Amount": 9.0,
+            "LinkedTxn": [{"TxnId": "qbo-target-b", "TxnType": "Invoice"}],
+        },
+    ]
+
+
+@pytest.mark.asyncio
+async def test_refund_journal_has_stable_requestid_and_collision_fence(monkeypatch) -> None:
+    refund_id = uuid4()
+    calls: list[dict] = []
+
+    async def fake_query(*_args, **_kwargs):
+        return [{"Id": "Accounts Receivable"}]
+
+    async def fake_customer(*_args, **_kwargs):
+        return "qbo-customer"
+
+    async def no_existing(*_args, **_kwargs):
+        return None
+
+    async def fake_request(_connection, method, path, json=None, params=None):
+        calls.append({"method": method, "path": path, "json": json, "params": params})
+        return {"JournalEntry": {"Id": "qbo-refund-je"}}
+
+    monkeypatch.setattr(
+        "app.services.db048_accounting_reconciliation._query", fake_query,
+    )
+    monkeypatch.setattr(
+        "app.services.db048_accounting_reconciliation.ensure_customer",
+        fake_customer,
+    )
+    monkeypatch.setattr(
+        "app.services.db048_accounting_reconciliation._qbo_find_by_doc_number",
+        no_existing,
+    )
+    monkeypatch.setattr(
+        "app.services.db048_accounting_reconciliation._request", fake_request,
+    )
+    envelope = SimpleNamespace(
+        refund=SimpleNamespace(id=refund_id, amount=Decimal("10.00")),
+        link=SimpleNamespace(account_mapping_snapshot={
+            "stripe_clearing_account": "Stripe Clearing",
+        }),
+        attempt=SimpleNamespace(provider="stripe_connect", rail="card"),
+        connection=SimpleNamespace(realm_id="realm-refund"),
+        customer=SimpleNamespace(id=uuid4()),
+    )
+    assert await sync_db048_refund(envelope) == "qbo-refund-je"
+    assert calls[0]["params"] == {
+        "requestid": _qbo_request_id("refund", refund_id)
+    }
+    assert f"refund={refund_id}" in calls[0]["json"]["PrivateNote"]
+
+    async def unrelated_existing(*_args, **_kwargs):
+        return {"Id": "qbo-unrelated", "PrivateNote": "unrelated"}
+
+    monkeypatch.setattr(
+        "app.services.db048_accounting_reconciliation._qbo_find_by_doc_number",
+        unrelated_existing,
+    )
+    with pytest.raises(DB048ReconciliationError, match="collides"):
+        await sync_db048_refund(envelope)
+    assert len(calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_credit_update_has_stable_requestid_and_source_collision_fence(
+    db_session,
+    monkeypatch,
+) -> None:
+    tenant = Tenant(name="Credit Fence Garage", slug=f"credit-fence-{uuid4().hex}")
+    db_session.add(tenant)
+    await db_session.flush()
+    customer = Customer(
+        tenant_id=tenant.id,
+        first_name="Credit",
+        last_name="Customer",
+        email=f"credit-fence-{uuid4().hex}@example.com",
+    )
+    db_session.add(customer)
+    await db_session.flush()
+    vehicle = Vehicle(
+        tenant_id=tenant.id,
+        customer_id=customer.id,
+        make="Volvo",
+        model="VNL",
+    )
+    db_session.add(vehicle)
+    await db_session.flush()
+    order = RepairOrder(
+        tenant_id=tenant.id,
+        customer_id=customer.id,
+        vehicle_id=vehicle.id,
+        order_number=f"RO-{uuid4().hex[:10]}",
+        status=RepairOrderStatus.INVOICED,
+        total_parts_cost=Decimal("0"),
+        total_labor_cost=Decimal("25"),
+        total_cost=Decimal("25"),
+    )
+    db_session.add(order)
+    await db_session.flush()
+    invoice = Invoice(
+        tenant_id=tenant.id,
+        repair_order_id=order.id,
+        invoice_number=f"INV-{uuid4().hex[:10]}",
+        status=InvoiceStatus.SENT,
+        subtotal=Decimal("25"),
+        shop_supplies_amount=Decimal("0"),
+        service_fee_amount=Decimal("0"),
+        tax_amount=Decimal("0"),
+        discount_amount=Decimal("0"),
+        total_amount=Decimal("25"),
+    )
+    db_session.add(invoice)
+    await db_session.flush()
+    settlement = InvoiceSettlement(
+        tenant_id=tenant.id,
+        invoice_id=invoice.id,
+        customer_id=customer.id,
+        principal_total=Decimal("25"),
+        max_card_fee=Decimal("0"),
+        max_card_fee_tax=Decimal("0"),
+        sales_tax_rate_snapshot=Decimal("0"),
+        card_fee_rate_snapshot=Decimal("0"),
+        confirmed_principal=Decimal("25"),
+        active_pending_principal=Decimal("0"),
+        unapplied_credit=Decimal("0"),
+        refund_pending=Decimal("0"),
+        state="paid",
+        currency="USD",
+        version=1,
+        last_event_sequence=1,
+        accounting_sync_status="accounting_sync_pending",
+    )
+    origin = CustomerCreditEntry(
+        tenant_id=tenant.id,
+        customer_id=customer.id,
+        entry_type="issued",
+        amount=Decimal("100"),
+        actor_name_snapshot="Customer",
+        idempotency_key="credit-fence-origin",
+        request_hash="0" * 64,
+    )
+    db_session.add_all([settlement, origin])
+    await db_session.flush()
+    application = CustomerCreditEntry(
+        tenant_id=tenant.id,
+        customer_id=customer.id,
+        entry_type="applied",
+        amount=Decimal("25"),
+        target_invoice_id=invoice.id,
+        source_entry_id=origin.id,
+        actor_name_snapshot="Customer",
+        idempotency_key="credit-fence-application",
+        request_hash="1" * 64,
+    )
+    db_session.add(application)
+    await db_session.flush()
+    source_attempt_id = uuid4()
+    calls: list[dict] = []
+
+    async def fake_request(_connection, method, path, json=None, params=None):
+        calls.append({"method": method, "path": path, "json": json, "params": params})
+        if method == "GET":
+            return {"Payment": {
+                "Id": "qbo-credit-source",
+                "SyncToken": "4",
+                "CustomerRef": {"value": "qbo-customer"},
+                "TotalAmt": 100.0,
+                "PaymentRefNum": "PAY-CREDIT-FENCE",
+                "PrivateNote": f"DB-048 attempt={source_attempt_id}",
+                "Line": [],
+            }}
+        return {"Payment": {"Id": "qbo-credit-source"}}
+
+    async def fake_invoice(**_kwargs):
+        return "qbo-customer", "qbo-target-invoice"
+
+    monkeypatch.setattr(
+        "app.services.db048_accounting_reconciliation._request", fake_request,
+    )
+    monkeypatch.setattr(
+        "app.services.db048_accounting_reconciliation._ensure_db048_qbo_invoice",
+        fake_invoice,
+    )
+    envelope = SimpleNamespace(
+        config=SimpleNamespace(writer_strategy="dieselbridge"),
+        tenant=tenant,
+        origin=origin,
+        source_accounting_link=SimpleNamespace(
+            provider_deposit_id="qbo-credit-source",
+        ),
+        source_attempt=SimpleNamespace(
+            id=source_attempt_id,
+            received_amount=Decimal("100"),
+            principal_amount=Decimal("100"),
+        ),
+        source_payment=SimpleNamespace(payment_number="PAY-CREDIT-FENCE"),
+        connection=SimpleNamespace(realm_id="realm-credit"),
+    )
+    assert await sync_db048_credit_application(db_session, envelope) == "qbo-credit-source"
+    assert calls[-1]["params"] == {
+        "requestid": _qbo_request_id("credit", origin.id)
+    }
+    assert calls[-1]["json"]["Line"] == [{
+        "Amount": 25.0,
+        "LinkedTxn": [{"TxnId": "qbo-target-invoice", "TxnType": "Invoice"}],
+    }]
+
+    calls.clear()
+
+    async def unrelated_source(_connection, method, path, json=None, params=None):
+        return {"Payment": {
+            "Id": "qbo-credit-source",
+            "SyncToken": "4",
+            "CustomerRef": {"value": "qbo-customer"},
+            "TotalAmt": 100.0,
+            "PaymentRefNum": "OTHER-PAYMENT",
+            "PrivateNote": "unrelated",
+            "Line": [],
+        }}
+
+    monkeypatch.setattr(
+        "app.services.db048_accounting_reconciliation._request",
+        unrelated_source,
+    )
+    with pytest.raises(DB048ReconciliationError, match="collides"):
+        await sync_db048_credit_application(db_session, envelope)
+
+
+@pytest.mark.asyncio
+async def test_refund_failure_remains_retryable_then_succeeds_once(db_session) -> None:
+    tenant = Tenant(name="DB048 Refund Garage", slug=f"db048-refund-{uuid4().hex}")
+    db_session.add(tenant)
+    await db_session.flush()
+    customer = Customer(
+        tenant_id=tenant.id,
+        first_name="Refund",
+        last_name="Customer",
+        email=f"refund-{uuid4().hex}@example.com",
+    )
+    db_session.add(customer)
+    await db_session.flush()
+    invoice = Invoice(
+        tenant_id=tenant.id,
+        repair_order_id=uuid4(),
+        invoice_number=f"INV-{uuid4().hex[:12]}",
+        status=InvoiceStatus.PAID,
+        subtotal=Decimal("100.00"),
+        shop_supplies_amount=Decimal("0.00"),
+        service_fee_amount=Decimal("0.00"),
+        tax_amount=Decimal("0.00"),
+        discount_amount=Decimal("0.00"),
+        total_amount=Decimal("100.00"),
+    )
+    db_session.add(invoice)
+    await db_session.flush()
+    settlement = InvoiceSettlement(
+        tenant_id=tenant.id,
+        invoice_id=invoice.id,
+        customer_id=customer.id,
+        principal_total=Decimal("100.00"),
+        max_card_fee=Decimal("0.00"),
+        max_card_fee_tax=Decimal("0.00"),
+        sales_tax_rate_snapshot=Decimal("0.00"),
+        card_fee_rate_snapshot=Decimal("0.00"),
+        currency="USD",
+        confirmed_principal=Decimal("100.00"),
+        active_pending_principal=Decimal("0.00"),
+        unapplied_credit=Decimal("10.00"),
+        refund_pending=Decimal("10.00"),
+        state="overpayment_resolution",
+        version=1,
+        last_event_sequence=0,
+    )
+    db_session.add(settlement)
+    await db_session.flush()
+    attempt = InvoicePaymentAttempt(
+        tenant_id=tenant.id,
+        invoice_id=invoice.id,
+        settlement_id=settlement.id,
+        customer_id=customer.id,
+        source="customer_portal",
+        rail="card",
+        provider="stripe_connect",
+        state="confirmed",
+        principal_amount=Decimal("100.00"),
+        card_fee_amount=Decimal("0.00"),
+        card_fee_tax_amount=Decimal("0.00"),
+        provider_charge_amount=Decimal("110.00"),
+        received_amount=Decimal("110.00"),
+        applied_principal_amount=Decimal("100.00"),
+        unapplied_amount=Decimal("10.00"),
+        processor_fee_amount=Decimal("0.00"),
+        currency="USD",
+        provider_configuration_version=1,
+        provider_account_id="acct_refund",
+        provider_charge_id="ch_refund",
+        actor_name_snapshot="Customer",
+        subject_type="customer",
+        subject_id=customer.id,
+        idempotency_key="refund-attempt",
+        request_hash="1" * 64,
+        version=1,
+    )
+    db_session.add(attempt)
+    await db_session.flush()
+    overpayment = PaymentOverpayment(
+        tenant_id=tenant.id,
+        invoice_id=invoice.id,
+        settlement_id=settlement.id,
+        source_attempt_id=attempt.id,
+        customer_id=customer.id,
+        amount=Decimal("10.00"),
+        state="refund_required",
+    )
+    db_session.add(overpayment)
+    await db_session.flush()
+    refund = PaymentRefund(
+        tenant_id=tenant.id,
+        invoice_id=invoice.id,
+        source_attempt_id=attempt.id,
+        overpayment_id=overpayment.id,
+        amount=Decimal("10.00"),
+        reason="Accidental provider overpayment",
+        destination_rail="card",
+        mode="automatic",
+        state="pending",
+            actor_name_snapshot="System",
+            idempotency_key="refund-10",
+            request_hash="3" * 64,
+        )
+    db_session.add_all([
+        refund,
+        TenantPaymentProviderConfiguration(
+            tenant_id=tenant.id,
+            version=1,
+            selected_provider="stripe_connect",
+            readiness_state="ready",
+            is_active=True,
+            actor_user_id=uuid4(),
+            actor_name_snapshot="Garage Owner",
+            provider_account_snapshot="acct_refund",
+            writer_strategy="dieselbridge",
+            idempotency_key="refund-provider-configuration",
+            request_hash="2" * 64,
+            stripe_clearing_account="Stripe Clearing",
+        ),
+    ])
+    await db_session.commit()
+
+    failed = await finalize_provider_refund(
+        db_session,
+        refund_id=refund.id,
+        tenant_id=tenant.id,
+        provider_account_id="acct_refund",
+        provider_reference="re_refund",
+        provider_event_id="evt_refund_failed",
+        provider_status="failed",
+    )
+    await db_session.flush()
+
+    assert failed.state == "failed"
+    assert failed.last_error == "provider_refund_failed"
+    assert overpayment.state == "refund_required"
+    assert settlement.unapplied_credit == Decimal("10.00")
+    assert settlement.refund_pending == Decimal("10.00")
+    assert await db_session.scalar(select(func.count()).select_from(PaymentAccountingLink)) == 0
+
+    succeeded = await finalize_provider_refund(
+        db_session,
+        refund_id=refund.id,
+        tenant_id=tenant.id,
+        provider_account_id="acct_refund",
+        provider_reference="re_refund",
+        provider_event_id="evt_refund_succeeded",
+        provider_status="succeeded",
+    )
+    await db_session.flush()
+    replay = await finalize_provider_refund(
+        db_session,
+        refund_id=refund.id,
+        tenant_id=tenant.id,
+        provider_account_id="acct_refund",
+        provider_reference="re_refund",
+        provider_event_id="evt_refund_succeeded_replay",
+        provider_status="succeeded",
+    )
+    await db_session.flush()
+
+    assert succeeded.state == replay.state == "succeeded"
+    assert succeeded.last_error is None
+    assert overpayment.state == "refunded"
+    assert settlement.unapplied_credit == Decimal("0.00")
+    assert settlement.refund_pending == Decimal("0.00")
+    assert await db_session.scalar(select(func.count()).select_from(PaymentAccountingLink)) == 1
+    assert await db_session.scalar(
+        select(func.count()).select_from(ProviderOutboxEvent).where(
+            ProviderOutboxEvent.event_type == "invoice_refund.accounting_sync"
+        )
+    ) == 1
+
+
+@pytest.mark.asyncio
+async def test_credit_accounting_retry_and_dead_letter_remain_visible_without_duplicates(
+    _db_engine,
+    monkeypatch,
+) -> None:
+    factory = async_sessionmaker(_db_engine, expire_on_commit=False)
+    async with factory() as db:
+        tenant = Tenant(name="DB048 Credit Worker", slug=f"db048-worker-{uuid4().hex}")
+        db.add(tenant)
+        await db.flush()
+        retry_event = ProviderOutboxEvent(
+            tenant_id=tenant.id,
+            event_type=CREDIT_ACCOUNTING_EVENT,
+            aggregate_type="customer_credit_entry",
+            aggregate_id=uuid4(),
+            payload={"accounting_link_id": str(uuid4()), "credit_entry_id": str(uuid4())},
+            idempotency_key="credit-worker-retry",
+            status=ProviderOutboxStatus.PENDING.value,
+            available_at=datetime.now(timezone.utc) - timedelta(seconds=1),
+        )
+        db.add(retry_event)
+        await db.commit()
+        retry_event_id = retry_event.id
+
+    monkeypatch.setattr(settings, "PROVIDER_OUTBOX_MAX_ATTEMPTS", 3)
+    delivery_attempts: dict = {}
+    qbo_payment_objects: set[str] = set()
+    terminal_event_id = None
+
+    async def fake_loader(_db, event):
+        return SimpleNamespace(event_id=event.id, connection=SimpleNamespace())
+
+    async def fake_refresh_connection(_db, _connection):
+        return None
+
+    async def fake_delivery(_db, envelope):
+        delivery_attempts[envelope.event_id] = delivery_attempts.get(envelope.event_id, 0) + 1
+        if envelope.event_id == terminal_event_id:
+            raise DB048ReconciliationError("credit source mismatch")
+        if delivery_attempts[envelope.event_id] == 1:
+            raise DB048ReconciliationError("QuickBooks temporarily unavailable", retryable=True)
+        qbo_payment_objects.add("qbo-unapplied-payment-1")
+        return "qbo-unapplied-payment-1"
+
+    monkeypatch.setattr(
+        "app.services.db048_accounting_reconciliation.load_credit_accounting_envelope",
+        fake_loader,
+    )
+    monkeypatch.setattr(
+        "app.services.db048_accounting_reconciliation.deliver_credit_accounting_envelope",
+        fake_delivery,
+    )
+    monkeypatch.setattr(
+        "app.services.db048_accounting_reconciliation._refresh_accounting_connection_if_needed",
+        fake_refresh_connection,
+    )
+
+    first = await process_due_db048_outbox_events(session_factory=factory, batch_size=10)
+    assert first == {
+        "claimed": 1, "succeeded": 0, "retried": 1, "dead": 0, "lease_lost": 0,
+    }
+    async with factory() as db:
+        visible_retry = await db.get(ProviderOutboxEvent, retry_event_id)
+        assert visible_retry.status == ProviderOutboxStatus.PENDING.value
+        assert visible_retry.attempt_count == 1
+        assert "temporarily unavailable" in visible_retry.last_error
+        visible_retry.available_at = datetime.now(timezone.utc) - timedelta(seconds=1)
+        await db.commit()
+
+    second = await process_due_db048_outbox_events(session_factory=factory, batch_size=10)
+    assert second == {
+        "claimed": 1, "succeeded": 1, "retried": 0, "dead": 0, "lease_lost": 0,
+    }
+    async with factory() as db:
+        visible_success = await db.get(ProviderOutboxEvent, retry_event_id)
+        assert visible_success.status == ProviderOutboxStatus.SUCCEEDED.value
+        assert visible_success.attempt_count == 2
+        assert visible_success.provider_message_id == "qbo-unapplied-payment-1"
+        terminal_event = ProviderOutboxEvent(
+            tenant_id=tenant.id,
+            event_type=CREDIT_ACCOUNTING_EVENT,
+            aggregate_type="customer_credit_entry",
+            aggregate_id=uuid4(),
+            payload={"accounting_link_id": str(uuid4()), "credit_entry_id": str(uuid4())},
+            idempotency_key="credit-worker-dead",
+            status=ProviderOutboxStatus.PENDING.value,
+            available_at=datetime.now(timezone.utc) - timedelta(seconds=1),
+        )
+        db.add(terminal_event)
+        await db.commit()
+        terminal_event_id = terminal_event.id
+
+    third = await process_due_db048_outbox_events(session_factory=factory, batch_size=10)
+    assert third == {
+        "claimed": 1, "succeeded": 0, "retried": 0, "dead": 1, "lease_lost": 0,
+    }
+    async with factory() as db:
+        visible_dead = await db.get(ProviderOutboxEvent, terminal_event_id)
+        assert visible_dead.status == ProviderOutboxStatus.DEAD.value
+        assert visible_dead.attempt_count == 1
+        assert "credit source mismatch" in visible_dead.last_error
+        assert await db.scalar(select(func.count()).select_from(ProviderOutboxEvent)) == 2
+
+    assert delivery_attempts == {retry_event_id: 2, terminal_event_id: 1}
+    assert qbo_payment_objects == {"qbo-unapplied-payment-1"}
+
+
+async def _tenant_with_stripe_configuration(
+    db_session,
+    *,
+    account_id: str,
+    qbo_realm: str | None = "realm-db048",
+) -> Tenant:
+    tenant = Tenant(name="DB048 Garage", slug=f"db048-{uuid4().hex}")
+    db_session.add(tenant)
+    await db_session.flush()
+    db_session.add(TenantPaymentProviderConfiguration(
+        tenant_id=tenant.id,
+        version=1,
+        selected_provider="stripe_connect",
+        readiness_state="ready",
+        is_active=True,
+        actor_user_id=uuid4(),
+        actor_name_snapshot="Garage Owner",
+        provider_account_snapshot=account_id,
+        qbo_realm_snapshot=qbo_realm,
+        writer_strategy="dieselbridge",
+        idempotency_key=f"provider-{uuid4().hex}",
+        request_hash="0" * 64,
+        stripe_clearing_account="Stripe Clearing",
+        processor_fee_expense_account="Processor Fees",
+        checking_account="Checking",
+    ))
+    await db_session.commit()
+    return tenant
+
+
+async def _payout_attempt(
+    db_session,
+    *,
+    tenant: Tenant,
+    account_id: str,
+    gross: Decimal,
+    configuration_version: int = 1,
+) -> InvoicePaymentAttempt:
+    attempt = InvoicePaymentAttempt(
+        tenant_id=tenant.id,
+        invoice_id=uuid4(),
+        settlement_id=uuid4(),
+        customer_id=uuid4(),
+        source="staff",
+        rail="card",
+        provider="stripe_connect",
+        state="confirmed",
+        principal_amount=gross,
+        card_fee_amount=Decimal("0.00"),
+        card_fee_tax_amount=Decimal("0.00"),
+        applied_card_fee_amount=Decimal("0.00"),
+        applied_card_fee_tax_amount=Decimal("0.00"),
+        provider_charge_amount=gross,
+        received_amount=gross,
+        applied_principal_amount=gross,
+        unapplied_amount=Decimal("0.00"),
+        processor_fee_amount=Decimal("0.00"),
+        currency="USD",
+        provider_configuration_version=configuration_version,
+        provider_account_id=account_id,
+        provider_intent_id=f"pi_{uuid4().hex}",
+        provider_charge_id=f"ch_{uuid4().hex}",
+        actor_name_snapshot="Garage Owner",
+        subject_type="user",
+        idempotency_key=f"attempt-{uuid4().hex}",
+        request_hash="a" * 64,
+        confirmed_at=datetime.now(timezone.utc),
+    )
+    db_session.add(attempt)
+    await db_session.flush()
+    return attempt
+
+
+async def _tenant_with_qbp_configuration(
+    db_session,
+    *,
+    realm: str = "realm-qbp",
+    checking_account: str = "bank-qbp",
+) -> Tenant:
+    tenant = Tenant(name="DB048 QBP Garage", slug=f"db048-qbp-{uuid4().hex}")
+    db_session.add(tenant)
+    await db_session.flush()
+    db_session.add(TenantPaymentProviderConfiguration(
+        tenant_id=tenant.id,
+        version=1,
+        selected_provider="quickbooks_payments",
+        readiness_state="ready",
+        is_active=True,
+        actor_user_id=uuid4(),
+        actor_name_snapshot="Garage Owner",
+        provider_account_snapshot=realm,
+        qbo_realm_snapshot=realm,
+        writer_strategy="dieselbridge",
+        idempotency_key=f"provider-{uuid4().hex}",
+        request_hash="9" * 64,
+        qbp_clearing_account="QBP Clearing",
+        processor_fee_expense_account="Processor Fees",
+        checking_account=checking_account,
+    ))
+    await db_session.flush()
+    return tenant
+
+
+async def _qbp_payout_attempt(
+    db_session,
+    *,
+    tenant: Tenant,
+    realm: str,
+    charge_id: str,
+    gross: Decimal,
+    customer_fee: Decimal = Decimal("0.00"),
+    customer_fee_tax: Decimal = Decimal("0.00"),
+    qbo_payment_id: str,
+    qbo_customer_id: str = "qbo-customer-qbp",
+    qbo_invoice_id: str = "qbo-invoice-qbp",
+) -> InvoicePaymentAttempt:
+    principal = gross - customer_fee - customer_fee_tax
+    customer = Customer(
+        tenant_id=tenant.id,
+        first_name="QBP",
+        last_name="Customer",
+        email=f"qbp-{uuid4().hex}@example.com",
+        quickbooks_customer_id=qbo_customer_id,
+    )
+    db_session.add(customer)
+    await db_session.flush()
+    vehicle = Vehicle(
+        tenant_id=tenant.id,
+        customer_id=customer.id,
+        make="Volvo",
+        model="VNL",
+    )
+    db_session.add(vehicle)
+    await db_session.flush()
+    order = RepairOrder(
+        tenant_id=tenant.id,
+        customer_id=customer.id,
+        vehicle_id=vehicle.id,
+        order_number=f"RO-QBP-{uuid4().hex[:10]}",
+        status=RepairOrderStatus.INVOICED,
+        total_parts_cost=Decimal("0.00"),
+        total_labor_cost=principal,
+        total_cost=principal,
+    )
+    db_session.add(order)
+    await db_session.flush()
+    invoice = Invoice(
+        tenant_id=tenant.id,
+        repair_order_id=order.id,
+        invoice_number=f"INV-QBP-{uuid4().hex[:10]}",
+        status=InvoiceStatus.PAID,
+        subtotal=principal,
+        shop_supplies_amount=Decimal("0.00"),
+        service_fee_amount=Decimal("0.00"),
+        tax_amount=Decimal("0.00"),
+        discount_amount=Decimal("0.00"),
+        total_amount=principal,
+        quickbooks_invoice_id=qbo_invoice_id,
+        quickbooks_sync_status="synced",
+    )
+    db_session.add(invoice)
+    await db_session.flush()
+    settlement = InvoiceSettlement(
+        tenant_id=tenant.id,
+        invoice_id=invoice.id,
+        customer_id=customer.id,
+        principal_total=principal,
+        max_card_fee=customer_fee,
+        max_card_fee_tax=customer_fee_tax,
+        sales_tax_rate_snapshot=Decimal("0.00"),
+        card_fee_rate_snapshot=Decimal("0.00"),
+        confirmed_principal=principal,
+        active_pending_principal=Decimal("0.00"),
+        unapplied_credit=Decimal("0.00"),
+        refund_pending=Decimal("0.00"),
+        state="paid",
+        currency="USD",
+        version=1,
+        last_event_sequence=0,
+        accounting_sync_status="synced",
+        qbo_realm_snapshot=realm,
+        initial_provider_configuration_version=1,
+    )
+    db_session.add(settlement)
+    await db_session.flush()
+    attempt = InvoicePaymentAttempt(
+        tenant_id=tenant.id,
+        invoice_id=invoice.id,
+        settlement_id=settlement.id,
+        customer_id=customer.id,
+        source="customer_portal",
+        rail="card",
+        provider="quickbooks_payments",
+        state="confirmed",
+        principal_amount=principal,
+        card_fee_amount=customer_fee,
+        card_fee_tax_amount=customer_fee_tax,
+        applied_card_fee_amount=customer_fee,
+        applied_card_fee_tax_amount=customer_fee_tax,
+        provider_charge_amount=gross,
+        received_amount=principal,
+        applied_principal_amount=principal,
+        unapplied_amount=Decimal("0.00"),
+        processor_fee_amount=Decimal("0.00"),
+        currency="USD",
+        provider_configuration_version=1,
+        provider_account_id=realm,
+        provider_intent_id=f"intent-{charge_id}",
+        provider_charge_id=charge_id,
+        provider_event_id=f"event-{charge_id}",
+        actor_name_snapshot="Customer",
+        subject_type="customer",
+        idempotency_key=f"attempt-{uuid4().hex}",
+        request_hash="8" * 64,
+        confirmed_at=datetime.now(timezone.utc),
+    )
+    db_session.add(attempt)
+    await db_session.flush()
+    payment = Payment(
+        tenant_id=tenant.id,
+        invoice_id=invoice.id,
+        payment_number=f"PAY-QBP-{uuid4().hex[:10]}",
+        amount=principal,
+        method=PaymentMethod.QUICKBOOKS,
+        status=PaymentStatus.COMPLETED,
+        quickbooks_charge_id=charge_id,
+        quickbooks_charge_status="CAPTURED",
+        quickbooks_payment_id=qbo_payment_id,
+        payment_provider="quickbooks_payments",
+        invoice_payment_attempt_id=attempt.id,
+    )
+    db_session.add(payment)
+    await db_session.flush()
+    attempt.payment_id = payment.id
+    await db_session.flush()
+    return attempt
+
+
+@pytest.mark.asyncio
+async def test_qbp_native_deposit_imports_exact_fee_and_is_idempotent(db_session) -> None:
+    tenant = await _tenant_with_qbp_configuration(db_session)
+    attempt = await _qbp_payout_attempt(
+        db_session,
+        tenant=tenant,
+        realm="realm-qbp",
+        charge_id="MT-QBP-100",
+        gross=Decimal("103.00"),
+        customer_fee=Decimal("3.00"),
+        qbo_payment_id="qbo-payment-100",
+    )
+    connection = QuickBooksConnection(
+        tenant_id=tenant.id,
+        realm_id="realm-qbp",
+        status="connected",
+        scopes="com.intuit.quickbooks.accounting",
+        encrypted_access_token="test",
+    )
+    payment = {
+        "Id": "qbo-payment-100",
+        "TotalAmt": 103.0,
+        "PaymentRefNum": "QBP MT-QBP-100",
+        "CustomerRef": {"value": "qbo-customer-qbp"},
+        "Line": [{"LinkedTxn": [{
+            "TxnId": "qbo-invoice-qbp", "TxnType": "Invoice",
+        }]}],
+        "TxnDate": "2026-09-03",
+        "CreditCardPayment": {
+            "CreditChargeResponse": {"CCTransId": "MT-QBP-100"},
+        },
+    }
+    deposit = {
+        "Id": "qbo-deposit-100",
+        "TotalAmt": 103.0,
+        "TxnDate": "2026-09-03",
+        "DepositToAccountRef": {"value": "35", "name": "bank-qbp"},
+        "Line": [{
+            "LinkedTxn": [{"TxnId": "qbo-payment-100", "TxnType": "Payment"}],
+        }],
+    }
+    purchase = {
+        "Id": "qbo-fee-100",
+        "TotalAmt": 2.99,
+        "TxnDate": "2026-09-03",
+        "AccountRef": {"value": "35", "name": "bank-qbp"},
+        "EntityRef": {"value": "vendor-intuit", "name": "Intuit Payment Solutions"},
+        "PrivateNote": "System-recorded fee for QuickBooks Payments",
+        "Line": [{
+            "Description": "QuickBooks Payments fee",
+            "AccountBasedExpenseLineDetail": {
+                "AccountRef": {"value": "expense-1", "name": "Processor Fees"},
+            },
+        }],
+    }
+
+    first = await reconcile_qbp_native_settlements(
+        db_session,
+        connection=connection,
+        deposits=[deposit],
+        payments=[payment],
+        purchases=[purchase],
+    )
+    await db_session.flush()
+    second = await reconcile_qbp_native_settlements(
+        db_session,
+        connection=connection,
+        deposits=[deposit],
+        payments=[payment],
+        purchases=[purchase],
+    )
+    await db_session.flush()
+
+    assert first == {
+        "batches": 1,
+        "matched": 1,
+        "manual": 0,
+        "deferred": 0,
+        "skipped": 0,
+    }
+    assert second == first
+    batch = await db_session.scalar(select(ProviderSettlementBatch).where(
+        ProviderSettlementBatch.provider_batch_id == "qbo-deposit-100",
+    ))
+    assert batch is not None
+    assert batch.reconciliation_state == "matched"
+    assert batch.gross_receipts == Decimal("100.00")
+    assert batch.customer_card_fees == Decimal("3.00")
+    assert batch.processor_fees == Decimal("2.99")
+    assert batch.net_payout == Decimal("100.01")
+    assert batch.qbo_deposit_id == "qbo-deposit-100"
+    assert await db_session.scalar(select(func.count()).select_from(
+        ProviderSettlementEntry,
+    ).where(ProviderSettlementEntry.batch_id == batch.id)) == 2
+    payment_entry = await db_session.scalar(select(ProviderSettlementEntry).where(
+        ProviderSettlementEntry.batch_id == batch.id,
+        ProviderSettlementEntry.entry_type == "qbp_payment",
+    ))
+    assert payment_entry is not None
+    assert payment_entry.attempt_id == attempt.id
+    owner = User(
+        email=f"qbp-payout-owner-{uuid4().hex}@example.com",
+        hashed_password="hash",
+        first_name="Payout",
+        last_name="Owner",
+        role=UserRole.GARAGE_OWNER,
+        tenant_id=tenant.id,
+        is_active=True,
+        is_verified=True,
+    )
+    db_session.add(owner)
+    await db_session.flush()
+    visible = await read_payout_reconciliations(
+        limit=25,
+        db=db_session,
+        current_user=owner,
+    )
+    assert visible == [{
+        "provider": "quickbooks_payments",
+        "payout_id": "qbo-deposit-100",
+        "provider_account_id": "realm-qbp",
+        "qbo_realm_snapshot": "realm-qbp",
+        "entry_manifest_hash": batch.entry_manifest_hash,
+        "configuration_partitions": [{
+            "provider_configuration_version": 1,
+            "qbo_realm_snapshot": "realm-qbp",
+            "owning_writer": "dieselbridge",
+            "account_mapping_hash": payment_entry.account_mapping_hash,
+            "entry_count": 2,
+        }],
+        "gross_receipts": "100.00",
+        "customer_card_fees": "3.00",
+        "card_fee_tax": "0.00",
+        "processor_fees": "2.99",
+        "net_payout": "100.01",
+        "state": "matched",
+        "mismatch_reason": None,
+        "qbo_deposit_id": "qbo-deposit-100",
+        "qbo_fee_purchase_ids": ["qbo-fee-100"],
+        "settled_at": batch.settled_at,
+        "operation_id": None,
+        "operation_state": None,
+        "retryable": False,
+    }]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("ownership", ["local", "mixed", "legacy", "foreign", "ambiguous_fee", "writer_zero_fee", "writer_surcharge"])
+async def test_qbp_native_provider_shaped_two_payment_batch(db_session, monkeypatch, ownership):
+    """Sanitized shape observed via live GETs; no real IDs, card data or API calls.
+
+    QBO exposes a gross Deposit and a separate daily fee Purchase without an
+    explicit link. Per-card fees seen in the merchant UI are deliberately absent.
+    """
+    async def no_provider_request(*args, **kwargs):
+        pytest.fail("Provider-shaped acceptance must not access Intuit")
+
+    monkeypatch.setattr("app.services.db048_accounting_reconciliation._request", no_provider_request)
+    tenant = await _tenant_with_qbp_configuration(db_session)
+    foreign = await _tenant_with_qbp_configuration(db_session) if ownership == "foreign" else None
+    payments = []
+    for index, amount in enumerate(("382.48", "876.60")):
+        attempt = None
+        if ownership != "legacy" and not (ownership == "mixed" and index == 0):
+            attempt = await _qbp_payout_attempt(
+                db_session, tenant=foreign if foreign and index == 0 else tenant,
+                realm="realm-qbp", charge_id=f"native-charge-{index}",
+                gross=Decimal(amount), qbo_payment_id=f"native-payment-{index}",
+                customer_fee=Decimal("3.00") if ownership == "writer_surcharge" else Decimal("0.00"),
+                qbo_customer_id=f"native-customer-{index}", qbo_invoice_id=f"native-invoice-{index}",
+            )
+        payments.append({
+            "Id": f"native-payment-{index}", "TotalAmt": float(amount),
+            "TxnDate": "2026-09-03",
+            "CustomerRef": {"value": f"native-customer-{index}"},
+            "CreditCardPayment": {"CreditChargeResponse": {
+                "CCTransId": f"native-charge-{index}", "Status": "Completed",
+            }},
+            "LinkedTxn": [{"TxnId": "native-deposit", "TxnType": "Deposit"}],
+            "Line": [{"Amount": float(amount), "LinkedTxn": [{
+                "TxnId": f"native-invoice-{index}", "TxnType": "Invoice",
+            }]}],
+        })
+        if ownership.startswith("writer_"):
+            # Compose the actual outbound builder with the importer. Our writer
+            # does not emit native CreditCardPayment metadata: do not inject it
+            # into acceptance and accidentally bypass its QBP reference path.
+            # Deposit linkage remains a fixture, not proof of native adoption.
+            local_payment = await db_session.get(Payment, attempt.payment_id)
+            local_invoice = await db_session.get(Invoice, attempt.invoice_id)
+            outbound = db048_qbo_payment_payload(
+                payment=local_payment, invoice=local_invoice, attempt=attempt,
+                qbo_customer_id=f"native-customer-{index}",
+                qbo_invoice_id=f"native-invoice-{index}",
+                principal_amount=attempt.applied_principal_amount,
+                received_principal_amount=attempt.received_amount,
+                deposit_account="QBP Clearing",
+            )
+            payments[-1].update(outbound)
+            payments[-1].pop("CreditCardPayment")
+            assert payments[-1]["PaymentRefNum"] == f"QBP native-charge-{index}"
+    deposit = {
+        "Id": "native-deposit", "TotalAmt": 1259.08, "TxnDate": "2026-09-03",
+        "DepositToAccountRef": {"value": "35", "name": "bank-qbp"},
+        "PrivateNote": "System-recorded deposit for QuickBooks Payments",
+        "Line": [{"Amount": p["TotalAmt"], "LinkedTxn": [{
+            "TxnId": p["Id"], "TxnType": "Payment", "TxnLineId": "0",
+        }]} for p in payments],
+    }
+    fee = {
+        "Id": "native-fee", "TotalAmt": 35.77, "TxnDate": "2026-09-03",
+        "AccountRef": {"value": "35", "name": "bank-qbp"},
+        "EntityRef": {"value": "native-vendor", "name": "QuickBooks Payments", "type": "Vendor"},
+        "PrivateNote": "System-recorded fee for QuickBooks Payments. Fee-name: DiscountRateFee, fee-type: Daily.",
+        "Line": [{"Amount": 35.77, "DetailType": "AccountBasedExpenseLineDetail",
+                  "AccountBasedExpenseLineDetail": {"AccountRef": {
+                      "value": "expense-1", "name": "Processor Fees",
+                  }}}],
+    }
+    purchases = [fee]
+    if ownership == "ambiguous_fee":
+        purchases.append({**fee, "Id": "second-daily-fee"})
+    connection = QuickBooksConnection(tenant_id=tenant.id, realm_id="realm-qbp", status="connected")
+    kwargs = dict(connection=connection, deposits=[deposit], payments=payments, purchases=purchases)
+    first = await reconcile_qbp_native_settlements(db_session, **kwargs)
+    await db_session.flush()
+    assert await reconcile_qbp_native_settlements(db_session, **kwargs) == first
+    batches = list((await db_session.scalars(select(ProviderSettlementBatch))).all())
+    if ownership == "legacy":
+        assert first["skipped"] == 1
+        assert batches == []
+        return
+    assert len(batches) == 1
+    batch = batches[0]
+    assert batch.tenant_id == tenant.id
+    assert batch.qbo_deposit_id == "native-deposit"
+    if ownership in ("local", "writer_zero_fee"):
+        assert first["matched"] == 1
+        assert batch.processor_fees == Decimal("35.77")
+        assert batch.net_payout == Decimal("1223.31")
+        assert await db_session.scalar(select(func.count()).select_from(ProviderSettlementEntry)) == 3
+        entries = list((await db_session.scalars(select(ProviderSettlementEntry))).all())
+        assert sum(e.entry_type == "qbp_fee_purchase" for e in entries) == 1
+        assert all(e.attempt_id is None for e in entries if e.entry_type == "qbp_fee_purchase")
+        fee["TotalAmt"] = 36.77
+        fee["Line"][0]["Amount"] = 36.77
+        with pytest.raises(DB048ReconciliationError, match="immutable manifest"):
+            await reconcile_qbp_native_settlements(db_session, **kwargs)
+        assert batch.processor_fees == Decimal("35.77")
+        assert await db_session.scalar(select(func.count()).select_from(ProviderSettlementEntry)) == 3
+    else:
+        assert first["matched"] == 0
+        assert first["manual"] == 1
+        expected = (
+            "fee_purchase_ambiguous" if ownership == "ambiguous_fee"
+            else "qbo_payment_amount_mismatch" if ownership == "writer_surcharge"
+            else "unmatched_qbo_payment"
+        )
+        assert expected in batch.mismatch_reason
+        if ownership == "writer_surcharge":
+            # Gross Deposit is deliberately synthetic: provider adoption and
+            # explicit surcharge components still require external evidence.
+            assert "deposit_payment_amount_mismatch" in batch.mismatch_reason
+
+
+@pytest.mark.asyncio
+async def test_qbp_native_deposit_rejects_unprefixed_reference_collision(
+    db_session,
+) -> None:
+    tenant = await _tenant_with_qbp_configuration(db_session)
+    await _qbp_payout_attempt(
+        db_session,
+        tenant=tenant,
+        realm="realm-qbp",
+        charge_id="MT-QBP-COLLISION",
+        gross=Decimal("40.00"),
+        qbo_payment_id="qbo-payment-collision",
+    )
+    connection = QuickBooksConnection(
+        tenant_id=tenant.id,
+        realm_id="realm-qbp",
+        status="connected",
+        scopes="com.intuit.quickbooks.accounting",
+        encrypted_access_token="test",
+    )
+    result = await reconcile_qbp_native_settlements(
+        db_session,
+        connection=connection,
+        deposits=[{
+            "Id": "qbo-deposit-collision",
+            "TotalAmt": 40.0,
+            "TxnDate": "2026-09-03",
+            "DepositToAccountRef": {"value": "bank-qbp"},
+            "Line": [{"LinkedTxn": [{
+                "TxnId": "qbo-payment-collision", "TxnType": "Payment",
+            }]}],
+        }],
+        payments=[{
+            "Id": "qbo-payment-collision",
+            "TotalAmt": 40.0,
+            # This is ordinary bookkeeping text, not native QBP identity.
+            "PaymentRefNum": "MT-QBP-COLLISION",
+            "CustomerRef": {"value": "qbo-customer-qbp"},
+            "Line": [{"LinkedTxn": [{
+                "TxnId": "qbo-invoice-qbp", "TxnType": "Invoice",
+            }]}],
+            "TxnDate": "2026-09-03",
+        }],
+        purchases=[],
+    )
+    assert result == {
+        "batches": 0,
+        "matched": 0,
+        "manual": 0,
+        "deferred": 0,
+        "skipped": 1,
+    }
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("mismatch", "expected_cause"),
+    (
+        ("payment_id", "qbo_payment_identity_mismatch"),
+        ("customer", "qbo_payment_customer_mismatch"),
+        ("invoice", "qbo_payment_invoice_mismatch"),
+    ),
+)
+async def test_qbp_native_payment_requires_persisted_qbo_identity(
+    db_session,
+    mismatch: str,
+    expected_cause: str,
+) -> None:
+    tenant = await _tenant_with_qbp_configuration(db_session)
+    await _qbp_payout_attempt(
+        db_session,
+        tenant=tenant,
+        realm="realm-qbp",
+        charge_id="MT-QBP-IDENTITY",
+        gross=Decimal("40.00"),
+        qbo_payment_id="qbo-payment-identity",
+    )
+    connection = QuickBooksConnection(
+        tenant_id=tenant.id,
+        realm_id="realm-qbp",
+        status="connected",
+        scopes="com.intuit.quickbooks.accounting",
+        encrypted_access_token="test",
+    )
+    payment = {
+        "Id": (
+            "qbo-payment-wrong"
+            if mismatch == "payment_id"
+            else "qbo-payment-identity"
+        ),
+        "TotalAmt": 40.0,
+        "PaymentRefNum": "QBP MT-QBP-IDENTITY",
+        "CustomerRef": {"value": (
+            "qbo-customer-wrong"
+            if mismatch == "customer"
+            else "qbo-customer-qbp"
+        )},
+        "Line": [{"LinkedTxn": [{
+            "TxnId": (
+                "qbo-invoice-wrong"
+                if mismatch == "invoice"
+                else "qbo-invoice-qbp"
+            ),
+            "TxnType": "Invoice",
+        }]}],
+        "TxnDate": "2026-09-03",
+    }
+    deposit = {
+        "Id": f"qbo-deposit-{mismatch}",
+        "TotalAmt": 40.0,
+        "TxnDate": "2026-09-03",
+        "DepositToAccountRef": {"value": "bank-qbp"},
+        "Line": [{"LinkedTxn": [{
+            "TxnId": payment["Id"], "TxnType": "Payment",
+        }]}],
+    }
+    purchase = {
+        "Id": f"qbo-fee-{mismatch}",
+        "TotalAmt": 1.20,
+        "TxnDate": "2026-09-03",
+        "AccountRef": {"value": "bank-qbp"},
+        "EntityRef": {"value": "vendor-intuit", "name": "Intuit Payment Solutions"},
+        "PrivateNote": "System-recorded fee for QuickBooks Payments",
+        "Line": [{"AccountBasedExpenseLineDetail": {
+            "AccountRef": {"value": "expense-1", "name": "Processor Fees"},
+        }}],
+    }
+    result = await reconcile_qbp_native_settlements(
+        db_session,
+        connection=connection,
+        deposits=[deposit],
+        payments=[payment],
+        purchases=[purchase],
+    )
+    batch = await db_session.scalar(select(ProviderSettlementBatch).where(
+        ProviderSettlementBatch.provider_batch_id == deposit["Id"],
+    ))
+    assert result["manual"] == 1
+    assert batch is not None
+    assert expected_cause in str(batch.mismatch_reason)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("mismatch", "expected_cause"),
+    (
+        ("expense", "fee_expense_account_mismatch"),
+        ("vendor", "fee_vendor_identity_mismatch"),
+        ("amount", "fee_amount_implausible"),
+    ),
+)
+async def test_qbp_native_fee_requires_account_vendor_and_plausible_amount(
+    db_session,
+    mismatch: str,
+    expected_cause: str,
+) -> None:
+    tenant = await _tenant_with_qbp_configuration(db_session)
+    await _qbp_payout_attempt(
+        db_session,
+        tenant=tenant,
+        realm="realm-qbp",
+        charge_id="MT-QBP-FEE-FENCE",
+        gross=Decimal("40.00"),
+        qbo_payment_id="qbo-payment-fee-fence",
+    )
+    connection = QuickBooksConnection(
+        tenant_id=tenant.id,
+        realm_id="realm-qbp",
+        status="connected",
+        scopes="com.intuit.quickbooks.accounting",
+        encrypted_access_token="test",
+    )
+    payment = {
+        "Id": "qbo-payment-fee-fence",
+        "TotalAmt": 40.0,
+        "PaymentRefNum": "QBP MT-QBP-FEE-FENCE",
+        "CustomerRef": {"value": "qbo-customer-qbp"},
+        "Line": [{"LinkedTxn": [{
+            "TxnId": "qbo-invoice-qbp", "TxnType": "Invoice",
+        }]}],
+        "TxnDate": "2026-09-03",
+    }
+    deposit = {
+        "Id": f"qbo-deposit-fee-{mismatch}",
+        "TotalAmt": 40.0,
+        "TxnDate": "2026-09-03",
+        "DepositToAccountRef": {"value": "bank-qbp"},
+        "Line": [{"LinkedTxn": [{
+            "TxnId": payment["Id"], "TxnType": "Payment",
+        }]}],
+    }
+    purchase = {
+        "Id": f"qbo-fee-fence-{mismatch}",
+        "TotalAmt": 40.0 if mismatch == "amount" else 1.20,
+        "TxnDate": "2026-09-03",
+        "AccountRef": {"value": "bank-qbp"},
+        "EntityRef": {
+            "value": "vendor-other" if mismatch == "vendor" else "vendor-intuit",
+            "name": "Other Vendor" if mismatch == "vendor" else "Intuit Payment Solutions",
+        },
+        "PrivateNote": "System-recorded fee for QuickBooks Payments",
+        "Line": [{"AccountBasedExpenseLineDetail": {"AccountRef": {
+            "value": "expense-wrong" if mismatch == "expense" else "expense-1",
+            "name": "Other Expense" if mismatch == "expense" else "Processor Fees",
+        }}}],
+    }
+    result = await reconcile_qbp_native_settlements(
+        db_session,
+        connection=connection,
+        deposits=[deposit],
+        payments=[payment],
+        purchases=[purchase],
+    )
+    batch = await db_session.scalar(select(ProviderSettlementBatch).where(
+        ProviderSettlementBatch.provider_batch_id == deposit["Id"],
+    ))
+    assert result["manual"] == 1
+    assert batch is not None
+    assert expected_cause in str(batch.mismatch_reason)
+
+
+@pytest.mark.asyncio
+async def test_qbp_native_deposit_missing_fee_requires_manual_reconciliation(
+    db_session,
+) -> None:
+    tenant = await _tenant_with_qbp_configuration(db_session)
+    await _qbp_payout_attempt(
+        db_session,
+        tenant=tenant,
+        realm="realm-qbp",
+        charge_id="MT-QBP-MISSING-FEE",
+        gross=Decimal("40.00"),
+        qbo_payment_id="qbo-payment-missing-fee",
+    )
+    connection = QuickBooksConnection(
+        tenant_id=tenant.id,
+        realm_id="realm-qbp",
+        status="connected",
+        scopes="com.intuit.quickbooks.accounting",
+        encrypted_access_token="test",
+    )
+    result = await reconcile_qbp_native_settlements(
+        db_session,
+        connection=connection,
+        deposits=[{
+            "Id": "qbo-deposit-missing-fee",
+            "TotalAmt": 40.0,
+            "TxnDate": "2026-08-01",
+            "DepositToAccountRef": {"value": "bank-qbp"},
+            "Line": [{"LinkedTxn": [{
+                "TxnId": "qbo-payment-missing-fee",
+                "TxnType": "Payment",
+            }]}],
+        }],
+        payments=[{
+            "Id": "qbo-payment-missing-fee",
+            "TotalAmt": 40.0,
+            "PaymentRefNum": "QBP MT-QBP-MISSING-FEE",
+            "CustomerRef": {"value": "qbo-customer-qbp"},
+            "Line": [{"LinkedTxn": [{
+                "TxnId": "qbo-invoice-qbp", "TxnType": "Invoice",
+            }]}],
+            "TxnDate": "2026-08-01",
+        }],
+        purchases=[],
+    )
+    await db_session.flush()
+    batch = await db_session.scalar(select(ProviderSettlementBatch).where(
+        ProviderSettlementBatch.provider_batch_id == "qbo-deposit-missing-fee",
+    ))
+    assert result["manual"] == 1
+    assert batch is not None
+    assert batch.reconciliation_state == "manual_reconciliation_required"
+    assert batch.mismatch_reason == "fee_purchase_missing"
+    assert batch.net_payout == Decimal("0.00")
+
+
+@pytest.mark.asyncio
+async def test_qbp_native_deposit_waits_for_late_fee_before_freezing_manifest(
+    db_session,
+) -> None:
+    tenant = await _tenant_with_qbp_configuration(db_session)
+    await _qbp_payout_attempt(
+        db_session,
+        tenant=tenant,
+        realm="realm-qbp",
+        charge_id="MT-QBP-LATE-FEE",
+        gross=Decimal("103.00"),
+        customer_fee=Decimal("3.00"),
+        qbo_payment_id="qbo-payment-late-fee",
+    )
+    connection = QuickBooksConnection(
+        tenant_id=tenant.id,
+        realm_id="realm-qbp",
+        status="connected",
+        scopes="com.intuit.quickbooks.accounting",
+        encrypted_access_token="test",
+    )
+    txn_date = datetime.now(timezone.utc).date().isoformat()
+    payment = {
+        "Id": "qbo-payment-late-fee",
+        "TotalAmt": 103.0,
+        "PaymentRefNum": "QBP MT-QBP-LATE-FEE",
+        "CustomerRef": {"value": "qbo-customer-qbp"},
+        "Line": [{"LinkedTxn": [{
+            "TxnId": "qbo-invoice-qbp", "TxnType": "Invoice",
+        }]}],
+        "TxnDate": txn_date,
+    }
+    deposit = {
+        "Id": "qbo-deposit-late-fee",
+        "TotalAmt": 103.0,
+        "TxnDate": txn_date,
+        "DepositToAccountRef": {"value": "bank-qbp"},
+        "Line": [{"LinkedTxn": [{
+            "TxnId": payment["Id"],
+            "TxnType": "Payment",
+        }]}],
+    }
+
+    first = await reconcile_qbp_native_settlements(
+        db_session,
+        connection=connection,
+        deposits=[deposit],
+        payments=[payment],
+        purchases=[],
+    )
+    assert first == {
+        "batches": 0,
+        "matched": 0,
+        "manual": 0,
+        "deferred": 1,
+        "skipped": 0,
+    }
+    assert await db_session.scalar(select(func.count()).select_from(
+        ProviderSettlementBatch,
+    )) == 0
+
+    second = await reconcile_qbp_native_settlements(
+        db_session,
+        connection=connection,
+        deposits=[deposit],
+        payments=[payment],
+        purchases=[{
+            "Id": "qbo-fee-late-fee",
+            "TotalAmt": 2.99,
+            "TxnDate": txn_date,
+            "AccountRef": {"value": "bank-qbp"},
+            "EntityRef": {"value": "vendor-intuit", "name": "Intuit Payment Solutions"},
+            "PrivateNote": "System-recorded fee for QuickBooks Payments",
+            "Line": [{
+                "Description": "QuickBooks Payments fee",
+                "AccountBasedExpenseLineDetail": {
+                    "AccountRef": {"value": "expense-1", "name": "Processor Fees"},
+                },
+            }],
+        }],
+    )
+    await db_session.flush()
+    assert second == {
+        "batches": 1,
+        "matched": 1,
+        "manual": 0,
+        "deferred": 0,
+        "skipped": 0,
+    }
+
+
+@pytest.mark.asyncio
+async def test_qbp_native_deposit_without_local_charge_is_not_attributed(db_session) -> None:
+    tenant = await _tenant_with_qbp_configuration(db_session)
+    connection = QuickBooksConnection(
+        tenant_id=tenant.id,
+        realm_id="realm-qbp",
+        status="connected",
+        scopes="com.intuit.quickbooks.accounting",
+        encrypted_access_token="test",
+    )
+    result = await reconcile_qbp_native_settlements(
+        db_session,
+        connection=connection,
+        deposits=[{
+            "Id": "qbo-external-deposit",
+            "TotalAmt": 25.0,
+            "TxnDate": "2026-09-03",
+            "DepositToAccountRef": {"value": "bank-qbp"},
+            "Line": [{"LinkedTxn": [{
+                "TxnId": "qbo-external-payment",
+                "TxnType": "Payment",
+            }]}],
+        }],
+        payments=[{
+            "Id": "qbo-external-payment",
+            "TotalAmt": 25.0,
+            "PaymentRefNum": "outside-qbo",
+            "TxnDate": "2026-09-03",
+        }],
+        purchases=[],
+    )
+    await db_session.flush()
+    assert result == {
+        "batches": 0,
+        "matched": 0,
+        "manual": 0,
+        "deferred": 0,
+        "skipped": 1,
+    }
+    assert await db_session.scalar(select(func.count()).select_from(
+        ProviderSettlementBatch,
+    )) == 0
+
+
+@pytest.mark.asyncio
+async def test_provider_config_and_accounting_link_orm_identity_is_frozen(
+    db_session,
+) -> None:
+    tenant = await _tenant_with_stripe_configuration(
+        db_session, account_id="acct_orm_frozen", qbo_realm="realm-orm",
+    )
+    tenant_id = tenant.id
+    config = await db_session.scalar(select(
+        TenantPaymentProviderConfiguration
+    ).where(TenantPaymentProviderConfiguration.tenant_id == tenant_id))
+    config.qbo_realm_snapshot = "realm-tampered"
+    with pytest.raises(ValueError, match="frozen fields are immutable"):
+        await db_session.flush()
+    await db_session.rollback()
+
+    config = await db_session.scalar(select(
+        TenantPaymentProviderConfiguration
+    ).where(TenantPaymentProviderConfiguration.tenant_id == tenant_id))
+    config.is_active = False
+    config.deactivated_at = datetime.now(timezone.utc)
+    await db_session.commit()
+
+    link = PaymentAccountingLink(
+        tenant_id=tenant_id,
+        invoice_id=uuid4(),
+        attempt_id=uuid4(),
+        financial_object_type="invoice_payment",
+        financial_object_id=uuid4(),
+        operation_version=1,
+        principal_amount_snapshot=Decimal("25.00"),
+        gross_amount_snapshot=Decimal("25.75"),
+        owning_writer="dieselbridge",
+        account_mapping_snapshot={"stripe_clearing_account": "Stripe Clearing"},
+        qbo_realm_snapshot="realm-orm",
+        sync_state="pending",
+    )
+    db_session.add(link)
+    await db_session.commit()
+    link.sync_state = "synced"
+    link.provider_object_id = "qbo-payment-1"
+    await db_session.commit()
+    link.account_mapping_snapshot = {"stripe_clearing_account": "Tampered"}
+    with pytest.raises(ValueError, match="frozen fields are immutable"):
+        await db_session.flush()
+
+
+@pytest.mark.asyncio
+async def test_settlement_realm_initial_bind_succeeds_then_is_orm_frozen(
+    db_session,
+) -> None:
+    tenant = await _tenant_with_stripe_configuration(
+        db_session, account_id="acct_settlement_frozen", qbo_realm="realm-frozen",
+    )
+    config = await db_session.scalar(select(
+        TenantPaymentProviderConfiguration
+    ).where(
+        TenantPaymentProviderConfiguration.tenant_id == tenant.id,
+        TenantPaymentProviderConfiguration.version == 1,
+    ))
+    settlement = InvoiceSettlement(
+        tenant_id=tenant.id,
+        invoice_id=uuid4(),
+        customer_id=uuid4(),
+        principal_total=Decimal("25.00"),
+        max_card_fee=Decimal("0.00"),
+        max_card_fee_tax=Decimal("0.00"),
+        sales_tax_rate_snapshot=Decimal("0.00"),
+        card_fee_rate_snapshot=Decimal("0.00"),
+        currency="USD",
+    )
+    db_session.add(settlement)
+    await db_session.flush()
+
+    await bind_settlement_accounting_realm(
+        db_session,
+        settlement=settlement,
+        config=config,
+    )
+    await db_session.flush()
+    assert settlement.qbo_realm_snapshot == "realm-frozen"
+    assert settlement.initial_provider_configuration_version == 1
+
+    settlement.accounting_sync_status = "accounting_sync_pending"
+    await db_session.flush()
+    settlement.qbo_realm_snapshot = "realm-rebound"
+    with pytest.raises(ValueError, match="accounting realm binding is immutable"):
+        await db_session.flush()
+
+
+@pytest.mark.asyncio
+async def test_settlement_realm_bind_allows_only_realm_free_legacy_attempts(
+    db_session,
+) -> None:
+    tenant = await _tenant_with_stripe_configuration(
+        db_session,
+        account_id="acct_legacy_realm",
+        qbo_realm=None,
+    )
+    tenant_id = tenant.id
+    legacy_config = await db_session.scalar(select(
+        TenantPaymentProviderConfiguration
+    ).where(
+        TenantPaymentProviderConfiguration.tenant_id == tenant_id,
+        TenantPaymentProviderConfiguration.version == 1,
+    ))
+    legacy_config.is_active = False
+    legacy_config.deactivated_at = datetime.now(timezone.utc)
+    connected_config = TenantPaymentProviderConfiguration(
+        tenant_id=tenant_id,
+        version=2,
+        selected_provider="stripe_connect",
+        readiness_state="ready",
+        is_active=True,
+        actor_user_id=uuid4(),
+        actor_name_snapshot="Garage Owner",
+        provider_account_snapshot="acct_legacy_realm",
+        qbo_realm_snapshot="realm-connected",
+        writer_strategy="dieselbridge",
+        idempotency_key=f"provider-{uuid4().hex}",
+        request_hash="1" * 64,
+        stripe_clearing_account="Stripe Clearing",
+        processor_fee_expense_account="Processor Fees",
+        checking_account="Checking",
+    )
+    db_session.add(connected_config)
+
+    legacy_settlement = InvoiceSettlement(
+        tenant_id=tenant_id,
+        invoice_id=uuid4(),
+        customer_id=uuid4(),
+        principal_total=Decimal("25.00"),
+        max_card_fee=Decimal("0.00"),
+        max_card_fee_tax=Decimal("0.00"),
+        sales_tax_rate_snapshot=Decimal("0.00"),
+        card_fee_rate_snapshot=Decimal("0.00"),
+        currency="USD",
+    )
+    db_session.add(legacy_settlement)
+    await db_session.flush()
+    legacy_attempt = InvoicePaymentAttempt(
+        tenant_id=tenant_id,
+        invoice_id=legacy_settlement.invoice_id,
+        settlement_id=legacy_settlement.id,
+        customer_id=legacy_settlement.customer_id,
+        source="backfill",
+        rail="check",
+        provider="manual",
+        state="confirmed",
+        principal_amount=Decimal("5.00"),
+        provider_charge_amount=Decimal("5.00"),
+        received_amount=Decimal("5.00"),
+        applied_principal_amount=Decimal("5.00"),
+        unapplied_amount=Decimal("0.00"),
+        processor_fee_amount=Decimal("0.00"),
+        currency="USD",
+        provider_configuration_version=1,
+        actor_name_snapshot="Legacy import",
+        subject_type="backfill",
+        idempotency_key=f"attempt-{uuid4().hex}",
+        request_hash="2" * 64,
+    )
+    db_session.add(legacy_attempt)
+    await db_session.flush()
+
+    await bind_settlement_accounting_realm(
+        db_session,
+        settlement=legacy_settlement,
+        config=connected_config,
+    )
+    await db_session.flush()
+    assert legacy_settlement.qbo_realm_snapshot == "realm-connected"
+    assert legacy_settlement.initial_provider_configuration_version == 2
+
+    native_settlement = InvoiceSettlement(
+        tenant_id=tenant_id,
+        invoice_id=uuid4(),
+        customer_id=uuid4(),
+        principal_total=Decimal("25.00"),
+        max_card_fee=Decimal("0.00"),
+        max_card_fee_tax=Decimal("0.00"),
+        sales_tax_rate_snapshot=Decimal("0.00"),
+        card_fee_rate_snapshot=Decimal("0.00"),
+        currency="USD",
+    )
+    db_session.add(native_settlement)
+    await db_session.flush()
+    native_attempt = InvoicePaymentAttempt(
+        tenant_id=tenant_id,
+        invoice_id=native_settlement.invoice_id,
+        settlement_id=native_settlement.id,
+        customer_id=native_settlement.customer_id,
+        source="staff",
+        rail="check",
+        provider="manual",
+        state="pending",
+        principal_amount=Decimal("5.00"),
+        provider_charge_amount=Decimal("5.00"),
+        currency="USD",
+        provider_configuration_version=1,
+        actor_name_snapshot="Garage Owner",
+        subject_type="user",
+        idempotency_key=f"attempt-{uuid4().hex}",
+        request_hash="3" * 64,
+    )
+    db_session.add(native_attempt)
+    await db_session.flush()
+    await bind_settlement_accounting_realm(
+        db_session,
+        settlement=native_settlement,
+        config=connected_config,
+    )
+    with pytest.raises(ValueError, match="accounting realm binding is immutable"):
+        await db_session.flush()
+
+
+@pytest.mark.asyncio
+async def test_stripe_payout_persists_match_mismatch_and_deduplicates(db_session) -> None:
+    tenant = await _tenant_with_stripe_configuration(db_session, account_id="acct_db048")
+    matched_attempt = await _payout_attempt(
+        db_session, tenant=tenant, account_id="acct_db048", gross=Decimal("100.00"),
+    )
+    mismatch_attempt = await _payout_attempt(
+        db_session, tenant=tenant, account_id="acct_db048", gross=Decimal("100.00"),
+    )
+    occurred_at = datetime(2026, 8, 30, 12, 0, tzinfo=timezone.utc)
+    matched_entries = [
+        {"id": "ch_1", "type": "charge", "amount": "100.00", "attempt_id": str(matched_attempt.id), "occurred_at": occurred_at},
+        {"id": "fee_1", "type": "stripe_fee", "amount": "3.00", "attempt_id": str(matched_attempt.id), "occurred_at": occurred_at},
+    ]
+
+    matched = await reconcile_stripe_payout(
+        db_session,
+        tenant_id=tenant.id,
+        provider_account_id="acct_db048",
+        payout_id="po_matched",
+        net_payout=Decimal("97.00"),
+        entries=matched_entries,
+    )
+    mismatch = await reconcile_stripe_payout(
+        db_session,
+        tenant_id=tenant.id,
+        provider_account_id="acct_db048",
+        payout_id="po_mismatch",
+        net_payout=Decimal("96.99"),
+        entries=[
+            {"id": "ch_2", "type": "charge", "amount": "100.00", "attempt_id": str(mismatch_attempt.id), "occurred_at": occurred_at},
+            {"id": "fee_2", "type": "stripe_fee", "amount": "3.00", "attempt_id": str(mismatch_attempt.id), "occurred_at": occurred_at},
+        ],
+    )
+    await db_session.flush()
+    duplicate = await reconcile_stripe_payout(
+        db_session,
+        tenant_id=tenant.id,
+        provider_account_id="acct_db048",
+        payout_id="po_matched",
+        net_payout=Decimal("97.00"),
+        entries=matched_entries,
+    )
+    with pytest.raises(DB048ReconciliationError, match="immutable manifest"):
+        await reconcile_stripe_payout(
+            db_session,
+            tenant_id=tenant.id,
+            provider_account_id="acct_db048",
+            payout_id="po_matched",
+            net_payout=Decimal("1.00"),
+            entries=matched_entries,
+        )
+    await db_session.flush()
+
+    assert matched.reconciliation_state == "matched"
+    assert matched.mismatch_reason is None
+    assert mismatch.reconciliation_state == "mismatch"
+    assert mismatch.mismatch_reason == "expected 97.00 got 96.99"
+    assert duplicate.id == matched.id
+    assert await db_session.scalar(select(func.count()).select_from(ProviderSettlementBatch)) == 2
+    assert await db_session.scalar(select(func.count()).select_from(ProviderSettlementEntry)) == 4
+
+
+@pytest.mark.asyncio
+async def test_stripe_payout_rejects_foreign_provider_account(db_session) -> None:
+    tenant = await _tenant_with_stripe_configuration(db_session, account_id="acct_owned")
+
+    with pytest.raises(
+        DB048ReconciliationError,
+        match="Stripe payout account does not belong to this tenant",
+    ):
+        await reconcile_stripe_payout(
+            db_session,
+            tenant_id=tenant.id,
+            provider_account_id="acct_foreign",
+            payout_id="po_foreign",
+            net_payout=Decimal("10.00"),
+            entries=[{"id": "ch_foreign", "type": "charge", "amount": "10.00"}],
+        )
+
+    assert await db_session.scalar(select(func.count()).select_from(ProviderSettlementBatch)) == 0
+    assert await db_session.scalar(select(func.count()).select_from(ProviderSettlementEntry)) == 0
+
+
+@pytest.mark.asyncio
+async def test_payout_booking_is_pinned_to_snapshotted_qbo_realm_before_io(
+    db_session,
+    monkeypatch,
+) -> None:
+    tenant = await _tenant_with_stripe_configuration(
+        db_session,
+        account_id="acct_realm_pin",
+        qbo_realm="realm-original",
+    )
+    db_session.add(QuickBooksConnection(
+        tenant_id=tenant.id,
+        realm_id="realm-current",
+        status="connected",
+        scopes="com.intuit.quickbooks.accounting",
+        encrypted_access_token="test",
+    ))
+    attempt = await _payout_attempt(
+        db_session,
+        tenant=tenant,
+        account_id="acct_realm_pin",
+        gross=Decimal("100.00"),
+    )
+    occurred_at = datetime(2026, 8, 30, 12, 0, tzinfo=timezone.utc)
+    batch = await reconcile_stripe_payout(
+        db_session,
+        tenant_id=tenant.id,
+        provider_account_id="acct_realm_pin",
+        payout_id="po_realm_pin",
+        net_payout=Decimal("97.00"),
+        entries=[
+            {"id": "ch_realm", "type": "charge", "amount": "100.00", "attempt_id": str(attempt.id), "occurred_at": occurred_at},
+            {"id": "fee_realm", "type": "stripe_fee", "amount": "3.00", "attempt_id": str(attempt.id), "occurred_at": occurred_at},
+        ],
+    )
+    provider_io = 0
+
+    async def unexpected_lookup(*_args, **_kwargs):
+        nonlocal provider_io
+        provider_io += 1
+        return None
+
+    monkeypatch.setattr(
+        "app.services.db048_accounting_reconciliation._qbo_find_by_doc_number",
+        unexpected_lookup,
+    )
+    with pytest.raises(
+        DB048ReconciliationError,
+        match="accounting configuration is unavailable",
+    ):
+        await _book_stripe_payout_batch(db_session, batch=batch)
+    assert provider_io == 0
+    assert batch.qbo_realm_snapshot == "realm-original"
+
+
+@pytest.mark.asyncio
+async def test_payout_booking_has_stable_requestid_and_rejects_doc_collision(
+    db_session,
+    monkeypatch,
+) -> None:
+    tenant = await _tenant_with_stripe_configuration(
+        db_session,
+        account_id="acct_payout_fence",
+        qbo_realm="realm-payout",
+    )
+    connection = QuickBooksConnection(
+        tenant_id=tenant.id,
+        realm_id="realm-payout",
+        status="connected",
+        scopes="com.intuit.quickbooks.accounting",
+        encrypted_access_token="test",
+    )
+    db_session.add(connection)
+    attempt = await _payout_attempt(
+        db_session,
+        tenant=tenant,
+        account_id="acct_payout_fence",
+        gross=Decimal("100.00"),
+    )
+    collision_attempt = await _payout_attempt(
+        db_session,
+        tenant=tenant,
+        account_id="acct_payout_fence",
+        gross=Decimal("10.00"),
+    )
+    occurred_at = datetime(2026, 8, 30, 12, 0, tzinfo=timezone.utc)
+    batch = await reconcile_stripe_payout(
+        db_session,
+        tenant_id=tenant.id,
+        provider_account_id="acct_payout_fence",
+        payout_id="po_requestid",
+        net_payout=Decimal("97.00"),
+        entries=[
+            {"id": "ch_requestid", "type": "charge", "amount": "100.00", "attempt_id": str(attempt.id), "occurred_at": occurred_at},
+            {"id": "fee_requestid", "type": "stripe_fee", "amount": "3.00", "attempt_id": str(attempt.id), "occurred_at": occurred_at},
+        ],
+    )
+    calls: list[dict] = []
+
+    async def no_existing(*_args, **_kwargs):
+        return None
+
+    async def fake_request(_connection, method, path, json=None, params=None):
+        calls.append({"method": method, "path": path, "json": json, "params": params})
+        return {"JournalEntry": {"Id": "qbo-payout-je-1"}}
+
+    monkeypatch.setattr(
+        "app.services.db048_accounting_reconciliation._qbo_find_by_doc_number",
+        no_existing,
+    )
+    monkeypatch.setattr(
+        "app.services.db048_accounting_reconciliation._request",
+        fake_request,
+    )
+    assert await _book_stripe_payout_batch(db_session, batch=batch) == "qbo-payout-je-1"
+    assert calls[0]["params"] == {
+        "requestid": _qbo_request_id("payout", batch.id)
+    }
+    assert f"payout={batch.provider_batch_id}" in calls[0]["json"]["PrivateNote"]
+
+    collision = await reconcile_stripe_payout(
+        db_session,
+        tenant_id=tenant.id,
+        provider_account_id="acct_payout_fence",
+        payout_id="po_collision",
+        net_payout=Decimal("10.00"),
+        entries=[{"id": "ch_collision", "type": "charge", "amount": "10.00", "attempt_id": str(collision_attempt.id), "occurred_at": occurred_at}],
+    )
+
+    async def unrelated_existing(*_args, **_kwargs):
+        return {"Id": "qbo-unrelated", "PrivateNote": "unrelated journal"}
+
+    monkeypatch.setattr(
+        "app.services.db048_accounting_reconciliation._qbo_find_by_doc_number",
+        unrelated_existing,
+    )
+    with pytest.raises(DB048ReconciliationError, match="collides"):
+        await _book_stripe_payout_batch(db_session, batch=collision)
+    assert len(calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_payout_books_same_realm_historical_configs_as_one_partitioned_journal(
+    db_session,
+    monkeypatch,
+) -> None:
+    tenant = await _tenant_with_stripe_configuration(
+        db_session, account_id="acct_partitioned", qbo_realm="realm-shared",
+    )
+    config_v1 = await db_session.scalar(select(
+        TenantPaymentProviderConfiguration
+    ).where(
+        TenantPaymentProviderConfiguration.tenant_id == tenant.id,
+        TenantPaymentProviderConfiguration.version == 1,
+    ))
+    switched_at = datetime(2026, 8, 30, 13, 0, tzinfo=timezone.utc)
+    config_v1.is_active = False
+    config_v1.deactivated_at = switched_at
+    await db_session.flush()
+    db_session.add(TenantPaymentProviderConfiguration(
+        tenant_id=tenant.id,
+        version=2,
+        selected_provider="stripe_connect",
+        readiness_state="ready",
+        is_active=True,
+        effective_at=switched_at,
+        actor_user_id=uuid4(),
+        actor_name_snapshot="Garage Owner",
+        provider_account_snapshot="acct_partitioned",
+        qbo_realm_snapshot="realm-shared",
+        writer_strategy="dieselbridge",
+        idempotency_key=f"provider-{uuid4().hex}",
+        request_hash="b" * 64,
+        stripe_clearing_account="Stripe Clearing V2",
+        processor_fee_expense_account="Processor Fees V2",
+        checking_account="Checking",
+    ))
+    await db_session.flush()
+    first = await _payout_attempt(
+        db_session,
+        tenant=tenant,
+        account_id="acct_partitioned",
+        gross=Decimal("100.00"),
+        configuration_version=1,
+    )
+    second = await _payout_attempt(
+        db_session,
+        tenant=tenant,
+        account_id="acct_partitioned",
+        gross=Decimal("50.00"),
+        configuration_version=2,
+    )
+    batch = await reconcile_stripe_payout(
+        db_session,
+        tenant_id=tenant.id,
+        provider_account_id="acct_partitioned",
+        payout_id="po_partitioned",
+        net_payout=Decimal("145.50"),
+        entries=[
+            {"id": "ch_partition_v1", "type": "charge", "amount": "100.00", "attempt_id": str(first.id), "occurred_at": switched_at - timedelta(minutes=1)},
+            {"id": "fee_partition_v1", "type": "stripe_fee", "amount": "3.00", "attempt_id": str(first.id), "occurred_at": switched_at - timedelta(minutes=1)},
+            {"id": "ch_partition_v2", "type": "charge", "amount": "50.00", "attempt_id": str(second.id), "occurred_at": switched_at + timedelta(minutes=1)},
+            {"id": "fee_partition_v2", "type": "stripe_fee", "amount": "1.50", "attempt_id": str(second.id), "occurred_at": switched_at + timedelta(minutes=1)},
+        ],
+    )
+    db_session.add(QuickBooksConnection(
+        tenant_id=tenant.id,
+        realm_id="realm-shared",
+        status="connected",
+        scopes="com.intuit.quickbooks.accounting",
+        encrypted_access_token="test",
+    ))
+    calls: list[dict] = []
+
+    async def no_existing(*_args, **_kwargs):
+        return None
+
+    async def fake_request(_connection, method, path, json=None, params=None):
+        calls.append({"json": json, "params": params})
+        return {"JournalEntry": {"Id": "qbo-partitioned"}}
+
+    monkeypatch.setattr(
+        "app.services.db048_accounting_reconciliation._qbo_find_by_doc_number",
+        no_existing,
+    )
+    monkeypatch.setattr(
+        "app.services.db048_accounting_reconciliation._request", fake_request,
+    )
+    assert await _book_stripe_payout_batch(db_session, batch=batch) == "qbo-partitioned"
+    lines = calls[0]["json"]["Line"]
+    checking_lines = [
+        line for line in lines
+        if line["JournalEntryLineDetail"]["AccountRef"]["value"] == "Checking"
+    ]
+    assert len(checking_lines) == 1
+    assert checking_lines[0]["Amount"] == 145.5
+    accounts = {
+        line["JournalEntryLineDetail"]["AccountRef"]["value"] for line in lines
+    }
+    assert {"Stripe Clearing", "Stripe Clearing V2"} <= accounts
+    snapshots = list((await db_session.execute(select(
+        ProviderSettlementEntry.provider_configuration_version,
+        ProviderSettlementEntry.account_mapping_snapshot,
+    ).where(ProviderSettlementEntry.batch_id == batch.id))).all())
+    assert {row.provider_configuration_version for row in snapshots} == {1, 2}
+
+
+@pytest.mark.asyncio
+async def test_mixed_realm_payout_persists_manual_proof_and_performs_zero_qbo_io(
+    db_session,
+    monkeypatch,
+) -> None:
+    tenant = await _tenant_with_stripe_configuration(
+        db_session, account_id="acct_mixed_realm", qbo_realm="realm-one",
+    )
+    config_v1 = await db_session.scalar(select(
+        TenantPaymentProviderConfiguration
+    ).where(TenantPaymentProviderConfiguration.tenant_id == tenant.id))
+    switched_at = datetime(2026, 8, 30, 13, 0, tzinfo=timezone.utc)
+    config_v1.is_active = False
+    config_v1.deactivated_at = switched_at
+    await db_session.flush()
+    db_session.add(TenantPaymentProviderConfiguration(
+        tenant_id=tenant.id,
+        version=2,
+        selected_provider="stripe_connect",
+        readiness_state="ready",
+        is_active=True,
+        effective_at=switched_at,
+        actor_user_id=uuid4(),
+        actor_name_snapshot="Garage Owner",
+        provider_account_snapshot="acct_mixed_realm",
+        qbo_realm_snapshot="realm-two",
+        writer_strategy="dieselbridge",
+        idempotency_key=f"provider-{uuid4().hex}",
+        request_hash="c" * 64,
+        stripe_clearing_account="Stripe Clearing Two",
+        processor_fee_expense_account="Processor Fees Two",
+        checking_account="Checking Two",
+    ))
+    await db_session.flush()
+    first = await _payout_attempt(
+        db_session, tenant=tenant, account_id="acct_mixed_realm",
+        gross=Decimal("40.00"), configuration_version=1,
+    )
+    second = await _payout_attempt(
+        db_session, tenant=tenant, account_id="acct_mixed_realm",
+        gross=Decimal("60.00"), configuration_version=2,
+    )
+    batch = await reconcile_stripe_payout(
+        db_session,
+        tenant_id=tenant.id,
+        provider_account_id="acct_mixed_realm",
+        payout_id="po_mixed_realm",
+        net_payout=Decimal("100.00"),
+        entries=[
+            {"id": "ch_mixed_one", "type": "charge", "amount": "40.00", "attempt_id": str(first.id), "occurred_at": switched_at - timedelta(minutes=1)},
+            {"id": "ch_mixed_two", "type": "charge", "amount": "60.00", "attempt_id": str(second.id), "occurred_at": switched_at + timedelta(minutes=1)},
+        ],
+    )
+    provider_io = 0
+
+    async def unexpected_provider_io(*_args, **_kwargs):
+        nonlocal provider_io
+        provider_io += 1
+        return None
+
+    monkeypatch.setattr(
+        "app.services.db048_accounting_reconciliation._qbo_find_by_doc_number",
+        unexpected_provider_io,
+    )
+    assert batch.reconciliation_state == "manual_reconciliation_required"
+    assert batch.qbo_realm_snapshot is None
+    with pytest.raises(DB048ReconciliationError, match="manual reconciliation"):
+        await _book_stripe_payout_batch(db_session, batch=batch)
+    assert provider_io == 0
+    assert await db_session.scalar(select(func.count()).select_from(
+        ProviderSettlementEntry,
+    ).where(ProviderSettlementEntry.batch_id == batch.id)) == 2
+
+
+@pytest.mark.asyncio
+async def test_payout_dead_letter_is_visible_tenant_scoped_and_idempotently_retryable(
+    db_session,
+) -> None:
+    tenant = await _tenant_with_stripe_configuration(
+        db_session,
+        account_id="acct_payout_dead",
+        qbo_realm="realm-payout-dead",
+    )
+    owner = User(
+        email=f"payout-owner-{uuid4().hex}@example.com",
+        hashed_password="hash",
+        first_name="Payout",
+        last_name="Owner",
+        role=UserRole.GARAGE_OWNER,
+        tenant_id=tenant.id,
+        is_active=True,
+        is_verified=True,
+    )
+    db_session.add(owner)
+    attempt = await _payout_attempt(
+        db_session,
+        tenant=tenant,
+        account_id="acct_payout_dead",
+        gross=Decimal("100.00"),
+    )
+    occurred_at = datetime(2026, 8, 30, 12, 0, tzinfo=timezone.utc)
+    batch = await reconcile_stripe_payout(
+        db_session,
+        tenant_id=tenant.id,
+        provider_account_id="acct_payout_dead",
+        payout_id="po_dead",
+        net_payout=Decimal("97.00"),
+        entries=[
+            {"id": "ch_dead", "type": "charge", "amount": "100.00", "attempt_id": str(attempt.id), "occurred_at": occurred_at},
+            {"id": "fee_dead", "type": "stripe_fee", "amount": "3.00", "attempt_id": str(attempt.id), "occurred_at": occurred_at},
+        ],
+    )
+    operation = ProviderOutboxEvent(
+        tenant_id=tenant.id,
+        event_type="stripe_payout.reconcile",
+        aggregate_type="stripe_payout",
+        aggregate_id=tenant.id,
+        payload={
+            "payout_id": "po_dead",
+            "provider_account_id": "acct_payout_dead",
+            "net_payout": "97.00",
+        },
+        idempotency_key="stripe-payout:acct_payout_dead:po_dead",
+        status=ProviderOutboxStatus.DEAD.value,
+        available_at=datetime.now(timezone.utc),
+        completed_at=datetime.now(timezone.utc),
+        last_error="QuickBooksAccountingError: provider unavailable",
+    )
+    db_session.add(operation)
+    await db_session.flush()
+    await _project_accounting_dead_letter(db_session, operation)
+    assert batch.reconciliation_state == "accounting_failed"
+    assert "provider unavailable" in batch.mismatch_reason
+
+    result = await retry_payout_reconciliation(
+        operation_id=operation.id,
+        idempotency_header="retry-po-dead",
+        db=db_session,
+        current_user=owner,
+    )
+    assert result.operation_id == operation.id
+    assert result.state == ProviderOutboxStatus.PENDING.value
+    assert batch.reconciliation_state == "matched"
+    replay = await retry_payout_reconciliation(
+        operation_id=operation.id,
+        idempotency_header="retry-po-dead",
+        db=db_session,
+        current_user=owner,
+    )
+    assert replay.state == ProviderOutboxStatus.PENDING.value
+    assert await db_session.scalar(select(func.count()).select_from(
+        ProviderOutboxEvent,
+    ).where(
+        ProviderOutboxEvent.event_type == "stripe_payout.retry_requested",
+        ProviderOutboxEvent.idempotency_key == "stripe-payout-retry:retry-po-dead",
+    )) == 1
+
+    foreign_tenant = Tenant(name="Foreign Garage", slug=f"foreign-{uuid4().hex}")
+    db_session.add(foreign_tenant)
+    await db_session.flush()
+    foreign_owner = User(
+        email=f"foreign-owner-{uuid4().hex}@example.com",
+        hashed_password="hash",
+        first_name="Foreign",
+        last_name="Owner",
+        role=UserRole.GARAGE_OWNER,
+        tenant_id=foreign_tenant.id,
+        is_active=True,
+        is_verified=True,
+    )
+    db_session.add(foreign_owner)
+    await db_session.flush()
+    with pytest.raises(SettlementDomainError) as error:
+        await retry_payout_reconciliation(
+            operation_id=operation.id,
+            idempotency_header="foreign-retry",
+            db=db_session,
+            current_user=foreign_owner,
+        )
+    assert getattr(error.value, "code", None) == "invoice_not_found"

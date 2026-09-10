@@ -15,6 +15,17 @@ import { getStripeForAccount } from '@/lib/stripe'
 import { useAuthStore } from '@/stores/authStore'
 import type { InvoiceDetail, RepairOrderDetail } from '@/types'
 import { formatUSPhone } from '@/utils/phone'
+import {
+  SettlementPaymentPanel,
+  SettlementCreditPanel,
+  SettlementResolutionPanel,
+  SettlementSummaryCard,
+  isPositiveMoney,
+  isSettlementUnavailable,
+  paymentApiError,
+  useInvoiceAllocations,
+  useInvoiceSettlement,
+} from '@/features/payments'
 
 import QuickBooksPaymentPanel from './QuickBooksPaymentPanel'
 import { getPortalPreferences } from './portal-preferences'
@@ -151,6 +162,14 @@ export default function CustomerInvoicePage() {
     enabled: Boolean(invoiceId),
   })
 
+  const settlementAccess = invoice?.id
+    ? { kind: 'authenticated' as const, invoiceId: invoice.id }
+    : null
+  const settlementQuery = useInvoiceSettlement(settlementAccess)
+  const allocationQuery = useInvoiceAllocations(settlementAccess, Boolean(settlementQuery.data))
+  const legacySettlementMode = settlementQuery.data?.feature_enabled === false
+    || Boolean(settlementQuery.error && isSettlementUnavailable(settlementQuery.error))
+
   const { data: repairOrder } = useQuery<RepairOrderDetail>({
     queryKey: ['repair-order-payment-detail', invoice?.repair_order_id],
     queryFn: async () => (await api.get(`/repair-orders/${invoice!.repair_order_id}/detail`)).data,
@@ -160,13 +179,15 @@ export default function CustomerInvoicePage() {
   const { data: zelleInfo, isLoading: isZelleLoading } = useQuery<ZelleInfoResponse>({
     queryKey: ['customer-zelle-info', invoice?.id],
     queryFn: async () => (await api.get(`/payments/zelle-info/${invoice!.id}`)).data,
+    // DB-048 still needs the shop's read-only Zelle destination. Only the
+    // legacy mutation/UI paths are gated off while the settlement flow is on.
     enabled: Boolean(invoice && invoice.status !== 'paid'),
   })
 
   const { data: quickBooksPayment, isLoading: isQuickBooksLoading } = useQuery<QuickBooksPaymentAvailability>({
     queryKey: ['quickbooks-payment-availability', invoice?.id],
     queryFn: async () => (await api.get(`/quickbooks/payments/availability/${invoice!.id}`)).data,
-    enabled: Boolean(invoice && invoice.status !== 'paid'),
+    enabled: Boolean(invoice && invoice.status !== 'paid' && legacySettlementMode),
   })
 
   const createIntentMutation = useMutation({
@@ -285,8 +306,12 @@ export default function CustomerInvoicePage() {
   }
 
   const backDestination = paymentState?.paymentOrigin || 'History'
-  const isPaid = invoice.status === 'paid'
-  const isPending = Boolean(invoice.pending_zelle_confirmation)
+  const splitSettlement = settlementQuery.data?.feature_enabled === false ? null : settlementQuery.data
+  const settlementFailure = settlementQuery.error && !isSettlementUnavailable(settlementQuery.error)
+  const isPaid = splitSettlement?.state === 'paid' || invoice.status === 'paid'
+  const isPending = splitSettlement
+    ? isPositiveMoney(splitSettlement.active_pending_principal)
+    : Boolean(invoice.pending_zelle_confirmation)
   const concern = repairOrder?.description?.trim() || 'Service / Repair'
   const labor = Number(repairOrder?.total_labor_cost || invoice.subtotal)
   const parts = Number(repairOrder?.total_parts_cost || 0)
@@ -343,11 +368,18 @@ export default function CustomerInvoicePage() {
               {isPaid ? 'paid' : 'invoiced'}
             </span>
           </p>
-          <h1 id="payment-total" className="mt-2.5 whitespace-nowrap text-[38px] font-extrabold leading-none tracking-[-0.02em] tabular-nums sm:text-[46px]">
-            {money(pricing.selectedTotal)}
+          {splitSettlement && (
+            <p className="mt-2.5 text-[11px] font-extrabold uppercase tracking-[0.12em] text-[#8b92a5]">Invoice outstanding</p>
+          )}
+          <h1 id="payment-total" className={`${splitSettlement ? 'mt-1' : 'mt-2.5'} whitespace-nowrap text-[38px] font-extrabold leading-none tracking-[-0.02em] tabular-nums sm:text-[46px]`}>
+            {money(splitSettlement?.outstanding_balance ?? pricing.selectedTotal)}
           </h1>
           <p className={`mt-1 min-h-5 text-[13px] font-bold ${selectedMethod === 'zelle' ? 'text-[#2dd4bf]' : 'text-[#8b92a5]'}`}>
-            {selectedMethod === 'zelle'
+            {splitSettlement
+              ? selectedMethod === 'zelle'
+                ? 'No card fee with Zelle'
+                : 'Card fee is calculated only on the card-funded amount'
+              : selectedMethod === 'zelle'
               ? pricing.cardFee > 0 && `No card fee with Zelle — you save ${money(pricing.cardFee)}`
               : `Includes ${money(pricing.cardFee)} card processing fee`}
           </p>
@@ -370,6 +402,58 @@ export default function CustomerInvoicePage() {
               Receipt
             </a>
           </section>
+        ) : splitSettlement && settlementAccess ? (
+          <div className="mt-4 space-y-4">
+            <SettlementSummaryCard
+              summary={splitSettlement}
+              allocations={allocationQuery.data?.items ?? []}
+              tone="dark"
+            />
+            <SettlementResolutionPanel
+              access={settlementAccess}
+              summary={splitSettlement}
+              allocations={allocationQuery.data?.items ?? []}
+              audience="customer"
+              tone="dark"
+              onUpdated={next => {
+                queryClient.setQueryData(['invoice-settlement', 'authenticated', invoice.id], next)
+                queryClient.invalidateQueries({ queryKey: ['invoice-detail', invoiceId] })
+              }}
+            />
+            <SettlementCreditPanel
+              access={settlementAccess}
+              summary={splitSettlement}
+              tone="dark"
+              onUpdated={next => {
+                queryClient.setQueryData(['invoice-settlement', 'authenticated', invoice.id], next)
+                queryClient.invalidateQueries({ queryKey: ['invoice-detail', invoiceId] })
+              }}
+            />
+            <SettlementPaymentPanel
+              access={settlementAccess}
+              summary={splitSettlement}
+              audience="customer"
+              tone="dark"
+              senderDefaults={{
+                email: user?.email || null,
+                phone: user?.phone || null,
+              }}
+              zelleRecipient={recipient ? { display: recipient, memo: invoice.order_number } : null}
+              onUpdated={next => {
+                queryClient.setQueryData(['invoice-settlement', 'authenticated', invoice.id], next)
+                queryClient.invalidateQueries({ queryKey: ['invoice-detail', invoiceId] })
+              }}
+            />
+          </div>
+        ) : settlementQuery.isLoading ? (
+          <div className="mt-4 flex min-h-32 items-center justify-center rounded-[14px] border border-[#232939] bg-[#12161f]">
+            <Spinner size="lg" />
+          </div>
+        ) : settlementFailure ? (
+          <div role="alert" className="mt-4 rounded-[14px] border border-red-500/30 bg-red-500/10 p-4 text-sm text-red-200">
+            <p className="font-extrabold">Payment details could not be loaded.</p>
+            <p className="mt-1">{paymentApiError(settlementQuery.error, 'Refresh before trying to pay. No payment was started.').message}</p>
+          </div>
         ) : (
           <>
             {isPending && (

@@ -1,11 +1,11 @@
 from datetime import datetime, timezone
 from decimal import Decimal
-from typing import Optional
+from typing import Literal, Optional
 from uuid import UUID
 
 import stripe
-from fastapi import APIRouter, Depends, HTTPException, Response, Request, status
-from pydantic import BaseModel, EmailStr
+from fastapi import APIRouter, Depends, Header, HTTPException, Response, Request, status
+from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -33,7 +33,8 @@ from app.core.websocket import broadcast_repair_order_update
 from app.core.password_policy import validate_password
 from app.db.models.customer import Customer
 from app.db.models.invoice import Invoice, InvoiceStatus
-from app.db.models.repair_order import RepairOrder
+from app.db.models.invoice_settlement import InvoicePaymentAttempt, InvoiceSettlement, PaymentOverpayment
+from app.db.models.repair_order import RepairOrder, RepairOrderStatus
 from app.db.models.tenant import Tenant
 from app.db.models.user import User, UserRole
 from app.db.models.user_customer_link import UserCustomerLink
@@ -44,9 +45,42 @@ from app.services.invoice_access_service import (
 )
 from app.services.pricing import get_order_checkout_breakdown
 from app.services.pending_zelle_staff_notification_service import send_pending_zelle_submission_alert
-from app.services.stripe_payment_finalization import finalize_stripe_invoice_payment
+from app.services.stripe_payment_finalization import (
+    finalize_stripe_invoice_payment,
+    validate_db048_stripe_payment_intent,
+)
 from app.services.stripe_customer_service import ensure_connected_stripe_customer
 from app.services.stripe_platform_fee import platform_fee_amount_cents, platform_fee_percent_for
+from app.services.quickbooks_payments_service import payments_base_url
+from app.schemas.invoice_settlement import (
+    InvoiceSettlementSummary,
+    PaymentAllocationPage,
+    PaymentAttemptConfirm,
+    PaymentAttemptCreate,
+    PaymentAttemptResponse,
+    SenderEvidence,
+)
+from app.services.invoice_settlement_service import (
+    SettlementDomainError,
+    allocatable_balance,
+    confirm_attempt,
+    create_attempt,
+    fail_attempt,
+    get_or_create_settlement,
+    money,
+    record_credit_consent,
+    require_feature_ready,
+    settlement_for_compatibility_route,
+)
+from app.api.v1.endpoints.invoice_settlements import (
+    _idempotency_key,
+    _persist_and_bind_stripe_intent,
+    allocation_page,
+    attempt_response,
+    charge_quickbooks_settlement_attempt,
+    settlement_summary,
+    _settlement_for_read,
+)
 
 router = APIRouter()
 logger = get_logger(__name__)
@@ -56,6 +90,33 @@ GUEST_INVOICE_PAYMENT_NOTE = "Payment made by guest invoice flow."
 
 
 class TokenRequest(BaseModel):
+    token: str
+    amount: Optional[Decimal] = None
+    expected_settlement_version: Optional[int] = None
+
+
+class GuestSettlementAllocationsRequest(TokenRequest):
+    cursor: Optional[str] = None
+    limit: int = Field(default=20, ge=1, le=100)
+
+
+class GuestSettlementAttemptRequest(PaymentAttemptCreate):
+    token: str
+
+
+class GuestQuickBooksChargeRequest(BaseModel):
+    token: str = Field(min_length=20, max_length=512)
+    payment_token: str = Field(min_length=8, max_length=2048)
+    expected_attempt_version: int = Field(ge=1)
+
+
+class GuestCreditConsentRequest(BaseModel):
+    token: str
+    channel: Literal["guest_token"] = "guest_token"
+    note: str = Field(min_length=1, max_length=1000)
+
+
+class GuestSettlementConfirmRequest(PaymentAttemptConfirm):
     token: str
 
 
@@ -128,6 +189,8 @@ class SubmitGuestZellePaymentRequest(BaseModel):
     sender_email: Optional[EmailStr] = None
     sender_phone: Optional[str] = None
     notes: Optional[str] = None
+    amount: Optional[Decimal] = None
+    expected_settlement_version: Optional[int] = None
 
 
 class SubmitGuestZellePaymentResponse(BaseModel):
@@ -243,6 +306,47 @@ async def _load_invoice_context(
             detail="Invoice not found.",
         )
     return invoice, invoice.repair_order, invoice.repair_order.customer, invoice.repair_order.vehicle
+
+
+async def _load_db048_guest_context(
+    db: AsyncSession,
+    token: str,
+) -> tuple[Invoice, RepairOrder, Customer, Tenant]:
+    payload = await _get_active_invoice_payload_or_400(token)
+    invoice, order, customer, _vehicle, tenant = await _load_hardened_guest_invoice_context(
+        db, payload,
+    )
+    return invoice, order, customer, tenant
+
+
+async def _load_hardened_guest_invoice_context(
+    db: AsyncSession,
+    payload: dict,
+) -> tuple[Invoice, RepairOrder, Customer, Optional[Vehicle], Tenant]:
+    """Resolve an exact guest-token subject without leaking invoice existence."""
+    try:
+        invoice, order, customer, vehicle = await _load_invoice_context(
+            db, payload["invoice_id"],
+        )
+    except (HTTPException, KeyError, TypeError, ValueError):
+        raise SettlementDomainError("invoice_not_found", "Invoice not found.", status_code=404)
+    if (
+        str(order.customer_id) != payload.get("customer_id")
+        or str(invoice.tenant_id) != payload.get("tenant_id")
+        or invoice.deleted_at is not None
+        or invoice.voided_at is not None
+        or invoice.status == InvoiceStatus.CANCELLED
+        or order.deleted_at is not None
+        or order.status == RepairOrderStatus.CANCELLED
+    ):
+        raise SettlementDomainError("invoice_not_found", "Invoice not found.", status_code=404)
+    tenant = (await db.execute(select(Tenant).where(
+        Tenant.id == invoice.tenant_id,
+        Tenant.is_active.is_(True),
+    ))).scalar_one_or_none()
+    if tenant is None:
+        raise SettlementDomainError("invoice_not_found", "Invoice not found.", status_code=404)
+    return invoice, order, customer, vehicle, tenant
 
 
 def _validate_invoice_link_subject(payload: dict, invoice: Invoice, order: RepairOrder) -> None:
@@ -367,30 +471,290 @@ async def resolve_invoice_link(
     )
 
 
+@router.post("/settlement", response_model=InvoiceSettlementSummary)
+@limiter.limit("20/minute")
+async def read_guest_invoice_settlement(
+    request: Request,
+    body: TokenRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    invoice, _order, customer, tenant = await _load_db048_guest_context(db, body.token)
+    settlement = await _settlement_for_read(
+        db, invoice=invoice, customer_id=customer.id, tenant=tenant,
+    )
+    return await settlement_summary(db, settlement, tenant, audience="guest")
+
+
+@router.post("/allocations", response_model=PaymentAllocationPage)
+@limiter.limit("20/minute")
+async def read_guest_invoice_allocations(
+    request: Request,
+    body: GuestSettlementAllocationsRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    invoice, _order, customer, tenant = await _load_db048_guest_context(db, body.token)
+    await _settlement_for_read(
+        db, invoice=invoice, customer_id=customer.id, tenant=tenant,
+    )
+    return await allocation_page(
+        db, invoice=invoice, cursor=body.cursor, limit=body.limit,
+        audience="guest",
+    )
+
+
+@router.post("/overpayments/{overpayment_id}/credit-consent")
+@limiter.limit("5/minute")
+async def record_guest_overpayment_credit_consent(
+    request: Request,
+    overpayment_id: UUID,
+    body: GuestCreditConsentRequest,
+    idempotency_header: Optional[str] = Header(default=None, alias="Idempotency-Key"),
+    db: AsyncSession = Depends(get_db),
+):
+    key = _idempotency_key(idempotency_header)
+    invoice, _order, customer, tenant = await _load_db048_guest_context(db, body.token)
+    overpayment = (await db.execute(select(PaymentOverpayment).where(
+        PaymentOverpayment.id == overpayment_id,
+        PaymentOverpayment.invoice_id == invoice.id,
+        PaymentOverpayment.tenant_id == tenant.id,
+        PaymentOverpayment.customer_id == customer.id,
+    ))).scalar_one_or_none()
+    if not overpayment:
+        raise SettlementDomainError("invoice_not_found", "Invoice not found.", status_code=404)
+    entry = await record_credit_consent(
+        db,
+        overpayment_id=overpayment.id,
+        tenant_id=tenant.id,
+        actor=None,
+        subject_customer_id=customer.id,
+        # Guest provenance is derived from the exact token-authenticated route;
+        # a caller-supplied label can never rewrite that immutable evidence.
+        channel="guest_token",
+        note=body.note,
+        idempotency_key=key,
+    )
+    await db.commit()
+    return {"credit_id": str(entry.id), "state": "available", "amount": str(money(entry.amount))}
+
+
+@router.post("/attempts", response_model=PaymentAttemptResponse)
+@limiter.limit("10/minute")
+async def create_guest_invoice_payment_attempt(
+    request: Request,
+    body: GuestSettlementAttemptRequest,
+    idempotency_header: Optional[str] = Header(default=None, alias="Idempotency-Key"),
+    db: AsyncSession = Depends(get_db),
+):
+    key = _idempotency_key(idempotency_header)
+    invoice, _order, customer, tenant = await _load_db048_guest_context(db, body.token)
+    creation = await create_attempt(
+        db,
+        invoice=invoice,
+        tenant=tenant,
+        customer_id=customer.id,
+        actor=None,
+        amount=body.amount,
+        rail=body.rail,
+        expected_settlement_version=body.expected_settlement_version,
+        idempotency_key=key,
+        source="guest_token",
+        subject_type="guest",
+        subject_id=customer.id,
+        sender_evidence=(
+            body.sender_evidence.model_dump(exclude_none=True)
+            if body.sender_evidence
+            else {}
+        ),
+    )
+    client_secret = None
+    provider_token_url = None
+    if creation.attempt.rail == "card" and creation.attempt.provider == "stripe_connect":
+        bound, client_secret = await _persist_and_bind_stripe_intent(
+            db,
+            attempt=creation.attempt,
+            tenant=tenant,
+            invoice=invoice,
+            customer=customer,
+            idempotency_key=key,
+            actor=None,
+        )
+        creation = type(creation)(bound, creation.settlement, creation.replayed)
+    elif creation.attempt.rail == "card" and creation.attempt.provider == "quickbooks_payments":
+        provider_token_url = f"{payments_base_url()}/quickbooks/v4/payments/tokens"
+        await db.commit()
+    else:
+        await db.commit()
+    return await attempt_response(
+        db,
+        creation.attempt,
+        creation.settlement,
+        tenant,
+        client_secret,
+        provider_token_url,
+        audience="guest",
+    )
+
+
+@router.post("/attempts/{attempt_id}/quickbooks-charge", response_model=PaymentAttemptResponse)
+@limiter.limit("10/minute")
+async def charge_guest_quickbooks_payment_attempt(
+    request: Request,
+    attempt_id: UUID,
+    body: GuestQuickBooksChargeRequest,
+    idempotency_header: Optional[str] = Header(default=None, alias="Idempotency-Key"),
+    db: AsyncSession = Depends(get_db),
+):
+    key = _idempotency_key(idempotency_header)
+    invoice, _order, _customer, tenant = await _load_db048_guest_context(db, body.token)
+    attempt = await db.scalar(select(InvoicePaymentAttempt).where(
+        InvoicePaymentAttempt.id == attempt_id,
+        InvoicePaymentAttempt.invoice_id == invoice.id,
+        InvoicePaymentAttempt.tenant_id == tenant.id,
+        InvoicePaymentAttempt.subject_type == "guest",
+    ))
+    if not attempt:
+        raise SettlementDomainError("invoice_not_found", "Invoice not found.", status_code=404)
+    await charge_quickbooks_settlement_attempt(
+        db,
+        attempt=attempt,
+        invoice=invoice,
+        tenant=tenant,
+        actor=None,
+        payment_token=body.payment_token,
+        expected_attempt_version=body.expected_attempt_version,
+        idempotency_key=key,
+    )
+    refreshed_attempt = await db.get(InvoicePaymentAttempt, attempt.id)
+    settlement = await db.get(InvoiceSettlement, refreshed_attempt.settlement_id)
+    return await attempt_response(
+        db,
+        refreshed_attempt,
+        settlement,
+        tenant,
+        audience="guest",
+    )
+
+
+@router.post("/attempts/{attempt_id}/confirm", response_model=PaymentAttemptResponse)
+@limiter.limit("10/minute")
+async def confirm_guest_invoice_payment_attempt(
+    request: Request,
+    attempt_id: UUID,
+    body: GuestSettlementConfirmRequest,
+    idempotency_header: Optional[str] = Header(default=None, alias="Idempotency-Key"),
+    db: AsyncSession = Depends(get_db),
+):
+    invoice, _order, _customer, tenant = await _load_db048_guest_context(db, body.token)
+    attempt = (await db.execute(select(InvoicePaymentAttempt).where(
+        InvoicePaymentAttempt.id == attempt_id,
+        InvoicePaymentAttempt.invoice_id == invoice.id,
+        InvoicePaymentAttempt.tenant_id == tenant.id,
+        InvoicePaymentAttempt.subject_type == "guest",
+    ))).scalar_one_or_none()
+    if attempt is None:
+        raise SettlementDomainError("invoice_not_found", "Invoice not found.", status_code=404)
+    if attempt.rail != "card" or attempt.provider != "stripe_connect":
+        raise SettlementDomainError(
+            "provider_confirmation_required",
+            "Only verified provider settlement can confirm this payment.",
+        )
+    try:
+        intent = stripe.PaymentIntent.retrieve(
+            attempt.provider_intent_id,
+            stripe_account=attempt.provider_account_id,
+        )
+    except stripe.error.StripeError as exc:
+        raise SettlementDomainError(
+            "card_provider_error",
+            "The card payment could not be verified.",
+            status_code=502,
+            retryable=True,
+        ) from exc
+    validated = await validate_db048_stripe_payment_intent(
+        db=db,
+        payment_intent=intent,
+        trusted_provider_account_id=attempt.provider_account_id,
+        attempt=attempt,
+        allowed_statuses=("succeeded",),
+    )
+    result = await confirm_attempt(
+        db,
+        attempt_id=attempt.id,
+        tenant=tenant,
+        actor=None,
+        expected_attempt_version=body.expected_attempt_version,
+        idempotency_key=_idempotency_key(idempotency_header),
+        received_principal=attempt.principal_amount,
+        reference=validated.payment_intent_id,
+        provider_charge_id=validated.latest_charge_id,
+    )
+    await db.commit()
+    return await attempt_response(
+        db, result.attempt, result.settlement, tenant, audience="guest",
+    )
+
+
 @router.post("/submit-zelle", response_model=SubmitGuestZellePaymentResponse)
 @limiter.limit("5/minute")
 async def submit_guest_zelle_payment(
     request: Request,
     body: SubmitGuestZellePaymentRequest,
+    idempotency_header: Optional[str] = Header(default=None, alias="Idempotency-Key"),
     db: AsyncSession = Depends(get_db),
 ):
     payload = await _get_active_invoice_payload_or_400(body.token)
-    invoice, order, customer, _ = await _load_invoice_context(db, payload["invoice_id"])
-
-    _validate_invoice_link_subject(payload, invoice, order)
+    invoice, order, customer, _, tenant = await _load_hardened_guest_invoice_context(
+        db, payload,
+    )
 
     if invoice.status == InvoiceStatus.PAID:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invoice already paid.")
-    if invoice.status == InvoiceStatus.CANCELLED:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="This invoice has been voided.")
-
-    was_pending = invoice.pending_zelle_confirmation
+    compatibility_submitted_at = (
+        invoice.zelle_pending_submitted_at or datetime.now(timezone.utc)
+    )
     sender_email = str(body.sender_email).strip().lower() if body.sender_email else (customer.email.strip().lower() if customer and customer.email else None)
     sender_phone = normalize_phone(body.sender_phone or (customer.phone if customer else None))
     notes = body.notes.strip() if body.notes else None
+    settlement = await settlement_for_compatibility_route(
+        db,
+        invoice=invoice,
+        customer_id=customer.id,
+        tenant=tenant,
+        lock=True,
+    ) if tenant else None
+    if settlement is not None:
+        principal = money(body.amount if body.amount is not None else allocatable_balance(settlement))
+        key = (
+            idempotency_header
+            or f"compat:guest-zelle:{invoice.id}:{customer.id}:{principal}"
+        ).strip()
+        if not key or len(key) > 255:
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Invalid Idempotency-Key")
+        await create_attempt(
+            db,
+            invoice=invoice,
+            tenant=tenant,
+            customer_id=customer.id,
+            actor=None,
+            amount=principal,
+            rail="zelle",
+            expected_settlement_version=body.expected_settlement_version or settlement.version,
+            idempotency_key=key,
+            source="compatibility_adapter",
+            subject_type="guest",
+            subject_id=None,
+            sender_evidence={
+                "sender_email": sender_email,
+                "sender_phone": sender_phone,
+                "notes": notes,
+                "compatibility_submitted_at": compatibility_submitted_at.isoformat(),
+            },
+        )
+
+    was_pending = invoice.pending_zelle_confirmation
     zelle_amount = invoice.total_amount - (invoice.service_fee_amount or 0)
 
-    invoice.zelle_pending_submitted_at = datetime.now(timezone.utc)
+    invoice.zelle_pending_submitted_at = compatibility_submitted_at
     invoice.zelle_pending_sender_email = sender_email
     invoice.zelle_pending_sender_phone = sender_phone
     invoice.zelle_pending_last_reminder_at = None
@@ -455,31 +819,72 @@ async def submit_guest_zelle_payment(
 async def create_guest_payment_intent(
     request: Request,
     body: TokenRequest,
+    idempotency_header: Optional[str] = Header(default=None, alias="Idempotency-Key"),
     db: AsyncSession = Depends(get_db),
 ):
     payload = await _get_active_invoice_payload_or_400(body.token)
-    invoice, order, customer, _ = await _load_invoice_context(db, payload["invoice_id"])
-
-    _validate_invoice_link_subject(payload, invoice, order)
+    invoice, order, customer, _, tenant = await _load_hardened_guest_invoice_context(
+        db, payload,
+    )
 
     if invoice.status == InvoiceStatus.PAID:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Invoice already paid.",
         )
-    if invoice.status == InvoiceStatus.CANCELLED:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="This invoice has been voided.")
-
     if invoice.total_amount < Decimal("0.50"):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Invoice amount is below the minimum charge amount ($0.50).",
         )
 
-    result = await db.execute(select(Tenant).where(Tenant.id == invoice.tenant_id))
-    tenant = result.scalar_one_or_none()
     if not tenant or not tenant.stripe_account_id or not tenant.stripe_onboarding_complete:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="This shop has not finished setting up Stripe payments.")
+
+    settlement = await settlement_for_compatibility_route(
+        db,
+        invoice=invoice,
+        customer_id=customer.id,
+        tenant=tenant,
+        lock=True,
+    )
+    if settlement is not None:
+        principal = money(body.amount if body.amount is not None else allocatable_balance(settlement))
+        key = (
+            idempotency_header
+            or f"compat:guest-card:{invoice.id}:{customer.id}:{principal}"
+        ).strip()
+        if not key or len(key) > 255:
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Invalid Idempotency-Key")
+        creation = await create_attempt(
+            db,
+            invoice=invoice,
+            tenant=tenant,
+            customer_id=customer.id,
+            actor=None,
+            amount=principal,
+            rail="card",
+            expected_settlement_version=body.expected_settlement_version or settlement.version,
+            idempotency_key=key,
+            source="compatibility_adapter",
+            subject_type="guest",
+            subject_id=None,
+        )
+        bound, client_secret = await _persist_and_bind_stripe_intent(
+            db,
+            attempt=creation.attempt,
+            tenant=tenant,
+            invoice=invoice,
+            customer=customer,
+            idempotency_key=key,
+            actor=None,
+        )
+        return GuestPaymentIntentResponse(
+            client_secret=client_secret,
+            payment_intent_id=bound.provider_intent_id,
+            amount=money(bound.provider_charge_amount),
+            stripe_account_id=bound.provider_account_id,
+        )
 
     try:
         amount_cents = int(invoice.total_amount * 100)
@@ -554,20 +959,29 @@ async def confirm_guest_payment(
     db: AsyncSession = Depends(get_db),
 ):
     payload = await _get_invoice_payload_for_confirm_or_400(body.token)
-    invoice, order, customer, vehicle = await _load_invoice_context(db, payload["invoice_id"])
+    invoice, order, customer, vehicle, tenant = await _load_hardened_guest_invoice_context(
+        db, payload,
+    )
 
-    _validate_invoice_link_subject(payload, invoice, order)
-
-    if invoice.status == InvoiceStatus.CANCELLED:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="This invoice has been voided.")
-
-    tenant_result = await db.execute(select(Tenant).where(Tenant.id == invoice.tenant_id))
-    tenant = tenant_result.scalar_one_or_none()
-
+    db048_attempt = await db.scalar(select(InvoicePaymentAttempt).where(
+        InvoicePaymentAttempt.tenant_id == invoice.tenant_id,
+        InvoicePaymentAttempt.invoice_id == invoice.id,
+        InvoicePaymentAttempt.provider == "stripe_connect",
+        InvoicePaymentAttempt.provider_intent_id == body.payment_intent_id,
+    ))
+    resolved_provider_account_id = (
+        db048_attempt.provider_account_id
+        if db048_attempt is not None
+        else (
+            tenant.stripe_account_id
+            if tenant and tenant.stripe_account_id and tenant.stripe_onboarding_complete
+            else None
+        )
+    )
     try:
         retrieve_params = {}
-        if tenant and tenant.stripe_account_id and tenant.stripe_onboarding_complete:
-            retrieve_params["stripe_account"] = tenant.stripe_account_id
+        if resolved_provider_account_id:
+            retrieve_params["stripe_account"] = resolved_provider_account_id
         payment_intent = stripe.PaymentIntent.retrieve(body.payment_intent_id, **retrieve_params)
     except stripe.error.InvalidRequestError:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid payment intent.")
@@ -576,13 +990,18 @@ async def confirm_guest_payment(
         record_payment_error(error_type=type(e).__name__, provider="stripe")
         raise
 
-    if payment_intent.status != "succeeded":
+    # Durable DB-048 attempts are validated in full by the shared finalizer.
+    # Keep the historical lightweight checks only for pre-DB-048 intents.
+    if db048_attempt is None and payment_intent.status != "succeeded":
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Payment not successful. Status: {payment_intent.status}",
         )
 
-    if payment_intent.metadata.get("invoice_id") != str(invoice.id):
+    if (
+        db048_attempt is None
+        and payment_intent.metadata.get("invoice_id") != str(invoice.id)
+    ):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Payment intent mismatch.")
 
     finalization = await finalize_stripe_invoice_payment(
@@ -594,6 +1013,7 @@ async def confirm_guest_payment(
         vehicle=vehicle,
         payment_intent=payment_intent,
         payment_note=GUEST_INVOICE_PAYMENT_NOTE,
+        provider_account_id=resolved_provider_account_id,
     )
 
     portal_enrollment_token = None
