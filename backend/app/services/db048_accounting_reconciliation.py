@@ -1425,6 +1425,23 @@ async def _ensure_db048_qbo_invoice(
     tenant_name: Optional[str] = None,
 ) -> tuple[str, str]:
     """Return canonical customer/invoice IDs for principal-only DB-048 A/R."""
+    # Every legacy caller (principal sync, credit target, dispute) must respect
+    # the persisted composition. Never replace earned gross fee lines with a
+    # principal-only payload simply because a different entry point ran.
+    from sqlalchemy import inspect
+    from sqlalchemy.ext.asyncio import async_object_session
+    from app.services.db048_qbo_gross_accounting import is_gross, ensure_gross_invoice
+    if inspect(invoice, raiseerr=False) is not None:
+        attached_db = async_object_session(invoice)
+        if attached_db is not None:
+            attached_settlement = await attached_db.scalar(select(InvoiceSettlement).where(
+                InvoiceSettlement.invoice_id == invoice.id,
+                InvoiceSettlement.tenant_id == invoice.tenant_id,
+            ))
+            if attached_settlement is not None and is_gross(attached_settlement):
+                return await ensure_gross_invoice(attached_db, connection=connection,
+                    invoice=invoice, customer=customer, settlement=attached_settlement,
+                    tenant_name=tenant_name)
     principal = money(principal_total)
     customer_id = await ensure_customer(
         connection,
@@ -1797,6 +1814,15 @@ async def sync_db048_credit_application(
             "Intuit-native credit accounting must be imported, not created by DieselBridge",
             retryable=True,
         )
+    source_settlement_id = getattr(envelope.source_attempt, "settlement_id", None)
+    if source_settlement_id:
+        source_settlement = await db.scalar(select(InvoiceSettlement).where(
+            InvoiceSettlement.id == source_settlement_id,
+            InvoiceSettlement.tenant_id == envelope.tenant.id,
+        ))
+        if source_settlement and source_settlement.accounting_composition_version == "gross_invoice_v1":
+            from app.services.db048_gross_credit_accounting import sync_gross_credit_application
+            return await sync_gross_credit_application(db, envelope, source_settlement)
     source_qbo_payment_id = envelope.source_accounting_link.provider_deposit_id
     if not source_qbo_payment_id:
         raise DB048ReconciliationError(
@@ -2502,7 +2528,10 @@ async def deliver_accounting_envelope(
             "Intuit-native accounting must be imported, not created by DieselBridge",
             retryable=True,
         )
-    if envelope.link.financial_object_type == "payment_dispute":
+    from app.services.db048_qbo_gross_accounting import is_gross, deliver_gross_envelope
+    if is_gross(envelope.settlement):
+        provider_id = await deliver_gross_envelope(db, envelope)
+    elif envelope.link.financial_object_type == "payment_dispute":
         provider_id = await sync_db048_dispute(db, envelope, recovery=False)
     elif envelope.link.financial_object_type == "payment_dispute_recovery":
         provider_id = await sync_db048_dispute(db, envelope, recovery=True)
@@ -4873,8 +4902,14 @@ async def reconcile_qbp_native_settlements(
             elif config is None:
                 causes.append("configuration_snapshot_missing")
             else:
+                gross_settlement = await db.scalar(select(InvoiceSettlement).where(
+                    InvoiceSettlement.tenant_id == tenant_id,
+                    InvoiceSettlement.invoice_id == attempt.invoice_id,
+                    InvoiceSettlement.id == attempt.settlement_id,
+                ))
+                gross_composition = getattr(gross_settlement, "accounting_composition_version", None) == "gross_invoice_v1"
                 if money(payment.get("TotalAmt")) != money(attempt.provider_charge_amount):
-                    if journal_links:
+                    if journal_links and not gross_composition:
                         try:
                             if config.writer_strategy != "dieselbridge":
                                 raise DB048ReconciliationError("qbo_explicit_component_writer_mismatch")
@@ -4923,9 +4958,30 @@ async def reconcile_qbp_native_settlements(
                 if (
                     local_invoice is None
                     or not local_invoice.quickbooks_invoice_id
-                    or linked_invoice_ids != {str(local_invoice.quickbooks_invoice_id)}
+                    or (not gross_composition and linked_invoice_ids != {str(local_invoice.quickbooks_invoice_id)})
                 ):
                     causes.append("qbo_payment_invoice_mismatch")
+                if gross_composition and local_invoice and local_invoice.quickbooks_invoice_id:
+                    from app.services.db048_gross_credit_accounting import gross_credit_allocations
+                    from app.services.db048_qbo_gross_accounting import _payment_state, _attempt_changes
+                    try:
+                        changes = await _attempt_changes(db, attempt, realm_id)
+                        allocation = money(attempt.applied_principal_amount) + money(attempt.applied_card_fee_amount) + money(attempt.applied_card_fee_tax_amount)
+                        allocation += sum((change["principal"] + change["fee"] + change["tax"] for change in changes), ZERO)
+                        gross = money(attempt.provider_charge_amount) + sum((change["gross"] for change in changes), ZERO)
+                        targets = await gross_credit_allocations(db, attempt=attempt,
+                            tenant=await db.get(Tenant, tenant_id), connection=connection, ensure_invoices=False)
+                        if allocation:
+                            key = str(local_invoice.quickbooks_invoice_id)
+                            targets[key] = targets.get(key, ZERO) + allocation
+                        allocated = sum(targets.values(), ZERO)
+                        expected = {"total":str(money(gross)),
+                            "lines":[(key,str(money(value))) for key,value in sorted(targets.items())],
+                            "unapplied":str(money(gross-allocated))}
+                        if allocation < ZERO or allocated > gross or _payment_state(payment) != expected:
+                            raise DB048ReconciliationError("gross allocation mismatch")
+                    except (DB048ReconciliationError, InvalidOperation, TypeError, ValueError):
+                        causes.append("qbo_gross_payment_allocation_mismatch")
         matched_configs = [config for _, attempt, config in resolved if attempt and config]
         if not matched_configs:
             result["skipped"] += 1

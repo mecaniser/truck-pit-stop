@@ -1,6 +1,6 @@
 # DB-048: one-invoice gross receipt correction
 
-Status: Architecture-selected correction; local implementation in progress.
+Status: Runtime correction implemented locally; independent local QA/Security GO.
 Accountable owner: Backend & Integrations.
 Contract reviewer: independent Architecture & API Contracts.
 No production activation or historical financial rewrite is authorized here.
@@ -62,7 +62,9 @@ with card fees 6, 9, 3, produces one 1,018 QBO invoice and four Payments of
    nor creates a second Payment. Never set ProcessPayment to charge again.
 6. Verify customer, realm, currency, same invoice ID, exact line allocation,
    gross and unapplied amounts before acknowledging accounting completion.
-   Keep the importer's single-invoice/tenant/charge identity fences.
+   Keep tenant/customer/realm/charge identity fences. Additional invoice
+   allocations require exact persisted customer-credit application evidence;
+   unrelated or amount-only matches remain rejected.
 7. Implement version-aware partial refunds, reversals, disputes and recovered
    funds so posted fee obligations are adjusted auditably without deleting
    financial history or re-recognizing fee income.
@@ -76,12 +78,46 @@ with card fees 6, 9, 3, produces one 1,018 QBO invoice and four Payments of
 
 ## Scope fences
 
-The projection foundation alone is not the production fix. Until persistence,
-writer, refund/tax and importer integration are complete, the current runtime
-continues unchanged and the new composition remains unactivated. No tenant
+### Versioned runtime correction
+
+Migration `139_qbo_gross_composition` persists the immutable composition and
+projection snapshots. Existing settlements and invoices with payment/accounting
+history remain `legacy_principal_v1`. New eligible invoices select
+`gross_invoice_v1` only with `DB048_GROSS_QBO_ACCOUNTING_ENABLED`; this flag
+defaults off. Turning it off does not reinterpret already-selected invoices.
+
+Fee items and tax codes are frozen configuration-version mappings. Earned fee
+tax must match the actual mapped QBO tax rate and returned invoice tax exactly.
+Unsupported or compound mappings fail closed rather than estimate tax.
+
+Reversal/dispute/recovery history retains the original positive fee line and
+appends signed compensating lines identified by immutable accounting events.
+This changes the original invoice's accounting period; it is not a separate
+current-period credit memo. Closed-period invoices are rejected before update.
+Signed tax-line behavior still requires provider acceptance before activation.
+
+Refund integration covers the existing domain's actual unapplied-overpayment
+refunds. It does not add an earned-service partial-refund product workflow.
+Customer-credit applications update allocations on the original gross receipt,
+never create a second receipt or convert an earned fee into customer credit.
+
+Persistence, writer, refund/tax, customer-credit and importer integration now
+exist in the isolated candidate. The running preview and production runtime
+remain unchanged and the new composition remains unactivated. No tenant
 records, native Deposits/Purchases, invoice settings or Fleet UI are changed.
 
 This model uses ordinary Invoice updates and Payment allocations. It does not
 claim that changing a Payment payload makes Intuit automatically include it in
 a native payout. That remaining provider behavior must be described precisely,
 not confused with the already observed actual tenant payout/fee evidence.
+
+### Acceptance boundary
+
+Local integration tests use real settlement/domain transitions and mocked
+provider responses. Migration rehearsal uses a separate schema-only PostgreSQL
+database. Neither is evidence of a new Intuit-produced payout. Before production
+activation, verify the candidate's signed fee/tax invoice updates and native
+payment-to-deposit linkage in the provider environment; then complete the
+protected CI, merge, migration and deployment checks for the exact candidate.
+Do not manufacture deposits, backfill fee estimates, or rewrite historical
+principal-only invoices to clear that acceptance boundary.

@@ -231,6 +231,8 @@ def _configuration_mappings(config: Optional[TenantPaymentProviderConfiguration]
         "check_deposit_account": config.check_deposit_account,
         "zelle_ach_account": config.zelle_ach_account,
         "card_fee_income_account": config.card_fee_income_account,
+        "qbo_card_fee_item_id": getattr(config, "qbo_card_fee_item_id", None),
+        "qbo_card_fee_tax_code_id": getattr(config, "qbo_card_fee_tax_code_id", None),
         "processor_fee_expense_account": config.processor_fee_expense_account,
         "sales_tax_liability_account": config.sales_tax_liability_account,
         "checking_account": config.checking_account,
@@ -554,6 +556,13 @@ async def provider_readiness(
         required.add("stripe_clearing_account")
     if provider == "quickbooks_payments":
         required.add("qbp_clearing_account")
+    gross_in_use = await db.scalar(select(InvoiceSettlement.id).where(
+        InvoiceSettlement.tenant_id == tenant.id,
+        InvoiceSettlement.accounting_composition_version == "gross_invoice_v1",
+        InvoiceSettlement.deleted_at.is_(None),
+    ).limit(1))
+    if settings.DB048_GROSS_QBO_ACCOUNTING_ENABLED or gross_in_use is not None:
+        required.update({"qbo_card_fee_item_id", "qbo_card_fee_tax_code_id"})
     mappings_ready = bool(config) and all(mappings.get(key) for key in required)
     if not mappings_ready:
         reasons.append("account_mappings_incomplete")
@@ -684,11 +693,25 @@ async def get_or_create_settlement(
         return settlement
 
     principal, fee, fee_tax, tax_rate, fee_rate = invoice_money_snapshot(invoice)
+    composition = "legacy_principal_v1"
+    if settings.DB048_GROSS_QBO_ACCOUNTING_ENABLED and not invoice.quickbooks_invoice_id and invoice.status != InvoiceStatus.PAID:
+        # An existing payment/link is history even if no settlement was lazily
+        # initialized yet. Never reinterpret it under the new composition.
+        prior_payment = await db.scalar(select(Payment.id).where(
+            Payment.tenant_id == invoice.tenant_id, Payment.invoice_id == invoice.id,
+        ).limit(1))
+        prior_link = await db.scalar(select(PaymentAccountingLink.id).where(
+            PaymentAccountingLink.tenant_id == invoice.tenant_id,
+            PaymentAccountingLink.invoice_id == invoice.id,
+        ).limit(1))
+        if prior_payment is None and prior_link is None:
+            composition = "gross_invoice_v1"
     settlement = InvoiceSettlement(
         tenant_id=invoice.tenant_id,
         invoice_id=invoice.id,
         customer_id=customer_id,
         principal_total=principal,
+        accounting_composition_version=composition,
         max_card_fee=fee,
         max_card_fee_tax=fee_tax,
         sales_tax_rate_snapshot=tax_rate,

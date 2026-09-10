@@ -1369,6 +1369,7 @@ async def _config_read(db: AsyncSession, tenant: Tenant) -> CardProviderConfigur
         "stripe_clearing_account", "qbp_clearing_account", "check_deposit_account",
         "zelle_ach_account", "card_fee_income_account", "processor_fee_expense_account",
         "sales_tax_liability_account", "checking_account",
+        "qbo_card_fee_item_id", "qbo_card_fee_tax_code_id",
     )
     return CardProviderConfigurationRead(
         selected_provider=config.selected_provider if config else None,
@@ -1486,6 +1487,7 @@ def _configuration_mapping_values(
         "stripe_clearing_account", "qbp_clearing_account", "check_deposit_account",
         "zelle_ach_account", "card_fee_income_account", "processor_fee_expense_account",
         "sales_tax_liability_account", "checking_account",
+        "qbo_card_fee_item_id", "qbo_card_fee_tax_code_id",
     )
     return {key: getattr(config, key) if config else None for key in keys}
 
@@ -1554,6 +1556,7 @@ async def update_card_provider_configuration(
         "stripe_clearing_account", "qbp_clearing_account", "check_deposit_account",
         "zelle_ach_account", "card_fee_income_account", "processor_fee_expense_account",
         "sales_tax_liability_account", "checking_account",
+        "qbo_card_fee_item_id", "qbo_card_fee_tax_code_id",
     )
     requested_mappings = {
         name: getattr(body, name) if getattr(body, name) is not None else (getattr(current, name) if current else None)

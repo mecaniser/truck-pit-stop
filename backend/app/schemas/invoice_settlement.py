@@ -240,6 +240,8 @@ class CardProviderConfigurationUpdate(BaseModel):
     check_deposit_account: Optional[str] = Field(default=None, max_length=255)
     zelle_ach_account: Optional[str] = Field(default=None, max_length=255)
     card_fee_income_account: Optional[str] = Field(default=None, max_length=255)
+    qbo_card_fee_item_id: Optional[str] = Field(default=None, min_length=1, max_length=255)
+    qbo_card_fee_tax_code_id: Optional[str] = Field(default=None, min_length=1, max_length=255)
     processor_fee_expense_account: Optional[str] = Field(default=None, max_length=255)
     sales_tax_liability_account: Optional[str] = Field(default=None, max_length=255)
     checking_account: Optional[str] = Field(default=None, max_length=255)

@@ -66,6 +66,9 @@ class Settings(BaseSettings):
     # DB-048 repair-invoice allocation rollout. Both this deployment switch and
     # the tenant switch must be on. Provider approvals are independent.
     INVOICE_SPLIT_PAYMENTS_ENABLED: bool = False
+    # Select the new accounting composition only for pristine new settlements.
+    # Existing financial records keep their immutable legacy composition.
+    DB048_GROSS_QBO_ACCOUNTING_ENABLED: bool = False
     STRIPE_CONNECT_INVOICE_PAYMENTS_APPROVED: bool = False
     QUICKBOOKS_PAYMENTS_INVOICE_PAYMENTS_APPROVED: bool = False
 

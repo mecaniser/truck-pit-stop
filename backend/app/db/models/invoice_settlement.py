@@ -58,6 +58,10 @@ class InvoiceSettlement(BaseModel):
         CheckConstraint("refund_pending >= 0", name="ck_invoice_settlement_refund_pending"),
         CheckConstraint("version >= 1", name="ck_invoice_settlement_version"),
         CheckConstraint(
+            "accounting_composition_version IN ('legacy_principal_v1','gross_invoice_v1')",
+            name="ck_invoice_settlement_composition",
+        ),
+        CheckConstraint(
             "(qbo_realm_snapshot IS NULL AND initial_provider_configuration_version IS NULL) "
             "OR (qbo_realm_snapshot IS NOT NULL AND initial_provider_configuration_version >= 1)",
             name="ck_invoice_settlement_accounting_realm_pair",
@@ -82,6 +86,13 @@ class InvoiceSettlement(BaseModel):
     version = Column(Integer, nullable=False, default=1)
     last_event_sequence = Column(Integer, nullable=False, default=0)
     accounting_sync_status = Column(String(32), nullable=False, default="not_required", index=True)
+    accounting_composition_version = Column(
+        String(32), nullable=False, default="legacy_principal_v1",
+        server_default="legacy_principal_v1",
+    )
+    accounting_projection_revision = Column(String(64), nullable=True)
+    accounting_fee_line_ids = Column(JSON, nullable=False, default=dict, server_default=text("'{}'"))
+    accounting_projection_snapshot = Column(JSON, nullable=False, default=dict, server_default=text("'{}'"))
     # Frozen by the first DB-048 attempt. Later provider configurations may be
     # used only when they belong to this same QuickBooks company.
     qbo_realm_snapshot = Column(String(255), nullable=True)
@@ -133,6 +144,8 @@ class TenantPaymentProviderConfiguration(BaseModel):
     check_deposit_account = Column(String(255), nullable=True)
     zelle_ach_account = Column(String(255), nullable=True)
     card_fee_income_account = Column(String(255), nullable=True)
+    qbo_card_fee_item_id = Column(String(255), nullable=True)
+    qbo_card_fee_tax_code_id = Column(String(255), nullable=True)
     processor_fee_expense_account = Column(String(255), nullable=True)
     sales_tax_liability_account = Column(String(255), nullable=True)
     checking_account = Column(String(255), nullable=True)
@@ -594,6 +607,7 @@ def _guard_provider_configuration_update(_mapper, _connection, target) -> None:
         "qbo_realm_snapshot", "writer_strategy", "idempotency_key",
         "request_hash", "stripe_clearing_account", "qbp_clearing_account",
         "check_deposit_account", "zelle_ach_account", "card_fee_income_account",
+        "qbo_card_fee_item_id", "qbo_card_fee_tax_code_id",
         "processor_fee_expense_account", "sales_tax_liability_account",
         "checking_account", "created_at", "deleted_at",
     )
@@ -622,6 +636,8 @@ def _guard_provider_configuration_update(_mapper, _connection, target) -> None:
 
 def _guard_invoice_settlement_realm_update(_mapper, connection, target) -> None:
     """Permit one config-backed realm bind, then freeze it permanently."""
+    if _attribute_changed(target, "accounting_composition_version"):
+        raise ValueError("invoice_settlements accounting composition is immutable")
     if not (
         _attribute_changed(target, "qbo_realm_snapshot")
         or _attribute_changed(target, "initial_provider_configuration_version")
