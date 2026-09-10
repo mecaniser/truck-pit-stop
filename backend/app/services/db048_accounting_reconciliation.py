@@ -65,6 +65,7 @@ from app.services.quickbooks_accounting_service import (
 from app.services.quickbooks_payments_service import (
     QuickBooksPaymentError,
     get_charge as get_quickbooks_charge,
+    get_refund as get_quickbooks_refund,
     is_successful_charge as is_successful_quickbooks_charge,
     refund_charge as refund_quickbooks_charge,
 )
@@ -2640,6 +2641,8 @@ async def _submit_stripe_refund(db: AsyncSession, event: ProviderOutboxEvent) ->
     if refund.state == "cancelled":
         return str(refund.id)
     if attempt.provider == "quickbooks_payments":
+        if refund.state != "pending":
+            raise DB048ReconciliationError("QuickBooks refund requires explicit state reconciliation")
         config = await db.scalar(select(TenantPaymentProviderConfiguration).where(
             TenantPaymentProviderConfiguration.tenant_id == event.tenant_id,
             TenantPaymentProviderConfiguration.version == attempt.provider_configuration_version,
@@ -2651,47 +2654,64 @@ async def _submit_stripe_refund(db: AsyncSession, event: ProviderOutboxEvent) ->
             QuickBooksConnection.status == "connected",
             QuickBooksConnection.deleted_at.is_(None),
         ))
-        if not config or not connection or connection.realm_id != config.qbo_realm_snapshot:
+        if (not config or not connection or connection.realm_id != config.qbo_realm_snapshot
+                or attempt.provider_account_id != config.provider_account_snapshot
+                or refund.invoice_id != attempt.invoice_id):
             raise DB048ReconciliationError(
                 "QuickBooks refund connection does not match the original provider configuration",
                 retryable=True,
             )
+        # An accepted ID is reconciled by GET, never another monetary POST.
+        # A lost first response cannot safely be retried: the sandbox rejects
+        # same-key refund replay with 400 rather than returning the first ID.
+        if not refund.provider_reference and (
+            refund.last_error == "qbp_refund_outcome_unknown" or (event.attempt_count or 0) > 1
+        ):
+            refund.last_error = "qbp_refund_outcome_unknown"
+            return str(refund.id)
+        known_refund = bool(refund.provider_reference)
         try:
-            response = await refund_quickbooks_charge(
-                connection=connection,
-                charge_id=attempt.provider_charge_id,
-                amount=money(refund.amount),
-                description=refund.reason,
-                request_id=f"db048-refund-{refund.id}"[:255],
-            )
-        except QuickBooksPaymentError as exc:
-            if exc.outcome_unknown:
-                raise DB048ReconciliationError(
-                    "QuickBooks refund outcome is not yet known",
-                    retryable=True,
-                ) from exc
-            await finalize_provider_refund(
-                db,
-                refund_id=refund.id,
-                tenant_id=event.tenant_id,
-                provider_account_id=attempt.provider_account_id,
-                provider_reference=f"qbp-rejected-{refund.id}",
-                provider_event_id=f"refund-submit:{refund.id}:rejected",
-                provider_status="failed",
-            )
-            return f"qbp-rejected-{refund.id}"
+            if known_refund:
+                response = await get_quickbooks_refund(
+                    connection=connection, charge_id=attempt.provider_charge_id,
+                    refund_id=refund.provider_reference,
+                )
+            else:
+                response = await refund_quickbooks_charge(
+                    connection=connection,
+                    charge_id=attempt.provider_charge_id,
+                    amount=money(refund.amount),
+                    description=refund.reason,
+                    request_id=f"db048-refund-{refund.id}"[:255],
+                )
+        except QuickBooksPaymentError:
+            # A rejection to THIS request does not prove the original refund
+            # failed. Keep money pending for GET/owner reconciliation.
+            refund.last_error = "qbp_refund_outcome_unknown"
+            return refund.provider_reference or str(refund.id)
+        if refund.provider_reference and response.id != refund.provider_reference:
+            refund.last_error = "qbp_refund_identity_mismatch"
+            return refund.provider_reference
+        refund.provider_reference = response.id
         if money(response.amount) != money(refund.amount):
-            raise DB048ReconciliationError(
-                "QuickBooks returned an unexpected refund amount",
-                retryable=True,
-            )
+            refund.last_error = "qbp_refund_amount_mismatch"
+            return refund.provider_reference
         provider_reference = response.id
         normalized_status = response.status.casefold()
-        if normalized_status not in {"succeeded", "completed", "captured", "refunded"}:
-            raise DB048ReconciliationError(
-                "QuickBooks refund is not yet final",
-                retryable=True,
+        if normalized_status == "declined" and known_refund:
+            await finalize_provider_refund(
+                db, refund_id=refund.id, tenant_id=event.tenant_id,
+                provider_account_id=attempt.provider_account_id,
+                provider_reference=provider_reference,
+                provider_event_id=f"refund-submit:{provider_reference}:declined",
+                provider_status="failed",
             )
+            return provider_reference
+        if normalized_status not in {"succeeded", "completed", "captured", "refunded", "settled"}:
+            # ISSUED is observed provider acceptance, not evidence of bank
+            # settlement. Persist the ID without releasing pending money.
+            refund.last_error = "qbp_refund_accepted_pending" if normalized_status == "issued" else "qbp_refund_outcome_unknown"
+            return provider_reference
         await finalize_provider_refund(
             db,
             refund_id=refund.id,
@@ -5754,9 +5774,89 @@ async def process_due_db048_outbox_events(
                         ProviderOutboxEvent.locked_until > datetime.now(timezone.utc),
                     ).with_for_update())
                 if owned is None:
+                    # Retain immutable provider evidence even if this worker
+                    # lost its projection lease. Do not update the outbox or
+                    # any money/state projection owned by a newer worker.
+                    retained = None
+                    if event.event_type == PROVIDER_REFUND_EVENT:
+                        row = (await db.execute(select(PaymentRefund, InvoicePaymentAttempt).join(
+                            InvoicePaymentAttempt, InvoicePaymentAttempt.id == PaymentRefund.source_attempt_id,
+                        ).where(
+                            PaymentRefund.id == UUID(str((event.payload or {}).get("refund_id"))),
+                            PaymentRefund.tenant_id == event.tenant_id,
+                            InvoicePaymentAttempt.tenant_id == event.tenant_id,
+                            InvoicePaymentAttempt.provider == "quickbooks_payments",
+                        ))).first()
+                        if row and row[0].provider_reference:
+                            retained = (row[0].id, row[0].tenant_id, row[0].source_attempt_id,
+                                        row[0].amount, row[0].provider_reference, row[1].provider_charge_id)
                     await db.rollback()
+                    if retained:
+                        refund_id, tenant_id, attempt_id, amount, reference, charge_id = retained
+                        refund_row = await db.scalar(select(PaymentRefund).join(
+                            InvoicePaymentAttempt, InvoicePaymentAttempt.id == PaymentRefund.source_attempt_id,
+                        ).where(
+                            PaymentRefund.id == refund_id, PaymentRefund.tenant_id == tenant_id,
+                            PaymentRefund.source_attempt_id == attempt_id, PaymentRefund.amount == amount,
+                            InvoicePaymentAttempt.tenant_id == tenant_id,
+                            InvoicePaymentAttempt.provider == "quickbooks_payments",
+                            InvoicePaymentAttempt.provider_charge_id == charge_id,
+                        ).with_for_update())
+                        if refund_row and refund_row.provider_reference is None:
+                            refund_row.provider_reference = reference
+                            await db.commit()
                     results["lease_lost"] += 1
                     continue
+                if event.event_type == PROVIDER_REFUND_EVENT:
+                    pending_qbp = await db.scalar(select(PaymentRefund).join(
+                        InvoicePaymentAttempt, InvoicePaymentAttempt.id == PaymentRefund.source_attempt_id,
+                    ).where(
+                        PaymentRefund.id == UUID(str((event.payload or {}).get("refund_id"))),
+                        PaymentRefund.tenant_id == event.tenant_id,
+                        InvoicePaymentAttempt.tenant_id == event.tenant_id,
+                        InvoicePaymentAttempt.provider == "quickbooks_payments",
+                        PaymentRefund.state == "pending",
+                        PaymentRefund.last_error.in_([
+                            "qbp_refund_accepted_pending", "qbp_refund_outcome_unknown",
+                            "qbp_refund_identity_mismatch", "qbp_refund_amount_mismatch",
+                        ]),
+                    ))
+                    if pending_qbp:
+                        # Do not raise/rollback: preserve accepted provider ID
+                        # in the same lease-fenced commit as the pending event.
+                        event.provider_message_id = pending_qbp.provider_reference
+                        event.last_error = pending_qbp.last_error
+                        event.lock_token = None
+                        event.locked_until = None
+                        if pending_qbp.last_error == "qbp_refund_accepted_pending":
+                            pending_qbp.retry_count = 0
+                            # ISSUED is normal settlement progress, not a
+                            # delivery failure. Poll across business-day time
+                            # scales rather than exhausting the error budget.
+                            created_at = pending_qbp.created_at
+                            if created_at.tzinfo is None:
+                                created_at = created_at.replace(tzinfo=timezone.utc)
+                            if datetime.now(timezone.utc) < created_at + timedelta(days=14):
+                                event.status = ProviderOutboxStatus.PENDING.value
+                                event.available_at = datetime.now(timezone.utc) + timedelta(hours=6)
+                                results["retried"] += 1
+                            else:
+                                event.status = ProviderOutboxStatus.DEAD.value
+                                event.last_error = "qbp_refund_settlement_deadline_requires_reconciliation"
+                                event.completed_at = datetime.now(timezone.utc)
+                                results["dead"] += 1
+                        else:
+                            pending_qbp.retry_count = (pending_qbp.retry_count or 0) + 1
+                            if pending_qbp.retry_count < settings.PROVIDER_OUTBOX_MAX_ATTEMPTS:
+                                event.status = ProviderOutboxStatus.PENDING.value
+                                event.available_at = datetime.now(timezone.utc) + timedelta(seconds=300)
+                                results["retried"] += 1
+                            else:
+                                event.status = ProviderOutboxStatus.DEAD.value
+                                event.completed_at = datetime.now(timezone.utc)
+                                results["dead"] += 1
+                        await db.commit()
+                        continue
                 event.status = ProviderOutboxStatus.SUCCEEDED.value
                 event.provider_message_id = provider_id
                 event.completed_at = datetime.now(timezone.utc)

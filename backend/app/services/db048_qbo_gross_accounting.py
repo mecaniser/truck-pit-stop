@@ -86,10 +86,15 @@ def invoice_semantics(entity):
         key=(_ref(detail,"TaxRateRef"),str(percent.normalize()))
         amount,base=tax_groups.get(key,(Decimal(0),Decimal(0)))
         tax_groups[key]=(amount+_signed_amount(line.get("Amount")),base+_signed_amount(detail.get("NetAmountTaxable")))
-    return {"lines": lines, "tax": str(_amount(tax.get("TotalTax", 0))),
+    semantics = {"lines": lines, "tax": str(_amount(tax.get("TotalTax", 0))),
             "tax_lines":[[key[0],key[1],str(_signed_amount(value[0])),str(_signed_amount(value[1]))] for key,value in sorted(tax_groups.items())],
             "total": str(_amount(entity.get("TotalAmt"))),
             "currency": _ref(entity, "CurrencyRef") or "USD"}
+    # Preserve persisted no-tax snapshots byte-for-byte. A taxable US invoice
+    # must also retain its transaction-level tax identity on every readback.
+    if _ref(tax, "TxnTaxCodeRef"):
+        semantics["transaction_tax_code"] = _ref(tax, "TxnTaxCodeRef")
+    return semantics
 
 
 def _usd_exchange(entity):
@@ -268,7 +273,9 @@ async def _fee_line(connection, member, mapping):
     return {"Amount": float(member.fee), "Description": mapping["_fee_description"],
             "DetailType": "SalesItemLineDetail", "SalesItemLineDetail": {
                 "ItemRef": {"value": item_id}, "Qty": 1,
-                "UnitPrice": float(member.fee), "TaxCodeRef": {"value": code}}}, tax_line
+                # US line-level taxability is TAX/NON, never a tax-code ID.
+                # The verified ID belongs in TxnTaxDetail.TxnTaxCodeRef.
+                "UnitPrice": float(member.fee), "TaxCodeRef": {"value": "TAX" if tax_line else "NON"}}}, tax_line
 
 
 async def ensure_gross_invoice(db, *, connection, invoice, customer, settlement, tenant_name=None,
@@ -291,6 +298,10 @@ async def ensure_gross_invoice(db, *, connection, invoice, customer, settlement,
     payload["Line"][0]["SalesItemLineDetail"]["TaxCodeRef"] = {"value": "NON"}
     tax_lines = []
     components = mappings.get("_fee_components", [(p.attempt_id, p, mappings[p.attempt_id]) for p in projection.payments if p.fee])
+    transaction_tax_codes = {str(mapping.get("qbo_card_fee_tax_code_id") or "")
+                             for _, member, mapping in components if member.fee_tax}
+    if len(transaction_tax_codes) > 1:
+        _fail("QuickBooks US invoice requires a single transaction tax code")
     for component_key, member, mapping in components:
         if member.fee:
             line, tax_line = await _fee_line(connection, member, mapping)
@@ -299,6 +310,8 @@ async def ensure_gross_invoice(db, *, connection, invoice, customer, settlement,
                 tax_lines.append(tax_line)
     payload["TxnTaxDetail"] = {"TotalTax": float(sum((p.fee_tax for p in projection.payments), Decimal(0))),
                                "TaxLine": tax_lines}
+    if tax_lines:
+        payload["TxnTaxDetail"]["TxnTaxCodeRef"] = {"value": next(iter(transaction_tax_codes))}
     previous = (settlement.accounting_projection_snapshot or {}).get("invoice")
     if previous:
         owned_order={line["description"]:index for index,line in enumerate(previous["lines"])}
@@ -345,7 +358,7 @@ async def ensure_gross_invoice(db, *, connection, invoice, customer, settlement,
             response = await r._request(connection, "POST", route, json=write,
                 params={"requestid": r._qbo_request_id("grossinv", f"{invoice.id}:{revision}")})
         except r.QuickBooksAccountingError as exc:
-            if not current or exc.status_code != 400 or "5010" not in str(exc) or retry == 2:
+            if not current or exc.status_code != 400 or exc.fault_code != 5010 or retry == 2:
                 raise
             current = (await r._request(connection, "GET", f"invoice/{current['Id']}")).get("Invoice")
             continue
@@ -465,7 +478,24 @@ async def sync_gross_payment(db, envelope):
     return str(current["Id"])
 
 
-async def _gross_source(db, envelope):
+def _receipt_deposit_matches(entity, expected, *, allow_empty_zero=False):
+    actual = _ref(entity, "DepositToAccountRef")
+    if actual == str(expected):
+        return True
+    # QBO omits the deposit account after a receipt becomes exactly zero.
+    # This is not an exemption for positive, allocated, or unapplied money.
+    return (allow_empty_zero and entity.get("DepositToAccountRef") is None and entity.get("Line") == []
+            and "TotalAmt" in entity and "UnappliedAmt" in entity
+            and _amount(entity["TotalAmt"]) == 0 and _amount(entity["UnappliedAmt"]) == 0)
+
+
+async def _source_deposit_account(envelope, source):
+    key = {"stripe_connect":"stripe_clearing_account", "quickbooks_payments":"qbp_clearing_account"}.get(
+        envelope.attempt.provider,"check_deposit_account" if envelope.attempt.rail=="check" else "zelle_ach_account")
+    return await _r()._resolve_qbo_account_reference(envelope.connection,(source.account_mapping_snapshot or {}).get(key))
+
+
+async def _gross_source(db, envelope, *, allow_empty_zero_deposit=False):
     r = _r()
     await _locked_settlement(db, envelope.settlement)
     source = await db.scalar(select(PaymentAccountingLink).where(
@@ -483,12 +513,10 @@ async def _gross_source(db, envelope):
     entity = (await r._request(envelope.connection, "GET", f"payment/{payment_id}")).get("Payment") or {}
     _usd_exchange(entity)
     customer_id = await r.ensure_customer(envelope.connection, envelope.customer, tenant_name=envelope.tenant.name)
-    key = {"stripe_connect":"stripe_clearing_account", "quickbooks_payments":"qbp_clearing_account"}.get(
-        envelope.attempt.provider,"check_deposit_account" if envelope.attempt.rail=="check" else "zelle_ach_account")
-    deposit = await r._resolve_qbo_account_reference(envelope.connection,(source.account_mapping_snapshot or {}).get(key))
+    deposit = await _source_deposit_account(envelope,source)
     if (str(entity.get("Id")) != str(payment_id)
             or _ref(entity, "CustomerRef") != str(customer_id)
-            or _ref(entity, "DepositToAccountRef") != str(deposit)
+            or not _receipt_deposit_matches(entity,deposit,allow_empty_zero=allow_empty_zero_deposit)
             or (_ref(entity, "CurrencyRef") or "USD") != "USD"
             or str(entity.get("PaymentRefNum") or "") != r.db048_qbo_payment_reference(attempt=envelope.attempt, payment=envelope.payment)
             or not r._qbo_payment_note_matches(entity.get("PrivateNote"), attempt=envelope.attempt,
@@ -613,7 +641,8 @@ async def sync_gross_adjustment(db, envelope, *, reversal=False):
         _fail("Gross adjustment conflicts with already refunded excess")
     if desired_total < 0 or desired_allocation < 0 or desired_allocation > desired_total:
         _fail("Gross dispute components exceed the original receipt")
-    source, current, customer_id = await _gross_source(db, envelope)
+    source, current, customer_id = await _gross_source(db, envelope, allow_empty_zero_deposit=True)
+    invoice_before = (envelope.settlement.accounting_projection_snapshot or {}).get("invoice") or {}
     # Tax mapping/readback must agree before changing the gross receipt.
     await ensure_gross_invoice(db, connection=envelope.connection, invoice=envelope.invoice,
         customer=envelope.customer, settlement=envelope.settlement, tenant_name=envelope.tenant.name)
@@ -637,22 +666,45 @@ async def sync_gross_adjustment(db, envelope, *, reversal=False):
     payment_id = str(current["Id"])
     expected_reference = current.get("PaymentRefNum")
     expected_note = current.get("PrivateNote")
-    expected_deposit = _ref(current, "DepositToAccountRef")
+    expected_deposit = str(await _source_deposit_account(envelope,source))
     def check_identity(entity):
         if (str(entity.get("Id")) != payment_id or _ref(entity,"CustomerRef") != customer_id
                 or entity.get("PaymentRefNum") != expected_reference or entity.get("PrivateNote") != expected_note
-                or _ref(entity,"DepositToAccountRef") != expected_deposit
+                or not _receipt_deposit_matches(entity,expected_deposit,allow_empty_zero=True)
                 or (_ref(entity,"CurrencyRef") or "USD") != "USD"
                 or Decimal(str(entity.get("ExchangeRate",1))) != 1):
             _fail("Gross adjustment readback identity changed")
     # JSON persists tuples as lists; compare canonical encodings.
     canonical = lambda value: json.dumps(value, sort_keys=True)
+    allowed_states = {canonical(original_state), canonical(previous)}
+    # QBO can cap this receipt's allocation and advance its SyncToken as a
+    # side-effect of our signed invoice reduction. Permit only that exact cap:
+    # same gross, same unrelated allocations, released cents become unapplied.
+    # Derive it from persisted expected states, NEVER from arbitrary readback.
+    for expected in (original_state, previous):
+        if expected is None:
+            continue
+        for invoice_snapshot in (invoice_before, snapshots.get("invoice") or {}):
+            if invoice_snapshot.get("total") is None:
+                continue
+            cap = _amount(invoice_snapshot["total"])
+            lines = [(key, _amount(value)) for key, value in expected["lines"]]
+            released = sum((max(Decimal(0), value-cap) for key,value in lines if key == invoice_id), Decimal(0))
+            if released:
+                clipped = {"total": expected["total"],
+                           "lines": [(key,str(min(value,cap) if key == invoice_id else value))
+                                     for key,value in lines if key != invoice_id or cap],
+                           "unapplied": str(_amount(expected["unapplied"])+released)}
+                allowed_states.add(canonical(clipped))
+    # The invoice update can mutate linked Payment state. Fetch a fresh token
+    # and validate it against the original identity and exact allowed states.
+    current = (await r._request(envelope.connection, "GET", f"payment/{payment_id}")).get("Payment") or {}
     for retry in range(3):
         check_identity(current)
         actual = _payment_state(current)
         if canonical(actual) == canonical(desired_state):
             break
-        if canonical(actual) not in {canonical(original_state), canonical(previous)}:
+        if canonical(actual) not in allowed_states:
             _fail("QuickBooks gross receipt has unexpected adjustments")
         if current.get("SyncToken") is None:
             _fail("QuickBooks gross receipt lacks a SyncToken")
@@ -661,6 +713,9 @@ async def sync_gross_adjustment(db, envelope, *, reversal=False):
                  for key,value in sorted(targets.items())]
         payload = r._qbo_payment_update_payload(current, total_amount=desired_total,
                                                 lines=lines, note=current["PrivateNote"])
+        # Restore the frozen original clearing account when recovering from a
+        # zero receipt whose provider representation omitted that reference.
+        payload["DepositToAccountRef"] = {"value": expected_deposit}
         if reversal:
             route, payload = "payment?operation=void", {"Id": str(current["Id"]), "SyncToken": str(current["SyncToken"])}
         else:
@@ -670,9 +725,12 @@ async def sync_gross_adjustment(db, envelope, *, reversal=False):
             await r._request(envelope.connection, "POST", route, json=payload,
                 params={"requestid": r._qbo_request_id("grossadj", f"{envelope.attempt.id}:{revision}")})
         except r.QuickBooksAccountingError as exc:
-            if exc.status_code != 400 or "5010" not in str(exc) or retry == 2:
+            if exc.status_code != 400 or exc.fault_code != 5010 or retry == 2:
                 raise
         current = (await r._request(envelope.connection, "GET", f"payment/{current['Id']}")).get("Payment") or {}
+        check_identity(current)
+        if canonical(_payment_state(current)) == canonical(desired_state):
+            break  # The third successful POST must be acknowledged as well.
     else:
         _fail("QuickBooks gross adjustment exhausted its bounded retries")
     check_identity(current)

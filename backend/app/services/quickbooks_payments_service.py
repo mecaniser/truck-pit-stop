@@ -8,6 +8,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from decimal import Decimal
 from typing import Any
+import re
 
 import httpx
 
@@ -230,3 +231,33 @@ async def refund_charge(
         amount=refunded_amount,
         raw=payload,
     )
+
+
+async def get_refund(
+    *, connection: QuickBooksConnection, charge_id: str, refund_id: str,
+) -> QuickBooksRefund:
+    """Retrieve a known refund under its original charge; never resubmit money."""
+    if not connection.encrypted_access_token or any(
+        not isinstance(value, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,255}", value)
+        for value in (charge_id, refund_id)
+    ):
+        raise QuickBooksPaymentError("QuickBooks refund identity is invalid", outcome_unknown=True)
+    access_token = decrypt_quickbooks_token(connection.encrypted_access_token)
+    try:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(settings.QUICKBOOKS_HTTP_TIMEOUT_SECONDS)) as client:
+            response = await client.get(
+                f"{payments_base_url()}/quickbooks/v4/payments/charges/{charge_id}/refunds/{refund_id}",
+                headers={"Authorization": f"Bearer {access_token}", "Accept": "application/json"},
+            )
+        if response.status_code >= 400:
+            raise QuickBooksPaymentError("QuickBooks refund could not be retrieved", outcome_unknown=True)
+        payload = response.json()
+        if (not isinstance(payload, dict) or payload.get("id") != refund_id
+                or not isinstance(payload.get("status"), str) or not payload["status"]):
+            raise ValueError("refund identity")
+        amount = Decimal(str(payload.get("amount")))
+        if not amount.is_finite() or amount <= 0 or amount != amount.quantize(Decimal("0.01")):
+            raise ValueError("refund amount")
+        return QuickBooksRefund(id=refund_id, status=str(payload["status"]).upper(), amount=amount, raw=payload)
+    except (httpx.HTTPError, ValueError, ArithmeticError) as exc:
+        raise QuickBooksPaymentError("QuickBooks refund readback is unavailable", outcome_unknown=True) from exc

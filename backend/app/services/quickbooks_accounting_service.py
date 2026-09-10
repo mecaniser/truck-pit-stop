@@ -28,10 +28,12 @@ class QuickBooksAccountingError(RuntimeError):
         *,
         retryable: bool = False,
         status_code: int | None = None,
+        fault_code: int | None = None,
     ):
         super().__init__(message)
         self.retryable = retryable
         self.status_code = status_code
+        self.fault_code = fault_code
 
 
 def accounting_base_url() -> str:
@@ -82,10 +84,23 @@ async def _request(
 
     if response.status_code >= 400:
         retryable = response.status_code == 429 or response.status_code >= 500
+        # Retain only a single bounded numeric provider code. Never propagate
+        # Fault Message/Detail, which can echo credentials or customer values.
+        fault_code = None
+        try:
+            failure = response.json()
+            fault = failure.get("Fault") if isinstance(failure, dict) else None
+            errors = fault.get("Error") if isinstance(fault, dict) else None
+            code = errors[0].get("code") if isinstance(errors, list) and len(errors) == 1 and isinstance(errors[0], dict) else None
+            if isinstance(code, str) and 1 <= len(code) <= 8 and all("0" <= char <= "9" for char in code):
+                fault_code = int(code)
+        except ValueError:
+            pass
         raise QuickBooksAccountingError(
             f"QuickBooks Accounting returned HTTP {response.status_code}",
             retryable=retryable,
             status_code=response.status_code,
+            fault_code=fault_code,
         )
     try:
         payload = response.json()

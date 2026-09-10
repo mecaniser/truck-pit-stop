@@ -5,6 +5,49 @@ Accountable owner: Backend & Integrations.
 Contract reviewer: independent Architecture & API Contracts.
 No production activation or historical financial rewrite is authorized here.
 
+## Sandbox acceptance correction contract (2026-09-10)
+
+- US fee-tax invoices use line `TAX`/`NON` indicators and the verified transaction
+  `TxnTaxCodeRef`; mapped TaxRate identity, signed tax base, and total must still
+  match provider readback. Mixed transaction tax codes fail closed. Preserve
+  existing no-tax snapshots and never rewrite historical posted compositions.
+- Invoice adjustments may cause QBO to clip a receipt's allocation and advance
+  its version; reread and validate only the exact expected cap-derived state.
+  The provider's omitted deposit account is allowed only on a verified zero
+  receipt with explicit empty lines and zero unapplied money. Positive recovery
+  must restore and verify the original snapshotted clearing account. Genuine
+  numeric5010 responses use bounded retries, including successful final-attempt
+  readback; no foreign identity, account, or money change is adopted.
+- Actual sandbox refund `MT7353020517` returned `ISSUED`; its charge
+  `MT0359488296` subsequently read `CANCELLED`. Treat issuance as provider
+  acceptance, not proof of bank settlement. Do not misclassify it as rejection.
+- Intuit's [official SDK refund tests](https://github.com/intuit/PHP-Payments-SDK/blob/master/tests/ChargeTest.php)
+  assert `ISSUED` as the successful submission response. Its
+  [official Java sample refund model](https://github.com/IntuitDeveloper/SampleApp-Payments-Java/blob/master/src/main/java/com/intuit/sample/payment/model/Refund.java)
+  defines `ISSUED`, `DECLINED`, and `SETTLED`. Normalize verified `ISSUED` as
+  accepted/pending, `SETTLED` as succeeded, and `DECLINED` as failed, retaining
+  the exact refund identity in all cases. Never infer settled from issuance
+  alone. Known-ID polling must cover settlement timescales, not exhaust an
+  error retry budget within minutes for an ordinary pending refund. Unknown
+  outcomes and genuine errors remain bounded/actionable. Payout/expense
+  evidence remains separate from refund state.
+- Ordinary known-ID `ISSUED` polling uses a six-hour interval with a fourteen-day
+  deadline from refund creation; beyond that, retain the pending refund and ID
+  with an actionable dead outbox item. This does not submit money again.
+- Persist a returned refund identity before any retry. A known identity is
+  reconciled through GET on its original charge, never another POST. Verify
+  tenant, original provider account/realm, charge, refund identity and amount.
+- If submission outcome is unknown without an identity, keep an actionable
+  unresolved state rather than automatically submitting another refund. A
+  replay HTTP400 is not proof that an earlier accepted refund failed.
+- Retry/worker transaction handling must retain accepted identities across
+  commits and lease checks; bounded retries must end in an actionable state.
+  Stripe behavior remains unchanged. No new migration is intended.
+- Acceptance requires focused negative/tenant-isolation and worker persistence
+  tests, independent non-implementing review, and GET-only verification of the
+  already-created sandbox refund. No additional refund or charge is authorized
+  merely to test a correction to retry handling.
+
 ## Evidence and defect boundary
 
 Real tenant evidence is already recorded in PROJECT_BOARD.md: QBO Deposit
