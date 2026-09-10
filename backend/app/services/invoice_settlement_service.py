@@ -449,7 +449,10 @@ async def provider_readiness(
                         RepairOrder.id == Invoice.repair_order_id,
                         RepairOrder.tenant_id == InvoicePaymentAttempt.tenant_id,
                         RepairOrder.customer_id == InvoicePaymentAttempt.customer_id,
-                        RepairOrder.deleted_at.is_(None),
+                        or_(
+                            RepairOrder.deleted_at.is_(None),
+                            InvoicePaymentAttempt.source == "backfill",
+                        ),
                     ),
                 )
                 .where(

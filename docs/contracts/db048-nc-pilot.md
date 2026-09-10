@@ -66,3 +66,27 @@ reads NC readiness and nonpilot denial in a new session. No provider operations.
 ETS imports remain untouched; future newly imported legacy sources can correctly
 close readiness until their factual baseline is refreshed. This is not evidence
 of a second external accounting writer.
+
+## Historical-readiness correction
+
+PR363 passed all six checks and deployed as cd277efb. Prospective activation
+correctly stopped before the tenant flag commit: one verified historical Zelle
+record belongs to an archived repair order. The factual backfill preserves it,
+but readiness previously required an active repair order even for backfill.
+Production admission switches were returned off; no new charge/refund occurred.
+
+Independent contract: allow an archived order only for a backfill-source attempt
+in the readiness evidence predicate, retaining verified baseline, active invoice,
+tenant/customer identities, reciprocal links, payment state and exact money
+checks. Native/canonical attempts on archived orders remain blocked. Live charge
+and confirmation eligibility are unchanged. Do not restore orders or rewrite
+historical amounts. Prove the candidate against production in a read-only
+transaction before another deployment and activation attempt.
+
+Live-data candidate simulation PASS: service SHA256
+`474f9b90d68ff366bd039c6921ed1cc5854acd929abb789cce0050dc725d65f4`
+under read-only transaction/no-autoflush returned NC `ready` with no reasons and
+both other tenants `not_ready`. All persisted tenant flags were asserted false.
+This verifies candidate behavior against actual records, not deployed activation.
+Diagnostic SHA256:
+`56931c8c0ec5e09c8ff5d25e764b100dd7f2e425e67dfac04abe41a239bef9f6`.
