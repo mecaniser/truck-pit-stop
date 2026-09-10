@@ -41,6 +41,13 @@ export default function CustomerCreditAgingCard() {
   const totalCents = credits.data.reduce((sum, item) => sum + (moneyToCents(item.remaining_amount) ?? 0n), 0n)
   const oldestAge = credits.data.reduce((oldest, item) => Math.max(oldest, item.age_days), 0)
 
+  if (credits.data.length === 0) return (
+    <section aria-label="Customer credits" className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-zinc-800 p-4 text-sm">
+      <h3 className="flex items-center gap-2 font-bold text-zinc-100"><WalletCards className="h-4 w-4" />Customer credits</h3>
+      <p className="text-zinc-400"><span className="font-bold tabular-nums text-zinc-100">$0.00</span> · No open credits</p>
+    </section>
+  )
+
   return (
     <section className="overflow-hidden rounded-2xl border border-zinc-800 bg-zinc-950/40" aria-labelledby="customer-credit-aging-heading">
       <header className="flex flex-wrap items-start justify-between gap-3 border-b border-zinc-800 p-4 sm:p-5">

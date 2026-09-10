@@ -26,8 +26,11 @@ import {
 } from 'lucide-react'
 import { useTheme, ACCENT_OPTIONS, FONT_FAMILY_OPTIONS, FONT_SIZE_OPTIONS, NOTIFICATION_POSITION_OPTIONS } from '../../contexts/ThemeContext'
 import AppearanceSettingsPanel from './AppearanceSettingsPanel'
+import QuickBooksCompanyIdentity from './QuickBooksCompanyIdentity'
 import GoogleReviewsPage from '@/features/reviews/GoogleReviewsPage'
 import { CardProviderSettingsCard, CustomerCreditAgingCard } from '@/features/payments'
+import type { CardProviderReadiness, CardProvider } from '@/features/payments/types'
+import { fetchCardProviderReadiness } from '@/features/payments/api'
 
 // ============ HYBRID DESIGN SYSTEM (Industrial + Organic) ============
 const industrialStyles = {
@@ -344,6 +347,7 @@ function IndustrialBadge({ children, variant = 'default' }: { children: React.Re
 }
 
 function PaymentIntegrationPanel({
+  cardProvider,
   icon,
   title,
   summary,
@@ -352,6 +356,7 @@ function PaymentIntegrationPanel({
   onOpenChange,
   children,
 }: {
+  cardProvider?: CardProvider
   icon: React.ReactNode
   title: string
   summary: string
@@ -362,6 +367,12 @@ function PaymentIntegrationPanel({
 }) {
   const triggerId = useId()
   const panelId = useId()
+  const { data: routing } = useQuery<CardProviderReadiness>({ queryKey: ['invoice-card-provider-readiness'], queryFn: fetchCardProviderReadiness, enabled: false })
+  const selectedForCards = routing?.selected_provider === cardProvider
+  const providerReady = cardProvider === 'stripe_connect'
+    ? routing?.stripe_connect.status === 'ready'
+    : routing?.quickbooks_payments.status === 'ready' && routing.quickbooks_payments.approved && routing.quickbooks_payments.tenant_ready
+  const activeForCards = selectedForCards && providerReady && routing?.feature_enabled && routing.accounting_ready
 
   return (
     <IndustrialCard className="db-settings-payment-card">
@@ -379,6 +390,7 @@ function PaymentIntegrationPanel({
         <span className="min-w-0 flex-1">
           <span className="block text-sm font-semibold text-zinc-100">{title}</span>
           <span className="mt-1 block text-sm text-zinc-400">{summary}</span>
+          {cardProvider && routing && (providerReady || selectedForCards) && <span className="mt-1 block text-xs font-semibold" style={{ color: activeForCards ? 'var(--parts-status-success, #10b981)' : selectedForCards ? 'var(--parts-status-warning, #f59e0b)' : 'var(--text-secondary, #a1a1aa)' }}>{activeForCards ? 'Active for card payments' : selectedForCards ? 'Card payments need attention' : 'Not used for invoice cards'}</span>}
         </span>
         {status && (
           <span className="col-span-2 col-start-2 justify-self-start sm:ml-auto">
@@ -388,6 +400,7 @@ function PaymentIntegrationPanel({
             </IndustrialBadge>
           </span>
         )}
+        <span className="hidden text-xs font-semibold text-zinc-400 sm:inline">{open ? 'Hide details' : 'Manage'}</span>
         <ChevronDown className={`col-start-3 row-start-1 h-5 w-5 shrink-0 text-zinc-400 transition-transform ${open ? 'rotate-180' : ''}`} />
       </button>
       {open && (
@@ -1460,6 +1473,7 @@ function PaymentsSection() {
       <PaymentIntegrationPanel
         icon={<CreditCard className="h-5 w-5" />}
         title="Stripe Payments"
+        cardProvider="stripe_connect"
         summary={statusConfig.desc}
         status={{
           label: statusConfig.title,
@@ -1643,17 +1657,20 @@ function PaymentsSection() {
 
   return (
     <div className="db-settings-payments space-y-8 animate-[fadeIn_0.4s_ease-out]">
-      <div className="rounded-xl border border-zinc-800 bg-zinc-950/40 px-4 py-3 text-sm text-zinc-400">
-        Manage card-payment connections, staff-confirmed Zelle, and QuickBooks accounting sync. Customer-facing charges are in Taxes &amp; Fees when your role has access.
-      </div>
       <CardProviderSettingsCard requestVerification={(onGranted) => requestDestructiveStepUp({
         scope: 'payment_sources.manage',
         title: 'Verify invoice card routing',
         description: 'Enter your current password to change the card provider for new payment attempts.',
         onGranted,
-      })} />
+      })}>
+        <div className="space-y-4">
+          {integrationOrder.map((integration, index) => <div key={integration.id} data-payment-source={integration.id}>
+            {!integration.configured && (index === 0 || integrationOrder[index - 1].configured) && <h4 className="mb-3 mt-6 text-sm font-semibold text-zinc-400">Other payment options</h4>}
+            {integrationPanels[integration.id]}
+          </div>)}
+        </div>
+      </CardProviderSettingsCard>
       <CustomerCreditAgingCard />
-      {integrationOrder.map(integration => <div key={integration.id} data-payment-source={integration.id}>{integrationPanels[integration.id]}</div>)}
       {disconnectKind && (
         <PaymentSourceDisconnectDialog
           title={disconnectKind === 'legacy' ? 'Disconnect legacy Stripe connection?' : 'Disconnect Stripe account?'}
@@ -1831,6 +1848,8 @@ function QuickBooksIntegrationCard({
   const queryClient = useQueryClient()
   const [isRedirecting, setIsRedirecting] = useState(false)
   const [showDisconnectConfirmation, setShowDisconnectConfirmation] = useState(false)
+  const [showConnectionSettings, setShowConnectionSettings] = useState(false)
+  const connectionSettingsId = useId()
   const [disconnectGrantToken, setDisconnectGrantToken] = useState<string | null>(null)
   const [searchParams, setSearchParams] = useSearchParams()
   const { data: status, isLoading } = useQuery<QuickBooksConnectionStatus>({
@@ -1903,7 +1922,7 @@ function QuickBooksIntegrationCard({
     : status.is_connected
       ? connectionNeedsAttention
         ? { led: 'warning' as const, title: 'ACTION REQUIRED', desc: 'Reconnect QuickBooks to continue using accounting and payments.' }
-        : { led: 'active' as const, title: 'ACTIVE', desc: 'Accounting and payments are authorized.' }
+        : { led: 'active' as const, title: 'CONNECTED', desc: status.scopes.includes('com.intuit.quickbooks.accounting') ? 'Accounting connection authorized.' : 'Accounting authorization required.' }
       : { led: 'inactive' as const, title: 'NOT CONNECTED', desc: 'Connect QuickBooks to use accounting and payments.' }
 
   return (
@@ -1911,6 +1930,7 @@ function QuickBooksIntegrationCard({
       <PaymentIntegrationPanel
       icon={<Building2 className="h-5 w-5" />}
       title="QuickBooks Online"
+      cardProvider="quickbooks_payments"
       summary={isLoading ? 'Checking connection status...' : statusConfig.desc}
       status={{
         label: isLoading ? 'CHECKING STATUS' : statusConfig.title,
@@ -1937,14 +1957,18 @@ function QuickBooksIntegrationCard({
             </div>
           )}
 
+          {status?.is_connected && <QuickBooksCompanyIdentity open={open} connection={status} />}
+          <QuickBooksRateGuidance />
+
           {status?.configured && (
-            <div className="flex flex-wrap items-center gap-3">
+            <div className="mt-5 border-t border-[var(--border-subtle)] pt-5">
               {status.is_connected ? (
                 <>
-                  <IndustrialBadge variant="success">
-                    <StatusLED status="active" />
-                    Accounting + Payments Authorized
-                  </IndustrialBadge>
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <p className="text-sm text-[var(--text-secondary)]">Connection management</p>
+                    <button type="button" className={industrialStyles.btnSecondary} aria-expanded={showConnectionSettings} aria-controls={connectionSettingsId} onClick={() => setShowConnectionSettings(!showConnectionSettings)}>{showConnectionSettings ? 'Close management' : 'Manage connection'}</button>
+                  </div>
+                  <div id={connectionSettingsId} hidden={!showConnectionSettings} className="mt-4">
                   {connectionNeedsAttention && (
                     <button
                       onClick={() => requestDestructiveStepUp({
@@ -1966,6 +1990,7 @@ function QuickBooksIntegrationCard({
                   >
                     {disconnectMutation.isPending ? 'Disconnecting...' : 'Disconnect QuickBooks'}
                   </button>
+                  </div>
                 </>
               ) : (
                 <button
@@ -1988,7 +2013,6 @@ function QuickBooksIntegrationCard({
           )}
         </>
       )}
-      <QuickBooksRateGuidance />
       </PaymentIntegrationPanel>
       {showDisconnectConfirmation && (
         <PaymentSourceDisconnectDialog
@@ -3541,18 +3565,25 @@ function SurchargeExplanation() {
 }
 
 function QuickBooksRateGuidance() {
+  const [expanded, setExpanded] = useState(false)
+  const ratesId = useId()
   return (
-      <details className="mt-5 border-t border-[var(--border-subtle)] pt-3 text-sm text-[var(--text-secondary)] leading-relaxed">
-        <summary className="cursor-pointer font-medium text-[var(--text-primary)] py-2">QuickBooks processing rates</summary>
-        <div className="space-y-3 pt-2">
+      <section aria-label="Processing rates" className="text-sm text-[var(--text-secondary)] leading-relaxed">
+        <button type="button" aria-expanded={expanded} aria-controls={ratesId} onClick={() => setExpanded(!expanded)} className="flex min-h-12 w-full items-center justify-between gap-4 rounded-lg px-3 py-3 text-left font-semibold text-[var(--text-primary)] transition-colors hover:bg-black/5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--accent-500)]">
+          <span>Processing rates</span>
+          <ChevronDown aria-hidden="true" className={`h-4 w-4 shrink-0 transition-transform duration-200 motion-reduce:transition-none ${expanded ? 'rotate-180' : ''}`} />
+        </button>
+        <div id={ratesId} aria-hidden={!expanded} className="grid transition-[grid-template-rows] duration-200 ease-out motion-reduce:transition-none" style={{ gridTemplateRows: expanded ? '1fr' : '0fr', visibility: expanded ? 'visible' : 'hidden' }}>
+        <div className="min-h-0 overflow-hidden"><div className="space-y-3 px-3 pb-3 pt-2">
           <dl className="space-y-2">
             <div className="flex justify-between gap-4"><dt>Card reader / Tap to Pay</dt><dd className="font-medium tabular-nums shrink-0">2.5%</dd></div>
             <div className="flex justify-between gap-4"><dt>Online invoice payment</dt><dd className="font-medium tabular-nums shrink-0">2.99%</dd></div>
             <div className="flex justify-between gap-4"><dt>Staff manually enters card</dt><dd className="font-medium tabular-nums shrink-0">3.5%</dd></div>
           </dl>
-          <a className="inline-block underline underline-offset-4 text-[var(--accent-400)]" href="https://quickbooks.intuit.com/payments/payment-rates/" target="_blank" rel="noopener noreferrer">QuickBooks published rates</a>
+          <a tabIndex={expanded ? 0 : -1} className="inline-block underline underline-offset-4 text-[var(--accent-400)]" href="https://quickbooks.intuit.com/payments/payment-rates/" target="_blank" rel="noopener noreferrer">QuickBooks published rates</a>
+        </div></div>
         </div>
-      </details>
+      </section>
   )
 }
 
