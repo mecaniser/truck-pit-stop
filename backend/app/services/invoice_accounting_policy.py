@@ -94,16 +94,21 @@ async def require_exportable_invoice(invoice):
     policy = await locked_policy(db, invoice) if db else getattr(invoice, "accounting_policy", "standard")
     if policy == LOCAL_CASH:
         raise QuickBooksAccountingError("Local cash invoices are excluded from QuickBooks")
-    if policy == HISTORICAL_HOLD:
+    from app.services.new_receipt_accounting import scoped_invoice
+    if policy == HISTORICAL_HOLD and not scoped_invoice(invoice):
         raise QuickBooksAccountingError("Historical invoice export is held for individual review")
     if db and await first_export_awaits_payment(db, invoice):
         raise QuickBooksAccountingError("Invoice export awaits a confirmed noncash payment")
 
 
-async def require_standard_payment(db, invoice, *, verified_provider_fact=False):
+async def require_standard_payment(db, invoice, *, verified_provider_fact=False, new_entry=False, attempt=None):
     from app.services.invoice_settlement_service import SettlementDomainError
     policy = await locked_policy(db, invoice)
     if policy == HISTORICAL_HOLD and not verified_provider_fact:
-        raise SettlementDomainError("historical_export_hold", "This historical invoice requires individual accounting review before accepting a noncash payment.")
+        from app.services.new_receipt_accounting import require_clean_historical_balance, valid_attempt_authorization
+        if new_entry:
+            await require_clean_historical_balance(db, invoice)
+        elif attempt is None or attempt.invoice_id != invoice.id or attempt.tenant_id != invoice.tenant_id or not await valid_attempt_authorization(db, attempt, check_connection=True):
+            raise SettlementDomainError("historical_export_hold", "This historical payment requires individual accounting review.")
     if policy == LOCAL_CASH:
         raise SettlementDomainError("local_cash_only", "This invoice is cash-only and cannot use this payment action.")

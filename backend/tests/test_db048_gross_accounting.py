@@ -550,7 +550,8 @@ async def test_same_tenant_wrong_customer_rejected_before_provider(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_three_card_partials_and_zelle_one_canonical_invoice(db_session,monkeypatch):
+@pytest.mark.parametrize("held_legacy", [False, True])
+async def test_three_card_partials_and_zelle_one_canonical_invoice(db_session,monkeypatch,held_legacy):
     """Real domain confirmation/outbox delivery; only the QBO transport is fake."""
     from sqlalchemy import select
     import test_db048_invoice_settlements as fixtures
@@ -563,8 +564,11 @@ async def test_three_card_partials_and_zelle_one_canonical_invoice(db_session,mo
         **kwargs,qbo_card_fee_item_id="fee-item",qbo_card_fee_tax_code_id="tax-code"))
     tenant,owner,customer,invoice=await fixtures._financial_context(db_session,monkeypatch,
         principal=Decimal("1000"),fee=Decimal("30"))
-    monkeypatch.setattr(settings,"DB048_GROSS_QBO_ACCOUNTING_ENABLED",True)
+    monkeypatch.setattr(settings,"DB048_GROSS_QBO_ACCOUNTING_ENABLED",not held_legacy)
     settlement=await get_or_create_settlement(db_session,invoice=invoice,customer_id=customer.id,tenant=tenant)
+    if held_legacy:
+        invoice.accounting_policy = "historical_export_hold"
+        await db_session.flush()
     connection=await db_session.scalar(select(QuickBooksConnection).where(QuickBooksConnection.tenant_id==tenant.id))
     config=await db_session.scalar(select(TenantPaymentProviderConfiguration).where(TenantPaymentProviderConfiguration.tenant_id==tenant.id))
     real_lock,real_projection=g._locked_settlement,g._projection
@@ -575,6 +579,9 @@ async def test_three_card_partials_and_zelle_one_canonical_invoice(db_session,mo
     single_request,single_query=r._request,r._query
     payments={}
     async def request(connection,method,path,**kwargs):
+        if held_legacy:
+            from app.services.new_receipt_accounting import request_environment
+            assert request_environment(connection) == "production"
         if method=="POST" and path=="payment":
             payload=deepcopy(kwargs["json"])
             payment_id=f"payment-{len(payments)+1}"
@@ -600,6 +607,8 @@ async def test_three_card_partials_and_zelle_one_canonical_invoice(db_session,mo
     monkeypatch.setattr(r,"_query",query)
     envelopes=[]
     for index,(rail,amount) in enumerate([("card","200"),("card","300"),("card","100"),("zelle","400")]):
+        if held_legacy:
+            monkeypatch.setattr(settings,"QUICKBOOKS_ACCOUNTING_ENVIRONMENT","production")
         manual=rail=="zelle"
         created=await create_attempt(db_session,invoice=invoice,tenant=tenant,customer_id=customer.id,
             actor=owner,amount=Decimal(amount),rail=rail,expected_settlement_version=settlement.version,
@@ -614,9 +623,26 @@ async def test_three_card_partials_and_zelle_one_canonical_invoice(db_session,mo
         link=await db_session.scalar(select(PaymentAccountingLink).where(PaymentAccountingLink.attempt_id==created.attempt.id))
         env=r.AccountingEnvelope(uuid4(),tenant,link,confirmed.attempt,confirmed.payment,
                                 invoice,customer,connection,config,settlement)
+        if held_legacy:
+            from app.db.models.provider_outbox import ProviderOutboxEvent
+            outbox = await db_session.scalar(select(ProviderOutboxEvent).where(
+                ProviderOutboxEvent.aggregate_id == created.attempt.id,
+                ProviderOutboxEvent.event_type == "invoice_payment.accounting_sync"))
+            assert outbox.status == "pending"
+            outbox.status = "processing"
+            outbox.lock_token = "worker-lease"
+            from datetime import datetime, timezone, timedelta
+            outbox.locked_until = datetime.now(timezone.utc) + timedelta(minutes=5)
+            await db_session.flush()
+            env = await r.load_accounting_envelope(db_session, outbox)
+            monkeypatch.setattr(settings,"QUICKBOOKS_ACCOUNTING_ENVIRONMENT","sandbox")
         await r.deliver_accounting_envelope(db_session,env)
         envelopes.append(env)
-    final=(await request(connection,"GET","invoice/invoice-1"))["Invoice"]
+    final=state["invoice"] if held_legacy else (await request(connection,"GET","invoice/invoice-1"))["Invoice"]
+    if held_legacy:
+        final["Balance"] = final["TotalAmt"] - sum(payment["TotalAmt"] for payment in payments.values())
+        assert invoice.accounting_policy == "historical_export_hold"
+        assert settlement.accounting_composition_version == "legacy_principal_v1"
     assert final["TotalAmt"]==1018
     assert final["Balance"]==0
     assert [line["Amount"] for line in final["Line"]]==[1000,6,9,3]

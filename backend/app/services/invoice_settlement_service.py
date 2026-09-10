@@ -565,7 +565,11 @@ async def provider_readiness(
         InvoiceSettlement.accounting_composition_version == "gross_invoice_v1",
         InvoiceSettlement.deleted_at.is_(None),
     ).limit(1))
-    if settings.DB048_GROSS_QBO_ACCOUNTING_ENABLED or gross_in_use is not None:
+    authorized_gross = await db.scalar(select(InvoicePaymentAttempt.id).where(
+        InvoicePaymentAttempt.tenant_id == tenant.id,
+        InvoicePaymentAttempt.new_receipt_accounting_authorization.is_not(None),
+    ).limit(1))
+    if settings.DB048_GROSS_QBO_ACCOUNTING_ENABLED or gross_in_use is not None or authorized_gross is not None:
         required.update({"qbo_card_fee_item_id", "qbo_card_fee_tax_code_id"})
     mappings_ready = bool(config) and all(mappings.get(key) for key in required)
     if not mappings_ready:
@@ -639,7 +643,7 @@ async def settlement_for_compatibility_route(
         InvoiceSettlement.customer_id == customer_id,
     )
     from app.services.invoice_accounting_policy import require_standard_payment
-    await require_standard_payment(db, invoice)
+    await require_standard_payment(db, invoice, new_entry=True)
     if lock:
         query = query.with_for_update()
     existing = await db.scalar(query)
@@ -999,7 +1003,7 @@ async def create_attempt(
             current_version=settlement.version,
         )
     from app.services.invoice_accounting_policy import require_standard_payment
-    await require_standard_payment(db, invoice)
+    await require_standard_payment(db, invoice, new_entry=True)
     available = allocatable_balance(settlement)
     if amount > available:
         raise SettlementDomainError(
@@ -1034,6 +1038,7 @@ async def create_attempt(
         else None
     )
     attempt = InvoicePaymentAttempt(
+        id=uuid4(),
         tenant_id=tenant.id,
         invoice_id=invoice.id,
         settlement_id=settlement.id,
@@ -1059,6 +1064,10 @@ async def create_attempt(
         request_hash=request_hash,
         expires_at=expires_at,
     )
+    from app.services.invoice_accounting_policy import HISTORICAL_HOLD
+    if invoice.accounting_policy == HISTORICAL_HOLD:
+        from app.services.new_receipt_accounting import issue_authorization
+        attempt.new_receipt_accounting_authorization = issue_authorization(attempt, config)
     db.add(attempt)
     await db.flush()
     prior_state = settlement.state
@@ -1210,7 +1219,8 @@ async def _enqueue_accounting(
     settlement.accounting_sync_status = "accounting_sync_pending"
     from app.services.invoice_accounting_policy import locked_policy, HISTORICAL_HOLD
     invoice = await db.get(Invoice, settlement.invoice_id)
-    if await locked_policy(db, invoice) == HISTORICAL_HOLD:
+    from app.services.new_receipt_accounting import valid_attempt_authorization
+    if await locked_policy(db, invoice) == HISTORICAL_HOLD and not await valid_attempt_authorization(db, attempt):
         link.sync_state = HISTORICAL_HOLD
         settlement.accounting_sync_status = HISTORICAL_HOLD
         outbox.status = "suppressed"
@@ -1263,7 +1273,7 @@ async def confirm_attempt(
     # money projection, accounting enqueue, or paid/order state mutation.
     invoice = await locked_accessible_invoice_for_attempt(db, attempt)
     from app.services.invoice_accounting_policy import require_standard_payment
-    await require_standard_payment(db, invoice, verified_provider_fact=(
+    await require_standard_payment(db, invoice, attempt=attempt, verified_provider_fact=(
         verified_provider_fact and actor is None and attempt.rail == "card"
         and attempt.provider in {"stripe_connect", "quickbooks_payments"}
         and bool(provider_charge_id or provider_event_id)))
@@ -1671,7 +1681,7 @@ async def create_refund(
     invoice = await db.scalar(select(Invoice).where(Invoice.id == attempt.invoice_id, Invoice.tenant_id == tenant_id))
     if invoice is None:
         raise SettlementDomainError("invoice_not_found", "Invoice not found.", status_code=404)
-    await require_standard_payment(db, invoice)
+    await require_standard_payment(db, invoice, attempt=attempt)
     overpayment = (
         await db.execute(select(PaymentOverpayment).where(
             PaymentOverpayment.tenant_id == tenant_id,

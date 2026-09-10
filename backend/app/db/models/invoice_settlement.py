@@ -232,6 +232,7 @@ class InvoicePaymentAttempt(BaseModel):
     customer_id = Column(UUID(as_uuid=True), ForeignKey("customers.id"), nullable=False, index=True)
     payment_id = Column(UUID(as_uuid=True), ForeignKey("payments.id"), nullable=True, unique=True)
     source = Column(String(40), nullable=False)
+    new_receipt_accounting_authorization = Column(JSON(none_as_null=True), nullable=True)
     rail = Column(String(16), nullable=False)
     provider = Column(String(32), nullable=False)
     state = Column(String(20), nullable=False, default="pending", index=True)
@@ -721,6 +722,11 @@ def _reject_financial_projection_delete(_mapper, _connection, target) -> None:
 
 
 event.listen(InvoicePaymentAttempt, "before_update", _reject_attempt_soft_delete)
+def _guard_new_receipt_authorization(_mapper, _connection, target):
+    if _attribute_changed(target, "new_receipt_accounting_authorization"):
+        raise ValueError("New receipt accounting authorization is immutable")
+
+event.listen(InvoicePaymentAttempt, "before_update", _guard_new_receipt_authorization)
 event.listen(InvoicePaymentAttempt, "before_delete", _reject_attempt_delete)
 event.listen(
     InvoiceSettlement,

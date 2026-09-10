@@ -201,16 +201,16 @@ async def settlement_summary(
     if invoice is None or settlement.tenant_id != tenant.id:
         raise SettlementDomainError("invoice_not_found", "Invoice not found.", status_code=404)
     if invoice and invoice.accounting_policy == HISTORICAL_HOLD:
-        actions.create_attempt = False
-        actions.rails = []
-        actions.confirm_manual = False
         actions.apply_customer_credit = False
         actions.retry_accounting = False
-        actions.payment_unavailable_reason = (
-            "Non-cash payments are paused for this historical invoice until accounting review is complete."
-            if audience == "staff" else
-            "Payment is unavailable for this invoice. Please contact the shop."
-        )
+        from app.services.new_receipt_accounting import require_clean_historical_balance
+        try:
+            await require_clean_historical_balance(db, invoice)
+        except SettlementDomainError as exc:
+            actions.create_attempt = actions.confirm_manual = False
+            actions.rails = []
+            actions.payment_unavailable_reason = (str(exc) if audience == "staff" else
+                "Payment is unavailable for this invoice. Please contact the shop.")
     if settlement.accounting_sync_status == LOCAL_CASH_SYNC:
         actions = SettlementAllowedActions(configure_provider=actions.configure_provider)
     elif feature_enabled and audience == "staff" and cash_staff(current_user):
@@ -524,7 +524,7 @@ async def _persist_and_bind_stripe_intent(
     attempt_id = attempt.id
     tenant_id = tenant.id
     from app.services.invoice_accounting_policy import require_standard_payment
-    await require_standard_payment(db, invoice)
+    await require_standard_payment(db, invoice, attempt=attempt)
     await db.commit()
     persisted = (
         await db.execute(
@@ -541,6 +541,8 @@ async def _persist_and_bind_stripe_intent(
             status_code=502,
             retryable=True,
         )
+    if not persisted.provider_intent_id:
+        await require_standard_payment(db, invoice, attempt=persisted)
     try:
         if persisted.provider_intent_id:
             intent = stripe.PaymentIntent.retrieve(
@@ -700,7 +702,7 @@ async def charge_quickbooks_settlement_attempt(
         # Admission denial is local and precedes DB/provider work. Holds block
         # NEW captures, not read-back of an already-existing provider charge.
         from app.services.invoice_accounting_policy import require_standard_payment
-        await require_standard_payment(db, invoice)
+        await require_standard_payment(db, invoice, attempt=attempt)
     config = await db.scalar(select(TenantPaymentProviderConfiguration).where(
         TenantPaymentProviderConfiguration.tenant_id == tenant.id,
         TenantPaymentProviderConfiguration.version == attempt.provider_configuration_version,
@@ -723,6 +725,8 @@ async def charge_quickbooks_settlement_attempt(
         )
     await _refresh_connection_if_needed(db, connection)
     reconciling_existing_charge = bool(attempt.provider_charge_id)
+    if not reconciling_existing_charge:
+        await require_standard_payment(db, invoice, attempt=attempt)
     try:
         if attempt.provider_charge_id:
             charge = await get_quickbooks_charge(
