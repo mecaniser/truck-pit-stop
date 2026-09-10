@@ -2104,9 +2104,10 @@ async def test_qbp_native_provider_shaped_two_payment_batch(db_session, monkeypa
             }]}],
         })
         if ownership.startswith("writer_"):
-            # Compose the real outbound builder with the importer. Adding native
-            # identity is a fixture assumption, not evidence that Intuit adopts
-            # our externally-created Payment into its settlement batch.
+            # Compose the actual outbound builder with the importer. Our writer
+            # does not emit native CreditCardPayment metadata: do not inject it
+            # into acceptance and accidentally bypass its QBP reference path.
+            # Deposit linkage remains a fixture, not proof of native adoption.
             local_payment = await db_session.get(Payment, attempt.payment_id)
             local_invoice = await db_session.get(Invoice, attempt.invoice_id)
             outbound = db048_qbo_payment_payload(
@@ -2118,6 +2119,8 @@ async def test_qbp_native_provider_shaped_two_payment_batch(db_session, monkeypa
                 deposit_account="QBP Clearing",
             )
             payments[-1].update(outbound)
+            payments[-1].pop("CreditCardPayment")
+            assert payments[-1]["PaymentRefNum"] == f"QBP native-charge-{index}"
     deposit = {
         "Id": "native-deposit", "TotalAmt": 1259.08, "TxnDate": "2026-09-03",
         "DepositToAccountRef": {"value": "35", "name": "bank-qbp"},
