@@ -15,7 +15,11 @@ credentials or exception details. Strings bounded; missing values omitted in UI.
 Name/address must come from Intuit, never the local shop profile.
 
 GET CompanyInfo through existing accounting client, with realm from the current
-tenant connection. No refresh/reconnect/provider writes or db commit. Missing
+tenant connection. The approved refresh correction reuses `_refresh_connection_if_needed`
+before the read: existing row lock/recheck, encrypted token persistence and refresh
+health updates are permitted for routine credential renewal. No reconnect, scope
+changes or financial/provider business writes. Failed renewal returns unavailable
+without attempting CompanyInfo; do not expose the helper's exception details. Missing
 connection returns not_connected without provider request. Provider failure,
 invalid payload or insufficient accounting scope returns unavailable, leaving
 existing connection health/settings intact. Environment from existing accounting
@@ -32,7 +36,8 @@ and unavailable state must not hide existing controls or claim disconnection.
 
 Acceptance: company field mapping and filtered secret fields; missing/partial/
 malformed/provider-failure cases; permission and second-tenant separation;
-zero write/refresh calls. Frontend loading, identity, missing/error/disconnected
+healthy-token no-write behavior, expired-token renewal before lookup, lock recheck
+and failed-refresh no-lookup cases. Frontend loading, identity, missing/error/disconnected
 and scoped cache tests; focused existing connection regression. Independent
 QA/security; runtime acceptance before release completion. No bank balances,
 payouts, contact edits, connection change or financial mutation in this item.
