@@ -240,11 +240,13 @@ describe('SettlementPaymentPanel', () => {
 
   it('shows the server payment hold reason without amount or tender entry', () => {
     const summary = { ...DB048_SETTLEMENT_FIXTURES.unpaid.summary,
-      allowed_actions: { create_attempt: false, rails: [],
+      allowed_actions: { create_attempt: false, confirm_cash: true, rails: [],
         payment_unavailable_reason: 'Non-cash payments are paused for this historical invoice until accounting review is complete.' } }
     renderWithQuery(<SettlementPaymentPanel access={{ kind: 'authenticated', invoiceId: summary.invoice_id }}
       summary={summary} audience="staff" tone="light" onUpdated={vi.fn()} />)
     expect(screen.getByText(summary.allowed_actions.payment_unavailable_reason)).toBeInTheDocument()
+    expect(screen.getByText('Other payment methods are unavailable.')).toBeInTheDocument()
+    expect(screen.queryByText('No new payment can be started right now.')).not.toBeInTheDocument()
     expect(screen.queryByLabelText('Amount applied to invoice')).not.toBeInTheDocument()
     expect(screen.queryByText('Choose an amount and tender')).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /Continue/ })).not.toBeInTheDocument()
