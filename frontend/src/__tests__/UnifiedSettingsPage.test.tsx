@@ -1,10 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 
 import { useAuthStore } from '../stores/authStore'
+import { DB048_PROVIDER_READINESS } from '../test-fixtures/db048/settlements'
 
 const apiMocks = vi.hoisted(() => ({
   get: vi.fn(),
@@ -94,6 +95,12 @@ function renderPage(initialEntry = '/dashboard/settings') {
       </MemoryRouter>
     </QueryClientProvider>
   )
+}
+
+async function verifyPaymentChange(user: ReturnType<typeof userEvent.setup>) {
+  const dialog = await screen.findByRole('alertdialog', { name: /^Verify / })
+  await user.type(within(dialog).getByLabelText('Your current password'), 'local-password')
+  await user.click(within(dialog).getByRole('button', { name: 'Verify and continue' }))
 }
 
 describe('UnifiedSettingsPage garage logo import', () => {
@@ -280,6 +287,146 @@ describe('UnifiedSettingsPage payment disclosures', () => {
     })
   })
 
+  it('nests Taxes & Fees under Payments & Accounting without changing settings', async () => {
+    const user = userEvent.setup()
+    renderPage()
+    expect(screen.queryByRole('button', { name: /Taxes? & Fees/ })).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Payments & Accounting' }))
+    await user.click(screen.getByRole('button', { name: 'Taxes & Fees' }))
+    expect(screen.getByRole('button', { name: 'Taxes & Fees' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.queryByText('Your customer’s card fee')).not.toBeInTheDocument()
+    const help = await screen.findByText('About card fees')
+    expect(help.closest('details')).not.toHaveAttribute('open')
+    await user.click(help)
+    expect(screen.queryByText('2.99%')).not.toBeInTheDocument()
+    expect(screen.getByText(/A surcharge is optional/)).toBeVisible()
+    expect(screen.getByRole('link', { name: 'Visa surcharge requirements' })).toHaveAttribute('href', expect.stringContaining('usa.visa.com'))
+    expect(screen.getByPlaceholderText('Enter password')).toBeInTheDocument()
+    expect(apiMocks.put).not.toHaveBeenCalled()
+    expect(apiMocks.post).not.toHaveBeenCalled()
+  })
+
+  it('places processor rates inside the QuickBooks source, not Taxes & Fees', async () => {
+    const user = userEvent.setup()
+    renderPage()
+    await user.click(screen.getByRole('button', { name: 'Payments & Accounting' }))
+    await user.click(screen.getByRole('button', { name: /QuickBooks Online/i }))
+    const panel = screen.getByRole('region', { name: /QuickBooks Online/i })
+    await user.click(within(panel).getByText('QuickBooks processing rates'))
+    for (const rate of ['2.5%', '2.99%', '3.5%']) expect(within(panel).getByText(rate)).toBeVisible()
+    expect(within(panel).queryByText(/not yet verified|DieselBridge customer portal/)).not.toBeInTheDocument()
+    for (const method of ['Card reader / Tap to Pay', 'Online invoice payment', 'Staff manually enters card']) expect(within(panel).getByText(method)).toBeVisible()
+    expect(panel.querySelector('details p')).toBeNull()
+    expect(within(panel).getByRole('link', { name: 'QuickBooks published rates' })).toBeVisible()
+    await user.click(screen.getByRole('button', { name: 'Taxes & Fees' }))
+    expect(screen.getByText('QuickBooks processing rates')).not.toBeVisible()
+    expect(screen.getByText('About card fees')).toBeVisible()
+    expect(apiMocks.post).not.toHaveBeenCalled()
+    expect(apiMocks.put).not.toHaveBeenCalled()
+  })
+
+  it('opens the legacy fees URL inside Payments & Accounting and preserves subview drafts', async () => {
+    const user = userEvent.setup()
+    renderPage('/dashboard/settings?section=fees')
+    const password = await screen.findByPlaceholderText('Enter password')
+    await user.type(password, 'unfinished-draft')
+    await user.click(screen.getByRole('button', { name: 'Payment sources' }))
+    await user.click(screen.getByRole('button', { name: 'Taxes & Fees' }))
+    expect(screen.getByPlaceholderText('Enter password')).toHaveValue('unfinished-draft')
+    expect(apiMocks.put).not.toHaveBeenCalled()
+    expect(apiMocks.post).not.toHaveBeenCalled()
+  })
+
+  it('submits verification once and ignores a late grant after leaving settings', async () => {
+    const user = userEvent.setup()
+    let resolveGrant!: (value: unknown) => void
+    apiMocks.post.mockImplementation(() => new Promise((resolve) => { resolveGrant = resolve }))
+    const page = renderPage()
+    await user.click(screen.getByRole('button', { name: 'Payments & Accounting' }))
+    await user.click(screen.getByRole('button', { name: 'Disconnect Stripe' }))
+    const dialog = await screen.findByRole('alertdialog', { name: 'Verify Stripe disconnection' })
+    await user.type(within(dialog).getByLabelText('Your current password'), 'password')
+    const form = within(dialog).getByRole('button', { name: 'Verify and continue' }).closest('form')!
+    fireEvent.submit(form)
+    fireEvent.submit(form)
+    await waitFor(() => expect(apiMocks.post).toHaveBeenCalledTimes(1))
+    expect(within(dialog).getByRole('button', { name: 'Cancel' })).toBeDisabled()
+    page.unmount()
+    resolveGrant({ data: { grant_token: 'late-grant', scope: 'payment_sources.stripe.disconnect' } })
+    await Promise.resolve()
+    expect(apiMocks.post).toHaveBeenCalledTimes(1)
+  })
+
+  it('clears the verification dialog and drafts when the active tenant changes', async () => {
+    const user = userEvent.setup()
+    renderPage()
+    await user.click(screen.getByRole('button', { name: 'Payments & Accounting' }))
+    await user.click(screen.getByRole('button', { name: 'Disconnect Stripe' }))
+    await user.type(await screen.findByLabelText('Your current password'), 'tenant-one-password')
+    act(() => useAuthStore.setState({ user: { ...useAuthStore.getState().user!, tenant_id: 'another-tenant' } }))
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument())
+    expect(apiMocks.post).not.toHaveBeenCalled()
+  })
+
+  it('uses the shared scoped password dialog before saving invoice card routing', async () => {
+    const user = userEvent.setup()
+    const fallback = apiMocks.get.getMockImplementation()!
+    apiMocks.get.mockImplementation((path: string) => path === '/payments/settings/card-provider/readiness'
+      ? Promise.resolve({ data: {
+        ...DB048_PROVIDER_READINESS,
+        quickbooks_payments: { approved: true, tenant_ready: true, status: 'ready' },
+      } }) : fallback(path))
+    renderPage()
+    await user.click(screen.getByRole('button', { name: 'Payments & Accounting' }))
+    await user.click(await screen.findByRole('radio', { name: /QuickBooks Payments/ }))
+    await user.click(screen.getByRole('button', { name: 'Use QuickBooks for new attempts' }))
+    expect(await screen.findByRole('alertdialog', { name: 'Verify invoice card routing' })).toBeInTheDocument()
+    expect(apiMocks.put).not.toHaveBeenCalled()
+    await verifyPaymentChange(user)
+    await waitFor(() => expect(apiMocks.put).toHaveBeenCalledWith(
+      '/payments/settings/card-provider',
+      expect.objectContaining({ selected_provider: 'quickbooks_payments' }),
+      { headers: { 'Idempotency-Key': expect.any(String), 'X-Step-Up-Authorization': 'opaque-step-up-grant' } },
+    ))
+  })
+
+  it.each([
+    { payments: true, taxes_fees: false },
+    { payments: false, taxes_fees: true },
+    { payments: true, taxes_fees: true },
+    { payments: false, taxes_fees: false },
+  ])('preserves separate admin permissions: %j', async (permissions) => {
+    const user = userEvent.setup()
+    useAuthStore.setState({ user: { ...useAuthStore.getState().user!, role: 'garage_admin', permissions } })
+    renderPage()
+    const entry = screen.queryByRole('button', { name: 'Payments & Accounting' })
+    if (!permissions.payments && !permissions.taxes_fees) {
+      expect(entry).not.toBeInTheDocument()
+      return
+    }
+    await user.click(entry!)
+    expect(!!screen.queryByRole('button', { name: 'Payment sources' })).toBe(permissions.payments)
+    expect(!!screen.queryByRole('button', { name: 'Taxes & Fees' })).toBe(permissions.taxes_fees)
+    if (!permissions.payments) {
+      expect(await screen.findByText('About card fees')).toBeInTheDocument()
+      expect(apiMocks.get).not.toHaveBeenCalledWith('/stripe/connect/status')
+      expect(apiMocks.get).not.toHaveBeenCalledWith('/quickbooks/status')
+      expect(apiMocks.get).not.toHaveBeenCalledWith('/admin/zelle-settings')
+    }
+    if (!permissions.taxes_fees) {
+      expect(apiMocks.get).not.toHaveBeenCalledWith('/admin/tax-fee-settings')
+    }
+    expect(apiMocks.put).not.toHaveBeenCalled()
+    expect(apiMocks.post).not.toHaveBeenCalled()
+  })
+
+  it('does not mount payment controls through an OAuth return without permission', async () => {
+    useAuthStore.setState({ user: { ...useAuthStore.getState().user!, role: 'garage_admin', permissions: {} } })
+    renderPage('/dashboard/settings?quickbooks=connected')
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Payment sources' })).not.toBeInTheDocument())
+    expect(apiMocks.get).not.toHaveBeenCalledWith('/quickbooks/status')
+  })
+
   it('links payment triggers to labelled disclosure regions', async () => {
     const user = userEvent.setup()
     renderPage()
@@ -306,31 +453,87 @@ describe('UnifiedSettingsPage payment disclosures', () => {
     expect(screen.queryByRole('region', { name: /Zelle Payments/i })).not.toBeInTheDocument()
   })
 
-  it('unlocks payment-source changes in memory and sends the grant on mutation', async () => {
+  it('blocks a failed password, supports cancellation, and verifies each later save again', async () => {
+    const user = userEvent.setup()
+    renderPage()
+    await user.click(screen.getByRole('button', { name: 'Payments & Accounting' }))
+    await user.click(screen.getByRole('button', { name: /Zelle Payments/i }))
+    const email = await screen.findByLabelText('Zelle Email')
+    await user.clear(email)
+    await user.type(email, 'new@example.com')
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+    apiMocks.post.mockRejectedValueOnce({ response: { data: { detail: 'Incorrect password' } } })
+    await verifyPaymentChange(user)
+    expect(await within(screen.getByRole('alertdialog')).findByRole('alert')).toHaveTextContent('Incorrect password')
+    expect(apiMocks.put).not.toHaveBeenCalled()
+    await user.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Cancel' }))
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+    expect(screen.getByLabelText('Your current password')).toHaveValue('')
+    await verifyPaymentChange(user)
+    await waitFor(() => expect(apiMocks.put).toHaveBeenCalledTimes(1))
+    await user.clear(screen.getByLabelText('Zelle Email'))
+    await user.type(screen.getByLabelText('Zelle Email'), 'later@example.com')
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+    expect(await screen.findByRole('alertdialog', { name: 'Verify Zelle contact changes' })).toBeInTheDocument()
+    expect(apiMocks.put).toHaveBeenCalledTimes(1)
+  })
+
+  it('verifies Stripe setup before starting the provider redirect', async () => {
+    const user = userEvent.setup()
+    apiMocks.get.mockImplementation((path: string) => Promise.resolve({ data: {
+      '/stripe/connect/status': { ...stripeConnection, is_connected: false },
+      '/quickbooks/status': quickBooksConnection,
+      '/admin/garage-profile': garageProfile,
+      '/admin/zelle-settings': {},
+    }[path] ?? garageProfile }))
+    const grant = { data: { grant_token: 'setup-grant', scope: 'payment_sources.manage' } }
+    apiMocks.post.mockImplementation((path: string) => path === '/auth/step-up-grants'
+      ? Promise.resolve(grant) : new Promise(() => {}))
+    renderPage()
+    await user.click(screen.getByRole('button', { name: 'Payments & Accounting' }))
+    await user.click(await screen.findByRole('button', { name: /Set Up Stripe Payments/i }))
+    expect(apiMocks.post).not.toHaveBeenCalled()
+    await verifyPaymentChange(user)
+    await waitFor(() => expect(apiMocks.post).toHaveBeenCalledWith(
+      '/stripe/connect/connect', undefined,
+      { headers: { 'X-Step-Up-Authorization': 'setup-grant' } },
+    ))
+    expect(apiMocks.post.mock.calls.filter(([path]) => path === '/auth/step-up-grants')).toHaveLength(1)
+  })
+
+  it('previews a QR upload locally and verifies before saving it', async () => {
+    const user = userEvent.setup()
+    renderPage()
+    await user.click(screen.getByRole('button', { name: 'Payments & Accounting' }))
+    await user.click(screen.getByRole('button', { name: /Zelle Payments/i }))
+    await user.upload(await screen.findByLabelText('Upload QR Code'), new File(['qr'], 'qr.png', { type: 'image/png' }))
+    await user.click(await screen.findByRole('button', { name: 'Save' }))
+    expect(apiMocks.put).not.toHaveBeenCalled()
+    expect(await screen.findByRole('alertdialog', { name: 'Verify Zelle QR upload' })).toBeInTheDocument()
+    await verifyPaymentChange(user)
+    await waitFor(() => expect(apiMocks.put).toHaveBeenCalledWith(
+      '/admin/zelle-qr-image', { zelle_qr_image: expect.stringMatching(/^data:image\/png;base64,/) },
+      { headers: { 'X-Step-Up-Authorization': 'opaque-step-up-grant' } },
+    ))
+  })
+
+  it('requests verification only when saving payment-source changes', async () => {
     const user = userEvent.setup()
     renderPage()
 
     await user.click(screen.getByRole('button', { name: 'Payments & Accounting' }))
-    await user.type(
-      screen.getByLabelText('Verify your current password to change payment sources'),
-      'local-password',
-    )
-    await user.click(screen.getByRole('button', { name: 'Unlock changes' }))
 
-    await waitFor(() => {
-      expect(apiMocks.post).toHaveBeenCalledWith('/auth/step-up-grants', {
-        password: 'local-password',
-        scope: 'payment_sources.manage',
-        target_tenant_id: null,
-      })
-    })
-    expect(screen.getByText(/Payment-source changes are unlocked/)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Unlock changes' })).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Your current password')).not.toBeInTheDocument()
+    expect(apiMocks.post).not.toHaveBeenCalled()
 
     await user.click(screen.getByRole('button', { name: /Zelle Payments/i }))
     const email = await screen.findByLabelText('Zelle Email')
     await user.clear(email)
     await user.type(email, 'updated@truckpitstop.com')
     await user.click(screen.getByRole('button', { name: 'Save' }))
+    expect(apiMocks.put).not.toHaveBeenCalled()
+    await verifyPaymentChange(user)
 
     await waitFor(() => {
       expect(apiMocks.put).toHaveBeenCalledWith(
@@ -341,19 +544,18 @@ describe('UnifiedSettingsPage payment disclosures', () => {
     })
   })
 
-  it('requires a final confirmation before an unlocked Zelle disablement', async () => {
+  it('requires a final confirmation before a verified Zelle disablement', async () => {
     const user = userEvent.setup()
     renderPage()
 
     await user.click(screen.getByRole('button', { name: 'Payments & Accounting' }))
-    await user.type(screen.getByLabelText('Verify your current password to change payment sources'), 'local-password')
-    await user.click(screen.getByRole('button', { name: 'Unlock changes' }))
-    await screen.findByText(/Payment-source changes are unlocked/)
     await user.click(screen.getByRole('button', { name: /Zelle Payments/i }))
 
     await user.clear(await screen.findByLabelText('Zelle Email'))
     await user.clear(screen.getByLabelText('Zelle Phone'))
     await user.click(screen.getByRole('button', { name: 'Save' }))
+    expect(apiMocks.put).not.toHaveBeenCalled()
+    await verifyPaymentChange(user)
 
     const confirmation = await screen.findByRole('alertdialog', { name: 'Disable Zelle payments?' })
     expect(apiMocks.put).not.toHaveBeenCalledWith('/admin/zelle-settings', expect.anything(), expect.anything())
@@ -366,7 +568,7 @@ describe('UnifiedSettingsPage payment disclosures', () => {
     ))
   })
 
-  it('requires a final confirmation before removing an unlocked Zelle QR code', async () => {
+  it('requires a final confirmation before removing a verified Zelle QR code', async () => {
     const user = userEvent.setup()
     apiMocks.get.mockImplementation((path: string) => Promise.resolve({ data: {
       '/stripe/connect/status': stripeConnection,
@@ -377,11 +579,9 @@ describe('UnifiedSettingsPage payment disclosures', () => {
     renderPage()
 
     await user.click(screen.getByRole('button', { name: 'Payments & Accounting' }))
-    await user.type(screen.getByLabelText('Verify your current password to change payment sources'), 'local-password')
-    await user.click(screen.getByRole('button', { name: 'Unlock changes' }))
-    await screen.findByText(/Payment-source changes are unlocked/)
     await user.click(screen.getByRole('button', { name: /Zelle Payments/i }))
     await user.click(await screen.findByRole('button', { name: 'Remove' }))
+    await verifyPaymentChange(user)
 
     const confirmation = await screen.findByRole('alertdialog', { name: 'Remove the Zelle QR code?' })
     expect(apiMocks.put).not.toHaveBeenCalledWith('/admin/zelle-qr-image', expect.anything(), expect.anything())
@@ -394,7 +594,7 @@ describe('UnifiedSettingsPage payment disclosures', () => {
     ))
   })
 
-  it('reuses the top-level manage grant for Stripe without a second password', async () => {
+  it('requests exactly one scoped password for Stripe disconnection', async () => {
     const user = userEvent.setup()
     apiMocks.post.mockImplementation((path: string, body?: { scope?: string }) => {
       if (path === '/auth/step-up-grants') {
@@ -410,17 +610,15 @@ describe('UnifiedSettingsPage payment disclosures', () => {
     renderPage()
 
     await user.click(screen.getByRole('button', { name: 'Payments & Accounting' }))
-    await user.type(screen.getByLabelText('Verify your current password to change payment sources'), 'local-password')
-    await user.click(screen.getByRole('button', { name: 'Unlock changes' }))
-    await screen.findByText(/Payment-source changes are unlocked/)
 
     await user.click(screen.getByRole('button', { name: 'Disconnect Stripe' }))
+    await verifyPaymentChange(user)
     const confirmation = await screen.findByRole('alertdialog', { name: 'Disconnect Stripe account?' })
     expect(confirmation).toHaveClass('db-payment-dialog__panel')
     await user.click(within(confirmation).getByRole('button', { name: 'Disconnect Stripe' }))
 
     await waitFor(() => {
-      expect(apiMocks.post).not.toHaveBeenCalledWith('/auth/step-up-grants', expect.objectContaining({
+      expect(apiMocks.post).toHaveBeenCalledWith('/auth/step-up-grants', expect.objectContaining({
         scope: 'payment_sources.stripe.disconnect',
       }))
       expect(apiMocks.post).toHaveBeenCalledWith(
@@ -562,13 +760,11 @@ describe('UnifiedSettingsPage payment disclosures', () => {
     renderPage()
 
     await user.click(screen.getByRole('button', { name: 'Payments & Accounting' }))
-    await user.type(screen.getByLabelText('Verify your current password to change payment sources'), 'local-password')
-    await user.click(screen.getByRole('button', { name: 'Unlock changes' }))
-    await screen.findByText(/Payment-source changes are unlocked/)
     await user.click(screen.getByRole('button', { name: /QuickBooks Online/i }))
 
     const openConfirmation = async () => {
       await user.click(await screen.findByRole('button', { name: 'Disconnect QuickBooks' }))
+      await verifyPaymentChange(user)
       return screen.findByRole('alertdialog', { name: 'Disconnect QuickBooks?' })
     }
 
@@ -606,10 +802,8 @@ describe('UnifiedSettingsPage payment disclosures', () => {
     renderPage()
 
     await user.click(screen.getByRole('button', { name: 'Payments & Accounting' }))
-    await user.type(screen.getByLabelText('Verify your current password to change payment sources'), 'local-password')
-    await user.click(screen.getByRole('button', { name: 'Unlock changes' }))
-    await screen.findByText(/Payment-source changes are unlocked/)
     await user.click(screen.getByRole('button', { name: 'Disconnect Stripe' }))
+    await verifyPaymentChange(user)
     const confirmation = await screen.findByRole('alertdialog', { name: 'Disconnect Stripe account?' })
     await user.click(within(confirmation).getByRole('button', { name: 'Disconnect Stripe' }))
 
@@ -639,15 +833,13 @@ describe('UnifiedSettingsPage payment disclosures', () => {
     renderPage()
 
     await user.click(screen.getByRole('button', { name: 'Payments & Accounting' }))
-    await user.type(screen.getByLabelText('Verify your current password to change payment sources'), 'local-password')
-    await user.click(screen.getByRole('button', { name: 'Unlock changes' }))
-    await screen.findByText(/Payment-source changes are unlocked/)
     await user.click(screen.getByRole('button', { name: 'Disconnect Legacy Connection' }))
+    await verifyPaymentChange(user)
     const confirmation = await screen.findByRole('alertdialog', { name: 'Disconnect legacy Stripe connection?' })
     expect(within(confirmation).getByText('After disconnecting, you can set up the new Stripe-hosted connection.')).toBeInTheDocument()
   })
 
-  it('sends the manage grant on QuickBooks connect and relocks on a 428', async () => {
+  it('verifies QuickBooks connect and requests fresh verification after a rejected Zelle change', async () => {
     const user = userEvent.setup()
     apiMocks.get.mockImplementation((path: string) => {
       const dataByPath: Record<string, unknown> = {
@@ -679,12 +871,10 @@ describe('UnifiedSettingsPage payment disclosures', () => {
     renderPage()
 
     await user.click(screen.getByRole('button', { name: 'Payments & Accounting' }))
-    await user.type(screen.getByLabelText('Verify your current password to change payment sources'), 'local-password')
-    await user.click(screen.getByRole('button', { name: 'Unlock changes' }))
-    await screen.findByText(/Payment-source changes are unlocked/)
 
     await user.click(screen.getByRole('button', { name: /QuickBooks Online/i }))
     await user.click(await screen.findByRole('button', { name: 'Connect My QuickBooks' }))
+    await verifyPaymentChange(user)
     await waitFor(() => expect(apiMocks.post).toHaveBeenCalledWith(
       '/quickbooks/connect',
       undefined,
@@ -696,7 +886,11 @@ describe('UnifiedSettingsPage payment disclosures', () => {
     await user.clear(email)
     await user.type(email, 'retry@truckpitstop.com')
     await user.click(screen.getByRole('button', { name: 'Save' }))
-    await screen.findByText('Verification expired. Enter your password again.')
-    expect(screen.getByRole('button', { name: 'Unlock changes' })).toBeInTheDocument()
+    expect(apiMocks.put).not.toHaveBeenCalled()
+    await verifyPaymentChange(user)
+    await waitFor(() => expect(apiMocks.put).toHaveBeenCalled())
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+    expect(await screen.findByRole('alertdialog', { name: 'Verify Zelle contact changes' })).toBeInTheDocument()
+    expect(apiMocks.post.mock.calls.filter(([path]) => path === '/auth/step-up-grants')).toHaveLength(2)
   })
 })

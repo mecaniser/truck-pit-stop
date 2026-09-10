@@ -14,9 +14,72 @@ from app.core.security import create_access_token, get_password_hash
 from app.db.models.payment_step_up import PaymentStepUpAuditEvent, PaymentStepUpGrant
 from app.db.models.tenant import Tenant
 from app.db.models.user import User, UserRole
+from app.db.models.invoice_settlement import TenantPaymentProviderConfiguration
 
 
 PASSWORD = "Local-dev-step-up-42!"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("failure", ["missing", "invalid", "expired", "tenant", "session", "scope"])
+async def test_card_provider_update_requires_bound_manage_grant(client, db_session, failure):
+    tenant, user, token = await _owner(db_session, f"provider-{failure}")
+    headers = {"Authorization": f"Bearer {token}", "Idempotency-Key": f"provider-{failure}"}
+    if failure != "missing":
+        response = await _request_grant(client, token, PaymentStepUpScope.MANAGE)
+        assert response.status_code == 200
+        headers["X-Step-Up-Authorization"] = response.json()["grant_token"]
+        grant = (await db_session.execute(select(PaymentStepUpGrant))).scalar_one()
+        if failure == "invalid":
+            headers["X-Step-Up-Authorization"] = "not-a-grant"
+        elif failure == "expired":
+            grant.expires_at = datetime.now(timezone.utc) - timedelta(seconds=1)
+        elif failure == "tenant":
+            other, _, _ = await _owner(db_session, "provider-other")
+            grant.tenant_id = other.id
+        elif failure == "session":
+            grant.session_jti = "another-session"
+        elif failure == "scope":
+            grant.scope = PaymentStepUpScope.STRIPE_DISCONNECT.value
+            grant.one_time = True
+        await db_session.commit()
+    response = await client.put("/api/v1/payments/settings/card-provider", headers=headers,
+                                json={"selected_provider": "stripe_connect", "expected_version": 0})
+    assert response.status_code == (403 if failure == "scope" else 428), response.text
+    assert not (await db_session.execute(select(TenantPaymentProviderConfiguration))).scalars().all()
+    events = (await db_session.execute(select(PaymentStepUpAuditEvent).where(
+        PaymentStepUpAuditEvent.user_id == user.id,
+        PaymentStepUpAuditEvent.event_type.in_(["denied", "expired"]),
+    ))).scalars().all()
+    assert events
+
+
+@pytest.mark.asyncio
+async def test_card_provider_authorized_update_and_replay_still_require_grant(client, db_session):
+    tenant, user, token = await _owner(db_session, "provider-authorized")
+    response = await _request_grant(client, token, PaymentStepUpScope.MANAGE)
+    assert response.status_code == 200
+    headers = {"Authorization": f"Bearer {token}", "Idempotency-Key": "provider-authorized",
+               "X-Step-Up-Authorization": response.json()["grant_token"]}
+    body = {"selected_provider": "stripe_connect", "expected_version": 0,
+            "qbo_card_fee_item_id": "fee-item", "qbo_card_fee_tax_code_id": "tax-code"}
+    for _ in range(2):
+        response = await client.put("/api/v1/payments/settings/card-provider", headers=headers, json=body)
+        assert response.status_code == 200, response.text
+        assert response.json()["configuration_version"] == 1
+    del headers["X-Step-Up-Authorization"]
+    denied = await client.put("/api/v1/payments/settings/card-provider", headers=headers, json=body)
+    assert denied.status_code == 428
+    configs = (await db_session.execute(select(TenantPaymentProviderConfiguration))).scalars().all()
+    assert len(configs) == 1
+    assert configs[0].tenant_id == tenant.id
+    assert configs[0].qbo_card_fee_item_id == "fee-item"
+    assert configs[0].qbo_card_fee_tax_code_id == "tax-code"
+    events = (await db_session.execute(select(PaymentStepUpAuditEvent).where(
+        PaymentStepUpAuditEvent.user_id == user.id,
+        PaymentStepUpAuditEvent.event_type == "mutation_succeeded",
+    ))).scalars().all()
+    assert len(events) == 2
 
 
 async def _owner(db_session, suffix: str, *, local_password: bool = True):

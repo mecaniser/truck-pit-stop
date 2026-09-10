@@ -1,6 +1,7 @@
 import { AxiosError } from 'axios'
 
 import api from '@/lib/api'
+import { paymentStepUpHeaders } from '@/lib/paymentStepUp'
 
 import type {
   AccountingReconciliation,
@@ -236,6 +237,7 @@ export async function updateCardProvider(
   provider: CardProvider,
   current: CardProviderReadiness,
   idempotencyKey: string,
+  grantToken: string,
 ): Promise<CardProviderReadiness> {
   const mappings = current.mappings ?? {}
   await api.put(
@@ -252,8 +254,10 @@ export async function updateCardProvider(
       processor_fee_expense_account: mappings.processor_fee_expense_account ?? '',
       sales_tax_liability_account: mappings.sales_tax_liability_account ?? '',
       checking_account: mappings.checking_account ?? '',
+      qbo_card_fee_item_id: mappings.qbo_card_fee_item_id ?? null,
+      qbo_card_fee_tax_code_id: mappings.qbo_card_fee_tax_code_id ?? null,
     },
-    idempotencyHeaders(idempotencyKey),
+    { headers: { ...idempotencyHeaders(idempotencyKey).headers, ...paymentStepUpHeaders(grantToken) } },
   )
   return fetchCardProviderReadiness()
 }
