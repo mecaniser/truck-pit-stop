@@ -164,3 +164,47 @@ async def test_existing_charge_can_reconcile_after_tenant_admission_removed(monk
             HistoricalDatabase(), attempt=attempt, invoice=invoice, tenant=tenant,
             actor=None, payment_token="opaque", expected_attempt_version=1, idempotency_key="historical-test",
         )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("existing_charge", [True, False])
+async def test_held_invoice_allows_verified_existing_charge_fact_but_never_new_capture(db_session, monkeypatch, existing_charge):
+    from unittest.mock import AsyncMock
+    from app.db.models.invoice import Invoice
+    from app.db.models.tenant import Tenant
+    from app.db.models.invoice_settlement import InvoicePaymentAttempt
+    from app.db.models.provider_outbox import ProviderOutboxEvent
+    from app.services.invoice_accounting_policy import HISTORICAL_HOLD
+    from tests.test_db048_qbp_refund_reconciliation import context
+    refund, _, _, _ = await context(db_session, monkeypatch)
+    attempt = await db_session.get(InvoicePaymentAttempt, refund.source_attempt_id)
+    invoice = await db_session.get(Invoice, attempt.invoice_id)
+    tenant = await db_session.get(Tenant, attempt.tenant_id)
+    invoice.accounting_policy = HISTORICAL_HOLD
+    if not existing_charge:
+        attempt.provider_charge_id = None
+    await db_session.flush()
+    monkeypatch.setattr(settings, "QUICKBOOKS_PAYMENTS_APPROVED_TENANT_IDS",
+        str(uuid4()) if existing_charge else str(tenant.id))
+    readback = AsyncMock(return_value=SimpleNamespace(id="CHARGE-NEW", amount=attempt.provider_charge_amount, status="CAPTURED"))
+    new_capture = AsyncMock(side_effect=AssertionError("Must not create a new charge"))
+    monkeypatch.setattr(invoice_settlements, "get_quickbooks_charge", readback)
+    monkeypatch.setattr(invoice_settlements, "create_quickbooks_charge", new_capture)
+    monkeypatch.setattr(invoice_settlements, "_refresh_connection_if_needed", AsyncMock())
+    kwargs = dict(attempt=attempt, invoice=invoice, tenant=tenant, actor=None,
+        payment_token="opaque", expected_attempt_version=attempt.version, idempotency_key="held-readback")
+    if existing_charge:
+        await invoice_settlements.charge_quickbooks_settlement_attempt(db_session, **kwargs)
+        assert attempt.state == "confirmed"
+        row = await db_session.scalar(select(ProviderOutboxEvent).where(
+            ProviderOutboxEvent.aggregate_id == attempt.id,
+            ProviderOutboxEvent.event_type == "invoice_payment.accounting_sync"))
+        assert row.status == "suppressed" and row.payload["suppression_reason"] == HISTORICAL_HOLD
+        readback.assert_awaited_once()
+    else:
+        with pytest.raises(SettlementDomainError) as exc:
+            await invoice_settlements.charge_quickbooks_settlement_attempt(db_session, **kwargs)
+        assert exc.value.code == HISTORICAL_HOLD
+        readback.assert_not_awaited()
+    new_capture.assert_not_awaited()
+    assert invoice.accounting_policy == HISTORICAL_HOLD

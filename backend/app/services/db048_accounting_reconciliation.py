@@ -335,6 +335,7 @@ async def reconcile_due_card_attempts(
                     received_principal=money(attempt.principal_amount),
                     provider_charge_id=charge.id,
                     provider_event_id=f"reconcile:{charge.id}:succeeded",
+                    verified_provider_fact=True,
                 )
                 result["confirmed"] += 1
                 continue
@@ -391,6 +392,7 @@ async def reconcile_due_card_attempts(
                     reference=intent_id,
                     provider_charge_id=validated.latest_charge_id,
                     provider_event_id=f"reconcile:{intent_id}:succeeded",
+                    verified_provider_fact=True,
                 )
                 result["confirmed"] += 1
                 continue
@@ -1960,6 +1962,15 @@ async def deliver_credit_accounting_envelope(
     db: AsyncSession,
     envelope: CreditAccountingEnvelope,
 ) -> str:
+    from app.services.invoice_accounting_policy import require_exportable_invoice
+    await require_exportable_invoice(envelope.target_invoice)
+    source_invoice = await db.scalar(select(Invoice).where(
+        Invoice.id == envelope.source_attempt.invoice_id,
+        Invoice.tenant_id == envelope.tenant.id,
+    ))
+    if source_invoice is None:
+        raise DB048ReconciliationError("Credit source invoice is unavailable")
+    await require_exportable_invoice(source_invoice)
     provider_id = await sync_db048_credit_application(db, envelope)
     envelope.link.sync_state = "synced"
     envelope.link.provider_object_id = provider_id
@@ -2531,6 +2542,8 @@ async def deliver_accounting_envelope(
             "Intuit-native accounting must be imported, not created by DieselBridge",
             retryable=True,
         )
+    from app.services.invoice_accounting_policy import require_exportable_invoice
+    await require_exportable_invoice(envelope.invoice)
     from app.services.db048_qbo_gross_accounting import is_gross, deliver_gross_envelope
     if is_gross(envelope.settlement):
         provider_id = await deliver_gross_envelope(db, envelope)
@@ -2642,6 +2655,12 @@ async def _submit_stripe_refund(db: AsyncSession, event: ProviderOutboxEvent) ->
         return refund.provider_reference or str(refund.id)
     if refund.state == "cancelled":
         return str(refund.id)
+    from app.services.invoice_accounting_policy import require_standard_payment
+    source_invoice = await db.scalar(select(Invoice).where(
+        Invoice.id == attempt.invoice_id, Invoice.tenant_id == event.tenant_id))
+    if source_invoice is None:
+        raise DB048ReconciliationError("Refund invoice is unavailable")
+    await require_standard_payment(db, source_invoice)
     if attempt.provider == "quickbooks_payments":
         if refund.state != "pending":
             raise DB048ReconciliationError("QuickBooks refund requires explicit state reconciliation")
@@ -5316,6 +5335,16 @@ async def _book_stripe_payout_batch(
     ).order_by(ProviderSettlementEntry.provider_entry_id))).scalars().all())
     if not rows:
         raise DB048ReconciliationError("Stripe payout proof has no immutable entries")
+    from app.services.invoice_accounting_policy import require_exportable_invoice
+    attempt_ids = {row.attempt_id for row in rows if row.attempt_id}
+    source_invoices = list((await db.scalars(select(Invoice).join(
+        InvoicePaymentAttempt, InvoicePaymentAttempt.invoice_id == Invoice.id).where(
+            Invoice.tenant_id == batch.tenant_id,
+            InvoicePaymentAttempt.tenant_id == batch.tenant_id,
+            InvoicePaymentAttempt.id.in_(attempt_ids),
+        ).order_by(Invoice.id))).all())
+    for invoice in source_invoices:
+        await require_exportable_invoice(invoice)
     manifest_entries: list[dict[str, Any]] = []
     partitions: dict[tuple[int, str, str, str], dict[str, Any]] = {}
     for row in rows:

@@ -439,6 +439,7 @@ async def finalize_stripe_invoice_payment(
             reference=validated.payment_intent_id,
             provider_charge_id=validated.latest_charge_id,
             provider_event_id=provider_event_id,
+            verified_provider_fact=True,
         )
         await db.commit()
         if result.payment is None:

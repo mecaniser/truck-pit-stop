@@ -231,7 +231,7 @@ async def _reset_accounting_links_for_realm_change(
         .where(
             Invoice.tenant_id == tenant_id,
             Invoice.status.in_([InvoiceStatus.SENT, InvoiceStatus.PAID]),
-            Invoice.accounting_policy != "local_cash_only",
+            Invoice.accounting_policy == "standard",
         )
         .values(
             quickbooks_invoice_id=None,
@@ -245,7 +245,7 @@ async def _reset_accounting_links_for_realm_change(
             ProviderOutboxEvent.tenant_id == tenant_id,
             ProviderOutboxEvent.event_type == QUICKBOOKS_INVOICE_SYNC_EVENT,
             ProviderOutboxEvent.aggregate_id.in_(select(Invoice.id).where(
-                Invoice.tenant_id == tenant_id, Invoice.accounting_policy != "local_cash_only")),
+                Invoice.tenant_id == tenant_id, Invoice.accounting_policy == "standard")),
         ).with_for_update())).all()
     for event in events:
         event.payload = {**(event.payload or {}), "cash_export_ambiguous": True,
@@ -603,6 +603,9 @@ async def sync_quickbooks_invoice_now(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
     if invoice.status == InvoiceStatus.DRAFT:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Only finalized invoices can be synchronized")
+    from app.services.invoice_accounting_policy import locked_policy, HISTORICAL_HOLD
+    if await locked_policy(db, invoice) == HISTORICAL_HOLD:
+        raise HTTPException(status_code=409, detail="Historical invoice export is held for individual review")
     connection = await _get_connection(db, invoice.tenant_id)
     if not connection:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="QuickBooks is not connected")
@@ -822,6 +825,9 @@ async def refund_quickbooks_payment(
         or not payment.quickbooks_charge_id
     ):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="QuickBooks payment was not found")
+
+    from app.services.invoice_accounting_policy import require_standard_payment
+    await require_standard_payment(db, payment.invoice)
 
     settlement = await db.scalar(
         select(InvoiceSettlement)

@@ -60,7 +60,16 @@ class _FakePaymentsSession:
     async def scalar(self, statement):
         entity = statement.column_descriptions[0].get("entity")
         self.queried_entities.append(entity)
+        selected = statement.column_descriptions[0].get("name")
+        if entity is Invoice and selected == "accounting_policy":
+            assert {self.invoice.tenant_id, self.invoice.id}.issubset(set(statement.compile().params.values()))
+            assert statement._for_update_arg is not None
+            return "standard"
         assert entity is InvoiceSettlement, f"Unexpected scalar query entity: {entity}"
+        if selected == "id":
+            assert {self.invoice.tenant_id, self.invoice.id}.issubset(set(statement.compile().params.values()))
+            assert statement._for_update_arg is not None
+            return None
         assert {
             self.invoice.tenant_id,
             self.invoice.id,

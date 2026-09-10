@@ -508,6 +508,8 @@ async def _persist_and_bind_stripe_intent(
     """
     attempt_id = attempt.id
     tenant_id = tenant.id
+    from app.services.invoice_accounting_policy import require_standard_payment
+    await require_standard_payment(db, invoice)
     await db.commit()
     persisted = (
         await db.execute(
@@ -660,10 +662,11 @@ async def charge_quickbooks_settlement_attempt(
             db,
             attempt_id=attempt.id,
             tenant=tenant,
-            actor=actor,
+            actor=None,
             expected_attempt_version=expected_attempt_version,
             idempotency_key=idempotency_key,
             provider_charge_id=attempt.provider_charge_id,
+            verified_provider_fact=bool(attempt.provider_charge_id),
         )
     if attempt.version != expected_attempt_version:
         raise SettlementDomainError(
@@ -678,6 +681,11 @@ async def charge_quickbooks_settlement_attempt(
             "quickbooks_payments_platform_approval_missing",
             "QuickBooks Payments is not approved for this shop.",
         )
+    if not attempt.provider_charge_id:
+        # Admission denial is local and precedes DB/provider work. Holds block
+        # NEW captures, not read-back of an already-existing provider charge.
+        from app.services.invoice_accounting_policy import require_standard_payment
+        await require_standard_payment(db, invoice)
     config = await db.scalar(select(TenantPaymentProviderConfiguration).where(
         TenantPaymentProviderConfiguration.tenant_id == tenant.id,
         TenantPaymentProviderConfiguration.version == attempt.provider_configuration_version,
@@ -699,6 +707,7 @@ async def charge_quickbooks_settlement_attempt(
             "QuickBooks Payments is not ready for this shop.",
         )
     await _refresh_connection_if_needed(db, connection)
+    reconciling_existing_charge = bool(attempt.provider_charge_id)
     try:
         if attempt.provider_charge_id:
             charge = await get_quickbooks_charge(
@@ -833,12 +842,13 @@ async def charge_quickbooks_settlement_attempt(
         db,
         attempt_id=attempt.id,
         tenant=tenant,
-        actor=actor,
+        actor=None if reconciling_existing_charge else actor,
         expected_attempt_version=attempt.version,
         idempotency_key=idempotency_key,
         received_principal=attempt.principal_amount,
         reference=charge_client_transaction_id(charge),
         provider_charge_id=charge.id,
+        verified_provider_fact=reconciling_existing_charge,
     )
     await db.commit()
     return confirmed

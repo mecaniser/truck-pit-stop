@@ -67,7 +67,11 @@ async def enqueue_quickbooks_invoice_sync(
     from app.services.invoice_accounting_policy import (
         locked_policy, LOCAL_CASH, LOCAL_CASH_SYNC, first_export_awaits_payment, AWAITING_PAYMENT, mark_awaiting_payment,
     )
-    if await locked_policy(db, invoice) == LOCAL_CASH:
+    from app.services.invoice_accounting_policy import HISTORICAL_HOLD
+    policy = await locked_policy(db, invoice)
+    if policy == HISTORICAL_HOLD:
+        return None
+    if policy == LOCAL_CASH:
         invoice.quickbooks_sync_status = LOCAL_CASH_SYNC
         return None
     if await first_export_awaits_payment(db, invoice):
@@ -272,6 +276,16 @@ async def process_quickbooks_invoice_sync_events(
             if not await _quickbooks_claim_is_current(db, event_id=event_id, lock_token=lock_token):
                 await db.rollback()
                 results["skipped"] += 1
+                continue
+            from app.services.invoice_accounting_policy import HISTORICAL_HOLD
+            if policy == HISTORICAL_HOLD:
+                event.status = "suppressed"
+                event.payload = {**(event.payload or {}), "suppression_reason": HISTORICAL_HOLD}
+                event.completed_at = _now()
+                event.locked_until = None
+                event.lock_token = None
+                results["skipped"] += 1
+                await db.commit()
                 continue
             if policy == LOCAL_CASH:
                 event.status = "suppressed"
