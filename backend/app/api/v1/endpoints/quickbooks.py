@@ -13,7 +13,7 @@ import hmac
 import json
 from hashlib import sha256
 from secrets import token_urlsafe
-from typing import Optional
+from typing import Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import RedirectResponse
@@ -56,6 +56,7 @@ from app.db.models.repair_order import RepairOrder, RepairOrderStatus
 from app.db.models.tenant import Tenant
 from app.db.models.user import User, UserRole
 from app.services.quickbooks_service import (
+    QUICKBOOKS_ACCOUNTING_SCOPE,
     QuickBooksConfigurationError,
     QuickBooksOAuthError,
     build_authorization_url,
@@ -81,6 +82,7 @@ from app.services.quickbooks_payments_service import (
 )
 from app.services.quickbooks_accounting_service import (
     QuickBooksAccountingError,
+    get_company_identity,
     create_refund_receipt,
     quickbooks_invoice_memo,
     sync_invoice,
@@ -274,6 +276,21 @@ class QuickBooksConnectionStatusResponse(BaseModel):
     last_webhook_error: Optional[str] = None
     last_cdc_at: Optional[datetime] = None
     last_cdc_error: Optional[str] = None
+
+
+class QuickBooksCompanyIdentity(BaseModel):
+    name: Optional[str] = None
+    legal_name: Optional[str] = None
+    address_lines: list[str] = Field(default_factory=list)
+    email: Optional[str] = None
+    phone: Optional[str] = None
+
+
+class QuickBooksCompanyIdentityResponse(BaseModel):
+    status: Literal["available", "not_connected", "unavailable"]
+    environment: Literal["production", "sandbox", "unknown"]
+    realm_id: Optional[str] = None
+    company: Optional[QuickBooksCompanyIdentity] = None
 
 
 class QuickBooksPaymentAvailabilityResponse(BaseModel):
@@ -471,6 +488,33 @@ async def quickbooks_status(
     _require_quickbooks_admin(current_user)
     connection = await _get_connection(db, current_user.tenant_id)
     return _status_response(connection)
+
+
+@router.get("/company-identity", response_model=QuickBooksCompanyIdentityResponse)
+async def quickbooks_company_identity(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    _require_quickbooks_admin(current_user)
+    connection = await _get_connection(db, current_user.tenant_id)
+    environment = settings.QUICKBOOKS_ACCOUNTING_ENVIRONMENT.strip().lower()
+    response = QuickBooksCompanyIdentityResponse(
+        status="not_connected",
+        environment=environment if environment in {"production", "sandbox"} else "unknown",
+    )
+    if not connection or connection.status != "connected" or not connection.realm_id:
+        return response
+    response.realm_id = connection.realm_id
+    response.status = "unavailable"
+    if QUICKBOOKS_ACCOUNTING_SCOPE not in (connection.scopes or "").split():
+        return response
+    try:
+        response.company = QuickBooksCompanyIdentity(**await get_company_identity(connection))
+    except QuickBooksAccountingError:
+        # Read-only: do not refresh credentials or overwrite connection health.
+        return response
+    response.status = "available"
+    return response
 
 
 @router.post("/health/check", response_model=QuickBooksConnectionStatusResponse)

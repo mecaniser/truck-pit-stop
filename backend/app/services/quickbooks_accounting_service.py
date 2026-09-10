@@ -111,6 +111,37 @@ async def _request(
     return payload
 
 
+async def get_company_identity(connection: QuickBooksConnection) -> dict[str, Any]:
+    """Read allowlisted business identity without refreshing or changing a connection."""
+    payload = await _request(connection, "GET", f"companyinfo/{connection.realm_id}")
+    company = payload.get("CompanyInfo")
+    if not isinstance(company, dict) or not company:
+        raise QuickBooksAccountingError("QuickBooks company identity is unavailable")
+
+    def text(value: Any, limit: int = 256) -> str | None:
+        if not isinstance(value, str):
+            return None
+        return " ".join(value.split())[:limit] or None
+
+    address = company.get("CompanyAddr")
+    address = address if isinstance(address, dict) else {}
+    lines = [text(address.get(f"Line{number}")) for number in range(1, 6)]
+    locality = [text(address.get(key), 100) for key in ("City", "CountrySubDivisionCode", "PostalCode")]
+    lines.extend([", ".join(value for value in locality if value), text(address.get("Country"), 100)])
+    email = company.get("Email")
+    phone = company.get("PrimaryPhone")
+    identity = {
+        "name": text(company.get("CompanyName")),
+        "legal_name": text(company.get("LegalName")),
+        "address_lines": [line for line in lines if line],
+        "email": text(email.get("Address")) if isinstance(email, dict) else None,
+        "phone": text(phone.get("FreeFormNumber"), 64) if isinstance(phone, dict) else None,
+    }
+    if not any(identity.values()):
+        raise QuickBooksAccountingError("QuickBooks company identity is unavailable")
+    return identity
+
+
 async def _query(connection: QuickBooksConnection, statement: str) -> list[dict[str, Any]]:
     payload = await _request(connection, "GET", "query", params={"query": statement})
     query_response = payload.get("QueryResponse")

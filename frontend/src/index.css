@@ -1828,6 +1828,7 @@ html::-webkit-scrollbar-thumb:hover {
 /* Settings switches retain a 44px touch target without stretching the visual
    control. The track and thumb are fixed so inherited control sizing cannot
    distort their geometry. */
+.db-presentation-new .db-settings-switch,
 .db-presentation-new .db-staff-content .db-settings-switch {
   width: 56px !important;
   min-width: 56px;
@@ -1836,6 +1837,7 @@ html::-webkit-scrollbar-thumb:hover {
   border: 0 !important;
   background: transparent !important;
   isolation: isolate;
+  flex-shrink: 0;
 }
 
 .db-presentation-new .db-settings-switch::before {
