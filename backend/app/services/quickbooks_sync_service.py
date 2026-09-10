@@ -64,9 +64,14 @@ async def enqueue_quickbooks_invoice_sync(
     invoice: Invoice,
     operation: str = "sync",
 ) -> ProviderOutboxEvent | None:
-    from app.services.invoice_accounting_policy import locked_policy, LOCAL_CASH, LOCAL_CASH_SYNC
+    from app.services.invoice_accounting_policy import (
+        locked_policy, LOCAL_CASH, LOCAL_CASH_SYNC, first_export_awaits_payment, AWAITING_PAYMENT, mark_awaiting_payment,
+    )
     if await locked_policy(db, invoice) == LOCAL_CASH:
         invoice.quickbooks_sync_status = LOCAL_CASH_SYNC
+        return None
+    if await first_export_awaits_payment(db, invoice):
+        await mark_awaiting_payment(db, invoice)
         return None
     event = ProviderOutboxEvent(
         tenant_id=invoice.tenant_id,
@@ -95,6 +100,13 @@ async def enqueue_quickbooks_invoice_sync(
         )).scalar_one_or_none()
         if existing is None:
             raise
+        if existing.status == "deferred" and not existing.lock_token and not existing.locked_until:
+            # The shared invoice lock and eligibility check above authorize
+            # only this parked issuance event. Preserve all prior dispatch
+            # evidence; never resurrect dead/suppressed financial operations.
+            existing.status = ProviderOutboxStatus.PENDING.value
+            existing.available_at = _now()
+            existing.completed_at = None
         return existing
     return event
 
@@ -236,7 +248,9 @@ async def process_quickbooks_invoice_sync_events(
                 results["dead"] += 1
                 await db.commit()
                 continue
-            from app.services.invoice_accounting_policy import locked_policy, LOCAL_CASH, LOCAL_CASH_SYNC
+            from app.services.invoice_accounting_policy import (
+                locked_policy, LOCAL_CASH, LOCAL_CASH_SYNC, first_export_awaits_payment, AWAITING_PAYMENT, mark_awaiting_payment,
+            )
             from app.services.invoice_settlement_service import SettlementDomainError
             try:
                 policy = await locked_policy(db, invoice)
@@ -255,6 +269,10 @@ async def process_quickbooks_invoice_sync_events(
                     await db.commit()
                 results["retried"] += 1
                 continue
+            if not await _quickbooks_claim_is_current(db, event_id=event_id, lock_token=lock_token):
+                await db.rollback()
+                results["skipped"] += 1
+                continue
             if policy == LOCAL_CASH:
                 event.status = "suppressed"
                 event.payload = {**(event.payload or {}), "suppression_reason": LOCAL_CASH_SYNC}
@@ -265,9 +283,17 @@ async def process_quickbooks_invoice_sync_events(
                 results["skipped"] += 1
                 await db.commit()
                 continue
-            if not await _quickbooks_claim_is_current(db, event_id=event_id, lock_token=lock_token):
-                await db.rollback()
+            if await first_export_awaits_payment(db, invoice):
+                # Park the old issuance event without claiming provider success
+                # or rewriting its prior-attempt ambiguity. Canonical confirmed
+                # payment accounting owns the subsequent invoice+receipt export.
+                event.status = "deferred"
+                event.payload = {**(event.payload or {}), "deferral_reason": AWAITING_PAYMENT}
+                event.lock_token = None
+                event.locked_until = None
+                await mark_awaiting_payment(db, invoice)
                 results["skipped"] += 1
+                await db.commit()
                 continue
             if not connection:
                 # A garage can finalize invoices before choosing QuickBooks.

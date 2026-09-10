@@ -4,7 +4,7 @@ from sqlalchemy import select
 from app.core.config import settings
 from app.core.dependencies import user_has_permission
 from app.db.models.invoice import Invoice, InvoiceStatus
-from app.db.models.invoice_settlement import InvoicePaymentAttempt, PaymentAccountingLink
+from app.db.models.invoice_settlement import InvoicePaymentAttempt, PaymentAccountingLink, InvoicePaymentLedgerEvent
 from app.db.models.payment import Payment, PaymentMethod, PaymentStatus
 from app.db.models.provider_outbox import ProviderOutboxEvent
 from app.db.models.quickbooks_connection import QuickBooksConnection
@@ -24,7 +24,7 @@ def cash_staff(actor):
 
 async def cash_eligibility(db, invoice, settlement, *, lock=False):
     if invoice.cash_export_review_required:
-        return "Previous QuickBooks company changes require accounting review before local cash.", []
+        return "Previous QuickBooks accounting activity requires review before local cash.", []
     if (invoice.deleted_at or invoice.voided_at or invoice.is_internal
             or invoice.status not in {InvoiceStatus.SENT, InvoiceStatus.OVERDUE}):
         return "Only an active unpaid customer invoice can be paid in cash.", []
@@ -32,11 +32,13 @@ async def cash_eligibility(db, invoice, settlement, *, lock=False):
         return "This invoice already has a QuickBooks accounting record.", []
     if invoice.zelle_pending_submitted_at is not None:
         return "A previously submitted Zelle payment must be resolved before cash.", []
+    if settlement.legacy_reconciliation_status not in {"native", "reconciled"}:
+        return "This older invoice needs payment-history review before cash.", []
     if (money(settlement.principal_total) <= 0 or any(money(getattr(settlement, name)) != 0
             for name in ("confirmed_principal", "active_pending_principal", "unapplied_credit", "refund_pending"))
-            or settlement.last_event_sequence or settlement.legacy_reconciliation_status != "native"):
+            or settlement.last_event_sequence):
         return "Cash requires the full invoice with no existing payment activity.", []
-    for model in (InvoicePaymentAttempt, Payment, PaymentAccountingLink):
+    for model in (InvoicePaymentAttempt, Payment, PaymentAccountingLink, InvoicePaymentLedgerEvent):
         if await db.scalar(select(model.id).where(model.tenant_id == invoice.tenant_id,
                 model.invoice_id == invoice.id).limit(1)):
             return "Cash cannot be mixed with existing or historical payments.", []
@@ -44,8 +46,12 @@ async def cash_eligibility(db, invoice, settlement, *, lock=False):
         ProviderOutboxEvent.aggregate_id == invoice.id)
     if lock:
         query = query.with_for_update()
-    events = list((await db.scalars(query)).all())
-    if not events and invoice.quickbooks_sync_status not in {None, "pending", "not_synced", "not_required"}:
+    all_events = list((await db.scalars(query)).all())
+    from app.services.provider_outbox_service import EMAIL_NOTIFICATION_EVENT
+    # Only known nonfinancial delivery events are ignored, never suppressed.
+    # SMS delivery is currently immediate and has no invoice provider-outbox type.
+    events = [event for event in all_events if event.event_type != EMAIL_NOTIFICATION_EVENT]
+    if not events and invoice.quickbooks_sync_status not in {None, "pending", "not_synced", "not_required", "awaiting_payment"}:
         return "Previous accounting activity must be reviewed before local cash.", events
     for event in events:
         if event.event_type != "quickbooks.invoice.sync.v1":
@@ -54,7 +60,7 @@ async def cash_eligibility(db, invoice, settlement, *, lock=False):
             return "Invoice export is in progress or its outcome is unresolved. Try again after reconciliation.", events
         if event.status == "succeeded" or event.provider_message_id:
             return "This invoice already has QuickBooks export history.", events
-        if event.status not in {"pending", "dead", "suppressed"}:
+        if event.status not in {"pending", "dead", "suppressed", "deferred"}:
             return "The invoice export outcome requires review.", events
         if ((event.payload or {}).get("cash_export_ambiguous")
                 or event.attempt_count and not (event.payload or {}).get("cash_no_dispatch")

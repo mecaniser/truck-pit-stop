@@ -158,8 +158,8 @@ async def test_manual_sync_is_durable_not_direct(db_session, monkeypatch):
     monkeypatch.setattr(endpoint, "sync_invoice", unexpected)
     monkeypatch.setattr(endpoint, "sync_db048_principal_invoice", unexpected)
     result = await endpoint.sync_quickbooks_invoice_now(ctx[3].id, db_session, ctx[1])
-    assert result.status == "pending"
-    assert await db_session.scalar(select(func.count()).select_from(ProviderOutboxEvent)) == 1
+    assert result.status == "awaiting_payment"
+    assert await db_session.scalar(select(func.count()).select_from(ProviderOutboxEvent)) == 0
 
 
 @pytest.mark.asyncio
@@ -219,7 +219,7 @@ async def test_realm_reset_cannot_erase_prior_export_evidence(db_session, monkey
     await _reset_accounting_links_for_realm_change(db_session, tenant_id=ctx[0].id, now=datetime.now(timezone.utc))
     await db_session.flush()
     assert invoice.cash_export_review_required
-    with pytest.raises(SettlementDomainError, match="company changes"):
+    with pytest.raises(SettlementDomainError, match="accounting activity"):
         await pay(db_session, ctx)
     assert invoice.status != InvoiceStatus.PAID
 
