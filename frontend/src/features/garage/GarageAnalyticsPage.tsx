@@ -1,6 +1,6 @@
 import { Spinner } from '@/components/ui'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
 } from 'recharts'
@@ -1107,6 +1107,7 @@ const TABS: { id: ReportTab; label: string }[] = [
 const DATE_FILTERED_TABS: ReportTab[] = ['dashboard', 'sales', 'fees', 'tax', 'parts', 'service-types', 'internal']
 
 export default function GarageAnalyticsPage() {
+  const queryClient = useQueryClient()
   const { accentColors } = useTheme()
   const [searchParams, setSearchParams] = useSearchParams()
   const tabParam = searchParams.get('tab') as ReportTab | null
@@ -1146,7 +1147,11 @@ export default function GarageAnalyticsPage() {
           <h1 className="text-xl sm:text-2xl font-bold text-white">Shop Analytics</h1>
           <p className="text-sm text-white/50">Performance overview and insights</p>
         </div>
-        {DATE_FILTERED_TABS.includes(activeTab) && <ReportingDatePicker value={range} resolved={period.data} onChange={setRange} />}
+        {DATE_FILTERED_TABS.includes(activeTab) && <ReportingDatePicker value={range} resolved={period.data} onChange={setRange} resolvePreset={preset => queryClient.fetchQuery<ReportsDashboardResponse>({
+          queryKey: ['report-period-preview', preset],
+          queryFn: async () => (await api.get('/reports/dashboard', { params: { range: preset } })).data,
+          staleTime: 0,
+        })} />}
       </div>
 
       <div className="db-analytics-tabs mb-4 flex-shrink-0 flex gap-1 overflow-x-auto scrollbar-hide border-b border-white/10">
