@@ -57,6 +57,23 @@ class InvoiceTaxExemptionCreate(BaseModel):
         return (value.strip() or None) if isinstance(value, str) else value
 
 
+class InvoiceCheckoutBreakdown(BaseModel):
+    subtotal: Money
+    shop_supplies_amount: Money
+    sales_tax_amount: Money
+    discount_amount: Money
+    principal_total: Money
+
+
+class InvoicePaymentQuote(BaseModel):
+    settlement_version: int
+    rail: Literal["card", "zelle", "check", "ach", "cash"]
+    principal_amount: Money
+    card_fee_amount: Money
+    card_fee_tax_amount: Money
+    total_amount: Money
+
+
 class InvoiceSettlementSummary(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -77,6 +94,7 @@ class InvoiceSettlementSummary(BaseModel):
     feature_enabled: bool
     allowed_actions: SettlementAllowedActions
     tax_exemption: Optional[InvoiceTaxExemptionRead] = None
+    breakdown: Optional[InvoiceCheckoutBreakdown] = None
 
 
 class SenderEvidence(BaseModel):

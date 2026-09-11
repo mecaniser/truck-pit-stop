@@ -8,7 +8,7 @@ import io
 import json
 from datetime import datetime, timezone
 from decimal import Decimal
-from typing import Optional
+from typing import Literal, Optional
 from uuid import UUID
 
 import stripe
@@ -46,6 +46,7 @@ from app.schemas.invoice_settlement import (
     CreditDueDiligenceCreate,
     CreditConsentCreate, EarlyReleaseOverride, EligibleCreditItem,
     InvoiceSettlementSummary, ManualRefundConfirm,
+    InvoiceCheckoutBreakdown, InvoicePaymentQuote,
     PaymentAllocationItem, PaymentAllocationPage, PaymentAttemptConfirm,
     PaymentAttemptCreate, PaymentAttemptFail, PaymentAttemptResponse,
     QuickBooksAttemptCharge,
@@ -190,9 +191,14 @@ async def settlement_summary(
     audience: str,
     current_user: Optional[CurrentUser] = None,
 ) -> InvoiceSettlementSummary:
-    readiness = await provider_readiness(db, tenant)
+    readiness = await provider_readiness(db, tenant, invoice_id=settlement.invoice_id)
     feature_enabled = readiness.split_payment_global_gate and readiness.split_payment_tenant_gate
     actions = _allowed_actions(settlement=settlement, readiness=readiness, audience=audience, current_user=current_user)
+    if readiness.status != "ready":
+        actions.payment_unavailable_reason = (
+            "Payment setup requires attention: " + ", ".join(reason.replace("_", " ") for reason in readiness.reasons)
+            if audience == "staff" else "Payment is unavailable. Please contact the shop."
+        )
     from app.services.invoice_cash_service import cash_eligibility, cash_staff
     from app.services.invoice_accounting_policy import LOCAL_CASH_SYNC, HISTORICAL_HOLD
     invoice = await db.scalar(select(Invoice).where(
@@ -241,6 +247,10 @@ async def settlement_summary(
         feature_enabled=feature_enabled,
         allowed_actions=actions,
         tax_exemption=tax_exemption,
+        breakdown=InvoiceCheckoutBreakdown(subtotal=money(invoice.subtotal),
+            shop_supplies_amount=money(invoice.shop_supplies_amount),
+            sales_tax_amount=money(invoice.tax_amount) - money(settlement.max_card_fee_tax),
+            discount_amount=money(invoice.discount_amount), principal_total=money(settlement.principal_total)),
     )
 
 
@@ -300,6 +310,57 @@ async def read_invoice_settlement(
     )
 
 
+@router.get("/invoices/{invoice_id}/quote", response_model=InvoicePaymentQuote)
+async def read_invoice_payment_quote(
+    invoice_id: UUID,
+    rail: Literal["card", "zelle", "check", "ach", "cash"],
+    principal_amount: Decimal = Query(gt=0, max_digits=14, decimal_places=2),
+    expected_settlement_version: int = Query(ge=1),
+    db: AsyncSession = Depends(get_db),
+    current_user: CurrentUser = Depends(get_current_active_user),
+):
+    if not _is_staff(current_user) or not user_has_permission(current_user, "payments"):
+        raise SettlementDomainError("invoice_not_found", "Invoice not found.", status_code=404)
+    invoice, tenant, customer_id = await invoice_for_principal(db, invoice_id, current_user)
+    from app.services.invoice_accounting_policy import locked_policy, require_standard_payment
+    from app.services.invoice_settlement_service import _card_fee_allocation
+    from app.services.invoice_cash_service import cash_eligibility
+    await locked_policy(db, invoice)
+    await db.refresh(invoice, attribute_names=[column.name for column in Invoice.__table__.columns])
+    await db.refresh(tenant)
+    invoice, tenant, customer_id = await invoice_for_principal(db, invoice_id, current_user)
+    customer = await db.scalar(select(Customer.id).where(Customer.id == customer_id,
+        Customer.tenant_id == tenant.id, Customer.deleted_at.is_(None)))
+    settlement = await db.scalar(select(InvoiceSettlement).where(
+        InvoiceSettlement.invoice_id == invoice.id, InvoiceSettlement.tenant_id == tenant.id,
+        InvoiceSettlement.customer_id == customer_id, InvoiceSettlement.deleted_at.is_(None),
+    ).execution_options(populate_existing=True))
+    if not customer or tenant.deleted_at or not settlement or invoice.is_internal:
+        raise SettlementDomainError("invoice_not_found", "Invoice not found.", status_code=404)
+    if settlement.version != expected_settlement_version:
+        raise SettlementDomainError("stale_settlement_version", "The invoice balance changed. Refresh before paying.",
+            current_version=settlement.version, retryable=True)
+    if not principal_amount.is_finite() or principal_amount <= 0 or principal_amount != money(principal_amount):
+        raise SettlementDomainError("payment_amount_invalid", "Enter a positive amount in cents.", status_code=422)
+    amount = money(principal_amount)
+    if amount > allocatable_balance(settlement):
+        raise SettlementDomainError("payment_amount_exceeds_allocatable_balance", "The requested amount is no longer available to pay.")
+    fee = fee_tax = Decimal("0.00")
+    if rail == "cash":
+        if not settings.INVOICE_SPLIT_PAYMENTS_ENABLED or not tenant.invoice_split_payments_enabled:
+            raise SettlementDomainError("split_payments_disabled", "Invoice settlement is not enabled for this shop.")
+        reason, _ = await cash_eligibility(db, invoice, settlement, lock=True)
+        if reason or amount != money(settlement.principal_total):
+            raise SettlementDomainError("cash_unavailable", reason or "Cash requires the full invoice balance.")
+    else:
+        await require_feature_ready(db, tenant, invoice_id=invoice.id)
+        await require_standard_payment(db, invoice, new_entry=True)
+        if rail == "card":
+            fee, fee_tax = await _card_fee_allocation(db, settlement, amount)
+    return InvoicePaymentQuote(settlement_version=settlement.version, rail=rail, principal_amount=amount,
+        card_fee_amount=fee, card_fee_tax_amount=fee_tax, total_amount=amount + fee + fee_tax)
+
+
 def _encode_cursor(created_at: datetime, row_id: UUID) -> str:
     return base64.urlsafe_b64encode(f"{created_at.isoformat()}|{row_id}".encode()).decode().rstrip("=")
 
@@ -350,7 +411,7 @@ async def _settlement_for_read(
     ))
     if settlement is not None:
         return settlement
-    await require_feature_ready(db, tenant)
+    await require_feature_ready(db, tenant, invoice_id=invoice.id)
     settlement = await get_or_create_settlement(
         db,
         invoice=invoice,

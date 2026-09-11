@@ -312,7 +312,13 @@ async def provider_readiness(
     db: AsyncSession,
     tenant: Tenant,
     config: Optional[TenantPaymentProviderConfiguration] = None,
+    *, invoice_id: Optional[UUID] = None,
 ) -> ProviderReadiness:
+    """Settings use tenant-wide reconciliation; checkout scopes it to its invoice.
+
+    Scoping never relaxes provider or verified-backfill gates and does not
+    initialize missing settlements or reinterpret legacy payments.
+    """
     config = config or await load_active_configuration(db, tenant.id)
     provider = config.selected_provider if config else None
     global_gate = bool(settings.INVOICE_SPLIT_PAYMENTS_ENABLED)
@@ -407,6 +413,7 @@ async def provider_readiness(
                 Invoice.tenant_id == tenant.id,
                 Invoice.deleted_at.is_(None),
                 RepairOrder.tenant_id == tenant.id,
+                or_(invoice_id is None, Invoice.id == invoice_id),
                 RepairOrder.customer_id.is_not(None),
                 ~select(InvoiceSettlement.id).where(
                     InvoiceSettlement.tenant_id == tenant.id,
@@ -420,6 +427,7 @@ async def provider_readiness(
         unreconciled_payment = await db.scalar(
             select(Payment.id).where(
                 Payment.tenant_id == tenant.id,
+                or_(invoice_id is None, Payment.invoice_id == invoice_id),
                 Payment.deleted_at.is_(None),
                 Payment.status.in_([PaymentStatus.COMPLETED, PaymentStatus.REFUNDED]),
                 Payment.method.in_(supported_methods),
@@ -499,6 +507,7 @@ async def provider_readiness(
             select(Invoice).where(
                 Invoice.tenant_id == tenant.id,
                 Invoice.zelle_pending_submitted_at.is_not(None),
+                or_(invoice_id is None, Invoice.id == invoice_id),
                 Invoice.deleted_at.is_(None),
             )
         )).scalars().all()
@@ -608,8 +617,8 @@ async def provider_readiness(
     )
 
 
-async def require_feature_ready(db: AsyncSession, tenant: Tenant) -> ProviderReadiness:
-    readiness = await provider_readiness(db, tenant)
+async def require_feature_ready(db: AsyncSession, tenant: Tenant, *, invoice_id: Optional[UUID] = None) -> ProviderReadiness:
+    readiness = await provider_readiness(db, tenant, invoice_id=invoice_id)
     if not readiness.split_payment_global_gate or not readiness.split_payment_tenant_gate:
         raise SettlementDomainError("split_payments_disabled", "Partial payments are not enabled for this shop.")
     if readiness.status != "ready":
@@ -673,7 +682,7 @@ async def settlement_for_compatibility_route(
             )
     if not enabled:
         return None
-    await require_feature_ready(db, tenant)
+    await require_feature_ready(db, tenant, invoice_id=invoice.id)
     return existing or await get_or_create_settlement(
         db,
         invoice=invoice,
@@ -954,7 +963,7 @@ async def create_attempt(
     if active_customer_id is None:
         raise SettlementDomainError("invoice_not_found", "Invoice not found.", status_code=404)
 
-    readiness = await require_feature_ready(db, tenant)
+    readiness = await require_feature_ready(db, tenant, invoice_id=invoice.id)
     if rail not in {"card", "zelle", "check", "ach"}:
         raise SettlementDomainError("payment_rail_disabled", "This payment rail is not available.")
     if subject_type in {"customer", "guest"} and rail not in {"card", "zelle"}:
