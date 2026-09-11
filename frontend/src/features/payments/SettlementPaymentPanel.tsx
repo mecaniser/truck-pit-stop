@@ -424,6 +424,7 @@ function InvoicePaymentPanel({
               inputMode="decimal"
               autoComplete="off"
               value={receivedAmount}
+              disabled={confirmMutation.isPending}
               readOnly={attempt.rail === 'fleet_payment'}
               onChange={event => setReceivedAmount(event.target.value)}
               onBlur={() => { const normalized = normalizeMoney(receivedAmount); if (normalized) setReceivedAmount(normalized) }}
@@ -504,6 +505,7 @@ function InvoicePaymentPanel({
 
   return (
     <section className={`rounded-2xl border p-4 ${panel}`} aria-labelledby={`settlement-payment-${summary.invoice_id}`}>
+      <fieldset disabled={createMutation.isPending || cash?.pending} className="m-0 min-w-0 border-0 p-0">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h2 id={`settlement-payment-${summary.invoice_id}`} className="font-extrabold">{audience === 'staff' ? 'Payment method' : 'Choose an amount and tender'}</h2>
@@ -646,6 +648,7 @@ function InvoicePaymentPanel({
       </button>
       <p className={`mt-2 text-center text-[11px] ${quiet}`}>Applied after {rail === 'card' ? 'provider' : 'shop'} confirmation.</p>
       </>}
+      </fieldset>
     </section>
   )
 }
