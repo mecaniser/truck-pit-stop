@@ -3,13 +3,13 @@ breakdowns, parts profitability, inventory valuation, and service-type
 performance, all filterable by date range (This Year/Quarter/Month/Week,
 last-period equivalents, or a custom range).
 """
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 from typing import Dict, List, Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -18,7 +18,7 @@ from app.core.dependencies import get_db, get_current_active_user
 from app.db.models.customer import Customer
 from app.db.models.inventory import Inventory, PartsUsage
 from app.db.models.invoice import Invoice, InvoiceStatus
-from app.db.models.payment import Payment, PaymentStatus
+from app.db.models.payment import Payment, PaymentMethod, PaymentStatus
 from app.db.models.invoice_settlement import ProviderSettlementBatch
 from app.db.models.labor import Labor
 from app.db.models.repair_order import RepairOrder
@@ -337,11 +337,50 @@ class SalesGroupRow(BaseModel):
     net_sales: str
 
 
+class CashReceiptRow(BaseModel):
+    payment_id: UUID
+    payment_number: str
+    invoice_number: str
+    customer_name: str
+    received_at: datetime
+    amount: str
+
+
+async def cash_receipts_for_range(db, tenant_id, rng):
+    result = await db.execute(
+        select(Payment, Invoice, Customer)
+        .join(Invoice, Payment.invoice_id == Invoice.id)
+        .join(RepairOrder, Invoice.repair_order_id == RepairOrder.id)
+        .join(Customer, RepairOrder.customer_id == Customer.id)
+        .where(
+            Payment.tenant_id == tenant_id,
+            Invoice.tenant_id == tenant_id,
+            RepairOrder.tenant_id == tenant_id,
+            Customer.tenant_id == tenant_id,
+            Payment.method == PaymentMethod.CASH,
+            Payment.status == PaymentStatus.COMPLETED,
+            Invoice.is_internal.is_(False),
+            func.date(Payment.created_at) >= rng.start,
+            func.date(Payment.created_at) <= rng.end,
+        )
+        .order_by(Payment.created_at.desc(), Payment.id)
+    )
+    rows = [CashReceiptRow(
+        payment_id=payment.id, payment_number=payment.payment_number,
+        invoice_number=invoice.invoice_number,
+        customer_name=customer.company_name or f"{customer.first_name} {customer.last_name}".strip(),
+        received_at=payment.created_at, amount=str(_money(payment.amount)),
+    ) for payment, invoice, customer in result.all()]
+    return str(sum((_money(row.amount) for row in rows), Decimal('0.00'))), rows
+
+
 class ReportsSalesResponse(BaseModel):
     range_start: date
     range_end: date
     summary: SalesSummary
     rows: List[SalesGroupRow]
+    cash_received: str = "0.00"
+    cash_receipts: List[CashReceiptRow] = Field(default_factory=list)
 
 
 @router.get("/sales", response_model=ReportsSalesResponse)
@@ -419,6 +458,8 @@ async def get_reports_sales(
     ]
     group_rows.sort(key=lambda r: Decimal(r.net_sales), reverse=True)
 
+    cash_received, cash_receipts = await cash_receipts_for_range(db, tenant_id, rng)
+
     return ReportsSalesResponse(
         range_start=rng.start,
         range_end=rng.end,
@@ -431,6 +472,8 @@ async def get_reports_sales(
             sales_tax=str(totals["sales_tax"]),
         ),
         rows=group_rows,
+        cash_received=cash_received,
+        cash_receipts=cash_receipts,
     )
 
 

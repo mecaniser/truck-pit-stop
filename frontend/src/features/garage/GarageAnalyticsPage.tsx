@@ -5,7 +5,7 @@ import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
 } from 'recharts'
 import { ReactNode } from 'react'
-import { Download, Lightbulb } from 'lucide-react'
+import { ChevronDown, Download, Lightbulb } from 'lucide-react'
 import api from '../../lib/api'
 import { useTheme } from '../../contexts/ThemeContext'
 import {
@@ -62,6 +62,15 @@ interface ReportsSalesResponse {
     sales_tax: string
   }
   rows: SalesGroupRow[]
+  cash_received?: string
+  cash_receipts?: {
+    payment_id: string
+    payment_number: string
+    invoice_number: string
+    customer_name: string
+    received_at: string
+    amount: string
+  }[]
 }
 
 interface FeeRow {
@@ -474,6 +483,36 @@ function SalesTab({ range }: { range: ReportRange }) {
         { label: 'Fees', value: fmtMoney(data.summary.fees) },
         { label: 'Sales Tax', value: fmtMoney(data.summary.sales_tax) },
       ]} />
+
+      <details className="db-analytics-detail-table group border border-white/[0.06] rounded-xl overflow-hidden">
+        <summary className="list-none [&::-webkit-details-marker]:hidden flex items-center gap-2 cursor-pointer min-h-[44px] px-4 py-3 text-white/85 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px]">
+          <ChevronDown aria-hidden="true" className="h-4 w-4 shrink-0 transition-transform group-open:rotate-180 motion-reduce:transition-none" />
+          <span className="inline-flex flex-wrap items-center justify-between gap-x-6 gap-y-1 w-[calc(100%-1.5rem)] align-middle">
+            <span className="text-sm font-medium">Cash received</span>
+            <span className="text-lg font-semibold tabular-nums">{data.cash_received == null ? '—' : fmtMoney(data.cash_received)}</span>
+          </span>
+        </summary>
+        <div className="border-t border-white/[0.06] px-4 py-3">
+          {data.cash_received == null || data.cash_receipts == null ? (
+            <p className="text-sm text-white/50">Cash receipt reporting is unavailable.</p>
+          ) : data.cash_receipts.length === 0 ? (
+            <p className="text-sm text-white/50">No cash receipts in this date range.</p>
+          ) : (
+            <ul className="divide-y divide-white/[0.06]" aria-label="Cash receipts">
+              {data.cash_receipts.map(receipt => (
+                <li key={receipt.payment_id} className="flex items-start justify-between gap-3 py-3 first:pt-0 last:pb-0">
+                  <div className="min-w-0 text-sm">
+                    <p className="font-medium text-white/85 break-words">{receipt.customer_name}</p>
+                    <p className="text-white/55 break-words">{receipt.payment_number} · {receipt.invoice_number}</p>
+                    <time className="text-xs text-white/50" dateTime={receipt.received_at}>{new Date(receipt.received_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' })} UTC</time>
+                  </div>
+                  <span className="shrink-0 text-sm font-medium tabular-nums text-white/85">{fmtMoney(receipt.amount)}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </details>
 
       <DetailTable title="All accounts" count={data.rows.length} onExport={handleExport}>
         <div className="overflow-x-auto">
