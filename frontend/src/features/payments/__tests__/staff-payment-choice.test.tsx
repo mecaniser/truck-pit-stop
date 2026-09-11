@@ -64,6 +64,8 @@ describe('Staff payment choice remains independent of historical export status',
     expect(screen.getByRole('radio', { name: 'Check' })).toBeEnabled()
     expect(screen.getByRole('radio', { name: 'ACH' })).toBeEnabled()
     expect(screen.getByRole('radio', { name: 'Fleet Check / Code' })).toBeEnabled()
+    expect(screen.getByRole('radio', { name: 'Fleet Check / Code' })).toHaveTextContent(/^Fleet$/)
+    expect(screen.getByRole('radio', { name: 'Fleet Check / Code' })).toHaveAttribute('title', 'Fleet Check / Code · EFS / MoneyCode, Comchek, T-Chek or other provider')
     const more = screen.getByRole('button', { name: 'More payment methods' })
     expect(tenders.compareDocumentPosition(more) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     expect(more.compareDocumentPosition(screen.getByRole('button', { name: 'Pay partial amount' })) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
