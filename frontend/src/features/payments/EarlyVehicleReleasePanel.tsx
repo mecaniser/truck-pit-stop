@@ -1,5 +1,5 @@
 import { useMutation } from '@tanstack/react-query'
-import { AlertTriangle } from 'lucide-react'
+import { AlertTriangle, ChevronDown } from 'lucide-react'
 import { useState } from 'react'
 import toast from 'react-hot-toast'
 
@@ -21,6 +21,7 @@ export default function EarlyVehicleReleasePanel({
   onUpdated: (next: InvoiceSettlementSummary) => void
 }) {
   const [reason, setReason] = useState('')
+  const [expanded, setExpanded] = useState(false)
   const release = useMutation({
     mutationFn: () => authorizeEarlyVehicleRelease(
       invoiceId,
@@ -39,6 +40,12 @@ export default function EarlyVehicleReleasePanel({
   if (summary.allowed_actions?.authorize_early_release !== true) return null
 
   return (
+    <div>
+      <button type="button" aria-expanded={expanded} aria-controls={`early-release-form-${invoiceId}`} onClick={() => setExpanded(!expanded)}
+        className="flex min-h-11 w-full items-center justify-between gap-3 rounded-xl px-3 text-left text-sm font-semibold text-slate-600 hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-700">
+        Release vehicle before payment<ChevronDown className={`h-4 w-4 shrink-0 ${expanded ? 'rotate-180' : ''}`} />
+      </button>
+      {expanded && <div id={`early-release-form-${invoiceId}`}>
     <section className="rounded-xl border border-amber-300 bg-amber-50 p-3 text-amber-950" aria-labelledby={`early-release-${invoiceId}`}>
       <div className="flex items-start gap-2">
         <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
@@ -68,6 +75,8 @@ export default function EarlyVehicleReleasePanel({
         {release.isPending ? 'Recording release…' : 'Authorize vehicle release'}
       </button>
     </section>
+      </div>}
+    </div>
   )
 }
 

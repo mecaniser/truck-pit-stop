@@ -21,7 +21,8 @@ const show = (value = summary()) => render(<QueryClientProvider client={new Quer
   <InvoiceTaxExemptionControl invoiceId={value.invoice_id} summary={value} onUpdated={updated} onEditingChange={editing} />
 </QueryClientProvider>)
 async function fill() {
-  await userEvent.click(screen.getByRole('button', { name: 'Apply tax exemption' }))
+  await userEvent.click(screen.getByRole('switch', { name: 'Sales tax exemption' }))
+  await userEvent.click(screen.getByRole('button', { name: 'Add certificate/reference' }))
   await userEvent.type(screen.getByLabelText('Certificate or supporting reference (optional)'), 'CERT-001')
 }
 describe('Invoice exemption is explicit and independent of tender', () => {
@@ -30,15 +31,16 @@ describe('Invoice exemption is explicit and independent of tender', () => {
     show({ ...summary(), tax_exemption: undefined })
     expect(screen.queryByRole('region', { name: 'Invoice tax exemption' })).not.toBeInTheDocument()
   })
-  it('offers only an optional reference, shows server preview, and cancels without mutation', async () => {
+  it('reveals the optional reference on demand and toggles the draft off without mutation', async () => {
     show()
-    await userEvent.click(screen.getByRole('button', { name: 'Apply tax exemption' }))
+    await userEvent.click(screen.getByRole('switch', { name: 'Sales tax exemption' }))
     expect(screen.queryByLabelText('Exemption reason')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Certificate or supporting reference (optional)')).not.toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Add certificate/reference' }))
     expect(screen.getByLabelText('Certificate or supporting reference (optional)')).not.toBeRequired()
-    expect(screen.getByRole('button', { name: 'Apply exemption and update total' })).toBeEnabled()
-    expect(screen.getByText('$204.50')).toBeInTheDocument()
-    expect(screen.getByText(/Shop supplies stay unchanged/)).toBeInTheDocument()
-    await userEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+    expect(screen.getByRole('button', { name: 'Update invoice' })).toBeEnabled()
+    expect(screen.queryByText(/Shop supplies stay unchanged/)).not.toBeInTheDocument()
+    await userEvent.click(screen.getByRole('switch', { name: 'Sales tax exemption' }))
     expect(editing).toHaveBeenLastCalledWith(false)
     expect(api.applyInvoiceTaxExemption).not.toHaveBeenCalled()
   })
@@ -47,7 +49,7 @@ describe('Invoice exemption is explicit and independent of tender', () => {
     api.applyInvoiceTaxExemption.mockResolvedValue(next)
     show()
     await fill()
-    await userEvent.click(screen.getByRole('button', { name: 'Apply exemption and update total' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Update invoice' }))
     expect(api.applyInvoiceTaxExemption).toHaveBeenCalledWith(summary().invoice_id, {
       expected_settlement_version: summary().version, support_reference: 'CERT-001',
     }, expect.any(String))
@@ -57,9 +59,12 @@ describe('Invoice exemption is explicit and independent of tender', () => {
   it.each(['', '   '])('applies with a blank optional reference %j and sends no reason', async reference => {
     api.applyInvoiceTaxExemption.mockResolvedValue({ ...summary(), version: 2, principal_total: '204.50' })
     show()
-    await userEvent.click(screen.getByRole('button', { name: 'Apply tax exemption' }))
-    if (reference) await userEvent.type(screen.getByLabelText('Certificate or supporting reference (optional)'), reference)
-    await userEvent.click(screen.getByRole('button', { name: 'Apply exemption and update total' }))
+    await userEvent.click(screen.getByRole('switch', { name: 'Sales tax exemption' }))
+    if (reference) {
+      await userEvent.click(screen.getByRole('button', { name: 'Add certificate/reference' }))
+      await userEvent.type(screen.getByLabelText('Certificate or supporting reference (optional)'), reference)
+    }
+    await userEvent.click(screen.getByRole('button', { name: 'Update invoice' }))
     expect(api.applyInvoiceTaxExemption).toHaveBeenCalledWith(summary().invoice_id, {
       expected_settlement_version: summary().version, support_reference: null,
     }, expect.any(String))
@@ -69,11 +74,11 @@ describe('Invoice exemption is explicit and independent of tender', () => {
     api.applyInvoiceTaxExemption.mockRejectedValue(new Error('Network lost'))
     show()
     await fill()
-    await userEvent.click(screen.getByRole('button', { name: 'Apply exemption and update total' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Update invoice' }))
     await screen.findByRole('alert')
     expect(screen.getByLabelText('Certificate or supporting reference (optional)')).toBeDisabled()
     const first = api.applyInvoiceTaxExemption.mock.calls[0]
-    await userEvent.click(screen.getByRole('button', { name: 'Apply exemption and update total' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Update invoice' }))
     expect(api.applyInvoiceTaxExemption.mock.calls[1]).toEqual(first)
   })
   it('disables apply for pending or ineligible invoices with the server reason', () => {
@@ -81,7 +86,7 @@ describe('Invoice exemption is explicit and independent of tender', () => {
     value.tax_exemption!.can_apply = false
     value.tax_exemption!.unavailable_reason = 'Resolve the pending payment first.'
     show(value)
-    expect(screen.getByRole('button', { name: 'Apply tax exemption' })).toBeDisabled()
+    expect(screen.getByRole('switch', { name: 'Sales tax exemption' })).toBeDisabled()
     expect(screen.getByText('Resolve the pending payment first.')).toBeInTheDocument()
   })
   it('allows retry after temporary invoice contention without a version change', async () => {
@@ -90,10 +95,10 @@ describe('Invoice exemption is explicit and independent of tender', () => {
     api.applyInvoiceTaxExemption.mockRejectedValue(failure)
     show()
     await fill()
-    await userEvent.click(screen.getByRole('button', { name: 'Apply exemption and update total' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Update invoice' }))
     await screen.findByText('Invoice is busy. Retry.')
-    expect(screen.getByRole('button', { name: 'Apply exemption and update total' })).toBeEnabled()
-    await userEvent.click(screen.getByRole('button', { name: 'Apply exemption and update total' }))
+    expect(screen.getByRole('button', { name: 'Update invoice' })).toBeEnabled()
+    await userEvent.click(screen.getByRole('button', { name: 'Update invoice' }))
     expect(api.applyInvoiceTaxExemption).toHaveBeenCalledTimes(2)
   })
   it('blocks stale-version resubmission until a refreshed version arrives', async () => {
@@ -102,9 +107,9 @@ describe('Invoice exemption is explicit and independent of tender', () => {
     api.applyInvoiceTaxExemption.mockRejectedValue(failure)
     show()
     await fill()
-    await userEvent.click(screen.getByRole('button', { name: 'Apply exemption and update total' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Update invoice' }))
     await screen.findByText('Refresh the invoice.')
-    expect(screen.getByRole('button', { name: 'Apply exemption and update total' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Update invoice' })).toBeDisabled()
   })
   it('displays applied evidence and offers no repeated reduction', () => {
     const value = summary()

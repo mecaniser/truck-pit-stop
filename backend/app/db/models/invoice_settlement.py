@@ -160,6 +160,9 @@ class InvoicePaymentAttempt(BaseModel):
             "tenant_id", "customer_id", "rail", "manual_reference_fingerprint",
             name="uq_invoice_payment_manual_reference",
         ),
+        Index("uq_invoice_payment_fleet_reference", "tenant_id", "manual_reference_fingerprint", unique=True,
+              postgresql_where=text("rail = 'fleet_payment' AND manual_reference_fingerprint IS NOT NULL"),
+              sqlite_where=text("rail = 'fleet_payment' AND manual_reference_fingerprint IS NOT NULL")),
         CheckConstraint("currency = 'USD'", name="ck_invoice_payment_attempt_currency"),
         CheckConstraint("principal_amount > 0", name="ck_invoice_payment_attempt_principal"),
         CheckConstraint("card_fee_amount >= 0", name="ck_invoice_payment_attempt_card_fee"),
@@ -211,7 +214,9 @@ class InvoicePaymentAttempt(BaseModel):
         ),
         CheckConstraint("provider_charge_amount > 0", name="ck_invoice_payment_attempt_charge"),
         CheckConstraint("processor_fee_amount >= 0", name="ck_invoice_payment_attempt_processor_fee"),
-        CheckConstraint("rail IN ('card','zelle','check','ach','cash')", name="ck_invoice_payment_attempt_rail"),
+        CheckConstraint("rail IN ('card','zelle','check','ach','fleet_payment','cash')", name="ck_invoice_payment_attempt_rail"),
+        CheckConstraint("rail <> 'fleet_payment' OR (provider = 'manual' AND card_fee_amount = 0 AND card_fee_tax_amount = 0 AND processor_fee_amount = 0)",
+                        name="ck_invoice_payment_fleet_money"),
         CheckConstraint(
             "provider IN ('stripe_connect','quickbooks_payments','manual')",
             name="ck_invoice_payment_attempt_provider",
@@ -722,6 +727,11 @@ def _reject_financial_projection_delete(_mapper, _connection, target) -> None:
 
 
 event.listen(InvoicePaymentAttempt, "before_update", _reject_attempt_soft_delete)
+def _guard_fleet_evidence(_mapper, _connection, target):
+    if target.rail == "fleet_payment" and _attribute_changed(target, "manual_evidence"):
+        raise ValueError("Fleet instrument evidence is immutable")
+
+event.listen(InvoicePaymentAttempt, "before_update", _guard_fleet_evidence)
 def _guard_new_receipt_authorization(_mapper, _connection, target):
     if _attribute_changed(target, "new_receipt_accounting_authorization"):
         raise ValueError("New receipt accounting authorization is immutable")

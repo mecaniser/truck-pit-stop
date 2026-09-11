@@ -2,6 +2,7 @@ from app.db.models.tenant import Tenant
 from app.db.models.user import User
 from app.db.models.appearance import UserAppearancePreference, UserPresentationOverride
 from app.db.models.customer import Customer
+from app.db.models.customer_tax_exemption import CustomerTaxExemptionAudit
 from app.db.models.customer_read_model import CustomerReadModel
 from app.db.models.repair_order_read_model import RepairOrderReadModel
 from app.db.models.invoice_read_model import InvoiceReadModel
@@ -43,6 +44,7 @@ from app.db.models.labor_operation_memory import LaborOperationMemory
 from app.db.models.recommended_service import RecommendedService, RecommendedServicePriority
 from app.db.models.quote import Quote
 from app.db.models.invoice import Invoice
+from app.db.models.invoice_charge_adjustment import InvoiceChargeAdjustment
 from app.db.models.payment import Payment
 from app.db.models.payment_number_counter import PaymentNumberCounter
 from app.db.models.notification import Notification

@@ -119,7 +119,7 @@ async def sync_gross_credit_application(db, envelope, settlement):
     current = (await r._request(envelope.connection, "GET", f"payment/{payment_id}")).get("Payment") or {}
     reference = r.db048_qbo_payment_reference(attempt=attempt, payment=envelope.source_payment)
     mapping_key = {"stripe_connect": "stripe_clearing_account", "quickbooks_payments": "qbp_clearing_account"}.get(
-        attempt.provider, "check_deposit_account" if attempt.rail == "check" else "zelle_ach_account")
+        attempt.provider, "check_deposit_account" if attempt.rail in {"check", "fleet_payment"} else "zelle_ach_account")
     deposit_account = await r._resolve_qbo_account_reference(envelope.connection,
         (envelope.source_accounting_link.account_mapping_snapshot or {}).get(mapping_key))
     def validate_identity(entity):

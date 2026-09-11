@@ -39,6 +39,8 @@ def event_history_digest(event):
         if isinstance(value, datetime):
             value = (value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value.astimezone(timezone.utc)).isoformat()
         values[column.name] = value
+    if isinstance(event, Invoice) and event.charge_adjustments:
+        values["charge_adjustments"] = [event_history_digest(row) for row in sorted(event.charge_adjustments, key=lambda row: row.version)]
     return sha256(json.dumps(values, sort_keys=True, default=str, separators=(",", ":")).encode()).hexdigest()
 
 

@@ -164,7 +164,8 @@ def _build_quote_savings_html(order: RepairOrder) -> str:
 
 
 def _build_quote_checkout_html(order: RepairOrder, tenant: Tenant) -> str:
-    breakdown = get_order_checkout_breakdown(order, tenant)
+    breakdown = get_order_checkout_breakdown(order, tenant,
+        tax_exempt=bool(getattr(getattr(order, "customer", None), "tax_exempt", False)))
     fee_rows: list[str] = []
     for label, key in (
         ("Repair total", "repair_total"),
@@ -699,7 +700,8 @@ def _quote_snapshot(
     tenant: Optional[Tenant],
     services: list[dict],
 ) -> dict:
-    breakdown = get_order_checkout_breakdown(order, tenant) if tenant else None
+    breakdown = get_order_checkout_breakdown(order, tenant,
+        tax_exempt=bool(getattr(getattr(order, "customer", None), "tax_exempt", False))) if tenant else None
     parts = [
         {
             "source_id": str(pu.id),
@@ -1648,7 +1650,8 @@ async def get_quote_by_token(
         existing_user = user_result.scalar_one_or_none()
     tenant_result = await db.execute(select(Tenant).where(Tenant.id == order.tenant_id))
     tenant = tenant_result.scalar_one_or_none()
-    checkout = get_order_checkout_breakdown(order, tenant) if tenant else {
+    checkout = get_order_checkout_breakdown(order, tenant,
+        tax_exempt=bool(getattr(customer, "tax_exempt", False))) if tenant else {
         "shop_supplies_amount": Decimal("0.00"),
         "service_fee_amount": Decimal("0.00"),
         "tax_amount": Decimal("0.00"),

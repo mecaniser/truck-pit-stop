@@ -6,11 +6,11 @@ from decimal import Decimal
 from typing import Any, Literal, Optional
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, StrictBool, field_validator, model_validator
 
 
 Money = Decimal
-PaymentRail = Literal["card", "zelle", "check", "ach"]
+PaymentRail = Literal["card", "zelle", "check", "ach", "fleet_payment"]
 
 
 class SettlementError(BaseModel):
@@ -65,9 +65,32 @@ class InvoiceCheckoutBreakdown(BaseModel):
     principal_total: Money
 
 
+class InvoiceChargeAdjustmentCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    expected_settlement_version: int = Field(ge=1)
+    tax_exempt: StrictBool
+    shop_supplies_enabled: StrictBool
+    support_reference: Optional[str] = Field(default=None, max_length=255)
+
+    @field_validator("support_reference", mode="before")
+    @classmethod
+    def normalize_reference(cls, value):
+        return (value.strip() or None) if isinstance(value, str) else value
+
+
+class InvoiceChargeControls(BaseModel):
+    tax_exempt: bool
+    shop_supplies_enabled: bool
+    can_adjust: bool
+    unavailable_reason: Optional[str] = None
+    support_reference: Optional[str] = None
+    original_shop_supplies_amount: Money
+    original_tax_amount: Money
+
+
 class InvoicePaymentQuote(BaseModel):
     settlement_version: int
-    rail: Literal["card", "zelle", "check", "ach", "cash"]
+    rail: Literal["card", "zelle", "check", "ach", "fleet_payment", "cash"]
     principal_amount: Money
     card_fee_amount: Money
     card_fee_tax_amount: Money
@@ -95,9 +118,13 @@ class InvoiceSettlementSummary(BaseModel):
     allowed_actions: SettlementAllowedActions
     tax_exemption: Optional[InvoiceTaxExemptionRead] = None
     breakdown: Optional[InvoiceCheckoutBreakdown] = None
+    charge_controls: Optional[InvoiceChargeControls] = None
 
 
 class SenderEvidence(BaseModel):
+    fleet_provider: Optional[Literal["EFS", "Comchek", "T-Chek", "Other"]] = None
+    fleet_provider_name: Optional[str] = Field(default=None, max_length=100)
+    authorization_number: Optional[str] = Field(default=None, max_length=255)
     sender_name: Optional[str] = Field(default=None, max_length=255)
     sender_email: Optional[str] = Field(default=None, max_length=255)
     sender_phone: Optional[str] = Field(default=None, max_length=40)
@@ -111,6 +138,14 @@ class PaymentAttemptCreate(BaseModel):
     rail: PaymentRail
     expected_settlement_version: int = Field(ge=1)
     sender_evidence: Optional[SenderEvidence] = None
+
+    @model_validator(mode="after")
+    def validate_fleet_evidence(self):
+        if self.rail == "fleet_payment":
+            from app.services.fleet_payment_evidence import normalize_fleet_evidence
+            self.sender_evidence = SenderEvidence(**normalize_fleet_evidence(
+                self.sender_evidence.model_dump(exclude_none=True) if self.sender_evidence else None))
+        return self
 
     @field_validator("amount")
     @classmethod
@@ -160,11 +195,15 @@ class PaymentAttemptResponse(BaseModel):
 class PaymentAllocationItem(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
+    sender_evidence: Optional[SenderEvidence] = None
     id: UUID
     attempt_id: UUID
     created_at: datetime
     rail: str
     provider: str
+    fleet_provider: Optional[str] = None
+    fleet_provider_name: Optional[str] = None
+    authorization_number: Optional[str] = None
     state: str
     attempt_version: int
     failure_code: Optional[str] = None

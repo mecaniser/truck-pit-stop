@@ -114,6 +114,15 @@ export async function confirmFullCashPayment(
   return data
 }
 
+export async function adjustInvoiceCharges(
+  invoiceId: string,
+  body: { expected_settlement_version: number; tax_exempt: boolean; shop_supplies_enabled: boolean; support_reference: string | null },
+  idempotencyKey: string,
+): Promise<InvoiceSettlementSummary> {
+  const { data } = await api.post(`/payments/invoices/${invoiceId}/charge-adjustments`, body, idempotencyHeaders(idempotencyKey))
+  return data.settlement ?? data
+}
+
 export async function fetchAllocations(
   access: SettlementAccess,
   cursor?: string | null,
@@ -156,6 +165,13 @@ function normalizeAllocationPage(data: PaymentAllocationPage | { items?: Array<R
         confirmed_at: raw.confirmed_at == null ? null : String(raw.confirmed_at),
         expires_at: raw.expires_at == null ? null : String(raw.expires_at),
         actor_name: raw.actor_name == null ? null : String(raw.actor_name),
+        fleet_provider: raw.fleet_provider as PaymentAllocationPage['items'][number]['fleet_provider'],
+        fleet_provider_name: typeof raw.fleet_provider_name === 'string' ? raw.fleet_provider_name : null,
+        authorization_number: typeof raw.authorization_number === 'string' ? raw.authorization_number : null,
+        sender_evidence: raw.sender_evidence && typeof raw.sender_evidence === 'object'
+          ? Object.fromEntries(Object.entries(raw.sender_evidence).filter(([key, value]) =>
+              ['sender_name', 'sender_email', 'sender_phone', 'reference', 'reference_number', 'note'].includes(key) && typeof value === 'string'))
+          : null,
         reference_number: raw.reference_number == null && raw.reference == null
           ? null
           : String(raw.reference_number ?? raw.reference),

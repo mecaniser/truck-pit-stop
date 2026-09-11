@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_, func
 from pydantic import BaseModel
 from decimal import Decimal
+from app.services.invoice_charge_state import effective_tax_exempt
 
 from app.core.dependencies import get_db, get_current_active_user
 from app.core.config import settings
@@ -179,7 +180,7 @@ def _build_invoice_pdf_bytes(
         subtotal=Decimal(str(invoice.subtotal)),
         tax_amount=Decimal(str(invoice.tax_amount)),
         tax_rate=tax_rate,
-        tax_exempt=bool(getattr(invoice, "tax_exemption", None)),
+        tax_exempt=effective_tax_exempt(invoice),
         discount_amount=Decimal(str(invoice.discount_amount or 0)),
         total_amount=Decimal(str(invoice.total_amount)),
         invoice_access_url=invoice_access_url,
@@ -361,7 +362,7 @@ def _build_invoice_email_html(
     <table width="100%" cellpadding="0" cellspacing="0">
       <tr><td style="padding:4px 8px;text-align:right;color:#6b7280;" colspan="3">Subtotal</td><td style="padding:4px 8px;text-align:right;color:#374151;">${Decimal(str(invoice.subtotal)):,.2f}</td></tr>
       {discount_row}
-      <tr><td style="padding:4px 8px;text-align:right;color:#6b7280;" colspan="3">{'Tax (exempt)' if getattr(invoice, 'tax_exemption', None) else 'Tax'}</td><td style="padding:4px 8px;text-align:right;color:#374151;">${tax:,.2f}</td></tr>
+      <tr><td style="padding:4px 8px;text-align:right;color:#6b7280;" colspan="3">{'Tax (exempt)' if effective_tax_exempt(invoice) else 'Tax'}</td><td style="padding:4px 8px;text-align:right;color:#374151;">${tax:,.2f}</td></tr>
       <tr style="background:#1f2937;">
         <td style="padding:10px 8px;text-align:right;color:#ffffff;font-weight:700;font-size:15px;" colspan="3">TOTAL DUE</td>
         <td style="padding:10px 8px;text-align:right;color:#ffffff;font-weight:700;font-size:15px;">${total:,.2f}</td>
@@ -681,7 +682,10 @@ async def auto_create_invoice_for_order(
     recipient_name = recipient_email = recipient_phone = None
     if order.is_internal:
         recipient_name, recipient_email, recipient_phone = _fleet_invoice_contact(vehicle)
-    checkout = get_order_checkout_breakdown(order, tenant)
+    from app.services.customer_tax_exemption import issuance_default, stamp_invoice
+    tax_default = await issuance_default(db, order, tenant)
+    taxable_checkout = get_order_checkout_breakdown(order, tenant)
+    checkout = get_order_checkout_breakdown(order, tenant, tax_exempt=bool(tax_default))
     subtotal = checkout["repair_total"]
     shop_supplies_amount = checkout["shop_supplies_amount"]
     service_fee_amount = checkout["service_fee_amount"]
@@ -716,6 +720,7 @@ async def auto_create_invoice_for_order(
             line_items_snapshot=line_items_snapshot,
             supersedes_invoice_id=supersedes_invoice_id,
         )
+        stamp_invoice(inv, tax_default, taxable_checkout, created_by_user_id)
         db.add(inv)
         if order.pricing_locked_at is None:
             order.pricing_locked_at = datetime.now(timezone.utc)
@@ -863,7 +868,10 @@ async def create_invoice(
     recipient_email = order.customer.email
     recipient_phone = order.customer.phone
     
-    checkout = get_order_checkout_breakdown(order, tenant)
+    from app.services.customer_tax_exemption import issuance_default, stamp_invoice
+    tax_default = await issuance_default(db, order, tenant)
+    taxable_checkout = get_order_checkout_breakdown(order, tenant)
+    checkout = get_order_checkout_breakdown(order, tenant, tax_exempt=bool(tax_default))
     subtotal = checkout["repair_total"]
     shop_supplies_amount = checkout["shop_supplies_amount"]
     service_fee_amount = checkout["service_fee_amount"]
@@ -918,6 +926,7 @@ async def create_invoice(
             line_items_snapshot=line_items_snapshot,
             supersedes_invoice_id=supersedes_invoice_id,
         )
+        stamp_invoice(invoice, tax_default, taxable_checkout, current_user.id)
         db.add(invoice)
         if order.pricing_locked_at is None:
             order.pricing_locked_at = datetime.now(timezone.utc)
@@ -943,6 +952,7 @@ async def create_invoice(
     )
     await enqueue_quickbooks_invoice_sync(db, invoice=invoice)
 
+    await db.refresh(order, attribute_names=["customer", "vehicle"])
     email_queued = await enqueue_invoice_created_email(
         db,
         invoice=invoice,

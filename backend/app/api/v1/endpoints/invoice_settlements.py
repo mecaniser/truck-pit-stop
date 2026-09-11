@@ -166,7 +166,7 @@ def _allowed_actions(
     is_staff = audience == "staff"
     is_customer = audience == "customer"
     manager = bool(current_user and _can_manage_money(current_user))
-    rails = ["card", "zelle", "check", "ach"] if is_staff else ["card", "zelle"]
+    rails = ["card", "zelle", "check", "ach", "fleet_payment"] if is_staff else ["card", "zelle"]
     return SettlementAllowedActions(
         create_attempt=can_create,
         rails=rails if can_create else [],
@@ -226,6 +226,8 @@ async def settlement_summary(
             actions.cash_unavailable_reason = reason
     from app.services.invoice_tax_exemption import summary as tax_exemption_summary
     tax_exemption = await tax_exemption_summary(db, invoice, settlement, tenant, current_user, audience=audience)
+    from app.services.invoice_charge_adjustments import summary as charge_summary
+    charge_controls = await charge_summary(db, invoice, settlement, tenant, current_user, audience=audience)
     return InvoiceSettlementSummary(
         invoice_id=settlement.invoice_id,
         currency=settlement.currency,
@@ -247,6 +249,7 @@ async def settlement_summary(
         feature_enabled=feature_enabled,
         allowed_actions=actions,
         tax_exemption=tax_exemption,
+        charge_controls=charge_controls,
         breakdown=InvoiceCheckoutBreakdown(subtotal=money(invoice.subtotal),
             shop_supplies_amount=money(invoice.shop_supplies_amount),
             sales_tax_amount=money(invoice.tax_amount) - money(settlement.max_card_fee_tax),
@@ -313,7 +316,7 @@ async def read_invoice_settlement(
 @router.get("/invoices/{invoice_id}/quote", response_model=InvoicePaymentQuote)
 async def read_invoice_payment_quote(
     invoice_id: UUID,
-    rail: Literal["card", "zelle", "check", "ach", "cash"],
+    rail: Literal["card", "zelle", "check", "ach", "fleet_payment", "cash"],
     principal_amount: Decimal = Query(gt=0, max_digits=14, decimal_places=2),
     expected_settlement_version: int = Query(ge=1),
     db: AsyncSession = Depends(get_db),
@@ -485,8 +488,16 @@ async def allocation_page(
     staff_evidence = audience == "staff"
     return PaymentAllocationPage(
         items=[PaymentAllocationItem(
+            sender_evidence={
+                key: value for key, value in (row.manual_evidence or {}).items()
+                if key in {"sender_name", "sender_email", "sender_phone", "reference", "reference_number", "note"}
+                and isinstance(value, str) and value.strip()
+            } if staff_evidence and row.rail != "card" else None,
             id=row.id, attempt_id=row.id, created_at=row.created_at, rail=row.rail,
             provider=row.provider, state=row.state, attempt_version=row.version,
+            fleet_provider=((row.manual_evidence or {}).get("fleet_provider") if staff_evidence and row.rail == "fleet_payment" else None),
+            fleet_provider_name=((row.manual_evidence or {}).get("fleet_provider_name") if staff_evidence and row.rail == "fleet_payment" else None),
+            authorization_number=((row.manual_evidence or {}).get("authorization_number") if staff_evidence and row.rail == "fleet_payment" else None),
             failure_code=row.failure_code,
             principal_amount=money(row.principal_amount),
             applied_principal_amount=money(row.applied_principal_amount),
@@ -976,7 +987,23 @@ async def charge_quickbooks_payment_attempt(
     )
 
 
-from app.schemas.invoice_settlement import InvoiceTaxExemptionCreate
+from app.schemas.invoice_settlement import InvoiceTaxExemptionCreate, InvoiceChargeAdjustmentCreate
+
+
+@router.post("/invoices/{invoice_id}/charge-adjustments", response_model=InvoiceSettlementSummary)
+async def adjust_invoice_charges(
+    invoice_id: UUID,
+    body: InvoiceChargeAdjustmentCreate,
+    idempotency_header: Optional[str] = Header(default=None, alias="Idempotency-Key"),
+    db: AsyncSession = Depends(get_db),
+    current_user: CurrentUser = Depends(get_current_active_user),
+):
+    from app.services.invoice_charge_adjustments import adjust
+    invoice, tenant, _customer_id = await invoice_for_principal(db, invoice_id, current_user)
+    settlement = await adjust(db, invoice=invoice, tenant=tenant, actor=current_user,
+                             body=body, idempotency_key=_idempotency_key(idempotency_header))
+    await db.commit()
+    return await settlement_summary(db, settlement, tenant, audience="staff", current_user=current_user)
 
 
 @router.post("/invoices/{invoice_id}/tax-exemption", response_model=InvoiceSettlementSummary)

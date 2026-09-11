@@ -17,6 +17,7 @@ const RAIL_LABELS: Record<PaymentAllocation['rail'], string> = {
   zelle: 'Zelle',
   check: 'Check',
   ach: 'ACH',
+  fleet_payment: 'Fleet Check / Code',
   cash: 'Cash',
 }
 
@@ -25,11 +26,13 @@ export default function SettlementSummaryCard({
   allocations = [],
   tone = 'dark',
   compact = false,
+  streamlined = false,
 }: {
   summary: InvoiceSettlementSummary
   allocations?: PaymentAllocation[]
   tone?: 'dark' | 'light'
   compact?: boolean
+  streamlined?: boolean
 }) {
   const dark = tone === 'dark'
   const panel = dark
@@ -40,36 +43,40 @@ export default function SettlementSummaryCard({
   const paid = summary.state === 'paid'
   const pending = isPositiveMoney(summary.active_pending_principal)
   const resolution = isPositiveMoney(summary.unapplied_credit) || isPositiveMoney(summary.refund_pending)
+  const figures = streamlined ? [
+    ...(isPositiveMoney(summary.confirmed_principal) ? [['Paid toward invoice', summary.confirmed_principal]] : []),
+    ...(pending ? [['Pending confirmation', summary.active_pending_principal], ['Available to pay', summary.allocatable_balance]] : []),
+  ] : [
+    ['Invoice total', summary.principal_total],
+    ['Confirmed', summary.confirmed_principal],
+    ['Pending', summary.active_pending_principal],
+    ['Available to pay', summary.allocatable_balance],
+  ]
 
   return (
     <section className={`overflow-hidden rounded-2xl border ${panel}`} aria-labelledby={`settlement-${summary.invoice_id}`}>
       <div className={`flex flex-wrap items-start justify-between gap-3 ${compact ? 'p-3' : 'p-4'}`}>
         <div>
-          <p className={`text-[11px] font-extrabold uppercase tracking-[0.12em] ${quiet}`}>Invoice settlement</p>
+          {!streamlined && <p className={`text-[11px] font-extrabold uppercase tracking-[0.12em] ${quiet}`}>Invoice settlement</p>}
           <h2 id={`settlement-${summary.invoice_id}`} className="mt-1 flex items-center gap-2 text-sm font-extrabold">
             {paid ? <CheckCircle2 className="h-4 w-4 text-emerald-500" /> : pending ? <Clock3 className="h-4 w-4 text-amber-500" /> : <RefreshCw className="h-4 w-4 text-sky-500" />}
             {paid && summary.accounting_sync_status === 'not_applicable_local_cash' ? 'Paid in cash' : STATE_LABELS[summary.state]}
           </h2>
         </div>
         <p className="text-right">
-          <span className={`block text-[11px] font-bold uppercase tracking-wide ${quiet}`}>Outstanding</span>
+          <span className={`block text-xs ${quiet}`}>{streamlined ? 'Balance due' : 'Outstanding'}</span>
           <span className="block text-2xl font-extrabold tabular-nums">{formatMoney(summary.outstanding_balance)}</span>
         </p>
       </div>
 
-      <dl className={`grid grid-cols-2 border-t ${divider} sm:grid-cols-4`}>
-        {[
-          ['Invoice total', summary.principal_total],
-          ['Confirmed', summary.confirmed_principal],
-          ['Pending', summary.active_pending_principal],
-          ['Available to pay', summary.allocatable_balance],
-        ].map(([label, value]) => (
-          <div key={label} className={`border-r px-3 py-2.5 last:border-r-0 ${divider}`}>
+      {figures.length > 0 && <dl className={`flex flex-wrap border-t ${divider}`}>
+        {figures.map(([label, value]) => (
+          <div key={label} className={`min-w-[120px] flex-1 border-r px-3 py-2.5 last:border-r-0 ${divider}`}>
             <dt className={`text-[11px] ${quiet}`}>{label}</dt>
             <dd className="mt-0.5 font-bold tabular-nums">{formatMoney(value)}</dd>
           </div>
         ))}
-      </dl>
+      </dl>}
 
       {resolution && (
         <div className={`flex gap-2 border-t px-3 py-3 text-sm ${divider} ${dark ? 'bg-amber-400/10 text-amber-200' : 'bg-amber-50 text-amber-900'}`}>

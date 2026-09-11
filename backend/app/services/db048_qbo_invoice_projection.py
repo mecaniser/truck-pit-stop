@@ -124,7 +124,7 @@ def project_gross_invoice(
             raise ValueError("Foreign tenant, realm or invoice")
         if attempt.composition_version != composition_version:
             raise ValueError("Unsupported attempt composition version")
-        if attempt.rail not in {"card", "zelle", "check", "ach"}:
+        if attempt.rail not in {"card", "zelle", "check", "ach", "fleet_payment"}:
             raise ValueError("Unsupported payment rail")
         if (
             not isinstance(attempt.attempt_id, str)

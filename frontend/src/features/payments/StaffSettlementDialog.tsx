@@ -102,7 +102,7 @@ export default function StaffSettlementDialog({
             </div>
           ) : (
             <>
-              <SettlementSummaryCard summary={current} allocations={allocationsQuery.data?.items ?? []} tone="light" />
+              <SettlementSummaryCard summary={current} allocations={allocationsQuery.data?.items ?? []} tone="light" streamlined />
               <fieldset disabled={editingExemption} className="min-w-0 space-y-4 border-0 p-0">
               <PendingManualPaymentPanel
                 invoiceId={invoiceId}
@@ -144,7 +144,7 @@ export default function StaffSettlementDialog({
                 tone="light"
                 onUpdated={handleUpdated}
                 cashTender={cash}
-                submissionBlockedReason={editingExemption ? 'Apply or cancel the tax exemption before recording payment.' : undefined}
+                submissionBlockedReason={editingExemption ? 'Save or discard invoice changes before recording payment.' : undefined}
                 taxExemptionControl={<InvoiceTaxExemptionControl embedded key={invoiceId} invoiceId={invoiceId} summary={current} onUpdated={handleUpdated} onEditingChange={setEditingExemption} />}
               />}
               </FullCashPaymentPanel>

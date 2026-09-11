@@ -7,10 +7,11 @@ import { confirmPaymentAttempt, createIdempotencyKey, paymentApiError } from './
 import { formatMoney, isPositiveMoney, normalizeMoney } from './money'
 import type { InvoiceSettlementSummary, PaymentAllocation } from './types'
 
-const RAIL_LABEL: Record<'zelle' | 'check' | 'ach', string> = {
+const RAIL_LABEL: Record<'zelle' | 'check' | 'ach' | 'fleet_payment', string> = {
   zelle: 'Zelle',
   check: 'check',
   ach: 'ACH',
+  fleet_payment: 'Fleet Check / Code',
 }
 
 function PendingManualPaymentItem({
@@ -25,15 +26,17 @@ function PendingManualPaymentItem({
   onUpdated: (next: InvoiceSettlementSummary) => void
 }) {
   const queryClient = useQueryClient()
-  const [reference, setReference] = useState(allocation.reference_number ?? '')
+  const submitted = allocation.sender_evidence
+  const [reference, setReference] = useState(allocation.reference_number || submitted?.reference || submitted?.reference_number || '')
   const [receivedAmount, setReceivedAmount] = useState(allocation.principal_amount)
-  const [note, setNote] = useState('')
+  const [note, setNote] = useState(submitted?.note ?? '')
+  const sender = [submitted?.sender_name, submitted?.sender_email, submitted?.sender_phone].filter(Boolean).join(' · ')
   const normalizedReceived = normalizeMoney(receivedAmount)
-  const receivedValid = Boolean(normalizedReceived && isPositiveMoney(normalizedReceived))
+  const receivedValid = Boolean(normalizedReceived && isPositiveMoney(normalizedReceived) && (allocation.rail !== 'fleet_payment' || normalizedReceived === allocation.principal_amount))
   const dark = tone === 'dark'
   const input = dark ? 'border-[#3a465e] bg-[#182234] text-white' : 'border-slate-300 bg-white text-slate-950'
   const quiet = dark ? 'text-[#99a4b7]' : 'text-slate-500'
-  const label = RAIL_LABEL[allocation.rail as 'zelle' | 'check' | 'ach']
+  const label = RAIL_LABEL[allocation.rail as keyof typeof RAIL_LABEL]
 
   const confirm = useMutation({
     mutationFn: async () => {
@@ -69,6 +72,9 @@ function PendingManualPaymentItem({
         </div>
         {allocation.expires_at && <p className={`text-xs ${quiet}`}>Expires {new Date(allocation.expires_at).toLocaleString()}</p>}
       </div>
+      {sender && <p className={`mt-2 break-words text-xs ${quiet}`}>Submitted sender: {sender}</p>}
+      {allocation.fleet_provider && <p className={`mt-2 break-words text-xs ${quiet}`}>Provider: {allocation.fleet_provider === 'Other' ? allocation.fleet_provider_name : allocation.fleet_provider}{allocation.authorization_number ? ` · Approval: ${allocation.authorization_number}` : ''}</p>}
+      {submitted?.note && <p className={`mt-1 break-words text-xs ${quiet}`}>Submitted note: {submitted.note}</p>}
       <div className="mt-3 grid gap-3 sm:grid-cols-2">
         <label className="block text-xs font-bold">Amount actually received
           <div className="relative mt-1">
@@ -78,6 +84,7 @@ function PendingManualPaymentItem({
               inputMode="decimal"
               autoComplete="off"
               value={receivedAmount}
+              readOnly={allocation.rail === 'fleet_payment'}
               onChange={event => setReceivedAmount(event.target.value.replace(/[^\d.]/g, ''))}
               onBlur={() => { const normalized = normalizeMoney(receivedAmount); if (normalized) setReceivedAmount(normalized) }}
               aria-invalid={!receivedValid}
@@ -86,7 +93,7 @@ function PendingManualPaymentItem({
           </div>
         </label>
         <label className="block text-xs font-bold">Transaction reference
-          <input value={reference} onChange={event => setReference(event.target.value)} className={`mt-1 h-11 w-full rounded-xl border px-3 outline-none focus:ring-2 focus:ring-amber-600 ${input}`} />
+          <input value={reference} readOnly={allocation.rail === 'fleet_payment'} onChange={event => setReference(event.target.value)} className={`mt-1 h-11 w-full rounded-xl border px-3 outline-none focus:ring-2 focus:ring-amber-600 ${input}`} />
         </label>
       </div>
       <label className="mt-3 block text-xs font-bold">Verification note <span className="font-normal">(optional)</span>

@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Text, ForeignKey, Numeric, Boolean, DateTime, UniqueConstraint
+from sqlalchemy import Column, String, Text, ForeignKey, Numeric, Boolean, DateTime, UniqueConstraint, Integer
 from sqlalchemy.orm import relationship
 from sqlalchemy.dialects.postgresql import UUID
 from app.db.base import BaseModel
@@ -29,6 +29,10 @@ class Customer(BaseModel):
     billing_country = Column(String(100), nullable=True, default="USA")
     
     notes = Column(Text, nullable=True)
+    tax_exempt = Column(Boolean, nullable=False, default=False, server_default="false")
+    tax_exemption_support_reference = Column(String(255), nullable=True)
+    tax_exemption_version = Column(Integer, nullable=False, default=0, server_default="0")
+    tax_exemption_updated_at = Column(DateTime(timezone=True), nullable=True)
     source = Column(String(50), nullable=True, index=True)  # e.g. zelle, walk_in, portal
     # Stable id of the source record in Easy Truck Shop, set only on imported
     # rows. Lets the resync tool match a re-scrape to this row idempotently.

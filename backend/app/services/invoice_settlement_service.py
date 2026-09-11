@@ -44,6 +44,7 @@ from app.db.models.tenant import Tenant
 from app.db.models.user import UserRole
 from app.services.paid_invoice_webhook_service import enqueue_paid_invoice_webhook
 from app.services.payment_number_service import allocate_next_payment_number
+from app.services.fleet_payment_evidence import fleet_provider_label
 
 
 CENT = Decimal("0.01")
@@ -460,6 +461,7 @@ async def provider_readiness(
             PaymentMethod.ZELLE,
             PaymentMethod.CHECK,
             PaymentMethod.ACH,
+            PaymentMethod.FLEET_PAYMENT,
         )
         unreconciled_invoice = await db.scalar(
             select(Invoice.id)
@@ -1026,10 +1028,21 @@ async def create_attempt(
         raise SettlementDomainError("invoice_not_found", "Invoice not found.", status_code=404)
 
     readiness = await require_feature_ready(db, tenant, invoice_id=invoice.id, lock_ancestry=True)
-    if rail not in {"card", "zelle", "check", "ach"}:
+    if rail not in {"card", "zelle", "check", "ach", "fleet_payment"}:
         raise SettlementDomainError("payment_rail_disabled", "This payment rail is not available.")
     if subject_type in {"customer", "guest"} and rail not in {"card", "zelle"}:
         raise SettlementDomainError("payment_rail_disabled", "This payment rail is not available.")
+    if rail == "fleet_payment":
+        _require_fleet_staff(actor, tenant.id)
+        if subject_type != "staff":
+            raise SettlementDomainError("payment_rail_disabled", "Fleet instruments require staff verification.")
+        from app.services.fleet_payment_evidence import normalize_fleet_evidence
+        try:
+            sender_evidence = normalize_fleet_evidence(sender_evidence)
+        except ValueError as exc:
+            raise SettlementDomainError("fleet_payment_evidence_invalid", str(exc), status_code=422) from exc
+        if not readiness.configuration.check_deposit_account:
+            raise SettlementDomainError("fleet_account_mapping_missing", "Configure the check deposit account before recording a Fleet instrument.")
 
     amount = money(amount)
     if amount < CENT:
@@ -1178,6 +1191,13 @@ def _manual_evidence_reference(attempt: InvoicePaymentAttempt, explicit_referenc
     evidence = attempt.manual_evidence or {}
     reference = evidence.get("reference") or evidence.get("reference_number")
     return str(reference).strip() if reference else None
+
+
+def _require_fleet_staff(actor, tenant_id):
+    if (actor is None or actor.tenant_id != tenant_id
+            or actor.role not in {UserRole.GARAGE_OWNER, UserRole.GARAGE_ADMIN, UserRole.RECEPTIONIST}
+            or not user_has_permission(actor, "payments")):
+        raise SettlementDomainError("invoice_not_found", "Invoice not found.", status_code=404)
 
 
 async def locked_accessible_invoice_for_attempt(
@@ -1345,6 +1365,18 @@ async def confirm_attempt(
     # Enforce lifecycle before replay lookup, manual-reference normalization,
     # money projection, accounting enqueue, or paid/order state mutation.
     invoice = await locked_accessible_invoice_for_attempt(db, attempt)
+    if attempt.rail == "fleet_payment":
+        _require_fleet_staff(actor, tenant.id)
+        from app.services.fleet_payment_evidence import normalize_fleet_evidence
+        try:
+            fleet_evidence = normalize_fleet_evidence(attempt.manual_evidence)
+        except ValueError as exc:
+            raise SettlementDomainError("fleet_payment_evidence_invalid", str(exc), status_code=422) from exc
+        if reference is not None and reference.strip() != fleet_evidence["reference_number"]:
+            raise SettlementDomainError("fleet_reference_conflict", "The Fleet reference cannot be changed after the attempt is created.")
+        if received_principal is not None and (not Decimal(str(received_principal)).is_finite()
+                or Decimal(str(received_principal)) != money(attempt.principal_amount)):
+            raise SettlementDomainError("fleet_amount_conflict", "Cancel and recreate the Fleet attempt if the verified amount differs.")
     from app.services.invoice_accounting_policy import require_standard_payment
     await require_standard_payment(db, invoice, attempt=attempt, verified_provider_fact=(
         verified_provider_fact and actor is None and attempt.rail == "card"
@@ -1368,9 +1400,24 @@ async def confirm_attempt(
         raise SettlementDomainError("attempt_transition_conflict", "This payment attempt cannot be confirmed.")
 
     ref = _manual_evidence_reference(attempt, reference)
-    if attempt.rail in {"check", "ach", "zelle"} and not ref:
+    if attempt.rail in {"check", "ach", "zelle", "fleet_payment"} and not ref:
         raise SettlementDomainError("manual_payment_evidence_required", "A transaction reference is required.", status_code=422)
-    if attempt.rail in {"check", "ach", "zelle"}:
+    if attempt.rail == "fleet_payment":
+        from app.services.fleet_payment_evidence import fleet_reference_fingerprint
+        # Tenant serialization plus the partial unique index prevent the same
+        # instrument being confirmed against two customers concurrently.
+        await db.execute(select(Tenant.id).where(Tenant.id == tenant.id).with_for_update())
+        reference_fingerprint = fleet_reference_fingerprint(attempt.manual_evidence)
+        duplicate = await db.scalar(select(InvoicePaymentAttempt.id).where(
+            InvoicePaymentAttempt.tenant_id == tenant.id,
+            InvoicePaymentAttempt.rail == "fleet_payment",
+            InvoicePaymentAttempt.manual_reference_fingerprint == reference_fingerprint,
+            InvoicePaymentAttempt.id != attempt.id,
+        ).limit(1))
+        if duplicate:
+            raise SettlementDomainError("manual_reference_requires_review", "This Fleet instrument has already been recorded for this shop.")
+        attempt.manual_reference_fingerprint = reference_fingerprint
+    elif attempt.rail in {"check", "ach", "zelle"}:
         # Serialize manual-reference confirmation per customer.  Check numbers
         # can legitimately repeat across unrelated customers, so the safety
         # boundary is tenant + customer + rail rather than a false global
@@ -1487,6 +1534,7 @@ async def confirm_attempt(
         "zelle": PaymentMethod.ZELLE,
         "check": PaymentMethod.CHECK,
         "ach": PaymentMethod.ACH,
+        "fleet_payment": PaymentMethod.FLEET_PAYMENT,
     }[attempt.rail]
     payment = Payment(
         tenant_id=tenant.id,
@@ -1504,9 +1552,13 @@ async def confirm_attempt(
         stripe_connected_account_id=attempt.provider_account_id if attempt.provider == "stripe_connect" else None,
         quickbooks_charge_id=attempt.provider_charge_id if attempt.provider == "quickbooks_payments" else None,
         quickbooks_charge_status="CAPTURED" if attempt.provider == "quickbooks_payments" else None,
-        payment_provider=attempt.provider,
+        payment_provider=(
+            fleet_provider_label(attempt.manual_evidence)
+            if attempt.rail == "fleet_payment" else attempt.provider
+        ),
         reference_number=ref,
-        recorded_by_user_id=attempt.actor_user_id,
+        authorization_number=(attempt.manual_evidence.get("authorization_number") if attempt.rail == "fleet_payment" else None),
+        recorded_by_user_id=(actor.id if attempt.rail == "fleet_payment" else attempt.actor_user_id),
         notes="DB-048 partial invoice allocation",
         invoice_payment_attempt_id=attempt.id,
     )

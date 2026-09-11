@@ -2149,6 +2149,36 @@ async def test_allocation_reference_is_full_for_staff_and_masked_for_customer_an
 
 
 @pytest.mark.asyncio
+async def test_pending_zelle_submission_evidence_roundtrips_only_to_staff(db_session, monkeypatch):
+    tenant, owner, customer, invoice = await _financial_context(db_session, monkeypatch, fee=Decimal("0"))
+    settlement = await get_or_create_settlement(db_session, invoice=invoice, customer_id=customer.id, tenant=tenant)
+    evidence = {"sender_email": "sender@example.com", "sender_phone": "5551234567",
+                "reference_number": "ZELLE-CUSTOMER-123", "note": "Sent from dispatch",
+                "compatibility_submitted_at": "internal-only"}
+    creation = await create_attempt(db_session, invoice=invoice, tenant=tenant,
+        customer_id=customer.id, actor=None, amount=Decimal("10.00"), rail="zelle",
+        expected_settlement_version=settlement.version, idempotency_key="customer-zelle-evidence",
+        source="customer_portal", subject_type="customer", subject_id=customer.id, sender_evidence=evidence)
+    for audience in ("staff", "customer", "guest"):
+        page = await allocation_page(db_session, invoice=invoice, cursor=None, limit=25, audience=audience)
+        item = page.items[0]
+        assert item.attempt_id == creation.attempt.id
+        assert item.state == "pending"
+        assert item.reference_number is None  # Not yet verified by the shop.
+        if audience == "staff":
+            assert item.sender_evidence.reference_number == "ZELLE-CUSTOMER-123"
+            assert item.sender_evidence.note == "Sent from dispatch"
+            assert item.sender_evidence.sender_email == "sender@example.com"
+            assert item.sender_evidence.sender_phone == "5551234567"
+        else:
+            assert item.sender_evidence is None
+            assert "sender@example.com" not in page.model_dump_json()
+            assert "ZELLE-CUSTOMER" not in page.model_dump_json()
+        assert "internal-only" not in page.model_dump_json()
+    assert creation.attempt.manual_evidence == evidence
+
+
+@pytest.mark.asyncio
 async def test_manual_reference_duplicate_requires_review_across_customer_invoices(db_session, monkeypatch):
     tenant, owner, customer, first_invoice = await _financial_context(
         db_session, monkeypatch, principal=Decimal("50"), fee=Decimal("0"),

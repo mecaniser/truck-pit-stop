@@ -19,6 +19,7 @@ import {
   stripRegNumber,
 } from './customerDetailFormat'
 import type { CustomerHistoryResponse } from './customerDetailFormat'
+import CustomerTaxExemptionControl from './CustomerTaxExemptionControl'
 
 /**
  * A customer's record: summary, contacts, notes, trucks, and service history.
@@ -360,6 +361,8 @@ export default function CustomerDetailPanel({
           </div>
         </div>
       </div>
+
+      <CustomerTaxExemptionControl customerId={selectedCustomer.id} />
 
       {/* Contacts: named individuals at this company (dispatcher, owner,
           driver). The auto-created "Main Line" placeholder (no name, just

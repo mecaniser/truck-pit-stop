@@ -419,7 +419,7 @@ def validate_payment(entity, *, envelope, customer_id, invoice_id, gross, alloca
 
 async def _deposit_account(envelope):
     key = {"stripe_connect": "stripe_clearing_account", "quickbooks_payments": "qbp_clearing_account"}.get(
-        envelope.attempt.provider, "check_deposit_account" if envelope.attempt.rail == "check" else "zelle_ach_account")
+        envelope.attempt.provider, "check_deposit_account" if envelope.attempt.rail in {"check", "fleet_payment"} else "zelle_ach_account")
     return await _r()._resolve_qbo_account_reference(envelope.connection, (envelope.link.account_mapping_snapshot or {}).get(key))
 
 
@@ -497,7 +497,7 @@ def _receipt_deposit_matches(entity, expected, *, allow_empty_zero=False):
 
 async def _source_deposit_account(envelope, source):
     key = {"stripe_connect":"stripe_clearing_account", "quickbooks_payments":"qbp_clearing_account"}.get(
-        envelope.attempt.provider,"check_deposit_account" if envelope.attempt.rail=="check" else "zelle_ach_account")
+        envelope.attempt.provider,"check_deposit_account" if envelope.attempt.rail in {"check", "fleet_payment"} else "zelle_ach_account")
     return await _r()._resolve_qbo_account_reference(envelope.connection,(source.account_mapping_snapshot or {}).get(key))
 
 
@@ -563,7 +563,7 @@ async def sync_gross_refund(db, envelope):
     source, payment, customer_id = await _gross_source(db, envelope)
     mappings = source.account_mapping_snapshot or {}
     key = {"stripe_connect": "stripe_clearing_account", "quickbooks_payments": "qbp_clearing_account"}.get(
-        envelope.attempt.provider, "check_deposit_account" if envelope.attempt.rail == "check" else "zelle_ach_account")
+        envelope.attempt.provider, "check_deposit_account" if envelope.attempt.rail in {"check", "fleet_payment"} else "zelle_ach_account")
     account = await r._resolve_qbo_account_reference(envelope.connection, mappings.get(key))
     accounts = await r._query(envelope.connection,
         "select * from Account where AccountType = 'Accounts Receivable' maxresults 2")

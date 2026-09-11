@@ -138,10 +138,13 @@ describe('SettlementPaymentPanel', () => {
     expect(screen.queryByRole('radio', { name: /check/i })).not.toBeInTheDocument()
     expect(screen.queryByRole('radio', { name: /ach/i })).not.toBeInTheDocument()
     await user.click(screen.getByRole('radio', { name: /zelle/i }))
+    await user.click(screen.getByRole('button', { name: 'Add transfer details (optional)' }))
+    await user.type(screen.getByLabelText('Zelle transaction reference (optional)'), 'ZELLE-PORTAL-334')
+    await user.type(screen.getByLabelText('Note to shop (optional)'), 'Sent by dispatch')
     await user.click(screen.getByRole('button', { name: /reserve zelle amount/i }))
     expect(paymentApi.createPaymentAttempt).toHaveBeenCalledWith(
       { kind: 'authenticated', invoiceId: fixture.summary.invoice_id },
-      expect.objectContaining({ amount: '334.00', rail: 'zelle', expected_settlement_version: 2 }),
+      expect.objectContaining({ amount: '334.00', rail: 'zelle', expected_settlement_version: 2, sender_evidence: expect.objectContaining({reference:'ZELLE-PORTAL-334',note:'Sent by dispatch'}) }),
       'test-idempotency-key',
     )
     expect(await screen.findByText('Zelle amount reserved')).toBeInTheDocument()
@@ -216,7 +219,9 @@ describe('SettlementPaymentPanel', () => {
     renderWithQuery(<SettlementPaymentPanel access={{ kind: 'authenticated', invoiceId: summary.invoice_id }} summary={summary} audience="staff" tone="light" onUpdated={vi.fn()} />)
     expect(screen.queryByText(/cash/i)).not.toBeInTheDocument()
     expect(screen.queryByText(/fleet/i)).not.toBeInTheDocument()
-    await user.click(screen.getByRole('radio', { name: /check/i }))
+    await user.click(screen.getByRole('button', { name: 'More payment methods' }))
+    await user.click(screen.getByRole('radio', { name: 'Check' }))
+    await user.click(screen.getByRole('button', { name: 'Pay partial amount' }))
     const submit = screen.getByRole('button', { name: /record check/i })
     expect(submit).toBeDisabled()
     const amount = screen.getByLabelText(/amount applied/i)
@@ -245,11 +250,11 @@ describe('SettlementPaymentPanel', () => {
     renderWithQuery(<SettlementPaymentPanel access={{ kind: 'authenticated', invoiceId: summary.invoice_id }}
       summary={summary} audience="staff" tone="light" onUpdated={vi.fn()} />)
     expect(screen.getByText(summary.allowed_actions.payment_unavailable_reason)).toBeInTheDocument()
-    expect(screen.getAllByRole('radio')).toHaveLength(4)
+    expect(screen.getAllByRole('radio')).toHaveLength(2)
     for (const tender of screen.getAllByRole('radio')) expect(tender).toBeDisabled()
     expect(screen.queryByText('No new payment can be started right now.')).not.toBeInTheDocument()
     expect(screen.queryByLabelText('Amount applied to invoice')).not.toBeInTheDocument()
-    expect(screen.getByText('Choose an amount and tender')).toBeInTheDocument()
+    expect(screen.getByText('Payment method')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /Continue/ })).not.toBeInTheDocument()
   })
 
@@ -338,7 +343,7 @@ describe('SettlementPaymentPanel', () => {
     }
 
     renderWithQuery(<FullBalanceHarness />)
-    await user.click(screen.getByRole('button', { name: /continue to quickbooks payments/i }))
+    await user.click(screen.getByRole('button', { name: /continue to QBO payments/i }))
     expect(await screen.findByRole('heading', { name: /complete secure card payment/i })).toBeInTheDocument()
     expect(screen.queryByText(/no new payment can be started/i)).not.toBeInTheDocument()
   })
@@ -561,6 +566,8 @@ describe('EarlyVehicleReleasePanel', () => {
         onUpdated={vi.fn()}
       />,
     )
+    expect(screen.queryByLabelText(/release reason/i)).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Release vehicle before payment' }))
     expect(screen.getByText(/does not close the invoice or reduce QuickBooks A\/R/i)).toBeInTheDocument()
     const submit = screen.getByRole('button', { name: /authorize vehicle release/i })
     expect(submit).toBeDisabled()

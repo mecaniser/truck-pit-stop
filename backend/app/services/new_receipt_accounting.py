@@ -35,7 +35,7 @@ def authorization_matches(attempt, config):
             and proof["writer"] == config.writer_strategy == "dieselbridge"
             and proof["environment"] in {"production", "sandbox"}
             and proof["effective_composition"] == "gross_invoice_v1"
-            and attempt.source in LIVE_SOURCES and attempt.rail in {"card", "zelle", "check", "ach"})
+            and attempt.source in LIVE_SOURCES and attempt.rail in {"card", "zelle", "check", "ach", "fleet_payment"})
     except (KeyError, TypeError, ValueError):
         return False
 

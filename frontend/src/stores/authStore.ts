@@ -14,6 +14,7 @@ interface User {
   role: 'super_admin' | 'garage_owner' | 'garage_admin' | 'mechanic' | 'receptionist' | 'fleet_manager' | 'driver' | 'customer'
   is_active: boolean
   can_access_messaging?: boolean
+  permissions?: Record<string, boolean>
   // Shop-wide switch for the Messages feature; defaults on when absent.
   messaging_enabled?: boolean
   tenant_id: string | null
