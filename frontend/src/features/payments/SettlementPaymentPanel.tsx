@@ -557,7 +557,7 @@ export default function SettlementPaymentPanel({
           />
         </div>
         <span id={`settlement-amount-help-${summary.invoice_id}`} className={`mt-1 block min-h-4 text-xs ${currentAmount.length > 0 && !amountValid ? 'text-red-500' : quiet}`}>
-          {currentAmount.length > 0 && !amountValid ? `Enter $0.01–${formatMoney(summary.allocatable_balance)}.` : 'Card fees are calculated only on the card-funded portion.'}
+          {currentAmount.length > 0 && !amountValid ? `Enter at least $0.01 and no more than ${formatMoney(summary.allocatable_balance)}, the amount available to pay.` : 'Card fees are calculated only on the card-funded portion.'}
         </span>
       </label>}
 
