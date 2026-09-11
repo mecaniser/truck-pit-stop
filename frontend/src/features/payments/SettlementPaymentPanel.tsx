@@ -175,7 +175,7 @@ export default function SettlementPaymentPanel({
     placeholderData: (previous, previousQuery) => previousQuery?.queryKey[1] === summary.invoice_id
       && previousQuery.queryKey[3] === selectedRail ? previous : undefined,
   })
-  const quote = quoteQuery.data
+  const quote = canQuote ? quoteQuery.data : undefined
   const quoteReady = quoteEnabled && !quoteQuery.isFetching && !quoteQuery.error && quote?.settlement_version === summary.version
     && quote?.rail === selectedRail && quote?.principal_amount === quoteAmount
   const partialInvoicePayment = Boolean(quoteAmount && moneyToCents(quoteAmount) !== moneyToCents(summary.principal_total))
@@ -414,7 +414,7 @@ export default function SettlementPaymentPanel({
               autoComplete="off"
               value={receivedAmount}
               readOnly={attempt.rail === 'fleet_payment'}
-              onChange={event => setReceivedAmount(event.target.value.replace(/[^\d.]/g, ''))}
+              onChange={event => setReceivedAmount(event.target.value)}
               onBlur={() => { const normalized = normalizeMoney(receivedAmount); if (normalized) setReceivedAmount(normalized) }}
               aria-invalid={!receivedAmountValid}
               className={`h-11 w-full rounded-xl border pl-8 pr-3 text-sm font-extrabold tabular-nums outline-none focus:ring-2 focus:ring-[var(--accent-500,#d25d43)] ${input}`}
@@ -548,7 +548,7 @@ export default function SettlementPaymentPanel({
             inputMode="decimal"
             autoComplete="off"
             value={currentAmount}
-            onChange={event => setAmount(event.target.value.replace(/[^\d.]/g, ''))}
+            onChange={event => setAmount(event.target.value)}
             onBlur={() => { const normalized = normalizeMoney(currentAmount); if (normalized) setAmount(normalized) }}
             aria-invalid={currentAmount.length > 0 && !amountValid}
             aria-label="Amount applied to invoice"
