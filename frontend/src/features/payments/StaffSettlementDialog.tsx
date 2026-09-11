@@ -144,7 +144,7 @@ export default function StaffSettlementDialog({
                 tone="light"
                 onUpdated={handleUpdated}
                 cashTender={cash}
-                submissionBlockedReason={editingExemption ? 'Save or discard invoice changes before recording payment.' : undefined}
+                submissionBlockedReason={editingExemption ? 'Finish saving invoice changes before recording payment.' : undefined}
                 taxExemptionControl={<InvoiceTaxExemptionControl embedded key={invoiceId} invoiceId={invoiceId} summary={current} onUpdated={handleUpdated} onEditingChange={setEditingExemption} />}
               />}
               </FullCashPaymentPanel>

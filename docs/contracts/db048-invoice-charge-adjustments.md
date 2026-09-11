@@ -14,8 +14,12 @@ unsafe export/history/ancestry remains blocked by existing exemption guards.
 Add optional `charge_controls` to summary:
 `{tax_exempt,shop_supplies_enabled,can_adjust,unavailable_reason,support_reference,
 original_shop_supplies_amount,original_tax_amount}`. Reference staff-only.
-UI holds two draft booleans, explicit Update invoice saves. No quote endpoint or
-automatic tender selection; ordinary payment quote recalculates after save.
+UI toggles save immediately with one serialized request; optional reference saves
+on blur/Enter. No Update invoice confirmation is required. Pause payment while
+saving; authoritative response updates totals. Explicit rejection restores saved
+state; uncertain responses lock further edits and retry the identical request/key.
+Stale version refreshes rather than overwrites. No quote endpoint or automatic
+tender selection; ordinary payment quote recalculates after save.
 
 First original snapshot is legacy invoice.tax_exemption.before (including
 customer-profile source), else untouched invoice money. Later adjustments reuse
