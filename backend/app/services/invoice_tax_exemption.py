@@ -29,8 +29,10 @@ def snapshot(invoice):
     return {name: str(money(getattr(invoice, name))) for name in MONEY_FIELDS}
 
 
-async def eligibility(db, invoice, settlement, *, lock=False):
-    if invoice.tax_exemption:
+async def eligibility(db, invoice, settlement, *, lock=False, adjustment=False):
+    if not adjustment and getattr(invoice, "charge_adjustments", []):
+        return "Use invoice charge controls to change this invoice."
+    if invoice.tax_exemption and not adjustment:
         return "Tax exemption has already been applied."
     if (invoice.deleted_at or invoice.voided_at or invoice.is_internal
             or invoice.status not in {InvoiceStatus.SENT, InvoiceStatus.OVERDUE}):
@@ -41,7 +43,7 @@ async def eligibility(db, invoice, settlement, *, lock=False):
         Customer.id == settlement.customer_id, Customer.tenant_id == invoice.tenant_id, Customer.deleted_at.is_(None)))
     if not live_customer or settlement.tenant_id != invoice.tenant_id or settlement.invoice_id != invoice.id:
         return "Invoice customer or repair order is unavailable."
-    if money(invoice.tax_amount) <= ZERO:
+    if money(invoice.tax_amount) <= ZERO and not adjustment:
         return "This invoice has no sales tax to exempt."
     values = {name: money(getattr(invoice, name)) for name in MONEY_FIELDS}
     if (any(value < ZERO for value in values.values())
@@ -142,7 +144,8 @@ async def summary(db, invoice, settlement, tenant, actor, *, audience):
     enabled = settings.INVOICE_SPLIT_PAYMENTS_ENABLED and tenant.invoice_split_payments_enabled
     reason = await eligibility(db, invoice, settlement) if staff and enabled else "Only an authorized shop owner or administrator can change invoice tax."
     audit = invoice.tax_exemption or {}
-    return InvoiceTaxExemptionRead(applied=bool(audit), can_apply=staff and enabled and reason is None,
+    from app.services.invoice_charge_adjustments import effective_tax_exempt
+    return InvoiceTaxExemptionRead(applied=effective_tax_exempt(invoice), can_apply=staff and enabled and reason is None,
         unavailable_reason=reason if staff else None, current_tax_amount=money(invoice.tax_amount),
         removed_tax_amount=money(audit.get("before", {}).get("tax_amount", ZERO)),
         exempt_principal_total=max(ZERO, money(invoice.total_amount) - money(invoice.tax_amount) - money(invoice.service_fee_amount)),

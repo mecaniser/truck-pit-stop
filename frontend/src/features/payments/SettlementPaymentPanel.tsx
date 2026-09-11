@@ -3,7 +3,7 @@ import type { ReactNode } from 'react'
 import { Elements, PaymentElement, useElements, useStripe } from '@stripe/react-stripe-js'
 import type { Stripe } from '@stripe/stripe-js'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Banknote, Building2, Check, Clock3, Copy, CreditCard, Landmark, Send } from 'lucide-react'
+import { Banknote, Building2, Check, Clock3, Copy, CreditCard, Landmark, MoreHorizontal, Send, Truck } from 'lucide-react'
 import toast from 'react-hot-toast'
 
 import { Spinner } from '@/components/ui'
@@ -13,10 +13,12 @@ import { getStripeForAccount } from '@/lib/stripe'
 import { chargeQuickBooksPaymentAttempt, confirmPaymentAttempt, createIdempotencyKey, createPaymentAttempt, fetchPaymentQuote, paymentApiError } from './api'
 import { centsToMoney, formatMoney, isPositiveMoney, isValidPrincipalAmount, moneyToCents, normalizeMoney } from './money'
 import type { InlineCashTender } from './FullCashPaymentPanel'
+import type { InlineInvoiceChargeControls } from './InvoiceChargeControls'
 import type {
   InvoiceSettlementSummary,
   PaymentAttemptResponse,
   PaymentRail,
+  FleetProvider,
   SettlementAccess,
 } from './types'
 
@@ -24,7 +26,8 @@ const RAIL_META: Record<PaymentRail, { label: string; detail: string; icon: type
   card: { label: 'Card', detail: 'Secure online payment', icon: CreditCard },
   zelle: { label: 'Zelle', detail: 'Confirmed by the shop', icon: Send },
   check: { label: 'Check', detail: 'Staff verified reference', icon: Building2 },
-  ach: { label: 'ACH', detail: 'Staff verified bank trace', icon: Landmark },
+  ach: { label: 'ACH', detail: 'Account transfer / bank transfer', icon: Landmark },
+  fleet_payment: { label: 'Fleet Check / Code', detail: 'EFS / MoneyCode, Comchek, T-Chek or other provider', icon: Truck },
 }
 
 function StripeAttemptForm({
@@ -90,6 +93,7 @@ export default function SettlementPaymentPanel({
   cashTender,
   submissionBlockedReason,
   taxExemptionControl,
+  chargeControls,
 }: {
   access: SettlementAccess
   summary: InvoiceSettlementSummary
@@ -101,13 +105,21 @@ export default function SettlementPaymentPanel({
   cashTender?: InlineCashTender
   submissionBlockedReason?: string
   taxExemptionControl?: ReactNode
+  chargeControls?: InlineInvoiceChargeControls
 }) {
   const queryClient = useQueryClient()
   const allowedRails = useMemo(() => summary.allowed_actions?.rails ?? [], [summary.allowed_actions?.rails])
   const [rail, setRail] = useState<PaymentRail | null>(allowedRails[0] ?? null)
   const [amount, setAmount] = useState(summary.allocatable_balance)
+  const [amountVersion, setAmountVersion] = useState(summary.version)
+  const [editingAmount, setEditingAmount] = useState(false)
+  const [expandedTenders, setExpandedTenders] = useState(false)
+  const [showTransferDetails, setShowTransferDetails] = useState(false)
   const [reference, setReference] = useState('')
   const [note, setNote] = useState('')
+  const [fleetProvider, setFleetProvider] = useState<FleetProvider>('EFS')
+  const [fleetProviderName, setFleetProviderName] = useState('')
+  const [authorization, setAuthorization] = useState('')
   const [senderEmail, setSenderEmail] = useState(senderDefaults?.email || '')
   const [senderPhone, setSenderPhone] = useState(senderDefaults?.phone || '')
   const [attempt, setAttempt] = useState<PaymentAttemptResponse | null>(null)
@@ -123,8 +135,10 @@ export default function SettlementPaymentPanel({
   const cash = audience === 'staff' && access.kind === 'authenticated' ? cashTender : undefined
   const cashSelected = cash?.selected === true
   const noncashAvailable = allowedRails.length > 0 && summary.allowed_actions?.create_attempt !== false
-  const visibleRails: PaymentRail[] = audience === 'staff' ? ['card', 'zelle', 'check', 'ach'] : allowedRails
-  const tenders: Array<PaymentRail | 'cash'> = [...visibleRails, ...(cash ? ['cash' as const] : [])]
+  const secondarySelected = !cashSelected && (rail === 'check' || rail === 'ach' || rail === 'fleet_payment')
+  const tenders: Array<PaymentRail | 'cash'> = audience === 'staff'
+    ? ['card', 'zelle', ...(cash ? ['cash' as const] : []), ...(expandedTenders ? ['check' as const, 'ach' as const, 'fleet_payment' as const] : secondarySelected ? [rail] : [])]
+    : allowedRails
   const tenderDisabled = (item: PaymentRail | 'cash') => Boolean(createMutation.isPending || cash?.pending || (item === 'cash' ? !cash?.allowed : !noncashAvailable || !allowedRails.includes(item)))
   const selectTender = (item: PaymentRail | 'cash') => {
     if (tenderDisabled(item)) return
@@ -135,6 +149,8 @@ export default function SettlementPaymentPanel({
 
   useEffect(() => {
     setAmount(summary.allocatable_balance)
+    setAmountVersion(summary.version)
+    setEditingAmount(false)
   }, [summary.allocatable_balance, summary.version])
 
   useEffect(() => {
@@ -142,9 +158,10 @@ export default function SettlementPaymentPanel({
     setRail(allowedRails[0] ?? null)
   }, [allowedRails, rail])
 
-  const amountValid = isValidPrincipalAmount(amount, summary.allocatable_balance)
+  const currentAmount = amountVersion === summary.version ? amount : summary.allocatable_balance
+  const amountValid = isValidPrincipalAmount(currentAmount, summary.allocatable_balance)
   const selectedRail = cashSelected ? 'cash' : rail
-  const quoteAmount = cashSelected ? summary.principal_total : normalizeMoney(amount)
+  const quoteAmount = cashSelected ? summary.principal_total : normalizeMoney(currentAmount)
   const [pricedAmount, setPricedAmount] = useState(quoteAmount)
   useEffect(() => {
     const timer = window.setTimeout(() => setPricedAmount(quoteAmount), 180)
@@ -159,16 +176,22 @@ export default function SettlementPaymentPanel({
     enabled: quoteEnabled,
     retry: false,
     staleTime: 0,
+    // Display-only continuity. A previous version is never eligible for submission.
+    placeholderData: (previous, previousQuery) => previousQuery?.queryKey[1] === summary.invoice_id
+      && previousQuery.queryKey[3] === selectedRail ? previous : undefined,
   })
   const quote = quoteQuery.data
   const quoteReady = quoteEnabled && !quoteQuery.isFetching && !quoteQuery.error && quote?.settlement_version === summary.version
     && quote?.rail === selectedRail && quote?.principal_amount === quoteAmount
+  const partialInvoicePayment = Boolean(quoteAmount && moneyToCents(quoteAmount) !== moneyToCents(summary.principal_total))
+  const remainingAfterPayment = quoteAmount ? centsToMoney((moneyToCents(summary.outstanding_balance) ?? 0n) - (moneyToCents(quoteAmount) ?? 0n)) : '0.00'
   const submissionBlocked = Boolean(submissionBlockedReason || (quoteRequired && !quoteReady))
   const referenceRequired = audience === 'staff' && rail !== 'card'
   const canSubmit = Boolean(
     rail
     && amountValid
     && allowedRails.includes(rail)
+    && (rail !== 'fleet_payment' || fleetProvider !== 'Other' || fleetProviderName.trim())
     && !submissionBlocked
     && summary.allowed_actions?.create_attempt !== false
     && (!referenceRequired || reference.trim()),
@@ -176,12 +199,13 @@ export default function SettlementPaymentPanel({
   const providerLabel = summary.card_provider === 'stripe_connect'
     ? 'Stripe Connect'
     : summary.card_provider === 'quickbooks_payments'
-      ? 'QuickBooks Payments'
+      ? audience === 'staff' ? 'QBO Payments' : 'QuickBooks Payments'
       : 'Card'
 
   const createMutation = useMutation({
     mutationFn: async () => {
       if (!rail) throw new Error('Select a payment method')
+      if (rail === 'fleet_payment' && (!reference.trim() || (fleetProvider === 'Other' && !fleetProviderName.trim()))) throw new Error('Enter the Fleet provider and instrument reference.')
       const normalized = normalizeMoney(amount)
       if (!normalized) throw new Error('Enter a valid amount')
       const created = await createPaymentAttempt(
@@ -196,6 +220,10 @@ export default function SettlementPaymentPanel({
                 sender_phone: senderPhone.trim() || null,
                 reference: reference.trim() || null,
                 note: note.trim() || null,
+                ...(rail === 'fleet_payment' ? {
+                  fleet_provider: fleetProvider, fleet_provider_name: fleetProvider === 'Other' ? fleetProviderName.trim() : null,
+                  authorization_number: authorization.trim() || null,
+                } : {}),
               }
             : null,
         },
@@ -370,7 +398,7 @@ export default function SettlementPaymentPanel({
   if (attempt && audience === 'staff' && attempt.rail !== 'card' && attempt.state === 'pending') {
     const label = RAIL_META[attempt.rail].label
     const normalizedReceived = normalizeMoney(receivedAmount)
-    const receivedAmountValid = Boolean(normalizedReceived && isPositiveMoney(normalizedReceived))
+    const receivedAmountValid = Boolean(normalizedReceived && isPositiveMoney(normalizedReceived) && (attempt.rail !== 'fleet_payment' || normalizedReceived === attempt.principal_amount))
     return (
       <section className={`rounded-2xl border p-4 ${panel}`} aria-labelledby="manual-payment-confirmation-heading">
         <p className={`text-[11px] font-extrabold uppercase tracking-[0.12em] ${quiet}`}>Staff confirmation required</p>
@@ -388,6 +416,7 @@ export default function SettlementPaymentPanel({
               inputMode="decimal"
               autoComplete="off"
               value={receivedAmount}
+              readOnly={attempt.rail === 'fleet_payment'}
               onChange={event => setReceivedAmount(event.target.value.replace(/[^\d.]/g, ''))}
               onBlur={() => { const normalized = normalizeMoney(receivedAmount); if (normalized) setReceivedAmount(normalized) }}
               aria-invalid={!receivedAmountValid}
@@ -395,7 +424,7 @@ export default function SettlementPaymentPanel({
             />
           </div>
         </label>
-        <p className={`mt-2 text-xs ${quiet}`}>Confirm only after independently verifying the external payment. If the received amount is higher than the current balance, the excess stays unapplied and enters refund-first resolution.</p>
+        <p className={`mt-2 text-xs ${quiet}`}>{attempt.rail === 'fleet_payment' ? 'Confirm the verified instrument amount. This records receipt; it does not redeem a code or confirm bank clearance.' : 'Confirm only after independently verifying the external payment. If the received amount is higher than the current balance, the excess stays unapplied and enters refund-first resolution.'}</p>
         {!attempt.attempt_version && <p role="alert" className="mt-3 text-sm text-red-500">Confirmation version is missing. Refresh this invoice before confirming.</p>}
         <div className="mt-4 flex flex-wrap justify-end gap-2">
           <button type="button" onClick={() => setAttempt(null)} disabled={confirmMutation.isPending} className={`min-h-[44px] px-3 text-sm font-bold ${quiet}`}>Back</button>
@@ -459,16 +488,61 @@ export default function SettlementPaymentPanel({
     )
   }
 
+  const moreTenders = audience === 'staff' && <button type="button" onClick={() => setExpandedTenders(!expandedTenders)}
+    aria-label="More payment methods" aria-expanded={expandedTenders} aria-controls={`payment-tenders-${summary.invoice_id}`}
+    className={`flex min-h-11 items-center gap-2 rounded-lg px-2 text-sm font-semibold outline-none focus-visible:ring-2 focus-visible:ring-emerald-700 ${quiet}`}>
+    <MoreHorizontal className="h-4 w-4" />{expandedTenders ? 'Less' : 'More'}
+  </button>
+
   return (
     <section className={`rounded-2xl border p-4 ${panel}`} aria-labelledby={`settlement-payment-${summary.invoice_id}`}>
-      <div className="flex flex-wrap items-end justify-between gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h2 id={`settlement-payment-${summary.invoice_id}`} className="font-extrabold">Choose an amount and tender</h2>
+          <h2 id={`settlement-payment-${summary.invoice_id}`} className="font-extrabold">{audience === 'staff' ? 'Payment method' : 'Choose an amount and tender'}</h2>
         </div>
-        <p className={`text-xs ${quiet}`}>Up to {formatMoney(summary.allocatable_balance)}</p>
+        {audience !== 'staff' && <p className={`text-xs ${quiet}`}>Up to {formatMoney(summary.allocatable_balance)}</p>}
       </div>
 
-      {!cashSelected && noncashAvailable && <label className="mt-4 block">
+      <div id={`payment-tenders-${summary.invoice_id}`} className="mt-3" role="radiogroup" aria-label="Payment tender">
+        <div className={`grid gap-2 ${audience === 'staff' ? 'sm:grid-cols-3' : 'sm:grid-cols-2'}`}>
+          {tenders.map((item, index) => {
+            const meta = item === 'cash' ? { label: 'Cash', detail: 'Full payment only', icon: Banknote } : RAIL_META[item]
+            const Icon = meta.icon
+            const selected = item === 'cash' ? cashSelected : !cashSelected && rail === item
+            return (
+              <button key={item} ref={node => { railRefs.current[index] = node }} type="button" role="radio"
+                aria-checked={selected} disabled={tenderDisabled(item)}
+                title={audience === 'staff' ? meta.detail : undefined}
+                aria-describedby={item === 'cash' && cash?.reason ? `cash-reason-${summary.invoice_id}` : undefined}
+                tabIndex={selected || (!noncashAvailable && item === 'cash') ? 0 : -1}
+                onClick={() => selectTender(item)}
+                onKeyDown={event => {
+                  if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key)) return
+                  event.preventDefault()
+                  const forward = event.key === 'ArrowRight' || event.key === 'ArrowDown'
+                  for (let step = 1; step <= tenders.length; step++) {
+                    const next = (index + (forward ? step : -step) + tenders.length) % tenders.length
+                    if (tenderDisabled(tenders[next])) continue
+                    selectTender(tenders[next])
+                    railRefs.current[next]?.focus()
+                    break
+                  }
+                }}
+                className={`flex min-h-11 items-center gap-2 rounded-xl border px-3 py-2 text-left outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-500,#d25d43)] disabled:cursor-not-allowed disabled:opacity-50 ${selected ? dark ? 'border-[#d25d43] bg-[#d25d43]/10' : 'border-emerald-700 bg-emerald-50' : input}`}>
+                <Icon className="h-4 w-4 shrink-0" />
+                <span className="min-w-0"><span className="block text-sm font-extrabold">{item === 'card' ? providerLabel : meta.label}</span>{audience !== 'staff' && <span className={`block text-[11px] ${quiet}`}>{meta.detail}</span>}</span>
+              </button>
+            )
+          })}
+        </div>
+      </div>
+      {audience === 'staff' && <div className={`mt-3 flex flex-wrap items-center justify-between gap-2 border-t pt-2 text-sm ${dark ? 'border-[#2a3245]' : 'border-slate-200'}`}>
+        {moreTenders}
+        {!cashSelected && noncashAvailable && <button type="button" disabled={createMutation.isPending} onClick={() => { if (editingAmount) setAmount(summary.allocatable_balance); setEditingAmount(!editingAmount) }} className="ml-auto min-h-11 rounded-lg px-2 font-semibold underline underline-offset-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-700">
+          {editingAmount ? 'Pay full balance' : 'Pay partial amount'}
+        </button>}
+      </div>}
+      {!cashSelected && noncashAvailable && (audience !== 'staff' || editingAmount) && <label className="mt-3 block">
         <span className={`mb-1.5 block text-xs font-bold ${quiet}`}>Amount applied to invoice</span>
         <div className="relative">
           <span className={`pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 font-bold ${quiet}`}>$</span>
@@ -490,88 +564,65 @@ export default function SettlementPaymentPanel({
         </span>
       </label>}
 
-      <div className="mt-3" role="radiogroup" aria-label="Payment tender">
-        <p className={`mb-1.5 text-xs font-bold ${quiet}`}>Tender</p>
-        <div className="grid gap-2 sm:grid-cols-2">
-          {tenders.map((item, index) => {
-            const meta = item === 'cash' ? { label: 'Cash', detail: 'Full payment only', icon: Banknote } : RAIL_META[item]
-            const Icon = meta.icon
-            const selected = item === 'cash' ? cashSelected : !cashSelected && rail === item
-            return (
-              <button
-                key={item}
-                ref={node => { railRefs.current[index] = node }}
-                type="button"
-                role="radio"
-                aria-checked={selected}
-                disabled={tenderDisabled(item)}
-                aria-describedby={item === 'cash' && cash?.reason ? `cash-reason-${summary.invoice_id}` : undefined}
-                tabIndex={selected || (!noncashAvailable && item === 'cash') ? 0 : -1}
-                onClick={() => selectTender(item)}
-                onKeyDown={event => {
-                  if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key)) return
-                  event.preventDefault()
-                  const forward = event.key === 'ArrowRight' || event.key === 'ArrowDown'
-                  for (let step = 1; step <= tenders.length; step++) {
-                    const next = (index + (forward ? step : -step) + tenders.length) % tenders.length
-                    if (tenderDisabled(tenders[next])) continue
-                    selectTender(tenders[next])
-                    railRefs.current[next]?.focus()
-                    break
-                  }
-                }}
-                className={`flex min-h-[52px] items-center gap-2 rounded-xl border px-3 text-left outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-500,#d25d43)] disabled:cursor-not-allowed disabled:opacity-50 ${selected ? dark ? 'border-[#d25d43] bg-[#d25d43]/10' : 'border-[#b9472f] bg-orange-50' : input}`}
-              >
-                <Icon className="h-4 w-4 shrink-0" />
-                <span className="min-w-0"><span className="block text-sm font-extrabold">{item === 'card' ? providerLabel : meta.label}</span><span className={`block text-[11px] ${quiet}`}>{meta.detail}</span></span>
-              </button>
-            )
-          })}
-        </div>
-      </div>
-
       {cash?.reason && !cash.allowed && <p id={`cash-reason-${summary.invoice_id}`} className={`mt-2 text-xs ${quiet}`}>{cash.reason}</p>}
       {!noncashAvailable && <p role="status" className={`mt-3 text-sm ${quiet}`}>{summary.allowed_actions?.payment_unavailable_reason ?? 'Other payment methods are unavailable.'}</p>}
       {taxExemptionControl && <div className="mt-4">{taxExemptionControl}</div>}
 
-      {audience === 'staff' && summary.breakdown && <section aria-label="Payment breakdown" className={`mt-4 border-t pt-4 ${dark ? 'border-[#2a3245]' : 'border-slate-200'}`}>
-        <h3 className="text-sm font-bold">Payment breakdown</h3>
+      {!cashSelected && noncashAvailable && audience === 'staff' && rail === 'fleet_payment' && <div className="mt-3 grid gap-3 sm:grid-cols-2">
+        <label className="block text-xs font-bold">Fleet provider<select value={fleetProvider} onChange={event => setFleetProvider(event.target.value as FleetProvider)} className={`mt-1 h-11 w-full rounded-xl border px-3 text-sm ${input}`}><option value="EFS">EFS / MoneyCode</option><option value="Comchek">Comchek</option><option value="T-Chek">T-Chek</option><option value="Other">Other provider</option></select></label>
+        {fleetProvider === 'Other' && <label className="block text-xs font-bold">Provider name<input maxLength={100} required value={fleetProviderName} onChange={event => setFleetProviderName(event.target.value)} className={`mt-1 h-11 w-full rounded-xl border px-3 text-sm ${input}`} /></label>}
+        <label className="block text-xs font-bold">Approval reference (optional)<input maxLength={255} value={authorization} onChange={event => setAuthorization(event.target.value)} className={`mt-1 h-11 w-full rounded-xl border px-3 text-sm ${input}`} /></label>
+      </div>}
+
+      {!cashSelected && noncashAvailable && audience === 'staff' && rail && rail !== 'card' && (
+        <div className="mt-3 grid gap-3 sm:grid-cols-2">
+          <label className="block"><span className={`mb-1 block text-xs font-bold ${quiet}`}>{rail === 'check' ? 'Check number' : rail === 'ach' ? 'Bank trace' : rail === 'fleet_payment' ? 'Instrument / code reference' : 'Zelle transaction reference'}</span><input maxLength={255} value={reference} onChange={event => setReference(event.target.value)} required className={`h-11 w-full rounded-xl border px-3 text-sm outline-none focus:ring-2 ${input}`} /></label>
+          <label className="block"><span className={`mb-1 block text-xs font-bold ${quiet}`}>Verification note <span className="font-normal">(optional)</span></span><input value={note} onChange={event => setNote(event.target.value)} className={`h-11 w-full rounded-xl border px-3 text-sm outline-none focus:ring-2 ${input}`} /></label>
+        </div>
+      )}
+
+      {audience === 'staff' && summary.breakdown && <section aria-label="Payment breakdown" aria-busy={Boolean(submissionBlockedReason || (canQuote && !quoteReady))} className={`mt-4 border-t pt-4 ${dark ? 'border-[#2a3245]' : 'border-slate-200'}`}>
+        <div className="flex items-center justify-between gap-2">
+          <h3 className="text-sm font-bold">Payment breakdown</h3>
+          <span aria-hidden="true" className={`text-xs ${quiet} ${submissionBlockedReason || (canQuote && !quoteReady) ? '' : 'invisible'}`}>Updating…</span>
+        </div>
         <dl className="mt-3 space-y-2 text-sm">
           {[
-            ['Services & parts', summary.breakdown.subtotal],
-            ...(isPositiveMoney(summary.breakdown.discount_amount) ? [['Discount', summary.breakdown.discount_amount]] : []),
-            ['Shop supplies', summary.breakdown.shop_supplies_amount],
-            [summary.tax_exemption?.applied ? 'Sales tax · exempt' : 'Sales tax', summary.breakdown.sales_tax_amount],
-            ['Invoice total before card fees', summary.breakdown.principal_total],
-          ].map(([label, value]) => <div key={label} className="flex justify-between gap-4"><dt className={quiet}>{label}</dt><dd className="shrink-0 font-semibold tabular-nums">{label === 'Discount' ? '−' : ''}{formatMoney(value)}</dd></div>)}
-          {(isPositiveMoney(summary.confirmed_principal) || isPositiveMoney(summary.active_pending_principal)) && <>
-            <div className="flex justify-between gap-4"><dt className={quiet}>Already paid toward invoice</dt><dd className="font-semibold tabular-nums">{formatMoney(summary.confirmed_principal)}</dd></div>
-            <div className="flex justify-between gap-4"><dt className={quiet}>Pending toward invoice</dt><dd className="font-semibold tabular-nums">{formatMoney(summary.active_pending_principal)}</dd></div>
-          </>}
+            ['subtotal', 'Services & parts', summary.breakdown.subtotal],
+            ...(isPositiveMoney(summary.breakdown.discount_amount) ? [['discount', 'Discount', summary.breakdown.discount_amount]] : []),
+            ['supplies', 'Shop supplies', summary.breakdown.shop_supplies_amount],
+            ['tax', !chargeControls && summary.tax_exemption?.applied ? 'Sales tax · exempt' : 'Sales tax', summary.breakdown.sales_tax_amount],
+            ...(partialInvoicePayment ? [['principal', 'Invoice total before card fees', summary.breakdown.principal_total]] : []),
+          ].map(([key, label, value]) => <div key={key} className="flex items-center justify-between gap-2">
+            <dt className={`flex min-w-0 flex-1 items-center ${quiet}`}>{label}{key === 'tax' && chargeControls?.referenceAction}</dt>
+            <dd className="flex shrink-0 items-center gap-2 font-semibold tabular-nums">
+              {key === 'supplies' ? chargeControls?.supplies : key === 'tax' ? chargeControls?.salesTax : null}
+              <span className="min-w-[4rem] text-right">{label === 'Discount' ? '−' : ''}{formatMoney(value)}</span>
+            </dd>
+          </div>)}
         </dl>
-        {quoteReady && quote && <dl aria-live="polite" className={`mt-3 space-y-2 border-t pt-3 text-sm ${dark ? 'border-[#2a3245]' : 'border-slate-200'}`}>
-          <div className="flex justify-between gap-4"><dt className={quiet}>{cashSelected ? 'Full cash payment' : 'This payment toward invoice'}</dt><dd className="font-semibold tabular-nums">{formatMoney(quote.principal_amount)}</dd></div>
-          <div className="flex justify-between gap-4"><dt className={quiet}>Card processing fee</dt><dd className="font-semibold tabular-nums">{formatMoney(quote.card_fee_amount)}</dd></div>
-          {isPositiveMoney(quote.card_fee_tax_amount) && <div className="flex justify-between gap-4"><dt className={quiet}>Tax on card fee</dt><dd className="font-semibold tabular-nums">{formatMoney(quote.card_fee_tax_amount)}</dd></div>}
-          <div className="flex items-baseline justify-between gap-4 pt-2"><dt className="font-bold">Amount to collect</dt><dd className="text-xl font-extrabold tabular-nums">{formatMoney(quote.total_amount)}</dd></div>
-          {!cashSelected && <div className={`flex justify-between gap-4 text-xs ${quiet}`}><dt>Remaining after this payment is confirmed</dt><dd className="tabular-nums">{formatMoney(centsToMoney((moneyToCents(summary.outstanding_balance) ?? 0n) - (moneyToCents(quote.principal_amount) ?? 0n)))}</dd></div>}
+        {selectedRail && <dl aria-live="polite" className={`mt-3 space-y-2 border-t pt-3 text-sm ${dark ? 'border-[#2a3245]' : 'border-slate-200'}`}>
+          {partialInvoicePayment && <div className="flex justify-between gap-4"><dt className={quiet}>This payment toward invoice</dt><dd className="font-semibold tabular-nums">{quote ? formatMoney(quote.principal_amount) : '—'}</dd></div>}
+          {selectedRail === 'card' && <div className="flex items-center justify-between gap-2"><dt className={`min-w-0 flex-1 ${quiet}`}>Card processing fee</dt><dd className="flex shrink-0 items-center gap-2 font-semibold tabular-nums">{chargeControls?.cardFee}<span className="min-w-[4rem] text-right">{quote ? formatMoney(quote.card_fee_amount) : '—'}</span></dd></div>}
+          {selectedRail === 'card' && <div className="flex justify-between gap-4"><dt className={quiet}>Tax on card fee</dt><dd className="font-semibold tabular-nums">{quote ? formatMoney(quote.card_fee_tax_amount) : '—'}</dd></div>}
+          <div className="flex items-baseline justify-between gap-4 pt-2"><dt className="font-bold">Amount to collect</dt><dd className="text-xl font-extrabold tabular-nums">{quote ? formatMoney(quote.total_amount) : '—'}</dd></div>
+          {!cashSelected && isPositiveMoney(remainingAfterPayment) && <div className={`flex justify-between gap-4 text-xs ${quiet}`}><dt>Remaining after confirmation</dt><dd className="tabular-nums">{formatMoney(remainingAfterPayment)}</dd></div>}
         </dl>}
-        {canQuote && (pricedAmount !== quoteAmount || quoteQuery.isFetching) && <p role="status" className={`mt-3 text-sm ${quiet}`}>Calculating payment total…</p>}
+        {chargeControls?.details}
+        <p role="status" className="sr-only">{canQuote && !quoteReady ? 'Calculating payment total…' : ''}</p>
         {quoteEnabled && quoteQuery.error && <div role="alert" className="mt-3 text-sm text-red-700"><p>{paymentApiError(quoteQuery.error, 'Payment total could not be verified. Retry before continuing.').message}</p><button type="button" onClick={() => { void quoteQuery.refetch(); void queryClient.invalidateQueries({ queryKey: ['invoice-settlement'] }) }} className="min-h-11 font-semibold underline">Retry payment total</button></div>}
       </section>}
-      {submissionBlockedReason && <p role="status" className={`mt-3 text-sm ${quiet}`}>{submissionBlockedReason}</p>}
+      {submissionBlockedReason && <p role="status" className="sr-only">{submissionBlockedReason}</p>}
       {cashSelected && <fieldset disabled={submissionBlocked} className="min-w-0 border-0 p-0">{cash?.confirmation}</fieldset>}
 
       {!cashSelected && rail === 'zelle' && audience !== 'staff' && (
         <div className="mt-3 grid gap-3">
           <label className="block"><span className={`mb-1 block text-xs font-bold ${quiet}`}>Sender email or phone <span className="font-normal">(optional)</span></span><input value={senderEmail || senderPhone} onChange={event => { const value = event.target.value; value.includes('@') ? (setSenderEmail(value), setSenderPhone('')) : (setSenderPhone(value), setSenderEmail('')) }} className={`h-11 w-full rounded-xl border px-3 text-sm outline-none focus:ring-2 ${input}`} /></label>
-        </div>
-      )}
-
-      {!cashSelected && noncashAvailable && audience === 'staff' && rail && rail !== 'card' && (
-        <div className="mt-3 grid gap-3 sm:grid-cols-2">
-          <label className="block"><span className={`mb-1 block text-xs font-bold ${quiet}`}>{rail === 'check' ? 'Check number' : rail === 'ach' ? 'Bank trace' : 'Zelle transaction reference'}</span><input value={reference} onChange={event => setReference(event.target.value)} required className={`h-11 w-full rounded-xl border px-3 text-sm outline-none focus:ring-2 ${input}`} /></label>
-          <label className="block"><span className={`mb-1 block text-xs font-bold ${quiet}`}>Verification note <span className="font-normal">(optional)</span></span><input value={note} onChange={event => setNote(event.target.value)} className={`h-11 w-full rounded-xl border px-3 text-sm outline-none focus:ring-2 ${input}`} /></label>
+          <button type="button" aria-expanded={showTransferDetails} onClick={() => setShowTransferDetails(!showTransferDetails)} className={`min-h-11 justify-self-start rounded-lg text-sm font-semibold underline underline-offset-4 focus-visible:ring-2 ${quiet}`}>{showTransferDetails ? 'Hide transfer details' : 'Add transfer details (optional)'}</button>
+          {showTransferDetails && <div className="grid gap-3 sm:grid-cols-2">
+            <label className="block text-xs font-bold">Zelle transaction reference (optional)<input maxLength={255} value={reference} onChange={event => setReference(event.target.value)} className={`mt-1 h-11 w-full rounded-xl border px-3 text-sm outline-none focus:ring-2 ${input}`} /></label>
+            <label className="block text-xs font-bold">Note to shop (optional)<input maxLength={1000} value={note} onChange={event => setNote(event.target.value)} className={`mt-1 h-11 w-full rounded-xl border px-3 text-sm outline-none focus:ring-2 ${input}`} /></label>
+          </div>}
         </div>
       )}
 
@@ -579,7 +630,7 @@ export default function SettlementPaymentPanel({
         {createMutation.isPending && <Spinner size="sm" />}
         {createMutation.isPending ? 'Preparing…' : rail === 'card' ? `Continue to ${providerLabel}` : audience === 'staff' ? `Record ${rail ? RAIL_META[rail].label : 'payment'}` : 'Reserve Zelle amount'}
       </button>
-      <p className={`mt-2 text-center text-[11px] ${quiet}`}>Payments are applied only after provider or staff confirmation. This screen never marks an invoice paid optimistically.</p>
+      <p className={`mt-2 text-center text-[11px] ${quiet}`}>Applied after {rail === 'card' ? 'provider' : 'shop'} confirmation.</p>
       </>}
     </section>
   )

@@ -1,5 +1,11 @@
 # DB-048 Cash-only invoices and fleet-instrument restoration
 
+Fleet follow-through is now implemented locally under
+[`db048-fleet-tender-v1.md`](db048-fleet-tender-v1.md) as part of the active payment
+journey. That versioned contract supersedes the Fleet-backlog status below; its
+independent gate and release remain pending. The earlier cash release record is
+retained here unchanged.
+
 Status: cash-only slice implemented and locally tested; not committed or released.
 Independent Security/local QA and PostgreSQL gates passed. Fleet/analytics are backlog.
 Accountable owner: Backend & Integrations. Architecture & API Contracts: root.

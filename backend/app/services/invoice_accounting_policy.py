@@ -48,7 +48,7 @@ async def first_export_awaits_payment(db, invoice):
     receipt = await db.scalar(select(InvoicePaymentAttempt.id).where(
         InvoicePaymentAttempt.tenant_id == invoice.tenant_id,
         InvoicePaymentAttempt.invoice_id == invoice.id,
-        InvoicePaymentAttempt.rail.in_(["card", "zelle", "check", "ach"]),
+        InvoicePaymentAttempt.rail.in_(["card", "zelle", "check", "ach", "fleet_payment"]),
         or_(InvoicePaymentAttempt.state == "confirmed", and_(
             InvoicePaymentAttempt.state.in_(["refunded", "reversed"]),
             InvoicePaymentAttempt.confirmed_at.is_not(None))),

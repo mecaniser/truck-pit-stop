@@ -25,7 +25,7 @@ async def test_held_new_noncash_and_cash_choices_are_independent(db_session, mon
     result = await settlement_summary(db_session, settlement, tenant, audience=audience,
         current_user=owner if audience == "staff" else None)
     actions = result.allowed_actions
-    assert actions.create_attempt and actions.rails == (["card", "zelle", "check", "ach"] if audience == "staff" else ["card", "zelle"])
+    assert actions.create_attempt and actions.rails == (["card", "zelle", "check", "ach", "fleet_payment"] if audience == "staff" else ["card", "zelle"])
     assert actions.confirm_manual == (audience == "staff")
     assert not actions.apply_customer_credit and not actions.retry_accounting
     assert actions.payment_unavailable_reason is None
@@ -43,7 +43,7 @@ async def test_standard_invoice_actions_unchanged(db_session, monkeypatch):
     tenant, owner, _, _, settlement = await context(db_session, monkeypatch)
     result = await settlement_summary(db_session, settlement, tenant, audience="staff", current_user=owner)
     assert result.allowed_actions.create_attempt
-    assert result.allowed_actions.rails == ["card", "zelle", "check", "ach"]
+    assert result.allowed_actions.rails == ["card", "zelle", "check", "ach", "fleet_payment"]
     assert result.allowed_actions.payment_unavailable_reason is None
     assert result.allowed_actions.confirm_cash
 

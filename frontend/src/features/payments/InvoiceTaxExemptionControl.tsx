@@ -2,12 +2,19 @@ import { useEffect, useId, useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { CheckCircle2 } from 'lucide-react'
 import { applyInvoiceTaxExemption, createIdempotencyKey, paymentApiError } from './api'
-import { formatMoney } from './money'
 import type { InvoiceSettlementSummary } from './types'
+import InvoiceChargeControls, { type InvoiceChargeControlProps } from './InvoiceChargeControls'
+
+export default function InvoiceTaxExemptionControl(props: InvoiceChargeControlProps) {
+  if (props.summary.invoice_id !== props.invoiceId) return null
+  return props.summary.charge_controls
+    ? <InvoiceChargeControls key={props.invoiceId} {...props} />
+    : <LegacyInvoiceTaxExemptionControl key={props.invoiceId} {...props} />
+}
 
 // Existing staff-payment visual language; exemption belongs to invoice totals,
 // not to a tender. Disclosure -> optional reference -> confirmed updated total.
-export default function InvoiceTaxExemptionControl({ invoiceId, summary, onUpdated, onEditingChange, embedded = false }: {
+function LegacyInvoiceTaxExemptionControl({ invoiceId, summary, onUpdated, onEditingChange, embedded = false }: {
   invoiceId: string
   summary: InvoiceSettlementSummary
   onUpdated: (summary: InvoiceSettlementSummary) => void
@@ -18,6 +25,7 @@ export default function InvoiceTaxExemptionControl({ invoiceId, summary, onUpdat
   const id = useId()
   const [editing, setEditing] = useState(false)
   const [reference, setReference] = useState('')
+  const [showReference, setShowReference] = useState(false)
   const [pending, setPending] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [staleVersion, setStaleVersion] = useState<number | null>(null)
@@ -74,22 +82,23 @@ export default function InvoiceTaxExemptionControl({ invoiceId, summary, onUpdat
       {exemption.support_reference && <p className="break-words text-xs text-slate-600">Reference: {exemption.support_reference}</p>}
     </div> : <>
       <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1">
-        <span className="text-sm font-semibold">Sales tax exemption</span>
-        <button type="button" aria-expanded={editing} aria-controls={id} disabled={!exemption.can_apply || pending}
-          onClick={() => changeEditing(!editing)} className="min-h-11 rounded-lg px-2 text-sm font-semibold text-emerald-800 enabled:hover:bg-emerald-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-700 disabled:cursor-not-allowed disabled:text-slate-500">
-          {editing ? 'Cancel' : 'Apply tax exemption'}
+        <span id={`${id}-label`} className="text-sm font-semibold">Sales tax exemption</span>
+        <button type="button" role="switch" aria-checked={editing} aria-labelledby={`${id}-label`} aria-controls={id} disabled={!exemption.can_apply || pending || request.current !== null}
+          onClick={() => changeEditing(!editing)} className="flex min-h-11 min-w-11 items-center justify-center rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-700 disabled:cursor-not-allowed disabled:opacity-50">
+          <span aria-hidden="true" className={`relative inline-flex h-6 w-10 shrink-0 rounded-full ${editing ? 'bg-emerald-700' : 'bg-slate-300'}`}>
+            <span className={`absolute left-1 top-1 h-4 w-4 rounded-full bg-white ${editing ? 'translate-x-4' : ''}`} />
+          </span>
         </button>
       </div>
       {!exemption.can_apply && exemption.unavailable_reason && <p className="text-xs leading-relaxed text-slate-600">{exemption.unavailable_reason}</p>}
-      {editing && <form id={id} onSubmit={event => { event.preventDefault(); void apply() }} className="mt-2 space-y-3 border-t border-slate-200 pt-3">
-        <p className="text-sm leading-relaxed text-slate-600">For a qualifying exemption, regardless of payment method. Shop supplies stay unchanged.</p>
-        <label className="block text-sm font-medium" htmlFor={`${id}-reference`}>Certificate or supporting reference (optional)</label>
-        <input id={`${id}-reference`} maxLength={255} disabled={pending || request.current !== null} value={reference} onChange={event => setReference(event.target.value)} className="block min-h-11 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-700 disabled:opacity-70" />
-        <div className="flex flex-wrap items-baseline justify-between gap-2 text-sm"><span>Invoice amount after exemption</span><strong className="text-lg tabular-nums">{formatMoney(exemption.exempt_principal_total)}</strong></div>
-        <p className="text-xs text-slate-600">Before any card fee. Applying an exemption does not record a payment.</p>
+      {editing && <form id={id} onSubmit={event => { event.preventDefault(); void apply() }} className="mt-1 space-y-2">
+        {!showReference ? <button type="button" onClick={() => setShowReference(true)} className="min-h-11 rounded-lg text-xs font-semibold text-slate-600 underline underline-offset-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-700">Add certificate/reference</button> : <>
+          <label className="block text-xs font-medium" htmlFor={`${id}-reference`}>Certificate or supporting reference (optional)</label>
+          <input id={`${id}-reference`} maxLength={255} disabled={pending || request.current !== null} value={reference} onChange={event => setReference(event.target.value)} className="block min-h-11 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-700 disabled:opacity-70" />
+        </>}
         {error && <p role="alert" className="text-sm text-red-700">{error}</p>}
-        <button type="submit" disabled={pending || !exemption.can_apply || staleVersion === summary.version} className="min-h-11 w-full rounded-xl bg-emerald-800 px-4 py-3 text-sm font-semibold text-white hover:bg-emerald-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-700 focus-visible:ring-offset-2 disabled:opacity-50">
-          {pending ? 'Applying exemption…' : 'Apply exemption and update total'}
+        <button type="submit" disabled={pending || !exemption.can_apply || staleVersion === summary.version} className="min-h-11 rounded-lg border border-emerald-700 px-3 text-xs font-semibold text-emerald-800 hover:bg-emerald-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-700 disabled:opacity-50">
+          {pending ? 'Updating…' : 'Update invoice'}
         </button>
       </form>}
     </>}

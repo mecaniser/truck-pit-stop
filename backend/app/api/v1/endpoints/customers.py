@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 from decimal import Decimal
 from typing import List, Optional
 from uuid import UUID
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, Header, HTTPException, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_, exists, func, or_, asc, desc, literal_column, case
 from sqlalchemy.orm import selectinload
@@ -52,6 +52,25 @@ from app.services.vin_decoder_service import decode_vin, VINDecodeResult
 
 router = APIRouter()
 logger = get_logger(__name__)
+
+from app.schemas.customer import CustomerTaxExemptionRead, CustomerTaxExemptionWrite
+from app.services import customer_tax_exemption
+
+
+@router.get("/{customer_id}/tax-exemption", response_model=CustomerTaxExemptionRead)
+async def read_customer_tax_exemption(customer_id: UUID, db: AsyncSession = Depends(get_db),
+                                     current_user: User = Depends(get_current_active_user)):
+    customer = await customer_tax_exemption.customer_for_setting(db, customer_id, current_user)
+    return customer_tax_exemption.state(customer)
+
+
+@router.put("/{customer_id}/tax-exemption", response_model=CustomerTaxExemptionRead)
+async def update_customer_tax_exemption(customer_id: UUID, body: CustomerTaxExemptionWrite,
+    idempotency_key: Optional[str] = Header(default=None, alias="Idempotency-Key"),
+    db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    result = await customer_tax_exemption.update_setting(db, customer_id, current_user, body, idempotency_key)
+    await db.commit()
+    return result
 
 
 def require_role(*allowed_roles: UserRole):

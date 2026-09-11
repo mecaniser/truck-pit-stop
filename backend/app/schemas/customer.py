@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, StrictBool, field_validator
 from typing import Optional, List, TYPE_CHECKING
 from datetime import datetime
 from uuid import UUID
@@ -6,6 +6,25 @@ from decimal import Decimal
 
 if TYPE_CHECKING:
     from app.schemas.vehicle import VehicleResponse
+
+
+class CustomerTaxExemptionWrite(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    tax_exempt: StrictBool
+    support_reference: Optional[str] = Field(default=None, max_length=255)
+    expected_version: int = Field(ge=0)
+
+    @field_validator("support_reference", mode="before")
+    @classmethod
+    def normalize_reference(cls, value):
+        return (value.strip() or None) if isinstance(value, str) else value
+
+
+class CustomerTaxExemptionRead(BaseModel):
+    tax_exempt: bool
+    support_reference: Optional[str]
+    version: int
+    updated_at: Optional[datetime]
 
 
 class CustomerBase(BaseModel):
@@ -76,6 +95,7 @@ class CustomerUpdate(BaseModel):
 
 
 class CustomerResponse(CustomerBase):
+    tax_exempt: bool = False
     id: UUID
     tenant_id: UUID
     source: Optional[str] = None
@@ -130,6 +150,7 @@ class VehicleInCustomer(BaseModel):
 class CustomerWithVehiclesResponse(CustomerBase):
     """Customer response that includes vehicles array"""
     id: UUID
+    tax_exempt: bool = False
     tenant_id: UUID
     source: Optional[str] = None
     fleet_enabled: bool = False

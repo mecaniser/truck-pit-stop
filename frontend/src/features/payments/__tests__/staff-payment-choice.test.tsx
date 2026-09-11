@@ -27,11 +27,12 @@ const show = () => render(<QueryClientProvider client={new QueryClient()}>
 describe('Staff payment choice remains independent of historical export status', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} })
     fixture.summary = {
       ...DB048_SETTLEMENT_FIXTURES.unpaid.summary,
       card_provider: 'quickbooks_payments',
       accounting_sync_status: 'historical_export_hold',
-      allowed_actions: { create_attempt: true, confirm_cash: true, rails: ['card', 'zelle', 'check', 'ach'] },
+      allowed_actions: { create_attempt: true, confirm_cash: true, rails: ['card', 'zelle', 'check', 'ach', 'fleet_payment'] },
     }
   })
 
@@ -39,12 +40,12 @@ describe('Staff payment choice remains independent of historical export status',
     fixture.summary!.tax_exemption = { applied: false, can_apply: true, unavailable_reason: null,
       current_tax_amount: '20.12', removed_tax_amount: '0.00', exempt_principal_total: '204.50', reason: null, support_reference: null }
     show()
-    await userEvent.click(screen.getByRole('button', { name: 'Apply tax exemption' }))
+    await userEvent.click(screen.getByRole('switch', { name: 'Sales tax exemption' }))
     for (const tender of screen.getAllByRole('radio')) expect(tender).toBeEnabled()
-    expect(screen.getByRole('button', { name: 'Continue to QuickBooks Payments' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Continue to QBO Payments' })).toBeDisabled()
     await userEvent.click(screen.getByRole('radio', { name: /^Cash/ }))
     expect(screen.getByRole('button', { name: /Confirm .* cash received/ })).toBeDisabled()
-    await userEvent.click(screen.getByRole('button', { name: 'Cancel', exact: true }))
+    await userEvent.click(screen.getByRole('switch', { name: 'Sales tax exemption' }))
     for (const tender of screen.getAllByRole('radio')) expect(tender).toBeEnabled()
     expect(screen.getByRole('button', { name: /Confirm .* cash received/ })).toBeEnabled()
     expect(paymentApi.confirmFullCashPayment).not.toHaveBeenCalled()
@@ -53,44 +54,55 @@ describe('Staff payment choice remains independent of historical export status',
 
   it('offers cash alongside all admitted noncash choices, and restores them when cash is cancelled', async () => {
     show()
-    for (const name of ['QuickBooks Payments', 'Zelle', 'Check', 'ACH']) {
+    for (const name of ['QBO Payments', 'Zelle', 'Cash']) {
       expect(screen.getByRole('radio', { name: new RegExp(`^${name}`) })).toBeEnabled()
     }
     const tenders = screen.getByRole('radiogroup', { name: 'Payment tender' })
-    expect(within(tenders).getAllByRole('radio')).toHaveLength(5)
-    expect(within(tenders).getByRole('radio', { name: /Cash Full payment only/ })).toBeEnabled()
+    expect(within(tenders).getAllByRole('radio')).toHaveLength(3)
+    expect(screen.queryByRole('radio', { name: /^Check/ })).not.toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'More payment methods' }))
+    expect(screen.getByRole('radio', { name: 'Check' })).toBeEnabled()
+    expect(screen.getByRole('radio', { name: 'ACH' })).toBeEnabled()
+    expect(screen.getByRole('radio', { name: 'Fleet Check / Code' })).toBeEnabled()
+    const more = screen.getByRole('button', { name: 'More payment methods' })
+    expect(tenders.compareDocumentPosition(more) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(more.compareDocumentPosition(screen.getByRole('button', { name: 'Pay partial amount' })) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    await userEvent.keyboard('{Escape}')
+    expect(within(tenders).getByRole('radio', { name: /Cash/ })).toBeEnabled()
     expect(screen.queryByRole('region', { name: 'Full cash payment' })).not.toBeInTheDocument()
-    await userEvent.click(screen.getByRole('radio', { name: /Cash Full payment only/ }))
+    await userEvent.click(screen.getByRole('radio', { name: /Cash/ }))
     expect(screen.queryByLabelText('Amount applied to invoice')).not.toBeInTheDocument()
-    expect(screen.getByRole('radio', { name: /^QuickBooks Payments/ })).toHaveAttribute('aria-checked', 'false')
+    expect(screen.getByRole('radio', { name: /^QBO Payments/ })).toHaveAttribute('aria-checked', 'false')
     expect(screen.getByRole('radio', { name: /^Cash/ })).toHaveAttribute('aria-checked', 'true')
     expect(screen.getByRole('button', { name: /Confirm .* cash received/ })).toBeEnabled()
-    await userEvent.click(screen.getByRole('radio', { name: /^QuickBooks Payments/ }))
+    await userEvent.click(screen.getByRole('radio', { name: /^QBO Payments/ }))
     expect(screen.queryByRole('button', { name: /Confirm .* cash received/ })).not.toBeInTheDocument()
-    expect(screen.getByLabelText('Amount applied to invoice')).toBeInTheDocument()
-    expect(screen.getByRole('radio', { name: /^QuickBooks Payments/ })).toBeEnabled()
+    expect(screen.queryByLabelText('Amount applied to invoice')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Pay partial amount' })).toBeInTheDocument()
+    expect(screen.getByRole('radio', { name: /^QBO Payments/ })).toBeEnabled()
     expect(screen.getByRole('radio', { name: /^Zelle/ })).toBeEnabled()
     expect(paymentApi.confirmFullCashPayment).not.toHaveBeenCalled()
     expect(paymentApi.createPaymentAttempt).not.toHaveBeenCalled()
   })
 
-  it('keeps noncash choices available when only cash is ineligible', () => {
+  it('keeps noncash choices available when only cash is ineligible', async () => {
     fixture.summary!.allowed_actions = { ...fixture.summary!.allowed_actions,
       confirm_cash: false, cash_unavailable_reason: 'Cash requires the full invoice with no existing payment activity.' }
     show()
-    expect(screen.getByRole('radio', { name: /Cash Full payment only/ })).toBeDisabled()
-    expect(screen.getByRole('radio', { name: /^QuickBooks Payments/ })).toBeEnabled()
-    expect(screen.getByRole('radio', { name: /^ACH/ })).toBeEnabled()
+    expect(screen.getByRole('radio', { name: /Cash/ })).toBeDisabled()
+    expect(screen.getByRole('radio', { name: /^QBO Payments/ })).toBeEnabled()
+    await userEvent.click(screen.getByRole('button', { name: 'More payment methods' }))
+    expect(screen.getByRole('radio', { name: 'ACH' })).toBeEnabled()
   })
 
   it('includes cash in arrow navigation without sending a payment', async () => {
     show()
-    screen.getByRole('radio', { name: /^QuickBooks Payments/ }).focus()
+    screen.getByRole('radio', { name: /^QBO Payments/ }).focus()
     await userEvent.keyboard('{ArrowLeft}')
     expect(screen.getByRole('radio', { name: /^Cash/ })).toHaveFocus()
     expect(screen.getByRole('radio', { name: /^Cash/ })).toHaveAttribute('aria-checked', 'true')
     await userEvent.keyboard('{ArrowRight}')
-    expect(screen.getByRole('radio', { name: /^QuickBooks Payments/ })).toHaveFocus()
+    expect(screen.getByRole('radio', { name: /^QBO Payments/ })).toHaveFocus()
     expect(paymentApi.confirmFullCashPayment).not.toHaveBeenCalled()
     expect(paymentApi.createPaymentAttempt).not.toHaveBeenCalled()
   })
@@ -98,8 +110,8 @@ describe('Staff payment choice remains independent of historical export status',
   it('keeps full-cash confirmation available inside the selector when noncash is blocked', async () => {
     fixture.summary!.allowed_actions = { confirm_cash: true, create_attempt: false, rails: [], payment_unavailable_reason: 'Review required.' }
     show()
-    expect(screen.getAllByRole('radio')).toHaveLength(5)
-    expect(screen.getByRole('radio', { name: /^QuickBooks Payments/ })).toBeDisabled()
+    expect(screen.getAllByRole('radio')).toHaveLength(3)
+    expect(screen.getByRole('radio', { name: /^QBO Payments/ })).toBeDisabled()
     await userEvent.click(screen.getByRole('radio', { name: /^Cash/ }))
     expect(screen.getByRole('button', { name: /Confirm .* cash received/ })).toBeEnabled()
     expect(screen.queryByLabelText('Amount applied to invoice')).not.toBeInTheDocument()
@@ -116,9 +128,14 @@ describe('Staff payment choice remains independent of historical export status',
     expect(within(breakdown).getByText('−$20.00')).toBeInTheDocument()
     await within(breakdown).findByText('$860.05')
     for (const tender of ['Zelle', 'Check', 'ACH', 'Cash']) {
-      await userEvent.click(screen.getByRole('radio', { name: new RegExp(`^${tender}`) }))
+      if (['Check', 'ACH'].includes(tender)) {
+        if (screen.getByRole('button', { name: 'More payment methods' }).getAttribute('aria-expanded') === 'false') {
+          await userEvent.click(screen.getByRole('button', { name: 'More payment methods' }))
+        }
+        await userEvent.click(screen.getByRole('radio', { name: tender }))
+      } else await userEvent.click(screen.getByRole('radio', { name: new RegExp(`^${tender}`) }))
       await waitFor(() => expect(within(breakdown).getByText('Amount to collect').nextElementSibling).toHaveTextContent('$834.00'))
-      expect(within(breakdown).getByText('Card processing fee').nextElementSibling).toHaveTextContent('$0.00')
+      expect(within(breakdown).queryByText('Card processing fee')).not.toBeInTheDocument()
       expect(within(breakdown).queryByText('Tax on card fee')).not.toBeInTheDocument()
     }
     expect(paymentApi.createPaymentAttempt).not.toHaveBeenCalled()
@@ -131,12 +148,13 @@ describe('Staff payment choice remains independent of historical export status',
     paymentApi.fetchPaymentQuote.mockRejectedValue(new Error('Offline'))
     show()
     await screen.findByText('$860.05')
+    await userEvent.click(screen.getByRole('button', { name: 'Pay partial amount' }))
     const amount = screen.getByLabelText('Amount applied to invoice')
     await userEvent.clear(amount)
     await userEvent.type(amount, '100')
     await screen.findByText('Payment total could not be verified. Retry before continuing.')
     expect(screen.queryByText('$860.05')).not.toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Continue to QuickBooks Payments' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Continue to QBO Payments' })).toBeDisabled()
     expect(screen.getByRole('radio', { name: /^Zelle/ })).toBeEnabled()
     expect(paymentApi.createPaymentAttempt).not.toHaveBeenCalled()
   })
@@ -151,6 +169,32 @@ describe('Staff payment choice remains independent of historical export status',
     expect(paymentApi.createPaymentAttempt).not.toHaveBeenCalled()
   })
 
+  it('keeps secondary selection visible and returns to the primary set without a payment', async () => {
+    show()
+    await userEvent.click(screen.getByRole('button', { name: 'More payment methods' }))
+    await userEvent.click(screen.getByRole('radio', { name: 'Check' }))
+    expect(screen.getByRole('radio', { name: /^Check/ })).toHaveAttribute('aria-checked', 'true')
+    expect(screen.getByLabelText('Check number')).toBeInTheDocument()
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'More payment methods' }))
+    expect(screen.getByRole('radio', { name: /^Check/ })).toHaveAttribute('aria-checked', 'true')
+    await userEvent.click(screen.getByRole('radio', { name: /^Zelle/ }))
+    expect(screen.getAllByRole('radio')).toHaveLength(3)
+    expect(paymentApi.createPaymentAttempt).not.toHaveBeenCalled()
+  })
+
+  it('hides duplicated unpaid metrics but retains meaningful paid and pending amounts', () => {
+    const view = show()
+    for (const label of ['Invoice total', 'Confirmed', 'Pending', 'Available to pay']) expect(screen.queryByText(label)).not.toBeInTheDocument()
+    expect(screen.getByText('Balance due')).toBeInTheDocument()
+    view.unmount()
+    fixture.summary = { ...fixture.summary!, state: 'partially_paid_pending', confirmed_principal: '100.00', active_pending_principal: '50.00', outstanding_balance: '734.00', allocatable_balance: '684.00' }
+    show()
+    expect(screen.getByText('Paid toward invoice').nextElementSibling).toHaveTextContent('$100.00')
+    expect(screen.getByText('Pending confirmation').nextElementSibling).toHaveTextContent('$50.00')
+    expect(screen.getByText('Available to pay').nextElementSibling).toHaveTextContent('$684.00')
+  })
+
   it('retains receipt identity when switching away and back after an uncertain response', async () => {
     paymentApi.confirmFullCashPayment.mockRejectedValue(new Error('Network unavailable'))
     show()
@@ -158,7 +202,7 @@ describe('Staff payment choice remains independent of historical export status',
     await userEvent.click(screen.getByRole('button', { name: /Confirm .* cash received/ }))
     await screen.findByText('Cash confirmation was not verified. Retry to check the same receipt.')
     const firstKey = paymentApi.confirmFullCashPayment.mock.calls[0][2]
-    await userEvent.click(screen.getByRole('radio', { name: /^QuickBooks Payments/ }))
+    await userEvent.click(screen.getByRole('radio', { name: /^QBO Payments/ }))
     await userEvent.click(screen.getByRole('radio', { name: /^Cash/ }))
     await userEvent.click(screen.getByRole('button', { name: /Confirm .* cash received/ }))
     expect(paymentApi.confirmFullCashPayment.mock.calls[1][2]).toBe(firstKey)

@@ -536,6 +536,9 @@ def db048_qbo_payment_reference(
             reference = f"QBP {attempt.provider_charge_id}"
         elif provider == "stripe_connect" and getattr(attempt, "provider_charge_id", None):
             reference = f"Stripe {attempt.provider_charge_id}"
+        elif rail == "fleet_payment" and getattr(attempt, "provider_reference", None):
+            from app.services.fleet_payment_evidence import fleet_provider_label
+            reference = f"{fleet_provider_label(attempt.manual_evidence)} {attempt.provider_reference}"
         elif (
             rail in {"zelle", "check", "ach"}
             and getattr(attempt, "provider_reference", None)
@@ -606,6 +609,9 @@ def db048_qbo_payment_memo(
         label = "Check payment"
     elif rail == "ach":
         label = "ACH payment"
+    elif rail == "fleet_payment":
+        from app.services.fleet_payment_evidence import fleet_provider_label
+        label = f"Fleet instrument payment ({fleet_provider_label(attempt.manual_evidence)})"
     else:
         label = "Invoice payment"
     full_reference = db048_qbo_payment_reference(attempt=attempt, payment=payment)
@@ -618,7 +624,7 @@ def db048_qbo_payment_memo(
             attempt, "provider_charge_id", None
         ):
             full_reference = f"Stripe {attempt.provider_charge_id}"
-        elif rail in {"zelle", "check", "ach"} and getattr(
+        elif rail in {"zelle", "check", "ach", "fleet_payment"} and getattr(
             attempt, "provider_reference", None
         ):
             full_reference = str(attempt.provider_reference).strip()
@@ -1709,7 +1715,7 @@ async def sync_db048_payment(envelope: AccountingEnvelope) -> str:
         deposit_account = mappings.get("stripe_clearing_account")
     elif envelope.attempt.provider == "quickbooks_payments":
         deposit_account = mappings.get("qbp_clearing_account")
-    elif envelope.attempt.rail == "check":
+    elif envelope.attempt.rail in {"check", "fleet_payment"}:
         deposit_account = mappings.get("check_deposit_account")
     else:
         deposit_account = mappings.get("zelle_ach_account")
@@ -1998,7 +2004,7 @@ async def sync_db048_refund(envelope: AccountingEnvelope) -> str:
         source_account = mappings.get("stripe_clearing_account")
     elif envelope.attempt.provider == "quickbooks_payments":
         source_account = mappings.get("qbp_clearing_account")
-    elif envelope.attempt.rail == "check":
+    elif envelope.attempt.rail in {"check", "fleet_payment"}:
         source_account = mappings.get("check_deposit_account")
     else:
         source_account = mappings.get("zelle_ach_account")

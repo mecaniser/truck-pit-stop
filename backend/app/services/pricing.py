@@ -90,7 +90,7 @@ def apply_canonical_order_totals(order: Any) -> dict[str, Decimal]:
     return totals
 
 
-def get_order_checkout_breakdown(order: Any, tenant: Any) -> dict[str, Decimal]:
+def get_order_checkout_breakdown(order: Any, tenant: Any, *, tax_exempt: bool = False) -> dict[str, Decimal]:
     """Return customer-facing checkout estimates using the same repair net total.
 
     Card total includes the card processing fee (stored as service_fee_amount)
@@ -106,7 +106,7 @@ def get_order_checkout_breakdown(order: Any, tenant: Any) -> dict[str, Decimal]:
 
     shop_supplies_rate = _to_decimal(getattr(tenant, "shop_supplies_rate", 0)) / Decimal("100")
     service_fee_rate = _to_decimal(getattr(tenant, "service_fee_rate", 0)) / Decimal("100")
-    sales_tax_rate = _to_decimal(getattr(tenant, "sales_tax_rate", 0)) / Decimal("100")
+    sales_tax_rate = Decimal("0") if tax_exempt else _to_decimal(getattr(tenant, "sales_tax_rate", 0)) / Decimal("100")
 
     shop_supplies_amount = (labor_net * shop_supplies_rate).quantize(Decimal("0.01"))
     pre_fee_taxable = repair_total + shop_supplies_amount

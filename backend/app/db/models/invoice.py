@@ -105,6 +105,14 @@ class Invoice(BaseModel):
     quickbooks_sync_error = Column(Text, nullable=True)
     
     payments = relationship("Payment", back_populates="invoice", cascade="all, delete-orphan")
+    charge_adjustments = relationship("InvoiceChargeAdjustment", lazy="selectin",
+        order_by="InvoiceChargeAdjustment.version")
+
+    def __init__(self, **kwargs):
+        # Newly issued objects are already in the identity map when summaries
+        # render; initialize the empty audit collection without async lazy IO.
+        kwargs.setdefault("charge_adjustments", [])
+        super().__init__(**kwargs)
 
     @property
     def pending_zelle_confirmation(self) -> bool:

@@ -28,7 +28,7 @@ async def test_unrelated_missing_settlement_does_not_disable_target(db_session, 
     assert (await provider_readiness(db_session, ctx[0], invoice_id=ctx[3].id)).status == "ready"
     assert (await provider_readiness(db_session, ctx[0], invoice_id=other.id)).status != "ready"
     summary = await settlement_summary(db_session, ctx[4], ctx[0], audience="staff", current_user=ctx[1])
-    assert summary.allowed_actions.rails == ["card", "zelle", "check", "ach"]
+    assert summary.allowed_actions.rails == ["card", "zelle", "check", "ach", "fleet_payment"]
     assert summary.allowed_actions.confirm_cash
     assert summary.breakdown.principal_total == 100
     await quote(db_session, ctx)

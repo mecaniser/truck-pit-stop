@@ -6,7 +6,8 @@ export type SettlementState =
   | 'paid'
   | 'overpayment_resolution'
 
-export type PaymentRail = 'card' | 'zelle' | 'check' | 'ach'
+export type PaymentRail = 'card' | 'zelle' | 'check' | 'ach' | 'fleet_payment'
+export type FleetProvider = 'EFS' | 'Comchek' | 'T-Chek' | 'Other'
 export type CardProvider = 'stripe_connect' | 'quickbooks_payments'
 export type CardProviderStatus =
   | 'ready'
@@ -36,6 +37,17 @@ export interface SettlementAllowedActions {
 }
 
 export interface InvoiceSettlementSummary {
+  charge_controls?: {
+    tax_exempt: boolean
+    shop_supplies_enabled: boolean
+    card_fee_enabled?: boolean
+    can_adjust: boolean
+    unavailable_reason: string | null
+    support_reference: string | null
+    original_shop_supplies_amount: string
+    original_tax_amount: string
+    original_card_fee_amount?: string
+  }
   breakdown?: {
     subtotal: string
     shop_supplies_amount: string
@@ -80,16 +92,23 @@ export interface PaymentQuote {
   total_amount: string
 }
 
+export interface PaymentSenderEvidence {
+  fleet_provider?: FleetProvider | null
+  fleet_provider_name?: string | null
+  authorization_number?: string | null
+  sender_name?: string | null
+  sender_email?: string | null
+  sender_phone?: string | null
+  reference?: string | null
+  reference_number?: string | null
+  note?: string | null
+}
+
 export interface PaymentAttemptCreate {
   amount: string
   rail: PaymentRail
   expected_settlement_version: number
-  sender_evidence?: {
-    sender_email?: string | null
-    sender_phone?: string | null
-    reference?: string | null
-    note?: string | null
-  } | null
+  sender_evidence?: PaymentSenderEvidence | null
 }
 
 export interface PaymentAttemptResponse {
@@ -112,6 +131,10 @@ export interface PaymentAttemptResponse {
 }
 
 export interface PaymentAllocation {
+  fleet_provider?: FleetProvider | null
+  fleet_provider_name?: string | null
+  authorization_number?: string | null
+  sender_evidence?: PaymentSenderEvidence | null
   id: string
   attempt_id: string
   attempt_version?: number

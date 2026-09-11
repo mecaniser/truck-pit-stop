@@ -86,6 +86,8 @@ export interface Customer {
   usdot_number?: string | null
   mc_number?: string | null
   fleet_enabled?: boolean
+  // Read-only invoice default; edited through the audited customer tax endpoint.
+  tax_exempt?: boolean
   quickbooks_customer_id?: string | null
   // Computed at query time (not stored columns), populated by the list/detail endpoints.
   balance?: string

@@ -50,6 +50,13 @@ class _FakeAsyncSession:
             return _ScalarResult(self.tenant)
         raise AssertionError(f"Unexpected query call #{self.execute_calls} for entity {entity}")
 
+    async def scalar(self, statement):
+        # Tax-default authorization has integration coverage; this isolated
+        # discount fixture represents an active taxable bill-to customer.
+        assert statement.column_descriptions[0].get("entity") is Customer
+        self.order.customer.tax_exempt = False
+        return self.order.customer
+
     def add(self, obj):
         self.added.append(obj)
 
@@ -63,7 +70,7 @@ class _FakeAsyncSession:
     async def commit(self):
         self.commit_count += 1
 
-    async def refresh(self, _obj):
+    async def refresh(self, _obj, **_kwargs):
         # Mimic DB-populated defaults expected by response model validation.
         if getattr(_obj, "id", None) is None:
             _obj.id = uuid4()

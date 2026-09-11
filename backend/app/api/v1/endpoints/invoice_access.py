@@ -436,9 +436,10 @@ async def resolve_invoice_link(
         existing_user = user_result.scalar_one_or_none()
 
     vehicle_info = vehicle_display_label(vehicle.year, vehicle.make, vehicle.model, vehicle.unit_number) if vehicle else "Vehicle"
-    _zelle_amount = get_order_checkout_breakdown(order, tenant)["estimated_zelle_total"] if tenant else (
-        Decimal(str(invoice.total_amount)) - Decimal(str(invoice.service_fee_amount or 0))
-    ).quantize(Decimal("0.01"))
+    # An issued invoice is an immutable pricing snapshot, not a live estimate
+    # using a subsequently changed customer default or shop tax rate.
+    from app.services.invoice_settlement_service import invoice_money_snapshot
+    _zelle_amount = invoice_money_snapshot(invoice)[0]
     return ResolveInvoiceLinkResponse(
         invoice_id=str(invoice.id),
         invoice_number=invoice.invoice_number,
