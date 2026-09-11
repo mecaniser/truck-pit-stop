@@ -112,3 +112,74 @@ async def test_breakdown_retains_supplies_discount_and_separates_fee_tax(db_sess
     assert breakdown.subtotal + breakdown.shop_supplies_amount + breakdown.sales_tax_amount - breakdown.discount_amount == principal
     result = await quote(db_session, ctx, amount=str(principal))
     assert result.total_amount == invoice.total_amount
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("history", ["check", "cash", "zelle", "pending", "balance", "missing", "foreign", "cycle", "absent", "deleted"])
+async def test_scoped_ancestry_blocks_quote_and_actual_creation(db_session, monkeypatch, history):
+    from tests.test_db048_invoice_settlements import _add_eligible_invoice
+    from app.db.models.invoice_settlement import InvoiceSettlement
+    ctx = await context(db_session, monkeypatch)
+    parent = await _add_eligible_invoice(db_session, tenant=ctx[0], customer=ctx[2],
+        reference_invoice=ctx[3], with_shadow_settlement=history not in {"check", "cash", "missing"})
+    parent_settlement = await db_session.scalar(select(InvoiceSettlement).where(InvoiceSettlement.invoice_id == parent.id))
+    if history == "pending":
+        await create_attempt(db_session, invoice=parent, tenant=ctx[0], customer_id=ctx[2].id,
+            actor=ctx[1], amount=Decimal("10"), rail="card", expected_settlement_version=1,
+            idempotency_key="parent-pending", source="staff", subject_type="staff", subject_id=ctx[1].id)
+    parent.status = InvoiceStatus.CANCELLED
+    ctx[3].supersedes_invoice_id = parent.id
+    if history in {"check", "cash"}:
+        db_session.add(Payment(tenant_id=ctx[0].id, invoice_id=parent.id, payment_number="PARENT-PAYMENT",
+            amount=Decimal("10"), method=PaymentMethod.CHECK if history == "check" else PaymentMethod.CASH,
+            status=PaymentStatus.COMPLETED, reference_number="OLD", recorded_by_user_id=ctx[1].id))
+    if history == "zelle": parent.zelle_pending_submitted_at = datetime.now(timezone.utc)
+    if history == "balance": parent_settlement.active_pending_principal = Decimal("10")
+    if history == "foreign": parent.tenant_id = uuid4()
+    if history == "cycle": parent.supersedes_invoice_id = ctx[3].id
+    if history == "absent": ctx[3].supersedes_invoice_id = uuid4()
+    if history == "deleted": parent.deleted_at = datetime.now(timezone.utc)
+    await db_session.flush()
+    baseline = await db_session.scalar(select(func.count()).select_from(InvoicePaymentAttempt))
+    readiness = await provider_readiness(db_session, ctx[0], invoice_id=ctx[3].id)
+    assert readiness.status != "ready"
+    for operation in ("quote", "create"):
+        with pytest.raises(SettlementDomainError):
+            if operation == "quote":
+                await quote(db_session, ctx, "check", "10")
+            else:
+                await create_attempt(db_session, invoice=ctx[3], tenant=ctx[0], customer_id=ctx[2].id,
+                    actor=ctx[1], amount=Decimal("10"), rail="check", expected_settlement_version=1,
+                    idempotency_key="child-payment", source="staff", subject_type="staff", subject_id=ctx[1].id)
+    assert await db_session.scalar(select(func.count()).select_from(InvoicePaymentAttempt)) == baseline
+    assert ctx[4].active_pending_principal == 0
+    if history == "balance": assert parent_settlement.active_pending_principal == 10
+
+
+@pytest.mark.asyncio
+async def test_early_release_matches_scoped_summary_with_unrelated_gap(db_session, monkeypatch):
+    from tests.test_db048_invoice_settlements import _add_eligible_invoice
+    from app.api.v1.endpoints.invoice_settlements import authorize_invoice_early_release
+    from app.schemas.invoice_settlement import EarlyReleaseOverride
+    ctx = await context(db_session, monkeypatch)
+    await _add_eligible_invoice(db_session, tenant=ctx[0], customer=ctx[2],
+        reference_invoice=ctx[3], with_shadow_settlement=False)
+    summary = await settlement_summary(db_session, ctx[4], ctx[0], audience="staff", current_user=ctx[1])
+    assert summary.allowed_actions.authorize_early_release
+    result = await authorize_invoice_early_release(ctx[3].id,
+        EarlyReleaseOverride(invoice_id=ctx[3].id, reason="Owner approved release", expected_settlement_version=1),
+        "scoped-early-release", db_session, ctx[1])
+    assert result.version == 2
+
+
+@pytest.mark.asyncio
+async def test_reconciled_no_money_ancestor_does_not_disable_checkout(db_session, monkeypatch):
+    from tests.test_db048_invoice_settlements import _add_eligible_invoice
+    ctx = await context(db_session, monkeypatch)
+    parent = await _add_eligible_invoice(db_session, tenant=ctx[0], customer=ctx[2],
+        reference_invoice=ctx[3], with_shadow_settlement=True)
+    parent.status = InvoiceStatus.CANCELLED
+    ctx[3].supersedes_invoice_id = parent.id
+    await db_session.flush()
+    assert (await provider_readiness(db_session, ctx[0], invoice_id=ctx[3].id)).status == "ready"
+    assert (await quote(db_session, ctx, "check", "10")).total_amount == 10

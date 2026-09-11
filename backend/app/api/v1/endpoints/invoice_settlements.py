@@ -353,7 +353,7 @@ async def read_invoice_payment_quote(
         if reason or amount != money(settlement.principal_total):
             raise SettlementDomainError("cash_unavailable", reason or "Cash requires the full invoice balance.")
     else:
-        await require_feature_ready(db, tenant, invoice_id=invoice.id)
+        await require_feature_ready(db, tenant, invoice_id=invoice.id, lock_ancestry=True)
         await require_standard_payment(db, invoice, new_entry=True)
         if rail == "card":
             fee, fee_tax = await _card_fee_allocation(db, settlement, amount)
@@ -1342,7 +1342,7 @@ async def authorize_invoice_early_release(
     # unavailable until both gates are on and the tenant backfill is verified;
     # otherwise an explicit call could create a settlement while the feature
     # is still intentionally dormant.
-    await require_feature_ready(db, tenant)
+    await require_feature_ready(db, tenant, invoice_id=invoice.id, lock_ancestry=True)
     settlement = await authorize_early_release(
         db,
         invoice=invoice,

@@ -3103,7 +3103,7 @@ async def approve_completion(
                 require_feature_ready,
             )
 
-            await require_feature_ready(db, invoice_tenant)
+            await require_feature_ready(db, invoice_tenant, invoice_id=invoice.id, lock_ancestry=True)
             await authorize_early_release(
                 db,
                 invoice=invoice,

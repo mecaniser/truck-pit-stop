@@ -4,8 +4,14 @@ Architecture / Backend owner; root owns frontend and release. Baseline cbea6e2a.
 
 ## Scope
 
-Checkout admission evaluates reconciliation for its invoice, not unrelated tenant
-invoices. Provider configuration/settings/activation retain full-tenant readiness.
+Checkout admission evaluates reconciliation for its invoice and every same-tenant
+superseded predecessor, not unrelated tenant invoices. Missing/deleted/foreign or
+cyclic ancestry fails closed. Any predecessor payment (including legacy Cash),
+pending attempt/reservation, received money/provider identity or legacy Zelle
+submission blocks replacement collection. Transactional admission locks and
+refreshes the chain. Invoice-specific early release uses the same chain-scoped
+readiness in both invoice and repair-order routes, retaining manager/business
+guards. Provider configuration/settings/activation retain full-tenant readiness.
 Verified tenant backfill, provider approval, identity, accounting mappings and
 writer gates remain mandatory. Target missing/mismatched settlement, unreconciled
 legacy payment or Zelle still fails closed. This does not repair/backfill invoices.
