@@ -82,7 +82,7 @@ function StripeAttemptForm({
   )
 }
 
-export default function SettlementPaymentPanel({
+function InvoicePaymentPanel({
   access,
   summary,
   audience,
@@ -108,10 +108,16 @@ export default function SettlementPaymentPanel({
   chargeControls?: InlineInvoiceChargeControls
 }) {
   const queryClient = useQueryClient()
+  const mounted = useRef(true)
+  useEffect(() => {
+    mounted.current = true
+    return () => { mounted.current = false }
+  }, [])
   const allowedRails = useMemo(() => summary.allowed_actions?.rails ?? [], [summary.allowed_actions?.rails])
   const [rail, setRail] = useState<PaymentRail | null>(allowedRails[0] ?? null)
-  const [amount, setAmount] = useState(summary.allocatable_balance)
-  const [amountVersion, setAmountVersion] = useState(summary.version)
+  // Null follows the full balance. An explicit draft belongs to the operator,
+  // not to a particular quote or invoice-charge version.
+  const [amount, setAmount] = useState<string | null>(null)
   const [editingAmount, setEditingAmount] = useState(false)
   const [expandedTenders, setExpandedTenders] = useState(false)
   const [showTransferDetails, setShowTransferDetails] = useState(false)
@@ -142,23 +148,28 @@ export default function SettlementPaymentPanel({
   const tenderDisabled = (item: PaymentRail | 'cash') => Boolean(createMutation.isPending || cash?.pending || (item === 'cash' ? !cash?.allowed : !noncashAvailable || !allowedRails.includes(item)))
   const selectTender = (item: PaymentRail | 'cash') => {
     if (tenderDisabled(item)) return
+    if (item !== (cashSelected ? 'cash' : rail)) {
+      setReference('')
+      setNote('')
+      setAuthorization('')
+      setFleetProvider('EFS')
+      setFleetProviderName('')
+    }
     cash?.select(item === 'cash')
     if (item !== 'cash') setRail(item)
     setAttempt(null)
   }
 
   useEffect(() => {
-    setAmount(summary.allocatable_balance)
-    setAmountVersion(summary.version)
-    setEditingAmount(false)
-  }, [summary.allocatable_balance, summary.version])
-
-  useEffect(() => {
     if (rail && allowedRails.includes(rail)) return
     setRail(allowedRails[0] ?? null)
+    setReference('')
+    setNote('')
+    setAuthorization('')
+    setFleetProviderName('')
   }, [allowedRails, rail])
 
-  const currentAmount = amountVersion === summary.version ? amount : summary.allocatable_balance
+  const currentAmount = amount ?? summary.allocatable_balance
   const amountValid = isValidPrincipalAmount(currentAmount, summary.allocatable_balance)
   const selectedRail = cashSelected ? 'cash' : rail
   const quoteAmount = cashSelected ? summary.principal_total : normalizeMoney(currentAmount)
@@ -180,7 +191,7 @@ export default function SettlementPaymentPanel({
     placeholderData: (previous, previousQuery) => previousQuery?.queryKey[1] === summary.invoice_id
       && previousQuery.queryKey[3] === selectedRail ? previous : undefined,
   })
-  const quote = quoteQuery.data
+  const quote = canQuote ? quoteQuery.data : undefined
   const quoteReady = quoteEnabled && !quoteQuery.isFetching && !quoteQuery.error && quote?.settlement_version === summary.version
     && quote?.rail === selectedRail && quote?.principal_amount === quoteAmount
   const partialInvoicePayment = Boolean(quoteAmount && moneyToCents(quoteAmount) !== moneyToCents(summary.principal_total))
@@ -206,7 +217,7 @@ export default function SettlementPaymentPanel({
     mutationFn: async () => {
       if (!rail) throw new Error('Select a payment method')
       if (rail === 'fleet_payment' && (!reference.trim() || (fleetProvider === 'Other' && !fleetProviderName.trim()))) throw new Error('Enter the Fleet provider and instrument reference.')
-      const normalized = normalizeMoney(amount)
+      const normalized = normalizeMoney(currentAmount)
       if (!normalized) throw new Error('Enter a valid amount')
       const created = await createPaymentAttempt(
         access,
@@ -232,13 +243,17 @@ export default function SettlementPaymentPanel({
       return created
     },
     onSuccess: async created => {
+      queryClient.invalidateQueries({ queryKey: ['invoice-settlement'] })
+      queryClient.invalidateQueries({ queryKey: ['invoice-settlement-allocations'] })
+      if (!mounted.current) return
+      setAmount(null)
+      setEditingAmount(false)
       setAttempt(created)
       setReceivedAmount(created.principal_amount)
       onUpdated(created.settlement)
-      queryClient.invalidateQueries({ queryKey: ['invoice-settlement'] })
-      queryClient.invalidateQueries({ queryKey: ['invoice-settlement-allocations'] })
       if (created.provider_client_secret && created.provider === 'stripe_connect') {
-        setStripe(await getStripeForAccount(created.provider_account_id ?? null))
+        const instance = await getStripeForAccount(created.provider_account_id ?? null)
+        if (mounted.current) setStripe(instance)
       } else if (created.state === 'confirmed') {
         setAttempt(null)
         toast.success(`${RAIL_META[rail!].label} payment recorded.`)
@@ -247,6 +262,7 @@ export default function SettlementPaymentPanel({
       }
     },
     onError: error => {
+      if (!mounted.current) return
       const parsed = paymentApiError(error)
       toast.error(parsed.message)
       if (typeof parsed.current_version === 'number') {
@@ -275,13 +291,14 @@ export default function SettlementPaymentPanel({
       )
     },
     onSuccess: confirmed => {
-      setAttempt(null)
-      onUpdated(confirmed.settlement)
       queryClient.invalidateQueries({ queryKey: ['invoice-settlement'] })
       queryClient.invalidateQueries({ queryKey: ['invoice-settlement-allocations'] })
+      if (!mounted.current) return
+      setAttempt(null)
+      onUpdated(confirmed.settlement)
       toast.success(`${RAIL_META[confirmed.rail].label} payment confirmed.`)
     },
-    onError: error => toast.error(paymentApiError(error, 'Unable to confirm this payment.').message),
+    onError: error => { if (mounted.current) toast.error(paymentApiError(error, 'Unable to confirm this payment.').message) },
   })
 
   const quickBooksMutation = useMutation({
@@ -296,10 +313,11 @@ export default function SettlementPaymentPanel({
       )
     },
     onSuccess: charged => {
-      setAttempt(charged.state === 'pending' ? charged : null)
-      onUpdated(charged.settlement)
       queryClient.invalidateQueries({ queryKey: ['invoice-settlement'] })
       queryClient.invalidateQueries({ queryKey: ['invoice-settlement-allocations'] })
+      if (!mounted.current) return
+      setAttempt(charged.state === 'pending' ? charged : null)
+      onUpdated(charged.settlement)
     },
   })
 
@@ -416,8 +434,9 @@ export default function SettlementPaymentPanel({
               inputMode="decimal"
               autoComplete="off"
               value={receivedAmount}
+              disabled={confirmMutation.isPending}
               readOnly={attempt.rail === 'fleet_payment'}
-              onChange={event => setReceivedAmount(event.target.value.replace(/[^\d.]/g, ''))}
+              onChange={event => setReceivedAmount(event.target.value)}
               onBlur={() => { const normalized = normalizeMoney(receivedAmount); if (normalized) setReceivedAmount(normalized) }}
               aria-invalid={!receivedAmountValid}
               className={`h-11 w-full rounded-xl border pl-8 pr-3 text-sm font-extrabold tabular-nums outline-none focus:ring-2 focus:ring-[var(--accent-500,#d25d43)] ${input}`}
@@ -496,6 +515,7 @@ export default function SettlementPaymentPanel({
 
   return (
     <section className={`rounded-2xl border p-4 ${panel}`} aria-labelledby={`settlement-payment-${summary.invoice_id}`}>
+      <fieldset disabled={createMutation.isPending || cash?.pending} className="m-0 min-w-0 border-0 p-0">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h2 id={`settlement-payment-${summary.invoice_id}`} className="font-extrabold">{audience === 'staff' ? 'Payment method' : 'Choose an amount and tender'}</h2>
@@ -538,7 +558,7 @@ export default function SettlementPaymentPanel({
       </div>
       {audience === 'staff' && <div className={`mt-3 flex flex-wrap items-center justify-between gap-2 border-t pt-2 text-sm ${dark ? 'border-[#2a3245]' : 'border-slate-200'}`}>
         {moreTenders}
-        {!cashSelected && noncashAvailable && <button type="button" disabled={createMutation.isPending} onClick={() => { if (editingAmount) setAmount(summary.allocatable_balance); setEditingAmount(!editingAmount) }} className="ml-auto min-h-11 rounded-lg px-2 font-semibold underline underline-offset-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-700">
+        {!cashSelected && noncashAvailable && <button type="button" disabled={createMutation.isPending} onClick={() => { setAmount(editingAmount ? null : currentAmount); setEditingAmount(!editingAmount) }} className="ml-auto min-h-11 rounded-lg px-2 font-semibold underline underline-offset-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-700">
           {editingAmount ? 'Pay full balance' : 'Pay partial amount'}
         </button>}
       </div>}
@@ -550,17 +570,17 @@ export default function SettlementPaymentPanel({
             type="text"
             inputMode="decimal"
             autoComplete="off"
-            value={amount}
-            onChange={event => setAmount(event.target.value.replace(/[^\d.]/g, ''))}
-            onBlur={() => { const normalized = normalizeMoney(amount); if (normalized) setAmount(normalized) }}
-            aria-invalid={amount.length > 0 && !amountValid}
+            value={currentAmount}
+            onChange={event => setAmount(event.target.value)}
+            onBlur={() => { const normalized = normalizeMoney(currentAmount); if (normalized) setAmount(normalized) }}
+            aria-invalid={currentAmount.length > 0 && !amountValid}
             aria-label="Amount applied to invoice"
             aria-describedby={`settlement-amount-help-${summary.invoice_id}`}
             className={`h-12 w-full rounded-xl border pl-8 pr-3 text-lg font-extrabold tabular-nums outline-none focus:ring-2 focus:ring-[var(--accent-500,#d25d43)] ${input}`}
           />
         </div>
-        <span id={`settlement-amount-help-${summary.invoice_id}`} className={`mt-1 block min-h-4 text-xs ${amount.length > 0 && !amountValid ? 'text-red-500' : quiet}`}>
-          {amount.length > 0 && !amountValid ? `Enter $0.01–${formatMoney(summary.allocatable_balance)}.` : 'Card fees are calculated only on the card-funded portion.'}
+        <span id={`settlement-amount-help-${summary.invoice_id}`} className={`mt-1 block min-h-4 text-xs ${currentAmount.length > 0 && !amountValid ? 'text-red-500' : quiet}`}>
+          {currentAmount.length > 0 && !amountValid ? `Enter at least $0.01 and no more than ${formatMoney(summary.allocatable_balance)}, the amount available to pay.` : 'Card fees are calculated only on the card-funded portion.'}
         </span>
       </label>}
 
@@ -569,7 +589,13 @@ export default function SettlementPaymentPanel({
       {taxExemptionControl && <div className="mt-4">{taxExemptionControl}</div>}
 
       {!cashSelected && noncashAvailable && audience === 'staff' && rail === 'fleet_payment' && <div className="mt-3 grid gap-3 sm:grid-cols-2">
-        <label className="block text-xs font-bold">Fleet provider<select value={fleetProvider} onChange={event => setFleetProvider(event.target.value as FleetProvider)} className={`mt-1 h-11 w-full rounded-xl border px-3 text-sm ${input}`}><option value="EFS">EFS / MoneyCode</option><option value="Comchek">Comchek</option><option value="T-Chek">T-Chek</option><option value="Other">Other provider</option></select></label>
+        <label className="block text-xs font-bold">Fleet provider<select value={fleetProvider} onChange={event => {
+          setFleetProvider(event.target.value as FleetProvider)
+          setFleetProviderName('')
+          setReference('')
+          setAuthorization('')
+          setNote('')
+        }} className={`mt-1 h-11 w-full rounded-xl border px-3 text-sm ${input}`}><option value="EFS">EFS / MoneyCode</option><option value="Comchek">Comchek</option><option value="T-Chek">T-Chek</option><option value="Other">Other provider</option></select></label>
         {fleetProvider === 'Other' && <label className="block text-xs font-bold">Provider name<input maxLength={100} required value={fleetProviderName} onChange={event => setFleetProviderName(event.target.value)} className={`mt-1 h-11 w-full rounded-xl border px-3 text-sm ${input}`} /></label>}
         <label className="block text-xs font-bold">Approval reference (optional)<input maxLength={255} value={authorization} onChange={event => setAuthorization(event.target.value)} className={`mt-1 h-11 w-full rounded-xl border px-3 text-sm ${input}`} /></label>
       </div>}
@@ -632,8 +658,15 @@ export default function SettlementPaymentPanel({
       </button>
       <p className={`mt-2 text-center text-[11px] ${quiet}`}>Applied after {rail === 'card' ? 'provider' : 'shop'} confirmation.</p>
       </>}
+      </fieldset>
     </section>
   )
+}
+
+export default function SettlementPaymentPanel(props: Parameters<typeof InvoicePaymentPanel>[0]) {
+  // Draft amounts, evidence and provider attempts cannot follow a different
+  // invoice, including customer/guest callers that do not key this component.
+  return <InvoicePaymentPanel key={`${props.audience}:${props.summary.invoice_id}`} {...props} />
 }
 
 export { SettlementPaymentPanel }

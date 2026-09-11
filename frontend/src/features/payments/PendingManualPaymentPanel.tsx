@@ -1,6 +1,6 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Clock3 } from 'lucide-react'
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import toast from 'react-hot-toast'
 
 import { confirmPaymentAttempt, createIdempotencyKey, paymentApiError } from './api'
@@ -26,6 +26,11 @@ function PendingManualPaymentItem({
   onUpdated: (next: InvoiceSettlementSummary) => void
 }) {
   const queryClient = useQueryClient()
+  const mounted = useRef(true)
+  useEffect(() => {
+    mounted.current = true
+    return () => { mounted.current = false }
+  }, [])
   const submitted = allocation.sender_evidence
   const [reference, setReference] = useState(allocation.reference_number || submitted?.reference || submitted?.reference_number || '')
   const [receivedAmount, setReceivedAmount] = useState(allocation.principal_amount)
@@ -55,16 +60,18 @@ function PendingManualPaymentItem({
       )
     },
     onSuccess: result => {
-      onUpdated(result.settlement)
       queryClient.invalidateQueries({ queryKey: ['invoice-settlement'] })
       queryClient.invalidateQueries({ queryKey: ['invoice-settlement-allocations'] })
+      if (!mounted.current) return
+      onUpdated(result.settlement)
       toast.success(`${label} payment confirmed.`)
     },
-    onError: error => toast.error(paymentApiError(error, `Unable to confirm this ${label} payment.`).message),
+    onError: error => { if (mounted.current) toast.error(paymentApiError(error, `Unable to confirm this ${label} payment.`).message) },
   })
 
   return (
     <li className={`rounded-xl border p-3 ${dark ? 'border-amber-700/40 bg-amber-950/20' : 'border-amber-200 bg-amber-50'}`}>
+      <fieldset disabled={confirm.isPending} className="m-0 min-w-0 border-0 p-0">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <p className="text-sm font-extrabold">Confirm pending {label}</p>
@@ -85,7 +92,7 @@ function PendingManualPaymentItem({
               autoComplete="off"
               value={receivedAmount}
               readOnly={allocation.rail === 'fleet_payment'}
-              onChange={event => setReceivedAmount(event.target.value.replace(/[^\d.]/g, ''))}
+              onChange={event => setReceivedAmount(event.target.value)}
               onBlur={() => { const normalized = normalizeMoney(receivedAmount); if (normalized) setReceivedAmount(normalized) }}
               aria-invalid={!receivedValid}
               className={`h-11 w-full rounded-xl border pl-8 pr-3 font-bold tabular-nums outline-none focus:ring-2 focus:ring-amber-600 ${input}`}
@@ -108,6 +115,7 @@ function PendingManualPaymentItem({
       >
         {confirm.isPending ? 'Confirming…' : `Confirm ${label} received`}
       </button>
+      </fieldset>
     </li>
   )
 }
@@ -137,7 +145,7 @@ export default function PendingManualPaymentPanel({
       <ol className="space-y-3">
         {pending.map(allocation => (
           <PendingManualPaymentItem
-            key={allocation.attempt_id}
+            key={`${invoiceId}:${allocation.attempt_id}`}
             allocation={allocation}
             invoiceId={invoiceId}
             tone={tone}
