@@ -97,6 +97,23 @@ describe('Staff payment choice remains independent of historical export status',
     expect(screen.getByRole('radio', { name: 'ACH' })).toBeEnabled()
   })
 
+  it('shows a payment block rather than a disabled cash-only selector when all tenders are unavailable', async () => {
+    fixture.summary!.allowed_actions = {
+      create_attempt: false, confirm_cash: false, rails: [],
+      payment_unavailable_reason: 'A previous version of this invoice has a pending payment. Resolve it before collecting another payment.',
+      cash_unavailable_reason: 'Previous export attempts have an unverified outcome. Accounting review is required before cash.',
+    }
+    show()
+    expect(screen.getByText('Payment is temporarily blocked')).toBeInTheDocument()
+    expect(screen.getByText(fixture.summary!.allowed_actions.payment_unavailable_reason!)).toBeInTheDocument()
+    expect(screen.queryByRole('radiogroup')).not.toBeInTheDocument()
+    expect(screen.queryByRole('radio', { name: /^Cash/ })).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Amount applied to invoice')).not.toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Refresh payment status' }))
+    expect(paymentApi.confirmFullCashPayment).not.toHaveBeenCalled()
+    expect(paymentApi.createPaymentAttempt).not.toHaveBeenCalled()
+  })
+
   it('includes cash in arrow navigation without sending a payment', async () => {
     show()
     screen.getByRole('radio', { name: /^QBO Payments/ }).focus()
