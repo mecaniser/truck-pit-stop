@@ -110,8 +110,9 @@ export default function SettlementPaymentPanel({
   const queryClient = useQueryClient()
   const allowedRails = useMemo(() => summary.allowed_actions?.rails ?? [], [summary.allowed_actions?.rails])
   const [rail, setRail] = useState<PaymentRail | null>(allowedRails[0] ?? null)
-  const [amount, setAmount] = useState(summary.allocatable_balance)
-  const [amountVersion, setAmountVersion] = useState(summary.version)
+  // Null follows the full balance. An explicit draft belongs to the operator,
+  // not to a particular quote or invoice-charge version.
+  const [amount, setAmount] = useState<string | null>(null)
   const [editingAmount, setEditingAmount] = useState(false)
   const [expandedTenders, setExpandedTenders] = useState(false)
   const [showTransferDetails, setShowTransferDetails] = useState(false)
@@ -148,17 +149,11 @@ export default function SettlementPaymentPanel({
   }
 
   useEffect(() => {
-    setAmount(summary.allocatable_balance)
-    setAmountVersion(summary.version)
-    setEditingAmount(false)
-  }, [summary.allocatable_balance, summary.version])
-
-  useEffect(() => {
     if (rail && allowedRails.includes(rail)) return
     setRail(allowedRails[0] ?? null)
   }, [allowedRails, rail])
 
-  const currentAmount = amountVersion === summary.version ? amount : summary.allocatable_balance
+  const currentAmount = amount ?? summary.allocatable_balance
   const amountValid = isValidPrincipalAmount(currentAmount, summary.allocatable_balance)
   const selectedRail = cashSelected ? 'cash' : rail
   const quoteAmount = cashSelected ? summary.principal_total : normalizeMoney(currentAmount)
@@ -206,7 +201,7 @@ export default function SettlementPaymentPanel({
     mutationFn: async () => {
       if (!rail) throw new Error('Select a payment method')
       if (rail === 'fleet_payment' && (!reference.trim() || (fleetProvider === 'Other' && !fleetProviderName.trim()))) throw new Error('Enter the Fleet provider and instrument reference.')
-      const normalized = normalizeMoney(amount)
+      const normalized = normalizeMoney(currentAmount)
       if (!normalized) throw new Error('Enter a valid amount')
       const created = await createPaymentAttempt(
         access,
@@ -232,6 +227,8 @@ export default function SettlementPaymentPanel({
       return created
     },
     onSuccess: async created => {
+      setAmount(null)
+      setEditingAmount(false)
       setAttempt(created)
       setReceivedAmount(created.principal_amount)
       onUpdated(created.settlement)
@@ -538,7 +535,7 @@ export default function SettlementPaymentPanel({
       </div>
       {audience === 'staff' && <div className={`mt-3 flex flex-wrap items-center justify-between gap-2 border-t pt-2 text-sm ${dark ? 'border-[#2a3245]' : 'border-slate-200'}`}>
         {moreTenders}
-        {!cashSelected && noncashAvailable && <button type="button" disabled={createMutation.isPending} onClick={() => { if (editingAmount) setAmount(summary.allocatable_balance); setEditingAmount(!editingAmount) }} className="ml-auto min-h-11 rounded-lg px-2 font-semibold underline underline-offset-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-700">
+        {!cashSelected && noncashAvailable && <button type="button" disabled={createMutation.isPending} onClick={() => { setAmount(editingAmount ? null : currentAmount); setEditingAmount(!editingAmount) }} className="ml-auto min-h-11 rounded-lg px-2 font-semibold underline underline-offset-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-700">
           {editingAmount ? 'Pay full balance' : 'Pay partial amount'}
         </button>}
       </div>}
@@ -550,17 +547,17 @@ export default function SettlementPaymentPanel({
             type="text"
             inputMode="decimal"
             autoComplete="off"
-            value={amount}
+            value={currentAmount}
             onChange={event => setAmount(event.target.value.replace(/[^\d.]/g, ''))}
-            onBlur={() => { const normalized = normalizeMoney(amount); if (normalized) setAmount(normalized) }}
-            aria-invalid={amount.length > 0 && !amountValid}
+            onBlur={() => { const normalized = normalizeMoney(currentAmount); if (normalized) setAmount(normalized) }}
+            aria-invalid={currentAmount.length > 0 && !amountValid}
             aria-label="Amount applied to invoice"
             aria-describedby={`settlement-amount-help-${summary.invoice_id}`}
             className={`h-12 w-full rounded-xl border pl-8 pr-3 text-lg font-extrabold tabular-nums outline-none focus:ring-2 focus:ring-[var(--accent-500,#d25d43)] ${input}`}
           />
         </div>
-        <span id={`settlement-amount-help-${summary.invoice_id}`} className={`mt-1 block min-h-4 text-xs ${amount.length > 0 && !amountValid ? 'text-red-500' : quiet}`}>
-          {amount.length > 0 && !amountValid ? `Enter $0.01–${formatMoney(summary.allocatable_balance)}.` : 'Card fees are calculated only on the card-funded portion.'}
+        <span id={`settlement-amount-help-${summary.invoice_id}`} className={`mt-1 block min-h-4 text-xs ${currentAmount.length > 0 && !amountValid ? 'text-red-500' : quiet}`}>
+          {currentAmount.length > 0 && !amountValid ? `Enter $0.01–${formatMoney(summary.allocatable_balance)}.` : 'Card fees are calculated only on the card-funded portion.'}
         </span>
       </label>}
 
