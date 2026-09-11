@@ -32,12 +32,10 @@ export default function StaffSettlementDialog({
   const settlementQuery = useInvoiceSettlement(access)
   const allocationsQuery = useInvoiceAllocations(access, open && Boolean(settlementQuery.data))
   const [current, setCurrent] = useState<InvoiceSettlementSummary | null>(null)
-  const [choosingCash, setChoosingCash] = useState(false)
   const closeRef = useRef<HTMLButtonElement>(null)
   const dialogRef = useRef<HTMLElement>(null)
 
   useEffect(() => setCurrent(settlementQuery.data ?? null), [settlementQuery.data])
-  useEffect(() => setChoosingCash(false), [invoiceId, open])
   useEffect(() => {
     if (!open) return
     const previous = document.activeElement as HTMLElement | null
@@ -137,15 +135,17 @@ export default function StaffSettlementDialog({
                 invoiceId={invoiceId}
                 summary={current}
                 onUpdated={handleUpdated}
-                onChoosingChange={setChoosingCash}
-              />
-              {(!choosingCash || current.allowed_actions?.confirm_cash !== true) && <SettlementPaymentPanel
+                onChoosingChange={() => undefined}
+              >
+              {cash => <SettlementPaymentPanel
                 access={{ kind: 'authenticated', invoiceId }}
                 summary={current}
                 audience="staff"
                 tone="light"
                 onUpdated={handleUpdated}
+                cashTender={cash}
               />}
+              </FullCashPaymentPanel>
             </>
           )}
         </div>
