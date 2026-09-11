@@ -1,5 +1,13 @@
 # DB-048 payment journey: local reviewed candidate
 
+## Inline charge switches and card surcharge waiver
+
+Exact implementation `a0754cc248f8b57cf67e29ff10245fe3894c7e5a` supersedes the separate controls layout below. All three switches sit beside their breakdown amounts. ON applies Sales tax, Shop supplies or Card processing fee; OFF retains the row at zero. Card-fee OFF also removes fee tax, but never invents or changes the actual processor cost borne by the shop. Saves persist through the existing145 audited adjustment flow, with original frozen pricing restored on reversal and unchanged history/payment/export locks.
+
+Independent QA/Security GO: backend65, PostgreSQL6, UI74, no unresolved P0/P1/P2. Owner backend107/PG6, UI83, TypeScript and changed-source lint pass. Browser fixture checks use250ms latency for writes/quotes, sampling every frame through18 on/off saves at1280/390/320: stable rows/dialog/breakdown height, no horizontal overflow, submission disabled during updates. In-app local preview also verified fee/tax zero and exact restoration without height change. Runtime data are synthetic; production acceptance is separate. No new migration for surcharge setting; reviewed144→145→146 remain the rollout requirement.
+
+The query may retain a prior same-invoice/same-tender quote for display during recalculation; it is never eligible for submission. Version/amount/rail match, successful fresh quote, and completed invoice save are still required. Failed/uncertain saves remain visible, retry the same request, and never unlock collection optimistically.
+
 ## One-click autosave successor — 2026-09-11
 
 User removes the extra Update invoice step. Successor
