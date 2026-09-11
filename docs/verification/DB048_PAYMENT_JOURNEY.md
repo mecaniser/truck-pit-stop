@@ -1,5 +1,28 @@
 # DB-048 payment journey: local reviewed candidate
 
+## One-click autosave successor — 2026-09-11
+
+User removes the extra Update invoice step. Successor
+`0b249edaaef8613089db2f71b5bf4af3ac55394e` saves each tax/supplies switch immediately;
+there is no normal Save/Discard action. Reference remains optional/on-demand and
+saves on blur or Enter. Payment is paused while saving or awaiting resolution.
+The server response updates invoice totals and triggers a fresh fee quote.
+Explicit rejection restores saved state; uncertain responses retain their exact
+key/body for Retry; stale versions offer refresh rather than overwriting.
+
+Owner tests99/type/lint passed. Independent QA/Security GO40/40, including10 new
+autosave cases, no unresolved P0/P1/P2. Review found and cleared a reference-blur
+race: a held pointer could start a reference-only save before the toggle click.
+Pointerdown now preserves reference focus until click submits both values;
+separated down/up and canceled-click regressions pass. No mutation on pointerdown.
+
+In-app synthetic acceptance: one click removes supplies; one click applies or
+reverses tax; restoring supplies and tax returns1160.49. Typing EXAMPLE-CERT and
+clicking supplies saves both correctly. No Update/Discard controls remain.
+Backend, migration, guards and accounting behavior unchanged from the prior gate.
+This supersedes the explicit-update UX described in the historical receipt below.
+Still local only, not pushed, merged or deployed.
+
 Accountable owner: root. Branch `codex/db048-payment-journey`.
 Implementation candidate `a83f302cdef62b246f25bdb11fea9f0450edf8cd`, tree
 `e5c4cd9f39876edc18a72b62a6c288339e296825`, base `d2a37545`.
