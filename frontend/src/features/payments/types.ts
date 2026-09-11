@@ -36,6 +36,13 @@ export interface SettlementAllowedActions {
 }
 
 export interface InvoiceSettlementSummary {
+  breakdown?: {
+    subtotal: string
+    shop_supplies_amount: string
+    sales_tax_amount: string
+    discount_amount: string
+    principal_total: string
+  }
   tax_exemption?: {
     applied: boolean
     can_apply: boolean
@@ -62,6 +69,15 @@ export interface InvoiceSettlementSummary {
   accounting_sync_status: AccountingSyncStatus
   feature_enabled?: boolean
   allowed_actions?: SettlementAllowedActions
+}
+
+export interface PaymentQuote {
+  settlement_version: number
+  rail: PaymentRail | 'cash'
+  principal_amount: string
+  card_fee_amount: string
+  card_fee_tax_amount: string
+  total_amount: string
 }
 
 export interface PaymentAttemptCreate {

@@ -14,6 +14,8 @@ import type {
   PaymentApiError,
   PaymentAttemptCreate,
   PaymentAttemptResponse,
+  PaymentQuote,
+  PaymentRail,
   SettlementAccess,
 } from './types'
 
@@ -39,6 +41,13 @@ interface CardProviderReadinessWire {
 }
 
 const idempotencyHeaders = (key: string) => ({ headers: { 'Idempotency-Key': key } })
+
+export async function fetchPaymentQuote(invoiceId: string, rail: PaymentRail | 'cash', principalAmount: string, version: number): Promise<PaymentQuote> {
+  const { data } = await api.get<PaymentQuote>(`/payments/invoices/${invoiceId}/quote`, {
+    params: { rail, principal_amount: principalAmount, expected_settlement_version: version },
+  })
+  return data
+}
 
 export async function applyInvoiceTaxExemption(invoiceId: string, body: {
   expected_settlement_version: number

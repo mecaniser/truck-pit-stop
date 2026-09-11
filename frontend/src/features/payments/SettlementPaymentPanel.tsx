@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import type { ReactNode } from 'react'
 import { Elements, PaymentElement, useElements, useStripe } from '@stripe/react-stripe-js'
 import type { Stripe } from '@stripe/stripe-js'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Banknote, Building2, Check, Clock3, Copy, CreditCard, Landmark, Send } from 'lucide-react'
 import toast from 'react-hot-toast'
 
@@ -9,8 +10,8 @@ import { Spinner } from '@/components/ui'
 import QuickBooksPaymentPanel from '@/features/customer-portal/QuickBooksPaymentPanel'
 import { getStripeForAccount } from '@/lib/stripe'
 
-import { chargeQuickBooksPaymentAttempt, confirmPaymentAttempt, createIdempotencyKey, createPaymentAttempt, paymentApiError } from './api'
-import { formatMoney, isPositiveMoney, isValidPrincipalAmount, normalizeMoney } from './money'
+import { chargeQuickBooksPaymentAttempt, confirmPaymentAttempt, createIdempotencyKey, createPaymentAttempt, fetchPaymentQuote, paymentApiError } from './api'
+import { centsToMoney, formatMoney, isPositiveMoney, isValidPrincipalAmount, moneyToCents, normalizeMoney } from './money'
 import type { InlineCashTender } from './FullCashPaymentPanel'
 import type {
   InvoiceSettlementSummary,
@@ -87,6 +88,8 @@ export default function SettlementPaymentPanel({
   zelleRecipient,
   onUpdated,
   cashTender,
+  submissionBlockedReason,
+  taxExemptionControl,
 }: {
   access: SettlementAccess
   summary: InvoiceSettlementSummary
@@ -96,6 +99,8 @@ export default function SettlementPaymentPanel({
   zelleRecipient?: { display: string; memo: string } | null
   onUpdated: (next: InvoiceSettlementSummary) => void
   cashTender?: InlineCashTender
+  submissionBlockedReason?: string
+  taxExemptionControl?: ReactNode
 }) {
   const queryClient = useQueryClient()
   const allowedRails = useMemo(() => summary.allowed_actions?.rails ?? [], [summary.allowed_actions?.rails])
@@ -118,8 +123,9 @@ export default function SettlementPaymentPanel({
   const cash = audience === 'staff' && access.kind === 'authenticated' ? cashTender : undefined
   const cashSelected = cash?.selected === true
   const noncashAvailable = allowedRails.length > 0 && summary.allowed_actions?.create_attempt !== false
-  const tenders: Array<PaymentRail | 'cash'> = [...allowedRails, ...(cash ? ['cash' as const] : [])]
-  const tenderDisabled = (item: PaymentRail | 'cash') => Boolean(createMutation.isPending || cash?.pending || (item === 'cash' ? !cash?.allowed : !noncashAvailable))
+  const visibleRails: PaymentRail[] = audience === 'staff' ? ['card', 'zelle', 'check', 'ach'] : allowedRails
+  const tenders: Array<PaymentRail | 'cash'> = [...visibleRails, ...(cash ? ['cash' as const] : [])]
+  const tenderDisabled = (item: PaymentRail | 'cash') => Boolean(createMutation.isPending || cash?.pending || (item === 'cash' ? !cash?.allowed : !noncashAvailable || !allowedRails.includes(item)))
   const selectTender = (item: PaymentRail | 'cash') => {
     if (tenderDisabled(item)) return
     cash?.select(item === 'cash')
@@ -137,10 +143,33 @@ export default function SettlementPaymentPanel({
   }, [allowedRails, rail])
 
   const amountValid = isValidPrincipalAmount(amount, summary.allocatable_balance)
+  const selectedRail = cashSelected ? 'cash' : rail
+  const quoteAmount = cashSelected ? summary.principal_total : normalizeMoney(amount)
+  const [pricedAmount, setPricedAmount] = useState(quoteAmount)
+  useEffect(() => {
+    const timer = window.setTimeout(() => setPricedAmount(quoteAmount), 180)
+    return () => window.clearTimeout(timer)
+  }, [quoteAmount])
+  const quoteRequired = audience === 'staff' && access.kind === 'authenticated' && Boolean(summary.breakdown)
+  const canQuote = quoteRequired && Boolean(selectedRail && quoteAmount && (cashSelected ? cash?.allowed : amountValid && noncashAvailable))
+  const quoteEnabled = canQuote && pricedAmount === quoteAmount
+  const quoteQuery = useQuery({
+    queryKey: ['invoice-payment-quote', summary.invoice_id, summary.version, selectedRail, quoteAmount],
+    queryFn: () => fetchPaymentQuote(summary.invoice_id, selectedRail!, quoteAmount!, summary.version),
+    enabled: quoteEnabled,
+    retry: false,
+    staleTime: 0,
+  })
+  const quote = quoteQuery.data
+  const quoteReady = quoteEnabled && !quoteQuery.isFetching && !quoteQuery.error && quote?.settlement_version === summary.version
+    && quote?.rail === selectedRail && quote?.principal_amount === quoteAmount
+  const submissionBlocked = Boolean(submissionBlockedReason || (quoteRequired && !quoteReady))
   const referenceRequired = audience === 'staff' && rail !== 'card'
   const canSubmit = Boolean(
     rail
     && amountValid
+    && allowedRails.includes(rail)
+    && !submissionBlocked
     && summary.allowed_actions?.create_attempt !== false
     && (!referenceRequired || reference.trim()),
   )
@@ -421,7 +450,7 @@ export default function SettlementPaymentPanel({
     )
   }
 
-  if (!noncashAvailable && !cash) {
+  if (!noncashAvailable && !cash && audience !== 'staff') {
     return (
       <div className={`rounded-2xl border p-4 text-sm ${panel}`} role="status">
         <p className="font-bold">{summary.allowed_actions?.confirm_cash ? 'Other payment methods are unavailable.' : 'No new payment can be started right now.'}</p>
@@ -434,8 +463,7 @@ export default function SettlementPaymentPanel({
     <section className={`rounded-2xl border p-4 ${panel}`} aria-labelledby={`settlement-payment-${summary.invoice_id}`}>
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <p className={`text-[11px] font-extrabold uppercase tracking-[0.12em] ${quiet}`}>New payment</p>
-          <h2 id={`settlement-payment-${summary.invoice_id}`} className="mt-1 font-extrabold">Choose an amount and tender</h2>
+          <h2 id={`settlement-payment-${summary.invoice_id}`} className="font-extrabold">Choose an amount and tender</h2>
         </div>
         <p className={`text-xs ${quiet}`}>Up to {formatMoney(summary.allocatable_balance)}</p>
       </div>
@@ -464,7 +492,7 @@ export default function SettlementPaymentPanel({
 
       <div className="mt-3" role="radiogroup" aria-label="Payment tender">
         <p className={`mb-1.5 text-xs font-bold ${quiet}`}>Tender</p>
-        <div className={`grid gap-2 ${allowedRails.length > 2 ? 'sm:grid-cols-2' : 'grid-cols-2'}`}>
+        <div className="grid gap-2 sm:grid-cols-2">
           {tenders.map((item, index) => {
             const meta = item === 'cash' ? { label: 'Cash', detail: 'Full payment only', icon: Banknote } : RAIL_META[item]
             const Icon = meta.icon
@@ -503,8 +531,36 @@ export default function SettlementPaymentPanel({
       </div>
 
       {cash?.reason && !cash.allowed && <p id={`cash-reason-${summary.invoice_id}`} className={`mt-2 text-xs ${quiet}`}>{cash.reason}</p>}
-      {cashSelected && cash?.confirmation}
       {!noncashAvailable && <p role="status" className={`mt-3 text-sm ${quiet}`}>{summary.allowed_actions?.payment_unavailable_reason ?? 'Other payment methods are unavailable.'}</p>}
+      {taxExemptionControl && <div className="mt-4">{taxExemptionControl}</div>}
+
+      {audience === 'staff' && summary.breakdown && <section aria-label="Payment breakdown" className={`mt-4 border-t pt-4 ${dark ? 'border-[#2a3245]' : 'border-slate-200'}`}>
+        <h3 className="text-sm font-bold">Payment breakdown</h3>
+        <dl className="mt-3 space-y-2 text-sm">
+          {[
+            ['Services & parts', summary.breakdown.subtotal],
+            ...(isPositiveMoney(summary.breakdown.discount_amount) ? [['Discount', summary.breakdown.discount_amount]] : []),
+            ['Shop supplies', summary.breakdown.shop_supplies_amount],
+            [summary.tax_exemption?.applied ? 'Sales tax · exempt' : 'Sales tax', summary.breakdown.sales_tax_amount],
+            ['Invoice total before card fees', summary.breakdown.principal_total],
+          ].map(([label, value]) => <div key={label} className="flex justify-between gap-4"><dt className={quiet}>{label}</dt><dd className="shrink-0 font-semibold tabular-nums">{label === 'Discount' ? '−' : ''}{formatMoney(value)}</dd></div>)}
+          {(isPositiveMoney(summary.confirmed_principal) || isPositiveMoney(summary.active_pending_principal)) && <>
+            <div className="flex justify-between gap-4"><dt className={quiet}>Already paid toward invoice</dt><dd className="font-semibold tabular-nums">{formatMoney(summary.confirmed_principal)}</dd></div>
+            <div className="flex justify-between gap-4"><dt className={quiet}>Pending toward invoice</dt><dd className="font-semibold tabular-nums">{formatMoney(summary.active_pending_principal)}</dd></div>
+          </>}
+        </dl>
+        {quoteReady && quote && <dl aria-live="polite" className={`mt-3 space-y-2 border-t pt-3 text-sm ${dark ? 'border-[#2a3245]' : 'border-slate-200'}`}>
+          <div className="flex justify-between gap-4"><dt className={quiet}>{cashSelected ? 'Full cash payment' : 'This payment toward invoice'}</dt><dd className="font-semibold tabular-nums">{formatMoney(quote.principal_amount)}</dd></div>
+          <div className="flex justify-between gap-4"><dt className={quiet}>Card processing fee</dt><dd className="font-semibold tabular-nums">{formatMoney(quote.card_fee_amount)}</dd></div>
+          {isPositiveMoney(quote.card_fee_tax_amount) && <div className="flex justify-between gap-4"><dt className={quiet}>Tax on card fee</dt><dd className="font-semibold tabular-nums">{formatMoney(quote.card_fee_tax_amount)}</dd></div>}
+          <div className="flex items-baseline justify-between gap-4 pt-2"><dt className="font-bold">Amount to collect</dt><dd className="text-xl font-extrabold tabular-nums">{formatMoney(quote.total_amount)}</dd></div>
+          {!cashSelected && <div className={`flex justify-between gap-4 text-xs ${quiet}`}><dt>Remaining after this payment is confirmed</dt><dd className="tabular-nums">{formatMoney(centsToMoney((moneyToCents(summary.outstanding_balance) ?? 0n) - (moneyToCents(quote.principal_amount) ?? 0n)))}</dd></div>}
+        </dl>}
+        {canQuote && (pricedAmount !== quoteAmount || quoteQuery.isFetching) && <p role="status" className={`mt-3 text-sm ${quiet}`}>Calculating payment total…</p>}
+        {quoteEnabled && quoteQuery.error && <div role="alert" className="mt-3 text-sm text-red-700"><p>{paymentApiError(quoteQuery.error, 'Payment total could not be verified. Retry before continuing.').message}</p><button type="button" onClick={() => { void quoteQuery.refetch(); void queryClient.invalidateQueries({ queryKey: ['invoice-settlement'] }) }} className="min-h-11 font-semibold underline">Retry payment total</button></div>}
+      </section>}
+      {submissionBlockedReason && <p role="status" className={`mt-3 text-sm ${quiet}`}>{submissionBlockedReason}</p>}
+      {cashSelected && <fieldset disabled={submissionBlocked} className="min-w-0 border-0 p-0">{cash?.confirmation}</fieldset>}
 
       {!cashSelected && rail === 'zelle' && audience !== 'staff' && (
         <div className="mt-3 grid gap-3">

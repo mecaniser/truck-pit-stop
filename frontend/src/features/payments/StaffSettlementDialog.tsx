@@ -93,7 +93,7 @@ export default function StaffSettlementDialog({
         </header>
 
         <div className="max-h-[calc(100vh-8rem)] space-y-4 overflow-y-auto p-4 sm:p-5">
-          {settlementQuery.isLoading ? (
+          {settlementQuery.isLoading || (current && current.invoice_id !== invoiceId) ? (
             <div className="flex min-h-48 items-center justify-center"><Spinner size="lg" /></div>
           ) : settlementQuery.error || !current ? (
             <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">
@@ -103,7 +103,6 @@ export default function StaffSettlementDialog({
           ) : (
             <>
               <SettlementSummaryCard summary={current} allocations={allocationsQuery.data?.items ?? []} tone="light" />
-              <InvoiceTaxExemptionControl key={invoiceId} invoiceId={invoiceId} summary={current} onUpdated={handleUpdated} onEditingChange={setEditingExemption} />
               <fieldset disabled={editingExemption} className="min-w-0 space-y-4 border-0 p-0">
               <PendingManualPaymentPanel
                 invoiceId={invoiceId}
@@ -130,11 +129,7 @@ export default function StaffSettlementDialog({
                 invoiceId={invoiceId}
                 canRetry={current.allowed_actions?.retry_accounting === true}
               />}
-              <EarlyVehicleReleasePanel
-                invoiceId={invoiceId}
-                summary={current}
-                onUpdated={handleUpdated}
-              />
+              </fieldset>
               <FullCashPaymentPanel
                 key={invoiceId}
                 invoiceId={invoiceId}
@@ -149,8 +144,12 @@ export default function StaffSettlementDialog({
                 tone="light"
                 onUpdated={handleUpdated}
                 cashTender={cash}
+                submissionBlockedReason={editingExemption ? 'Apply or cancel the tax exemption before recording payment.' : undefined}
+                taxExemptionControl={<InvoiceTaxExemptionControl embedded key={invoiceId} invoiceId={invoiceId} summary={current} onUpdated={handleUpdated} onEditingChange={setEditingExemption} />}
               />}
               </FullCashPaymentPanel>
+              <fieldset disabled={editingExemption} className="min-w-0 border-0 p-0">
+                <EarlyVehicleReleasePanel invoiceId={invoiceId} summary={current} onUpdated={handleUpdated} />
               </fieldset>
             </>
           )}
