@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
@@ -11,6 +11,20 @@ vi.mock('../api',async original=>({...await original<typeof import('../api')>(),
 const summary:InvoiceSettlementSummary={...DB048_SETTLEMENT_FIXTURES.unpaid.summary,allowed_actions:{create_attempt:true,confirm_manual:true,rails:['card','zelle','check','ach','fleet_payment']}}
 const wrap=(ui:React.ReactNode)=>render(<QueryClientProvider client={new QueryClient({defaultOptions:{queries:{retry:false},mutations:{retry:false}}})}>{ui}</QueryClientProvider>)
 describe('Restored Fleet tender',()=>{
+  beforeEach(() => vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} }))
+  afterEach(() => vi.unstubAllGlobals())
+  it('supports keyboard selection and Escape without changing the provider', async () => {
+    wrap(<SettlementPaymentPanel access={{kind:'authenticated',invoiceId:summary.invoice_id}} summary={summary} audience="staff" onUpdated={vi.fn()} />)
+    await userEvent.click(screen.getByRole('button', { name: 'More payment methods' }))
+    await userEvent.click(screen.getByRole('radio', { name: 'Fleet Check / Code' }))
+    await userEvent.click(screen.getByRole('button', { name: /^Fleet provider/ }))
+    await userEvent.keyboard('{ArrowDown}{Enter}')
+    expect(screen.getByRole('button', { name: /^Fleet provider/ })).toHaveTextContent('Comchek')
+    await userEvent.click(screen.getByRole('button', { name: /^Fleet provider/ }))
+    await userEvent.keyboard('{End}{Escape}')
+    expect(screen.queryByRole('listbox')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /^Fleet provider/ })).toHaveTextContent('Comchek')
+  })
   it.each(['EFS','Comchek','T-Chek','Other'])('records %s against the canonical partial rail and freezes confirmation amount',async provider=>{
     api.createPaymentAttempt.mockReset()
     api.confirmPaymentAttempt.mockReset()
@@ -21,7 +35,8 @@ describe('Restored Fleet tender',()=>{
     await userEvent.click(screen.getByRole('button',{name:'More payment methods'}))
     expect(screen.queryByRole('menu')).not.toBeInTheDocument()
     await userEvent.click(screen.getByRole('radio',{name:'Fleet Check / Code'}))
-    await userEvent.selectOptions(screen.getByLabelText('Fleet provider'),provider)
+    await userEvent.click(screen.getByRole('button', { name: /^Fleet provider/ }))
+    await userEvent.click(screen.getByRole('option', { name: provider === 'EFS' ? 'EFS / MoneyCode' : provider === 'Other' ? 'Other provider' : provider }))
     await userEvent.click(screen.getByRole('button',{name:'Pay partial amount'}))
     await userEvent.clear(screen.getByLabelText('Amount applied to invoice'))
     await userEvent.type(screen.getByLabelText('Amount applied to invoice'),'50')
