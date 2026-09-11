@@ -1825,7 +1825,8 @@ async def sync_db048_credit_application(
             InvoiceSettlement.id == source_settlement_id,
             InvoiceSettlement.tenant_id == envelope.tenant.id,
         ))
-        if source_settlement and source_settlement.accounting_composition_version == "gross_invoice_v1":
+        from app.services.new_receipt_accounting import attempt_effective_gross
+        if source_settlement and await attempt_effective_gross(db, source_settlement, envelope.source_attempt):
             from app.services.db048_gross_credit_accounting import sync_gross_credit_application
             return await sync_gross_credit_application(db, envelope, source_settlement)
     source_qbo_payment_id = envelope.source_accounting_link.provider_deposit_id
@@ -2529,6 +2530,10 @@ async def sync_db048_reversal(envelope: AccountingEnvelope) -> str:
     return str(payment_id)
 
 
+from app.services.new_receipt_accounting import receipt_accounting_operation
+
+
+@receipt_accounting_operation
 async def deliver_accounting_envelope(
     db: AsyncSession,
     envelope: AccountingEnvelope,
@@ -2660,7 +2665,7 @@ async def _submit_stripe_refund(db: AsyncSession, event: ProviderOutboxEvent) ->
         Invoice.id == attempt.invoice_id, Invoice.tenant_id == event.tenant_id))
     if source_invoice is None:
         raise DB048ReconciliationError("Refund invoice is unavailable")
-    await require_standard_payment(db, source_invoice)
+    await require_standard_payment(db, source_invoice, attempt=attempt)
     if attempt.provider == "quickbooks_payments":
         if refund.state != "pending":
             raise DB048ReconciliationError("QuickBooks refund requires explicit state reconciliation")
@@ -4948,7 +4953,8 @@ async def reconcile_qbp_native_settlements(
                     InvoiceSettlement.invoice_id == attempt.invoice_id,
                     InvoiceSettlement.id == attempt.settlement_id,
                 ))
-                gross_composition = getattr(gross_settlement, "accounting_composition_version", None) == "gross_invoice_v1"
+                from app.services.new_receipt_accounting import attempt_effective_gross
+                gross_composition = gross_settlement is not None and await attempt_effective_gross(db, gross_settlement, attempt)
                 if money(payment.get("TotalAmt")) != money(attempt.provider_charge_amount):
                     if journal_links and not gross_composition:
                         try:

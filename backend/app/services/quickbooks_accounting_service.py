@@ -36,8 +36,8 @@ class QuickBooksAccountingError(RuntimeError):
         self.fault_code = fault_code
 
 
-def accounting_base_url() -> str:
-    environment = settings.QUICKBOOKS_ACCOUNTING_ENVIRONMENT.strip().lower()
+def accounting_base_url(environment=None) -> str:
+    environment = (environment or settings.QUICKBOOKS_ACCOUNTING_ENVIRONMENT).strip().lower()
     if environment == "sandbox":
         return "https://sandbox-quickbooks.api.intuit.com"
     if environment == "production":
@@ -64,7 +64,8 @@ async def _request(
     except QuickBooksTokenEncryptionError as exc:
         raise QuickBooksAccountingError("QuickBooks credentials could not be read") from exc
 
-    url = f"{accounting_base_url()}/v3/company/{connection.realm_id}/{resource.lstrip('/')}"
+    from app.services.new_receipt_accounting import request_environment
+    url = f"{accounting_base_url(request_environment(connection))}/v3/company/{connection.realm_id}/{resource.lstrip('/')}"
     query = {"minorversion": settings.QUICKBOOKS_MINOR_VERSION, **(params or {})}
     try:
         async with httpx.AsyncClient(timeout=httpx.Timeout(settings.QUICKBOOKS_HTTP_TIMEOUT_SECONDS)) as client:

@@ -32,7 +32,8 @@ def _r():
 
 
 def is_gross(settlement):
-    return getattr(settlement, "accounting_composition_version", None) == COMPOSITION_VERSION
+    from app.services.new_receipt_accounting import effective_gross
+    return effective_gross(settlement)
 
 
 def _fail(message):
@@ -144,6 +145,9 @@ async def _projection(db, settlement, connection, *, original_attempt_id=None):
     ).order_by(InvoicePaymentAttempt.created_at, InvoicePaymentAttempt.id))).scalars().all()
     members, mappings, fee_components = [], {}, []
     for attempt in attempts:
+        from app.services.new_receipt_accounting import scoped_invoice, valid_attempt_authorization
+        if scoped_invoice(settlement) and not await valid_attempt_authorization(db, attempt):
+            continue
         link = await db.scalar(select(PaymentAccountingLink).where(
             PaymentAccountingLink.tenant_id == settlement.tenant_id,
             PaymentAccountingLink.invoice_id == settlement.invoice_id,
