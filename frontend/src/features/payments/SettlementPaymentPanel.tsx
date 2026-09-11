@@ -82,7 +82,7 @@ function StripeAttemptForm({
   )
 }
 
-export default function SettlementPaymentPanel({
+function InvoicePaymentPanel({
   access,
   summary,
   audience,
@@ -143,6 +143,13 @@ export default function SettlementPaymentPanel({
   const tenderDisabled = (item: PaymentRail | 'cash') => Boolean(createMutation.isPending || cash?.pending || (item === 'cash' ? !cash?.allowed : !noncashAvailable || !allowedRails.includes(item)))
   const selectTender = (item: PaymentRail | 'cash') => {
     if (tenderDisabled(item)) return
+    if (item !== (cashSelected ? 'cash' : rail)) {
+      setReference('')
+      setNote('')
+      setAuthorization('')
+      setFleetProvider('EFS')
+      setFleetProviderName('')
+    }
     cash?.select(item === 'cash')
     if (item !== 'cash') setRail(item)
     setAttempt(null)
@@ -151,6 +158,10 @@ export default function SettlementPaymentPanel({
   useEffect(() => {
     if (rail && allowedRails.includes(rail)) return
     setRail(allowedRails[0] ?? null)
+    setReference('')
+    setNote('')
+    setAuthorization('')
+    setFleetProviderName('')
   }, [allowedRails, rail])
 
   const currentAmount = amount ?? summary.allocatable_balance
@@ -566,7 +577,13 @@ export default function SettlementPaymentPanel({
       {taxExemptionControl && <div className="mt-4">{taxExemptionControl}</div>}
 
       {!cashSelected && noncashAvailable && audience === 'staff' && rail === 'fleet_payment' && <div className="mt-3 grid gap-3 sm:grid-cols-2">
-        <label className="block text-xs font-bold">Fleet provider<select value={fleetProvider} onChange={event => setFleetProvider(event.target.value as FleetProvider)} className={`mt-1 h-11 w-full rounded-xl border px-3 text-sm ${input}`}><option value="EFS">EFS / MoneyCode</option><option value="Comchek">Comchek</option><option value="T-Chek">T-Chek</option><option value="Other">Other provider</option></select></label>
+        <label className="block text-xs font-bold">Fleet provider<select value={fleetProvider} onChange={event => {
+          setFleetProvider(event.target.value as FleetProvider)
+          setFleetProviderName('')
+          setReference('')
+          setAuthorization('')
+          setNote('')
+        }} className={`mt-1 h-11 w-full rounded-xl border px-3 text-sm ${input}`}><option value="EFS">EFS / MoneyCode</option><option value="Comchek">Comchek</option><option value="T-Chek">T-Chek</option><option value="Other">Other provider</option></select></label>
         {fleetProvider === 'Other' && <label className="block text-xs font-bold">Provider name<input maxLength={100} required value={fleetProviderName} onChange={event => setFleetProviderName(event.target.value)} className={`mt-1 h-11 w-full rounded-xl border px-3 text-sm ${input}`} /></label>}
         <label className="block text-xs font-bold">Approval reference (optional)<input maxLength={255} value={authorization} onChange={event => setAuthorization(event.target.value)} className={`mt-1 h-11 w-full rounded-xl border px-3 text-sm ${input}`} /></label>
       </div>}
@@ -631,6 +648,12 @@ export default function SettlementPaymentPanel({
       </>}
     </section>
   )
+}
+
+export default function SettlementPaymentPanel(props: Parameters<typeof InvoicePaymentPanel>[0]) {
+  // Draft amounts, evidence and provider attempts cannot follow a different
+  // invoice, including customer/guest callers that do not key this component.
+  return <InvoicePaymentPanel key={`${props.audience}:${props.summary.invoice_id}`} {...props} />
 }
 
 export { SettlementPaymentPanel }
