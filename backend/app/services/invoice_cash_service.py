@@ -30,6 +30,10 @@ def event_history_digest(event):
         if column.name == "updated_at":
             continue
         value = getattr(event, column.name)
+        # Migration 143 added a nullable audit to Invoice. A NULL audit must
+        # retain pre-143 ancestor proofs; an actual audit remains history-bound.
+        if isinstance(event, Invoice) and column.name == "tax_exemption" and value is None:
+            continue
         if column.name == "payload":
             value = None if value is None else {key: item for key, item in value.items() if key != CASH_REVIEW_KEY}
         if isinstance(value, datetime):
