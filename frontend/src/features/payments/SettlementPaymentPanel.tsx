@@ -143,7 +143,7 @@ function InvoicePaymentPanel({
   const noncashAvailable = allowedRails.length > 0 && summary.allowed_actions?.create_attempt !== false
   const secondarySelected = !cashSelected && (rail === 'check' || rail === 'ach' || rail === 'fleet_payment')
   const tenders: Array<PaymentRail | 'cash'> = audience === 'staff'
-    ? ['card', 'zelle', ...(cash ? ['cash' as const] : []), ...(expandedTenders ? ['check' as const, 'ach' as const, 'fleet_payment' as const] : secondarySelected ? [rail] : [])]
+    ? ['card', 'zelle', ...(cash ? ['cash' as const] : []), ...(expandedTenders ? ['check' as const, 'ach' as const, 'fleet_payment' as const] : [])]
     : allowedRails
   const tenderDisabled = (item: PaymentRail | 'cash') => Boolean(createMutation.isPending || cash?.pending || (item === 'cash' ? !cash?.allowed : !noncashAvailable || !allowedRails.includes(item)))
   const selectTender = (item: PaymentRail | 'cash') => {
@@ -535,7 +535,7 @@ function InvoicePaymentPanel({
                 title={audience === 'staff' ? item === 'fleet_payment' ? `${meta.label} · ${meta.detail}` : meta.detail : undefined}
                 aria-label={audience === 'staff' && item === 'fleet_payment' ? meta.label : undefined}
                 aria-describedby={item === 'cash' && cash?.reason ? `cash-reason-${summary.invoice_id}` : undefined}
-                tabIndex={selected || (!noncashAvailable && item === 'cash') ? 0 : -1}
+                tabIndex={selected || (index === 0 && secondarySelected && !expandedTenders) || (!noncashAvailable && item === 'cash') ? 0 : -1}
                 onClick={() => selectTender(item)}
                 onKeyDown={event => {
                   if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key)) return
