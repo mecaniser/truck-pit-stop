@@ -99,11 +99,53 @@ async def test_summary_redaction_and_preview(db_session, monkeypatch):
         assert result.reason is None and result.support_reference is None
 
 
-@pytest.mark.parametrize("extra", [{"reason": "  "}, {"support_reference": " "}, {"amount": "1"}, {"reason": "x"*501}])
+@pytest.mark.parametrize("extra", [{"reason": "ab"}, {"support_reference": "x"*256}, {"amount": "1"}, {"reason": "x"*501}, {"support_reference": 123}, {"expected_settlement_version": 0}])
 def test_request_validation(extra):
     fields = {"expected_settlement_version": 1, "reason": "Valid reason", "support_reference": "Reference", **extra}
     with pytest.raises(ValidationError):
         InvoiceTaxExemptionCreate(**fields)
+
+
+@pytest.mark.parametrize("fields", [{}, {"support_reference": None}, {"support_reference": ""},
+    {"support_reference": "  \t "}, {"reason": " "}, {"reason": None}])
+def test_optional_tax_reference_normalization(fields):
+    body = InvoiceTaxExemptionCreate(expected_settlement_version=1, **fields)
+    assert body.model_dump() == {"expected_settlement_version": 1, "reason": None, "support_reference": None}
+
+
+def test_legacy_tax_request_canonical_payload_unchanged():
+    fields = {"expected_settlement_version": 1, "reason": "Existing reason", "support_reference": "Certificate ABC"}
+    assert InvoiceTaxExemptionCreate(**fields).model_dump() == fields
+    assert InvoiceTaxExemptionCreate(expected_settlement_version=1,
+        reason="  Existing reason  ", support_reference=" Certificate ABC ").model_dump() == fields
+    with pytest.raises(ValidationError):
+        InvoiceTaxExemptionCreate(support_reference="Certificate ABC")
+
+
+@pytest.mark.asyncio
+async def test_apply_without_reference_retains_audit_and_normalized_replay(db_session, monkeypatch):
+    ctx = await setup(db_session, monkeypatch)
+    invoice, settlement = ctx[3:]
+    async def submit(body):
+        return await tax.apply_exemption(db_session, invoice=invoice, tenant=ctx[0], actor=ctx[1],
+            body=body, idempotency_key="optional-reference-key")
+    await submit(InvoiceTaxExemptionCreate(expected_settlement_version=1))
+    await db_session.refresh(invoice, attribute_names=["tax_exemption"])
+    audit = dict(invoice.tax_exemption)
+    assert audit["reason"] is None and audit["support_reference"] is None
+    assert audit["actor_id"] == str(ctx[1].id) and audit["actor_name"] and audit["actor_role"]
+    assert audit["applied_at"] and audit["request_hash"] and audit["idempotency_key"]
+    assert audit["before"]["tax_amount"] == "8.99" and audit["after"]["tax_amount"] == "0.00"
+    assert audit["before_settlement_version"] == 1 and audit["after_settlement_version"] == 2
+    assert invoice.total_amount == 109 and invoice.shop_supplies_amount == 6
+    for text in (None, "", " \t "):
+        await submit(InvoiceTaxExemptionCreate(expected_settlement_version=1, reason=text, support_reference=text))
+        assert invoice.tax_exemption == audit and settlement.version == 2
+    for audience in ("staff", "guest", "customer"):
+        summary = await tax.summary(db_session, invoice, settlement, ctx[0], ctx[1], audience=audience)
+        assert summary.applied and summary.reason is None and summary.support_reference is None
+    with pytest.raises(SettlementDomainError):
+        await submit(InvoiceTaxExemptionCreate(expected_settlement_version=1, support_reference="New reference"))
 
 
 @pytest.mark.asyncio

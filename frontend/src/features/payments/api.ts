@@ -42,8 +42,7 @@ const idempotencyHeaders = (key: string) => ({ headers: { 'Idempotency-Key': key
 
 export async function applyInvoiceTaxExemption(invoiceId: string, body: {
   expected_settlement_version: number
-  reason: string
-  support_reference: string
+  support_reference?: string | null
 }, key: string): Promise<InvoiceSettlementSummary> {
   const response = await api.post<InvoiceSettlementSummary>(
     `/payments/invoices/${invoiceId}/tax-exemption`, body, idempotencyHeaders(key),

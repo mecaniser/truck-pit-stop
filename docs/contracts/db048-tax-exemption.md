@@ -1,13 +1,14 @@
 # DB-048: staff invoice tax exemption before payment
 
 Owner: Backend & Integrations; Frontend owns the control above tender selection.
-Architecture contract v1, 2026-09-11, baseline e569890c. Independent QA/Security
+Architecture contract v1.1, 2026-09-11, baseline e569890c. Independent QA/Security
 review the integrated candidate. No production data mutation is authorized here.
 
 ## Outcome and boundary
 
-Staff can apply a one-time invoice-level sales-tax exemption, with a reason and
-supporting reference, before collecting payment. It is independent of tender:
+Staff can apply a one-time invoice-level sales-tax exemption with an optional
+certificate/supporting reference before collecting payment. No reason field is
+shown or required. It is independent of tender:
 cash does not imply exemption, exemption does not select cash, and supplies are
 never removed. Staff attests applicability; the application does not decide legal
 eligibility or validate an exemption certificate. Reference is text, not an upload.
@@ -38,9 +39,16 @@ false outside authorized staff. All fields default safely for older fixtures.
 
 ```text
 { expected_settlement_version: integer >= 1,
-  reason: trimmed string length 3..500,
-  support_reference: trimmed string length 1..255 }
+  support_reference?: trimmed string length 1..255 | null }
 ```
+
+Omitted, empty or whitespace-only reference is normalized to null. Continue
+accepting the previous optional `reason` field (3..500 trimmed characters when
+nonempty) for already-open clients; new UI does not collect or send it. Blank
+legacy reason is normalized to null. Existing audits remain unchanged. Required
+actor/time, original/revised totals, version and idempotency audit are retained
+even when staff supplies no reference. This changes neither eligibility nor tax
+calculation, and performs no automatic application.
 
 Response: updated canonical `InvoiceSettlementSummary`. Reuse existing tenant
 and invoice resolution and money permissions; allow GARAGE_OWNER, GARAGE_ADMIN,
@@ -134,7 +142,8 @@ immutable amount to accommodate a tax change.
    version increment, persistent immutable audit and accurate reloaded totals.
 2. Same tax decision for card/check/ACH/Zelle/cash; no tender implied; applying
    exemption alone leaves invoice unpaid and creates no receipt/provider work.
-3. Trim/required/length validation; no reason/reference in guest/customer views.
+3. Optional-reference omission/null/blank normalization and length validation;
+   legacy reason accepted but never required; no private reference in guest/customer views.
 4. Tenant/role/permission negatives; internal/cancelled/voided/paid/partial-paid,
    pending Zelle/card/manual, received ancestry and inconsistent money denied.
 5. Same-key replay, changed payload conflict, duplicate apply, stale version,

@@ -48,8 +48,13 @@ class InvoiceTaxExemptionRead(BaseModel):
 class InvoiceTaxExemptionCreate(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
     expected_settlement_version: int = Field(ge=1)
-    reason: str = Field(min_length=3, max_length=500)
-    support_reference: str = Field(min_length=1, max_length=255)
+    reason: Optional[str] = Field(default=None, min_length=3, max_length=500)
+    support_reference: Optional[str] = Field(default=None, min_length=1, max_length=255)
+
+    @field_validator("reason", "support_reference", mode="before")
+    @classmethod
+    def normalize_optional_text(cls, value):
+        return (value.strip() or None) if isinstance(value, str) else value
 
 
 class InvoiceSettlementSummary(BaseModel):
