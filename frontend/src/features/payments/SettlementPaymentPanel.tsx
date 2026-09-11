@@ -551,7 +551,7 @@ function InvoicePaymentPanel({
                 }}
                 className={`flex min-h-11 items-center gap-2 rounded-xl border px-3 py-2 text-left outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-500,#d25d43)] disabled:cursor-not-allowed disabled:opacity-50 ${selected ? dark ? 'border-[#d25d43] bg-[#d25d43]/10' : 'border-emerald-700 bg-emerald-50' : input}`}>
                 <Icon className="h-4 w-4 shrink-0" />
-                <span className="min-w-0"><span className="block text-sm font-extrabold">{item === 'card' ? providerLabel : audience === 'staff' && item === 'fleet_payment' ? 'Fleet' : meta.label}</span>{audience !== 'staff' && <span className={`block text-[11px] ${quiet}`}>{meta.detail}</span>}</span>
+                <span className="min-w-0"><span className="block text-sm font-extrabold">{item === 'card' ? providerLabel : audience === 'staff' && item === 'fleet_payment' ? 'EFS codes' : meta.label}</span>{audience !== 'staff' && <span className={`block text-[11px] ${quiet}`}>{meta.detail}</span>}</span>
               </button>
             )
           })}
