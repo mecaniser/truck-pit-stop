@@ -116,7 +116,7 @@ export async function confirmFullCashPayment(
 
 export async function adjustInvoiceCharges(
   invoiceId: string,
-  body: { expected_settlement_version: number; tax_exempt: boolean; shop_supplies_enabled: boolean; support_reference: string | null },
+  body: { expected_settlement_version: number; tax_exempt: boolean; shop_supplies_enabled: boolean; card_fee_enabled?: boolean; support_reference: string | null },
   idempotencyKey: string,
 ): Promise<InvoiceSettlementSummary> {
   const { data } = await api.post(`/payments/invoices/${invoiceId}/charge-adjustments`, body, idempotencyHeaders(idempotencyKey))

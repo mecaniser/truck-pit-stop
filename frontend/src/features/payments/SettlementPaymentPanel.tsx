@@ -13,6 +13,7 @@ import { getStripeForAccount } from '@/lib/stripe'
 import { chargeQuickBooksPaymentAttempt, confirmPaymentAttempt, createIdempotencyKey, createPaymentAttempt, fetchPaymentQuote, paymentApiError } from './api'
 import { centsToMoney, formatMoney, isPositiveMoney, isValidPrincipalAmount, moneyToCents, normalizeMoney } from './money'
 import type { InlineCashTender } from './FullCashPaymentPanel'
+import type { InlineInvoiceChargeControls } from './InvoiceChargeControls'
 import type {
   InvoiceSettlementSummary,
   PaymentAttemptResponse,
@@ -92,6 +93,7 @@ export default function SettlementPaymentPanel({
   cashTender,
   submissionBlockedReason,
   taxExemptionControl,
+  chargeControls,
 }: {
   access: SettlementAccess
   summary: InvoiceSettlementSummary
@@ -103,11 +105,13 @@ export default function SettlementPaymentPanel({
   cashTender?: InlineCashTender
   submissionBlockedReason?: string
   taxExemptionControl?: ReactNode
+  chargeControls?: InlineInvoiceChargeControls
 }) {
   const queryClient = useQueryClient()
   const allowedRails = useMemo(() => summary.allowed_actions?.rails ?? [], [summary.allowed_actions?.rails])
   const [rail, setRail] = useState<PaymentRail | null>(allowedRails[0] ?? null)
   const [amount, setAmount] = useState(summary.allocatable_balance)
+  const [amountVersion, setAmountVersion] = useState(summary.version)
   const [editingAmount, setEditingAmount] = useState(false)
   const [expandedTenders, setExpandedTenders] = useState(false)
   const [showTransferDetails, setShowTransferDetails] = useState(false)
@@ -145,6 +149,7 @@ export default function SettlementPaymentPanel({
 
   useEffect(() => {
     setAmount(summary.allocatable_balance)
+    setAmountVersion(summary.version)
     setEditingAmount(false)
   }, [summary.allocatable_balance, summary.version])
 
@@ -153,9 +158,10 @@ export default function SettlementPaymentPanel({
     setRail(allowedRails[0] ?? null)
   }, [allowedRails, rail])
 
-  const amountValid = isValidPrincipalAmount(amount, summary.allocatable_balance)
+  const currentAmount = amountVersion === summary.version ? amount : summary.allocatable_balance
+  const amountValid = isValidPrincipalAmount(currentAmount, summary.allocatable_balance)
   const selectedRail = cashSelected ? 'cash' : rail
-  const quoteAmount = cashSelected ? summary.principal_total : normalizeMoney(amount)
+  const quoteAmount = cashSelected ? summary.principal_total : normalizeMoney(currentAmount)
   const [pricedAmount, setPricedAmount] = useState(quoteAmount)
   useEffect(() => {
     const timer = window.setTimeout(() => setPricedAmount(quoteAmount), 180)
@@ -170,12 +176,15 @@ export default function SettlementPaymentPanel({
     enabled: quoteEnabled,
     retry: false,
     staleTime: 0,
+    // Display-only continuity. A previous version is never eligible for submission.
+    placeholderData: (previous, previousQuery) => previousQuery?.queryKey[1] === summary.invoice_id
+      && previousQuery.queryKey[3] === selectedRail ? previous : undefined,
   })
   const quote = quoteQuery.data
   const quoteReady = quoteEnabled && !quoteQuery.isFetching && !quoteQuery.error && quote?.settlement_version === summary.version
     && quote?.rail === selectedRail && quote?.principal_amount === quoteAmount
-  const partialInvoicePayment = Boolean(quote && moneyToCents(quote.principal_amount) !== moneyToCents(summary.principal_total))
-  const remainingAfterPayment = quote ? centsToMoney((moneyToCents(summary.outstanding_balance) ?? 0n) - (moneyToCents(quote.principal_amount) ?? 0n)) : '0.00'
+  const partialInvoicePayment = Boolean(quoteAmount && moneyToCents(quoteAmount) !== moneyToCents(summary.principal_total))
+  const remainingAfterPayment = quoteAmount ? centsToMoney((moneyToCents(summary.outstanding_balance) ?? 0n) - (moneyToCents(quoteAmount) ?? 0n)) : '0.00'
   const submissionBlocked = Boolean(submissionBlockedReason || (quoteRequired && !quoteReady))
   const referenceRequired = audience === 'staff' && rail !== 'card'
   const canSubmit = Boolean(
@@ -572,28 +581,38 @@ export default function SettlementPaymentPanel({
         </div>
       )}
 
-      {audience === 'staff' && summary.breakdown && <section aria-label="Payment breakdown" className={`mt-4 border-t pt-4 ${dark ? 'border-[#2a3245]' : 'border-slate-200'}`}>
-        <h3 className="text-sm font-bold">Payment breakdown</h3>
+      {audience === 'staff' && summary.breakdown && <section aria-label="Payment breakdown" aria-busy={Boolean(submissionBlockedReason || (canQuote && !quoteReady))} className={`mt-4 border-t pt-4 ${dark ? 'border-[#2a3245]' : 'border-slate-200'}`}>
+        <div className="flex items-center justify-between gap-2">
+          <h3 className="text-sm font-bold">Payment breakdown</h3>
+          <span aria-hidden="true" className={`text-xs ${quiet} ${submissionBlockedReason || (canQuote && !quoteReady) ? '' : 'invisible'}`}>Updating…</span>
+        </div>
         <dl className="mt-3 space-y-2 text-sm">
           {[
-            ['Services & parts', summary.breakdown.subtotal],
-            ...(isPositiveMoney(summary.breakdown.discount_amount) ? [['Discount', summary.breakdown.discount_amount]] : []),
-            ['Shop supplies', summary.breakdown.shop_supplies_amount],
-            [summary.tax_exemption?.applied ? 'Sales tax · exempt' : 'Sales tax', summary.breakdown.sales_tax_amount],
-            ...(partialInvoicePayment ? [['Invoice total before card fees', summary.breakdown.principal_total]] : []),
-          ].map(([label, value]) => <div key={label} className="flex justify-between gap-4"><dt className={quiet}>{label}</dt><dd className="shrink-0 font-semibold tabular-nums">{label === 'Discount' ? '−' : ''}{formatMoney(value)}</dd></div>)}
+            ['subtotal', 'Services & parts', summary.breakdown.subtotal],
+            ...(isPositiveMoney(summary.breakdown.discount_amount) ? [['discount', 'Discount', summary.breakdown.discount_amount]] : []),
+            ['supplies', 'Shop supplies', summary.breakdown.shop_supplies_amount],
+            ['tax', !chargeControls && summary.tax_exemption?.applied ? 'Sales tax · exempt' : 'Sales tax', summary.breakdown.sales_tax_amount],
+            ...(partialInvoicePayment ? [['principal', 'Invoice total before card fees', summary.breakdown.principal_total]] : []),
+          ].map(([key, label, value]) => <div key={key} className="flex items-center justify-between gap-2">
+            <dt className={`flex min-w-0 flex-1 items-center ${quiet}`}>{label}{key === 'tax' && chargeControls?.referenceAction}</dt>
+            <dd className="flex shrink-0 items-center gap-2 font-semibold tabular-nums">
+              {key === 'supplies' ? chargeControls?.supplies : key === 'tax' ? chargeControls?.salesTax : null}
+              <span className="min-w-[4rem] text-right">{label === 'Discount' ? '−' : ''}{formatMoney(value)}</span>
+            </dd>
+          </div>)}
         </dl>
-        {quoteReady && quote && <dl aria-live="polite" className={`mt-3 space-y-2 border-t pt-3 text-sm ${dark ? 'border-[#2a3245]' : 'border-slate-200'}`}>
-          {partialInvoicePayment && <div className="flex justify-between gap-4"><dt className={quiet}>This payment toward invoice</dt><dd className="font-semibold tabular-nums">{formatMoney(quote.principal_amount)}</dd></div>}
-          {selectedRail === 'card' && <div className="flex justify-between gap-4"><dt className={quiet}>Card processing fee</dt><dd className="font-semibold tabular-nums">{formatMoney(quote.card_fee_amount)}</dd></div>}
-          {isPositiveMoney(quote.card_fee_tax_amount) && <div className="flex justify-between gap-4"><dt className={quiet}>Tax on card fee</dt><dd className="font-semibold tabular-nums">{formatMoney(quote.card_fee_tax_amount)}</dd></div>}
-          <div className="flex items-baseline justify-between gap-4 pt-2"><dt className="font-bold">Amount to collect</dt><dd className="text-xl font-extrabold tabular-nums">{formatMoney(quote.total_amount)}</dd></div>
+        {selectedRail && <dl aria-live="polite" className={`mt-3 space-y-2 border-t pt-3 text-sm ${dark ? 'border-[#2a3245]' : 'border-slate-200'}`}>
+          {partialInvoicePayment && <div className="flex justify-between gap-4"><dt className={quiet}>This payment toward invoice</dt><dd className="font-semibold tabular-nums">{quote ? formatMoney(quote.principal_amount) : '—'}</dd></div>}
+          {selectedRail === 'card' && <div className="flex items-center justify-between gap-2"><dt className={`min-w-0 flex-1 ${quiet}`}>Card processing fee</dt><dd className="flex shrink-0 items-center gap-2 font-semibold tabular-nums">{chargeControls?.cardFee}<span className="min-w-[4rem] text-right">{quote ? formatMoney(quote.card_fee_amount) : '—'}</span></dd></div>}
+          {selectedRail === 'card' && <div className="flex justify-between gap-4"><dt className={quiet}>Tax on card fee</dt><dd className="font-semibold tabular-nums">{quote ? formatMoney(quote.card_fee_tax_amount) : '—'}</dd></div>}
+          <div className="flex items-baseline justify-between gap-4 pt-2"><dt className="font-bold">Amount to collect</dt><dd className="text-xl font-extrabold tabular-nums">{quote ? formatMoney(quote.total_amount) : '—'}</dd></div>
           {!cashSelected && isPositiveMoney(remainingAfterPayment) && <div className={`flex justify-between gap-4 text-xs ${quiet}`}><dt>Remaining after confirmation</dt><dd className="tabular-nums">{formatMoney(remainingAfterPayment)}</dd></div>}
         </dl>}
-        {canQuote && (pricedAmount !== quoteAmount || quoteQuery.isFetching) && <p role="status" className={`mt-3 text-sm ${quiet}`}>Calculating payment total…</p>}
+        {chargeControls?.details}
+        <p role="status" className="sr-only">{canQuote && !quoteReady ? 'Calculating payment total…' : ''}</p>
         {quoteEnabled && quoteQuery.error && <div role="alert" className="mt-3 text-sm text-red-700"><p>{paymentApiError(quoteQuery.error, 'Payment total could not be verified. Retry before continuing.').message}</p><button type="button" onClick={() => { void quoteQuery.refetch(); void queryClient.invalidateQueries({ queryKey: ['invoice-settlement'] }) }} className="min-h-11 font-semibold underline">Retry payment total</button></div>}
       </section>}
-      {submissionBlockedReason && <p role="status" className={`mt-3 text-sm ${quiet}`}>{submissionBlockedReason}</p>}
+      {submissionBlockedReason && <p role="status" className="sr-only">{submissionBlockedReason}</p>}
       {cashSelected && <fieldset disabled={submissionBlocked} className="min-w-0 border-0 p-0">{cash?.confirmation}</fieldset>}
 
       {!cashSelected && rail === 'zelle' && audience !== 'staff' && (

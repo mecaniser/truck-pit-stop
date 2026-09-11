@@ -15,10 +15,10 @@ from app.db.models.payment import Payment
 from app.db.models.user import UserRole
 
 
-async def adjust(db, ctx, tax=False, supplies=True, version=None, key=None):
+async def adjust(db, ctx, tax=False, supplies=True, version=None, key=None, fee=None):
     version = ctx[4].version if version is None else version
     body = InvoiceChargeAdjustmentCreate(expected_settlement_version=version,
-        tax_exempt=tax, shop_supplies_enabled=supplies)
+        tax_exempt=tax, shop_supplies_enabled=supplies, card_fee_enabled=fee)
     return await charges.adjust(db, invoice=ctx[3], tenant=ctx[0], actor=ctx[1], body=body,
         idempotency_key=key or f"adjust-{version}")
 

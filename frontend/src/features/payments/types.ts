@@ -40,11 +40,13 @@ export interface InvoiceSettlementSummary {
   charge_controls?: {
     tax_exempt: boolean
     shop_supplies_enabled: boolean
+    card_fee_enabled?: boolean
     can_adjust: boolean
     unavailable_reason: string | null
     support_reference: string | null
     original_shop_supplies_amount: string
     original_tax_amount: string
+    original_card_fee_amount?: string
   }
   breakdown?: {
     subtotal: string

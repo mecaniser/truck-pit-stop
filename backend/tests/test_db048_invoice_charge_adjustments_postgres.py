@@ -15,7 +15,8 @@ pytestmark = pytest.mark.skipif(not os.environ.get("DB048_POSTGRES_URL"), reason
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("winner", ["adjustment", "payment", "competing_adjustment"])
-async def test_serialized_charge_changes_and_audit(monkeypatch, winner):
+@pytest.mark.parametrize("fee", [None, False])
+async def test_serialized_charge_changes_and_audit(monkeypatch, winner, fee):
     engine = create_async_engine(os.environ["DB048_POSTGRES_URL"])
     sessions = async_sessionmaker(engine, expire_on_commit=False)
     try:
@@ -32,7 +33,7 @@ async def test_serialized_charge_changes_and_audit(monkeypatch, winner):
             if winner == "payment":
                 await payment(first, a)
             else:
-                await adjust(first, a, tax=True, supplies=False)
+                await adjust(first, a, tax=True, supplies=False, fee=fee)
             if winner == "adjustment":
                 with pytest.raises(SettlementDomainError) as busy:
                     await payment(second, b)
@@ -45,13 +46,13 @@ async def test_serialized_charge_changes_and_audit(monkeypatch, winner):
                 assert failure.value.code == "stale_settlement_version"
             else:
                 with pytest.raises(SettlementDomainError) as busy:
-                    await adjust(second, b, tax=True)
+                    await adjust(second, b, tax=True, fee=fee)
                 assert busy.value.code == "invoice_busy"
                 await second.rollback()
                 await first.commit()
                 b = await load(second, ids)
                 with pytest.raises(SettlementDomainError):
-                    await adjust(second, b, tax=True, version=1)
+                    await adjust(second, b, tax=True, version=1, fee=fee)
             await second.rollback()
         if winner != "payment":
             async with sessions() as check:

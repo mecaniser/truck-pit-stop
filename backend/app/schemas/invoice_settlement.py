@@ -70,6 +70,7 @@ class InvoiceChargeAdjustmentCreate(BaseModel):
     expected_settlement_version: int = Field(ge=1)
     tax_exempt: StrictBool
     shop_supplies_enabled: StrictBool
+    card_fee_enabled: Optional[StrictBool] = None
     support_reference: Optional[str] = Field(default=None, max_length=255)
 
     @field_validator("support_reference", mode="before")
@@ -81,11 +82,13 @@ class InvoiceChargeAdjustmentCreate(BaseModel):
 class InvoiceChargeControls(BaseModel):
     tax_exempt: bool
     shop_supplies_enabled: bool
+    card_fee_enabled: bool = True
     can_adjust: bool
     unavailable_reason: Optional[str] = None
     support_reference: Optional[str] = None
     original_shop_supplies_amount: Money
     original_tax_amount: Money
+    original_card_fee_amount: Money
 
 
 class InvoicePaymentQuote(BaseModel):

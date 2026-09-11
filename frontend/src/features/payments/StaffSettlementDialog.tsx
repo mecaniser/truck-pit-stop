@@ -8,6 +8,8 @@ import AccountingReconciliationPanel from './AccountingReconciliationPanel'
 import EarlyVehicleReleasePanel from './EarlyVehicleReleasePanel'
 import FullCashPaymentPanel from './FullCashPaymentPanel'
 import InvoiceTaxExemptionControl from './InvoiceTaxExemptionControl'
+import InvoiceChargeControls from './InvoiceChargeControls'
+import type { InlineInvoiceChargeControls } from './InvoiceChargeControls'
 import PendingManualPaymentPanel from './PendingManualPaymentPanel'
 import SettlementPaymentPanel from './SettlementPaymentPanel'
 import SettlementCreditPanel from './SettlementCreditPanel'
@@ -137,7 +139,8 @@ export default function StaffSettlementDialog({
                 onUpdated={handleUpdated}
                 onChoosingChange={() => undefined}
               >
-              {cash => <SettlementPaymentPanel
+              {cash => {
+                const paymentPanel = (chargeControls?: InlineInvoiceChargeControls) => <SettlementPaymentPanel
                 access={{ kind: 'authenticated', invoiceId }}
                 summary={current}
                 audience="staff"
@@ -145,8 +148,13 @@ export default function StaffSettlementDialog({
                 onUpdated={handleUpdated}
                 cashTender={cash}
                 submissionBlockedReason={editingExemption ? 'Finish saving invoice changes before recording payment.' : undefined}
-                taxExemptionControl={<InvoiceTaxExemptionControl embedded key={invoiceId} invoiceId={invoiceId} summary={current} onUpdated={handleUpdated} onEditingChange={setEditingExemption} />}
-              />}
+                chargeControls={chargeControls}
+                taxExemptionControl={!current.charge_controls && <InvoiceTaxExemptionControl embedded key={invoiceId} invoiceId={invoiceId} summary={current} onUpdated={handleUpdated} onEditingChange={setEditingExemption} />}
+              />
+                return current.charge_controls
+                  ? <InvoiceChargeControls key={invoiceId} invoiceId={invoiceId} summary={current} onUpdated={handleUpdated} onEditingChange={setEditingExemption}>{paymentPanel}</InvoiceChargeControls>
+                  : paymentPanel()
+              }}
               </FullCashPaymentPanel>
               <fieldset disabled={editingExemption} className="min-w-0 border-0 p-0">
                 <EarlyVehicleReleasePanel invoiceId={invoiceId} summary={current} onUpdated={handleUpdated} />

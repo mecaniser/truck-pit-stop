@@ -10,7 +10,7 @@ from app.services.invoice_accounting_policy import locked_policy
 from app.services.invoice_tax_exemption import authorized, eligibility, snapshot, MONEY_FIELDS
 from app.services.invoice_settlement_service import SettlementDomainError, money, invoice_money_snapshot, _canonical_hash, _actor_snapshot
 from app.schemas.invoice_settlement import InvoiceChargeControls
-from app.services.invoice_charge_state import latest, effective_tax_exempt
+from app.services.invoice_charge_state import latest, effective_tax_exempt, effective_card_fee_enabled
 
 
 def original_snapshot(invoice):
@@ -32,15 +32,17 @@ def original_snapshot(invoice):
     return {key: str(money(value)) for key, value in values.items()}
 
 
-def calculate(original, *, tax_exempt, shop_supplies_enabled):
+def calculate(original, *, tax_exempt, shop_supplies_enabled, card_fee_enabled=True):
     values = {key: Decimal(original[key]) for key in MONEY_FIELDS}
     subtotal, supplies, fee, tax = (values[key] for key in
         ("subtotal", "shop_supplies_amount", "service_fee_amount", "tax_amount"))
     base = subtotal + supplies
     new_supplies = supplies if shop_supplies_enabled else Decimal("0.00")
     new_fee = fee if shop_supplies_enabled else money(subtotal * fee / base)
-    new_tax = Decimal("0.00") if tax_exempt else (tax if shop_supplies_enabled
-        else money((subtotal + new_fee) * tax / (base + fee)))
+    if not card_fee_enabled:
+        new_fee = Decimal("0.00")
+    new_tax = Decimal("0.00") if tax_exempt else (tax if shop_supplies_enabled and card_fee_enabled
+        else money((subtotal + new_supplies + new_fee) * tax / (base + fee)))
     values.update(shop_supplies_amount=new_supplies, service_fee_amount=new_fee, tax_amount=new_tax)
     values["total_amount"] = subtotal + new_supplies + new_fee + new_tax - values["discount_amount"]
     if values["total_amount"] - new_fee - new_tax <= 0:
@@ -62,11 +64,13 @@ async def summary(db, invoice, settlement, tenant, actor, *, audience):
         original, reason = snapshot(invoice), str(exc)
     row = latest(invoice)
     return InvoiceChargeControls(tax_exempt=effective_tax_exempt(invoice),
+        card_fee_enabled=effective_card_fee_enabled(invoice),
         shop_supplies_enabled=row.evidence["settings"]["shop_supplies_enabled"] if row else True,
         can_adjust=reason is None, unavailable_reason=reason,
         support_reference=(row.evidence if row else invoice.tax_exemption or {}).get("support_reference"),
         original_shop_supplies_amount=money(original["shop_supplies_amount"]),
-        original_tax_amount=money(original["tax_amount"]))
+        original_tax_amount=money(original["tax_amount"]),
+        original_card_fee_amount=money(original["service_fee_amount"]))
 
 
 async def adjust(db, *, invoice, tenant, actor, body, idempotency_key):
@@ -84,7 +88,10 @@ async def adjust(db, *, invoice, tenant, actor, body, idempotency_key):
         InvoiceSettlement.tenant_id == tenant.id).execution_options(populate_existing=True))
     if not settlement:
         raise SettlementDomainError("charge_adjustment_unavailable", "Refresh the invoice before changing charges.")
-    request_hash = _canonical_hash({"invoice_id": str(invoice.id), "actor_id": str(actor.id), **body.model_dump()})
+    request_body = body.model_dump()
+    if body.card_fee_enabled is None:
+        request_body.pop("card_fee_enabled")
+    request_hash = _canonical_hash({"invoice_id": str(invoice.id), "actor_id": str(actor.id), **request_body})
     previous = next((row for row in invoice.charge_adjustments if row.idempotency_key == idempotency_key), None)
     if previous:
         if previous.request_hash != request_hash:
@@ -97,7 +104,10 @@ async def adjust(db, *, invoice, tenant, actor, body, idempotency_key):
         raise SettlementDomainError("charge_adjustment_unavailable", reason)
     try:
         original = original_snapshot(invoice)
-        after = calculate(original, tax_exempt=body.tax_exempt, shop_supplies_enabled=body.shop_supplies_enabled)
+        card_fee_enabled = (effective_card_fee_enabled(invoice) if body.card_fee_enabled is None
+                            else body.card_fee_enabled)
+        after = calculate(original, tax_exempt=body.tax_exempt, shop_supplies_enabled=body.shop_supplies_enabled,
+                          card_fee_enabled=card_fee_enabled)
     except ValueError as exc:
         raise SettlementDomainError("charge_adjustment_unavailable", str(exc))
     before, version = snapshot(invoice), settlement.version
@@ -111,7 +121,8 @@ async def adjust(db, *, invoice, tenant, actor, body, idempotency_key):
     row = InvoiceChargeAdjustment(tenant_id=tenant.id, invoice_id=invoice.id,
         version=settlement.version, idempotency_key=idempotency_key, request_hash=request_hash,
         evidence={"schema": "invoice-charge-adjustment-v1", "original": original, "before": before, "after": after,
-            "settings": {"tax_exempt": body.tax_exempt, "shop_supplies_enabled": body.shop_supplies_enabled},
+            "settings": {"tax_exempt": body.tax_exempt, "shop_supplies_enabled": body.shop_supplies_enabled,
+                         "card_fee_enabled": card_fee_enabled},
             "support_reference": body.support_reference, "actor_id": str(actor_id), "actor_name": actor_name,
             "actor_role": actor_role, "applied_at": datetime.now(timezone.utc).isoformat(),
             "before_settlement_version": version, "after_settlement_version": settlement.version})
