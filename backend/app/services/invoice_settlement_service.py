@@ -312,7 +312,14 @@ async def provider_readiness(
     db: AsyncSession,
     tenant: Tenant,
     config: Optional[TenantPaymentProviderConfiguration] = None,
+    *, invoice_id: Optional[UUID] = None,
+    lock_ancestry: bool = False,
 ) -> ProviderReadiness:
+    """Settings use tenant-wide reconciliation; checkout scopes it to its invoice.
+
+    Scoping never relaxes provider or verified-backfill gates and does not
+    initialize missing settlements or reinterpret legacy payments.
+    """
     config = config or await load_active_configuration(db, tenant.id)
     provider = config.selected_provider if config else None
     global_gate = bool(settings.INVOICE_SPLIT_PAYMENTS_ENABLED)
@@ -320,6 +327,60 @@ async def provider_readiness(
     provider_gate = False
     onboarding = False
     reasons: list[str] = []
+    scope_ids: list[UUID] = []
+    ancestry_reasons: list[str] = []
+    current_id = invoice_id
+    while current_id is not None:
+        if current_id in scope_ids:
+            ancestry_reasons.append("invoice_settlement_ancestry_requires_review")
+            break
+        node = await db.scalar(select(Invoice).where(Invoice.id == current_id,
+            Invoice.tenant_id == tenant.id))
+        if node is None or node.deleted_at is not None:
+            ancestry_reasons.append("invoice_settlement_ancestry_requires_review")
+            break
+        if lock_ancestry:
+            from app.services.invoice_accounting_policy import locked_policy
+            await locked_policy(db, node)
+        # Column-only refresh preserves eager relationships used by subsequent
+        # invoice actions (a full populate_existing would expire them).
+        await db.refresh(node, attribute_names=[column.name for column in Invoice.__table__.columns])
+        if node.deleted_at is not None or node.tenant_id != tenant.id:
+            ancestry_reasons.append("invoice_settlement_ancestry_requires_review")
+            break
+        coherent_order = await db.scalar(select(RepairOrder.id).join(Customer,
+            Customer.id == RepairOrder.customer_id).where(RepairOrder.id == node.repair_order_id,
+            RepairOrder.tenant_id == tenant.id, Customer.tenant_id == tenant.id))
+        if coherent_order is None:
+            ancestry_reasons.append("invoice_settlement_ancestry_requires_review")
+            break
+        scope_ids.append(current_id)
+        if current_id != invoice_id:
+            # A replacement may not collect against any predecessor money,
+            # even when that money was reconciled or used a legacy cash rail.
+            parent_payment = await db.scalar(select(Payment.id).where(
+                Payment.tenant_id == tenant.id, Payment.invoice_id == current_id,
+                Payment.amount > ZERO).limit(1))
+            parent_attempt = await db.scalar(select(InvoicePaymentAttempt.id).where(
+                InvoicePaymentAttempt.tenant_id == tenant.id, InvoicePaymentAttempt.invoice_id == current_id,
+                or_(InvoicePaymentAttempt.state == "pending", InvoicePaymentAttempt.received_amount > ZERO,
+                    InvoicePaymentAttempt.provider_charge_id.is_not(None),
+                    InvoicePaymentAttempt.provider_intent_id.is_not(None))).limit(1))
+            parent_balance = await db.scalar(select(InvoiceSettlement.id).where(
+                InvoiceSettlement.tenant_id == tenant.id, InvoiceSettlement.invoice_id == current_id,
+                or_(InvoiceSettlement.confirmed_principal > ZERO, InvoiceSettlement.active_pending_principal > ZERO,
+                    InvoiceSettlement.unapplied_credit > ZERO, InvoiceSettlement.refund_pending > ZERO)).limit(1))
+            parent_pending = await db.scalar(select(InvoicePaymentAttempt.id).where(
+                InvoicePaymentAttempt.tenant_id == tenant.id, InvoicePaymentAttempt.invoice_id == current_id,
+                InvoicePaymentAttempt.state == "pending").limit(1))
+            parent_reservation = await db.scalar(select(InvoiceSettlement.id).where(
+                InvoiceSettlement.tenant_id == tenant.id, InvoiceSettlement.invoice_id == current_id,
+                InvoiceSettlement.active_pending_principal > ZERO).limit(1))
+            if parent_pending or parent_reservation or node.zelle_pending_submitted_at:
+                ancestry_reasons.append("previous_invoice_payment_pending")
+            if parent_payment or parent_attempt or parent_balance or node.zelle_pending_submitted_at:
+                ancestry_reasons.append("previous_invoice_payment_requires_review")
+        current_id = node.supersedes_invoice_id
 
     qbo = (
         await db.execute(
@@ -407,6 +468,7 @@ async def provider_readiness(
                 Invoice.tenant_id == tenant.id,
                 Invoice.deleted_at.is_(None),
                 RepairOrder.tenant_id == tenant.id,
+                or_(invoice_id is None, Invoice.id.in_(scope_ids)),
                 RepairOrder.customer_id.is_not(None),
                 ~select(InvoiceSettlement.id).where(
                     InvoiceSettlement.tenant_id == tenant.id,
@@ -420,6 +482,7 @@ async def provider_readiness(
         unreconciled_payment = await db.scalar(
             select(Payment.id).where(
                 Payment.tenant_id == tenant.id,
+                or_(invoice_id is None, Payment.invoice_id.in_(scope_ids)),
                 Payment.deleted_at.is_(None),
                 Payment.status.in_([PaymentStatus.COMPLETED, PaymentStatus.REFUNDED]),
                 Payment.method.in_(supported_methods),
@@ -499,6 +562,7 @@ async def provider_readiness(
             select(Invoice).where(
                 Invoice.tenant_id == tenant.id,
                 Invoice.zelle_pending_submitted_at.is_not(None),
+                or_(invoice_id is None, Invoice.id.in_(scope_ids)),
                 Invoice.deleted_at.is_(None),
             )
         )).scalars().all()
@@ -534,7 +598,7 @@ async def provider_readiness(
                 ):
                     unreconciled_zelle = pending_invoice.id
                     break
-        stale_reasons = []
+        stale_reasons = list(ancestry_reasons)
         if unreconciled_invoice:
             stale_reasons.append("invoice_settlement_backfill_stale_invoice")
         if unreconciled_payment:
@@ -608,11 +672,18 @@ async def provider_readiness(
     )
 
 
-async def require_feature_ready(db: AsyncSession, tenant: Tenant) -> ProviderReadiness:
-    readiness = await provider_readiness(db, tenant)
+async def require_feature_ready(db: AsyncSession, tenant: Tenant, *, invoice_id: Optional[UUID] = None,
+                                lock_ancestry: bool = False) -> ProviderReadiness:
+    readiness = await provider_readiness(db, tenant, invoice_id=invoice_id, lock_ancestry=lock_ancestry)
     if not readiness.split_payment_global_gate or not readiness.split_payment_tenant_gate:
         raise SettlementDomainError("split_payments_disabled", "Partial payments are not enabled for this shop.")
     if readiness.status != "ready":
+        if "previous_invoice_payment_pending" in readiness.reasons:
+            raise SettlementDomainError("previous_invoice_payment_pending",
+                "A previous version of this invoice has a pending payment. Resolve it before collecting another payment.")
+        if "previous_invoice_payment_requires_review" in readiness.reasons:
+            raise SettlementDomainError("historical_payment_balance_review",
+                "A replaced invoice has payment activity. Resolve it before collecting a new payment.")
         code = (
             "quickbooks_payments_external_approval_pending"
             if readiness.status == "unavailable_external_approval"
@@ -673,7 +744,7 @@ async def settlement_for_compatibility_route(
             )
     if not enabled:
         return None
-    await require_feature_ready(db, tenant)
+    await require_feature_ready(db, tenant, invoice_id=invoice.id, lock_ancestry=lock)
     return existing or await get_or_create_settlement(
         db,
         invoice=invoice,
@@ -954,7 +1025,7 @@ async def create_attempt(
     if active_customer_id is None:
         raise SettlementDomainError("invoice_not_found", "Invoice not found.", status_code=404)
 
-    readiness = await require_feature_ready(db, tenant)
+    readiness = await require_feature_ready(db, tenant, invoice_id=invoice.id, lock_ancestry=True)
     if rail not in {"card", "zelle", "check", "ach"}:
         raise SettlementDomainError("payment_rail_disabled", "This payment rail is not available.")
     if subject_type in {"customer", "guest"} and rail not in {"card", "zelle"}:

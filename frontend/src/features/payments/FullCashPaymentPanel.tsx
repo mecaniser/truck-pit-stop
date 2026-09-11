@@ -83,7 +83,7 @@ export default function FullCashPaymentPanel({ invoiceId, summary, onUpdated, on
   }
 
   const confirmation = expanded && <div id={panelId} className="mt-3 space-y-3 border-t border-slate-200 pt-4">
-      <div className="flex flex-wrap items-baseline justify-between gap-3"><span className="text-sm text-slate-600">Full amount to collect</span><strong className="text-xl tabular-nums">{formatMoney(summary.principal_total)}</strong></div>
+      {(!children || !summary.breakdown) && <div className="flex flex-wrap items-baseline justify-between gap-3"><span className="text-sm text-slate-600">Full amount to collect</span><strong className="text-xl tabular-nums">{formatMoney(summary.principal_total)}</strong></div>}
       <p className="text-xs leading-relaxed text-slate-600">No card fee. Recorded in this shop’s cash receipts only—not sent to QuickBooks. Cannot be combined with another payment method.</p>
       <label htmlFor={noteId} className="block text-xs font-semibold text-slate-600">Receipt note (optional)</label>
       <textarea id={noteId} value={note} maxLength={1000} disabled={pending || request.current !== null} onChange={event => setNote(event.target.value)} rows={2} className="w-full rounded-xl border border-slate-200 bg-white p-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-700 disabled:opacity-70" />

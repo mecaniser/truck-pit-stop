@@ -7,11 +7,12 @@ import type { InvoiceSettlementSummary } from './types'
 
 // Existing staff-payment visual language; exemption belongs to invoice totals,
 // not to a tender. Disclosure -> optional reference -> confirmed updated total.
-export default function InvoiceTaxExemptionControl({ invoiceId, summary, onUpdated, onEditingChange }: {
+export default function InvoiceTaxExemptionControl({ invoiceId, summary, onUpdated, onEditingChange, embedded = false }: {
   invoiceId: string
   summary: InvoiceSettlementSummary
   onUpdated: (summary: InvoiceSettlementSummary) => void
   onEditingChange: (editing: boolean) => void
+  embedded?: boolean
 }) {
   const queryClient = useQueryClient()
   const id = useId()
@@ -66,7 +67,7 @@ export default function InvoiceTaxExemptionControl({ invoiceId, summary, onUpdat
     }
   }
 
-  return <section aria-label="Invoice tax exemption" className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-slate-950">
+  return <section aria-label="Invoice tax exemption" className={embedded ? 'border-t border-slate-200 pt-3 text-slate-950' : 'rounded-xl border border-slate-200 bg-white px-4 py-3 text-slate-950'}>
     {exemption.applied ? <div role="status" className="space-y-1">
       <p className="flex items-center gap-2 text-sm font-semibold"><CheckCircle2 aria-hidden="true" className="h-4 w-4 text-emerald-700" />Tax exemption applied</p>
       {exemption.reason && <p className="break-words text-sm text-slate-600">{exemption.reason}</p>}
