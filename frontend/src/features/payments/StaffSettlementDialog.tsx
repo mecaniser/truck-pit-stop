@@ -7,6 +7,7 @@ import { paymentApiError } from './api'
 import AccountingReconciliationPanel from './AccountingReconciliationPanel'
 import EarlyVehicleReleasePanel from './EarlyVehicleReleasePanel'
 import FullCashPaymentPanel from './FullCashPaymentPanel'
+import InvoiceTaxExemptionControl from './InvoiceTaxExemptionControl'
 import PendingManualPaymentPanel from './PendingManualPaymentPanel'
 import SettlementPaymentPanel from './SettlementPaymentPanel'
 import SettlementCreditPanel from './SettlementCreditPanel'
@@ -32,10 +33,12 @@ export default function StaffSettlementDialog({
   const settlementQuery = useInvoiceSettlement(access)
   const allocationsQuery = useInvoiceAllocations(access, open && Boolean(settlementQuery.data))
   const [current, setCurrent] = useState<InvoiceSettlementSummary | null>(null)
+  const [editingExemption, setEditingExemption] = useState(false)
   const closeRef = useRef<HTMLButtonElement>(null)
   const dialogRef = useRef<HTMLElement>(null)
 
   useEffect(() => setCurrent(settlementQuery.data ?? null), [settlementQuery.data])
+  useEffect(() => setEditingExemption(false), [invoiceId, open])
   useEffect(() => {
     if (!open) return
     const previous = document.activeElement as HTMLElement | null
@@ -100,6 +103,8 @@ export default function StaffSettlementDialog({
           ) : (
             <>
               <SettlementSummaryCard summary={current} allocations={allocationsQuery.data?.items ?? []} tone="light" />
+              <InvoiceTaxExemptionControl key={invoiceId} invoiceId={invoiceId} summary={current} onUpdated={handleUpdated} onEditingChange={setEditingExemption} />
+              <fieldset disabled={editingExemption} className="min-w-0 space-y-4 border-0 p-0">
               <PendingManualPaymentPanel
                 invoiceId={invoiceId}
                 summary={current}
@@ -146,6 +151,7 @@ export default function StaffSettlementDialog({
                 cashTender={cash}
               />}
               </FullCashPaymentPanel>
+              </fieldset>
             </>
           )}
         </div>

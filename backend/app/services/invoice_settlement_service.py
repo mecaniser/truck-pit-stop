@@ -697,7 +697,9 @@ async def get_or_create_settlement(
         InvoiceSettlement.deleted_at.is_(None),
     )
     if lock:
-        query = query.with_for_update()
+        # A transaction may have waited for a concurrent pre-payment tax edit.
+        # Refresh the identity map as well as acquiring the database row lock.
+        query = query.with_for_update().execution_options(populate_existing=True)
     settlement = (await db.execute(query)).scalar_one_or_none()
     if settlement:
         return settlement

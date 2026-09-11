@@ -34,6 +34,24 @@ class SettlementAllowedActions(BaseModel):
     payment_unavailable_reason: Optional[str] = None
 
 
+class InvoiceTaxExemptionRead(BaseModel):
+    applied: bool = False
+    can_apply: bool = False
+    unavailable_reason: Optional[str] = None
+    current_tax_amount: Money = Decimal("0.00")
+    removed_tax_amount: Money = Decimal("0.00")
+    exempt_principal_total: Money = Decimal("0.00")
+    reason: Optional[str] = None
+    support_reference: Optional[str] = None
+
+
+class InvoiceTaxExemptionCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+    expected_settlement_version: int = Field(ge=1)
+    reason: str = Field(min_length=3, max_length=500)
+    support_reference: str = Field(min_length=1, max_length=255)
+
+
 class InvoiceSettlementSummary(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -53,6 +71,7 @@ class InvoiceSettlementSummary(BaseModel):
     accounting_sync_status: str
     feature_enabled: bool
     allowed_actions: SettlementAllowedActions
+    tax_exemption: Optional[InvoiceTaxExemptionRead] = None
 
 
 class SenderEvidence(BaseModel):

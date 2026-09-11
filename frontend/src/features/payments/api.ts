@@ -40,6 +40,17 @@ interface CardProviderReadinessWire {
 
 const idempotencyHeaders = (key: string) => ({ headers: { 'Idempotency-Key': key } })
 
+export async function applyInvoiceTaxExemption(invoiceId: string, body: {
+  expected_settlement_version: number
+  reason: string
+  support_reference: string
+}, key: string): Promise<InvoiceSettlementSummary> {
+  const response = await api.post<InvoiceSettlementSummary>(
+    `/payments/invoices/${invoiceId}/tax-exemption`, body, idempotencyHeaders(key),
+  )
+  return response.data
+}
+
 export function createIdempotencyKey(): string {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') return crypto.randomUUID()
   return `db048-${Date.now()}-${Math.random().toString(16).slice(2)}`

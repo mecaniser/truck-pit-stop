@@ -208,6 +208,7 @@ def generate_invoice_pdf(
     subtotal: Decimal = Decimal("0"),
     tax_amount: Decimal = Decimal("0"),
     tax_rate: Optional[float] = None,
+    tax_exempt: bool = False,
     discount_amount: Decimal = Decimal("0"),
     total_amount: Decimal = Decimal("0"),
     # Payment
@@ -484,7 +485,7 @@ def generate_invoice_pdf(
         total_rows.append(total_row("You saved", -parts_savings_total, color=C_GREEN))
     if discount_amount > 0:
         total_rows.append(total_row(f"Discount", -discount_amount, color=C_GREEN))
-    tax_label = f"Tax ({tax_rate:.2f}%)" if tax_rate else "Tax"
+    tax_label = "Tax (exempt)" if tax_exempt else (f"Tax ({tax_rate:.2f}%)" if tax_rate else "Tax")
     total_rows.append(total_row(tax_label, tax_amount))
     total_rows.append(total_row("TOTAL DUE", total_amount, bold=True, color=white))
 
