@@ -179,6 +179,7 @@ def _build_invoice_pdf_bytes(
         subtotal=Decimal(str(invoice.subtotal)),
         tax_amount=Decimal(str(invoice.tax_amount)),
         tax_rate=tax_rate,
+        tax_exempt=bool(getattr(invoice, "tax_exemption", None)),
         discount_amount=Decimal(str(invoice.discount_amount or 0)),
         total_amount=Decimal(str(invoice.total_amount)),
         invoice_access_url=invoice_access_url,
@@ -360,7 +361,7 @@ def _build_invoice_email_html(
     <table width="100%" cellpadding="0" cellspacing="0">
       <tr><td style="padding:4px 8px;text-align:right;color:#6b7280;" colspan="3">Subtotal</td><td style="padding:4px 8px;text-align:right;color:#374151;">${Decimal(str(invoice.subtotal)):,.2f}</td></tr>
       {discount_row}
-      <tr><td style="padding:4px 8px;text-align:right;color:#6b7280;" colspan="3">Tax</td><td style="padding:4px 8px;text-align:right;color:#374151;">${tax:,.2f}</td></tr>
+      <tr><td style="padding:4px 8px;text-align:right;color:#6b7280;" colspan="3">{'Tax (exempt)' if getattr(invoice, 'tax_exemption', None) else 'Tax'}</td><td style="padding:4px 8px;text-align:right;color:#374151;">${tax:,.2f}</td></tr>
       <tr style="background:#1f2937;">
         <td style="padding:10px 8px;text-align:right;color:#ffffff;font-weight:700;font-size:15px;" colspan="3">TOTAL DUE</td>
         <td style="padding:10px 8px;text-align:right;color:#ffffff;font-weight:700;font-size:15px;">${total:,.2f}</td>

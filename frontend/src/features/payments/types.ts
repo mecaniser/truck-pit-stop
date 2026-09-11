@@ -36,6 +36,16 @@ export interface SettlementAllowedActions {
 }
 
 export interface InvoiceSettlementSummary {
+  tax_exemption?: {
+    applied: boolean
+    can_apply: boolean
+    unavailable_reason: string | null
+    current_tax_amount: string
+    removed_tax_amount: string
+    exempt_principal_total: string
+    reason: string | null
+    support_reference: string | null
+  }
   invoice_id: string
   currency: 'USD'
   principal_total: string

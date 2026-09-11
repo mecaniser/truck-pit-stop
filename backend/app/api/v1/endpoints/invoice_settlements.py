@@ -218,6 +218,8 @@ async def settlement_summary(
             reason, _events = await cash_eligibility(db, invoice, settlement)
             actions.confirm_cash = reason is None
             actions.cash_unavailable_reason = reason
+    from app.services.invoice_tax_exemption import summary as tax_exemption_summary
+    tax_exemption = await tax_exemption_summary(db, invoice, settlement, tenant, current_user, audience=audience)
     return InvoiceSettlementSummary(
         invoice_id=settlement.invoice_id,
         currency=settlement.currency,
@@ -238,6 +240,7 @@ async def settlement_summary(
         accounting_sync_status=settlement.accounting_sync_status,
         feature_enabled=feature_enabled,
         allowed_actions=actions,
+        tax_exemption=tax_exemption,
     )
 
 
@@ -910,6 +913,25 @@ async def charge_quickbooks_payment_attempt(
         audience=audience,
         current_user=current_user,
     )
+
+
+from app.schemas.invoice_settlement import InvoiceTaxExemptionCreate
+
+
+@router.post("/invoices/{invoice_id}/tax-exemption", response_model=InvoiceSettlementSummary)
+async def apply_invoice_tax_exemption(
+    invoice_id: UUID,
+    body: InvoiceTaxExemptionCreate,
+    idempotency_header: Optional[str] = Header(default=None, alias="Idempotency-Key"),
+    db: AsyncSession = Depends(get_db),
+    current_user: CurrentUser = Depends(get_current_active_user),
+):
+    from app.services.invoice_tax_exemption import apply_exemption
+    invoice, tenant, _customer_id = await invoice_for_principal(db, invoice_id, current_user)
+    settlement = await apply_exemption(db, invoice=invoice, tenant=tenant, actor=current_user,
+                                      body=body, idempotency_key=_idempotency_key(idempotency_header))
+    await db.commit()
+    return await settlement_summary(db, settlement, tenant, audience="staff", current_user=current_user)
 
 
 @router.post("/invoices/{invoice_id}/cash-confirmation", response_model=CashConfirmationResponse)

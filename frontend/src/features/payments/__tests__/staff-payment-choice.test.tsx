@@ -35,6 +35,19 @@ describe('Staff payment choice remains independent of historical export status',
     }
   })
 
+  it('keeps payment actions disabled only while editing exemption and restores every tender on cancel', async () => {
+    fixture.summary!.tax_exemption = { applied: false, can_apply: true, unavailable_reason: null,
+      current_tax_amount: '20.12', removed_tax_amount: '0.00', exempt_principal_total: '204.50', reason: null, support_reference: null }
+    show()
+    await userEvent.click(screen.getByRole('button', { name: 'Apply tax exemption' }))
+    for (const tender of screen.getAllByRole('radio')) expect(tender).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Continue to QuickBooks Payments' })).toBeDisabled()
+    await userEvent.click(screen.getByRole('button', { name: 'Cancel', exact: true }))
+    for (const tender of screen.getAllByRole('radio')) expect(tender).toBeEnabled()
+    expect(paymentApi.confirmFullCashPayment).not.toHaveBeenCalled()
+    expect(paymentApi.createPaymentAttempt).not.toHaveBeenCalled()
+  })
+
   it('offers cash alongside all admitted noncash choices, and restores them when cash is cancelled', async () => {
     show()
     for (const name of ['QuickBooks Payments', 'Zelle', 'Check', 'ACH']) {

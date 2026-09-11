@@ -55,6 +55,8 @@ class Invoice(BaseModel):
     shop_supplies_amount = Column(Numeric(10, 2), default=Decimal("0.00"), nullable=False)
     service_fee_amount = Column(Numeric(10, 2), default=Decimal("0.00"), nullable=False)
     tax_amount = Column(Numeric(10, 2), default=Decimal("0.00"), nullable=False)
+    # One-time, staff-attested pre-payment adjustment; never a tender decision.
+    tax_exemption = Column(JSONB, nullable=True)
     discount_amount = Column(Numeric(10, 2), default=Decimal("0.00"), nullable=False)
     total_amount = Column(Numeric(10, 2), nullable=False)
     # Immutable labor/parts captured when the invoice is finalized. PDFs,
