@@ -42,3 +42,13 @@ Local evidence is retained in `.gstack/qa-reports/`: before/after screenshots, `
 ## Release
 
 Focused frontend-only PR and normal protected CI/merge. API/UI deployment only; no migration or worker rollout is required. Rollback is the prior API/UI deployment. PR, merge, exact deployed SHA/readiness and acceptance status will be recorded here and on the board after release.
+
+### Merge receipt
+
+[PR382](https://github.com/mecaniser/truck-pit-stop/pull/382) merged at2026-09-11 18:31:14UTC as `d3ef19d50690f3926b6bcc038a96c58f25594009`. Merge tree `62c0970faace067e0ab72d114d0353b0fea4726d` equals branch26b3a86f; only evidence documentation differs from independently approved edb61bda. All six protected checks passed in run34632797363: frontend619/619, backend1850 passed/73 skipped, Playwright5/5, critical suites, migration/configuration check. Deployment verification follows; authenticated production acceptance is still blocked by staff login.
+
+### Deployment receipt
+
+Verified2026-09-11 18:34UTC: API/UI deployment `c87f83b1-525f-4b78-9295-618ffe2bceed` SUCCESS at merge `d3ef19d50690f3926b6bcc038a96c58f25594009`. Production serves `index-QzgxEglg.js` and its `SettlementResolutionPanel-Cdyn_tA7.js` contains the new inclusive amount-limit message. `/health/ready` is healthy with database/Redis OK and new-instance uptime34s then75s. Worker remains `27b65959-2379-48e3-a53b-32a9ea64885e` at50421e00; no worker/migration/activation/export action performed. Startup log contains no application startup error. Correct settlement endpoint rejects unauthenticated access with401 (an initial incorrectly composed URL returned404 and was corrected; not a product defect).
+
+Released code, not fully authenticated runtime acceptance: the in-app production session remains signed out. User was asked to sign into DieselBridge only, not QuickBooks, for a read-only walkthrough. No financial mutation will be used for acceptance. Local in-app preview5196 remains open and serves the final candidate. This post-merge receipt is retained locally and posted durably on PR382; the merged committed report contains pre-release verification.

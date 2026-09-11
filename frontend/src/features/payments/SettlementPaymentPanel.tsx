@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
+import { Label, Listbox, ListboxButton, ListboxOption, ListboxOptions } from '@headlessui/react'
 import { Elements, PaymentElement, useElements, useStripe } from '@stripe/react-stripe-js'
 import type { Stripe } from '@stripe/stripe-js'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Banknote, Building2, Check, Clock3, Copy, CreditCard, Landmark, MoreHorizontal, Send, Truck } from 'lucide-react'
+import { Banknote, Building2, Check, ChevronDown, Clock3, Copy, CreditCard, Landmark, MoreHorizontal, Send, Truck } from 'lucide-react'
 import toast from 'react-hot-toast'
 
 import { Spinner } from '@/components/ui'
@@ -143,7 +144,7 @@ function InvoicePaymentPanel({
   const noncashAvailable = allowedRails.length > 0 && summary.allowed_actions?.create_attempt !== false
   const secondarySelected = !cashSelected && (rail === 'check' || rail === 'ach' || rail === 'fleet_payment')
   const tenders: Array<PaymentRail | 'cash'> = audience === 'staff'
-    ? ['card', 'zelle', ...(cash ? ['cash' as const] : []), ...(expandedTenders ? ['check' as const, 'ach' as const, 'fleet_payment' as const] : secondarySelected ? [rail] : [])]
+    ? ['card', 'zelle', ...(cash ? ['cash' as const] : []), ...(expandedTenders ? ['check' as const, 'ach' as const, 'fleet_payment' as const] : [])]
     : allowedRails
   const tenderDisabled = (item: PaymentRail | 'cash') => Boolean(createMutation.isPending || cash?.pending || (item === 'cash' ? !cash?.allowed : !noncashAvailable || !allowedRails.includes(item)))
   const selectTender = (item: PaymentRail | 'cash') => {
@@ -532,9 +533,10 @@ function InvoicePaymentPanel({
             return (
               <button key={item} ref={node => { railRefs.current[index] = node }} type="button" role="radio"
                 aria-checked={selected} disabled={tenderDisabled(item)}
-                title={audience === 'staff' ? meta.detail : undefined}
+                title={audience === 'staff' ? item === 'fleet_payment' ? `${meta.label} · ${meta.detail}` : meta.detail : undefined}
+                aria-label={audience === 'staff' && item === 'fleet_payment' ? meta.label : undefined}
                 aria-describedby={item === 'cash' && cash?.reason ? `cash-reason-${summary.invoice_id}` : undefined}
-                tabIndex={selected || (!noncashAvailable && item === 'cash') ? 0 : -1}
+                tabIndex={selected || (index === 0 && secondarySelected && !expandedTenders) || (!noncashAvailable && item === 'cash') ? 0 : -1}
                 onClick={() => selectTender(item)}
                 onKeyDown={event => {
                   if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key)) return
@@ -550,7 +552,7 @@ function InvoicePaymentPanel({
                 }}
                 className={`flex min-h-11 items-center gap-2 rounded-xl border px-3 py-2 text-left outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-500,#d25d43)] disabled:cursor-not-allowed disabled:opacity-50 ${selected ? dark ? 'border-[#d25d43] bg-[#d25d43]/10' : 'border-emerald-700 bg-emerald-50' : input}`}>
                 <Icon className="h-4 w-4 shrink-0" />
-                <span className="min-w-0"><span className="block text-sm font-extrabold">{item === 'card' ? providerLabel : meta.label}</span>{audience !== 'staff' && <span className={`block text-[11px] ${quiet}`}>{meta.detail}</span>}</span>
+                <span className="min-w-0"><span className="block text-sm font-extrabold">{item === 'card' ? providerLabel : audience === 'staff' && item === 'fleet_payment' ? 'EFS codes' : meta.label}</span>{audience !== 'staff' && <span className={`block text-[11px] ${quiet}`}>{meta.detail}</span>}</span>
               </button>
             )
           })}
@@ -589,13 +591,23 @@ function InvoicePaymentPanel({
       {taxExemptionControl && <div className="mt-4">{taxExemptionControl}</div>}
 
       {!cashSelected && noncashAvailable && audience === 'staff' && rail === 'fleet_payment' && <div className="mt-3 grid gap-3 sm:grid-cols-2">
-        <label className="block text-xs font-bold">Fleet provider<select value={fleetProvider} onChange={event => {
-          setFleetProvider(event.target.value as FleetProvider)
+        <div className="text-xs font-bold"><Listbox value={fleetProvider} disabled={createMutation.isPending || cash?.pending} onChange={(provider: FleetProvider) => {
+          setFleetProvider(provider)
           setFleetProviderName('')
           setReference('')
           setAuthorization('')
           setNote('')
-        }} className={`mt-1 h-11 w-full rounded-xl border px-3 text-sm ${input}`}><option value="EFS">EFS / MoneyCode</option><option value="Comchek">Comchek</option><option value="T-Chek">T-Chek</option><option value="Other">Other provider</option></select></label>
+        }}>
+          <Label>Fleet provider</Label>
+          <ListboxButton className={`mt-1 flex h-11 w-full items-center justify-between gap-2 rounded-xl border px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-500,#0891b2)] disabled:cursor-not-allowed disabled:opacity-50 ${input}`}>
+            <span>{fleetProvider === 'EFS' ? 'EFS / MoneyCode' : fleetProvider === 'Other' ? 'Other provider' : fleetProvider}</span><ChevronDown aria-hidden="true" className="h-4 w-4 shrink-0" />
+          </ListboxButton>
+          <ListboxOptions anchor="bottom start" modal={false} className={`z-[10010] w-[var(--button-width)] max-w-[calc(100vw-2rem)] rounded-xl border p-1 shadow-lg outline-none [--anchor-gap:4px] [--anchor-padding:16px] ${dark ? 'border-[#2a3245] bg-[#161d2b] text-slate-100' : 'border-slate-200 bg-white text-slate-900'}`}>
+            {(['EFS', 'Comchek', 'T-Chek', 'Other'] as const).map(provider => <ListboxOption key={provider} value={provider} className={`flex min-h-10 cursor-pointer items-center justify-between gap-2 rounded-lg px-3 py-2 text-sm ${dark ? 'data-[focus]:bg-white/10 data-[selected]:bg-emerald-950' : 'data-[focus]:bg-slate-100 data-[selected]:bg-emerald-50'}`}>
+              {({ selected }) => <><span>{provider === 'EFS' ? 'EFS / MoneyCode' : provider === 'Other' ? 'Other provider' : provider}</span><Check aria-hidden="true" className={`h-4 w-4 text-emerald-600 ${selected ? '' : 'invisible'}`} /></>}
+            </ListboxOption>)}
+          </ListboxOptions>
+        </Listbox></div>
         {fleetProvider === 'Other' && <label className="block text-xs font-bold">Provider name<input maxLength={100} required value={fleetProviderName} onChange={event => setFleetProviderName(event.target.value)} className={`mt-1 h-11 w-full rounded-xl border px-3 text-sm ${input}`} /></label>}
         <label className="block text-xs font-bold">Approval reference (optional)<input maxLength={255} value={authorization} onChange={event => setAuthorization(event.target.value)} className={`mt-1 h-11 w-full rounded-xl border px-3 text-sm ${input}`} /></label>
       </div>}

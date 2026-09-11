@@ -2,12 +2,15 @@ import { useState } from 'react'
 import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { DB048_SETTLEMENT_FIXTURES } from '@/test-fixtures/db048/settlements'
 import InvoiceChargeControls from '../InvoiceChargeControls'
 import SettlementPaymentPanel from '../SettlementPaymentPanel'
 import PendingManualPaymentPanel from '../PendingManualPaymentPanel'
 import type { InvoiceSettlementSummary, PaymentQuote, PaymentRail } from '../types'
+
+beforeEach(() => vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} }))
+afterEach(() => vi.unstubAllGlobals())
 
 // Regression: ISSUE-001..004: partial amounts reset, opaque limits, negative
 // amounts silently became positive, and evidence leaked between payment drafts.
@@ -186,7 +189,8 @@ describe('Payment panel explicit drafts and fee refresh', () => {
     await userEvent.click(screen.getByRole('radio', { name: 'Fleet Check / Code', exact: true }))
     await userEvent.type(screen.getByRole('textbox', { name: 'Instrument / code reference' }), 'EFS-123')
     await userEvent.type(screen.getByRole('textbox', { name: 'Approval reference (optional)' }), 'EFS-APPROVAL')
-    await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Fleet provider' }), 'Comchek')
+    await userEvent.click(screen.getByRole('button', { name: /^Fleet provider/ }))
+    await userEvent.click(screen.getByRole('option', { name: 'Comchek' }))
     expect(screen.getByRole('textbox', { name: 'Instrument / code reference' })).toHaveValue('')
     expect(screen.getByRole('textbox', { name: 'Approval reference (optional)' })).toHaveValue('')
     expect(amountInput()).toHaveValue('500.00')
@@ -225,7 +229,7 @@ describe('Payment panel explicit drafts and fee refresh', () => {
     expect(screen.getByRole('textbox', { name: 'Verification note (optional)' })).toBeDisabled()
     expect(screen.getByRole('switch', { name: 'Sales tax', exact: true })).toBeDisabled()
     if (rail === 'fleet_payment') {
-      expect(screen.getByRole('combobox', { name: 'Fleet provider' })).toBeDisabled()
+      expect(screen.getByRole('button', { name: /^Fleet provider/ })).toBeDisabled()
       expect(screen.getByRole('textbox', { name: 'Approval reference (optional)' })).toBeDisabled()
     }
     await userEvent.type(reference, 'CHANGED')
