@@ -1,6 +1,20 @@
 # DB-048 payment-choice restoration
 
-Status: implementation frozen for independent gate and protected CI; not released.
+Status: released 2026-09-10, PR374 merge `460ae91a204fd3636fe17e3af338b05769a03a4d`.
+
+Final independent QA/Security160/160 at `f3510d4160794f019295305e63adbc119741f1f1`;
+six protected CI checks passed, full backend1689 passed/56 skipped. Migration142
+applied with all five historical table fingerprints unchanged and no backfill.
+Guarded worker deployment `b48ffd6e-f17f-4907-bb4a-4a8db3b5e5e9` is running the
+approved PR head; older worker retired. API deployment
+`7b1fea37-39dc-43fc-9821-3e950cedb8bf` succeeded at merge SHA. Head/merge share tree
+`6b5f4f6946f30b391d10713c9434db3a16b6d546`; readiness DB/Redis healthy.
+Signed-in production INV000020 displayed Cash plus QuickBooks/Zelle/Check/ACH;
+cash selection showed full469.52, local-only/no mixing, cancellation restored
+noncash. No payment/receipt/provider financial write was executed. Eight exact
+reviewed invoices passed rollback-only live admission/cash checks. Replacement
+TPS000001 correctly reports its parent pending reservation; it was not cleared.
+The separate Cash section is superseded by the focused inline-tender UI follow-up.
 
 Backend owns implementation; Architecture owns the receipt-scoped contract;
 independent QA/Security reviews the frozen candidate; Release owns deployment.
@@ -38,7 +52,7 @@ Tenant baseline fingerprints, excluding the new nullable authorization column:
 | Payments | 2252 | `0815eb35a809f8e95bfd3f2a3add0efd` |
 | Outbox | 536 | `2ef3fdd792f36e490cb62e1f42cdc367` |
 
-## Release acceptance (pending)
+## Pre-release evidence trail (superseded by final release above)
 
 Backend owner evidence: new-receipt suite **20/20**, preceding combined
 new-receipt/cash-panel/historical-hold/gross suite **110/110**, and clean diff.

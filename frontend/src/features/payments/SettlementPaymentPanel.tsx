@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { Elements, PaymentElement, useElements, useStripe } from '@stripe/react-stripe-js'
 import type { Stripe } from '@stripe/stripe-js'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { Building2, Check, Clock3, Copy, CreditCard, Landmark, Send } from 'lucide-react'
+import { Banknote, Building2, Check, Clock3, Copy, CreditCard, Landmark, Send } from 'lucide-react'
 import toast from 'react-hot-toast'
 
 import { Spinner } from '@/components/ui'
@@ -11,6 +11,7 @@ import { getStripeForAccount } from '@/lib/stripe'
 
 import { chargeQuickBooksPaymentAttempt, confirmPaymentAttempt, createIdempotencyKey, createPaymentAttempt, paymentApiError } from './api'
 import { formatMoney, isPositiveMoney, isValidPrincipalAmount, normalizeMoney } from './money'
+import type { InlineCashTender } from './FullCashPaymentPanel'
 import type {
   InvoiceSettlementSummary,
   PaymentAttemptResponse,
@@ -85,6 +86,7 @@ export default function SettlementPaymentPanel({
   senderDefaults,
   zelleRecipient,
   onUpdated,
+  cashTender,
 }: {
   access: SettlementAccess
   summary: InvoiceSettlementSummary
@@ -93,6 +95,7 @@ export default function SettlementPaymentPanel({
   senderDefaults?: { email?: string | null; phone?: string | null }
   zelleRecipient?: { display: string; memo: string } | null
   onUpdated: (next: InvoiceSettlementSummary) => void
+  cashTender?: InlineCashTender
 }) {
   const queryClient = useQueryClient()
   const allowedRails = useMemo(() => summary.allowed_actions?.rails ?? [], [summary.allowed_actions?.rails])
@@ -112,6 +115,17 @@ export default function SettlementPaymentPanel({
   const panel = dark ? 'border-[#2a3245] bg-[#111722] text-[#edf0f6]' : 'border-slate-200 bg-white text-slate-950'
   const input = dark ? 'border-[#3a465e] bg-[#182234] text-white placeholder:text-[#738097]' : 'border-slate-300 bg-white text-slate-950 placeholder:text-slate-400'
   const quiet = dark ? 'text-[#99a4b7]' : 'text-slate-500'
+  const cash = audience === 'staff' && access.kind === 'authenticated' ? cashTender : undefined
+  const cashSelected = cash?.selected === true
+  const noncashAvailable = allowedRails.length > 0 && summary.allowed_actions?.create_attempt !== false
+  const tenders: Array<PaymentRail | 'cash'> = [...allowedRails, ...(cash ? ['cash' as const] : [])]
+  const tenderDisabled = (item: PaymentRail | 'cash') => Boolean(createMutation.isPending || cash?.pending || (item === 'cash' ? !cash?.allowed : !noncashAvailable))
+  const selectTender = (item: PaymentRail | 'cash') => {
+    if (tenderDisabled(item)) return
+    cash?.select(item === 'cash')
+    if (item !== 'cash') setRail(item)
+    setAttempt(null)
+  }
 
   useEffect(() => {
     setAmount(summary.allocatable_balance)
@@ -407,7 +421,7 @@ export default function SettlementPaymentPanel({
     )
   }
 
-  if (allowedRails.length === 0 || summary.allowed_actions?.create_attempt === false) {
+  if (!noncashAvailable && !cash) {
     return (
       <div className={`rounded-2xl border p-4 text-sm ${panel}`} role="status">
         <p className="font-bold">{summary.allowed_actions?.confirm_cash ? 'Other payment methods are unavailable.' : 'No new payment can be started right now.'}</p>
@@ -426,7 +440,7 @@ export default function SettlementPaymentPanel({
         <p className={`text-xs ${quiet}`}>Up to {formatMoney(summary.allocatable_balance)}</p>
       </div>
 
-      <label className="mt-4 block">
+      {!cashSelected && noncashAvailable && <label className="mt-4 block">
         <span className={`mb-1.5 block text-xs font-bold ${quiet}`}>Amount applied to invoice</span>
         <div className="relative">
           <span className={`pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 font-bold ${quiet}`}>$</span>
@@ -438,6 +452,7 @@ export default function SettlementPaymentPanel({
             onChange={event => setAmount(event.target.value.replace(/[^\d.]/g, ''))}
             onBlur={() => { const normalized = normalizeMoney(amount); if (normalized) setAmount(normalized) }}
             aria-invalid={amount.length > 0 && !amountValid}
+            aria-label="Amount applied to invoice"
             aria-describedby={`settlement-amount-help-${summary.invoice_id}`}
             className={`h-12 w-full rounded-xl border pl-8 pr-3 text-lg font-extrabold tabular-nums outline-none focus:ring-2 focus:ring-[var(--accent-500,#d25d43)] ${input}`}
           />
@@ -445,14 +460,15 @@ export default function SettlementPaymentPanel({
         <span id={`settlement-amount-help-${summary.invoice_id}`} className={`mt-1 block min-h-4 text-xs ${amount.length > 0 && !amountValid ? 'text-red-500' : quiet}`}>
           {amount.length > 0 && !amountValid ? `Enter $0.01–${formatMoney(summary.allocatable_balance)}.` : 'Card fees are calculated only on the card-funded portion.'}
         </span>
-      </label>
+      </label>}
 
       <div className="mt-3" role="radiogroup" aria-label="Payment tender">
         <p className={`mb-1.5 text-xs font-bold ${quiet}`}>Tender</p>
         <div className={`grid gap-2 ${allowedRails.length > 2 ? 'sm:grid-cols-2' : 'grid-cols-2'}`}>
-          {allowedRails.map((item, index) => {
-            const Icon = RAIL_META[item].icon
-            const selected = rail === item
+          {tenders.map((item, index) => {
+            const meta = item === 'cash' ? { label: 'Cash', detail: 'Full payment only', icon: Banknote } : RAIL_META[item]
+            const Icon = meta.icon
+            const selected = item === 'cash' ? cashSelected : !cashSelected && rail === item
             return (
               <button
                 key={item}
@@ -460,44 +476,55 @@ export default function SettlementPaymentPanel({
                 type="button"
                 role="radio"
                 aria-checked={selected}
-                tabIndex={selected ? 0 : -1}
-                onClick={() => { setRail(item); setAttempt(null) }}
+                disabled={tenderDisabled(item)}
+                aria-describedby={item === 'cash' && cash?.reason ? `cash-reason-${summary.invoice_id}` : undefined}
+                tabIndex={selected || (!noncashAvailable && item === 'cash') ? 0 : -1}
+                onClick={() => selectTender(item)}
                 onKeyDown={event => {
                   if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key)) return
                   event.preventDefault()
                   const forward = event.key === 'ArrowRight' || event.key === 'ArrowDown'
-                  const next = (index + (forward ? 1 : -1) + allowedRails.length) % allowedRails.length
-                  setRail(allowedRails[next])
-                  railRefs.current[next]?.focus()
+                  for (let step = 1; step <= tenders.length; step++) {
+                    const next = (index + (forward ? step : -step) + tenders.length) % tenders.length
+                    if (tenderDisabled(tenders[next])) continue
+                    selectTender(tenders[next])
+                    railRefs.current[next]?.focus()
+                    break
+                  }
                 }}
-                className={`flex min-h-[52px] items-center gap-2 rounded-xl border px-3 text-left outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-500,#d25d43)] ${selected ? dark ? 'border-[#d25d43] bg-[#d25d43]/10' : 'border-[#b9472f] bg-orange-50' : input}`}
+                className={`flex min-h-[52px] items-center gap-2 rounded-xl border px-3 text-left outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-500,#d25d43)] disabled:cursor-not-allowed disabled:opacity-50 ${selected ? dark ? 'border-[#d25d43] bg-[#d25d43]/10' : 'border-[#b9472f] bg-orange-50' : input}`}
               >
                 <Icon className="h-4 w-4 shrink-0" />
-                <span className="min-w-0"><span className="block text-sm font-extrabold">{item === 'card' ? providerLabel : RAIL_META[item].label}</span><span className={`block truncate text-[11px] ${quiet}`}>{RAIL_META[item].detail}</span></span>
+                <span className="min-w-0"><span className="block text-sm font-extrabold">{item === 'card' ? providerLabel : meta.label}</span><span className={`block text-[11px] ${quiet}`}>{meta.detail}</span></span>
               </button>
             )
           })}
         </div>
       </div>
 
-      {rail === 'zelle' && audience !== 'staff' && (
+      {cash?.reason && !cash.allowed && <p id={`cash-reason-${summary.invoice_id}`} className={`mt-2 text-xs ${quiet}`}>{cash.reason}</p>}
+      {cashSelected && cash?.confirmation}
+      {!noncashAvailable && <p role="status" className={`mt-3 text-sm ${quiet}`}>{summary.allowed_actions?.payment_unavailable_reason ?? 'Other payment methods are unavailable.'}</p>}
+
+      {!cashSelected && rail === 'zelle' && audience !== 'staff' && (
         <div className="mt-3 grid gap-3">
           <label className="block"><span className={`mb-1 block text-xs font-bold ${quiet}`}>Sender email or phone <span className="font-normal">(optional)</span></span><input value={senderEmail || senderPhone} onChange={event => { const value = event.target.value; value.includes('@') ? (setSenderEmail(value), setSenderPhone('')) : (setSenderPhone(value), setSenderEmail('')) }} className={`h-11 w-full rounded-xl border px-3 text-sm outline-none focus:ring-2 ${input}`} /></label>
         </div>
       )}
 
-      {audience === 'staff' && rail && rail !== 'card' && (
+      {!cashSelected && noncashAvailable && audience === 'staff' && rail && rail !== 'card' && (
         <div className="mt-3 grid gap-3 sm:grid-cols-2">
           <label className="block"><span className={`mb-1 block text-xs font-bold ${quiet}`}>{rail === 'check' ? 'Check number' : rail === 'ach' ? 'Bank trace' : 'Zelle transaction reference'}</span><input value={reference} onChange={event => setReference(event.target.value)} required className={`h-11 w-full rounded-xl border px-3 text-sm outline-none focus:ring-2 ${input}`} /></label>
           <label className="block"><span className={`mb-1 block text-xs font-bold ${quiet}`}>Verification note <span className="font-normal">(optional)</span></span><input value={note} onChange={event => setNote(event.target.value)} className={`h-11 w-full rounded-xl border px-3 text-sm outline-none focus:ring-2 ${input}`} /></label>
         </div>
       )}
 
-      <button type="button" onClick={() => createMutation.mutate()} disabled={!canSubmit || createMutation.isPending} className="mt-4 flex min-h-[48px] w-full items-center justify-center gap-2 rounded-xl bg-[var(--accent-600,#b9472f)] px-4 text-sm font-extrabold text-white hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50">
+      {!cashSelected && noncashAvailable && <><button type="button" onClick={() => createMutation.mutate()} disabled={!canSubmit || createMutation.isPending} className="mt-4 flex min-h-[48px] w-full items-center justify-center gap-2 rounded-xl bg-[var(--accent-600,#b9472f)] px-4 text-sm font-extrabold text-white hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50">
         {createMutation.isPending && <Spinner size="sm" />}
         {createMutation.isPending ? 'Preparing…' : rail === 'card' ? `Continue to ${providerLabel}` : audience === 'staff' ? `Record ${rail ? RAIL_META[rail].label : 'payment'}` : 'Reserve Zelle amount'}
       </button>
       <p className={`mt-2 text-center text-[11px] ${quiet}`}>Payments are applied only after provider or staff confirmation. This screen never marks an invoice paid optimistically.</p>
+      </>}
     </section>
   )
 }
