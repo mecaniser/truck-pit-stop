@@ -108,6 +108,11 @@ function InvoicePaymentPanel({
   chargeControls?: InlineInvoiceChargeControls
 }) {
   const queryClient = useQueryClient()
+  const mounted = useRef(true)
+  useEffect(() => {
+    mounted.current = true
+    return () => { mounted.current = false }
+  }, [])
   const allowedRails = useMemo(() => summary.allowed_actions?.rails ?? [], [summary.allowed_actions?.rails])
   const [rail, setRail] = useState<PaymentRail | null>(allowedRails[0] ?? null)
   // Null follows the full balance. An explicit draft belongs to the operator,
@@ -238,15 +243,17 @@ function InvoicePaymentPanel({
       return created
     },
     onSuccess: async created => {
+      queryClient.invalidateQueries({ queryKey: ['invoice-settlement'] })
+      queryClient.invalidateQueries({ queryKey: ['invoice-settlement-allocations'] })
+      if (!mounted.current) return
       setAmount(null)
       setEditingAmount(false)
       setAttempt(created)
       setReceivedAmount(created.principal_amount)
       onUpdated(created.settlement)
-      queryClient.invalidateQueries({ queryKey: ['invoice-settlement'] })
-      queryClient.invalidateQueries({ queryKey: ['invoice-settlement-allocations'] })
       if (created.provider_client_secret && created.provider === 'stripe_connect') {
-        setStripe(await getStripeForAccount(created.provider_account_id ?? null))
+        const instance = await getStripeForAccount(created.provider_account_id ?? null)
+        if (mounted.current) setStripe(instance)
       } else if (created.state === 'confirmed') {
         setAttempt(null)
         toast.success(`${RAIL_META[rail!].label} payment recorded.`)
@@ -255,6 +262,7 @@ function InvoicePaymentPanel({
       }
     },
     onError: error => {
+      if (!mounted.current) return
       const parsed = paymentApiError(error)
       toast.error(parsed.message)
       if (typeof parsed.current_version === 'number') {
@@ -283,13 +291,14 @@ function InvoicePaymentPanel({
       )
     },
     onSuccess: confirmed => {
-      setAttempt(null)
-      onUpdated(confirmed.settlement)
       queryClient.invalidateQueries({ queryKey: ['invoice-settlement'] })
       queryClient.invalidateQueries({ queryKey: ['invoice-settlement-allocations'] })
+      if (!mounted.current) return
+      setAttempt(null)
+      onUpdated(confirmed.settlement)
       toast.success(`${RAIL_META[confirmed.rail].label} payment confirmed.`)
     },
-    onError: error => toast.error(paymentApiError(error, 'Unable to confirm this payment.').message),
+    onError: error => { if (mounted.current) toast.error(paymentApiError(error, 'Unable to confirm this payment.').message) },
   })
 
   const quickBooksMutation = useMutation({
@@ -304,10 +313,11 @@ function InvoicePaymentPanel({
       )
     },
     onSuccess: charged => {
-      setAttempt(charged.state === 'pending' ? charged : null)
-      onUpdated(charged.settlement)
       queryClient.invalidateQueries({ queryKey: ['invoice-settlement'] })
       queryClient.invalidateQueries({ queryKey: ['invoice-settlement-allocations'] })
+      if (!mounted.current) return
+      setAttempt(charged.state === 'pending' ? charged : null)
+      onUpdated(charged.settlement)
     },
   })
 
