@@ -65,6 +65,15 @@ historical export hold, change provider facts, or create a receipt. Direct amoun
 changes, altered/deleted adjustment evidence, payment activity, provider data,
 or ancestry drift still invalidate the review and deny Cash.
 
+For a legacy review created before transition rebinding existed, eligibility may
+reconstruct the missing chain read-only. The recorded review digest must match an
+exact pre- or post-adjustment state, every subsequent row must form one complete
+immutable amount sequence, and the final reconstructed digest must equal the live
+invoice. A missing row, malformed evidence, noncontiguous amount state, or any
+other live-history drift remains a denial. The next valid charge adjustment writes
+that reconstructed chain into the marker; opening checkout alone never mutates
+the review.
+
 ## Checkout presentation
 
 The API continues returning separate `card_fee_amount` and
