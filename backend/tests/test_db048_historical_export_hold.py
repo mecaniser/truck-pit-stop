@@ -94,6 +94,28 @@ async def test_hold_blocks_enqueue_provider_boundary_and_new_money(db_session, m
 
 
 @pytest.mark.asyncio
+async def test_new_payment_entry_keeps_fail_fast_historical_lock(db_session, monkeypatch):
+    from app.services import new_receipt_accounting
+    from tests.test_db048_invoice_settlements import _financial_context
+    original_config = _financial_context.__globals__["TenantPaymentProviderConfiguration"]
+    monkeypatch.setitem(_financial_context.__globals__, "TenantPaymentProviderConfiguration",
+        lambda **kw: original_config(**dict(kw, qbo_card_fee_item_id="fee-item", qbo_card_fee_tax_code_id="tax-code")))
+    ctx = await context(db_session, monkeypatch)
+    ctx[3].accounting_policy = HISTORICAL_HOLD
+    await db_session.flush()
+    observed = []
+    original = new_receipt_accounting.require_clean_historical_balance
+
+    async def observed_balance_read(db, invoice, *, nowait=True):
+        observed.append(nowait)
+        return await original(db, invoice, nowait=nowait)
+
+    monkeypatch.setattr(new_receipt_accounting, "require_clean_historical_balance", observed_balance_read)
+    await require_standard_payment(db_session, ctx[3], new_entry=True)
+    assert observed == [True]
+
+
+@pytest.mark.asyncio
 async def test_accounting_dispatch_held_before_any_serializer(db_session, monkeypatch):
     from app.services.db048_accounting_reconciliation import deliver_accounting_envelope
     ctx = await context(db_session, monkeypatch)
