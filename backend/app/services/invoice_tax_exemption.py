@@ -12,7 +12,8 @@ from app.db.models.user import UserRole
 from app.db.models.customer import Customer
 from app.db.models.repair_order import RepairOrder, RepairOrderStatus
 from app.services.invoice_accounting_policy import locked_policy
-from app.services.invoice_cash_service import valid_sandbox_cash_review, local_void_ancestor_snapshot, CASH_REVIEW_KEY, cash_eligibility
+from app.services.invoice_cash_service import (valid_sandbox_cash_review, local_void_ancestor_snapshot,
+    compatible_ancestor_snapshot, CASH_REVIEW_KEY, cash_eligibility)
 from app.services.invoice_settlement_service import SettlementDomainError, money, invoice_money_snapshot, _canonical_hash, _actor_snapshot
 from app.schemas.invoice_settlement import InvoiceTaxExemptionRead
 
@@ -118,7 +119,8 @@ async def eligibility(db, invoice, settlement, *, lock=False, adjustment=False):
         local_snapshot = await local_void_ancestor_snapshot(db, parent, lock=lock) if parent.quickbooks_synced_at else None
         local_reviewed = bool(local_snapshot and reviews and all(any(
             proof.get("schema") == "db048-local-void-ancestor-review-v1"
-            and proof.get("invoice_id") == str(parent.id) and proof.get("snapshot") == local_snapshot
+            and proof.get("invoice_id") == str(parent.id)
+            and compatible_ancestor_snapshot(proof, local_snapshot, parent)
             and proof.get("confirmation_realm_id") == review.get("confirmation_realm_id")
             and proof.get("evidence_manifest_sha256") == review.get("evidence_manifest_sha256")
             for proof in review.get("ancestor_reviews", [])) for review in reviews))

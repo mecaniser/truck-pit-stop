@@ -39,7 +39,8 @@ def owner_cash_review_target(event, invoice):
     )
 
 
-def event_history_digest(event, *, value_overrides=None, charge_adjustments=None):
+def event_history_digest(event, *, value_overrides=None, charge_adjustments=None,
+                         _omit_null_invoice_fields=frozenset()):
     """Bind review to every original column except ordinary update metadata."""
     values = {}
     for column in event.__table__.columns:
@@ -47,9 +48,11 @@ def event_history_digest(event, *, value_overrides=None, charge_adjustments=None
             continue
         value = (value_overrides[column.name] if value_overrides and column.name in value_overrides
                  else getattr(event, column.name))
-        # Migration 143 added a nullable audit to Invoice. A NULL audit must
-        # retain pre-143 ancestor proofs; an actual audit remains history-bound.
-        if isinstance(event, Invoice) and column.name == "tax_exemption" and value is None:
+        # Migration 143 intentionally made a NULL tax audit part of the
+        # canonical pre-143 encoding. Other compatibility encodings are used
+        # only by validation and never replace the canonical digest.
+        if (isinstance(event, Invoice) and value is None
+                and (column.name == "tax_exemption" or column.name in _omit_null_invoice_fields)):
             continue
         if column.name == "payload":
             value = None if value is None else {key: item for key, item in value.items() if key not in REVIEW_KEYS}
@@ -61,6 +64,32 @@ def event_history_digest(event, *, value_overrides=None, charge_adjustments=None
         if rows:
             values["charge_adjustments"] = [event_history_digest(row) for row in sorted(rows, key=lambda row: row.version)]
     return sha256(json.dumps(values, sort_keys=True, default=str, separators=(",", ":")).encode()).hexdigest()
+
+
+def compatible_invoice_history_digests(invoice, *, value_overrides=None, charge_adjustments=None):
+    """Return canonical plus exact legacy encodings for additive NULL fields."""
+    digests = {event_history_digest(invoice, value_overrides=value_overrides,
+                                    charge_adjustments=charge_adjustments)}
+    activation_id = (value_overrides.get("qbo_shop_activation_id")
+                     if value_overrides and "qbo_shop_activation_id" in value_overrides
+                     else invoice.qbo_shop_activation_id)
+    if activation_id is None:
+        digests.add(event_history_digest(invoice, value_overrides=value_overrides,
+            charge_adjustments=charge_adjustments,
+            _omit_null_invoice_fields={"qbo_shop_activation_id"}))
+    return digests
+
+
+def compatible_ancestor_snapshot(proof, current, invoice):
+    """Accept only a legacy invoice digest; every other snapshot byte matches."""
+    stored = proof.get("snapshot") if isinstance(proof, dict) else None
+    if not isinstance(stored, dict) or not isinstance(current, dict):
+        return False
+    stored_digest = stored.get("invoice_sha256")
+    if (not isinstance(stored_digest, str) or len(stored_digest) != 64
+            or stored_digest not in compatible_invoice_history_digests(invoice)):
+        return False
+    return stored == {**current, "invoice_sha256": stored_digest}
 
 
 OWNER_CASH_CHARGE_TRANSITION_SCHEMA = "db048-owner-cash-charge-adjustment-v1"
@@ -112,10 +141,12 @@ def _inferred_owner_cash_charge_transitions(event, invoice, review):
         after = _owner_cash_amount_snapshot(evidence.get("after"))
         if before is None or after is None or (previous is not None and before != previous):
             return None
+        before_digests = compatible_invoice_history_digests(
+            invoice, value_overrides=before, charge_adjustments=rows)
         before_digest = event_history_digest(invoice, value_overrides=before, charge_adjustments=rows)
         rows.append(row)
         after_digest = event_history_digest(invoice, value_overrides=after, charge_adjustments=rows)
-        if matched_at is None and stage_digest == before_digest:
+        if matched_at is None and stage_digest in before_digests:
             matched_at = len(transitions)
         transitions.append({
             "schema": OWNER_CASH_CHARGE_TRANSITION_SCHEMA,
@@ -126,14 +157,20 @@ def _inferred_owner_cash_charge_transitions(event, invoice, review):
             "before_invoice_history_sha256": before_digest,
             "after_invoice_history_sha256": after_digest,
         })
-        if stage_digest == after_digest:
+        if stage_digest in compatible_invoice_history_digests(
+                invoice, value_overrides=after, charge_adjustments=rows):
             matched_at = len(transitions)
         previous = after
     if previous != _owner_cash_amount_snapshot({field: getattr(invoice, field) for field in OWNER_CASH_MONEY_FIELDS}):
         return None
     if event_history_digest(invoice) != transitions[-1]["after_invoice_history_sha256"] or matched_at is None:
         return None
-    return transitions[matched_at:]
+    remaining = transitions[matched_at:]
+    if remaining and remaining[0]["before_invoice_history_sha256"] != stage_digest:
+        # The exact state matched a legacy encoding. Link its first audited
+        # transition from that stored digest into today's canonical encoding.
+        remaining[0] = {**remaining[0], "before_invoice_history_sha256": stage_digest}
+    return remaining
 
 
 def owner_cash_review_transition_chain(event, invoice):
@@ -144,7 +181,6 @@ def owner_cash_review_transition_chain(event, invoice):
     transitions = review.get("charge_adjustment_transitions", [])
     if not isinstance(transitions, list):
         return None
-    current_digest = event_history_digest(invoice)
     if transitions:
         root = review.get("reviewed_invoice_history_sha256")
         if not isinstance(root, str) or len(root) != 64:
@@ -162,8 +198,9 @@ def owner_cash_review_transition_chain(event, invoice):
                     or len(transition["after_invoice_history_sha256"]) != 64):
                 return None
             expected = transition["after_invoice_history_sha256"]
-        return transitions if expected == review.get("invoice_history_sha256") == current_digest else None
-    if review.get("invoice_history_sha256") == current_digest:
+        return (transitions if expected == review.get("invoice_history_sha256")
+                and expected in compatible_invoice_history_digests(invoice) else None)
+    if review.get("invoice_history_sha256") in compatible_invoice_history_digests(invoice):
         return []
     return _inferred_owner_cash_charge_transitions(event, invoice, review)
 
@@ -225,7 +262,7 @@ def valid_owner_cash_review(event, invoice):
         if owner_cash_review_transition_chain(event, invoice) is None:
             return False
         current_digest = event_history_digest(invoice)
-        history_matches = review["invoice_history_sha256"] == current_digest
+        history_matches = review["invoice_history_sha256"] in compatible_invoice_history_digests(invoice)
         if not history_matches:
             inferred = _inferred_owner_cash_charge_transitions(event, invoice, review)
             history_matches = bool(inferred and inferred[-1]["after_invoice_history_sha256"] == current_digest)
@@ -421,7 +458,7 @@ async def reviewed_cash_ancestry_reason(db, invoice, *, lock=False, reviews=None
                 if proof.get("invoice_id") == str(parent.id)), None) for review in owner_reviews]
             if (not snapshot or any(not proof
                     or proof.get("schema") != "db048-owner-attested-ancestor-review-v1"
-                    or proof.get("snapshot") != snapshot for proof in proofs)):
+                    or not compatible_ancestor_snapshot(proof, snapshot, parent) for proof in proofs)):
                 return "A replaced invoice has payment or export history outside the owner's reviewed cash attestation."
         elif parent.quickbooks_invoice_id or parent.quickbooks_synced_at:
             snapshot = await local_void_ancestor_snapshot(db, parent, lock=lock)
@@ -429,7 +466,7 @@ async def reviewed_cash_ancestry_reason(db, invoice, *, lock=False, reviews=None
                 if isinstance(proof, dict) and proof.get("invoice_id") == str(parent.id)]
             if not snapshot or len(proofs) != len(reviews or []) or not proofs or any(
                     proof.get("schema") != "db048-local-void-ancestor-review-v1"
-                    or proof.get("snapshot") != snapshot
+                    or not compatible_ancestor_snapshot(proof, snapshot, parent)
                     or proof.get("confirmation_realm_id") != review.get("confirmation_realm_id")
                     or proof.get("evidence_manifest_sha256") != review.get("evidence_manifest_sha256")
                     for review, proof in zip(reviews, proofs)):
