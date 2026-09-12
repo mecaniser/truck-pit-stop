@@ -1318,6 +1318,17 @@ async def _enqueue_accounting(
         settlement.accounting_sync_status = HISTORICAL_HOLD
         outbox.status = "suppressed"
         outbox.payload = {**outbox.payload, "suppression_reason": HISTORICAL_HOLD}
+    else:
+        from app.services.quickbooks_shop_activation import require_shop_invoice_admission
+        try:
+            await require_shop_invoice_admission(db, invoice)
+        except SettlementDomainError as exc:
+            if not exc.code.startswith("quickbooks_"):
+                raise
+            link.sync_state = "activation_not_admitted"
+            settlement.accounting_sync_status = "activation_not_admitted"
+            outbox.status = "deferred"
+            outbox.payload = {**outbox.payload, "deferral_reason": exc.code}
     return link
 
 
@@ -2381,6 +2392,8 @@ async def expire_due_attempts(db: AsyncSession, *, tenant_id: Optional[UUID] = N
     )
     if tenant_id:
         query = query.where(InvoicePaymentAttempt.tenant_id == tenant_id)
+    from app.services.quickbooks_shop_activation import admitted_invoice_predicate, require_shop_invoice_admission
+    query = query.where(admitted_invoice_predicate(InvoicePaymentAttempt.tenant_id, InvoicePaymentAttempt.invoice_id))
     attempts = (
         await db.execute(
             query.order_by(InvoicePaymentAttempt.expires_at)
@@ -2390,6 +2403,13 @@ async def expire_due_attempts(db: AsyncSession, *, tenant_id: Optional[UUID] = N
     ).scalars().all()
     count = 0
     for attempt in attempts:
+        invoice = await db.get(Invoice, attempt.invoice_id)
+        try:
+            await require_shop_invoice_admission(db, invoice)
+        except SettlementDomainError as exc:
+            if not exc.code.startswith("quickbooks_"):
+                raise
+            continue
         settlement = (
             await db.execute(select(InvoiceSettlement).where(InvoiceSettlement.id == attempt.settlement_id).with_for_update())
         ).scalar_one()

@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, DateTime, Date, ForeignKey, Numeric, Text, Enum as SQLEnum, Integer, Boolean, Index, text, CheckConstraint
+from sqlalchemy import Column, String, DateTime, Date, ForeignKey, ForeignKeyConstraint, Numeric, Text, Enum as SQLEnum, Integer, Boolean, Index, text, CheckConstraint
 from sqlalchemy.orm import relationship
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 import enum
@@ -18,6 +18,8 @@ class Invoice(BaseModel):
     __tablename__ = "invoices"
     __table_args__ = (
         CheckConstraint("accounting_policy IN ('standard','local_cash_only','historical_export_hold')", name="ck_invoice_accounting_policy"),
+        ForeignKeyConstraint(["tenant_id", "qbo_shop_activation_id"],
+            ["quickbooks_shop_activations.tenant_id", "quickbooks_shop_activations.id"], name="fk_invoice_qbo_shop_activation"),
         Index(
             "ux_invoices_active_repair_order_id",
             "repair_order_id",
@@ -35,6 +37,7 @@ class Invoice(BaseModel):
     
     invoice_number = Column(String(50), unique=True, nullable=False, index=True)
     accounting_policy = Column(String(32), nullable=False, default="standard", server_default="standard")
+    qbo_shop_activation_id = Column(UUID(as_uuid=True), nullable=True, index=True)
     cash_export_review_required = Column(Boolean, nullable=False, default=False, server_default=text("false"))
     # Internal fleet invoice: a cost record for the garage's own work orders —
     # no customer billing, tax, or markup.

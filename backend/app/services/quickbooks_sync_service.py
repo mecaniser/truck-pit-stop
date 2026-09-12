@@ -74,6 +74,14 @@ async def enqueue_quickbooks_invoice_sync(
     if policy == LOCAL_CASH:
         invoice.quickbooks_sync_status = LOCAL_CASH_SYNC
         return None
+    from app.services.quickbooks_shop_activation import require_shop_invoice_admission
+    from app.services.invoice_settlement_service import SettlementDomainError
+    try:
+        await require_shop_invoice_admission(db, invoice)
+    except SettlementDomainError as exc:
+        if not exc.code.startswith("quickbooks_"):
+            raise
+        return None
     if await first_export_awaits_payment(db, invoice):
         await mark_awaiting_payment(db, invoice)
         return None
@@ -149,34 +157,31 @@ async def _claim_next_quickbooks_sync_event(
 ) -> tuple[UUID, str] | None:
     """Lease one event immediately before processing it."""
     claim_now = _now()
-    event = (await db.execute(
-        select(ProviderOutboxEvent)
-        .where(
+    from app.services.quickbooks_shop_activation import admitted_invoice_predicate, event_admitted
+    due = or_(
+        (ProviderOutboxEvent.status == "pending") & (ProviderOutboxEvent.available_at <= claim_now),
+        (ProviderOutboxEvent.status == "processing") & ProviderOutboxEvent.locked_until.is_not(None)
+        & (ProviderOutboxEvent.locked_until <= claim_now))
+    skipped = set()
+    while True:
+        # Inspect without taking an outbox lock ahead of settlement/invoice
+        # admission. Skipping a denied head never starves another tenant.
+        event = await db.scalar(select(ProviderOutboxEvent).where(
             ProviderOutboxEvent.event_type == QUICKBOOKS_INVOICE_SYNC_EVENT,
-            or_(
-                (
-                    ProviderOutboxEvent.status
-                    == ProviderOutboxStatus.PENDING.value
-                )
-                & (ProviderOutboxEvent.available_at <= claim_now),
-                (
-                    ProviderOutboxEvent.status
-                    == ProviderOutboxStatus.PROCESSING.value
-                )
-                & ProviderOutboxEvent.locked_until.is_not(None)
-                & (ProviderOutboxEvent.locked_until <= claim_now),
-            ),
-        )
-        .order_by(
-            ProviderOutboxEvent.available_at,
-            ProviderOutboxEvent.created_at,
-        )
-        .limit(1)
-        .with_for_update(skip_locked=True)
-    )).scalar_one_or_none()
-    if event is None:
-        await db.rollback()
-        return None
+            admitted_invoice_predicate(ProviderOutboxEvent.tenant_id, ProviderOutboxEvent.aggregate_id),
+            due, ProviderOutboxEvent.id.not_in(skipped),
+        ).order_by(ProviderOutboxEvent.available_at, ProviderOutboxEvent.created_at).limit(1))
+        if event is None:
+            await db.rollback()
+            return None
+        skipped.add(event.id)
+        if not await event_admitted(db, event):
+            continue
+        event = await db.scalar(select(ProviderOutboxEvent).where(
+            ProviderOutboxEvent.id == event.id, due,
+        ).with_for_update(skip_locked=True).execution_options(populate_existing=True))
+        if event is not None:
+            break
     token = uuid4().hex
     evidence = dict(event.payload or {})
     if event.status == ProviderOutboxStatus.PROCESSING.value:
@@ -258,7 +263,13 @@ async def process_quickbooks_invoice_sync_events(
             from app.services.invoice_settlement_service import SettlementDomainError
             try:
                 policy = await locked_policy(db, invoice)
+                from app.services.quickbooks_shop_activation import require_shop_invoice_admission
+                await require_shop_invoice_admission(db, invoice)
             except SettlementDomainError as exc:
+                if exc.code.startswith("quickbooks_"):
+                    await db.rollback()
+                    results["skipped"] += 1
+                    continue
                 if exc.code != "invoice_busy":
                     raise
                 await db.rollback()
@@ -398,6 +409,7 @@ async def reconcile_quickbooks_payments(
     limit: int = 100,
 ) -> dict[str, int]:
     results = {"checked": 0, "reconciled": 0, "failed": 0}
+    from app.services.quickbooks_shop_activation import load_shop_activation
     cutoff = _now() - timedelta(hours=12)
     async with session_factory() as db:
         payments = (await db.execute(
@@ -422,6 +434,8 @@ async def reconcile_quickbooks_payments(
             .limit(limit)
         )).scalars().all()
         for payment in payments:
+            if await load_shop_activation(db, payment.tenant_id) is not None:
+                continue
             results["checked"] += 1
             connection = (await db.execute(
                 select(QuickBooksConnection).where(
@@ -468,6 +482,8 @@ async def reconcile_quickbooks_payments(
             .limit(limit)
         )).scalars().all()
         for refund in refund_records:
+            if await load_shop_activation(db, refund.tenant_id) is not None:
+                continue
             results["checked"] += 1
             connection = (await db.execute(
                 select(QuickBooksConnection).where(
@@ -522,6 +538,11 @@ async def backfill_quickbooks_cdc(
             )
         )).scalars().all()
         for connection in connections:
+            from app.services.quickbooks_shop_activation import load_shop_activation
+            if await load_shop_activation(db, connection.tenant_id) is not None:
+                # A managed cursor/importer must not reuse historical global CDC.
+                # Explicitly disabled until admitted-only payout proof is available.
+                continue
             results["connections"] += 1
             changed_since = connection.last_cdc_at or (_now() - timedelta(days=1))
             retry_from = _settlement_retry_from(connection.last_cdc_error, connection.realm_id)

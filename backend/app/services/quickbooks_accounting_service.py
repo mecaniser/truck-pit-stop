@@ -19,6 +19,7 @@ from app.db.models.customer import Customer
 from app.db.models.invoice import Invoice
 from app.db.models.payment import Payment
 from app.db.models.quickbooks_connection import QuickBooksConnection
+from app.services.quickbooks_shop_activation import request_environment
 
 
 class QuickBooksAccountingError(RuntimeError):
@@ -64,8 +65,8 @@ async def _request(
     except QuickBooksTokenEncryptionError as exc:
         raise QuickBooksAccountingError("QuickBooks credentials could not be read") from exc
 
-    from app.services.new_receipt_accounting import request_environment
-    url = f"{accounting_base_url(request_environment(connection))}/v3/company/{connection.realm_id}/{resource.lstrip('/')}"
+    environment = await request_environment(connection, method=method, resource=resource)
+    url = f"{accounting_base_url(environment)}/v3/company/{connection.realm_id}/{resource.lstrip('/')}"
     query = {"minorversion": settings.QUICKBOOKS_MINOR_VERSION, **(params or {})}
     try:
         async with httpx.AsyncClient(timeout=httpx.Timeout(settings.QUICKBOOKS_HTTP_TIMEOUT_SECONDS)) as client:

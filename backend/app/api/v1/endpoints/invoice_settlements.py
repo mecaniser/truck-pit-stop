@@ -805,6 +805,10 @@ async def charge_quickbooks_settlement_attempt(
     reconciling_existing_charge = bool(attempt.provider_charge_id)
     if not reconciling_existing_charge:
         await require_standard_payment(db, invoice, attempt=attempt)
+        from app.services.quickbooks_shop_activation import require_shop_invoice_admission
+        await require_shop_invoice_admission(
+            db, invoice, payment=True, payment_provider=attempt.provider,
+        )
     try:
         if attempt.provider_charge_id:
             charge = await get_quickbooks_charge(

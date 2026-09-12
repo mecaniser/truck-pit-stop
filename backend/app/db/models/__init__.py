@@ -45,6 +45,7 @@ from app.db.models.recommended_service import RecommendedService, RecommendedSer
 from app.db.models.quote import Quote
 from app.db.models.invoice import Invoice
 from app.db.models.invoice_charge_adjustment import InvoiceChargeAdjustment
+from app.db.models.quickbooks_shop_activation import QuickBooksShopActivation
 from app.db.models.payment import Payment
 from app.db.models.payment_number_counter import PaymentNumberCounter
 from app.db.models.notification import Notification

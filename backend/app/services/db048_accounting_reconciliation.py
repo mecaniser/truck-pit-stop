@@ -245,6 +245,13 @@ async def reconcile_due_card_attempts(
         InvoicePaymentAttempt.expires_at.is_not(None),
         InvoicePaymentAttempt.expires_at <= now,
     )
+    # A managed shop that is not yet activated owns neither provider dispatch
+    # nor reservation maintenance. Filter before locking or calling a provider
+    # so an excluded row remains byte-for-byte untouched.
+    from app.services.quickbooks_shop_activation import admitted_invoice_predicate
+    query = query.where(admitted_invoice_predicate(
+        InvoicePaymentAttempt.tenant_id, InvoicePaymentAttempt.invoice_id,
+    ))
     if tenant_id:
         query = query.where(InvoicePaymentAttempt.tenant_id == tenant_id)
     attempt_ids = list((await db.execute(
@@ -2537,8 +2544,10 @@ async def sync_db048_reversal(envelope: AccountingEnvelope) -> str:
 
 
 from app.services.new_receipt_accounting import receipt_accounting_operation
+from app.services.quickbooks_shop_activation import accounting_operation
 
 
+@accounting_operation
 @receipt_accounting_operation
 async def deliver_accounting_envelope(
     db: AsyncSession,
@@ -2672,6 +2681,10 @@ async def _submit_stripe_refund(db: AsyncSession, event: ProviderOutboxEvent) ->
     if source_invoice is None:
         raise DB048ReconciliationError("Refund invoice is unavailable")
     await require_standard_payment(db, source_invoice, attempt=attempt)
+    from app.services.quickbooks_shop_activation import require_shop_invoice_admission
+    await require_shop_invoice_admission(
+        db, source_invoice, payment=True, payment_provider=attempt.provider,
+    )
     if attempt.provider == "quickbooks_payments":
         if refund.state != "pending":
             raise DB048ReconciliationError("QuickBooks refund requires explicit state reconciliation")
@@ -5767,7 +5780,13 @@ async def process_due_db048_outbox_events(
             ),
         ).order_by(ProviderOutboxEvent.available_at).limit(limit).with_for_update(skip_locked=True))).scalars().all()
         claims: list[tuple[UUID, str]] = []
+        from app.services.quickbooks_shop_activation import event_admitted
         for event in rows:
+            # Do not lease or mutate events that belong to a disabled managed
+            # shop (or historical/rejected invoice lineage). The guard must
+            # apply before the first outbox-state transition.
+            if not await event_admitted(db, event):
+                continue
             event.status = "processing"
             event.attempt_count += 1
             event.lock_token = uuid4().hex
