@@ -31,6 +31,7 @@ import {
 import api from '@/lib/api'
 import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 import QuantityStepper from '@/components/QuantityStepper'
+import StartWorkAction from './StartWorkAction'
 import DurationStepper from '@/components/DurationStepper'
 import { formatHoursMinutes } from '@/lib/durationFormat'
 import { formatFileSize, isSupportedPhotoFile, runPhotoUploadQueue, uploadDirectPhoto, type PhotoUploadStatus } from '@/lib/photoUpload'
@@ -4988,10 +4989,23 @@ export default function PriceBuilderPanel({
                   {completionPending ? <Spinner size="xs" /> : <CheckCircle className="h-4 w-4" />}
                   {completionPending ? 'Finalizing...' : 'Finalize & Send Invoice'}
                 </button>
+              ) : canEdit && !isDeleted && canManageTechnician && !hasAssignedTechnician
+                && ['draft', 'quoted', 'declined', 'approved'].includes(orderStatus)
+                && ((onAssignTechnician && availableTechnicians.length > 0) || canOverrideTechnicianAssignment) ? (
+                <StartWorkAction
+                  key={orderId}
+                  technicians={availableTechnicians}
+                  onAssign={onAssignTechnician}
+                  onStartWithoutTechnician={canOverrideTechnicianAssignment ? onOverrideTechnicianAssignment : undefined}
+                  assignmentPending={technicianAssignmentPending}
+                  startPending={technicianOverridePending}
+                />
               ) : (
-                <span className="inline-flex h-11 items-center gap-2 rounded-xl border border-blue-200 bg-blue-50 px-4 text-sm font-bold text-blue-800">
-                  <CheckCircle className="h-4 w-4" />
-                  {orderStatus === 'draft' ? 'Checked in · work order open' : 'Work order open'}
+                <span className="max-w-64 text-right text-sm font-medium text-gray-600" role="status">
+                  {hasAssignedTechnician && ['draft', 'quoted', 'declined', 'approved', 'assigned', 'acknowledged'].includes(orderStatus)
+                    ? `Waiting for ${assignedTechnicianName} to start`
+                    : orderStatus === 'in_progress' ? 'Work in progress'
+                    : orderStatus === 'draft' ? 'Checked in · work order open' : 'Work order open'}
                 </span>
               )
             )}
