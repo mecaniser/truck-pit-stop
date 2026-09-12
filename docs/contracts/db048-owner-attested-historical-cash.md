@@ -54,6 +54,17 @@ errors, ambiguity flags, and history remain. Only a later successful full-cash
 confirmation converts the active invoice to local-cash-only and suppresses its
 export event under the existing serialized transaction.
 
+## Audited invoice charges before collection
+
+The exact reviewed, unpaid invoice may use the existing owner/admin charge
+controls before receipt confirmation. A successful control update must be an
+immutable `invoice_charge_adjustments` row and atomically append a digest-bound
+transition to the existing owner-review marker. That preserves the attestation's
+original history and binds it to the new audited amount; it does not clear the
+historical export hold, change provider facts, or create a receipt. Direct amount
+changes, altered/deleted adjustment evidence, payment activity, provider data,
+or ancestry drift still invalidate the review and deny Cash.
+
 ## Checkout presentation
 
 The API continues returning separate `card_fee_amount` and

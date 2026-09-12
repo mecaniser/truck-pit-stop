@@ -12,7 +12,7 @@ from app.db.models.user import UserRole
 from app.db.models.customer import Customer
 from app.db.models.repair_order import RepairOrder, RepairOrderStatus
 from app.services.invoice_accounting_policy import locked_policy
-from app.services.invoice_cash_service import valid_sandbox_cash_review, local_void_ancestor_snapshot, CASH_REVIEW_KEY
+from app.services.invoice_cash_service import valid_sandbox_cash_review, local_void_ancestor_snapshot, CASH_REVIEW_KEY, cash_eligibility
 from app.services.invoice_settlement_service import SettlementDomainError, money, invoice_money_snapshot, _canonical_hash, _actor_snapshot
 from app.schemas.invoice_settlement import InvoiceTaxExemptionRead
 
@@ -34,6 +34,16 @@ async def eligibility(db, invoice, settlement, *, lock=False, adjustment=False):
         return "Use invoice charge controls to change this invoice."
     if invoice.tax_exemption and not adjustment:
         return "Tax exemption has already been applied."
+    # A bounded owner-attested historical-cash review already proves the exact
+    # no-money/export conditions needed for local receipt completion.  Keep the
+    # checkout fee controls available through that same verified boundary rather
+    # than treating its intentionally preserved export event as a new denial.
+    # The adjustment service rebinds the review to its immutable audit row.
+    if getattr(invoice, "accounting_policy", None) == "historical_export_hold":
+        reason, _events = await cash_eligibility(db, invoice, settlement, lock=lock)
+        if reason:
+            return reason.replace("before cash", "before changing charges")
+        return None
     if (invoice.deleted_at or invoice.voided_at or invoice.is_internal
             or invoice.status not in {InvoiceStatus.SENT, InvoiceStatus.OVERDUE}):
         return "Only an active unpaid customer invoice can be made tax exempt."

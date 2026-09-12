@@ -11,6 +11,8 @@ from app.db.models.invoice_settlement import InvoicePaymentLedgerEvent
 from app.db.models.payment import Payment
 from app.db.models.provider_outbox import ProviderOutboxEvent
 from app.db.models.repair_order import RepairOrder, RepairOrderStatus
+from app.schemas.invoice_settlement import InvoiceChargeAdjustmentCreate
+from app.services import invoice_charge_adjustments as charges
 from app.services import invoice_cash_service as cash
 from app.services.historical_export_hold import digest
 from app.services.invoice_settlement_service import create_attempt, fail_attempt, get_or_create_settlement
@@ -156,6 +158,28 @@ async def test_owner_review_rejects_a_post_review_invoice_amount_change(db_sessi
     await db_session.flush()
     reason, _ = await cash.cash_eligibility(db_session, ctx[3], ctx[4])
     assert reason == "The owner-attested export history changed. Accounting review is required before cash."
+
+
+@pytest.mark.asyncio
+async def test_owner_review_allows_audited_fee_controls_and_rebinds_cash_eligibility(db_session, monkeypatch):
+    ctx, _, _, event, _ = await reviewed_owner_cash(db_session, monkeypatch)
+    tenant, owner, _, invoice, settlement = ctx
+    controls = await charges.summary(db_session, invoice, settlement, tenant, owner, audience="staff")
+    assert controls.can_adjust is True
+    before = event.payload[cash.OWNER_CASH_REVIEW_KEY]["invoice_history_sha256"]
+    await charges.adjust(db_session, invoice=invoice, tenant=tenant, actor=owner,
+        body=InvoiceChargeAdjustmentCreate(expected_settlement_version=settlement.version,
+            tax_exempt=False, shop_supplies_enabled=True, card_fee_enabled=False),
+        idempotency_key="owner-reviewed-card-fee-off")
+    review = event.payload[cash.OWNER_CASH_REVIEW_KEY]
+    assert invoice.service_fee_amount == Decimal("0.00")
+    assert review["reviewed_invoice_history_sha256"] == before
+    assert review["charge_adjustment_transitions"][-1]["adjustment_version"] == settlement.version
+    assert cash.valid_owner_cash_review(event, invoice)
+    assert (await cash.cash_eligibility(db_session, invoice, settlement))[0] is None
+    invoice.total_amount += Decimal("1.00")
+    await db_session.flush()
+    assert (await cash.cash_eligibility(db_session, invoice, settlement))[0] == "The owner-attested export history changed. Accounting review is required before cash."
 
 
 @pytest.mark.asyncio

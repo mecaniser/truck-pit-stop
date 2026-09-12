@@ -114,6 +114,28 @@ def valid_owner_cash_review(event, invoice):
             return False
         for item in chain:
             UUID(item)
+        transitions = review.get("charge_adjustment_transitions", [])
+        if not isinstance(transitions, list):
+            return False
+        if transitions:
+            root = review.get("reviewed_invoice_history_sha256")
+            if not isinstance(root, str) or len(root) != 64:
+                return False
+            expected = root
+            adjustments = {str(row.id): row for row in getattr(invoice, "charge_adjustments", [])}
+            for transition in transitions:
+                row = adjustments.get(str(transition.get("adjustment_id"))) if isinstance(transition, dict) else None
+                if (row is None or transition.get("schema") != "db048-owner-cash-charge-adjustment-v1"
+                        or transition.get("before_invoice_history_sha256") != expected
+                        or transition.get("adjustment_version") != row.version
+                        or transition.get("request_hash") != row.request_hash
+                        or transition.get("adjustment_history_sha256") != event_history_digest(row)
+                        or not isinstance(transition.get("after_invoice_history_sha256"), str)
+                        or len(transition["after_invoice_history_sha256"]) != 64):
+                    return False
+                expected = transition["after_invoice_history_sha256"]
+            if expected != review.get("invoice_history_sha256"):
+                return False
         return bool(
             review["schema"] == "db048-owner-cash-review-v1"
             and review["tenant_id"] == str(invoice.tenant_id) == str(event.tenant_id)
@@ -137,6 +159,43 @@ def valid_owner_cash_review(event, invoice):
         )
     except (KeyError, TypeError, ValueError):
         return False
+
+
+def retarget_owner_cash_reviews_after_charge_adjustment(invoice, adjustment, events, *, validated_events=None):
+    """Carry a valid owner cash attestation through one audited local adjustment.
+
+    The attestation is not broadened: the prior digest must still validate, the
+    adjustment row is immutable/audited, and any later direct invoice or history
+    drift invalidates the current digest again.
+    """
+    validated_ids = None if validated_events is None else {event.id for event in validated_events}
+    for event in events:
+        if validated_ids is not None:
+            if event.id not in validated_ids:
+                continue
+        elif not valid_owner_cash_review(event, invoice):
+            continue
+        review = dict(event.payload[OWNER_CASH_REVIEW_KEY])
+        before = review["invoice_history_sha256"]
+        transitions = list(review.get("charge_adjustment_transitions", []))
+        review.setdefault("reviewed_invoice_history_sha256", before)
+        # The event digest excludes trusted review markers, so the new invoice
+        # digest can be calculated before its marker is replaced.
+        after = event_history_digest(invoice)
+        transitions.append({
+            "schema": "db048-owner-cash-charge-adjustment-v1",
+            "adjustment_id": str(adjustment.id),
+            "adjustment_version": adjustment.version,
+            "request_hash": adjustment.request_hash,
+            "adjustment_history_sha256": event_history_digest(adjustment),
+            "before_invoice_history_sha256": before,
+            "after_invoice_history_sha256": after,
+        })
+        review["charge_adjustment_transitions"] = transitions
+        review["invoice_history_sha256"] = after
+        event.payload = {**(event.payload or {}), OWNER_CASH_REVIEW_KEY: review}
+        if not valid_owner_cash_review(event, invoice):
+            raise ValueError("Owner cash review cannot be carried through this charge adjustment.")
 
 
 def cash_staff(actor):

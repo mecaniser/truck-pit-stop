@@ -6,6 +6,7 @@ from app.core.config import settings
 from app.db.models.invoice import Invoice
 from app.db.models.invoice_settlement import InvoiceSettlement
 from app.db.models.invoice_charge_adjustment import InvoiceChargeAdjustment
+from app.db.models.provider_outbox import ProviderOutboxEvent
 from app.services.invoice_accounting_policy import locked_policy
 from app.services.invoice_tax_exemption import authorized, eligibility, snapshot, MONEY_FIELDS
 from app.services.invoice_settlement_service import SettlementDomainError, money, invoice_money_snapshot, _canonical_hash, _actor_snapshot
@@ -102,6 +103,12 @@ async def adjust(db, *, invoice, tenant, actor, body, idempotency_key):
     reason = await eligibility(db, invoice, settlement, lock=True, adjustment=True)
     if reason:
         raise SettlementDomainError("charge_adjustment_unavailable", reason)
+    from app.services.invoice_cash_service import valid_owner_cash_review
+    review_events = list((await db.scalars(select(ProviderOutboxEvent).where(
+        ProviderOutboxEvent.tenant_id == invoice.tenant_id,
+        ProviderOutboxEvent.aggregate_id == invoice.id,
+    ).with_for_update(nowait=True).execution_options(populate_existing=True))).all())
+    valid_owner_review_events = [event for event in review_events if valid_owner_cash_review(event, invoice)]
     try:
         original = original_snapshot(invoice)
         card_fee_enabled = (effective_card_fee_enabled(invoice) if body.card_fee_enabled is None
@@ -129,4 +136,11 @@ async def adjust(db, *, invoice, tenant, actor, body, idempotency_key):
     invoice.charge_adjustments.append(row)
     db.add(row)
     await db.flush()
+    # An owner-attested historical-cash review is an exact no-money review, not
+    # a blanket export bypass.  Preserve it only when this audited adjustment
+    # itself produced the new invoice state; direct later drift still invalidates
+    # the review and keeps cash unavailable.
+    from app.services.invoice_cash_service import retarget_owner_cash_reviews_after_charge_adjustment
+    retarget_owner_cash_reviews_after_charge_adjustment(invoice, row, review_events,
+        validated_events=valid_owner_review_events)
     return settlement
