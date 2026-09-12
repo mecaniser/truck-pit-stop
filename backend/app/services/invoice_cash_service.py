@@ -39,13 +39,14 @@ def owner_cash_review_target(event, invoice):
     )
 
 
-def event_history_digest(event):
+def event_history_digest(event, *, value_overrides=None, charge_adjustments=None):
     """Bind review to every original column except ordinary update metadata."""
     values = {}
     for column in event.__table__.columns:
         if column.name == "updated_at":
             continue
-        value = getattr(event, column.name)
+        value = (value_overrides[column.name] if value_overrides and column.name in value_overrides
+                 else getattr(event, column.name))
         # Migration 143 added a nullable audit to Invoice. A NULL audit must
         # retain pre-143 ancestor proofs; an actual audit remains history-bound.
         if isinstance(event, Invoice) and column.name == "tax_exemption" and value is None:
@@ -55,9 +56,116 @@ def event_history_digest(event):
         if isinstance(value, datetime):
             value = (value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value.astimezone(timezone.utc)).isoformat()
         values[column.name] = value
-    if isinstance(event, Invoice) and event.charge_adjustments:
-        values["charge_adjustments"] = [event_history_digest(row) for row in sorted(event.charge_adjustments, key=lambda row: row.version)]
+    if isinstance(event, Invoice):
+        rows = event.charge_adjustments if charge_adjustments is None else charge_adjustments
+        if rows:
+            values["charge_adjustments"] = [event_history_digest(row) for row in sorted(rows, key=lambda row: row.version)]
     return sha256(json.dumps(values, sort_keys=True, default=str, separators=(",", ":")).encode()).hexdigest()
+
+
+OWNER_CASH_CHARGE_TRANSITION_SCHEMA = "db048-owner-cash-charge-adjustment-v1"
+OWNER_CASH_MONEY_FIELDS = (
+    "subtotal", "shop_supplies_amount", "service_fee_amount",
+    "tax_amount", "discount_amount", "total_amount",
+)
+
+
+def _owner_cash_amount_snapshot(snapshot):
+    """Accept only a complete, non-negative audited invoice money snapshot."""
+    if not isinstance(snapshot, dict) or set(snapshot) != set(OWNER_CASH_MONEY_FIELDS):
+        return None
+    try:
+        values = {field: money(snapshot[field]) for field in OWNER_CASH_MONEY_FIELDS}
+    except (ArithmeticError, TypeError, ValueError):
+        return None
+    if any(value < 0 for value in values.values()):
+        return None
+    if values["total_amount"] != (values["subtotal"] + values["shop_supplies_amount"]
+                                  + values["service_fee_amount"] + values["tax_amount"]
+                                  - values["discount_amount"]):
+        return None
+    return values
+
+
+def _inferred_owner_cash_charge_transitions(event, invoice, review):
+    """Reconstruct a pre-release review only from immutable adjustment rows.
+
+    Older held invoices could be adjusted before review-chain rebinding shipped.
+    This is deliberately read-only: it accepts a marker only when its recorded
+    invoice digest matches an exact stage of the audited adjustment sequence and
+    the final reconstructed state is the live invoice digest.
+    """
+    adjustments = sorted(getattr(invoice, "charge_adjustments", []) or [], key=lambda row: row.version)
+    if not adjustments:
+        return None
+    stage_digest = review.get("invoice_history_sha256")
+    if not isinstance(stage_digest, str) or len(stage_digest) != 64:
+        return None
+    rows, transitions, previous = [], [], None
+    matched_at = None
+    for row in adjustments:
+        evidence = getattr(row, "evidence", None)
+        if (row.tenant_id != invoice.tenant_id or not isinstance(evidence, dict)
+                or evidence.get("schema") != "invoice-charge-adjustment-v1"):
+            return None
+        before = _owner_cash_amount_snapshot(evidence.get("before"))
+        after = _owner_cash_amount_snapshot(evidence.get("after"))
+        if before is None or after is None or (previous is not None and before != previous):
+            return None
+        before_digest = event_history_digest(invoice, value_overrides=before, charge_adjustments=rows)
+        rows.append(row)
+        after_digest = event_history_digest(invoice, value_overrides=after, charge_adjustments=rows)
+        if matched_at is None and stage_digest == before_digest:
+            matched_at = len(transitions)
+        transitions.append({
+            "schema": OWNER_CASH_CHARGE_TRANSITION_SCHEMA,
+            "adjustment_id": str(row.id),
+            "adjustment_version": row.version,
+            "request_hash": row.request_hash,
+            "adjustment_history_sha256": event_history_digest(row),
+            "before_invoice_history_sha256": before_digest,
+            "after_invoice_history_sha256": after_digest,
+        })
+        if stage_digest == after_digest:
+            matched_at = len(transitions)
+        previous = after
+    if previous != _owner_cash_amount_snapshot({field: getattr(invoice, field) for field in OWNER_CASH_MONEY_FIELDS}):
+        return None
+    if event_history_digest(invoice) != transitions[-1]["after_invoice_history_sha256"] or matched_at is None:
+        return None
+    return transitions[matched_at:]
+
+
+def owner_cash_review_transition_chain(event, invoice):
+    """Return the verified explicit or reconstructable adjustment chain."""
+    review = (event.payload or {}).get(OWNER_CASH_REVIEW_KEY)
+    if not isinstance(review, dict):
+        return None
+    transitions = review.get("charge_adjustment_transitions", [])
+    if not isinstance(transitions, list):
+        return None
+    current_digest = event_history_digest(invoice)
+    if transitions:
+        root = review.get("reviewed_invoice_history_sha256")
+        if not isinstance(root, str) or len(root) != 64:
+            return None
+        expected = root
+        adjustments = {str(row.id): row for row in getattr(invoice, "charge_adjustments", [])}
+        for transition in transitions:
+            row = adjustments.get(str(transition.get("adjustment_id"))) if isinstance(transition, dict) else None
+            if (row is None or transition.get("schema") != OWNER_CASH_CHARGE_TRANSITION_SCHEMA
+                    or transition.get("before_invoice_history_sha256") != expected
+                    or transition.get("adjustment_version") != row.version
+                    or transition.get("request_hash") != row.request_hash
+                    or transition.get("adjustment_history_sha256") != event_history_digest(row)
+                    or not isinstance(transition.get("after_invoice_history_sha256"), str)
+                    or len(transition["after_invoice_history_sha256"]) != 64):
+                return None
+            expected = transition["after_invoice_history_sha256"]
+        return transitions if expected == review.get("invoice_history_sha256") == current_digest else None
+    if review.get("invoice_history_sha256") == current_digest:
+        return []
+    return _inferred_owner_cash_charge_transitions(event, invoice, review)
 
 
 def valid_sandbox_cash_review(event, invoice):
@@ -114,33 +222,18 @@ def valid_owner_cash_review(event, invoice):
             return False
         for item in chain:
             UUID(item)
-        transitions = review.get("charge_adjustment_transitions", [])
-        if not isinstance(transitions, list):
+        if owner_cash_review_transition_chain(event, invoice) is None:
             return False
-        if transitions:
-            root = review.get("reviewed_invoice_history_sha256")
-            if not isinstance(root, str) or len(root) != 64:
-                return False
-            expected = root
-            adjustments = {str(row.id): row for row in getattr(invoice, "charge_adjustments", [])}
-            for transition in transitions:
-                row = adjustments.get(str(transition.get("adjustment_id"))) if isinstance(transition, dict) else None
-                if (row is None or transition.get("schema") != "db048-owner-cash-charge-adjustment-v1"
-                        or transition.get("before_invoice_history_sha256") != expected
-                        or transition.get("adjustment_version") != row.version
-                        or transition.get("request_hash") != row.request_hash
-                        or transition.get("adjustment_history_sha256") != event_history_digest(row)
-                        or not isinstance(transition.get("after_invoice_history_sha256"), str)
-                        or len(transition["after_invoice_history_sha256"]) != 64):
-                    return False
-                expected = transition["after_invoice_history_sha256"]
-            if expected != review.get("invoice_history_sha256"):
-                return False
+        current_digest = event_history_digest(invoice)
+        history_matches = review["invoice_history_sha256"] == current_digest
+        if not history_matches:
+            inferred = _inferred_owner_cash_charge_transitions(event, invoice, review)
+            history_matches = bool(inferred and inferred[-1]["after_invoice_history_sha256"] == current_digest)
         return bool(
             review["schema"] == "db048-owner-cash-review-v1"
             and review["tenant_id"] == str(invoice.tenant_id) == str(event.tenant_id)
             and review["invoice_id"] == str(invoice.id) == str(event.aggregate_id)
-            and review["invoice_history_sha256"] == event_history_digest(invoice)
+            and history_matches
             and review["event_id"] == str(event.id)
             and review["event_type"] == event.event_type == "quickbooks.invoice.sync.v1"
             and review["event_status"] == event.status
@@ -178,21 +271,30 @@ def retarget_owner_cash_reviews_after_charge_adjustment(invoice, adjustment, eve
         review = dict(event.payload[OWNER_CASH_REVIEW_KEY])
         before = review["invoice_history_sha256"]
         transitions = list(review.get("charge_adjustment_transitions", []))
+        # When a legacy review has no stored chain, reconstruct all of its
+        # immutable rows (including this just-created adjustment) instead of
+        # incorrectly linking the new row directly to the old root digest.
+        if not transitions:
+            inferred = _inferred_owner_cash_charge_transitions(event, invoice, review)
+            if inferred is None:
+                raise ValueError("Owner cash review cannot be reconciled through this charge adjustment.")
+            transitions = inferred
+        else:
+            # The event digest excludes trusted review markers, so the new
+            # invoice digest can be calculated before its marker is replaced.
+            after = event_history_digest(invoice)
+            transitions.append({
+                "schema": OWNER_CASH_CHARGE_TRANSITION_SCHEMA,
+                "adjustment_id": str(adjustment.id),
+                "adjustment_version": adjustment.version,
+                "request_hash": adjustment.request_hash,
+                "adjustment_history_sha256": event_history_digest(adjustment),
+                "before_invoice_history_sha256": before,
+                "after_invoice_history_sha256": after,
+            })
         review.setdefault("reviewed_invoice_history_sha256", before)
-        # The event digest excludes trusted review markers, so the new invoice
-        # digest can be calculated before its marker is replaced.
-        after = event_history_digest(invoice)
-        transitions.append({
-            "schema": "db048-owner-cash-charge-adjustment-v1",
-            "adjustment_id": str(adjustment.id),
-            "adjustment_version": adjustment.version,
-            "request_hash": adjustment.request_hash,
-            "adjustment_history_sha256": event_history_digest(adjustment),
-            "before_invoice_history_sha256": before,
-            "after_invoice_history_sha256": after,
-        })
         review["charge_adjustment_transitions"] = transitions
-        review["invoice_history_sha256"] = after
+        review["invoice_history_sha256"] = event_history_digest(invoice)
         event.payload = {**(event.payload or {}), OWNER_CASH_REVIEW_KEY: review}
         if not valid_owner_cash_review(event, invoice):
             raise ValueError("Owner cash review cannot be carried through this charge adjustment.")

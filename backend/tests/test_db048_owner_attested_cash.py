@@ -85,6 +85,23 @@ async def reviewed_owner_cash(db, monkeypatch):
     return ctx, parent, creation.attempt, current_event, manifest
 
 
+async def legacy_adjusted_owner_cash(db, monkeypatch):
+    """Return the exact pre-PR387 review state after one audited fee change."""
+    ctx, parent, _, event, _ = await reviewed_owner_cash(db, monkeypatch)
+    tenant, owner, _, invoice, settlement = ctx
+    root = event.payload[cash.OWNER_CASH_REVIEW_KEY]["invoice_history_sha256"]
+    await charges.adjust(db, invoice=invoice, tenant=tenant, actor=owner,
+        body=InvoiceChargeAdjustmentCreate(expected_settlement_version=settlement.version,
+            tax_exempt=False, shop_supplies_enabled=True, card_fee_enabled=False),
+        idempotency_key="legacy-owner-reviewed-card-fee-off")
+    marker = {key: value for key, value in event.payload[cash.OWNER_CASH_REVIEW_KEY].items()
+              if key not in {"reviewed_invoice_history_sha256", "charge_adjustment_transitions"}}
+    marker["invoice_history_sha256"] = root
+    event.payload = {**event.payload, cash.OWNER_CASH_REVIEW_KEY: marker}
+    await db.flush()
+    return ctx, parent, event
+
+
 @pytest.mark.asyncio
 async def test_owner_review_is_exact_metadata_only_and_enables_cash(db_session, monkeypatch):
     ctx, parent, attempt, event, manifest = await reviewed_owner_cash(db_session, monkeypatch)
@@ -180,6 +197,61 @@ async def test_owner_review_allows_audited_fee_controls_and_rebinds_cash_eligibi
     invoice.total_amount += Decimal("1.00")
     await db_session.flush()
     assert (await cash.cash_eligibility(db_session, invoice, settlement))[0] == "The owner-attested export history changed. Accounting review is required before cash."
+
+
+@pytest.mark.asyncio
+async def test_owner_review_reconciles_a_pre_release_audited_charge_adjustment(db_session, monkeypatch):
+    """A held invoice adjusted before PR387 is usable only when its row chain closes."""
+    ctx, _, event = await legacy_adjusted_owner_cash(db_session, monkeypatch)
+    tenant, owner, _, invoice, settlement = ctx
+    assert cash.valid_owner_cash_review(event, invoice)
+    assert (await cash.cash_eligibility(db_session, invoice, settlement))[0] is None
+    assert (await charges.summary(db_session, invoice, settlement, tenant, owner, audience="staff")).can_adjust is True
+
+    # A later normal adjustment records the reconstructed chain; unrelated
+    # mutation still invalidates cash rather than broadening the exception.
+    await charges.adjust(db_session, invoice=invoice, tenant=tenant, actor=owner,
+        body=InvoiceChargeAdjustmentCreate(expected_settlement_version=settlement.version,
+            tax_exempt=False, shop_supplies_enabled=True, card_fee_enabled=True),
+        idempotency_key="legacy-owner-reviewed-card-fee-on")
+    review = event.payload[cash.OWNER_CASH_REVIEW_KEY]
+    assert len(review["charge_adjustment_transitions"]) == 2
+    assert cash.valid_owner_cash_review(event, invoice)
+    assert (await cash.cash_eligibility(db_session, invoice, settlement))[0] is None
+    invoice.total_amount += Decimal("1.00")
+    await db_session.flush()
+    assert not cash.valid_owner_cash_review(event, invoice)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("defect", ["malformed_evidence", "tenant_mismatch"])
+async def test_legacy_owner_review_rejects_tampered_adjustment_chain(db_session, monkeypatch, defect):
+    ctx, _, event = await legacy_adjusted_owner_cash(db_session, monkeypatch)
+    invoice = ctx[3]
+    row = invoice.charge_adjustments[0]
+    if defect == "malformed_evidence":
+        row.evidence = {**row.evidence, "after": {**row.evidence["after"], "total_amount": "999.00"}}
+    else:
+        row.tenant_id = uuid4()
+    await db_session.flush()
+    assert not cash.valid_owner_cash_review(event, invoice)
+    assert (await cash.cash_eligibility(db_session, invoice, ctx[4]))[0] == (
+        "The owner-attested export history changed. Accounting review is required before cash.")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("defect", ["provider", "payment", "ancestor"])
+async def test_legacy_owner_review_rejects_post_reconstruction_financial_drift(db_session, monkeypatch, defect):
+    ctx, parent, event = await legacy_adjusted_owner_cash(db_session, monkeypatch)
+    invoice, settlement = ctx[3], ctx[4]
+    if defect == "provider":
+        event.provider_message_id = "unexpected-provider-object"
+    elif defect == "payment":
+        settlement.confirmed_principal = Decimal("1.00")
+    else:
+        parent.zelle_pending_submitted_at = datetime.now(timezone.utc)
+    await db_session.flush()
+    assert (await cash.cash_eligibility(db_session, invoice, settlement))[0] is not None
 
 
 @pytest.mark.asyncio
