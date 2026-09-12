@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { act, render, screen, waitFor } from '@testing-library/react'
+import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { ComponentProps } from 'react'
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
@@ -369,6 +369,92 @@ describe('PriceBuilderPanel pending feedback', () => {
         allow_stock_shortage: true,
       }))
     })
+  })
+
+  it('guides checked-in work through a keyboard-accessible footer without starting on assignment', async () => {
+    apiMocks.get.mockResolvedValue({ data: emptySummary })
+    const user = userEvent.setup()
+    const onAssignTechnician = vi.fn()
+    const onOverrideTechnicianAssignment = vi.fn()
+    const props = {
+      technicianOptions: [{ mechanic_id: 'tech-1', mechanic_name: 'Mike Johnson', assigned_count: 0, in_progress_count: 0 }],
+      onAssignTechnician,
+      onOverrideTechnicianAssignment,
+    }
+    const view = renderPanel(props)
+    const trigger = await screen.findByRole('button', { name: 'Start work…' })
+    trigger.focus()
+    await user.keyboard('{Enter}')
+    let options = screen.getByLabelText('Start work options')
+    expect(within(options).getByText('They’ll be notified and can start work.')).toBeVisible()
+    await user.keyboard('{Escape}')
+    expect(screen.queryByLabelText('Start work options')).not.toBeInTheDocument()
+    expect(trigger).toHaveFocus()
+    await user.click(trigger)
+    options = screen.getByLabelText('Start work options')
+    await user.click(within(options).getByRole('button', { name: /Mike Johnson/ }))
+    expect(onAssignTechnician).toHaveBeenCalledWith('tech-1')
+    expect(onOverrideTechnicianAssignment).not.toHaveBeenCalled()
+    view.rerenderPanel({ ...props, orderStatus: 'assigned', assignedTechnicianName: 'Mike Johnson', assignedTechnicianId: 'tech-1' })
+    expect(screen.getByText('Waiting for Mike Johnson to start')).toBeVisible()
+    expect(screen.queryByRole('button', { name: 'Start work…' })).not.toBeInTheDocument()
+  })
+
+  it('starts shop-managed work from the footer and shows the existing completion action afterward', async () => {
+    apiMocks.get.mockResolvedValue({ data: emptySummary })
+    const user = userEvent.setup()
+    const onOverrideTechnicianAssignment = vi.fn()
+    const props = { onOverrideTechnicianAssignment, onAdminCompleteWork: vi.fn() }
+    const view = renderPanel(props)
+    await user.click(await screen.findByRole('button', { name: 'Start work…' }))
+    await user.click(within(screen.getByLabelText('Start work options')).getByRole('button', { name: 'Start without a technician' }))
+    expect(onOverrideTechnicianAssignment).toHaveBeenCalledTimes(1)
+    view.rerenderPanel({ ...props, technicianOverridePending: true })
+    expect(screen.getByRole('button', { name: 'Starting…' })).toBeDisabled()
+    view.rerenderPanel({ ...props, orderStatus: 'in_progress' })
+    expect(screen.getByText('Work in progress')).toBeVisible()
+    expect(screen.getByRole('button', { name: 'Mark Completed' })).toBeEnabled()
+    expect(screen.queryByRole('button', { name: 'Start work…' })).not.toBeInTheDocument()
+  })
+
+  it('can retry a failed start and dismiss its panel by clicking outside', async () => {
+    apiMocks.get.mockResolvedValue({ data: emptySummary })
+    const user = userEvent.setup()
+    const props = { onOverrideTechnicianAssignment: vi.fn() }
+    const view = renderPanel(props)
+    await user.click(await screen.findByRole('button', { name: 'Start work…' }))
+    await user.click(within(screen.getByLabelText('Start work options')).getByRole('button', { name: 'Start without a technician' }))
+    view.rerenderPanel({ ...props, technicianOverridePending: true })
+    view.rerenderPanel(props)
+    await user.click(screen.getByRole('button', { name: 'Start work…' }))
+    expect(screen.getByLabelText('Start work options')).toBeVisible()
+    await user.click(screen.getByText('Checked in'))
+    expect(screen.queryByLabelText('Start work options')).not.toBeInTheDocument()
+  })
+
+  it.each([
+    { canEdit: false }, { isDeleted: true }, { isInternalOrder: true },
+    { orderStatus: 'cancelled' as const }, { orderStatus: 'completed' as const },
+    { orderStatus: 'pending_review' as const }, { orderStatus: 'in_progress' as const },
+  ])('does not introduce a start action for an ineligible order: %j', async (props) => {
+    apiMocks.get.mockResolvedValue({ data: emptySummary })
+    renderPanel({ onOverrideTechnicianAssignment: vi.fn(), ...props })
+    expect(screen.queryByRole('button', { name: 'Start work…' })).not.toBeInTheDocument()
+  })
+
+  it('respects unavailable assignment capability and does not expose an absent override callback', async () => {
+    apiMocks.get.mockResolvedValue({ data: emptySummary })
+    const user = userEvent.setup()
+    const view = renderPanel({ onAssignTechnician: vi.fn() })
+    await waitFor(() => expect(apiMocks.get).toHaveBeenCalled())
+    expect(screen.queryByRole('button', { name: 'Start work…' })).not.toBeInTheDocument()
+    view.rerenderPanel({
+      onAssignTechnician: vi.fn(),
+      technicianOptions: [{ mechanic_id: 'tech-1', mechanic_name: 'Mike Johnson', assigned_count: 0, in_progress_count: 0 }],
+    })
+    await user.click(screen.getByRole('button', { name: 'Start work…' }))
+    const options = screen.getByLabelText('Start work options')
+    expect(within(options).queryByRole('button', { name: 'Start without a technician' })).not.toBeInTheDocument()
   })
 
   it('collapses technician assignment after an admin override starts work', async () => {
