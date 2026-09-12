@@ -108,7 +108,7 @@ PRE142_INVOICE_FIELDS = (
     "id", "tenant_id", "repair_order_id", "invoice_number", "accounting_policy",
     "cash_export_review_required", "is_internal", "recipient_name", "recipient_email",
     "recipient_phone", "status", "subtotal", "shop_supplies_amount", "service_fee_amount",
-    "tax_amount", "discount_amount", "total_amount", "line_items_snapshot", "due_date",
+    "tax_amount", "tax_exemption", "discount_amount", "total_amount", "line_items_snapshot", "due_date",
     "paid_at", "ets_invoiced_at", "notes", "source", "created_by_user_id", "voided_at",
     "voided_by_user_id", "void_reason", "supersedes_invoice_id", "zelle_pending_submitted_at",
     "zelle_pending_sender_email", "zelle_pending_sender_phone", "zelle_pending_last_reminder_at",
@@ -124,6 +124,8 @@ def pre142_activation_digest(invoice, *, value_overrides=None, charge_adjustment
     for name in PRE142_INVOICE_FIELDS:
         value = (value_overrides[name] if value_overrides and name in value_overrides
                  else getattr(invoice, name))
+        if name == "tax_exemption" and value is None:
+            continue
         if isinstance(value, datetime):
             value = (value.replace(tzinfo=timezone.utc) if value.tzinfo is None
                      else value.astimezone(timezone.utc)).isoformat()
@@ -178,6 +180,17 @@ async def test_owner_review_survives_nullable_activation_column_added_after_revi
     enrolled.created_at = parent.created_at
     enrolled.qbo_shop_activation_id = uuid4()
     assert legacy not in cash.compatible_invoice_history_digests(enrolled)
+
+
+def test_pre142_activation_digest_binds_nonnull_tax_exemption():
+    invoice = Invoice(tax_exemption={"schema": "invoice-tax-exemption-v1", "reason": "Reviewed"})
+    legacy = pre142_activation_digest(invoice)
+    assert legacy in cash.compatible_invoice_history_digests(invoice)
+    invoice.tax_exemption = {**invoice.tax_exemption, "reason": "Changed"}
+    assert legacy not in cash.compatible_invoice_history_digests(invoice)
+    invoice.tax_exemption = {"schema": "invoice-tax-exemption-v1", "reason": "Reviewed"}
+    invoice.qbo_shop_activation_id = uuid4()
+    assert legacy not in cash.compatible_invoice_history_digests(invoice)
 
 
 @pytest.mark.asyncio
