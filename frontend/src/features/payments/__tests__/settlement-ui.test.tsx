@@ -243,18 +243,18 @@ describe('SettlementPaymentPanel', () => {
     )
   })
 
-  it('shows the server payment hold reason and retains disabled tender choices', () => {
+  it('shows the server payment hold reason without a misleading disabled tender selector', () => {
     const summary = { ...DB048_SETTLEMENT_FIXTURES.unpaid.summary,
       allowed_actions: { create_attempt: false, confirm_cash: true, rails: [],
         payment_unavailable_reason: 'Non-cash payments are paused for this historical invoice until accounting review is complete.' } }
     renderWithQuery(<SettlementPaymentPanel access={{ kind: 'authenticated', invoiceId: summary.invoice_id }}
       summary={summary} audience="staff" tone="light" onUpdated={vi.fn()} />)
     expect(screen.getByText(summary.allowed_actions.payment_unavailable_reason)).toBeInTheDocument()
-    expect(screen.getAllByRole('radio')).toHaveLength(2)
-    for (const tender of screen.getAllByRole('radio')) expect(tender).toBeDisabled()
-    expect(screen.queryByText('No new payment can be started right now.')).not.toBeInTheDocument()
+    expect(screen.queryAllByRole('radio')).toHaveLength(0)
+    expect(screen.getByRole('button', { name: 'Refresh payment status' })).toBeInTheDocument()
+    expect(screen.getByText('Other payment methods are unavailable.')).toBeInTheDocument()
     expect(screen.queryByLabelText('Amount applied to invoice')).not.toBeInTheDocument()
-    expect(screen.getByText('Payment method')).toBeInTheDocument()
+    expect(screen.queryByText('Payment method')).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /Continue/ })).not.toBeInTheDocument()
   })
 
