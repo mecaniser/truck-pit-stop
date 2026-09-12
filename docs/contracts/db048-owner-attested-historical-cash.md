@@ -14,9 +14,10 @@ QuickBooks. Cash confirmation remains a separate staff action.
 ## Durable review
 
 Reviewed operator tooling adds only `cash_owner_attestation_review` to the exact
-invoice-sync outbox payload. The marker binds its tenant, invoice, event, status,
-attempt count, original event digest, exact replacement chain, and complete
-financial snapshots of every ancestor. It records the normalized statement
+held replacement invoice's ambiguous invoice-sync outbox payload. The marker binds
+its tenant, invoice, current invoice digest, event, status, attempt count, original
+event digest, exact replacement chain, and complete financial snapshots of every
+ancestor. It records the normalized statement
 `no_provider_payment_cash_received`, the attestation source, reviewer, timestamp,
 and `provider_verified: false`.
 
@@ -32,8 +33,10 @@ payment request DTOs cannot supply it. Conflicting metadata cannot be overwritte
 
 All existing active-invoice, staff permission, same-tenant, full-positive-balance,
 idempotency, version, no-mixing, no-Zelle-pending, and no-current-payment-history
-checks remain. An owner review can resolve only historical outbox ambiguity and
-the exact ancestor evidence it snapshots.
+checks remain. The exception requires `historical_export_hold`, a replacement
+ancestor, and an exact `cash_export_ambiguous` QuickBooks invoice-sync outbox
+event. An owner review can resolve only that historical ambiguity and the exact
+ancestor evidence it snapshots.
 
 An ancestor snapshot is eligible only when there is no received/applied money,
 payment, accounting link, refund, credit, overpayment, or provider settlement;

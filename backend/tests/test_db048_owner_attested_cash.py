@@ -97,7 +97,7 @@ async def test_owner_review_is_exact_metadata_only_and_enables_cash(db_session, 
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("defect", ["event_payload", "event_provider", "event_lease", "marker_tenant", "missing_ancestor", "ancestor_provider", "ancestor_zelle", "new_money"])
+@pytest.mark.parametrize("defect", ["event_payload", "event_provider", "event_lease", "marker_tenant", "missing_ancestor", "ancestor_provider", "ancestor_zelle", "ancestor_synced_status", "ancestor_other_outbox", "new_money"])
 async def test_owner_review_rejects_drift_and_provider_or_money_evidence(db_session, monkeypatch, defect):
     ctx, _, attempt, event, _ = await reviewed_owner_cash(db_session, monkeypatch)
     if defect == "event_payload":
@@ -117,10 +117,45 @@ async def test_owner_review_rejects_drift_and_provider_or_money_evidence(db_sess
     elif defect == "ancestor_zelle":
         parent = await db_session.get(Invoice, ctx[3].supersedes_invoice_id)
         parent.zelle_pending_submitted_at = datetime.now(timezone.utc)
+    elif defect == "ancestor_synced_status":
+        parent = await db_session.get(Invoice, ctx[3].supersedes_invoice_id)
+        parent.quickbooks_sync_status = "synced"
+    elif defect == "ancestor_other_outbox":
+        db_session.add(ProviderOutboxEvent(
+            tenant_id=ctx[0].id, aggregate_id=ctx[3].supersedes_invoice_id,
+            aggregate_type="payment", event_type="payment.accounting.v1", status="dead",
+            attempt_count=1, available_at=datetime.now(timezone.utc),
+            idempotency_key=f"unexpected-financial-event-{uuid4()}", payload={},
+        ))
     else:
         ctx[4].confirmed_principal = Decimal("1.00")
     await db_session.flush()
     assert (await cash.cash_eligibility(db_session, ctx[3], ctx[4]))[0] is not None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("defect", ["policy", "replacement", "ambiguity"])
+async def test_owner_review_never_becomes_a_general_export_bypass(db_session, monkeypatch, defect):
+    ctx, _, _, event, manifest = await reviewed_owner_cash(db_session, monkeypatch)
+    if defect == "policy":
+        ctx[3].accounting_policy = "standard"
+    elif defect == "replacement":
+        ctx[3].supersedes_invoice_id = None
+    else:
+        event.payload = {**event.payload, "cash_export_ambiguous": False}
+    await db_session.flush()
+    with pytest.raises(ValueError, match="Owner review is limited"):
+        await prepare(db_session, manifest["scope"])
+    assert (await cash.cash_eligibility(db_session, ctx[3], ctx[4]))[0] is not None
+
+
+@pytest.mark.asyncio
+async def test_owner_review_rejects_a_post_review_invoice_amount_change(db_session, monkeypatch):
+    ctx, _, _, _, _ = await reviewed_owner_cash(db_session, monkeypatch)
+    ctx[3].total_amount += Decimal("1.00")
+    await db_session.flush()
+    reason, _ = await cash.cash_eligibility(db_session, ctx[3], ctx[4])
+    assert reason == "The owner-attested export history changed. Accounting review is required before cash."
 
 
 @pytest.mark.asyncio

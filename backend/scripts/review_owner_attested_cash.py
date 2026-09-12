@@ -17,10 +17,10 @@ from app.db.models.invoice_settlement import InvoiceSettlement
 from app.db.models.provider_outbox import ProviderOutboxEvent
 from app.db.session import AsyncSessionLocal
 from app.services.historical_export_hold import digest, rows_digest
-from app.services.invoice_accounting_policy import locked_policy
+from app.services.invoice_accounting_policy import HISTORICAL_HOLD, locked_policy
 from app.services.invoice_cash_service import (
     OWNER_CASH_REVIEW_KEY, cash_eligibility, event_history_digest,
-    owner_attested_ancestor_snapshot, valid_owner_cash_review,
+    owner_attested_ancestor_snapshot, owner_cash_review_target, valid_owner_cash_review,
 )
 
 
@@ -59,6 +59,10 @@ async def prepare(db, scope):
         raise ValueError("Reviewer and attestation source are required")
 
     invoice, event = await targets(db, scope)
+    if invoice.accounting_policy != HISTORICAL_HOLD or invoice.supersedes_invoice_id is None:
+        raise ValueError("Owner review is limited to an exact held replacement invoice")
+    if not owner_cash_review_target(event, invoice):
+        raise ValueError("Owner review is limited to an exact ambiguous QuickBooks export hold")
     chain, ancestor_reviews = [], []
     seen = {invoice.id}
     parent_id = invoice.supersedes_invoice_id
@@ -85,6 +89,7 @@ async def prepare(db, scope):
         "schema": "db048-owner-cash-review-v1",
         "tenant_id": str(invoice.tenant_id),
         "invoice_id": str(invoice.id),
+        "invoice_history_sha256": event_history_digest(invoice),
         "event_id": str(event.id),
         "event_type": event.event_type,
         "event_status": event.status,

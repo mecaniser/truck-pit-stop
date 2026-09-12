@@ -17,7 +17,7 @@ from app.db.models.provider_outbox import ProviderOutboxEvent
 from app.db.models.quickbooks_connection import QuickBooksConnection
 from app.db.models.repair_order import RepairOrderStatus
 from app.db.models.user import UserRole
-from app.services.invoice_accounting_policy import locked_policy, LOCAL_CASH, LOCAL_CASH_SYNC
+from app.services.invoice_accounting_policy import HISTORICAL_HOLD, locked_policy, LOCAL_CASH, LOCAL_CASH_SYNC
 from app.services.invoice_settlement_service import (
     SettlementDomainError, _canonical_hash, _actor_snapshot, money,
     get_or_create_settlement, append_ledger_event, allocate_next_payment_number,
@@ -27,6 +27,16 @@ from app.services.invoice_settlement_service import (
 CASH_REVIEW_KEY = "cash_nonproduction_review"
 OWNER_CASH_REVIEW_KEY = "cash_owner_attestation_review"
 REVIEW_KEYS = {CASH_REVIEW_KEY, OWNER_CASH_REVIEW_KEY}
+
+
+def owner_cash_review_target(event, invoice):
+    """The owner exception is only for a held, ambiguous replacement export."""
+    return bool(
+        invoice.accounting_policy == HISTORICAL_HOLD
+        and invoice.supersedes_invoice_id is not None
+        and event.event_type == "quickbooks.invoice.sync.v1"
+        and (event.payload or {}).get("cash_export_ambiguous") is True
+    )
 
 
 def event_history_digest(event):
@@ -108,10 +118,12 @@ def valid_owner_cash_review(event, invoice):
             review["schema"] == "db048-owner-cash-review-v1"
             and review["tenant_id"] == str(invoice.tenant_id) == str(event.tenant_id)
             and review["invoice_id"] == str(invoice.id) == str(event.aggregate_id)
+            and review["invoice_history_sha256"] == event_history_digest(invoice)
             and review["event_id"] == str(event.id)
             and review["event_type"] == event.event_type == "quickbooks.invoice.sync.v1"
             and review["event_status"] == event.status
             and event.status in {"dead", "suppressed", "deferred"}
+            and owner_cash_review_target(event, invoice)
             and review["attempt_count"] == event.attempt_count and event.attempt_count > 0
             and review["original_history_sha256"] == event_history_digest(event)
             and review["attestation"] == "no_provider_payment_cash_received"
@@ -183,10 +195,12 @@ async def owner_attested_ancestor_snapshot(db, parent, *, lock=False):
 
     if (getattr(parent.status, "value", parent.status) != "cancelled"
             or parent.quickbooks_invoice_id or parent.quickbooks_synced_at
+            or parent.quickbooks_sync_status == "synced"
             or parent.zelle_pending_submitted_at is not None
             or payments or links or refunds or overpayments or credits or provider_rows
             or len(settlements) > 1
-            or any(event.status not in {"dead", "suppressed", "deferred"}
+            or any(event.event_type != "quickbooks.invoice.sync.v1"
+                or event.status not in {"dead", "suppressed", "deferred"}
                 or event.provider_message_id or event.lock_token or event.locked_until for event in events)):
         return None
     if any(attempt.state not in {"failed", "expired"}
