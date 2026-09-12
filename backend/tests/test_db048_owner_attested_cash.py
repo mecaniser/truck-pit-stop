@@ -153,11 +153,18 @@ async def test_owner_review_survives_nullable_activation_column_added_after_revi
     assert legacy != canonical
     assert (await cash.cash_eligibility(db_session, ctx[3], ctx[4]))[0] is None
 
-    parent.qbo_shop_activation_id = uuid4()
-    await db_session.flush()
-    assert legacy not in cash.compatible_invoice_history_digests(parent)
-    assert "outside the owner's reviewed cash attestation" in (
-        await cash.cash_eligibility(db_session, ctx[3], ctx[4]))[0]
+    # A production invoice cannot be enrolled after creation. Exercise the
+    # non-NULL binding on a detached representation instead of issuing an
+    # UPDATE that PostgreSQL's creation-only trigger correctly rejects.
+    enrolled = Invoice(**{
+        column.name: getattr(parent, column.name)
+        for column in Invoice.__table__.columns
+        if column.name not in {"id", "created_at", "updated_at"}
+    })
+    enrolled.id = parent.id
+    enrolled.created_at = parent.created_at
+    enrolled.qbo_shop_activation_id = uuid4()
+    assert legacy not in cash.compatible_invoice_history_digests(enrolled)
 
 
 @pytest.mark.asyncio
