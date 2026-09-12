@@ -1,4 +1,5 @@
 import { AlertTriangle, CheckCircle2, Clock3, RefreshCw } from 'lucide-react'
+import type { ReactNode } from 'react'
 
 import { formatMoney, isPositiveMoney } from './money'
 import type { InvoiceSettlementSummary, PaymentAllocation } from './types'
@@ -27,12 +28,14 @@ export default function SettlementSummaryCard({
   tone = 'dark',
   compact = false,
   streamlined = false,
+  children,
 }: {
   summary: InvoiceSettlementSummary
   allocations?: PaymentAllocation[]
   tone?: 'dark' | 'light'
   compact?: boolean
   streamlined?: boolean
+  children?: ReactNode
 }) {
   const dark = tone === 'dark'
   const panel = dark
@@ -77,6 +80,8 @@ export default function SettlementSummaryCard({
           </div>
         ))}
       </dl>}
+
+      {children}
 
       {resolution && (
         <div className={`flex gap-2 border-t px-3 py-3 text-sm ${divider} ${dark ? 'bg-amber-400/10 text-amber-200' : 'bg-amber-50 text-amber-900'}`}>

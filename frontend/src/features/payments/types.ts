@@ -49,6 +49,8 @@ export interface InvoiceSettlementSummary {
     original_card_fee_amount?: string
   }
   breakdown?: {
+    labor_total?: string | null
+    parts_total?: string | null
     subtotal: string
     shop_supplies_amount: string
     sales_tax_amount: string
