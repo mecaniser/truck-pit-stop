@@ -116,6 +116,24 @@ async def test_owner_review_is_exact_metadata_only_and_enables_cash(db_session, 
 
 
 @pytest.mark.asyncio
+async def test_owner_review_survives_nullable_activation_column_added_after_review(db_session, monkeypatch):
+    """A pre-migration ancestor proof treats a later NULL column as absent."""
+    ctx, parent, _, event, _ = await reviewed_owner_cash(db_session, monkeypatch)
+    review = event.payload[cash.OWNER_CASH_REVIEW_KEY]
+    stored = review["ancestor_reviews"][0]["snapshot"]["invoice_sha256"]
+
+    assert parent.qbo_shop_activation_id is None
+    assert cash.event_history_digest(parent) == stored
+    assert (await cash.cash_eligibility(db_session, ctx[3], ctx[4]))[0] is None
+
+    parent.qbo_shop_activation_id = uuid4()
+    await db_session.flush()
+    assert cash.event_history_digest(parent) != stored
+    assert "outside the owner's reviewed cash attestation" in (
+        await cash.cash_eligibility(db_session, ctx[3], ctx[4]))[0]
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("defect", ["event_payload", "event_provider", "event_lease", "marker_tenant", "missing_ancestor", "ancestor_provider", "ancestor_zelle", "ancestor_synced_status", "ancestor_other_outbox", "new_money"])
 async def test_owner_review_rejects_drift_and_provider_or_money_evidence(db_session, monkeypatch, defect):
     ctx, _, attempt, event, _ = await reviewed_owner_cash(db_session, monkeypatch)

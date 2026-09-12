@@ -1,4 +1,4 @@
-"""Persisted pre-143 ancestor proofs survive only the additive NULL audit."""
+"""Persisted ancestor proofs survive only additive, allowlisted NULL fields."""
 from copy import deepcopy
 from datetime import datetime, timezone
 from decimal import Decimal
@@ -14,12 +14,12 @@ from app.services.invoice_settlement_service import invoice_money_snapshot
 from tests.test_db048_reviewed_sandbox_cash import reviewed
 
 
-def pre143_invoice_digest(invoice):
-    # Frozen old serializer: the pre-143 schema had no tax_exemption column.
+def legacy_nullable_invoice_digest(invoice):
+    # Frozen old serializer: the reviewed schema had neither nullable column.
     # Deliberately independent of the production digest function.
     values = {}
     for column in Invoice.__table__.columns:
-        if column.name in {"updated_at", "tax_exemption"}:
+        if column.name in {"updated_at", "qbo_shop_activation_id", "tax_exemption"}:
             continue
         value = getattr(invoice, column.name)
         if isinstance(value, datetime):
@@ -36,7 +36,7 @@ async def test_persisted_pre143_review_cash_and_tax_eligibility(db_session, monk
     ctx, queued, *_ = await reviewed(db_session, monkeypatch, local_void_parent=True)
     invoice, settlement = ctx[3:]
     parent = await db_session.get(Invoice, invoice.supersedes_invoice_id)
-    legacy_digest = pre143_invoice_digest(parent)
+    legacy_digest = legacy_nullable_invoice_digest(parent)
     marker = deepcopy(queued.payload[cash.CASH_REVIEW_KEY])
     marker["ancestor_reviews"][0]["snapshot"]["invoice_sha256"] = legacy_digest
     queued.payload = {**queued.payload, cash.CASH_REVIEW_KEY: marker}
@@ -72,5 +72,5 @@ def test_nonnull_audit_is_digest_bound():
     parent.tax_exemption = {**parent.tax_exemption, "reason": "Tampered"}
     assert cash.event_history_digest(parent) != original
     parent.tax_exemption = None
-    assert cash.event_history_digest(parent) == pre143_invoice_digest(parent)
+    assert cash.event_history_digest(parent) == legacy_nullable_invoice_digest(parent)
     assert cash.event_history_digest(parent) != original
