@@ -383,6 +383,8 @@ describe('PriceBuilderPanel pending feedback', () => {
     }
     const view = renderPanel(props)
     const trigger = await screen.findByRole('button', { name: 'Start work…' })
+    expect(screen.getByLabelText('Technician status')).toHaveTextContent('No technician assigned')
+    expect(screen.queryByRole('button', { name: /^Assign technician/ })).not.toBeInTheDocument()
     trigger.focus()
     await user.keyboard('{Enter}')
     let options = screen.getByLabelText('Start work options')
@@ -457,6 +459,47 @@ describe('PriceBuilderPanel pending feedback', () => {
     expect(within(options).queryByRole('button', { name: 'Start without a technician' })).not.toBeInTheDocument()
   })
 
+  it('shows a passive assigned status and allows reassignment only from the footer', async () => {
+    apiMocks.get.mockResolvedValue({ data: emptySummary })
+    const user = userEvent.setup()
+    const onAssignTechnician = vi.fn()
+    const props = {
+      orderStatus: 'assigned', assignedTechnicianName: 'Mike Johnson', assignedTechnicianId: 'tech-1',
+      technicianOptions: [
+        { mechanic_id: 'tech-1', mechanic_name: 'Mike Johnson', assigned_count: 0, in_progress_count: 0 },
+        { mechanic_id: 'tech-2', mechanic_name: 'Gregory Toronto', assigned_count: 0, in_progress_count: 0 },
+      ],
+      onAssignTechnician,
+      onOverrideTechnicianAssignment: vi.fn(),
+    }
+    const view = renderPanel(props)
+    expect(await screen.findByLabelText('Technician status')).toHaveTextContent('Technician: Mike Johnson')
+    const trigger = screen.getByRole('button', { name: 'Change technician…' })
+    await user.click(trigger)
+    const options = screen.getByLabelText('Change technician options')
+    expect(within(options).queryByRole('button', { name: /Mike Johnson/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Start without a technician' })).not.toBeInTheDocument()
+    await user.click(within(options).getByRole('button', { name: /Gregory Toronto/ }))
+    expect(onAssignTechnician).toHaveBeenCalledWith('tech-2')
+    view.rerenderPanel({ ...props, technicianAssignmentPending: true })
+    expect(screen.getByRole('button', { name: 'Assigning…' })).toBeDisabled()
+    view.rerenderPanel({ ...props, canEdit: false })
+    expect(screen.queryByRole('button', { name: 'Change technician…' })).not.toBeInTheDocument()
+  })
+
+  it('retains read-only review history after finalization without assignment controls', async () => {
+    apiMocks.get.mockImplementation((url: string) => Promise.resolve({ data: url.endsWith('/price-build') ? emptySummary : [] }))
+    const user = userEvent.setup()
+    renderPanel({ orderStatus: 'completed', canEdit: false, workflowInfo: {
+      created_at: '2026-09-12T09:00:00Z',
+      internal_notes: JSON.stringify({ reviews: [{ type: 'manager_review', notes: 'Road test passed', reviewed_by: 'Sam' }] }),
+    } })
+    await user.click(await screen.findByRole('button', { name: 'Quality review' }))
+    expect(screen.getByText('Road test passed')).toBeVisible()
+    expect(screen.queryByRole('button', { name: 'Assign technician…' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Start work…' })).not.toBeInTheDocument()
+  })
+
   it('collapses technician assignment after an admin override starts work', async () => {
     apiMocks.get.mockImplementation((url: string) => {
       if (url === '/repair-orders/order-1/price-build') return Promise.resolve({ data: emptySummary })
@@ -476,7 +519,8 @@ describe('PriceBuilderPanel pending feedback', () => {
       onAdminCompleteWork,
     })
 
-    const disclosure = await screen.findByRole('button', { name: 'Assign technician' })
+    expect(await screen.findByLabelText('Technician status')).toHaveTextContent('Shop-managed · no technician')
+    const disclosure = screen.getByRole('button', { name: 'Assign technician…' })
     expect(disclosure).toHaveAttribute('aria-expanded', 'false')
     expect(screen.queryByText('Mike Johnson')).not.toBeInTheDocument()
 
@@ -484,6 +528,9 @@ describe('PriceBuilderPanel pending feedback', () => {
 
     expect(disclosure).toHaveAttribute('aria-expanded', 'true')
     expect(screen.getByText('Mike Johnson')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Start without a technician' })).not.toBeInTheDocument()
+    await user.keyboard('{Escape}')
+    expect(disclosure).toHaveFocus()
 
     await user.click(screen.getByRole('button', { name: 'Mark Completed' }))
     expect(screen.getByText('Mark work completed')).toBeInTheDocument()

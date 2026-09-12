@@ -4514,6 +4514,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                 {showPriceBuilder && (
                   <PriceBuilderPanel
                     orderId={selectedOrder.id}
+                    workflowInfo={orderDetail ?? selectedOrder}
                     orderStatus={(orderDetail ?? selectedOrder).status}
                     canEdit={canEditPriceBuilderByRole}
                     isInternalOrder={!!(orderDetail ?? selectedOrder).is_internal}
@@ -4554,11 +4555,11 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                     quoteDisabledReason={quoteDisabledReason}
                     onQuoteAction={canPublishCustomerAuthorization ? handlePriceBuilderQuoteAction : undefined}
                     assignedTechnicianName={
-                      selectedOrder.assigned_mechanic_id
-                        ? mechanicLookup.get(selectedOrder.assigned_mechanic_id) || 'Assigned technician'
+                      (orderDetail ?? selectedOrder).assigned_mechanic_id
+                        ? mechanicLookup.get((orderDetail ?? selectedOrder).assigned_mechanic_id!) || 'Assigned technician'
                         : null
                     }
-                    assignedTechnicianId={selectedOrder.assigned_mechanic_id}
+                    assignedTechnicianId={(orderDetail ?? selectedOrder).assigned_mechanic_id}
                     technicianOptions={technicianRoster}
                     technicianAssignmentPending={assignMechanicMutation.isPending}
                     onAssignTechnician={(mechanicId) =>

@@ -1,8 +1,9 @@
 import { Popover, PopoverButton, PopoverPanel } from '@headlessui/react'
-import { ChevronUp, Play, X } from 'lucide-react'
+import { ChevronUp, Play, UserRound, X } from 'lucide-react'
 import { Spinner } from '@/components/ui'
 
 interface StartWorkActionProps {
+  mode?: 'start' | 'assign' | 'reassign'
   technicians: { mechanic_id: string; mechanic_name: string; load: number }[]
   onAssign?: (mechanicId: string) => void
   onStartWithoutTechnician?: () => void
@@ -11,9 +12,11 @@ interface StartWorkActionProps {
 }
 
 export default function StartWorkAction({
-  technicians, onAssign, onStartWithoutTechnician, assignmentPending, startPending,
+  technicians, onAssign, onStartWithoutTechnician, assignmentPending, startPending, mode = 'start',
 }: StartWorkActionProps) {
   const pending = assignmentPending || startPending
+  const title = mode === 'start' ? 'Start work' : mode === 'reassign' ? 'Change technician' : 'Assign technician'
+  const ActionIcon = mode === 'start' ? Play : UserRound
 
   return (
     <Popover className="relative">
@@ -22,28 +25,28 @@ export default function StartWorkAction({
           <PopoverButton
             disabled={pending}
             aria-busy={pending}
-            className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-orange-600 px-4 text-sm font-bold text-white hover:bg-orange-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-orange-600 disabled:opacity-60"
+            className={`inline-flex h-11 items-center justify-center gap-2 rounded-xl px-4 text-sm font-bold focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-orange-600 disabled:opacity-60 ${mode === 'start' ? 'bg-orange-600 text-white hover:bg-orange-700' : 'border border-gray-300 bg-white text-gray-700 hover:bg-gray-50'}`}
           >
-            {pending ? <span aria-hidden="true"><Spinner size="xs" /></span> : <Play className="h-4 w-4" aria-hidden="true" />}
-            {startPending ? 'Starting…' : assignmentPending ? 'Assigning…' : 'Start work…'}
+            {pending ? <span aria-hidden="true"><Spinner size="xs" /></span> : <ActionIcon className="h-4 w-4" aria-hidden="true" />}
+            {startPending ? 'Starting…' : assignmentPending ? 'Assigning…' : `${title}…`}
             {!pending && <ChevronUp className="h-4 w-4" aria-hidden="true" />}
           </PopoverButton>
           <PopoverPanel
             anchor="top end"
             focus
-            aria-label="Start work options"
+            aria-label={`${title} options`}
             className="z-[100] w-80 max-w-[calc(100vw-2rem)] overflow-y-auto rounded-xl bg-white p-4 text-gray-900 shadow-lg ring-1 ring-gray-200 [--anchor-gap:8px] [--anchor-padding:16px]"
           >
             <div className="mb-3 flex items-center justify-between gap-2">
-              <h3 className="text-base font-bold">Start work</h3>
-              <button type="button" onClick={() => close()} aria-label="Close start work options" className="-mr-2 inline-flex h-11 w-11 items-center justify-center rounded-lg text-gray-500 hover:bg-gray-100">
+              <h3 className="text-base font-bold">{title}</h3>
+              <button type="button" onClick={() => close()} aria-label={`Close ${title.toLowerCase()} options`} className="-mr-2 inline-flex h-11 w-11 items-center justify-center rounded-lg text-gray-500 hover:bg-gray-100">
                 <X className="h-4 w-4" aria-hidden="true" />
               </button>
             </div>
             {onAssign && (
               <div>
-                <p className="text-sm font-semibold">Assign technician</p>
-                <p className="mt-1 text-xs text-gray-600">They’ll be notified and can start work.</p>
+                {mode === 'start' && <p className="text-sm font-semibold">Assign technician</p>}
+                <p className="mt-1 text-xs text-gray-600">{mode === 'start' ? 'They’ll be notified and can start work.' : 'The selected technician will be notified.'}</p>
                 {technicians.length > 0 ? (
                   <div className="mt-2 max-h-48 overflow-y-auto">
                     {technicians.map((tech) => (
