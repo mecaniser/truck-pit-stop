@@ -651,6 +651,28 @@ describe('Settlement credit and overpayment resolution', () => {
     expect(paymentApi.retryPaymentRefund).toHaveBeenCalledWith(failedAllocation.refund_id, 'test-idempotency-key')
   })
 
+  it('blocks card refund retry while customer credit consent is pending', async () => {
+    const user = userEvent.setup()
+    const fixture = DB048_SETTLEMENT_FIXTURES.automaticRefundPending
+    paymentApi.retryPaymentRefund.mockClear()
+    paymentApi.recordOverpaymentCreditConsent.mockReturnValueOnce(new Promise(() => {}))
+    renderWithQuery(
+      <SettlementResolutionPanel
+        access={{ kind: 'authenticated', invoiceId: fixture.summary.invoice_id }}
+        summary={{ ...fixture.summary, allowed_actions: { resolve_overpayment: true } }}
+        allocations={[{ ...fixture.allocations[0], refund_state: 'failed' }]}
+        audience="staff"
+        onUpdated={vi.fn()}
+      />,
+    )
+    await user.type(screen.getByLabelText(/customer consent note/i), 'Keep for my next repair')
+    await user.click(screen.getByRole('button', { name: /keep as customer credit/i }))
+    const retry = screen.getByRole('button', { name: /retry card refund/i })
+    expect(retry).toBeDisabled()
+    await user.click(retry)
+    expect(paymentApi.retryPaymentRefund).not.toHaveBeenCalled()
+  })
+
   it('records explicit per-event guest consent before retaining an overpayment as credit', async () => {
     const user = userEvent.setup()
     const fixture = DB048_SETTLEMENT_FIXTURES.manualOverpaymentDecision

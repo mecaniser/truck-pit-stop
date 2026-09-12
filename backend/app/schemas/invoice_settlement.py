@@ -58,6 +58,8 @@ class InvoiceTaxExemptionCreate(BaseModel):
 
 
 class InvoiceCheckoutBreakdown(BaseModel):
+    labor_total: Optional[Money] = None
+    parts_total: Optional[Money] = None
     subtotal: Money
     shop_supplies_amount: Money
     sales_tax_amount: Money

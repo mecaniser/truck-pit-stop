@@ -4913,13 +4913,13 @@ export default function PriceBuilderPanel({
                           ? 'w-[136px] gap-1.5 px-3 max-[360px]:w-[116px] max-[360px]:px-2 max-[360px]:text-[11px]'
                           : 'w-10 gap-0 px-0'
                       }`}
-                      aria-label={invoice.pending_zelle_confirmation ? 'Confirm Zelle payment' : 'Record payment'}
+                      aria-label={invoiceSettlement && invoiceSettlement.state !== 'unpaid' ? 'Review payment' : invoice.pending_zelle_confirmation ? 'Confirm Zelle payment' : 'Record payment'}
                     >
                       <CreditCard className="h-4 w-4 shrink-0" />
                       <span className={`overflow-hidden transition-[max-width,opacity] duration-150 sm:max-w-40 sm:opacity-100 ${
                         expandedInvoiceAction === 'payment' ? 'max-w-40 opacity-100' : 'max-w-0 opacity-0'
                       }`}>
-                        {invoice.pending_zelle_confirmation ? 'Confirm Zelle payment' : 'Record payment'}
+                        {invoiceSettlement && invoiceSettlement.state !== 'unpaid' ? 'Review payment' : invoice.pending_zelle_confirmation ? 'Confirm Zelle payment' : 'Record payment'}
                       </span>
                     </button>
                   )}

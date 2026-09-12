@@ -2061,6 +2061,19 @@ async def record_credit_consent(
                 status_code=409,
             )
         return existing
+    if overpayment.state in {"credited", "refunded"} or overpayment.resolved_at is not None:
+        raise SettlementDomainError(
+            "overpayment_already_resolved", "This overpayment has already been resolved.", status_code=409,
+        )
+    issued_credit = await db.scalar(select(CustomerCreditEntry).where(
+        CustomerCreditEntry.tenant_id == tenant_id,
+        CustomerCreditEntry.origin_overpayment_id == overpayment.id,
+        CustomerCreditEntry.entry_type == "issued",
+    ))
+    if issued_credit is not None:
+        raise SettlementDomainError(
+            "overpayment_already_resolved", "Customer credit has already been issued for this overpayment.", status_code=409,
+        )
     source_attempt = (
         await db.execute(
             select(InvoicePaymentAttempt).where(

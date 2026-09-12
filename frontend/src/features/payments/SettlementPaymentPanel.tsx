@@ -507,11 +507,19 @@ function InvoicePaymentPanel({
   }
 
   if (!noncashAvailable && (!cash || (!cash.allowed && !cashSelected))) {
+    const resolving = isPositiveMoney(summary.unapplied_credit) || isPositiveMoney(summary.refund_pending)
+    const pending = isPositiveMoney(summary.active_pending_principal)
+    const settled = !isPositiveMoney(summary.outstanding_balance)
+    const title = resolving ? 'Payment review needed' : pending ? 'Payment awaiting confirmation' : settled ? 'Invoice paid in full' : !cash && summary.allowed_actions?.confirm_cash ? 'Other payment methods are unavailable.' : 'Payment unavailable'
+    const explanation = resolving
+      ? 'Review the excess payment shown above before collecting any additional money.'
+      : pending ? `${formatMoney(summary.active_pending_principal)} is awaiting confirmation. It is reserved against this invoice to prevent a duplicate payment.`
+      : settled ? 'There is no remaining balance to collect.'
+      : summary.allowed_actions?.payment_unavailable_reason ?? cash?.reason ?? 'Payment collection is unavailable. Review the invoice’s accounting status.'
     return (
       <div className={`rounded-2xl border p-4 text-sm ${panel}`} role="status">
-        <p className="font-bold">{!cash && summary.allowed_actions?.confirm_cash ? 'Other payment methods are unavailable.' : 'Payment is temporarily blocked'}</p>
-        <p className={`mt-1 ${quiet}`}>{summary.allowed_actions?.payment_unavailable_reason ?? 'Existing payments and pending reconciliation remain visible above. Contact the shop if this balance needs attention.'}</p>
-        {cash?.reason && cash.reason !== summary.allowed_actions?.payment_unavailable_reason && <p className={`mt-2 text-xs ${quiet}`}>Cash: {cash.reason}</p>}
+        <p className="font-bold">{title}</p>
+        <p className={`mt-1 ${quiet}`}>{explanation}</p>
         <button type="button" onClick={() => {
           void queryClient.invalidateQueries({ queryKey: ['invoice-settlement'] })
           void queryClient.invalidateQueries({ queryKey: ['invoice-settlement-allocations'] })

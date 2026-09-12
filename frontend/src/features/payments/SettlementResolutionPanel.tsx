@@ -102,7 +102,7 @@ function SettlementResolutionItem({
       {automaticFailed && canManage && (
         <button
           type="button"
-          disabled={retryRefundMutation.isPending}
+          disabled={refundMutation.isPending || consentMutation.isPending || retryRefundMutation.isPending}
           onClick={() => retryRefundMutation.mutate()}
           className="mt-3 min-h-[44px] rounded-xl bg-amber-900 px-3 text-xs font-extrabold text-white disabled:opacity-50"
         >
@@ -111,6 +111,7 @@ function SettlementResolutionItem({
       )}
 
       {manualRefundRequired && canManage && (
+        <fieldset disabled={refundMutation.isPending || consentMutation.isPending || retryRefundMutation.isPending}>
         <div className={`mt-3 rounded-xl border p-3 ${dark ? 'border-amber-800/60 bg-black/20' : 'border-amber-200 bg-white/70'}`}>
           <label className={`block text-xs font-bold ${dark ? 'text-amber-100' : 'text-amber-950'}`}>Refund transaction or check reference
             <input value={refundReference} onChange={event => setRefundReference(event.target.value)} className={`mt-1 h-11 w-full rounded-xl border px-3 text-sm outline-none focus:ring-2 focus:ring-amber-600 ${dark ? 'border-amber-800 bg-[#161b27] text-white' : 'border-amber-300 bg-white'}`} />
@@ -119,9 +120,11 @@ function SettlementResolutionItem({
             {refundMutation.isPending ? 'Confirming…' : 'Confirm refund completed'}
           </button>
         </div>
+        </fieldset>
       )}
 
       {canConsent && resolution.refund_state !== 'succeeded' && (
+        <fieldset disabled={refundMutation.isPending || consentMutation.isPending || retryRefundMutation.isPending}>
         <div className={`mt-3 rounded-xl border p-3 ${dark ? 'border-amber-800/60 bg-black/20' : 'border-amber-200 bg-white/70'}`}>
           {audience === 'staff' && (
             <label className={`block text-xs font-bold ${dark ? 'text-amber-100' : 'text-amber-950'}`}>Consent channel
@@ -138,6 +141,7 @@ function SettlementResolutionItem({
             {consentMutation.isPending ? 'Recording…' : 'Keep as customer credit'}
           </button>
         </div>
+        </fieldset>
       )}
     </section>
   )
