@@ -12,6 +12,7 @@ from typing import Literal, Optional
 from uuid import UUID
 
 import stripe
+from app.services.invoice_snapshot_totals import invoice_snapshot_totals
 from fastapi import APIRouter, Depends, Header, Query, Response
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -254,6 +255,7 @@ async def settlement_summary(
         tax_exemption=tax_exemption,
         charge_controls=charge_controls,
         breakdown=InvoiceCheckoutBreakdown(subtotal=money(invoice.subtotal),
+            **invoice_snapshot_totals(getattr(invoice, "line_items_snapshot", None)),
             shop_supplies_amount=money(invoice.shop_supplies_amount),
             sales_tax_amount=money(invoice.tax_amount) - money(settlement.max_card_fee_tax),
             discount_amount=money(invoice.discount_amount), principal_total=money(settlement.principal_total)),
