@@ -211,7 +211,10 @@ async def settlement_summary(
         actions.retry_accounting = False
         from app.services.new_receipt_accounting import require_clean_historical_balance
         try:
-            await require_clean_historical_balance(db, invoice)
+            # This is presentation-only.  Wait for a concurrent invoice
+            # writer rather than letting a NOWAIT lock leave the session
+            # aborted and surface as a generic database error in the modal.
+            await require_clean_historical_balance(db, invoice, nowait=False)
         except SettlementDomainError as exc:
             actions.create_attempt = actions.confirm_manual = False
             actions.rails = []

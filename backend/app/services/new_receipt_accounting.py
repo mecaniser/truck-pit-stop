@@ -57,7 +57,13 @@ async def valid_attempt_authorization(db, attempt, *, check_connection=False):
     return True
 
 
-async def require_clean_historical_balance(db, invoice):
+async def require_clean_historical_balance(db, invoice, *, nowait=True):
+    """Validate historical balances without poisoning a read-only request.
+
+    Mutation callers retain the fail-fast invoice lock.  Settlement summaries
+    pass ``nowait=False`` because a transient writer must not turn a harmless
+    payment-panel read into a database-error screen.
+    """
     config = await db.scalar(select(TenantPaymentProviderConfiguration).where(
         TenantPaymentProviderConfiguration.tenant_id == invoice.tenant_id,
         TenantPaymentProviderConfiguration.is_active.is_(True)))
@@ -105,7 +111,7 @@ async def require_clean_historical_balance(db, invoice):
         if parent is None:
             deny("historical_payment_balance_review", "Invoice replacement history requires review.")
         from app.services.invoice_accounting_policy import locked_policy
-        await locked_policy(db, parent)
+        await locked_policy(db, parent, nowait=nowait)
         active = await db.scalar(select(InvoicePaymentAttempt.id).where(InvoicePaymentAttempt.invoice_id == parent.id,
             InvoicePaymentAttempt.tenant_id == invoice.tenant_id,
             or_(InvoicePaymentAttempt.state == "pending", InvoicePaymentAttempt.received_amount > 0)).limit(1))

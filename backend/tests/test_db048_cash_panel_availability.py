@@ -61,6 +61,24 @@ async def test_cash_blocker_preserved_under_hold(db_session, monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_held_summary_uses_waiting_balance_read_not_fail_fast_lock(db_session, monkeypatch):
+    tenant, owner, _, invoice, settlement = await context(db_session, monkeypatch)
+    invoice.accounting_policy = HISTORICAL_HOLD
+    await db_session.flush()
+    from app.services import new_receipt_accounting
+    original = new_receipt_accounting.require_clean_historical_balance
+    observed = []
+
+    async def observed_balance_read(db, target, *, nowait=True):
+        observed.append(nowait)
+        return await original(db, target, nowait=nowait)
+
+    monkeypatch.setattr(new_receipt_accounting, "require_clean_historical_balance", observed_balance_read)
+    await settlement_summary(db_session, settlement, tenant, audience="staff", current_user=owner)
+    assert observed == [False]
+
+
+@pytest.mark.asyncio
 async def test_other_tenant_summary_is_not_disclosed(db_session, monkeypatch):
     _, _, _, invoice, settlement = await context(db_session, monkeypatch)
     other, owner, _, _, _ = await context(db_session, monkeypatch)
