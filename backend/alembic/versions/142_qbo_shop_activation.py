@@ -4,7 +4,10 @@ import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
 revision = "142_qbo_shop_activation"
-down_revision = "141_historical_export_hold"
+# This guard branch was rebased after the receipt, exemption, customer-default,
+# invoice-charge, and Fleet tender migrations landed. It must extend that sole
+# production head rather than fork the historical hold revision.
+down_revision = "146_fleet_payment_rail"
 branch_labels = None
 depends_on = None
 
