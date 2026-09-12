@@ -15,6 +15,7 @@ import SettlementPaymentPanel from './SettlementPaymentPanel'
 import SettlementCreditPanel from './SettlementCreditPanel'
 import SettlementResolutionPanel from './SettlementResolutionPanel'
 import SettlementSummaryCard from './SettlementSummaryCard'
+import InvoiceDetailsDisclosure from './InvoiceDetailsDisclosure'
 import type { InvoiceSettlementSummary } from './types'
 import { useInvoiceAllocations, useInvoiceSettlement } from './useInvoiceSettlement'
 
@@ -104,7 +105,9 @@ export default function StaffSettlementDialog({
             </div>
           ) : (
             <>
-              <SettlementSummaryCard summary={current} allocations={allocationsQuery.data?.items ?? []} tone="light" streamlined />
+              <SettlementSummaryCard summary={current} allocations={allocationsQuery.data?.items ?? []} tone="light" streamlined>
+                <InvoiceDetailsDisclosure key={invoiceId} summary={current} />
+              </SettlementSummaryCard>
               <fieldset disabled={editingExemption} className="min-w-0 space-y-4 border-0 p-0">
               <PendingManualPaymentPanel
                 invoiceId={invoiceId}
