@@ -78,3 +78,29 @@ canonical invoice/settlement writer lock ordering must be established by
 Architecture before integrating transfer/legacy writers. No concurrency GO.
 Runtime owner has no agreed window while the status-pipeline design review awaits
 user response; its four-file passive UI patch is not approved for integration.
+
+
+## Subsequent Architecture source-order risk receipt
+
+Architecture's DB064_ETS_AUDIT.md audit was read after the selected code gate.
+Native application candidate remains `cf7cacb1673bc3bfedd2212f10eaf051df4a2d6f`;
+service SHA256 freshly matches
+`b0c3f339de3f91d7ee4561f055ea08313884895f0b73f23f8fba4604dbf5ebaa`.
+
+Observed conflicting acquisition orders: refund creation settlement → invoice →
+overpayment → refunds; credit consent overpayment → refund → outbox → settlement;
+manual refund refund → settlement. Confirmation settlement → attempt conflicts
+with failure/expiry attempt → settlement. Historical legacy preparation invoice →
+settlement conflicts with blocking void settlement → invoice. Duplicate-credit
+checks do not establish a common locking protocol. These are source-level risks,
+not PostgreSQL-reproduced deadlocks; isolated unit tests cannot clear them.
+
+Shared integration and full native payment acceptance remain held. Architecture
+owns a coordinated writer contract, including the absent-settlement case and batch
+workers. An aggregate invoice mutex is only a proposal; do not add it to one writer
+and claim global safety. Backend/native implementation follows that contract.
+Required two-session tests include confirm versus fail/expiry, refund versus
+consent/manual refund, duplicate settlement creation, and (with ETS) transfer
+versus confirm/void/source change. No runtime, financial or source implementation
+change was made by this follow-up. The earlier GO covers the selected local diff,
+not these broader concurrency requirements.
