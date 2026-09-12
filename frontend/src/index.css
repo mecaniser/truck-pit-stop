@@ -3835,6 +3835,9 @@ html::-webkit-scrollbar-thumb:hover {
      minimum made that one step taller than the row it belongs to. It is the
      same shape and the same information as its neighbours; only the ability to
      open the roster differs. */
+  .db-repair-orders-new .db-summary-pill,
+  .db-repair-order-detail-new .db-summary-pill,
+  .db-summary-pill,
   .db-repair-orders-new .db-pipeline-step,
   .db-pipeline-step {
     min-height: 0 !important;
