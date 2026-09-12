@@ -193,6 +193,14 @@ def test_pre142_activation_digest_binds_nonnull_tax_exemption():
     assert legacy not in cash.compatible_invoice_history_digests(invoice)
 
 
+@pytest.mark.parametrize("malformed_digest", [None, [], {}, 1, "short"])
+def test_malformed_legacy_ancestor_digest_denies_safely(malformed_digest):
+    invoice = Invoice()
+    current = {"invoice_sha256": cash.event_history_digest(invoice)}
+    proof = {"snapshot": {"invoice_sha256": malformed_digest}}
+    assert cash.compatible_ancestor_snapshot(proof, current, invoice) is False
+
+
 @pytest.mark.asyncio
 async def test_pre142_current_review_rebinds_through_audited_charge(db_session, monkeypatch):
     ctx, _, _, event, _ = await reviewed_owner_cash(db_session, monkeypatch)

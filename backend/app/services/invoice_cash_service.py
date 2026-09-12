@@ -86,7 +86,8 @@ def compatible_ancestor_snapshot(proof, current, invoice):
     if not isinstance(stored, dict) or not isinstance(current, dict):
         return False
     stored_digest = stored.get("invoice_sha256")
-    if stored_digest not in compatible_invoice_history_digests(invoice):
+    if (not isinstance(stored_digest, str) or len(stored_digest) != 64
+            or stored_digest not in compatible_invoice_history_digests(invoice)):
         return False
     return stored == {**current, "invoice_sha256": stored_digest}
 
