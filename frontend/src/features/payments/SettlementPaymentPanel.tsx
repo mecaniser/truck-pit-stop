@@ -31,6 +31,10 @@ const RAIL_META: Record<PaymentRail, { label: string; detail: string; icon: type
   fleet_payment: { label: 'Fleet Check / Code', detail: 'EFS / MoneyCode, Comchek, T-Chek or other provider', icon: Truck },
 }
 
+function combinedCardProcessingFee(cardFeeAmount: string, cardFeeTaxAmount: string): string {
+  return centsToMoney((moneyToCents(cardFeeAmount) ?? 0n) + (moneyToCents(cardFeeTaxAmount) ?? 0n))
+}
+
 function StripeAttemptForm({
   attempt,
   tone,
@@ -77,7 +81,7 @@ function StripeAttemptForm({
       </button>
       <p className={`text-xs ${tone === 'dark' ? 'text-[#99a4b7]' : 'text-slate-500'}`}>
         {formatMoney(attempt.principal_amount)} applies to the invoice
-        {attempt.card_fee_amount !== '0.00' ? ` · ${formatMoney(attempt.card_fee_amount)} card fee` : ''}.
+        {attempt.card_fee_amount !== '0.00' ? ` · ${formatMoney(combinedCardProcessingFee(attempt.card_fee_amount, attempt.card_fee_tax_amount))} card fee` : ''}.
       </p>
     </form>
   )
@@ -193,6 +197,9 @@ function InvoicePaymentPanel({
       && previousQuery.queryKey[3] === selectedRail ? previous : undefined,
   })
   const quote = canQuote ? quoteQuery.data : undefined
+  const displayedCardProcessingFee = quote != null
+    ? combinedCardProcessingFee(quote.card_fee_amount, quote.card_fee_tax_amount)
+    : undefined
   const quoteReady = quoteEnabled && !quoteQuery.isFetching && !quoteQuery.error && quote?.settlement_version === summary.version
     && quote?.rail === selectedRail && quote?.principal_amount === quoteAmount
   const partialInvoicePayment = Boolean(quoteAmount && moneyToCents(quoteAmount) !== moneyToCents(summary.principal_total))
@@ -383,7 +390,7 @@ function InvoicePaymentPanel({
         />
         <p className={`mt-3 text-xs ${quiet}`}>
           {formatMoney(attempt.principal_amount)} applies to the invoice
-          {attempt.card_fee_amount !== '0.00' ? ` · ${formatMoney(attempt.card_fee_amount)} card fee` : ''}.
+          {attempt.card_fee_amount !== '0.00' ? ` · ${formatMoney(combinedCardProcessingFee(attempt.card_fee_amount, attempt.card_fee_tax_amount))} card fee` : ''}.
         </p>
       </section>
     )
@@ -641,8 +648,7 @@ function InvoicePaymentPanel({
         </dl>
         {selectedRail && <dl aria-live="polite" className={`mt-3 space-y-2 border-t pt-3 text-sm ${dark ? 'border-[#2a3245]' : 'border-slate-200'}`}>
           {partialInvoicePayment && <div className="flex justify-between gap-4"><dt className={quiet}>This payment toward invoice</dt><dd className="font-semibold tabular-nums">{quote ? formatMoney(quote.principal_amount) : '—'}</dd></div>}
-          {selectedRail === 'card' && <div className="flex items-center justify-between gap-2"><dt className={`min-w-0 flex-1 ${quiet}`}>Card processing fee</dt><dd className="flex shrink-0 items-center gap-2 font-semibold tabular-nums">{chargeControls?.cardFee}<span className="min-w-[4rem] text-right">{quote ? formatMoney(quote.card_fee_amount) : '—'}</span></dd></div>}
-          {selectedRail === 'card' && <div className="flex justify-between gap-4"><dt className={quiet}>Tax on card fee</dt><dd className="font-semibold tabular-nums">{quote ? formatMoney(quote.card_fee_tax_amount) : '—'}</dd></div>}
+          {selectedRail === 'card' && <div className="flex items-center justify-between gap-2"><dt className={`min-w-0 flex-1 ${quiet}`}>Card processing fee</dt><dd className="flex shrink-0 items-center gap-2 font-semibold tabular-nums">{chargeControls?.cardFee}<span className="min-w-[4rem] text-right">{displayedCardProcessingFee ? formatMoney(displayedCardProcessingFee) : '—'}</span></dd></div>}
           <div className="flex items-baseline justify-between gap-4 pt-2"><dt className="font-bold">Amount to collect</dt><dd className="text-xl font-extrabold tabular-nums">{quote ? formatMoney(quote.total_amount) : '—'}</dd></div>
           {!cashSelected && isPositiveMoney(remainingAfterPayment) && <div className={`flex justify-between gap-4 text-xs ${quiet}`}><dt>Remaining after confirmation</dt><dd className="tabular-nums">{formatMoney(remainingAfterPayment)}</dd></div>}
         </dl>}

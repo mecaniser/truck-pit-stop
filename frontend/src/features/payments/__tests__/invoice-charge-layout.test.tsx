@@ -51,7 +51,7 @@ describe('Stable invoice charge layout', () => {
     api.adjustInvoiceCharges.mockReturnValue(save.promise)
     show()
     await screen.findByText('$1,198.17')
-    const labels = ['Services & parts', 'Shop supplies', 'Sales tax', 'Card processing fee', 'Tax on card fee', 'Amount to collect']
+    const labels = ['Services & parts', 'Shop supplies', 'Sales tax', 'Card processing fee', 'Amount to collect']
     const rows = labels.map(row)
     const button = screen.getByRole('button', { name: 'Continue to QBO Payments' })
     expect(screen.queryByRole('region', { name: 'Invoice charges' })).not.toBeInTheDocument()
@@ -81,7 +81,8 @@ describe('Stable invoice charge layout', () => {
     await act(async () => refresh.resolve({ ...originalQuote, settlement_version: 2, principal_amount: principal, card_fee_amount: fee, card_fee_tax_amount: feeTax, total_amount: total }))
     await waitFor(() => expect(button).toBeEnabled())
     expect(rows.every(node => node.isConnected)).toBe(true)
-    expect(row('Tax on card fee')).toHaveTextContent(`$${feeTax}`)
+    expect(row('Card processing fee')).toHaveTextContent(`$${(Number(fee) + Number(feeTax)).toFixed(2)}`)
+    expect(screen.queryByText('Tax on card fee')).not.toBeInTheDocument()
     expect(row('Amount to collect')).toHaveTextContent(`$${Number(total).toLocaleString('en-US', { minimumFractionDigits: 2 })}`)
     expect(api.createPaymentAttempt).not.toHaveBeenCalled()
   })
