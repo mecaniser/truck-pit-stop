@@ -180,7 +180,6 @@ def owner_cash_review_transition_chain(event, invoice):
     transitions = review.get("charge_adjustment_transitions", [])
     if not isinstance(transitions, list):
         return None
-    current_digest = event_history_digest(invoice)
     if transitions:
         root = review.get("reviewed_invoice_history_sha256")
         if not isinstance(root, str) or len(root) != 64:
@@ -198,7 +197,8 @@ def owner_cash_review_transition_chain(event, invoice):
                     or len(transition["after_invoice_history_sha256"]) != 64):
                 return None
             expected = transition["after_invoice_history_sha256"]
-        return transitions if expected == review.get("invoice_history_sha256") == current_digest else None
+        return (transitions if expected == review.get("invoice_history_sha256")
+                and expected in compatible_invoice_history_digests(invoice) else None)
     if review.get("invoice_history_sha256") in compatible_invoice_history_digests(invoice):
         return []
     return _inferred_owner_cash_charge_transitions(event, invoice, review)

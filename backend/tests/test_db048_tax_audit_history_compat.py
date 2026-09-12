@@ -11,6 +11,7 @@ from app.db.models.invoice import Invoice
 from app.services import invoice_cash_service as cash
 from app.services import invoice_tax_exemption as tax
 from app.services.invoice_settlement_service import invoice_money_snapshot
+from tests.test_db048_owner_attested_cash import pre142_activation_digest
 from tests.test_db048_reviewed_sandbox_cash import reviewed
 
 
@@ -64,6 +65,26 @@ async def test_persisted_pre143_review_cash_and_tax_eligibility(db_session, monk
         assert cash_reason is not None and tax_reason is not None
     else:
         assert cash_reason is None and tax_reason is None
+
+
+@pytest.mark.asyncio
+async def test_persisted_pre142_activation_snapshot_allows_cash_and_tax_controls(db_session, monkeypatch):
+    ctx, queued, *_ = await reviewed(db_session, monkeypatch, local_void_parent=True)
+    invoice, settlement = ctx[3:]
+    parent = await db_session.get(Invoice, invoice.supersedes_invoice_id)
+    marker = deepcopy(queued.payload[cash.CASH_REVIEW_KEY])
+    snapshot = marker["ancestor_reviews"][0]["snapshot"]
+    snapshot["invoice_sha256"] = pre142_activation_digest(parent)
+    queued.payload = {**queued.payload, cash.CASH_REVIEW_KEY: marker}
+    invoice.tax_amount = Decimal("8.50")
+    invoice.total_amount += Decimal("8.50")
+    principal, fee, fee_tax, rate, fee_rate = invoice_money_snapshot(invoice)
+    settlement.principal_total, settlement.max_card_fee, settlement.max_card_fee_tax = principal, fee, fee_tax
+    settlement.sales_tax_rate_snapshot, settlement.card_fee_rate_snapshot = rate, fee_rate
+    await db_session.flush()
+
+    assert (await cash.cash_eligibility(db_session, invoice, settlement))[0] is None
+    assert await tax.eligibility(db_session, invoice, settlement) is None
 
 
 def test_nonnull_audit_is_digest_bound():

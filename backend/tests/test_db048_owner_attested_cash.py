@@ -104,19 +104,32 @@ async def legacy_adjusted_owner_cash(db, monkeypatch):
     return ctx, parent, event
 
 
-def pre142_activation_digest(invoice):
-    """Frozen serializer from before qbo_shop_activation_id existed."""
+PRE142_INVOICE_FIELDS = (
+    "id", "tenant_id", "repair_order_id", "invoice_number", "accounting_policy",
+    "cash_export_review_required", "is_internal", "recipient_name", "recipient_email",
+    "recipient_phone", "status", "subtotal", "shop_supplies_amount", "service_fee_amount",
+    "tax_amount", "discount_amount", "total_amount", "line_items_snapshot", "due_date",
+    "paid_at", "ets_invoiced_at", "notes", "source", "created_by_user_id", "voided_at",
+    "voided_by_user_id", "void_reason", "supersedes_invoice_id", "zelle_pending_submitted_at",
+    "zelle_pending_sender_email", "zelle_pending_sender_phone", "zelle_pending_last_reminder_at",
+    "zelle_pending_reminder_count", "last_reminder_sent_at", "reminder_count",
+    "quickbooks_invoice_id", "quickbooks_sync_status", "quickbooks_synced_at",
+    "quickbooks_sync_error", "created_at", "deleted_at",
+)
+
+
+def pre142_activation_digest(invoice, *, value_overrides=None, charge_adjustments=None):
+    """Frozen pre-142 invoice serializer; later model columns cannot enter it."""
     values = {}
-    for column in Invoice.__table__.columns:
-        if column.name in {"updated_at", "qbo_shop_activation_id"}:
-            continue
-        value = getattr(invoice, column.name)
-        if column.name == "tax_exemption" and value is None:
-            continue
+    for name in PRE142_INVOICE_FIELDS:
+        value = (value_overrides[name] if value_overrides and name in value_overrides
+                 else getattr(invoice, name))
         if isinstance(value, datetime):
             value = (value.replace(tzinfo=timezone.utc) if value.tzinfo is None
                      else value.astimezone(timezone.utc)).isoformat()
-        values[column.name] = value
+        values[name] = value
+    if charge_adjustments:
+        values["charge_adjustments"] = [cash.event_history_digest(row) for row in charge_adjustments]
     return sha256(json.dumps(values, sort_keys=True, default=str,
                              separators=(",", ":")).encode()).hexdigest()
 
@@ -187,6 +200,43 @@ async def test_pre142_current_review_rebinds_through_audited_charge(db_session, 
     rebound = event.payload[cash.OWNER_CASH_REVIEW_KEY]
     assert rebound["reviewed_invoice_history_sha256"] == legacy
     assert rebound["charge_adjustment_transitions"][0]["before_invoice_history_sha256"] == legacy
+    assert cash.valid_owner_cash_review(event, invoice)
+
+
+@pytest.mark.asyncio
+async def test_pre142_explicit_charge_chain_rebinds_to_canonical_digest(db_session, monkeypatch):
+    ctx, _, _, event, _ = await reviewed_owner_cash(db_session, monkeypatch)
+    tenant, owner, _, invoice, settlement = ctx
+    await charges.adjust(db_session, invoice=invoice, tenant=tenant, actor=owner,
+        body=InvoiceChargeAdjustmentCreate(expected_settlement_version=settlement.version,
+            tax_exempt=False, shop_supplies_enabled=True, card_fee_enabled=False),
+        idempotency_key="pre142-explicit-chain-card-fee-off")
+    row = invoice.charge_adjustments[0]
+    review = event.payload[cash.OWNER_CASH_REVIEW_KEY]
+    before = cash._owner_cash_amount_snapshot(row.evidence["before"])
+    after = cash._owner_cash_amount_snapshot(row.evidence["after"])
+    legacy_before = pre142_activation_digest(invoice, value_overrides=before,
+                                             charge_adjustments=[])
+    legacy_after = pre142_activation_digest(invoice, value_overrides=after,
+                                            charge_adjustments=[row])
+    transition = {**review["charge_adjustment_transitions"][0],
+                  "before_invoice_history_sha256": legacy_before,
+                  "after_invoice_history_sha256": legacy_after}
+    event.payload = {**event.payload, cash.OWNER_CASH_REVIEW_KEY: {
+        **review, "reviewed_invoice_history_sha256": legacy_before,
+        "charge_adjustment_transitions": [transition],
+        "invoice_history_sha256": legacy_after,
+    }}
+    await db_session.flush()
+
+    assert cash.valid_owner_cash_review(event, invoice)
+    await charges.adjust(db_session, invoice=invoice, tenant=tenant, actor=owner,
+        body=InvoiceChargeAdjustmentCreate(expected_settlement_version=settlement.version,
+            tax_exempt=False, shop_supplies_enabled=True, card_fee_enabled=True),
+        idempotency_key="pre142-explicit-chain-card-fee-on")
+    rebound = event.payload[cash.OWNER_CASH_REVIEW_KEY]
+    assert rebound["charge_adjustment_transitions"][1]["before_invoice_history_sha256"] == legacy_after
+    assert rebound["invoice_history_sha256"] == cash.event_history_digest(invoice)
     assert cash.valid_owner_cash_review(event, invoice)
 
 
