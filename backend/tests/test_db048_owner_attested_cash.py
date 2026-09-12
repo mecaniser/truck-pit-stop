@@ -1,5 +1,7 @@
 from datetime import datetime, timezone
 from decimal import Decimal
+from hashlib import sha256
+import json
 from unittest.mock import AsyncMock
 from uuid import uuid4
 
@@ -102,6 +104,23 @@ async def legacy_adjusted_owner_cash(db, monkeypatch):
     return ctx, parent, event
 
 
+def pre142_activation_digest(invoice):
+    """Frozen serializer from before qbo_shop_activation_id existed."""
+    values = {}
+    for column in Invoice.__table__.columns:
+        if column.name in {"updated_at", "qbo_shop_activation_id"}:
+            continue
+        value = getattr(invoice, column.name)
+        if column.name == "tax_exemption" and value is None:
+            continue
+        if isinstance(value, datetime):
+            value = (value.replace(tzinfo=timezone.utc) if value.tzinfo is None
+                     else value.astimezone(timezone.utc)).isoformat()
+        values[column.name] = value
+    return sha256(json.dumps(values, sort_keys=True, default=str,
+                             separators=(",", ":")).encode()).hexdigest()
+
+
 @pytest.mark.asyncio
 async def test_owner_review_is_exact_metadata_only_and_enables_cash(db_session, monkeypatch):
     ctx, parent, attempt, event, manifest = await reviewed_owner_cash(db_session, monkeypatch)
@@ -120,17 +139,48 @@ async def test_owner_review_survives_nullable_activation_column_added_after_revi
     """A pre-migration ancestor proof treats a later NULL column as absent."""
     ctx, parent, _, event, _ = await reviewed_owner_cash(db_session, monkeypatch)
     review = event.payload[cash.OWNER_CASH_REVIEW_KEY]
-    stored = review["ancestor_reviews"][0]["snapshot"]["invoice_sha256"]
+    canonical = review["ancestor_reviews"][0]["snapshot"]["invoice_sha256"]
+    legacy = pre142_activation_digest(parent)
+    marker = {**review, "ancestor_reviews": [{
+        **review["ancestor_reviews"][0],
+        "snapshot": {**review["ancestor_reviews"][0]["snapshot"], "invoice_sha256": legacy},
+    }]}
+    event.payload = {**event.payload, cash.OWNER_CASH_REVIEW_KEY: marker}
+    await db_session.flush()
 
     assert parent.qbo_shop_activation_id is None
-    assert cash.event_history_digest(parent) == stored
+    assert cash.event_history_digest(parent) == canonical
+    assert legacy != canonical
     assert (await cash.cash_eligibility(db_session, ctx[3], ctx[4]))[0] is None
 
     parent.qbo_shop_activation_id = uuid4()
     await db_session.flush()
-    assert cash.event_history_digest(parent) != stored
+    assert legacy not in cash.compatible_invoice_history_digests(parent)
     assert "outside the owner's reviewed cash attestation" in (
         await cash.cash_eligibility(db_session, ctx[3], ctx[4]))[0]
+
+
+@pytest.mark.asyncio
+async def test_pre142_current_review_rebinds_through_audited_charge(db_session, monkeypatch):
+    ctx, _, _, event, _ = await reviewed_owner_cash(db_session, monkeypatch)
+    tenant, owner, _, invoice, settlement = ctx
+    review = event.payload[cash.OWNER_CASH_REVIEW_KEY]
+    legacy = pre142_activation_digest(invoice)
+    event.payload = {**event.payload, cash.OWNER_CASH_REVIEW_KEY: {
+        **review, "invoice_history_sha256": legacy,
+    }}
+    await db_session.flush()
+
+    assert cash.valid_owner_cash_review(event, invoice)
+    await charges.adjust(db_session, invoice=invoice, tenant=tenant, actor=owner,
+        body=InvoiceChargeAdjustmentCreate(expected_settlement_version=settlement.version,
+            tax_exempt=False, shop_supplies_enabled=True, card_fee_enabled=False),
+        idempotency_key="pre142-owner-reviewed-card-fee-off")
+
+    rebound = event.payload[cash.OWNER_CASH_REVIEW_KEY]
+    assert rebound["reviewed_invoice_history_sha256"] == legacy
+    assert rebound["charge_adjustment_transitions"][0]["before_invoice_history_sha256"] == legacy
+    assert cash.valid_owner_cash_review(event, invoice)
 
 
 @pytest.mark.asyncio
