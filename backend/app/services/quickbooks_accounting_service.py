@@ -19,6 +19,7 @@ from app.db.models.customer import Customer
 from app.db.models.invoice import Invoice
 from app.db.models.payment import Payment
 from app.db.models.quickbooks_connection import QuickBooksConnection
+from app.services.quickbooks_shop_activation import request_environment
 
 
 class QuickBooksAccountingError(RuntimeError):

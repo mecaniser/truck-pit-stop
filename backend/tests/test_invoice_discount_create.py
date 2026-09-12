@@ -157,12 +157,18 @@ async def test_create_invoice_applies_discount_amount(monkeypatch):
     async def _no_line_items(*_args, **_kwargs):
         return [], []
 
+    async def _no_enrollment(*_args, **_kwargs):
+        return None
+
     monkeypatch.setattr("app.core.unique_id.create_with_retry", _fake_create_with_retry)
     monkeypatch.setattr(invoices, "broadcast_invoice_created", _noop_async)
     monkeypatch.setattr(invoices, "broadcast_repair_order_update", _noop_async)
     monkeypatch.setattr(invoices, "send_email", _noop_async)
     monkeypatch.setattr(invoices, "enqueue_invoice_created_email", _no_email_queue)
     monkeypatch.setattr(invoices, "_load_line_items", _no_line_items)
+    # This unit owns discount math. Managed-shop enrollment has dedicated
+    # integration coverage and requires a real activation query.
+    monkeypatch.setattr("app.services.quickbooks_shop_activation.enroll_new_invoice", _no_enrollment)
     # Export locking has dedicated service tests; this unit test owns discount
     # calculation and verifies that the resulting invoice is handed to export.
     enqueue_sync = AsyncMock()
