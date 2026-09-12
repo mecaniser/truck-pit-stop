@@ -506,11 +506,16 @@ function InvoicePaymentPanel({
     )
   }
 
-  if (!noncashAvailable && !cash && audience !== 'staff') {
+  if (!noncashAvailable && (!cash || (!cash.allowed && !cashSelected))) {
     return (
       <div className={`rounded-2xl border p-4 text-sm ${panel}`} role="status">
-        <p className="font-bold">{summary.allowed_actions?.confirm_cash ? 'Other payment methods are unavailable.' : 'No new payment can be started right now.'}</p>
+        <p className="font-bold">{!cash && summary.allowed_actions?.confirm_cash ? 'Other payment methods are unavailable.' : 'Payment is temporarily blocked'}</p>
         <p className={`mt-1 ${quiet}`}>{summary.allowed_actions?.payment_unavailable_reason ?? 'Existing payments and pending reconciliation remain visible above. Contact the shop if this balance needs attention.'}</p>
+        {cash?.reason && cash.reason !== summary.allowed_actions?.payment_unavailable_reason && <p className={`mt-2 text-xs ${quiet}`}>Cash: {cash.reason}</p>}
+        <button type="button" onClick={() => {
+          void queryClient.invalidateQueries({ queryKey: ['invoice-settlement'] })
+          void queryClient.invalidateQueries({ queryKey: ['invoice-settlement-allocations'] })
+        }} className="mt-3 min-h-11 rounded-xl border border-current px-3 text-sm font-bold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-500,#d25d43)]">Refresh payment status</button>
       </div>
     )
   }
