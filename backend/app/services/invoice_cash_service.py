@@ -47,9 +47,11 @@ def event_history_digest(event, *, value_overrides=None, charge_adjustments=None
             continue
         value = (value_overrides[column.name] if value_overrides and column.name in value_overrides
                  else getattr(event, column.name))
-        # Migration 143 added a nullable audit to Invoice. A NULL audit must
-        # retain pre-143 ancestor proofs; an actual audit remains history-bound.
-        if isinstance(event, Invoice) and column.name == "tax_exemption" and value is None:
+        # Migrations 142 and 143 added nullable invoice metadata. NULL values
+        # must retain proofs created before those columns existed; any actual
+        # activation or tax audit remains history-bound.
+        if (isinstance(event, Invoice) and value is None
+                and column.name in {"qbo_shop_activation_id", "tax_exemption"}):
             continue
         if column.name == "payload":
             value = None if value is None else {key: item for key, item in value.items() if key not in REVIEW_KEYS}
