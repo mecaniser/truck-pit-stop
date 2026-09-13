@@ -144,7 +144,7 @@ export default function PortalDashboardPage() {
   ))
   const actionCount = quoteActions.length + unpaid.length
   const balance = unpaid.reduce((sum, item) => sum + Number(item.invoice.total_amount || 0), 0)
-  const paidYtd = paidThisYear.reduce((sum, invoice) => sum + Number(invoice.total_amount || 0), 0)
+  const paidYtd = paidThisYear.reduce((sum, invoice) => sum + Number(invoice.cash_receipt?.amount ?? invoice.total_amount ?? 0), 0)
   const selected = unpaid.filter(item => selectedIds.includes(item.invoice.id))
   const selectedTotal = selected.reduce((sum, item) => sum + Number(item.invoice.total_amount || 0), 0)
   const oldest = unpaid[0]
@@ -468,7 +468,7 @@ export default function PortalDashboardPage() {
                   <span className="truncate text-[13px] font-bold">{order?.order_number || invoice.invoice_number}</span>
                   <span className="hidden truncate text-xs text-[#8b92a5] sm:block">{order?.description || 'Repair service'}</span>
                   <PaidBadge />
-                  <Money className="text-right text-sm font-extrabold">{formatMoney(invoice.total_amount)}</Money>
+                  <Money className="text-right text-sm font-extrabold">{formatMoney(invoice.cash_receipt?.amount ?? invoice.total_amount)}</Money>
                 </div>
               )
             })}

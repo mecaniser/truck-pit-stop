@@ -27,6 +27,7 @@ import {
   useInvoiceSettlement,
 } from '@/features/payments'
 
+import CashReceiptBreakdown from './CashReceiptBreakdown'
 import QuickBooksPaymentPanel from './QuickBooksPaymentPanel'
 import { getPortalPreferences } from './portal-preferences'
 
@@ -309,6 +310,7 @@ export default function CustomerInvoicePage() {
   const splitSettlement = settlementQuery.data?.feature_enabled === false ? null : settlementQuery.data
   const settlementFailure = settlementQuery.error && !isSettlementUnavailable(settlementQuery.error)
   const isPaid = splitSettlement?.state === 'paid' || invoice.status === 'paid'
+  const cashReceipt = isPaid ? invoice.cash_receipt : null
   const isPending = splitSettlement
     ? isPositiveMoney(splitSettlement.active_pending_principal)
     : Boolean(invoice.pending_zelle_confirmation)
@@ -368,13 +370,13 @@ export default function CustomerInvoicePage() {
               {isPaid ? 'paid' : 'invoiced'}
             </span>
           </p>
-          {splitSettlement && (
-            <p className="mt-2.5 text-[11px] font-extrabold uppercase tracking-[0.12em] text-[#8b92a5]">Invoice outstanding</p>
+          {(splitSettlement || cashReceipt) && (
+            <p className="mt-2.5 text-[11px] font-extrabold uppercase tracking-[0.12em] text-[#8b92a5]">{cashReceipt ? 'Total paid' : 'Invoice outstanding'}</p>
           )}
           <h1 id="payment-total" className={`${splitSettlement ? 'mt-1' : 'mt-2.5'} whitespace-nowrap text-[38px] font-extrabold leading-none tracking-[-0.02em] tabular-nums sm:text-[46px]`}>
-            {money(splitSettlement?.outstanding_balance ?? pricing.selectedTotal)}
+            {money(cashReceipt?.amount ?? splitSettlement?.outstanding_balance ?? pricing.selectedTotal)}
           </h1>
-          <p className={`mt-1 min-h-5 text-[13px] font-bold ${selectedMethod === 'zelle' ? 'text-[#2dd4bf]' : 'text-[#8b92a5]'}`}>
+          {!cashReceipt && <p className={`mt-1 min-h-5 text-[13px] font-bold ${selectedMethod === 'zelle' ? 'text-[#2dd4bf]' : 'text-[#8b92a5]'}`}>
             {splitSettlement
               ? selectedMethod === 'zelle'
                 ? 'No card fee with Zelle'
@@ -382,16 +384,16 @@ export default function CustomerInvoicePage() {
               : selectedMethod === 'zelle'
               ? pricing.cardFee > 0 && `No card fee with Zelle — you save ${money(pricing.cardFee)}`
               : `Includes ${money(pricing.cardFee)} card processing fee`}
-          </p>
+          </p>}
         </section>
 
         {isPaid ? (
           <section className="mt-4 rounded-[14px] border border-[#2dd4bf]/35 bg-[#2dd4bf]/10 p-5 text-center">
             <p className="text-lg font-extrabold text-[#5eead4]">Paid</p>
             <p className="mt-1 text-sm text-[#c9cdd8]">
-              {money(invoice.payment?.amount || invoice.total_amount)}
+              {money(cashReceipt?.amount ?? invoice.payment?.amount ?? invoice.total_amount)}
               {invoice.paid_at ? ` · ${format(new Date(invoice.paid_at), 'MMM d, yyyy')}` : ''}
-              {invoice.payment?.method ? ` · ${invoice.payment.method}` : ''}
+              {cashReceipt ? ' · Cash' : invoice.payment?.method ? ` · ${invoice.payment.method}` : ''}
             </p>
             <a
               href={`/api/v1/invoices/${invoice.id}/pdf`}
@@ -609,7 +611,7 @@ export default function CustomerInvoicePage() {
               Invoice PDF
             </a>
           </div>
-          <div>
+          {cashReceipt ? <CashReceiptBreakdown receipt={cashReceipt} /> : <div>
             {[
               ['Labor / Services', labor],
               ['Parts', parts],
@@ -627,12 +629,12 @@ export default function CustomerInvoicePage() {
                 <span className="whitespace-nowrap font-semibold text-[#eceef4] tabular-nums">{money(amount)}</span>
               </div>
             ))}
-          </div>
+          </div>}
         </section>
 
         <p className="mt-4 flex items-center justify-center gap-1.5 text-center text-[11px] text-[#5c6375]">
           <Lock className="h-3 w-3" />
-          Secure payment · Receipt emailed instantly
+          {cashReceipt ? 'Cash payment recorded · Receipt available to download' : 'Secure payment · Receipt emailed instantly'}
         </p>
       </div>
     </div>

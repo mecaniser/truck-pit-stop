@@ -1,6 +1,8 @@
 """Invoice PDF generation using ReportLab."""
 from __future__ import annotations
 
+from app.core.phone import format_phone_display
+
 import urllib.request
 from decimal import Decimal
 from io import BytesIO
@@ -142,7 +144,7 @@ def _make_page_handler(
             canvas.drawRightString(info_x, text_y, shop_email)
             text_y -= 11
         if shop_phone:
-            canvas.drawRightString(info_x, text_y, shop_phone)
+            canvas.drawRightString(info_x, text_y, format_phone_display(shop_phone))
 
         # ── Divider line (below the tallest header element) ─────────────────
         div_y = y_top - 120
@@ -205,6 +207,7 @@ def generate_invoice_pdf(
     parts_total: Decimal = Decimal("0"),
     shop_supplies_amount: Decimal = Decimal("0"),
     service_fee_amount: Decimal = Decimal("0"),
+    cash_receipt: bool = False,
     subtotal: Decimal = Decimal("0"),
     tax_amount: Decimal = Decimal("0"),
     tax_rate: Optional[float] = None,
@@ -239,8 +242,9 @@ def generate_invoice_pdf(
         invoice_date=invoice_date,
     )
 
-    # topMargin must clear the canvas header (logo ~0.6in + shop name + 3 text lines ≈ 1.7in total)
-    TOP_MARGIN = 1.85 * inch
+    # Canvas divider is MARGIN + 120 points below the page top. Start
+    # the body below it, with 12 points of clear space on every page.
+    TOP_MARGIN = MARGIN + 120 + 12
     BOT_MARGIN = 0.6 * inch
     doc = BaseDocTemplate(
         buf,
@@ -266,7 +270,7 @@ def generate_invoice_pdf(
     if customer_email:
         bill_rows.append(_p(customer_email, S_SMALL))
     if customer_phone:
-        bill_rows.append(_p(customer_phone, S_SMALL))
+        bill_rows.append(_p(format_phone_display(customer_phone), S_SMALL))
 
     info_rows = [
         [_p("Invoice Date", S_LABEL), _p(invoice_date, S_BOLD)],
@@ -472,7 +476,7 @@ def generate_invoice_pdf(
         total_rows.append(total_row("Parts", parts_total))
     if shop_supplies_amount:
         total_rows.append(total_row("Shop Supplies", shop_supplies_amount))
-    if service_fee_amount:
+    if service_fee_amount or cash_receipt:
         total_rows.append(total_row("Processing Fee", service_fee_amount))
     total_rows.append(total_row("Subtotal", subtotal))
     # Itemized parts savings (discount off list price). Shown as informational
@@ -485,9 +489,9 @@ def generate_invoice_pdf(
         total_rows.append(total_row("You saved", -parts_savings_total, color=C_GREEN))
     if discount_amount > 0:
         total_rows.append(total_row(f"Discount", -discount_amount, color=C_GREEN))
-    tax_label = "Tax (exempt)" if tax_exempt else (f"Tax ({tax_rate:.2f}%)" if tax_rate else "Tax")
+    tax_label = "Sales tax (not charged)" if cash_receipt and tax_amount == 0 else "Tax (exempt)" if tax_exempt else (f"Tax ({tax_rate:.2f}%)" if tax_rate else "Tax")
     total_rows.append(total_row(tax_label, tax_amount))
-    total_rows.append(total_row("TOTAL DUE", total_amount, bold=True, color=white))
+    total_rows.append(total_row("TOTAL PAID — CASH" if cash_receipt else "INVOICE TOTAL", total_amount, bold=True, color=white))
 
     sum_tbl = Table(
         total_rows,
@@ -516,7 +520,7 @@ def generate_invoice_pdf(
 
     # ── Payment instructions ───────────────────────────────────────────────────
     payment_items = []
-    if invoice_access_url:
+    if invoice_access_url and not cash_receipt:
         # Strip query params so the URL is clean and readable in print
         from urllib.parse import urlparse
         _parsed = urlparse(invoice_access_url)
@@ -525,12 +529,12 @@ def generate_invoice_pdf(
             f'<b>Pay Online:</b> <font color="#D97706">{clean_url}</font>',
             _style("paylink", fontSize=8, textColor=C_DARK, leading=12),
         ))
-    if zelle_email or zelle_phone:
+    if (zelle_email or zelle_phone) and not cash_receipt:
         zelle_parts = ["<b>Zelle:</b>"]
         if zelle_email:
             zelle_parts.append(zelle_email)
         if zelle_phone:
-            zelle_parts.append(zelle_phone)
+            zelle_parts.append(format_phone_display(zelle_phone))
         payment_items.append(_p("  ·  ".join(zelle_parts), _style("zelle", fontSize=8, textColor=C_DARK, leading=12)))
 
     if payment_items:
