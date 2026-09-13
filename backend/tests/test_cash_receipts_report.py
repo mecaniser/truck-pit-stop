@@ -7,6 +7,8 @@ from uuid import uuid4
 import pytest
 from sqlalchemy.dialects import postgresql
 
+from app.core.date_ranges import DateRange
+
 from app.api.v1.endpoints.reports import cash_receipts_for_range
 
 
@@ -22,7 +24,7 @@ def receipt(amount, company="Cash customer"):
 @pytest.mark.asyncio
 async def test_cash_query_has_all_tenant_and_receipt_boundaries():
     tenant = uuid4()
-    rng = SimpleNamespace(start=date(2026, 9, 1), end=date(2026, 9, 11))
+    rng = DateRange(start=date(2026, 9, 1), end=date(2026, 9, 11))
     db = SimpleNamespace(execute=AsyncMock(return_value=SimpleNamespace(all=lambda: [])))
     total, rows = await cash_receipts_for_range(db, tenant, rng)
     query = str(db.execute.call_args.args[0].compile(
@@ -32,8 +34,8 @@ async def test_cash_query_has_all_tenant_and_receipt_boundaries():
     assert "payments.method = 'cash'" in query
     assert "payments.status = 'completed'" in query
     assert "invoices.is_internal IS false" in query
-    assert "date(payments.created_at) >= '2026-09-01'" in query
-    assert "date(payments.created_at) <= '2026-09-11'" in query
+    assert "payments.created_at >= '2026-09-01 04:00:00+00:00'" in query
+    assert "payments.created_at < '2026-09-12 04:00:00+00:00'" in query
     assert "ORDER BY payments.created_at DESC, payments.id" in query
     assert total == "0.00"
     assert rows == []
@@ -45,7 +47,7 @@ async def test_cash_sum_uses_receipt_amounts_and_fallback_customer_name():
     records = [receipt("0.10"), receipt("0.20", company=None)]
     db = SimpleNamespace(execute=AsyncMock(return_value=SimpleNamespace(all=lambda: records)))
     total, rows = await cash_receipts_for_range(db, uuid4(),
-        SimpleNamespace(start=date(2026, 9, 1), end=date(2026, 9, 11)))
+        DateRange(start=date(2026, 9, 1), end=date(2026, 9, 11)))
     assert total == "0.30"
     assert [row.amount for row in rows] == ["0.10", "0.20"]
     assert rows[1].customer_name == "Jane Doe"
