@@ -603,6 +603,17 @@ export interface Supplier {
 
 export type InvoiceStatus = 'draft' | 'sent' | 'paid' | 'overdue' | 'cancelled'
 
+export interface CashReceiptSummary {
+  method: 'cash'
+  amount: string
+  subtotal: string
+  shop_supplies_amount: string
+  service_fee_amount: string
+  tax_amount: string
+  discount_amount: string
+  paid_at: string | null
+}
+
 export interface Invoice {
   id: string
   tenant_id: string
@@ -628,6 +639,7 @@ export interface Invoice {
   zelle_pending_sender_phone?: string | null
   zelle_pending_last_reminder_at?: string | null
   zelle_pending_reminder_count?: number
+  cash_receipt?: CashReceiptSummary | null
   payment?: InvoicePaymentSummary | null
   created_at: string
   updated_at: string
