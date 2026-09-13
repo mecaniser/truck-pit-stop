@@ -4,7 +4,7 @@ competitors expose on their Reports pages, so garage owners get the same
 familiar shortcuts (This Year, Last Month, etc.) instead of always typing
 exact dates."""
 from dataclasses import dataclass
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, time, timezone
 from typing import Optional
 from zoneinfo import ZoneInfo
 
@@ -26,6 +26,20 @@ REPORT_DATE_PRESETS = {
 class DateRange:
     start: date
     end: date  # inclusive
+    timezone_name: str = "America/New_York"
+
+    @property
+    def utc_start(self) -> datetime:
+        return datetime.combine(self.start, time.min, ZoneInfo(self.timezone_name)).astimezone(timezone.utc)
+
+    @property
+    def utc_end(self) -> datetime:
+        # Construct the next local midnight before converting: DST days need
+        # not contain 24 hours. The end is exclusive.
+        return datetime.combine(self.end + timedelta(days=1), time.min, ZoneInfo(self.timezone_name)).astimezone(timezone.utc)
+
+    def local_date(self, value: datetime) -> date:
+        return value.replace(tzinfo=value.tzinfo or timezone.utc).astimezone(ZoneInfo(self.timezone_name)).date()
 
 
 def _quarter_start(d: date) -> date:
@@ -55,41 +69,41 @@ def resolve_date_range(
     if preset == "custom":
         if not custom_from or not custom_to:
             raise ValueError("custom_from and custom_to are required when preset='custom'")
-        return DateRange(start=custom_from, end=custom_to)
+        return DateRange(timezone_name=tz.key, start=custom_from, end=custom_to)
 
     if preset == "this_week":
         start = today - timedelta(days=today.weekday())
-        return DateRange(start=start, end=today)
+        return DateRange(timezone_name=tz.key, start=start, end=today)
     if preset == "last_week":
         this_week_start = today - timedelta(days=today.weekday())
         start = this_week_start - timedelta(days=7)
         end = this_week_start - timedelta(days=1)
-        return DateRange(start=start, end=end)
+        return DateRange(timezone_name=tz.key, start=start, end=end)
 
     if preset == "this_month":
         start = today.replace(day=1)
-        return DateRange(start=start, end=today)
+        return DateRange(timezone_name=tz.key, start=start, end=today)
     if preset == "last_month":
         this_month_start = today.replace(day=1)
         end = this_month_start - timedelta(days=1)
         start = end.replace(day=1)
-        return DateRange(start=start, end=end)
+        return DateRange(timezone_name=tz.key, start=start, end=end)
 
     if preset == "this_quarter":
         start = _quarter_start(today)
-        return DateRange(start=start, end=today)
+        return DateRange(timezone_name=tz.key, start=start, end=today)
     if preset == "last_quarter":
         this_q_start = _quarter_start(today)
         end = this_q_start - timedelta(days=1)
         start = _quarter_start(end)
-        return DateRange(start=start, end=end)
+        return DateRange(timezone_name=tz.key, start=start, end=end)
 
     if preset == "this_year":
         start = date(today.year, 1, 1)
-        return DateRange(start=start, end=today)
+        return DateRange(timezone_name=tz.key, start=start, end=today)
     if preset == "last_year":
         start = date(today.year - 1, 1, 1)
         end = date(today.year - 1, 12, 31)
-        return DateRange(start=start, end=end)
+        return DateRange(timezone_name=tz.key, start=start, end=end)
 
     raise ValueError(f"Unknown date range preset: {preset!r}")

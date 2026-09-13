@@ -8,6 +8,7 @@ export interface CashReceipt {
   payment_number: string
   invoice_number: string
   customer_name: string
+  received_on?: string
   received_at: string
   amount: string
 }
@@ -41,7 +42,7 @@ export default function CashReceiptsByCustomer({ receipts }: { receipts: CashRec
           {group.receipts.map(receipt => <li key={receipt.payment_id} className="flex items-start justify-between gap-3 py-3">
             <div className="min-w-0 text-sm">
               <p className="break-words text-white/85">{receipt.payment_number} · {receipt.invoice_number}</p>
-              <time className="text-xs text-white/50" dateTime={receipt.received_at}>{new Date(receipt.received_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' })} UTC</time>
+              <time className="text-xs text-white/50" dateTime={receipt.received_at}>{new Date(receipt.received_on ? `${receipt.received_on}T12:00:00Z` : receipt.received_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' })} {receipt.received_on ? 'shop time' : 'UTC'}</time>
             </div>
             <span className="shrink-0 text-sm tabular-nums text-white/85">{moneyToCents(receipt.amount) === null ? 'Unavailable' : formatMoney(receipt.amount)}</span>
           </li>)}
