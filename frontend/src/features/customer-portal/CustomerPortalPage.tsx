@@ -1,3 +1,4 @@
+import CashReceiptBreakdown from './CashReceiptBreakdown'
 import { useState, useEffect, useRef, type MouseEvent as ReactMouseEvent, type TouchEvent } from 'react'
 import { Spinner } from '@/components/ui'
 import { Routes, Route, Link, useLocation } from 'react-router-dom'
@@ -1189,6 +1190,7 @@ function CustomerRepairs() {
             </div>
 
             <div className="bg-white/5 rounded-lg p-4 mb-4">
+              {invoice.status === 'paid' && invoice.cash_receipt ? <CashReceiptBreakdown receipt={invoice.cash_receipt} /> : <>
               <div className="flex justify-between mb-2">
                 <span className="text-gray-400">Subtotal</span>
                 <span className="text-white">${parseFloat(invoice.subtotal).toFixed(2)}</span>
@@ -1215,6 +1217,7 @@ function CustomerRepairs() {
                 <span className="font-semibold text-white">Total Due</span>
                 <span className="font-bold text-xl text-white">${parseFloat(invoice.total_amount).toFixed(2)}</span>
               </div>
+              </>}
             </div>
 
             <Link
@@ -1222,7 +1225,7 @@ function CustomerRepairs() {
               state={{ paymentOrigin: 'History' }}
               className="flex min-h-[44px] w-full items-center justify-center gap-2 rounded-xl bg-[#8b7cf7] px-4 py-3.5 text-sm font-extrabold text-[#0e1118] hover:brightness-110"
             >
-              Review payment options
+              {invoice.status === 'paid' ? 'View receipt' : 'Review payment options'}
             </Link>
 
             <div className="hidden">

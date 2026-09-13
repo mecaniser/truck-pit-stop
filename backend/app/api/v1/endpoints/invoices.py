@@ -31,6 +31,7 @@ from app.services.pricing import get_order_checkout_breakdown
 from app.services.email_service import send_email
 from app.services.invoice_access_service import generate_invoice_access_link
 from app.services.pdf_service import generate_invoice_pdf
+from app.services.cash_receipt_service import CashReceipt, load_cash_receipt, receipt_invoice_view
 from app.services.provider_outbox_service import enqueue_email_notification
 from app.services.quickbooks_sync_service import enqueue_quickbooks_invoice_sync
 from app.services.invoice_settlement_service import invoice_money_snapshot
@@ -134,8 +135,10 @@ def _line_items_snapshot(labor_items: list[dict], parts_items: list[dict]) -> di
 
 def _build_invoice_pdf_bytes(
     invoice, order, customer, vehicle, tenant,
-    labor_items, parts_items, invoice_access_url: Optional[str]
+    labor_items, parts_items, invoice_access_url: Optional[str], cash_receipt=None
 ) -> bytes:
+    if cash_receipt:
+        invoice = receipt_invoice_view(invoice, cash_receipt)
     service_date = None
     if order.work_completed_at:
         service_date = order.work_completed_at.strftime("%m/%d/%Y")
@@ -149,6 +152,7 @@ def _build_invoice_pdf_bytes(
     snapshot_parts_total = sum(Decimal(str(item.get("total_price", 0))) for item in parts_items)
 
     return generate_invoice_pdf(
+        cash_receipt=bool(cash_receipt),
         invoice_number=invoice.invoice_number,
         order_number=order.order_number,
         invoice_date=invoice.created_at.strftime("%m/%d/%Y") if invoice.created_at else "",
@@ -219,11 +223,14 @@ def _build_invoice_email_html(
     labor_items: list, parts_items: list, invoice_access_url: str,
     tenant=None,
     pdf_attached: bool = True,
+    cash_receipt=None,
 ) -> str:
     shop_name = tenant.name if tenant else "Your Shop"
     shop_phone = tenant.phone if tenant else ""
     shop_email = tenant.email if tenant else ""
 
+    if cash_receipt:
+        invoice = receipt_invoice_view(invoice, cash_receipt)
     # Line items HTML
     def item_rows_html(items, is_labor: bool) -> str:
         html = ""
@@ -272,7 +279,7 @@ def _build_invoice_email_html(
           <td style="padding:6px 8px;color:#6b7280;text-align:right;border-bottom:1px solid #f3f4f6;"></td>
           <td style="padding:6px 8px;color:#1f2937;font-weight:600;text-align:right;border-bottom:1px solid #f3f4f6;">${Decimal(str(invoice.shop_supplies_amount)):,.2f}</td>
         </tr>"""
-    if invoice.service_fee_amount and Decimal(str(invoice.service_fee_amount)) > 0:
+    if cash_receipt or (invoice.service_fee_amount and Decimal(str(invoice.service_fee_amount)) > 0):
         items_html += f"""
         <tr>
           <td style="padding:6px 8px;color:#374151;border-bottom:1px solid #f3f4f6;">Card Processing Fee</td>
@@ -362,9 +369,9 @@ def _build_invoice_email_html(
     <table width="100%" cellpadding="0" cellspacing="0">
       <tr><td style="padding:4px 8px;text-align:right;color:#6b7280;" colspan="3">Subtotal</td><td style="padding:4px 8px;text-align:right;color:#374151;">${Decimal(str(invoice.subtotal)):,.2f}</td></tr>
       {discount_row}
-      <tr><td style="padding:4px 8px;text-align:right;color:#6b7280;" colspan="3">{'Tax (exempt)' if effective_tax_exempt(invoice) else 'Tax'}</td><td style="padding:4px 8px;text-align:right;color:#374151;">${tax:,.2f}</td></tr>
+      <tr><td style="padding:4px 8px;text-align:right;color:#6b7280;" colspan="3">{'Sales tax (not charged)' if cash_receipt and cash_receipt.tax_amount == 0 else ('Tax (exempt)' if effective_tax_exempt(invoice) else 'Tax')}</td><td style="padding:4px 8px;text-align:right;color:#374151;">${tax:,.2f}</td></tr>
       <tr style="background:#1f2937;">
-        <td style="padding:10px 8px;text-align:right;color:#ffffff;font-weight:700;font-size:15px;" colspan="3">TOTAL DUE</td>
+        <td style="padding:10px 8px;text-align:right;color:#ffffff;font-weight:700;font-size:15px;" colspan="3">{'TOTAL PAID — CASH' if cash_receipt else 'INVOICE TOTAL'}</td>
         <td style="padding:10px 8px;text-align:right;color:#ffffff;font-weight:700;font-size:15px;">${total:,.2f}</td>
       </tr>
     </table>
@@ -373,7 +380,7 @@ def _build_invoice_email_html(
   <!-- CTA -->
   <div style="padding:0 28px 24px 28px;text-align:center;">
     <a href="{invoice_access_url}" style="display:inline-block;background:#d97706;color:#ffffff;padding:13px 32px;text-decoration:none;border-radius:8px;font-weight:700;font-size:15px;">
-      View &amp; Pay Invoice
+      {"View Cash Receipt" if cash_receipt else "View Invoice"}
     </a>
     <p style="color:#9ca3af;font-size:11px;margin-top:10px;">{document_note}</p>
   </div>
@@ -433,6 +440,7 @@ class InvoiceResponse(BaseModel):
     status: str
     is_internal: bool = False
     payment: Optional[PaymentSummary] = None
+    cash_receipt: Optional[CashReceipt] = None
     subtotal: Decimal
     shop_supplies_amount: Decimal = Decimal("0.00")
     service_fee_amount: Decimal = Decimal("0.00")
@@ -1031,8 +1039,11 @@ async def list_invoices(
         .offset(skip)
         .limit(limit)
     )
+    items = [InvoiceResponse.model_validate(payload) for payload in rows.scalars().all()]
+    for item in items:
+        item.cash_receipt = await load_cash_receipt(db, item)
     return paginated_or_list(
-        [InvoiceResponse.model_validate(payload) for payload in rows.scalars().all()],
+        items,
         total,
         skip,
         limit,
@@ -1115,6 +1126,7 @@ async def _list_invoices_legacy(
     for inv in invoices:
         resp = InvoiceResponse.model_validate(inv)
         resp.payment = payments_by_invoice.get(inv.id)
+        resp.cash_receipt = await load_cash_receipt(db, inv)
         items.append(resp)
     return paginated_or_list(items, total, skip, limit, paginated)
 
@@ -1152,8 +1164,10 @@ async def get_invoice(
         )
     vehicle_info = vehicle_display_label(vehicle.year, vehicle.make, vehicle.model, vehicle.unit_number)
     customer_name = f"{customer.first_name} {customer.last_name}"
+    response = InvoiceResponse.model_validate(inv)
+    response.cash_receipt = await load_cash_receipt(db, inv)
     return InvoiceDetailResponse(
-        **InvoiceResponse.model_validate(inv).model_dump(),
+        **response.model_dump(),
         order_number=order.order_number,
         customer_name=customer_name,
         vehicle_info=vehicle_info,
@@ -1362,10 +1376,12 @@ async def resend_invoice(
 
     labor_items, parts_items = await _load_line_items(db, order.id, invoice)
 
+    cash_receipt = await load_cash_receipt(db, invoice)
     email_html = _build_invoice_email_html(
         customer=recipient,
         vehicle_info=vehicle_info,
         invoice=invoice,
+        cash_receipt=cash_receipt,
         order=order,
         labor_items=labor_items,
         parts_items=parts_items,
@@ -1378,7 +1394,7 @@ async def resend_invoice(
             invoice=invoice, order=order, customer=recipient,
             vehicle=vehicle, tenant=tenant,
             labor_items=labor_items, parts_items=parts_items,
-            invoice_access_url=invoice_access_url,
+            invoice_access_url=invoice_access_url, cash_receipt=cash_receipt,
         )
         attachments = [{"filename": f"Invoice-{invoice.invoice_number}.pdf", "content": pdf_bytes}]
     except Exception:
@@ -1432,7 +1448,7 @@ async def download_invoice_pdf(
         invoice=inv, order=order, customer=customer,
         vehicle=vehicle, tenant=tenant,
         labor_items=labor_items, parts_items=parts_items,
-        invoice_access_url=None,
+        invoice_access_url=None, cash_receipt=await load_cash_receipt(db, inv),
     )
 
     filename = f"Invoice-{inv.invoice_number}.pdf"

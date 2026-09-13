@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import type { CashReceiptSummary } from '../../types'
 import { Spinner } from '@/components/ui'
 import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
@@ -25,6 +26,7 @@ import {
 } from '@/features/payments'
 
 interface InvoiceAccessResolve {
+  cash_receipt?: CashReceiptSummary | null
   invoice_id: string
   invoice_number: string
   order_number: string
@@ -287,7 +289,8 @@ export default function InvoiceAccessPage() {
 
   const paidInThisSession = paymentResult !== null
   const isPaid = !!invoice && (splitSettlement?.state === 'paid' || invoice.is_paid || paidInThisSession)
-  const paidAt = paymentResult?.paidAt ?? invoice?.paid_at ?? null
+  const cashReceipt = isPaid ? invoice?.cash_receipt : null
+  const paidAt = cashReceipt?.paid_at ?? paymentResult?.paidAt ?? invoice?.paid_at ?? null
   const portalTokenForCreate = paidInThisSession
     ? paymentResult?.portalEnrollmentToken ?? null
     : token
@@ -627,39 +630,39 @@ export default function InvoiceAccessPage() {
           <div className="bg-amber-50 border border-amber-100 rounded-xl p-4 mb-6">
             <div className="flex items-center justify-between">
               <span className="text-gray-700 font-medium">Amount Due</span>
-              <span className="text-3xl font-bold text-gray-900">{formatMoney(splitSettlement?.outstanding_balance ?? invoice.amount_due)}</span>
+              <span className="text-3xl font-bold text-gray-900">{formatMoney(isPaid ? '0' : splitSettlement?.outstanding_balance ?? invoice.amount_due)}</span>
             </div>
             <p className="text-xs text-gray-500 mt-2">Status: {invoice.status.replace('_', ' ')}</p>
           </div>
 
           <div className="bg-white rounded-xl border border-gray-200 p-4 mb-6">
-            <h3 className="text-sm font-semibold text-gray-900 mb-3">Invoice Breakdown</h3>
+            <h3 className="text-sm font-semibold text-gray-900 mb-3">{cashReceipt ? 'Cash Receipt Breakdown' : 'Invoice Breakdown'}</h3>
             <div className="space-y-2 text-sm">
               <div className="flex items-center justify-between text-gray-700">
                 <span>Subtotal</span>
-                <span>{formatMoney(invoice.subtotal)}</span>
+                <span>{formatMoney(cashReceipt?.subtotal ?? invoice.subtotal)}</span>
               </div>
               <div className="flex items-center justify-between text-gray-700">
                 <span>Shop Supplies</span>
-                <span>{formatMoney(invoice.shop_supplies_amount)}</span>
+                <span>{formatMoney(cashReceipt?.shop_supplies_amount ?? invoice.shop_supplies_amount)}</span>
               </div>
               <div className="flex items-center justify-between text-gray-700">
                 <span>Card Processing Fee</span>
-                <span>{formatMoney(invoice.service_fee_amount)}</span>
+                <span>{formatMoney(cashReceipt?.service_fee_amount ?? invoice.service_fee_amount)}</span>
               </div>
               <div className="flex items-center justify-between text-gray-700">
-                <span>Tax</span>
-                <span>{formatMoney(invoice.tax_amount)}</span>
+                <span>{cashReceipt && Number(cashReceipt.tax_amount) === 0 ? 'Sales tax — not charged' : 'Sales tax'}</span>
+                <span>{formatMoney(cashReceipt?.tax_amount ?? invoice.tax_amount)}</span>
               </div>
               {parseFloat(invoice.discount_amount || '0') > 0 && (
                 <div className="flex items-center justify-between text-green-700">
                   <span>Discount</span>
-                  <span>-{formatMoney(invoice.discount_amount)}</span>
+                  <span>-{formatMoney(cashReceipt?.discount_amount ?? invoice.discount_amount)}</span>
                 </div>
               )}
               <div className="pt-2 border-t border-gray-200 flex items-center justify-between text-gray-900 font-semibold">
-                <span>Total</span>
-                <span>{formatMoney(invoice.total_amount)}</span>
+                <span>{cashReceipt ? 'Total paid in cash' : 'Invoice total'}</span>
+                <span>{formatMoney(cashReceipt?.amount ?? invoice.total_amount)}</span>
               </div>
             </div>
           </div>
