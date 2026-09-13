@@ -16,6 +16,28 @@ class WorkOSProviderError(Exception):
     pass
 
 
+class WorkOSProviderTemporaryError(WorkOSProviderError):
+    """Provider could not establish authority; retry without destroying session."""
+
+
+async def _session_request(method: str, url: str, **kwargs) -> httpx.Response:
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            return await getattr(client, method)(url, **kwargs)
+    except httpx.RequestError as exc:
+        raise WorkOSProviderTemporaryError("WorkOS is temporarily unavailable") from exc
+
+
+def _session_json(response: httpx.Response) -> Dict[str, Any]:
+    try:
+        result = response.json()
+    except ValueError as exc:
+        raise WorkOSProviderTemporaryError("WorkOS response is unavailable") from exc
+    if not isinstance(result, dict):
+        raise WorkOSProviderTemporaryError("WorkOS response is unavailable")
+    return result
+
+
 _jwks_cache: Optional[Dict[str, Any]] = None
 _jwks_cached_at: Optional[datetime] = None
 
@@ -25,13 +47,12 @@ async def _get_jwks(force: bool = False) -> Dict[str, Any]:
     now = datetime.now(timezone.utc)
     if not force and _jwks_cache and _jwks_cached_at and (now - _jwks_cached_at).total_seconds() < 3600:
         return _jwks_cache
-    async with httpx.AsyncClient(timeout=10.0) as client:
-        response = await client.get(f"https://api.workos.com/sso/jwks/{settings.WORKOS_CLIENT_ID}")
+    response = await _session_request("get", f"https://api.workos.com/sso/jwks/{settings.WORKOS_CLIENT_ID}")
     if response.status_code >= 400:
-        raise WorkOSProviderError("WorkOS signing keys are unavailable")
-    payload = response.json()
-    if not isinstance(payload, dict) or not isinstance(payload.get("keys"), list):
-        raise WorkOSProviderError("WorkOS signing keys are malformed")
+        raise WorkOSProviderTemporaryError("WorkOS signing keys are unavailable")
+    payload = _session_json(response)
+    if not isinstance(payload.get("keys"), list):
+        raise WorkOSProviderTemporaryError("WorkOS signing keys are malformed")
     _jwks_cache, _jwks_cached_at = payload, now
     return payload
 
@@ -89,14 +110,16 @@ async def authenticate(payload: Dict[str, Any]) -> Dict[str, Any]:
         "client_secret": settings.WORKOS_API_KEY,
         **payload,
     }
-    async with httpx.AsyncClient(timeout=10.0) as client:
-        response = await client.post("https://api.workos.com/user_management/authenticate", json=body)
+    response = await _session_request("post", "https://api.workos.com/user_management/authenticate", json=body)
     if response.status_code >= 400:
-        raise WorkOSProviderError("WorkOS authentication failed")
-    result = response.json()
-    if not isinstance(result, dict):
-        raise WorkOSProviderError("WorkOS authentication response is malformed")
-    return result
+        # A provider HTTP 401 may mean a misconfigured application secret, not
+        # that this user's session was revoked. Only explicit grant rejection
+        # establishes that the refresh credential can no longer be used.
+        result = _session_json(response)
+        if response.status_code in {400, 401, 403} and result.get("error") == "invalid_grant":
+            raise WorkOSProviderError("WorkOS refresh credential is no longer authorized")
+        raise WorkOSProviderTemporaryError("WorkOS authentication is temporarily unavailable")
+    return _session_json(response)
 
 
 async def send_invitation(*, email: str, organization_id: str, role_slug: str, inviter_user_id: Optional[str]) -> Dict[str, Any]:
@@ -145,18 +168,16 @@ async def find_organization_membership(*, user_id: str, organization_id: str) ->
         ("statuses[]", "inactive"),
         ("limit", "10"),
     ]
-    async with httpx.AsyncClient(timeout=10.0) as client:
-        response = await client.get(
-            "https://api.workos.com/user_management/organization_memberships",
-            headers={"Authorization": f"Bearer {settings.WORKOS_API_KEY}"},
-            params=params,
-        )
+    response = await _session_request(
+        "get", "https://api.workos.com/user_management/organization_memberships",
+        headers={"Authorization": f"Bearer {settings.WORKOS_API_KEY}"}, params=params,
+    )
     if response.status_code >= 400:
-        raise WorkOSProviderError("WorkOS organization membership is unavailable")
-    result = response.json()
+        raise WorkOSProviderTemporaryError("WorkOS organization membership is unavailable")
+    result = _session_json(response)
     data = result.get("data") if isinstance(result, dict) else None
     if not isinstance(data, list):
-        raise WorkOSProviderError("WorkOS organization membership response is malformed")
+        raise WorkOSProviderTemporaryError("WorkOS organization membership response is malformed")
     matches = [
         item for item in data
         if isinstance(item, dict)

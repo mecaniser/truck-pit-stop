@@ -10,6 +10,7 @@ vi.mock('../authRefresh', () => ({
   requestWorkOSSessionRefresh: refreshMocks.requestWorkOSSessionRefresh,
 }))
 
+import { useSessionRecovery, setSessionRecovering } from '../sessionRecovery'
 import { useAuthStore } from '../../stores/authStore'
 import {
   isSessionKeepAliveRunning,
@@ -32,6 +33,8 @@ function setWorkOSSession() {
 describe('sessionKeepAlive', () => {
   beforeEach(() => {
     vi.useFakeTimers()
+    setSessionRecovering(false)
+    Object.defineProperty(window, 'location', { value: { href: '', pathname: '/dashboard', search: '' }, writable: true })
     refreshMocks.requestTokenRefresh.mockReset()
     refreshMocks.requestWorkOSSessionRefresh.mockReset()
   })
@@ -103,7 +106,9 @@ describe('sessionKeepAlive', () => {
 
     await renewSessionNow()
 
-    expect(logoutSpy).toHaveBeenCalledTimes(1)
+    expect(useAuthStore.getState().isAuthenticated).toBe(false)
+    expect(window.location.href).toContain('reason=session_ended')
+    expect(logoutSpy).not.toHaveBeenCalled()
     expect(isSessionKeepAliveRunning()).toBe(false)
     logoutSpy.mockRestore()
   })
@@ -117,4 +122,44 @@ describe('sessionKeepAlive', () => {
 
     expect(refreshMocks.requestWorkOSSessionRefresh).not.toHaveBeenCalled()
   })
+  it('survives the 9m45s renewal outage, remains signed in past 10m, and recovers', async () => {
+    setWorkOSSession()
+    refreshMocks.requestWorkOSSessionRefresh.mockRejectedValue({ response: { status: 503 } })
+    startSessionKeepAlive()
+    await vi.advanceTimersByTimeAsync(585_000)
+    expect(refreshMocks.requestWorkOSSessionRefresh).toHaveBeenCalledTimes(1)
+    expect(useSessionRecovery.getState().recovering).toBe(true)
+    await vi.advanceTimersByTimeAsync(75_000)
+    expect(useAuthStore.getState().isAuthenticated).toBe(true)
+    expect(window.location.href).toBe('')
+    refreshMocks.requestWorkOSSessionRefresh.mockResolvedValue(undefined)
+    await vi.advanceTimersByTimeAsync(60_000)
+    expect(useSessionRecovery.getState().recovering).toBe(false)
+    expect(useAuthStore.getState().isAuthenticated).toBe(true)
+  })
+
+  it('ignores an old rejection after another user signs in', async () => {
+    setWorkOSSession()
+    let reject!: (reason: unknown) => void
+    refreshMocks.requestWorkOSSessionRefresh.mockImplementation(() => new Promise((_, r) => { reject = r }))
+    startSessionKeepAlive()
+    const pending = renewSessionNow()
+    useAuthStore.getState().establishCookieSession({ id: 'u2', role: 'driver', tenant_id: 't2', is_active: true } as never)
+    reject({ response: { status: 401 } })
+    await pending
+    expect(useAuthStore.getState().user?.id).toBe('u2')
+    expect(useAuthStore.getState().isAuthenticated).toBe(true)
+    expect(window.location.href).toBe('')
+  })
+
+  it('routes confirmed expiration to the driver login with truthful reason', async () => {
+    setWorkOSSession()
+    useAuthStore.setState({ user: { id: 'u1', role: 'driver', tenant_id: 't1', is_active: true } as never })
+    refreshMocks.requestWorkOSSessionRefresh.mockRejectedValue({ response: { status: 401, data: { detail: { code: 'session_expired' } } } })
+    startSessionKeepAlive()
+    await vi.advanceTimersByTimeAsync(585_000)
+    expect(window.location.href).toBe('/driver/login?reason=session_expired&tenant_id=t1')
+    expect(useAuthStore.getState().isAuthenticated).toBe(false)
+  })
+
 })

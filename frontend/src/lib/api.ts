@@ -1,7 +1,7 @@
 import axios from 'axios'
 import { useAuthStore } from '../stores/authStore'
 import { requestTokenRefresh, requestWorkOSSessionRefresh } from './authRefresh'
-import { stopSessionKeepAlive } from './sessionKeepAlive'
+import { endRejectedSession, isSessionRejection, setSessionRecovering } from './sessionRecovery'
 
 const api = axios.create({
   baseURL: import.meta.env.VITE_API_URL || '/api/v1',
@@ -15,7 +15,9 @@ const api = axios.create({
 // Request interceptor to add auth token (fallback for non-cookie scenarios)
 api.interceptors.request.use(
   (config) => {
-    const token = useAuthStore.getState().token
+    const state = useAuthStore.getState()
+    ;(config as typeof config & { authSessionEpoch?: number }).authSessionEpoch = state.authSessionEpoch
+    const token = state.token
     const hasAuthHeader = Boolean(config.headers?.Authorization || config.headers?.authorization)
     // Only add Authorization header if we have a token and cookies might not be set yet
     if (token && !hasAuthHeader) {
@@ -30,6 +32,7 @@ api.interceptors.request.use(
 
 // Response interceptor to handle auth errors with token refresh
 let isRefreshing = false
+let refreshingEpoch: number | null = null
 let failedQueue: Array<{
   resolve: (token: string | null) => void
   reject: (error: unknown) => void
@@ -70,6 +73,7 @@ async function runRefreshWithRetry(
       return await attempt()
     } catch (error) {
       lastError = error
+      if (axios.isCancel(error)) throw error
       const status = refreshErrorStatus(error)
       // A definitive "session is gone" answer is not retryable.
       if (status === 401 || status === 403) {
@@ -97,15 +101,24 @@ api.interceptors.response.use(
     const originalRequest = error.config
     const isAuthEndpoint = originalRequest?.url?.includes('/auth/')
     const isWorkOSSessionEndpoint = originalRequest?.url?.includes('/auth/workos/session/refresh')
-    const authProvider = useAuthStore.getState().authProvider
+    const session = useAuthStore.getState()
+    const authProvider = session.authProvider
+    const sessionEpoch = session.authSessionEpoch
+    const isCurrentSession = () => useAuthStore.getState().authSessionEpoch === sessionEpoch
+      && !useAuthStore.getState().logoutInProgress
+    if (originalRequest?.authSessionEpoch !== undefined && originalRequest.authSessionEpoch !== sessionEpoch) {
+      return Promise.reject(error)
+    }
     const mayRefresh = authProvider === 'workos' ? !isWorkOSSessionEndpoint : !isAuthEndpoint
 
-    if (error.response?.status === 401 && mayRefresh && !originalRequest._retry) {
+    if (error.response?.status === 401 && mayRefresh && !session.logoutInProgress && !originalRequest._retry) {
       if (isRefreshing) {
+        if (refreshingEpoch !== sessionEpoch) return Promise.reject(new axios.CanceledError('Session changed'))
         // Queue requests while refresh is in progress
         return new Promise((resolve, reject) => {
           failedQueue.push({ resolve, reject })
         }).then((token) => {
+          if (!isCurrentSession()) throw new axios.CanceledError('Session changed')
           // Mark as retried to prevent infinite refresh loops
           originalRequest._retry = true
           if (token) {
@@ -117,19 +130,24 @@ api.interceptors.response.use(
 
       originalRequest._retry = true
       isRefreshing = true
+      refreshingEpoch = sessionEpoch
 
       try {
         const { accessToken } = await runRefreshWithRetry(async () => {
+          if (!isCurrentSession()) throw new axios.CanceledError('Session changed')
           if (authProvider === 'workos') {
             await requestWorkOSSessionRefresh()
             return { accessToken: null }
           }
           const refreshToken = useAuthStore.getState().refreshToken
           const { access_token, refresh_token: newRefreshToken } = await requestTokenRefresh(refreshToken)
+          if (!isCurrentSession()) throw new axios.CanceledError('Session changed')
           useAuthStore.getState().setTokens(access_token, newRefreshToken)
           return { accessToken: access_token }
         })
 
+        if (!isCurrentSession()) throw new axios.CanceledError('Session changed')
+        setSessionRecovering(false)
         if (accessToken) {
           originalRequest.headers.Authorization = `Bearer ${accessToken}`
         } else {
@@ -139,23 +157,14 @@ api.interceptors.response.use(
         return api(originalRequest)
       } catch (refreshError) {
         processQueue(refreshError, null)
-        stopSessionKeepAlive()
-        if (authProvider === 'workos') {
-          const role = useAuthStore.getState().user?.role
-          const tenantId = useAuthStore.getState().user?.tenant_id
-          useAuthStore.getState().clearSession()
-          const returnTo = `${window.location.pathname}${window.location.search}`
-          const tenantQuery = tenantId ? `&tenant_id=${encodeURIComponent(tenantId)}` : ''
-          window.location.href = role === 'driver'
-            ? `/driver/login?reason=workos_session_expired${tenantQuery}`
-            : `/login?reason=workos_session_expired&return_to=${encodeURIComponent(returnTo)}${tenantQuery}`
-        } else {
-          void useAuthStore.getState().logout()
-          window.location.href = '/login'
+        if (isCurrentSession() && !axios.isCancel(refreshError)) {
+          if (isSessionRejection(refreshError)) endRejectedSession(refreshError)
+          else setSessionRecovering(true)
         }
         return Promise.reject(refreshError)
       } finally {
         isRefreshing = false
+        refreshingEpoch = null
       }
     }
 

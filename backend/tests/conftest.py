@@ -101,6 +101,36 @@ class FakeRedis:
         self.kv[key] = str(cur)
         return cur
 
+    async def eval(self, script, numkeys, *values):
+        """Model the session CAS operations; integration tests exercise real Lua."""
+        keys, args = values[:numkeys], values[numkeys:]
+        if "db064_release_lock" in script:
+            if self.kv.get(keys[0]) == args[0]:
+                return await self.delete(keys[0])
+            return 0
+        if "db064_renew_lock" in script:
+            return int(self.kv.get(keys[0]) == args[0])
+        if "db064_update_session" in script:
+            if self.kv.get(keys[0]) != args[0]:
+                return 0
+            if args[3] and self.kv.get(keys[1]) != args[3]:
+                return 0
+            self.kv[keys[0]] = args[1]
+            return 1
+        if "db064_delete_session" in script:
+            if self.kv.get(keys[1]) == args[0]:
+                return await self.delete(keys[0])
+            return 0
+        if "local consumed_key = KEYS[2]" in script:
+            # Existing one-time-token code selects Lua when eval is available.
+            if keys[1] in self.kv:
+                return None
+            raw = self.kv.pop(keys[0], None)
+            if raw is not None:
+                self.kv[keys[1]] = raw
+            return raw
+        raise NotImplementedError("Unsupported Redis test script")
+
     async def ping(self):
         return True
 

@@ -1,5 +1,6 @@
-import { lazy, Suspense, useEffect, useState } from 'react'
-import axios from 'axios'
+import { useCookieSessionBootstrap } from './lib/useCookieSessionBootstrap'
+import SessionRecoveryNotice from './components/SessionRecoveryNotice'
+import { lazy, Suspense, useEffect } from 'react'
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import { Toaster, ToastBar, toast, useToasterStore } from 'react-hot-toast'
 import { useAuthStore } from './stores/authStore'
@@ -245,48 +246,24 @@ function AppToaster() {
   )
 }
 
-function useCookieSessionBootstrap(): boolean {
-  const { isAuthenticated, establishCookieSession } = useAuthStore()
-  const [checkingSession, setCheckingSession] = useState(!isAuthenticated)
-
-  useEffect(() => {
-    if (isAuthenticated) {
-      setCheckingSession(false)
-      return
-    }
-    let active = true
-    const apiBase = String(import.meta.env.VITE_API_URL || '/api/v1').replace(/\/$/, '')
-    const workOSClient = axios.create({ withCredentials: true })
-    // Use a bare client so this path can only refresh the server-held WorkOS
-    // credential and can never fall into the legacy refresh-token flow.
-    const bootstrap = () => workOSClient.get(`${apiBase}/auth/workos/me`)
-      .catch(async (error) => {
-        if (!axios.isAxiosError(error) || error.response?.status !== 401) throw error
-        await workOSClient.post(`${apiBase}/auth/workos/session/refresh`, {})
-        return workOSClient.get(`${apiBase}/auth/workos/me`)
-      })
-    bootstrap()
-      .then(({ data }) => {
-        if (active) establishCookieSession(data)
-      })
-      .catch(() => undefined)
-      .finally(() => { if (active) setCheckingSession(false) })
-    return () => { active = false }
-  }, [establishCookieSession, isAuthenticated])
-
-  return checkingSession
+function SessionBootstrapStatus({ recovering }: { recovering: boolean }) {
+  return <div role="status" className="min-h-screen bg-zinc-950 px-6 text-center text-white grid place-items-center">
+    <div><p>{recovering ? 'Reconnecting your session' : 'Opening workspace…'}</p>
+      {recovering && <p className="mt-2 max-w-md text-sm text-zinc-300">We’re having trouble checking your session. We’ll retry automatically. Please keep this page open.</p>}
+    </div>
+  </div>
 }
 
 function StaffRoute({ children }: { children: React.ReactNode }) {
   const { user, isAuthenticated } = useAuthStore()
-  const checkingSession = useCookieSessionBootstrap()
+  const { checkingSession, recovering, endReason } = useCookieSessionBootstrap()
 
   if (checkingSession) {
-    return <div className="min-h-screen bg-zinc-950 text-white grid place-items-center">Opening workspace…</div>
+    return <SessionBootstrapStatus recovering={recovering} />
   }
   
   if (!isAuthenticated) {
-    return <Navigate to="/login" replace />
+    return <Navigate to={endReason ? `/login?reason=${endReason}` : "/login"} replace />
   }
   
   // Redirect roles with their own standalone app away from the garage dashboard.
@@ -309,24 +286,24 @@ function StaffRoute({ children }: { children: React.ReactNode }) {
 
 function DriverRoute({ children }: { children: React.ReactNode }) {
   const { user } = useAuthStore()
-  const checkingSession = useCookieSessionBootstrap()
+  const { checkingSession, recovering, endReason } = useCookieSessionBootstrap()
 
-  if (checkingSession) return <div className="min-h-screen bg-[#081018] text-white grid place-items-center">Opening driver workspace…</div>
-  if (!useAuthStore.getState().isAuthenticated) return <Navigate to="/driver/login" replace />
+  if (checkingSession) return <SessionBootstrapStatus recovering={recovering} />
+  if (!useAuthStore.getState().isAuthenticated) return <Navigate to={endReason ? `/driver/login?reason=${endReason}` : "/driver/login"} replace />
   if ((user || useAuthStore.getState().user)?.role !== 'driver') return <Navigate to="/dashboard" replace />
   return <>{children}</>
 }
 
 function FleetRoute({ children }: { children: React.ReactNode }) {
   const { user, isAuthenticated } = useAuthStore()
-  const checkingSession = useCookieSessionBootstrap()
+  const { checkingSession, recovering, endReason } = useCookieSessionBootstrap()
 
   if (checkingSession) {
-    return <div className="min-h-screen bg-[#081018] text-white grid place-items-center">Opening fleet workspace…</div>
+    return <SessionBootstrapStatus recovering={recovering} />
   }
 
   if (!isAuthenticated) {
-    return <Navigate to="/login" replace />
+    return <Navigate to={endReason ? `/login?reason=${endReason}` : "/login"} replace />
   }
   // Fleet board is for the fleet manager + the garage owner/admin who own the fleet.
   if (!['fleet_manager', 'garage_owner', 'garage_admin'].includes(user?.role || '')) {
@@ -386,6 +363,7 @@ function App() {
       <RouteFaviconManager />
       <ToastLimiter />
       <AppToaster />
+      <SessionRecoveryNotice />
       <Suspense fallback={<RouteLoading />}>
       <Routes>
         <Route path="/login" element={<LoginPage />} />

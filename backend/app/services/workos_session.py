@@ -5,7 +5,8 @@ import hashlib
 import json
 import secrets
 import time
-from typing import Any, Dict, Optional
+from typing import Any, Awaitable, Callable, Dict, Optional, TypeVar
+from contextlib import suppress
 
 from cryptography.fernet import Fernet, InvalidToken
 
@@ -23,6 +24,68 @@ def session_ttl_seconds() -> int:
 
 def _refresh_lock_seconds() -> int:
     return settings.WORKOS_SESSION_REFRESH_LOCK_SECONDS
+
+
+# Compare and mutate in one Redis operation: an expired owner must never clear
+# a successor's lock, overwrite its credential, or resurrect a logged-out session.
+RELEASE_LOCK_SCRIPT = """-- db064_release_lock
+if redis.call('get', KEYS[1]) == ARGV[1] then
+    return redis.call('del', KEYS[1])
+end
+return 0
+"""
+RENEW_LOCK_SCRIPT = """-- db064_renew_lock
+if redis.call('get', KEYS[1]) == ARGV[1] then
+    return redis.call('expire', KEYS[1], ARGV[2])
+end
+return 0
+"""
+UPDATE_SESSION_SCRIPT = """-- db064_update_session
+if redis.call('get', KEYS[1]) ~= ARGV[1] then return 0 end
+if ARGV[4] ~= '' and redis.call('get', KEYS[2]) ~= ARGV[4] then return 0 end
+redis.call('setex', KEYS[1], ARGV[3], ARGV[2])
+return 1
+"""
+DELETE_SESSION_SCRIPT = """-- db064_delete_session
+if redis.call('get', KEYS[2]) ~= ARGV[1] then return 0 end
+return redis.call('del', KEYS[1])
+"""
+
+
+class RefreshLockUnavailable(Exception):
+    pass
+
+
+_Result = TypeVar("_Result")
+
+
+async def run_with_refresh_lock(session_id: str, operation: Callable[[str], Awaitable[_Result]]) -> _Result:
+    """Hold a renewable lease for the entire refresh, cancelling on lease loss."""
+    token = await acquire_refresh_lock(session_id)
+    if token is None:
+        raise RefreshLockUnavailable()
+
+    async def maintain_lease():
+        redis = await get_redis()
+        while True:
+            await asyncio.sleep(_refresh_lock_seconds() / 3)
+            if not await redis.eval(RENEW_LOCK_SCRIPT, 1, f"{REFRESH_LOCK_PREFIX}{session_id}", token, _refresh_lock_seconds()):
+                return
+
+    work = asyncio.create_task(operation(token))
+    lease = asyncio.create_task(maintain_lease())
+    try:
+        done, _ = await asyncio.wait({work, lease}, return_when=asyncio.FIRST_COMPLETED)
+        if lease in done:
+            raise RefreshLockUnavailable()
+        return await work
+    finally:
+        for task in (work, lease):
+            task.cancel()
+        for task in (work, lease):
+            with suppress(asyncio.CancelledError, Exception):
+                await task
+        await release_refresh_lock(session_id, token)
 
 
 async def acquire_refresh_lock(session_id: str) -> Optional[str]:
@@ -45,9 +108,7 @@ async def acquire_refresh_lock(session_id: str) -> Optional[str]:
 async def release_refresh_lock(session_id: str, token: str) -> None:
     """Release the lock only if we still own it (avoids clearing a re-acquire)."""
     redis = await get_redis()
-    current = await redis.get(f"{REFRESH_LOCK_PREFIX}{session_id}")
-    if current == token:
-        await redis.delete(f"{REFRESH_LOCK_PREFIX}{session_id}")
+    await redis.eval(RELEASE_LOCK_SCRIPT, 1, f"{REFRESH_LOCK_PREFIX}{session_id}", token)
 
 
 async def wait_for_rotated_session(
@@ -104,14 +165,23 @@ async def get_session(session_id: str) -> Optional[Dict[str, Any]]:
         return None
 
 
-async def rotate_session(session_id: str, refresh_token: str) -> bool:
-    payload = await get_session(session_id)
-    if not payload:
+async def rotate_session(session_id: str, refresh_token: str, *, lock_token: Optional[str] = None) -> bool:
+    redis = await get_redis()
+    key = f"{SESSION_PREFIX}{session_id}"
+    raw = await redis.get(key)
+    if not raw:
         return False
+    payload = json.loads(raw)
     payload["refresh_token"] = _cipher().encrypt(refresh_token.encode()).decode()
-    await (await get_redis()).setex(f"{SESSION_PREFIX}{session_id}", session_ttl_seconds(), json.dumps(payload))
-    return True
+    return bool(await redis.eval(
+        UPDATE_SESSION_SCRIPT, 2, key, f"{REFRESH_LOCK_PREFIX}{session_id}",
+        raw, json.dumps(payload), session_ttl_seconds(), lock_token or "",
+    ))
 
 
-async def delete_session(session_id: str) -> None:
-    await (await get_redis()).delete(f"{SESSION_PREFIX}{session_id}")
+async def delete_session(session_id: str, *, lock_token: Optional[str] = None) -> None:
+    redis = await get_redis()
+    if lock_token is not None:
+        await redis.eval(DELETE_SESSION_SCRIPT, 2, f"{SESSION_PREFIX}{session_id}", f"{REFRESH_LOCK_PREFIX}{session_id}", lock_token)
+    else:
+        await redis.delete(f"{SESSION_PREFIX}{session_id}")

@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { persist, createJSONStorage } from 'zustand/middleware'
 import api from '../lib/api'
+import { setSessionRecovering } from '../lib/sessionRecovery'
 import { isTokenExpired } from '../lib/authTokens'
 import { startSessionKeepAlive, stopSessionKeepAlive } from '../lib/sessionKeepAlive'
 import type { PresentationBootstrap } from '../types/presentation'
@@ -117,6 +118,7 @@ export const useAuthStore = create<AuthState>()(
       logoutInProgress: false,
       webSocketRecoverySessionKey: null,
       login: (token, refreshToken, user) => {
+        setSessionRecovering(false)
         set((state) => ({
           token,
           refreshToken,
@@ -132,6 +134,7 @@ export const useAuthStore = create<AuthState>()(
         startSessionKeepAlive()
       },
       establishCookieSession: (user) => {
+        setSessionRecovering(false)
         set((state) => ({
           user,
           token: null,
@@ -155,6 +158,7 @@ export const useAuthStore = create<AuthState>()(
 
         // Publish logout intent before waiting on the network so live resources
         // cannot remain attached to the session during a slow provider logout.
+        setSessionRecovering(false)
         stopSessionKeepAlive()
         set({ authSessionEpoch: logoutEpoch, logoutInProgress: true })
 
@@ -182,6 +186,7 @@ export const useAuthStore = create<AuthState>()(
         })
       },
       clearSession: () => {
+        setSessionRecovering(false)
         stopSessionKeepAlive()
         set((state) => ({
           user: null,

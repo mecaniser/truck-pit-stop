@@ -17,7 +17,7 @@ from app.db.models.identity import (
 from app.db.models.tenant import Tenant
 from app.db.models.user import User, UserRole
 from app.services import workos_provider
-from app.services.workos_provider import WorkOSProviderError
+from app.services.workos_provider import WorkOSProviderError, WorkOSProviderTemporaryError
 
 
 ROLE_TO_USER_ROLE = {
@@ -89,6 +89,8 @@ async def resolve_authenticated_identity(
                 user_id=workos_user_id,
                 organization_id=workos_org_id,
             )
+        except WorkOSProviderTemporaryError:
+            raise
         except WorkOSProviderError:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="WorkOS membership is unavailable")
         if (

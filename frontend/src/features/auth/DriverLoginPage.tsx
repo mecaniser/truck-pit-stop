@@ -1,3 +1,4 @@
+import { sessionEndMessage } from '../../lib/sessionRecovery'
 import { ClipboardCheck, ShieldCheck, TriangleAlert, Truck } from 'lucide-react'
 import { useEffect } from 'react'
 import { Navigate, useSearchParams } from 'react-router-dom'
@@ -9,6 +10,7 @@ import { buildWorkOSLoginUrl } from '../../lib/workosAuth'
 export default function DriverLoginPage() {
   const { isAuthenticated, user } = useAuthStore()
   const [searchParams] = useSearchParams()
+  const endedMessage = sessionEndMessage(searchParams.get('reason'))
   const accessNeedsReview = searchParams.get('reason') === 'identity_review_required'
   const stateExpired = searchParams.get('reason') === 'workos_state_expired'
   const tenantId = searchParams.get('tenant_id')
@@ -55,6 +57,11 @@ export default function DriverLoginPage() {
             Open your assigned truck and trailer, complete inspections, and report conditions as they happen.
           </p>
 
+          {endedMessage && (
+            <div role="alert" className="my-5 rounded-xl border border-amber-700/50 bg-amber-900/20 px-4 py-3 text-sm leading-6 text-amber-200">
+              {endedMessage}
+            </div>
+          )}
           {accessNeedsReview && (
             <div
               role="alert"
