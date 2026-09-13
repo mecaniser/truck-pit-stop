@@ -65,3 +65,9 @@ production renewal acceptance remain pending; no PR merge or deployment done.
 A provider rotation response lost before receipt/persistence cannot be reconstructed;
 subsequent confirmed invalid_grant still requires signing in. This change does not
 promise sessions can survive confirmed revocation or every provider failure.
+
+Release record: application candidate `20ec2c126dcd675b1746f33b21915f5116d4e9e7`
+is pushed as draft [PR396](https://github.com/mecaniser/truck-pit-stop/pull/396).
+Protected CI had no checks reported at draft creation. Merge/deployment and actual
+authenticated provider/runtime acceptance remain pending. Disposable test Redis
+was stopped after completed checks; existing containers were preserved.
