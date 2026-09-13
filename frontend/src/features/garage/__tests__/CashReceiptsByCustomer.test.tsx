@@ -7,6 +7,12 @@ const receipt = (payment: string, customer: string, amount: string, invoice = pa
   invoice_number: `INV-${invoice}`, customer_name: name, amount, received_at: '2026-09-12T12:00:00Z',
 })
 describe('Cash receipts by company', () => {
+  it('shows the server-provided shop date across UTC midnight', async () => {
+    render(<CashReceiptsByCustomer receipts={[{ ...receipt('1', 'elis', '10'), received_at: '2026-09-13T00:14:00Z', received_on: '2026-09-12' }]} />)
+    await userEvent.click(screen.getByText('Elis Logistics LLC'))
+    expect(screen.getByText('Sep 12, 2026 shop time')).toBeVisible()
+    expect(screen.queryByText('Sep 13, 2026 UTC')).not.toBeInTheDocument()
+  })
   it('shows exact totals and unique invoice counts with independently expandable receipts', async () => {
     render(<CashReceiptsByCustomer receipts={[receipt('1', 'elis', '0.10', 'one'), receipt('2', 'elis', '0.20', 'one'), receipt('3', 'elis', '10.00', 'two'), receipt('4', 'avanti', '7.00', 'three', 'Avanti LLC')]} />)
     const company = screen.getByText('Elis Logistics LLC').closest('details')!
