@@ -1,3 +1,4 @@
+import { sessionEndMessage } from '../../lib/sessionRecovery'
 import { useEffect, useMemo, useState } from 'react'
 import { Spinner } from '@/components/ui'
 import { useNavigate, useSearchParams, Link } from 'react-router-dom'
@@ -63,6 +64,7 @@ interface ShopOption {
 export default function LoginPage() {
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
+  const endedMessage = sessionEndMessage(searchParams.get('reason'))
   const { login, isAuthenticated, user } = useAuthStore()
   const remembered = useMemo(() => getRememberedLogin(), [])
   const lastMethod = useMemo(() => getLastLoginMethod(), [])
@@ -72,7 +74,7 @@ export default function LoginPage() {
   const [shopSelectToken, setShopSelectToken] = useState<string | null>(null)
   const [shops, setShops] = useState<ShopOption[]>([])
   const resetSuccess = searchParams.get('reset') === 'success'
-  const workOSReauthenticationRequired = ['workos_session_expired', 'workos_required'].includes(searchParams.get('reason') || '')
+  const workOSReauthenticationRequired = searchParams.get('reason') === 'workos_required'
   const workOSStateExpired = searchParams.get('reason') === 'workos_state_expired'
   const organizationReturnTo = searchParams.get('return_to') || '/dashboard'
   const organizationTenantId = searchParams.get('tenant_id')
@@ -311,6 +313,11 @@ export default function LoginPage() {
             </div>
           ) : (
           <form className="space-y-5" onSubmit={handleSubmit(onSubmit)}>
+          {endedMessage && (
+            <div role="alert" className="my-5 rounded-xl border border-amber-700/50 bg-amber-900/20 px-4 py-3 text-sm leading-6 text-amber-200">
+              {endedMessage}
+            </div>
+          )}
           {workOSReauthenticationRequired && (
             <div className="rounded-xl border border-amber-700/50 bg-amber-900/20 px-4 py-3 text-sm leading-6 text-amber-200">
               Continue with organization sign-in to manage Driver Portal access. Your existing shop password session cannot authorize this action.

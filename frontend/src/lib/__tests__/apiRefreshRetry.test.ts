@@ -17,6 +17,7 @@ vi.mock('../sessionKeepAlive', () => ({
 }))
 
 import api from '../api'
+import { useSessionRecovery, setSessionRecovering } from '../sessionRecovery'
 import { useAuthStore } from '../../stores/authStore'
 
 function unauthorizedOnce() {
@@ -34,10 +35,13 @@ function unauthorizedOnce() {
 
 describe('api 401 refresh retry', () => {
   beforeEach(() => {
+    setSessionRecovering(false)
+    Object.defineProperty(window, 'location', { value: { href: '', pathname: '/dashboard', search: '' }, writable: true })
     refreshMocks.requestTokenRefresh.mockReset()
     refreshMocks.requestWorkOSSessionRefresh.mockReset()
     useAuthStore.setState({
       isAuthenticated: true,
+      logoutInProgress: false,
       authProvider: 'legacy',
       token: 'stale',
       refreshToken: 'r1',
@@ -71,7 +75,38 @@ describe('api 401 refresh retry', () => {
     await expect(api.get('/repair-orders', { adapter: unauthorizedOnce() })).rejects.toBeTruthy()
 
     expect(refreshMocks.requestTokenRefresh).toHaveBeenCalledTimes(1)
-    expect(logoutSpy).toHaveBeenCalled()
+    expect(logoutSpy).not.toHaveBeenCalled()
+    expect(useAuthStore.getState().isAuthenticated).toBe(false)
+    expect(window.location.href).toContain('reason=session_ended')
     logoutSpy.mockRestore()
   })
+  it.each(['legacy', 'workos'] as const)('preserves %s auth after all temporary retries fail', async (provider) => {
+    vi.useFakeTimers()
+    useAuthStore.setState({ authProvider: provider })
+    const refresh = provider === 'workos' ? refreshMocks.requestWorkOSSessionRefresh : refreshMocks.requestTokenRefresh
+    refresh.mockRejectedValue({ response: { status: 503 } })
+    const request = expect(api.get('/repair-orders', { adapter: unauthorizedOnce() })).rejects.toBeTruthy()
+    await vi.runAllTimersAsync()
+    await request
+    expect(refresh).toHaveBeenCalledTimes(4)
+    expect(useAuthStore.getState().isAuthenticated).toBe(true)
+    expect(useSessionRecovery.getState().recovering).toBe(true)
+    expect(window.location.href).toBe('')
+    vi.useRealTimers()
+  })
+
+  it('does not replay or replace tokens after the session changes during renewal', async () => {
+    let resolve!: (value: unknown) => void
+    refreshMocks.requestTokenRefresh.mockImplementation(() => new Promise(r => { resolve = r }))
+    const adapter = vi.fn(unauthorizedOnce())
+    const pending = expect(api.get('/repair-orders', { adapter })).rejects.toBeTruthy()
+    await vi.waitFor(() => expect(refreshMocks.requestTokenRefresh).toHaveBeenCalledTimes(1))
+    useAuthStore.getState().login('new-user-token', 'new-user-refresh', { id: 'u2', role: 'garage_owner', tenant_id: 't2', is_active: true } as never)
+    resolve({ access_token: 'old-result', refresh_token: 'old-refresh' })
+    await pending
+    expect(adapter).toHaveBeenCalledTimes(1)
+    expect(useAuthStore.getState().token).toBe('new-user-token')
+    expect(window.location.href).toBe('')
+  })
+
 })

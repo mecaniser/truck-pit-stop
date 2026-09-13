@@ -48,4 +48,15 @@ describe('DriverLoginPage', () => {
     expect(screen.getByRole('alert')).toHaveTextContent(/couldn't complete sign-in/i)
     expect(screen.getByRole('link', { name: 'Continue to Driver Portal' })).toHaveAttribute('href', expect.stringContaining('tenant_id=tenant-1'))
   })
+  it.each(['session_expired', 'workos_session_expired'])('explains %s without claiming inactivity', (reason) => {
+    renderDriverLogin('/driver/login?reason=' + reason)
+    expect(screen.getByRole('alert')).toHaveTextContent('Your session expired. Sign in again to continue.')
+    expect(screen.getByRole('alert')).not.toHaveTextContent(/inactivity|Driver Portal access/i)
+  })
+
+  it('explains a session ending without inventing an expiry cause', () => {
+    renderDriverLogin('/driver/login?reason=session_ended')
+    expect(screen.getByRole('alert')).toHaveTextContent('Your session ended. Sign in again to continue.')
+  })
+
 })
