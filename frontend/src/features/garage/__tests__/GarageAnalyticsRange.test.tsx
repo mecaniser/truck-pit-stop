@@ -40,7 +40,7 @@ describe('Analytics report date contract', () => {
     expect(screen.queryByText(/Cash on hand/i)).not.toBeInTheDocument()
     await userEvent.click(label)
     expect(details.open).toBe(true)
-    expect(screen.getByRole('list', { name: 'Cash receipts' })).toHaveTextContent('Example Logistics')
+    expect(screen.getByRole('list', { name: 'Cash receipts by customer' })).toHaveTextContent('Example Logistics')
     expect(screen.getByText('PAY-001 · INV-001')).toBeInTheDocument()
     expect(screen.getByText('Mar 1, 2024 UTC')).toHaveAttribute('datetime', '2024-03-01T18:00:00Z')
     await userEvent.click(label)

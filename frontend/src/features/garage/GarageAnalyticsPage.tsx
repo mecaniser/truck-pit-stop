@@ -13,6 +13,7 @@ import {
 } from '../analytics/ChartKit'
 import { TAB_ACCENT } from '../analytics/chartTheme'
 import ReportingDatePicker from './ReportingDatePicker'
+import CashReceiptsByCustomer, { type CashReceipt } from './CashReceiptsByCustomer'
 import { readReportRange, type ReportRange } from './reportRange'
 
 // ============ SHARED TYPES ============
@@ -63,14 +64,7 @@ interface ReportsSalesResponse {
   }
   rows: SalesGroupRow[]
   cash_received?: string
-  cash_receipts?: {
-    payment_id: string
-    payment_number: string
-    invoice_number: string
-    customer_name: string
-    received_at: string
-    amount: string
-  }[]
+  cash_receipts?: CashReceipt[]
 }
 
 interface FeeRow {
@@ -498,18 +492,7 @@ function SalesTab({ range }: { range: ReportRange }) {
           ) : data.cash_receipts.length === 0 ? (
             <p className="text-sm text-white/50">No cash receipts in this date range.</p>
           ) : (
-            <ul className="divide-y divide-white/[0.06]" aria-label="Cash receipts">
-              {data.cash_receipts.map(receipt => (
-                <li key={receipt.payment_id} className="flex items-start justify-between gap-3 py-3 first:pt-0 last:pb-0">
-                  <div className="min-w-0 text-sm">
-                    <p className="font-medium text-white/85 break-words">{receipt.customer_name}</p>
-                    <p className="text-white/55 break-words">{receipt.payment_number} · {receipt.invoice_number}</p>
-                    <time className="text-xs text-white/50" dateTime={receipt.received_at}>{new Date(receipt.received_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' })} UTC</time>
-                  </div>
-                  <span className="shrink-0 text-sm font-medium tabular-nums text-white/85">{fmtMoney(receipt.amount)}</span>
-                </li>
-              ))}
-            </ul>
+            <CashReceiptsByCustomer receipts={data.cash_receipts} />
           )}
         </div>
       </details>

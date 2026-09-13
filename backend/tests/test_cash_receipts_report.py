@@ -14,8 +14,8 @@ def receipt(amount, company="Cash customer"):
     return (
         SimpleNamespace(id=uuid4(), payment_number="PAY-1", amount=Decimal(amount),
                         created_at=datetime(2026, 9, 11, tzinfo=timezone.utc)),
-        SimpleNamespace(invoice_number="INV-1"),
-        SimpleNamespace(company_name=company, first_name="Jane", last_name="Doe"),
+        SimpleNamespace(id=uuid4(), invoice_number="INV-1"),
+        SimpleNamespace(id=uuid4(), company_name=company, first_name="Jane", last_name="Doe"),
     )
 
 
@@ -52,3 +52,5 @@ async def test_cash_sum_uses_receipt_amounts_and_fallback_customer_name():
     assert rows[0].payment_id == records[0][0].id
     assert rows[0].received_at == records[0][0].created_at
     assert rows[0].invoice_number == "INV-1"
+    assert rows[0].customer_id == records[0][2].id
+    assert rows[0].invoice_id == records[0][1].id

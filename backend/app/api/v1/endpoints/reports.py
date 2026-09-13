@@ -338,6 +338,8 @@ class SalesGroupRow(BaseModel):
 
 
 class CashReceiptRow(BaseModel):
+    customer_id: UUID
+    invoice_id: UUID
     payment_id: UUID
     payment_number: str
     invoice_number: str
@@ -366,6 +368,7 @@ async def cash_receipts_for_range(db, tenant_id, rng):
         .order_by(Payment.created_at.desc(), Payment.id)
     )
     rows = [CashReceiptRow(
+        customer_id=customer.id, invoice_id=invoice.id,
         payment_id=payment.id, payment_number=payment.payment_number,
         invoice_number=invoice.invoice_number,
         customer_name=customer.company_name or f"{customer.first_name} {customer.last_name}".strip(),
