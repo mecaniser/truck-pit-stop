@@ -1,3 +1,4 @@
+from app.services.cash_receipt_service import CashReceipt, load_cash_receipt
 from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Literal, Optional
@@ -121,6 +122,7 @@ class GuestSettlementConfirmRequest(PaymentAttemptConfirm):
 
 
 class ResolveInvoiceLinkResponse(BaseModel):
+    cash_receipt: Optional[CashReceipt] = None
     invoice_id: str
     invoice_number: str
     order_number: str
@@ -441,6 +443,7 @@ async def resolve_invoice_link(
     from app.services.invoice_settlement_service import invoice_money_snapshot
     _zelle_amount = invoice_money_snapshot(invoice)[0]
     return ResolveInvoiceLinkResponse(
+        cash_receipt=await load_cash_receipt(db, invoice),
         invoice_id=str(invoice.id),
         invoice_number=invoice.invoice_number,
         order_number=order.order_number,
@@ -1197,7 +1200,7 @@ async def download_invoice_pdf_by_token(
         invoice=invoice, order=order, customer=customer,
         vehicle=vehicle, tenant=tenant,
         labor_items=labor_items, parts_items=parts_items,
-        invoice_access_url=None,
+        invoice_access_url=None, cash_receipt=await load_cash_receipt(db, invoice),
     )
 
     filename = f"Invoice-{invoice.invoice_number}.pdf"

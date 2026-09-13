@@ -1,3 +1,4 @@
+from app.services.cash_receipt_service import load_cash_receipt, receipt_invoice_view
 from decimal import Decimal
 from typing import Optional
 from app.services.invoice_charge_state import effective_tax_exempt
@@ -71,6 +72,9 @@ async def send_invoice_payment_confirmation_email(
     if not customer.email:
         return
 
+    cash_receipt = await load_cash_receipt(db, invoice)
+    if cash_receipt:
+        invoice = receipt_invoice_view(invoice, cash_receipt)
     shop_name = tenant.name if tenant else "Your Shop"
     shop_phone = tenant.phone if tenant else ""
     shop_email_addr = tenant.email if tenant else ""
@@ -131,7 +135,7 @@ async def send_invoice_payment_confirmation_email(
         items_html += section_header_html("Fees")
     if shop_supplies > 0:
         items_html += f'<tr><td style="padding:6px 8px;color:#374151;border-bottom:1px solid #f3f4f6;">Shop Supplies</td><td style="padding:6px 8px;text-align:right;border-bottom:1px solid #f3f4f6;"></td><td style="padding:6px 8px;text-align:right;border-bottom:1px solid #f3f4f6;"></td><td style="padding:6px 8px;color:#1f2937;font-weight:600;text-align:right;border-bottom:1px solid #f3f4f6;">${shop_supplies:,.2f}</td></tr>'
-    if service_fee > 0:
+    if service_fee > 0 or cash_receipt:
         items_html += f'<tr><td style="padding:6px 8px;color:#374151;border-bottom:1px solid #f3f4f6;">Processing Fee</td><td style="padding:6px 8px;text-align:right;border-bottom:1px solid #f3f4f6;"></td><td style="padding:6px 8px;text-align:right;border-bottom:1px solid #f3f4f6;"></td><td style="padding:6px 8px;color:#1f2937;font-weight:600;text-align:right;border-bottom:1px solid #f3f4f6;">${service_fee:,.2f}</td></tr>'
 
     discount = Decimal(str(invoice.discount_amount or 0))
@@ -173,7 +177,7 @@ async def send_invoice_payment_confirmation_email(
         <td style="vertical-align:top;text-align:right;">
           <p style="margin:0 0 4px 0;font-size:12px;color:#6b7280;"><b>Order #:</b> {order.order_number}</p>
           <p style="margin:0;font-size:22px;font-weight:700;color:#16a34a;">${total:,.2f}</p>
-          <p style="margin:0;font-size:11px;color:#6b7280;">Amount Paid</p>
+          <p style="margin:0;font-size:11px;color:#6b7280;">{'Amount paid — cash' if cash_receipt else 'Invoice total (issued)'}</p>
         </td>
       </tr>
     </table>
@@ -199,9 +203,9 @@ async def send_invoice_payment_confirmation_email(
     <table width="100%" cellpadding="0" cellspacing="0">
       <tr><td colspan="3" style="padding:4px 8px;text-align:right;color:#6b7280;">Subtotal</td><td style="padding:4px 8px;text-align:right;color:#374151;">${subtotal:,.2f}</td></tr>
       {discount_row}
-      <tr><td colspan="3" style="padding:4px 8px;text-align:right;color:#6b7280;">{'Tax (exempt)' if effective_tax_exempt(invoice) else 'Tax'}</td><td style="padding:4px 8px;text-align:right;color:#374151;">${tax:,.2f}</td></tr>
+      <tr><td colspan="3" style="padding:4px 8px;text-align:right;color:#6b7280;">{'Sales tax (not charged)' if cash_receipt and tax == 0 else ('Tax (exempt)' if effective_tax_exempt(invoice) else 'Tax')}</td><td style="padding:4px 8px;text-align:right;color:#374151;">${tax:,.2f}</td></tr>
       <tr style="background:#16a34a;">
-        <td colspan="3" style="padding:10px 8px;text-align:right;color:#fff;font-weight:700;font-size:15px;">TOTAL PAID</td>
+        <td colspan="3" style="padding:10px 8px;text-align:right;color:#fff;font-weight:700;font-size:15px;">{'TOTAL PAID — CASH' if cash_receipt else 'INVOICE TOTAL (ISSUED)'}</td>
         <td style="padding:10px 8px;text-align:right;color:#fff;font-weight:700;font-size:15px;">${total:,.2f}</td>
       </tr>
     </table>
@@ -263,6 +267,7 @@ async def send_invoice_payment_confirmation_email(
             parts_total=snapshot_parts_total,
             shop_supplies_amount=shop_supplies,
             service_fee_amount=service_fee,
+            cash_receipt=bool(cash_receipt),
             subtotal=subtotal,
             tax_amount=tax,
             tax_rate=tax_rate,
