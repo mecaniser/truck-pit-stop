@@ -1,6 +1,8 @@
 """Invoice PDF generation using ReportLab."""
 from __future__ import annotations
 
+from app.core.phone import format_phone_display
+
 import urllib.request
 from decimal import Decimal
 from io import BytesIO
@@ -142,7 +144,7 @@ def _make_page_handler(
             canvas.drawRightString(info_x, text_y, shop_email)
             text_y -= 11
         if shop_phone:
-            canvas.drawRightString(info_x, text_y, shop_phone)
+            canvas.drawRightString(info_x, text_y, format_phone_display(shop_phone))
 
         # ── Divider line (below the tallest header element) ─────────────────
         div_y = y_top - 120
@@ -240,8 +242,9 @@ def generate_invoice_pdf(
         invoice_date=invoice_date,
     )
 
-    # topMargin must clear the canvas header (logo ~0.6in + shop name + 3 text lines ≈ 1.7in total)
-    TOP_MARGIN = 1.85 * inch
+    # Canvas divider is MARGIN + 120 points below the page top. Start
+    # the body below it, with 12 points of clear space on every page.
+    TOP_MARGIN = MARGIN + 120 + 12
     BOT_MARGIN = 0.6 * inch
     doc = BaseDocTemplate(
         buf,
@@ -267,7 +270,7 @@ def generate_invoice_pdf(
     if customer_email:
         bill_rows.append(_p(customer_email, S_SMALL))
     if customer_phone:
-        bill_rows.append(_p(customer_phone, S_SMALL))
+        bill_rows.append(_p(format_phone_display(customer_phone), S_SMALL))
 
     info_rows = [
         [_p("Invoice Date", S_LABEL), _p(invoice_date, S_BOLD)],
@@ -531,7 +534,7 @@ def generate_invoice_pdf(
         if zelle_email:
             zelle_parts.append(zelle_email)
         if zelle_phone:
-            zelle_parts.append(zelle_phone)
+            zelle_parts.append(format_phone_display(zelle_phone))
         payment_items.append(_p("  ·  ".join(zelle_parts), _style("zelle", fontSize=8, textColor=C_DARK, leading=12)))
 
     if payment_items:
