@@ -71,3 +71,9 @@ is pushed as draft [PR396](https://github.com/mecaniser/truck-pit-stop/pull/396)
 Protected CI had no checks reported at draft creation. Merge/deployment and actual
 authenticated provider/runtime acceptance remain pending. Disposable test Redis
 was stopped after completed checks; existing containers were preserved.
+
+CI follow-up: PR was reconciled with reporting-only main changes (board conflict
+resolved retaining both tasks). Initial frontend CI rejected no-this-alias in a
+new BroadcastChannel test fixture. Fixed in `88ca4928`; affected test and explicit
+ESLint over every changed frontend source/test passed. No application change.
+Protected CI rerun pending; earlier backend and migration checks passed.
