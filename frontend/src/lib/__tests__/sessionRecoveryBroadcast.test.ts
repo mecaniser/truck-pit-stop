@@ -7,10 +7,10 @@ vi.mock('../authRefresh', () => ({ requestWorkOSSessionRefresh: vi.fn().mockReje
 afterEach(() => { stopSessionKeepAlive(); vi.unstubAllGlobals(); vi.useRealTimers() })
 it('clears the recovery notice when a sibling renews the shared session', async () => {
   vi.useFakeTimers()
-  let channel!: { onmessage: ((event: MessageEvent) => void) | null }
+  const channels: FakeChannel[] = []
   class FakeChannel {
     onmessage: ((event: MessageEvent) => void) | null = null
-    constructor() { channel = this }
+    constructor() { channels.push(this) }
     postMessage() {}
   }
   vi.stubGlobal('BroadcastChannel', FakeChannel)
@@ -18,7 +18,7 @@ it('clears the recovery notice when a sibling renews the shared session', async 
   startSessionKeepAlive()
   await renewSessionNow()
   expect(useSessionRecovery.getState().recovering).toBe(true)
-  channel.onmessage?.({ data: { type: 'renewed', at: Date.now() } } as MessageEvent)
+  channels[0].onmessage?.({ data: { type: 'renewed', at: Date.now() } } as MessageEvent)
   expect(useSessionRecovery.getState().recovering).toBe(false)
   expect(useAuthStore.getState().isAuthenticated).toBe(true)
 })
