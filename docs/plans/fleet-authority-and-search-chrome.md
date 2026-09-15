@@ -222,14 +222,14 @@ Written after the CSS half shipped and the operator exercised the real board.
 ### The blocker cleared itself
 
 Zero trucks in production now reach a board through the house-account branch
-alone. `77C-603` was linked to Elis Logistics and renamed to `603`. Section B's
+alone. The one affected truck was linked to an operating authority. Section B's
 sequencing concern is resolved: the visibility change can ship without anything
 disappearing.
 
 ### A truck can sit on a board it is not owned by, and nothing says so
 
-`d3bed256…` is owned by **House Account** and carries an operating authority of
-**Elis Logistics**. Both are true at once, by design — but no surface shows both,
+A truck can be owned by the house account while a real carrier holds operating
+authority over it. Both are true at once, by design — but no surface shows both,
 so the disagreement is invisible until it bites.
 
 It bites at `DELETE /customers/{customer_id}/vehicles/{vehicle_id}`, which
@@ -256,16 +256,18 @@ model.
 
 ### Two trucks now share the unit number `603`
 
-| id | VIN | Plate | Odometer | Owner | ROs |
-|---|---|---|---|---|---|
-| `51c800af…` | 4V4WC9EG**2**LN250022 | VW9328 | 589,745 | Elis Logistics | 15 |
-| `d3bed256…` | 4V4WC9EG**9**LN250022 | DD-4019A | 598,456 | House Account | 0 |
+Two records share a unit number. Their VINs differ only in the check digit,
+which looks like a duplicate — but the plates differ entirely and the odometers
+are thousands of miles apart, so they are two vehicles with a mistyped VIN, not
+one truck entered twice. **They must not be merged:** one carries a real service
+history and the other none, and a merge would fold that history into the wrong
+vehicle.
 
-Different plates and 8,711 miles apart, so these are two vehicles whose VINs
-differ only in the check digit — a typo, not a duplicate. **They must not be
-merged:** one carries 15 repair orders of history.
+(Identifiers deliberately omitted — this is production data and the repository
+may not stay private. Query the tenant for `unit_number` collisions to see the
+current pair.)
 
-Not a code change. Renaming `d3bed256…` back to something distinct is an
+Not a code change. Renaming the newer record back to something distinct is an
 operator action, listed here so the collision is not mistaken for a bug in the
 visibility work.
 
