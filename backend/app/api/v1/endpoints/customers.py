@@ -1362,8 +1362,31 @@ async def delete_customer_vehicle(
         )
     )
     vehicle = result.scalar_one_or_none()
-    
+
     if not vehicle:
+        # A truck can sit on one company's fleet board while another company
+        # owns it — membership and ownership are separate facts. Matching on
+        # customer_id alone then reports a truck that plainly exists as missing,
+        # and the operator concludes it was deleted. Say which it is.
+        owned_elsewhere = (await db.execute(
+            select(Vehicle, Customer.company_name)
+            .join(Customer, Customer.id == Vehicle.customer_id)
+            .where(
+                Vehicle.id == vehicle_id,
+                Vehicle.tenant_id == current_user.tenant_id,
+                Vehicle.deleted_at.is_(None),
+            )
+        )).first()
+        if owned_elsewhere:
+            other_vehicle, owner_name = owned_elsewhere
+            unit = other_vehicle.unit_number or "This truck"
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=(
+                    f"{unit} belongs to {owner_name or 'another customer'}, not to this "
+                    "customer. Remove it from its owner's profile, or change its owner first."
+                ),
+            )
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Vehicle not found",

@@ -115,3 +115,71 @@ async def test_list_customers(client, staff_token):
 async def test_unauthenticated_returns_401(client):
     r = await client.get(CUSTOMERS_URL)
     assert r.status_code in (401, 403)
+
+
+@pytest.mark.asyncio
+async def test_deleting_a_truck_another_customer_owns_names_the_owner(client, staff_token, db_session):
+    """A truck on one company's board can be owned by another.
+
+    Matching on customer_id alone answered "Vehicle not found" for a truck that
+    plainly exists, and the operator concluded it had been deleted. The error
+    now says who owns it and what to do instead.
+    """
+    from uuid import uuid4
+    from app.db.models.vehicle import Vehicle
+
+    token, tenant_id = staff_token
+
+    owner = Customer(
+        id=uuid4(), tenant_id=tenant_id, first_name="House", last_name="Account",
+        company_name="House Account", email=f"house-{uuid4().hex[:8]}@example.test",
+    )
+    other = Customer(
+        id=uuid4(), tenant_id=tenant_id, first_name="Elis", last_name="Logistics",
+        company_name="Elis Logistics", email=f"elis-{uuid4().hex[:8]}@example.test",
+    )
+    truck = Vehicle(
+        id=uuid4(), tenant_id=tenant_id, customer_id=owner.id,
+        make="Volvo", model="VNR", year=2020, unit_number="603",
+    )
+    db_session.add_all([owner, other, truck])
+    await db_session.commit()
+
+    # Deleting it from the company that does NOT own it.
+    r = await client.delete(
+        f"{CUSTOMERS_URL}/{other.id}/vehicles/{truck.id}",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert r.status_code == 404
+    detail = r.json()["detail"]
+    assert "House Account" in detail, detail
+    assert "not found" != detail.lower()
+    assert "603" in detail, detail
+
+    # From its real owner it still deletes.
+    r = await client.delete(
+        f"{CUSTOMERS_URL}/{owner.id}/vehicles/{truck.id}",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert r.status_code == 204
+
+
+@pytest.mark.asyncio
+async def test_deleting_a_truck_that_does_not_exist_still_says_not_found(client, staff_token, db_session):
+    """The owner-specific message must not swallow a genuine miss."""
+    from uuid import uuid4
+
+    token, tenant_id = staff_token
+    customer = Customer(
+        id=uuid4(), tenant_id=tenant_id, first_name="A", last_name="B",
+        company_name="Acme", email=f"acme-{uuid4().hex[:8]}@example.test",
+    )
+    db_session.add(customer)
+    await db_session.commit()
+
+    r = await client.delete(
+        f"{CUSTOMERS_URL}/{customer.id}/vehicles/{uuid4()}",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert r.status_code == 404
+    assert r.json()["detail"] == "Vehicle not found"

@@ -41,6 +41,20 @@ def _vehicle(tenant_id, fc_id, **kw):
     return Vehicle(**base)
 
 
+async def _join_fleet(db, tenant_id, fc_id, *vehicles):
+    """Put seeded trucks on the fleet board.
+
+    A truck is fleet-managed because a company answers for it, so a seeded
+    vehicle needs the membership a real one gets on creation. Without it the
+    board is empty and every fleet endpoint reports the truck as missing.
+    """
+    from app.services.vehicle_identity import ensure_fleet_membership
+    for vehicle in vehicles:
+        await ensure_fleet_membership(
+            db, tenant_id=tenant_id, vehicle_id=vehicle.id, fleet_customer_id=fc_id)
+    await db.commit()
+
+
 def _ro(tenant_id, fc_id, vehicle_id, status, **kw):
     base = dict(id=uuid4(), tenant_id=tenant_id, customer_id=fc_id, vehicle_id=vehicle_id,
                 order_number=f"RO-{uuid4().hex[:8]}", status=status, is_internal=True,
@@ -62,6 +76,7 @@ async def test_board_status_derivation(db_session):
     v_parts = _vehicle(tenant.id, fc.id, unit_number="R", mileage=100000, next_pm_miles=120000)
     db_session.add_all([v_active, v_pm, v_shop, v_parts])
     await db_session.commit()
+    await _join_fleet(db_session, tenant.id, fc.id, v_active, v_pm, v_shop, v_parts)
     db_session.add(_ro(tenant.id, fc.id, v_shop.id, RepairOrderStatus.IN_PROGRESS))
     db_session.add(_ro(tenant.id, fc.id, v_parts.id, RepairOrderStatus.IN_PROGRESS, hold_reason="awaiting_parts"))
     await db_session.commit()
@@ -85,6 +100,7 @@ async def test_board_stats(db_session):
     v2 = _vehicle(tenant.id, fc.id, unit_number="2", next_pm_miles=99000)  # overdue -> pm
     db_session.add_all([v1, v2])
     await db_session.commit()
+    await _join_fleet(db_session, tenant.id, fc.id, v1, v2)
     db_session.add(_ro(tenant.id, fc.id, v1.id, RepairOrderStatus.IN_PROGRESS))
     await db_session.commit()
 
@@ -102,6 +118,7 @@ async def test_truck_detail_history_and_spend(db_session):
                  driver_name="Marcus Reed", driver_phone="+17045551234")
     db_session.add(v)
     await db_session.commit()
+    await _join_fleet(db_session, tenant.id, v.customer_id, v)
     # two completed internal ROs (one PM, one repair) + one open
     db_session.add(_ro(tenant.id, fc.id, v.id, RepairOrderStatus.COMPLETED, is_pm=True,
                        total_cost=Decimal("500.00"), mileage_out=180000, description="PM service A"))
@@ -139,6 +156,7 @@ async def test_truck_detail_does_not_rescan_the_fleet_for_nearby_units(db_sessio
     )
     db_session.add(vehicle)
     await db_session.commit()
+    await _join_fleet(db_session, tenant.id, vehicle.customer_id, vehicle)
 
     async def fleet_scan_should_not_run(*_args, **_kwargs):
         raise AssertionError("truck detail must not scan the full fleet")
@@ -164,6 +182,7 @@ async def test_board_truck_from_legacy_internal_account_can_open_detail(db_sessi
     vehicle = _vehicle(tenant.id, legacy_fleet_customer.id, unit_number="LEGACY", next_pm_miles=120000)
     db_session.add_all([legacy_fleet_customer, vehicle])
     await db_session.commit()
+    await _join_fleet(db_session, tenant.id, legacy_fleet_customer.id, vehicle)
 
     board = await fleet.fleet_board(db=db_session, current_user=user)
     assert vehicle.id in {truck.id for truck in board.trucks}
@@ -178,6 +197,7 @@ async def test_schedule_pm_and_new_work_order(db_session):
     v = _vehicle(tenant.id, fc.id, unit_number="W", next_pm_miles=120000)
     db_session.add(v)
     await db_session.commit()
+    await _join_fleet(db_session, tenant.id, v.customer_id, v)
 
     from app.schemas.fleet import SchedulePMRequest
     res = await fleet.schedule_pm(vehicle_id=v.id, body=SchedulePMRequest(create_work_order=True),
@@ -223,6 +243,7 @@ async def test_pm_services_default_package_and_seeding(db_session):
     svc = Service(id=uuid4(), tenant_id=tenant.id, name="Oil change", duration_minutes=60)
     db_session.add_all([v, part, svc])
     await db_session.commit()
+    await _join_fleet(db_session, tenant.id, fc.id, v)
     db_session.add(ServicePart(id=uuid4(), tenant_id=tenant.id, service_id=svc.id,
                                inventory_id=part.id, quantity=2))
     await db_session.commit()
@@ -299,6 +320,7 @@ async def test_schedule_pm_rejects_invalid_bundle_before_schedule_or_order_mutat
     )
     db_session.add_all([vehicle, inventory, service])
     await db_session.commit()
+    await _join_fleet(db_session, tenant.id, fc.id, vehicle)
     db_session.add(
         ServicePart(
             id=uuid4(),
@@ -369,6 +391,7 @@ async def test_set_wo_pm_services_on_existing_draft(db_session):
     s2 = Service(id=uuid4(), tenant_id=tenant.id, name="Air filter", duration_minutes=90)
     db_session.add_all([v, s1, s2])
     await db_session.commit()
+    await _join_fleet(db_session, tenant.id, fc.id, v)
 
     # PM work order created with NO services (empty default package).
     res = await fleet.schedule_pm(
@@ -440,6 +463,7 @@ async def test_delete_pm_work_order_with_services(db_session):
     svc = Service(id=uuid4(), tenant_id=tenant.id, name="Oil change", duration_minutes=60)
     db_session.add_all([v, svc])
     await db_session.commit()
+    await _join_fleet(db_session, tenant.id, fc.id, v)
 
     res = await fleet.schedule_pm(
         vehicle_id=v.id,
@@ -484,6 +508,7 @@ async def test_ro_detail_includes_pm_services(db_session):
     svc = Service(id=uuid4(), tenant_id=tenant.id, name="PM Level A", duration_minutes=60)
     db_session.add_all([v, part, svc])
     await db_session.commit()
+    await _join_fleet(db_session, tenant.id, fc.id, v)
     db_session.add(ServicePart(id=uuid4(), tenant_id=tenant.id, service_id=svc.id,
                                inventory_id=part.id, quantity=2))
     await db_session.commit()
