@@ -199,7 +199,13 @@
 .fleet-root .authority-picker{position:relative;}
 .fleet-root .authority-combobox{height:46px;display:flex;align-items:center;gap:10px;padding:0 12px;border:1px solid var(--line);border-radius:10px;background:#0f161e;color:var(--muted-2);transition:border-color 140ms ease,box-shadow 140ms ease,background-color 140ms ease;}
 .fleet-root .authority-combobox.is-open{border-color:var(--st-shop);box-shadow:0 0 0 3px rgba(66,200,255,.12);}
-.fleet-root .dsec .authority-combobox input,.fleet-root .dsec .authority-combobox input:focus{width:100%;min-width:0;height:100%;padding:0;border:0;border-radius:0;outline:0;box-shadow:none;background:transparent;color:var(--text);font:inherit;font-size:14px;font-weight:600;}
+/* The :not() guards are load-bearing, not noise. The generic field rule below
+   (".dsec input:not([type=radio]):not([type=checkbox])") carries them too, and
+   each :not() contributes its argument's specificity — so a reset written
+   without them scores lower and never applies, leaving this input its own
+   bordered box inside the box it is supposed to sit invisibly within.
+   Same reason .driver-profile-search carries them. */
+.fleet-root .dsec .authority-combobox input:not([type="radio"]):not([type="checkbox"]),.fleet-root .dsec .authority-combobox input:not([type="radio"]):not([type="checkbox"]):focus{width:100%;min-width:0;height:100%;padding:0;border:0;border-radius:0;outline:0;box-shadow:none;background:transparent;color:var(--text);font:inherit;font-size:14px;font-weight:600;}
 .fleet-root .authority-combobox input::placeholder{color:var(--muted-3);font-weight:400;}
 .fleet-root .authority-combobox>svg{flex-shrink:0;}
 .fleet-root .authority-combobox .authority-picker-default{flex-shrink:0;}
@@ -821,9 +827,17 @@
 .fleet-root .vin-autofill-label{display:flex;align-items:baseline;justify-content:space-between;gap:12px;}
 .fleet-root .vin-autofill-label .id-k{margin:0 !important;}
 .fleet-root .vin-autofill-label>span:last-child{color:var(--muted-3);font-size:11.5px;}
-.fleet-root .vin-autofill-control{height:48px;display:flex;align-items:stretch;border-bottom:1px solid var(--line-2);background:transparent;transition:border-color 140ms ease;}
+/* The bottom rule IS the field, so the text needs room above it — flush
+   against the line the input reads as sitting on top of a divider. */
+.fleet-root .vin-autofill-control{height:48px;display:flex;align-items:stretch;padding-bottom:6px;border-bottom:1px solid var(--line-2);background:transparent;transition:border-color 140ms ease;}
 .fleet-root .vin-autofill-control:focus-within{border-bottom-color:var(--yellow);}
-.fleet-root .dsec .vin-autofill-control input,.fleet-root .dsec .vin-autofill-control input:focus{height:100%;padding:0 6px 0 0;border:0;border-radius:0;box-shadow:none;background:transparent;color:var(--text);font-family:var(--mono);font-size:14px;letter-spacing:.02em;}
+/* The :not() guards are load-bearing, not noise. The generic field rule below
+   (".dsec input:not([type=radio]):not([type=checkbox])") carries them too, and
+   each :not() contributes its argument's specificity — so a reset written
+   without them scores lower and never applies, leaving this input its own
+   bordered box inside the box it is supposed to sit invisibly within.
+   Same reason .driver-profile-search carries them. */
+.fleet-root .dsec .vin-autofill-control input:not([type="radio"]):not([type="checkbox"]),.fleet-root .dsec .vin-autofill-control input:not([type="radio"]):not([type="checkbox"]):focus{height:100%;padding:0 6px 0 0;border:0;border-radius:0;box-shadow:none;background:transparent;color:var(--text);font-family:var(--mono);font-size:14px;letter-spacing:.02em;}
 .fleet-root .vin-decode{min-width:84px;margin-left:12px;padding:0;border:0;background:transparent;color:var(--yellow);font:inherit;font-size:13px;font-weight:800;letter-spacing:.02em;}
 .fleet-root .vin-decode:disabled{color:var(--muted-3);cursor:default;}
 .fleet-root .vin-decode:not(:disabled):active{transform:scale(.97);}

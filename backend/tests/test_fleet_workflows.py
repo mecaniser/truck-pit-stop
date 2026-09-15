@@ -43,6 +43,7 @@ from app.schemas.fleet import (
     RecognizePMRequest,
 )
 from app.services.internal_fleet import ensure_internal_fleet_customer
+from app.services.vehicle_identity import ensure_fleet_membership
 
 
 def _upload_file(name: str, content_type: str, data: bytes) -> UploadFile:
@@ -72,6 +73,18 @@ async def _seed_fleet(db_session, *, role=UserRole.FLEET_MANAGER):
         role=role, is_active=True, is_verified=True,
     )
     db_session.add_all([vehicle, user])
+    await db_session.commit()
+
+    # A truck is fleet-managed because a company answers for it. Seeding one
+    # without a membership describes a state that cannot occur through any
+    # entry point — adding a truck and linking an existing one both create one —
+    # and every fleet endpoint refuses it.
+    await ensure_fleet_membership(
+        db_session,
+        tenant_id=tenant.id,
+        vehicle_id=vehicle.id,
+        fleet_customer_id=fleet_customer.id,
+    )
     await db_session.commit()
     return tenant, vehicle, user
 
@@ -1562,3 +1575,95 @@ async def test_incident_does_not_fold_into_a_pm(db_session):
     assert len(ros) == 2, "the incident should get its own order beside the PM"
     pm = next(r for r in ros if r.is_pm)
     assert "Cracked mirror" not in (pm.description or "")
+
+
+@pytest.mark.asyncio
+async def test_a_truck_leaves_the_board_when_its_membership_ends(db_session):
+    """Removing a truck from a fleet takes it off the board.
+
+    It used to not, for the shop's own trucks: ownership by the house account
+    was a second, independent reason to be on a board, so ending the membership
+    reported success and changed nothing visible.
+    """
+    from app.services.vehicle_identity import end_fleet_membership
+
+    tenant, vehicle, user = await _seed_fleet(db_session)
+    fleet_customer = await ensure_internal_fleet_customer(db_session, tenant.id)
+
+    board = await fleet.fleet_board(db=db_session, current_user=user)
+    assert any(t.id == vehicle.id for t in board.trucks)
+
+    await end_fleet_membership(
+        db_session,
+        tenant_id=tenant.id,
+        vehicle_id=vehicle.id,
+        fleet_customer_id=fleet_customer.id,
+        reason="sold",
+        ended_by_user_id=user.id,
+    )
+    await db_session.commit()
+
+    board = await fleet.fleet_board(db=db_session, current_user=user)
+    assert not any(t.id == vehicle.id for t in board.trucks), (
+        "the truck is still on the board after its membership ended"
+    )
+
+
+@pytest.mark.asyncio
+async def test_a_truck_with_no_authority_is_not_fleet_managed(db_session):
+    """No company answering for it means no fleet operations on it.
+
+    Not merely hidden: inspections, incidents and PM all run through the same
+    scope, so a truck nobody has authority over is a truck in the customer list,
+    serviced through the ordinary repair-order flow.
+    """
+    from app.services.vehicle_identity import end_fleet_membership
+
+    tenant, vehicle, user = await _seed_fleet(db_session)
+    fleet_customer = await ensure_internal_fleet_customer(db_session, tenant.id)
+    await end_fleet_membership(
+        db_session, tenant_id=tenant.id, vehicle_id=vehicle.id,
+        fleet_customer_id=fleet_customer.id, reason="sold",
+        ended_by_user_id=user.id,
+    )
+    await db_session.commit()
+
+    with pytest.raises(HTTPException) as exc:
+        await fleet.create_inspection(
+            body=InspectionCreate(vehicle_id=vehicle.id),
+            db=db_session, current_user=user)
+    assert exc.value.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_a_removed_truck_can_be_found_and_linked_again(db_session):
+    """Removal must be reversible, or it is a trap.
+
+    The candidate search deliberately scopes to the tenant rather than to fleet
+    membership, so a truck taken off a board stays findable under "Link existing
+    truck" and can rejoin one.
+    """
+    from app.services.vehicle_identity import end_fleet_membership
+    from app.schemas.fleet import FleetMembershipCreate
+
+    tenant, vehicle, user = await _seed_fleet(db_session)
+    fleet_customer = await ensure_internal_fleet_customer(db_session, tenant.id)
+    await end_fleet_membership(
+        db_session, tenant_id=tenant.id, vehicle_id=vehicle.id,
+        fleet_customer_id=fleet_customer.id, reason="sold",
+        ended_by_user_id=user.id,
+    )
+    await db_session.commit()
+
+    candidates = await fleet.list_fleet_vehicle_candidates(
+        q="T-12", limit=50, db=db_session, current_user=user)
+    assert any(c.id == vehicle.id for c in candidates), (
+        "a removed truck must stay findable, or removal cannot be undone"
+    )
+
+    await fleet.add_fleet_membership(
+        body=FleetMembershipCreate(vehicle_id=vehicle.id,
+                                   fleet_customer_id=fleet_customer.id),
+        db=db_session, current_user=user)
+    board = await fleet.fleet_board(db=db_session, current_user=user)
+    assert any(t.id == vehicle.id for t in board.trucks)
