@@ -46,12 +46,15 @@ async def test_fleet_reference_confirmation_serializes_and_db_enforces_identity(
             first = await first_db.get(InvoicePaymentAttempt, attempt_ids[0])
             second = await second_db.get(InvoicePaymentAttempt, attempt_ids[1])
             await confirm(first_db, a, first)
-            task = asyncio.create_task(confirm(second_db, b, second))
-            await asyncio.sleep(0.05)
-            assert not task.done(), "The shop's instrument receipt confirmations must serialize"
+            with pytest.raises(SettlementDomainError) as busy:
+                await asyncio.wait_for(confirm(second_db, b, second), timeout=2)
+            assert busy.value.code == "invoice_busy" and busy.value.retryable
+            await second_db.rollback()
             await first_db.commit()
+            b = await load(second_db, ids[1])
+            second = await second_db.get(InvoicePaymentAttempt, attempt_ids[1])
             with pytest.raises(SettlementDomainError, match="already been recorded"):
-                await task
+                await confirm(second_db, b, second)
             await second_db.rollback()
         async with sessions() as check:
             first = await check.get(InvoicePaymentAttempt, attempt_ids[0])
@@ -81,6 +84,7 @@ async def test_fleet_evidence_database_immutable_and_populated_downgrade_refused
                 await db.execute(text("UPDATE invoice_payment_attempts SET manual_evidence=manual_evidence::jsonb || '{\"reference_number\":\"changed\"}'::jsonb WHERE id=:id"), {"id": attempt_id})
             await db.rollback()
         async with engine.begin() as connection:
+            original_revision = await connection.scalar(text("SELECT version_num FROM alembic_version"))
             def downgrade(sync):
                 from pathlib import Path
                 import importlib.util
@@ -92,6 +96,6 @@ async def test_fleet_evidence_database_immutable_and_populated_downgrade_refused
                     migration.downgrade()
             with pytest.raises(RuntimeError, match="must be preserved"):
                 await connection.run_sync(downgrade)
-            assert await connection.scalar(text("SELECT version_num FROM alembic_version")) == "146_fleet_payment_rail"
+            assert await connection.scalar(text("SELECT version_num FROM alembic_version")) == original_revision
     finally:
         await engine.dispose()

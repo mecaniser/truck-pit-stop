@@ -19,6 +19,8 @@ def _r():
 
 async def gross_credit_allocations(db, *, attempt, tenant, connection, ensure_invoices=True):
     """Rebuild all live applications from this receipt's immutable credit tree."""
+    from app.services.financial_transaction_lock import lock_tenant_financials
+    await lock_tenant_financials(db, tenant.id)
     r = _r()
     origins = (await db.execute(select(CustomerCreditEntry).join(
         PaymentOverpayment, CustomerCreditEntry.origin_overpayment_id == PaymentOverpayment.id,
@@ -97,6 +99,8 @@ async def gross_credit_allocations(db, *, attempt, tenant, connection, ensure_in
 
 
 async def sync_gross_credit_application(db, envelope, settlement):
+    from app.services.financial_transaction_lock import lock_tenant_financials
+    await lock_tenant_financials(db, envelope.tenant.id)
     from app.services.db048_qbo_gross_accounting import _payment_state, _attempt_changes, _assert_open_period
     r = _r()
     attempt = envelope.source_attempt

@@ -1182,6 +1182,8 @@ async def update_invoice(
     current_user: User = Depends(get_current_active_user),
 ):
     """Update invoice due date or notes"""
+    from app.services.financial_transaction_lock import lock_tenant_financials
+    await lock_tenant_financials(db, current_user.tenant_id)
     _require_staff(current_user)
     
     result = await db.execute(select(Invoice).where(Invoice.id == invoice_id))
@@ -1217,6 +1219,8 @@ async def void_invoice(
     current_user: User = Depends(get_current_active_user),
 ):
     """Void an unpaid invoice and reopen its repair order for revision."""
+    from app.services.financial_transaction_lock import lock_tenant_financials
+    await lock_tenant_financials(db, current_user.tenant_id)
     if current_user.role not in (UserRole.GARAGE_OWNER, UserRole.GARAGE_ADMIN):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,

@@ -371,6 +371,8 @@ async def finalize_stripe_invoice_payment(
     This function is intentionally shared by browser confirmation and Stripe
     webhooks so the webhook is a real backup path rather than a log-only path.
     """
+    from app.services.financial_transaction_lock import lock_tenant_financials
+    await lock_tenant_financials(db, invoice.tenant_id)
     metadata = _payment_intent_metadata(payment_intent)
     payment_intent_id = _payment_intent_get(payment_intent, "id")
     if not payment_intent_id:

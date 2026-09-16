@@ -577,6 +577,21 @@ async def test_credit_consent_channel_is_server_bound_to_principal(db_session, m
         note="Customer approved by phone", idempotency_key="staff-phone-consent",
     )
     assert credit.consent_channel == "phone"
+    # Transport retries replay; a different key cannot spend the same excess twice.
+    consent = dict(
+        overpayment_id=confirmed.overpayment.id, tenant_id=tenant.id, actor=owner,
+        subject_customer_id=customer.id, channel="phone", note="Customer approved by phone",
+    )
+    assert await record_credit_consent(
+        db_session, **consent, idempotency_key="staff-phone-consent",
+    ) is credit
+    with pytest.raises(SettlementDomainError) as duplicate:
+        await record_credit_consent(db_session, **consent, idempotency_key="second-credit-key")
+    assert duplicate.value.code == "overpayment_already_resolved"
+    assert await db_session.scalar(select(func.count(CustomerCreditEntry.id)).where(
+        CustomerCreditEntry.origin_overpayment_id == confirmed.overpayment.id,
+        CustomerCreditEntry.entry_type == "issued",
+    )) == 1
 
 
 @pytest.mark.asyncio

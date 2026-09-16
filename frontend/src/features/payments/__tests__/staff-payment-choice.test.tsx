@@ -104,7 +104,7 @@ describe('Staff payment choice remains independent of historical export status',
       cash_unavailable_reason: 'Previous export attempts have an unverified outcome. Accounting review is required before cash.',
     }
     show()
-    expect(screen.getByText('Payment is temporarily blocked')).toBeInTheDocument()
+    expect(screen.getByText('Payment unavailable')).toBeInTheDocument()
     expect(screen.getByText(fixture.summary!.allowed_actions.payment_unavailable_reason!)).toBeInTheDocument()
     expect(screen.queryByRole('radiogroup')).not.toBeInTheDocument()
     expect(screen.queryByRole('radio', { name: /^Cash/ })).not.toBeInTheDocument()
@@ -240,4 +240,17 @@ describe('Staff payment choice remains independent of historical export status',
     expect(paymentApi.confirmFullCashPayment.mock.calls[1][2]).toBe(firstKey)
     expect(screen.getByLabelText('Receipt note (optional)')).toBeDisabled()
   })
+  it('does not regress to a delayed older settlement query', () => {
+    const client = new QueryClient()
+    const ui = <QueryClientProvider client={client}><StaffSettlementDialog invoiceId="invoice-834" invoiceNumber="Invoice" open onClose={vi.fn()} /></QueryClientProvider>
+    const original = fixture.summary!
+    fixture.summary = { ...original, version: original.version + 2, state: 'paid', outstanding_balance: '0.00', allocatable_balance: '0.00', allowed_actions: { create_attempt: false, confirm_cash: false, rails: [] } }
+    const view = render(ui)
+    expect(screen.getByText('Paid in full')).toBeInTheDocument()
+    fixture.summary = original
+    view.rerender(<QueryClientProvider client={client}><StaffSettlementDialog invoiceId="invoice-834" invoiceNumber="Invoice updated" open onClose={vi.fn()} /></QueryClientProvider>)
+    expect(screen.getByText('Paid in full')).toBeInTheDocument()
+    expect(screen.queryByRole('radio', { name: /^Cash/ })).not.toBeInTheDocument()
+  })
+
 })

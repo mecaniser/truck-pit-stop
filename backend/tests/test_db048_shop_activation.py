@@ -2,7 +2,7 @@ import asyncio
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 import pytest
 from sqlalchemy import select
@@ -269,3 +269,55 @@ async def test_old_qbp_refund_cannot_cross_environment_after_provider_switch(db_
     assert exc.value.code == "quickbooks_activation_environment_mismatch"
     provider_call.assert_not_awaited()
     assert refund.state == "pending" and refund.provider_reference is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("provider", ["stripe_connect", "quickbooks_payments"])
+async def test_attempt_failure_during_provider_helper_commit_prevents_capture(db_session, monkeypatch, provider):
+    from app.api.v1.endpoints import invoice_settlements as endpoints
+    ctx, _activation, connection = await managed(db_session, monkeypatch, enabled=True, enrolled=True)
+    tenant, owner, customer, invoice, _ = ctx
+    if provider == "quickbooks_payments":
+        config = await db_session.scalar(select(TenantPaymentProviderConfiguration).where(
+            TenantPaymentProviderConfiguration.tenant_id == tenant.id))
+        values = {c.name: getattr(config, c.name) for c in config.__table__.columns
+            if c.name not in {"id", "created_at", "updated_at", "deleted_at"}}
+        config.is_active = False
+        config.deactivated_at = datetime.now(timezone.utc)
+        values.update(version=2, idempotency_key="qbp-race-config", is_active=True, deactivated_at=None,
+            selected_provider=provider, provider_account_snapshot=connection.realm_id)
+        db_session.add(TenantPaymentProviderConfiguration(**values))
+        connection.scopes = "com.intuit.quickbooks.accounting com.intuit.quickbooks.payment"
+        monkeypatch.setattr(settings, "QUICKBOOKS_PAYMENTS_ENVIRONMENT", "production")
+        monkeypatch.setattr(settings, "QUICKBOOKS_PAYMENTS_INVOICE_PAYMENTS_APPROVED", True)
+        monkeypatch.setattr(settings, "QUICKBOOKS_PAYMENTS_APPROVED_TENANT_IDS", str(tenant.id))
+    await db_session.flush()
+    creation = await create_attempt(db_session, invoice=invoice, tenant=tenant, customer_id=customer.id,
+        actor=owner, amount=Decimal("10"), rail="card", expected_settlement_version=1,
+        idempotency_key="helper-commit-race", source="staff", subject_type="staff", subject_id=owner.id)
+    expected_version = creation.attempt.version
+
+    async def commit_then_fail(*args, **kwargs):
+        await db_session.commit()
+        creation.attempt.state = "failed"
+        creation.attempt.version += 1
+        await db_session.commit()
+        return "cus_race"
+
+    if provider == "stripe_connect":
+        provider_call = MagicMock(side_effect=AssertionError("failed attempt must not create a Stripe intent"))
+        monkeypatch.setattr(endpoints, "ensure_connected_stripe_customer", commit_then_fail)
+        monkeypatch.setattr(endpoints.stripe.PaymentIntent, "create", provider_call)
+        operation = endpoints._create_stripe_intent(db_session, attempt=creation.attempt,
+            tenant=tenant, invoice=invoice, customer=customer, idempotency_key="race")
+    else:
+        provider_call = AsyncMock(side_effect=AssertionError("failed attempt must not create a QBP charge"))
+        monkeypatch.setattr(endpoints, "_refresh_connection_if_needed", commit_then_fail)
+        monkeypatch.setattr(endpoints, "create_quickbooks_charge", provider_call)
+        operation = endpoints.charge_quickbooks_settlement_attempt(db_session, attempt=creation.attempt,
+            tenant=tenant, invoice=invoice, actor=owner, payment_token="opaque",
+            expected_attempt_version=expected_version, idempotency_key="race")
+    with pytest.raises(SettlementDomainError) as exc:
+        await operation
+    assert exc.value.code == "attempt_transition_conflict"
+    provider_call.assert_not_called()

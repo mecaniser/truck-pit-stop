@@ -393,6 +393,8 @@ async def create_payment_intent_for_invoice(
     current_user: User = Depends(get_current_active_user),
 ):
     """Create a PaymentIntent for an invoice"""
+    from app.services.financial_transaction_lock import lock_tenant_financials
+    await lock_tenant_financials(db, current_user.tenant_id)
     if current_user.role != UserRole.CUSTOMER or not current_user.customer_id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only customers can pay invoices")
     
@@ -478,6 +480,16 @@ async def create_payment_intent_for_invoice(
             tenant.stripe_account_id,
         )
 
+        from app.services.financial_transaction_lock import lock_tenant_financials
+        await lock_tenant_financials(db, tenant.id)
+        if (invoice.status in {InvoiceStatus.PAID, InvoiceStatus.CANCELLED}
+                or invoice.deleted_at is not None or invoice.voided_at is not None
+                or invoice.repair_order.deleted_at is not None
+                or invoice.repair_order.status == RepairOrderStatus.CANCELLED
+                or int(invoice.total_amount * 100) != amount_cents):
+            raise SettlementDomainError(
+                "invoice_changed", "The invoice changed. Refresh and try again.", retryable=True,
+            )
         intent_params = {
             "amount": amount_cents,
             "currency": "usd",
@@ -534,6 +546,8 @@ async def confirm_payment(
     current_user: User = Depends(get_current_active_user),
 ):
     """Confirm payment was successful and update invoice/repair order status"""
+    from app.services.financial_transaction_lock import lock_tenant_financials
+    await lock_tenant_financials(db, current_user.tenant_id)
     if current_user.role != UserRole.CUSTOMER or not current_user.customer_id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
     
@@ -653,6 +667,8 @@ async def record_manual_payment(
     current_user: User = Depends(get_current_active_user),
 ):
     """Record a manual payment (cash, zelle, check, etc.) - staff only"""
+    from app.services.financial_transaction_lock import lock_tenant_financials
+    await lock_tenant_financials(db, current_user.tenant_id)
     # Only garage staff can record manual payments
     if current_user.role not in [UserRole.GARAGE_OWNER, UserRole.GARAGE_ADMIN, UserRole.RECEPTIONIST]:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Staff access required")
@@ -956,6 +972,8 @@ async def revert_pending_zelle(
     current_user: User = Depends(get_current_active_user),
 ):
     """Clear pending-Zelle state when staff determines no payment was received."""
+    from app.services.financial_transaction_lock import lock_tenant_financials
+    await lock_tenant_financials(db, current_user.tenant_id)
     if current_user.role not in [UserRole.GARAGE_OWNER, UserRole.GARAGE_ADMIN, UserRole.RECEPTIONIST]:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Staff access required")
 
@@ -1015,6 +1033,8 @@ async def submit_customer_zelle_payment(
     current_user: User = Depends(get_current_active_user),
 ):
     """Mark an invoice as pending Zelle confirmation from the customer portal."""
+    from app.services.financial_transaction_lock import lock_tenant_financials
+    await lock_tenant_financials(db, current_user.tenant_id)
     if current_user.role != UserRole.CUSTOMER or not current_user.customer_id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Customer access required")
 

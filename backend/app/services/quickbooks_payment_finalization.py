@@ -39,6 +39,8 @@ async def finalize_quickbooks_invoice_payment(
     charge: QuickBooksCharge,
     idempotency_key: str,
 ) -> Payment:
+    from app.services.financial_transaction_lock import lock_tenant_financials
+    await lock_tenant_financials(db, invoice.tenant_id)
     existing = await find_quickbooks_payment(db, idempotency_key)
     if existing:
         return existing

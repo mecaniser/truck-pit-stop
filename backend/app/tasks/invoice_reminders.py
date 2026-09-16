@@ -75,6 +75,22 @@ async def _process_invoice_reminders(tenant_id: str = None):
         
         sent_count = 0
         for invoice in invoices:
+            from app.services.financial_transaction_lock import lock_tenant_financials
+            from app.services.invoice_settlement_service import SettlementDomainError
+            try:
+                await lock_tenant_financials(db, invoice.tenant_id)
+            except SettlementDomainError as exc:
+                if exc.code != "invoice_busy":
+                    raise
+                continue
+            # Discovery is not authority: a payment may have completed meanwhile.
+            if (invoice.status not in {InvoiceStatus.SENT, InvoiceStatus.OVERDUE}
+                    or invoice.deleted_at is not None or invoice.voided_at is not None
+                    or invoice.zelle_pending_submitted_at is not None
+                    or invoice.repair_order is None
+                    or invoice.repair_order.deleted_at is not None
+                    or invoice.repair_order.status.value == "cancelled"):
+                continue
             tenant = invoice.tenant
             
             # Check tenant settings
@@ -116,6 +132,8 @@ async def _process_invoice_reminders(tenant_id: str = None):
             
             reminder_num = invoice.reminder_count + 1
             
+            # Notification transports commit their own logs in a separate session;
+            # the financial transaction retains its mutex through both sends.
             # Send SMS if customer has phone
             if customer.phone:
                 if reminder_num == 1:
@@ -124,15 +142,16 @@ async def _process_invoice_reminders(tenant_id: str = None):
                     sms_body = f"Reminder #{reminder_num}: Invoice #{invoice.invoice_number} for ${invoice.total_amount:,.2f} is {days_overdue} days overdue. Please pay ASAP to avoid service holds. - {garage_name}"
                 
                 try:
-                    await send_sms(
-                        db,
-                        str(invoice.tenant_id),
-                        customer.phone,
-                        sms_body,
-                        template_name="invoice_reminder_sms",
-                        customer_id=customer.id,
-                        source="automated",
-                    )
+                    async with AsyncSessionLocal() as notification_db:
+                        await send_sms(
+                            notification_db,
+                            str(invoice.tenant_id),
+                            customer.phone,
+                            sms_body,
+                            template_name="invoice_reminder_sms",
+                            customer_id=customer.id,
+                            source="automated",
+                        )
                 except Exception:
                     pass
             
@@ -188,10 +207,11 @@ async def _process_invoice_reminders(tenant_id: str = None):
                 """
                 
                 try:
-                    await send_email(
-                        db, str(invoice.tenant_id), customer.email, subject, html_body,
-                        template_name="invoice_reminder_email"
-                    )
+                    async with AsyncSessionLocal() as notification_db:
+                        await send_email(
+                            notification_db, str(invoice.tenant_id), customer.email, subject, html_body,
+                            template_name="invoice_reminder_email"
+                        )
                 except Exception:
                     pass
             

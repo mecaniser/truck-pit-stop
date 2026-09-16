@@ -220,6 +220,8 @@ async def load_active_configuration(
         TenantPaymentProviderConfiguration.deleted_at.is_(None),
     )
     if lock:
+        from app.services.financial_transaction_lock import lock_tenant_financials
+        await lock_tenant_financials(db, tenant_id)
         query = query.with_for_update()
     return (await db.execute(query)).scalar_one_or_none()
 
@@ -676,6 +678,9 @@ async def provider_readiness(
 
 async def require_feature_ready(db: AsyncSession, tenant: Tenant, *, invoice_id: Optional[UUID] = None,
                                 lock_ancestry: bool = False) -> ProviderReadiness:
+    if lock_ancestry:
+        from app.services.financial_transaction_lock import lock_tenant_financials
+        await lock_tenant_financials(db, tenant.id)
     readiness = await provider_readiness(db, tenant, invoice_id=invoice_id, lock_ancestry=lock_ancestry)
     if not readiness.split_payment_global_gate or not readiness.split_payment_tenant_gate:
         raise SettlementDomainError("split_payments_disabled", "Partial payments are not enabled for this shop.")
@@ -710,6 +715,8 @@ async def settlement_for_compatibility_route(
     gate makes that invoice read-only; it can never fall back to a legacy
     full-balance charge or manual receipt.
     """
+    from app.services.financial_transaction_lock import lock_tenant_financials
+    await lock_tenant_financials(db, tenant.id)
     query = select(InvoiceSettlement).where(
         InvoiceSettlement.tenant_id == tenant.id,
         InvoiceSettlement.invoice_id == invoice.id,
@@ -764,6 +771,8 @@ async def get_or_create_settlement(
     tenant: Tenant,
     lock: bool = True,
 ) -> InvoiceSettlement:
+    from app.services.financial_transaction_lock import lock_tenant_financials
+    await lock_tenant_financials(db, tenant.id)
     query = select(InvoiceSettlement).where(
         InvoiceSettlement.tenant_id == invoice.tenant_id,
         InvoiceSettlement.invoice_id == invoice.id,
@@ -1001,6 +1010,8 @@ async def create_attempt(
     subject_id: Optional[UUID],
     sender_evidence: Optional[dict[str, Any]] = None,
 ) -> AttemptCreation:
+    from app.services.financial_transaction_lock import lock_tenant_financials
+    await lock_tenant_financials(db, tenant.id)
     if (
         invoice.tenant_id != tenant.id
         or not tenant.is_active
@@ -1210,6 +1221,8 @@ async def locked_accessible_invoice_for_attempt(
     The money must then remain visible for explicit reconciliation, but the
     inaccessible lifecycle can never be resurrected by confirmation.
     """
+    from app.services.financial_transaction_lock import lock_tenant_financials
+    await lock_tenant_financials(db, attempt.tenant_id)
     invoice = (
         await db.execute(
             select(Invoice)
@@ -1347,6 +1360,8 @@ async def confirm_attempt(
     processor_fee: Decimal = ZERO,
     verified_provider_fact: bool = False,
 ) -> AttemptConfirmation:
+    from app.services.financial_transaction_lock import lock_tenant_financials
+    await lock_tenant_financials(db, tenant.id)
     settlement_id = (
         await db.execute(
             select(InvoicePaymentAttempt.settlement_id).where(
@@ -1735,6 +1750,8 @@ async def fail_attempt(
     idempotency_key: str,
     expired: bool = False,
 ) -> tuple[InvoicePaymentAttempt, InvoiceSettlement]:
+    from app.services.financial_transaction_lock import lock_tenant_financials
+    await lock_tenant_financials(db, tenant_id)
     attempt = (
         await db.execute(
             select(InvoicePaymentAttempt)
@@ -1784,6 +1801,8 @@ async def create_refund(
     reason: str,
     idempotency_key: str,
 ) -> PaymentRefund:
+    from app.services.financial_transaction_lock import lock_tenant_financials
+    await lock_tenant_financials(db, tenant_id)
     if attempt.tenant_id != tenant_id:
         raise SettlementDomainError("invoice_not_found", "Invoice not found.", status_code=404)
     if attempt.rail == "cash":
@@ -1907,6 +1926,8 @@ async def confirm_manual_refund(
     reference: str,
     idempotency_key: str,
 ) -> PaymentRefund:
+    from app.services.financial_transaction_lock import lock_tenant_financials
+    await lock_tenant_financials(db, tenant_id)
     refund = (
         await db.execute(
             select(PaymentRefund)
@@ -1990,6 +2011,8 @@ async def record_credit_consent(
     note: str,
     idempotency_key: str,
 ) -> CustomerCreditEntry:
+    from app.services.financial_transaction_lock import lock_tenant_financials
+    await lock_tenant_financials(db, tenant_id)
     requested_channel = channel.strip()
     if actor is None:
         if requested_channel != "guest_token":
@@ -2061,6 +2084,19 @@ async def record_credit_consent(
                 status_code=409,
             )
         return existing
+    if overpayment.state in {"credited", "refunded"} or overpayment.resolved_at is not None:
+        raise SettlementDomainError(
+            "overpayment_already_resolved", "This overpayment has already been resolved.", status_code=409,
+        )
+    issued_credit = await db.scalar(select(CustomerCreditEntry).where(
+        CustomerCreditEntry.tenant_id == tenant_id,
+        CustomerCreditEntry.origin_overpayment_id == overpayment.id,
+        CustomerCreditEntry.entry_type == "issued",
+    ))
+    if issued_credit is not None:
+        raise SettlementDomainError(
+            "overpayment_already_resolved", "Customer credit has already been issued for this overpayment.", status_code=409,
+        )
     source_attempt = (
         await db.execute(
             select(InvoicePaymentAttempt).where(
@@ -2208,6 +2244,8 @@ async def apply_customer_credit(
     actor: Optional[CurrentUser],
     idempotency_key: str,
 ) -> tuple[CustomerCreditEntry, InvoiceSettlement]:
+    from app.services.financial_transaction_lock import lock_tenant_financials
+    await lock_tenant_financials(db, tenant.id)
     amount = money(amount)
     request_hash = _canonical_hash({
         "operation": "credit_application",
@@ -2398,9 +2436,15 @@ async def expire_due_attempts(db: AsyncSession, *, tenant_id: Optional[UUID] = N
         await db.execute(
             query.order_by(InvoicePaymentAttempt.expires_at)
             .limit(limit)
-            .with_for_update(skip_locked=True)
         )
     ).scalars().all()
+    from app.services.financial_transaction_lock import lock_tenants_financials
+    try:
+        await lock_tenants_financials(db, [attempt.tenant_id for attempt in attempts])
+    except SettlementDomainError as exc:
+        if exc.code == "invoice_busy":
+            return 0
+        raise
     count = 0
     for attempt in attempts:
         invoice = await db.get(Invoice, attempt.invoice_id)
@@ -2413,7 +2457,7 @@ async def expire_due_attempts(db: AsyncSession, *, tenant_id: Optional[UUID] = N
         settlement = (
             await db.execute(select(InvoiceSettlement).where(InvoiceSettlement.id == attempt.settlement_id).with_for_update())
         ).scalar_one()
-        if attempt.state != "pending":
+        if attempt.state != "pending" or attempt.expires_at is None or attempt.expires_at > now:
             continue
         prior = settlement.state
         settlement.active_pending_principal = max(ZERO, money(settlement.active_pending_principal) - money(attempt.principal_amount))
@@ -2448,6 +2492,8 @@ async def authorize_early_release(
     expected_settlement_version: int,
     idempotency_key: str,
 ) -> InvoiceSettlement:
+    from app.services.financial_transaction_lock import lock_tenant_financials
+    await lock_tenant_financials(db, tenant.id)
     if actor.role not in {UserRole.GARAGE_OWNER, UserRole.GARAGE_ADMIN} or not user_has_permission(actor, "payments"):
         raise SettlementDomainError("invoice_not_found", "Invoice not found.", status_code=404)
     settlement = await get_or_create_settlement(

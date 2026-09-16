@@ -113,6 +113,9 @@ function InvoicePaymentPanel({
   chargeControls?: InlineInvoiceChargeControls
 }) {
   const queryClient = useQueryClient()
+  const latestSummary = useRef(summary)
+  useEffect(() => { latestSummary.current = summary }, [summary])
+  const accepts = (next: InvoiceSettlementSummary) => mounted.current && next.invoice_id === latestSummary.current.invoice_id && next.version >= latestSummary.current.version
   const mounted = useRef(true)
   useEffect(() => {
     mounted.current = true
@@ -253,7 +256,8 @@ function InvoicePaymentPanel({
     onSuccess: async created => {
       queryClient.invalidateQueries({ queryKey: ['invoice-settlement'] })
       queryClient.invalidateQueries({ queryKey: ['invoice-settlement-allocations'] })
-      if (!mounted.current) return
+      if (!accepts(created.settlement)) return
+      latestSummary.current = created.settlement
       setAmount(null)
       setEditingAmount(false)
       setAttempt(created)
@@ -261,7 +265,7 @@ function InvoicePaymentPanel({
       onUpdated(created.settlement)
       if (created.provider_client_secret && created.provider === 'stripe_connect') {
         const instance = await getStripeForAccount(created.provider_account_id ?? null)
-        if (mounted.current) setStripe(instance)
+        if (accepts(created.settlement)) setStripe(instance)
       } else if (created.state === 'confirmed') {
         setAttempt(null)
         toast.success(`${RAIL_META[rail!].label} payment recorded.`)
@@ -301,7 +305,8 @@ function InvoicePaymentPanel({
     onSuccess: confirmed => {
       queryClient.invalidateQueries({ queryKey: ['invoice-settlement'] })
       queryClient.invalidateQueries({ queryKey: ['invoice-settlement-allocations'] })
-      if (!mounted.current) return
+      if (!accepts(confirmed.settlement)) return
+      latestSummary.current = confirmed.settlement
       setAttempt(null)
       onUpdated(confirmed.settlement)
       toast.success(`${RAIL_META[confirmed.rail].label} payment confirmed.`)
@@ -323,7 +328,8 @@ function InvoicePaymentPanel({
     onSuccess: charged => {
       queryClient.invalidateQueries({ queryKey: ['invoice-settlement'] })
       queryClient.invalidateQueries({ queryKey: ['invoice-settlement-allocations'] })
-      if (!mounted.current) return
+      if (!accepts(charged.settlement)) return
+      latestSummary.current = charged.settlement
       setAttempt(charged.state === 'pending' ? charged : null)
       onUpdated(charged.settlement)
     },
@@ -507,11 +513,19 @@ function InvoicePaymentPanel({
   }
 
   if (!noncashAvailable && (!cash || (!cash.allowed && !cashSelected))) {
+    const resolving = isPositiveMoney(summary.unapplied_credit) || isPositiveMoney(summary.refund_pending)
+    const pending = isPositiveMoney(summary.active_pending_principal)
+    const settled = !isPositiveMoney(summary.outstanding_balance)
+    const title = resolving ? 'Payment review needed' : pending ? 'Payment awaiting confirmation' : settled ? 'Invoice paid in full' : !cash && summary.allowed_actions?.confirm_cash ? 'Other payment methods are unavailable.' : 'Payment unavailable'
+    const explanation = resolving
+      ? 'Review the excess payment shown above before collecting any additional money.'
+      : pending ? `${formatMoney(summary.active_pending_principal)} is awaiting confirmation. It is reserved against this invoice to prevent a duplicate payment.`
+      : settled ? 'There is no remaining balance to collect.'
+      : summary.allowed_actions?.payment_unavailable_reason ?? cash?.reason ?? 'Payment collection is unavailable. Review the invoice’s accounting status.'
     return (
       <div className={`rounded-2xl border p-4 text-sm ${panel}`} role="status">
-        <p className="font-bold">{!cash && summary.allowed_actions?.confirm_cash ? 'Other payment methods are unavailable.' : 'Payment is temporarily blocked'}</p>
-        <p className={`mt-1 ${quiet}`}>{summary.allowed_actions?.payment_unavailable_reason ?? 'Existing payments and pending reconciliation remain visible above. Contact the shop if this balance needs attention.'}</p>
-        {cash?.reason && cash.reason !== summary.allowed_actions?.payment_unavailable_reason && <p className={`mt-2 text-xs ${quiet}`}>Cash: {cash.reason}</p>}
+        <p className="font-bold">{title}</p>
+        <p className={`mt-1 ${quiet}`}>{explanation}</p>
         <button type="button" onClick={() => {
           void queryClient.invalidateQueries({ queryKey: ['invoice-settlement'] })
           void queryClient.invalidateQueries({ queryKey: ['invoice-settlement-allocations'] })

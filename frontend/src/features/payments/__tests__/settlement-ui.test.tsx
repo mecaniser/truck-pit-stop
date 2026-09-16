@@ -721,3 +721,41 @@ describe('Settlement credit and overpayment resolution', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent(/customer credit could not be verified/i)
   })
 })
+
+
+describe('Resolution concurrency and response ownership', () => {
+  it.each(['refund', 'credit'] as const)('blocks both decisions while %s is pending', async action => {
+    const fixture = DB048_SETTLEMENT_FIXTURES.manualOverpaymentDecision
+    let finish!: (value: unknown) => void
+    const pending = new Promise(resolve => { finish = resolve })
+    const api = action === 'refund' ? paymentApi.confirmManualRefund : paymentApi.recordOverpaymentCreditConsent
+    api.mockReturnValueOnce(pending)
+    paymentApi.fetchSettlement.mockResolvedValue(fixture.summary)
+    renderWithQuery(<SettlementResolutionPanel access={{ kind: 'authenticated', invoiceId: fixture.summary.invoice_id }} summary={fixture.summary} allocations={fixture.allocations} audience="staff" onUpdated={vi.fn()} />)
+    await userEvent.type(screen.getByLabelText(/refund transaction or check reference/i), 'external-reference')
+    await userEvent.type(screen.getByLabelText(/customer consent note/i), 'Customer requested shop credit')
+    await userEvent.click(screen.getByRole('button', { name: action === 'refund' ? /confirm refund completed/i : /keep as customer credit/i }))
+    expect(screen.getByLabelText(/refund transaction or check reference/i)).toBeDisabled()
+    expect(screen.getByLabelText(/customer consent note/i)).toBeDisabled()
+    expect(screen.getByRole('button', { name: action === 'refund' ? /keep as customer credit/i : /confirm refund completed/i })).toBeDisabled()
+    await act(async () => finish({}))
+  })
+
+  it.each(['unmount', 'newer version'] as const)('ignores a deferred refresh after %s', async change => {
+    const fixture = DB048_SETTLEMENT_FIXTURES.manualOverpaymentDecision
+    let finish!: (value: unknown) => void
+    paymentApi.confirmManualRefund.mockResolvedValue({})
+    paymentApi.fetchSettlement.mockReturnValueOnce(new Promise(resolve => { finish = resolve }))
+    const updated = vi.fn()
+    const client = new QueryClient()
+    const panel = (version: number) => <QueryClientProvider client={client}><SettlementResolutionPanel access={{ kind: 'authenticated', invoiceId: fixture.summary.invoice_id }} summary={{ ...fixture.summary, version }} allocations={fixture.allocations} audience="staff" onUpdated={updated} /></QueryClientProvider>
+    const view = render(panel(fixture.summary.version))
+    await userEvent.type(screen.getByLabelText(/refund transaction or check reference/i), 'external-reference')
+    await userEvent.click(screen.getByRole('button', { name: /confirm refund completed/i }))
+    await waitFor(() => expect(finish).toBeDefined())
+    if (change === 'unmount') view.unmount()
+    else view.rerender(panel(fixture.summary.version + 2))
+    await act(async () => finish({ ...fixture.summary, version: fixture.summary.version + 1 }))
+    expect(updated).not.toHaveBeenCalled()
+  })
+})

@@ -71,6 +71,8 @@ async def first_export_awaits_payment(db, invoice):
 async def locked_policy(db, invoice, *, nowait=True):
     # Scalar read deliberately bypasses an already-loaded ORM identity. Lock is
     # retained until caller commit, including all remote dispatch/read-back IO.
+    from app.services.financial_transaction_lock import lock_tenant_financials
+    await lock_tenant_financials(db, invoice.tenant_id)
     from app.db.models.invoice_settlement import InvoiceSettlement
     try:
         await db.scalar(select(InvoiceSettlement.id).where(

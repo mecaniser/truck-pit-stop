@@ -1,6 +1,6 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { AlertTriangle, CheckCircle2 } from 'lucide-react'
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import toast from 'react-hot-toast'
 
 import {
@@ -30,6 +30,10 @@ function SettlementResolutionItem({
   onUpdated: (next: InvoiceSettlementSummary) => void
 }) {
   const queryClient = useQueryClient()
+  const mounted = useRef(false)
+  const latestSummary = useRef(summary)
+  useEffect(() => { latestSummary.current = summary }, [summary])
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false } }, [])
   const [consentNote, setConsentNote] = useState('')
   const [consentChannel, setConsentChannel] = useState<'in_person' | 'phone'>('in_person')
   const [refundReference, setRefundReference] = useState('')
@@ -38,7 +42,10 @@ function SettlementResolutionItem({
 
   const refresh = async () => {
     const next = await fetchSettlement(access)
-    onUpdated(next)
+    if (mounted.current && next.invoice_id === latestSummary.current.invoice_id && next.version >= latestSummary.current.version) {
+      latestSummary.current = next
+      onUpdated(next)
+    }
     queryClient.invalidateQueries({ queryKey: ['invoice-settlement-allocations'] })
     queryClient.invalidateQueries({ queryKey: ['invoice-eligible-customer-credits'] })
   }
@@ -52,27 +59,28 @@ function SettlementResolutionItem({
     ),
     onSuccess: async () => {
       await refresh()
-      toast.success('Customer consent recorded. The excess is now customer credit.')
+      if (mounted.current) toast.success('Customer consent recorded. The excess is now customer credit.')
     },
-    onError: error => toast.error(paymentApiError(error, 'Unable to record customer-credit consent.').message),
+    onError: error => { if (mounted.current) toast.error(paymentApiError(error, 'Unable to record customer-credit consent.').message) },
   })
   const refundMutation = useMutation({
     mutationFn: () => confirmManualRefund(resolution!.refund_id!, refundReference.trim(), createIdempotencyKey()),
     onSuccess: async () => {
       await refresh()
-      toast.success('Manual refund confirmed and removed from unapplied customer money.')
+      if (mounted.current) toast.success('Manual refund confirmed and removed from unapplied customer money.')
     },
-    onError: error => toast.error(paymentApiError(error, 'Unable to confirm the manual refund.').message),
+    onError: error => { if (mounted.current) toast.error(paymentApiError(error, 'Unable to confirm the manual refund.').message) },
   })
   const retryRefundMutation = useMutation({
     mutationFn: () => retryPaymentRefund(resolution!.refund_id!, createIdempotencyKey()),
     onSuccess: async () => {
       await refresh()
-      toast.success('Card refund retry queued. The excess remains unapplied until the provider confirms it.')
+      if (mounted.current) toast.success('Card refund retry queued. The excess remains unapplied until the provider confirms it.')
     },
-    onError: error => toast.error(paymentApiError(error, 'Unable to retry the card refund.').message),
+    onError: error => { if (mounted.current) toast.error(paymentApiError(error, 'Unable to retry the card refund.').message) },
   })
 
+  const busy = consentMutation.isPending || refundMutation.isPending || retryRefundMutation.isPending
   const dark = tone === 'dark'
   if (resolution.overpayment_state === 'credited') {
     return <div className={`flex gap-2 rounded-xl border p-3 text-sm ${dark ? 'border-emerald-700/40 bg-emerald-950/20 text-emerald-200' : 'border-emerald-200 bg-emerald-50 text-emerald-900'}`}><CheckCircle2 className="h-4 w-4 shrink-0" />Customer consent is recorded and this excess is retained as customer credit.</div>
@@ -102,7 +110,7 @@ function SettlementResolutionItem({
       {automaticFailed && canManage && (
         <button
           type="button"
-          disabled={retryRefundMutation.isPending}
+          disabled={busy}
           onClick={() => retryRefundMutation.mutate()}
           className="mt-3 min-h-[44px] rounded-xl bg-amber-900 px-3 text-xs font-extrabold text-white disabled:opacity-50"
         >
@@ -111,18 +119,18 @@ function SettlementResolutionItem({
       )}
 
       {manualRefundRequired && canManage && (
-        <div className={`mt-3 rounded-xl border p-3 ${dark ? 'border-amber-800/60 bg-black/20' : 'border-amber-200 bg-white/70'}`}>
+        <fieldset disabled={busy} className={`mt-3 min-w-0 rounded-xl border p-3 ${dark ? 'border-amber-800/60 bg-black/20' : 'border-amber-200 bg-white/70'}`}>
           <label className={`block text-xs font-bold ${dark ? 'text-amber-100' : 'text-amber-950'}`}>Refund transaction or check reference
             <input value={refundReference} onChange={event => setRefundReference(event.target.value)} className={`mt-1 h-11 w-full rounded-xl border px-3 text-sm outline-none focus:ring-2 focus:ring-amber-600 ${dark ? 'border-amber-800 bg-[#161b27] text-white' : 'border-amber-300 bg-white'}`} />
           </label>
           <button type="button" disabled={!refundReference.trim() || refundMutation.isPending} onClick={() => refundMutation.mutate()} className="mt-2 min-h-[44px] rounded-xl bg-amber-900 px-3 text-xs font-extrabold text-white disabled:opacity-50">
             {refundMutation.isPending ? 'Confirming…' : 'Confirm refund completed'}
           </button>
-        </div>
+        </fieldset>
       )}
 
       {canConsent && resolution.refund_state !== 'succeeded' && (
-        <div className={`mt-3 rounded-xl border p-3 ${dark ? 'border-amber-800/60 bg-black/20' : 'border-amber-200 bg-white/70'}`}>
+        <fieldset disabled={busy} className={`mt-3 min-w-0 rounded-xl border p-3 ${dark ? 'border-amber-800/60 bg-black/20' : 'border-amber-200 bg-white/70'}`}>
           {audience === 'staff' && (
             <label className={`block text-xs font-bold ${dark ? 'text-amber-100' : 'text-amber-950'}`}>Consent channel
               <select value={consentChannel} onChange={event => setConsentChannel(event.target.value as 'in_person' | 'phone')} className={`mt-1 h-11 w-full rounded-xl border px-3 text-sm ${dark ? 'border-amber-800 bg-[#161b27] text-white' : 'border-amber-300 bg-white'}`}>
@@ -137,7 +145,7 @@ function SettlementResolutionItem({
           <button type="button" disabled={!consentNote.trim() || consentMutation.isPending} onClick={() => consentMutation.mutate()} className={`mt-2 min-h-[44px] rounded-xl border px-3 text-xs font-extrabold disabled:opacity-50 ${dark ? 'border-amber-600 text-amber-100' : 'border-amber-800 text-amber-950'}`}>
             {consentMutation.isPending ? 'Recording…' : 'Keep as customer credit'}
           </button>
-        </div>
+        </fieldset>
       )}
     </section>
   )
@@ -164,7 +172,7 @@ export default function SettlementResolutionPanel({
     <div className="space-y-3">
       {resolutions.map(resolution => (
         <SettlementResolutionItem
-          key={resolution.id}
+          key={`${access.kind}:${access.kind === 'guest' ? access.token : access.invoiceId}:${resolution.id}`}
           access={access}
           summary={summary}
           resolution={resolution}
