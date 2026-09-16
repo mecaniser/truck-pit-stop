@@ -47,12 +47,14 @@ async def test_serialization(monkeypatch, winner):
             else:
                 await apply(first, a)
             if winner == "exemption_before_payment":
-                pending = asyncio.create_task(payment(second, b))
-                await asyncio.sleep(0.05)
-                assert not pending.done(), "Payment should wait for exemption's settlement lock"
+                with pytest.raises(SettlementDomainError) as busy:
+                    await asyncio.wait_for(payment(second, b), timeout=2)
+                assert busy.value.code == "invoice_busy" and busy.value.retryable
+                await second.rollback()
                 await first.commit()
+                b = await load(second, ids)
                 with pytest.raises(SettlementDomainError) as rejected:
-                    await pending
+                    await payment(second, b)
                 assert rejected.value.code == "stale_settlement_version"
                 await second.rollback()
             else:

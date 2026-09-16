@@ -89,7 +89,7 @@ export default function SettlementSummaryCard({
           <p>
             {isPositiveMoney(summary.refund_pending)
               ? `${formatMoney(summary.refund_pending)} refund pending.`
-              : `${formatMoney(summary.unapplied_credit)} is unapplied and must be refunded or explicitly accepted as customer credit.`}
+              : `${formatMoney(summary.unapplied_credit)} exceeds the invoice balance. Review this amount before deciding whether to refund it or retain it as customer credit with the customer’s consent.`}
           </p>
         </div>
       )}

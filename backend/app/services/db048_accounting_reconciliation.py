@@ -138,7 +138,10 @@ async def _refresh_accounting_connection_if_needed(
         ) from exc
     connection.last_token_refresh_at = now
     connection.last_token_refresh_error = None
+    refreshed_tenant_id = connection.tenant_id
     await db.commit()
+    from app.services.financial_transaction_lock import lock_tenant_financials
+    await lock_tenant_financials(db, refreshed_tenant_id)
 
 
 @dataclass(frozen=True)
@@ -183,6 +186,8 @@ async def _record_card_reconciliation_failure(
     now: datetime,
 ) -> None:
     """Keep a mismatched provider result pending and append safe evidence."""
+    from app.services.financial_transaction_lock import lock_tenant_financials
+    await lock_tenant_financials(db, attempt.tenant_id)
     attempt.failure_code = code[:100]
     attempt.version += 1
     attempt.expires_at = now + timedelta(minutes=CARD_RECONCILE_RETRY_MINUTES)
@@ -258,6 +263,16 @@ async def reconcile_due_card_attempts(
         query.order_by(InvoicePaymentAttempt.expires_at).limit(limit)
     )).scalars().all())
     result = {"checked": 0, "confirmed": 0, "released": 0, "deferred": 0}
+    from app.services.financial_transaction_lock import lock_financial_query_tenants
+    try:
+        await lock_financial_query_tenants(db, select(InvoicePaymentAttempt.tenant_id).where(
+            InvoicePaymentAttempt.id.in_(attempt_ids),
+        ))
+    except SettlementDomainError as exc:
+        if exc.code == "invoice_busy":
+            result["deferred"] = len(attempt_ids)
+            return result
+        raise
     terminal_release = {"canceled"}
     cancelable = {"requires_payment_method", "requires_confirmation", "requires_action"}
     for attempt_id in attempt_ids:
@@ -1089,6 +1104,8 @@ async def load_accounting_envelope(
     event: ProviderOutboxEvent,
 ) -> AccountingEnvelope:
     """Resolve and validate the complete tenant envelope before provider I/O."""
+    from app.services.financial_transaction_lock import lock_tenant_financials
+    await lock_tenant_financials(db, event.tenant_id)
     payload = event.payload or {}
     try:
         link_id = UUID(str(payload["accounting_link_id"]))
@@ -1210,6 +1227,8 @@ async def load_credit_accounting_envelope(
     event: ProviderOutboxEvent,
 ) -> CreditAccountingEnvelope:
     """Resolve a credit application back to its one original customer receipt."""
+    from app.services.financial_transaction_lock import lock_tenant_financials
+    await lock_tenant_financials(db, event.tenant_id)
     payload = event.payload or {}
     try:
         link_id = UUID(str(payload["accounting_link_id"]))
@@ -1292,8 +1311,18 @@ async def load_credit_accounting_envelope(
                 source_link, target_invoice, target_order, target_customer,
                 target_settlement, config, connection, tenant)):
         raise DB048ReconciliationError("Credit accounting source records do not match")
-    if origin.customer_id != target_customer.id or application.customer_id != origin.customer_id:
-        raise DB048ReconciliationError("Credit accounting customer identity does not match")
+    if (
+        origin.customer_id != target_customer.id
+        or application.customer_id != origin.customer_id
+        or overpayment.customer_id != origin.customer_id
+        or source_attempt.customer_id != origin.customer_id
+        or source_attempt.invoice_id != overpayment.invoice_id
+        or source_attempt.settlement_id != overpayment.settlement_id
+        or link.attempt_id != source_attempt.id
+        or source_link.invoice_id != source_attempt.invoice_id
+        or source_payment.invoice_id != source_attempt.invoice_id
+    ):
+        raise DB048ReconciliationError("Credit accounting customer/source identity does not match")
     if source_link.sync_state != "synced" or not source_link.provider_deposit_id:
         raise DB048ReconciliationError(
             "Original unapplied QuickBooks payment is not synchronized yet", retryable=True,
@@ -1826,6 +1855,9 @@ async def sync_db048_credit_application(
     envelope: CreditAccountingEnvelope,
 ) -> str:
     """Apply consented credit by reallocating its original unapplied QBO Payment."""
+    from app.services.financial_transaction_lock import lock_tenant_financials
+    if db is not None:
+        await lock_tenant_financials(db, envelope.tenant.id)
     if envelope.config.writer_strategy == "intuit_native":
         envelope.link.sync_state = "awaiting_native_import"
         raise DB048ReconciliationError(
@@ -1976,6 +2008,9 @@ async def deliver_credit_accounting_envelope(
     db: AsyncSession,
     envelope: CreditAccountingEnvelope,
 ) -> str:
+    from app.services.financial_transaction_lock import lock_tenant_financials
+    if db is not None:
+        await lock_tenant_financials(db, envelope.tenant.id)
     from app.services.invoice_accounting_policy import require_exportable_invoice
     await require_exportable_invoice(envelope.target_invoice)
     source_invoice = await db.scalar(select(Invoice).where(
@@ -2372,6 +2407,9 @@ async def sync_db048_dispute(
     *,
     recovery: bool,
 ) -> str:
+    from app.services.financial_transaction_lock import lock_tenant_financials
+    if db is not None:
+        await lock_tenant_financials(db, envelope.tenant.id)
     dispute = envelope.dispute
     if not dispute:
         raise DB048ReconciliationError("Dispute accounting source is missing")
@@ -2556,6 +2594,9 @@ async def deliver_accounting_envelope(
     sync_payment_func: Optional[Callable[[AccountingEnvelope], Awaitable[str]]] = None,
     sync_refund_func: Optional[Callable[[AccountingEnvelope], Awaitable[str]]] = None,
 ) -> str:
+    from app.services.financial_transaction_lock import lock_tenant_financials
+    if db is not None:
+        await lock_tenant_financials(db, envelope.tenant.id)
     if envelope.config.writer_strategy == "intuit_native":
         envelope.link.sync_state = "awaiting_native_import"
         raise DB048ReconciliationError(
@@ -2648,6 +2689,8 @@ async def _submit_stripe_refund(db: AsyncSession, event: ProviderOutboxEvent) ->
     but DB-048 supports both approved card providers here.  A provider switch
     never moves an existing refund to the tenant's new provider.
     """
+    from app.services.financial_transaction_lock import lock_tenant_financials
+    await lock_tenant_financials(db, event.tenant_id)
     payload = event.payload or {}
     try:
         refund_id = UUID(str(payload["refund_id"]))
@@ -2827,6 +2870,8 @@ async def finalize_provider_refund(
     provider_status: str,
 ) -> PaymentRefund:
     """Apply one signed/provider-verified refund terminal state idempotently."""
+    from app.services.financial_transaction_lock import lock_tenant_financials
+    await lock_tenant_financials(db, tenant_id)
     refund = (await db.execute(select(PaymentRefund).where(
         PaymentRefund.id == refund_id,
         PaymentRefund.tenant_id == tenant_id,
@@ -3065,6 +3110,8 @@ async def _reverse_applied_credit_for_dispute(
     applications are reopened is recorded as a reversal linked directly to the
     issued origin, which is the only form that reduces available wallet credit.
     """
+    from app.services.financial_transaction_lock import lock_tenant_financials
+    await lock_tenant_financials(db, attempt.tenant_id)
     remaining = money(amount)
     if remaining == ZERO:
         return
@@ -3281,6 +3328,8 @@ async def _restore_applied_credit_after_dispute_win(
     The child `applied` entry is an immutable compensation of the immutable
     dispute reversal, preserving both lineage and deterministic QBO replay.
     """
+    from app.services.financial_transaction_lock import lock_tenant_financials
+    await lock_tenant_financials(db, attempt.tenant_id)
     reversals = (await db.execute(select(CustomerCreditEntry).where(
         CustomerCreditEntry.tenant_id == attempt.tenant_id,
         CustomerCreditEntry.customer_id == attempt.customer_id,
@@ -3402,6 +3451,12 @@ async def record_stripe_dispute(
     reason: str,
 ) -> PaymentProviderDispute:
     """Record one signed partial/full dispute and reopen only exact A/R money."""
+    from app.services.financial_transaction_lock import lock_financial_query_tenants
+    await lock_financial_query_tenants(db, select(InvoicePaymentAttempt.tenant_id).where(
+        InvoicePaymentAttempt.provider == "stripe_connect",
+        InvoicePaymentAttempt.provider_account_id == provider_account_id,
+        InvoicePaymentAttempt.provider_charge_id == provider_charge_id,
+    ))
     if str(currency).upper() != "USD":
         raise DB048ReconciliationError("Stripe dispute currency does not match DB-048")
     attempt = await db.scalar(select(InvoicePaymentAttempt).where(
@@ -3639,6 +3694,13 @@ async def close_stripe_dispute(
     outcome: str,
 ) -> PaymentProviderDispute:
     """Apply a signed terminal dispute outcome, restoring exact won money."""
+    from app.services.financial_transaction_lock import lock_financial_query_tenants
+    await lock_financial_query_tenants(db, select(PaymentProviderDispute.tenant_id).where(
+        PaymentProviderDispute.provider == "stripe_connect",
+        PaymentProviderDispute.provider_account_id == provider_account_id,
+        PaymentProviderDispute.provider_dispute_id == provider_dispute_id,
+        PaymentProviderDispute.provider_charge_id == provider_charge_id,
+    ))
     dispute = await db.scalar(select(PaymentProviderDispute).where(
         PaymentProviderDispute.provider == "stripe_connect",
         PaymentProviderDispute.provider_account_id == provider_account_id,
@@ -3916,6 +3978,8 @@ async def reverse_confirmed_attempt(
     reason: str,
 ) -> InvoicePaymentAttempt:
     """Apply a signed dispute/reversal once and reopen local and QBO A/R."""
+    from app.services.financial_transaction_lock import lock_tenant_financials
+    await lock_tenant_financials(db, tenant_id)
     attempt = (await db.execute(select(InvoicePaymentAttempt).where(
         InvoicePaymentAttempt.tenant_id == tenant_id,
         InvoicePaymentAttempt.provider == "stripe_connect",
@@ -4500,6 +4564,8 @@ async def reconcile_stripe_payout(
     entries: list[dict[str, Any]],
 ) -> ProviderSettlementBatch:
     """Persist a secret-free Stripe payout proof; never create a bank payment."""
+    from app.services.financial_transaction_lock import lock_tenant_financials
+    await lock_tenant_financials(db, tenant_id)
     tenant = await db.get(Tenant, tenant_id)
     account_owned = await db.scalar(select(
         TenantPaymentProviderConfiguration.id
@@ -4877,6 +4943,8 @@ async def reconcile_qbp_native_settlements(
     Payment resolves to an exact local QBP charge. Mixed or incomplete batches
     remain visible for a CPA but never enter fee-recovery analytics as matched.
     """
+    from app.services.financial_transaction_lock import lock_tenant_financials
+    await lock_tenant_financials(db, connection.tenant_id)
     if not connection.tenant_id or not connection.realm_id:
         raise DB048ReconciliationError(
             "QuickBooks settlement import requires a tenant and company realm"
@@ -5341,6 +5409,8 @@ async def _book_stripe_payout_batch(
     *,
     batch: ProviderSettlementBatch,
 ) -> str:
+    from app.services.financial_transaction_lock import lock_tenant_financials
+    await lock_tenant_financials(db, batch.tenant_id)
     if batch.reconciliation_state == "mismatch":
         raise DB048ReconciliationError(
             f"Stripe payout does not reconcile: {batch.mismatch_reason}", retryable=False,
@@ -5527,6 +5597,8 @@ async def _process_stripe_payout_event(
     list_balance_transactions: Callable[..., Any] = stripe.BalanceTransaction.list,
     retrieve_dispute: Callable[..., Any] = stripe.Dispute.retrieve,
 ) -> str:
+    from app.services.financial_transaction_lock import lock_tenant_financials
+    await lock_tenant_financials(db, event.tenant_id)
     payload = event.payload or {}
     payout_id = str(payload.get("payout_id") or "")
     provider_account_id = str(payload.get("provider_account_id") or "")
@@ -5660,6 +5732,8 @@ async def _project_accounting_dead_letter(
     event: ProviderOutboxEvent,
 ) -> None:
     """Surface terminal delivery failure on the financial projection/audit."""
+    from app.services.financial_transaction_lock import lock_tenant_financials
+    await lock_tenant_financials(db, event.tenant_id)
     payload = event.payload or {}
     if event.event_type == PAYOUT_RECONCILIATION_EVENT:
         payout_id = str(payload.get("payout_id") or "")
@@ -5805,6 +5879,8 @@ async def process_due_db048_outbox_events(
             try:
                 if not event or event.event_type not in WORKER_EVENTS:
                     raise DB048ReconciliationError("Claimed DB-048 event is invalid")
+                from app.services.financial_transaction_lock import lock_tenant_financials
+                await lock_tenant_financials(db, event.tenant_id)
                 if event.event_type == PROVIDER_REFUND_EVENT:
                     provider_id = await _submit_stripe_refund(db, event)
                 elif event.event_type == PAYOUT_RECONCILIATION_EVENT:
@@ -5855,6 +5931,7 @@ async def process_due_db048_outbox_events(
                     await db.rollback()
                     if retained:
                         refund_id, tenant_id, attempt_id, amount, reference, charge_id = retained
+                        await lock_tenant_financials(db, tenant_id)
                         refund_row = await db.scalar(select(PaymentRefund).join(
                             InvoicePaymentAttempt, InvoicePaymentAttempt.id == PaymentRefund.source_attempt_id,
                         ).where(
@@ -5927,8 +6004,38 @@ async def process_due_db048_outbox_events(
                 event.last_error = None
                 await db.commit()
                 results["succeeded"] += 1
-            except (DB048ReconciliationError, QuickBooksAccountingError) as exc:
+            except SettlementDomainError as exc:
+                if exc.code != "invoice_busy":
+                    raise
                 await db.rollback()
+                event = await db.scalar(select(ProviderOutboxEvent).where(
+                    ProviderOutboxEvent.id == event_id,
+                    ProviderOutboxEvent.status == "processing",
+                    ProviderOutboxEvent.lock_token == claim_token,
+                ).with_for_update())
+                if event:
+                    event.status = ProviderOutboxStatus.PENDING.value
+                    event.attempt_count = max(0, event.attempt_count - 1)
+                    event.available_at = datetime.now(timezone.utc) + timedelta(seconds=30)
+                    event.lock_token = None
+                    event.locked_until = None
+                    await db.commit()
+                    results["retried"] += 1
+                else:
+                    results["lease_lost"] += 1
+            except (DB048ReconciliationError, QuickBooksAccountingError) as exc:
+                # Capture the tenant before rollback expires ORM identities.
+                failed_tenant_id = event.tenant_id if event else None
+                await db.rollback()
+                if failed_tenant_id is not None:
+                    try:
+                        await lock_tenant_financials(db, failed_tenant_id)
+                    except SettlementDomainError as busy:
+                        if busy.code != "invoice_busy":
+                            raise
+                        # Leave the existing durable lease for safe reclamation.
+                        results["retried"] += 1
+                        continue
                 event = await db.scalar(select(ProviderOutboxEvent).where(
                     ProviderOutboxEvent.id == event_id,
                     ProviderOutboxEvent.status == "processing",

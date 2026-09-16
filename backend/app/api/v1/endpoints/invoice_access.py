@@ -707,6 +707,8 @@ async def submit_guest_zelle_payment(
     db: AsyncSession = Depends(get_db),
 ):
     payload = await _get_active_invoice_payload_or_400(body.token)
+    from app.services.financial_transaction_lock import lock_tenant_financials
+    await lock_tenant_financials(db, UUID(payload["tenant_id"]))
     invoice, order, customer, _, tenant = await _load_hardened_guest_invoice_context(
         db, payload,
     )
@@ -827,6 +829,8 @@ async def create_guest_payment_intent(
     db: AsyncSession = Depends(get_db),
 ):
     payload = await _get_active_invoice_payload_or_400(body.token)
+    from app.services.financial_transaction_lock import lock_tenant_financials
+    await lock_tenant_financials(db, UUID(payload["tenant_id"]))
     invoice, order, customer, _, tenant = await _load_hardened_guest_invoice_context(
         db, payload,
     )
@@ -909,6 +913,16 @@ async def create_guest_payment_intent(
             tenant.stripe_account_id,
         )
 
+        from app.services.financial_transaction_lock import lock_tenant_financials
+        await lock_tenant_financials(db, tenant.id)
+        if (invoice.status in {InvoiceStatus.PAID, InvoiceStatus.CANCELLED}
+                or invoice.deleted_at is not None or invoice.voided_at is not None
+                or invoice.repair_order.deleted_at is not None
+                or invoice.repair_order.status == RepairOrderStatus.CANCELLED
+                or int(invoice.total_amount * 100) != amount_cents):
+            raise SettlementDomainError(
+                "invoice_changed", "The invoice changed. Refresh and try again.", retryable=True,
+            )
         intent_params = {
             "amount": amount_cents,
             "currency": "usd",
@@ -963,6 +977,8 @@ async def confirm_guest_payment(
     db: AsyncSession = Depends(get_db),
 ):
     payload = await _get_invoice_payload_for_confirm_or_400(body.token)
+    from app.services.financial_transaction_lock import lock_tenant_financials
+    await lock_tenant_financials(db, UUID(payload["tenant_id"]))
     invoice, order, customer, vehicle, tenant = await _load_hardened_guest_invoice_context(
         db, payload,
     )

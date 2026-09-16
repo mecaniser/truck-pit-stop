@@ -19,7 +19,7 @@ import InvoiceDetailsDisclosure from './InvoiceDetailsDisclosure'
 import type { InvoiceSettlementSummary } from './types'
 import { useInvoiceAllocations, useInvoiceSettlement } from './useInvoiceSettlement'
 
-export default function StaffSettlementDialog({
+function OpenStaffSettlementDialog({
   invoiceId,
   invoiceNumber,
   open,
@@ -40,7 +40,13 @@ export default function StaffSettlementDialog({
   const closeRef = useRef<HTMLButtonElement>(null)
   const dialogRef = useRef<HTMLElement>(null)
 
-  useEffect(() => setCurrent(settlementQuery.data ?? null), [settlementQuery.data])
+  const mounted = useRef(false)
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false } }, [])
+  useEffect(() => {
+    const next = settlementQuery.data
+    if (!next || next.invoice_id !== invoiceId) return
+    setCurrent(previous => previous && previous.version > next.version ? previous : next)
+  }, [invoiceId, settlementQuery.data])
   useEffect(() => setEditingExemption(false), [invoiceId, open])
   useEffect(() => {
     if (!open) return
@@ -80,7 +86,8 @@ export default function StaffSettlementDialog({
   if (!open) return null
 
   const handleUpdated = (next: InvoiceSettlementSummary) => {
-    setCurrent(next)
+    if (!mounted.current || next.invoice_id !== invoiceId) return
+    setCurrent(previous => previous && previous.version > next.version ? previous : next)
     onUpdated?.()
   }
 
@@ -170,4 +177,11 @@ export default function StaffSettlementDialog({
   )
 }
 
+// Each open invoice owns its drafts and pending callbacks. Closing or switching
+// unmounts that session so a late payment response cannot affect the next one.
+function StaffSettlementDialog(props: Parameters<typeof OpenStaffSettlementDialog>[0]) {
+  return props.open ? <OpenStaffSettlementDialog key={props.invoiceId} {...props} /> : null
+}
+
+export default StaffSettlementDialog
 export { StaffSettlementDialog }

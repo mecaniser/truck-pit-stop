@@ -41,6 +41,16 @@ async def _process_pending_zelle_reminders(tenant_id: str = None):
 
         reminders_sent = 0
         for invoice in invoices:
+            from app.services.financial_transaction_lock import lock_tenant_financials
+            from app.services.invoice_settlement_service import SettlementDomainError
+            try:
+                await lock_tenant_financials(db, invoice.tenant_id)
+            except SettlementDomainError as exc:
+                if exc.code != "invoice_busy":
+                    raise
+                continue
+            if invoice.status in {InvoiceStatus.PAID, InvoiceStatus.CANCELLED} or invoice.deleted_at is not None:
+                continue
             if not invoice.zelle_pending_submitted_at:
                 continue
 

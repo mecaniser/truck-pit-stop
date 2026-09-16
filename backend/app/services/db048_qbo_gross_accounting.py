@@ -125,6 +125,8 @@ async def _assert_open_period(connection,entity):
 
 
 async def _locked_settlement(db, settlement):
+    from app.services.financial_transaction_lock import lock_tenant_financials
+    await lock_tenant_financials(db, settlement.tenant_id)
     row = await db.scalar(select(InvoiceSettlement).where(
         InvoiceSettlement.id == settlement.id,
         InvoiceSettlement.tenant_id == settlement.tenant_id,
@@ -137,6 +139,8 @@ async def _locked_settlement(db, settlement):
 
 async def _projection(db, settlement, connection, *, original_attempt_id=None):
     """Current earned obligations, retaining immutable original capture data."""
+    from app.services.financial_transaction_lock import lock_tenant_financials
+    await lock_tenant_financials(db, settlement.tenant_id)
     identity = InvoiceIdentity(str(settlement.tenant_id), str(connection.realm_id), str(settlement.invoice_id))
     attempts = (await db.execute(select(InvoicePaymentAttempt).where(
         InvoicePaymentAttempt.tenant_id == settlement.tenant_id,
@@ -286,6 +290,8 @@ async def _fee_line(connection, member, mapping):
 @accounting_operation
 async def ensure_gross_invoice(db, *, connection, invoice, customer, settlement, tenant_name=None,
                                original_attempt_id=None):
+    from app.services.financial_transaction_lock import lock_tenant_financials
+    await lock_tenant_financials(db, invoice.tenant_id)
     from app.services.invoice_accounting_policy import require_exportable_invoice
     await require_exportable_invoice(invoice)
     r = _r()
@@ -427,6 +433,8 @@ async def _deposit_account(envelope):
 
 @accounting_operation
 async def sync_gross_payment(db, envelope):
+    from app.services.financial_transaction_lock import lock_tenant_financials
+    await lock_tenant_financials(db, envelope.tenant.id)
     from app.services.invoice_accounting_policy import require_exportable_invoice
     await require_exportable_invoice(envelope.invoice)
     r = _r()
@@ -507,6 +515,8 @@ async def _source_deposit_account(envelope, source):
 
 
 async def _gross_source(db, envelope, *, allow_empty_zero_deposit=False):
+    from app.services.financial_transaction_lock import lock_tenant_financials
+    await lock_tenant_financials(db, envelope.tenant.id)
     r = _r()
     await _locked_settlement(db, envelope.settlement)
     source = await db.scalar(select(PaymentAccountingLink).where(
@@ -539,6 +549,8 @@ async def _gross_source(db, envelope, *, allow_empty_zero_deposit=False):
 @accounting_operation
 async def sync_gross_refund(db, envelope):
     """Return only genuine excess; earned invoice income is never reversed."""
+    from app.services.financial_transaction_lock import lock_tenant_financials
+    await lock_tenant_financials(db, envelope.tenant.id)
     from app.services.invoice_accounting_policy import require_exportable_invoice
     await require_exportable_invoice(envelope.invoice)
     r = _r()
@@ -630,6 +642,8 @@ def _payment_state(entity):
 
 @accounting_operation
 async def sync_gross_adjustment(db, envelope, *, reversal=False):
+    from app.services.financial_transaction_lock import lock_tenant_financials
+    await lock_tenant_financials(db, envelope.tenant.id)
     from app.services.invoice_accounting_policy import require_exportable_invoice
     await require_exportable_invoice(envelope.invoice)
     """Absolute receipt state makes duplicate/out-of-order deliveries converge.
@@ -761,6 +775,8 @@ async def sync_gross_adjustment(db, envelope, *, reversal=False):
 
 @accounting_operation
 async def deliver_gross_envelope(db, envelope):
+    from app.services.financial_transaction_lock import lock_tenant_financials
+    await lock_tenant_financials(db, envelope.tenant.id)
     if envelope.config.writer_strategy != "dieselbridge" or envelope.link.owning_writer != "dieselbridge":
         _fail("Gross accounting requires the persisted DieselBridge writer")
     kind = envelope.link.financial_object_type

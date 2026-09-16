@@ -558,4 +558,14 @@ describe('useWebSocket cookie-session transport', () => {
       quoteNumber: 'Q-100',
     })
   })
+  it('invalidates the open portal invoice and settlement when payment is received', () => {
+    authenticateWithWorkOS()
+    const client = new QueryClient()
+    const keys = [['invoice-detail', 'invoice-1'], ['invoice-settlement', 'authenticated', 'invoice-1'], ['invoice-settlement-allocations', 'authenticated', 'invoice-1']]
+    for (const key of keys) client.setQueryData(key, { state: 'unpaid' })
+    renderHook(() => useWebSocket(), { wrapper: ({ children }: PropsWithChildren) => <QueryClientProvider client={client}>{children}</QueryClientProvider> })
+    act(() => latestSocket().emitMessage(JSON.stringify({ type: 'payment_received', order_id: 'order-1' })))
+    for (const key of keys) expect(client.getQueryState(key)?.isInvalidated).toBe(true)
+  })
+
 })

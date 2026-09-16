@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 
 import { fetchAllocations, fetchSettlement } from './api'
-import type { SettlementAccess } from './types'
+import type { InvoiceSettlementSummary, SettlementAccess } from './types'
 
 const accessKey = (access: SettlementAccess | null) => access?.kind === 'guest'
   ? ['guest', access.token]
@@ -13,6 +13,14 @@ export function useInvoiceSettlement(access: SettlementAccess | null) {
     queryFn: () => fetchSettlement(access!),
     enabled: Boolean(access),
     retry: false,
+    // Refetches and mutation responses can finish out of order. Preserve the
+    // newest server version for this invoice, including cache writes by controls.
+    structuralSharing: (previous, next) => {
+      const oldSummary = previous as InvoiceSettlementSummary | undefined
+      const nextSummary = next as InvoiceSettlementSummary
+      return oldSummary?.invoice_id === nextSummary.invoice_id && oldSummary.version > nextSummary.version
+        ? oldSummary : nextSummary
+    },
     staleTime: 10_000,
   })
 }
