@@ -36,6 +36,15 @@ export function invalidateFleetAndCockpit(qc: QueryClient) {
   for (const key of ['repair-orders', 'mechanic-board-team', 'mechanic-board-detail']) {
     qc.invalidateQueries({ queryKey: [key], refetchType: 'all' })
   }
+  // The truck record and its incident list, for every truck rather than one:
+  // callers here are modals that know a truck id, but the helper does not, and
+  // React Query matches on key prefix. Leaving the incident list out is what
+  // made logging or editing an incident report success and then show the old
+  // text — the write landed, the list never refetched, and it read as a save
+  // that had not saved.
+  for (const key of ['fleet-truck', 'fleet-truck-incidents', 'fleet-inspections']) {
+    qc.invalidateQueries({ queryKey: [key] })
+  }
 }
 
 /* shared modal shell (fleet design system) */

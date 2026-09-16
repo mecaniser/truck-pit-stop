@@ -141,6 +141,27 @@ function truckLoadFailureDetail(error: unknown) {
   return 'The truck record could not be reached. Check the connection and try again.'
 }
 
+/**
+ * What the incident card should say beneath its heading.
+ *
+ * The API builds `type` from the description's first line, cut at 60
+ * characters, and sends the full text as `note`. Printing both repeats what was
+ * just read, so the body is hidden when the heading already carries the whole
+ * description.
+ *
+ * When the heading is a truncation, the body repeats the full text rather than
+ * the leftover: the cut lands mid-word, and resuming from it produces a
+ * fragment like "ually saves the update" — worse than the repetition it set out
+ * to avoid. Reading one line twice is a fair price for the rest making sense.
+ */
+function incidentBody(inc: IncidentEntry): string | null {
+  const note = (inc.note || '').trim()
+  if (!note) return null
+  const heading = (inc.type || '').trim()
+  // Nothing beyond the heading: one line, said once.
+  return !heading || note === heading ? null : note
+}
+
 export default function TruckDetail({
   truckId, trucks, onOpen,
 }: { truckId: string; trucks: BoardTruck[]; onOpen: (id: string) => void }) {
@@ -767,7 +788,14 @@ export default function TruckDetail({
                     <div className="inc-body">
                       <div className="inc-row1"><b>{inc.type}</b><span className="inc-date">{fmtDate(inc.date)}</span></div>
                       {inc.location && <div className="inc-loc"><MapIcon size={12} /> {inc.location}</div>}
-                      <div className="inc-note">{inc.note}</div>
+                      {/* The heading is the description's first line, cut at 60
+                          characters, so printing the note under it repeats what
+                          was just read — the whole sentence for a short incident,
+                          the first 60 characters for a longer one. Show only what
+                          the heading left out. */}
+                      {incidentBody(inc) && (
+                        <div className="inc-note">{incidentBody(inc)}</div>
+                      )}
                       {(pendingPhotos.length > 0 || !!inc.photos?.length) && (
                         <div style={{ display: 'flex', gap: 7, marginTop: 10, flexWrap: 'wrap' }}>
                           {pendingPhotos.map((photo) => (
