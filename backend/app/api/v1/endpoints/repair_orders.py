@@ -1799,6 +1799,8 @@ async def update_repair_order(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role(*RO_MANAGE_ROLES)),
 ):
+    from app.services.financial_transaction_lock import lock_tenant_financials
+    await lock_tenant_financials(db, current_user.tenant_id)
     result = await db.execute(select(RepairOrder).where(RepairOrder.id == order_id, RepairOrder.deleted_at.is_(None)))
     order = result.scalar_one_or_none()
     
@@ -2915,6 +2917,8 @@ async def approve_completion(
     )),
 ):
     """Finalize reviewed work, lock pricing, create the invoice, and notify the customer."""
+    from app.services.financial_transaction_lock import lock_tenant_financials
+    await lock_tenant_financials(db, current_user.tenant_id)
     result = await db.execute(
         select(RepairOrder)
         .where(
@@ -3197,6 +3201,8 @@ async def delete_repair_order(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role(*RO_MANAGE_ROLES)),
 ):
+    from app.services.financial_transaction_lock import lock_tenant_financials
+    await lock_tenant_financials(db, current_user.tenant_id)
     result = await db.execute(select(RepairOrder).where(RepairOrder.id == order_id))
     order = result.scalar_one_or_none()
 
@@ -3267,6 +3273,8 @@ async def restore_repair_order(
 ):
     """Undo a soft delete. Restores the order to whatever status it had
     when deleted — restoring never changes status on its own."""
+    from app.services.financial_transaction_lock import lock_tenant_financials
+    await lock_tenant_financials(db, current_user.tenant_id)
     result = await db.execute(select(RepairOrder).where(RepairOrder.id == order_id))
     order = result.scalar_one_or_none()
 
@@ -3325,6 +3333,8 @@ async def reopen_repair_order(
     """Reopen a completed internal fleet work order back to in_progress so more
     labor/parts can be added. Internal-only — customer ROs are locked once
     completed because their quote/invoice/payment depends on it."""
+    from app.services.financial_transaction_lock import lock_tenant_financials
+    await lock_tenant_financials(db, current_user.tenant_id)
     result = await db.execute(
         select(RepairOrder).where(RepairOrder.id == order_id, RepairOrder.deleted_at.is_(None))
     )
@@ -4035,6 +4045,8 @@ async def force_void_repair_order(
     re-enters their password for a one-time grant, on the same machinery that
     guards payment-source changes.
     """
+    from app.services.financial_transaction_lock import lock_tenant_financials
+    await lock_tenant_financials(db, current_user.tenant_id)
     grant = await authorize_step_up(
         db,
         context=step_up_context,

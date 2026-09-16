@@ -291,6 +291,9 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
           break
           
         case 'payment_received':
+          queryClient.invalidateQueries({ queryKey: ['invoice-detail'] })
+          queryClient.invalidateQueries({ queryKey: ['invoice-settlement'] })
+          queryClient.invalidateQueries({ queryKey: ['invoice-settlement-allocations'] })
           queryClient.invalidateQueries({ queryKey: ['invoices'] })
           queryClient.invalidateQueries({ queryKey: ['invoice'] })
           queryClient.invalidateQueries({ queryKey: ['payments'] })

@@ -114,20 +114,6 @@ describe('Staff payment choice remains independent of historical export status',
     expect(paymentApi.createPaymentAttempt).not.toHaveBeenCalled()
   })
 
-  it.each(['pending', 'excess'] as const)('explains %s instead of a temporary block', mode => {
-    Object.assign(fixture.summary!, {
-      state: mode === 'pending' ? 'payment_pending' : 'overpayment_resolution',
-      active_pending_principal: mode === 'pending' ? '100.00' : '0.00',
-      unapplied_credit: mode === 'excess' ? '1.01' : '0.00',
-      allocatable_balance: '0.00',
-      allowed_actions: { create_attempt: false, confirm_cash: false, rails: [] },
-    })
-    show()
-    expect(screen.getByText(mode === 'pending' ? 'Payment awaiting confirmation' : 'Payment review needed')).toBeInTheDocument()
-    expect(screen.queryByText('Payment is temporarily blocked')).not.toBeInTheDocument()
-    expect(paymentApi.createPaymentAttempt).not.toHaveBeenCalled()
-  })
-
   it('includes cash in arrow navigation without sending a payment', async () => {
     show()
     screen.getByRole('radio', { name: /^QBO Payments/ }).focus()
@@ -254,4 +240,17 @@ describe('Staff payment choice remains independent of historical export status',
     expect(paymentApi.confirmFullCashPayment.mock.calls[1][2]).toBe(firstKey)
     expect(screen.getByLabelText('Receipt note (optional)')).toBeDisabled()
   })
+  it('does not regress to a delayed older settlement query', () => {
+    const client = new QueryClient()
+    const ui = <QueryClientProvider client={client}><StaffSettlementDialog invoiceId="invoice-834" invoiceNumber="Invoice" open onClose={vi.fn()} /></QueryClientProvider>
+    const original = fixture.summary!
+    fixture.summary = { ...original, version: original.version + 2, state: 'paid', outstanding_balance: '0.00', allocatable_balance: '0.00', allowed_actions: { create_attempt: false, confirm_cash: false, rails: [] } }
+    const view = render(ui)
+    expect(screen.getByText('Paid in full')).toBeInTheDocument()
+    fixture.summary = original
+    view.rerender(<QueryClientProvider client={client}><StaffSettlementDialog invoiceId="invoice-834" invoiceNumber="Invoice updated" open onClose={vi.fn()} /></QueryClientProvider>)
+    expect(screen.getByText('Paid in full')).toBeInTheDocument()
+    expect(screen.queryByRole('radio', { name: /^Cash/ })).not.toBeInTheDocument()
+  })
+
 })

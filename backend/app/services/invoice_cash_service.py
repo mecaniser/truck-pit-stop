@@ -595,6 +595,8 @@ async def reconcile_export_absence(db, invoice, events):
 
 async def confirm_full_cash(db, *, invoice, tenant, customer_id, actor,
                             expected_settlement_version, idempotency_key, note=None):
+    from app.services.financial_transaction_lock import lock_tenant_financials
+    await lock_tenant_financials(db, tenant.id)
     if not cash_staff(actor) or actor.tenant_id != tenant.id:
         raise SettlementDomainError("invoice_not_found", "Invoice not found.", status_code=404)
     if (invoice.tenant_id != tenant.id or not tenant.is_active or tenant.deleted_at

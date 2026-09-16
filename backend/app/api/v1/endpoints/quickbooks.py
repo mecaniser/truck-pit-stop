@@ -221,6 +221,8 @@ async def _reset_accounting_links_for_realm_change(
     now: datetime,
 ) -> None:
     """Make provider IDs retryable when a tenant connects a different QBO company."""
+    from app.services.financial_transaction_lock import lock_tenant_financials
+    await lock_tenant_financials(db, tenant_id)
     await db.execute(
         update(Customer)
         .where(Customer.tenant_id == tenant_id)
@@ -406,6 +408,8 @@ def _quickbooks_payments_token_url() -> str:
 
 
 async def _refresh_connection_if_needed(db: AsyncSession, connection: QuickBooksConnection) -> None:
+    from app.services.financial_transaction_lock import lock_tenant_financials
+    await lock_tenant_financials(db, connection.tenant_id)
     if _connection_token_health(connection) != "refresh_required":
         return
     # Intuit rotates refresh tokens. Serialize refreshes per tenant and check
@@ -419,7 +423,9 @@ async def _refresh_connection_if_needed(db: AsyncSession, connection: QuickBooks
         save_token_set(connection, realm_id=connection.realm_id or "", token_set=token_set)
         connection.last_token_refresh_at = datetime.now(timezone.utc)
         connection.last_token_refresh_error = None
+        refreshed_tenant_id = connection.tenant_id
         await db.commit()
+        await lock_tenant_financials(db, refreshed_tenant_id)
     except (QuickBooksConfigurationError, QuickBooksOAuthError) as exc:
         connection.last_token_refresh_error = str(exc)
         await db.commit()
@@ -465,6 +471,8 @@ async def _sync_payment_accounting(
     customer: Customer,
 ) -> None:
     """Best-effort post-capture accounting; never undo an accepted card charge."""
+    from app.services.financial_transaction_lock import lock_tenant_financials
+    await lock_tenant_financials(db, invoice.tenant_id)
     try:
         await sync_payment(connection, payment, invoice, customer)
         await db.commit()
@@ -597,6 +605,8 @@ async def sync_quickbooks_invoice_now(
     current_user: User = Depends(get_current_active_user),
 ):
     """Queue a durable export; only the leased worker dispatches invoice writes."""
+    from app.services.financial_transaction_lock import lock_tenant_financials
+    await lock_tenant_financials(db, current_user.tenant_id)
     _require_quickbooks_admin(current_user)
     invoice, _order, customer = await _invoice_accounting_context(db, invoice_id)
     if invoice.tenant_id != current_user.tenant_id:
@@ -636,6 +646,8 @@ async def charge_quickbooks_invoice(
 
     The request deliberately has no card, account, routing, or CVC fields.
     """
+    from app.services.financial_transaction_lock import lock_tenant_financials
+    await lock_tenant_financials(db, current_user.tenant_id)
     if current_user.role != UserRole.CUSTOMER or not current_user.customer_id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only customers can pay invoices")
     _require_quickbooks_payments_approved_release()
@@ -745,6 +757,18 @@ async def charge_quickbooks_invoice(
     if not connection or _connection_token_health(connection) in {"not_connected", "reconnect_required"}:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="This shop has not finished QuickBooks Payments setup")
     await _refresh_connection_if_needed(db, connection)
+    await lock_tenant_financials(db, current_user.tenant_id)
+    if (invoice.status in {InvoiceStatus.PAID, InvoiceStatus.CANCELLED}
+            or invoice.deleted_at is not None or invoice.voided_at is not None
+            or invoice.repair_order.deleted_at is not None
+            or invoice.repair_order.status == RepairOrderStatus.CANCELLED):
+        raise HTTPException(status_code=409, detail="Invoice is no longer payable")
+    outstanding_amount = await _invoice_outstanding_amount(db, invoice)
+    if outstanding_amount <= Decimal("0.00"):
+        raise HTTPException(status_code=409, detail="Invoice is already paid")
+    existing = await find_quickbooks_payment(db, body.idempotency_key)
+    if existing:
+        raise HTTPException(status_code=409, detail="Payment request already processed; refresh the invoice")
     try:
         charge = await create_charge(
             connection=connection,
@@ -810,6 +834,8 @@ async def refund_quickbooks_payment(
     current_user: User = Depends(get_current_active_user),
 ):
     """Refund or void an Intuit charge and record the QBO refund receipt."""
+    from app.services.financial_transaction_lock import lock_tenant_financials
+    await lock_tenant_financials(db, current_user.tenant_id)
     _require_quickbooks_admin(current_user)
     _require_quickbooks_payments_approved_release()
     if not quickbooks_payments_enabled_for_tenant(current_user.tenant_id):
@@ -959,6 +985,8 @@ async def reconcile_quickbooks_payment(
     current_user: User = Depends(get_current_active_user),
 ):
     """Refresh provider state and retry the linked QBO accounting payment."""
+    from app.services.financial_transaction_lock import lock_tenant_financials
+    await lock_tenant_financials(db, current_user.tenant_id)
     _require_quickbooks_admin(current_user)
     _require_quickbooks_payments_approved_release()
     payment = await db.get(Payment, payment_id)
@@ -1333,6 +1361,8 @@ async def disconnect_quickbooks(
     step_up_context: PaymentStepUpContext = Depends(get_payment_step_up_context),
 ):
     """Forget local QuickBooks credentials for this tenant."""
+    from app.services.financial_transaction_lock import lock_tenant_financials
+    await lock_tenant_financials(db, current_user.tenant_id)
     _require_quickbooks_admin(current_user)
     grant = await authorize_step_up(
         db,

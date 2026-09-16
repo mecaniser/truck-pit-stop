@@ -153,6 +153,14 @@ async def _seed_fleet(db_session):
     )
     db_session.add_all([truck, trailer])
     await db_session.flush()
+
+    # The truck reaches the fleet board through its employer's membership, the
+    # way a real one does when it is added or linked.
+    from app.services.vehicle_identity import ensure_fleet_membership
+    await ensure_fleet_membership(
+        db_session, tenant_id=tenant.id, vehicle_id=truck.id,
+        fleet_customer_id=employer.id)
+    await db_session.flush()
     return tenant, other_tenant, employer, other_employer, manager, driver_user, truck, trailer
 
 

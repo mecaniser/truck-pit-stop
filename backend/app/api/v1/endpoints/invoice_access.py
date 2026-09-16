@@ -1,3 +1,4 @@
+from app.services.cash_receipt_service import CashReceipt, load_cash_receipt
 from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Literal, Optional
@@ -121,6 +122,7 @@ class GuestSettlementConfirmRequest(PaymentAttemptConfirm):
 
 
 class ResolveInvoiceLinkResponse(BaseModel):
+    cash_receipt: Optional[CashReceipt] = None
     invoice_id: str
     invoice_number: str
     order_number: str
@@ -441,6 +443,7 @@ async def resolve_invoice_link(
     from app.services.invoice_settlement_service import invoice_money_snapshot
     _zelle_amount = invoice_money_snapshot(invoice)[0]
     return ResolveInvoiceLinkResponse(
+        cash_receipt=await load_cash_receipt(db, invoice),
         invoice_id=str(invoice.id),
         invoice_number=invoice.invoice_number,
         order_number=order.order_number,
@@ -704,6 +707,8 @@ async def submit_guest_zelle_payment(
     db: AsyncSession = Depends(get_db),
 ):
     payload = await _get_active_invoice_payload_or_400(body.token)
+    from app.services.financial_transaction_lock import lock_tenant_financials
+    await lock_tenant_financials(db, UUID(payload["tenant_id"]))
     invoice, order, customer, _, tenant = await _load_hardened_guest_invoice_context(
         db, payload,
     )
@@ -824,6 +829,8 @@ async def create_guest_payment_intent(
     db: AsyncSession = Depends(get_db),
 ):
     payload = await _get_active_invoice_payload_or_400(body.token)
+    from app.services.financial_transaction_lock import lock_tenant_financials
+    await lock_tenant_financials(db, UUID(payload["tenant_id"]))
     invoice, order, customer, _, tenant = await _load_hardened_guest_invoice_context(
         db, payload,
     )
@@ -906,6 +913,16 @@ async def create_guest_payment_intent(
             tenant.stripe_account_id,
         )
 
+        from app.services.financial_transaction_lock import lock_tenant_financials
+        await lock_tenant_financials(db, tenant.id)
+        if (invoice.status in {InvoiceStatus.PAID, InvoiceStatus.CANCELLED}
+                or invoice.deleted_at is not None or invoice.voided_at is not None
+                or invoice.repair_order.deleted_at is not None
+                or invoice.repair_order.status == RepairOrderStatus.CANCELLED
+                or int(invoice.total_amount * 100) != amount_cents):
+            raise SettlementDomainError(
+                "invoice_changed", "The invoice changed. Refresh and try again.", retryable=True,
+            )
         intent_params = {
             "amount": amount_cents,
             "currency": "usd",
@@ -960,6 +977,8 @@ async def confirm_guest_payment(
     db: AsyncSession = Depends(get_db),
 ):
     payload = await _get_invoice_payload_for_confirm_or_400(body.token)
+    from app.services.financial_transaction_lock import lock_tenant_financials
+    await lock_tenant_financials(db, UUID(payload["tenant_id"]))
     invoice, order, customer, vehicle, tenant = await _load_hardened_guest_invoice_context(
         db, payload,
     )
@@ -1197,7 +1216,7 @@ async def download_invoice_pdf_by_token(
         invoice=invoice, order=order, customer=customer,
         vehicle=vehicle, tenant=tenant,
         labor_items=labor_items, parts_items=parts_items,
-        invoice_access_url=None,
+        invoice_access_url=None, cash_receipt=await load_cash_receipt(db, invoice),
     )
 
     filename = f"Invoice-{invoice.invoice_number}.pdf"

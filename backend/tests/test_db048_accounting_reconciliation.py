@@ -315,6 +315,7 @@ async def test_accounting_worker_refreshes_and_persists_expired_qbo_token_before
     monkeypatch,
 ) -> None:
     connection = SimpleNamespace(
+        tenant_id=uuid4(),
         realm_id="9341457819957473",
         access_token_expires_at=datetime.now(timezone.utc) - timedelta(minutes=1),
         last_token_refresh_at=None,
@@ -3324,3 +3325,41 @@ async def test_payout_dead_letter_is_visible_tenant_scoped_and_idempotently_retr
             current_user=foreign_owner,
         )
     assert getattr(error.value, "code", None) == "invoice_not_found"
+
+
+@pytest.mark.asyncio
+async def test_busy_financial_aggregate_defers_outbox_without_spending_retry_budget(_db_engine, monkeypatch):
+    """Mutex contention is scheduling, not a failed provider submission."""
+    factory = async_sessionmaker(_db_engine, expire_on_commit=False)
+    async with factory() as db:
+        tenant = Tenant(name="Busy Worker", slug=f"busy-worker-{uuid4().hex}")
+        db.add(tenant)
+        await db.flush()
+        event = ProviderOutboxEvent(
+            tenant_id=tenant.id, event_type=CREDIT_ACCOUNTING_EVENT,
+            aggregate_type="customer_credit_entry", aggregate_id=uuid4(),
+            payload={}, idempotency_key=f"busy-{uuid4()}",
+            status=ProviderOutboxStatus.PENDING.value, attempt_count=2,
+            available_at=datetime.now(timezone.utc) - timedelta(seconds=1),
+        )
+        db.add(event)
+        await db.commit()
+        event_id = event.id
+
+    async def busy(*args, **kwargs):
+        raise SettlementDomainError("invoice_busy", "Busy", retryable=True)
+
+    async def forbidden(*args, **kwargs):
+        pytest.fail("A busy tenant must not dispatch provider work")
+
+    monkeypatch.setattr("app.services.financial_transaction_lock.lock_tenant_financials", busy)
+    monkeypatch.setattr("app.services.db048_accounting_reconciliation.load_credit_accounting_envelope", forbidden)
+    result = await process_due_db048_outbox_events(session_factory=factory, batch_size=10)
+    assert result == {"claimed": 1, "succeeded": 0, "retried": 1, "dead": 0, "lease_lost": 0}
+    async with factory() as db:
+        event = await db.get(ProviderOutboxEvent, event_id)
+        assert event.status == ProviderOutboxStatus.PENDING.value
+        assert event.attempt_count == 2
+        assert event.lock_token is None
+        assert event.locked_until is None
+        assert event.provider_message_id is None

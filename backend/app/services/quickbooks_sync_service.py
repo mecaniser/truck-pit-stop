@@ -278,6 +278,7 @@ async def process_quickbooks_invoice_sync_events(
                 event = await db.get(ProviderOutboxEvent, event_id)
                 if event and event.lock_token == lock_token and event.status == "processing":
                     event.status = "pending"
+                    event.attempt_count = max(0, event.attempt_count - 1)
                     event.available_at = _now() + timedelta(seconds=30)
                     event.lock_token = None
                     event.locked_until = None
@@ -434,6 +435,14 @@ async def reconcile_quickbooks_payments(
             .limit(limit)
         )).scalars().all()
         for payment in payments:
+            from app.services.financial_transaction_lock import lock_tenant_financials
+            from app.services.invoice_settlement_service import SettlementDomainError
+            try:
+                await lock_tenant_financials(db, payment.tenant_id)
+            except SettlementDomainError as exc:
+                if exc.code != "invoice_busy":
+                    raise
+                continue
             if await load_shop_activation(db, payment.tenant_id) is not None:
                 continue
             results["checked"] += 1
@@ -482,6 +491,14 @@ async def reconcile_quickbooks_payments(
             .limit(limit)
         )).scalars().all()
         for refund in refund_records:
+            from app.services.financial_transaction_lock import lock_tenant_financials
+            from app.services.invoice_settlement_service import SettlementDomainError
+            try:
+                await lock_tenant_financials(db, refund.tenant_id)
+            except SettlementDomainError as exc:
+                if exc.code != "invoice_busy":
+                    raise
+                continue
             if await load_shop_activation(db, refund.tenant_id) is not None:
                 continue
             results["checked"] += 1
@@ -538,6 +555,14 @@ async def backfill_quickbooks_cdc(
             )
         )).scalars().all()
         for connection in connections:
+            from app.services.financial_transaction_lock import lock_tenant_financials
+            from app.services.invoice_settlement_service import SettlementDomainError
+            try:
+                await lock_tenant_financials(db, connection.tenant_id)
+            except SettlementDomainError as exc:
+                if exc.code != "invoice_busy":
+                    raise
+                continue
             from app.services.quickbooks_shop_activation import load_shop_activation
             if await load_shop_activation(db, connection.tenant_id) is not None:
                 # A managed cursor/importer must not reuse historical global CDC.

@@ -143,8 +143,8 @@ async def get_reports_dashboard(
             Invoice.status != InvoiceStatus.CANCELLED,
             Payment.deleted_at.is_(None),
             Payment.status == PaymentStatus.COMPLETED,
-            func.date(Payment.created_at) >= rng.start,
-            func.date(Payment.created_at) <= rng.end,
+            Payment.created_at >= rng.utc_start,
+            Payment.created_at < rng.utc_end,
         )
     )
     paid_rows = result.all()
@@ -182,7 +182,7 @@ async def get_reports_dashboard(
 
     counted_invoices: set = set()
     for payment, invoice, order in paid_rows:
-        paid_date = payment.created_at.date() if payment.created_at else rng.start
+        paid_date = rng.local_date(payment.created_at) if payment.created_at else rng.start
         idx = week_index(paid_date)
 
         # Share of the invoice this payment settles. A fully-paid invoice gives
@@ -245,7 +245,7 @@ async def get_reports_dashboard(
     )
     ets_invoiced_date_by_ro: Dict[UUID, date] = dict(ets_dated_result.all())
 
-    order_paid_date = {ro.id: (pay.created_at.date() if pay.created_at else rng.start)
+    order_paid_date = {ro.id: (rng.local_date(pay.created_at) if pay.created_at else rng.start)
                        for pay, _inv, ro in paid_rows}
     hours_ro_dates: Dict[UUID, date] = {}
     for oid in order_ids:
@@ -338,11 +338,14 @@ class SalesGroupRow(BaseModel):
 
 
 class CashReceiptRow(BaseModel):
+    customer_id: UUID
+    invoice_id: UUID
     payment_id: UUID
     payment_number: str
     invoice_number: str
     customer_name: str
     received_at: datetime
+    received_on: date
     amount: str
 
 
@@ -360,16 +363,17 @@ async def cash_receipts_for_range(db, tenant_id, rng):
             Payment.method == PaymentMethod.CASH,
             Payment.status == PaymentStatus.COMPLETED,
             Invoice.is_internal.is_(False),
-            func.date(Payment.created_at) >= rng.start,
-            func.date(Payment.created_at) <= rng.end,
+            Payment.created_at >= rng.utc_start,
+            Payment.created_at < rng.utc_end,
         )
         .order_by(Payment.created_at.desc(), Payment.id)
     )
     rows = [CashReceiptRow(
+        customer_id=customer.id, invoice_id=invoice.id,
         payment_id=payment.id, payment_number=payment.payment_number,
         invoice_number=invoice.invoice_number,
         customer_name=customer.company_name or f"{customer.first_name} {customer.last_name}".strip(),
-        received_at=payment.created_at, amount=str(_money(payment.amount)),
+        received_at=payment.created_at, received_on=rng.local_date(payment.created_at), amount=str(_money(payment.amount)),
     ) for payment, invoice, customer in result.all()]
     return str(sum((_money(row.amount) for row in rows), Decimal('0.00'))), rows
 
@@ -405,8 +409,8 @@ async def get_reports_sales(
             Invoice.tenant_id == tenant_id,
             Invoice.status == InvoiceStatus.PAID,
             Invoice.is_internal.is_(False),
-            func.date(Invoice.paid_at) >= rng.start,
-            func.date(Invoice.paid_at) <= rng.end,
+            Invoice.paid_at >= rng.utc_start,
+            Invoice.paid_at < rng.utc_end,
         )
     )
     rows = result.all()
@@ -534,8 +538,8 @@ async def get_reports_fees(
             Invoice.tenant_id == tenant_id,
             Invoice.status == InvoiceStatus.PAID,
             Invoice.is_internal.is_(False),
-            func.date(Invoice.paid_at) >= rng.start,
-            func.date(Invoice.paid_at) <= rng.end,
+            Invoice.paid_at >= rng.utc_start,
+            Invoice.paid_at < rng.utc_end,
         )
     )
     rows = result.all()
@@ -585,8 +589,8 @@ async def get_reports_fees(
         ).where(
             ProviderSettlementBatch.tenant_id == tenant_id,
             ProviderSettlementBatch.reconciliation_state.in_(("matched", "synced")),
-            func.date(ProviderSettlementBatch.settled_at) >= rng.start,
-            func.date(ProviderSettlementBatch.settled_at) <= rng.end,
+            ProviderSettlementBatch.settled_at >= rng.utc_start,
+            ProviderSettlementBatch.settled_at < rng.utc_end,
         ).group_by(ProviderSettlementBatch.provider)
     )
     provider_expenses = [
@@ -635,8 +639,8 @@ async def get_reports_fees(
                 "manual_reconciliation_required",
                 "accounting_failed",
             )),
-            func.date(ProviderSettlementBatch.settled_at) >= rng.start,
-            func.date(ProviderSettlementBatch.settled_at) <= rng.end,
+            ProviderSettlementBatch.settled_at >= rng.utc_start,
+            ProviderSettlementBatch.settled_at < rng.utc_end,
         )
     ) or 0)
 
@@ -693,8 +697,8 @@ async def get_reports_tax(
             Invoice.tenant_id == tenant_id,
             Invoice.status == InvoiceStatus.PAID,
             Invoice.is_internal.is_(False),
-            func.date(Invoice.paid_at) >= rng.start,
-            func.date(Invoice.paid_at) <= rng.end,
+            Invoice.paid_at >= rng.utc_start,
+            Invoice.paid_at < rng.utc_end,
         )
     )
     tax_collected = _money(result.scalar())
@@ -756,8 +760,8 @@ async def get_reports_parts(
             Invoice.tenant_id == tenant_id,
             Invoice.status == InvoiceStatus.PAID,
             Invoice.is_internal.is_(False),
-            func.date(Invoice.paid_at) >= rng.start,
-            func.date(Invoice.paid_at) <= rng.end,
+            Invoice.paid_at >= rng.utc_start,
+            Invoice.paid_at < rng.utc_end,
         )
     )
     rows = result.all()
@@ -927,8 +931,8 @@ async def get_reports_service_types(
             Invoice.tenant_id == tenant_id,
             Invoice.status == InvoiceStatus.PAID,
             Invoice.is_internal.is_(False),
-            func.date(Invoice.paid_at) >= rng.start,
-            func.date(Invoice.paid_at) <= rng.end,
+            Invoice.paid_at >= rng.utc_start,
+            Invoice.paid_at < rng.utc_end,
         )
     )
     rows = result.all()
@@ -1024,8 +1028,8 @@ async def get_reports_internal(
         .where(
             Invoice.tenant_id == tenant_id,
             Invoice.is_internal.is_(True),
-            func.date(Invoice.created_at) >= rng.start,
-            func.date(Invoice.created_at) <= rng.end,
+            Invoice.created_at >= rng.utc_start,
+            Invoice.created_at < rng.utc_end,
         )
         .order_by(Invoice.created_at.desc())
     )
@@ -1066,8 +1070,8 @@ async def get_reports_internal(
             RepairOrder.tenant_id == tenant_id,
             Invoice.tenant_id == tenant_id,
             Invoice.is_internal.is_(True),
-            func.date(Invoice.created_at) >= rng.start,
-            func.date(Invoice.created_at) <= rng.end,
+            Invoice.created_at >= rng.utc_start,
+            Invoice.created_at < rng.utc_end,
         )
     )
     labor_rows = labor_result.all()
@@ -1156,8 +1160,8 @@ async def get_analytics_profitability(
         select(RepairOrder).where(
             RepairOrder.tenant_id == tenant_id,
             RepairOrder.deleted_at.is_(None),
-            func.date(RepairOrder.created_at) >= rng.start,
-            func.date(RepairOrder.created_at) <= rng.end,
+            RepairOrder.created_at >= rng.utc_start,
+            RepairOrder.created_at < rng.utc_end,
         )
     )
     orders = result.scalars().all()
@@ -1216,8 +1220,8 @@ async def get_analytics_accounts(
             Invoice.tenant_id == tenant_id,
             Invoice.status == InvoiceStatus.PAID,
             Invoice.is_internal.is_(False),
-            func.date(Invoice.paid_at) >= rng.start,
-            func.date(Invoice.paid_at) <= rng.end,
+            Invoice.paid_at >= rng.utc_start,
+            Invoice.paid_at < rng.utc_end,
         )
     )
     rows = result.all()
@@ -1278,16 +1282,16 @@ async def get_analytics_quote_funnel(
         select(func.count(Quote.id)).where(
             Quote.tenant_id == tenant_id,
             Quote.sent_to_customer.is_(True),
-            func.date(Quote.created_at) >= rng.start,
-            func.date(Quote.created_at) <= rng.end,
+            Quote.created_at >= rng.utc_start,
+            Quote.created_at < rng.utc_end,
         )
     )).scalar() or 0
     approved = (await db.execute(
         select(func.count(Quote.id)).where(
             Quote.tenant_id == tenant_id,
             Quote.is_approved.is_(True),
-            func.date(Quote.created_at) >= rng.start,
-            func.date(Quote.created_at) <= rng.end,
+            Quote.created_at >= rng.utc_start,
+            Quote.created_at < rng.utc_end,
         )
     )).scalar() or 0
     invoiced = (await db.execute(
@@ -1296,8 +1300,8 @@ async def get_analytics_quote_funnel(
         .where(
             Invoice.tenant_id == tenant_id,
             Quote.is_approved.is_(True),
-            func.date(Quote.created_at) >= rng.start,
-            func.date(Quote.created_at) <= rng.end,
+            Quote.created_at >= rng.utc_start,
+            Quote.created_at < rng.utc_end,
         )
     )).scalar() or 0
 
@@ -1340,8 +1344,8 @@ async def get_analytics_truck_costs(
             RepairOrder.tenant_id == tenant_id,
             RepairOrder.is_internal.is_(True),
             RepairOrder.deleted_at.is_(None),
-            func.date(RepairOrder.created_at) >= rng.start,
-            func.date(RepairOrder.created_at) <= rng.end,
+            RepairOrder.created_at >= rng.utc_start,
+            RepairOrder.created_at < rng.utc_end,
         )
         .group_by(Vehicle.unit_number)
     )

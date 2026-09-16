@@ -109,6 +109,27 @@ logger = get_logger(__name__)
 
 FLEET_ROLES = (UserRole.FLEET_MANAGER, UserRole.GARAGE_OWNER, UserRole.GARAGE_ADMIN)
 
+
+def on_a_fleet_board():
+    """A truck is on a fleet board because a company has authority over it.
+
+    Membership is the only route in. Ownership by the tenant's house account
+    used to be a second one, which made the shop's own trucks unremovable: the
+    board kept showing them after their membership ended, because owning a truck
+    was treated as its own reason to be there. It is not — the transport company
+    that runs a truck is what answers for it, and the shop's own trucks reach a
+    board the same way every other truck does.
+
+    Distinct from pricing. `internal_fleet.uses_internal_fleet_pricing` still
+    keys off `is_internal_fleet` to decide at-cost parts and the internal labor
+    rate: who pays and who is answerable are different questions, and only the
+    second one is asked here.
+
+    Callers must already join Vehicle -> Customer and outer-join FleetMembership
+    scoped to the tenant with `effective_to IS NULL`.
+    """
+    return FleetMembership.id.is_not(None)
+
 # Repair-order statuses that count as a closed/terminal work order.
 TERMINAL_RO_STATUSES = {
     RepairOrderStatus.COMPLETED,
@@ -175,7 +196,7 @@ async def _get_fleet_vehicle(db: AsyncSession, tenant_id: UUID, vehicle_id: UUID
                 Vehicle.id == vehicle_id,
                 Vehicle.tenant_id == tenant_id,
                 Vehicle.deleted_at.is_(None),
-                or_(FleetMembership.id.is_not(None), Customer.is_internal_fleet.is_(True)),
+                on_a_fleet_board(),
                 Customer.deleted_at.is_(None),
             )
         )
@@ -471,7 +492,7 @@ async def list_fleet_vehicles(
         .where(
             Vehicle.tenant_id == current_user.tenant_id,
             Vehicle.deleted_at.is_(None),
-            or_(FleetMembership.id.is_not(None), Customer.is_internal_fleet.is_(True)),
+            on_a_fleet_board(),
             Customer.deleted_at.is_(None),
         )
         .distinct()
@@ -1404,7 +1425,7 @@ async def _fleet_vehicles(db: AsyncSession, tenant_id: UUID) -> list[Vehicle]:
         .where(
             Vehicle.tenant_id == tenant_id,
             Vehicle.deleted_at.is_(None),
-            or_(FleetMembership.id.is_not(None), Customer.is_internal_fleet.is_(True)),
+            on_a_fleet_board(),
             Customer.deleted_at.is_(None),
         )
         .distinct()
@@ -1427,7 +1448,7 @@ async def _fleet_board_vehicle_ids(db: AsyncSession, tenant_id: UUID) -> list[UU
         .where(
             Vehicle.tenant_id == tenant_id,
             Vehicle.deleted_at.is_(None),
-            or_(FleetMembership.id.is_not(None), Customer.is_internal_fleet.is_(True)),
+            on_a_fleet_board(),
             Customer.deleted_at.is_(None),
         )
         .distinct()
@@ -1655,8 +1676,7 @@ async def _fleet_board_from_projection(
         .where(
             FleetBoardReadModel.tenant_id == tenant_id,
             or_(
-                FleetMembership.id.is_not(None),
-                Customer.is_internal_fleet.is_(True),
+                on_a_fleet_board(),
                 Vehicle.id.is_(None),  # migration-restore projection compatibility
             ),
         )
@@ -2504,7 +2524,7 @@ async def _load_fleet_ro_or_404(
             RepairOrder.id == ro_id,
             RepairOrder.tenant_id == tenant_id,
             RepairOrder.deleted_at.is_(None),
-            or_(FleetMembership.id.is_not(None), Customer.is_internal_fleet.is_(True)),
+            on_a_fleet_board(),
         ))
         .options(
             selectinload(RepairOrder.assigned_mechanic),

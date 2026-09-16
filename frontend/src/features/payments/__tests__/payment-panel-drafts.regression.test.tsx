@@ -289,4 +289,29 @@ describe('Payment panel explicit drafts and fee refresh', () => {
     expect(updated).not.toHaveBeenCalled()
     expect(screen.getByRole('button', { name: 'Confirm Zelle received' })).toBeEnabled()
   })
+  it.each(['create', 'confirm'])('ignores late %s results older than the displayed settlement version', async stage => {
+    const summary = active
+    const updated = vi.fn()
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const ui = (version: number) => <QueryClientProvider client={client}><SettlementPaymentPanel access={{ kind: 'authenticated', invoiceId: summary.invoice_id }} summary={{ ...summary, version }} audience="staff" tone="light" onUpdated={updated} /></QueryClientProvider>
+    const view = render(ui(summary.version))
+    await userEvent.click(screen.getByRole('radio', { name: 'Zelle', exact: true }))
+    await userEvent.type(screen.getByRole('textbox', { name: 'Zelle transaction reference' }), 'REFERENCE')
+    const pending = { attempt_id: 'attempt-A', attempt_version: 1, state: 'pending', rail: 'zelle', principal_amount: '1160.49', settlement: { ...summary, version: summary.version + 1 } }
+    let finish!: (value: unknown) => void
+    const deferred = new Promise(resolve => { finish = resolve })
+    api.createPaymentAttempt.mockReturnValue(stage === 'create' ? deferred : Promise.resolve(pending))
+    api.confirmPaymentAttempt.mockReturnValue(deferred)
+    const record = screen.getByRole('button', { name: 'Record Zelle' })
+    await waitFor(() => expect(record).toBeEnabled())
+    await userEvent.click(record)
+    if (stage === 'confirm') {
+      await userEvent.click(await screen.findByRole('button', { name: 'Confirm Zelle received' }))
+      updated.mockClear()
+    }
+    view.rerender(ui(summary.version + 3))
+    await act(async () => finish({ ...pending, ...(stage === 'confirm' ? { state: 'confirmed' } : {}) }))
+    expect(updated).not.toHaveBeenCalled()
+  })
+
 })

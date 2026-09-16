@@ -577,7 +577,7 @@ async def test_credit_consent_channel_is_server_bound_to_principal(db_session, m
         note="Customer approved by phone", idempotency_key="staff-phone-consent",
     )
     assert credit.consent_channel == "phone"
-    # A transport retry replays one result; a new key must not issue a second credit.
+    # Transport retries replay; a different key cannot spend the same excess twice.
     consent = dict(
         overpayment_id=confirmed.overpayment.id, tenant_id=tenant.id, actor=owner,
         subject_customer_id=customer.id, channel="phone", note="Customer approved by phone",

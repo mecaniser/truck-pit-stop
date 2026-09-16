@@ -557,6 +557,7 @@ async def _create_stripe_intent(
             "The provider payment configuration is unavailable.",
             status_code=409,
         )
+    expected_attempt_version = attempt.version
     amount_cents = int(money(attempt.provider_charge_amount) * 100)
     params = {
         "amount": amount_cents, "currency": "usd",
@@ -578,6 +579,18 @@ async def _create_stripe_intent(
         "stripe_account": provider_account_id,
         "idempotency_key": f"db048:{tenant.id}:{idempotency_key}",
     }
+    from app.services.financial_transaction_lock import lock_tenant_financials
+    await lock_tenant_financials(db, tenant.id)
+    if (attempt.state != "pending" or attempt.version != expected_attempt_version
+            or int(money(attempt.provider_charge_amount) * 100) != amount_cents):
+        raise SettlementDomainError(
+            "attempt_transition_conflict", "The payment attempt changed. Refresh and try again.",
+            retryable=True, current_version=attempt.version,
+        )
+    from app.services.invoice_settlement_service import locked_accessible_invoice_for_attempt
+    await locked_accessible_invoice_for_attempt(db, attempt)
+    from app.services.invoice_accounting_policy import require_standard_payment
+    await require_standard_payment(db, invoice, attempt=attempt)
     platform_fee = platform_fee_amount_cents(amount_cents, platform_fee_percent_for(tenant))
     if platform_fee > 0:
         params["application_fee_amount"] = platform_fee
@@ -601,11 +614,14 @@ async def _persist_and_bind_stripe_intent(
     and the local binding update.  A provider-create failure transitions the
     already-durable attempt to failed and releases only its reservation.
     """
+    from app.services.financial_transaction_lock import lock_tenant_financials
+    await lock_tenant_financials(db, tenant.id)
     attempt_id = attempt.id
     tenant_id = tenant.id
     from app.services.invoice_accounting_policy import require_standard_payment
     await require_standard_payment(db, invoice, attempt=attempt)
     await db.commit()
+    await lock_tenant_financials(db, tenant_id)
     persisted = (
         await db.execute(
             select(InvoicePaymentAttempt).where(
@@ -747,6 +763,8 @@ async def charge_quickbooks_settlement_attempt(
     expected_attempt_version: int,
     idempotency_key: str,
 ):
+    from app.services.financial_transaction_lock import lock_tenant_financials
+    await lock_tenant_financials(db, tenant.id)
     if (
         attempt.invoice_id != invoice.id
         or attempt.tenant_id != tenant.id
@@ -804,6 +822,15 @@ async def charge_quickbooks_settlement_attempt(
             "QuickBooks Payments is not ready for this shop.",
         )
     await _refresh_connection_if_needed(db, connection)
+    # Token rotation commits. Reacquire before trusting the pre-refresh attempt.
+    await lock_tenant_financials(db, tenant.id)
+    if attempt.state != "pending" or attempt.version != expected_attempt_version:
+        raise SettlementDomainError(
+            "attempt_transition_conflict", "The payment attempt changed. Refresh and try again.",
+            retryable=True, current_version=attempt.version,
+        )
+    from app.services.invoice_settlement_service import locked_accessible_invoice_for_attempt
+    invoice = await locked_accessible_invoice_for_attempt(db, attempt)
     reconciling_existing_charge = bool(attempt.provider_charge_id)
     if not reconciling_existing_charge:
         await require_standard_payment(db, invoice, attempt=attempt)
@@ -1161,6 +1188,8 @@ async def retry_failed_payment_refund(
     db: AsyncSession = Depends(get_db),
     current_user: CurrentUser = Depends(get_current_active_user),
 ):
+    from app.services.financial_transaction_lock import lock_tenant_financials
+    await lock_tenant_financials(db, current_user.tenant_id)
     if not _can_manage_money(current_user):
         raise SettlementDomainError("invoice_not_found", "Invoice not found.", status_code=404)
     key = _idempotency_key(idempotency_header)
@@ -1697,6 +1726,8 @@ async def update_card_provider_configuration(
     current_user: CurrentUser = Depends(get_current_active_user),
     step_up_context: PaymentStepUpContext = Depends(get_payment_step_up_context),
 ):
+    from app.services.financial_transaction_lock import lock_tenant_financials
+    await lock_tenant_financials(db, current_user.tenant_id)
     idempotency_key = _idempotency_key(idempotency_header)
     if not _can_manage_money(current_user):
         raise SettlementDomainError("invoice_not_found", "Invoice not found.", status_code=404)
@@ -1949,6 +1980,8 @@ async def retry_payout_reconciliation(
     db: AsyncSession = Depends(get_db),
     current_user: CurrentUser = Depends(get_current_active_user),
 ):
+    from app.services.financial_transaction_lock import lock_tenant_financials
+    await lock_tenant_financials(db, current_user.tenant_id)
     idempotency_key = _idempotency_key(idempotency_header)
     if not _can_manage_money(current_user):
         raise SettlementDomainError("invoice_not_found", "Invoice not found.", status_code=404)
@@ -2025,6 +2058,8 @@ async def retry_accounting_operation(
     db: AsyncSession = Depends(get_db),
     current_user: CurrentUser = Depends(get_current_active_user),
 ):
+    from app.services.financial_transaction_lock import lock_tenant_financials
+    await lock_tenant_financials(db, current_user.tenant_id)
     idempotency_key = _idempotency_key(idempotency_header)
     if not _can_manage_money(current_user):
         raise SettlementDomainError("invoice_not_found", "Invoice not found.", status_code=404)

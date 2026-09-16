@@ -1,3 +1,4 @@
+import { endRejectedSession, setSessionRecovering } from './sessionRecovery'
 import { useAuthStore } from '../stores/authStore'
 import { decodeJwtPayload } from './authTokens'
 import { requestTokenRefresh, requestWorkOSSessionRefresh } from './authRefresh'
@@ -52,6 +53,7 @@ function getChannel(): BroadcastChannel | null {
       if (event.data?.type === 'renewed' && typeof event.data.at === 'number') {
         // Another tab just renewed the shared cookie. Reset our schedule so we
         // don't also hit the server.
+        setSessionRecovering(false)
         lastRenewAtMs = event.data.at
         retryIndex = 0
         scheduleNext()
@@ -124,7 +126,7 @@ function scheduleNext(delayMs?: number): void {
   }, delay)
 }
 
-async function performRenewal(): Promise<void> {
+async function performRenewal(epoch: number): Promise<void> {
   const provider = useAuthStore.getState().authProvider
   if (provider === 'workos') {
     await requestWorkOSSessionRefresh()
@@ -132,7 +134,9 @@ async function performRenewal(): Promise<void> {
   }
   const refreshToken = useAuthStore.getState().refreshToken
   const { access_token, refresh_token } = await requestTokenRefresh(refreshToken)
-  useAuthStore.getState().setTokens(access_token, refresh_token)
+  if (useAuthStore.getState().authSessionEpoch === epoch && !useAuthStore.getState().logoutInProgress) {
+    useAuthStore.getState().setTokens(access_token, refresh_token)
+  }
 }
 
 async function renewNow(options: { respectRecentRenewal?: boolean } = {}): Promise<void> {
@@ -151,37 +155,42 @@ async function renewNow(options: { respectRecentRenewal?: boolean } = {}): Promi
     return
   }
 
-  inFlight = (async () => {
+  const epoch = useAuthStore.getState().authSessionEpoch
+  const isCurrentSession = () => running && useAuthStore.getState().authSessionEpoch === epoch
+    && useAuthStore.getState().isAuthenticated && !useAuthStore.getState().logoutInProgress
+  const renewal = (async () => {
     try {
-      await performRenewal()
+      await performRenewal(epoch)
+      if (!isCurrentSession()) return
+      setSessionRecovering(false)
       retryIndex = 0
       announceRenewed()
       scheduleNext()
     } catch (error) {
+      if (!isCurrentSession()) return
       const status = getErrorStatus(error)
       if (status === 401 || status === 403) {
         // The server session itself is gone. Hand off to the app's normal
         // logout/redirect path; the 401 interceptor handles UX.
         stopSessionKeepAlive()
-        void useAuthStore.getState().logout()
+        endRejectedSession(error)
         return
       }
       // Transient (network blip, 5xx, rate limit). Back off and retry rather
       // than logging the user out of an all-day workspace.
+      setSessionRecovering(true)
       if (retryIndex < RETRY_BACKOFF_MS.length) {
         const backoff = RETRY_BACKOFF_MS[retryIndex]
         retryIndex += 1
         scheduleNext(backoff)
       } else {
         retryIndex = 0
-        scheduleNext()
+        scheduleNext(60_000)
       }
-    } finally {
-      inFlight = null
     }
   })()
-
-  return inFlight
+  inFlight = renewal
+  try { await renewal } finally { if (inFlight === renewal) inFlight = null }
 }
 
 function getErrorStatus(error: unknown): number | undefined {

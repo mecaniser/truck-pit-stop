@@ -165,6 +165,8 @@ async def summary(db, invoice, settlement, tenant, actor, *, audience):
 
 
 async def apply_exemption(db, *, invoice, tenant, actor, body, idempotency_key):
+    from app.services.financial_transaction_lock import lock_tenant_financials
+    await lock_tenant_financials(db, tenant.id)
     if (not authorized(actor) or actor.tenant_id != tenant.id or invoice.tenant_id != tenant.id
             or not tenant.is_active or tenant.deleted_at):
         raise SettlementDomainError("invoice_not_found", "Invoice not found.", status_code=404)

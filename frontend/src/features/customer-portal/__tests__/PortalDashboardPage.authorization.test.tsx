@@ -4,7 +4,7 @@ import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { useAuthStore } from '@/stores/authStore'
-import type { Quote, RepairOrder } from '@/types'
+import type { Invoice, Quote, RepairOrder } from '@/types'
 
 const apiMocks = vi.hoisted(() => ({ get: vi.fn() }))
 
@@ -62,7 +62,7 @@ const quote = (overrides: Partial<Quote> = {}): Quote => ({
   ...overrides,
 })
 
-function renderDashboard(repairOrders: RepairOrder[], revisions: Quote[], historyStatus = 200) {
+function renderDashboard(repairOrders: RepairOrder[], revisions: Quote[], historyStatus = 200, invoices: Invoice[] = []) {
   apiMocks.get.mockImplementation((url: string) => {
     if (url === '/customers/customer-1') {
       return Promise.resolve({ data: { id: 'customer-1', first_name: 'Casey', last_name: 'Customer' } })
@@ -73,7 +73,7 @@ function renderDashboard(repairOrders: RepairOrder[], revisions: Quote[], histor
     if (url === '/repair-orders') {
       return Promise.resolve({ data: { items: repairOrders, has_more: false, skip: 0, limit: 100 } })
     }
-    if (url === '/invoices') return Promise.resolve({ data: [] })
+    if (url === '/invoices') return Promise.resolve({ data: invoices })
     if (url.startsWith('/quotes?repair_order_id=')) {
       return Promise.reject({ response: { status: 403 } })
     }
@@ -114,6 +114,13 @@ describe('PortalDashboardPage authorization actions', () => {
       },
       isAuthenticated: true,
     })
+  })
+
+  it('uses recorded cash amount in recently paid and paid YTD', async () => {
+    renderDashboard([], [], 200, [{ id: 'cash-invoice', status: 'paid', total_amount: '115.00', paid_at: new Date().toISOString(), cash_receipt: { method: 'cash', amount: '101.00' } } as Invoice])
+    await screen.findByText('Recently paid')
+    expect(screen.getAllByText('$101.00')).toHaveLength(2)
+    expect(screen.queryByText('$115.00')).not.toBeInTheDocument()
   })
 
   it.each([

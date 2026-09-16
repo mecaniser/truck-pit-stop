@@ -151,6 +151,17 @@ async def _seed(db_session, *, is_internal: bool, with_part: bool = False):
         objects += [inv, service_part]
     db_session.add_all(objects)
     await db_session.commit()
+
+    # A truck is fleet-managed because a company answers for it, so an internal
+    # truck needs the membership a real one gets on creation. An external truck
+    # deliberately gets none: that is what the fleet-manager authorization tests
+    # rely on, and granting one here would quietly hand them fleet access.
+    if is_internal:
+        from app.services.vehicle_identity import ensure_fleet_membership
+        await ensure_fleet_membership(
+            db_session, tenant_id=tenant.id, vehicle_id=vehicle.id,
+            fleet_customer_id=customer.id)
+        await db_session.commit()
     return staff_user, order, service
 
 

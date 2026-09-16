@@ -113,6 +113,9 @@ function InvoicePaymentPanel({
   chargeControls?: InlineInvoiceChargeControls
 }) {
   const queryClient = useQueryClient()
+  const latestSummary = useRef(summary)
+  useEffect(() => { latestSummary.current = summary }, [summary])
+  const accepts = (next: InvoiceSettlementSummary) => mounted.current && next.invoice_id === latestSummary.current.invoice_id && next.version >= latestSummary.current.version
   const mounted = useRef(true)
   useEffect(() => {
     mounted.current = true
@@ -253,7 +256,8 @@ function InvoicePaymentPanel({
     onSuccess: async created => {
       queryClient.invalidateQueries({ queryKey: ['invoice-settlement'] })
       queryClient.invalidateQueries({ queryKey: ['invoice-settlement-allocations'] })
-      if (!mounted.current) return
+      if (!accepts(created.settlement)) return
+      latestSummary.current = created.settlement
       setAmount(null)
       setEditingAmount(false)
       setAttempt(created)
@@ -261,7 +265,7 @@ function InvoicePaymentPanel({
       onUpdated(created.settlement)
       if (created.provider_client_secret && created.provider === 'stripe_connect') {
         const instance = await getStripeForAccount(created.provider_account_id ?? null)
-        if (mounted.current) setStripe(instance)
+        if (accepts(created.settlement)) setStripe(instance)
       } else if (created.state === 'confirmed') {
         setAttempt(null)
         toast.success(`${RAIL_META[rail!].label} payment recorded.`)
@@ -301,7 +305,8 @@ function InvoicePaymentPanel({
     onSuccess: confirmed => {
       queryClient.invalidateQueries({ queryKey: ['invoice-settlement'] })
       queryClient.invalidateQueries({ queryKey: ['invoice-settlement-allocations'] })
-      if (!mounted.current) return
+      if (!accepts(confirmed.settlement)) return
+      latestSummary.current = confirmed.settlement
       setAttempt(null)
       onUpdated(confirmed.settlement)
       toast.success(`${RAIL_META[confirmed.rail].label} payment confirmed.`)
@@ -323,7 +328,8 @@ function InvoicePaymentPanel({
     onSuccess: charged => {
       queryClient.invalidateQueries({ queryKey: ['invoice-settlement'] })
       queryClient.invalidateQueries({ queryKey: ['invoice-settlement-allocations'] })
-      if (!mounted.current) return
+      if (!accepts(charged.settlement)) return
+      latestSummary.current = charged.settlement
       setAttempt(charged.state === 'pending' ? charged : null)
       onUpdated(charged.settlement)
     },

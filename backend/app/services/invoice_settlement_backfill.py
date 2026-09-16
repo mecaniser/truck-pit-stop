@@ -717,6 +717,8 @@ async def backfill_tenant_invoice_settlements(
     batch_size: int = DEFAULT_BACKFILL_BATCH_SIZE,
 ) -> InvoiceSettlementBackfillRun:
     """Create or re-verify factual baselines without inventing tender details."""
+    from app.services.financial_transaction_lock import lock_tenant_financials
+    await lock_tenant_financials(db, tenant_id)
     cutoff_at = _utc(cutoff_at)
     if batch_size < 1 or batch_size > 1000:
         raise ValueError("batch_size must be between 1 and 1000")

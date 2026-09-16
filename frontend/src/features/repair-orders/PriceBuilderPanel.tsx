@@ -32,6 +32,7 @@ import api from '@/lib/api'
 import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 import QuantityStepper from '@/components/QuantityStepper'
 import StartWorkAction from './StartWorkAction'
+import WorkflowInfoStep, { WorkflowInfoGroup, type WorkflowInfo } from './WorkflowInfoStep'
 import DurationStepper from '@/components/DurationStepper'
 import { formatHoursMinutes } from '@/lib/durationFormat'
 import { formatFileSize, isSupportedPhotoFile, runPhotoUploadQueue, uploadDirectPhoto, type PhotoUploadStatus } from '@/lib/photoUpload'
@@ -167,6 +168,7 @@ type Props = {
   quoteActionDisabled?: boolean
   quoteDisabledReason?: string
   onQuoteAction?: (trigger?: HTMLButtonElement) => void
+  workflowInfo?: WorkflowInfo
   assignedTechnicianName?: string | null
   assignedTechnicianId?: string | null
   technicianOptions?: TechnicianOption[]
@@ -916,6 +918,7 @@ export default function PriceBuilderPanel({
   quoteActionDisabled = false,
   quoteDisabledReason,
   onQuoteAction,
+  workflowInfo,
   assignedTechnicianName,
   assignedTechnicianId,
   technicianOptions = [],
@@ -1071,38 +1074,6 @@ export default function PriceBuilderPanel({
     }
     adHocWasOpen.current = open
   }, [adHocDraft])
-  const [technicianAssignmentOpen, setTechnicianAssignmentOpen] = useState(false)
-  const technicianPopoverRef = useRef<HTMLSpanElement | null>(null)
-  const technicianTriggerRef = useRef<HTMLButtonElement | null>(null)
-  const [technicianPopoverPosition, setTechnicianPopoverPosition] = useState<{ top: number; left: number } | null>(null)
-  useEffect(() => {
-    if (!technicianAssignmentOpen) return
-    const onPointerDown = (event: MouseEvent) => {
-      if (!technicianPopoverRef.current?.contains(event.target as Node)) setTechnicianAssignmentOpen(false)
-    }
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setTechnicianAssignmentOpen(false)
-    }
-    // Anything that moves the trigger invalidates the position, and a menu that
-    // follows a scrolling anchor is more distracting than one that closes.
-    const close = () => setTechnicianAssignmentOpen(false)
-    document.addEventListener('mousedown', onPointerDown)
-    document.addEventListener('keydown', onKeyDown)
-    window.addEventListener('resize', close)
-    window.addEventListener('scroll', close, true)
-    return () => {
-      document.removeEventListener('mousedown', onPointerDown)
-      document.removeEventListener('keydown', onKeyDown)
-      window.removeEventListener('resize', close)
-      window.removeEventListener('scroll', close, true)
-    }
-  }, [technicianAssignmentOpen])
-
-  useEffect(() => {
-    if (!technicianAssignmentOpen) { setTechnicianPopoverPosition(null); return }
-    const rect = technicianTriggerRef.current?.getBoundingClientRect()
-    if (rect) setTechnicianPopoverPosition({ top: rect.bottom + 6, left: rect.left })
-  }, [technicianAssignmentOpen])
   const [photoCaption, setPhotoCaption] = useState('')
   const [photoUploadItems, setPhotoUploadItems] = useState<RepairPhotoUploadItem[]>([])
   const [armWoComplete, setArmWoComplete] = useState(false)
@@ -1229,10 +1200,6 @@ export default function PriceBuilderPanel({
   })
 
   const isFinalizedOrder = ['completed', 'invoiced', 'paid', 'cancelled'].includes(orderStatus)
-  // The pipeline row is only drawn for customer-facing, unfinalised orders. Where
-  // it is absent the band keeps its own header, or internal fleet orders would
-  // lose technician assignment altogether.
-  const technicianPillInPipeline = !isInternalOrder && !isFinalizedOrder
   const { data: repairPhotosData, isFetching: repairPhotosFetching } = useQuery<RepairOrderPhoto[]>({
     queryKey: ['repair-order-photos', orderId],
     queryFn: async ({ signal }) => {
@@ -1506,8 +1473,7 @@ export default function PriceBuilderPanel({
   const technicianAssignmentBypassed = !hasAssignedTechnician && ['in_progress', 'pending_review', 'completed', 'invoiced', 'paid'].includes(orderStatus)
   const canAdminCompleteBypassedWork = !isInternalOrder && technicianAssignmentBypassed && orderStatus === 'in_progress' && !!onAdminCompleteWork
   // A finalized order is closed: the work is done and billed/settled. No more
-  // photo uploads, and the quote pipeline is just clutter (the single status
-  // chip already says it all).
+  // photo uploads; the informational pipeline remains available for history.
   const isFinalized = isFinalizedOrder
   const canManageTechnician = !isInternalOrder && (summary?.can_assign_technician ?? !['pending_review', 'completed', 'invoiced', 'paid', 'cancelled'].includes(orderStatus))
   const canOverrideTechnicianAssignment = !isInternalOrder && !hasAssignedTechnician && ['draft', 'quoted', 'declined', 'approved'].includes(orderStatus) && !!onOverrideTechnicianAssignment
@@ -1622,14 +1588,6 @@ export default function PriceBuilderPanel({
   useEffect(() => {
     setHistoryOpen(false)
     setHistoryVisibleCount(5)
-  }, [orderId])
-
-  // Reset per order, but do not auto-open. This used to expand for every order
-  // without an assigned technician, which is most of them, so the band was the
-  // default state rather than the exception. The pipeline pill already carries
-  // the pending step in amber, and it is the control that opens this.
-  useEffect(() => {
-    setTechnicianAssignmentOpen(false)
   }, [orderId])
 
   useEffect(() => {
@@ -2518,110 +2476,17 @@ export default function PriceBuilderPanel({
 
       {/* Operational workflow is primary. Estimates are optional authorization
           records and appear as a secondary action, never as a work gate. */}
-      {!isInternalOrder && !isFinalized && (
+      {!isInternalOrder && !isDeleted && (
         <>
-        <div className="flex items-center border-b border-orange-100 bg-orange-50/60 px-5 py-2.5 text-xs">
-          <div className="flex w-full min-w-0 items-center gap-2 overflow-x-auto whitespace-nowrap">
-            <span className={`rounded-full px-2.5 py-1 font-semibold ${
-              orderStatus !== 'draft' ? 'bg-emerald-100 text-emerald-700' : 'bg-orange-500 text-white'
-            }`}>
-              {orderStatus === 'draft' ? 'Checked in' : '✓ Checked in'}
-            </span>
-            <span className="text-gray-300">→</span>
-            {canManageTechnician && ((onAssignTechnician && availableTechnicians.length > 0) || canOverrideTechnicianAssignment) ? (
-              <span className="relative inline-flex" ref={technicianPopoverRef}>
-              <button
-                type="button"
-                ref={technicianTriggerRef}
-                onClick={() => setTechnicianAssignmentOpen((open) => !open)}
-                aria-expanded={technicianAssignmentOpen}
-                // The pill shows the state it is in — a name, or Shop-managed —
-                // so the name says what pressing it does instead.
-                aria-label={hasAssignedTechnician ? 'Reassign technician' : 'Assign technician'}
-                className={`db-pipeline-step inline-flex items-center gap-1 rounded-full px-2.5 py-1 font-semibold transition-colors ${
-                  hasAssignedTechnician || technicianAssignmentBypassed
-                    ? 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200'
-                    : 'bg-white text-amber-700 ring-1 ring-amber-200 hover:bg-amber-50'
-                }`}
-              >
-                {hasAssignedTechnician ? `✓ ${assignedTechnicianName}` : technicianAssignmentBypassed ? '✓ Shop-managed' : 'Assign technician'}
-                {/* Not a chevron: a chevron promises a list unrolling below the
-                    control, and this opens a popover beside it. A ring that
-                    fills is the honest shape — closed is an outline, open is
-                    solid, and the fill grows from the middle rather than
-                    appearing, because nothing in the world arrives from
-                    nothing. */}
-                <span
-                  className={`db-popover-dot ${technicianAssignmentOpen ? 'is-open' : ''}`}
-                  aria-hidden="true"
-                />
-              </button>
-              {technicianAssignmentOpen && technicianPopoverPosition && (
-                <div
-                  role="dialog"
-                  aria-label={hasAssignedTechnician ? 'Reassign technician' : 'Assign technician'}
-                  style={{ position: 'fixed', top: technicianPopoverPosition.top, left: technicianPopoverPosition.left }}
-                  className="db-technician-popover z-50 w-64 rounded-xl border border-gray-200 bg-white p-1.5 text-left shadow-[0_14px_34px_rgba(16,36,59,.18)]"
-                >
-                  {onAssignTechnician && availableTechnicians.length > 0 && (
-                    <div className="max-h-64 overflow-y-auto">
-                      {availableTechnicians.map((tech) => (
-                        <button
-                          key={tech.mechanic_id}
-                          type="button"
-                          onClick={() => { onAssignTechnician(tech.mechanic_id); setTechnicianAssignmentOpen(false) }}
-                          disabled={technicianAssignmentPending || technicianOverridePending}
-                          className="db-technician-choice flex w-full items-center justify-between gap-2 rounded-lg px-2.5 py-1.5 text-left disabled:opacity-50"
-                        >
-                          <span className="truncate text-[13px] font-semibold text-gray-900">{tech.mechanic_name}</span>
-                          <span className={`shrink-0 text-[11px] font-bold ${tech.load < 50 ? 'text-emerald-600' : tech.load < 80 ? 'text-orange-600' : 'text-red-600'}`}>
-                            {tech.load.toFixed(0)}%
-                          </span>
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                  {canOverrideTechnicianAssignment && (
-                    <button
-                      type="button"
-                      onClick={() => { onOverrideTechnicianAssignment?.(); setTechnicianAssignmentOpen(false) }}
-                      disabled={technicianOverridePending || technicianAssignmentPending}
-                      className={`flex w-full items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[12px] font-semibold text-amber-700 transition-colors hover:bg-amber-50 disabled:opacity-50 ${
-                        onAssignTechnician && availableTechnicians.length > 0 ? 'mt-1 border-t border-gray-100 pt-2' : ''
-                      }`}
-                    >
-                      {technicianOverridePending ? <Spinner size="xs" /> : <Play className="h-3.5 w-3.5" />}
-                      {technicianOverridePending ? 'Starting…' : 'Start without a technician'}
-                    </button>
-                  )}
-                </div>
-              )}
-              </span>
-            ) : (
-              <span className={`rounded-full px-2.5 py-1 font-semibold ${
-                hasAssignedTechnician || technicianAssignmentBypassed
-                  ? 'bg-emerald-100 text-emerald-700'
-                  : 'bg-white text-amber-700 ring-1 ring-amber-200'
-              }`}>
-                {hasAssignedTechnician ? `✓ ${assignedTechnicianName}` : technicianAssignmentBypassed ? '✓ Shop-managed' : 'Assign technician'}
-              </span>
-            )}
-            <span className="text-gray-300">→</span>
-            <span className={`rounded-full px-2.5 py-1 font-semibold ${
-              ['in_progress', 'pending_review'].includes(orderStatus)
-                ? 'bg-emerald-100 text-emerald-700'
-                : 'bg-transparent text-gray-400'
-            }`}>
-              {orderStatus === 'in_progress' ? 'In the bay' : ['pending_review'].includes(orderStatus) ? '✓ Work complete' : 'In the bay'}
-            </span>
-            <span className="text-gray-300">→</span>
-            <span className={`rounded-full px-2.5 py-1 font-semibold ${
-              orderStatus === 'pending_review'
-                ? 'bg-orange-500 text-white'
-                : 'bg-transparent text-gray-400'
-            }`}>
-              Quality review
-            </span>
+        <div className="flex items-center border-b border-gray-100 bg-white px-5 py-1.5 text-xs">
+          <WorkflowInfoGroup className="flex w-full min-w-0 items-center gap-2 overflow-x-auto whitespace-nowrap">
+            <WorkflowInfoStep key={`intake-${orderId}`} stage="intake" label={orderStatus === 'draft' ? 'Checked in' : '✓ Checked in'} className={orderStatus === 'draft' ? 'bg-orange-500 text-white' : 'bg-emerald-100 text-emerald-700'} info={workflowInfo} status={orderStatus} description={description} mileage={mileageIn} />
+            <span className="text-gray-300" aria-hidden="true">→</span>
+            <WorkflowInfoStep key={`tech-${orderId}`} stage="technician" label={hasAssignedTechnician ? `Technician: ${assignedTechnicianName}` : technicianAssignmentBypassed ? 'Shop-managed · no technician' : 'No technician assigned'} className={hasAssignedTechnician || technicianAssignmentBypassed ? 'bg-emerald-100 text-emerald-700' : 'text-gray-500'} info={workflowInfo} status={orderStatus} technician={assignedTechnicianName} />
+            <span className="text-gray-300" aria-hidden="true">→</span>
+            <WorkflowInfoStep key={`bay-${orderId}`} stage="bay" label={['pending_review', 'completed', 'invoiced', 'paid'].includes(orderStatus) ? '✓ Work complete' : 'In the bay'} className={['in_progress', 'pending_review', 'completed', 'invoiced', 'paid'].includes(orderStatus) ? 'bg-emerald-100 text-emerald-700' : 'text-gray-500'} info={workflowInfo} status={orderStatus} operationCount={summary?.lines.length} />
+            <span className="text-gray-300" aria-hidden="true">→</span>
+            <WorkflowInfoStep key={`review-${orderId}`} stage="review" label="Quality review" className={orderStatus === 'pending_review' ? 'bg-orange-500 text-white' : ['completed', 'invoiced', 'paid'].includes(orderStatus) ? 'bg-emerald-100 text-emerald-700' : 'text-gray-500'} info={workflowInfo} status={orderStatus} reviewDraft={reviewNotesValue} />
             {onQuoteAction && canMutate && (
               <button
                 ref={desktopQuoteActionRef}
@@ -2640,10 +2505,10 @@ export default function PriceBuilderPanel({
                 {quoteActionPending ? 'Working…' : quoteActionLabel}
               </button>
             )}
-          </div>
+          </WorkflowInfoGroup>
         </div>
         {onQuoteAction && canMutate && (
-          <div className="border-b border-orange-100 bg-orange-50/60 px-5 py-2.5 sm:hidden">
+          <div className="border-b border-gray-100 bg-white px-5 pb-2 pt-0 sm:hidden">
             <button
               ref={mobileQuoteActionRef}
               type="button"
@@ -2660,61 +2525,6 @@ export default function PriceBuilderPanel({
               {quoteActionPending ? <Spinner size="xs" /> : <FileText className="h-4 w-4" />}
               {quoteActionPending ? 'Working…' : quoteActionLabel}
             </button>
-          </div>
-        )}
-        {!technicianPillInPipeline && canManageTechnician && ((onAssignTechnician && availableTechnicians.length > 0) || canOverrideTechnicianAssignment) && (
-          <div className="border-t border-orange-100 bg-white px-5 py-3">
-            {!technicianPillInPipeline && (
-              <button
-                type="button"
-                onClick={() => setTechnicianAssignmentOpen((open) => !open)}
-                className={`flex w-full items-center justify-between gap-2 text-left ${technicianAssignmentOpen ? 'mb-2' : ''}`}
-                aria-expanded={technicianAssignmentOpen}
-              >
-                <span className="text-[11px] font-bold uppercase tracking-[0.16em] text-gray-500">
-                  {hasAssignedTechnician ? 'Reassign technician' : 'Assign technician'}
-                </span>
-                <ChevronDown className={`h-4 w-4 text-gray-400 transition-transform ${technicianAssignmentOpen ? 'rotate-180' : ''}`} aria-hidden="true" />
-              </button>
-            )}
-            {technicianAssignmentOpen && (
-              <>
-            {onAssignTechnician && availableTechnicians.length > 0 && (
-              <div className="grid grid-cols-1 gap-1 sm:grid-cols-2 lg:grid-cols-3">
-                {availableTechnicians.map((tech) => (
-                  <button
-                    key={tech.mechanic_id}
-                    type="button"
-                    onClick={() => onAssignTechnician(tech.mechanic_id)}
-                    disabled={technicianAssignmentPending || technicianOverridePending}
-                    className="db-technician-choice flex items-center justify-between gap-2 rounded-lg px-2.5 py-1.5 text-left disabled:opacity-50"
-                  >
-                    <span className="truncate text-[13px] font-semibold text-gray-900">{tech.mechanic_name}</span>
-                    <span className={`shrink-0 text-[11px] font-bold ${tech.load < 50 ? 'text-emerald-600' : tech.load < 80 ? 'text-orange-600' : 'text-red-600'}`}>
-                      {tech.load.toFixed(0)}%
-                    </span>
-                  </button>
-                ))}
-              </div>
-            )}
-            {canOverrideTechnicianAssignment && (
-              <div className={`flex items-center justify-between gap-3 ${onAssignTechnician && availableTechnicians.length > 0 ? 'mt-3 border-t border-gray-100 pt-3' : ''}`}>
-                <p className="text-xs text-gray-500">
-                  Handled verbally or outside the mechanic portal?
-                </p>
-                <button
-                  type="button"
-                  onClick={onOverrideTechnicianAssignment}
-                  disabled={technicianOverridePending || technicianAssignmentPending}
-                  className="inline-flex shrink-0 items-center gap-1.5 rounded-lg px-2 py-1 text-xs font-semibold text-amber-700 underline-offset-2 transition-colors hover:bg-amber-50 hover:underline disabled:opacity-50"
-                >
-                  {technicianOverridePending ? <Spinner size="xs" /> : <Play className="h-3.5 w-3.5" />}
-                  {technicianOverridePending ? 'Starting…' : 'Start without a technician'}
-                </button>
-              </div>
-            )}
-              </>
-            )}
           </div>
         )}
         </>
@@ -4639,14 +4449,14 @@ export default function PriceBuilderPanel({
           <button
             type="button"
             onClick={() => { setFooterDetailsOpen((open) => open === 'parts' ? null : 'parts'); setDiscountsOpen(false) }}
-            className="rounded-full bg-blue-50 px-3 py-1 text-xs font-bold text-blue-700 hover:bg-blue-100"
+            className="db-summary-pill rounded-full bg-blue-50 px-3 py-1 text-xs font-bold text-blue-700 hover:bg-blue-100"
           >
             Parts {isInitialSummaryLoad || summaryLoadFailed ? '…' : money(summary?.parts_total)}
           </button>
           <button
             type="button"
             onClick={() => { setFooterDetailsOpen((open) => open === 'labor' ? null : 'labor'); setDiscountsOpen(false) }}
-            className="rounded-full bg-orange-50 px-3 py-1 text-xs font-bold text-orange-700 hover:bg-orange-100"
+            className="db-summary-pill rounded-full bg-orange-50 px-3 py-1 text-xs font-bold text-orange-700 hover:bg-orange-100"
           >
             Labor {isInitialSummaryLoad || summaryLoadFailed ? '…' : money(effectiveLaborTotal)}
           </button>
@@ -4657,7 +4467,7 @@ export default function PriceBuilderPanel({
             <button
               type="button"
               onClick={() => { setFooterDetailsOpen((open) => open === 'discounts' ? null : 'discounts'); setDiscountsOpen(false) }}
-              className="rounded-full bg-red-50 px-3 py-1 text-xs font-bold text-red-700 hover:bg-red-100"
+              className="db-summary-pill rounded-full bg-red-50 px-3 py-1 text-xs font-bold text-red-700 hover:bg-red-100"
             >
               Discounts -{isInitialSummaryLoad || summaryLoadFailed ? '…' : money(discountTotal)}
             </button>
@@ -4666,7 +4476,7 @@ export default function PriceBuilderPanel({
             <button
               type="button"
               onClick={() => { setFooterDetailsOpen((open) => open === 'savings' ? null : 'savings'); setDiscountsOpen(false) }}
-              className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-bold text-emerald-700 hover:bg-emerald-100"
+              className="db-summary-pill rounded-full bg-emerald-50 px-3 py-1 text-xs font-bold text-emerald-700 hover:bg-emerald-100"
             >
               Customer saves {isInitialSummaryLoad || summaryLoadFailed ? '…' : money(customerSavesTotal)}
             </button>
@@ -4785,7 +4595,7 @@ export default function PriceBuilderPanel({
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className={hasInvoice
             ? 'flex w-full min-w-0 items-end justify-between gap-2'
-            : 'ml-auto flex items-center gap-3'
+            : 'ml-auto flex min-w-0 flex-wrap items-center justify-end gap-3'
           }>
             <div className={hasInvoice ? 'shrink-0 text-left' : 'text-right'}>
               <div className="flex items-center justify-end gap-2">
@@ -4913,13 +4723,13 @@ export default function PriceBuilderPanel({
                           ? 'w-[136px] gap-1.5 px-3 max-[360px]:w-[116px] max-[360px]:px-2 max-[360px]:text-[11px]'
                           : 'w-10 gap-0 px-0'
                       }`}
-                      aria-label={invoiceSettlement && invoiceSettlement.state !== 'unpaid' ? 'Review payment' : invoice.pending_zelle_confirmation ? 'Confirm Zelle payment' : 'Record payment'}
+                      aria-label={invoice.pending_zelle_confirmation ? 'Confirm Zelle payment' : 'Record payment'}
                     >
                       <CreditCard className="h-4 w-4 shrink-0" />
                       <span className={`overflow-hidden transition-[max-width,opacity] duration-150 sm:max-w-40 sm:opacity-100 ${
                         expandedInvoiceAction === 'payment' ? 'max-w-40 opacity-100' : 'max-w-0 opacity-0'
                       }`}>
-                        {invoiceSettlement && invoiceSettlement.state !== 'unpaid' ? 'Review payment' : invoice.pending_zelle_confirmation ? 'Confirm Zelle payment' : 'Record payment'}
+                        {invoice.pending_zelle_confirmation ? 'Confirm Zelle payment' : 'Record payment'}
                       </span>
                     </button>
                   )}
@@ -5008,6 +4818,17 @@ export default function PriceBuilderPanel({
                     : orderStatus === 'draft' ? 'Checked in · work order open' : 'Work order open'}
                 </span>
               )
+            )}
+            {canEdit && !isDeleted && canManageTechnician && onAssignTechnician && availableTechnicians.length > 0
+              && (hasAssignedTechnician || orderStatus === 'in_progress') && (
+              <StartWorkAction
+                key={`technician-${orderId}`}
+                mode={hasAssignedTechnician ? 'reassign' : 'assign'}
+                technicians={availableTechnicians}
+                onAssign={onAssignTechnician}
+                assignmentPending={technicianAssignmentPending}
+                startPending={false}
+              />
             )}
             {canAdminCompleteBypassedWork && !isDeleted && !armWoComplete && (
               <button
