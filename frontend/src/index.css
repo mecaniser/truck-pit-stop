@@ -5861,8 +5861,8 @@ html.customer-portal-active {
    divider, beside the selected-part panel. */
 .db-parts-workbench__ledger-workspace { --parts-ledger-edge-gutter:0px; container-name:parts-ledger; container-type:inline-size; display:flex; min-block-size:0; min-inline-size:0; flex-direction:column; padding-inline-end:var(--parts-ledger-edge-gutter); overflow:hidden; border-inline-end:1px solid var(--workspace-border); background:var(--surface-canvas); }
 .db-parts-workbench__ledger { flex:1 1 auto; overflow:auto; border-inline-end:0; scrollbar-gutter:stable; }
-.db-parts-workbench__table-head,.db-parts-workbench__row { display:grid; grid-template-columns:2.75rem minmax(12rem,1fr) 6rem 7.5rem 7.75rem 9rem 8.5rem; align-items:center; gap:0; min-inline-size:53.5rem; }
-/* The seven columns ask for 53.5rem — about 856px — before they will lay out,
+.db-parts-workbench__table-head,.db-parts-workbench__row { display:grid; grid-template-columns:2.75rem minmax(12rem,1fr) 6rem 7.5rem 7.75rem 7.75rem 9rem 8.5rem; align-items:center; gap:0; min-inline-size:61.25rem; }
+/* The eight columns ask for 61.25rem — about 980px — before they will lay out,
    and the pane is narrower than that between the compact fallback at 760px and
    roughly a thousand. The pane already clips horizontally, so those columns were
    not scrollable, they were unreachable: Bin and Remarks simply stopped existing
@@ -5874,20 +5874,20 @@ html.customer-portal-active {
 @media (min-width:761px) and (max-width:1120px) {
   .db-parts-workbench__table-head,
   .db-parts-workbench__row {
-    grid-template-columns:2.4rem minmax(7.5rem,1fr) 4.25rem 5.25rem 5.5rem 6.25rem 5.75rem;
-    /* The floor is the whole problem. min-inline-size:53.5rem guarantees the row
+    grid-template-columns:2.4rem minmax(7.5rem,1fr) 4.25rem 5.25rem 5.5rem 5.5rem 6.25rem 5.75rem;
+    /* The floor is the whole problem. min-inline-size:61.25rem guarantees the row
        is wider than the pane, and the pane clips horizontally, so the guarantee
        is that the last columns cannot be reached at all. Releasing it lets the
        tightened tracks do their job. */
     min-inline-size:0;
   }
   .db-parts-workbench__ledger.is-read-only :is(.db-parts-workbench__table-head,.db-parts-workbench__row) {
-    grid-template-columns:minmax(7.5rem,1fr) 4.25rem 5.25rem 5.5rem 6.25rem 5.75rem;
+    grid-template-columns:minmax(7.5rem,1fr) 4.25rem 5.25rem 5.5rem 5.5rem 6.25rem 5.75rem;
     min-inline-size:0;
   }
 }
 
-.db-parts-workbench__ledger.is-read-only :is(.db-parts-workbench__table-head,.db-parts-workbench__row) { grid-template-columns:minmax(12rem,1fr) 6rem 7.5rem 7.75rem 9rem 8.5rem; min-inline-size:50.75rem; }
+.db-parts-workbench__ledger.is-read-only :is(.db-parts-workbench__table-head,.db-parts-workbench__row) { grid-template-columns:minmax(12rem,1fr) 6rem 7.5rem 7.75rem 7.75rem 9rem 8.5rem; min-inline-size:58.5rem; }
 .db-parts-workbench__table-head { min-block-size:47px; padding:0; }
 .db-parts-workbench__table-head > span { display:flex; min-block-size:44px; min-inline-size:0; align-items:center; padding-inline:.35rem; overflow:hidden; line-height:1.15; overflow-wrap:normal; text-align:left; white-space:nowrap; word-break:normal; }
 .db-parts-workbench__table-head > .is-sortable { padding:0; }
@@ -5895,15 +5895,16 @@ html.customer-portal-active {
 .db-parts-workbench__table-head > .is-sortable > button > span { min-inline-size:0; overflow:hidden; text-overflow:clip; white-space:nowrap; }
 .db-parts-workbench__table-head > .is-sortable > button svg { flex:0 0 .82rem; inline-size:.82rem; block-size:.82rem; }
 .db-parts-workbench__table-head > .is-description > button { padding-inline-start:calc(46px + .95rem - 1px); }
-.db-parts-workbench__table-head > :is(.is-available,.is-cost) > button { justify-content:flex-end; text-align:right; }
+.db-parts-workbench__table-head > :is(.is-available,.is-cost,.is-value) > button { justify-content:flex-end; text-align:right; }
 .db-parts-workbench__table-head > .is-sortable > button:focus-visible { outline:2px solid var(--workspace-text); outline-offset:-3px; box-shadow:none; }
 .db-staff-shell[data-appearance-mode='high_contrast'] .db-parts-workbench__table-head > .is-sortable > button:focus-visible { outline-color:CanvasText; }
 .db-parts-workbench__table-head > * + *,.db-parts-workbench__row > * + * { border-inline-start:1px solid color-mix(in srgb,var(--workspace-border) 56%,transparent); }
 .db-parts-workbench__table-head > .is-available,.db-parts-workbench__row > .is-available { border-inline-start:0; }
 .db-parts-workbench__row > :is(.is-cost,.is-remarks) { border-inline-start:0; }
-/* The table needs 53.5rem at minimum; the first data guide returns below
-   55rem, leaving 1.5rem of verified scan-space before the tracks bottom out. */
-@container parts-ledger (max-width:55rem) {
+/* The table needs 61.25rem at minimum; the first data guide returns below
+   62.75rem, leaving the same 1.5rem of scan-space above the floor that the
+   53.5rem/55rem pair gave before Stock value became the eighth column. */
+@container parts-ledger (max-width:62.75rem) {
   .db-parts-workbench__table-head > .is-available,.db-parts-workbench__row > .is-available { border-inline-start:1px solid color-mix(in srgb,var(--workspace-border) 56%,transparent); }
 }
 .db-parts-workbench__row { position:relative; min-block-size:68px; border-block:0; background:transparent; color:var(--text-primary); transition:background-color 120ms ease-out,color 120ms ease-out; }

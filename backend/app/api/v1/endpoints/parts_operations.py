@@ -82,7 +82,7 @@ ReturnStatusFilter = Literal["draft", "submitted", "shipped", "credited", "cance
 CoreStatusFilter = Literal["expected", "on_hand", "returned", "waived"]
 PartView = Literal["active", "archived", "all"]
 PartAttention = Literal["needs_reorder", "out_of_stock", "incoming"]
-PartSort = Literal["catalog", "name", "available", "location", "cost", "reorder"]
+PartSort = Literal["catalog", "name", "available", "location", "cost", "value", "reorder"]
 PartDirection = Literal["asc", "desc"]
 
 DEMAND_STATES = frozenset({"open", "covered", "unlinked"})
@@ -108,7 +108,7 @@ EDITABLE_REPAIR_STATUSES = frozenset({
 })
 PART_VIEWS = frozenset({"active", "archived", "all"})
 PART_ATTENTION = frozenset({"needs_reorder", "out_of_stock", "incoming"})
-PART_SORTS = frozenset({"catalog", "name", "available", "location", "cost", "reorder"})
+PART_SORTS = frozenset({"catalog", "name", "available", "location", "cost", "value", "reorder"})
 PART_DIRECTIONS = frozenset({"asc", "desc"})
 PART_DEFAULT_DIRECTIONS = {
     "catalog": "asc",
@@ -116,6 +116,7 @@ PART_DEFAULT_DIRECTIONS = {
     "available": "asc",
     "location": "asc",
     "cost": "desc",
+    "value": "desc",
     "reorder": "desc",
 }
 
@@ -374,6 +375,11 @@ def _part_ordering(sort_by: str, direction: str, recommended):
     elif sort_by == "cost":
         primary = Inventory.cost
         fallback = stable
+    elif sort_by == "value":
+        primary = (
+            func.coalesce(Inventory.cost, 0) + func.coalesce(Inventory.core_charge, 0)
+        ) * func.coalesce(Inventory.stock_quantity, 0)
+        fallback = stable
     else:
         primary = actionable_reorder
         fallback = stable
@@ -498,6 +504,11 @@ async def _part_projection_rows(
         recommended = max(needed + max(reorder - available, 0) - incoming, 0)
         if item.is_placeholder or item.ets_retired_at is not None:
             recommended = 0
+        unit_cost = decimal_money(item.cost or 0)
+        core_charge = decimal_money(item.core_charge or 0)
+        # Stock value mirrors the Analytics dashboard: (cost + core_charge) x qty,
+        # so refundable core deposits are included and the two screens agree.
+        stock_value = decimal_money((unit_cost + core_charge) * available)
         values.append({
             "id": str(item.id),
             "sku": item.sku,
@@ -514,7 +525,9 @@ async def _part_projection_rows(
             "reorder_level": reorder,
             "incoming_packages": incoming,
             "recommended_order_packages": recommended,
-            "average_unit_cost": str(decimal_money(item.cost or 0)),
+            "average_unit_cost": str(unit_cost),
+            "core_charge": str(core_charge),
+            "stock_value": str(stock_value),
             "is_archived": item.ets_retired_at is not None,
             "is_placeholder": bool(item.is_placeholder),
             "preferred_source": _supplier_source_summary(preferred, suppliers.get(preferred.supplier_id)) if preferred else None,
@@ -713,10 +726,22 @@ async def summary(db: AsyncSession = Depends(get_db), current_user: User = Depen
         recommended > 0,
     ))).scalar() or 0
     open_pos = (await db.execute(select(func.count(PurchaseOrder.id)).where(PurchaseOrder.tenant_id == tenant_id, PurchaseOrder.deleted_at.is_(None), PurchaseOrder.status.in_(("draft", "submitted", "partially_received"))))).scalar() or 0
+    # Same population as the tracked/needs-reorder counts above, and the same
+    # (cost + core_charge) x qty formula the Analytics dashboard reports.
+    stock_value = (await db.execute(select(func.coalesce(func.sum(
+        (func.coalesce(Inventory.cost, 0) + func.coalesce(Inventory.core_charge, 0))
+        * func.coalesce(Inventory.stock_quantity, 0)
+    ), 0)).where(
+        Inventory.tenant_id == tenant_id,
+        Inventory.deleted_at.is_(None),
+        Inventory.ets_retired_at.is_(None),
+        Inventory.is_placeholder.is_(False),
+    ))).scalar() or 0
     return {
         "needs_reorder_count": needs_reorder,
         "low_stock_count": needs_reorder,
         "open_purchase_order_count": open_pos,
+        "total_stock_value": str(decimal_money(stock_value)),
         "capabilities": await counter_sale_capabilities(db, current_user),
     }
 

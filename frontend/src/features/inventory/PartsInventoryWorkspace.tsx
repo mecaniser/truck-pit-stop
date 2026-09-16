@@ -12,10 +12,10 @@ import QuantityStepper from '@/components/QuantityStepper'
 import ActivityWorkspace, { PartLifecycleSummary } from './ActivityWorkspace'
 
 type Page<T> = { items: T[]; total: number; skip: number; limit: number; has_more: boolean }
-type Summary = { needs_reorder_count?: number; low_stock_count?: number; open_purchase_order_count: number; capabilities?: { counter_sales?: boolean; counter_sale_tenders?: string[] } }
+type Summary = { needs_reorder_count?: number; low_stock_count?: number; open_purchase_order_count: number; total_stock_value?: string; capabilities?: { counter_sales?: boolean; counter_sale_tenders?: string[] } }
 type WorkspaceView = 'parts' | 'reorder' | 'activity'
 type CatalogView = 'active' | 'archived'
-type PartSort = 'catalog' | 'name' | 'available' | 'location' | 'cost' | 'reorder'
+type PartSort = 'catalog' | 'name' | 'available' | 'location' | 'cost' | 'value' | 'reorder'
 type SortDirection = 'asc' | 'desc'
 type StockFilter = 'all' | 'below_min' | 'out_of_stock'
 type LedgerDensity = 'comfortable' | 'compact'
@@ -30,6 +30,7 @@ const FIRST_SORT_DIRECTION: Record<PartSort, SortDirection> = {
   available: 'asc',
   location: 'asc',
   cost: 'desc',
+  value: 'desc',
   reorder: 'desc',
 }
 
@@ -42,6 +43,8 @@ const COMPACT_SORT_OPTIONS: Array<{ sort: Exclude<PartSort, 'catalog'>; directio
   { sort: 'location', direction: 'desc', label: 'Bin location Z–A' },
   { sort: 'cost', direction: 'desc', label: 'Unit cost high to low' },
   { sort: 'cost', direction: 'asc', label: 'Unit cost low to high' },
+  { sort: 'value', direction: 'desc', label: 'Stock value high to low' },
+  { sort: 'value', direction: 'asc', label: 'Stock value low to high' },
   { sort: 'reorder', direction: 'desc', label: 'Reorder urgency high to low' },
   { sort: 'reorder', direction: 'asc', label: 'Reorder urgency low to high' },
 ]
@@ -84,6 +87,8 @@ export type PartRecord = {
   incoming_packages: number
   recommended_order_packages: number
   average_unit_cost: string
+  core_charge?: string | null
+  stock_value?: string | null
   selling_price?: string | null
   is_archived: boolean
   is_placeholder: boolean
@@ -356,6 +361,20 @@ function partRemark(part: PartRecord) {
   if (part.recommended_order_packages > 0) return 'Needs reorder'
   if (part.incoming_packages > 0) return 'Incoming'
   return '—'
+}
+
+// What this stock is worth: (unit cost + core charge) x on-hand quantity, the
+// same formula the Analytics dashboard reports, so the two screens agree. The
+// server sends it; the fallback covers a response cached before that field
+// existed, and can only omit the core charge, never invent one.
+function formatStockValue(part: PartRecord) {
+  const served = Number(part.stock_value ?? NaN)
+  if (Number.isFinite(served)) return `$${money(served)}`
+  const unit = Number(part.average_unit_cost ?? 0)
+  const core = Number(part.core_charge ?? 0)
+  const quantity = part.physical_on_hand_packages ?? part.available_packages
+  if (!Number.isFinite(unit) || !Number.isFinite(quantity)) return '—'
+  return `$${money((unit + (Number.isFinite(core) ? core : 0)) * quantity)}`
 }
 
 function isManuallySelectable(part: PartRecord) {
@@ -757,7 +776,7 @@ export default function PartsInventoryWorkspace({ summary }: { summary: Summary 
 
   return <section className="db-parts-workbench" aria-labelledby="parts-workbench-title">
     <header className="db-parts-workbench__header">
-      <div><h1 id="parts-workbench-title">Parts</h1><p className="db-parts-workbench__technical-line">{allPartsCount ?? firstPartsPage?.total ?? '—'} TRACKED / <em>{needsReorderCount} NEEDS REORDER</em> / {summary.open_purchase_order_count} OPEN PURCHASE ORDERS</p></div>
+      <div><h1 id="parts-workbench-title">Parts</h1><p className="db-parts-workbench__technical-line">{allPartsCount ?? firstPartsPage?.total ?? '—'} TRACKED / <em>{needsReorderCount} NEEDS REORDER</em> / {summary.open_purchase_order_count} OPEN PURCHASE ORDERS{summary.total_stock_value == null ? '' : ` / $${money(summary.total_stock_value)} STOCK VALUE`}</p></div>
       <div className="db-parts-workbench__summary" aria-label="Parts summary">
         {counterSalesEnabled && <button className="db-parts-workbench__sales-link" type="button" onClick={() => navigate('/dashboard/garage/inventory/sales')}>Parts sales<ArrowRight aria-hidden="true" /></button>}
         {manage && <button className="db-parts-workbench__add-part" type="button" onClick={() => setAddPartOpen(true)}><Plus aria-hidden="true" />Add Part</button>}
@@ -892,6 +911,7 @@ function PartLedger({ page, loading, loadingMore, failed, manage, salesEnabled, 
       <SortableColumnHeader label="Available" columnClass="is-available" field="available" sort={sort} direction={direction} onSort={onSort} />
       <SortableColumnHeader label="Bin location" columnClass="is-bin" field="location" sort={sort} direction={direction} onSort={onSort} />
       <SortableColumnHeader label="Unit cost" columnClass="is-cost" field="cost" sort={sort} direction={direction} onSort={onSort} />
+      <SortableColumnHeader label="Stock value" columnClass="is-value" field="value" sort={sort} direction={direction} onSort={onSort} />
       <span className="is-supplier" role="columnheader">Preferred supplier</span>
       <SortableColumnHeader label="Remarks" columnClass="is-remarks" field="reorder" sort={sort} direction={direction} onSort={onSort} />
     </div>
@@ -911,6 +931,7 @@ function PartLedger({ page, loading, loadingMore, failed, manage, salesEnabled, 
           <strong role="cell" data-label="Available" className="is-available">{part.available_to_sell_packages ?? part.available_packages}</strong>
           <span role="cell" data-label="Bin location" className="is-bin">{part.location ? `Bin ${part.location}` : 'Bin not set'}</span>
           <strong role="cell" data-label="Unit cost" className="is-cost">${Number(part.average_unit_cost || 0).toFixed(2)}</strong>
+          <strong role="cell" data-label="Stock value" className="is-value">{formatStockValue(part)}</strong>
           <span role="cell" data-label="Preferred supplier" className={`is-supplier${!part.preferred_source ? ' is-unassigned' : ''}`}>{part.preferred_source?.supplier_name || 'Unassigned'}</span>
           <span role="cell" data-label="Remarks" className={`db-parts-workbench__remark is-remarks${remark === '—' ? ' is-empty' : ''}`}>{remark !== '—' && <i aria-hidden="true" />}{remark}</span>
         </div>
@@ -1425,7 +1446,7 @@ function PartInspector({ part, loading, failed, manage, prepared, logoUrl, compa
             try { await onAdjust(part, { is_placeholder: false }) } finally { setPromoting(false) }
           }}>{promoting ? 'Promoting…' : 'Make this a stocked part'}</button>}
         </section>}
-        <section className="db-parts-workbench__section"><h3>At a glance</h3><dl className="db-parts-workbench__facts is-overview"><div><dt>Physical on hand</dt><dd>{physicalOnHand}</dd></div><div><dt>Held for checkout</dt><dd>{heldForCheckout}</dd></div><div><dt>Available to sell</dt><dd>{availableToSell}</dd></div><div><dt>Needed for open repairs</dt><dd>{part.needed_for_open_repairs}</dd></div><div><dt>Reorder at</dt><dd>{part.reorder_level}</dd></div><div><dt>Incoming</dt><dd>{part.incoming_packages}</dd></div><div><dt>Unit cost</dt><dd>${Number(part.average_unit_cost || 0).toFixed(2)}</dd></div><div><dt>Selling price</dt><dd>{part.selling_price == null ? '—' : `$${Number(part.selling_price).toFixed(2)}`}</dd></div><div><dt>Remarks</dt><dd>{remark}</dd></div></dl></section>
+        <section className="db-parts-workbench__section"><h3>At a glance</h3><dl className="db-parts-workbench__facts is-overview"><div><dt>Physical on hand</dt><dd>{physicalOnHand}</dd></div><div><dt>Held for checkout</dt><dd>{heldForCheckout}</dd></div><div><dt>Available to sell</dt><dd>{availableToSell}</dd></div><div><dt>Needed for open repairs</dt><dd>{part.needed_for_open_repairs}</dd></div><div><dt>Reorder at</dt><dd>{part.reorder_level}</dd></div><div><dt>Incoming</dt><dd>{part.incoming_packages}</dd></div><div><dt>Unit cost</dt><dd>${Number(part.average_unit_cost || 0).toFixed(2)}</dd></div><div><dt>Stock value</dt><dd>{formatStockValue(part)}</dd></div><div><dt>Selling price</dt><dd>{part.selling_price == null ? '—' : `$${Number(part.selling_price).toFixed(2)}`}</dd></div><div><dt>Remarks</dt><dd>{remark}</dd></div></dl></section>
         <section className="db-parts-workbench__section db-parts-workbench__supplier-section">
           <div className="db-parts-workbench__supplier-section-head">
             <h3>Supplied by</h3>

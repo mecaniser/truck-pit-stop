@@ -936,6 +936,7 @@ describe('DB-038 Parts & inventory workspace', () => {
       'Available',
       'Bin location',
       'Unit cost',
+      'Stock value',
       'Preferred supplier',
       'Remarks',
     ])
@@ -1121,7 +1122,7 @@ describe('DB-038 Parts & inventory workspace', () => {
     expect(catalogReset).toHaveFocus()
     expect(screen.queryByRole('combobox')).not.toBeInTheDocument()
     const compactRadios = screen.getAllByRole('radio')
-    expect(compactRadios).toHaveLength(10)
+    expect(compactRadios).toHaveLength(12)
     const compactTabStops = compactRadios.filter((radio) => radio.tabIndex === 0)
     expect(compactTabStops).toHaveLength(1)
     expect(compactTabStops[0]).toHaveAttribute('aria-checked', 'false')
