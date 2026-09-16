@@ -676,3 +676,49 @@ def test_parts_operations_uses_durable_not_ephemeral_idempotency_replay():
     assert not IdempotencyMiddleware._should_apply({
         "type": "http", "method": "POST", "path": "/api/v1/parts-operations/purchase-orders/x/receipts",
     })
+
+
+@pytest.mark.asyncio
+async def test_parts_stock_value_includes_core_charge_and_total_excludes_retired(client, db_session, monkeypatch):
+    """Stock value is (cost + core_charge) x on-hand, matching the Analytics
+    dashboard, and the summary total covers the same parts the tracked and
+    needs-reorder counts do -- no retired or placeholder stock."""
+    monkeypatch.setattr(settings, "PARTS_OPERATIONS_V1_ENABLED", True)
+    tenant, owner, _supplier, item = await seed(db_session)
+    headers = auth(owner, tenant)
+
+    # The seeded part: 2 on hand at $10.00, no core.
+    cored = Inventory(
+        tenant_id=tenant.id, sku="CORE-1", name="Reman alternator", stock_quantity=3,
+        on_order_quantity=0, reorder_level=0, cost=Decimal("100.00"), selling_price=Decimal("180.00"),
+        core_charge=Decimal("50.00"), unit_type="each", is_placeholder=False,
+    )
+    retired = Inventory(
+        tenant_id=tenant.id, sku="OLD-1", name="Discontinued hose", stock_quantity=9,
+        on_order_quantity=0, reorder_level=0, cost=Decimal("77.00"), selling_price=Decimal("110.00"), unit_type="each",
+        is_placeholder=False, ets_retired_at=datetime.now(timezone.utc),
+    )
+    placeholder = Inventory(
+        tenant_id=tenant.id, sku="TBD-1", name="Unidentified part", stock_quantity=5,
+        on_order_quantity=0, reorder_level=0, cost=Decimal("31.00"), selling_price=Decimal("45.00"), unit_type="each",
+        is_placeholder=True,
+    )
+    db_session.add_all([cored, retired, placeholder])
+    await db_session.commit()
+
+    listed = await client.get(f"{PREFIX}/parts?view=all", headers=headers)
+    assert listed.status_code == 200
+    by_sku = {row["sku"]: row for row in listed.json()["items"]}
+
+    # No core charge: 2 x $10.00.
+    assert by_sku["FILTER-1"]["stock_value"] == "20.00"
+    assert by_sku["FILTER-1"]["core_charge"] == "0.00"
+    # Core deposit rides along: 3 x ($100.00 + $50.00), not 3 x $100.00.
+    assert by_sku["CORE-1"]["stock_value"] == "450.00"
+    assert by_sku["CORE-1"]["core_charge"] == "50.00"
+
+    summary_response = await client.get(f"{PREFIX}/summary", headers=headers)
+    assert summary_response.status_code == 200
+    # 20.00 + 450.00 only: the retired hose (693.00) and the placeholder
+    # (155.00) are excluded, exactly as they are from the tracked count.
+    assert summary_response.json()["total_stock_value"] == "470.00"
