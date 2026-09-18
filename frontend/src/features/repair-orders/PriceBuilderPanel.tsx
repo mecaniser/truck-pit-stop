@@ -3448,27 +3448,24 @@ export default function PriceBuilderPanel({
                   const matches = inventory.filter((item) => (
                     item.name.toLowerCase().includes(term) || item.sku.toLowerCase().includes(term)
                   ))
-                  if (!matches.length) {
-                    // A search that finds nothing is where an unlisted part is
-                    // discovered, so this is where adding one belongs — not on
-                    // the inventory screen, which means leaving the job.
-                    if (adHocDraft) return renderAdHocForm(null)
-                    return (
+                  if (adHocDraft) return renderAdHocForm(null)
+                  return (
+                    <>
                       <div className="px-2 py-3">
-                        <p className="text-sm text-gray-500">No parts match this search.</p>
+                        {!matches.length && <p className="text-sm text-gray-500">No parts match this search.</p>}
                         {canMutate && (
                           <button
                             type="button"
-                            onClick={() => setAdHocDraft({ name: partSearchTerm.trim(), sku: '', price: '', cost: '', quantity: '1' })}
-                            className="mt-1.5 text-sm font-semibold text-orange-700 underline-offset-2 hover:underline"
+                            onClick={() => setAdHocDraft({ name: searchTerm.trim(), sku: '', price: '', cost: '', quantity: '1' })}
+                            className="text-sm font-semibold text-orange-700 underline-offset-2 hover:underline"
                           >
-                            Add &ldquo;{partSearchTerm.trim()}&rdquo; as a new part
+                            Add &ldquo;{searchTerm.trim()}&rdquo; as a new part
                           </button>
                         )}
                       </div>
-                    )
-                  }
-                  return matches.map((item, index) => renderItemRow(item, index))
+                      {matches.map((item, index) => renderItemRow(item, index))}
+                    </>
+                  )
                 })()}
               </>
             ) : null}
@@ -3711,25 +3708,20 @@ export default function PriceBuilderPanel({
                     Retry
                   </button>
                 </p>
-              ) : !matches.length ? (
-                (
-                    adHocDraft ? renderAdHocForm(operationPartPickerLineId) : (
-                      <div className="px-1 py-2">
-                        <p className="text-sm text-gray-500">No parts match this search.</p>
-                        {canMutate && (
-                          <button
-                            type="button"
-                            onClick={() => setAdHocDraft({ name: operationPartSearchTerm.trim(), sku: '', price: '', cost: '', quantity: '1' })}
-                            className="db-inline-text-action mt-1 text-sm font-semibold text-orange-700 underline-offset-2 hover:underline"
-                          >
-                            Add &ldquo;{operationPartSearchTerm.trim()}&rdquo; as a new part
-                          </button>
-                        )}
-                      </div>
-                    )
-                  )
-              ) : (
+              ) : adHocDraft ? renderAdHocForm(operationPartPickerLineId) : (
                 <div className="space-y-1">
+                  <div className="px-1 py-2">
+                    {!matches.length && <p className="text-sm text-gray-500">No parts match this search.</p>}
+                    {canMutate && (
+                      <button
+                        type="button"
+                        onClick={() => setAdHocDraft({ name: (operationPartSearchByLineId[line.id] || '').trim(), sku: '', price: '', cost: '', quantity: '1' })}
+                        className="db-inline-text-action text-sm font-semibold text-orange-700 underline-offset-2 hover:underline"
+                      >
+                        Add &ldquo;{(operationPartSearchByLineId[line.id] || '').trim()}&rdquo; as a new part
+                      </button>
+                    )}
+                  </div>
                   {matches.map((item) => {
                     const isFluid = item.unit_type && item.unit_type !== 'each'
                     const step = isFluid ? 0.25 : 1

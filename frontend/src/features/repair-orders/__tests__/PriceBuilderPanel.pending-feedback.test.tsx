@@ -208,6 +208,50 @@ describe('PriceBuilderPanel pending feedback', () => {
     })
   })
 
+  it.each(['main', 'operation'])('offers a new part alongside similar results in the %s picker', async (picker) => {
+    const matches = [
+      { id: 'connector-1', name: 'Connector brass', sku: 'CB-1', stock_quantity: 12, unit_type: 'each', selling_price: '5.00' },
+      { id: 'connector-2', name: 'Connector steel', sku: 'CS-1', stock_quantity: 8, unit_type: 'each', selling_price: '7.00' },
+    ]
+    apiMocks.get.mockImplementation((url: string) => {
+      if (url.endsWith('/price-build')) return Promise.resolve({ data: {
+        ...emptySummary,
+        lines: picker === 'operation' ? [{
+          id: 'labor-1', repair_order_id: 'order-1', description: 'Initial inspection',
+          hours: '1.00', hourly_rate: '100.00', total_cost: '100.00',
+          line_type: 'manual', source_service_id: null,
+        }] : [],
+      } })
+      if (url.endsWith('/parts/suggestions')) return Promise.resolve({ data: { for_this_order: [], most_used: [] } })
+      if (url === '/inventory/typeahead') return Promise.resolve({ data: matches })
+      return Promise.resolve({ data: [] })
+    })
+    const user = userEvent.setup()
+    renderPanel()
+    if (picker === 'operation') await user.click(await screen.findByRole('button', { name: /Initial inspection/ }))
+    await user.click(await screen.findByRole('button', { name: picker === 'main' ? 'Part' : 'Add part to this operation', exact: true }))
+    const search = await screen.findByPlaceholderText(picker === 'main' ? /add part/i : 'Search parts, or type a name to add a new one')
+    await user.type(search, 'connector')
+    for (const item of matches) expect(await screen.findByText(item.name)).toBeInTheDocument()
+    const create = await screen.findByRole('button', { name: 'Add “connector” as a new part' })
+    create.focus()
+    await user.keyboard('{Enter}')
+    const name = screen.getByPlaceholderText('Part name')
+    expect(name).toHaveValue('connector')
+    expect(name).toHaveFocus()
+    await user.type(name, ' nylon')
+    expect(name).toHaveValue('connector nylon')
+    expect(apiMocks.post).not.toHaveBeenCalled()
+    await user.click(screen.getByRole('button', { name: 'Cancel', exact: true }))
+    expect(screen.queryByPlaceholderText('Part name')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Add “connector” as a new part' })).toBeInTheDocument()
+    await user.clear(search)
+    await user.type(search, 'unique hose')
+    expect(await screen.findByRole('button', { name: 'Add “unique hose” as a new part' })).toBeInTheDocument()
+    await user.clear(search)
+    expect(screen.queryByRole('button', { name: /as a new part/ })).not.toBeInTheDocument()
+  })
+
   it('shows a parts skeleton while searching and a spinner while adding the chosen part', async () => {
     let resolveInventory: (() => void) | undefined
     const pendingInventory = new Promise<{ data: unknown }>((resolve) => {
