@@ -540,7 +540,7 @@ export default function ServicesManagementPage() {
   return (
     <div className="db-services-workspace db-operating-surface space-y-6 lg:gap-4 lg:space-y-0">
       {/* Header */}
-      <div className="mb-4 flex flex-row items-center gap-3 lg:mb-0 lg:flex-shrink-0">
+      <div className="db-services-workspace__toolbar mb-4 flex flex-row items-center gap-3 lg:mb-0 lg:flex-shrink-0">
         <div className="flex-1 min-w-0">
           <SearchAddBar
             value={searchQuery}
