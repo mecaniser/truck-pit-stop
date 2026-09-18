@@ -49,6 +49,17 @@ describe('Workflow informational steps', () => {
     expect(screen.getByText('Repair started')).toBeVisible()
     expect(screen.queryByText('No technician assigned')).not.toBeInTheDocument()
   })
+  it('uses a filling circle to signal an open pipeline popover instead of a dropdown caret', async () => {
+    const user = userEvent.setup()
+    const { container } = render(<WorkflowInfoStep stage="technician" label="Shop-managed" className="" status="in_progress" info={info} />)
+    const indicator = screen.getByTestId('workflow-popover-indicator')
+    expect(indicator).toHaveAttribute('data-open', 'false')
+    expect(container.querySelector('[data-lucide="chevron-down"]')).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Technician status' }))
+    expect(indicator).toHaveAttribute('data-open', 'true')
+    expect(indicator.firstElementChild).toHaveClass('scale-100')
+  })
   it('handles malformed legacy notes without inventing reviews', async () => {
     const user = userEvent.setup()
     render(<WorkflowInfoStep stage="review" label="Quality review" className="" status="draft" info={{ ...info, internal_notes: 'legacy plain text' }} />)

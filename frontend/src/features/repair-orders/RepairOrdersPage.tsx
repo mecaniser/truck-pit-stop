@@ -38,7 +38,7 @@ import RepairOrdersLedger, { type RepairOrdersLedgerRow } from './RepairOrdersLe
 import SectionInfoTooltip from '@/components/SectionInfoTooltip'
 import SuggestingTextarea from '@/components/SuggestingTextarea'
 import { buildPartHistoryEvents } from './repairOrderHistory'
-import { REPAIR_ORDERS_QUEUE_LABEL } from './repairOrdersPresentation'
+import { REPAIR_ORDERS_QUEUE_LABEL, retainRepairOrderPresentation, seedRepairOrderPresentation } from './repairOrdersPresentation'
 import type { ActionQueueOrder } from '../dashboard/ShopCockpitActionLedger'
 import { AuthorizationSummary } from '@/features/quotes/AuthorizationSummary'
 import { StaffSettlementDialog, isSettlementUnavailable, useInvoiceSettlement } from '@/features/payments'
@@ -1067,7 +1067,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
     onSuccess: (updated) => {
       queryClient.invalidateQueries({ queryKey: ['repair-orders'] })
       queryClient.invalidateQueries({ queryKey: ['repair-order-detail', updated.id] })
-      setSelectedOrder(updated)
+      setSelectedOrder((current) => retainRepairOrderPresentation(current, updated))
       toast.success('Work requested updated')
     },
     onError: (error: unknown) => toast.error(getErrorDetail(error, 'Could not save work requested')),
@@ -1548,7 +1548,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
       queryClient.invalidateQueries({ queryKey: ['repair-order-detail', updated.id] })
       queryClient.invalidateQueries({ queryKey: ['price-build', updated.id] })
       queryClient.invalidateQueries({ queryKey: ['inventory-typeahead'] })
-      setSelectedOrder(updated)
+      setSelectedOrder((current) => retainRepairOrderPresentation(current, updated))
       toast.success(`Repair order ${updated.order_number} restored`)
       // While the order sat deleted its parts went back on the shelf and may
       // have been used elsewhere — say so rather than letting stock go silently
@@ -1575,7 +1575,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
       invalidateOrderBoards()
       queryClient.invalidateQueries({ queryKey: ['repair-order-detail', updated.id] })
       queryClient.invalidateQueries({ queryKey: ['price-build', updated.id] })
-      setSelectedOrder(updated)
+      setSelectedOrder((current) => retainRepairOrderPresentation(current, updated))
       toast.success(`Reopened ${updated.order_number} — add work below`)
     },
     onError: (error: unknown) => {
@@ -1598,7 +1598,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
       queryClient.invalidateQueries({ queryKey: ['repair-orders'] })
       queryClient.invalidateQueries({ queryKey: ['repair-order-detail', updated.id] })
       queryClient.invalidateQueries({ queryKey: ['customerRepairOrders'] })
-      setSelectedOrder(updated)
+      setSelectedOrder((current) => retainRepairOrderPresentation(current, updated))
       toast.success(variables.mechanicId ? 'Technician assigned and notified' : 'Technician unassigned')
     },
     onError: (error: unknown) => {
@@ -1616,7 +1616,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
       queryClient.invalidateQueries({ queryKey: ['repair-order-detail', updated.id] })
       queryClient.invalidateQueries({ queryKey: ['customerRepairOrders'] })
       queryClient.invalidateQueries({ queryKey: ['price-build', updated.id] })
-      setSelectedOrder(updated)
+      setSelectedOrder((current) => retainRepairOrderPresentation(current, updated))
       toast.success('Work started without assigning a technician')
     },
     onError: (error: unknown) => {
@@ -1633,7 +1633,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
       queryClient.invalidateQueries({ queryKey: ['repair-orders'] })
       queryClient.invalidateQueries({ queryKey: ['repair-order-detail', updated.id] })
       queryClient.invalidateQueries({ queryKey: ['fleet-board'] })
-      setSelectedOrder(updated)
+      setSelectedOrder((current) => retainRepairOrderPresentation(current, updated))
       toast.success('Work order in progress')
     },
     onError: (error: unknown) => {
@@ -1688,7 +1688,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
       queryClient.invalidateQueries({ queryKey: ['repair-order-detail', updated.id] })
       queryClient.invalidateQueries({ queryKey: ['customerRepairOrders'] })
       queryClient.invalidateQueries({ queryKey: ['price-build', updated.id] })
-      setSelectedOrder(updated)
+      setSelectedOrder((current) => retainRepairOrderPresentation(current, updated))
       toast.success('Work marked complete - ready for review')
     },
     onError: (error: unknown) => {
@@ -1708,7 +1708,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
       queryClient.invalidateQueries({ queryKey: ['repair-orders'] })
       queryClient.invalidateQueries({ queryKey: ['repair-order-detail', updated.id] })
       queryClient.invalidateQueries({ queryKey: ['customerRepairOrders'] })
-      setSelectedOrder(updated)
+      setSelectedOrder((current) => retainRepairOrderPresentation(current, updated))
       setReviewNotes('')
       setMileageOut('')
       if (updated.status === 'invoiced') {
@@ -1918,7 +1918,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
       queryClient.invalidateQueries({ queryKey: ['repair-orders'] })
       queryClient.invalidateQueries({ queryKey: ['repair-order-detail', updated.id] })
       queryClient.invalidateQueries({ queryKey: ['customerRepairOrders'] })
-      setSelectedOrder(updated)
+      setSelectedOrder((current) => retainRepairOrderPresentation(current, updated))
     },
   })
 
@@ -2709,6 +2709,8 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
       let finalCustomerId = selectedCustomerId
       let finalVehicleId = selectedVehicleId
       const isNewCustomer = selectedCustomerId === 'add_new'
+      let customerForCreatedOrder = selectedCustomerOption
+      let vehicleForCreatedOrder = selectedVehicleOption
 
       // New customer flow
       if (isNewCustomer) {
@@ -2723,6 +2725,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
           no_vehicle: true,
         })
         finalCustomerId = createdCustomer.id
+        customerForCreatedOrder = createdCustomer
       } else if (!finalCustomerId) {
         setFormErrors((current) => ({ ...current, customer: 'Select a customer or add a new one.' }))
         return
@@ -2752,6 +2755,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
         })
         finalVehicleId = createdVehicle.id
         finalCustomerId = createdVehicle.customer_id
+        vehicleForCreatedOrder = createdVehicle
       } else {
         const vehicle = vehicleOptions.find((item) => item.id === selectedVehicleId)
         if (!vehicle) {
@@ -2789,6 +2793,23 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
         mileage_in_carried: mileageInCarried && mileageIn.trim() !== '',
         attribution: attributionDraft,
       })
+      const createdOrderWithPresentation = seedRepairOrderPresentation(
+        createdOrder,
+        customerForCreatedOrder && {
+          customer_first_name: customerForCreatedOrder.first_name,
+          customer_last_name: customerForCreatedOrder.last_name,
+          customer_company_name: customerForCreatedOrder.company_name,
+          customer_email: customerForCreatedOrder.email,
+          customer_phone: customerForCreatedOrder.phone,
+        },
+        vehicleForCreatedOrder && {
+          vehicle_make: vehicleForCreatedOrder.make,
+          vehicle_model: vehicleForCreatedOrder.model,
+          vehicle_year: vehicleForCreatedOrder.year,
+          vehicle_unit_number: vehicleForCreatedOrder.unit_number,
+          vehicle_vin: vehicleForCreatedOrder.vin,
+        },
+      )
 
       if (selectedServicePayload.length > 0) {
         // Apply sequentially so a stock-failure on one service doesn't abort the rest,
@@ -2827,7 +2848,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
       closeModal()
       // Drop the operator straight into the new order's drawer so they can start
       // building it, instead of hunting for it back in the list.
-      openDetail(createdOrder)
+      openDetail(createdOrderWithPresentation)
     } catch (err: unknown) {
       setFormErrors((current) => ({ ...current, root: getErrorDetail(err, 'Failed to create repair order') }))
     } finally {
