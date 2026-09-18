@@ -233,18 +233,21 @@ function fluidLink(field: 'category' | 'unitType', value: string, current: { cat
 
 function skuStem(name: string, category: string) {
   const cat = category.trim()
-  const prefix = cat ? cat.substring(0, 3).toUpperCase() : 'GEN'
+  if (!cat) return ''
+  const prefix = cat.substring(0, 3).toUpperCase()
   const catLower = cat.toLowerCase()
-  const words = name.trim().split(/[\s\-_]+/)
+  const allWords = name.trim().split(/[\s\-_]+/)
     .map((word) => word.replace(/[^a-zA-Z0-9]/g, ''))
     .filter((word) => word.length > 0)
-    .filter((word) => {
-      if (!cat) return true
+  const words = allWords.filter((word) => {
       const lower = word.toLowerCase()
       return !(catLower.startsWith(lower) || lower.startsWith(catLower.substring(0, Math.min(4, catLower.length))))
     })
-  if (words.length === 0) return ''
-  const abbrev = words.slice(0, 3)
+  // A category can equal the part name (Connectors / Connector). In that
+  // case retain the name rather than offering no SKU at all.
+  const skuWords = words.length ? words : allWords
+  if (skuWords.length === 0) return ''
+  const abbrev = skuWords.slice(0, 3)
     .map((word) => /^\d+$/.test(word) ? word.substring(0, 3) : word.substring(0, 3).toUpperCase())
     .join('-')
   return abbrev ? `${prefix}-${abbrev}` : ''
@@ -957,21 +960,24 @@ type AddPartForm = {
   supplierContact: string
 }
 
+type InventoryLibrarySuggestion = { text: string; times_used: number }
+
 const EMPTY_ADD_PART: AddPartForm = {
   name: '', sku: '', description: '', category: '', location: '', stockQuantity: '0', reorderLevel: '0', cost: '0.00', sellingPrice: '0.00', coreCharge: '0.00', unitType: 'each', supplierName: '', supplierContact: '',
 }
 
 function AddPartDrawer({ isOpen, onClose, onCreated }: { isOpen: boolean; onClose: () => void; onCreated: (partName: string) => Promise<void> }) {
   const [form, setForm] = useState<AddPartForm>(EMPTY_ADD_PART)
+  const [skuMode, setSkuMode] = useState<'automatic' | 'manual'>('automatic')
   const [saving, setSaving] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
   const update = (field: keyof AddPartForm, value: string) => { setForm((current) => ({ ...current, [field]: value, ...(field === 'category' || field === 'unitType' ? fluidLink(field, value, current) : {}) })); setFormError(null) }
 
-  // Suggest a SKU only while the field is untouched. The sequence is resolved
+  // Generate the SKU until the operator overrides it. The sequence is resolved
   // against the server rather than the loaded page: the ledger paginates, so a
   // client-side count would hand out the same -001 twice, and the tenant has a
   // unique canonical-SKU index that would reject the second save.
-  const stem = form.sku.trim() ? '' : skuStem(form.name, form.category)
+  const stem = skuMode === 'automatic' ? skuStem(form.name, form.category) : ''
   const stemQuery = useQuery<Page<PartRecord>>({
     queryKey: ['parts-operations', 'sku-stem', stem],
     queryFn: async () => (await api.get('/parts-operations/parts', { params: { search: stem, limit: 1, skip: 0 } })).data,
@@ -982,12 +988,23 @@ function AddPartDrawer({ isOpen, onClose, onCreated }: { isOpen: boolean; onClos
   const skuSuggestion = stem && stemQuery.data
     ? `${stem}-${String((stemQuery.data.total ?? 0) + 1).padStart(3, '0')}`
     : ''
-  const close = () => { if (saving) return; setForm(EMPTY_ADD_PART); setFormError(null); onClose() }
+  const categoryTerm = form.category.trim()
+  const categorySuggestions = useQuery<InventoryLibrarySuggestion[]>({
+    queryKey: ['inventory-category-suggestions', categoryTerm],
+    queryFn: async () => (await api.get('/inventory/category-suggestions', { params: { q: categoryTerm, limit: 6 } })).data,
+    enabled: isOpen && categoryTerm.length > 0,
+    staleTime: 30_000,
+    retry: false,
+  })
+  const effectiveSku = skuMode === 'automatic' ? skuSuggestion : form.sku.trim()
+  const close = () => { if (saving) return; setForm(EMPTY_ADD_PART); setSkuMode('automatic'); setFormError(null); onClose() }
   const submit = async () => {
     if (saving) return
     const name = form.name.trim()
-    const sku = form.sku.trim()
+    const category = form.category.trim()
+    const sku = effectiveSku
     const wholeNumberFields: Array<[string, string]> = [['On-hand quantity', form.stockQuantity], ['Reorder level', form.reorderLevel]]
+    if (!category) { setFormError('Category is required before creating a part.'); return }
     if (!name) { setFormError('Part name is required.'); return }
     if (!sku) { setFormError('SKU is required.'); return }
     for (const [label, raw] of wholeNumberFields) {
@@ -1004,7 +1021,7 @@ function AddPartDrawer({ isOpen, onClose, onCreated }: { isOpen: boolean; onClos
         name,
         sku,
         description: form.description.trim() || undefined,
-        category: form.category.trim() || undefined,
+        category,
         location: form.location.trim() || undefined,
         stock_quantity: Number(form.stockQuantity),
         reorder_level: Number(form.reorderLevel),
@@ -1028,12 +1045,16 @@ function AddPartDrawer({ isOpen, onClose, onCreated }: { isOpen: boolean; onClos
       <fieldset>
         <legend>Part details</legend>
         <div className="db-parts-workbench__add-fields">
-          <label><span className="db-parts-workbench__field-label">Part name <span aria-hidden="true">*</span></span><input autoFocus required disabled={saving} value={form.name} onChange={(event) => update('name', event.target.value)} placeholder="Brake pads – rear" /></label>
-          <label><span className="db-parts-workbench__field-label">SKU <span aria-hidden="true">*</span></span><input required disabled={saving} value={form.sku} onChange={(event) => update('sku', event.target.value)} placeholder="BRA-HEA-DUT-PAD-001" />
-            {skuSuggestion && <button type="button" className="db-parts-workbench__sku-suggestion" disabled={saving} onClick={() => update('sku', skuSuggestion)}>Use suggested: <span>{skuSuggestion}</span></button>}
+          <label className="is-wide"><span className="db-parts-workbench__field-label">Category <span aria-hidden="true">*</span></span><input autoFocus required disabled={saving} value={form.category} onChange={(event) => update('category', event.target.value)} placeholder="Brakes" list="part-category-suggestions" />
+            <datalist id="part-category-suggestions">{categorySuggestions.data?.map((suggestion) => <option key={suggestion.text} value={suggestion.text} />)}</datalist>
+            <small>Choose an existing category or enter a new one before naming the part.</small>
+          </label>
+          <label><span className="db-parts-workbench__field-label">Part name <span aria-hidden="true">*</span></span><input required disabled={saving || !form.category.trim()} value={form.name} onChange={(event) => update('name', event.target.value)} placeholder="Brake pads – rear" /></label>
+          <label><span className="db-parts-workbench__field-label">SKU <span aria-hidden="true">*</span></span><input required disabled={saving || !form.category.trim()} value={effectiveSku} onChange={(event) => { setSkuMode('manual'); update('sku', event.target.value) }} placeholder="Choose a category and name" />
+            {skuMode === 'automatic' && form.name.trim() && !skuSuggestion && <small>Generating SKU…</small>}
+            {skuMode === 'manual' && skuSuggestion && <button type="button" className="db-parts-workbench__sku-suggestion" disabled={saving} onClick={() => { setSkuMode('automatic'); update('sku', '') }}>Use generated: <span>{skuSuggestion}</span></button>}
           </label>
           <label className="is-wide">Description<textarea disabled={saving} rows={3} value={form.description} onChange={(event) => update('description', event.target.value)} placeholder="Optional catalog description" /></label>
-          <label>Category<input disabled={saving} value={form.category} onChange={(event) => update('category', event.target.value)} placeholder="Brakes" /></label>
           <label>Unit<input disabled={saving} value={form.unitType} onChange={(event) => update('unitType', event.target.value)} placeholder="each" /></label>
         </div>
       </fieldset>

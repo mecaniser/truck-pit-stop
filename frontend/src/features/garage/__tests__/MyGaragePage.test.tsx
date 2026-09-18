@@ -95,4 +95,9 @@ describe('DB-043 container-adaptive Shop navigation', () => {
     expect(await screen.findByRole('heading', { name: 'Services surface' })).toBeInTheDocument()
     expect(within(navigation).getByRole('link', { name: 'Services' })).toHaveAttribute('aria-current', 'page')
   })
+
+  it('marks only Services as a route whose toolbar may paint outside its frame', () => {
+    renderGarage('/dashboard/garage/services')
+    expect(document.querySelector('.db-my-shop-content')).toHaveClass('db-my-shop-content--services')
+  })
 })

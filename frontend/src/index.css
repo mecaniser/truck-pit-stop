@@ -2415,8 +2415,9 @@ html::-webkit-scrollbar-thumb:hover {
 }
 
 /* Services owns its ledger scroller. Let toolbar focus and its catalog menu
-   paint outside the route frame without unclipping the ledger itself. */
-.db-my-shop-content:has(> .db-services-workspace) {
+   paint outside the route frame without unclipping the ledger itself. This is
+   route-owned so nested route rendering cannot make the selector miss. */
+.db-my-shop-content.db-my-shop-content--services {
   overflow: visible;
 }
 
