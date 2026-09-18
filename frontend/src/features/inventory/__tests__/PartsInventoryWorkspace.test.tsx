@@ -193,9 +193,11 @@ function installApi(detailOverride?: ReturnType<typeof detail>) {
       const params = config?.params || {}
       if (params.view === 'archived') return Promise.resolve({ data: page([archivedPart]) })
       if (params.search === 'brake') return Promise.resolve({ data: page([brakePart]) })
+      if (params.search === 'AIR-DRY-CAR') return Promise.resolve({ data: page([], { total: 1 }) })
       if (params.skip === 50) return Promise.resolve({ data: page([brakePart], { total: 51, skip: 50 }) })
       return Promise.resolve({ data: page([activePart], { total: 51, has_more: true }) })
     }
+    if (url === '/inventory/category-suggestions') return Promise.resolve({ data: [{ text: 'Air Systems', times_used: 4 }] })
     if (url.endsWith('/lifecycle-summary')) return Promise.resolve({ data: lifecycleSummary })
     if (url.startsWith('/parts-operations/parts/')) {
       const id = url.split('/').at(-1)
@@ -1048,12 +1050,14 @@ describe('DB-038 Parts & inventory workspace', () => {
     await user.type(sellingPrice, '18.75')
     await user.tab()
     fireEvent.submit(addPartDialog.querySelector('form')!)
-    expect(screen.getByRole('alert')).toHaveTextContent('Part name is required.')
+    expect(screen.getByRole('alert')).toHaveTextContent('Category is required before creating a part.')
+    expect(within(addPartDialog).getByRole('textbox', { name: /Part name/ })).toBeDisabled()
+    await user.type(screen.getByRole('combobox', { name: /Category/ }), 'Air')
     await user.type(screen.getByRole('textbox', { name: /Part name/ }), 'Air dryer cartridge')
-    await user.type(screen.getByRole('textbox', { name: /SKU/ }), 'AIR-DRY-01')
+    await waitFor(() => expect(within(addPartDialog).getByRole('textbox', { name: /SKU/ })).toHaveValue('AIR-DRY-CAR-002'))
     fireEvent.submit(addPartDialog.querySelector('form')!)
     await waitFor(() => expect(apiMocks.post).toHaveBeenCalledWith('/inventory', expect.objectContaining({
-      name: 'Air dryer cartridge', sku: 'AIR-DRY-01', stock_quantity: 0, reorder_level: 4, cost: 12.34, selling_price: 18.75, unit_type: 'each',
+      name: 'Air dryer cartridge', sku: 'AIR-DRY-CAR-002', category: 'Air', stock_quantity: 0, reorder_level: 4, cost: 12.34, selling_price: 18.75, unit_type: 'each',
     })))
   })
 

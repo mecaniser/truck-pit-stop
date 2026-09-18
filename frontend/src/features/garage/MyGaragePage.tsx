@@ -1,4 +1,4 @@
-import { NavLink, Routes, Route, Navigate } from 'react-router-dom'
+import { NavLink, Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import { BarChart3, Boxes, ClipboardList, Clock3, ShoppingCart, Wrench, type LucideIcon } from 'lucide-react'
 import ServicesManagementPage from '@/features/dashboard/ServicesManagementPage'
 import InventoryPage from '@/features/inventory/InventoryPage'
@@ -84,6 +84,9 @@ function GarageNav() {
 }
 
 export default function MyGaragePage() {
+  const location = useLocation()
+  const isServicesRoute = location.pathname.endsWith('/services')
+
   return (
     <div className="db-my-shop-workspace db-operating-surface w-full">
       <div className="db-my-shop-layout">
@@ -91,7 +94,7 @@ export default function MyGaragePage() {
 
         {/* Every routed section is an operating surface and owns its own
             scroller, so this frame clips rather than offering a second one. */}
-        <div className="db-my-shop-content db-operating-surface__frame min-w-0 scrollbar-dark">
+        <div className={`db-my-shop-content db-operating-surface__frame min-w-0 scrollbar-dark${isServicesRoute ? ' db-my-shop-content--services' : ''}`}>
           <Routes>
             <Route index element={<Navigate to="inventory" replace />} />
             <Route path="services" element={<ServicesManagementPage />} />
