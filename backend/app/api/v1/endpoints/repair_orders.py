@@ -59,6 +59,7 @@ from app.services.repair_order_status_sets import (
     INTERNAL_FROZEN_RO_STATUSES,
 )
 from app.services.pricing import apply_canonical_order_totals, get_order_total
+from app.services.discount_limits import discount_limits, proposed_part_price, validate_discounts
 from app.services.internal_fleet import fleet_labor_uses_customer_rate, uses_internal_fleet_pricing
 from app.services.vehicle_identity import ensure_vehicle_relationship
 from app.services.parts_operations_service import apply_inventory_movement
@@ -2955,7 +2956,10 @@ async def approve_completion(
     # Finalization shares the repair-order row lock with every price mutation.
     # Reconcile canonical children before authorization checks and invoice
     # creation so both the stored totals and immutable invoice snapshot describe
-    # the same work.
+    # the same work. Reload the current cost basis at this publication boundary.
+    await db.refresh(order, attribute_names=['tenant'])
+    await db.refresh(order.tenant)
+    _validate_cost_discounts(order)
     apply_canonical_order_totals(order)
 
     # Estimates are optional in the work-first model. Once the shop chooses to
@@ -3521,11 +3525,12 @@ async def _load_pricing_order_for_update(
         select(RepairOrder)
         .where(RepairOrder.id == order_id, RepairOrder.deleted_at.is_(None))
         .options(
+            joinedload(RepairOrder.tenant, innerjoin=True),
             selectinload(RepairOrder.parts_usage).selectinload(PartsUsage.inventory_item),
             selectinload(RepairOrder.labor_items),
         )
         .execution_options(populate_existing=True)
-        .with_for_update()
+        .with_for_update(of=RepairOrder)
     )
     if tenant_id is not None:
         statement = statement.where(RepairOrder.tenant_id == tenant_id)
@@ -3594,6 +3599,7 @@ async def _refresh_repair_order_totals(
     await db.flush()
     order = await _load_pricing_order_for_update(db, order_id)
     if order:
+        _validate_cost_discounts(order)
         apply_canonical_order_totals(order)
     await db.flush()
     return order
@@ -3638,6 +3644,40 @@ def _apply_repair_order_totals(
 
 
 # --- Price Builder ---
+
+def _validate_cost_discounts(order, **candidate):
+    try:
+        validate_discounts(order, **candidate)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+def _apply_parts_mode(order, mode):
+    # Calculate every proposed price first; a missing cost cannot partly mutate.
+    try:
+        prices = [(part, proposed_part_price(part, mode)) for part in order.parts_usage]
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    for part, price in prices:
+        part.unit_price = price
+        part.total_price = price * part.quantity
+
+
+@router.get('/{order_id}/discount-limits')
+async def get_discount_limits(
+    order_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role(*PRICE_BUILD_EDIT_ROLES)),
+):
+    try:
+        order = await _load_tenant_price_build_order(db, order_id, current_user)
+        _check_ro_access(current_user, order)
+    except Exception as exc:
+        raise _map_price_build_error(exc)
+    result = {}
+    for key, mode in [('current', None), ('stock', 'stock'), ('list', 'list')]:
+        result[key] = discount_limits(order, mode)
+    return result
 
 
 async def _load_tenant_price_build_order(
@@ -4700,18 +4740,8 @@ async def set_parts_pricing_mode(
     _check_ro_access(current_user, order)
     _require_editable_ro(order)
 
-    for pu in order.parts_usage:
-        inv = pu.inventory_item
-        if body.mode == "stock":
-            price = pu.unit_cost if pu.unit_cost is not None else (inv.cost if inv else pu.unit_price)
-        else:
-            price = pu.list_price if pu.list_price is not None else (inv.selling_price if inv else pu.unit_price)
-        # Never below cost.
-        floor = pu.unit_cost if pu.unit_cost is not None else (inv.cost if inv else None)
-        if floor is not None and price < floor:
-            price = floor
-        pu.unit_price = price
-        pu.total_price = price * pu.quantity
+    _validate_cost_discounts(order, mode=body.mode)
+    _apply_parts_mode(order, body.mode)
     _apply_repair_order_totals(order)
     await db.commit()
     return _to_price_build_summary(order)
@@ -4735,28 +4765,14 @@ async def update_repair_order_discounts(
     _check_ro_access(current_user, order)
     _require_editable_ro(order)
 
-    parts_total = sum(Decimal(str(pu.total_price)) for pu in order.parts_usage)
-    labor_total = sum(Decimal(str(li.total_cost)) for li in order.labor_items)
-
-    if body.labor_discount_amount is not None:
-        d = Decimal(str(body.labor_discount_amount)).quantize(Decimal("0.01"))
-        if d < 0:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Labor discount cannot be negative")
-        if d > labor_total:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Labor discount cannot exceed the labor total (${labor_total})")
-        order.labor_discount_amount = d
-
-    if body.order_discount_amount is not None:
-        d = Decimal(str(body.order_discount_amount)).quantize(Decimal("0.01"))
-        if d < 0:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Order discount cannot be negative")
-        labor_net = max(Decimal("0.00"), labor_total - Decimal(str(order.labor_discount_amount or 0)))
-        subtotal = parts_total + labor_net
-        if d > subtotal:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Order discount cannot exceed the order subtotal (${subtotal})")
-        order.order_discount_amount = d
-
-    _apply_repair_order_totals(order, parts_total=parts_total, labor_total=labor_total)
+    labor = body.labor_discount_amount if body.labor_discount_amount is not None else (order.labor_discount_amount or Decimal('0'))
+    total = body.order_discount_amount if body.order_discount_amount is not None else (order.order_discount_amount or Decimal('0'))
+    _validate_cost_discounts(order, labor=labor, total=total, mode=body.parts_pricing_mode)
+    if body.parts_pricing_mode:
+        _apply_parts_mode(order, body.parts_pricing_mode)
+    order.labor_discount_amount = labor.quantize(Decimal('0.01'))
+    order.order_discount_amount = total.quantize(Decimal('0.01'))
+    _apply_repair_order_totals(order)
     await db.commit()
     return _to_price_build_summary(order)
 

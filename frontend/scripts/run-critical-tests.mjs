@@ -16,6 +16,7 @@ const criticalTests = [
   'src/features/auth/__tests__/LoginPage.test.tsx',
   'src/features/mechanics/__tests__/MechanicsPage.test.tsx',
   'src/features/repair-orders/__tests__/RepairOrdersPage.abort.test.tsx',
+  'src/features/repair-orders/__tests__/PriceBuilderPanel.pending-feedback.test.tsx',
   'src/lib/__tests__/apiCancellation.test.ts',
 ]
 

@@ -25,7 +25,7 @@ from app.schemas.repair_order import PartsPricingModeRequest, DiscountUpdate
 
 
 async def _seed_order(db):
-    t = Tenant(id=uuid4(), name="P", slug=f"p-{uuid4().hex[:6]}", labor_rate=Decimal("100"))
+    t = Tenant(id=uuid4(), name="P", slug=f"p-{uuid4().hex[:6]}", labor_rate=Decimal("100"), internal_labor_rate=Decimal('50'))
     db.add(t)
     await db.commit()
     cust = Customer(id=uuid4(), tenant_id=t.id, first_name="A", last_name="B", email=f"c{uuid4().hex[:6]}@x.com")

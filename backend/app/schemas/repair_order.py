@@ -96,8 +96,20 @@ class PartsPricingModeRequest(BaseModel):
 
 
 class DiscountUpdate(BaseModel):
-    labor_discount_amount: Optional[Decimal] = None   # $ off the labor subtotal
-    order_discount_amount: Optional[Decimal] = None   # $ off the order total
+    parts_pricing_mode: Optional[Literal['stock', 'list']] = None
+    labor_discount_amount: Optional[Decimal] = None
+    order_discount_amount: Optional[Decimal] = None
+
+    @field_validator('labor_discount_amount', 'order_discount_amount')
+    @classmethod
+    def validate_discount_amount(cls, value: Optional[Decimal]) -> Optional[Decimal]:
+        if value is None:
+            return None
+        if not value.is_finite() or value < 0 or value > Decimal('99999999.99'):
+            raise ValueError('Discount must be a finite non-negative dollar amount.')
+        if value != value.quantize(Decimal('0.01')):
+            raise ValueError('Discount must have at most two decimal places.')
+        return value.quantize(Decimal('0.01'))
 
 
 class PartsUsageResponse(BaseModel):
