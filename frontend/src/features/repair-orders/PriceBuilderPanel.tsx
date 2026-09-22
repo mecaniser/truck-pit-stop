@@ -32,6 +32,7 @@ import api from '@/lib/api'
 import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 import QuantityStepper from '@/components/QuantityStepper'
 import StartWorkAction from './StartWorkAction'
+import DiscountAmountInput from './DiscountAmountInput'
 import WorkflowInfoStep, { WorkflowInfoGroup, type WorkflowInfo } from './WorkflowInfoStep'
 import DurationStepper from '@/components/DurationStepper'
 import { formatHoursMinutes } from '@/lib/durationFormat'
@@ -1682,39 +1683,58 @@ export default function PriceBuilderPanel({
     }
   }, [partsUsed])
 
+  const nextLaborDiscount = laborDiscount.trim() === '' ? '0' : laborDiscount
+  const nextOrderDiscount = orderDiscount.trim() === '' ? '0' : orderDiscount
+  const discountsChanged = (
+    Math.abs((parseFloat(nextLaborDiscount) || 0) - (parseFloat(summary?.labor_discount_amount || '0') || 0)) >= 0.005
+    || Math.abs((parseFloat(nextOrderDiscount) || 0) - (parseFloat(summary?.order_discount_amount || '0') || 0)) >= 0.005
+  )
+  const pricingAdjustmentsChanged = draftPartsPricingMode !== partsPricingMode || discountsChanged
+  type DiscountCapacity = {
+    labor_discount_max: string | number
+    combined_discount_max: string | number
+    labor_discount_block_reason: string | null
+    order_discount_block_reason: string | null
+  }
+  const { data: discountLimits, isError: discountLimitsError } = useQuery({
+    queryKey: ['discount-limits', orderId, summary],
+    queryFn: async () => (await api.get<Record<'current' | 'stock' | 'list', DiscountCapacity>>(`/repair-orders/${orderId}/discount-limits`)).data,
+    enabled: discountsOpen && canEdit,
+    retry: false,
+  })
+  const discountCapacity = discountLimits?.[draftPartsPricingMode === partsPricingMode ? 'current' : draftPartsPricingMode]
+  const maxLaborDiscount = Number(discountCapacity?.labor_discount_max ?? 0)
+  // Compare currency in cents: 198.89 - 187.50 is slightly below 11.39 in binary.
+  const discountCents = (value: string | number) => Math.round(Number(value) * 100)
+  const maxOrderDiscount = discountCapacity?.order_discount_block_reason ? 0 : Math.max(0, discountCents(discountCapacity?.combined_discount_max ?? 0) - discountCents(nextLaborDiscount || 0)) / 100
+  const discountValidation = !discountCapacity
+    ? (discountLimitsError ? 'Discount limits could not be loaded. Reopen pricing to retry.' : 'Checking available discounts…')
+    : !Number.isFinite(Number(nextLaborDiscount)) || !Number.isFinite(Number(nextOrderDiscount))
+      ? 'Enter valid dollar amounts for discounts.'
+    : discountCents(nextLaborDiscount) > discountCents(maxLaborDiscount)
+      ? (discountCapacity.labor_discount_block_reason || `Labor discount is limited to ${money(maxLaborDiscount)} to protect shop cost.`)
+      : discountCents(nextOrderDiscount) > discountCents(maxOrderDiscount)
+        ? (discountCapacity.order_discount_block_reason || `Order discount is limited to ${money(maxOrderDiscount)} after the labor discount.`)
+        : null
+
   const savePricingAdjustments = async () => {
+    if (discountsSaving || !pricingAdjustmentsChanged || discountValidation) return false
     setDiscountsSaving(true)
     try {
-      let updatedSummary: PriceBuildSummary | undefined
-      if (draftPartsPricingMode !== partsPricingMode) {
-        const response = await api.post<PriceBuildSummary>(`/repair-orders/${orderId}/parts/pricing-mode`, { mode: draftPartsPricingMode })
-        updatedSummary = response.data
-        setPartsPricingMode(draftPartsPricingMode)
-      }
-
-      const nextLaborDiscount = laborDiscount.trim() === '' ? '0' : laborDiscount
-      const nextOrderDiscount = orderDiscount.trim() === '' ? '0' : orderDiscount
-      const discountsChanged = (
-        Math.abs((parseFloat(nextLaborDiscount) || 0) - (parseFloat(summary?.labor_discount_amount || '0') || 0)) >= 0.005
-        || Math.abs((parseFloat(nextOrderDiscount) || 0) - (parseFloat(summary?.order_discount_amount || '0') || 0)) >= 0.005
-      )
-      if (discountsChanged) {
-        const response = await api.patch<PriceBuildSummary>(`/repair-orders/${orderId}/discounts`, {
-          labor_discount_amount: nextLaborDiscount,
-          order_discount_amount: nextOrderDiscount,
-        })
-        updatedSummary = response.data
-      }
-
-      if (updatedSummary) {
-        // Both mutations return the complete summary. Reuse it immediately
-        // instead of waiting for a second price-build request plus unrelated
-        // inventory/detail refetches before the pricing popover can close.
-        queryClient.setQueryData<PriceBuildSummary>(['price-build', orderId], updatedSummary)
-        onUpdated?.()
-      }
+      const response = await api.patch<PriceBuildSummary>(`/repair-orders/${orderId}/discounts`, {
+        labor_discount_amount: nextLaborDiscount,
+        order_discount_amount: nextOrderDiscount,
+        ...(draftPartsPricingMode !== partsPricingMode ? { parts_pricing_mode: draftPartsPricingMode } : {}),
+      })
+      setPartsPricingMode(draftPartsPricingMode)
+      queryClient.setQueryData<PriceBuildSummary>(['price-build', orderId], response.data)
+      void queryClient.invalidateQueries({ queryKey: ['discount-limits', orderId] })
+      onUpdated?.()
+      return true
     } catch (err: unknown) {
       toast.error(errorDetail(err, 'Failed to apply pricing adjustments'))
+      void queryClient.invalidateQueries({ queryKey: ['discount-limits', orderId] })
+      return false
     } finally {
       setDiscountsSaving(false)
     }
@@ -2371,7 +2391,7 @@ export default function PriceBuilderPanel({
   return (
     <div className="db-price-builder relative flex h-full min-h-full flex-col overflow-hidden bg-white">
       <div
-        className="px-5 py-4 text-white"
+        className="db-workspace-header px-5 py-4 text-white"
         style={{
           background: isInternalOrder
             ? 'linear-gradient(100deg,#1e3a8a,#0f172a)'
@@ -2395,6 +2415,7 @@ export default function PriceBuilderPanel({
             )}
           </div>
           <div className="flex flex-wrap items-center justify-end gap-2">
+            <button type="button" onClick={onToggleDangerActions} aria-expanded={showDangerActions} aria-label="Order actions" title="Order actions" className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-white/14 text-white ring-1 ring-white/20">⋯</button>
             {onPrev && (
               <button
                 type="button"
@@ -2465,12 +2486,11 @@ export default function PriceBuilderPanel({
               Shop fleet
             </span>
           )}
-          {/* Vehicle chip is the least critical here — hide it on mobile so the
-              status + company stay on one tidy row. */}
-          <span className="hidden items-center gap-1 rounded-full bg-white/14 px-3 py-1.5 text-white ring-1 ring-white/20 sm:inline-flex">
+          {/* Keep unique vehicle/order details accessible without a duplicate row. */}
+          <button type="button" onClick={() => setCustomerOpen((open) => !open)} aria-expanded={customerOpen} title="Customer and vehicle details" className="inline-flex items-center gap-1 rounded-full bg-white/14 px-3 py-1.5 text-white ring-1 ring-white/20">
             <Truck className="h-3.5 w-3.5" />
             {[vehicleUnit, vehicleLabel].filter(Boolean).join(' · ') || 'Truck'}
-          </span>
+          </button>
         </div>
       </div>
 
@@ -2530,7 +2550,7 @@ export default function PriceBuilderPanel({
         </>
       )}
 
-      <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-5 py-5 pb-4">
+      <div className="db-workspace-body min-h-0 flex-1 space-y-4 overflow-y-auto px-5 py-5 pb-4">
 
       {(onSaveDescription || (description && description.trim())) && (
         <div>
@@ -2851,17 +2871,15 @@ export default function PriceBuilderPanel({
         </div>
       )}
 
-      {/* Editable orders get the dashed "add" shell around the tab strip + search.
-          Read-only orders only surface History, so drop the shell entirely and let
-          the History card stand on its own (styled like the invoice card). */}
-      <div className={addBarReadOnly ? '' : 'rounded-2xl border border-dashed border-gray-300 bg-gray-50/70 p-3'}>
-        <div className="flex flex-wrap items-center gap-3">
+      {/* Tools share one flat row; only the search field needs a boundary. */}
+      <div className="db-workspace-add">
+        <div className="db-workspace-tool-row flex flex-wrap items-center gap-3 border-b border-gray-200 pb-2">
           {/* Read-only orders only have History — the single tab switches to
               nothing, and on mobile it wraps above the panel wasting a row. Drop
               the tab strip entirely; the History panel below carries its own
               header. */}
           {!addBarReadOnly && (
-          <div className="grid w-full grid-cols-4 shrink-0 rounded-xl bg-white p-1 text-xs font-bold shadow-sm ring-1 ring-gray-200 sm:w-auto">
+          <div className="grid w-full grid-cols-4 shrink-0 gap-1 text-xs font-bold sm:w-auto">
             {([
               ['operation', Wrench, 'Operation'],
               ['part', Box, 'Part'],
@@ -2873,9 +2891,11 @@ export default function PriceBuilderPanel({
                 type="button"
                 onClick={() => {
                   setAddType(key)
+                  setSearchTerm('')
                   setPaletteOpen(key !== 'history')
                   if (key === 'history') onHistoryOpen?.()
                 }}
+                aria-pressed={addType === key}
                 className={`inline-flex items-center justify-center gap-1.5 rounded-lg px-2.5 py-2 ${
                   addType === key ? 'bg-orange-500 text-white shadow-sm' : 'text-gray-600 hover:bg-gray-50'
                 }`}
@@ -2902,7 +2922,7 @@ export default function PriceBuilderPanel({
                 addType === 'saved_labor' ? 'Search labor book time — e.g. DPF filter replacement…' :
                 'Add part — search inventory by name or SKU…'
               }
-              className="h-11 w-full rounded-xl border border-gray-200 bg-white pl-9 pr-10 text-sm text-slate-950 placeholder:text-slate-500 outline-none focus:border-orange-300 focus:ring-2 focus:ring-orange-100"
+              className="db-workspace-search h-11 w-full rounded-lg border border-gray-100 bg-gray-50 pl-9 pr-10 text-sm text-slate-950 placeholder:text-slate-500 outline-none focus-visible:border-slate-400 focus-visible:ring-1 focus-visible:ring-slate-300"
             />
             {searchTerm && (
               <button
@@ -2927,7 +2947,7 @@ export default function PriceBuilderPanel({
           // Same card shape as the invoice display (icon circle · title/subtitle ·
           // chevron), so a read-only order shows History and Invoice as two
           // matching buttons.
-          <div className="rounded-2xl border border-gray-200 bg-gray-50/70 p-3">
+          <div className={addBarReadOnly ? 'rounded-2xl border border-gray-200 bg-gray-50/70 p-3' : 'py-3'}>
             <button
               type="button"
               onClick={() => {
@@ -2957,7 +2977,7 @@ export default function PriceBuilderPanel({
               </span>
             </button>
             {historyOpen && (
-              <div className="border-t border-gray-100 p-3">
+              <div className={addBarReadOnly ? 'border-t border-gray-100 p-3' : ''}>
                 {sortedHistoryEvents.length ? (
                   <>
                   <ol className="space-y-3">
@@ -3020,11 +3040,11 @@ export default function PriceBuilderPanel({
           </div>
         )}
 
-        {paletteOpen && addType !== 'history' && (
-          <div className="mt-3 rounded-[14px] border border-gray-200 bg-white p-2 shadow-[0_10px_30px_rgba(20,25,35,.10)]">
+        {paletteOpen && addType !== 'history' && (addType !== 'operation' || searchTerm.trim().length > 0) && (
+          <div className={`db-workspace-picker mt-2 border-b border-gray-200 bg-white py-2 ${searchTerm.trim() ? 'max-h-64 overflow-y-auto' : ''}`}>
             <div className="mb-2 flex items-center justify-between border-b border-gray-100 px-2 pb-2">
               <span className="text-xs font-bold uppercase tracking-[0.16em] text-slate-600">
-                {addType === 'operation' ? 'Repair operations & services' : addType === 'saved_labor' ? 'Labor book time' : 'Parts'}
+                {addType === 'operation' ? 'Repair operations & services' : addType === 'saved_labor' ? 'Labor book time' : searchTerm.trim() ? 'Parts' : 'Most used parts'}
               </span>
               <span className="font-['JetBrains_Mono',monospace] text-[11px] text-slate-600">↵ to add</span>
             </div>
@@ -3047,7 +3067,7 @@ export default function PriceBuilderPanel({
                   return (
                     <div
                       key={c.operation_id}
-                      className={`flex items-center justify-between gap-3 rounded-xl px-3 py-2.5 ${
+                      className={`db-workspace-pick-row flex items-center justify-between gap-3 rounded-xl px-3 py-2.5 ${
                         index === 0 ? 'bg-orange-50 shadow-[inset_3px_0_0_#ef8a12]' : 'hover:bg-gray-50'
                       }`}
                     >
@@ -3115,13 +3135,16 @@ export default function PriceBuilderPanel({
                     Searching labor book time…
                   </p>
                 )}
-                {!laborBookEntriesFetching && laborBookEntries.length > 0 && laborBookEntries.slice(0, 8).map((entry, index) => {
+                {!laborBookEntriesFetching && laborBookEntries.length > 0 && (laborBookSearchTerm
+                  ? laborBookEntries.slice(0, 8)
+                  : [...laborBookEntries].sort((a, b) => b.usage_count - a.usage_count).slice(0, 3)
+                ).map((entry, index) => {
                   const scope = laborBookTimeScope(entry)
                   const isAddingThisLaborBookEntry = isApplyingLaborBookEntry(entry)
                   return (
                     <div
                       key={entry.id}
-                      className={`flex items-center justify-between gap-3 rounded-xl px-3 py-2.5 ${
+                      className={`db-workspace-pick-row flex items-center justify-between gap-3 rounded-xl px-3 py-2.5 ${
                         index === 0 ? 'bg-orange-50 shadow-[inset_3px_0_0_#ef8a12]' : 'hover:bg-gray-50'
                       }`}
                     >
@@ -3330,7 +3353,7 @@ export default function PriceBuilderPanel({
                     return (
                       <div
                         key={item.id}
-                        className={`rounded-xl px-3 py-2.5 ${
+                        className={`db-workspace-pick-row rounded-xl px-3 py-2.5 ${
                           index === 0 ? 'bg-orange-50 shadow-[inset_3px_0_0_#ef8a12]' : 'hover:bg-gray-50'
                         }`}
                       >
@@ -3387,9 +3410,9 @@ export default function PriceBuilderPanel({
                   }
 
                   if (!term) {
-                    const forThisOrder = partSuggestions?.for_this_order || []
+                    const forThisOrder: NonNullable<typeof partSuggestions>['for_this_order'] = []
                     const mostUsed = (partSuggestions?.most_used || [])
-                      .filter((s) => !forThisOrder.some((f) => f.inventory_id === s.inventory_id))
+                      .slice(0, 3)
 
                     if (!forThisOrder.length && !mostUsed.length) {
                       return (
@@ -3414,9 +3437,6 @@ export default function PriceBuilderPanel({
                         )}
                         {!!mostUsed.length && (
                           <div>
-                            <p className="px-3 pb-1 text-[10px] font-bold uppercase tracking-[0.16em] text-slate-600">
-                              Most used parts
-                            </p>
                             {mostUsed.map((s, index) => renderItemRow(
                               { id: s.inventory_id, name: s.name, sku: s.sku, stock_quantity: s.stock_quantity, unit_type: s.unit_type, selling_price: s.selling_price },
                               forThisOrder.length ? -1 : index,
@@ -3809,7 +3829,7 @@ export default function PriceBuilderPanel({
           return (
             <div className="rounded-xl border border-dashed border-gray-200 bg-gray-50 px-4 py-6 text-center">
               <p className="font-semibold text-gray-900">This order is deleted.</p>
-              <p className="mt-1 text-sm text-slate-600">Restore it from the Danger zone below to view and edit its work &amp; labor.</p>
+              <p className="mt-1 text-sm text-slate-600">Restore it from Order actions to view and edit its work &amp; labor.</p>
             </div>
           )
         }
@@ -3862,9 +3882,8 @@ export default function PriceBuilderPanel({
             return <PendingWorkRows message={pendingWorkMessage || 'Loading parts for work & labor…'} />
           }
           return (
-            <div className="rounded-xl border border-dashed border-orange-200 bg-orange-50/40 px-4 py-6 text-center">
-              <p className="font-semibold text-gray-900">Start by adding an operation, diagnostic or part.</p>
-              <p className="mt-1 text-sm text-gray-500">The add bar above feeds this single work and labor list.</p>
+            <div className="py-2 text-sm text-gray-500">
+              <p>Add an operation, labor or part to begin.</p>
             </div>
           )
         }
@@ -3893,7 +3912,7 @@ export default function PriceBuilderPanel({
                     <button
                       type="button"
                       onClick={() => toggleLine(line.id)}
-                      className="grid w-full grid-cols-[auto_auto_1fr_auto] items-center gap-3 rounded-xl px-2 py-3 text-left hover:bg-gray-50"
+                      className="db-workspace-line-trigger grid w-full grid-cols-[auto_auto_1fr_auto] items-center gap-3 rounded-xl px-2 py-3 text-left hover:bg-gray-50"
                     >
                       <ChevronRight className={`h-4 w-4 text-gray-400 transition-transform ${isOpen ? 'rotate-90' : ''}`} />
                       <span className={`inline-flex h-9 w-9 items-center justify-center rounded-lg ${
@@ -3918,7 +3937,7 @@ export default function PriceBuilderPanel({
                       </span>
                     </button>
                     {isOpen && (
-                      <div className="ml-[60px] space-y-3 pb-4 pr-2">
+                      <div className="db-workspace-line-details ml-3 space-y-2 pb-2 pr-2">
                         {warningsForLine.length > 0 && (
                           <div role="alert" className="space-y-1 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
                             {warningsForLine.map((warning) => (
@@ -4002,21 +4021,7 @@ export default function PriceBuilderPanel({
         )
       })()}
 
-      <div className="space-y-1 pb-2">
-        <button
-          type="button"
-          onClick={() => setCustomerOpen((open) => !open)}
-          className="flex w-full items-center justify-between rounded-xl border-t border-gray-100 px-2 py-3 text-left hover:bg-gray-50"
-        >
-          <span className="inline-flex min-w-0 items-center gap-2 text-sm font-semibold text-gray-800">
-            <Truck className="h-4 w-4 text-gray-400" />
-            Customer & Vehicle
-          </span>
-          <span className="truncate px-3 text-right text-xs text-gray-500">
-            {customerName || 'Customer'} · {vehicleUnit || 'Unit'} · {vehicleLabel || 'Vehicle'}{vehicleVin ? ` · VIN ${vehicleVin.slice(-6)}` : ''}
-          </span>
-          <ChevronRight className={`h-4 w-4 shrink-0 text-gray-400 transition-transform ${customerOpen ? 'rotate-90' : ''}`} />
-        </button>
+      <div className="db-workspace-secondary pb-2">
         {customerOpen && (
           <div className="grid gap-3 rounded-xl bg-gray-50 px-4 py-3 text-sm sm:grid-cols-2">
             <div>
@@ -4047,6 +4052,7 @@ export default function PriceBuilderPanel({
               onRecommendedServicesOpenChange?.(next)
               return next
             })}
+            aria-expanded={recommendedOpen}
             className="flex w-full items-center justify-between rounded-xl border-t border-gray-100 px-2 py-3 text-left hover:bg-gray-50"
           >
             <span className="inline-flex items-center gap-2 text-sm font-semibold text-gray-800">
@@ -4302,7 +4308,7 @@ export default function PriceBuilderPanel({
             on a finalized order with no photos there's nothing to show, so the
             whole section is hidden. */}
         {!isDeleted && (!isFinalized || (repairPhotosData !== undefined && repairPhotos.length > 0)) && (
-          <div className="mt-4 rounded-2xl border border-gray-200 bg-white p-3 shadow-sm">
+          <div className="db-workspace-photos">
             <button
               type="button"
               onClick={() => setPhotosOpen((open) => !open)}
@@ -4310,8 +4316,8 @@ export default function PriceBuilderPanel({
               aria-expanded={photosOpen}
             >
               <span className="min-w-0">
-                <span className="block text-xs font-bold uppercase tracking-[0.16em] text-gray-400">Repair photos</span>
-                <span className="mt-0.5 block text-sm font-semibold text-gray-900">
+                <span className="inline-flex items-center gap-2 text-sm font-semibold text-gray-800"><Camera className="h-4 w-4" /> Photos</span>
+                <span className="sr-only">
                   {repairPhotosData === undefined
                     ? 'Open to view repair photos'
                     : repairPhotos.length
@@ -4325,7 +4331,7 @@ export default function PriceBuilderPanel({
                     <Spinner size="xs" />
                   </span>
                 )}
-                {visiblePhotoThumbs.length > 0 && (
+                {photosOpen && visiblePhotoThumbs.length > 0 && (
                   <span className="flex min-w-0 items-center justify-end gap-1">
                     {visiblePhotoThumbs.map((photo) => (
                       <span key={photo.id} className="block h-10 w-10 shrink-0 overflow-hidden rounded-lg border border-gray-200 bg-gray-100">
@@ -4436,7 +4442,9 @@ export default function PriceBuilderPanel({
       </div>
       </div>
 
-      <div className="z-10 border-t border-gray-200 bg-white/95 px-3 py-4 shadow-[0_-10px_30px_rgba(20,25,35,.08)] backdrop-blur sm:px-5">
+      <div className="db-workspace-footer z-10 border-t border-gray-200 bg-white/95 px-3 py-4 shadow-[0_-10px_30px_rgba(20,25,35,.08)] backdrop-blur sm:px-5">
+        <details key={orderId} className="db-workspace-pricing">
+          <summary className="inline-flex cursor-pointer items-center gap-1 rounded-lg border border-gray-200 px-2 py-1.5 text-xs font-semibold">Pricing <ChevronUp className="h-3.5 w-3.5" /></summary>
         <div ref={footerDetailsRef} className="relative mb-3 flex flex-wrap items-center gap-2">
           <button
             type="button"
@@ -4509,31 +4517,45 @@ export default function PriceBuilderPanel({
                   <X className="h-4 w-4" />
                 </button>
               </div>
-              <label className="mb-3 block text-sm">
-                <span className="mb-1 block text-xs font-bold uppercase tracking-wide text-slate-600">Parts pricing</span>
-                <select
-                  value={draftPartsPricingMode}
-                  disabled={discountsSaving}
-                  onChange={(e) => {
-                    const v = e.target.value
-                    if (v === 'stock' || v === 'list') setDraftPartsPricingMode(v)
-                  }}
-                  className="h-10 w-full rounded-lg border border-gray-200 bg-white px-2 text-sm text-slate-950 disabled:opacity-60"
-                >
-                  <option value="stock">Stock price</option>
-                  <option value="list">List price</option>
-                </select>
-              </label>
+              <fieldset className="mb-3" disabled={discountsSaving}>
+                <legend className="mb-1 text-xs font-bold uppercase tracking-wide text-slate-600">Parts pricing</legend>
+                <div className="grid grid-cols-2 gap-1 rounded-lg bg-gray-100 p-1">
+                  {(['stock', 'list'] as const).map((mode) => (
+                    <label
+                      key={mode}
+                      className="relative cursor-pointer"
+                      onMouseDown={(event) => {
+                        if (event.button !== 0 || discountsSaving) return
+                        // Focus the radio before the label's default click forwards
+                        // to it. Otherwise the focusable order panel briefly gains
+                        // focus and dismisses this popover before selection occurs.
+                        event.preventDefault()
+                        event.currentTarget.querySelector('input')?.focus()
+                      }}
+                    >
+                      <input
+                        type="radio"
+                        name={`parts-pricing-${orderId}`}
+                        value={mode}
+                        checked={draftPartsPricingMode === mode}
+                        onChange={() => setDraftPartsPricingMode(mode)}
+                        className="peer absolute inset-0 z-10 m-0 h-full w-full cursor-pointer opacity-0 disabled:cursor-not-allowed"
+                      />
+                      <span className="flex min-h-8 items-center justify-center rounded-md px-3 py-1.5 text-xs font-semibold text-slate-600 peer-checked:bg-white peer-checked:text-slate-950 peer-checked:shadow-sm peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-slate-500 peer-disabled:cursor-not-allowed peer-disabled:opacity-60 [@media(pointer:coarse)]:min-h-11">
+                        {mode === 'stock' ? 'Stock price' : 'List price'}
+                      </span>
+                    </label>
+                  ))}
+                </div>
+              </fieldset>
               <div className="mb-3 flex items-center justify-between gap-3 text-sm">
                 <span className="font-medium text-gray-700">Labor discount</span>
                 <span className="flex items-center gap-1.5">
-                  <input
-                    aria-label="Labor discount"
+                  <DiscountAmountInput
+                    label="Labor discount"
                     value={laborDiscount}
-                    onChange={(e) => setLaborDiscount(e.target.value.replace(/[^0-9.]/g, ''))}
-                    inputMode="decimal"
-                    placeholder="0.00"
-                    className="h-9 w-28 rounded-lg border border-gray-200 bg-white px-2 text-right font-['JetBrains_Mono',monospace] text-sm text-slate-950 placeholder:text-slate-500"
+                    onChange={setLaborDiscount}
+                    disabled={discountsSaving}
                   />
                   <button
                     type="button"
@@ -4548,13 +4570,11 @@ export default function PriceBuilderPanel({
               <div className="mb-3 flex items-center justify-between gap-3 text-sm">
                 <span className="font-medium text-gray-700">Order discount</span>
                 <span className="flex items-center gap-1.5">
-                  <input
-                    aria-label="Order discount"
+                  <DiscountAmountInput
+                    label="Order discount"
                     value={orderDiscount}
-                    onChange={(e) => setOrderDiscount(e.target.value.replace(/[^0-9.]/g, ''))}
-                    inputMode="decimal"
-                    placeholder="0.00"
-                    className="h-9 w-28 rounded-lg border border-gray-200 bg-white px-2 text-right font-['JetBrains_Mono',monospace] text-sm text-slate-950 placeholder:text-slate-500"
+                    onChange={setOrderDiscount}
+                    disabled={discountsSaving}
                   />
                   <button
                     type="button"
@@ -4566,14 +4586,15 @@ export default function PriceBuilderPanel({
                   </button>
                 </span>
               </div>
+              <p className="mb-2 text-[11px] text-slate-500">Available discount: labor {money(maxLaborDiscount)} · order {money(maxOrderDiscount)}</p>
+              {discountValidation && <p role="alert" className="mb-2 text-xs text-amber-800">{discountValidation}</p>}
               <div className="flex items-center justify-between border-t border-gray-100 pt-3">
-                <span className="text-xs font-semibold text-emerald-700">Customer saves {money(draftCustomerSavesTotal)}</span>
+                <span className="text-xs font-semibold text-emerald-700">Customer saves {draftCustomerSavesTotal.toLocaleString('en-US', { style: 'currency', currency: 'USD' })}</span>
                 <button
                   type="button"
-                  disabled={discountsSaving}
+                  disabled={discountsSaving || !pricingAdjustmentsChanged || !!discountValidation}
                   onClick={async () => {
-                    await savePricingAdjustments()
-                    setDiscountsOpen(false)
+                    if (await savePricingAdjustments()) setDiscountsOpen(false)
                   }}
                   className="inline-flex items-center gap-1.5 rounded-lg bg-orange-500 px-3 py-1.5 text-xs font-bold text-white disabled:opacity-60"
                 >
@@ -4584,7 +4605,8 @@ export default function PriceBuilderPanel({
             </div>
           )}
         </div>
-        <div className="flex flex-wrap items-center justify-between gap-3">
+        </details>
+        <div className="db-workspace-actions flex flex-wrap items-center justify-between gap-3">
           <div className={hasInvoice
             ? 'flex w-full min-w-0 items-end justify-between gap-2'
             : 'ml-auto flex min-w-0 flex-wrap items-center justify-end gap-3'
@@ -4871,17 +4893,6 @@ export default function PriceBuilderPanel({
               ) : null
             )}
           </div>
-        </div>
-        <div className="-mx-5 -mb-4 mt-4 border-t border-red-100 bg-red-50/60">
-          <button
-            type="button"
-            onClick={onToggleDangerActions}
-            aria-expanded={showDangerActions}
-            className="flex w-full items-center justify-between px-5 py-2.5 text-left text-xs font-semibold text-red-700"
-          >
-            <span className="inline-flex items-center gap-2"><AlertTriangle className="h-4 w-4" /> Danger zone</span>
-            <ChevronUp className="h-4 w-4" />
-          </button>
         </div>
       </div>
 

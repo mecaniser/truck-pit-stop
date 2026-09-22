@@ -37,6 +37,7 @@ from app.db.models.labor import Labor
 from app.db.models.repair_order_history import RepairOrderHistoryEvent
 from app.schemas.repair_order import RepairOrderHistoryEventResponse
 from app.services.email_service import send_email
+from app.services.discount_limits import validate_discounts
 from app.services.provider_outbox_service import enqueue_email_notification
 from app.services.tenant_branding import build_tenant_contact_html, get_tenant_display_name
 from app.services.twilio_service import send_sms
@@ -58,6 +59,16 @@ from app.services.repair_order_access import (
 )
 
 router = APIRouter()
+
+
+async def _validate_publication_discounts(db: AsyncSession, order: RepairOrder) -> None:
+    # Cost settings may have changed since the draft discount was entered.
+    await db.refresh(order, attribute_names=['tenant'])
+    await db.refresh(order.tenant)
+    try:
+        validate_discounts(order)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 QUOTE_ALLOWED_RO_STATUSES = {
     RepairOrderStatus.DRAFT,
@@ -984,6 +995,7 @@ async def update_quote(
             status_code=status.HTTP_409_CONFLICT,
             detail="A sent authorization cannot be changed; create a new additional-work authorization instead",
         )
+    await _validate_publication_discounts(db, order)
     apply_canonical_order_totals(order)
     quote.total_amount = get_order_total(order)
     quote.delta_amount = _money(quote.total_amount - quote.previously_authorized_amount)
@@ -1102,6 +1114,7 @@ async def send_quote_to_customer(
     # The repair-order row lock serializes this publication with every price
     # mutation. Rebuild persisted totals from the locked canonical children
     # before validating the draft or producing its immutable snapshot.
+    await _validate_publication_discounts(db, order)
     apply_canonical_order_totals(order)
     await db.flush()
 

@@ -172,6 +172,7 @@ def _mutation_requests(
 ) -> tuple[tuple[str, str, dict | None], ...]:
     base = f"/api/v1/repair-orders/{order_id}"
     return (
+        ("get", f"{base}/discount-limits", None),
         ("patch", f"{base}/price-build/lines/{labor_id}", {"description": "Changed"}),
         ("delete", f"{base}/price-build/lines/{labor_id}", None),
         ("post", f"{base}/price-build/recalculate", None),

@@ -51,6 +51,8 @@ async def _seed_quote_context(db_session):
         phone="7045550199",
         email="service@locktest.example",
         labor_rate=Decimal("100.00"),
+        # Discount/publication scenarios require a known shop-cost floor.
+        internal_labor_rate=Decimal("50.00"),
     )
     customer = Customer(
         id=uuid4(),

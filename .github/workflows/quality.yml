@@ -67,6 +67,7 @@ jobs:
             tests/test_fleet_board.py \
             tests/test_fleet_board_projection.py \
             tests/test_ro_pricing_discounts.py \
+            tests/test_discount_cost_floor.py \
             tests/test_workspace_typeaheads.py \
             tests/test_request_performance.py
 
