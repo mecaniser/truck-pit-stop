@@ -673,5 +673,12 @@ async def confirm_full_cash(db, *, invoice, tenant, customer_id, actor,
         prior_state=prior, new_state="paid", principal_delta=amount,
         evidence={"payment_id": str(payment.id), "accounting_policy": LOCAL_CASH,
                   "export_event_ids": [str(event.id) for event in events]})
+    # Marketing outcome capture is a durable record in this same transaction;
+    # it does not export the invoice to accounting or submit another payment.
+    from app.services.paid_invoice_webhook_service import enqueue_paid_invoice_webhook
+    await enqueue_paid_invoice_webhook(
+        db, tenant=tenant, invoice=invoice, order=invoice.repair_order,
+        customer=invoice.repair_order.customer,
+    )
     await db.flush()
     return payment.id, settlement

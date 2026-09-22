@@ -1849,12 +1849,19 @@ async def update_repair_order(
 
     update_data = order_data.model_dump(exclude_unset=True)
     attribution_fields = {
-        "lead_source_channel", "external_lead_id", "callrail_call_id", "google_click_id",
+        "lead_source_channel", "external_lead_id", "elis_opportunity_id", "callrail_call_id", "google_click_id",
         "gbraid", "wbraid", "landing_page_url", "utm_source", "utm_medium",
         "utm_campaign", "utm_term", "utm_content",
     }
-    if attribution_fields.intersection(update_data) and order.status in (RepairOrderStatus.INVOICED, RepairOrderStatus.PAID):
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Attribution is locked after invoice finalization")
+    if attribution_fields.intersection(update_data):
+        # Source attribution cannot be reopened by regressing the presentation
+        # status or cancelling/soft-deleting an already issued invoice.
+        invoice_exists = await db.scalar(select(Invoice.id).where(
+            Invoice.tenant_id == current_user.tenant_id,
+            Invoice.repair_order_id == order.id,
+        ).limit(1))
+        if invoice_exists is not None or order.status in (RepairOrderStatus.INVOICED, RepairOrderStatus.PAID):
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Attribution is locked after invoice finalization")
 
     # Update fields
     for field, value in update_data.items():

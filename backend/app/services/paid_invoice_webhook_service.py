@@ -11,8 +11,9 @@ from uuid import UUID, uuid4
 
 import anyio
 import httpx
-from sqlalchemy import and_, or_, select
+from sqlalchemy import and_, exists, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+from sqlalchemy.exc import IntegrityError
 
 from app.core.config import settings
 from app.core.paid_invoice_webhook_crypto import PaidInvoiceWebhookCryptoError, decrypt_paid_invoice_webhook_secret
@@ -23,6 +24,7 @@ from app.core.webhook_destination import (
 )
 from app.db.models.customer import Customer
 from app.db.models.invoice import Invoice, InvoiceStatus
+from app.db.models.invoice_settlement import InvoiceSettlement
 from app.db.models.provider_outbox import ProviderOutboxEvent, ProviderOutboxStatus
 from app.db.models.repair_order import RepairOrder, RepairOrderStatus
 from app.db.models.tenant import Tenant
@@ -37,6 +39,10 @@ from app.services.provider_outbox_service import ProviderDeliveryError, enqueue_
 
 
 PAID_INVOICE_WEBHOOK_EVENT = "repair_order.paid"  # compatibility export
+
+
+class ConversionDeliveryPaused(Exception):
+    """Delivery is suspended; captured work and retry budget stay intact."""
 
 
 class ConversionEventPrivacyExpired(Exception):
@@ -80,8 +86,8 @@ def service_lines(invoice: Invoice) -> list[dict]:
     return lines
 
 
-def attribution(order: RepairOrder) -> dict:
-    return {
+def attribution(order: RepairOrder, *, schema_version: int = 1) -> dict:
+    result = {
         "lead_source_channel": order.lead_source_channel,
         "external_lead_id": order.external_lead_id,
         "callrail_call_id": order.callrail_call_id,
@@ -95,11 +101,15 @@ def attribution(order: RepairOrder) -> dict:
         "utm_term": order.utm_term,
         "utm_content": order.utm_content,
     }
+    if schema_version == 2:
+        result["elis_opportunity_id"] = str(order.elis_opportunity_id) if order.elis_opportunity_id else None
+    return result
 
 
 def conversion_payload(*, event_id: UUID, event_type: str, tenant: Tenant, invoice: Invoice, order: RepairOrder, customer: Optional[Customer], occurred_at: Optional[datetime] = None, total_amount=None) -> dict:
     timestamp = occurred_at or _now()
-    return {
+    version = tenant.paid_invoice_webhook_payload_version or 1
+    result = {
         "event_id": str(event_id),
         "event_type": event_type,
         "occurred_at": timestamp.isoformat(),
@@ -111,8 +121,30 @@ def conversion_payload(*, event_id: UUID, event_type: str, tenant: Tenant, invoi
         "total_amount": _money(invoice.total_amount if total_amount is None else total_amount),
         "service_lines": service_lines(invoice),
         "customer": {"email": customer.email if customer else invoice.recipient_email, "phone": customer.phone if customer else invoice.recipient_phone},
-        "attribution": attribution(order),
+        "attribution": attribution(order, schema_version=version),
     }
+    if version == 2:
+        result.update(
+            schema_version=2, source_system="dieselbridge", source_revision=str(event_id),
+            repair_order_uuid=str(order.id), repair_order_number=order.order_number,
+            value_basis="invoice_settled" if event_type == PAID_INVOICE_WEBHOOK_EVENT else "measurement_adjustment",
+            amount_semantics="snapshot" if event_type == PAID_INVOICE_WEBHOOK_EVENT else "delta",
+        )
+    return result
+
+
+def native_invoice_outcome_predicate():
+    """Native source creation proof, not proof of cash or processor settlement."""
+    return and_(
+        Invoice.source.is_(None),
+        RepairOrder.source.is_(None),
+        exists().where(
+            InvoiceSettlement.invoice_id == Invoice.id,
+            InvoiceSettlement.tenant_id == Invoice.tenant_id,
+            InvoiceSettlement.customer_id == RepairOrder.customer_id,
+            InvoiceSettlement.legacy_reconciliation_status == "native",
+        ),
+    )
 
 
 async def enqueue_conversion_event(db: AsyncSession, *, tenant: Optional[Tenant], invoice: Invoice, order: RepairOrder, customer: Optional[Customer], event_type: str, idempotency_key: str, total_amount=None) -> Optional[ProviderOutboxEvent]:
@@ -128,13 +160,42 @@ async def enqueue_conversion_event(db: AsyncSession, *, tenant: Optional[Tenant]
         return None
     if event_type == "repair_order.paid" and (invoice.status != InvoiceStatus.PAID or order.status != RepairOrderStatus.PAID or Decimal(invoice.total_amount or 0) <= 0):
         return None
+    if tenant.paid_invoice_webhook_payload_version == 2:
+        if invoice.source is not None or order.source is not None:
+            return None
+        native_id = await db.scalar(select(InvoiceSettlement.id).where(
+            InvoiceSettlement.tenant_id == tenant.id,
+            InvoiceSettlement.invoice_id == invoice.id,
+            InvoiceSettlement.customer_id == order.customer_id,
+            InvoiceSettlement.legacy_reconciliation_status == "native",
+        ))
+        if native_id is None:
+            return None
+    existing_query = select(ProviderOutboxEvent).where(
+        ProviderOutboxEvent.tenant_id == tenant.id,
+        ProviderOutboxEvent.event_type == event_type,
+        ProviderOutboxEvent.idempotency_key == idempotency_key,
+    )
+    existing = (await db.execute(existing_query)).scalar_one_or_none()
+    if existing:
+        if existing.aggregate_id != invoice.id:
+            raise ValueError("Conversion event identity belongs to another invoice")
+        return existing
     event_id = uuid4()
     event = ProviderOutboxEvent(
         id=event_id, tenant_id=tenant.id, event_type=event_type, aggregate_type="invoice", aggregate_id=invoice.id,
         payload=conversion_payload(event_id=event_id, event_type=event_type, tenant=tenant, invoice=invoice, order=order, customer=customer, total_amount=total_amount),
         idempotency_key=idempotency_key, status=ProviderOutboxStatus.PENDING.value, available_at=_now(),
     )
-    db.add(event)
+    try:
+        async with db.begin_nested():
+            db.add(event)
+            await db.flush()
+    except IntegrityError:
+        existing = (await db.execute(existing_query)).scalar_one_or_none()
+        if existing is None or existing.aggregate_id != invoice.id:
+            raise
+        return existing
     return event
 
 
@@ -148,7 +209,7 @@ async def _claim(db: AsyncSession, limit: int) -> tuple[list[tuple[UUID, str]], 
         and_(ProviderOutboxEvent.status == ProviderOutboxStatus.PENDING.value, ProviderOutboxEvent.available_at <= now),
         and_(ProviderOutboxEvent.status == ProviderOutboxStatus.PROCESSING.value, ProviderOutboxEvent.locked_until <= now),
     )
-    rows = (await db.execute(select(ProviderOutboxEvent).where(ProviderOutboxEvent.event_type.in_(CONVERSION_EVENT_TYPES), due).order_by(ProviderOutboxEvent.available_at).limit(limit).with_for_update(skip_locked=True))).scalars()
+    rows = (await db.execute(select(ProviderOutboxEvent).join(Tenant, Tenant.id == ProviderOutboxEvent.tenant_id).where(Tenant.paid_invoice_webhook_enabled.is_(True), Tenant.paid_invoice_webhook_delivery_paused.is_(False), ProviderOutboxEvent.event_type.in_(CONVERSION_EVENT_TYPES), due).order_by(ProviderOutboxEvent.available_at).limit(limit).with_for_update(skip_locked=True, of=ProviderOutboxEvent))).scalars()
     claims = []
     expired = 0
     for event in rows:
@@ -192,7 +253,9 @@ async def _deliver(tenant: Tenant, event: ProviderOutboxEvent) -> tuple[Optional
 
 
 async def _deliver_within_budget(tenant: Tenant, event: ProviderOutboxEvent) -> tuple[Optional[str], int]:
-    if not tenant.paid_invoice_webhook_enabled or not tenant.paid_invoice_webhook_url or not tenant.paid_invoice_webhook_secret_encrypted:
+    if tenant.paid_invoice_webhook_delivery_paused or not tenant.paid_invoice_webhook_enabled:
+        raise ConversionDeliveryPaused()
+    if not tenant.paid_invoice_webhook_url or not tenant.paid_invoice_webhook_secret_encrypted:
         raise ProviderDeliveryError("Conversion webhook is disabled or incomplete", retryable=False)
     body = json.dumps(event.payload, separators=(",", ":"), sort_keys=True).encode()
     # Validate keyring/decryption before any network work. Operator crypto
@@ -260,14 +323,14 @@ async def _deliver_within_budget(tenant: Tenant, event: ProviderOutboxEvent) -> 
         raise ProviderDeliveryError("Webhook network request failed", retryable=True) from exc
 
 
-async def _disable_and_notify(db: AsyncSession, tenant: Tenant, event: ProviderOutboxEvent) -> None:
-    tenant.paid_invoice_webhook_enabled = False
+async def _pause_and_notify(db: AsyncSession, tenant: Tenant, event: ProviderOutboxEvent) -> None:
+    tenant.paid_invoice_webhook_delivery_paused = True
     admins = (await db.execute(select(User).where(User.tenant_id == tenant.id, User.role.in_((UserRole.GARAGE_OWNER, UserRole.GARAGE_ADMIN)), User.is_active.is_(True)))).scalars().all()
     recipients = {user.email for user in admins if user.email}
     if tenant.email:
         recipients.add(tenant.email)
     for recipient in recipients:
-        await enqueue_email_notification(db, tenant_id=tenant.id, aggregate_type="conversion_webhook", aggregate_id=event.id, idempotency_key=f"conversion-webhook-disabled:{event.id}:{hashlib.sha256(recipient.encode()).hexdigest()[:12]}", recipient=recipient, subject="DieselBridge conversion webhook disabled", body="<p>Your conversion webhook was disabled after repeated delivery failures. Review the delivery history, correct the endpoint, then enable and replay the event.</p>", template_name="conversion_webhook_disabled", sender_name="DieselBridge")
+        await enqueue_email_notification(db, tenant_id=tenant.id, aggregate_type="conversion_webhook", aggregate_id=event.id, idempotency_key=f"conversion-webhook-paused:{event.id}:{hashlib.sha256(recipient.encode()).hexdigest()[:12]}", recipient=recipient, subject="DieselBridge conversion webhook paused", body="<p>Your conversion webhook delivery was paused after repeated failures. New events are still captured under the retention policy. Review delivery history, correct the endpoint, resume delivery, then replay the failed event.</p>", template_name="conversion_webhook_paused", sender_name="DieselBridge")
 
 
 async def process_due_paid_invoice_webhooks(*, session_factory: async_sessionmaker[AsyncSession] = AsyncSessionLocal, batch_size: Optional[int] = None) -> dict[str, int]:
@@ -275,7 +338,7 @@ async def process_due_paid_invoice_webhooks(*, session_factory: async_sessionmak
         claims, expired_at_claim = await _claim(
             db, batch_size or settings.PROVIDER_OUTBOX_BATCH_SIZE
         )
-    result = {"claimed": len(claims), "succeeded": 0, "retried": 0, "dead": 0, "configuration_blocked": 0, "expired": expired_at_claim}
+    result = {"claimed": len(claims), "succeeded": 0, "retried": 0, "dead": 0, "configuration_blocked": 0, "paused": 0, "expired": expired_at_claim}
     for event_id, token in claims:
         # Preflight under the row lock, then release the transaction before
         # external I/O. Retention or erasure may still win while the request is
@@ -302,6 +365,15 @@ async def process_due_paid_invoice_webhooks(*, session_factory: async_sessionmak
                 expire_conversion_event(event)
                 await db.commit()
                 result["expired"] += 1
+                continue
+            if tenant.paid_invoice_webhook_delivery_paused or not tenant.paid_invoice_webhook_enabled:
+                event.status = ProviderOutboxStatus.PENDING.value
+                event.attempt_count = max(0, event.attempt_count - 1)
+                if event.attempt_count == 0:
+                    event.last_attempt_at = None
+                event.lock_token = event.locked_at = event.locked_until = None
+                await db.commit()
+                result["paused"] += 1
                 continue
             db.expunge(event)
             db.expunge(tenant)
@@ -344,6 +416,10 @@ async def process_due_paid_invoice_webhooks(*, session_factory: async_sessionmak
                 event.status, event.completed_at, event.provider_message_id, event.last_response_code = ProviderOutboxStatus.SUCCEEDED.value, _now(), provider_id, code
                 event.last_error = None
                 result["succeeded"] += 1
+            except ConversionDeliveryPaused:
+                event.attempt_count = max(0, event.attempt_count - 1)
+                event.status = ProviderOutboxStatus.PENDING.value
+                result["paused"] += 1
             except PaidInvoiceWebhookCryptoError:
                 # Operator/keyring failures are not receiver failures. Leave the
                 # event pending without consuming its delivery retry budget or
@@ -363,7 +439,7 @@ async def process_due_paid_invoice_webhooks(*, session_factory: async_sessionmak
                     result["retried"] += 1
                 else:
                     event.status, event.completed_at = ProviderOutboxStatus.DEAD.value, _now()
-                    await _disable_and_notify(db, tenant, event)
+                    await _pause_and_notify(db, tenant, event)
                     result["dead"] += 1
             event.lock_token = event.locked_until = None
             await db.commit()

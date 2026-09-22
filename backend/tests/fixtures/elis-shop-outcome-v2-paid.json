@@ -1,0 +1,21 @@
+{
+  "event_id": "20000000-0000-4000-8000-000000000001",
+  "event_type": "repair_order.paid",
+  "occurred_at": "2026-09-22T12:00:00+00:00",
+  "shop_id": "10000000-0000-4000-8000-000000000001",
+  "repair_order_id": "SYN-0001",
+  "repair_order_uuid": "10000000-0000-4000-8000-000000000003",
+  "repair_order_number": "SYN-0001",
+  "invoice_id": "10000000-0000-4000-8000-000000000005",
+  "paid_at": "2026-09-22T12:00:00+00:00",
+  "currency": "USD",
+  "total_amount": 100.0,
+  "schema_version": 2,
+  "source_system": "dieselbridge",
+  "source_revision": "20000000-0000-4000-8000-000000000001",
+  "value_basis": "invoice_settled",
+  "amount_semantics": "snapshot",
+  "service_lines": [{"name": "Synthetic repair", "quantity": 1.0, "amount": 100.0}],
+  "customer": {"email": "customer@example.test", "phone": "+12025550123"},
+  "attribution": {"lead_source_channel": null, "external_lead_id": null, "callrail_call_id": null, "gclid": null, "gbraid": null, "wbraid": null, "landing_page_url": null, "utm_source": null, "utm_medium": null, "utm_campaign": null, "utm_term": null, "utm_content": null, "elis_opportunity_id": "10000000-0000-4000-8000-000000000006"}
+}
