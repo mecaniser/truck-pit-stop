@@ -2421,6 +2421,12 @@ html::-webkit-scrollbar-thumb:hover {
   overflow: visible;
 }
 
+/* Keep the Services toolbar aligned with the workspace rhythm instead of
+   sitting directly on the route-frame edge. */
+.db-services-workspace__toolbar {
+  margin-inline-start: 0.5rem;
+}
+
 /* Frame stays unpainted; the fill belongs to the card inside the scroller. */
 .db-presentation-new .db-services-workspace__ledger {
   background: transparent !important;
