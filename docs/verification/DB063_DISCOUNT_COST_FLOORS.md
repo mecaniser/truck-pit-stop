@@ -1,7 +1,49 @@
-# DB-063 discount cost floors — local candidate
+# DB-063 discount cost floors — release candidate
 
 Owner: Backend & Integrations. Architecture contract approved; independent
 QA/Security code review passed after corrections. Not merged or deployed.
+
+## Current release evidence, 2026-09-22
+
+Integrated application candidate:46df56a8628098e77c05e626db465183fb01bbd4,
+including current main7934d96d without reverting its DB067 changes. Scoped
+implementation commit8bc0cf19. Independent QA/Security re-review GO; independent
+plan/coverage audit estimates90% requirement evidence (not measured line coverage),
+with no remaining implementation blocker. Global pre-landing checklist used by
+explicit user authorization. This repository does not use a VERSION/CHANGELOG
+release scheme; retain its existing focused PR and merge-SHA deployment convention.
+
+- User approved current shop costs at publication: quote recalculation/send and
+  completion refresh cost settings and reject invalid discounts before writes.
+- Explicit FOR UPDATE OF repair_orders excludes the tenant row. PostgreSQL
+  tests prove lock independence and both discount-versus-stock execution orders.
+- Integer-cent frontend comparisons accept187.50+11.39 and reject187.50+11.40.
+- Backend focused SQLite20/20; PostgreSQL new/existing race suites14/14;
+  frontend critical123/123 including37 panel tests; production build and source
+  lint pass. New regression suites are included in protected critical CI.
+- Broader PG test initially failed on a pre-existing history==0 assertion;
+  reproduced unchanged on pristine83880452. Its successful setup intentionally
+  writes history. Now assert the exact initial history ID set remains unchanged.
+- Signed-in API8002/preview5181 verifies loaded caps, both modes, exact/over-cent,
+  unchanged Apply and1280x720 popover. Drafts reset, original stock retained,
+  no browser save or customer financial mutation. Viewport restored.
+- Local migration147→148 (already on main/production) applied transparently;
+  schema preflight and direct/proxied readiness pass. API backend mount remains
+  compact-workspace, frontend PID89153 serves the integrated SHA; shared API8000
+  process unchanged. Database identity remains the approved local development DB.
+- Optional further hardening: explicit limits GET role matrix, discount-specific
+  removal/recalculation cases, and mixed missing-cost part stock-switch fixtures.
+
+Release target: Railway Diesel Bridge Network App / Diesel Bridge Network
+Production / diesel-bridge-network, servingwww.dieselbridge.com and
+api.dieselbridge.com with one backend Docker image bundling the frontend. Last
+observed production deployment8f89afb2-e9d4-45a8-808c-26bd01b45df7 runs main7934d96d.
+Rollback trigger: new pricing500s/deadlocks, publication below cost, or broken RO
+surface. Rollback via a reviewed revert PR or redeploy the recorded prior image;
+do not roll back unrelated upstream migration148 or mutate customer records.
+PR, protected CI, merge and production acceptance remain pending.
+
+## Historical investigation and runtime receipts
 
 ## Release recheck, 2026-09-22: NO-GO
 
