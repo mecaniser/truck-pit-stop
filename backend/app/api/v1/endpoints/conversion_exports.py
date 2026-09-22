@@ -7,7 +7,7 @@ import json
 import secrets
 from datetime import datetime, timezone
 from decimal import Decimal
-from typing import Literal, Optional
+from typing import Annotated, Literal, Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Response, status
@@ -26,7 +26,7 @@ from app.db.models.repair_order import RepairOrder
 from app.db.models.tenant import Tenant
 from app.db.models.user import User, UserRole
 from app.services.conversion_export_audit_service import record_conversion_audit
-from app.services.paid_invoice_webhook_service import CONVERSION_EVENT_TYPES, attribution, enqueue_conversion_event, service_lines
+from app.services.paid_invoice_webhook_service import CONVERSION_EVENT_TYPES, attribution, enqueue_conversion_event, native_invoice_outcome_predicate, service_lines
 
 router = APIRouter()
 
@@ -99,15 +99,18 @@ async def revoke_api_key(key_id: UUID, db: AsyncSession = Depends(get_db), user:
     await db.commit(); return Response(status_code=204)
 
 
-def _export_item(invoice: Invoice, order: RepairOrder, customer: Customer) -> dict:
-    return {
+def _export_item(invoice: Invoice, order: RepairOrder, customer: Customer, *, schema_version: int = 1) -> dict:
+    result = {
         "repair_order_id": order.order_number, "invoice_id": str(invoice.id),
         "paid_at": invoice.paid_at.isoformat() if invoice.paid_at else None,
         "total_amount": float(Decimal(invoice.total_amount)), "currency": "USD",
         "service_lines": service_lines(invoice),
         "customer": {"phone": customer.phone, "email": customer.email},
-        "attribution": attribution(order),
+        "attribution": attribution(order, schema_version=schema_version),
     }
+    if schema_version == 2:
+        result.update(schema_version=2, source_system="dieselbridge", shop_id=str(invoice.tenant_id), repair_order_uuid=str(order.id), repair_order_number=order.order_number, value_basis="invoice_settled", amount_semantics="snapshot")
+    return result
 
 
 @router.get("/paid-repair-orders")
@@ -115,25 +118,33 @@ async def export_paid_repair_orders(
     paid_from: datetime = Query(...), paid_to: datetime = Query(...), payment_status: str = Query("paid"),
     skip: int = Query(0, ge=0), limit: int = Query(100, ge=1, le=500), format: str = Query("json", pattern="^(json|csv)$"),
     db: AsyncSession = Depends(get_db), tenant: Tenant = Depends(conversion_api_tenant), api_key: ConversionApiKey = Depends(conversion_api_key),
+    schema_version: Annotated[int, Query(ge=1, le=2)] = 1,
 ):
     if paid_to < paid_from: raise HTTPException(status_code=422, detail="paid_to must be after paid_from")
     if payment_status != "paid": raise HTTPException(status_code=422, detail="Only paid repair orders are exportable")
-    filters = [Invoice.tenant_id == tenant.id, Invoice.status == InvoiceStatus.PAID, Invoice.paid_at >= paid_from, Invoice.paid_at <= paid_to, Invoice.total_amount > 0, RepairOrder.deleted_at.is_(None)]
-    total = (await db.execute(select(func.count(Invoice.id)).join(RepairOrder).where(*filters))).scalar_one()
+    filters = [Invoice.tenant_id == tenant.id, Invoice.status == InvoiceStatus.PAID, Invoice.paid_at >= paid_from, Invoice.paid_at <= paid_to, Invoice.total_amount > 0, RepairOrder.deleted_at.is_(None), RepairOrder.tenant_id == tenant.id, Customer.tenant_id == tenant.id]
+    count_query = select(func.count(Invoice.id)).join(RepairOrder, Invoice.repair_order_id == RepairOrder.id).join(Customer, RepairOrder.customer_id == Customer.id)
+    paid_count = (await db.execute(count_query.where(*filters))).scalar_one()
+    if schema_version == 2:
+        filters.append(native_invoice_outcome_predicate())
+    total = (await db.execute(count_query.where(*filters))).scalar_one() if schema_version == 2 else paid_count
+    coverage = {"paid_invoice_count": paid_count, "eligible_native_count": total, "excluded_native_authority_count": paid_count - total}
     rows = (await db.execute(select(Invoice, RepairOrder, Customer).join(RepairOrder, Invoice.repair_order_id == RepairOrder.id).join(Customer, RepairOrder.customer_id == Customer.id).where(*filters).order_by(Invoice.paid_at, Invoice.id).offset(skip).limit(limit))).all()
-    items = [_export_item(*row) for row in rows]
+    items = [_export_item(*row, schema_version=schema_version) for row in rows]
     record_conversion_audit(
         db, tenant_id=tenant.id, actor_api_key_id=api_key.id, action="paid_repair_orders.exported",
         target_type="tenant", target_id=tenant.id,
-        metadata={"format": format, "paid_from": paid_from.isoformat(), "paid_to": paid_to.isoformat(), "skip": skip, "limit": limit, "result_count": len(items)},
+        metadata={"format": format, "paid_from": paid_from.isoformat(), "paid_to": paid_to.isoformat(), "skip": skip, "limit": limit, "result_count": len(items), "schema_version": schema_version, **({"coverage": coverage} if schema_version == 2 else {})},
     )
     await db.commit()
     if format == "csv":
         output = io.StringIO(); fields = ["repair_order_id", "invoice_id", "paid_at", "total_amount", "currency", "service_lines", "customer_phone", "customer_email", "attribution"]
+        extra_fields = ["schema_version", "source_system", "shop_id", "repair_order_uuid", "repair_order_number", "value_basis", "amount_semantics"] if schema_version == 2 else []
+        fields.extend(extra_fields)
         writer = csv.DictWriter(output, fieldnames=fields); writer.writeheader()
-        for item in items: writer.writerow({**{k: item[k] for k in fields[:5]}, "service_lines": json.dumps(item["service_lines"]), "customer_phone": item["customer"]["phone"], "customer_email": item["customer"]["email"], "attribution": json.dumps(item["attribution"])})
-        return Response(output.getvalue(), media_type="text/csv", headers={"Content-Disposition": "attachment; filename=paid-repair-orders.csv"})
-    return {"items": items, "total": total, "skip": skip, "limit": limit}
+        for item in items: writer.writerow({**{k: item[k] for k in fields[:5] + extra_fields}, "service_lines": json.dumps(item["service_lines"]), "customer_phone": item["customer"]["phone"], "customer_email": item["customer"]["email"], "attribution": json.dumps(item["attribution"])})
+        return Response(output.getvalue(), media_type="text/csv", headers={"Content-Disposition": "attachment; filename=paid-repair-orders.csv", **({"X-Paid-Invoice-Count": str(paid_count), "X-Eligible-Native-Count": str(total), "X-Excluded-Native-Authority-Count": str(paid_count - total)} if schema_version == 2 else {})})
+    return {"items": items, "total": total, "skip": skip, "limit": limit, **({"coverage": coverage} if schema_version == 2 else {})}
 
 
 @router.get("/deliveries")

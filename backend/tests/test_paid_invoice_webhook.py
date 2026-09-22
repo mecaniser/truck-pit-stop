@@ -107,7 +107,7 @@ async def test_unpaid_zero_and_deleted_orders_do_not_emit(_db_engine, monkeypatc
 
 
 @pytest.mark.asyncio
-async def test_repeated_delivery_failure_disables_shop_webhook(_db_engine, monkeypatch):
+async def test_repeated_delivery_failure_pauses_delivery_but_preserves_capture(_db_engine, monkeypatch):
     monkeypatch.setattr("app.core.config.settings.PAID_INVOICE_WEBHOOK_ENCRYPTION_KEY", Fernet.generate_key().decode())
     monkeypatch.setattr("app.core.config.settings.PROVIDER_OUTBOX_MAX_ATTEMPTS", 1)
     factory = async_sessionmaker(_db_engine, expire_on_commit=False)
@@ -126,7 +126,8 @@ async def test_repeated_delivery_failure_disables_shop_webhook(_db_engine, monke
     assert result["dead"] == 1
     async with factory() as db:
         tenant = await db.get(Tenant, tenant_id)
-        assert tenant.paid_invoice_webhook_enabled is False
+        assert tenant.paid_invoice_webhook_enabled is True
+        assert tenant.paid_invoice_webhook_delivery_paused is True
 
 
 @pytest.mark.asyncio

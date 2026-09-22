@@ -24,6 +24,8 @@ CONVERSION_EVENT_TYPES = {
 RETAINED_FIELDS = {
     "event_id", "event_type", "occurred_at", "shop_id", "repair_order_id",
     "invoice_id", "paid_at", "currency", "total_amount",
+    "schema_version", "source_system", "source_revision", "repair_order_uuid",
+    "repair_order_number", "value_basis", "amount_semantics",
 }
 SENSITIVE_FIELDS = {"customer", "attribution", "service_lines"}
 TERMINAL_STATUSES = {

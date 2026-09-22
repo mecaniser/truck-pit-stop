@@ -55,6 +55,8 @@ class RepairOrder(BaseModel):
     # or notes and remain attached to the repair order after invoicing/payment.
     lead_source_channel = Column(String(64), nullable=True, index=True)
     external_lead_id = Column(String(255), nullable=True, index=True)
+    # Opaque external reference, never an authorization or paid-attribution grant.
+    elis_opportunity_id = Column(UUID(as_uuid=True), nullable=True, index=True)
     callrail_call_id = Column(String(255), nullable=True, index=True)
     google_click_id = Column(String(255), nullable=True, index=True)
     gbraid = Column(String(255), nullable=True)

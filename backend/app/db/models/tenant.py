@@ -43,6 +43,8 @@ class Tenant(BaseModel):
     paid_invoice_webhook_url = Column(String(2048), nullable=True)
     paid_invoice_webhook_secret_encrypted = Column(Text, nullable=True)
     paid_invoice_webhook_enabled = Column(Boolean, default=False, nullable=False)
+    paid_invoice_webhook_delivery_paused = Column(Boolean, default=False, server_default="false", nullable=False)
+    paid_invoice_webhook_payload_version = Column(Integer, default=1, server_default="1", nullable=False)
     
     # Garage ownership
     owner_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True, index=True)

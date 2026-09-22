@@ -2,7 +2,7 @@
 Super Admin endpoints for platform management.
 Only accessible by users with SUPER_ADMIN role.
 """
-from typing import Dict, List, Optional
+from typing import Dict, List, Literal, Optional
 from uuid import UUID, uuid4
 from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, status, Query
@@ -1015,6 +1015,8 @@ class TenantSettingsUpdateRequest(BaseModel):
 
 class PaidInvoiceWebhookResponse(BaseModel):
     enabled: bool
+    delivery_paused: bool = False
+    payload_version: Literal[1, 2] = 1
     url: Optional[str] = None
     signing_secret_configured: bool = False
     event_type: str = "repair_order.paid"
@@ -1022,6 +1024,8 @@ class PaidInvoiceWebhookResponse(BaseModel):
 
 class PaidInvoiceWebhookUpdateRequest(BaseModel):
     enabled: bool
+    delivery_paused: Optional[bool] = None
+    payload_version: Optional[Literal[1, 2]] = None
     url: Optional[HttpUrl] = Field(None, max_length=2048)
     # Write-only: clients may rotate the secret, but can never retrieve it.
     signing_secret: Optional[str] = Field(None, min_length=16, max_length=512)
@@ -1030,6 +1034,8 @@ class PaidInvoiceWebhookUpdateRequest(BaseModel):
 def _paid_invoice_webhook_response(tenant: Tenant) -> PaidInvoiceWebhookResponse:
     return PaidInvoiceWebhookResponse(
         enabled=tenant.paid_invoice_webhook_enabled,
+        delivery_paused=tenant.paid_invoice_webhook_delivery_paused,
+        payload_version=tenant.paid_invoice_webhook_payload_version,
         url=tenant.paid_invoice_webhook_url,
         signing_secret_configured=bool(tenant.paid_invoice_webhook_secret_encrypted),
     )
@@ -1288,6 +1294,10 @@ async def update_paid_invoice_webhook(
         except PaidInvoiceWebhookCryptoError as exc:
             raise HTTPException(status_code=503, detail="Webhook secret encryption is not configured") from exc
     tenant.paid_invoice_webhook_enabled = body.enabled
+    if body.delivery_paused is not None:
+        tenant.paid_invoice_webhook_delivery_paused = body.delivery_paused
+    if body.payload_version is not None:
+        tenant.paid_invoice_webhook_payload_version = body.payload_version
     record_conversion_audit(
         db,
         tenant_id=tenant.id,
@@ -1299,6 +1309,8 @@ async def update_paid_invoice_webhook(
             "enabled": body.enabled,
             "url_changed": body.url is not None,
             "secret_rotated": body.signing_secret is not None,
+            **({"delivery_paused": body.delivery_paused} if body.delivery_paused is not None else {}),
+            **({"payload_version": body.payload_version} if body.payload_version is not None else {}),
         },
     )
     await db.commit()
