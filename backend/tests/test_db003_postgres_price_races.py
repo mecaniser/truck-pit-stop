@@ -568,6 +568,11 @@ async def test_mechanic_rejections_leave_pricing_history_and_stock_unchanged():
                 db=db,
                 current_user=mechanic,
             )
+            initial_history_ids = set((await db.scalars(
+                select(RepairOrderHistoryEvent.id).where(
+                    RepairOrderHistoryEvent.repair_order_id == context["order_id"]
+                )
+            )).all())
 
         async with factory() as db:
             service = await db.get(Service, service.id)
@@ -749,11 +754,11 @@ async def test_mechanic_rejections_leave_pricing_history_and_stock_unchanged():
             assert order.total_labor_cost == Decimal("150.00")
             assert order.total_parts_cost == Decimal("50.00")
             assert order.total_cost == Decimal("200.00")
-            assert await db.scalar(
-                select(func.count(RepairOrderHistoryEvent.id)).where(
+            assert set((await db.scalars(
+                select(RepairOrderHistoryEvent.id).where(
                     RepairOrderHistoryEvent.repair_order_id == context["order_id"]
                 )
-            ) == 0
+            )).all()) == initial_history_ids
             assert await db.scalar(
                 select(func.count(Quote.id)).where(Quote.repair_order_id == context["order_id"])
             ) == 0

@@ -2,17 +2,18 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { ComponentProps } from 'react'
-import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const apiMocks = vi.hoisted(() => ({
   get: vi.fn(),
   post: vi.fn(),
   patch: vi.fn(),
+  limits: vi.fn(),
 }))
 
 vi.mock('@/lib/api', () => ({
   default: {
-    get: apiMocks.get,
+    get: (url: string, ...args: unknown[]) => url.endsWith('/discount-limits') ? apiMocks.limits() : apiMocks.get(url, ...args),
     post: apiMocks.post,
     patch: apiMocks.patch,
   },
@@ -64,6 +65,215 @@ function renderPanel(props: Partial<ComponentProps<typeof PriceBuilderPanel>> = 
 }
 
 describe('PriceBuilderPanel pending feedback', () => {
+  beforeEach(() => {
+    const capacity = { labor_discount_max: '10000', combined_discount_max: '20000', labor_discount_block_reason: null, order_discount_block_reason: null }
+    apiMocks.limits.mockResolvedValue({ data: { current: capacity, stock: capacity, list: capacity } })
+  })
+  it('limits combined discounts to cost headroom and rechecks a stock-price draft', async () => {
+    apiMocks.get.mockResolvedValue({ data: emptySummary })
+    const current = { labor_discount_max: '150', combined_discount_max: '450', labor_discount_block_reason: null, order_discount_block_reason: null }
+    apiMocks.limits.mockResolvedValue({ data: { current, list: current, stock: { ...current, combined_discount_max: '150' } } })
+    const user = userEvent.setup()
+    renderPanel()
+    await user.click(screen.getByText('Pricing', { exact: true }))
+    await user.click(screen.getByRole('button', { name: 'Discounts & pricing' }))
+    await screen.findByText('Available discount: labor $150.00 · order $450.00')
+    await user.type(screen.getByRole('textbox', { name: 'Labor discount' }), '150')
+    await user.type(screen.getByRole('textbox', { name: 'Order discount' }), '300')
+    expect(screen.getByRole('button', { name: 'Apply', exact: true })).toBeEnabled()
+    await user.clear(screen.getByRole('textbox', { name: 'Order discount' }))
+    await user.type(screen.getByRole('textbox', { name: 'Order discount' }), '300.01')
+    expect(screen.getByRole('button', { name: 'Apply', exact: true })).toBeDisabled()
+    expect(screen.getByRole('alert')).toHaveTextContent('Order discount is limited to $300.00')
+    await user.click(screen.getByRole('radio', { name: 'Stock price' }))
+    expect(screen.getByRole('alert')).toHaveTextContent('Order discount is limited to $0.00')
+    await user.clear(screen.getByRole('textbox', { name: 'Order discount' }))
+    expect(screen.getByRole('button', { name: 'Apply', exact: true })).toBeEnabled()
+    expect(apiMocks.patch).not.toHaveBeenCalled()
+  })
+
+  it('accepts an exact fractional-dollar boundary and retains drafts after a failed save', async () => {
+    apiMocks.get.mockResolvedValue({ data: emptySummary })
+    const capacity = { labor_discount_max: '187.50', combined_discount_max: '198.89', labor_discount_block_reason: null, order_discount_block_reason: null }
+    apiMocks.limits.mockResolvedValue({ data: { current: capacity, stock: capacity, list: capacity } })
+    apiMocks.patch.mockRejectedValueOnce(new Error('Save failed'))
+    const user = userEvent.setup()
+    renderPanel()
+    await user.click(screen.getByText('Pricing', { exact: true }))
+    await user.click(screen.getByRole('button', { name: 'Discounts & pricing' }))
+    await screen.findByText('Available discount: labor $187.50 · order $198.89')
+    await user.type(screen.getByRole('textbox', { name: 'Labor discount' }), '187.50')
+    await user.type(screen.getByRole('textbox', { name: 'Order discount' }), '11.39')
+    const apply = screen.getByRole('button', { name: 'Apply', exact: true })
+    expect(apply).toBeEnabled()
+    const previousRequests = apiMocks.limits.mock.calls.length
+    await user.click(apply)
+    await waitFor(() => expect(apiMocks.limits.mock.calls.length).toBeGreaterThan(previousRequests))
+    expect(screen.getByRole('textbox', { name: 'Labor discount' })).toHaveValue('187.50')
+    expect(screen.getByRole('textbox', { name: 'Order discount' })).toHaveValue('11.39')
+    expect(apply).toBeEnabled()
+    await user.clear(screen.getByRole('textbox', { name: 'Order discount' }))
+    await user.type(screen.getByRole('textbox', { name: 'Order discount' }), '11.40')
+    expect(apply).toBeDisabled()
+  })
+
+  it('fails closed when cost limits cannot be loaded', async () => {
+    apiMocks.get.mockResolvedValue({ data: emptySummary })
+    apiMocks.limits.mockRejectedValue(new Error('Unavailable'))
+    const user = userEvent.setup()
+    renderPanel()
+    await user.click(screen.getByText('Pricing', { exact: true }))
+    await user.click(screen.getByRole('button', { name: 'Discounts & pricing' }))
+    await screen.findByText('Discount limits could not be loaded. Reopen pricing to retry.')
+    await user.click(screen.getByRole('radio', { name: 'Stock price' }))
+    expect(screen.getByRole('button', { name: 'Apply', exact: true })).toBeDisabled()
+    expect(apiMocks.patch).not.toHaveBeenCalled()
+  })
+  it.each(['Labor discount', 'Order discount'])('formats %s and saves an ungrouped decimal', async name => {
+    apiMocks.get.mockResolvedValue({ data: emptySummary })
+    apiMocks.patch.mockResolvedValue({ data: emptySummary })
+    const user = userEvent.setup()
+    renderPanel()
+    await user.click(screen.getByText('Pricing', { exact: true }))
+    await user.click(screen.getByRole('button', { name: 'Discounts & pricing' }))
+    const input = screen.getByRole('textbox', { name })
+    await user.type(input, '1234')
+    expect(input).toHaveValue('1,234')
+    await user.keyboard('{Home}{ArrowRight}9')
+    expect(input).toHaveValue('19,234')
+    await user.keyboard('{Backspace}')
+    expect(input).toHaveValue('1,234')
+    await user.tab()
+    expect(input).toHaveValue('1,234.00')
+    await user.clear(input)
+    await user.paste('$1,234.50')
+    expect(input).toHaveValue('1,234.50')
+    expect(screen.getByText('Customer saves $1,234.50')).toBeInTheDocument()
+    await user.type(input, '9')
+    expect(input).toHaveValue('1,234.50')
+    await user.click(screen.getByRole('button', { name: 'Apply', exact: true }))
+    expect(apiMocks.patch).toHaveBeenCalledWith('/repair-orders/order-1/discounts', {
+      labor_discount_amount: name === 'Labor discount' ? '1234.50' : '0',
+      order_discount_amount: name === 'Order discount' ? '1234.50' : '0',
+    })
+  })
+  it('selects a pricing segment without persisting until Apply', async () => {
+    apiMocks.get.mockResolvedValue({ data: emptySummary })
+    const user = userEvent.setup()
+    renderPanel()
+    await user.click(screen.getByText('Pricing', { exact: true }))
+    await user.click(screen.getByRole('button', { name: 'Discounts & pricing' }))
+    const list = screen.getByRole('radio', { name: 'List price' })
+    const stock = screen.getByRole('radio', { name: 'Stock price' })
+    expect(stock).toHaveClass('absolute', 'inset-0', 'w-full', 'h-full')
+    expect(list).toBeChecked()
+    expect(screen.getByRole('button', { name: 'Apply', exact: true })).toBeDisabled()
+    await user.pointer({ target: screen.getByText('Stock price', { exact: true }), keys: '[MouseLeft>]' })
+    expect(stock).toHaveFocus()
+    await user.pointer({ keys: '[/MouseLeft]' })
+    expect(stock).toBeChecked()
+    expect(stock).toHaveFocus()
+    expect(list).not.toBeChecked()
+    expect(screen.getByRole('button', { name: 'Apply', exact: true })).toBeEnabled()
+    await user.click(screen.getByText('List price', { exact: true }))
+    expect(list).toBeChecked()
+    expect(list).toHaveFocus()
+    expect(screen.getByRole('button', { name: 'Apply', exact: true })).toBeDisabled()
+    await user.click(stock)
+    expect(stock).toBeChecked()
+    expect(screen.getByRole('button', { name: 'Apply', exact: true })).toBeEnabled()
+    await user.click(list)
+    expect(list).toBeChecked()
+    expect(screen.getByRole('button', { name: 'Apply', exact: true })).toBeDisabled()
+    expect(apiMocks.post).not.toHaveBeenCalled()
+    expect(apiMocks.patch).not.toHaveBeenCalled()
+  })
+  it.each(['0.00', '5.00'])('enables Apply only for changed discount amounts (saved %s)', async amount => {
+    apiMocks.get.mockResolvedValue({ data: { ...emptySummary, labor_discount_amount: amount, order_discount_amount: amount } })
+    const user = userEvent.setup()
+    renderPanel()
+    await user.click(screen.getByText('Pricing', { exact: true }))
+    await user.click(screen.getByRole('button', { name: 'Discounts & pricing' }))
+    const apply = screen.getByRole('button', { name: 'Apply', exact: true })
+    expect(apply).toBeDisabled()
+    for (const name of ['Labor discount', 'Order discount']) {
+      const input = screen.getByRole('textbox', { name })
+      await user.clear(input)
+      await user.type(input, String(Number(amount)))
+      expect(apply).toBeDisabled()
+      await user.clear(input)
+      await user.type(input, '7.00')
+      expect(apply).toBeEnabled()
+      await user.clear(input)
+      if (Number(amount)) await user.type(input, amount)
+      expect(apply).toBeDisabled()
+    }
+    await user.click(apply)
+    expect(apiMocks.post).not.toHaveBeenCalled()
+    expect(apiMocks.patch).not.toHaveBeenCalled()
+  })
+  it('applies either selected pricing mode and locks selection while saving', async () => {
+    apiMocks.get.mockResolvedValue({ data: emptySummary })
+    const user = userEvent.setup()
+    renderPanel()
+    await user.click(screen.getByText('Pricing', { exact: true }))
+    for (const mode of ['stock', 'list'] as const) {
+      let finishSave!: () => void
+      apiMocks.patch.mockImplementationOnce(() => new Promise(resolve => {
+        finishSave = () => resolve({ data: emptySummary })
+      }))
+      await user.click(screen.getByRole('button', { name: 'Discounts & pricing' }))
+      await user.click(screen.getByText(mode === 'stock' ? 'Stock price' : 'List price', { exact: true }))
+      await user.click(screen.getByRole('button', { name: 'Apply', exact: true }))
+      expect(apiMocks.patch).toHaveBeenLastCalledWith('/repair-orders/order-1/discounts', { parts_pricing_mode: mode, labor_discount_amount: '0', order_discount_amount: '0' })
+      expect(screen.getByRole('radio', { name: 'Stock price' })).toBeDisabled()
+      expect(screen.getByRole('radio', { name: 'List price' })).toBeDisabled()
+      expect(screen.getByRole('button', { name: /Applying…/ })).toBeDisabled()
+      await act(async () => finishSave())
+      await waitFor(() => expect(screen.queryByRole('radio')).not.toBeInTheDocument())
+    }
+    expect(apiMocks.patch).toHaveBeenCalledTimes(2)
+    expect(apiMocks.post).not.toHaveBeenCalled()
+  })
+  it('shows only three quick picks without focusing search and keeps history collapsed', async () => {
+    const parts = [1, 2, 3, 4].map(n => ({ inventory_id: `part-${n}`, name: `Part ${n}`, sku: `${n}`, stock_quantity: 10, unit_type: 'each', selling_price: '10' }))
+    const labor = [1, 2, 3, 4].map(n => ({ id: `labor-${n}`, operation_name: `Labor ${n}`, normalized_hours: '1', usage_count: n }))
+    apiMocks.get.mockImplementation((url: string) => Promise.resolve({ data: url.endsWith('/price-build') ? emptySummary : url.endsWith('/suggestions') ? { for_this_order: [], most_used: parts } : url === '/labor-book-time' ? labor : [] }))
+    const user = userEvent.setup()
+    const view = renderPanel()
+    await user.click(screen.getByRole('button', { name: 'Part', exact: true }))
+    expect(await screen.findByRole('button', { name: 'Add Part 3' })).toBeInTheDocument()
+    expect(view.container.querySelector('.db-workspace-picker')).not.toHaveClass('overflow-y-auto')
+    expect(screen.queryByRole('button', { name: 'Add Part 4' })).not.toBeInTheDocument()
+    expect(screen.getByPlaceholderText(/Add part —/)).not.toHaveFocus()
+    await user.click(screen.getByRole('button', { name: 'Labor', exact: true }))
+    expect(await screen.findByRole('button', { name: 'Add Labor 4' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Add Labor 1' })).not.toBeInTheDocument()
+    expect(screen.getByPlaceholderText(/Search labor book time/)).not.toHaveFocus()
+    await user.click(screen.getByRole('button', { name: 'History', exact: true }))
+    expect(screen.queryByText('No repair order history has been recorded yet.')).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: /Repair order history/ }))
+    expect(screen.getByText('No repair order history has been recorded yet.')).toBeInTheDocument()
+  })
+  it('keeps secondary work flows on demand and vehicle details accessible from the header', async () => {
+    apiMocks.get.mockResolvedValue({ data: emptySummary })
+    const onToggleDangerActions = vi.fn()
+    const user = userEvent.setup()
+    const { container } = renderPanel({ vehicleUnit: '609', vehicleVin: 'TESTVIN609', onAddNote: vi.fn(), onToggleDangerActions })
+    expect(screen.queryByRole('button', { name: 'Customer & Vehicle' })).not.toBeInTheDocument()
+    expect(screen.queryByText('VIN: TESTVIN609')).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: /609/ }))
+    expect(screen.getByText('VIN: TESTVIN609')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Add note' })).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: /^Notes/ }))
+    expect(screen.getByRole('button', { name: 'Add note' })).toBeInTheDocument()
+    const pricing = container.querySelector('details.db-workspace-pricing')!
+    expect(pricing).not.toHaveAttribute('open')
+    await user.click(screen.getByText('Pricing', { exact: true }))
+    expect(pricing).toHaveAttribute('open')
+    await user.click(screen.getByRole('button', { name: 'Order actions' }))
+    expect(onToggleDangerActions).toHaveBeenCalledOnce()
+  })
   beforeAll(() => {
     vi.stubGlobal('ResizeObserver', class {
       observe() {}

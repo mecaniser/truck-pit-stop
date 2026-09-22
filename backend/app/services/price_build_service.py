@@ -34,6 +34,7 @@ from app.services.repair_operation_library import (
 from app.services.internal_fleet import fleet_labor_uses_customer_rate
 from app.services.parts_operations_service import apply_inventory_movement
 from app.services.pricing import compute_canonical_order_totals
+from app.services.discount_limits import validate_discounts
 from app.services.repair_order_status_sets import (
     EDITABLE_RO_STATUSES,
     FINALIZED_STATUSES,
@@ -252,6 +253,7 @@ class PriceBuildService:
             select(RepairOrder)
             .where(RepairOrder.id == order_id, RepairOrder.deleted_at.is_(None))
             .options(
+                selectinload(RepairOrder.tenant),
                 selectinload(RepairOrder.vehicle),
                 selectinload(RepairOrder.parts_usage).selectinload(PartsUsage.inventory_item),
                 selectinload(RepairOrder.labor_items),
@@ -922,6 +924,10 @@ class PriceBuildService:
             )
 
     def _compute_totals(self, order: RepairOrder) -> dict[str, Decimal]:
+        try:
+            validate_discounts(order)
+        except ValueError as exc:
+            raise PriceBuildValidationError(str(exc)) from exc
         return compute_canonical_order_totals(order)
 
     async def _get_tenant(self, db: AsyncSession, tenant_id: UUID) -> Tenant:

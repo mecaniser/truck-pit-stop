@@ -1,0 +1,93 @@
+# DB-063 discount cost floors — local candidate
+
+Owner: Backend & Integrations. Architecture contract approved; independent
+QA/Security code review passed after corrections. Not merged or deployed.
+
+## Release recheck, 2026-09-22: NO-GO
+
+- Global pre-landing checklist used with explicit user approval. Independent
+  rereview found the joined Tenant eager load plus unqualified FOR UPDATE locks
+  the tenant as well as the repair order, introducing tenant/inventory lock-order
+  inversion with fleet staged creation. Source/compiled-SQL evidence; concurrent
+  deadlock not yet reproduced. Restrict the intended lock and add PostgreSQL proof.
+- Quote publication and repair completion call canonical totals without current
+  discount-floor validation. A later internal rate increase can invalidate an
+  existing draft discount. Confirm current-cost publication semantics versus
+  grandfathering before altering these publication boundaries.
+- Signed-in local browser now renders limits successfully from API8002. Labor
+  187.51 is rejected against187.50. List mode with labor187.50 and order11.39
+  incorrectly disables Apply while showing11.39 remaining: binary floating-point
+  subtraction leaves a slightly smaller capacity. Add integer-cent validation
+  and a non-whole-dollar exact-boundary regression.
+- Restored both draft discounts to empty and mode to original stock, verified
+  unchanged Apply disabled, dismissed without saving. No customer prices changed.
+- Fresh origin/main is7934d96d, with upstream migration148/DB067 changes absent
+  from candidate HEAD83880452. Fast-forward was safely refused because local edits
+  overlap; no merge or stash occurred. Preserve upstream work during integration.
+- Remaining test gaps: PostgreSQL serialization, fresh-session rollback after
+  rejected work edits and atomic repricing, failed frontend save/draft retention,
+  and permitted/denied limits-role cases. No release sign-off yet.
+
+## Policy and API contract
+
+- All ordinary labor uses tenant internal fleet labor rate × billed hours.
+- Sublet labor protects vendor cost. Missing rate/hours/vendor basis blocks
+  labor and order-level discounts; zero-price ordinary lines have zero floor.
+- Parts protect recorded unit cost × quantity, falling back only to inventory
+  cost from the same tenant. Unknown part costs block order discounts, not an
+  independently valid labor-only discount. An explicit zero part cost is valid.
+- Labor discount cannot exceed labor markup. Labor plus order discount cannot
+  exceed combined markup. Exact cost boundary is allowed, below cost is not.
+- Existing no-discount orders are not repriced by reading limits. Price/work
+  changes with retained discounts must revalidate rather than silently clamp.
+
+`GET /api/v1/repair-orders/{id}/discount-limits` uses the existing discount editor
+roles and tenant/order access checks. It returns `current`, `stock`, `list`, each
+with `labor_discount_max`, `combined_discount_max`,
+`labor_discount_block_reason`, `order_discount_block_reason`. No raw internal
+labor rates/cost fields are added to the mechanic-readable price summary.
+
+`PATCH /api/v1/repair-orders/{id}/discounts` accepts the existing optional labor
+and order amounts plus optional `parts_pricing_mode: stock|list`. All are saved
+atomically under the order row lock; omitted amounts participate from current
+state. Invalid precision/nonfinite/negative values return422. Cost violations
+return400. Existing frozen/access/missing-order errors retain their semantics.
+The existing pricing-mode POST remains supported and validates retained discounts.
+
+Frontend uses prospective mode limits, subtracts the draft labor discount from
+combined headroom, disables Apply for invalid/unavailable/unchanged drafts, and
+uses the atomic PATCH. Failed saves retain the draft and refresh limits.
+
+## Verification, 2026-09-22
+
+- Backend15 tests pass: cost-floor, existing pricing/discount, and DB003
+  foreign/missing/deleted tenant boundary suites. Run in transient Docker using
+  current backend mount and isolated in-memory SQLite, not the live local DB.
+- Frontend36 tests pass, including exact/over-limit combined drafts, stock
+  repricing, unavailable limits, atomic payload, money formatting and unchanged
+  Apply behavior. Changed lint and production build pass.
+- Independent review caught and verified repairs for sub-cent rounding bypass,
+  missing-order error mapping, and legacy null-list-price restoration.
+- Remaining: signed-in aligned-backend browser acceptance and PostgreSQL
+  concurrency verification. Existing order locking is preserved; SQLite tests
+  are not concurrency proof. No customer price mutations performed.
+
+## Runtime boundary
+
+User approved separate API8002 on2026-09-22. Frontend5181 (PID45410) now proxies
+to8002; both serve `truck-pit-stop-compact-workspace` on
+`codex/repair-order-compact-workspace`, HEAD83880452 with uncommitted candidate
+changes. Container `dieselbridge_api_compact_8002` publishes only127.0.0.1:8002
+and mounts this worktree's backend at/app. Shared API8000 is untouched.
+
+Runtime receipt2026-09-22: copied existing container environment directly into
+the new runtime without writing secrets to the worktree. Effective auth/session/
+database/Redis setting fingerprints match the shared development API. Local DB
+is `postgres:5432/truckpitstop_db048_local_e2e_20260912`; Redis is `redis:6379/0`.
+Alembic current reports147_credit_link_identity(head); no migration/reseed done.
+Direct8002 and proxied5181 `/health/ready` pass DB/Redis checks. New limits route
+through5181 returns401 without authentication (present and protected).
+
+Status: aligned but signed-in browser acceptance blocked by expired browser
+session. Login is displayed; user asked to sign in again. Do not claim rendered
+cost-limit acceptance yet. No customer price mutations performed.
