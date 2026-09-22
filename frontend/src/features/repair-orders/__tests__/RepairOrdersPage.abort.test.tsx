@@ -552,6 +552,41 @@ describe('RepairOrdersPage request cancellation', () => {
     expect(screen.queryByPlaceholderText('Acme')).not.toBeInTheDocument()
   })
 
+  it('creates a repair order without asking staff for campaign IDs or clearing machine attribution', async () => {
+    apiMocks.get.mockImplementation((url: string) => {
+      if (url === '/repair-orders') return Promise.resolve({ data: { items: [], total: 0, has_more: false } })
+      if (url === '/customers/typeahead') return Promise.resolve({ data: [{
+        id: 'customer-1', first_name: 'Elis', last_name: 'Logistics', company_name: 'ELIS LOGISTICS LLC',
+        email: 'dispatch@elis.example', phone: null,
+      }] })
+      if (url === '/vehicles/typeahead') return Promise.resolve({ data: [{
+        id: 'vehicle-1', customer_id: 'customer-1', make: 'Freightliner', model: 'Cascadia',
+        year: 2022, unit_number: '204', vin: 'VIN204',
+      }] })
+      if (url === '/services/typeahead') return Promise.resolve({ data: [] })
+      if (url === '/dashboard/stats') return Promise.resolve({ data: { mechanic_workload: [] } })
+      return Promise.resolve({ data: { labor_rate: 100 } })
+    })
+    apiMocks.post.mockResolvedValue({ data: { id: 'order-1', order_number: 'RO-1', status: 'draft' } })
+
+    renderPage(['/?new=true'])
+    await screen.findByRole('heading', { name: 'New Repair Order' })
+    expect(screen.queryByText('Marketing attribution')).not.toBeInTheDocument()
+    expect(screen.queryByText('CallRail call ID')).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: /choose a customer/i }))
+    fireEvent.mouseDown(await screen.findByText('ELIS LOGISTICS LLC'))
+    fireEvent.click(await screen.findByRole('button', { name: /select freightliner cascadia · unit 204/i }))
+    fireEvent.click(screen.getByRole('button', { name: 'Create Repair Order' }))
+
+    await waitFor(() => expect(apiMocks.post).toHaveBeenCalledWith('/repair-orders', expect.any(Object)))
+    const payload = apiMocks.post.mock.calls.find(([url]) => url === '/repair-orders')?.[1] as Record<string, unknown>
+    expect(payload).toMatchObject({ customer_id: 'customer-1', vehicle_id: 'vehicle-1' })
+    expect(payload).not.toHaveProperty('callrail_call_id')
+    expect(payload).not.toHaveProperty('google_click_id')
+    expect(payload).not.toHaveProperty('external_lead_id')
+  })
+
   it('records normal and stock-override part additions in repair-order history', () => {
     const basePart: PartsUsage = {
       id: 'usage-1',

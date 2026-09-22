@@ -135,6 +135,13 @@ describe('RepairOrdersPage authorization publication', () => {
     useAuthStore.setState({ user: null, isAuthenticated: false })
   })
 
+  it('does not offer a manual attribution editor on an existing repair order', async () => {
+    renderPage()
+    expect(await screen.findByText('Price editing enabled')).toBeInTheDocument()
+    expect(screen.queryByText('Marketing attribution')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Save attribution' })).not.toBeInTheDocument()
+  })
+
   it('requires a fresh PUT review before a publisher can send', async () => {
     renderPage()
     fireEvent.click(await screen.findByRole('button', { name: 'Send estimate' }))
