@@ -1,7 +1,8 @@
 # Paid repair-order conversion export
 
 DieselBridge provides a supported, tenant-isolated path for sending verified
-paid repair revenue to CallRail or another attribution service. Google Ads
+settled-invoice outcomes to CallRail or another attribution service. Invoice
+face value is not proof of cash collected or processor settlement. Google Ads
 credentials and offline-import logic remain outside DieselBridge.
 
 ## Attribution capture
@@ -52,8 +53,11 @@ This timestamp window prevents a captured signed request from being replayed
 indefinitely.
 
 Delivery is at-least-once with exponential retry. Consumers must deduplicate on
-`event_id` or `Idempotency-Key`. After the configured maximum failures, the
-webhook is disabled and the shop email receives a notification.
+`event_id` or `Idempotency-Key`. After the configured maximum failures, delivery is paused and the shop email
+receives a notification; enabled capture continues under the retention policy.
+Set `delivery_paused: false` to resume after repairing the destination. The failed
+event remains available for explicit replay. Changing `enabled` alone does not
+clear the pause.
 
 Admins inspect and replay deliveries through:
 
@@ -142,3 +146,15 @@ and a non-production signed delivery reaches a public test receiver.
 Application validation and connection pinning block non-public destinations
 and redirects; the production network must also deny backend egress to private,
 link-local, and metadata address ranges as defense in depth.
+
+## ELIS outcome contract v2
+
+Version2 is an explicit per-tenant opt-in (`payload_version: 2` in webhook
+settings). It adds immutable repair-order UUID, outcome revision and value
+semantics while preserving the existing v1 default. Existing queued events are
+not rewritten. The repair-order APIs accept optional typed
+`elis_opportunity_id`, locked with other attribution after invoicing. Recovery
+exports opt in independently with `schema_version=2`. Invoice settled value is
+not cash collected, and correction events are measurement deltas rather than
+financial operations. See [DB-067 contract](contracts/db067-elis-outcome-source.md)
+for exact wire, identity, pause, retention, correction and rollout semantics.

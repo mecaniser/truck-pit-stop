@@ -285,6 +285,7 @@ class RepairOrderBase(BaseModel):
         return False if value is None else value
     lead_source_channel: Optional[str] = Field(None, max_length=64)
     external_lead_id: Optional[str] = Field(None, max_length=255)
+    elis_opportunity_id: Optional[UUID] = None
     callrail_call_id: Optional[str] = Field(None, max_length=255)
     google_click_id: Optional[str] = Field(None, max_length=255)
     gbraid: Optional[str] = Field(None, max_length=255)
@@ -325,6 +326,7 @@ class RepairOrderUpdate(BaseModel):
     is_warranty_repair: Optional[bool] = None
     lead_source_channel: Optional[str] = Field(None, max_length=64)
     external_lead_id: Optional[str] = Field(None, max_length=255)
+    elis_opportunity_id: Optional[UUID] = None
     callrail_call_id: Optional[str] = Field(None, max_length=255)
     google_click_id: Optional[str] = Field(None, max_length=255)
     gbraid: Optional[str] = Field(None, max_length=255)
