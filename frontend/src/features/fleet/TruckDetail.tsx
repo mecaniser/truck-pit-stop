@@ -14,6 +14,7 @@ import type {
   VehicleMergePreview, VehicleMergeResult, VehicleMergeSummary, VehicleDriverAssignment,
 } from './types'
 import { STATUS_META, fleetUnitLabel, fmt, money, fmtDate, pmState, initials } from './helpers'
+import DatePicker from '@/components/DatePicker'
 import FleetMap from './FleetMap'
 import { ConfirmModal, TruckEditModal, LogIncidentModal, EditIncidentModal, InspectionsSection, AssignDriverModal, SchedulePMModal, Modal, SidekickPanel, invalidateFleetAndCockpit, type InspectionsSectionHandle } from './FleetModals'
 import FleetPriceBuilderPanel from './FleetPriceBuilderPanel'
@@ -1251,10 +1252,12 @@ function RecognizePMModal({ entry, truck, onClose, onDone }: {
       </div>
 
       <div className="recognize-pm-fields">
-        <label>
-          <span>PM performed date</span>
-          <input type="date" value={performedOn} max={new Date().toISOString().slice(0, 10)} onChange={(event) => setPerformedOn(event.target.value)} />
-        </label>
+        <DatePicker
+          label="PM performed date"
+          value={performedOn}
+          max={new Date().toISOString().slice(0, 10)}
+          onChange={setPerformedOn}
+        />
         <label>
           <span>Odometer at service</span>
           <input inputMode="numeric" value={odometer} onChange={(event) => setOdometer(event.target.value.replace(/[^0-9]/g, ''))} placeholder="Enter service mileage" />
