@@ -1,4 +1,5 @@
 import { ReactNode, useEffect, useId, useLayoutEffect, useRef } from 'react'
+import { useDirtyOnInput } from '../lib/staleBuild'
 import { ArrowLeft, ChevronLeft, ChevronRight, X } from 'lucide-react'
 
 type HeaderVariant = 'amber' | 'slate' | 'blue' | 'green' | 'minimal' | 'dark'
@@ -90,6 +91,8 @@ export default function SlidePanel({
   nextDisabled,
   navigationLabel,
 }: SlidePanelProps) {
+  // DB-076: typing here is unsaved work, so a new deploy prompts instead of reloading.
+  const markDirty = useDirtyOnInput(isOpen)
   const pointerGesture = useRef<{
     pointerId: number
     startX: number
@@ -403,6 +406,7 @@ export default function SlidePanel({
   if (layout === 'workspace') {
     return (
       <aside
+        onInputCapture={markDirty}
         ref={panelRef}
         role="region"
         aria-labelledby={!hideHeader && isMinimal ? workspaceTitleId : undefined}
@@ -499,6 +503,7 @@ export default function SlidePanel({
         {/* Panel */}
         <div
           ref={panelRef}
+          onInputCapture={markDirty}
           role="dialog"
           aria-modal="true"
           aria-label={title}
@@ -599,6 +604,7 @@ export default function SlidePanel({
       {/* Panel */}
       <div
         ref={panelRef}
+        onInputCapture={markDirty}
         role="dialog"
         aria-modal="true"
         aria-label={title}

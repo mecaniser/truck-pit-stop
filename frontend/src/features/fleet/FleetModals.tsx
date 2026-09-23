@@ -9,6 +9,7 @@ import {
 } from 'lucide-react'
 import api from '../../lib/api'
 import SlidePanel from '@/components/SlidePanel'
+import { useDirtyOnInput } from '@/lib/staleBuild'
 import MapboxAddressInput from '@/components/MapboxAddressInput'
 import DatePicker, { type DayLoad as PMDayLoadEntry } from '@/components/DatePicker'
 import { useAuthStore } from '../../stores/authStore'
@@ -64,6 +65,8 @@ export function Modal({ title, icon, onClose, children, width = 480, scrollable 
 }) {
   const titleId = useId()
   const dialogRef = useRef<HTMLDivElement>(null)
+  // DB-076: typing here is unsaved work, so a new deploy prompts instead of reloading.
+  const markDirty = useDirtyOnInput(true)
   const onCloseRef = useRef(onClose)
   const dismissDisabledRef = useRef(dismissDisabled)
   onCloseRef.current = onClose
@@ -142,6 +145,7 @@ export function Modal({ title, icon, onClose, children, width = 480, scrollable 
     >
       <div
         ref={dialogRef}
+        onInputCapture={markDirty}
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}

@@ -13,6 +13,7 @@
  */
 
 /** Forms currently holding unsaved input. Counted, not boolean: two panels can be open. */
+import { useCallback, useEffect, useRef } from 'react'
 import { markStaleDeploy } from './staleDeploy'
 
 let dirtyForms = 0
@@ -138,4 +139,32 @@ export function startStaleBuildWatch({
     clearInterval(timer)
     document.removeEventListener('visibilitychange', onVisible)
   }
+}
+
+/**
+ * Mark a form shell as unsaved work from the first keystroke until it closes.
+ *
+ * Attach the returned handler as `onInputCapture` on the shell's root. Opening
+ * a form does not block a reload; typing does. Typing and then reverting still
+ * counts as dirty -- tracking each field's original value is not worth the risk
+ * of getting it wrong, and the error only ever delays a reload.
+ */
+export function useDirtyOnInput(active: boolean): () => void {
+  const release = useRef<(() => void) | null>(null)
+
+  useEffect(() => {
+    if (active) return
+    release.current?.()
+    release.current = null
+  }, [active])
+
+  useEffect(() => () => {
+    release.current?.()
+    release.current = null
+  }, [])
+
+  return useCallback(() => {
+    if (release.current) return
+    release.current = registerDirtyForm()
+  }, [])
 }
