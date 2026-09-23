@@ -6,7 +6,7 @@ import toast from 'react-hot-toast'
 import {
   Gauge, Calendar, Wrench, AlertTriangle, History, Truck, User, Box, Map as MapIcon,
   Shield, Phone, ClipboardList, ClipboardCheck, Pencil, CheckCircle2, ChevronDown, Check, Info, Trash2, Camera, MoreHorizontal,
-  Archive, ArrowLeft, ArrowRight, Clock3, Combine, RotateCcw, LogOut } from 'lucide-react'
+  Archive, ArrowLeft, ArrowRight, Clock3, Combine, RotateCcw, LogOut, Ban } from 'lucide-react'
 import api from '../../lib/api'
 import { isSupportedPhotoFile, runPhotoUploadQueue, uploadDirectPhoto, type PhotoUploadStatus } from '@/lib/photoUpload'
 import type {
@@ -16,7 +16,7 @@ import type {
 import { STATUS_META, fleetUnitLabel, fmt, money, fmtDate, pmState, initials } from './helpers'
 import DatePicker from '@/components/DatePicker'
 import FleetMap from './FleetMap'
-import { ConfirmModal, TruckEditModal, LogIncidentModal, EditIncidentModal, InspectionsSection, AssignDriverModal, SchedulePMModal, Modal, SidekickPanel, invalidateFleetAndCockpit, type InspectionsSectionHandle } from './FleetModals'
+import { ConfirmModal, TruckEditModal, LogIncidentModal, EditIncidentModal, ResolveIncidentModal, InspectionsSection, AssignDriverModal, SchedulePMModal, Modal, SidekickPanel, invalidateFleetAndCockpit, type InspectionsSectionHandle } from './FleetModals'
 import FleetPriceBuilderPanel from './FleetPriceBuilderPanel'
 import { useAuthStore } from '../../stores/authStore'
 import { getWorkOSCapabilities, startWorkOSLogin, type WorkOSCapabilities } from '../../lib/workosAuth'
@@ -245,11 +245,6 @@ export default function TruckDetail({
     // Fleet WOs are repair orders — keep the owner's cockpit queue in sync too.
     invalidateFleetAndCockpit(qc)
   }
-  const resolveIncident = useMutation({
-    mutationFn: async (id: string) => (await api.patch(`/fleet/incidents/${id}`, { status: 'resolved' })).data,
-    onSuccess: () => { toast.success('Incident resolved'); refresh() },
-    onError: (e: AxiosError<{ detail?: string }>) => toast.error(e.response?.data?.detail || 'Failed'),
-  })
   // The incident already puts its description on the order; opening the builder
   // straight away is the point — the manager is standing at the truck and the
   // next thing they do is say what the work is.
@@ -262,10 +257,14 @@ export default function TruckDetail({
     },
     onError: (e: AxiosError<{ detail?: string }>) => toast.error(e.response?.data?.detail || 'Failed'),
   })
-  const deleteIncident = useMutation({
+  // The DELETE route voids rather than erases: it sets status 'voided', stamps
+  // resolved_at and keeps the record and its photos for accountable history.
+  // The menu used to call this "Delete" in red, which told a user their record
+  // was gone when it was retained.
+  const voidIncident = useMutation({
     mutationFn: async (id: string) => (await api.delete(`/fleet/incidents/${id}`)).data,
-    onSuccess: () => { toast.success('Incident deleted'); refresh() },
-    onError: (e: AxiosError<{ detail?: string }>) => toast.error(e.response?.data?.detail || 'Failed to delete incident'),
+    onSuccess: () => { toast.success('Incident voided'); refresh() },
+    onError: (e: AxiosError<{ detail?: string }>) => toast.error(e.response?.data?.detail || 'Failed to void incident'),
   })
   /**
    * Open an empty repair order and go straight into the builder, rather than
@@ -305,7 +304,9 @@ export default function TruckDetail({
   const [editing, setEditing] = useState(false)
   const [logging, setLogging] = useState(false)
   const [editingIncident, setEditingIncident] = useState<IncidentEntry | null>(null)
-  const [armedDeleteIncidentId, setArmedDeleteIncidentId] = useState<string | null>(null)
+  const [resolvingIncident, setResolvingIncident] = useState<IncidentEntry | null>(null)
+  const [resolvedIncidentsOpen, setResolvedIncidentsOpen] = useState(false)
+  const [armedVoidIncidentId, setArmedVoidIncidentId] = useState<string | null>(null)
   const [incidentMenuOpenId, setIncidentMenuOpenId] = useState<string | null>(null)
   const [pendingIncidentPhotos, setPendingIncidentPhotos] = useState<PendingIncidentPhoto[]>([])
   const pendingIncidentPhotosRef = useRef<PendingIncidentPhoto[]>([])
@@ -476,7 +477,15 @@ export default function TruckDetail({
   const failedInspection = inspections.find((inspection) => (
     inspection.status === 'completed' && inspection.result === 'fail' && !inspection.repair_order_id
   ))
-  const unresolvedIncidents = incidents.filter((incident) => incident.status !== 'resolved')
+  const unresolvedIncidents = incidents.filter(
+    (incident) => incident.status !== 'resolved' && incident.status !== 'voided',
+  )
+  // Settled incidents. The backend keeps them — resolved and voided alike — but
+  // the truck page filtered them out and hid the section when none were open,
+  // so a resolved incident disappeared from the only page that had shown it.
+  const settledIncidents = incidents.filter(
+    (incident) => incident.status === 'resolved' || incident.status === 'voided',
+  )
   const safetyIncident = unresolvedIncidents.find((incident) => incident.severity === 'critical' || incident.severity === 'high')
   const primaryWorkOrder = data?.open_work_orders[0]
   const hasSafetyIssue = t.status === 'out_of_service' || Boolean(t.warning_lights?.length) || Boolean(safetyIncident) || Boolean(failedInspection)
@@ -861,7 +870,7 @@ export default function TruckDetail({
                           <button
                             className="dbtn dbtn-ghost inc-menu-btn"
                             onClick={() => {
-                              setArmedDeleteIncidentId(null)
+                              setArmedVoidIncidentId(null)
                               setIncidentMenuOpenId((openId) => openId === inc.id ? null : inc.id)
                             }}
                             aria-label="Incident actions"
@@ -872,7 +881,7 @@ export default function TruckDetail({
                           </button>
                           {incidentMenuOpenId === inc.id && (
                             <>
-                              <div onClick={() => { setIncidentMenuOpenId(null); setArmedDeleteIncidentId(null) }} style={{ position: 'fixed', inset: 0, zIndex: 40 }} />
+                              <div onClick={() => { setIncidentMenuOpenId(null); setArmedVoidIncidentId(null) }} style={{ position: 'fixed', inset: 0, zIndex: 40 }} />
                               <div style={{ position: 'absolute', top: 'calc(100% + 6px)', right: 0, zIndex: 41, minWidth: 190, padding: 6, background: 'var(--surface)', border: '1px solid var(--line)', borderRadius: 10, boxShadow: '0 10px 28px rgba(0,0,0,.45)' }}>
                                 <button
                                   style={incidentMenuItemStyle}
@@ -924,36 +933,37 @@ export default function TruckDetail({
                                   <button
                                     style={incidentMenuItemStyle}
                                     onClick={() => {
-                                      resolveIncident.mutate(inc.id)
+                                      setResolvingIncident(inc)
                                       setIncidentMenuOpenId(null)
                                     }}
-                                    disabled={resolveIncident.isPending}
                                   >
                                     <CheckCircle2 size={13} /> Resolve
                                   </button>
                                 )}
                                 {!inc.repair_order_id && (
-                                  armedDeleteIncidentId === inc.id ? (
+                                  armedVoidIncidentId === inc.id ? (
                                     <div style={{ padding: '7px 8px 4px' }}>
-                                      <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 7 }}>Delete this incident?</div>
+                                      <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 7, lineHeight: 1.45 }}>
+                                        Void this incident? The record is kept in history.
+                                      </div>
                                       <div style={{ display: 'flex', gap: 6 }}>
                                         <button className="dbtn dbtn-ghost" style={{ height: 30, flex: 1, fontSize: 12 }}
-                                          disabled={deleteIncident.isPending} onClick={() => setArmedDeleteIncidentId(null)}>
+                                          disabled={voidIncident.isPending} onClick={() => setArmedVoidIncidentId(null)}>
                                           Cancel
                                         </button>
                                         <button className="dbtn dbtn-ghost" style={{ height: 30, flex: 1, fontSize: 12, color: 'var(--red)' }}
-                                          disabled={deleteIncident.isPending}
-                                          onClick={() => deleteIncident.mutate(inc.id, { onSuccess: () => { setArmedDeleteIncidentId(null); setIncidentMenuOpenId(null) } })}>
-                                          {deleteIncident.isPending ? <Spinner size="xs" /> : <Trash2 size={12} />} Delete
+                                          disabled={voidIncident.isPending}
+                                          onClick={() => voidIncident.mutate(inc.id, { onSuccess: () => { setArmedVoidIncidentId(null); setIncidentMenuOpenId(null) } })}>
+                                          {voidIncident.isPending ? <Spinner size="xs" /> : <Ban size={12} />} Void incident
                                         </button>
                                       </div>
                                     </div>
                                   ) : (
                                     <button
                                       style={{ ...incidentMenuItemStyle, color: 'var(--red)' }}
-                                      onClick={() => setArmedDeleteIncidentId(inc.id)}
+                                      onClick={() => setArmedVoidIncidentId(inc.id)}
                                     >
-                                      <Trash2 size={13} /> Delete
+                                      <Ban size={13} /> Void
                                     </button>
                                   )
                                 )}
@@ -979,6 +989,67 @@ export default function TruckDetail({
               <div className="empty-note"><Shield size={16} /> No incidents recorded for this unit.</div>
             )}
           </Section>}
+
+          {settledIncidents.length > 0 && (
+            <div className="dsec-operation" style={{ marginTop: 10 }}>
+              <button
+                onClick={() => setResolvedIncidentsOpen((open) => !open)}
+                aria-expanded={resolvedIncidentsOpen}
+                style={{
+                  width: '100%', display: 'flex', alignItems: 'center', gap: 8,
+                  padding: '10px 12px', borderRadius: 9, border: '1px solid var(--line)',
+                  background: 'transparent', color: 'var(--muted)', cursor: 'pointer',
+                  fontSize: 12.5, fontWeight: 600, letterSpacing: '.04em', textTransform: 'uppercase',
+                }}
+              >
+                <History size={14} />
+                Resolved incidents
+                <span style={{ ...incidentStatePillStyle, textTransform: 'none', letterSpacing: 0 }}>
+                  {settledIncidents.length}
+                </span>
+                <ChevronDown
+                  size={15}
+                  style={{
+                    marginLeft: 'auto',
+                    transform: resolvedIncidentsOpen ? 'rotate(180deg)' : 'none',
+                    transition: 'transform .15s ease',
+                  }}
+                />
+              </button>
+              {resolvedIncidentsOpen && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 8 }}>
+                  {settledIncidents.map((inc) => (
+                    <div
+                      key={inc.id}
+                      style={{
+                        padding: '10px 12px', borderRadius: 9,
+                        border: '1px solid var(--line)', background: 'var(--ink)',
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
+                        <span style={{ fontWeight: 600, fontSize: 13.5 }}>{inc.type}</span>
+                        <span style={{ ...incidentStatePillStyle, textTransform: 'capitalize' }}>
+                          {inc.status === 'voided' ? 'Voided' : 'Resolved'}
+                        </span>
+                        <span style={{ marginLeft: 'auto', fontSize: 12, color: 'var(--muted)' }}>
+                          {fmtDate(inc.resolved_at || inc.date)}
+                        </span>
+                      </div>
+                      {inc.resolution_notes ? (
+                        <div style={{ marginTop: 5, fontSize: 12.5, color: 'var(--text)', lineHeight: 1.5 }}>
+                          {inc.resolution_notes}
+                        </div>
+                      ) : (
+                        <div style={{ marginTop: 5, fontSize: 12.5, color: 'var(--muted)', fontStyle: 'italic' }}>
+                          No outcome was recorded for this incident.
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
 
               <InspectionsSection ref={inspectionsRef} vehicleId={t.id} truckId={t.id} currentOdometer={t.odometer} className="dsec-operation dsec-inspections" hideWhenIdle onOpenRepairOrder={setRoPanelId} />
             </div>
@@ -1180,6 +1251,7 @@ export default function TruckDetail({
       {assigningDriver && <AssignDriverModal truck={t} driverPhone={t.driver_phone} onClose={() => setAssigningDriver(false)} />}
       {logging && <LogIncidentModal vehicleId={t.id} truckId={t.id} onClose={() => setLogging(false)} />}
       {editingIncident && <EditIncidentModal incident={editingIncident} truckId={t.id} onClose={() => setEditingIncident(null)} />}
+      {resolvingIncident && <ResolveIncidentModal incident={resolvingIncident} truckId={t.id} onClose={() => setResolvingIncident(null)} />}
       {roPanelId && <FleetPriceBuilderPanel repairOrderId={roPanelId} onClose={() => setRoPanelId(null)} onChanged={refresh} />}
     </div>
   )

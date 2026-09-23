@@ -495,6 +495,72 @@ releasable; DB-070 and DB-071 are the ones a dispatcher feels first.
 | DB-072 | P2 | Inbox | Link a road incident to a repair order that already exists | Architecture & API Contracts | Standard product | An incident with no linked order can be attached to an open repair order for the same truck, and detached; the attach is recorded as an incident event; cross-vehicle and cross-tenant attach are refused |
 | DB-073 | P3 | Inbox | Name the incident void action for what it does | Frontend & UX | Fast UI | The action menu and its confirmation say "Void", matching the backend behavior of retaining the record at status `voided` rather than deleting it |
 
+## Inbox
+
+Intake recorded 2026-09-23 from a product observation on the truck-detail
+"Unresolved road incidents" card. Four items, split by lane: DB-072 is a
+contract change and ships separately, the other three are not.
+
+> **DB-070/071 implemented, PR pending (2026-09-23):** Branch
+> `codex/incident-outcome-and-void` from main `7e6e2166` (#410), carrying
+> DB-070, DB-071 and DB-073 only — DB-072 is withdrawn to Architecture, see below. Resolve now
+> requires a written outcome and sends the long-existing `resolution_notes`,
+> which the client had never sent; settled incidents get a collapsed history
+> section on truck detail, where a resolved one previously vanished entirely.
+> Two drift corrections: the frontend `IncidentStatus` type lacked `voided`
+> though the backend has had it since delete became void, and the truck-scoped
+> `IncidentEntry` response carried no outcome fields, so a resolved incident
+> could be listed but not explained. Evidence: backend `test_fleet_workflows.py`
+> 63 pass (1 new); frontend 746/746 across 93 files (6 new in
+> `IncidentOutcome.test.tsx`); typecheck, production build and changed-source
+> lint clean. Mutation-verified: removing the blank-outcome guard or
+> `resolution_notes` from the payload each fail a specific test. Fast UI lane —
+> no API field, enum, migration, auth or tenant change; sending a field the
+> contract already publishes is not a contract change. **Not done:** no PR,
+> protected CI, review gate, merge or deployment.
+
+> **DB-072 WITHDRAWN to Architecture (2026-09-23):** The contract change was
+> implemented and green, but its `AGENTS.md` rule 3 Architecture review was never
+> recorded. Three stacked PRs merged out of order — #412 into #411's branch at
+> 16:54:12, #413 into #412's branch at 16:54:28, sixteen seconds after #412 had
+> already left — and the reconciliation that followed would have carried DB-072
+> onto `main` past that gate. The product owner chose to withdraw it rather than
+> ship an unreviewed contract. The work is preserved in full on
+> `codex/incident-stack-preserved` (`03a0b183`) and on the merged #412/#413
+> branches; nothing is lost and nothing needs rewriting. It returns as its own PR
+> once Architecture records the contract for `GET /fleet/incidents/{id}/linkable-orders`
+> and `POST`/`DELETE /fleet/incidents/{id}/repair-order`. Its acceptance criteria
+> below stand unchanged. **Blocked on:** an Architecture-recorded contract.
+
+> **DB-073 implemented, PR pending (2026-09-23):** Now on
+> `codex/incident-outcome-and-void` alongside DB-070/071. Originally built on
+> DB-072's branch; its backend test linked an order through DB-072's attach
+> route, so with that item withdrawn the test sets `repair_order_id` directly —
+> what it asserts is the refusal message, not how the link was made.
+> `DELETE /fleet/incidents/{id}` has never deleted — it sets status `voided`,
+> stamps `resolved_at`, records a `voided` event and keeps the photos — but the
+> menu called it "Delete" in red with a trash icon, telling a user their record
+> was gone when it was retained. The action, its confirmation and its toast now
+> say Void, and the confirmation states that the record is kept in history. The
+> icon changes from a trash can to a `Ban` glyph, since a red trash can is the
+> wrong signal for a record that survives. The backend refusal for a linked
+> incident said "Delete or unlink the repair order first", naming two actions
+> the UI does not offer; it now reads "This incident is linked to a repair
+> order. Unlink it first." — an action DB-072 actually provides. Behavior is
+> unchanged: same route, same request, same result. Evidence: backend
+> `test_fleet_workflows.py` 64 pass (1 new; the total drops from 76 because
+> DB-072's 12 tests leave with it); frontend 749/749 across 93 files (3 new);
+> typecheck, production build and changed-source lint clean.
+> Mutation-verified: dropping the kept-in-history reassurance fails its test.
+> **Not done:** no PR, protected CI, review gate, merge or deployment.
+
+| ID | Priority | State | Outcome | Owner | Lane | Acceptance target |
+|---|---|---|---|---|---|---|
+| DB-070 | P1 | Implemented, PR pending | Require a written outcome before an incident can be resolved | Frontend & UX | Fast UI | Resolving from the incident action menu opens a reason panel; submit stays disabled until a non-blank outcome is typed; the text persists to the existing `resolution_notes` field and is visible afterwards |
+| DB-071 | P1 | Implemented, PR pending | Give resolved and voided road incidents a visible home on the truck | Frontend & UX | Fast UI | A collapsed "Resolved incidents" section on truck detail lists non-open incidents with their outcome text and resolution date; the existing append-only event timeline remains available at `GET /fleet/incidents/{id}/events` and is not yet surfaced |
+| DB-072 | P2 | Withdrawn to Architecture | Link a road incident to a repair order that already exists | Architecture & API Contracts | Standard product | An incident with no linked order can be attached to an open repair order for the same truck, and detached; the attach is recorded as an incident event; cross-vehicle and cross-tenant attach are refused |
+| DB-073 | P3 | Implemented, PR pending | Name the incident void action for what it does | Frontend & UX | Fast UI | The action menu and its confirmation say "Void", matching the backend behavior of retaining the record at status `voided` rather than deleting it |
+
 ## Blocked
 
 | ID | Priority | State | Outcome | Owner | Blocker | Resolver / next safe action | Unblock evidence |
@@ -922,3 +988,92 @@ record is gone when it is retained.
   it is, not as a generic failure.
 - Behavior is unchanged; only the naming stops contradicting it. Pairs with
   DB-071, which is what makes the retained record actually reachable.
+
+## DB-070 acceptance criteria
+
+Resolving a road incident sent `PATCH /fleet/incidents/{id}` with
+`{status: 'resolved'}` and nothing else, so the fleet kept no record of why an
+incident stopped being a problem. The `resolution_notes` column, the
+`IncidentUpdate` field and the `IncidentResponse` field already existed and were
+unused by the client; this item spends them rather than adding anything.
+
+- Choosing Resolve opens a panel asking what the outcome was. It does not
+  resolve on the click.
+- Submit is unavailable until a non-blank outcome is typed. Whitespace alone is
+  not an outcome. Free text was chosen over presets so the record reads as a
+  sentence a person wrote, not a category someone clicked past.
+- Submitting sends `status` and `resolution_notes` in one request; a failed
+  request leaves the incident open and says so.
+- No API field, response shape, enum value, migration, auth or tenant change.
+
+## DB-071 acceptance criteria
+
+`TruckDetail` filtered incidents to `status !== 'resolved'` and hid the whole
+section when none remained, so a resolved incident disappeared from the only
+page that showed it. The data was never lost.
+
+- Truck detail shows a collapsed section for incidents no longer open, listing
+  each with its outcome text and when it was resolved.
+- Collapsed is the default: a resolved incident is history and must not compete
+  with the unresolved card above it for a dispatcher's attention.
+- Voided incidents appear here too. The backend already retains them; a record
+  kept and never shown is the same as a record lost.
+- An incident resolved before this shipped, carrying no outcome, says so plainly
+  rather than rendering an empty space.
+- The truck-scoped `IncidentEntry` response needed `resolution_notes` and
+  `resolved_at` added: it is what this page reads, and without them a resolved
+  incident could be listed but not explained.
+
+## DB-072 acceptance criteria
+
+`FleetIncident.repair_order_id` could only be set by
+`POST /fleet/incidents/{id}/create-repair`, which creates an order or appends to
+the truck's open visit. Nothing could point an incident at an order that already
+existed, so an incident repaired under an order opened by another route stayed
+unlinked forever.
+
+This item adds API capability and is **not** Fast UI. Per `AGENTS.md` rule 3 it
+routes to Architecture for a recorded contract before release.
+
+- Selectable orders are open repair orders **for the same vehicle** only. An
+  incident pointed at another truck's order is a data-integrity defect no UI
+  affordance can undo, and closed orders cannot absorb the work anyway.
+- The rule is enforced on attach, not only in the picker: the order is re-read
+  through the same tenant-and-vehicle filter, so a stale or hand-crafted id
+  cannot attach an incident to another truck's or another tenant's work.
+- A foreign order returns the generic `404` this codebase already uses, rather
+  than confirming that another tenant's order exists.
+- Attaching an incident that already has a linked order is refused rather than
+  silently reassigned.
+- Attach and detach each append a `FleetIncidentEvent`, matching how
+  `repair_order_created` is already recorded, so the link has provenance.
+- Detaching leaves the order itself untouched — its status, lines and place on
+  the board are unchanged.
+- A PM order is offered here although `_open_visit_for_vehicle` excludes it.
+  That helper excludes PM because folding unrelated repairs into a curated PM
+  scope happens silently there; here a person is choosing that specific order,
+  and refusing the explicit choice would leave a real incident nowhere to point.
+- The existing `create-repair` behavior is unchanged, including its rule that an
+  open visit absorbs the complaint instead of spawning a second order.
+- Contract, negative cases and the tenant boundary carry test evidence before
+  any UI consumes the route.
+
+## DB-073 acceptance criteria
+
+`DELETE /fleet/incidents/{id}` does not delete. It sets status `voided`, stamps
+`resolved_at`, records a `voided` event, keeps the photos, and refuses outright
+when a repair order is linked. The menu called this "Delete" in red with a trash
+icon, which told a user their record was gone when it was retained.
+
+- The action, its confirmation and its success toast read as voiding.
+- The confirmation says the record is kept in history rather than implying
+  erasure.
+- The icon is not a trash can. A red trash can is the wrong signal for a record
+  that survives the action.
+- The refusal when a repair order is linked names an action the UI offers.
+  It said "Delete or unlink the repair order first" — nothing deletes a repair
+  order from here, and the incident action is no longer Delete either.
+- Behavior is unchanged: same route, same request, same resulting state. Only
+  the naming stops contradicting what the server does.
+- DB-071 is what makes the retained record reachable; without that section a
+  voided incident is still correct and still invisible.

@@ -1339,6 +1339,98 @@ export function EditIncidentModal({ incident, truckId, onClose }: { incident: In
   )
 }
 
+/* ---------- Resolve an incident with a recorded outcome (DB-070) ---------- */
+
+/**
+ * Resolving used to be one blind PATCH carrying only `status`, so the fleet
+ * kept no record of why an incident stopped being a problem. `resolution_notes`
+ * already existed on the model and in the contract and simply went unsent.
+ *
+ * The outcome is required free text rather than a preset list: the record has
+ * to read as a sentence a person wrote, not a category someone clicked past on
+ * the way to closing the card.
+ */
+export function ResolveIncidentModal({
+  incident,
+  truckId,
+  onClose,
+}: {
+  incident: IncidentEntry
+  truckId: string
+  onClose: () => void
+}) {
+  const qc = useQueryClient()
+  const [outcome, setOutcome] = useState('')
+  const fieldId = useId()
+  const blank = outcome.trim() === ''
+
+  const resolve = useMutation({
+    mutationFn: async () =>
+      (
+        await api.patch(`/fleet/incidents/${incident.id}`, {
+          status: 'resolved',
+          resolution_notes: outcome.trim(),
+        })
+      ).data,
+    onSuccess: () => {
+      toast.success('Incident resolved')
+      qc.invalidateQueries({ queryKey: ['fleet-truck', truckId] })
+      qc.invalidateQueries({ queryKey: ['fleet-truck-incidents', truckId] })
+      invalidateFleetAndCockpit(qc)
+      onClose()
+    },
+    onError: (e: AxiosError<{ detail?: string }>) =>
+      toast.error(e.response?.data?.detail || 'Failed to resolve incident'),
+  })
+
+  return (
+    <SidekickPanel
+      title="Resolve road incident"
+      subtitle="Record what was done about it"
+      icon={<CheckCircle2 size={18} className="text-[var(--green)]" />}
+      onClose={onClose}
+      width="max-w-[540px]"
+      tone="safety"
+      footer={(
+        <div className="fleet-sidekick-actions">
+          <button type="button" className="dbtn dbtn-ghost" disabled={resolve.isPending} onClick={onClose}>
+            Cancel
+          </button>
+          <button
+            className={yellowBtn}
+            disabled={blank || resolve.isPending}
+            onClick={() => { if (!blank) resolve.mutate() }}
+          >
+            {resolve.isPending ? <Spinner size="sm" /> : <CheckCircle2 size={15} />} Resolve incident
+          </button>
+        </div>
+      )}
+    >
+      <div style={{ marginBottom: 12, fontSize: 13, color: 'var(--muted)', lineHeight: 1.5 }}>
+        {incident.note || incident.type}
+      </div>
+      <label htmlFor={fieldId} className="id-k" style={{ display: 'block', marginBottom: 5 }}>
+        Outcome <span style={{ color: 'var(--red)' }}>*</span>
+      </label>
+      <textarea
+        id={fieldId}
+        value={outcome}
+        onChange={(e) => setOutcome(e.target.value)}
+        rows={4}
+        placeholder="What fixed it, or why no work was needed"
+        style={{
+          width: '100%', background: 'var(--ink)', border: '1px solid var(--line)',
+          borderRadius: 9, color: 'var(--text)', fontFamily: 'inherit', fontSize: 13.5,
+          padding: 10, outline: 'none',
+        }}
+      />
+      <p style={{ marginTop: 7, fontSize: 12, color: 'var(--muted)' }}>
+        This is kept with the incident so the next person reading it knows how it ended.
+      </p>
+    </SidekickPanel>
+  )
+}
+
 /* ---------- Inspections: section + checklist ---------- */
 
 export interface InspectionsSectionHandle {

@@ -19,6 +19,7 @@ os.environ.setdefault("TWILIO_PHONE_NUMBER", "+15555550100")
 from app.api.v1.endpoints import fleet
 from app.db.models.customer import Customer
 from app.db.models.fleet import (
+    FleetIncident,
     FleetIncidentPhoto,
     InspectionResult,
     InspectionStatus,
@@ -1667,3 +1668,110 @@ async def test_a_removed_truck_can_be_found_and_linked_again(db_session):
         db=db_session, current_user=user)
     board = await fleet.fleet_board(db=db_session, current_user=user)
     assert any(t.id == vehicle.id for t in board.trucks)
+
+
+# ---------------------------------------------------------------------------
+# DB-071: a resolved incident has to be able to say how it was resolved.
+# ---------------------------------------------------------------------------
+
+
+async def _seed_incident(db_session, vehicle, user, *, description="Air leak on I-85"):
+    return await fleet.create_incident(
+        body=IncidentCreate(
+            vehicle_id=vehicle.id,
+            occurred_at=datetime.now(timezone.utc),
+            description=description,
+        ),
+        db=db_session,
+        current_user=user,
+    )
+
+
+@pytest.mark.asyncio
+async def test_truck_incidents_carry_the_recorded_outcome(db_session):
+    """DB-071: the truck list is what the UI reads, so it must carry the answer.
+
+    Without these fields a resolved incident can be listed but not explained,
+    which is the same dead end as hiding it.
+    """
+    _, vehicle, user = await _seed_fleet(db_session)
+    incident = await _seed_incident(db_session, vehicle, user, description="Blown marker lamp")
+    await fleet.update_incident(
+        incident_id=incident.id,
+        body=IncidentUpdate(
+            status=IncidentStatus.RESOLVED,
+            resolution_notes="Replaced the lamp and reseated the harness",
+        ),
+        db=db_session,
+        current_user=user,
+    )
+
+    entries = await fleet.truck_incidents(
+        vehicle_id=vehicle.id, db=db_session, current_user=user
+    )
+
+    assert entries[0].resolution_notes == "Replaced the lamp and reseated the harness"
+    assert entries[0].resolved_at is not None
+
+
+# ---------------------------------------------------------------------------
+# DB-073: voiding an incident, and the refusal when work is attached to it.
+# ---------------------------------------------------------------------------
+
+
+async def _seed_repair_order(
+    db_session,
+    tenant,
+    vehicle,
+    *,
+    status_value=RepairOrderStatus.IN_PROGRESS,
+    is_pm=False,
+    description="Existing shop visit",
+):
+    customer_id = (
+        await db_session.execute(select(Vehicle.customer_id).where(Vehicle.id == vehicle.id))
+    ).scalar_one()
+    ro = RepairOrder(
+        id=uuid4(),
+        tenant_id=tenant.id,
+        customer_id=customer_id,
+        vehicle_id=vehicle.id,
+        order_number=f"RO-{uuid4().hex[:8].upper()}",
+        status=status_value,
+        is_internal=True,
+        is_fleet_work=True,
+        is_pm=is_pm,
+        description=description,
+    )
+    db_session.add(ro)
+    await db_session.commit()
+    return ro
+
+
+@pytest.mark.asyncio
+async def test_voiding_a_linked_incident_says_to_unlink_not_delete(db_session):
+    """DB-073: the refusal has to name an action the UI actually offers.
+
+    It said "Delete or unlink the repair order first", but nothing deletes a
+    repair order from here and the incident action is now Void, so the sentence
+    sent the reader looking for two things that do not exist.
+    """
+    tenant, vehicle, user = await _seed_fleet(db_session)
+    incident = await _seed_incident(db_session, vehicle, user)
+    ro = await _seed_repair_order(db_session, tenant, vehicle)
+    # Set the link directly. DB-072's attach route is not on this branch, and
+    # what is under test is the refusal message, not how the link was made.
+    stored = (
+        await db_session.execute(select(FleetIncident).where(FleetIncident.id == incident.id))
+    ).scalar_one()
+    stored.repair_order_id = ro.id
+    await db_session.commit()
+
+    with pytest.raises(HTTPException) as exc:
+        await fleet.delete_incident(
+            incident_id=incident.id, db=db_session, current_user=user
+        )
+
+    assert exc.value.status_code == 400
+    assert "unlink" in exc.value.detail.lower()
+    assert "delete" not in exc.value.detail.lower()
