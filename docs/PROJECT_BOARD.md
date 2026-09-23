@@ -484,20 +484,6 @@ no production implementation resumes before that decision.
 ## Inbox
 
 Intake recorded 2026-09-23 from a product observation on the truck-detail
-"Unresolved road incidents" card. Four items, split by lane because one of them
-is a contract change and the other three are not. Each is independently
-releasable; DB-070 and DB-071 are the ones a dispatcher feels first.
-
-| ID | Priority | State | Outcome | Owner | Lane | Acceptance target |
-|---|---|---|---|---|---|---|
-| DB-070 | P1 | Inbox | Require a written outcome before an incident can be resolved | Frontend & UX | Fast UI | Resolving from the incident action menu opens a reason panel; submit stays disabled until a non-blank outcome is typed; the text persists to the existing `resolution_notes` field and is visible afterwards |
-| DB-071 | P1 | Inbox | Give resolved and voided road incidents a visible home on the truck | Frontend & UX | Fast UI | A collapsed "Resolved incidents" section on truck detail lists non-open incidents with their outcome text and resolution date, and each incident exposes its existing append-only event timeline |
-| DB-072 | P2 | Inbox | Link a road incident to a repair order that already exists | Architecture & API Contracts | Standard product | An incident with no linked order can be attached to an open repair order for the same truck, and detached; the attach is recorded as an incident event; cross-vehicle and cross-tenant attach are refused |
-| DB-073 | P3 | Inbox | Name the incident void action for what it does | Frontend & UX | Fast UI | The action menu and its confirmation say "Void", matching the backend behavior of retaining the record at status `voided` rather than deleting it |
-
-## Inbox
-
-Intake recorded 2026-09-23 from a product observation on the truck-detail
 "Unresolved road incidents" card. Four items, split by lane: DB-072 is a
 contract change and ships separately, the other three are not.
 
@@ -518,6 +504,22 @@ contract change and ships separately, the other three are not.
 > no API field, enum, migration, auth or tenant change; sending a field the
 > contract already publishes is not a contract change. **Not done:** no PR,
 > protected CI, review gate, merge or deployment.
+
+> **DB-072 contract recorded and resubmitted (2026-09-23):** The Architecture
+> gate is answered by `docs/contracts/db072-incident-repair-order-link.md`
+> (v1.0.0), written against the preserved implementation and verified line by
+> line against it rather than from memory: routes, response shapes, the linkable
+> rule, every failure mode with its exact status and detail, the tenancy
+> boundary, and the acceptance list. It names two decisions for a reviewer to
+> weigh rather than accept — PM orders are offered here although
+> `_open_visit_for_vehicle` excludes them, and detach deliberately does not roll
+> an incident's status back to `open`. The contract is a separate commit from the
+> code so it can be read on its own. Implementation restored from
+> `codex/incident-stack-preserved` by cherry-pick, not by file copy: a blind
+> restore would have reverted #414's `pm_day_load` endpoint, which landed after
+> that branch was cut. **Still not done:** the contract is proposed, not
+> approved. Architecture review remains outstanding and should be someone other
+> than the implementer.
 
 > **DB-072 WITHDRAWN to Architecture (2026-09-23):** The contract change was
 > implemented and green, but its `AGENTS.md` rule 3 Architecture review was never
@@ -558,7 +560,7 @@ contract change and ships separately, the other three are not.
 |---|---|---|---|---|---|---|
 | DB-070 | P1 | Implemented, PR pending | Require a written outcome before an incident can be resolved | Frontend & UX | Fast UI | Resolving from the incident action menu opens a reason panel; submit stays disabled until a non-blank outcome is typed; the text persists to the existing `resolution_notes` field and is visible afterwards |
 | DB-071 | P1 | Implemented, PR pending | Give resolved and voided road incidents a visible home on the truck | Frontend & UX | Fast UI | A collapsed "Resolved incidents" section on truck detail lists non-open incidents with their outcome text and resolution date; the existing append-only event timeline remains available at `GET /fleet/incidents/{id}/events` and is not yet surfaced |
-| DB-072 | P2 | Withdrawn to Architecture | Link a road incident to a repair order that already exists | Architecture & API Contracts | Standard product | An incident with no linked order can be attached to an open repair order for the same truck, and detached; the attach is recorded as an incident event; cross-vehicle and cross-tenant attach are refused |
+| DB-072 | P2 | Contract recorded, PR open | Link a road incident to a repair order that already exists | Architecture & API Contracts | Standard product | An incident with no linked order can be attached to an open repair order for the same truck, and detached; the attach is recorded as an incident event; cross-vehicle and cross-tenant attach are refused |
 | DB-073 | P3 | Implemented, PR pending | Name the incident void action for what it does | Frontend & UX | Fast UI | The action menu and its confirmation say "Void", matching the backend behavior of retaining the record at status `voided` rather than deleting it |
 
 ## Blocked

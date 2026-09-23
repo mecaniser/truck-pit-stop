@@ -14,7 +14,7 @@ import DatePicker, { type DayLoad as PMDayLoadEntry } from '@/components/DatePic
 import { useAuthStore } from '../../stores/authStore'
 import type {
   BoardTruck, TruckDetail, Inspection, InspectionDetail, InspectionItem, InspectionItemResult, InspectionResult, IncidentSeverity, IncidentEntry,
-  PMServiceEntry, DriverProfile, LegacyDriverContact, VehicleDriverAssignment,
+  PMServiceEntry, DriverProfile, LegacyDriverContact, VehicleDriverAssignment, LinkableRepairOrder,
 } from './types'
 import { fleetUnitLabel, fmtDate, fmt } from './helpers'
 import { isSupportedPhotoFile, runPhotoUploadQueue, uploadDirectPhoto, type PhotoUploadStatus } from '@/lib/photoUpload'
@@ -1427,6 +1427,107 @@ export function ResolveIncidentModal({
       <p style={{ marginTop: 7, fontSize: 12, color: 'var(--muted)' }}>
         This is kept with the incident so the next person reading it knows how it ended.
       </p>
+    </SidekickPanel>
+  )
+}
+
+/* ---------- Attach an incident to an existing repair order (DB-072) ---------- */
+
+/**
+ * "Create repair" could only open a new order or append to the current visit.
+ * When the repair was opened some other way, the incident had no way to say
+ * which order was addressing it. Only open orders for this same truck are
+ * offered — the server enforces the same rule, and a closed order cannot
+ * absorb the work anyway.
+ */
+export function AssignIncidentRepairOrderModal({
+  incident,
+  truckId,
+  onClose,
+}: {
+  incident: IncidentEntry
+  truckId: string
+  onClose: () => void
+}) {
+  const qc = useQueryClient()
+  const options = useQuery<LinkableRepairOrder[]>({
+    queryKey: ['fleet-incident-linkable-orders', incident.id],
+    queryFn: async () => (await api.get(`/fleet/incidents/${incident.id}/linkable-orders`)).data,
+  })
+
+  const link = useMutation({
+    mutationFn: async (repairOrderId: string) =>
+      (await api.post(`/fleet/incidents/${incident.id}/repair-order`, {
+        repair_order_id: repairOrderId,
+      })).data,
+    onSuccess: () => {
+      toast.success('Incident assigned to repair order')
+      qc.invalidateQueries({ queryKey: ['fleet-truck', truckId] })
+      qc.invalidateQueries({ queryKey: ['fleet-truck-incidents', truckId] })
+      invalidateFleetAndCockpit(qc)
+      onClose()
+    },
+    onError: (e: AxiosError<{ detail?: string }>) =>
+      toast.error(e.response?.data?.detail || 'Failed to assign incident'),
+  })
+
+  const orders = options.data || []
+
+  return (
+    <SidekickPanel
+      title="Assign to repair order"
+      subtitle="Point this incident at work already open"
+      icon={<Wrench size={18} className="text-[var(--yellow)]" />}
+      onClose={onClose}
+      width="max-w-[540px]"
+      tone="safety"
+      footer={(
+        <div className="fleet-sidekick-actions">
+          <button type="button" className="dbtn dbtn-ghost" disabled={link.isPending} onClick={onClose}>
+            Cancel
+          </button>
+        </div>
+      )}
+    >
+      <div style={{ marginBottom: 12, fontSize: 13, color: 'var(--muted)', lineHeight: 1.5 }}>
+        {incident.note || incident.type}
+      </div>
+      {options.isLoading ? (
+        <div className="empty-note"><Spinner size="xs" /> Loading open repair orders…</div>
+      ) : options.isError ? (
+        <div className="empty-note">Open repair orders could not be loaded.</div>
+      ) : orders.length === 0 ? (
+        <div className="empty-note">
+          No open repair orders for this truck. Use “Create repair” to open one.
+        </div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {orders.map((ro) => (
+            <button
+              key={ro.id}
+              disabled={link.isPending}
+              onClick={() => link.mutate(ro.id)}
+              style={{
+                textAlign: 'left', padding: '11px 12px', borderRadius: 9,
+                border: '1px solid var(--line)', background: 'var(--ink)',
+                color: 'var(--text)', cursor: link.isPending ? 'not-allowed' : 'pointer',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 600, fontSize: 13.5 }}>
+                {ro.order_number}
+                {ro.is_pm && (
+                  <span style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 500 }}>PM</span>
+                )}
+              </div>
+              {ro.description && (
+                <div style={{ marginTop: 3, fontSize: 12.5, color: 'var(--muted)' }}>
+                  {ro.description}
+                </div>
+              )}
+            </button>
+          ))}
+        </div>
+      )}
     </SidekickPanel>
   )
 }
