@@ -482,20 +482,6 @@ no production implementation resumes before that decision.
 ## Inbox
 
 Intake recorded 2026-09-23 from a product observation on the truck-detail
-"Unresolved road incidents" card. Four items, split by lane because one of them
-is a contract change and the other three are not. Each is independently
-releasable; DB-070 and DB-071 are the ones a dispatcher feels first.
-
-| ID | Priority | State | Outcome | Owner | Lane | Acceptance target |
-|---|---|---|---|---|---|---|
-| DB-070 | P1 | Inbox | Require a written outcome before an incident can be resolved | Frontend & UX | Fast UI | Resolving from the incident action menu opens a reason panel; submit stays disabled until a non-blank outcome is typed; the text persists to the existing `resolution_notes` field and is visible afterwards |
-| DB-071 | P1 | Inbox | Give resolved and voided road incidents a visible home on the truck | Frontend & UX | Fast UI | A collapsed "Resolved incidents" section on truck detail lists non-open incidents with their outcome text and resolution date, and each incident exposes its existing append-only event timeline |
-| DB-072 | P2 | Inbox | Link a road incident to a repair order that already exists | Architecture & API Contracts | Standard product | An incident with no linked order can be attached to an open repair order for the same truck, and detached; the attach is recorded as an incident event; cross-vehicle and cross-tenant attach are refused |
-| DB-073 | P3 | Inbox | Name the incident void action for what it does | Frontend & UX | Fast UI | The action menu and its confirmation say "Void", matching the backend behavior of retaining the record at status `voided` rather than deleting it |
-
-## Inbox
-
-Intake recorded 2026-09-23 from a product observation on the truck-detail
 "Unresolved road incidents" card. Four items, split by lane: DB-072 is a
 contract change and ships separately, the other three are not.
 
@@ -516,11 +502,33 @@ contract change and ships separately, the other three are not.
 > contract already publishes is not a contract change. **Not done:** no PR,
 > protected CI, review gate, merge or deployment.
 
+> **DB-072 implemented, contract review pending (2026-09-23):** Branch
+> `codex/incident-repair-order-link-v2`, stacked on
+> `codex/incident-resolution-outcome` so its diff is the linking work alone.
+> Adds `GET /fleet/incidents/{id}/linkable-orders` and
+> `POST`/`DELETE /fleet/incidents/{id}/repair-order`. Only open orders for the
+> same truck are offered, and the rule is enforced on attach rather than only in
+> the picker: the order is re-read through the same tenant-and-vehicle filter, so
+> a stale or hand-crafted id cannot reach another truck's or another tenant's
+> work. A foreign order returns the generic `404` this codebase already uses
+> rather than confirming it exists. Attach and detach each append a
+> `FleetIncidentEvent`, matching `repair_order_created`. Evidence: backend
+> `test_fleet_workflows.py` 75 pass (12 new, covering cross-tenant,
+> cross-vehicle, closed-order and double-link rejection); frontend 750/750 across
+> 93 files (4 new); typecheck, production build and changed-source lint clean.
+> Mutation-verified: removing the tenant filter or the vehicle filter each fail a
+> specific test. The first cross-tenant test passed with the tenant boundary
+> removed because the same-vehicle filter masked it; it was rewritten to seed the
+> foreign order on this incident's own `vehicle_id` and now fails without that
+> filter. **Not done:** this adds API capability, so per `AGENTS.md` rule 3 it
+> needs an Architecture-recorded contract; no PR, protected CI, independent gate,
+> merge or deployment.
+
 | ID | Priority | State | Outcome | Owner | Lane | Acceptance target |
 |---|---|---|---|---|---|---|
 | DB-070 | P1 | Implemented, PR pending | Require a written outcome before an incident can be resolved | Frontend & UX | Fast UI | Resolving from the incident action menu opens a reason panel; submit stays disabled until a non-blank outcome is typed; the text persists to the existing `resolution_notes` field and is visible afterwards |
 | DB-071 | P1 | Implemented, PR pending | Give resolved and voided road incidents a visible home on the truck | Frontend & UX | Fast UI | A collapsed "Resolved incidents" section on truck detail lists non-open incidents with their outcome text and resolution date; the existing append-only event timeline remains available at `GET /fleet/incidents/{id}/events` and is not yet surfaced |
-| DB-072 | P2 | Implemented, contract review pending | Link a road incident to a repair order that already exists | Architecture & API Contracts | Standard product | Ships separately on `codex/incident-repair-order-link`: an incident with no linked order can be attached to an open repair order for the same truck, and detached; the attach is recorded as an incident event; cross-vehicle and cross-tenant attach are refused |
+| DB-072 | P2 | Implemented, contract review pending | Link a road incident to a repair order that already exists | Architecture & API Contracts | Standard product | An incident with no linked order can be attached to an open repair order for the same truck, and detached; the attach is recorded as an incident event; cross-vehicle and cross-tenant attach are refused |
 | DB-073 | P3 | Inbox | Name the incident void action for what it does | Frontend & UX | Fast UI | The action menu and its confirmation say "Void", matching the backend behavior of retaining the record at status `voided` rather than deleting it |
 
 ## Blocked
@@ -985,3 +993,37 @@ page that showed it. The data was never lost.
 - The truck-scoped `IncidentEntry` response needed `resolution_notes` and
   `resolved_at` added: it is what this page reads, and without them a resolved
   incident could be listed but not explained.
+
+## DB-072 acceptance criteria
+
+`FleetIncident.repair_order_id` could only be set by
+`POST /fleet/incidents/{id}/create-repair`, which creates an order or appends to
+the truck's open visit. Nothing could point an incident at an order that already
+existed, so an incident repaired under an order opened by another route stayed
+unlinked forever.
+
+This item adds API capability and is **not** Fast UI. Per `AGENTS.md` rule 3 it
+routes to Architecture for a recorded contract before release.
+
+- Selectable orders are open repair orders **for the same vehicle** only. An
+  incident pointed at another truck's order is a data-integrity defect no UI
+  affordance can undo, and closed orders cannot absorb the work anyway.
+- The rule is enforced on attach, not only in the picker: the order is re-read
+  through the same tenant-and-vehicle filter, so a stale or hand-crafted id
+  cannot attach an incident to another truck's or another tenant's work.
+- A foreign order returns the generic `404` this codebase already uses, rather
+  than confirming that another tenant's order exists.
+- Attaching an incident that already has a linked order is refused rather than
+  silently reassigned.
+- Attach and detach each append a `FleetIncidentEvent`, matching how
+  `repair_order_created` is already recorded, so the link has provenance.
+- Detaching leaves the order itself untouched — its status, lines and place on
+  the board are unchanged.
+- A PM order is offered here although `_open_visit_for_vehicle` excludes it.
+  That helper excludes PM because folding unrelated repairs into a curated PM
+  scope happens silently there; here a person is choosing that specific order,
+  and refusing the explicit choice would leave a real incident nowhere to point.
+- The existing `create-repair` behavior is unchanged, including its rule that an
+  open visit absorbs the complaint instead of spawning a second order.
+- Contract, negative cases and the tenant boundary carry test evidence before
+  any UI consumes the route.
