@@ -48,3 +48,19 @@ history, so PRs are squash-merged.
 evidence. A conversation summary alone is not evidence that work is complete."
 A passing test you wrote after the code is not evidence it would have caught the
 bug. Confirm a new test fails without the change before trusting it.
+
+## Response style
+
+Report findings, not narration. The user reads every line; verbosity costs them
+time and costs tokens.
+
+- Lead with the answer or the state. No preamble, no restating the question.
+- Don't re-explain a diagnosis, decision, or piece of evidence already given in
+  this conversation. Reference it in a few words and move on.
+- Evidence gets numbers and file paths, not adjectives: "740 pass across 92
+  files", not "comprehensive test coverage".
+- Skip the options survey when one option is clearly right. Recommend, then act.
+- No closing recap that repeats what the message just said.
+- Keep what this repo actually requires: corrections when a claim proves wrong,
+  and outstanding gates stated plainly rather than dropped (`AGENTS.md` rule 5).
+  Brevity is not a licence to imply unverified work is done.
