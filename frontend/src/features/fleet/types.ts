@@ -263,6 +263,18 @@ export interface IncidentEntry {
   note?: string | null
   repair_order_id?: string | null
   photos?: FleetPhoto[]
+  resolution_notes?: string | null
+  resolved_at?: string | null
+}
+
+/** An open repair order on this truck that an incident may be attached to. */
+export interface LinkableRepairOrder {
+  id: string
+  order_number: string
+  status: string
+  is_pm: boolean
+  description?: string | null
+  created_at: string
 }
 
 export interface FleetPhoto {

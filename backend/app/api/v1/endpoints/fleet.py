@@ -51,6 +51,8 @@ from app.schemas.fleet import (
     IncidentUpdate,
     IncidentResponse,
     IncidentEventResponse,
+    IncidentRepairOrderLink,
+    LinkableRepairOrderOption,
     FleetVehicleResponse,
     FleetSummaryResponse,
     BoardTruck,
@@ -1220,6 +1222,153 @@ async def create_repair_for_incident(
     return _incident_response(incident)
 
 
+def _linkable_orders_query(tenant_id: UUID, vehicle_id: UUID):
+    """Orders an incident on this truck may be attached to.
+
+    Same vehicle, still open. A closed order cannot absorb the work, and an
+    order belonging to another truck answers for a different unit — neither can
+    honestly be the repair for this incident.
+
+    Unlike `_open_visit_for_vehicle`, a PM is included. That helper excludes PM
+    orders because folding unrelated repairs into a curated PM scope happens
+    silently there; here a person is choosing this specific order, and refusing
+    their explicit choice would leave a real incident with nowhere to point.
+    """
+    return (
+        select(RepairOrder)
+        .where(
+            and_(
+                RepairOrder.tenant_id == tenant_id,
+                RepairOrder.vehicle_id == vehicle_id,
+                RepairOrder.status.notin_(list(TERMINAL_RO_STATUSES)),
+                RepairOrder.deleted_at.is_(None),
+            )
+        )
+        .order_by(RepairOrder.created_at.asc())
+    )
+
+
+@router.get(
+    "/incidents/{incident_id}/linkable-orders",
+    response_model=List[LinkableRepairOrderOption],
+)
+async def list_incident_linkable_orders(
+    incident_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_fleet_access),
+):
+    """The open orders on this incident's truck, for the attach picker."""
+    incident = await _load_incident(db, current_user.tenant_id, incident_id)
+    rows = (
+        await db.execute(_linkable_orders_query(current_user.tenant_id, incident.vehicle_id))
+    ).scalars().all()
+    return [
+        LinkableRepairOrderOption(
+            id=ro.id,
+            order_number=ro.order_number,
+            status=ro.status,
+            is_pm=bool(ro.is_pm),
+            description=ro.description,
+            created_at=ro.created_at,
+        )
+        for ro in rows
+    ]
+
+
+@router.post("/incidents/{incident_id}/repair-order", response_model=IncidentResponse)
+async def link_incident_repair_order(
+    incident_id: UUID,
+    body: IncidentRepairOrderLink,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_fleet_access),
+):
+    """Attach an incident to a repair order that already exists.
+
+    The order is re-read through the same tenant-and-vehicle filter that built
+    the picker, so a stale or hand-crafted id cannot attach an incident to
+    another truck's — or another tenant's — work.
+    """
+    incident = await _load_incident(db, current_user.tenant_id, incident_id)
+    if incident.repair_order_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This incident is already linked to a repair order. Unlink it first.",
+        )
+
+    # A foreign or non-existent order is indistinguishable in the response: a
+    # caller must not learn that another tenant's order exists.
+    candidate = (
+        await db.execute(
+            select(RepairOrder).where(
+                and_(
+                    RepairOrder.id == body.repair_order_id,
+                    RepairOrder.tenant_id == current_user.tenant_id,
+                    RepairOrder.vehicle_id == incident.vehicle_id,
+                    RepairOrder.deleted_at.is_(None),
+                )
+            )
+        )
+    ).scalar_one_or_none()
+    if candidate is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Repair order not found for this truck",
+        )
+    if candidate.status in TERMINAL_RO_STATUSES:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="That repair order is already closed. Pick an open order.",
+        )
+
+    incident.repair_order_id = candidate.id
+    if incident.status == IncidentStatus.OPEN:
+        incident.status = IncidentStatus.IN_PROGRESS
+    _record_incident_event(
+        db,
+        incident=incident,
+        event_type="repair_order_linked",
+        actor_user_id=current_user.id,
+        data={
+            "repair_order_id": str(candidate.id),
+            "order_number": candidate.order_number,
+        },
+    )
+    await db.commit()
+    await db.refresh(incident, attribute_names=["vehicle"])
+    return _incident_response(incident)
+
+
+@router.delete("/incidents/{incident_id}/repair-order", response_model=IncidentResponse)
+async def unlink_incident_repair_order(
+    incident_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_fleet_access),
+):
+    """Detach an incident from its repair order, leaving the order itself alone.
+
+    Detaching corrects the link, not the work: the order keeps its status, its
+    lines and its place on the board.
+    """
+    incident = await _load_incident(db, current_user.tenant_id, incident_id)
+    if not incident.repair_order_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This incident has no linked repair order",
+        )
+    previous_id = incident.repair_order_id
+    incident.repair_order_id = None
+    _record_incident_event(
+        db,
+        incident=incident,
+        event_type="repair_order_unlinked",
+        actor_user_id=current_user.id,
+        data={"repair_order_id": str(previous_id)},
+    )
+    await db.commit()
+    await db.refresh(incident, attribute_names=["vehicle"])
+    return _incident_response(incident)
+
+
 @router.delete("/incidents/{incident_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_incident(
     incident_id: UUID,
@@ -2362,6 +2511,8 @@ async def truck_incidents(
             location=incident.location,
             note=incident.description,
             repair_order_id=incident.repair_order_id,
+            resolution_notes=incident.resolution_notes,
+            resolved_at=incident.resolved_at,
             photos=[
                 _incident_photo_response(photo)
                 for photo in sorted(incident.photos or [], key=lambda photo: photo.uploaded_at, reverse=True)
