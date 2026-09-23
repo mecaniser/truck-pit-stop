@@ -33,7 +33,9 @@ from app.db.models.repair_order_history import RepairOrderHistoryEvent
 from app.db.models.tenant import Tenant
 from app.db.models.user import User, UserRole
 from app.db.models.vehicle import Vehicle
+from app.db.models.driver_accountability import FleetIncidentEvent
 from app.schemas.fleet import (
+    IncidentRepairOrderLink,
     InspectionCreate,
     InspectionComplete,
     InspectionItemUpdate,
@@ -1775,3 +1777,289 @@ async def test_voiding_a_linked_incident_says_to_unlink_not_delete(db_session):
     assert exc.value.status_code == 400
     assert "unlink" in exc.value.detail.lower()
     assert "delete" not in exc.value.detail.lower()
+
+
+# ---------------------------------------------------------------------------
+# DB-072: linking an incident to a repair order that already exists.
+#
+# `create_repair_for_incident` can only make a new order or append to the
+# truck's current visit. An incident repaired under an order opened by another
+# route had no way to point at it.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_link_incident_to_existing_open_repair_order(db_session):
+    tenant, vehicle, user = await _seed_fleet(db_session)
+    incident = await _seed_incident(db_session, vehicle, user)
+    ro = await _seed_repair_order(db_session, tenant, vehicle)
+
+    linked = await fleet.link_incident_repair_order(
+        incident_id=incident.id,
+        body=IncidentRepairOrderLink(repair_order_id=ro.id),
+        db=db_session,
+        current_user=user,
+    )
+
+    assert linked.repair_order_id == ro.id
+
+
+@pytest.mark.asyncio
+async def test_linking_an_incident_moves_it_out_of_open(db_session):
+    """An incident with work attached is underway, not merely reported."""
+    tenant, vehicle, user = await _seed_fleet(db_session)
+    incident = await _seed_incident(db_session, vehicle, user)
+    ro = await _seed_repair_order(db_session, tenant, vehicle)
+
+    linked = await fleet.link_incident_repair_order(
+        incident_id=incident.id,
+        body=IncidentRepairOrderLink(repair_order_id=ro.id),
+        db=db_session,
+        current_user=user,
+    )
+
+    assert linked.status == IncidentStatus.IN_PROGRESS
+
+
+@pytest.mark.asyncio
+async def test_link_records_an_incident_event(db_session):
+    tenant, vehicle, user = await _seed_fleet(db_session)
+    incident = await _seed_incident(db_session, vehicle, user)
+    ro = await _seed_repair_order(db_session, tenant, vehicle)
+
+    await fleet.link_incident_repair_order(
+        incident_id=incident.id,
+        body=IncidentRepairOrderLink(repair_order_id=ro.id),
+        db=db_session,
+        current_user=user,
+    )
+
+    events = (
+        await db_session.execute(
+            select(FleetIncidentEvent).where(
+                FleetIncidentEvent.incident_id == incident.id,
+                FleetIncidentEvent.event_type == "repair_order_linked",
+            )
+        )
+    ).scalars().all()
+    assert len(events) == 1
+    assert events[0].data_json["repair_order_id"] == str(ro.id)
+
+
+@pytest.mark.asyncio
+async def test_link_refuses_an_order_for_a_different_vehicle(db_session):
+    """An incident pointed at another truck's order is a defect no UI can undo."""
+    tenant, vehicle, user = await _seed_fleet(db_session)
+    incident = await _seed_incident(db_session, vehicle, user)
+
+    other_vehicle = Vehicle(
+        id=uuid4(),
+        tenant_id=tenant.id,
+        customer_id=vehicle.customer_id,
+        make="Peterbilt",
+        model="579",
+        year=2021,
+        unit_number="T-99",
+    )
+    db_session.add(other_vehicle)
+    await db_session.commit()
+    foreign_ro = await _seed_repair_order(db_session, tenant, other_vehicle)
+
+    with pytest.raises(HTTPException) as exc:
+        await fleet.link_incident_repair_order(
+            incident_id=incident.id,
+            body=IncidentRepairOrderLink(repair_order_id=foreign_ro.id),
+            db=db_session,
+            current_user=user,
+        )
+    assert exc.value.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_link_refuses_an_order_from_another_tenant(db_session):
+    """Cross-tenant reads return the generic not-found this codebase already uses.
+
+    The foreign order deliberately carries THIS incident's vehicle_id. A
+    neighbouring tenant's order for some other truck is already refused by the
+    same-vehicle filter, so seeding one would let this test pass with the tenant
+    boundary removed — it would assert nothing about tenancy at all.
+    """
+    tenant, vehicle, user = await _seed_fleet(db_session)
+    incident = await _seed_incident(db_session, vehicle, user)
+    other_tenant, _, other_user = await _seed_fleet(db_session)
+
+    foreign_ro = RepairOrder(
+        id=uuid4(),
+        tenant_id=other_tenant.id,
+        customer_id=other_user.tenant_id,
+        vehicle_id=vehicle.id,
+        order_number=f"RO-{uuid4().hex[:8].upper()}",
+        status=RepairOrderStatus.IN_PROGRESS,
+        is_internal=True,
+        is_fleet_work=True,
+        is_pm=False,
+        description="Another tenant's order",
+    )
+    db_session.add(foreign_ro)
+    await db_session.commit()
+
+    with pytest.raises(HTTPException) as exc:
+        await fleet.link_incident_repair_order(
+            incident_id=incident.id,
+            body=IncidentRepairOrderLink(repair_order_id=foreign_ro.id),
+            db=db_session,
+            current_user=user,
+        )
+    assert exc.value.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_link_refuses_a_completed_order(db_session):
+    """A closed order cannot absorb the work, so it cannot answer for the incident."""
+    tenant, vehicle, user = await _seed_fleet(db_session)
+    incident = await _seed_incident(db_session, vehicle, user)
+    closed_ro = await _seed_repair_order(
+        db_session, tenant, vehicle, status_value=RepairOrderStatus.PAID
+    )
+
+    with pytest.raises(HTTPException) as exc:
+        await fleet.link_incident_repair_order(
+            incident_id=incident.id,
+            body=IncidentRepairOrderLink(repair_order_id=closed_ro.id),
+            db=db_session,
+            current_user=user,
+        )
+    assert exc.value.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_link_refuses_when_the_incident_already_has_an_order(db_session):
+    tenant, vehicle, user = await _seed_fleet(db_session)
+    incident = await _seed_incident(db_session, vehicle, user)
+    first = await _seed_repair_order(db_session, tenant, vehicle)
+    second = await _seed_repair_order(db_session, tenant, vehicle)
+    await fleet.link_incident_repair_order(
+        incident_id=incident.id,
+        body=IncidentRepairOrderLink(repair_order_id=first.id),
+        db=db_session,
+        current_user=user,
+    )
+
+    with pytest.raises(HTTPException) as exc:
+        await fleet.link_incident_repair_order(
+            incident_id=incident.id,
+            body=IncidentRepairOrderLink(repair_order_id=second.id),
+            db=db_session,
+            current_user=user,
+        )
+    assert exc.value.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_unlink_clears_the_repair_order(db_session):
+    tenant, vehicle, user = await _seed_fleet(db_session)
+    incident = await _seed_incident(db_session, vehicle, user)
+    ro = await _seed_repair_order(db_session, tenant, vehicle)
+    await fleet.link_incident_repair_order(
+        incident_id=incident.id,
+        body=IncidentRepairOrderLink(repair_order_id=ro.id),
+        db=db_session,
+        current_user=user,
+    )
+
+    unlinked = await fleet.unlink_incident_repair_order(
+        incident_id=incident.id, db=db_session, current_user=user
+    )
+
+    assert unlinked.repair_order_id is None
+
+
+@pytest.mark.asyncio
+async def test_unlink_leaves_the_repair_order_itself_untouched(db_session):
+    tenant, vehicle, user = await _seed_fleet(db_session)
+    incident = await _seed_incident(db_session, vehicle, user)
+    ro = await _seed_repair_order(db_session, tenant, vehicle)
+    await fleet.link_incident_repair_order(
+        incident_id=incident.id,
+        body=IncidentRepairOrderLink(repair_order_id=ro.id),
+        db=db_session,
+        current_user=user,
+    )
+
+    await fleet.unlink_incident_repair_order(
+        incident_id=incident.id, db=db_session, current_user=user
+    )
+
+    stored = (
+        await db_session.execute(select(RepairOrder).where(RepairOrder.id == ro.id))
+    ).scalar_one()
+    assert stored.deleted_at is None
+    assert stored.status == RepairOrderStatus.IN_PROGRESS
+
+
+@pytest.mark.asyncio
+async def test_unlink_records_an_incident_event(db_session):
+    tenant, vehicle, user = await _seed_fleet(db_session)
+    incident = await _seed_incident(db_session, vehicle, user)
+    ro = await _seed_repair_order(db_session, tenant, vehicle)
+    await fleet.link_incident_repair_order(
+        incident_id=incident.id,
+        body=IncidentRepairOrderLink(repair_order_id=ro.id),
+        db=db_session,
+        current_user=user,
+    )
+
+    await fleet.unlink_incident_repair_order(
+        incident_id=incident.id, db=db_session, current_user=user
+    )
+
+    events = (
+        await db_session.execute(
+            select(FleetIncidentEvent).where(
+                FleetIncidentEvent.incident_id == incident.id,
+                FleetIncidentEvent.event_type == "repair_order_unlinked",
+            )
+        )
+    ).scalars().all()
+    assert len(events) == 1
+
+
+@pytest.mark.asyncio
+async def test_linkable_orders_lists_only_open_orders_for_this_truck(db_session):
+    tenant, vehicle, user = await _seed_fleet(db_session)
+    incident = await _seed_incident(db_session, vehicle, user)
+    open_ro = await _seed_repair_order(db_session, tenant, vehicle)
+    await _seed_repair_order(db_session, tenant, vehicle, status_value=RepairOrderStatus.PAID)
+
+    other_vehicle = Vehicle(
+        id=uuid4(),
+        tenant_id=tenant.id,
+        customer_id=vehicle.customer_id,
+        make="Kenworth",
+        model="T680",
+        year=2019,
+        unit_number="T-77",
+    )
+    db_session.add(other_vehicle)
+    await db_session.commit()
+    await _seed_repair_order(db_session, tenant, other_vehicle)
+
+    options = await fleet.list_incident_linkable_orders(
+        incident_id=incident.id, db=db_session, current_user=user
+    )
+
+    assert [o.id for o in options] == [open_ro.id]
+
+
+@pytest.mark.asyncio
+async def test_linkable_orders_includes_a_pm_visit(db_session):
+    """Folding repairs into a PM is automatic-only; an explicit choice may pick it."""
+    tenant, vehicle, user = await _seed_fleet(db_session)
+    incident = await _seed_incident(db_session, vehicle, user)
+    pm_ro = await _seed_repair_order(db_session, tenant, vehicle, is_pm=True)
+
+    options = await fleet.list_incident_linkable_orders(
+        incident_id=incident.id, db=db_session, current_user=user
+    )
+
+    assert [o.id for o in options] == [pm_ro.id]
