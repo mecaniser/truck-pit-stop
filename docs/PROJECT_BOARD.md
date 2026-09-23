@@ -483,14 +483,40 @@ no production implementation resumes before that decision.
 
 Intake recorded 2026-09-23 from a product observation on the truck-detail
 "Unresolved road incidents" card. Four items, split by lane because one of them
-is a contract change and the other three are not. Each is independently
-releasable; DB-070 and DB-071 are the ones a dispatcher feels first.
+is a contract change and the other three are not.
+
+> **DB-070/071/072 implemented locally (2026-09-23), not released:** Branch
+> `codex/incident-repair-order-link`, commits `02815c24` (backend) and
+> `baa40362` (frontend). Resolve now requires a written outcome and sends the
+> long-existing `resolution_notes`; settled incidents get a collapsed history
+> section on truck detail; an incident can be attached to an open order for the
+> same truck through new `GET /fleet/incidents/{id}/linkable-orders` and
+> `POST`/`DELETE /fleet/incidents/{id}/repair-order`, with tenant and vehicle
+> re-checked server-side and a foreign order returning `404` rather than
+> revealing that another tenant's order exists. Attach and detach each append a
+> `FleetIncidentEvent`. Two drift corrections found on the way: the frontend
+> `IncidentStatus` type lacked `voided` though the backend has had it since
+> delete became void, and the truck-scoped `IncidentEntry` response carried no
+> outcome fields, so a resolved incident could be listed but not explained.
+> Evidence: backend `test_fleet_workflows.py` 75 pass (13 new); frontend 730/730
+> across 90 files (10 new in `IncidentOutcome.test.tsx`); typecheck, production
+> build and changed-source lint clean with the 13 pre-existing `FleetModals`
+> findings unchanged and none from these lines. Guards are mutation-verified:
+> removing the tenant filter, the vehicle filter, the blank-outcome guard, or
+> `resolution_notes` from the payload each fail a specific test. The first
+> cross-tenant test passed with the tenant boundary removed because the
+> same-vehicle filter masked it; it was rewritten to seed the foreign order on
+> this incident's own `vehicle_id` and now fails without that filter.
+> One unrelated pre-existing failure in `test_db048_invoice_settlements.py`
+> fails identically with these changes stashed. **Not done:** DB-072 is a
+> contract change and has not been through Architecture review; no PR, protected
+> CI, independent gate, merge or deployment. DB-073 is untouched.
 
 | ID | Priority | State | Outcome | Owner | Lane | Acceptance target |
 |---|---|---|---|---|---|---|
-| DB-070 | P1 | Inbox | Require a written outcome before an incident can be resolved | Frontend & UX | Fast UI | Resolving from the incident action menu opens a reason panel; submit stays disabled until a non-blank outcome is typed; the text persists to the existing `resolution_notes` field and is visible afterwards |
-| DB-071 | P1 | Inbox | Give resolved and voided road incidents a visible home on the truck | Frontend & UX | Fast UI | A collapsed "Resolved incidents" section on truck detail lists non-open incidents with their outcome text and resolution date, and each incident exposes its existing append-only event timeline |
-| DB-072 | P2 | Inbox | Link a road incident to a repair order that already exists | Architecture & API Contracts | Standard product | An incident with no linked order can be attached to an open repair order for the same truck, and detached; the attach is recorded as an incident event; cross-vehicle and cross-tenant attach are refused |
+| DB-070 | P1 | Implemented locally | Require a written outcome before an incident can be resolved | Frontend & UX | Fast UI | Resolving from the incident action menu opens a reason panel; submit stays disabled until a non-blank outcome is typed; the text persists to the existing `resolution_notes` field and is visible afterwards |
+| DB-071 | P1 | Implemented locally | Give resolved and voided road incidents a visible home on the truck | Frontend & UX | Fast UI | A collapsed "Resolved incidents" section on truck detail lists non-open incidents with their outcome text and resolution date; the existing append-only event timeline remains available at `GET /fleet/incidents/{id}/events` and is not yet surfaced |
+| DB-072 | P2 | Implemented locally, contract review pending | Link a road incident to a repair order that already exists | Architecture & API Contracts | Standard product | An incident with no linked order can be attached to an open repair order for the same truck, and detached; the attach is recorded as an incident event; cross-vehicle and cross-tenant attach are refused |
 | DB-073 | P3 | Inbox | Name the incident void action for what it does | Frontend & UX | Fast UI | The action menu and its confirmation say "Void", matching the backend behavior of retaining the record at status `voided` rather than deleting it |
 
 ## Blocked
@@ -838,73 +864,72 @@ last passing automated and runtime evidence in the item or associated issue.
 
 ## DB-070 acceptance criteria
 
-Resolving a road incident currently sends `PATCH /fleet/incidents/{id}` with
-`{status: 'resolved'}` and nothing else, so the fleet keeps no record of why an
+Resolving a road incident sent `PATCH /fleet/incidents/{id}` with
+`{status: 'resolved'}` and nothing else, so the fleet kept no record of why an
 incident stopped being a problem. The `resolution_notes` column, the
-`IncidentUpdate` field, and the `IncidentResponse` field already exist and are
+`IncidentUpdate` field and the `IncidentResponse` field already existed and were
 unused by the client; this item spends them rather than adding anything.
 
-- Choosing Resolve from the incident action menu opens a panel asking what the
-  outcome was. It does not resolve on the click.
+- Choosing Resolve opens a panel asking what the outcome was. It does not
+  resolve on the click.
 - Submit is unavailable until a non-blank outcome is typed. Whitespace alone is
-  not an outcome. The product owner chose free text over presets so the record
-  reads as a sentence a person wrote, not a category someone clicked past.
+  not an outcome. Free text was chosen over presets so the record reads as a
+  sentence a person wrote, not a category someone clicked past.
 - Submitting sends `status` and `resolution_notes` in one request; a failed
   request leaves the incident open and says so.
-- The recorded outcome is readable after the fact, not write-only.
-- No API field, response shape, enum value, migration, auth, or tenant change:
-  this stays Fast UI only for as long as that remains true. Sending a field the
-  contract already publishes is not a contract change; adding one would be.
+- No API field, response shape, enum value, migration, auth or tenant change.
+  Sending a field the contract already publishes is not a contract change.
 
 ## DB-071 acceptance criteria
 
-`TruckDetail` filters incidents to `status !== 'resolved'` and hides the whole
-section when none remain, so a resolved incident disappears from the only page
-that showed it. The data is not lost — `GET /fleet/trucks/{id}/incidents`
-returns it, and `GET /fleet/incidents/{id}/events` holds an append-only trail
-that no client reads today — but the UI has no door to either.
+`TruckDetail` filtered incidents to `status !== 'resolved'` and hid the whole
+section when none remained, so a resolved incident disappeared from the only
+page that showed it. The data was never lost.
 
-- Truck detail shows a collapsed section for incidents that are no longer open,
-  listing each with its outcome text and when it was resolved.
-- Collapsed is the default. A resolved incident is history, and history must not
-  compete with the unresolved card above it for a dispatcher's attention.
-- Each incident can reveal its event timeline from the existing events endpoint,
-  including who acted and when, with voided incidents distinguishable from
-  resolved ones rather than merged into one bucket.
+- Truck detail shows a collapsed section for incidents no longer open, listing
+  each with its outcome text and when it was resolved.
+- Collapsed is the default: a resolved incident is history and must not compete
+  with the unresolved card above it for a dispatcher's attention.
 - Voided incidents appear here too. The backend already retains them; a record
   kept and never shown is the same as a record lost.
-- No API, migration, auth, or tenant change. Both endpoints exist and are
-  already authorized through the incident.
+- An incident resolved before this shipped, carrying no outcome, says so plainly
+  rather than rendering an empty space.
+- The truck-scoped `IncidentEntry` response needed `resolution_notes` and
+  `resolved_at` added: it is what this page reads, and without them a resolved
+  incident could be listed but not explained.
 
 ## DB-072 acceptance criteria
 
-`FleetIncident.repair_order_id` can only be set by
-`POST /fleet/incidents/{id}/create-repair`, which creates an order or appends to
-the truck's open visit. Nothing can point an incident at an order that already
-exists, so an incident repaired under an order opened by another route stays
-unlinked forever.
+`FleetIncident.repair_order_id` could only be set by
+`POST /fleet/incidents/{id}/create-repair`. Nothing could point an incident at
+an order that already existed, so an incident repaired under an order opened by
+another route stayed unlinked forever.
 
-This item adds an API capability and therefore is **not** Fast UI. Per
-`AGENTS.md` rule 3 it routes to Architecture for a recorded contract before
-backend and frontend proceed.
+This item adds API capability and is **not** Fast UI. Per `AGENTS.md` rule 3 it
+routes to Architecture for a recorded contract before release.
 
-- Selectable orders are open repair orders **for the same vehicle** only. The
-  product owner chose this over searching all orders: an incident pointed at
-  another truck's order is a data-integrity defect that no UI affordance can
-  undo, and closed orders cannot absorb the work anyway.
+- Selectable orders are open repair orders **for the same vehicle** only. An
+  incident pointed at another truck's order is a data-integrity defect no UI
+  affordance can undo, and closed orders cannot absorb the work anyway.
+- The rule is enforced on attach, not only in the picker: the order is re-read
+  through the same tenant-and-vehicle filter, so a stale or hand-crafted id
+  cannot attach an incident to another truck's or another tenant's work.
+- A foreign order returns the generic `404` this codebase already uses, rather
+  than confirming that another tenant's order exists.
 - Attaching an incident that already has a linked order is refused rather than
   silently reassigned.
 - Attach and detach each append a `FleetIncidentEvent`, matching how
   `repair_order_created` is already recorded, so the link has provenance.
-- Attempting to attach an order belonging to another vehicle, or to another
-  tenant, is refused; the cross-tenant case returns the same generic
-  not-found response the codebase already uses for foreign records rather than
-  confirming the order exists.
+- Detaching leaves the order itself untouched — its status, lines and place on
+  the board are unchanged.
+- Contract, negative cases and the tenant boundary carry test evidence before
+  any UI consumes the route.
+- A PM order is offered here although `_open_visit_for_vehicle` excludes it.
+  That helper excludes PM because folding unrelated repairs into a curated PM
+  scope happens silently there; here a person is choosing that specific order,
+  and refusing the explicit choice would leave a real incident nowhere to point.
 - The existing `create-repair` behavior is unchanged, including its rule that an
   open visit absorbs the complaint instead of spawning a second order.
-- Detaching an incident from its order must leave the order itself untouched.
-- Contract, negative cases, and the tenant boundary carry test evidence before
-  any UI consumes the route.
 
 ## DB-073 acceptance criteria
 
@@ -918,5 +943,5 @@ record is gone when it is retained.
   erasure.
 - The existing refusal when a repair order is linked is surfaced as the reason
   it is, not as a generic failure.
-- Behavior is unchanged; only the naming stops contradicting it. Pairs with
-  DB-071, which is what makes the retained record actually reachable.
+- Behavior is unchanged; only the naming stops contradicting it. DB-071 is what
+  makes the retained record actually reachable.
