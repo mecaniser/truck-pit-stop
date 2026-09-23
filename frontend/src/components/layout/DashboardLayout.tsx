@@ -1,4 +1,5 @@
 import { Routes, Route, Link, Navigate, useLocation } from 'react-router-dom'
+import { lazyRouteLoader } from '@/lib/staleDeploy'
 import { useQuery } from '@tanstack/react-query'
 import { lazy, Suspense, type MouseEvent as ReactMouseEvent, type TouchEvent, useEffect, useRef, useState } from 'react'
 import { useAuthStore } from '../../stores/authStore'
@@ -13,20 +14,20 @@ import DevRuntimeIdentity from '../dev/DevRuntimeIdentity'
 import useTenantBranding from '@/hooks/useTenantBranding'
 
 const STAFF_RAIL_STORAGE_KEY = 'db-staff-rail-expanded'
-const CustomersPage = lazy(() => import('@/features/customers/CustomersPage'))
-const RepairOrdersPage = lazy(() => import('@/features/repair-orders/RepairOrdersPage'))
-const MyGaragePage = lazy(() => import('@/features/garage/MyGaragePage'))
-const DashboardHome = lazy(() => import('@/features/dashboard/DashboardHome'))
-const UnifiedSettingsPage = lazy(() => import('@/features/dashboard/UnifiedSettingsPage'))
-const PlatformDashboard = lazy(() => import('@/features/platform-admin/PlatformDashboard'))
-const GaragesPage = lazy(() => import('@/features/platform-admin/GaragesPage'))
-const GarageAnalyticsPage = lazy(() => import('@/features/platform-admin/GarageAnalyticsPage'))
-const PlatformAnalyticsPage = lazy(() => import('@/features/platform-admin/PlatformAnalyticsPage'))
-const PendingEnrollmentsPage = lazy(() => import('@/features/platform-admin/PendingEnrollmentsPage'))
-const PaymentControlCenter = lazy(() => import('@/features/platform-admin/PaymentControlCenter'))
-const MessagesInboxPage = lazy(() => import('@/features/messages/MessagesInboxPage'))
-const MechanicsBoardPage = lazy(() => import('@/features/dashboard/MechanicsBoardPage'))
-const MechanicBoardDetailPage = lazy(() => import('@/features/dashboard/MechanicBoardDetailPage'))
+const CustomersPage = lazy(lazyRouteLoader(() => import('@/features/customers/CustomersPage')))
+const RepairOrdersPage = lazy(lazyRouteLoader(() => import('@/features/repair-orders/RepairOrdersPage')))
+const MyGaragePage = lazy(lazyRouteLoader(() => import('@/features/garage/MyGaragePage')))
+const DashboardHome = lazy(lazyRouteLoader(() => import('@/features/dashboard/DashboardHome')))
+const UnifiedSettingsPage = lazy(lazyRouteLoader(() => import('@/features/dashboard/UnifiedSettingsPage')))
+const PlatformDashboard = lazy(lazyRouteLoader(() => import('@/features/platform-admin/PlatformDashboard')))
+const GaragesPage = lazy(lazyRouteLoader(() => import('@/features/platform-admin/GaragesPage')))
+const GarageAnalyticsPage = lazy(lazyRouteLoader(() => import('@/features/platform-admin/GarageAnalyticsPage')))
+const PlatformAnalyticsPage = lazy(lazyRouteLoader(() => import('@/features/platform-admin/PlatformAnalyticsPage')))
+const PendingEnrollmentsPage = lazy(lazyRouteLoader(() => import('@/features/platform-admin/PendingEnrollmentsPage')))
+const PaymentControlCenter = lazy(lazyRouteLoader(() => import('@/features/platform-admin/PaymentControlCenter')))
+const MessagesInboxPage = lazy(lazyRouteLoader(() => import('@/features/messages/MessagesInboxPage')))
+const MechanicsBoardPage = lazy(lazyRouteLoader(() => import('@/features/dashboard/MechanicsBoardPage')))
+const MechanicBoardDetailPage = lazy(lazyRouteLoader(() => import('@/features/dashboard/MechanicBoardDetailPage')))
 
 function getInitialStaffRailExpanded() {
   const storedPreference = window.localStorage.getItem(STAFF_RAIL_STORAGE_KEY)

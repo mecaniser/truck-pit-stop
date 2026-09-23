@@ -1,5 +1,8 @@
 import { useCookieSessionBootstrap } from './lib/useCookieSessionBootstrap'
 import SessionRecoveryNotice from './components/SessionRecoveryNotice'
+import StaleDeployNotice from './components/StaleDeployNotice'
+import RouteErrorBoundary from './components/RouteErrorBoundary'
+import { lazyRouteLoader } from './lib/staleDeploy'
 import { lazy, Suspense, useEffect } from 'react'
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import { Toaster, ToastBar, toast, useToasterStore } from 'react-hot-toast'
@@ -7,23 +10,23 @@ import { useAuthStore } from './stores/authStore'
 import { ThemeProvider, useTheme, type NotificationPosition } from './contexts/ThemeContext'
 import { AppearanceNavigationGuardProvider } from './features/dashboard/AppearanceNavigationGuard'
 
-const LandingPage = lazy(() => import('./features/landing/LandingPage'))
-const PrivacyPolicyPage = lazy(() => import('./features/landing/PrivacyPolicyPage'))
-const TermsOfServicePage = lazy(() => import('./features/landing/TermsOfServicePage'))
-const LoginPage = lazy(() => import('./features/auth/LoginPage'))
-const DriverLoginPage = lazy(() => import('./features/auth/DriverLoginPage'))
-const ForgotPasswordPage = lazy(() => import('./features/auth/ForgotPasswordPage'))
-const ResetPasswordPage = lazy(() => import('./features/auth/ResetPasswordPage'))
-const VerifyEmailPage = lazy(() => import('./features/auth/VerifyEmailPage'))
-const GarageEnrollmentPage = lazy(() => import('./features/auth/GarageEnrollmentPage'))
-const GarageEnrollmentSuccessPage = lazy(() => import('./features/auth/GarageEnrollmentSuccessPage'))
-const DashboardLayout = lazy(() => import('./components/layout/DashboardLayout'))
-const CustomerPortalPage = lazy(() => import('./features/customer-portal/CustomerPortalPage'))
-const QuoteApprovalPage = lazy(() => import('./features/quote-approval/QuoteApprovalPage'))
-const MechanicPortalPage = lazy(() => import('./features/mechanic-portal/MechanicPortalPage'))
-const FleetApp = lazy(() => import('./features/fleet/FleetApp'))
-const DriverPortalPage = lazy(() => import('./features/driver-portal/DriverPortalPage'))
-const InvoiceAccessPage = lazy(() => import('./features/invoice-access/InvoiceAccessPage'))
+const LandingPage = lazy(lazyRouteLoader(() => import('./features/landing/LandingPage')))
+const PrivacyPolicyPage = lazy(lazyRouteLoader(() => import('./features/landing/PrivacyPolicyPage')))
+const TermsOfServicePage = lazy(lazyRouteLoader(() => import('./features/landing/TermsOfServicePage')))
+const LoginPage = lazy(lazyRouteLoader(() => import('./features/auth/LoginPage')))
+const DriverLoginPage = lazy(lazyRouteLoader(() => import('./features/auth/DriverLoginPage')))
+const ForgotPasswordPage = lazy(lazyRouteLoader(() => import('./features/auth/ForgotPasswordPage')))
+const ResetPasswordPage = lazy(lazyRouteLoader(() => import('./features/auth/ResetPasswordPage')))
+const VerifyEmailPage = lazy(lazyRouteLoader(() => import('./features/auth/VerifyEmailPage')))
+const GarageEnrollmentPage = lazy(lazyRouteLoader(() => import('./features/auth/GarageEnrollmentPage')))
+const GarageEnrollmentSuccessPage = lazy(lazyRouteLoader(() => import('./features/auth/GarageEnrollmentSuccessPage')))
+const DashboardLayout = lazy(lazyRouteLoader(() => import('./components/layout/DashboardLayout')))
+const CustomerPortalPage = lazy(lazyRouteLoader(() => import('./features/customer-portal/CustomerPortalPage')))
+const QuoteApprovalPage = lazy(lazyRouteLoader(() => import('./features/quote-approval/QuoteApprovalPage')))
+const MechanicPortalPage = lazy(lazyRouteLoader(() => import('./features/mechanic-portal/MechanicPortalPage')))
+const FleetApp = lazy(lazyRouteLoader(() => import('./features/fleet/FleetApp')))
+const DriverPortalPage = lazy(lazyRouteLoader(() => import('./features/driver-portal/DriverPortalPage')))
+const InvoiceAccessPage = lazy(lazyRouteLoader(() => import('./features/invoice-access/InvoiceAccessPage')))
 
 type FaviconAssetSet = {
   svg: string
@@ -364,6 +367,8 @@ function App() {
       <ToastLimiter />
       <AppToaster />
       <SessionRecoveryNotice />
+      <StaleDeployNotice />
+      <RouteErrorBoundary>
       <Suspense fallback={<RouteLoading />}>
       <Routes>
         <Route path="/login" element={<LoginPage />} />
@@ -427,6 +432,7 @@ function App() {
         <Route path="/terms" element={<TermsOfServicePage />} />
       </Routes>
       </Suspense>
+      </RouteErrorBoundary>
       </AppearanceNavigationGuardProvider>
     </BrowserRouter>
     </ThemeProvider>
