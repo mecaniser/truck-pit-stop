@@ -664,6 +664,11 @@ async def db_health_check():
 
 app.include_router(api_router, prefix="/api/v1")
 
+# DB-076: must be registered before the SPA catch-all below, or the
+# "/{full_path:path}" route answers it with index.html.
+from app.api.v1.endpoints import build_version as _build_version  # noqa: E402
+app.include_router(_build_version.router)
+
 
 # ============ Metrics Endpoint ============
 # Must be registered BEFORE catch-all SPA routes

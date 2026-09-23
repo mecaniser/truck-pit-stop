@@ -19,6 +19,10 @@ ARG VITE_MAPBOX_TOKEN
 ARG VITE_GA_MEASUREMENT_ID
 ENV VITE_MAPBOX_TOKEN=${VITE_MAPBOX_TOKEN}
 ENV VITE_GA_MEASUREMENT_ID=${VITE_GA_MEASUREMENT_ID}
+# DB-076: the build stamp served at /build-version. Railway provides this at
+# build time; without it the stamp is null and the staleness check stays off.
+ARG RAILWAY_GIT_COMMIT_SHA
+ENV RAILWAY_GIT_COMMIT_SHA=${RAILWAY_GIT_COMMIT_SHA}
 COPY frontend/package*.json ./frontend/
 WORKDIR /app/frontend
 RUN npm ci
