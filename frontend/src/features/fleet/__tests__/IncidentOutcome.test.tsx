@@ -6,7 +6,7 @@
  * tests pin both.
  */
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
@@ -90,11 +90,12 @@ function renderTruck() {
   )
 }
 
-function mockQueries(incidents: IncidentEntry[]) {
+function mockQueries(incidents: IncidentEntry[], extra: Record<string, unknown> = {}) {
   apiMocks.get.mockImplementation((url: string) => {
     if (url === `/fleet/trucks/${truck.id}`) return Promise.resolve({ data: detail })
     if (url === `/fleet/trucks/${truck.id}/incidents`) return Promise.resolve({ data: incidents })
     if (url === '/fleet/inspections') return Promise.resolve({ data: [] })
+    if (url in extra) return Promise.resolve({ data: extra[url] })
     return Promise.reject(new Error(`Unexpected GET ${url}`))
   })
 }
@@ -254,5 +255,73 @@ describe('DB-073 the void action says what it does', () => {
     await waitFor(() => {
       expect(apiMocks.delete).toHaveBeenCalledWith('/fleet/incidents/inc-1')
     })
+  })
+})
+
+describe('DB-072 attaching an incident to an existing order', () => {
+  afterEach(() => {
+    Object.values(apiMocks).forEach((mock) => mock.mockReset())
+  })
+
+  const linkable = [
+    {
+      id: 'ro-9',
+      order_number: 'RO-000123',
+      status: 'in_progress',
+      is_pm: false,
+      description: 'Clutch replacement',
+      created_at: '2026-09-14T08:00:00Z',
+    },
+  ]
+
+  it('offers the open orders for this truck', async () => {
+    mockQueries([openIncident], { '/fleet/incidents/inc-1/linkable-orders': linkable })
+    const user = userEvent.setup()
+    renderTruck()
+
+    await openIncidentMenu(user)
+    await user.click(screen.getByRole('button', { name: /assign to repair order/i }))
+
+    expect(await screen.findByText(/RO-000123/)).toBeInTheDocument()
+  })
+
+  it('posts the chosen order to the link route', async () => {
+    mockQueries([openIncident], { '/fleet/incidents/inc-1/linkable-orders': linkable })
+    apiMocks.post.mockResolvedValue({ data: { ...openIncident, repair_order_id: 'ro-9' } })
+    const user = userEvent.setup()
+    renderTruck()
+
+    await openIncidentMenu(user)
+    await user.click(screen.getByRole('button', { name: /assign to repair order/i }))
+    const option = await screen.findByRole('button', { name: /RO-000123/ })
+    await user.click(option)
+
+    await waitFor(() => {
+      expect(apiMocks.post).toHaveBeenCalledWith('/fleet/incidents/inc-1/repair-order', {
+        repair_order_id: 'ro-9',
+      })
+    })
+  })
+
+  it('says so plainly when the truck has no open order to attach to', async () => {
+    mockQueries([openIncident], { '/fleet/incidents/inc-1/linkable-orders': [] })
+    const user = userEvent.setup()
+    renderTruck()
+
+    await openIncidentMenu(user)
+    await user.click(screen.getByRole('button', { name: /assign to repair order/i }))
+
+    expect(await screen.findByText(/no open repair orders/i)).toBeInTheDocument()
+  })
+
+  it('does not offer assignment for an incident that already has an order', async () => {
+    mockQueries([{ ...openIncident, repair_order_id: 'ro-existing' }])
+    const user = userEvent.setup()
+    renderTruck()
+
+    await openIncidentMenu(user)
+
+    const menu = screen.getByRole('button', { name: /edit/i }).parentElement as HTMLElement
+    expect(within(menu).queryByRole('button', { name: /assign to repair order/i })).toBeNull()
   })
 })

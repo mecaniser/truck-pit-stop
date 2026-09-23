@@ -16,7 +16,7 @@ import type {
 import { STATUS_META, fleetUnitLabel, fmt, money, fmtDate, pmState, initials } from './helpers'
 import DatePicker from '@/components/DatePicker'
 import FleetMap from './FleetMap'
-import { ConfirmModal, TruckEditModal, LogIncidentModal, EditIncidentModal, ResolveIncidentModal, InspectionsSection, AssignDriverModal, SchedulePMModal, Modal, SidekickPanel, invalidateFleetAndCockpit, type InspectionsSectionHandle } from './FleetModals'
+import { ConfirmModal, TruckEditModal, LogIncidentModal, EditIncidentModal, ResolveIncidentModal, AssignIncidentRepairOrderModal, InspectionsSection, AssignDriverModal, SchedulePMModal, Modal, SidekickPanel, invalidateFleetAndCockpit, type InspectionsSectionHandle } from './FleetModals'
 import FleetPriceBuilderPanel from './FleetPriceBuilderPanel'
 import { useAuthStore } from '../../stores/authStore'
 import { getWorkOSCapabilities, startWorkOSLogin, type WorkOSCapabilities } from '../../lib/workosAuth'
@@ -305,6 +305,7 @@ export default function TruckDetail({
   const [logging, setLogging] = useState(false)
   const [editingIncident, setEditingIncident] = useState<IncidentEntry | null>(null)
   const [resolvingIncident, setResolvingIncident] = useState<IncidentEntry | null>(null)
+  const [assigningIncident, setAssigningIncident] = useState<IncidentEntry | null>(null)
   const [resolvedIncidentsOpen, setResolvedIncidentsOpen] = useState(false)
   const [armedVoidIncidentId, setArmedVoidIncidentId] = useState<string | null>(null)
   const [incidentMenuOpenId, setIncidentMenuOpenId] = useState<string | null>(null)
@@ -929,6 +930,17 @@ export default function TruckDetail({
                                     <Wrench size={13} /> Create repair
                                   </button>
                                 )}
+                                {!inc.repair_order_id && (
+                                  <button
+                                    style={incidentMenuItemStyle}
+                                    onClick={() => {
+                                      setAssigningIncident(inc)
+                                      setIncidentMenuOpenId(null)
+                                    }}
+                                  >
+                                    <ClipboardList size={13} /> Assign to repair order
+                                  </button>
+                                )}
                                 {inc.status !== 'resolved' && (
                                   <button
                                     style={incidentMenuItemStyle}
@@ -1253,6 +1265,7 @@ export default function TruckDetail({
       {logging && <LogIncidentModal vehicleId={t.id} truckId={t.id} onClose={() => setLogging(false)} />}
       {editingIncident && <EditIncidentModal incident={editingIncident} truckId={t.id} onClose={() => setEditingIncident(null)} />}
       {resolvingIncident && <ResolveIncidentModal incident={resolvingIncident} truckId={t.id} onClose={() => setResolvingIncident(null)} />}
+      {assigningIncident && <AssignIncidentRepairOrderModal incident={assigningIncident} truckId={t.id} onClose={() => setAssigningIncident(null)} />}
       {roPanelId && <FleetPriceBuilderPanel repairOrderId={roPanelId} onClose={() => setRoPanelId(null)} onChanged={refresh} />}
     </div>
   )
