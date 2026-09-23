@@ -1,6 +1,7 @@
 """Fleet operations for trucks assigned to customer or internal fleets."""
 import json
-from datetime import datetime, timezone, timedelta, date
+from datetime import datetime, timezone, timedelta, date, time
+from zoneinfo import ZoneInfo
 from decimal import Decimal
 from typing import List, Optional
 from uuid import UUID, uuid4
@@ -69,6 +70,7 @@ from app.schemas.fleet import (
     WorkOrderComplete,
     SchedulePMRequest,
     PMServiceEntry,
+    PMDayLoad,
     PMServicesUpdate,
     AddServiceRequest,
     FleetInvoiceEntry,
@@ -2994,6 +2996,108 @@ async def _ro_pm_services(db: AsyncSession, tenant_id: UUID, ro_id: UUID) -> lis
         .order_by(RepairOrderPMService.sort_order)
     )
     return await _load_pm_services(db, tenant_id, list(result.scalars().all()))
+
+
+# A PM calendar spans at most a rolling year: the picker shows one month at a
+# time, and an unbounded range would scan the whole fleet history on every
+# keystroke of month navigation.
+PM_LOAD_MAX_DAYS = 366
+
+
+@router.get("/pm-day-load", response_model=List[PMDayLoad])
+async def pm_day_load(
+    start: date = Query(..., description="First day of the window, inclusive"),
+    end: date = Query(..., description="Last day of the window, inclusive"),
+    include_repair_orders: bool = Query(
+        False, description="Also count corrective work already booked that day"),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_fleet_access),
+):
+    """Trucks already scheduled for PM on each day of a window.
+
+    Feeds the PM date picker so a manager can see which dates are already busy
+    before committing another truck to one. Read-only over the existing
+    `Vehicle.pm_due_date`; it schedules nothing and changes no state.
+
+    Days with no scheduled PM are omitted rather than returned as zero, so the
+    response stays proportional to actual load rather than to window length.
+    """
+    if end < start:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="End date must not precede start date",
+        )
+    if (end - start).days > PM_LOAD_MAX_DAYS:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Window must not exceed {PM_LOAD_MAX_DAYS} days",
+        )
+
+    result = await db.execute(
+        select(Vehicle.pm_due_date, Vehicle.unit_number)
+        .where(and_(
+            Vehicle.tenant_id == current_user.tenant_id,
+            Vehicle.deleted_at.is_(None),
+            Vehicle.pm_due_date.is_not(None),
+            Vehicle.pm_due_date >= start,
+            Vehicle.pm_due_date <= end,
+        ))
+        .order_by(Vehicle.pm_due_date, Vehicle.unit_number)
+    )
+
+    by_day: dict[date, list[str]] = {}
+    for due, unit in result.all():
+        by_day.setdefault(due, []).append(unit or "Unit")
+
+    booked_by_day: dict[date, list[str]] = {}
+    # `is True` rather than a truth test: called directly (as tests and internal
+    # callers do) the parameter is FastAPI's Query default object, which is
+    # truthy and would silently switch the extra query on.
+    if include_repair_orders is True:
+        from app.db.models.appointment import Appointment, AppointmentStatus
+
+        # `scheduled_at` is an instant; which day it falls on is a shop-local
+        # question. Bucketing on the raw UTC timestamp would move an evening
+        # booking to the next day and make a busy evening look free. Widen the
+        # fetch by a day on each side so a local day near the window edge is not
+        # cut off by the UTC comparison, then bucket by the shop's own date.
+        tenant = await db.get(Tenant, current_user.tenant_id)
+        zone = ZoneInfo(getattr(tenant, "timezone", None) or "America/New_York")
+        window_start = datetime.combine(start - timedelta(days=1), time.min, tzinfo=timezone.utc)
+        window_end = datetime.combine(end + timedelta(days=1), time.max, tzinfo=timezone.utc)
+
+        booked = await db.execute(
+            select(Appointment.scheduled_at, Vehicle.unit_number)
+            .join(Vehicle, Vehicle.id == Appointment.vehicle_id)
+            .where(and_(
+                Appointment.tenant_id == current_user.tenant_id,
+                Vehicle.deleted_at.is_(None),
+                # A cancelled or no-show booking holds no bay.
+                Appointment.status.not_in([
+                    AppointmentStatus.CANCELLED, AppointmentStatus.NO_SHOW,
+                ]),
+                Appointment.scheduled_at >= window_start,
+                Appointment.scheduled_at <= window_end,
+            ))
+            .order_by(Appointment.scheduled_at)
+        )
+        for when, unit in booked.all():
+            moment = when if when.tzinfo else when.replace(tzinfo=timezone.utc)
+            local_day = moment.astimezone(zone).date()
+            if start <= local_day <= end:
+                booked_by_day.setdefault(local_day, []).append(unit or "Unit")
+
+    days = sorted(set(by_day) | set(booked_by_day))
+    return [
+        PMDayLoad(
+            day=day,
+            count=len(by_day.get(day, [])),
+            units=by_day.get(day, []),
+            booked_count=len(booked_by_day.get(day, [])),
+            booked_units=sorted(set(booked_by_day.get(day, []))),
+        )
+        for day in days
+    ]
 
 
 @router.get("/pm-service-catalog", response_model=List[PMServiceEntry])

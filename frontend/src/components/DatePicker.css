@@ -63,17 +63,17 @@
   place-items: center;
   width: 36px;
   height: 36px;
-  border: 1px solid transparent;
+  border: 0;
   border-radius: 8px;
   background: transparent;
   color: var(--text-secondary, #9fb0c5);
   cursor: pointer;
 }
 
+/* Hover tints the icon only. A border or filled box here would paint a second
+   frame inside the field's own border, which reads as a rendering fault. */
 .db-datepicker__trigger:hover:not(:disabled) {
-  border-color: var(--border-subtle, rgb(148 163 184 / 20%));
-  background: var(--surface-overlay, #111f33);
-  color: var(--text-primary, #f6f8fb);
+  color: var(--yellow, #f5c518);
 }
 
 .db-datepicker__trigger:disabled {
@@ -241,9 +241,7 @@
 .db-datepicker--light .db-datepicker__trigger { color: #4b5563; }
 
 .db-datepicker--light .db-datepicker__trigger:hover:not(:disabled) {
-  border-color: #d1d5db;
-  background: #f3f4f6;
-  color: #111827;
+  color: #4f46e5;
 }
 
 .db-datepicker--light .db-datepicker__hint { color: #4b5563; }
@@ -276,3 +274,159 @@
 }
 
 .db-datepicker--light :focus-visible { outline-color: #4f46e5; }
+
+/* Day load: how many trucks are already scheduled on a day.
+   The badge is a second signal alongside the count digit, never colour alone,
+   so the information survives both themes and colour-blind vision. */
+.db-datepicker__days button { position: relative; }
+
+.db-datepicker__load {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  display: grid;
+  place-items: center;
+  min-width: 14px;
+  height: 14px;
+  padding: 0 3px;
+  border-radius: 7px;
+  background: var(--parts-status-warning, #f4c46b);
+  color: #1a1206;
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+/* A booked day carries a faint ground as well as the badge, so the busy days
+   read as a block at a glance when scanning for a free date. */
+.db-datepicker__days .has-load:not(.is-selected) {
+  background: color-mix(in srgb, var(--parts-status-warning, #f4c46b) 14%, transparent);
+}
+
+/* On the selected day the yellow fill would swallow a yellow badge. */
+.db-datepicker__days .is-selected .db-datepicker__load {
+  background: #1a1206;
+  color: var(--yellow, #f5c518);
+}
+
+.db-datepicker--light .db-datepicker__load {
+  background: #b45309;
+  color: #fff;
+}
+
+.db-datepicker--light .db-datepicker__days .has-load:not(.is-selected) {
+  background: #fef3c7;
+}
+
+.db-datepicker--light .db-datepicker__days .is-selected .db-datepicker__load {
+  background: #fff;
+  color: #4f46e5;
+}
+
+.db-staff-shell[data-appearance-mode='high_contrast'] .db-datepicker__load {
+  background: var(--text-primary, #fff);
+  color: var(--surface-overlay, #000);
+  border: 1px solid var(--surface-overlay, #000);
+}
+
+.db-staff-shell[data-appearance-mode='high_contrast'] .db-datepicker__days .has-load:not(.is-selected) {
+  background: transparent;
+  outline: 1px dashed var(--text-primary, #fff);
+  outline-offset: -3px;
+}
+
+/* Day detail footer.
+   Below the grid and always occupying its space. Two earlier shapes failed:
+   an in-flow block that appeared on hover pushed the days out from under the
+   pointer, and an overlay covered the very weeks a manager compares a busy day
+   against. A reserved footer does neither, and it is the only form that works
+   on touch, where there is no hover at all. */
+.db-datepicker__detail {
+  margin-top: 10px;
+  padding: 10px 12px;
+  /* Reserved height: roughly a title plus one kind-and-chips row. The footer
+     must not resize as the user moves between days, or the calendar above it
+     would shift again. Content taller than this scrolls inside. */
+  min-height: 74px;
+  max-height: 128px;
+  overflow-y: auto;
+  border: 1px solid var(--border-subtle, rgb(148 163 184 / 20%));
+  border-radius: 10px;
+  background: var(--surface-raised, #0d1a2a);
+  color: var(--text-primary, #f6f8fb);
+}
+
+.db-datepicker__detail h3 {
+  margin: 0 0 6px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-primary, #f6f8fb);
+}
+
+.db-datepicker__detail section + section {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border-subtle, rgb(148 163 184 / 20%));
+}
+
+.db-datepicker__detail-kind {
+  margin: 0 0 4px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-secondary, #9fb0c5);
+}
+
+.db-datepicker__detail-empty {
+  margin: 0;
+  font-size: 11px;
+  color: var(--text-secondary, #9fb0c5);
+}
+
+.db-datepicker__detail ul {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.db-datepicker__detail li {
+  padding: 2px 7px;
+  border-radius: 5px;
+  background: var(--surface-overlay, #111f33);
+  border: 1px solid var(--border-subtle, rgb(148 163 184 / 20%));
+  font-size: 11px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.db-datepicker--light .db-datepicker__detail {
+  border-color: #d1d5db;
+  background: #f9fafb;
+  color: #111827;
+}
+
+.db-datepicker--light .db-datepicker__detail h3 { color: #111827; }
+.db-datepicker--light .db-datepicker__detail-kind,
+.db-datepicker--light .db-datepicker__detail-empty { color: #4b5563; }
+.db-datepicker--light .db-datepicker__detail section + section { border-top-color: #d1d5db; }
+
+.db-datepicker--light .db-datepicker__detail li {
+  background: #fff;
+  border-color: #d1d5db;
+  color: #111827;
+}
+
+.db-staff-shell[data-appearance-mode='high_contrast'] .db-datepicker__detail,
+.db-staff-shell[data-appearance-mode='high_contrast'] .db-datepicker__detail li {
+  border-color: var(--border-subtle, #fff);
+}
+
+/* Touch: the first tap on a busy day reveals it, so the day needs a visible
+   "opened" state to explain why that tap did not select. */
+.db-datepicker__days .is-revealed:not(.is-selected) {
+  outline: 2px solid var(--yellow, #f5c518);
+  outline-offset: -2px;
+}

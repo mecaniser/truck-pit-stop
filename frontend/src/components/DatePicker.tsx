@@ -15,6 +15,18 @@ import {
 } from './calendarGrid'
 import './DatePicker.css'
 
+export interface DayLoad {
+  /** ISO `YYYY-MM-DD`. */
+  day: string
+  count: number
+  /** Unit numbers already booked that day; shown on hover and to screen readers. */
+  units?: string[]
+  /** Corrective repair work booked that day, kept separate from the PM count so
+      a day busy with repairs is not read as a day busy with PMs. */
+  booked_count?: number
+  booked_units?: string[]
+}
+
 export interface DatePickerProps {
   value: string
   onChange: (day: string) => void
@@ -31,6 +43,13 @@ export interface DatePickerProps {
   /** Inline filter rows carry no visible label; the name moves to aria-label
       so the control still announces itself. */
   compact?: boolean
+  /** Days that already carry scheduled work, so the calendar can show what is
+      booked before another truck is committed to a date. Omit for a plain
+      calendar. */
+  dayLoad?: DayLoad[]
+  /** Called with the `YYYY-MM` now on screen, so the caller can fetch that
+      month's load as the user navigates. */
+  onMonthChange?: (month: string) => void
   /** Some panels (invoice creation) paint their own light surface inside the
       shell regardless of appearance mode. 'light' pins the control to that
       surface instead of the shell tokens, so it cannot render a dark field on
@@ -59,6 +78,8 @@ export default function DatePicker({
   disabled,
   placeholder = 'YYYY-MM-DD',
   hint,
+  dayLoad,
+  onMonthChange,
   compact,
   surface = 'shell',
   className,
@@ -71,6 +92,15 @@ export default function DatePicker({
   const [open, setOpen] = useState(false)
   const [month, setMonth] = useState(() => monthOf(validDay(value) ? value : isoToday()))
   const [focusedDay, setFocusedDay] = useState(() => (validDay(value) ? value : isoToday()))
+  // Which busy day is showing its detail. The native title attribute cannot be
+  // styled, is ~1s delayed, never fires on touch and is invisible to keyboard
+  // users, so the calendar renders its own.
+  const [peekDay, setPeekDay] = useState('')
+  // A day the user has deliberately opened (tapped/clicked) rather than merely
+  // hovered. Hover alone cannot stand in for this: a tap fires mouseenter
+  // first, so the day would already look "revealed" and the first tap would
+  // commit - closing the calendar before a touch user has read anything.
+  const [revealedDay, setRevealedDay] = useState('')
 
   // Follow the value when it changes underneath us — the PM modal recomputes
   // the due date from the odometer target while this control is mounted.
@@ -82,6 +112,8 @@ export default function DatePicker({
 
   const close = (restoreFocus = true) => {
     setOpen(false)
+    setPeekDay('')
+    setRevealedDay('')
     if (restoreFocus) trigger.current?.focus()
   }
 
@@ -116,6 +148,21 @@ export default function DatePicker({
     onChange(day)
     close()
   }
+
+  // Index the load once per render so each day cell is a map lookup, not a scan.
+  const loadByDay = new Map(
+    (dayLoad || [])
+      .filter(d => d.count > 0 || (d.booked_count || 0) > 0)
+      .map(d => [d.day, d]),
+  )
+
+  // Tell the caller which month is on screen so it can fetch that month's load.
+  const goToMonth = (next: string) => {
+    setMonth(next)
+    onMonthChange?.(next)
+  }
+
+  const peek = peekDay ? loadByDay.get(peekDay) : undefined
 
   const selected = validDay(value) ? value : ''
   const triggerLabel = selected ? `Choose date — ${formatDay(selected)}` : 'Choose date'
@@ -186,7 +233,7 @@ export default function DatePicker({
             <button
               type="button"
               aria-label="Previous month"
-              onClick={() => setMonth(shiftMonth(month, -1))}
+              onClick={() => goToMonth(shiftMonth(month, -1))}
             >
               <ChevronLeft size={16} aria-hidden="true" />
             </button>
@@ -194,7 +241,7 @@ export default function DatePicker({
             <button
               type="button"
               aria-label="Next month"
-              onClick={() => setMonth(shiftMonth(month, 1))}
+              onClick={() => goToMonth(shiftMonth(month, 1))}
             >
               <ChevronRight size={16} aria-hidden="true" />
             </button>
@@ -206,22 +253,55 @@ export default function DatePicker({
             {Array.from({ length: leadingBlanks(month) }, (_, i) => <span key={`blank-${i}`} />)}
             {daysOf(month).map((day) => {
               const unavailable = outOfRange(day, min, max)
+              const booked = loadByDay.get(day)
+              // The badge shows total work on the day; the description keeps PM
+              // and repair load apart, because a manager avoiding a busy day
+              // still needs to know what makes it busy.
+              const repairCount = booked?.booked_count || 0
+              const total = (booked?.count || 0) + repairCount
+              const parts: string[] = []
+              if (booked?.count) {
+                parts.push(`${booked.count} PM${booked.count === 1 ? '' : 's'} scheduled${
+                  booked.units?.length ? `: ${booked.units.join(', ')}` : ''}`)
+              }
+              if (repairCount) {
+                parts.push(`${repairCount} repair job${repairCount === 1 ? '' : 's'} booked${
+                  booked?.booked_units?.length ? `: ${booked.booked_units.join(', ')}` : ''}`)
+              }
+              const bookedNames = parts.join(' · ')
               return (
                 <button
                   type="button"
                   key={day}
                   data-day={day}
-                  aria-label={formatDay(day)}
+                  aria-label={booked ? `${formatDay(day)} — ${bookedNames}` : formatDay(day)}
+                  aria-describedby={`${dialogId}-detail`}
+                  onMouseEnter={() => setPeekDay(day)}
+                  onMouseLeave={() => setPeekDay(prev => (prev === day ? '' : prev))}
                   aria-pressed={day === selected}
                   aria-current={day === isoToday() ? 'date' : undefined}
                   disabled={unavailable}
                   className={[
                     day === selected ? 'is-selected' : '',
                     day === isoToday() ? 'is-today' : '',
+                    booked ? 'has-load' : '',
+                    revealedDay === day ? 'is-revealed' : '',
                   ].filter(Boolean).join(' ')}
                   tabIndex={focusedDay === day ? 0 : -1}
-                  onClick={() => choose(day)}
-                  onFocus={() => setFocusedDay(day)}
+                  onClick={() => {
+                    // Touch has no hover: a tap is the only way to read a busy
+                    // day. So the first tap on a day that already carries work
+                    // reveals it, and a second tap commits. A free day has
+                    // nothing to read, so it selects on the first tap.
+                    if (booked && revealedDay !== day) {
+                      setRevealedDay(day)
+                      setPeekDay(day)
+                      return
+                    }
+                    setPeekDay(day)
+                    choose(day)
+                  }}
+                  onFocus={() => { setFocusedDay(day); setPeekDay(day) }}
                   onKeyDown={(event) => {
                     const step = { ArrowLeft: -1, ArrowRight: 1, ArrowUp: -7, ArrowDown: 7 }[event.key]
                     if (step) {
@@ -240,9 +320,59 @@ export default function DatePicker({
                   }}
                 >
                   {Number(day.slice(8))}
+                  {booked && (
+                    <span className="db-datepicker__load" aria-hidden="true">{total}</span>
+                  )}
                 </button>
               )
             })}
+          </div>
+          {/* Day detail lives below the grid and always occupies its space.
+              An overlay covered the weeks a manager compares against, and an
+              in-flow block that appeared on hover pushed the days out from
+              under the pointer. A reserved footer does neither, and it is the
+              only form that works on touch, where there is no hover at all. */}
+          <div
+            className="db-datepicker__detail"
+            data-testid="day-detail"
+            id={`${dialogId}-detail`}
+            role="status"
+            aria-live="polite"
+          >
+            {peek ? (
+              <>
+                <h3>{formatDay(peek.day)}</h3>
+                {peek.count > 0 && (
+                  <section>
+                    <p className="db-datepicker__detail-kind">
+                      {peek.count} PM{peek.count === 1 ? '' : 's'} scheduled
+                    </p>
+                    <ul>
+                      {(peek.units || []).map(unit => <li key={`pm-${unit}`}>{unit}</li>)}
+                    </ul>
+                  </section>
+                )}
+                {(peek.booked_count || 0) > 0 && (
+                  <section>
+                    <p className="db-datepicker__detail-kind">
+                      {peek.booked_count} repair job{peek.booked_count === 1 ? '' : 's'} booked
+                    </p>
+                    <ul>
+                      {(peek.booked_units || []).map(unit => <li key={`ro-${unit}`}>{unit}</li>)}
+                    </ul>
+                  </section>
+                )}
+              </>
+            ) : peekDay ? (
+              <>
+                <h3>{formatDay(peekDay)}</h3>
+                <p className="db-datepicker__detail-kind">Nothing scheduled — free</p>
+              </>
+            ) : (
+              <p className="db-datepicker__detail-empty">
+                Select a day to see what is already scheduled
+              </p>
+            )}
           </div>
         </div>
       )}
