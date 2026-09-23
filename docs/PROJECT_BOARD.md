@@ -1112,3 +1112,90 @@ showing a problem the shop had already fixed.
   truck-page completion already invalidates the incident list, and the Repair
   Orders page is a separate route that refetches on mount (`staleTime` 0).
 
+## DB-076 contract: build version endpoint
+
+Architecture & API Contracts handoff, recorded 2026-09-23. Frontend and backend
+may build against this without renegotiating it in implementation code.
+
+### Route
+
+`GET /build-version` and `HEAD /build-version`.
+
+HEAD is required, not optional. The existing `public/` asset routes in
+`backend/app/main.py` register `methods=["GET"]` only, which is why
+`HEAD /robots.txt` returns 405 in production. A polling client must not trip
+over that.
+
+The route MUST be registered before the `@app.get("/{full_path:path}")` SPA
+catch-all. A file dropped in `frontend/public/` does NOT work: `public/` assets
+are served from a hardcoded `static_files` allowlist, and anything absent from
+it falls through the catch-all and returns `index.html`. Verified in production —
+`GET /version.json` today answers with HTML, not 404, so a naive client would
+hand HTML to `JSON.parse` on every poll and fail silently.
+
+### Response
+
+```json
+{ "sha": "<40 lowercase hex>", "built_at": "<ISO 8601 UTC>" }
+```
+
+- `200` with both fields when the build stamp exists.
+- `200` with `{"sha": null, "built_at": null}` when it does not (a backend
+  running without a built frontend). The client treats null as "unknown" and
+  does nothing — an unbuilt or misconfigured deploy must never trigger reloads.
+- No authentication. The response carries no tenant or user data, and an
+  unauthenticated long-lived tab still needs to know it is stale.
+
+### Headers
+
+`Cache-Control: no-store` is mandatory on this route. `FileResponse` sets no
+`Cache-Control` today (only `etag`/`last-modified`), and `index.html` is served
+with no cache headers at all, so an iPad may hold a cached copy indefinitely.
+Without `no-store` the endpoint can report the version the device already has,
+which defeats the feature.
+
+### Source of the SHA
+
+The frontend build owns this fact; the backend only serves it. Vite writes
+`dist/build-version.json` at build time and the route reads that file.
+
+`frontend/vite.config.ts` already validates `DIESELBRIDGE_RUNTIME_SHA` but
+strips runtime identity from production via `isLocalRuntimeServe`. That guard
+exists to stop ambient `VITE_*` values from being exposed and MUST NOT be
+removed. Add a deliberate, validated write of the build stamp instead, keeping
+the existing 40-lowercase-hex check.
+
+### Client behavior
+
+Polling: on an interval and on `visibilitychange`, which is the moment a
+parked iPad is picked back up. `lib/sessionKeepAlive.ts` already uses that
+event; follow it. Back off while the document is hidden.
+
+On a version mismatch:
+
+| Page state | Behavior |
+|---|---|
+| Clean and idle | Reload silently, no prompt (product decision, 2026-09-23) |
+| Unsaved work present | Show the DB-074 notice; reload only when accepted |
+| Release marked breaking | Force the reload after a visible countdown |
+
+Never reload and never nag when the fetch fails, times out, returns non-JSON,
+or reports a null sha. Offline is not staleness.
+
+### Unsaved work
+
+One shared definition, used by every caller:
+
+- any React Query mutation in flight, and
+- any form registered as dirty in a shared registry.
+
+A page is "clean and idle" only when both are false. This is the single riskiest
+part of the item: a wrong answer reloads away a manager's typed work. It needs
+tests proving a dirty form and an in-flight mutation each suppress a silent
+reload.
+
+### Test fixtures
+
+Both sides use the same shapes: a valid response, a null-sha response, a
+non-JSON body (the `index.html` fallback case above), and a network failure.
+No test may reach the network.
