@@ -221,6 +221,27 @@ describe('DB-073 the void action says what it does', () => {
     expect(await screen.findByText(/kept/i)).toBeInTheDocument()
   })
 
+  /**
+   * The confirm row is two flex:1 buttons in a 190px menu at a fixed 30px
+   * height, so each label has roughly 86px. "Void incident" plus its icon
+   * overflowed that and wrapped out of the button. jsdom does no layout, so
+   * this pins the cause rather than the pixels: the confirming label has to
+   * stay as short as the Cancel it sits beside.
+   */
+  it('keeps the confirming label short enough to fit beside Cancel', async () => {
+    mockQueries([openIncident])
+    const user = userEvent.setup()
+    renderTruck()
+
+    await openIncidentMenu(user)
+    await user.click(screen.getByRole('button', { name: /^void$/i }))
+
+    const cancel = await screen.findByRole('button', { name: /^cancel$/i })
+    const confirm = cancel.parentElement?.querySelector('button:last-of-type') as HTMLElement
+    expect(confirm).not.toBe(cancel)
+    expect(confirm.textContent?.trim().length).toBeLessThanOrEqual('Cancel'.length + 2)
+  })
+
   it('still sends the same request the backend already answers', async () => {
     mockQueries([openIncident])
     apiMocks.delete.mockResolvedValue({ data: {} })
