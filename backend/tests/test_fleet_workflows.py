@@ -2028,3 +2028,31 @@ async def test_linkable_orders_includes_a_pm_visit(db_session):
     )
 
     assert [o.id for o in options] == [pm_ro.id]
+
+
+@pytest.mark.asyncio
+async def test_voiding_a_linked_incident_says_to_unlink_not_delete(db_session):
+    """DB-073: the refusal has to name an action the UI actually offers.
+
+    It said "Delete or unlink the repair order first", but nothing deletes a
+    repair order from here and the incident action is now Void, so the sentence
+    sent the reader looking for two things that do not exist.
+    """
+    tenant, vehicle, user = await _seed_fleet(db_session)
+    incident = await _seed_incident(db_session, vehicle, user)
+    ro = await _seed_repair_order(db_session, tenant, vehicle)
+    await fleet.link_incident_repair_order(
+        incident_id=incident.id,
+        body=IncidentRepairOrderLink(repair_order_id=ro.id),
+        db=db_session,
+        current_user=user,
+    )
+
+    with pytest.raises(HTTPException) as exc:
+        await fleet.delete_incident(
+            incident_id=incident.id, db=db_session, current_user=user
+        )
+
+    assert exc.value.status_code == 400
+    assert "unlink" in exc.value.detail.lower()
+    assert "delete" not in exc.value.detail.lower()

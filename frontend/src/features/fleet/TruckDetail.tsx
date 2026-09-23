@@ -6,7 +6,7 @@ import toast from 'react-hot-toast'
 import {
   Gauge, Calendar, Wrench, AlertTriangle, History, Truck, User, Box, Map as MapIcon,
   Shield, Phone, ClipboardList, ClipboardCheck, Pencil, CheckCircle2, ChevronDown, Check, Info, Trash2, Camera, MoreHorizontal,
-  Archive, ArrowLeft, ArrowRight, Clock3, Combine, RotateCcw, LogOut } from 'lucide-react'
+  Archive, ArrowLeft, ArrowRight, Clock3, Combine, RotateCcw, LogOut, Ban } from 'lucide-react'
 import api from '../../lib/api'
 import { isSupportedPhotoFile, runPhotoUploadQueue, uploadDirectPhoto, type PhotoUploadStatus } from '@/lib/photoUpload'
 import type {
@@ -257,10 +257,14 @@ export default function TruckDetail({
     },
     onError: (e: AxiosError<{ detail?: string }>) => toast.error(e.response?.data?.detail || 'Failed'),
   })
-  const deleteIncident = useMutation({
+  // The DELETE route voids rather than erases: it sets status 'voided', stamps
+  // resolved_at and keeps the record and its photos for accountable history.
+  // The menu used to call this "Delete" in red, which told a user their record
+  // was gone when it was retained.
+  const voidIncident = useMutation({
     mutationFn: async (id: string) => (await api.delete(`/fleet/incidents/${id}`)).data,
-    onSuccess: () => { toast.success('Incident deleted'); refresh() },
-    onError: (e: AxiosError<{ detail?: string }>) => toast.error(e.response?.data?.detail || 'Failed to delete incident'),
+    onSuccess: () => { toast.success('Incident voided'); refresh() },
+    onError: (e: AxiosError<{ detail?: string }>) => toast.error(e.response?.data?.detail || 'Failed to void incident'),
   })
   /**
    * Open an empty repair order and go straight into the builder, rather than
@@ -303,7 +307,7 @@ export default function TruckDetail({
   const [resolvingIncident, setResolvingIncident] = useState<IncidentEntry | null>(null)
   const [assigningIncident, setAssigningIncident] = useState<IncidentEntry | null>(null)
   const [resolvedIncidentsOpen, setResolvedIncidentsOpen] = useState(false)
-  const [armedDeleteIncidentId, setArmedDeleteIncidentId] = useState<string | null>(null)
+  const [armedVoidIncidentId, setArmedVoidIncidentId] = useState<string | null>(null)
   const [incidentMenuOpenId, setIncidentMenuOpenId] = useState<string | null>(null)
   const [pendingIncidentPhotos, setPendingIncidentPhotos] = useState<PendingIncidentPhoto[]>([])
   const pendingIncidentPhotosRef = useRef<PendingIncidentPhoto[]>([])
@@ -867,7 +871,7 @@ export default function TruckDetail({
                           <button
                             className="dbtn dbtn-ghost inc-menu-btn"
                             onClick={() => {
-                              setArmedDeleteIncidentId(null)
+                              setArmedVoidIncidentId(null)
                               setIncidentMenuOpenId((openId) => openId === inc.id ? null : inc.id)
                             }}
                             aria-label="Incident actions"
@@ -878,7 +882,7 @@ export default function TruckDetail({
                           </button>
                           {incidentMenuOpenId === inc.id && (
                             <>
-                              <div onClick={() => { setIncidentMenuOpenId(null); setArmedDeleteIncidentId(null) }} style={{ position: 'fixed', inset: 0, zIndex: 40 }} />
+                              <div onClick={() => { setIncidentMenuOpenId(null); setArmedVoidIncidentId(null) }} style={{ position: 'fixed', inset: 0, zIndex: 40 }} />
                               <div style={{ position: 'absolute', top: 'calc(100% + 6px)', right: 0, zIndex: 41, minWidth: 190, padding: 6, background: 'var(--surface)', border: '1px solid var(--line)', borderRadius: 10, boxShadow: '0 10px 28px rgba(0,0,0,.45)' }}>
                                 <button
                                   style={incidentMenuItemStyle}
@@ -949,27 +953,29 @@ export default function TruckDetail({
                                   </button>
                                 )}
                                 {!inc.repair_order_id && (
-                                  armedDeleteIncidentId === inc.id ? (
+                                  armedVoidIncidentId === inc.id ? (
                                     <div style={{ padding: '7px 8px 4px' }}>
-                                      <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 7 }}>Delete this incident?</div>
+                                      <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 7, lineHeight: 1.45 }}>
+                                        Void this incident? The record is kept in history.
+                                      </div>
                                       <div style={{ display: 'flex', gap: 6 }}>
                                         <button className="dbtn dbtn-ghost" style={{ height: 30, flex: 1, fontSize: 12 }}
-                                          disabled={deleteIncident.isPending} onClick={() => setArmedDeleteIncidentId(null)}>
+                                          disabled={voidIncident.isPending} onClick={() => setArmedVoidIncidentId(null)}>
                                           Cancel
                                         </button>
                                         <button className="dbtn dbtn-ghost" style={{ height: 30, flex: 1, fontSize: 12, color: 'var(--red)' }}
-                                          disabled={deleteIncident.isPending}
-                                          onClick={() => deleteIncident.mutate(inc.id, { onSuccess: () => { setArmedDeleteIncidentId(null); setIncidentMenuOpenId(null) } })}>
-                                          {deleteIncident.isPending ? <Spinner size="xs" /> : <Trash2 size={12} />} Delete
+                                          disabled={voidIncident.isPending}
+                                          onClick={() => voidIncident.mutate(inc.id, { onSuccess: () => { setArmedVoidIncidentId(null); setIncidentMenuOpenId(null) } })}>
+                                          {voidIncident.isPending ? <Spinner size="xs" /> : <Ban size={12} />} Void incident
                                         </button>
                                       </div>
                                     </div>
                                   ) : (
                                     <button
                                       style={{ ...incidentMenuItemStyle, color: 'var(--red)' }}
-                                      onClick={() => setArmedDeleteIncidentId(inc.id)}
+                                      onClick={() => setArmedVoidIncidentId(inc.id)}
                                     >
-                                      <Trash2 size={13} /> Delete
+                                      <Ban size={13} /> Void
                                     </button>
                                   )
                                 )}
