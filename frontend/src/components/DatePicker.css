@@ -63,17 +63,17 @@
   place-items: center;
   width: 36px;
   height: 36px;
-  border: 1px solid transparent;
+  border: 0;
   border-radius: 8px;
   background: transparent;
   color: var(--text-secondary, #9fb0c5);
   cursor: pointer;
 }
 
+/* Hover tints the icon only. A border or filled box here would paint a second
+   frame inside the field's own border, which reads as a rendering fault. */
 .db-datepicker__trigger:hover:not(:disabled) {
-  border-color: var(--border-subtle, rgb(148 163 184 / 20%));
-  background: var(--surface-overlay, #111f33);
-  color: var(--text-primary, #f6f8fb);
+  color: var(--yellow, #f5c518);
 }
 
 .db-datepicker__trigger:disabled {
@@ -241,9 +241,7 @@
 .db-datepicker--light .db-datepicker__trigger { color: #4b5563; }
 
 .db-datepicker--light .db-datepicker__trigger:hover:not(:disabled) {
-  border-color: #d1d5db;
-  background: #f3f4f6;
-  color: #111827;
+  color: #4f46e5;
 }
 
 .db-datepicker--light .db-datepicker__hint { color: #4b5563; }
@@ -336,4 +334,91 @@
   background: transparent;
   outline: 1px dashed var(--text-primary, #fff);
   outline-offset: -3px;
+}
+
+/* Day detail popover.
+   Replaces the native title tooltip, which cannot be themed, waits ~1s, never
+   appears on touch and is invisible to keyboard users. Anchored above the grid
+   rather than to the cell, so it never covers the day being inspected and
+   cannot overflow the calendar's own edges. */
+.db-datepicker__peek {
+  /* Overlays the calendar instead of sitting in flow: in flow it pushed the
+     grid down ~97px, sliding the hovered day out from under the pointer, which
+     closed the popover and flickered. Pinned to the calendar's lower area,
+     where it covers trailing weeks rather than the day being inspected. */
+  position: absolute;
+  z-index: 2;
+  /* Informational only. Without this the overlay takes the pointer, the day
+     beneath fires mouseleave, the popover closes, the day is re-exposed and it
+     reopens: a flicker loop. */
+  pointer-events: none;
+  left: 12px;
+  right: 12px;
+  bottom: 12px;
+  padding: 10px 12px;
+  box-shadow: 0 10px 28px rgb(3 8 16 / 55%);
+  border: 1px solid var(--border-subtle, rgb(148 163 184 / 20%));
+  border-radius: 10px;
+  background: var(--surface-raised, #0d1a2a);
+  color: var(--text-primary, #f6f8fb);
+}
+
+.db-datepicker__peek h3 {
+  margin: 0 0 6px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-primary, #f6f8fb);
+}
+
+.db-datepicker__peek section + section {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border-subtle, rgb(148 163 184 / 20%));
+}
+
+.db-datepicker__peek-kind {
+  margin: 0 0 4px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-secondary, #9fb0c5);
+}
+
+.db-datepicker__peek ul {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.db-datepicker__peek li {
+  padding: 2px 7px;
+  border-radius: 5px;
+  background: var(--surface-overlay, #111f33);
+  border: 1px solid var(--border-subtle, rgb(148 163 184 / 20%));
+  font-size: 11px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.db-datepicker--light .db-datepicker__peek {
+  border-color: #d1d5db;
+  background: #f9fafb;
+  color: #111827;
+}
+
+.db-datepicker--light .db-datepicker__peek h3 { color: #111827; }
+.db-datepicker--light .db-datepicker__peek-kind { color: #4b5563; }
+.db-datepicker--light .db-datepicker__peek section + section { border-top-color: #d1d5db; }
+
+.db-datepicker--light .db-datepicker__peek li {
+  background: #fff;
+  border-color: #d1d5db;
+  color: #111827;
+}
+
+.db-staff-shell[data-appearance-mode='high_contrast'] .db-datepicker__peek,
+.db-staff-shell[data-appearance-mode='high_contrast'] .db-datepicker__peek li {
+  border-color: var(--border-subtle, #fff);
 }

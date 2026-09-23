@@ -92,6 +92,10 @@ export default function DatePicker({
   const [open, setOpen] = useState(false)
   const [month, setMonth] = useState(() => monthOf(validDay(value) ? value : isoToday()))
   const [focusedDay, setFocusedDay] = useState(() => (validDay(value) ? value : isoToday()))
+  // Which busy day is showing its detail. The native title attribute cannot be
+  // styled, is ~1s delayed, never fires on touch and is invisible to keyboard
+  // users, so the calendar renders its own.
+  const [peekDay, setPeekDay] = useState('')
 
   // Follow the value when it changes underneath us — the PM modal recomputes
   // the due date from the odometer target while this control is mounted.
@@ -103,6 +107,7 @@ export default function DatePicker({
 
   const close = (restoreFocus = true) => {
     setOpen(false)
+    setPeekDay('')
     if (restoreFocus) trigger.current?.focus()
   }
 
@@ -150,6 +155,8 @@ export default function DatePicker({
     setMonth(next)
     onMonthChange?.(next)
   }
+
+  const peek = peekDay ? loadByDay.get(peekDay) : undefined
 
   const selected = validDay(value) ? value : ''
   const triggerLabel = selected ? `Choose date — ${formatDay(selected)}` : 'Choose date'
@@ -236,6 +243,31 @@ export default function DatePicker({
           <div className="db-datepicker__week" aria-hidden="true">
             {WEEKDAY_LABELS.map((day) => <span key={day}>{day}</span>)}
           </div>
+          {peek && (
+            <div className="db-datepicker__peek" role="tooltip" id={`${dialogId}-peek`}>
+              <h3>{formatDay(peek.day)}</h3>
+              {peek.count > 0 && (
+                <section>
+                  <p className="db-datepicker__peek-kind">
+                    {peek.count} PM{peek.count === 1 ? '' : 's'} scheduled
+                  </p>
+                  <ul>
+                    {(peek.units || []).map(unit => <li key={`pm-${unit}`}>{unit}</li>)}
+                  </ul>
+                </section>
+              )}
+              {(peek.booked_count || 0) > 0 && (
+                <section>
+                  <p className="db-datepicker__peek-kind">
+                    {peek.booked_count} repair job{peek.booked_count === 1 ? '' : 's'} booked
+                  </p>
+                  <ul>
+                    {(peek.booked_units || []).map(unit => <li key={`ro-${unit}`}>{unit}</li>)}
+                  </ul>
+                </section>
+              )}
+            </div>
+          )}
           <div className="db-datepicker__days" role="group" aria-label={`Dates in ${monthLabel(month)}`}>
             {Array.from({ length: leadingBlanks(month) }, (_, i) => <span key={`blank-${i}`} />)}
             {daysOf(month).map((day) => {
@@ -261,8 +293,10 @@ export default function DatePicker({
                   type="button"
                   key={day}
                   data-day={day}
-                  title={bookedNames || undefined}
                   aria-label={booked ? `${formatDay(day)} — ${bookedNames}` : formatDay(day)}
+                  aria-describedby={booked && peekDay === day ? `${dialogId}-peek` : undefined}
+                  onMouseEnter={() => booked && setPeekDay(day)}
+                  onMouseLeave={() => setPeekDay(prev => (prev === day ? '' : prev))}
                   aria-pressed={day === selected}
                   aria-current={day === isoToday() ? 'date' : undefined}
                   disabled={unavailable}
@@ -273,7 +307,8 @@ export default function DatePicker({
                   ].filter(Boolean).join(' ')}
                   tabIndex={focusedDay === day ? 0 : -1}
                   onClick={() => choose(day)}
-                  onFocus={() => setFocusedDay(day)}
+                  onFocus={() => { setFocusedDay(day); if (booked) setPeekDay(day) }}
+                  onBlur={() => setPeekDay(prev => (prev === day ? '' : prev))}
                   onKeyDown={(event) => {
                     const step = { ArrowLeft: -1, ArrowRight: 1, ArrowUp: -7, ArrowDown: 7 }[event.key]
                     if (step) {
