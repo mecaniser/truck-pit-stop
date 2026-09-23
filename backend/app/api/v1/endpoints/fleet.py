@@ -2362,6 +2362,8 @@ async def truck_incidents(
             location=incident.location,
             note=incident.description,
             repair_order_id=incident.repair_order_id,
+            resolution_notes=incident.resolution_notes,
+            resolved_at=incident.resolved_at,
             photos=[
                 _incident_photo_response(photo)
                 for photo in sorted(incident.photos or [], key=lambda photo: photo.uploaded_at, reverse=True)

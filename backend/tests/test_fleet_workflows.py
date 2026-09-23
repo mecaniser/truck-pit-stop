@@ -1667,3 +1667,47 @@ async def test_a_removed_truck_can_be_found_and_linked_again(db_session):
         db=db_session, current_user=user)
     board = await fleet.fleet_board(db=db_session, current_user=user)
     assert any(t.id == vehicle.id for t in board.trucks)
+
+
+# ---------------------------------------------------------------------------
+# DB-071: a resolved incident has to be able to say how it was resolved.
+# ---------------------------------------------------------------------------
+
+
+async def _seed_incident(db_session, vehicle, user, *, description="Air leak on I-85"):
+    return await fleet.create_incident(
+        body=IncidentCreate(
+            vehicle_id=vehicle.id,
+            occurred_at=datetime.now(timezone.utc),
+            description=description,
+        ),
+        db=db_session,
+        current_user=user,
+    )
+
+
+@pytest.mark.asyncio
+async def test_truck_incidents_carry_the_recorded_outcome(db_session):
+    """DB-071: the truck list is what the UI reads, so it must carry the answer.
+
+    Without these fields a resolved incident can be listed but not explained,
+    which is the same dead end as hiding it.
+    """
+    _, vehicle, user = await _seed_fleet(db_session)
+    incident = await _seed_incident(db_session, vehicle, user, description="Blown marker lamp")
+    await fleet.update_incident(
+        incident_id=incident.id,
+        body=IncidentUpdate(
+            status=IncidentStatus.RESOLVED,
+            resolution_notes="Replaced the lamp and reseated the harness",
+        ),
+        db=db_session,
+        current_user=user,
+    )
+
+    entries = await fleet.truck_incidents(
+        vehicle_id=vehicle.id, db=db_session, current_user=user
+    )
+
+    assert entries[0].resolution_notes == "Replaced the lamp and reseated the harness"
+    assert entries[0].resolved_at is not None
