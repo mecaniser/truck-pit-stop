@@ -182,6 +182,27 @@ class PMServiceEntry(BaseModel):
         from_attributes = True
 
 
+class PMDayLoad(BaseModel):
+    """How many trucks are already scheduled for PM on one calendar day.
+
+    Read-only planning aid for the PM calendar: a manager choosing a due date
+    needs to see which days are already busy, so the shop does not book five
+    trucks onto one day and none onto the next. Days with no scheduled PM are
+    omitted rather than returned as zero.
+    """
+    day: date
+    count: int
+    units: List[str] = []
+    # Corrective work already booked that day, counted separately: a day heavy
+    # with repair jobs is busy for a different reason than a day heavy with PMs,
+    # and merging them would hide which.
+    booked_count: int = 0
+    booked_units: List[str] = []
+
+    class Config:
+        from_attributes = True
+
+
 class BoardWorkOrder(BaseModel):
     id: str                 # order_number
     repair_order_id: UUID   # actual RO id, for opening/editing the work order
