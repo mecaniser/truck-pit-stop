@@ -947,14 +947,15 @@ export default function TruckDetail({
                                         Void this incident? The record is kept in history.
                                       </div>
                                       <div style={{ display: 'flex', gap: 6 }}>
-                                        <button className="dbtn dbtn-ghost" style={{ height: 30, flex: 1, fontSize: 12 }}
+                                        <button className="dbtn dbtn-ghost" style={{ height: 30, flex: 1, fontSize: 12, whiteSpace: 'nowrap' }}
                                           disabled={voidIncident.isPending} onClick={() => setArmedVoidIncidentId(null)}>
                                           Cancel
                                         </button>
-                                        <button className="dbtn dbtn-ghost" style={{ height: 30, flex: 1, fontSize: 12, color: 'var(--red)' }}
+                                        <button className="dbtn dbtn-ghost" style={{ height: 30, flex: 1, fontSize: 12, color: 'var(--red)', whiteSpace: 'nowrap' }}
+                                          aria-label="Void incident"
                                           disabled={voidIncident.isPending}
                                           onClick={() => voidIncident.mutate(inc.id, { onSuccess: () => { setArmedVoidIncidentId(null); setIncidentMenuOpenId(null) } })}>
-                                          {voidIncident.isPending ? <Spinner size="xs" /> : <Ban size={12} />} Void incident
+                                          {voidIncident.isPending ? <Spinner size="xs" /> : <Ban size={12} />} Void
                                         </button>
                                       </div>
                                     </div>
