@@ -2,7 +2,9 @@ export type InspectionStatus = 'scheduled' | 'completed' | 'cancelled' | 'missed
 export type InspectionResult = 'pass' | 'attention' | 'fail'
 export type InspectionItemResult = 'pending' | 'pass' | 'fail' | 'na'
 export type IncidentSeverity = 'low' | 'medium' | 'high' | 'critical'
-export type IncidentStatus = 'open' | 'in_progress' | 'resolved'
+// Mirrors the backend IncidentStatus enum. 'voided' is what DELETE actually
+// does — the record is retained, not erased — and was missing here.
+export type IncidentStatus = 'open' | 'in_progress' | 'resolved' | 'voided'
 
 export interface FleetVehicle {
   id: string

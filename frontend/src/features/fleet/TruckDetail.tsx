@@ -16,7 +16,7 @@ import type {
 import { STATUS_META, fleetUnitLabel, fmt, money, fmtDate, pmState, initials } from './helpers'
 import DatePicker from '@/components/DatePicker'
 import FleetMap from './FleetMap'
-import { ConfirmModal, TruckEditModal, LogIncidentModal, EditIncidentModal, InspectionsSection, AssignDriverModal, SchedulePMModal, Modal, SidekickPanel, invalidateFleetAndCockpit, type InspectionsSectionHandle } from './FleetModals'
+import { ConfirmModal, TruckEditModal, LogIncidentModal, EditIncidentModal, ResolveIncidentModal, AssignIncidentRepairOrderModal, InspectionsSection, AssignDriverModal, SchedulePMModal, Modal, SidekickPanel, invalidateFleetAndCockpit, type InspectionsSectionHandle } from './FleetModals'
 import FleetPriceBuilderPanel from './FleetPriceBuilderPanel'
 import { useAuthStore } from '../../stores/authStore'
 import { getWorkOSCapabilities, startWorkOSLogin, type WorkOSCapabilities } from '../../lib/workosAuth'
@@ -245,11 +245,6 @@ export default function TruckDetail({
     // Fleet WOs are repair orders — keep the owner's cockpit queue in sync too.
     invalidateFleetAndCockpit(qc)
   }
-  const resolveIncident = useMutation({
-    mutationFn: async (id: string) => (await api.patch(`/fleet/incidents/${id}`, { status: 'resolved' })).data,
-    onSuccess: () => { toast.success('Incident resolved'); refresh() },
-    onError: (e: AxiosError<{ detail?: string }>) => toast.error(e.response?.data?.detail || 'Failed'),
-  })
   // The incident already puts its description on the order; opening the builder
   // straight away is the point — the manager is standing at the truck and the
   // next thing they do is say what the work is.
@@ -305,6 +300,9 @@ export default function TruckDetail({
   const [editing, setEditing] = useState(false)
   const [logging, setLogging] = useState(false)
   const [editingIncident, setEditingIncident] = useState<IncidentEntry | null>(null)
+  const [resolvingIncident, setResolvingIncident] = useState<IncidentEntry | null>(null)
+  const [assigningIncident, setAssigningIncident] = useState<IncidentEntry | null>(null)
+  const [resolvedIncidentsOpen, setResolvedIncidentsOpen] = useState(false)
   const [armedDeleteIncidentId, setArmedDeleteIncidentId] = useState<string | null>(null)
   const [incidentMenuOpenId, setIncidentMenuOpenId] = useState<string | null>(null)
   const [pendingIncidentPhotos, setPendingIncidentPhotos] = useState<PendingIncidentPhoto[]>([])
@@ -476,7 +474,15 @@ export default function TruckDetail({
   const failedInspection = inspections.find((inspection) => (
     inspection.status === 'completed' && inspection.result === 'fail' && !inspection.repair_order_id
   ))
-  const unresolvedIncidents = incidents.filter((incident) => incident.status !== 'resolved')
+  const unresolvedIncidents = incidents.filter(
+    (incident) => incident.status !== 'resolved' && incident.status !== 'voided',
+  )
+  // Settled incidents. The backend keeps them — resolved and voided alike — but
+  // the truck page filtered them out and hid the section when none were open,
+  // so a resolved incident disappeared from the only page that had shown it.
+  const settledIncidents = incidents.filter(
+    (incident) => incident.status === 'resolved' || incident.status === 'voided',
+  )
   const safetyIncident = unresolvedIncidents.find((incident) => incident.severity === 'critical' || incident.severity === 'high')
   const primaryWorkOrder = data?.open_work_orders[0]
   const hasSafetyIssue = t.status === 'out_of_service' || Boolean(t.warning_lights?.length) || Boolean(safetyIncident) || Boolean(failedInspection)
@@ -920,14 +926,24 @@ export default function TruckDetail({
                                     <Wrench size={13} /> Create repair
                                   </button>
                                 )}
+                                {!inc.repair_order_id && (
+                                  <button
+                                    style={incidentMenuItemStyle}
+                                    onClick={() => {
+                                      setAssigningIncident(inc)
+                                      setIncidentMenuOpenId(null)
+                                    }}
+                                  >
+                                    <ClipboardList size={13} /> Assign to repair order
+                                  </button>
+                                )}
                                 {inc.status !== 'resolved' && (
                                   <button
                                     style={incidentMenuItemStyle}
                                     onClick={() => {
-                                      resolveIncident.mutate(inc.id)
+                                      setResolvingIncident(inc)
                                       setIncidentMenuOpenId(null)
                                     }}
-                                    disabled={resolveIncident.isPending}
                                   >
                                     <CheckCircle2 size={13} /> Resolve
                                   </button>
@@ -979,6 +995,67 @@ export default function TruckDetail({
               <div className="empty-note"><Shield size={16} /> No incidents recorded for this unit.</div>
             )}
           </Section>}
+
+          {settledIncidents.length > 0 && (
+            <div className="dsec-operation" style={{ marginTop: 10 }}>
+              <button
+                onClick={() => setResolvedIncidentsOpen((open) => !open)}
+                aria-expanded={resolvedIncidentsOpen}
+                style={{
+                  width: '100%', display: 'flex', alignItems: 'center', gap: 8,
+                  padding: '10px 12px', borderRadius: 9, border: '1px solid var(--line)',
+                  background: 'transparent', color: 'var(--muted)', cursor: 'pointer',
+                  fontSize: 12.5, fontWeight: 600, letterSpacing: '.04em', textTransform: 'uppercase',
+                }}
+              >
+                <History size={14} />
+                Resolved incidents
+                <span style={{ ...incidentStatePillStyle, textTransform: 'none', letterSpacing: 0 }}>
+                  {settledIncidents.length}
+                </span>
+                <ChevronDown
+                  size={15}
+                  style={{
+                    marginLeft: 'auto',
+                    transform: resolvedIncidentsOpen ? 'rotate(180deg)' : 'none',
+                    transition: 'transform .15s ease',
+                  }}
+                />
+              </button>
+              {resolvedIncidentsOpen && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 8 }}>
+                  {settledIncidents.map((inc) => (
+                    <div
+                      key={inc.id}
+                      style={{
+                        padding: '10px 12px', borderRadius: 9,
+                        border: '1px solid var(--line)', background: 'var(--ink)',
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
+                        <span style={{ fontWeight: 600, fontSize: 13.5 }}>{inc.type}</span>
+                        <span style={{ ...incidentStatePillStyle, textTransform: 'capitalize' }}>
+                          {inc.status === 'voided' ? 'Voided' : 'Resolved'}
+                        </span>
+                        <span style={{ marginLeft: 'auto', fontSize: 12, color: 'var(--muted)' }}>
+                          {fmtDate(inc.resolved_at || inc.date)}
+                        </span>
+                      </div>
+                      {inc.resolution_notes ? (
+                        <div style={{ marginTop: 5, fontSize: 12.5, color: 'var(--text)', lineHeight: 1.5 }}>
+                          {inc.resolution_notes}
+                        </div>
+                      ) : (
+                        <div style={{ marginTop: 5, fontSize: 12.5, color: 'var(--muted)', fontStyle: 'italic' }}>
+                          No outcome was recorded for this incident.
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
 
               <InspectionsSection ref={inspectionsRef} vehicleId={t.id} truckId={t.id} currentOdometer={t.odometer} className="dsec-operation dsec-inspections" hideWhenIdle onOpenRepairOrder={setRoPanelId} />
             </div>
@@ -1180,6 +1257,8 @@ export default function TruckDetail({
       {assigningDriver && <AssignDriverModal truck={t} driverPhone={t.driver_phone} onClose={() => setAssigningDriver(false)} />}
       {logging && <LogIncidentModal vehicleId={t.id} truckId={t.id} onClose={() => setLogging(false)} />}
       {editingIncident && <EditIncidentModal incident={editingIncident} truckId={t.id} onClose={() => setEditingIncident(null)} />}
+      {resolvingIncident && <ResolveIncidentModal incident={resolvingIncident} truckId={t.id} onClose={() => setResolvingIncident(null)} />}
+      {assigningIncident && <AssignIncidentRepairOrderModal incident={assigningIncident} truckId={t.id} onClose={() => setAssigningIncident(null)} />}
       {roPanelId && <FleetPriceBuilderPanel repairOrderId={roPanelId} onClose={() => setRoPanelId(null)} onChanged={refresh} />}
     </div>
   )

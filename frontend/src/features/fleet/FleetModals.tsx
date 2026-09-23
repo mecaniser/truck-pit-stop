@@ -14,7 +14,7 @@ import DatePicker from '@/components/DatePicker'
 import { useAuthStore } from '../../stores/authStore'
 import type {
   BoardTruck, TruckDetail, Inspection, InspectionDetail, InspectionItem, InspectionItemResult, InspectionResult, IncidentSeverity, IncidentEntry,
-  PMServiceEntry, DriverProfile, LegacyDriverContact, VehicleDriverAssignment,
+  PMServiceEntry, DriverProfile, LegacyDriverContact, VehicleDriverAssignment, LinkableRepairOrder,
 } from './types'
 import { fleetUnitLabel, fmtDate, fmt } from './helpers'
 import { isSupportedPhotoFile, runPhotoUploadQueue, uploadDirectPhoto, type PhotoUploadStatus } from '@/lib/photoUpload'
@@ -1311,6 +1311,199 @@ export function EditIncidentModal({ incident, truckId, onClose }: { incident: In
           <span style={{ display: 'block', marginTop: 5, fontSize: 12, color: 'var(--red)' }}>{descError}</span>
         )}
       </div>
+    </SidekickPanel>
+  )
+}
+
+/* ---------- Resolve an incident with a recorded outcome (DB-070) ---------- */
+
+/**
+ * Resolving used to be one blind PATCH carrying only `status`, so the fleet
+ * kept no record of why an incident stopped being a problem. `resolution_notes`
+ * already existed on the model and in the contract and simply went unsent.
+ *
+ * The outcome is required free text rather than a preset list: the record has
+ * to read as a sentence a person wrote, not a category someone clicked past on
+ * the way to closing the card.
+ */
+export function ResolveIncidentModal({
+  incident,
+  truckId,
+  onClose,
+}: {
+  incident: IncidentEntry
+  truckId: string
+  onClose: () => void
+}) {
+  const qc = useQueryClient()
+  const [outcome, setOutcome] = useState('')
+  const fieldId = useId()
+  const blank = outcome.trim() === ''
+
+  const resolve = useMutation({
+    mutationFn: async () =>
+      (
+        await api.patch(`/fleet/incidents/${incident.id}`, {
+          status: 'resolved',
+          resolution_notes: outcome.trim(),
+        })
+      ).data,
+    onSuccess: () => {
+      toast.success('Incident resolved')
+      qc.invalidateQueries({ queryKey: ['fleet-truck', truckId] })
+      qc.invalidateQueries({ queryKey: ['fleet-truck-incidents', truckId] })
+      invalidateFleetAndCockpit(qc)
+      onClose()
+    },
+    onError: (e: AxiosError<{ detail?: string }>) =>
+      toast.error(e.response?.data?.detail || 'Failed to resolve incident'),
+  })
+
+  return (
+    <SidekickPanel
+      title="Resolve road incident"
+      subtitle="Record what was done about it"
+      icon={<CheckCircle2 size={18} className="text-[var(--green)]" />}
+      onClose={onClose}
+      width="max-w-[540px]"
+      tone="safety"
+      footer={(
+        <div className="fleet-sidekick-actions">
+          <button type="button" className="dbtn dbtn-ghost" disabled={resolve.isPending} onClick={onClose}>
+            Cancel
+          </button>
+          <button
+            className={yellowBtn}
+            disabled={blank || resolve.isPending}
+            onClick={() => { if (!blank) resolve.mutate() }}
+          >
+            {resolve.isPending ? <Spinner size="sm" /> : <CheckCircle2 size={15} />} Resolve incident
+          </button>
+        </div>
+      )}
+    >
+      <div style={{ marginBottom: 12, fontSize: 13, color: 'var(--muted)', lineHeight: 1.5 }}>
+        {incident.note || incident.type}
+      </div>
+      <label htmlFor={fieldId} className="id-k" style={{ display: 'block', marginBottom: 5 }}>
+        Outcome <span style={{ color: 'var(--red)' }}>*</span>
+      </label>
+      <textarea
+        id={fieldId}
+        value={outcome}
+        onChange={(e) => setOutcome(e.target.value)}
+        rows={4}
+        placeholder="What fixed it, or why no work was needed"
+        style={{
+          width: '100%', background: 'var(--ink)', border: '1px solid var(--line)',
+          borderRadius: 9, color: 'var(--text)', fontFamily: 'inherit', fontSize: 13.5,
+          padding: 10, outline: 'none',
+        }}
+      />
+      <p style={{ marginTop: 7, fontSize: 12, color: 'var(--muted)' }}>
+        This is kept with the incident so the next person reading it knows how it ended.
+      </p>
+    </SidekickPanel>
+  )
+}
+
+/* ---------- Attach an incident to an existing repair order (DB-072) ---------- */
+
+/**
+ * "Create repair" could only open a new order or append to the current visit.
+ * When the repair was opened some other way, the incident had no way to say
+ * which order was addressing it. Only open orders for this same truck are
+ * offered — the server enforces the same rule, and a closed order cannot
+ * absorb the work anyway.
+ */
+export function AssignIncidentRepairOrderModal({
+  incident,
+  truckId,
+  onClose,
+}: {
+  incident: IncidentEntry
+  truckId: string
+  onClose: () => void
+}) {
+  const qc = useQueryClient()
+  const options = useQuery<LinkableRepairOrder[]>({
+    queryKey: ['fleet-incident-linkable-orders', incident.id],
+    queryFn: async () => (await api.get(`/fleet/incidents/${incident.id}/linkable-orders`)).data,
+  })
+
+  const link = useMutation({
+    mutationFn: async (repairOrderId: string) =>
+      (await api.post(`/fleet/incidents/${incident.id}/repair-order`, {
+        repair_order_id: repairOrderId,
+      })).data,
+    onSuccess: () => {
+      toast.success('Incident assigned to repair order')
+      qc.invalidateQueries({ queryKey: ['fleet-truck', truckId] })
+      qc.invalidateQueries({ queryKey: ['fleet-truck-incidents', truckId] })
+      invalidateFleetAndCockpit(qc)
+      onClose()
+    },
+    onError: (e: AxiosError<{ detail?: string }>) =>
+      toast.error(e.response?.data?.detail || 'Failed to assign incident'),
+  })
+
+  const orders = options.data || []
+
+  return (
+    <SidekickPanel
+      title="Assign to repair order"
+      subtitle="Point this incident at work already open"
+      icon={<Wrench size={18} className="text-[var(--yellow)]" />}
+      onClose={onClose}
+      width="max-w-[540px]"
+      tone="safety"
+      footer={(
+        <div className="fleet-sidekick-actions">
+          <button type="button" className="dbtn dbtn-ghost" disabled={link.isPending} onClick={onClose}>
+            Cancel
+          </button>
+        </div>
+      )}
+    >
+      <div style={{ marginBottom: 12, fontSize: 13, color: 'var(--muted)', lineHeight: 1.5 }}>
+        {incident.note || incident.type}
+      </div>
+      {options.isLoading ? (
+        <div className="empty-note"><Spinner size="xs" /> Loading open repair orders…</div>
+      ) : options.isError ? (
+        <div className="empty-note">Open repair orders could not be loaded.</div>
+      ) : orders.length === 0 ? (
+        <div className="empty-note">
+          No open repair orders for this truck. Use “Create repair” to open one.
+        </div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {orders.map((ro) => (
+            <button
+              key={ro.id}
+              disabled={link.isPending}
+              onClick={() => link.mutate(ro.id)}
+              style={{
+                textAlign: 'left', padding: '11px 12px', borderRadius: 9,
+                border: '1px solid var(--line)', background: 'var(--ink)',
+                color: 'var(--text)', cursor: link.isPending ? 'not-allowed' : 'pointer',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 600, fontSize: 13.5 }}>
+                {ro.order_number}
+                {ro.is_pm && (
+                  <span style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 500 }}>PM</span>
+                )}
+              </div>
+              {ro.description && (
+                <div style={{ marginTop: 3, fontSize: 12.5, color: 'var(--muted)' }}>
+                  {ro.description}
+                </div>
+              )}
+            </button>
+          ))}
+        </div>
+      )}
     </SidekickPanel>
   )
 }
