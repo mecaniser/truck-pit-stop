@@ -10,6 +10,7 @@ import {
 import api from '../../lib/api'
 import SlidePanel from '@/components/SlidePanel'
 import MapboxAddressInput from '@/components/MapboxAddressInput'
+import DatePicker from '@/components/DatePicker'
 import { useAuthStore } from '../../stores/authStore'
 import type {
   BoardTruck, TruckDetail, Inspection, InspectionDetail, InspectionItem, InspectionItemResult, InspectionResult, IncidentSeverity, IncidentEntry,
@@ -775,14 +776,14 @@ export function SchedulePMModal({ truck, onClose, onDone, createMode = false }: 
                 placeholder={`${intervalMiles} mi interval`}
               />
             </Field>
-            <Field label="Next PM due date">
-              <input type="date" value={dueDate} onChange={(e) => { setDueDate(e.target.value); setDateEdited(true) }} />
-              <p className="id-k" style={{ textTransform: 'none', letterSpacing: 0, marginTop: 6 }}>
-                {dateEdited
-                  ? 'Custom date — overrides the mileage estimate.'
-                  : `Estimated from mileage (~${AVG_MILES_PER_DAY} mi/day). Edit to override.`}
-              </p>
-            </Field>
+            <DatePicker
+              label="Next PM due date"
+              value={dueDate}
+              onChange={(day) => { setDueDate(day); setDateEdited(true) }}
+              hint={dateEdited
+                ? 'Custom date — overrides the mileage estimate.'
+                : `Estimated from mileage (~${AVG_MILES_PER_DAY} mi/day). Edit to override.`}
+            />
           </>
         )}
         {createWO && (

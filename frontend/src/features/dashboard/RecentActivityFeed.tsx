@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import DatePicker from '@/components/DatePicker'
 import { Spinner } from '@/components/ui'
 import { useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
@@ -228,18 +229,8 @@ export default function RecentActivityFeed({
             <option key={opt.value} value={opt.value}>{opt.label}</option>
           ))}
         </select>
-        <input
-          type="date"
-          value={dateFrom}
-          onChange={(e) => setDateFrom(e.target.value)}
-          className="bg-gray-700/50 border border-gray-600/50 rounded-lg px-3 py-1.5 text-sm text-gray-200"
-        />
-        <input
-          type="date"
-          value={dateTo}
-          onChange={(e) => setDateTo(e.target.value)}
-          className="bg-gray-700/50 border border-gray-600/50 rounded-lg px-3 py-1.5 text-sm text-gray-200"
-        />
+        <DatePicker compact label="Activity from date" value={dateFrom} onChange={setDateFrom} />
+        <DatePicker compact label="Activity to date" value={dateTo} onChange={setDateTo} min={dateFrom || undefined} />
         {hasActiveFilters && (
           <button
             type="button"

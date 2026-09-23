@@ -85,3 +85,19 @@
   .db-report-picker [aria-pressed='true'], .db-report-picker .db-report-picker__apply { forced-color-adjust: none; background: Highlight; color: HighlightText; }
   .db-report-period :focus-visible { outline-color: Highlight; }
 }
+
+/* The native indicator renders as a dim glyph on the dark surface. These two
+   fields keep the native popup deliberately — they sit inside a dialog that
+   already shows both months, so a nested calendar would be redundant — but the
+   glyph is brightened to the field's own foreground so it is visibly a
+   control. `color-scheme` above already matches the popup to the theme. */
+.db-report-picker .db-report-picker__fields input::-webkit-calendar-picker-indicator {
+  filter: invert(1) brightness(1.6);
+  opacity: 0.85;
+  cursor: pointer;
+}
+
+.db-presentation-new[data-appearance-mode='light'] .db-report-picker .db-report-picker__fields input::-webkit-calendar-picker-indicator {
+  filter: none;
+  opacity: 0.7;
+}

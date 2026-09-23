@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import DatePicker from '@/components/DatePicker'
 import { Dialog, DialogBackdrop, DialogPanel, DialogTitle } from '@headlessui/react'
 import { Spinner, LoadingLine } from '@/components/ui'
 import { useMutation, useQuery, useQueryClient, keepPreviousData, useInfiniteQuery,
@@ -5275,13 +5276,12 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                       </button>
                       {showInvoiceCreateOptions && (
                         <div className="border-t border-indigo-200 px-3 py-3">
-                          <label className="mb-1 block text-sm font-medium text-indigo-700">Due Date (optional)</label>
-                          <input
-                            type="date"
+                          <DatePicker
+                            surface="light"
+                            label="Due Date (optional)"
                             value={invoiceDueDate}
-                            onChange={(e) => setInvoiceDueDate(e.target.value)}
+                            onChange={setInvoiceDueDate}
                             min={new Date().toISOString().split('T')[0]}
-                            className="w-full rounded-lg border border-indigo-200 px-3 py-2 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500"
                           />
                         </div>
                       )}

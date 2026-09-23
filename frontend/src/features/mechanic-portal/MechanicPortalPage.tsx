@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
+import DatePicker from '@/components/DatePicker'
 import { Spinner } from '@/components/ui'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import api from '../../lib/api'
@@ -1498,26 +1499,18 @@ export default function MechanicPortalPage() {
               <p className="text-sm text-zinc-400">Select your PTO dates (8,000 pts/day)</p>
               
               <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-medium text-zinc-400 mb-2">Start Date</label>
-                  <input
-                    type="date"
-                    value={ptoStartDate}
-                    onChange={(e) => setPtoStartDate(e.target.value)}
-                    min={format(new Date(), 'yyyy-MM-dd')}
-                    className="w-full px-4 py-3 bg-zinc-800/60 border border-zinc-600/50 rounded-xl text-zinc-100 text-sm focus:outline-none focus:border-[var(--accent-500)] focus:ring-2 focus:ring-[var(--accent-500)]/20 transition-all"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-zinc-400 mb-2">End Date</label>
-                  <input
-                    type="date"
-                    value={ptoEndDate}
-                    onChange={(e) => setPtoEndDate(e.target.value)}
-                    min={ptoStartDate || format(new Date(), 'yyyy-MM-dd')}
-                    className="w-full px-4 py-3 bg-zinc-800/60 border border-zinc-600/50 rounded-xl text-zinc-100 text-sm focus:outline-none focus:border-[var(--accent-500)] focus:ring-2 focus:ring-[var(--accent-500)]/20 transition-all"
-                  />
-                </div>
+                <DatePicker
+                  label="Start Date"
+                  value={ptoStartDate}
+                  onChange={setPtoStartDate}
+                  min={format(new Date(), 'yyyy-MM-dd')}
+                />
+                <DatePicker
+                  label="End Date"
+                  value={ptoEndDate}
+                  onChange={setPtoEndDate}
+                  min={ptoStartDate || format(new Date(), 'yyyy-MM-dd')}
+                />
               </div>
 
               {ptoDays > 0 && (

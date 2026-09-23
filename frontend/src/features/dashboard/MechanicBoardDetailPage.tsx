@@ -1,8 +1,9 @@
 import { useMemo, useRef, useState } from 'react'
+import DatePicker from '@/components/DatePicker'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useParams } from 'react-router-dom'
 import toast from 'react-hot-toast'
-import { ArrowLeft, PlayCircle, Square, Pencil, Trash2, Settings, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, CalendarDays, User } from 'lucide-react'
+import { ArrowLeft, PlayCircle, Square, Pencil, Trash2, Settings, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, User } from 'lucide-react'
 import api from '@/lib/api'
 import { MISC_WORK_OPTIONS, formatMiscCategory, formatSessionType } from '@/lib/mechanicWorkLabels'
 import { formatSuggestedNextAction } from '@/lib/mechanicSuggestions'
@@ -550,17 +551,14 @@ export default function MechanicBoardDetailPage() {
                     Previous week
                   </span>
                 </Button>
-                <label className="relative flex items-center">
-                  <CalendarDays className="pointer-events-none absolute left-3 h-4 w-4 text-zinc-500" />
-                  <input
-                    type="date"
-                    value={m.date}
-                    max={todayDate}
-                    onChange={(event) => event.target.value && changeDate(event.target.value, event.target.value)}
-                    aria-label="Select work day"
-                    className="min-w-[9.5rem] rounded-xl border border-zinc-700/50 bg-zinc-800/60 py-2 pl-9 pr-3 text-sm text-zinc-200"
-                  />
-                </label>
+                <DatePicker
+                  compact
+                  label="Select work day"
+                  value={m.date}
+                  max={todayDate}
+                  onChange={(day) => day && changeDate(day, day)}
+                  className="min-w-[9.5rem]"
+                />
                 {!isToday ? (
                   <Button className="whitespace-nowrap" size="sm" variant="secondary" onClick={() => changeDate(todayDate, todayDate)}>Today</Button>
                 ) : null}

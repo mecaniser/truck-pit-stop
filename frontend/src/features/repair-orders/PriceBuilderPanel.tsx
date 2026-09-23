@@ -1,4 +1,5 @@
 import { type ChangeEvent, type MouseEvent as ReactMouseEvent, useEffect, useRef, useState } from 'react'
+import DatePicker from '@/components/DatePicker'
 import { Spinner } from '@/components/ui'
 import { createPortal } from 'react-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
@@ -4693,16 +4694,13 @@ export default function PriceBuilderPanel({
                           <FileText className="h-4 w-4 text-indigo-600" />
                         </button>
                         <div className="rounded-xl border border-gray-200 bg-gray-50 p-3">
-                          <label className="block text-sm">
-                            <span className="mb-1 block font-semibold text-gray-700">Choose due date</span>
-                            <input
-                              type="date"
-                              value={invoiceDueDateValue}
-                              onChange={(e) => onInvoiceDueDateChange?.(e.target.value)}
-                              min={new Date().toISOString().split('T')[0]}
-                              className="h-10 w-full rounded-lg border border-gray-200 bg-white px-3 text-sm text-gray-900 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
-                            />
-                          </label>
+                          <DatePicker
+                            surface="light"
+                            label="Choose due date"
+                            value={invoiceDueDateValue}
+                            onChange={(day) => onInvoiceDueDateChange?.(day)}
+                            min={new Date().toISOString().split('T')[0]}
+                          />
                           <button
                             type="button"
                             onClick={() => onCreateInvoice?.(invoiceDueDateValue || null, invoiceRecipientId || undefined)}

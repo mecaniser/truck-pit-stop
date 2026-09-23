@@ -1,21 +1,14 @@
 import { useEffect, useRef, useState } from 'react'
 import { CalendarDays, Check, ChevronLeft, ChevronRight, X } from 'lucide-react'
 import { REPORT_PRESETS, formatReportDate, rangeError, validDate, type ReportPreset, type ReportRange, type ResolvedRange } from './reportRange'
+import { daysOf, isoToday, leadingBlanks, monthLabel as formatMonthLabel, shiftDay, shiftMonth, WEEKDAY_LABELS } from '@/components/calendarGrid'
 import './ReportingDatePicker.css'
 
 // Operate: draft a reporting window, inspect its dates, then apply once.
 // Existing shop-local API presets remain authoritative; no client-side fiscal assumptions.
-function iso(date: Date) { return date.toISOString().slice(0, 10) }
-function shiftDay(day: string, amount: number) {
-  const date = new Date(`${day}T12:00:00Z`)
-  date.setUTCDate(date.getUTCDate() + amount)
-  return iso(date)
-}
-function shiftMonth(month: string, amount: number) {
-  const date = new Date(`${month}-01T12:00:00Z`)
-  date.setUTCMonth(date.getUTCMonth() + amount)
-  return iso(date).slice(0, 7)
-}
+// Calendar arithmetic is shared with the single-date picker in
+// `@/components/calendarGrid` so both grids agree on month length, week start
+// and date-only handling.
 
 export default function ReportingDatePicker({ value, resolved, onChange, resolvePreset }: {
   value: ReportRange; resolved?: ResolvedRange; onChange: (range: ReportRange) => void
@@ -75,8 +68,8 @@ export default function ReportingDatePicker({ value, resolved, onChange, resolve
     setDraft(value.range)
     setFrom(actual?.range_start || '')
     setTo(actual?.range_end || '')
-    setMonth((actual?.range_start || iso(new Date())).slice(0, 7))
-    setFocusedDay(actual?.range_start || iso(new Date()))
+    setMonth((actual?.range_start || isoToday()).slice(0, 7))
+    setFocusedDay(actual?.range_start || isoToday())
     setPickingEnd(false)
     setOpen(true)
     dialog.current?.showModal()
@@ -97,16 +90,16 @@ export default function ReportingDatePicker({ value, resolved, onChange, resolve
   function calendar(offset: number) {
     const current = shiftMonth(month, offset)
     const first = `${current}-01`
-    const weekday = (new Date(`${first}T12:00:00Z`).getUTCDay() + 6) % 7
-    const days = new Date(new Date(`${shiftMonth(current, 1)}-01T12:00:00Z`).valueOf() - 86400000).getUTCDate()
-    const monthLabel = new Date(`${first}T12:00:00Z`).toLocaleDateString('en-US', { month: 'long', year: 'numeric', timeZone: 'UTC' })
+    const weekday = leadingBlanks(current)
+    const monthDays = daysOf(current)
+    const days = monthDays.length
+    const monthLabel = formatMonthLabel(current)
     return <section className={`db-report-calendar ${offset ? 'db-report-calendar--second' : ''}`} aria-label={monthLabel} key={current}>
       <h3>{monthLabel}</h3>
-      <div className="db-report-calendar__week" aria-hidden="true">{['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su'].map(d => <span key={d}>{d}</span>)}</div>
+      <div className="db-report-calendar__week" aria-hidden="true">{WEEKDAY_LABELS.map(d => <span key={d}>{d}</span>)}</div>
       <div className="db-report-calendar__days" role="group" aria-label={`Dates in ${monthLabel}`}>
         {Array.from({ length: weekday }, (_, i) => <span key={`blank-${i}`} />)}
-        {Array.from({ length: days }, (_, i) => {
-          const day = `${current}-${String(i + 1).padStart(2, '0')}`
+        {monthDays.map((day, i) => {
           const selected = Boolean(from) && day >= from && day <= (to || from)
           const edge = Boolean(from) && (day === from || day === to)
           return <button type="button" key={day} data-day={day} aria-label={formatReportDate(day)} aria-pressed={selected}
