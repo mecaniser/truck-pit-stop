@@ -335,6 +335,10 @@ class IncidentEntry(BaseModel):
     note: Optional[str] = None
     repair_order_id: Optional[UUID] = None
     photos: List[FleetPhotoResponse] = []
+    # A resolved incident that cannot say how it was resolved is a dead end for
+    # the reader, so the truck list carries the outcome alongside the status.
+    resolution_notes: Optional[str] = None
+    resolved_at: Optional[datetime] = None
 
 
 class NearestUnit(BaseModel):

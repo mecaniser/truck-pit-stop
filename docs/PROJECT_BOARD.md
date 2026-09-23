@@ -493,6 +493,36 @@ releasable; DB-070 and DB-071 are the ones a dispatcher feels first.
 | DB-072 | P2 | Inbox | Link a road incident to a repair order that already exists | Architecture & API Contracts | Standard product | An incident with no linked order can be attached to an open repair order for the same truck, and detached; the attach is recorded as an incident event; cross-vehicle and cross-tenant attach are refused |
 | DB-073 | P3 | Inbox | Name the incident void action for what it does | Frontend & UX | Fast UI | The action menu and its confirmation say "Void", matching the backend behavior of retaining the record at status `voided` rather than deleting it |
 
+## Inbox
+
+Intake recorded 2026-09-23 from a product observation on the truck-detail
+"Unresolved road incidents" card. Four items, split by lane: DB-072 is a
+contract change and ships separately, the other three are not.
+
+> **DB-070/071 implemented, PR pending (2026-09-23):** Branch
+> `codex/incident-resolution-outcome` from main `aa0a5ba7` (#409). Resolve now
+> requires a written outcome and sends the long-existing `resolution_notes`,
+> which the client had never sent; settled incidents get a collapsed history
+> section on truck detail, where a resolved one previously vanished entirely.
+> Two drift corrections: the frontend `IncidentStatus` type lacked `voided`
+> though the backend has had it since delete became void, and the truck-scoped
+> `IncidentEntry` response carried no outcome fields, so a resolved incident
+> could be listed but not explained. Evidence: backend `test_fleet_workflows.py`
+> 63 pass (1 new); frontend 746/746 across 93 files (6 new in
+> `IncidentOutcome.test.tsx`); typecheck, production build and changed-source
+> lint clean. Mutation-verified: removing the blank-outcome guard or
+> `resolution_notes` from the payload each fail a specific test. Fast UI lane —
+> no API field, enum, migration, auth or tenant change; sending a field the
+> contract already publishes is not a contract change. **Not done:** no PR,
+> protected CI, review gate, merge or deployment.
+
+| ID | Priority | State | Outcome | Owner | Lane | Acceptance target |
+|---|---|---|---|---|---|---|
+| DB-070 | P1 | Implemented, PR pending | Require a written outcome before an incident can be resolved | Frontend & UX | Fast UI | Resolving from the incident action menu opens a reason panel; submit stays disabled until a non-blank outcome is typed; the text persists to the existing `resolution_notes` field and is visible afterwards |
+| DB-071 | P1 | Implemented, PR pending | Give resolved and voided road incidents a visible home on the truck | Frontend & UX | Fast UI | A collapsed "Resolved incidents" section on truck detail lists non-open incidents with their outcome text and resolution date; the existing append-only event timeline remains available at `GET /fleet/incidents/{id}/events` and is not yet surfaced |
+| DB-072 | P2 | Implemented, contract review pending | Link a road incident to a repair order that already exists | Architecture & API Contracts | Standard product | Ships separately on `codex/incident-repair-order-link`: an incident with no linked order can be attached to an open repair order for the same truck, and detached; the attach is recorded as an incident event; cross-vehicle and cross-tenant attach are refused |
+| DB-073 | P3 | Inbox | Name the incident void action for what it does | Frontend & UX | Fast UI | The action menu and its confirmation say "Void", matching the backend behavior of retaining the record at status `voided` rather than deleting it |
+
 ## Blocked
 
 | ID | Priority | State | Outcome | Owner | Blocker | Resolver / next safe action | Unblock evidence |
@@ -920,3 +950,38 @@ record is gone when it is retained.
   it is, not as a generic failure.
 - Behavior is unchanged; only the naming stops contradicting it. Pairs with
   DB-071, which is what makes the retained record actually reachable.
+
+## DB-070 acceptance criteria
+
+Resolving a road incident sent `PATCH /fleet/incidents/{id}` with
+`{status: 'resolved'}` and nothing else, so the fleet kept no record of why an
+incident stopped being a problem. The `resolution_notes` column, the
+`IncidentUpdate` field and the `IncidentResponse` field already existed and were
+unused by the client; this item spends them rather than adding anything.
+
+- Choosing Resolve opens a panel asking what the outcome was. It does not
+  resolve on the click.
+- Submit is unavailable until a non-blank outcome is typed. Whitespace alone is
+  not an outcome. Free text was chosen over presets so the record reads as a
+  sentence a person wrote, not a category someone clicked past.
+- Submitting sends `status` and `resolution_notes` in one request; a failed
+  request leaves the incident open and says so.
+- No API field, response shape, enum value, migration, auth or tenant change.
+
+## DB-071 acceptance criteria
+
+`TruckDetail` filtered incidents to `status !== 'resolved'` and hid the whole
+section when none remained, so a resolved incident disappeared from the only
+page that showed it. The data was never lost.
+
+- Truck detail shows a collapsed section for incidents no longer open, listing
+  each with its outcome text and when it was resolved.
+- Collapsed is the default: a resolved incident is history and must not compete
+  with the unresolved card above it for a dispatcher's attention.
+- Voided incidents appear here too. The backend already retains them; a record
+  kept and never shown is the same as a record lost.
+- An incident resolved before this shipped, carrying no outcome, says so plainly
+  rather than rendering an empty space.
+- The truck-scoped `IncidentEntry` response needed `resolution_notes` and
+  `resolved_at` added: it is what this page reads, and without them a resolved
+  incident could be listed but not explained.
