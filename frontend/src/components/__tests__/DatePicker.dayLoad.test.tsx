@@ -1,4 +1,4 @@
-import { render, screen, within } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import DatePicker from '../DatePicker'
@@ -96,104 +96,100 @@ describe('DatePicker total shop load', () => {
   })
 })
 
-describe('DatePicker day load popover', () => {
+describe('DatePicker day detail footer', () => {
   const busy = [
     { day: '2026-11-04', count: 3, units: ['603', '412', '118'] },
     { day: '2026-11-06', count: 0, units: [], booked_count: 2, booked_units: ['77', '88'] },
   ]
 
-  it('shows the app popover on hover, not the browser tooltip', async () => {
+  it('shows the detail below the grid, not over it', async () => {
+    const user = open({ dayLoad: busy })
+    await user.click(screen.getByRole('button', { name: /choose date/i }))
+    const dialog = screen.getByRole('dialog')
+    await user.hover(within(dialog).getByRole('button', { name: /Nov 4, 2026/ }))
+    const detail = await screen.findByTestId('day-detail')
+    const grid = dialog.querySelector('.db-datepicker__days')!
+    // The detail must follow the grid in document order, so it cannot cover the
+    // weeks a manager is comparing against.
+    expect(grid.compareDocumentPosition(detail) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
+  it('reserves its space so the grid never shifts', async () => {
+    const user = open({ dayLoad: busy })
+    await user.click(screen.getByRole('button', { name: /choose date/i }))
+    // Present and occupying layout even with nothing selected, so appearing
+    // later cannot move the days under the pointer.
+    expect(screen.getByTestId('day-detail')).toBeInTheDocument()
+  })
+
+  it('opens on tap, for touch screens with no hover', async () => {
     const user = open({ dayLoad: busy })
     await user.click(screen.getByRole('button', { name: /choose date/i }))
     const day = within(screen.getByRole('dialog')).getByRole('button', { name: /Nov 4, 2026/ })
-    // The native tooltip cannot be styled, delayed or keyboard-triggered, so the
-    // day must not fall back to it.
-    expect(day).not.toHaveAttribute('title')
-    await user.hover(day)
-    expect(await screen.findByRole('tooltip')).toBeInTheDocument()
+    // A tap selects the date and must also reveal what is already on that day.
+    await user.click(day)
+    expect(screen.getByTestId('day-detail')).toHaveTextContent('603')
   })
 
-  it('lists each truck due that day', async () => {
+  it('prompts when nothing is highlighted', async () => {
+    const user = open({ dayLoad: busy })
+    await user.click(screen.getByRole('button', { name: /choose date/i }))
+    expect(screen.getByTestId('day-detail')).toHaveTextContent(/select a day|no pm/i)
+  })
+
+  it('names the trucks and the day', async () => {
     const user = open({ dayLoad: busy })
     await user.click(screen.getByRole('button', { name: /choose date/i }))
     await user.hover(within(screen.getByRole('dialog')).getByRole('button', { name: /Nov 4, 2026/ }))
-    const tip = within(await screen.findByRole('tooltip'))
-    expect(tip.getByText('603')).toBeInTheDocument()
-    expect(tip.getByText('412')).toBeInTheDocument()
-    expect(tip.getByText('118')).toBeInTheDocument()
+    const detail = await screen.findByTestId('day-detail')
+    expect(detail).toHaveTextContent('Nov 4, 2026')
+    expect(detail).toHaveTextContent('603')
+    expect(detail).toHaveTextContent('412')
   })
 
-  it('names the day so the popover stands on its own', async () => {
-    const user = open({ dayLoad: busy })
-    await user.click(screen.getByRole('button', { name: /choose date/i }))
-    await user.hover(within(screen.getByRole('dialog')).getByRole('button', { name: /Nov 4, 2026/ }))
-    expect(await screen.findByRole('tooltip')).toHaveTextContent('Nov 4, 2026')
-  })
-
-  it('separates booked repair work from PMs', async () => {
+  it('separates repair work from PMs', async () => {
     const user = open({ dayLoad: busy })
     await user.click(screen.getByRole('button', { name: /choose date/i }))
     await user.hover(within(screen.getByRole('dialog')).getByRole('button', { name: /Nov 6, 2026/ }))
-    const tip = within(await screen.findByRole('tooltip'))
-    expect(tip.getByText(/repair/i)).toBeInTheDocument()
-    expect(tip.getByText('77')).toBeInTheDocument()
+    const detail = await screen.findByTestId('day-detail')
+    expect(detail).toHaveTextContent(/repair/i)
+    expect(detail).toHaveTextContent('77')
   })
 
-  it('opens on keyboard focus so it is not mouse-only', async () => {
-    const user = open({ dayLoad: busy })
-    await user.click(screen.getByRole('button', { name: /choose date/i }))
-    const day = within(screen.getByRole('dialog')).getByRole('button', { name: /Nov 4, 2026/ })
-    day.focus()
-    expect(await screen.findByRole('tooltip')).toBeInTheDocument()
-  })
-
-  it('closes when the pointer leaves', async () => {
-    const user = open({ dayLoad: busy })
-    await user.click(screen.getByRole('button', { name: /choose date/i }))
-    const dialog = within(screen.getByRole('dialog'))
-    const day = dialog.getByRole('button', { name: /Nov 4, 2026/ })
-    await user.hover(day)
-    expect(await screen.findByRole('tooltip')).toBeInTheDocument()
-    await user.unhover(day)
-    expect(screen.queryByRole('tooltip')).not.toBeInTheDocument()
-  })
-
-  it('shows no popover on a free day', async () => {
+  it('says a highlighted free day is free', async () => {
     const user = open({ dayLoad: busy })
     await user.click(screen.getByRole('button', { name: /choose date/i }))
     await user.hover(within(screen.getByRole('dialog')).getByRole('button', { name: /^Nov 5, 2026$/ }))
-    expect(screen.queryByRole('tooltip')).not.toBeInTheDocument()
+    expect(screen.getByTestId('day-detail')).toHaveTextContent(/nothing scheduled|free/i)
+  })
+})
+
+describe('DatePicker day detail replaces the native tooltip', () => {
+  it('does not fall back to the browser tooltip', async () => {
+    const user = open({ dayLoad: [{ day: '2026-11-04', count: 2, units: ['603', '412'] }] })
+    await user.click(screen.getByRole('button', { name: /choose date/i }))
+    const day = within(screen.getByRole('dialog')).getByRole('button', { name: /Nov 4, 2026/ })
+    // title cannot be styled, is ~1s delayed, never fires on touch and is
+    // invisible to keyboard users.
+    expect(day).not.toHaveAttribute('title')
+  })
+
+  it('reports the day on keyboard focus, so it is not pointer-only', async () => {
+    // The calendar opens with the selected day focused; arrow keys move between
+    // days, which is how a keyboard user reaches one.
+    const user = open({ value: '2026-11-05', dayLoad: [{ day: '2026-11-04', count: 2, units: ['603', '412'] }] })
+    await user.click(screen.getByRole('button', { name: /choose date/i }))
+    const day = within(screen.getByRole('dialog')).getByRole('button', { name: /^Nov 5, 2026$/ })
+    day.focus()
+    await user.keyboard('{ArrowLeft}')
+    // focusDay moves focus inside requestAnimationFrame, so wait for it.
+    await waitFor(() => expect(screen.getByTestId('day-detail')).toHaveTextContent('603'))
   })
 
   it('keeps the full description on the day for screen readers', async () => {
-    const user = open({ dayLoad: busy })
+    const user = open({ dayLoad: [{ day: '2026-11-04', count: 3, units: ['603', '412', '118'] }] })
     await user.click(screen.getByRole('button', { name: /choose date/i }))
     const day = within(screen.getByRole('dialog')).getByRole('button', { name: /Nov 4, 2026/ })
     expect(day).toHaveAccessibleName(expect.stringContaining('3 PMs'))
-  })
-})
-
-describe('DatePicker popover does not move the grid', () => {
-  it('overlays rather than displacing the days under the cursor', async () => {
-    const user = open({ dayLoad: [{ day: '2026-11-04', count: 2, units: ['603', '412'] }] })
-    await user.click(screen.getByRole('button', { name: /choose date/i }))
-    await user.hover(within(screen.getByRole('dialog')).getByRole('button', { name: /Nov 4, 2026/ }))
-    const tip = await screen.findByRole('tooltip')
-    // In flow, the popover would push the grid down and the day would slide out
-    // from under the pointer, closing the popover and flickering.
-    expect(getComputedStyle(tip).position).toBe('absolute')
-  })
-})
-
-describe('DatePicker popover stability', () => {
-  it('does not intercept the pointer and close itself', async () => {
-    const user = open({ dayLoad: [{ day: '2026-11-04', count: 2, units: ['603', '412'] }] })
-    await user.click(screen.getByRole('button', { name: /choose date/i }))
-    await user.hover(within(screen.getByRole('dialog')).getByRole('button', { name: /Nov 4, 2026/ }))
-    const tip = await screen.findByRole('tooltip')
-    // The popover overlays the grid. If it accepted pointer events, moving onto
-    // a day beneath it would fire mouseleave on that day, closing the popover,
-    // which re-exposes the day and reopens it: a flicker loop.
-    expect(getComputedStyle(tip).pointerEvents).toBe('none')
   })
 })

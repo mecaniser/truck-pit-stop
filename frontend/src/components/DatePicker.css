@@ -336,54 +336,54 @@
   outline-offset: -3px;
 }
 
-/* Day detail popover.
-   Replaces the native title tooltip, which cannot be themed, waits ~1s, never
-   appears on touch and is invisible to keyboard users. Anchored above the grid
-   rather than to the cell, so it never covers the day being inspected and
-   cannot overflow the calendar's own edges. */
-.db-datepicker__peek {
-  /* Overlays the calendar instead of sitting in flow: in flow it pushed the
-     grid down ~97px, sliding the hovered day out from under the pointer, which
-     closed the popover and flickered. Pinned to the calendar's lower area,
-     where it covers trailing weeks rather than the day being inspected. */
-  position: absolute;
-  z-index: 2;
-  /* Informational only. Without this the overlay takes the pointer, the day
-     beneath fires mouseleave, the popover closes, the day is re-exposed and it
-     reopens: a flicker loop. */
-  pointer-events: none;
-  left: 12px;
-  right: 12px;
-  bottom: 12px;
+/* Day detail footer.
+   Below the grid and always occupying its space. Two earlier shapes failed:
+   an in-flow block that appeared on hover pushed the days out from under the
+   pointer, and an overlay covered the very weeks a manager compares a busy day
+   against. A reserved footer does neither, and it is the only form that works
+   on touch, where there is no hover at all. */
+.db-datepicker__detail {
+  margin-top: 10px;
   padding: 10px 12px;
-  box-shadow: 0 10px 28px rgb(3 8 16 / 55%);
+  /* Reserved height: roughly a title plus one kind-and-chips row. The footer
+     must not resize as the user moves between days, or the calendar above it
+     would shift again. Content taller than this scrolls inside. */
+  min-height: 74px;
+  max-height: 128px;
+  overflow-y: auto;
   border: 1px solid var(--border-subtle, rgb(148 163 184 / 20%));
   border-radius: 10px;
   background: var(--surface-raised, #0d1a2a);
   color: var(--text-primary, #f6f8fb);
 }
 
-.db-datepicker__peek h3 {
+.db-datepicker__detail h3 {
   margin: 0 0 6px;
   font-size: 12px;
   font-weight: 700;
   color: var(--text-primary, #f6f8fb);
 }
 
-.db-datepicker__peek section + section {
+.db-datepicker__detail section + section {
   margin-top: 8px;
   padding-top: 8px;
   border-top: 1px solid var(--border-subtle, rgb(148 163 184 / 20%));
 }
 
-.db-datepicker__peek-kind {
+.db-datepicker__detail-kind {
   margin: 0 0 4px;
   font-size: 11px;
   font-weight: 600;
   color: var(--text-secondary, #9fb0c5);
 }
 
-.db-datepicker__peek ul {
+.db-datepicker__detail-empty {
+  margin: 0;
+  font-size: 11px;
+  color: var(--text-secondary, #9fb0c5);
+}
+
+.db-datepicker__detail ul {
   display: flex;
   flex-wrap: wrap;
   gap: 4px;
@@ -392,7 +392,7 @@
   list-style: none;
 }
 
-.db-datepicker__peek li {
+.db-datepicker__detail li {
   padding: 2px 7px;
   border-radius: 5px;
   background: var(--surface-overlay, #111f33);
@@ -402,23 +402,31 @@
   font-variant-numeric: tabular-nums;
 }
 
-.db-datepicker--light .db-datepicker__peek {
+.db-datepicker--light .db-datepicker__detail {
   border-color: #d1d5db;
   background: #f9fafb;
   color: #111827;
 }
 
-.db-datepicker--light .db-datepicker__peek h3 { color: #111827; }
-.db-datepicker--light .db-datepicker__peek-kind { color: #4b5563; }
-.db-datepicker--light .db-datepicker__peek section + section { border-top-color: #d1d5db; }
+.db-datepicker--light .db-datepicker__detail h3 { color: #111827; }
+.db-datepicker--light .db-datepicker__detail-kind,
+.db-datepicker--light .db-datepicker__detail-empty { color: #4b5563; }
+.db-datepicker--light .db-datepicker__detail section + section { border-top-color: #d1d5db; }
 
-.db-datepicker--light .db-datepicker__peek li {
+.db-datepicker--light .db-datepicker__detail li {
   background: #fff;
   border-color: #d1d5db;
   color: #111827;
 }
 
-.db-staff-shell[data-appearance-mode='high_contrast'] .db-datepicker__peek,
-.db-staff-shell[data-appearance-mode='high_contrast'] .db-datepicker__peek li {
+.db-staff-shell[data-appearance-mode='high_contrast'] .db-datepicker__detail,
+.db-staff-shell[data-appearance-mode='high_contrast'] .db-datepicker__detail li {
   border-color: var(--border-subtle, #fff);
+}
+
+/* Touch: the first tap on a busy day reveals it, so the day needs a visible
+   "opened" state to explain why that tap did not select. */
+.db-datepicker__days .is-revealed:not(.is-selected) {
+  outline: 2px solid var(--yellow, #f5c518);
+  outline-offset: -2px;
 }

@@ -96,6 +96,11 @@ export default function DatePicker({
   // styled, is ~1s delayed, never fires on touch and is invisible to keyboard
   // users, so the calendar renders its own.
   const [peekDay, setPeekDay] = useState('')
+  // A day the user has deliberately opened (tapped/clicked) rather than merely
+  // hovered. Hover alone cannot stand in for this: a tap fires mouseenter
+  // first, so the day would already look "revealed" and the first tap would
+  // commit - closing the calendar before a touch user has read anything.
+  const [revealedDay, setRevealedDay] = useState('')
 
   // Follow the value when it changes underneath us — the PM modal recomputes
   // the due date from the odometer target while this control is mounted.
@@ -108,6 +113,7 @@ export default function DatePicker({
   const close = (restoreFocus = true) => {
     setOpen(false)
     setPeekDay('')
+    setRevealedDay('')
     if (restoreFocus) trigger.current?.focus()
   }
 
@@ -243,31 +249,6 @@ export default function DatePicker({
           <div className="db-datepicker__week" aria-hidden="true">
             {WEEKDAY_LABELS.map((day) => <span key={day}>{day}</span>)}
           </div>
-          {peek && (
-            <div className="db-datepicker__peek" role="tooltip" id={`${dialogId}-peek`}>
-              <h3>{formatDay(peek.day)}</h3>
-              {peek.count > 0 && (
-                <section>
-                  <p className="db-datepicker__peek-kind">
-                    {peek.count} PM{peek.count === 1 ? '' : 's'} scheduled
-                  </p>
-                  <ul>
-                    {(peek.units || []).map(unit => <li key={`pm-${unit}`}>{unit}</li>)}
-                  </ul>
-                </section>
-              )}
-              {(peek.booked_count || 0) > 0 && (
-                <section>
-                  <p className="db-datepicker__peek-kind">
-                    {peek.booked_count} repair job{peek.booked_count === 1 ? '' : 's'} booked
-                  </p>
-                  <ul>
-                    {(peek.booked_units || []).map(unit => <li key={`ro-${unit}`}>{unit}</li>)}
-                  </ul>
-                </section>
-              )}
-            </div>
-          )}
           <div className="db-datepicker__days" role="group" aria-label={`Dates in ${monthLabel(month)}`}>
             {Array.from({ length: leadingBlanks(month) }, (_, i) => <span key={`blank-${i}`} />)}
             {daysOf(month).map((day) => {
@@ -294,8 +275,8 @@ export default function DatePicker({
                   key={day}
                   data-day={day}
                   aria-label={booked ? `${formatDay(day)} — ${bookedNames}` : formatDay(day)}
-                  aria-describedby={booked && peekDay === day ? `${dialogId}-peek` : undefined}
-                  onMouseEnter={() => booked && setPeekDay(day)}
+                  aria-describedby={`${dialogId}-detail`}
+                  onMouseEnter={() => setPeekDay(day)}
                   onMouseLeave={() => setPeekDay(prev => (prev === day ? '' : prev))}
                   aria-pressed={day === selected}
                   aria-current={day === isoToday() ? 'date' : undefined}
@@ -304,11 +285,23 @@ export default function DatePicker({
                     day === selected ? 'is-selected' : '',
                     day === isoToday() ? 'is-today' : '',
                     booked ? 'has-load' : '',
+                    revealedDay === day ? 'is-revealed' : '',
                   ].filter(Boolean).join(' ')}
                   tabIndex={focusedDay === day ? 0 : -1}
-                  onClick={() => choose(day)}
-                  onFocus={() => { setFocusedDay(day); if (booked) setPeekDay(day) }}
-                  onBlur={() => setPeekDay(prev => (prev === day ? '' : prev))}
+                  onClick={() => {
+                    // Touch has no hover: a tap is the only way to read a busy
+                    // day. So the first tap on a day that already carries work
+                    // reveals it, and a second tap commits. A free day has
+                    // nothing to read, so it selects on the first tap.
+                    if (booked && revealedDay !== day) {
+                      setRevealedDay(day)
+                      setPeekDay(day)
+                      return
+                    }
+                    setPeekDay(day)
+                    choose(day)
+                  }}
+                  onFocus={() => { setFocusedDay(day); setPeekDay(day) }}
                   onKeyDown={(event) => {
                     const step = { ArrowLeft: -1, ArrowRight: 1, ArrowUp: -7, ArrowDown: 7 }[event.key]
                     if (step) {
@@ -333,6 +326,53 @@ export default function DatePicker({
                 </button>
               )
             })}
+          </div>
+          {/* Day detail lives below the grid and always occupies its space.
+              An overlay covered the weeks a manager compares against, and an
+              in-flow block that appeared on hover pushed the days out from
+              under the pointer. A reserved footer does neither, and it is the
+              only form that works on touch, where there is no hover at all. */}
+          <div
+            className="db-datepicker__detail"
+            data-testid="day-detail"
+            id={`${dialogId}-detail`}
+            role="status"
+            aria-live="polite"
+          >
+            {peek ? (
+              <>
+                <h3>{formatDay(peek.day)}</h3>
+                {peek.count > 0 && (
+                  <section>
+                    <p className="db-datepicker__detail-kind">
+                      {peek.count} PM{peek.count === 1 ? '' : 's'} scheduled
+                    </p>
+                    <ul>
+                      {(peek.units || []).map(unit => <li key={`pm-${unit}`}>{unit}</li>)}
+                    </ul>
+                  </section>
+                )}
+                {(peek.booked_count || 0) > 0 && (
+                  <section>
+                    <p className="db-datepicker__detail-kind">
+                      {peek.booked_count} repair job{peek.booked_count === 1 ? '' : 's'} booked
+                    </p>
+                    <ul>
+                      {(peek.booked_units || []).map(unit => <li key={`ro-${unit}`}>{unit}</li>)}
+                    </ul>
+                  </section>
+                )}
+              </>
+            ) : peekDay ? (
+              <>
+                <h3>{formatDay(peekDay)}</h3>
+                <p className="db-datepicker__detail-kind">Nothing scheduled — free</p>
+              </>
+            ) : (
+              <p className="db-datepicker__detail-empty">
+                Select a day to see what is already scheduled
+              </p>
+            )}
           </div>
         </div>
       )}
