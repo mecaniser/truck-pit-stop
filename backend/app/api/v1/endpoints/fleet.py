@@ -69,6 +69,7 @@ from app.schemas.fleet import (
     WorkOrderComplete,
     SchedulePMRequest,
     PMServiceEntry,
+    PMDayLoad,
     PMServicesUpdate,
     AddServiceRequest,
     FleetInvoiceEntry,
@@ -2991,6 +2992,61 @@ async def _ro_pm_services(db: AsyncSession, tenant_id: UUID, ro_id: UUID) -> lis
         .order_by(RepairOrderPMService.sort_order)
     )
     return await _load_pm_services(db, tenant_id, list(result.scalars().all()))
+
+
+# A PM calendar spans at most a rolling year: the picker shows one month at a
+# time, and an unbounded range would scan the whole fleet history on every
+# keystroke of month navigation.
+PM_LOAD_MAX_DAYS = 366
+
+
+@router.get("/pm-day-load", response_model=List[PMDayLoad])
+async def pm_day_load(
+    start: date = Query(..., description="First day of the window, inclusive"),
+    end: date = Query(..., description="Last day of the window, inclusive"),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_fleet_access),
+):
+    """Trucks already scheduled for PM on each day of a window.
+
+    Feeds the PM date picker so a manager can see which dates are already busy
+    before committing another truck to one. Read-only over the existing
+    `Vehicle.pm_due_date`; it schedules nothing and changes no state.
+
+    Days with no scheduled PM are omitted rather than returned as zero, so the
+    response stays proportional to actual load rather than to window length.
+    """
+    if end < start:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="End date must not precede start date",
+        )
+    if (end - start).days > PM_LOAD_MAX_DAYS:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Window must not exceed {PM_LOAD_MAX_DAYS} days",
+        )
+
+    result = await db.execute(
+        select(Vehicle.pm_due_date, Vehicle.unit_number)
+        .where(and_(
+            Vehicle.tenant_id == current_user.tenant_id,
+            Vehicle.deleted_at.is_(None),
+            Vehicle.pm_due_date.is_not(None),
+            Vehicle.pm_due_date >= start,
+            Vehicle.pm_due_date <= end,
+        ))
+        .order_by(Vehicle.pm_due_date, Vehicle.unit_number)
+    )
+
+    by_day: dict[date, list[str]] = {}
+    for due, unit in result.all():
+        by_day.setdefault(due, []).append(unit or "Unit")
+
+    return [
+        PMDayLoad(day=day, count=len(units), units=units)
+        for day, units in sorted(by_day.items())
+    ]
 
 
 @router.get("/pm-service-catalog", response_model=List[PMServiceEntry])

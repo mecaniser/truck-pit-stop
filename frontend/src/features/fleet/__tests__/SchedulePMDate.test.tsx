@@ -73,3 +73,29 @@ describe('Schedule PM due date', () => {
     expect(screen.getByText(/overrides the mileage estimate/i)).toBeInTheDocument()
   })
 })
+
+describe('Schedule PM day load', () => {
+  afterEach(() => vi.clearAllMocks())
+
+  it('shows which days already have trucks booked for PM', async () => {
+    apiMocks.get.mockImplementation((url: string) => {
+      if (url.includes('pm-day-load')) {
+        return Promise.resolve({ data: [{ day: '2026-11-20', count: 2, units: ['412', '118'] }] })
+      }
+      if (url.includes('/relationships')) return Promise.resolve({ data: [] })
+      if (url.includes('pm-service-catalog')) return Promise.resolve({ data: [] })
+      return Promise.resolve({ data: [] })
+    })
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const user = userEvent.setup()
+    render(
+      <QueryClientProvider client={client}>
+        <SchedulePMModal truck={truck} onClose={vi.fn()} onDone={vi.fn()} />
+      </QueryClientProvider>,
+    )
+    await user.click(screen.getByRole('button', { name: /choose date/i }))
+    const dialog = screen.getByRole('dialog', { name: /next pm due date/i })
+    const busy = await within(dialog).findByRole('button', { name: /Nov 20, 2026.*2 PMs scheduled/ })
+    expect(busy).toHaveTextContent('2')
+  })
+})

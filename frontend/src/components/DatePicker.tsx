@@ -15,6 +15,14 @@ import {
 } from './calendarGrid'
 import './DatePicker.css'
 
+export interface DayLoad {
+  /** ISO `YYYY-MM-DD`. */
+  day: string
+  count: number
+  /** Unit numbers already booked that day; shown on hover and to screen readers. */
+  units?: string[]
+}
+
 export interface DatePickerProps {
   value: string
   onChange: (day: string) => void
@@ -31,6 +39,13 @@ export interface DatePickerProps {
   /** Inline filter rows carry no visible label; the name moves to aria-label
       so the control still announces itself. */
   compact?: boolean
+  /** Days that already carry scheduled work, so the calendar can show what is
+      booked before another truck is committed to a date. Omit for a plain
+      calendar. */
+  dayLoad?: DayLoad[]
+  /** Called with the `YYYY-MM` now on screen, so the caller can fetch that
+      month's load as the user navigates. */
+  onMonthChange?: (month: string) => void
   /** Some panels (invoice creation) paint their own light surface inside the
       shell regardless of appearance mode. 'light' pins the control to that
       surface instead of the shell tokens, so it cannot render a dark field on
@@ -59,6 +74,8 @@ export default function DatePicker({
   disabled,
   placeholder = 'YYYY-MM-DD',
   hint,
+  dayLoad,
+  onMonthChange,
   compact,
   surface = 'shell',
   className,
@@ -115,6 +132,15 @@ export default function DatePicker({
     if (outOfRange(day, min, max)) return
     onChange(day)
     close()
+  }
+
+  // Index the load once per render so each day cell is a map lookup, not a scan.
+  const loadByDay = new Map((dayLoad || []).filter(d => d.count > 0).map(d => [d.day, d]))
+
+  // Tell the caller which month is on screen so it can fetch that month's load.
+  const goToMonth = (next: string) => {
+    setMonth(next)
+    onMonthChange?.(next)
   }
 
   const selected = validDay(value) ? value : ''
@@ -186,7 +212,7 @@ export default function DatePicker({
             <button
               type="button"
               aria-label="Previous month"
-              onClick={() => setMonth(shiftMonth(month, -1))}
+              onClick={() => goToMonth(shiftMonth(month, -1))}
             >
               <ChevronLeft size={16} aria-hidden="true" />
             </button>
@@ -194,7 +220,7 @@ export default function DatePicker({
             <button
               type="button"
               aria-label="Next month"
-              onClick={() => setMonth(shiftMonth(month, 1))}
+              onClick={() => goToMonth(shiftMonth(month, 1))}
             >
               <ChevronRight size={16} aria-hidden="true" />
             </button>
@@ -206,18 +232,27 @@ export default function DatePicker({
             {Array.from({ length: leadingBlanks(month) }, (_, i) => <span key={`blank-${i}`} />)}
             {daysOf(month).map((day) => {
               const unavailable = outOfRange(day, min, max)
+              const booked = loadByDay.get(day)
+              // The count alone ("2") does not say what is booked, so the
+              // accessible name and tooltip carry the unit numbers too.
+              const bookedNames = booked
+                ? `${booked.count} PM${booked.count === 1 ? '' : 's'} scheduled${
+                    booked.units?.length ? `: ${booked.units.join(', ')}` : ''}`
+                : ''
               return (
                 <button
                   type="button"
                   key={day}
                   data-day={day}
-                  aria-label={formatDay(day)}
+                  title={bookedNames || undefined}
+                  aria-label={booked ? `${formatDay(day)} — ${bookedNames}` : formatDay(day)}
                   aria-pressed={day === selected}
                   aria-current={day === isoToday() ? 'date' : undefined}
                   disabled={unavailable}
                   className={[
                     day === selected ? 'is-selected' : '',
                     day === isoToday() ? 'is-today' : '',
+                    booked ? 'has-load' : '',
                   ].filter(Boolean).join(' ')}
                   tabIndex={focusedDay === day ? 0 : -1}
                   onClick={() => choose(day)}
@@ -240,6 +275,9 @@ export default function DatePicker({
                   }}
                 >
                   {Number(day.slice(8))}
+                  {booked && (
+                    <span className="db-datepicker__load" aria-hidden="true">{booked.count}</span>
+                  )}
                 </button>
               )
             })}

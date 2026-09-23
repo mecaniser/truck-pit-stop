@@ -10,7 +10,7 @@ import {
 import api from '../../lib/api'
 import SlidePanel from '@/components/SlidePanel'
 import MapboxAddressInput from '@/components/MapboxAddressInput'
-import DatePicker from '@/components/DatePicker'
+import DatePicker, { type DayLoad as PMDayLoadEntry } from '@/components/DatePicker'
 import { useAuthStore } from '../../stores/authStore'
 import type {
   BoardTruck, TruckDetail, Inspection, InspectionDetail, InspectionItem, InspectionItemResult, InspectionResult, IncidentSeverity, IncidentEntry,
@@ -679,6 +679,23 @@ export function SchedulePMModal({ truck, onClose, onDone, createMode = false }: 
       setBillToCustomerId(preferred.customer_id)
     }
   }, [billToCustomerId, billToOptions])
+  // Which month's PM load to show. The calendar opens on the due date's month
+  // and refetches as the manager navigates, so the badges always describe what
+  // is on screen.
+  const [loadMonth, setLoadMonth] = useState(() => (dueDate || new Date().toISOString().slice(0, 10)).slice(0, 7))
+  // Days in this month that already carry scheduled PMs, so the manager can
+  // spread the work instead of stacking trucks onto one date. Read-only.
+  const { data: pmDayLoad } = useQuery<PMDayLoadEntry[]>({
+    queryKey: ['fleet-pm-day-load', loadMonth],
+    queryFn: async () => {
+      const start = `${loadMonth}-01`
+      const end = new Date(Date.UTC(
+        Number(loadMonth.slice(0, 4)), Number(loadMonth.slice(5, 7)), 0,
+      )).toISOString().slice(0, 10)
+      return (await api.get('/fleet/pm-day-load', { params: { start, end } })).data
+    },
+  })
+
   const rescheduling = !!truck.pm_due_date
 
   // Services for this PM, seeded from the truck's saved default package. The
@@ -780,6 +797,8 @@ export function SchedulePMModal({ truck, onClose, onDone, createMode = false }: 
               label="Next PM due date"
               value={dueDate}
               onChange={(day) => { setDueDate(day); setDateEdited(true) }}
+              dayLoad={pmDayLoad}
+              onMonthChange={setLoadMonth}
               hint={dateEdited
                 ? 'Custom date — overrides the mileage estimate.'
                 : `Estimated from mileage (~${AVG_MILES_PER_DAY} mi/day). Edit to override.`}

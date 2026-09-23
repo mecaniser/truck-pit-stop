@@ -276,3 +276,64 @@
 }
 
 .db-datepicker--light :focus-visible { outline-color: #4f46e5; }
+
+/* Day load: how many trucks are already scheduled on a day.
+   The badge is a second signal alongside the count digit, never colour alone,
+   so the information survives both themes and colour-blind vision. */
+.db-datepicker__days button { position: relative; }
+
+.db-datepicker__load {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  display: grid;
+  place-items: center;
+  min-width: 14px;
+  height: 14px;
+  padding: 0 3px;
+  border-radius: 7px;
+  background: var(--parts-status-warning, #f4c46b);
+  color: #1a1206;
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+/* A booked day carries a faint ground as well as the badge, so the busy days
+   read as a block at a glance when scanning for a free date. */
+.db-datepicker__days .has-load:not(.is-selected) {
+  background: color-mix(in srgb, var(--parts-status-warning, #f4c46b) 14%, transparent);
+}
+
+/* On the selected day the yellow fill would swallow a yellow badge. */
+.db-datepicker__days .is-selected .db-datepicker__load {
+  background: #1a1206;
+  color: var(--yellow, #f5c518);
+}
+
+.db-datepicker--light .db-datepicker__load {
+  background: #b45309;
+  color: #fff;
+}
+
+.db-datepicker--light .db-datepicker__days .has-load:not(.is-selected) {
+  background: #fef3c7;
+}
+
+.db-datepicker--light .db-datepicker__days .is-selected .db-datepicker__load {
+  background: #fff;
+  color: #4f46e5;
+}
+
+.db-staff-shell[data-appearance-mode='high_contrast'] .db-datepicker__load {
+  background: var(--text-primary, #fff);
+  color: var(--surface-overlay, #000);
+  border: 1px solid var(--surface-overlay, #000);
+}
+
+.db-staff-shell[data-appearance-mode='high_contrast'] .db-datepicker__days .has-load:not(.is-selected) {
+  background: transparent;
+  outline: 1px dashed var(--text-primary, #fff);
+  outline-offset: -3px;
+}
