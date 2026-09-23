@@ -3,6 +3,7 @@ import ReactDOM from 'react-dom/client'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { isAxiosError } from 'axios'
 import App from './App.tsx'
+import { startStaleDeployWatch } from './lib/staleDeploy'
 import './index.css'
 
 const queryClient = new QueryClient({
@@ -19,6 +20,8 @@ const queryClient = new QueryClient({
     },
   },
 })
+
+startStaleDeployWatch()
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
