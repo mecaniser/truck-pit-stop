@@ -13,6 +13,8 @@
  */
 
 /** Forms currently holding unsaved input. Counted, not boolean: two panels can be open. */
+import { markStaleDeploy } from './staleDeploy'
+
 let dirtyForms = 0
 
 export function registerDirtyForm(): () => void {
@@ -63,5 +65,77 @@ export async function checkBuildVersion(runningSha: string | null): Promise<Buil
     return body.sha === runningSha ? 'current' : 'stale'
   } catch {
     return 'unknown'
+  }
+}
+
+/** The sha the server is currently serving, or null when it cannot be known. */
+async function fetchServedSha(): Promise<string | null> {
+  try {
+    const res = await fetch('/build-version', { cache: 'no-store' })
+    if (!res.ok) return null
+    const body = (await res.json()) as { sha?: unknown }
+    return typeof body?.sha === 'string' && body.sha ? body.sha : null
+  } catch {
+    return null
+  }
+}
+
+type WatchOptions = {
+  intervalMs?: number
+  reload?: () => void
+  mutationsInFlight?: () => number
+}
+
+/**
+ * Poll the served build and act when it changes.
+ *
+ * The running build's own sha is not compiled in: `isLocalRuntimeServe` in
+ * vite.config.ts deliberately keeps runtime identity out of production client
+ * code, and widening that guard to leak a sha would be the wrong trade. Instead
+ * the first response is adopted as "what this tab is running" — it is served by
+ * the same deployment that served this tab's HTML — and later responses are
+ * compared against it. A first poll therefore never reloads.
+ */
+export function startStaleBuildWatch({
+  intervalMs = 60_000,
+  reload = () => window.location.reload(),
+  mutationsInFlight = () => 0,
+}: WatchOptions = {}): () => void {
+  let runningSha: string | null = null
+  let stopped = false
+
+  const poll = async () => {
+    if (stopped) return
+    const served = await fetchServedSha()
+    if (stopped || served === null) return
+
+    if (runningSha === null) {
+      // Adoption pass: this response came from the deployment that served this
+      // tab, so it is what the tab is running. Decide nothing yet.
+      runningSha = served
+      return
+    }
+
+    if (served === runningSha) return
+
+    if (shouldReloadSilently({ mutationsInFlight: mutationsInFlight(), dirtyForms })) {
+      reload()
+      return
+    }
+    // Work would be lost, so ask instead of taking it. Reuses the DB-074 notice.
+    markStaleDeploy()
+  }
+
+  void poll()
+  const timer = setInterval(() => void poll(), intervalMs)
+  // An iPad parked for days fires this the moment it is picked back up, which
+  // is the realistic moment a stale tab is used again.
+  const onVisible = () => { if (document.visibilityState === 'visible') void poll() }
+  document.addEventListener('visibilitychange', onVisible)
+
+  return () => {
+    stopped = true
+    clearInterval(timer)
+    document.removeEventListener('visibilitychange', onVisible)
   }
 }
