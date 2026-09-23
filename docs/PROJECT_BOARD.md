@@ -1,6 +1,6 @@
 # DieselBridge Delivery Board
 
-> **DB-070 stale deploy recovery / IN REVIEW (2026-09-23), Frontend & UX accountable, Standard product lane:** Reported from production: `/dashboard/garage` showed a blank page, with the console reporting 404s for `MyGaragePage-BqMbfKJl.js` and other hashed chunks plus `Refused to apply style ... MIME type ('application/json')`. Root cause is not a code defect -- a deploy replaces every content-hashed asset, so a tab still running the previous build requests chunk filenames the server no longer has. Confirmed against production: `index-DlIE8I4u.js` and `index-C1FToTmH.css` (current `index.html`) return 200 while every asset named in the report returns 404, and a missing `/assets/*` path falls through to the API, which answers `{"detail":"Not Found"}` as `application/json` -- that fallback, not a stylesheet bug, produces the MIME refusal. The 401s on `/auth/me/appearance` and `/messages/unread-summary` are an unrelated expired session. Browser evidence showed React unmounts the entire tree when `React.lazy` re-throws a failed import and no error boundary exists, which is why the page is blank rather than partly working. Adds `lib/staleDeploy.ts` (detection across Chrome/Safari/Firefox wordings and the JSON-MIME symptom, a `vite:preloadError` and unhandled-rejection watch, and a `lazyRouteLoader` wrapper applied to all 31 lazy routes in `App.tsx` and `DashboardLayout.tsx`), `components/RouteErrorBoundary.tsx` (the app's first error boundary -- replaces the blank page and offers reload), and `components/StaleDeployNotice.tsx` for the non-render case, deduplicated via a `handled` flag so the message never appears twice. Not Fast UI: the boundary changes app-wide render-failure behavior, though no API, contract, migration, auth or tenant boundary changes. Acceptance: a dead route chunk shows one readable recovery card instead of a blank page; reload returns to a working app; an ordinary render error says "Something went wrong" and never claims a new version shipped; a non-stale rejection is ignored. Evidence: tests written first and confirmed red for the expected reason, with four independent mutations (removed listener, skipped teardown, ignored stale flag, over-broad pattern) each caught by exactly the intended test; frontend 740 pass across 92 files, up from 720/89, no regressions; TypeScript and production build clean; changed-source lint 0 findings across all 9 files. Browser-verified in Chromium against a served `dist` with a real chunk deleted and missing assets answering JSON 404, reproducing the reported console errors exactly: the unit tests passed while the real case still blanked, which is what exposed both the `React.lazy` unmount and a duplicate-message defect the unit tests could not see; after the fix the message shows once and clicking Reload recovers the app on the requested route. Branch `codex/stale-deploy-recovery` from main `f18867c1` (#408). Outstanding: protected PR CI, independent QA, and a signed-in browser pass on the real staff shell -- local evidence is a served production build, not the signed-in app. This does not change the immediate remedy for the reported session: a hard reload. Unrelated untracked paths preserved. Not Done.
+> **DB-070 stale deploy recovery / IN REVIEW (2026-09-23), Frontend & UX accountable, Standard product lane:** Reported from production: `/dashboard/garage` showed a blank page, with the console reporting 404s for `MyGaragePage-BqMbfKJl.js` and other hashed chunks plus `Refused to apply style ... MIME type ('application/json')`. Root cause is not a code defect -- a deploy replaces every content-hashed asset, so a tab still running the previous build requests chunk filenames the server no longer has. Confirmed against production: `index-DlIE8I4u.js` and `index-C1FToTmH.css` (current `index.html`) return 200 while every asset named in the report returns 404, and a missing `/assets/*` path falls through to the API, which answers `{"detail":"Not Found"}` as `application/json` -- that fallback, not a stylesheet bug, produces the MIME refusal. The 401s on `/auth/me/appearance` and `/messages/unread-summary` are an unrelated expired session. Browser evidence showed React unmounts the entire tree when `React.lazy` re-throws a failed import and no error boundary exists, which is why the page is blank rather than partly working. Adds `lib/staleDeploy.ts` (detection across Chrome/Safari/Firefox wordings and the JSON-MIME symptom, a `vite:preloadError` and unhandled-rejection watch, and a `lazyRouteLoader` wrapper applied to all 31 lazy routes in `App.tsx` and `DashboardLayout.tsx`), `components/RouteErrorBoundary.tsx` (the app's first error boundary -- replaces the blank page and offers reload), and `components/StaleDeployNotice.tsx` for the non-render case, deduplicated via a `handled` flag so the message never appears twice. Not Fast UI: the boundary changes app-wide render-failure behavior, though no API, contract, migration, auth or tenant boundary changes. Acceptance: a dead route chunk shows one readable recovery card instead of a blank page; reload returns to a working app; an ordinary render error says "Something went wrong" and never claims a new version shipped; a non-stale rejection is ignored. Evidence: tests written first and confirmed red for the expected reason, with four independent mutations (removed listener, skipped teardown, ignored stale flag, over-broad pattern) each caught by exactly the intended test; frontend 740 pass across 92 files, up from 720/89, no regressions; TypeScript and production build clean; changed-source lint 0 findings across all 9 files. Browser-verified in Chromium against a served `dist` with a real chunk deleted and missing assets answering JSON 404, reproducing the reported console errors exactly: the unit tests passed while the real case still blanked, which is what exposed both the `React.lazy` unmount and a duplicate-message defect the unit tests could not see; after the fix the message shows once and clicking Reload recovers the app on the requested route. Branch `codex/stale-deploy-recovery` from main `f18867c1` (#408), candidate `0b15b1e8`, [PR409](https://github.com/mecaniser/truck-pit-stop/pull/409). Protected PR CI passed all five required checks -- Frontend checks 2m35s, Playwright smoke 2m55s, Backend tests 1m1s, Migration graph 28s, Frontend full suite (informational) 2m54s; Backend full suite (informational) still running. Merge state is BLOCKED on review only, not on a failing check. Outstanding: independent QA, and a signed-in browser pass on the real staff shell -- local evidence is a served production build, not the signed-in app. This does not change the immediate remedy for the reported session: a hard reload. Unrelated untracked paths preserved. Not Done.
 
 > **DB-069 readable date picker / IN REVIEW (2026-09-23), Frontend & UX accountable, Standard product lane:** Every date field in the app was a bare `<input type="date">`, which hands the calendar to the browser; on the dark staff shell Chrome paints a dark-on-dark popup that is unreadable and unreachable by app CSS, so styling the input alone cannot fix it. Adds a shared `components/DatePicker.tsx` that owns its calendar so the appearance-mode tokens apply, with calendar arithmetic extracted to `components/calendarGrid.ts` and shared with the existing reporting range picker. All 11 date fields adopt it across three variants: default (PM due date, PM performed date, PTO start/end), `compact` (activity filters, mechanic work day), and `surface="light"` (invoice due dates, whose panels paint a white card inside the dark shell). The reporting picker keeps its two native fields deliberately -- they sit inside a dialog already showing both months -- with its indicator glyph brightened. Not Fast UI: 11 surfaces across fleet, dashboard, repair orders and mechanic portal exceed that lane, though no API, contract, migration, auth or tenant boundary changes -- presentation only. Acceptance: the PM due date calendar is legible in light, dark and high_contrast; date-only values do not shift across timezone boundaries; min/max boundaries are enforced; Escape closes and restores focus. Evidence: tests written first and confirmed red for the expected reason, with the Escape-to-close fix independently reverted to prove the test catches it; frontend 720 pass across 89 files including all 22 pre-existing ReportingDatePicker tests, so the shared-helper refactor changed no behavior; TypeScript and production build clean; changed-source lint adds no new findings (pre-existing counts 8/14/19/3 unchanged); every contrast pair passes WCAG AA at 6.29:1 minimum against a 4.5:1 threshold, verified in-browser via an isolated Playwright harness across all three appearance modes. Branch `codex/shared-date-picker` from main `3a999242`, candidate `a7528c30`, [PR408](https://github.com/mecaniser/truck-pit-stop/pull/408). Outstanding: protected PR CI, independent QA, and signed-in browser acceptance on the real screens -- the local evidence is an isolated component harness, not the signed-in app. Unrelated `Claude outputs/` preserved untracked. Not Done.
 
@@ -479,6 +479,20 @@ source-grounded prototype directions outside production source. Product now owns
 the single topology decision recorded in `docs/DB-035_MASTER_EXECUTION_PLAN.md`;
 no production implementation resumes before that decision.
 
+## Inbox
+
+Intake recorded 2026-09-23 from a product observation on the truck-detail
+"Unresolved road incidents" card. Four items, split by lane because one of them
+is a contract change and the other three are not. Each is independently
+releasable; DB-070 and DB-071 are the ones a dispatcher feels first.
+
+| ID | Priority | State | Outcome | Owner | Lane | Acceptance target |
+|---|---|---|---|---|---|---|
+| DB-070 | P1 | Inbox | Require a written outcome before an incident can be resolved | Frontend & UX | Fast UI | Resolving from the incident action menu opens a reason panel; submit stays disabled until a non-blank outcome is typed; the text persists to the existing `resolution_notes` field and is visible afterwards |
+| DB-071 | P1 | Inbox | Give resolved and voided road incidents a visible home on the truck | Frontend & UX | Fast UI | A collapsed "Resolved incidents" section on truck detail lists non-open incidents with their outcome text and resolution date, and each incident exposes its existing append-only event timeline |
+| DB-072 | P2 | Inbox | Link a road incident to a repair order that already exists | Architecture & API Contracts | Standard product | An incident with no linked order can be attached to an open repair order for the same truck, and detached; the attach is recorded as an incident event; cross-vehicle and cross-tenant attach are refused |
+| DB-073 | P3 | Inbox | Name the incident void action for what it does | Frontend & UX | Fast UI | The action menu and its confirmation say "Void", matching the backend behavior of retaining the record at status `voided` rather than deleting it |
+
 ## Blocked
 
 | ID | Priority | State | Outcome | Owner | Blocker | Resolver / next safe action | Unblock evidence |
@@ -821,3 +835,88 @@ last passing automated and runtime evidence in the item or associated issue.
 - Release evidence records both web deployment IDs/SHAs, successful Railway
   health gates, API health, and absence of connection-refused responses during
   each cutover; the worker is not redeployed.
+
+## DB-070 acceptance criteria
+
+Resolving a road incident currently sends `PATCH /fleet/incidents/{id}` with
+`{status: 'resolved'}` and nothing else, so the fleet keeps no record of why an
+incident stopped being a problem. The `resolution_notes` column, the
+`IncidentUpdate` field, and the `IncidentResponse` field already exist and are
+unused by the client; this item spends them rather than adding anything.
+
+- Choosing Resolve from the incident action menu opens a panel asking what the
+  outcome was. It does not resolve on the click.
+- Submit is unavailable until a non-blank outcome is typed. Whitespace alone is
+  not an outcome. The product owner chose free text over presets so the record
+  reads as a sentence a person wrote, not a category someone clicked past.
+- Submitting sends `status` and `resolution_notes` in one request; a failed
+  request leaves the incident open and says so.
+- The recorded outcome is readable after the fact, not write-only.
+- No API field, response shape, enum value, migration, auth, or tenant change:
+  this stays Fast UI only for as long as that remains true. Sending a field the
+  contract already publishes is not a contract change; adding one would be.
+
+## DB-071 acceptance criteria
+
+`TruckDetail` filters incidents to `status !== 'resolved'` and hides the whole
+section when none remain, so a resolved incident disappears from the only page
+that showed it. The data is not lost — `GET /fleet/trucks/{id}/incidents`
+returns it, and `GET /fleet/incidents/{id}/events` holds an append-only trail
+that no client reads today — but the UI has no door to either.
+
+- Truck detail shows a collapsed section for incidents that are no longer open,
+  listing each with its outcome text and when it was resolved.
+- Collapsed is the default. A resolved incident is history, and history must not
+  compete with the unresolved card above it for a dispatcher's attention.
+- Each incident can reveal its event timeline from the existing events endpoint,
+  including who acted and when, with voided incidents distinguishable from
+  resolved ones rather than merged into one bucket.
+- Voided incidents appear here too. The backend already retains them; a record
+  kept and never shown is the same as a record lost.
+- No API, migration, auth, or tenant change. Both endpoints exist and are
+  already authorized through the incident.
+
+## DB-072 acceptance criteria
+
+`FleetIncident.repair_order_id` can only be set by
+`POST /fleet/incidents/{id}/create-repair`, which creates an order or appends to
+the truck's open visit. Nothing can point an incident at an order that already
+exists, so an incident repaired under an order opened by another route stays
+unlinked forever.
+
+This item adds an API capability and therefore is **not** Fast UI. Per
+`AGENTS.md` rule 3 it routes to Architecture for a recorded contract before
+backend and frontend proceed.
+
+- Selectable orders are open repair orders **for the same vehicle** only. The
+  product owner chose this over searching all orders: an incident pointed at
+  another truck's order is a data-integrity defect that no UI affordance can
+  undo, and closed orders cannot absorb the work anyway.
+- Attaching an incident that already has a linked order is refused rather than
+  silently reassigned.
+- Attach and detach each append a `FleetIncidentEvent`, matching how
+  `repair_order_created` is already recorded, so the link has provenance.
+- Attempting to attach an order belonging to another vehicle, or to another
+  tenant, is refused; the cross-tenant case returns the same generic
+  not-found response the codebase already uses for foreign records rather than
+  confirming the order exists.
+- The existing `create-repair` behavior is unchanged, including its rule that an
+  open visit absorbs the complaint instead of spawning a second order.
+- Detaching an incident from its order must leave the order itself untouched.
+- Contract, negative cases, and the tenant boundary carry test evidence before
+  any UI consumes the route.
+
+## DB-073 acceptance criteria
+
+`DELETE /fleet/incidents/{id}` does not delete. It sets status `voided`, stamps
+`resolved_at`, records a `voided` event, and refuses outright when a repair
+order is linked. The menu calls this "Delete" in red, which tells a user their
+record is gone when it is retained.
+
+- The action and its confirmation read as voiding, not deleting.
+- The confirmation says the record is kept for history rather than implying
+  erasure.
+- The existing refusal when a repair order is linked is surfaced as the reason
+  it is, not as a generic failure.
+- Behavior is unchanged; only the naming stops contradicting it. Pairs with
+  DB-071, which is what makes the retained record actually reachable.
