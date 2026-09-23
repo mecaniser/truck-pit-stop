@@ -524,6 +524,21 @@ contract change and ships separately, the other three are not.
 > needs an Architecture-recorded contract; no PR, protected CI, independent gate,
 > merge or deployment.
 
+> **Incident stack reconciled (2026-09-23):** The three stacked PRs merged out
+> of order. #412 merged into #411's branch at 16:54:12; #413 merged into #412's
+> branch at 16:54:28, sixteen seconds after #412 had already left, so DB-073
+> landed one level below where the stack had moved on to and was absent from
+> #411. Recovered by merging `codex/incident-repair-order-link-v2` into
+> `codex/incident-resolution-outcome` (merge `23a80aae`); five conflicts, all the
+> same shape — the pre-DB-073 state against DB-073's own addition — resolved to
+> DB-073 throughout. Verified after the merge: backend `test_fleet_workflows.py`
+> 76 pass, frontend 753/753 across 93 files, typecheck and production build
+> clean, all four items present in the tree and in the PR diff. **PR #411 now
+> carries DB-070, DB-071, DB-072 and DB-073 to `main` as a single merge.** It is
+> `MERGEABLE` but `BLOCKED` on review approval, not on a failing check. Note that
+> DB-072 is a contract change whose Architecture review was never recorded; the
+> stacked merges carried it past that gate, and #411 will land it on `main`.
+
 > **DB-073 implemented, PR pending (2026-09-23):** Branch
 > `codex/incident-void-naming`, stacked on `codex/incident-repair-order-link-v2`.
 > `DELETE /fleet/incidents/{id}` has never deleted — it sets status `voided`,
