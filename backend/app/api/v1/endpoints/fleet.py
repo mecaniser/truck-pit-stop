@@ -1228,14 +1228,15 @@ async def delete_incident(
 ):
     """Void an accidental road-incident entry without erasing its audit trail.
 
-    The DELETE route remains for client compatibility, but the record and its
-    evidence are retained for accountable history.
+    The route keeps the DELETE verb for client compatibility, but nothing is
+    deleted: the record and its evidence are retained for accountable history,
+    and the UI names the action Void to match (DB-073).
     """
     incident = await _load_incident(db, current_user.tenant_id, incident_id)
     if incident.repair_order_id:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="This incident has a linked repair order. Delete or unlink the repair order first.",
+            detail="This incident is linked to a repair order. Unlink it first.",
         )
     incident.status = IncidentStatus.VOIDED
     incident.resolved_at = datetime.now(timezone.utc)

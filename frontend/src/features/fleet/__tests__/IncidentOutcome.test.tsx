@@ -192,3 +192,46 @@ describe('DB-071 resolved incidents keep a visible home', () => {
     expect(screen.queryByText('Blown marker lamp')).not.toBeInTheDocument()
   })
 })
+
+describe('DB-073 the void action says what it does', () => {
+  afterEach(() => {
+    Object.values(apiMocks).forEach((mock) => mock.mockReset())
+  })
+
+  it('offers to void the incident rather than delete it', async () => {
+    mockQueries([openIncident])
+    const user = userEvent.setup()
+    renderTruck()
+
+    await openIncidentMenu(user)
+
+    expect(screen.getByRole('button', { name: /^void$/i })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^delete$/i })).toBeNull()
+  })
+
+  it('says the record is kept when asking to confirm', async () => {
+    mockQueries([openIncident])
+    const user = userEvent.setup()
+    renderTruck()
+
+    await openIncidentMenu(user)
+    await user.click(screen.getByRole('button', { name: /^void$/i }))
+
+    expect(await screen.findByText(/kept/i)).toBeInTheDocument()
+  })
+
+  it('still sends the same request the backend already answers', async () => {
+    mockQueries([openIncident])
+    apiMocks.delete.mockResolvedValue({ data: {} })
+    const user = userEvent.setup()
+    renderTruck()
+
+    await openIncidentMenu(user)
+    await user.click(screen.getByRole('button', { name: /^void$/i }))
+    await user.click(screen.getByRole('button', { name: /^void incident$/i }))
+
+    await waitFor(() => {
+      expect(apiMocks.delete).toHaveBeenCalledWith('/fleet/incidents/inc-1')
+    })
+  })
+})
