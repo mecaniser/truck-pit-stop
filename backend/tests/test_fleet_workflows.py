@@ -2063,3 +2063,145 @@ async def test_linkable_orders_includes_a_pm_visit(db_session):
     )
 
     assert [o.id for o in options] == [pm_ro.id]
+
+
+# ---------------------------------------------------------------------------
+# An incident linked to a repair order is resolved when that order's work is
+# completed. Before this, completing the order left the incident open on the
+# truck page, so the fleet showed a problem the shop had already fixed.
+# ---------------------------------------------------------------------------
+
+
+async def _linked_incident_and_order(db_session, *, order_status=RepairOrderStatus.IN_PROGRESS):
+    tenant, vehicle, user = await _seed_fleet(db_session)
+    incident = await _seed_incident(db_session, vehicle, user)
+    ro = await _seed_repair_order(db_session, tenant, vehicle, status_value=order_status)
+    await fleet.link_incident_repair_order(
+        incident_id=incident.id,
+        body=IncidentRepairOrderLink(repair_order_id=ro.id),
+        db=db_session,
+        current_user=user,
+    )
+    return tenant, vehicle, user, incident, ro
+
+
+async def _complete_through_fleet(db_session, ro, user, monkeypatch):
+    from app.api.v1.endpoints import invoices as invoices_endpoint
+
+    async def _no_op(*_args, **_kwargs):
+        return None
+
+    monkeypatch.setattr(invoices_endpoint, "notify_invoice_created", _no_op)
+    await fleet.complete_work_order(
+        ro_id=ro.id,
+        body=WorkOrderComplete(),
+        db=db_session,
+        current_user=user,
+    )
+
+
+async def _stored_incident(db_session, incident_id):
+    from app.db.models.fleet import FleetIncident
+
+    db_session.expire_all()
+    return (
+        await db_session.execute(select(FleetIncident).where(FleetIncident.id == incident_id))
+    ).scalar_one()
+
+
+@pytest.mark.asyncio
+async def test_completing_the_linked_order_resolves_the_incident(db_session, monkeypatch):
+    _, _, user, incident, ro = await _linked_incident_and_order(db_session)
+
+    await _complete_through_fleet(db_session, ro, user, monkeypatch)
+
+    stored = await _stored_incident(db_session, incident.id)
+    assert stored.status == IncidentStatus.RESOLVED
+    assert stored.resolved_at is not None
+
+
+@pytest.mark.asyncio
+async def test_the_resolution_names_the_order_that_fixed_it(db_session, monkeypatch):
+    _, _, user, incident, ro = await _linked_incident_and_order(db_session)
+    order_number = ro.order_number
+
+    await _complete_through_fleet(db_session, ro, user, monkeypatch)
+
+    stored = await _stored_incident(db_session, incident.id)
+    assert order_number in (stored.resolution_notes or "")
+
+
+@pytest.mark.asyncio
+async def test_completion_records_a_resolved_by_repair_order_event(db_session, monkeypatch):
+    _, _, user, incident, ro = await _linked_incident_and_order(db_session)
+
+    await _complete_through_fleet(db_session, ro, user, monkeypatch)
+
+    events = (
+        await db_session.execute(
+            select(FleetIncidentEvent).where(
+                FleetIncidentEvent.incident_id == incident.id,
+                FleetIncidentEvent.event_type == "resolved_by_repair_order",
+            )
+        )
+    ).scalars().all()
+    assert len(events) == 1
+    assert events[0].data_json["repair_order_id"] == str(ro.id)
+
+
+@pytest.mark.asyncio
+async def test_completion_keeps_an_outcome_someone_already_wrote(db_session):
+    """A person's words outrank the generated note."""
+    from app.services.fleet_incident_resolution import resolve_incidents_for_completed_order
+
+    _, _, user, incident, ro = await _linked_incident_and_order(db_session)
+    user_id = user.id
+    stored = await _stored_incident(db_session, incident.id)
+    stored.resolution_notes = "Driver confirmed the leak stopped after the clamp"
+    await db_session.commit()
+    await db_session.refresh(ro)
+
+    await resolve_incidents_for_completed_order(db_session, ro, actor_user_id=user_id)
+    await db_session.commit()
+
+    stored = await _stored_incident(db_session, incident.id)
+    assert stored.resolution_notes == "Driver confirmed the leak stopped after the clamp"
+
+
+@pytest.mark.asyncio
+async def test_completion_leaves_a_voided_incident_voided(db_session):
+    from app.services.fleet_incident_resolution import resolve_incidents_for_completed_order
+
+    _, _, user, incident, ro = await _linked_incident_and_order(db_session)
+    user_id = user.id
+    stored = await _stored_incident(db_session, incident.id)
+    stored.status = IncidentStatus.VOIDED
+    await db_session.commit()
+    await db_session.refresh(ro)
+
+    await resolve_incidents_for_completed_order(db_session, ro, actor_user_id=user_id)
+    await db_session.commit()
+
+    stored = await _stored_incident(db_session, incident.id)
+    assert stored.status == IncidentStatus.VOIDED
+
+
+@pytest.mark.asyncio
+async def test_completion_does_not_touch_incidents_on_other_orders(db_session):
+    from app.services.fleet_incident_resolution import resolve_incidents_for_completed_order
+
+    tenant, vehicle, user, _, ro = await _linked_incident_and_order(db_session)
+    other_incident = await _seed_incident(db_session, vehicle, user, description="Cracked mirror")
+    other_ro = await _seed_repair_order(db_session, tenant, vehicle)
+    await fleet.link_incident_repair_order(
+        incident_id=other_incident.id,
+        body=IncidentRepairOrderLink(repair_order_id=other_ro.id),
+        db=db_session,
+        current_user=user,
+    )
+
+    await resolve_incidents_for_completed_order(db_session, ro, actor_user_id=user.id)
+    await db_session.commit()
+
+    stored = await _stored_incident(db_session, other_incident.id)
+    assert stored.status == IncidentStatus.IN_PROGRESS

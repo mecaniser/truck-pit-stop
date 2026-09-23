@@ -14,6 +14,7 @@ os.environ.setdefault("TWILIO_AUTH_TOKEN", "test-token")
 os.environ.setdefault("TWILIO_PHONE_NUMBER", "+15555550100")
 
 from app.api.v1.endpoints import repair_orders
+from app.db.models.fleet import FleetIncident
 from app.db.models.repair_order_history import RepairOrderHistoryEvent
 from app.db.models.repair_order import RepairOrder, RepairOrderStatus
 from app.db.models.tenant import Tenant
@@ -27,6 +28,12 @@ class _ScalarResult:
 
     def scalar_one_or_none(self):
         return self._value
+
+    def scalars(self):
+        return self
+
+    def all(self):
+        return [] if self._value is None else list(self._value)
 
 
 class _FakeAsyncSession:
@@ -71,6 +78,8 @@ class _FakeOverrideSession:
             return _ScalarResult(self.order)
         if entity is Tenant:
             return _ScalarResult(None)
+        if entity is FleetIncident:
+            return _ScalarResult([])
         raise AssertionError(f"Unexpected query call #{self.execute_calls} for entity {entity}")
 
     def add(self, obj):
@@ -409,3 +418,42 @@ async def test_admin_approval_of_internal_override_ro_records_admin_history(monk
     assert history_event.event_type == "admin_approved_completion"
     assert history_event.label == "Completion approved by admin"
     assert history_event.actor_name == "Shop Manager"
+
+
+@pytest.mark.asyncio
+async def test_approving_completion_resolves_incidents_linked_to_the_order(monkeypatch):
+    """Both completion paths hand the order to the incident resolver.
+
+    fleet.complete_work_order is covered end to end against a real database in
+    test_fleet_workflows.py; this pins the second path, approve_completion.
+    """
+    order, _mechanic, manager = _build_context(mechanic_phone=None)
+    order.status = RepairOrderStatus.PENDING_REVIEW
+    order.work_started_at = datetime.now(timezone.utc)
+    order.work_completed_at = datetime.now(timezone.utc)
+    order.assigned_mechanic_id = None
+    order.is_internal = True
+    fake_db = _FakeOverrideSession(order=order)
+
+    async def _noop(*_args, **_kwargs):
+        return None
+
+    resolved_for: list[object] = []
+
+    async def _spy(db, completed_order, *, actor_user_id):
+        resolved_for.append((completed_order, actor_user_id))
+        return 0
+
+    monkeypatch.setattr(repair_orders, "broadcast_repair_order_update", _noop)
+    monkeypatch.setattr(repair_orders, "send_email", _noop)
+    monkeypatch.setattr(repair_orders, "send_sms", _noop)
+    monkeypatch.setattr(repair_orders, "resolve_incidents_for_completed_order", _spy, raising=False)
+
+    await repair_orders.approve_completion(
+        order_id=order.id,
+        body=repair_orders.ApproveCompletionRequest(review_notes="Looks good", mileage_out=123456),
+        db=fake_db,
+        current_user=manager,
+    )
+
+    assert resolved_for == [(order, manager.id)]

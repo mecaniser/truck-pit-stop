@@ -41,6 +41,7 @@ from app.core.payment_step_up import (
     payment_step_up_mutation_result,
 )
 from app.services.email_service import send_email
+from app.services.fleet_incident_resolution import resolve_incidents_for_completed_order
 from app.services.tenant_branding import build_tenant_contact_html, get_tenant_display_name
 from app.services.twilio_service import send_sms
 from app.services.price_build_service import (
@@ -3012,6 +3013,8 @@ async def approve_completion(
         order.mileage_out = body.mileage_out
 
     order.status = RepairOrderStatus.COMPLETED
+    # The work is done, so the road incidents this order answers for are too.
+    await resolve_incidents_for_completed_order(db, order, actor_user_id=current_user.id)
     # Finalization is the financial lock boundary in the work-first model.
     # Quotes never lock pricing; manager approval does.
     order.pricing_locked_at = datetime.now(timezone.utc)
