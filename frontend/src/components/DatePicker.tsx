@@ -21,6 +21,10 @@ export interface DayLoad {
   count: number
   /** Unit numbers already booked that day; shown on hover and to screen readers. */
   units?: string[]
+  /** Corrective repair work booked that day, kept separate from the PM count so
+      a day busy with repairs is not read as a day busy with PMs. */
+  booked_count?: number
+  booked_units?: string[]
 }
 
 export interface DatePickerProps {
@@ -135,7 +139,11 @@ export default function DatePicker({
   }
 
   // Index the load once per render so each day cell is a map lookup, not a scan.
-  const loadByDay = new Map((dayLoad || []).filter(d => d.count > 0).map(d => [d.day, d]))
+  const loadByDay = new Map(
+    (dayLoad || [])
+      .filter(d => d.count > 0 || (d.booked_count || 0) > 0)
+      .map(d => [d.day, d]),
+  )
 
   // Tell the caller which month is on screen so it can fetch that month's load.
   const goToMonth = (next: string) => {
@@ -233,12 +241,21 @@ export default function DatePicker({
             {daysOf(month).map((day) => {
               const unavailable = outOfRange(day, min, max)
               const booked = loadByDay.get(day)
-              // The count alone ("2") does not say what is booked, so the
-              // accessible name and tooltip carry the unit numbers too.
-              const bookedNames = booked
-                ? `${booked.count} PM${booked.count === 1 ? '' : 's'} scheduled${
-                    booked.units?.length ? `: ${booked.units.join(', ')}` : ''}`
-                : ''
+              // The badge shows total work on the day; the description keeps PM
+              // and repair load apart, because a manager avoiding a busy day
+              // still needs to know what makes it busy.
+              const repairCount = booked?.booked_count || 0
+              const total = (booked?.count || 0) + repairCount
+              const parts: string[] = []
+              if (booked?.count) {
+                parts.push(`${booked.count} PM${booked.count === 1 ? '' : 's'} scheduled${
+                  booked.units?.length ? `: ${booked.units.join(', ')}` : ''}`)
+              }
+              if (repairCount) {
+                parts.push(`${repairCount} repair job${repairCount === 1 ? '' : 's'} booked${
+                  booked?.booked_units?.length ? `: ${booked.booked_units.join(', ')}` : ''}`)
+              }
+              const bookedNames = parts.join(' · ')
               return (
                 <button
                   type="button"
@@ -276,7 +293,7 @@ export default function DatePicker({
                 >
                   {Number(day.slice(8))}
                   {booked && (
-                    <span className="db-datepicker__load" aria-hidden="true">{booked.count}</span>
+                    <span className="db-datepicker__load" aria-hidden="true">{total}</span>
                   )}
                 </button>
               )

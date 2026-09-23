@@ -692,7 +692,12 @@ export function SchedulePMModal({ truck, onClose, onDone, createMode = false }: 
       const end = new Date(Date.UTC(
         Number(loadMonth.slice(0, 4)), Number(loadMonth.slice(5, 7)), 0,
       )).toISOString().slice(0, 10)
-      return (await api.get('/fleet/pm-day-load', { params: { start, end } })).data
+      // Include booked repair work: the manager is choosing a day the shop can
+      // actually take the truck, and a bay filled by corrective work is just as
+      // unavailable as one filled by a PM.
+      return (await api.get('/fleet/pm-day-load', {
+        params: { start, end, include_repair_orders: true },
+      })).data
     },
   })
 

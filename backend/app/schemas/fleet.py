@@ -193,6 +193,11 @@ class PMDayLoad(BaseModel):
     day: date
     count: int
     units: List[str] = []
+    # Corrective work already booked that day, counted separately: a day heavy
+    # with repair jobs is busy for a different reason than a day heavy with PMs,
+    # and merging them would hide which.
+    booked_count: int = 0
+    booked_units: List[str] = []
 
     class Config:
         from_attributes = True

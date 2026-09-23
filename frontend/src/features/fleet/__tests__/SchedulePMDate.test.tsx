@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen, within } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
@@ -97,5 +97,26 @@ describe('Schedule PM day load', () => {
     const dialog = screen.getByRole('dialog', { name: /next pm due date/i })
     const busy = await within(dialog).findByRole('button', { name: /Nov 20, 2026.*2 PMs scheduled/ })
     expect(busy).toHaveTextContent('2')
+  })
+})
+
+describe('Schedule PM shop load request', () => {
+  afterEach(() => vi.clearAllMocks())
+
+  it('asks for booked repair work as well as PMs', async () => {
+    apiMocks.get.mockImplementation((url: string) => {
+      if (url.includes('pm-day-load')) return Promise.resolve({ data: [] })
+      return Promise.resolve({ data: [] })
+    })
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    render(
+      <QueryClientProvider client={client}>
+        <SchedulePMModal truck={truck} onClose={vi.fn()} onDone={vi.fn()} />
+      </QueryClientProvider>,
+    )
+    await waitFor(() => {
+      const call = apiMocks.get.mock.calls.find((c) => String(c[0]).includes('pm-day-load'))
+      expect(call?.[1]?.params?.include_repair_orders).toBe(true)
+    })
   })
 })

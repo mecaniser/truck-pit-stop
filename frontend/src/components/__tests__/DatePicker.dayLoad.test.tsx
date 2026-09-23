@@ -57,3 +57,41 @@ describe('DatePicker day load', () => {
     expect(onMonthChange).toHaveBeenCalledWith('2026-12')
   })
 })
+
+describe('DatePicker total shop load', () => {
+  const mixed = [
+    { day: '2026-11-04', count: 2, units: ['603', '412'], booked_count: 1, booked_units: ['118'] },
+    { day: '2026-11-06', count: 0, units: [], booked_count: 3, booked_units: ['77', '88', '99'] },
+  ]
+
+  it('adds booked repair work into the day total', async () => {
+    const user = open({ dayLoad: mixed })
+    await user.click(screen.getByRole('button', { name: /choose date/i }))
+    const day = within(screen.getByRole('dialog')).getByRole('button', { name: /Nov 4, 2026/ })
+    expect(day).toHaveTextContent('3')
+  })
+
+  it('separates PM load from repair load so the reason is visible', async () => {
+    const user = open({ dayLoad: mixed })
+    await user.click(screen.getByRole('button', { name: /choose date/i }))
+    const day = within(screen.getByRole('dialog')).getByRole('button', { name: /Nov 4, 2026/ })
+    expect(day).toHaveAccessibleName(expect.stringContaining('2 PMs'))
+    expect(day).toHaveAccessibleName(expect.stringContaining('1 repair'))
+  })
+
+  it('marks a day that carries only repair work', async () => {
+    const user = open({ dayLoad: mixed })
+    await user.click(screen.getByRole('button', { name: /choose date/i }))
+    const day = within(screen.getByRole('dialog')).getByRole('button', { name: /Nov 6, 2026/ })
+    expect(day).toHaveClass('has-load')
+    expect(day).toHaveTextContent('3')
+    expect(day).toHaveAccessibleName(expect.stringContaining('3 repair'))
+  })
+
+  it('does not mention repair work on a PM-only day', async () => {
+    const user = open({ dayLoad: [{ day: '2026-11-04', count: 1, units: ['603'] }] })
+    await user.click(screen.getByRole('button', { name: /choose date/i }))
+    const day = within(screen.getByRole('dialog')).getByRole('button', { name: /Nov 4, 2026/ })
+    expect(day).toHaveAccessibleName(expect.not.stringContaining('repair'))
+  })
+})
