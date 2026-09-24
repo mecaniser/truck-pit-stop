@@ -1,6 +1,7 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import path from 'path'
+import { buildStampPlugin } from './scripts/buildStampPlugin.mjs'
 
 // https://vitejs.dev/config/
 export default defineConfig(({ command, mode }) => {
@@ -28,7 +29,9 @@ export default defineConfig(({ command, mode }) => {
     'import.meta.env.VITE_DIESELBRIDGE_RUNTIME_BRANCH': JSON.stringify(runtimeBranch),
     'import.meta.env.VITE_DIESELBRIDGE_RUNTIME_SHA': JSON.stringify(runtimeSha),
   } : undefined,
-  plugins: [react()],
+  // DB-076: the stamp is emitted as its own asset, never defined into client
+  // code, so the isLocalRuntimeServe guard above stays as it is.
+  plugins: [react(), buildStampPlugin({ sha: process.env.RAILWAY_GIT_COMMIT_SHA ?? runtimeSha })],
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),

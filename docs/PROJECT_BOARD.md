@@ -1,5 +1,7 @@
 # DieselBridge Delivery Board
 
+> **DB-076 forced update for long-lived tabs / INBOX (2026-09-23), Frontend & UX accountable, Standard product lane:** A fleet manager keeps the board open on an iPad for days. Deploys ship, but the tab keeps running old code and never asks for a new chunk, so nothing tells it to update. DB-074 does not cover this: its detection fires only when a lazy chunk 404s, and `features/fleet/FleetApp.tsx` imports `FleetBoard`, `TruckDetail`, `FleetMap` and its modals statically -- one chunk, already in memory. The manager can work the board indefinitely and never trigger it. API calls keep succeeding because the backend is deployed and compatible, so the app feels correct while running a week-old build. Acceptance: the build stamps a version the client can read and serves it at a path that is never cached; the client compares on an interval and on `visibilitychange` (the moment an iPad is picked back up -- `lib/sessionKeepAlive.ts` already uses that event); on mismatch with a clean idle page the app reloads silently, with no prompt (product decision, 2026-09-23); on mismatch with unsaved work it shows the DB-074 notice instead and reloads only when the person accepts; a release may additionally be marked breaking, which forces the reload after a visible countdown regardless of state. Negative cases: a failed or offline version fetch must never reload or nag; a version check must not fire while a form is dirty or a mutation is in flight; polling must not add meaningful load (single small request, backed off when hidden). Open questions for Architecture: what counts as "unsaved work" needs one shared definition (React Query mutation in flight plus dirty-form registry), and whether the version source is a static `version.json` written at build time or a backend field -- note `backend/app/main.py:682-715` serves both the API and the SPA, so either lands in the same service, and that same fallback is why a missing `/assets/*` path returns `{"detail":"Not Found"}` as JSON. IMPLEMENTED, REVIEW PENDING (2026-09-23): `/build-version` serves the stamp Vite emits, with `no-store` and GET+HEAD, registered before the SPA catch-all; the client adopts the first response as this tab's build and compares later polls, so a first poll never reloads and no sha needs compiling into client code (the `isLocalRuntimeServe` guard stays intact). Polls on an interval and on `visibilitychange`. Mutation count from `queryClient.isMutating()`. Two defects found while building, both fixed: the Dockerfile had no `ARG RAILWAY_GIT_COMMIT_SHA`, so the stamp would have shipped permanently null and the feature would have been silently dead; and the client had no way to learn its own sha, which the adoption pass now solves. Evidence: tests written first and confirmed red for the expected reason; backend 7, frontend 16 for this item, frontend 794 across 94 files; mutation-verified on the two paths that would destroy a manager's work (ignoring dirty forms, and treating a failed fetch as stale) plus the two contract requirements (no-store, HEAD). Endpoint verified against a running server: `no-store` present, sha matches the build, HEAD 200 while HEAD /robots.txt is 405. Browser-verified against a served build: the tab reloads itself with no prompt when the served sha changes, and does not reload at all when the endpoint returns 500 or returns HTML. Not Fast UI: app-wide runtime behavior, a new served endpoint, and a build-time stamp. Outstanding: the breaking-release countdown tier is NOT implemented; typing in any fleet Modal or SlidePanel now registers unsaved work (`useDirtyOnInput`, mutation-verified), but inline fields outside those two shells are not covered; protected PR CI; independent QA; and a signed-in browser pass on a real iPad. Today `index.html` returns no cache-control header and `/health` carries no build identity, so neither can answer the question as-is; the dev-only `VITE_DIESELBRIDGE_RUNTIME_SHA` is stripped from production builds by `isLocalRuntimeServe` in `frontend/vite.config.ts`. Depends on DB-074 (merged, deployed, `aa0a5ba7`) for the prompt UI it reuses. No branch, no implementation, no PR.
+
 > **DB-075 PM calendar day load / IN REVIEW (2026-09-23), Frontend & UX accountable with a Backend contract addition, Standard product lane:** A manager rescheduling a PM could not see which dates were already busy, so trucks stacked onto one day while the next sat empty. **Contract change requiring Architecture review under rule 3:** new `GET /fleet/pm-day-load` returning `PMDayLoad` (`day`, `count`, `units`, `booked_count`, `booked_units`). Read-only over the existing `Vehicle.pm_due_date` and `Appointment.scheduled_at`; it schedules nothing, writes nothing, and adds no migration. Tenant-scoped, excludes deleted trucks, omits empty days, and rejects reversed or >366-day windows so month navigation cannot scan the whole fleet history. `include_repair_orders=true` additionally counts appointments, excluding cancelled and no-show; the two kinds stay separate because a day heavy with repairs is busy for a different reason than a day heavy with PMs. Semantics confirmed with the product owner: a PM count is trucks **due** that day, not trucks booked in - three due on a Saturday is the signal to move the fourth to the following week. Frontend: the shared `DatePicker` gains an optional `dayLoad`; busy days carry a count badge and tinted ground, and a reserved footer below the grid names the trucks. Three UI defects were found in-browser and each fixed test-first: an in-flow detail block pushed the grid down 97px and slid the hovered day out from under the pointer; as an overlay it covered the very weeks being compared against and took the pointer, causing a mouseleave/reopen flicker loop; and the trigger's hover drew a border inside the field's own border, reading as a double frame. Touch is a first-class case (the calendar is used on shop tablets): the first tap on a busy day reveals it, a second commits, tracked separately from hover because a tap fires mouseenter first. Acceptance: busy days are legible in light, dark and high_contrast; the footer hides no weeks and the grid never shifts; date-only values do not cross timezone boundaries; appointment bucketing is shop-local. Evidence: every test written first and confirmed red; tenant isolation verified by removing the filter, shop-local bucketing verified by reverting to UTC, both failed as intended. Backend 14 new tests, fleet suites 90 pass; frontend 761 pass across 92 files; TypeScript, changed-source lint and production build clean; verified in-browser at 420px and on an emulated iPhone 13 with touch (detail top 377 vs last day bottom 367, no overlap; grid top 187 identical idle and hovering). Branch `codex/pm-day-load` rebased onto main `7e6e2166` after PR409/PR410 landed mid-flight - the pre-rebase diff would have deleted the stale-deploy work, so the rebase was required, not cosmetic. Outstanding: Architecture contract review, protected PR CI, independent QA, and signed-in browser acceptance on the real screens. Local dev DB carries 8 seeded PM dates for demonstration, revertible via the recorded original values. Not Done.
 
 > **DB-074 stale deploy recovery / IN REVIEW (2026-09-23), Frontend & UX accountable, Standard product lane:** Reported from production: `/dashboard/garage` showed a blank page, with the console reporting 404s for `MyGaragePage-BqMbfKJl.js` and other hashed chunks plus `Refused to apply style ... MIME type ('application/json')`. Root cause is not a code defect -- a deploy replaces every content-hashed asset, so a tab still running the previous build requests chunk filenames the server no longer has. Confirmed against production: `index-DlIE8I4u.js` and `index-C1FToTmH.css` (current `index.html`) return 200 while every asset named in the report returns 404, and a missing `/assets/*` path falls through to the API, which answers `{"detail":"Not Found"}` as `application/json` -- that fallback, not a stylesheet bug, produces the MIME refusal. The 401s on `/auth/me/appearance` and `/messages/unread-summary` are an unrelated expired session. Browser evidence showed React unmounts the entire tree when `React.lazy` re-throws a failed import and no error boundary exists, which is why the page is blank rather than partly working. Adds `lib/staleDeploy.ts` (detection across Chrome/Safari/Firefox wordings and the JSON-MIME symptom, a `vite:preloadError` and unhandled-rejection watch, and a `lazyRouteLoader` wrapper applied to all 31 lazy routes in `App.tsx` and `DashboardLayout.tsx`), `components/RouteErrorBoundary.tsx` (the app's first error boundary -- replaces the blank page and offers reload), and `components/StaleDeployNotice.tsx` for the non-render case, deduplicated via a `handled` flag so the message never appears twice. Not Fast UI: the boundary changes app-wide render-failure behavior, though no API, contract, migration, auth or tenant boundary changes. Acceptance: a dead route chunk shows one readable recovery card instead of a blank page; reload returns to a working app; an ordinary render error says "Something went wrong" and never claims a new version shipped; a non-stale rejection is ignored. Evidence: tests written first and confirmed red for the expected reason, with four independent mutations (removed listener, skipped teardown, ignored stale flag, over-broad pattern) each caught by exactly the intended test; frontend 740 pass across 92 files, up from 720/89, no regressions; TypeScript and production build clean; changed-source lint 0 findings across all 9 files. Browser-verified in Chromium against a served `dist` with a real chunk deleted and missing assets answering JSON 404, reproducing the reported console errors exactly: the unit tests passed while the real case still blanked, which is what exposed both the `React.lazy` unmount and a duplicate-message defect the unit tests could not see; after the fix the message shows once and clicking Reload recovers the app on the requested route. Branch `codex/stale-deploy-recovery` from main `f18867c1` (#408), candidate `0b15b1e8`, [PR409](https://github.com/mecaniser/truck-pit-stop/pull/409). Protected PR CI passed all five required checks -- Frontend checks 2m35s, Playwright smoke 2m55s, Backend tests 1m1s, Migration graph 28s, Frontend full suite (informational) 2m54s; Backend full suite (informational) still running. Merge state is BLOCKED on review only, not on a failing check. MERGED AND DEPLOYED: squash-merged to `main` as `aa0a5ba7` at 2026-09-23T16:12:30Z after all six required checks passed on `13d76f08` (Backend full suite 11m37s, Playwright smoke 3m2s, Frontend full suite 2m48s, Frontend checks 2m14s, Backend tests 1m4s, Migration graph 20s); `main` protection requires no approving review, so the six checks were the whole gate. Railway service `diesel-bridge-network` auto-deploys `main` and serves `www.dieselbridge.com`; CI validates `railway.json` but never deploys. Auto-deploy did NOT fire for this merge: GitHub emitted no `PushEvent` on `refs/heads/main` for `aa0a5ba7` and registered zero check suites on it, against 3 on the equivalent #408 merge commit `f18867c1` (`railway-app`, `cursor`, `github-actions`), so Railway was never told the commit existed. Railway config was unchanged throughout (`branch: main`, no staged changes, empty `pendingWork`), and `railway-app` did register on the branch pushes immediately before and after (`13d76f08`, `9dcafc41`), so the integration was healthy and this reads as a one-off GitHub event-delivery miss on that single commit rather than a broken connection. No manual deploy was triggered. The fix reached production instead by being swept along in later merges: `1c8996d0` (#414) at 17:52Z and `4f749ab6` (#415) at 18:04Z, the latter SUCCESS and currently live, with `aa0a5ba7` an ancestor of both. DEPLOY CONFIRMED against the live bundle `index-CF4Kx_Y2.js`: the notice and boundary copy ("A new version of DieselBridge is available", "Something went wrong", "Reload now", "Reload to finish") and all four detection paths (`dynamically imported module`, `preloadError`, `supported stylesheet`, `unhandledrejection`) are present, including the minified stale-vs-ordinary ternary. Correction: an earlier check in this item's history reported the fix absent from the live bundle. That was a faulty measurement -- 303KB of minified JS grepped through a shell variable rather than a file -- not a failed deploy; re-run against a saved file, every marker matched. Outstanding: independent QA, and a signed-in browser pass on the real staff shell -- the deploy evidence above is bundle content, not a person clicking through the deployed app. Note this fix could not demonstrate itself on its own deploy: it makes subsequent deploys recoverable, and the deploys that carried it handed already-open tabs the very error it fixes, now with a reload card instead of a blank page. This does not change the immediate remedy for the reported session: a hard reload. Unrelated untracked paths preserved. Not Done.
@@ -1110,3 +1112,90 @@ showing a problem the shop had already fixed.
   truck-page completion already invalidates the incident list, and the Repair
   Orders page is a separate route that refetches on mount (`staleTime` 0).
 
+## DB-076 contract: build version endpoint
+
+Architecture & API Contracts handoff, recorded 2026-09-23. Frontend and backend
+may build against this without renegotiating it in implementation code.
+
+### Route
+
+`GET /build-version` and `HEAD /build-version`.
+
+HEAD is required, not optional. The existing `public/` asset routes in
+`backend/app/main.py` register `methods=["GET"]` only, which is why
+`HEAD /robots.txt` returns 405 in production. A polling client must not trip
+over that.
+
+The route MUST be registered before the `@app.get("/{full_path:path}")` SPA
+catch-all. A file dropped in `frontend/public/` does NOT work: `public/` assets
+are served from a hardcoded `static_files` allowlist, and anything absent from
+it falls through the catch-all and returns `index.html`. Verified in production —
+`GET /version.json` today answers with HTML, not 404, so a naive client would
+hand HTML to `JSON.parse` on every poll and fail silently.
+
+### Response
+
+```json
+{ "sha": "<40 lowercase hex>", "built_at": "<ISO 8601 UTC>" }
+```
+
+- `200` with both fields when the build stamp exists.
+- `200` with `{"sha": null, "built_at": null}` when it does not (a backend
+  running without a built frontend). The client treats null as "unknown" and
+  does nothing — an unbuilt or misconfigured deploy must never trigger reloads.
+- No authentication. The response carries no tenant or user data, and an
+  unauthenticated long-lived tab still needs to know it is stale.
+
+### Headers
+
+`Cache-Control: no-store` is mandatory on this route. `FileResponse` sets no
+`Cache-Control` today (only `etag`/`last-modified`), and `index.html` is served
+with no cache headers at all, so an iPad may hold a cached copy indefinitely.
+Without `no-store` the endpoint can report the version the device already has,
+which defeats the feature.
+
+### Source of the SHA
+
+The frontend build owns this fact; the backend only serves it. Vite writes
+`dist/build-version.json` at build time and the route reads that file.
+
+`frontend/vite.config.ts` already validates `DIESELBRIDGE_RUNTIME_SHA` but
+strips runtime identity from production via `isLocalRuntimeServe`. That guard
+exists to stop ambient `VITE_*` values from being exposed and MUST NOT be
+removed. Add a deliberate, validated write of the build stamp instead, keeping
+the existing 40-lowercase-hex check.
+
+### Client behavior
+
+Polling: on an interval and on `visibilitychange`, which is the moment a
+parked iPad is picked back up. `lib/sessionKeepAlive.ts` already uses that
+event; follow it. Back off while the document is hidden.
+
+On a version mismatch:
+
+| Page state | Behavior |
+|---|---|
+| Clean and idle | Reload silently, no prompt (product decision, 2026-09-23) |
+| Unsaved work present | Show the DB-074 notice; reload only when accepted |
+| Release marked breaking | Force the reload after a visible countdown |
+
+Never reload and never nag when the fetch fails, times out, returns non-JSON,
+or reports a null sha. Offline is not staleness.
+
+### Unsaved work
+
+One shared definition, used by every caller:
+
+- any React Query mutation in flight, and
+- any form registered as dirty in a shared registry.
+
+A page is "clean and idle" only when both are false. This is the single riskiest
+part of the item: a wrong answer reloads away a manager's typed work. It needs
+tests proving a dirty form and an in-flight mutation each suppress a silent
+reload.
+
+### Test fixtures
+
+Both sides use the same shapes: a valid response, a null-sha response, a
+non-JSON body (the `index.html` fallback case above), and a network failure.
+No test may reach the network.
