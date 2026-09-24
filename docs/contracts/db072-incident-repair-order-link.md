@@ -1,6 +1,6 @@
 # DB-072: incident to repair-order link contract
 
-- Version: 1.0.0
+- Version: 1.1.0 (adds §3.5, DB-077)
 - Status: Proposed for Architecture review
 - Accountable owner: Architecture & API Contracts
 - Implementing owner: Backend & Integrations, then Frontend & UX
@@ -115,6 +115,17 @@ target forward. Here a person is choosing that specific order deliberately;
 refusing the explicit choice would leave a real incident with nowhere to point.
 This asymmetry is intentional and is the one place this contract diverges from
 the existing helper.
+
+### 3.5 Completion resolves the incident (DB-077)
+
+When a linked order reaches `COMPLETED` — through
+`POST /fleet/work-orders/{id}/complete` or
+`POST /repair-orders/{id}/approve-completion` — each of its `open` or
+`in_progress` incidents becomes `resolved` in the same transaction, with
+`resolved_at` set, a generated `resolution_notes` naming the order unless one
+already exists, and a `resolved_by_repair_order` event. `voided` and
+already-`resolved` incidents are untouched. `CANCELLED` and `DECLINED` orders
+resolve nothing. Implemented in `app/services/fleet_incident_resolution.py`.
 
 ## 4. Failure modes
 

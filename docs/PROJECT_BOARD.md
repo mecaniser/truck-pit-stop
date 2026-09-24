@@ -562,6 +562,7 @@ contract change and ships separately, the other three are not.
 | DB-071 | P1 | Implemented, PR pending | Give resolved and voided road incidents a visible home on the truck | Frontend & UX | Fast UI | A collapsed "Resolved incidents" section on truck detail lists non-open incidents with their outcome text and resolution date; the existing append-only event timeline remains available at `GET /fleet/incidents/{id}/events` and is not yet surfaced |
 | DB-072 | P2 | Contract recorded, PR open | Link a road incident to a repair order that already exists | Architecture & API Contracts | Standard product | An incident with no linked order can be attached to an open repair order for the same truck, and detached; the attach is recorded as an incident event; cross-vehicle and cross-tenant attach are refused |
 | DB-073 | P3 | Implemented, PR pending | Name the incident void action for what it does | Frontend & UX | Fast UI | The action menu and its confirmation say "Void", matching the backend behavior of retaining the record at status `voided` rather than deleting it |
+| DB-077 | P1 | Implemented, PR pending | Resolve a road incident when the repair order answering for it is completed | Backend & Integrations | Standard product | Completing a linked order resolves its open or in-progress incidents, names the order in the outcome unless one was already written, and records a `resolved_by_repair_order` event; voided, already-resolved and unrelated incidents are untouched; cancelled orders resolve nothing |
 
 ## Blocked
 
@@ -1079,3 +1080,33 @@ icon, which told a user their record was gone when it was retained.
   the naming stops contradicting what the server does.
 - DB-071 is what makes the retained record reachable; without that section a
   voided incident is still correct and still invisible.
+
+## DB-077 acceptance criteria
+
+An incident linked to a repair order — through `create-repair` or DB-072's
+attach — stayed open after that order was completed, so the truck page kept
+showing a problem the shop had already fixed.
+
+- Completion resolves the order's `open` and `in_progress` incidents in the same
+  transaction as the order's own completion.
+- Both completion paths do it: `POST /fleet/work-orders/{id}/complete` and
+  `POST /repair-orders/{id}/approve-completion`. `INVOICED` and `PAID` are only
+  reached through `COMPLETED` (`create_invoice` refuses anything else, and both
+  auto-invoice calls follow those two assignments), so no later state needs a
+  hook. `db048_accounting_reconciliation` also writes `INVOICED`/`PAID`; it is a
+  reconciliation path over orders already completed and is deliberately not
+  touched here.
+- The outcome names the order ("Resolved when repair order RO-… was
+  completed.") unless a person already wrote one; theirs is kept.
+- A `resolved_by_repair_order` event records the order id and number.
+- `voided` and already-`resolved` incidents, and incidents linked to other
+  orders, are untouched.
+- `CANCELLED` and `DECLINED` never call the resolver: the work did not happen,
+  so the incident stays open for someone to decide.
+- Restoring a deleted internal order reopens it from `COMPLETED` to
+  `IN_PROGRESS`; its incidents stay resolved, consistent with DB-072 detach not
+  rolling status back. The event trail records both.
+- No API field, response shape, enum value or migration. Frontend unchanged:
+  truck-page completion already invalidates the incident list, and the Repair
+  Orders page is a separate route that refetches on mount (`staleTime` 0).
+

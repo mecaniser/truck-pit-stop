@@ -41,6 +41,7 @@ from app.db.models.fleet import (
     INSPECTION_INTERVAL_DAYS,
 )
 from app.db.models.driver_accountability import FleetIncidentEvent
+from app.services.fleet_incident_resolution import resolve_incidents_for_completed_order
 from app.schemas.fleet import (
     InspectionCreate,
     InspectionComplete,
@@ -2767,6 +2768,8 @@ async def complete_work_order(
     ro.status = RepairOrderStatus.COMPLETED
     if ro.work_completed_at is None:
         ro.work_completed_at = now
+    # The work is done, so the incidents this order answers for are too.
+    await resolve_incidents_for_completed_order(db, ro, actor_user_id=current_user.id)
 
     if body and body.review_notes and body.review_notes.strip():
         review_entry = {
