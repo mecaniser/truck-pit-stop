@@ -27,7 +27,7 @@ from app.db.models.description_library import DescriptionLibraryEntry
 
 logger = logging.getLogger(__name__)
 
-MODEL = "claude-opus-4-8"
+MODEL = "claude-opus-4-1"
 MAX_SOURCE_VALUES = 2000  # guard against pathological tenants; most shops have far fewer distinct strings
 
 LIBRARY_TYPE_RO_DESCRIPTION = "ro_description"

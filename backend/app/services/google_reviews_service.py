@@ -12,7 +12,7 @@ from app.core.google_business_crypto import decrypt_google_business_token, encry
 from app.db.models.google_review import GoogleBusinessConnection, GoogleReview, GoogleReviewAuditEvent, GoogleReviewSettings, GoogleReviewStatus
 from app.db.models.tenant import Tenant
 
-MODEL = "claude-opus-4-8"
+MODEL = "claude-opus-4-1"
 GOOGLE_SCOPE = "https://www.googleapis.com/auth/business.manage"
 DEFAULT_POLICY = "Professional, warm, concise, under 70 words. Use only facts in the review. Never invent facts, guarantee outcomes, discuss repair details or prices, blame customers, or request private information publicly. For negative reviews, apologize and invite offline resolution."
 
@@ -130,6 +130,7 @@ async def generate_draft(db: AsyncSession, *, tenant_id, review: GoogleReview) -
         if not draft: raise RuntimeError("AI returned no reply")
         review.ai_draft = review.reply_text = draft[:600]
         review.ai_model, review.ai_metadata = MODEL, {"word_count": len(draft.split())}
+        review.publish_failure_reason = None
         auto = bool(settings_row and settings_row.auto_publish_five_star and review.rating == 5)
         review.requires_approval = not auto
         review.status = GoogleReviewStatus.NEW.value if auto else GoogleReviewStatus.AWAITING_APPROVAL.value
@@ -137,6 +138,9 @@ async def generate_draft(db: AsyncSession, *, tenant_id, review: GoogleReview) -
     except Exception as exc:
         review.requires_approval, review.status = True, GoogleReviewStatus.AWAITING_APPROVAL.value
         review.ai_metadata = {"error": str(exc)[:300]}
+        # ai_metadata is not serialized to the inbox, so a draft failure would
+        # otherwise reach the operator as an empty reply with no reason.
+        review.publish_failure_reason = f"AI draft unavailable: {str(exc)[:460]}"
         await audit(db, tenant_id, "generation_failed", review_id=review.id)
     return review
 
