@@ -4,7 +4,7 @@ import INBOX_SOURCE from '../GoogleReviewsPage.tsx?raw'
 import SETTINGS_SOURCE from '../GoogleReviewsSettingsPage.tsx?raw'
 
 /**
- * DB-079. Both Google Reviews pages were written with a night-only palette
+ * DB-081. Both Google Reviews pages were written with a night-only palette
  * (text-white, bg-white/5, border-white/10, amber-200 notices ...). Under Day
  * shop the inbox's "Google connection & settings" link, card labels and filter
  * tabs were white on the road-white canvas, and the settings page's notices and

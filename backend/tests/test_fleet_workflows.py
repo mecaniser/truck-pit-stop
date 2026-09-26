@@ -983,7 +983,7 @@ async def test_completing_pm_rolls_date_and_mileage_forward(db_session):
 
 @pytest.mark.asyncio
 async def test_existing_closed_repair_can_be_recognized_as_pm_without_duplication(db_session):
-    from app.services.internal_fleet import PM_AVG_MILES_PER_DAY
+    from app.services.internal_fleet import PM_AVG_MILES_PER_DAY, next_pm_service_day
     import math
 
     tenant, vehicle, user = await _seed_fleet(db_session)
@@ -1022,7 +1022,9 @@ async def test_existing_closed_repair_can_be_recognized_as_pm_without_duplicatio
     assert repair_order.is_pm is True
     assert repair_order.mileage_out == 621_565
     assert vehicle.next_pm_miles == 646_565
-    assert vehicle.pm_due_date == performed_on + timedelta(days=math.ceil(25_000 / PM_AVG_MILES_PER_DAY))
+    # Rolled forward from the serviced mileage, then rounded to the shop's PM day.
+    raw_next = performed_on + timedelta(days=math.ceil(25_000 / PM_AVG_MILES_PER_DAY))
+    assert vehicle.pm_due_date == next_pm_service_day(raw_next)
     assert result.schedule_advanced is True
 
     matching_orders = list((await db_session.execute(
@@ -1073,7 +1075,7 @@ async def test_schedule_pm_projects_due_date_from_mileage(db_session):
     import math
     from datetime import date, timedelta
     from app.schemas.fleet import SchedulePMRequest
-    from app.services.internal_fleet import PM_AVG_MILES_PER_DAY
+    from app.services.internal_fleet import PM_AVG_MILES_PER_DAY, next_pm_service_day
     _, vehicle, user = await _seed_fleet(db_session)
     vehicle.mileage = 149075
     await db_session.commit()
@@ -1083,8 +1085,11 @@ async def test_schedule_pm_projects_due_date_from_mileage(db_session):
                             body=SchedulePMRequest(next_pm_miles=151002),
                             db=db_session, current_user=user)
     await db_session.refresh(vehicle)
-    expected = date.today() + timedelta(days=math.ceil((151002 - 149075) / PM_AVG_MILES_PER_DAY))
-    assert vehicle.pm_due_date == expected  # ~4 days out, not months
+    # Projected from the mileage, then rounded forward to the shop's PM day:
+    # a mid-week date is not a day anyone services the truck.
+    raw = date.today() + timedelta(days=math.ceil((151002 - 149075) / PM_AVG_MILES_PER_DAY))
+    assert vehicle.pm_due_date == next_pm_service_day(raw)  # days out, not months
+    assert vehicle.pm_due_date >= raw  # never earlier than the mileage supports
 
     # An explicit date wins (manager knows the truck will sit idle).
     picked = date.today() + timedelta(days=120)

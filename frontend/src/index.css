@@ -2485,7 +2485,7 @@ html::-webkit-scrollbar-thumb:hover {
   }
 }
 
-/* DB-079 Google Reviews inbox and settings were written night-only. In the
+/* DB-081 Google Reviews inbox and settings were written night-only. In the
    staff shell their legacy utilities follow the selected appearance, and the
    status notices use the semantic status tokens so Day shop keeps contrast. */
 .db-presentation-new .db-reviews-workspace {
