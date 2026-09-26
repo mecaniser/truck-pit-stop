@@ -22,22 +22,26 @@ from app.db.models.google_review import (
 from app.db.models.tenant import Tenant
 
 
-# Anthropic model ids are <family>-<major>-<minor>, e.g. claude-opus-4-1.
-# A second digit in the minor position ("4-8") is not a released model and the
-# API rejects it, so the pin must be checked as data, not eyeballed.
-KNOWN_BAD_PINS = {"claude-opus-4-8"}
+# DB-084: DB-078 "corrected" claude-opus-4-8 to claude-opus-4-1 on the belief that 4-8 was not
+# a released id. The reverse was true: claude-opus-4-8 is current and claude-opus-4-1 is retired,
+# so every production draft 404'd (46 of 46 on the first sync, 2026-09-26). Pin checks compare
+# against the served model ids instead of a hand-written deny list.
+CURRENT_MODEL_IDS = {
+    "claude-fable-5-1", "claude-fable-5", "claude-opus-5-5", "claude-opus-5", "claude-opus-4-8",
+    "claude-opus-4-7", "claude-opus-4-6", "claude-sonnet-5", "claude-sonnet-4-6", "claude-haiku-4-5",
+}
 
 
-def test_google_reviews_model_pin_is_not_a_known_bad_id():
+def test_google_reviews_model_pin_is_a_current_model():
     from app.services import google_reviews_service
 
-    assert google_reviews_service.MODEL not in KNOWN_BAD_PINS
+    assert google_reviews_service.MODEL in CURRENT_MODEL_IDS
 
 
-def test_description_library_model_pin_is_not_a_known_bad_id():
+def test_description_library_model_pin_is_a_current_model():
     from app.services import description_library_service
 
-    assert description_library_service.MODEL not in KNOWN_BAD_PINS
+    assert description_library_service.MODEL in CURRENT_MODEL_IDS
 
 
 async def _tenant(db_session) -> Tenant:
