@@ -52,6 +52,42 @@ export function fmtDate(s?: string | null) {
   return new Date(s).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
 }
 
+/**
+ * The shop performs PM work on Saturdays, so a projected date of Wednesday is
+ * not a day anyone will service the truck.
+ *
+ * This mirrors `next_pm_service_day` in the backend's internal_fleet service;
+ * the two must agree, or the date the modal offers differs from the one the
+ * server stores. Date-only strings are compared and built as UTC noon so no
+ * local offset can move the day.
+ */
+export const PM_SERVICE_WEEKDAY = 6 // JS: Sunday=0 ... Saturday=6
+
+export function nextPmServiceDay(day: string): string {
+  const date = new Date(`${day}T12:00:00Z`)
+  const shift = (PM_SERVICE_WEEKDAY - date.getUTCDay() + 7) % 7
+  date.setUTCDate(date.getUTCDate() + shift)
+  return date.toISOString().slice(0, 10)
+}
+
+/**
+ * The date to offer for a truck's next PM: projected from its mileage target,
+ * then rounded forward to the shop's PM day. A truck already overdue on
+ * mileage books the next PM day rather than today, because a PM is only
+ * actually performed on one.
+ */
+export function projectPmDueDate(
+  targetMiles: number,
+  odometer: number,
+  fromDay: string,
+): string {
+  const remaining = targetMiles - (odometer || 0)
+  const days = remaining > 0 ? Math.ceil(remaining / PM_AVG_MILES_PER_DAY) : 0
+  const raw = new Date(`${fromDay}T12:00:00Z`)
+  raw.setUTCDate(raw.getUTCDate() + days)
+  return nextPmServiceDay(raw.toISOString().slice(0, 10))
+}
+
 export interface PmState { label: string; cls: 'pm-ok' | 'pm-soon' | 'pm-over'; pct: number }
 
 export function pmState(t: Pick<BoardTruck, 'pm_remaining' | 'pm_interval_miles' | 'pm_days_remaining'>): PmState {

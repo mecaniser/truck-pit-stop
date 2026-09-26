@@ -17,7 +17,7 @@ import type {
   BoardTruck, TruckDetail, Inspection, InspectionDetail, InspectionItem, InspectionItemResult, InspectionResult, IncidentSeverity, IncidentEntry,
   PMServiceEntry, DriverProfile, LegacyDriverContact, VehicleDriverAssignment, LinkableRepairOrder,
 } from './types'
-import { fleetUnitLabel, fmtDate, fmt } from './helpers'
+import { PM_AVG_MILES_PER_DAY, fleetUnitLabel, fmtDate, fmt, projectPmDueDate } from './helpers'
 import { isSupportedPhotoFile, runPhotoUploadQueue, uploadDirectPhoto, type PhotoUploadStatus } from '@/lib/photoUpload'
 import { formatUSPhone } from '@/utils/phone'
 import { duplicateVinConflict, duplicateVinTruckLabel, type DuplicateVinConflict } from './duplicateVin'
@@ -655,15 +655,12 @@ export const WO_DRAWER_WIDTH = 'max-w-full sm:max-w-[94vw] lg:max-w-[760px] xl:m
 export function SchedulePMModal({ truck, onClose, onDone, createMode = false }: { truck: BoardTruck; onClose: () => void; onDone: () => void; createMode?: boolean }) {
   const qc = useQueryClient()
   const intervalMiles = truck.pm_interval_miles || 25000
-  // Assumed average daily mileage — keeps the projected due date in step with
-  // the odometer target so they don't contradict each other.
-  const AVG_MILES_PER_DAY = 600
-  // Project the due date from a target odometer: today + miles_remaining / 600.
-  const projectDate = (targetMiles: number) => {
-    const remaining = targetMiles - (truck.odometer || 0)
-    const days = remaining > 0 ? Math.ceil(remaining / AVG_MILES_PER_DAY) : 0
-    return new Date(Date.now() + days * 86400000).toISOString().slice(0, 10)
-  }
+  const AVG_MILES_PER_DAY = PM_AVG_MILES_PER_DAY
+  // Project the due date from a target odometer, then round forward to the
+  // shop's PM day. The same helper backs the server's projection, so the date
+  // offered here is the one the server would store.
+  const projectDate = (targetMiles: number) =>
+    projectPmDueDate(targetMiles, truck.odometer || 0, new Date().toISOString().slice(0, 10))
   const initialMiles = truck.next_pm_miles ?? ((truck.odometer || 0) + intervalMiles)
   // Pre-fill the date from mileage (not the stale stored date), so the manager
   // sees a date that agrees with the odometer. They can still override it.
@@ -810,7 +807,7 @@ export function SchedulePMModal({ truck, onClose, onDone, createMode = false }: 
               onMonthChange={setLoadMonth}
               hint={dateEdited
                 ? 'Custom date — overrides the mileage estimate.'
-                : `Estimated from mileage (~${AVG_MILES_PER_DAY} mi/day). Edit to override.`}
+                : `Estimated from mileage (~${AVG_MILES_PER_DAY} mi/day), on the next PM Saturday. Edit to override.`}
             />
           </>
         )}
