@@ -44,7 +44,7 @@ export default function GoogleReviewsSettingsPage() {
       ? "Google could not load this account's Business Profile locations. The Google sign-in has likely expired or lost access — reconnect the Google account that manages this location."
       : locationErrorResponse?.data?.detail ?? 'Could not load Google locations.'
 
-  return <div className="db-operating-surface__scroller mx-auto max-w-4xl p-4 sm:p-6 text-white">
+  return <div className="db-operating-surface__scroller db-reviews-workspace mx-auto max-w-4xl p-4 sm:p-6 text-white">
     <Link to="/dashboard/garage/reviews" className="inline-flex items-center gap-2 text-sm text-gray-400 hover:text-white"><ArrowLeft className="h-4 w-4" /> Google Reviews inbox</Link>
     <h1 className="mt-4 text-2xl font-semibold">Google Reviews settings</h1>
     <p className="mt-1 text-sm text-gray-400">Connect this shop’s own Google Business Profile and control how replies are handled.</p>
