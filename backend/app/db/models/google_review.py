@@ -49,6 +49,7 @@ class GoogleReviewSettings(BaseModel):
     reply_policy = Column(Text, nullable=False, default="")
     auto_publish_five_star = Column(Boolean, nullable=False, default=False)
     alert_recipients = Column(JSON, nullable=False, default=list)
+    reply_model = Column(String(64), nullable=True)  # NULL = platform default (DB-086)
     tenant = relationship("Tenant")
 
 
