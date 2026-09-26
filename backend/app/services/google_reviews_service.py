@@ -158,17 +158,39 @@ async def sync_connection(db: AsyncSession, connection: GoogleBusinessConnection
     if not connection.tenant_id or not connection.google_account_id or not connection.location_id or connection.status != "connected": return 0
     token = await _access_token(db, connection)
     url = f"https://mybusiness.googleapis.com/v4/accounts/{connection.google_account_id}/locations/{connection.location_id}/reviews"
+    items: list[dict] = []
     async with httpx.AsyncClient(timeout=settings.GOOGLE_BUSINESS_HTTP_TIMEOUT_SECONDS) as client:
-        response = await client.get(url, headers={"Authorization": f"Bearer {token}"})
-        response.raise_for_status()
+        page_token = None
+        while True:
+            params = {"pageSize": 50, **({"pageToken": page_token} if page_token else {})}
+            response = await client.get(url, headers={"Authorization": f"Bearer {token}"}, params=params)
+            response.raise_for_status()
+            body = response.json()
+            items.extend(body.get("reviews", []))
+            page_token = body.get("nextPageToken")
+            if not page_token: break
     count = 0
-    for item in response.json().get("reviews", []):
+    for item in items:
         review, created = await upsert_review(db, tenant_id=connection.tenant_id, connection=connection, payload=item)
-        if created:
+        if item.get("reviewReply"):
+            _record_google_reply(review, item["reviewReply"])
+        elif created:
             await generate_draft(db, tenant_id=connection.tenant_id, review=review)
             count += 1
     connection.last_sync_at, connection.last_sync_error = datetime.now(timezone.utc), None
     return count
+
+
+def _record_google_reply(review: GoogleReview, google_reply: dict) -> None:
+    """Mirror a reply that is already public on Google, unless an operator is replacing it."""
+    operator_editing = review.status == GoogleReviewStatus.AWAITING_APPROVAL.value and review.reply_text and review.reply_text != review.ai_draft
+    if operator_editing or review.status == GoogleReviewStatus.PUBLISHING.value:
+        return
+    update_time = google_reply.get("updateTime")
+    published_at = datetime.fromisoformat(update_time.replace("Z", "+00:00")) if update_time else None
+    review.reply_text = google_reply.get("comment") or review.reply_text
+    review.status, review.requires_approval, review.publish_failure_reason = GoogleReviewStatus.PUBLISHED.value, False, None
+    review.published_at = published_at or review.published_at or datetime.now(timezone.utc)
 
 
 async def publish_reply(db: AsyncSession, *, tenant_id, review: GoogleReview) -> None:
@@ -176,6 +198,8 @@ async def publish_reply(db: AsyncSession, *, tenant_id, review: GoogleReview) ->
     connection = (await db.execute(select(GoogleBusinessConnection).where(GoogleBusinessConnection.id == review.connection_id, GoogleBusinessConnection.tenant_id == tenant_id))).scalar_one_or_none()
     if not connection or not review.reply_text: raise RuntimeError("Google connection or reply is missing")
     if review.status == GoogleReviewStatus.PUBLISHED.value: return
+    if (review.raw_payload or {}).get("reviewReply") and not review.approved_by_user_id:
+        raise RuntimeError("Review already has a public reply on Google; edit and approve to replace it")
     review.status, review.last_publish_attempt_at = GoogleReviewStatus.PUBLISHING.value, datetime.now(timezone.utc)
     try:
         token = await _access_token(db, connection)
