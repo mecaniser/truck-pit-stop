@@ -1,7 +1,7 @@
 import { useState, type CSSProperties } from 'react'
 import { Wrench, Gauge, ClipboardList, MapPin, User, Search, ChevronDown, ChevronRight, Check, AlertTriangle, X } from 'lucide-react'
 import type { BoardTruck, FleetBoard as FleetBoardData, TruckStatus } from './types'
-import { STATUS_META, VISIT_STALE_AFTER_DAYS, fleetUnitLabel, fmt, pmState, rank, visitAge, visitIsStale } from './helpers'
+import { STATUS_META, VISIT_STALE_AFTER_DAYS, fleetUnitLabel, fmt, pmState, pmUrgency, rank, visitAge, visitIsStale } from './helpers'
 import { formatUSPhone } from '@/utils/phone'
 import FleetActivity from './FleetActivity'
 import ClosedRepairOrders from './ClosedRepairOrders'
@@ -36,6 +36,20 @@ function ActionQueue({ icon, value, label, detail, tone, active, onClick }: {
   )
 }
 
+const SORT_TITLE: Record<Sort, string> = {
+  attention: 'Fleet overview',
+  unit: 'All trucks by unit',
+  pm: 'All trucks by PM urgency',
+  odo: 'All trucks by mileage',
+}
+
+const SORT_DETAIL: Record<Sort, string> = {
+  attention: 'Units without an immediate action queue.',
+  unit: 'Every truck, ordered by unit number.',
+  pm: 'Overdue first, then due today, then by how soon the PM falls.',
+  odo: 'Every truck, highest mileage first.',
+}
+
 function SectionHeading({ title, count, detail }: { title: string; count?: number; detail: string }) {
   return (
     <div className="board-section-heading">
@@ -48,9 +62,29 @@ function SectionHeading({ title, count, detail }: { title: string; count?: numbe
   )
 }
 
+/**
+ * Why this truck is flagged, when nothing else on the card says so. A card
+ * showing "19,077 mi to PM" in Needs attention otherwise looks mis-sorted: the
+ * reason is real but invisible.
+ *
+ * Status and PM are deliberately excluded - the badge already reads "In shop"
+ * or "Parts", and the PM bar carries its own label. Repeating them would add
+ * noise rather than information.
+ */
+function attentionReasons(t: BoardTruck): string[] {
+  const reasons: string[] = []
+  if (t.open_incident_count) {
+    reasons.push(t.open_incident_count === 1 ? '1 incident' : `${t.open_incident_count} incidents`)
+  }
+  const lights = t.warning_lights?.length
+  if (lights) reasons.push(lights === 1 ? '1 warning light' : `${lights} warning lights`)
+  return reasons
+}
+
 function TruckCard({ t, onOpen, onOpenRepairOrder }: { t: BoardTruck; onOpen: (t: BoardTruck) => void; onOpenRepairOrder: (repairOrderId: string) => void }) {
   const meta = STATUS_META[t.status]
   const pm = pmState(t)
+  const reasons = attentionReasons(t)
   return (
     <article
       className="tcard"
@@ -74,6 +108,11 @@ function TruckCard({ t, onOpen, onOpenRepairOrder }: { t: BoardTruck; onOpen: (t
         <span className="tcard-badge"><i className={'tcard-bdot' + (t.moving ? ' is-moving' : '')} />{meta.short}</span>
       </div>
       {t.body_type && <div className="tcard-type">{t.body_type}</div>}
+      {reasons.length > 0 && (
+        <div className="tcard-reasons">
+          {reasons.map((reason) => <span key={reason} className="tcard-reason">{reason}</span>)}
+        </div>
+      )}
       <div className="tcard-row">
         <span className="tcard-row-ic"><MapPin size={14} /></span>
         <span className="tcard-row-tx">{t.location_label || 'Location unknown'}</span>
@@ -147,7 +186,10 @@ export default function FleetBoard({
   const [orderView, setOrderView] = useState<'open' | 'closed'>('open')
   const ordersActive = filter === 'open_work_orders' || filter === 'visits_to_close'
   let list = trucks
-  const isPmOverdue = (t: BoardTruck) => (t.pm_remaining != null && t.pm_remaining <= 0) || (t.pm_days_remaining != null && t.pm_days_remaining < 0)
+  // Due today is owed now, so it belongs with the work needing a decision.
+  // pmState is the single place that decides this, so the card label and the
+  // section a truck lands in can never disagree.
+  const isPmOverdue = (t: BoardTruck) => pmState(t).cls === 'pm-over' && !(t.pm_remaining == null && t.pm_days_remaining == null)
   const needsPmPlanning = (t: BoardTruck) => (t.pm_remaining == null && t.pm_days_remaining == null) || pmState(t).cls === 'pm-soon'
   if (filter === 'pm_planning') {
     list = list.filter(needsPmPlanning)
@@ -178,13 +220,18 @@ export default function FleetBoard({
   const sorters: Record<Sort, (a: BoardTruck, b: BoardTruck) => number> = {
     attention: (a, b) => rank(b) - rank(a),
     unit: (a, b) => fleetUnitLabel(a).localeCompare(fleetUnitLabel(b)),
-    pm: (a, b) => (a.pm_remaining ?? 1e9) - (b.pm_remaining ?? 1e9),
+    pm: (a, b) => pmUrgency(a) - pmUrgency(b),
     odo: (a, b) => (b.odometer ?? 0) - (a.odometer ?? 0),
   }
   list = [...list].sort(sorters[sort])
   // Action Now sits above the tab toggle, so it stays put across a tab switch:
   // gating it on the tab would shift the toggle out from under the pointer that
   // just clicked it. Only what is below the toggle changes.
+  // The triage sections answer "what should I look at first" for the default
+  // view. Once a manager names an order, sections contradict it: a truck due
+  // today rendered below trucks due next week purely because it sat in a later
+  // section. So an explicit sort shows one list in that order.
+  const sectioned = sort === 'attention'
   const showActionLane = filter === 'all' && !query.trim()
   const needsAction = list.filter((t) => {
     return isPmOverdue(t) || t.status === 'shop' || t.status === 'parts' || !!t.open_incident_count || !!t.warning_lights?.length
@@ -271,13 +318,13 @@ export default function FleetBoard({
         </section>
       )}
 
-      {tab === 'trucks' && showActionLane && needsAction.length > 0 && (
+      {tab === 'trucks' && showActionLane && sectioned && needsAction.length > 0 && (
         <section className="board-section">
           <SectionHeading title="Needs attention" count={needsAction.length} detail="Prioritized by service and PM urgency." />
           <div className="tgrid tgrid-attention">{needsAction.map((t) => <TruckCard key={t.id} t={t} onOpen={onOpen} onOpenRepairOrder={onOpenRepairOrder} />)}</div>
         </section>
       )}
-      {tab === 'trucks' && showActionLane && planning.length > 0 && (
+      {tab === 'trucks' && showActionLane && sectioned && planning.length > 0 && (
         <section className="board-section">
           <SectionHeading title="Maintenance to plan" count={planning.length} detail="Schedule these before they become service interruptions." />
           <div className="tgrid">{planning.map((t) => <TruckCard key={t.id} t={t} onOpen={onOpen} onOpenRepairOrder={onOpenRepairOrder} />)}</div>
@@ -285,9 +332,13 @@ export default function FleetBoard({
       )}
       {tab === 'trucks' && !(ordersActive && orderView === 'closed') && (
       <section className="board-section">
-        <SectionHeading title={showActionLane ? 'Fleet overview' : activeFilter?.title || 'Matching trucks'} count={showActionLane ? remaining.length : list.length} detail={showActionLane ? 'Units without an immediate action queue.' : activeFilter?.detail || 'Search and filter results.'} />
+        <SectionHeading
+          title={!showActionLane ? activeFilter?.title || 'Matching trucks' : sectioned ? 'Fleet overview' : SORT_TITLE[sort]}
+          count={showActionLane && sectioned ? remaining.length : list.length}
+          detail={!showActionLane ? activeFilter?.detail || 'Search and filter results.' : sectioned ? 'Units without an immediate action queue.' : SORT_DETAIL[sort]}
+        />
         <div className="tgrid">
-          {(showActionLane ? remaining : list).map((t) => <TruckCard key={t.id} t={t} onOpen={onOpen} onOpenRepairOrder={onOpenRepairOrder} />)}
+          {(showActionLane && sectioned ? remaining : list).map((t) => <TruckCard key={t.id} t={t} onOpen={onOpen} onOpenRepairOrder={onOpenRepairOrder} />)}
           {list.length === 0 && <div className="tgrid-empty">No trucks match.</div>}
         </div>
       </section>

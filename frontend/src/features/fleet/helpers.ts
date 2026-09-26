@@ -36,9 +36,14 @@ export function pmState(t: Pick<BoardTruck, 'pm_remaining' | 'pm_interval_miles'
 
   if (r == null && d == null) return { label: 'PM not scheduled', cls: 'pm-over', pct: 100 }
 
-  // Overdue on either axis.
-  if ((r != null && r <= 0) || (d != null && d < 0)) {
-    const label = r != null && r <= 0 ? `OVERDUE ${fmt(Math.abs(r))} mi` : `OVERDUE ${Math.abs(d as number)} d`
+  // Overdue on either axis. Due *today* counts here too: the PM is owed now,
+  // so it belongs with the work that needs a decision, not with planning. It
+  // reads "Due today" rather than "OVERDUE 0 d", which is both wrong and
+  // alarming.
+  if ((r != null && r <= 0) || (d != null && d <= 0)) {
+    if (r != null && r <= 0) return { label: `OVERDUE ${fmt(Math.abs(r))} mi`, cls: 'pm-over', pct: 100 }
+    const days = d as number
+    const label = days === 0 ? 'Due today' : `OVERDUE ${Math.abs(days)} d`
     return { label, cls: 'pm-over', pct: 100 }
   }
   // Due soon on either axis.
@@ -50,6 +55,30 @@ export function pmState(t: Pick<BoardTruck, 'pm_remaining' | 'pm_interval_miles'
   }
   const label = r != null ? `${fmt(r)} mi to PM` : `${d} d to PM`
   return { label, cls: 'pm-ok', pct: r != null ? milePct : 50 }
+}
+
+/**
+ * How soon this truck needs its PM, as one comparable number: lower is more
+ * urgent. Sorting on miles alone sank a truck due *today* below trucks with
+ * weeks of road left, because its remaining mileage was large.
+ *
+ * Miles and days are different units, so they are converted to a common one -
+ * days - using the same average the scheduler projects with. Whichever axis is
+ * closer wins, matching `pmState`, which shows whichever fires first.
+ * Unscheduled trucks sort last: they need planning, but a truck already
+ * overdue needs it more.
+ */
+export const PM_AVG_MILES_PER_DAY = 600
+
+export function pmUrgency(
+  t: Pick<BoardTruck, 'pm_remaining' | 'pm_days_remaining'>,
+): number {
+  const byMiles = t.pm_remaining != null ? t.pm_remaining / PM_AVG_MILES_PER_DAY : null
+  const byDays = t.pm_days_remaining != null ? t.pm_days_remaining : null
+  if (byMiles == null && byDays == null) return Number.MAX_SAFE_INTEGER
+  if (byMiles == null) return byDays as number
+  if (byDays == null) return byMiles
+  return Math.min(byMiles, byDays)
 }
 
 export function rank(t: BoardTruck): number {
