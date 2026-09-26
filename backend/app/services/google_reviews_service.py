@@ -23,7 +23,7 @@ def is_configured() -> bool:
 
 def authorization_url(state: str) -> str:
     from urllib.parse import urlencode
-    return "https://accounts.google.com/o/oauth2/v2/auth?" + urlencode({"client_id": settings.GOOGLE_BUSINESS_CLIENT_ID, "redirect_uri": settings.GOOGLE_BUSINESS_REDIRECT_URI, "response_type": "code", "scope": GOOGLE_SCOPE, "access_type": "offline", "prompt": "consent", "state": state})
+    return "https://accounts.google.com/o/oauth2/v2/auth?" + urlencode({"client_id": settings.GOOGLE_BUSINESS_CLIENT_ID, "redirect_uri": settings.GOOGLE_BUSINESS_REDIRECT_URI, "response_type": "code", "scope": GOOGLE_SCOPE, "access_type": "offline", "prompt": "select_account consent", "state": state})
 
 
 async def audit(db: AsyncSession, tenant_id, event_type: str, *, review_id=None, actor_user_id=None, metadata: dict | None = None):

@@ -215,3 +215,15 @@ async def test_successful_regeneration_clears_a_previous_draft_failure(
 
     assert review.ai_draft == "Thanks for the kind words!"
     assert review.publish_failure_reason is None
+
+
+def test_authorization_url_always_shows_the_google_account_chooser():
+    """Without select_account, Google silently reuses the browser's signed-in account, so an
+    owner who connected the wrong account can never switch by reconnecting."""
+    from urllib.parse import parse_qs, urlparse
+
+    from app.services.google_reviews_service import authorization_url
+
+    prompt = parse_qs(urlparse(authorization_url("state-token")).query)["prompt"][0].split()
+    assert "select_account" in prompt
+    assert "consent" in prompt  # still needed so Google re-issues a refresh token
