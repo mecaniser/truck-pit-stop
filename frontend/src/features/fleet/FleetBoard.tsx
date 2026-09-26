@@ -1,7 +1,7 @@
 import { useState, type CSSProperties } from 'react'
 import { Wrench, Gauge, ClipboardList, MapPin, User, Search, ChevronDown, ChevronRight, Check, AlertTriangle, X } from 'lucide-react'
 import type { BoardTruck, FleetBoard as FleetBoardData, TruckStatus } from './types'
-import { STATUS_META, VISIT_STALE_AFTER_DAYS, fleetUnitLabel, fmt, pmState, pmUrgency, rank, visitAge, visitIsStale } from './helpers'
+import { STATUS_META, VISIT_STALE_AFTER_DAYS, fleetIdentity, fleetUnitLabel, fmt, pmState, pmUrgency, rank, visitAge, visitIsStale } from './helpers'
 import { formatUSPhone } from '@/utils/phone'
 import FleetActivity from './FleetActivity'
 import ClosedRepairOrders from './ClosedRepairOrders'
@@ -85,6 +85,7 @@ function TruckCard({ t, onOpen, onOpenRepairOrder }: { t: BoardTruck; onOpen: (t
   const meta = STATUS_META[t.status]
   const pm = pmState(t)
   const reasons = attentionReasons(t)
+  const identity = fleetIdentity(t)
   return (
     <article
       className="tcard"
@@ -102,10 +103,16 @@ function TruckCard({ t, onOpen, onOpenRepairOrder }: { t: BoardTruck; onOpen: (t
     >
       <div className="tcard-top">
         <div className="tcard-id">
-          <span className="tcard-unit">{fleetUnitLabel(t)}</span>
+          {/* Company names the operator; the unit number is the mark a manager
+              actually scans for, so it is lifted into the space beside the
+              status badge at a size readable across a service bay. */}
+          {identity.company && <span className="tcard-company" data-testid="tcard-company">{identity.company}</span>}
           <span className="tcard-mm">{`${t.year || ''} ${t.make} ${t.model}`.trim()}</span>
         </div>
-        <span className="tcard-badge"><i className={'tcard-bdot' + (t.moving ? ' is-moving' : '')} />{meta.short}</span>
+        <div className="tcard-mark">
+          <span className="tcard-badge"><i className={'tcard-bdot' + (t.moving ? ' is-moving' : '')} />{meta.short}</span>
+          <span className="tcard-unit" data-testid="tcard-unit-mark">{identity.unit}</span>
+        </div>
       </div>
       {t.body_type && <div className="tcard-type">{t.body_type}</div>}
       {reasons.length > 0 && (

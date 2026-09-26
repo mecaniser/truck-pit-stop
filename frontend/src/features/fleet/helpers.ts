@@ -21,6 +21,32 @@ export function fleetUnitLabel(t: Pick<BoardTruck, 'display_unit_number' | 'unit
   return t.display_unit_number || t.unit_number || t.make || 'Truck'
 }
 
+/**
+ * The two halves of a truck's identity, for a card that shows the company as a
+ * heading and the unit number as the large glanceable mark.
+ *
+ * `display_unit_number` arrives pre-joined ("77 CARGO LLC 01"), so the parts
+ * are taken from the source fields rather than split back out of it. The
+ * backend omits the company prefix when the unit already begins with it; this
+ * mirrors that rule with the same normalize comparison, so the card never
+ * prints the company twice.
+ */
+export function fleetIdentity(
+  t: Pick<BoardTruck, 'display_unit_number' | 'unit_number' | 'make' | 'fleet_company_name' | 'owner_company_name'>,
+): { company: string | null; unit: string } {
+  const unit = (t.unit_number || '').trim()
+  // Owner is the listing/leasing company; the operating authority is the
+  // fallback for legacy fleet rows with no owner relationship.
+  const company = (t.owner_company_name || t.fleet_company_name || '').trim()
+  const normalize = (value: string) => value.toLowerCase().replace(/[^a-z0-9]/g, '')
+
+  if (!unit) return { company: company || null, unit: fleetUnitLabel(t) }
+  if (!company) return { company: null, unit }
+  // Already self-identifying: showing the company again would duplicate it.
+  if (normalize(unit).startsWith(normalize(company))) return { company: null, unit }
+  return { company, unit }
+}
+
 export function fmtDate(s?: string | null) {
   if (!s) return '—'
   return new Date(s).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })

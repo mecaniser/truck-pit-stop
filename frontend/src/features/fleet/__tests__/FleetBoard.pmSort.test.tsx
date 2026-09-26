@@ -108,3 +108,41 @@ describe('Truck card explains why it needs attention', () => {
     expect(within(card).queryByText(/in shop|incident|warning/i)).not.toBeInTheDocument()
   })
 })
+
+describe('Truck card identity', () => {
+  it('shows the company as the heading and the unit as the large mark', () => {
+    render(<Board sort="attention" trucks={[truck({
+      id: 'c', unit_number: '01', display_unit_number: '77 CARGO LLC 01',
+      owner_company_name: '77 CARGO LLC', pm_remaining: 20000,
+    } as Partial<BoardTruck> & { id: string; unit_number: string })]} />)
+    const card = screen.getByRole('button', { name: /Open 77 CARGO LLC 01 truck details/ })
+    expect(within(card).getByText('77 CARGO LLC')).toBeInTheDocument()
+    // The unit sits beside the status badge, not appended to the company name.
+    expect(within(card).getByTestId('tcard-unit-mark')).toHaveTextContent('01')
+  })
+
+  it('does not repeat the company inside the unit mark', () => {
+    render(<Board sort="attention" trucks={[truck({
+      id: 'c2', unit_number: '01', display_unit_number: '77 CARGO LLC 01',
+      owner_company_name: '77 CARGO LLC', pm_remaining: 20000,
+    } as Partial<BoardTruck> & { id: string; unit_number: string })]} />)
+    const mark = screen.getByTestId('tcard-unit-mark')
+    expect(mark.textContent).toBe('01')
+  })
+
+  it('still names the truck in full for assistive tech', () => {
+    render(<Board sort="attention" trucks={[truck({
+      id: 'c3', unit_number: '01', display_unit_number: '77 CARGO LLC 01',
+      owner_company_name: '77 CARGO LLC', pm_remaining: 20000,
+    } as Partial<BoardTruck> & { id: string; unit_number: string })]} />)
+    expect(screen.getByRole('button', { name: 'Open 77 CARGO LLC 01 truck details' })).toBeInTheDocument()
+  })
+
+  it('shows only the unit when the truck has no company', () => {
+    render(<Board sort="attention" trucks={[truck({
+      id: 'c4', unit_number: 'W900', display_unit_number: 'W900', pm_remaining: 20000,
+    } as Partial<BoardTruck> & { id: string; unit_number: string })]} />)
+    expect(screen.getByTestId('tcard-unit-mark')).toHaveTextContent('W900')
+    expect(screen.queryByTestId('tcard-company')).not.toBeInTheDocument()
+  })
+})
