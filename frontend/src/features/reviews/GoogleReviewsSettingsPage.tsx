@@ -34,14 +34,15 @@ export default function GoogleReviewsSettingsPage() {
   const save = useMutation({ mutationFn: () => api.put('/google-reviews/settings', { brand_voice_prompt: voice, reply_policy: policy, auto_publish_five_star: autoPublish, alert_recipients: recipients.split(',').map(email => email.trim()).filter(Boolean) }), onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['google-review-settings'] }); toast.success('Review settings saved') }, onError: () => toast.error('Could not save settings') })
 
   const reconnect = () => connect.mutate()
-  const locationErrorStatus = (locationsError as any)?.response?.status as number | undefined
+  const locationErrorResponse = (locationsError as { response?: { status?: number; data?: { detail?: string } } } | null)?.response
+  const locationErrorStatus = locationErrorResponse?.status
   // The API replaces every 5xx detail with "Internal server error", so branch on status.
   const quotaPending = locationErrorStatus === 503
   const locationLoadMessage = !locationsError ? undefined : quotaPending
     ? 'Google Business Profile API access is still pending for this platform. Google has assigned this project a zero request quota, so locations cannot be loaded yet.'
     : locationErrorStatus === 502
       ? "Google could not load this account's Business Profile locations. The Google sign-in has likely expired or lost access — reconnect the Google account that manages this location."
-      : (locationsError as any)?.response?.data?.detail as string | undefined ?? 'Could not load Google locations.'
+      : locationErrorResponse?.data?.detail ?? 'Could not load Google locations.'
 
   return <div className="db-operating-surface__scroller mx-auto max-w-4xl p-4 sm:p-6 text-white">
     <Link to="/dashboard/garage/reviews" className="inline-flex items-center gap-2 text-sm text-gray-400 hover:text-white"><ArrowLeft className="h-4 w-4" /> Google Reviews inbox</Link>
