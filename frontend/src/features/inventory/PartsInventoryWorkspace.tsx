@@ -10,6 +10,7 @@ import { useAuthStore } from '@/stores/authStore'
 import SlidePanelForm from '@/components/SlidePanelForm'
 import QuantityStepper from '@/components/QuantityStepper'
 import ActivityWorkspace, { PartLifecycleSummary } from './ActivityWorkspace'
+import { formatMoney } from '../payments/money'
 
 type Page<T> = { items: T[]; total: number; skip: number; limit: number; has_more: boolean }
 type Summary = { needs_reorder_count?: number; low_stock_count?: number; open_purchase_order_count: number; total_stock_value?: string; capabilities?: { counter_sales?: boolean; counter_sale_tenders?: string[] } }
@@ -372,12 +373,12 @@ function partRemark(part: PartRecord) {
 // existed, and can only omit the core charge, never invent one.
 function formatStockValue(part: PartRecord) {
   const served = Number(part.stock_value ?? NaN)
-  if (Number.isFinite(served)) return `$${money(served)}`
+  if (Number.isFinite(served)) return formatMoney(money(served))
   const unit = Number(part.average_unit_cost ?? 0)
   const core = Number(part.core_charge ?? 0)
   const quantity = part.physical_on_hand_packages ?? part.available_packages
   if (!Number.isFinite(unit) || !Number.isFinite(quantity)) return '—'
-  return `$${money((unit + (Number.isFinite(core) ? core : 0)) * quantity)}`
+  return formatMoney(money((unit + (Number.isFinite(core) ? core : 0)) * quantity))
 }
 
 function isManuallySelectable(part: PartRecord) {
@@ -779,7 +780,7 @@ export default function PartsInventoryWorkspace({ summary }: { summary: Summary 
 
   return <section className="db-parts-workbench" aria-labelledby="parts-workbench-title">
     <header className="db-parts-workbench__header">
-      <div><h1 id="parts-workbench-title">Parts</h1><p className="db-parts-workbench__technical-line">{allPartsCount ?? firstPartsPage?.total ?? '—'} TRACKED / <em>{needsReorderCount} NEEDS REORDER</em> / {summary.open_purchase_order_count} OPEN PURCHASE ORDERS{summary.total_stock_value == null ? '' : ` / $${money(summary.total_stock_value)} STOCK VALUE`}</p></div>
+      <div><h1 id="parts-workbench-title">Parts</h1><p className="db-parts-workbench__technical-line"><span className="db-parts-workbench__stat">{allPartsCount ?? firstPartsPage?.total ?? '—'} TRACKED /</span> <span className="db-parts-workbench__stat"><em>{needsReorderCount} NEEDS REORDER</em> /</span> <span className="db-parts-workbench__stat">{summary.open_purchase_order_count} OPEN PURCHASE ORDERS{summary.total_stock_value == null ? '' : ' /'}</span>{summary.total_stock_value == null ? null : <> <span className="db-parts-workbench__stat">{formatMoney(money(summary.total_stock_value))} STOCK VALUE</span></>}</p></div>
       <div className="db-parts-workbench__summary" aria-label="Parts summary">
         {counterSalesEnabled && <button className="db-parts-workbench__sales-link" type="button" onClick={() => navigate('/dashboard/garage/inventory/sales')}>Parts sales<ArrowRight aria-hidden="true" /></button>}
         {manage && <button className="db-parts-workbench__add-part" type="button" onClick={() => setAddPartOpen(true)}><Plus aria-hidden="true" />Add Part</button>}
@@ -933,7 +934,7 @@ function PartLedger({ page, loading, loadingMore, failed, manage, salesEnabled, 
           </span>
           <strong role="cell" data-label="Available" className="is-available">{part.available_to_sell_packages ?? part.available_packages}</strong>
           <span role="cell" data-label="Bin location" className="is-bin">{part.location ? `Bin ${part.location}` : 'Bin not set'}</span>
-          <strong role="cell" data-label="Unit cost" className="is-cost">${Number(part.average_unit_cost || 0).toFixed(2)}</strong>
+          <strong role="cell" data-label="Unit cost" className="is-cost">{formatMoney(money(part.average_unit_cost))}</strong>
           <strong role="cell" data-label="Stock value" className="is-value">{formatStockValue(part)}</strong>
           <span role="cell" data-label="Preferred supplier" className={`is-supplier${!part.preferred_source ? ' is-unassigned' : ''}`}>{part.preferred_source?.supplier_name || 'Unassigned'}</span>
           <span role="cell" data-label="Remarks" className={`db-parts-workbench__remark is-remarks${remark === '—' ? ' is-empty' : ''}`}>{remark !== '—' && <i aria-hidden="true" />}{remark}</span>
@@ -1467,7 +1468,7 @@ function PartInspector({ part, loading, failed, manage, prepared, logoUrl, compa
             try { await onAdjust(part, { is_placeholder: false }) } finally { setPromoting(false) }
           }}>{promoting ? 'Promoting…' : 'Make this a stocked part'}</button>}
         </section>}
-        <section className="db-parts-workbench__section"><h3>At a glance</h3><dl className="db-parts-workbench__facts is-overview"><div><dt>Physical on hand</dt><dd>{physicalOnHand}</dd></div><div><dt>Held for checkout</dt><dd>{heldForCheckout}</dd></div><div><dt>Available to sell</dt><dd>{availableToSell}</dd></div><div><dt>Needed for open repairs</dt><dd>{part.needed_for_open_repairs}</dd></div><div><dt>Reorder at</dt><dd>{part.reorder_level}</dd></div><div><dt>Incoming</dt><dd>{part.incoming_packages}</dd></div><div><dt>Unit cost</dt><dd>${Number(part.average_unit_cost || 0).toFixed(2)}</dd></div><div><dt>Stock value</dt><dd>{formatStockValue(part)}</dd></div><div><dt>Selling price</dt><dd>{part.selling_price == null ? '—' : `$${Number(part.selling_price).toFixed(2)}`}</dd></div><div><dt>Remarks</dt><dd>{remark}</dd></div></dl></section>
+        <section className="db-parts-workbench__section"><h3>At a glance</h3><dl className="db-parts-workbench__facts is-overview"><div><dt>Physical on hand</dt><dd>{physicalOnHand}</dd></div><div><dt>Held for checkout</dt><dd>{heldForCheckout}</dd></div><div><dt>Available to sell</dt><dd>{availableToSell}</dd></div><div><dt>Needed for open repairs</dt><dd>{part.needed_for_open_repairs}</dd></div><div><dt>Reorder at</dt><dd>{part.reorder_level}</dd></div><div><dt>Incoming</dt><dd>{part.incoming_packages}</dd></div><div><dt>Unit cost</dt><dd>{formatMoney(money(part.average_unit_cost))}</dd></div><div><dt>Stock value</dt><dd>{formatStockValue(part)}</dd></div><div><dt>Selling price</dt><dd>{part.selling_price == null ? '—' : formatMoney(money(part.selling_price))}</dd></div><div><dt>Remarks</dt><dd>{remark}</dd></div></dl></section>
         <section className="db-parts-workbench__section db-parts-workbench__supplier-section">
           <div className="db-parts-workbench__supplier-section-head">
             <h3>Supplied by</h3>
