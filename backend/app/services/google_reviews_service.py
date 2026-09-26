@@ -71,13 +71,22 @@ async def list_locations(db: AsyncSession, connection: GoogleBusinessConnection)
     async with httpx.AsyncClient(timeout=settings.GOOGLE_BUSINESS_HTTP_TIMEOUT_SECONDS) as client:
         accounts_response = await client.get("https://mybusinessaccountmanagement.googleapis.com/v1/accounts", headers=headers)
         accounts_response.raise_for_status()
-        locations: list[dict] = []
+        locations: dict[str, dict] = {}
         for account in accounts_response.json().get("accounts", []):
-            page = await client.get(f"https://mybusinessbusinessinformation.googleapis.com/v1/{account['name']}/locations?readMask=name,title", headers=headers)
+            page = await client.get(f"https://mybusinessbusinessinformation.googleapis.com/v1/{account['name']}/locations?readMask=name,title,storefrontAddress", headers=headers)
             page.raise_for_status()
             for location in page.json().get("locations", []):
-                locations.append({"account_id": account["name"].split("/")[-1], "location_id": location["name"].split("/")[-1], "name": location.get("title") or location["name"]})
-    return locations
+                location_id = location["name"].split("/")[-1]
+                # Google repeats a listing under every account that can see it (personal + each location group).
+                locations.setdefault(location_id, {"account_id": account["name"].split("/")[-1], "location_id": location_id, "name": location.get("title") or location["name"], "address": _format_address(location.get("storefrontAddress"))})
+    return list(locations.values())
+
+
+def _format_address(address: dict | None) -> str | None:
+    if not address: return None
+    region = " ".join(part for part in (address.get("administrativeArea"), address.get("postalCode")) if part)
+    parts = [*address.get("addressLines", []), address.get("locality"), region]
+    return ", ".join(part for part in parts if part) or None
 
 
 def _first_name(name: str | None) -> str | None:

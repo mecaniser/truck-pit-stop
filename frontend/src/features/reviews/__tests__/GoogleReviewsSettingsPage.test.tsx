@@ -53,7 +53,7 @@ describe('GoogleReviewsSettingsPage location loading failure', () => {
 })
 
 describe('GoogleReviewsSettingsPage location selection', () => {
-  const locations = [{ account_id: 'acct-1', location_id: 'loc-9', name: 'Truck Pit Stop Truck & Trailer Repair' }]
+  const locations = [{ account_id: 'acct-1', location_id: 'loc-9', name: 'Truck Pit Stop Truck & Trailer Repair', address: '416 Seaboard Drive, Matthews, NC 28104' }, { account_id: 'acct-1', location_id: 'loc-2', name: 'TruckPitStop', address: null }]
   beforeEach(() => {
     vi.clearAllMocks()
     mocks.get.mockImplementation(async (url: string) => {
@@ -70,6 +70,12 @@ describe('GoogleReviewsSettingsPage location selection', () => {
     await userEvent.click(await screen.findByRole('button', { name: /Truck Pit Stop Truck & Trailer Repair/ }))
     // LocationSelection forbids extra fields and requires location_name (backend google_reviews.py).
     expect(mocks.put).toHaveBeenCalledWith('/google-reviews/connection/location', { account_id: 'acct-1', location_id: 'loc-9', location_name: 'Truck Pit Stop Truck & Trailer Repair' })
+  })
+
+  it("shows each location's address so same-named listings can be told apart", async () => {
+    show()
+    expect(await screen.findByText('416 Seaboard Drive, Matthews, NC 28104')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /TruckPitStop.*No storefront address/ })).toBeInTheDocument()
   })
 
   it('lets the owner switch to a different Google account before choosing a location', async () => {
