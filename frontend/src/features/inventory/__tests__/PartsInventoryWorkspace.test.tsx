@@ -232,7 +232,7 @@ function installApi(detailOverride?: ReturnType<typeof detail>) {
   apiMocks.delete.mockResolvedValue({ data: null })
 }
 
-function renderWorkspace(summary: { needs_reorder_count?: number; low_stock_count: number; open_purchase_order_count: number } = { needs_reorder_count: 5, low_stock_count: 7, open_purchase_order_count: 2 }) {
+function renderWorkspace(summary: { needs_reorder_count?: number; low_stock_count: number; open_purchase_order_count: number; total_stock_value?: string } = { needs_reorder_count: 5, low_stock_count: 7, open_purchase_order_count: 2 }) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
   return render(
     <QueryClientProvider client={client}>
@@ -1206,5 +1206,43 @@ describe('DB-038 Parts & inventory workspace', () => {
     renderWorkspace()
     await screen.findByRole('heading', { name: 'Alternator' })
     expect(screen.queryByRole('button', { name: 'Add Part' })).not.toBeInTheDocument()
+  })
+
+  it('groups thousands in every dollar figure and keeps the stock total with its label', async () => {
+    const dpfPart: PartRecord = {
+      ...activePart,
+      id: 'part-dpf',
+      sku: 'DPF-FLTR-001',
+      name: 'DPF filter assembly',
+      available_packages: 2,
+      physical_on_hand_packages: 2,
+      average_unit_cost: '1800.00',
+      core_charge: '150.00',
+      stock_value: '3900.00',
+      selling_price: '2450.00',
+    }
+    installApi()
+    const served = apiMocks.get.getMockImplementation()!
+    apiMocks.get.mockImplementation((url: string, config?: { params?: Record<string, unknown> }) => {
+      if (url === '/parts-operations/parts') return Promise.resolve({ data: page([dpfPart]) })
+      if (url === `/parts-operations/parts/${dpfPart.id}`) return Promise.resolve({ data: detail(dpfPart) })
+      return served(url, config)
+    })
+    renderWorkspace({ needs_reorder_count: 5, low_stock_count: 7, open_purchase_order_count: 2, total_stock_value: '184233.50' })
+    await screen.findByRole('heading', { name: 'DPF filter assembly' })
+
+    // A shop total in the hundreds of thousands must read at a glance, and the
+    // figure must never be separated from what it measures.
+    expect(screen.getByText('$184,233.50 STOCK VALUE')).toBeInTheDocument()
+
+    // Unit cost and stock value sit side by side, so both group the same way.
+    const row = screen.getByRole('row', { selected: true })
+    expect(within(row).getByRole('cell', { name: '$1,800.00' })).toBeInTheDocument()
+    expect(within(row).getByRole('cell', { name: '$3,900.00' })).toBeInTheDocument()
+
+    const overview = screen.getByRole('tabpanel', { name: 'Overview' })
+    expect(within(overview).getByText('$1,800.00')).toBeInTheDocument()
+    expect(within(overview).getByText('$3,900.00')).toBeInTheDocument()
+    expect(within(overview).getByText('$2,450.00')).toBeInTheDocument()
   })
 })
