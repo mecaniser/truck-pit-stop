@@ -15,7 +15,7 @@ vi.mock('@/lib/api', () => ({
 }))
 
 /**
- * DB-080. At 375px the review list overflowed its column and clipped the star
+ * DB-083. At 375px the review list overflowed its column and clipped the star
  * ratings. The filter tabs are whitespace-nowrap in an overflow-x-auto row, but
  * the list and detail panels are grid items, and a grid item's default
  * min-width:auto will not shrink below its content, so the ~414px tab row

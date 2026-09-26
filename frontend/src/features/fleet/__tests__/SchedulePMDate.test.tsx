@@ -120,3 +120,40 @@ describe('Schedule PM shop load request', () => {
     })
   })
 })
+
+describe('Schedule PM offers a service day', () => {
+  afterEach(() => vi.clearAllMocks())
+
+  it('defaults the due date to the shop PM day, not a mid-week date', async () => {
+    apiMocks.get.mockImplementation((url: string) => {
+      if (url.includes('pm-day-load')) return Promise.resolve({ data: [] })
+      return Promise.resolve({ data: [] })
+    })
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    render(
+      <QueryClientProvider client={client}>
+        <SchedulePMModal truck={truck} onClose={vi.fn()} onDone={vi.fn()} />
+      </QueryClientProvider>,
+    )
+    const field = screen.getByLabelText(/next pm due date/i) as HTMLInputElement
+    await waitFor(() => expect(field.value).toMatch(/^\d{4}-\d{2}-\d{2}$/))
+    // Saturday: the only day the shop performs PM work.
+    expect(new Date(`${field.value}T12:00:00Z`).getUTCDay()).toBe(6)
+  })
+
+  it('keeps the offered date on a service day when the mileage target changes', async () => {
+    apiMocks.get.mockImplementation(() => Promise.resolve({ data: [] }))
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const user = userEvent.setup()
+    render(
+      <QueryClientProvider client={client}>
+        <SchedulePMModal truck={truck} onClose={vi.fn()} onDone={vi.fn()} />
+      </QueryClientProvider>,
+    )
+    const miles = screen.getByLabelText(/next pm at odometer/i)
+    await user.clear(miles)
+    await user.type(miles, '610000')
+    const field = screen.getByLabelText(/next pm due date/i) as HTMLInputElement
+    await waitFor(() => expect(new Date(`${field.value}T12:00:00Z`).getUTCDay()).toBe(6))
+  })
+})
