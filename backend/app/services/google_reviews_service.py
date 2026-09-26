@@ -12,7 +12,7 @@ from app.core.google_business_crypto import decrypt_google_business_token, encry
 from app.db.models.google_review import GoogleBusinessConnection, GoogleReview, GoogleReviewAuditEvent, GoogleReviewSettings, GoogleReviewStatus
 from app.db.models.tenant import Tenant
 
-MODEL = "claude-opus-4-1"
+MODEL = "claude-opus-4-8"
 GOOGLE_SCOPE = "https://www.googleapis.com/auth/business.manage"
 DEFAULT_POLICY = "Professional, warm, concise, under 70 words. Use only facts in the review. Never invent facts, guarantee outcomes, discuss repair details or prices, blame customers, or request private information publicly. For negative reviews, apologize and invite offline resolution."
 
