@@ -1171,7 +1171,7 @@ async function installFixture(page: Page, {
     if (url.pathname.endsWith('/auth/me/appearance')) return json(fixturePresentation)
     if (url.pathname.endsWith('/auth/tenant-branding') || url.pathname.endsWith('/admin/garage-profile')) return json({ name: 'Truck Pit Stop Wisconsin', state: 'WI', logo_url: tenantLogoUrl })
     if (url.pathname.endsWith('/messages/unread-summary')) return json({ unread_count: 0 })
-    if (url.pathname.endsWith('/parts-operations/summary')) return json({ needs_reorder_count: 2, low_stock_count: 695, open_purchase_order_count: 4 })
+    if (url.pathname.endsWith('/parts-operations/summary')) return json({ needs_reorder_count: 2, low_stock_count: 695, open_purchase_order_count: 4, total_stock_value: '184233.50' })
     if (url.pathname.endsWith('/parts-operations/demand')) return json({ items: demandItems, total: demandItems.length, skip: 0, limit: 100, has_more: false })
     if (url.pathname.endsWith('/suppliers') && route.request().method() === 'GET') return json({ items: [{ id: 'supplier-secondary', name: 'AutoZone' }], total: 1, skip: 0, limit: 100, has_more: false })
     if (/\/parts-operations\/suppliers\/[^/]+\/purchasing$/.test(url.pathname)) return json({ id: fixture.ids.supplier, name: 'Fleet Parts Co', payment_terms: 'NET 30', default_lead_time_days: 7, minimum_order_amount: null, purchasing_notes: null, active_part_source_count: 98, open_purchase_order_count: 1, open_purchase_order_value: '60.00', last_receipt_at: fixture.frozen_at, on_time_order_count: 9, timed_order_count: 10, on_time_rate: '90' })
@@ -2185,3 +2185,92 @@ test('DB-041 keeps server sorting singular, directional, and continuous across P
     await context.close()
   }
 })
+
+test('DB-038 stock value layout: docked panel has no dead dismiss, headers wrap, and the total stays whole', async ({ browser }) => {
+  const inspector = (page: Page) => page.locator('#selected-part-inspector')
+  const dismiss = (page: Page) => inspector(page).getByRole('button', { name: 'Back to parts' })
+  const total = (page: Page) => page.locator('.db-parts-workbench__technical-line').getByText('$184,233.50 STOCK VALUE', { exact: true })
+  // Lines the element occupies. Box counts are not lines: the figure and its
+  // label are separate text nodes and can each report a box on the same line.
+  // Lines of text inside an element, measured from the text itself.
+  // getClientRects() on a block returns one border box however many lines it
+  // wraps to, and a Range over mixed content also returns inline-block boxes
+  // whose tops differ from the text's, so only visible text runs count.
+  const lines = (el: Element) => {
+    const tops = new Set<number>()
+    const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT)
+    for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+      if (!node.textContent?.trim()) continue
+      const range = document.createRange()
+      range.selectNodeContents(node)
+      for (const rect of range.getClientRects()) if (rect.width > 0) tops.add(Math.round(rect.bottom))
+    }
+    return tops.size
+  }
+  const technicalLine = (page: Page) => page.locator('.db-parts-workbench__header .db-parts-workbench__technical-line')
+  // Stats that break across lines. Without the no-wrap rule the stock total
+  // splits from its label at 740-840px and three stats split at phone widths.
+  const splitStats = (page: Page) => page.locator('.db-parts-workbench__stat').evaluateAll((els, measure) => {
+    const count = new Function(`return (${measure})`)() as (el: Element) => number
+    return els.filter((el) => count(el) > 1).map((el) => el.textContent)
+  }, lines.toString())
+  const headerClipped = (page: Page, columnClass: string) => page.locator(`.db-parts-workbench__table-head > .${columnClass} button > span`)
+    .evaluate((label) => label.scrollWidth > label.clientWidth + 1)
+
+  // Wide: the panel is docked beside the table and a part is always selected,
+  // so a dismiss control has nothing to dismiss.
+  {
+    const context = await browser.newContext({ viewport: { width: 1920, height: 1000 }, reducedMotion: 'reduce' })
+    const page = await context.newPage()
+    await installFixture(page, { appearanceMode: 'light' })
+    await page.goto('/dashboard/garage/inventory')
+    await expect(inspector(page)).toBeVisible()
+    await expect(page.locator('.db-parts-workbench__row-select[aria-current="true"]')).toHaveCount(1)
+    await expect(dismiss(page)).toBeHidden()
+    await expect(total(page)).toBeVisible()
+    // Wide screens have the room: the whole stats line, total included, is one line.
+    expect(await technicalLine(page).evaluate(lines), 'stats line wraps on a wide screen').toBe(1)
+    await context.close()
+  }
+
+  // Laptop band: the panel is a sheet over the table, opened by choosing a
+  // part, and its dismiss is the way back to the full table.
+  for (const width of [1000, 800]) {
+    const context = await browser.newContext({ viewport: { width, height: 900 }, reducedMotion: 'reduce' })
+    const page = await context.newPage()
+    await installFixture(page, { appearanceMode: 'light' })
+    await page.goto('/dashboard/garage/inventory')
+    await page.locator('.db-parts-workbench__row-select').first().waitFor()
+
+    expect(await headerClipped(page, 'is-value'), `Stock value header clipped at ${width}px`).toBe(false)
+    expect(await headerClipped(page, 'is-description'), `Part / Description header clipped at ${width}px`).toBe(false)
+    await expect(total(page)).toBeVisible()
+    expect(await splitStats(page), `stats split at ${width}px`).toEqual([])
+
+    await expect(inspector(page)).toBeHidden()
+    await page.locator('.db-parts-workbench__row-select').first().click()
+    await expect(inspector(page)).toBeVisible()
+    await expect(dismiss(page)).toBeVisible()
+    await dismiss(page).click()
+    await expect(inspector(page)).toBeHidden()
+    await context.close()
+  }
+
+  {
+    const context = await browser.newContext({ viewport: { width: 390, height: 844 }, reducedMotion: 'reduce' })
+    const page = await context.newPage()
+    await installFixture(page, { appearanceMode: 'light' })
+    await page.goto('/dashboard/garage/inventory')
+    await expect(total(page)).toBeVisible()
+    // A phone column is narrower than some stats, so they may wrap inside
+    // themselves here. What they must not do is run past the column into the
+    // Add Part button beside it.
+    const overflowing = await technicalLine(page).evaluate((line) => {
+      const edge = line.getBoundingClientRect().right + 1
+      return [...line.querySelectorAll('.db-parts-workbench__stat')].filter((stat) => stat.getBoundingClientRect().right > edge).map((stat) => stat.textContent)
+    })
+    expect(overflowing, 'stats overflow the header column at 390px').toEqual([])
+    await context.close()
+  }
+})
+

@@ -5530,6 +5530,15 @@ html.customer-portal-active {
 .db-parts-workbench__header h1 { margin:0; max-inline-size:18ch; font-size:clamp(1.65rem,2.4vw,2.35rem); letter-spacing:-.03em; line-height:1; text-wrap:balance; }
 .db-parts-workbench__header p { max-inline-size:68ch; margin:.55rem 0 0; color:var(--text-secondary); line-height:1.4; }
 .db-parts-workbench__technical-line { font-family:var(--font-mono,ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace); font-size:.74rem; font-variant-numeric:tabular-nums; letter-spacing:.035em; }
+/* The 68ch measure above is for prose. This line is a row of figures: capping
+   it split "$184,233.50" from "STOCK VALUE" onto separate lines. It takes the
+   header's width instead. Each stat is an inline-block, which is placed whole:
+   it stays on the current line if it fits, moves to the next line if it does
+   not, and wraps inside itself only when it is wider than a whole line, as on a
+   phone. no-wrap would do the first two but run a long stat under Add Part. The
+   separating slash belongs to the stat before it, so it is never left alone. */
+.db-parts-workbench__header p.db-parts-workbench__technical-line { max-inline-size:none; }
+.db-parts-workbench__stat { display:inline-block; max-inline-size:100%; }
 .db-parts-workbench__summary { display:flex; flex:0 0 auto; align-items:center; gap:.25rem; }
 .db-parts-workbench__summary button { display:inline-flex; align-items:center; gap:.35rem; min-block-size:44px; padding:.35rem .55rem; border:0; border-block-end:1px solid var(--parts-rule); border-radius:0; background:transparent; color:var(--text-primary); }
 .db-parts-workbench__summary strong { font-family:var(--font-mono,ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace); font-size:.9rem; font-variant-numeric:tabular-nums; }
@@ -6014,6 +6023,14 @@ html.customer-portal-active {
 .db-parts-workbench__table-head > .is-sortable { padding:0; }
 .db-parts-workbench__sort-header,.db-parts-workbench__table-head > .is-sortable > button { display:flex; inline-size:100%; min-block-size:44px; min-inline-size:0; align-items:center; justify-content:flex-start; gap:.25rem; padding:.2rem .35rem; border:0; border-radius:0; background:transparent; color:inherit; font:inherit; font-weight:inherit; letter-spacing:inherit; line-height:1.15; text-align:left; text-transform:inherit; white-space:nowrap; }
 .db-parts-workbench__table-head > .is-sortable > button > span { min-inline-size:0; overflow:hidden; text-overflow:clip; white-space:nowrap; }
+/* In the tightened laptop tracks a one-line header is cut mid-word ("STOCK VA",
+   "PART / DESCRI"). The head row is 47px tall, room for two lines at this size,
+   so multi-word headers wrap instead. A single word wider than its track still
+   clips; no wrap can help that. */
+@media (min-width:761px) and (max-width:1120px) {
+  .db-parts-workbench__table-head > .is-sortable > button > span,
+  .db-parts-workbench__table-head > span:not(.is-sortable) { white-space:normal; overflow-wrap:normal; line-height:1.15; }
+}
 .db-parts-workbench__table-head > .is-sortable > button svg { flex:0 0 .82rem; inline-size:.82rem; block-size:.82rem; }
 .db-parts-workbench__table-head > .is-description > button { padding-inline-start:calc(46px + .95rem - 1px); }
 .db-parts-workbench__table-head > :is(.is-available,.is-cost,.is-value) > button { justify-content:flex-end; text-align:right; }
@@ -6500,6 +6517,14 @@ html.customer-portal-active {
   background: transparent;
   color: var(--parts-selected-ink);
   box-shadow: none;
+}
+
+/* Wide workbench: the panel is docked beside the table and a part is always
+   selected, so "Back to parts" had nothing to do; it only cleared a flag the
+   docked layout never reads. Below this width the panel is a dismissible sheet
+   (laptop band) or a full screen (phone), and the control returns to the table. */
+@container parts-workbench (width > 80rem) {
+  .db-parts-workbench__inspector .db-parts-workbench__selected-controls > .db-parts-workbench__mobile-back { display:none; }
 }
 
 /* Selected-part header controls: dismiss then edit, on one row. */
