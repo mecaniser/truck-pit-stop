@@ -215,3 +215,52 @@ async def test_successful_regeneration_clears_a_previous_draft_failure(
 
     assert review.ai_draft == "Thanks for the kind words!"
     assert review.publish_failure_reason is None
+
+
+def test_authorization_url_always_shows_the_google_account_chooser():
+    """Without select_account, Google silently reuses the browser's signed-in account, so an
+    owner who connected the wrong account can never switch by reconnecting."""
+    from urllib.parse import parse_qs, urlparse
+
+    from app.services.google_reviews_service import authorization_url
+
+    prompt = parse_qs(urlparse(authorization_url("state-token")).query)["prompt"][0].split()
+    assert "select_account" in prompt
+    assert "consent" in prompt  # still needed so Google re-issues a refresh token
+
+
+@pytest.mark.asyncio
+async def test_list_locations_returns_each_listing_once_with_its_address(monkeypatch):
+    """Google lists one Business Profile under every account that can see it (the user's personal
+    account and each location group), so the picker showed the same shop twice with no way to
+    tell entries apart."""
+    import httpx
+
+    from app.services import google_reviews_service as svc
+
+    shop = {"name": "locations/111", "title": "Truck Pit Stop Truck & Trailer Repair",
+            "storefrontAddress": {"addressLines": ["416 Seaboard Drive"], "locality": "Matthews", "administrativeArea": "NC", "postalCode": "28104"}}
+    area_only = {"name": "locations/222", "title": "TruckPitStop"}
+    pages = {
+        "https://mybusinessaccountmanagement.googleapis.com/v1/accounts": {"accounts": [{"name": "accounts/personal"}, {"name": "accounts/group"}]},
+        "accounts/personal/locations": {"locations": [shop]},
+        "accounts/group/locations": {"locations": [shop, area_only]},
+    }
+
+    class FakeClient:
+        def __init__(self, *a, **k): pass
+        async def __aenter__(self): return self
+        async def __aexit__(self, *a): return False
+        async def get(self, url, headers=None):
+            key = url if url in pages else url.split("/v1/")[1].split("?")[0]
+            return httpx.Response(200, json=pages[key], request=httpx.Request("GET", url))
+
+    async def fake_token(db, connection): return "token"
+    monkeypatch.setattr(svc, "_access_token", fake_token)
+    monkeypatch.setattr(svc.httpx, "AsyncClient", FakeClient)
+
+    result = await svc.list_locations(None, object())
+
+    assert [r["location_id"] for r in result] == ["111", "222"]
+    assert result[0]["address"] == "416 Seaboard Drive, Matthews, NC 28104"
+    assert result[1]["address"] is None

@@ -51,3 +51,40 @@ describe('GoogleReviewsSettingsPage location loading failure', () => {
     expect(screen.queryByRole('button', { name: /Reconnect Google account/ })).not.toBeInTheDocument()
   })
 })
+
+describe('GoogleReviewsSettingsPage location selection', () => {
+  const locations = [{ account_id: 'acct-1', location_id: 'loc-9', name: 'Truck Pit Stop Truck & Trailer Repair', address: '416 Seaboard Drive, Matthews, NC 28104' }, { account_id: 'acct-1', location_id: 'loc-2', name: 'TruckPitStop', address: null }]
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mocks.get.mockImplementation(async (url: string) => {
+      if (url === '/google-reviews/connection/status') return { data: pendingConnection }
+      if (url === '/google-reviews/settings') return { data: settings }
+      if (url === '/google-reviews/connection/locations') return { data: locations }
+      throw new Error(`unexpected GET ${url}`)
+    })
+  })
+
+  it('saves the location in the shape the API accepts', async () => {
+    mocks.put.mockResolvedValue({ data: { ok: true } })
+    show()
+    await userEvent.click(await screen.findByRole('button', { name: /Truck Pit Stop Truck & Trailer Repair/ }))
+    // LocationSelection forbids extra fields and requires location_name (backend google_reviews.py).
+    expect(mocks.put).toHaveBeenCalledWith('/google-reviews/connection/location', { account_id: 'acct-1', location_id: 'loc-9', location_name: 'Truck Pit Stop Truck & Trailer Repair' })
+  })
+
+  it("shows each location's address so same-named listings can be told apart", async () => {
+    show()
+    expect(await screen.findByText('416 Seaboard Drive, Matthews, NC 28104')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /TruckPitStop.*No storefront address/ })).toBeInTheDocument()
+  })
+
+  it('lets the owner switch to a different Google account before choosing a location', async () => {
+    mocks.post.mockResolvedValue({ data: { url: 'https://accounts.google.com/o/oauth2/v2/auth' } })
+    vi.stubGlobal('location', { ...window.location, assign: vi.fn() })
+    show()
+    await screen.findByRole('button', { name: /Truck Pit Stop Truck & Trailer Repair/ })
+    await userEvent.click(screen.getByRole('button', { name: /Use a different Google account/ }))
+    expect(mocks.post).toHaveBeenCalledWith('/google-reviews/connection/authorize')
+    vi.unstubAllGlobals()
+  })
+})
