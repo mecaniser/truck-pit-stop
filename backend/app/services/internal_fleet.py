@@ -51,6 +51,21 @@ def uses_internal_fleet_pricing(customer: Optional[Customer], tenant: Tenant) ->
     )
 
 
+# The shop performs PM work on Saturdays, so a projected date of Wednesday is
+# not a day anyone will service the truck. Monday=0 ... Saturday=5.
+PM_SERVICE_WEEKDAY = 5
+
+
+def next_pm_service_day(day: date) -> date:
+    """The first PM day on or after ``day``.
+
+    Rounding forward rather than back keeps the mileage contract: the truck is
+    never asked in sooner than its odometer supports. A date already on the PM
+    day is returned unchanged.
+    """
+    return day + timedelta(days=(PM_SERVICE_WEEKDAY - day.weekday()) % 7)
+
+
 def project_pm_due_date(
     next_pm_miles: Optional[int],
     current_odometer: Optional[int],
@@ -60,18 +75,20 @@ def project_pm_due_date(
     """Estimate the PM due date from the mileage target, so the date and the
     odometer trigger describe the same event instead of drifting apart.
 
-    date = from_date + ceil(miles_remaining / PM_AVG_MILES_PER_DAY) days.
-    Overdue-on-mileage (remaining <= 0) projects to today (from_date). Returns
-    None when there's no mileage target to project from.
+    date = from_date + ceil(miles_remaining / PM_AVG_MILES_PER_DAY) days,
+    then rounded forward to the shop's PM day. Overdue-on-mileage
+    (remaining <= 0) books the next PM day rather than today, because a PM is
+    only actually performed on one. Returns None when there's no mileage target
+    to project from.
     """
     if next_pm_miles is None:
         return None
     base_date = from_date or date.today()
     remaining = next_pm_miles - (current_odometer or 0)
     if remaining <= 0:
-        return base_date
+        return next_pm_service_day(base_date)
     days = math.ceil(remaining / PM_AVG_MILES_PER_DAY)
-    return base_date + timedelta(days=days)
+    return next_pm_service_day(base_date + timedelta(days=days))
 
 
 def advance_vehicle_pm(vehicle, base_odometer: Optional[int], completed_on: Optional[date] = None) -> None:

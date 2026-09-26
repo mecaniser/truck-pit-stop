@@ -21,9 +21,71 @@ export function fleetUnitLabel(t: Pick<BoardTruck, 'display_unit_number' | 'unit
   return t.display_unit_number || t.unit_number || t.make || 'Truck'
 }
 
+/**
+ * The two halves of a truck's identity, for a card that shows the company as a
+ * heading and the unit number as the large glanceable mark.
+ *
+ * `display_unit_number` arrives pre-joined ("77 CARGO LLC 01"), so the parts
+ * are taken from the source fields rather than split back out of it. The
+ * backend omits the company prefix when the unit already begins with it; this
+ * mirrors that rule with the same normalize comparison, so the card never
+ * prints the company twice.
+ */
+export function fleetIdentity(
+  t: Pick<BoardTruck, 'display_unit_number' | 'unit_number' | 'make' | 'fleet_company_name' | 'owner_company_name'>,
+): { company: string | null; unit: string } {
+  const unit = (t.unit_number || '').trim()
+  // Owner is the listing/leasing company; the operating authority is the
+  // fallback for legacy fleet rows with no owner relationship.
+  const company = (t.owner_company_name || t.fleet_company_name || '').trim()
+  const normalize = (value: string) => value.toLowerCase().replace(/[^a-z0-9]/g, '')
+
+  if (!unit) return { company: company || null, unit: fleetUnitLabel(t) }
+  if (!company) return { company: null, unit }
+  // Already self-identifying: showing the company again would duplicate it.
+  if (normalize(unit).startsWith(normalize(company))) return { company: null, unit }
+  return { company, unit }
+}
+
 export function fmtDate(s?: string | null) {
   if (!s) return '—'
   return new Date(s).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+}
+
+/**
+ * The shop performs PM work on Saturdays, so a projected date of Wednesday is
+ * not a day anyone will service the truck.
+ *
+ * This mirrors `next_pm_service_day` in the backend's internal_fleet service;
+ * the two must agree, or the date the modal offers differs from the one the
+ * server stores. Date-only strings are compared and built as UTC noon so no
+ * local offset can move the day.
+ */
+export const PM_SERVICE_WEEKDAY = 6 // JS: Sunday=0 ... Saturday=6
+
+export function nextPmServiceDay(day: string): string {
+  const date = new Date(`${day}T12:00:00Z`)
+  const shift = (PM_SERVICE_WEEKDAY - date.getUTCDay() + 7) % 7
+  date.setUTCDate(date.getUTCDate() + shift)
+  return date.toISOString().slice(0, 10)
+}
+
+/**
+ * The date to offer for a truck's next PM: projected from its mileage target,
+ * then rounded forward to the shop's PM day. A truck already overdue on
+ * mileage books the next PM day rather than today, because a PM is only
+ * actually performed on one.
+ */
+export function projectPmDueDate(
+  targetMiles: number,
+  odometer: number,
+  fromDay: string,
+): string {
+  const remaining = targetMiles - (odometer || 0)
+  const days = remaining > 0 ? Math.ceil(remaining / PM_AVG_MILES_PER_DAY) : 0
+  const raw = new Date(`${fromDay}T12:00:00Z`)
+  raw.setUTCDate(raw.getUTCDate() + days)
+  return nextPmServiceDay(raw.toISOString().slice(0, 10))
 }
 
 export interface PmState { label: string; cls: 'pm-ok' | 'pm-soon' | 'pm-over'; pct: number }
@@ -36,9 +98,14 @@ export function pmState(t: Pick<BoardTruck, 'pm_remaining' | 'pm_interval_miles'
 
   if (r == null && d == null) return { label: 'PM not scheduled', cls: 'pm-over', pct: 100 }
 
-  // Overdue on either axis.
-  if ((r != null && r <= 0) || (d != null && d < 0)) {
-    const label = r != null && r <= 0 ? `OVERDUE ${fmt(Math.abs(r))} mi` : `OVERDUE ${Math.abs(d as number)} d`
+  // Overdue on either axis. Due *today* counts here too: the PM is owed now,
+  // so it belongs with the work that needs a decision, not with planning. It
+  // reads "Due today" rather than "OVERDUE 0 d", which is both wrong and
+  // alarming.
+  if ((r != null && r <= 0) || (d != null && d <= 0)) {
+    if (r != null && r <= 0) return { label: `OVERDUE ${fmt(Math.abs(r))} mi`, cls: 'pm-over', pct: 100 }
+    const days = d as number
+    const label = days === 0 ? 'Due today' : `OVERDUE ${Math.abs(days)} d`
     return { label, cls: 'pm-over', pct: 100 }
   }
   // Due soon on either axis.
@@ -50,6 +117,30 @@ export function pmState(t: Pick<BoardTruck, 'pm_remaining' | 'pm_interval_miles'
   }
   const label = r != null ? `${fmt(r)} mi to PM` : `${d} d to PM`
   return { label, cls: 'pm-ok', pct: r != null ? milePct : 50 }
+}
+
+/**
+ * How soon this truck needs its PM, as one comparable number: lower is more
+ * urgent. Sorting on miles alone sank a truck due *today* below trucks with
+ * weeks of road left, because its remaining mileage was large.
+ *
+ * Miles and days are different units, so they are converted to a common one -
+ * days - using the same average the scheduler projects with. Whichever axis is
+ * closer wins, matching `pmState`, which shows whichever fires first.
+ * Unscheduled trucks sort last: they need planning, but a truck already
+ * overdue needs it more.
+ */
+export const PM_AVG_MILES_PER_DAY = 600
+
+export function pmUrgency(
+  t: Pick<BoardTruck, 'pm_remaining' | 'pm_days_remaining'>,
+): number {
+  const byMiles = t.pm_remaining != null ? t.pm_remaining / PM_AVG_MILES_PER_DAY : null
+  const byDays = t.pm_days_remaining != null ? t.pm_days_remaining : null
+  if (byMiles == null && byDays == null) return Number.MAX_SAFE_INTEGER
+  if (byMiles == null) return byDays as number
+  if (byDays == null) return byMiles
+  return Math.min(byMiles, byDays)
 }
 
 export function rank(t: BoardTruck): number {
