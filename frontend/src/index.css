@@ -2485,6 +2485,76 @@ html::-webkit-scrollbar-thumb:hover {
   }
 }
 
+/* DB-081 Google Reviews inbox and settings were written night-only. In the
+   staff shell their legacy utilities follow the selected appearance, and the
+   status notices use the semantic status tokens so Day shop keeps contrast. */
+.db-presentation-new .db-reviews-workspace {
+  color: var(--workspace-text);
+}
+
+.db-presentation-new .db-reviews-workspace :is(.bg-white\/5, .bg-black\/20) {
+  background-color: var(--surface-overlay) !important;
+}
+
+.db-presentation-new .db-reviews-workspace .bg-white\/10 {
+  background-color: color-mix(in srgb, var(--workspace-text) 9%, var(--surface-overlay)) !important;
+}
+
+.db-presentation-new .db-reviews-workspace :is(.border-white\/10, .border-white\/15) {
+  border-color: var(--workspace-border) !important;
+}
+
+.db-presentation-new .db-reviews-workspace :is(.text-white, .text-gray-100, .text-gray-200, .text-gray-300) {
+  color: var(--workspace-text) !important;
+}
+
+.db-presentation-new .db-reviews-workspace :is(.text-gray-400, .text-gray-500) {
+  color: var(--workspace-muted) !important;
+}
+
+.db-presentation-new .db-reviews-workspace :is(textarea, input:not([type='checkbox']))::placeholder {
+  color: var(--workspace-muted);
+  opacity: 1;
+}
+
+.db-presentation-new .db-reviews-workspace :is(.text-amber-200, .text-amber-300) {
+  color: var(--parts-status-warning) !important;
+}
+
+.db-presentation-new .db-reviews-workspace :is(.text-emerald-200, .text-emerald-300) {
+  color: var(--parts-status-success) !important;
+}
+
+.db-presentation-new .db-reviews-workspace :is(.text-red-200, .text-red-300) {
+  color: var(--parts-status-danger) !important;
+}
+
+.db-presentation-new .db-reviews-workspace .bg-amber-400\/10 {
+  background-color: color-mix(in srgb, var(--parts-status-warning) 12%, var(--surface-overlay)) !important;
+}
+
+.db-presentation-new .db-reviews-workspace .bg-emerald-400\/10 {
+  background-color: color-mix(in srgb, var(--parts-status-success) 12%, var(--surface-overlay)) !important;
+}
+
+.db-presentation-new .db-reviews-workspace .border-red-400\/30 {
+  border-color: color-mix(in srgb, var(--parts-status-danger) 45%, transparent) !important;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .db-presentation-new .db-reviews-workspace :is(.hover\:bg-white\/5:hover, .hover\:bg-white\/10:hover, .hover\:bg-white\/15:hover) {
+    background-color: color-mix(in srgb, var(--workspace-text) 6%, var(--surface-overlay)) !important;
+  }
+
+  .db-presentation-new .db-reviews-workspace .hover\:bg-red-400\/10:hover {
+    background-color: color-mix(in srgb, var(--parts-status-danger) 10%, var(--surface-overlay)) !important;
+  }
+
+  .db-presentation-new .db-reviews-workspace .hover\:text-white:hover {
+    color: var(--workspace-text) !important;
+  }
+}
+
 /* Retained settings navigation inherits legacy zinc utilities. New presentation
    keeps its active, hover, and keyboard focus states in the current accent ramp. */
 .db-presentation-new .db-settings-nav-item[data-active='true'] {
