@@ -112,3 +112,72 @@ describe('GoogleReviewsSettingsPage reply model (DB-086)', () => {
     expect(mocks.put).toHaveBeenCalledWith('/google-reviews/settings', expect.objectContaining({ reply_model: 'claude-sonnet-5' }))
   })
 })
+
+/**
+ * DB-089. The status endpoint returns last_sync_at, last_sync_error and token_health,
+ * but no screen showed them: a failing sync or an expired Google sign-in looked like a
+ * healthy, green "Connected" shop with an empty inbox.
+ */
+describe('GoogleReviewsSettingsPage connection health (DB-089)', () => {
+  const base = { configured: true, is_connected: true, status: 'connected', location_name: 'Truck Pit Stop', last_sync_at: '2026-09-27T14:00:00Z', last_sync_error: null, token_health: 'healthy' }
+  function withStatus(status: Record<string, unknown>, locationsError?: number) {
+    vi.clearAllMocks()
+    mocks.get.mockImplementation(async (url: string) => {
+      if (url === '/google-reviews/connection/status') return { data: { ...base, ...status } }
+      if (url === '/google-reviews/settings') return { data: settings }
+      if (url === '/google-reviews/connection/locations') {
+        if (locationsError) throw { response: { status: locationsError, data: { detail: 'Internal server error' } } }
+        return { data: [] }
+      }
+      throw new Error(`unexpected GET ${url}`)
+    })
+  }
+
+  it('shows when Google was last checked and raises no alarm when healthy', async () => {
+    withStatus({})
+    show()
+    expect(await screen.findByText(/Last checked/)).toBeInTheDocument()
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  })
+
+  it('says so when a connected shop has never completed a sync', async () => {
+    withStatus({ last_sync_at: null })
+    show()
+    expect(await screen.findByText(/not checked Google yet/i)).toBeInTheDocument()
+  })
+
+  it('shows the reason the last sync failed', async () => {
+    withStatus({ last_sync_error: '429 Too Many Requests' })
+    show()
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent(/last review sync failed/i)
+    expect(alert).toHaveTextContent('429 Too Many Requests')
+  })
+
+  it('offers a reconnect when the Google sign-in has expired', async () => {
+    withStatus({ token_health: 'reconnect_required', last_sync_error: 'Google token refresh failed; reconnect required' })
+    mocks.post.mockResolvedValue({ data: { url: 'https://accounts.google.com/o/oauth2/v2/auth' } })
+    vi.stubGlobal('location', { ...window.location, assign: vi.fn() })
+    show()
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent(/sign-in has expired/i)
+    await userEvent.click(screen.getByRole('button', { name: /Reconnect Google account/ }))
+    expect(mocks.post).toHaveBeenCalledWith('/google-reviews/connection/authorize')
+    vi.unstubAllGlobals()
+  })
+
+  it('keeps a disconnected shop free of stale sync errors', async () => {
+    withStatus({ is_connected: false, status: 'disconnected', token_health: 'not_connected', last_sync_error: 'old failure' })
+    show()
+    expect(await screen.findByRole('button', { name: /Connect Google Business Profile/ })).toBeInTheDocument()
+    expect(screen.queryByText(/old failure/)).not.toBeInTheDocument()
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  })
+
+  it('shows one warning, not two, when location loading and the last sync both failed', async () => {
+    withStatus({ is_connected: false, status: 'location_selection_required', last_sync_error: 'old failure' }, 502)
+    show()
+    expect(await screen.findByText(/Google could not load this account/)).toBeInTheDocument()
+    expect(screen.queryByText(/old failure/)).not.toBeInTheDocument()
+  })
+})
