@@ -121,14 +121,16 @@ async def save_settings(payload: ReviewSettingsPayload, db: AsyncSession = Depen
     await audit(db, current_user.tenant_id, "settings_updated", actor_user_id=current_user.id); await db.commit(); return await get_settings(db, current_user)
 
 @router.get("")
-async def inbox(status_filter: Optional[str] = Query(None, alias="status"), rating: Optional[int] = Query(None, ge=1, le=5), db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+async def inbox(status_filter: Optional[str] = Query(None, alias="status"), rating: Optional[int] = Query(None, ge=1, le=5), limit: int = Query(50, ge=1, le=200), offset: int = Query(0, ge=0), db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
     _staff(current_user); query = select(GoogleReview).where(GoogleReview.tenant_id == current_user.tenant_id)
     if status_filter == "unread": query = query.where(GoogleReview.status == GoogleReviewStatus.NEW.value)
     elif status_filter == "needs_reply": query = query.where(GoogleReview.status.in_([GoogleReviewStatus.NEW.value, GoogleReviewStatus.AWAITING_APPROVAL.value, GoogleReviewStatus.FAILED.value]))
     elif status_filter: query = query.where(GoogleReview.status == status_filter)
     if rating: query = query.where(GoogleReview.rating == rating)
-    rows = (await db.execute(query.order_by(GoogleReview.review_created_at.desc()).limit(200))).scalars().all()
-    return [_serialize(r) for r in rows]
+    # DB-092: paged with a total, so the whole synced history is reachable (was a silent 200-row cap).
+    total = (await db.execute(select(func.count()).select_from(query.subquery()))).scalar_one()
+    rows = (await db.execute(query.order_by(GoogleReview.review_created_at.desc(), GoogleReview.id).limit(limit).offset(offset))).scalars().all()
+    return {"items": [_serialize(r) for r in rows], "total": total, "limit": limit, "offset": offset}
 @router.get("/metrics")
 async def metrics(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
     _staff(current_user); tid = current_user.tenant_id
@@ -147,7 +149,9 @@ async def edit_reply(review_id: UUID, payload: ReplyEdit, db: AsyncSession = Dep
     await audit(db, current_user.tenant_id, "reply_edited", review_id=r.id, actor_user_id=current_user.id); await db.commit(); return _serialize(r)
 @router.post("/{review_id}/generate")
 async def regenerate(review_id: UUID, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
-    _staff(current_user); r = await generate_draft(db, tenant_id=current_user.tenant_id, review=await _review(db, current_user.tenant_id, review_id)); await db.commit(); return _serialize(r)
+    _staff(current_user); review = await _review(db, current_user.tenant_id, review_id)
+    if review.status == GoogleReviewStatus.PUBLISHED.value: raise HTTPException(409, "This review already has a public reply on Google. Edit the reply to replace it.")
+    r = await generate_draft(db, tenant_id=current_user.tenant_id, review=review); await db.commit(); return _serialize(r)
 @router.post("/{review_id}/approve")
 async def approve(review_id: UUID, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
     _staff(current_user); r = await _review(db, current_user.tenant_id, review_id); r.requires_approval, r.approved_at, r.approved_by_user_id = False, datetime.now(timezone.utc), current_user.id; await audit(db, current_user.tenant_id, "reply_approved", review_id=r.id, actor_user_id=current_user.id); await db.commit(); return _serialize(r)
