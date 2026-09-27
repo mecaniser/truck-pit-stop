@@ -154,11 +154,14 @@ async def regenerate(review_id: UUID, db: AsyncSession = Depends(get_db), curren
     r = await generate_draft(db, tenant_id=current_user.tenant_id, review=review); await db.commit(); return _serialize(r)
 @router.post("/{review_id}/approve")
 async def approve(review_id: UUID, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
-    _staff(current_user); r = await _review(db, current_user.tenant_id, review_id); r.requires_approval, r.approved_at, r.approved_by_user_id = False, datetime.now(timezone.utc), current_user.id; await audit(db, current_user.tenant_id, "reply_approved", review_id=r.id, actor_user_id=current_user.id); await db.commit(); return _serialize(r)
+    _staff(current_user); r = await _review(db, current_user.tenant_id, review_id)
+    if not (r.reply_text or "").strip(): raise HTTPException(409, "Write or generate a reply before approving it")
+    r.requires_approval, r.approved_at, r.approved_by_user_id = False, datetime.now(timezone.utc), current_user.id; await audit(db, current_user.tenant_id, "reply_approved", review_id=r.id, actor_user_id=current_user.id); await db.commit(); return _serialize(r)
 @router.post("/{review_id}/publish")
 async def publish(review_id: UUID, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
     _staff(current_user); r = await _review(db, current_user.tenant_id, review_id)
     if r.requires_approval: raise HTTPException(409, "Reply approval is required before publishing")
+    if not (r.reply_text or "").strip(): raise HTTPException(409, "This reply is empty; write or generate one and approve it before publishing")
     try: await publish_reply(db, tenant_id=current_user.tenant_id, review=r); await db.commit()
     except Exception: await db.commit(); raise HTTPException(502, "Google could not publish this reply; it will be retried")
     return _serialize(r)

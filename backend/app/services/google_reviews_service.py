@@ -153,15 +153,24 @@ def _draft_failed(review: GoogleReview) -> bool:
             and (review.ai_metadata or {}).get("draft_attempts", 0) < MAX_DRAFT_ATTEMPTS)
 
 
+def _review_line(review: GoogleReview) -> str:
+    """DB-093: a star rating with no text still deserves a reply, but there is nothing to refer to."""
+    if review.review_text:
+        return f"Review: {review.review_text}"
+    tone = ("Thank them briefly and warmly." if review.rating >= 4
+            else "Apologise sincerely that the visit fell short and invite them to contact the shop directly so it can be put right.")
+    return f"Review: (none) The customer left a {review.rating}-star rating with no written review. Do not mention any details of their visit, work done, prices or timing, because none were given. {tone} Keep it to one or two short sentences."
+
+
 async def generate_draft(db: AsyncSession, *, tenant_id, review: GoogleReview, allow_auto_publish: bool = True) -> GoogleReview:
     settings_row = (await db.execute(select(GoogleReviewSettings).where(GoogleReviewSettings.tenant_id == tenant_id))).scalar_one_or_none()
     tenant = (await db.execute(select(Tenant).where(Tenant.id == tenant_id))).scalar_one()
-    if not review.review_text or not settings.ANTHROPIC_API_KEY:
+    if not settings.ANTHROPIC_API_KEY:
         review.requires_approval, review.status = True, GoogleReviewStatus.AWAITING_APPROVAL.value
-        await audit(db, tenant_id, "generation_failed", review_id=review.id, metadata={"reason": "empty review or unavailable AI"})
+        await audit(db, tenant_id, "generation_failed", review_id=review.id, metadata={"reason": "unavailable AI"})
         return review
     policy = (settings_row.reply_policy if settings_row and settings_row.reply_policy else DEFAULT_POLICY)
-    prompt = f"Business: {tenant.name}\nBrand voice: {settings_row.brand_voice_prompt if settings_row else ''}\nPolicy: {policy}\nRating: {review.rating}/5\nReviewer first name: {_first_name(review.reviewer_name) or 'not available'}\nReview: {review.review_text}\nWrite only the public reply."
+    prompt = f"Business: {tenant.name}\nBrand voice: {settings_row.brand_voice_prompt if settings_row else ''}\nPolicy: {policy}\nRating: {review.rating}/5\nReviewer first name: {_first_name(review.reviewer_name) or 'not available'}\n{_review_line(review)}\nWrite only the public reply."
     model = settings_row.reply_model if settings_row and settings_row.reply_model in REPLY_MODELS else DEFAULT_REPLY_MODEL
     try:
         client = anthropic.Anthropic(api_key=settings.ANTHROPIC_API_KEY)

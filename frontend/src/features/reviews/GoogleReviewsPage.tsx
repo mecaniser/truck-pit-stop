@@ -26,7 +26,8 @@ export default function GoogleReviewsPage() {
   const reviews = data?.pages.flatMap(page => page.items) ?? []
   const total = data?.pages[0]?.total ?? 0
   const { data: metrics } = useQuery({ queryKey: ['google-review-metrics'], queryFn: async () => (await api.get('/google-reviews/metrics')).data })
-  const refresh = () => queryClient.invalidateQueries({ queryKey: ['google-reviews'] })
+  // DB-093: counts change with every action too; refreshing only the list left Unreplied stale.
+  const refresh = () => { queryClient.invalidateQueries({ queryKey: ['google-reviews'] }); queryClient.invalidateQueries({ queryKey: ['google-review-metrics'] }) }
   const open = (review: Review) => { setSelected(review); setEditingReply(false) }
   // One action per review at a time, tracked per review so another can be worked meanwhile; a response only replaces the panel if its review is still open.
   const run = async (actionName: string, request: (id: string) => Promise<{ data: Review }>, success: string, failure: string) => { if (!selected || busy[selected.id]) return; const id = selected.id; setBusy(current => ({ ...current, [id]: actionName })); try { const { data } = await request(id); setSelected(current => current?.id === id ? data : current); if (selected.id === id) setEditingReply(false); refresh(); toast.success(success) } catch (error) { toast.error((error as { response?: { data?: { detail?: string } } }).response?.data?.detail || failure) } finally { setBusy(current => { const next = { ...current }; delete next[id]; return next }) } }
@@ -37,6 +38,7 @@ export default function GoogleReviewsPage() {
   // DB-092: a reply already public on Google is shown read-only; replacing it is an explicit, warned step.
   const replied = selected?.status === 'published'
   const locked = replied && !editingReply
+  const emptyReply = !selected?.reply_text?.trim()
   const secondary = 'rounded bg-white/10 px-3 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-50'
   return <div className="db-operating-surface__scroller db-reviews-workspace mx-auto w-full max-w-6xl p-4 sm:p-6 text-white">
     <div className="mb-6 flex flex-wrap items-end justify-between gap-3"><div><h1 className="text-2xl font-semibold">Google Reviews</h1><p className="mt-1 text-sm text-gray-400">AI reply approval queue.</p></div><Link to="/dashboard/garage/reviews/settings" className="rounded-lg border border-white/15 px-3 py-2 text-sm hover:bg-white/10">Google connection & settings</Link></div>
@@ -61,7 +63,7 @@ export default function GoogleReviewsPage() {
           ? <button type="button" onClick={() => setEditingReply(true)} className={secondary}>Edit public reply</button>
           : replied
             ? <><button onClick={saveEdit} disabled={!!pending} className={secondary}>{label('save', 'Save edit', 'Saving…')}</button><button type="button" onClick={() => setEditingReply(false)} disabled={!!pending} className={secondary}>Cancel</button></>
-            : <><button onClick={saveEdit} disabled={!!pending} className={secondary}>{label('save', 'Save edit', 'Saving…')}</button><button onClick={() => action('generate')} disabled={!!pending} className={secondary}>{label('generate', 'Regenerate AI', 'Generating…')}</button>{selected.requires_approval && <button onClick={() => action('approve')} disabled={!!pending} className="rounded bg-amber-400 px-3 py-2 text-sm text-black disabled:cursor-not-allowed disabled:opacity-50">{label('approve', 'Approve', 'Approving…')}</button>}{!selected.requires_approval && <button onClick={() => action('publish')} disabled={!!pending} className="rounded bg-emerald-400 px-3 py-2 text-sm text-black disabled:cursor-not-allowed disabled:opacity-50">{label('publish', 'Publish', 'Publishing…')}</button>}</>}
+            : <><button onClick={saveEdit} disabled={!!pending} className={secondary}>{label('save', 'Save edit', 'Saving…')}</button><button onClick={() => action('generate')} disabled={!!pending} className={secondary}>{label('generate', 'Regenerate AI', 'Generating…')}</button>{selected.requires_approval && <button onClick={() => action('approve')} disabled={!!pending || emptyReply} className="rounded bg-amber-400 px-3 py-2 text-sm text-black disabled:cursor-not-allowed disabled:opacity-50">{label('approve', 'Approve', 'Approving…')}</button>}{!selected.requires_approval && <button onClick={() => action('publish')} disabled={!!pending || emptyReply} className="rounded bg-emerald-400 px-3 py-2 text-sm text-black disabled:cursor-not-allowed disabled:opacity-50">{label('publish', 'Publish', 'Publishing…')}</button>}</>}
         </div>
         {selected.publish_failure_reason && <p className="mt-3 text-sm text-red-300">{selected.publish_failure_reason}</p>}
       </> : <p className="text-sm text-gray-400">Select a review to view its AI draft and controls.</p>}</section>
