@@ -209,7 +209,7 @@ async def sync_connection(db: AsyncSession, connection: GoogleBusinessConnection
             await generate_draft(db, tenant_id=connection.tenant_id, review=review)
             count += 1
         elif _draft_failed(review):
-            # DB-089: a draft is otherwise attempted only once, so an outage left its error on
+            # DB-091: a draft is otherwise attempted only once, so an outage left its error on
             # the review for good. Retried drafts always wait for approval: nobody has read
             # them, and a backlog retried at once would reach Google unreviewed.
             await generate_draft(db, tenant_id=connection.tenant_id, review=review, allow_auto_publish=False)

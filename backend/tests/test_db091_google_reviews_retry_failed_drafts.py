@@ -1,4 +1,4 @@
-"""DB-089: reviews whose AI draft failed are retried by the sync, and always wait for approval.
+"""DB-091: reviews whose AI draft failed are retried by the sync, and always wait for approval.
 
 A draft was attempted once, when the sync first stored a review. Every review imported
 while DB-078 pinned `claude-opus-4-1` (404) kept "AI draft unavailable" in
