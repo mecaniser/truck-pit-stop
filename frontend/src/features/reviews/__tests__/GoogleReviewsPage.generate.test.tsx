@@ -15,7 +15,7 @@ function show() {
 }
 
 /**
- * DB-088. Regenerate AI waits several seconds on the model with no sign it was
+ * DB-090. Regenerate AI waits several seconds on the model with no sign it was
  * pressed, so operators click again (a second paid call) or act on the old
  * draft. While a review action is in flight the pressed button says so and
  * every other action on that review is held.
