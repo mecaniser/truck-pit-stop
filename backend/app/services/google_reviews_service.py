@@ -1,6 +1,6 @@
 """Google Reviews provider and AI workflow. All entry points require tenant_id."""
 from __future__ import annotations
-import base64, hashlib, json
+import base64, hashlib, json, re
 from datetime import datetime, timedelta, timezone
 from secrets import token_urlsafe
 from typing import Any
@@ -130,6 +130,18 @@ async def upsert_review(db: AsyncSession, *, tenant_id, connection: GoogleBusine
     return review, created_new
 
 
+_DASH = "\u2014\u2013"  # em dash, en dash
+
+
+def _remove_dashes(text: str) -> str:
+    """DB-088: the owner wants no em or en dashes in public replies, even when the model uses them."""
+    text = re.sub(rf"(?<=\d)\s*[{_DASH}]\s*(?=\d)", "-", text)  # 2–3 hours -> 2-3 hours
+    text = re.sub(rf"(?<=[^\s.!?])\s*[{_DASH}]\s*$", ".", text)  # trailing dash ends the sentence
+    text = re.sub(rf"\s*[{_DASH}]+\s*", ", ", text)
+    text = re.sub(r",\s*([,.!?;:])", r"\1", text)
+    return re.sub(r"\s{2,}", " ", text).strip(" ,")
+
+
 async def generate_draft(db: AsyncSession, *, tenant_id, review: GoogleReview) -> GoogleReview:
     settings_row = (await db.execute(select(GoogleReviewSettings).where(GoogleReviewSettings.tenant_id == tenant_id))).scalar_one_or_none()
     tenant = (await db.execute(select(Tenant).where(Tenant.id == tenant_id))).scalar_one()
@@ -142,8 +154,8 @@ async def generate_draft(db: AsyncSession, *, tenant_id, review: GoogleReview) -
     model = settings_row.reply_model if settings_row and settings_row.reply_model in REPLY_MODELS else DEFAULT_REPLY_MODEL
     try:
         client = anthropic.Anthropic(api_key=settings.ANTHROPIC_API_KEY)
-        response = client.messages.create(model=model, max_tokens=180, system="You write safe public Google Business Profile replies.", messages=[{"role": "user", "content": prompt}], **REPLY_MODELS[model]["request"])
-        draft = next((block.text for block in response.content if block.type == "text"), "").strip()
+        response = client.messages.create(model=model, max_tokens=180, system="You write safe public Google Business Profile replies. Never use em dashes or en dashes; use commas or full stops instead.", messages=[{"role": "user", "content": prompt}], **REPLY_MODELS[model]["request"])
+        draft = _remove_dashes(next((block.text for block in response.content if block.type == "text"), "").strip())
         if not draft: raise RuntimeError("AI returned no reply")
         review.ai_draft = review.reply_text = draft[:600]
         review.ai_model, review.ai_metadata = model, {"word_count": len(draft.split())}
