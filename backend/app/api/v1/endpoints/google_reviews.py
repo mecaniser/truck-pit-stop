@@ -3,7 +3,7 @@ from __future__ import annotations
 import base64, hashlib, json
 from datetime import datetime, timedelta, timezone
 from secrets import token_urlsafe
-from typing import Optional
+from typing import Literal, Optional
 from uuid import UUID
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
@@ -15,7 +15,7 @@ from app.core.config import settings
 from app.core.dependencies import get_current_active_user, get_db
 from app.db.models.google_review import GoogleBusinessConnection, GoogleBusinessOAuthState, GoogleReview, GoogleReviewSettings, GoogleReviewStatus
 from app.db.models.user import User, UserRole
-from app.services.google_reviews_service import audit, authorization_url, exchange_code, generate_draft, is_configured, list_locations, publish_reply, sync_connection
+from app.services.google_reviews_service import DEFAULT_REPLY_MODEL, REPLY_MODELS, audit, authorization_url, exchange_code, generate_draft, is_configured, list_locations, publish_reply, sync_connection
 
 router = APIRouter()
 
@@ -30,6 +30,7 @@ class ReviewSettingsPayload(BaseModel):
     reply_policy: str = Field(default="", max_length=4000)
     auto_publish_five_star: bool = False
     alert_recipients: list[str] = Field(default_factory=list, max_length=20)
+    reply_model: Literal["claude-opus-4-8", "claude-sonnet-5"] = DEFAULT_REPLY_MODEL
 class ReplyEdit(BaseModel):
     reply_text: str = Field(min_length=1, max_length=600)
 
@@ -111,7 +112,7 @@ async def disconnect(db: AsyncSession = Depends(get_db), current_user: User = De
 @router.get("/settings")
 async def get_settings(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
     _admin(current_user); item = (await db.execute(select(GoogleReviewSettings).where(GoogleReviewSettings.tenant_id == current_user.tenant_id))).scalar_one_or_none()
-    return {"brand_voice_prompt": item.brand_voice_prompt if item else "", "reply_policy": item.reply_policy if item else "", "auto_publish_five_star": bool(item and item.auto_publish_five_star), "alert_recipients": item.alert_recipients if item else []}
+    return {"brand_voice_prompt": item.brand_voice_prompt if item else "", "reply_policy": item.reply_policy if item else "", "auto_publish_five_star": bool(item and item.auto_publish_five_star), "alert_recipients": item.alert_recipients if item else [], "reply_model": (item.reply_model if item and item.reply_model in REPLY_MODELS else DEFAULT_REPLY_MODEL), "reply_model_options": [{"id": key, "label": value["label"]} for key, value in REPLY_MODELS.items()]}
 @router.put("/settings")
 async def save_settings(payload: ReviewSettingsPayload, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
     _admin(current_user); item = (await db.execute(select(GoogleReviewSettings).where(GoogleReviewSettings.tenant_id == current_user.tenant_id))).scalar_one_or_none()

@@ -12,7 +12,14 @@ from app.core.google_business_crypto import decrypt_google_business_token, encry
 from app.db.models.google_review import GoogleBusinessConnection, GoogleReview, GoogleReviewAuditEvent, GoogleReviewSettings, GoogleReviewStatus
 from app.db.models.tenant import Tenant
 
-MODEL = "claude-opus-4-8"
+# DB-086: the models a shop may choose for reply drafts. Each entry carries its request shape:
+# Sonnet 5 thinks unless told not to, and thinking tokens would eat the short draft budget.
+REPLY_MODELS: dict[str, dict] = {
+    "claude-opus-4-8": {"label": "Claude Opus 4.8 (default)", "request": {}},
+    "claude-sonnet-5": {"label": "Claude Sonnet 5 (faster, lower cost)", "request": {"thinking": {"type": "disabled"}}},
+}
+DEFAULT_REPLY_MODEL = "claude-opus-4-8"
+MODEL = DEFAULT_REPLY_MODEL
 GOOGLE_SCOPE = "https://www.googleapis.com/auth/business.manage"
 DEFAULT_POLICY = "Professional, warm, concise, under 70 words. Use only facts in the review. Never invent facts, guarantee outcomes, discuss repair details or prices, blame customers, or request private information publicly. For negative reviews, apologize and invite offline resolution."
 
@@ -132,18 +139,19 @@ async def generate_draft(db: AsyncSession, *, tenant_id, review: GoogleReview) -
         return review
     policy = (settings_row.reply_policy if settings_row and settings_row.reply_policy else DEFAULT_POLICY)
     prompt = f"Business: {tenant.name}\nBrand voice: {settings_row.brand_voice_prompt if settings_row else ''}\nPolicy: {policy}\nRating: {review.rating}/5\nReviewer first name: {_first_name(review.reviewer_name) or 'not available'}\nReview: {review.review_text}\nWrite only the public reply."
+    model = settings_row.reply_model if settings_row and settings_row.reply_model in REPLY_MODELS else DEFAULT_REPLY_MODEL
     try:
         client = anthropic.Anthropic(api_key=settings.ANTHROPIC_API_KEY)
-        response = client.messages.create(model=MODEL, max_tokens=180, system="You write safe public Google Business Profile replies.", messages=[{"role": "user", "content": prompt}])
+        response = client.messages.create(model=model, max_tokens=180, system="You write safe public Google Business Profile replies.", messages=[{"role": "user", "content": prompt}], **REPLY_MODELS[model]["request"])
         draft = next((block.text for block in response.content if block.type == "text"), "").strip()
         if not draft: raise RuntimeError("AI returned no reply")
         review.ai_draft = review.reply_text = draft[:600]
-        review.ai_model, review.ai_metadata = MODEL, {"word_count": len(draft.split())}
+        review.ai_model, review.ai_metadata = model, {"word_count": len(draft.split())}
         review.publish_failure_reason = None
         auto = bool(settings_row and settings_row.auto_publish_five_star and review.rating == 5)
         review.requires_approval = not auto
         review.status = GoogleReviewStatus.NEW.value if auto else GoogleReviewStatus.AWAITING_APPROVAL.value
-        await audit(db, tenant_id, "draft_generated", review_id=review.id, metadata={"model": MODEL, "auto_publish_eligible": auto})
+        await audit(db, tenant_id, "draft_generated", review_id=review.id, metadata={"model": model, "auto_publish_eligible": auto})
     except Exception as exc:
         review.requires_approval, review.status = True, GoogleReviewStatus.AWAITING_APPROVAL.value
         review.ai_metadata = {"error": str(exc)[:300]}

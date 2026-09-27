@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter } from 'react-router-dom'
@@ -86,5 +86,29 @@ describe('GoogleReviewsSettingsPage location selection', () => {
     await userEvent.click(screen.getByRole('button', { name: /Use a different Google account/ }))
     expect(mocks.post).toHaveBeenCalledWith('/google-reviews/connection/authorize')
     vi.unstubAllGlobals()
+  })
+})
+
+describe('GoogleReviewsSettingsPage reply model (DB-086)', () => {
+  const connected = { configured: true, is_connected: true, status: 'connected', location_name: 'Truck Pit Stop', last_sync_at: null, last_sync_error: null }
+  const options = [{ id: 'claude-opus-4-8', label: 'Claude Opus 4.8 (default)' }, { id: 'claude-sonnet-5', label: 'Claude Sonnet 5 (faster, lower cost)' }]
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mocks.get.mockImplementation(async (url: string) => {
+      if (url === '/google-reviews/connection/status') return { data: connected }
+      if (url === '/google-reviews/settings') return { data: { ...settings, reply_model: 'claude-opus-4-8', reply_model_options: options } }
+      throw new Error(`unexpected GET ${url}`)
+    })
+    mocks.put.mockResolvedValue({ data: {} })
+  })
+
+  it('lets the owner pick the model that drafts replies and saves it', async () => {
+    show()
+    const picker = await screen.findByRole('combobox', { name: /Reply model/ })
+    await waitFor(() => expect(picker).toHaveValue('claude-opus-4-8'))
+    expect(screen.getByRole('option', { name: 'Claude Sonnet 5 (faster, lower cost)' })).toBeInTheDocument()
+    await userEvent.selectOptions(picker, 'claude-sonnet-5')
+    await userEvent.click(screen.getByRole('button', { name: 'Save settings' }))
+    expect(mocks.put).toHaveBeenCalledWith('/google-reviews/settings', expect.objectContaining({ reply_model: 'claude-sonnet-5' }))
   })
 })
