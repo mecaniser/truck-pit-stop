@@ -124,6 +124,7 @@ async def save_settings(payload: ReviewSettingsPayload, db: AsyncSession = Depen
 async def inbox(status_filter: Optional[str] = Query(None, alias="status"), rating: Optional[int] = Query(None, ge=1, le=5), db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
     _staff(current_user); query = select(GoogleReview).where(GoogleReview.tenant_id == current_user.tenant_id)
     if status_filter == "unread": query = query.where(GoogleReview.status == GoogleReviewStatus.NEW.value)
+    elif status_filter == "needs_reply": query = query.where(GoogleReview.status.in_([GoogleReviewStatus.NEW.value, GoogleReviewStatus.AWAITING_APPROVAL.value, GoogleReviewStatus.FAILED.value]))
     elif status_filter: query = query.where(GoogleReview.status == status_filter)
     if rating: query = query.where(GoogleReview.rating == rating)
     rows = (await db.execute(query.order_by(GoogleReview.review_created_at.desc()).limit(200))).scalars().all()
