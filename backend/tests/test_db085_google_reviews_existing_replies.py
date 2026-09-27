@@ -159,6 +159,6 @@ async def test_inbox_needs_reply_filter_excludes_reviews_already_replied(db_sess
     await db_session.flush()
     owner = SimpleNamespace(id=uuid4(), tenant_id=connection.tenant_id, role=UserRole.GARAGE_OWNER)
 
-    needs = await inbox(status_filter="needs_reply", rating=None, db=db_session, current_user=owner)
+    needs = await inbox(status_filter="needs_reply", rating=None, limit=50, offset=0, db=db_session, current_user=owner)
 
-    assert sorted(r["status"] for r in needs) == ["awaiting_approval", "failed", "new"]
+    assert sorted(r["status"] for r in needs["items"]) == ["awaiting_approval", "failed", "new"]
