@@ -142,7 +142,18 @@ def _remove_dashes(text: str) -> str:
     return re.sub(r"\s{2,}", " ", text).strip(" ,")
 
 
-async def generate_draft(db: AsyncSession, *, tenant_id, review: GoogleReview) -> GoogleReview:
+DRAFT_FAILURE_PREFIX = "AI draft unavailable: "
+MAX_DRAFT_ATTEMPTS = 5
+
+
+def _draft_failed(review: GoogleReview) -> bool:
+    """A stored review whose AI draft failed and that nobody has written a reply for."""
+    return (review.status == GoogleReviewStatus.AWAITING_APPROVAL.value and not review.reply_text
+            and (review.publish_failure_reason or "").startswith(DRAFT_FAILURE_PREFIX)
+            and (review.ai_metadata or {}).get("draft_attempts", 0) < MAX_DRAFT_ATTEMPTS)
+
+
+async def generate_draft(db: AsyncSession, *, tenant_id, review: GoogleReview, allow_auto_publish: bool = True) -> GoogleReview:
     settings_row = (await db.execute(select(GoogleReviewSettings).where(GoogleReviewSettings.tenant_id == tenant_id))).scalar_one_or_none()
     tenant = (await db.execute(select(Tenant).where(Tenant.id == tenant_id))).scalar_one()
     if not review.review_text or not settings.ANTHROPIC_API_KEY:
@@ -160,16 +171,16 @@ async def generate_draft(db: AsyncSession, *, tenant_id, review: GoogleReview) -
         review.ai_draft = review.reply_text = draft[:600]
         review.ai_model, review.ai_metadata = model, {"word_count": len(draft.split())}
         review.publish_failure_reason = None
-        auto = bool(settings_row and settings_row.auto_publish_five_star and review.rating == 5)
+        auto = bool(allow_auto_publish and settings_row and settings_row.auto_publish_five_star and review.rating == 5)
         review.requires_approval = not auto
         review.status = GoogleReviewStatus.NEW.value if auto else GoogleReviewStatus.AWAITING_APPROVAL.value
         await audit(db, tenant_id, "draft_generated", review_id=review.id, metadata={"model": model, "auto_publish_eligible": auto})
     except Exception as exc:
         review.requires_approval, review.status = True, GoogleReviewStatus.AWAITING_APPROVAL.value
-        review.ai_metadata = {"error": str(exc)[:300]}
+        review.ai_metadata = {"error": str(exc)[:300], "draft_attempts": (review.ai_metadata or {}).get("draft_attempts", 0) + 1}
         # ai_metadata is not serialized to the inbox, so a draft failure would
         # otherwise reach the operator as an empty reply with no reason.
-        review.publish_failure_reason = f"AI draft unavailable: {str(exc)[:460]}"
+        review.publish_failure_reason = f"{DRAFT_FAILURE_PREFIX}{str(exc)[:460]}"
         await audit(db, tenant_id, "generation_failed", review_id=review.id)
     return review
 
@@ -196,6 +207,12 @@ async def sync_connection(db: AsyncSession, connection: GoogleBusinessConnection
             _record_google_reply(review, item["reviewReply"])
         elif created:
             await generate_draft(db, tenant_id=connection.tenant_id, review=review)
+            count += 1
+        elif _draft_failed(review):
+            # DB-091: a draft is otherwise attempted only once, so an outage left its error on
+            # the review for good. Retried drafts always wait for approval: nobody has read
+            # them, and a backlog retried at once would reach Google unreviewed.
+            await generate_draft(db, tenant_id=connection.tenant_id, review=review, allow_auto_publish=False)
             count += 1
     connection.last_sync_at, connection.last_sync_error = datetime.now(timezone.utc), None
     return count
