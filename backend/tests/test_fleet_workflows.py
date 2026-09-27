@@ -974,11 +974,13 @@ async def test_completing_pm_rolls_date_and_mileage_forward(db_session):
     await db_session.refresh(vehicle)
     assert vehicle.next_pm_miles == 100000 + 25000
     # The due date is now projected from the mileage target (not a flat
-    # pm_interval_days span): 25,000 mi remaining at 600 mi/day = 42 days.
+    # pm_interval_days span): 25,000 mi remaining at 600 mi/day = 42 days,
+    # then rolled forward to the shop's PM service day. Asserting the raw span
+    # passed only when today + 42 happened to be that weekday (1 day in 7).
     import math
-    from app.services.internal_fleet import PM_AVG_MILES_PER_DAY
+    from app.services.internal_fleet import PM_AVG_MILES_PER_DAY, next_pm_service_day
     expected_days = math.ceil(25000 / PM_AVG_MILES_PER_DAY)
-    assert vehicle.pm_due_date == date.today() + timedelta(days=expected_days)
+    assert vehicle.pm_due_date == next_pm_service_day(date.today() + timedelta(days=expected_days))
 
 
 @pytest.mark.asyncio
