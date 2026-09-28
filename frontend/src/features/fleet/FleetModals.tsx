@@ -17,7 +17,7 @@ import type {
   BoardTruck, TruckDetail, Inspection, InspectionDetail, InspectionItem, InspectionItemResult, InspectionResult, IncidentSeverity, IncidentEntry,
   PMServiceEntry, DriverProfile, LegacyDriverContact, VehicleDriverAssignment, LinkableRepairOrder,
 } from './types'
-import { PM_AVG_MILES_PER_DAY, fleetUnitLabel, fmtDate, fmt, projectPmDueDate } from './helpers'
+import { PM_AVG_MILES_PER_DAY, fleetUnitLabel, fmtDate, fmtDay, fmt, nextPmServiceDay, projectPmDueDate } from './helpers'
 import { isSupportedPhotoFile, runPhotoUploadQueue, uploadDirectPhoto, type PhotoUploadStatus } from '@/lib/photoUpload'
 import { formatUSPhone } from '@/utils/phone'
 import { duplicateVinConflict, duplicateVinTruckLabel, type DuplicateVinConflict } from './duplicateVin'
@@ -660,7 +660,15 @@ export function SchedulePMModal({ truck, onClose, onDone, createMode = false }: 
   // shop's PM day. The same helper backs the server's projection, so the date
   // offered here is the one the server would store.
   const projectDate = (targetMiles: number) =>
-    projectPmDueDate(targetMiles, truck.odometer || 0, new Date().toISOString().slice(0, 10))
+    projectPmDueDate(
+      targetMiles,
+      truck.odometer || 0,
+      new Date().toISOString().slice(0, 10),
+      // The stored date is the other half of the PM condition. Without it an
+      // overdue truck is offered its mileage date, weeks away, despite needing
+      // service now.
+      truck.pm_due_date,
+    )
   const initialMiles = truck.next_pm_miles ?? ((truck.odometer || 0) + intervalMiles)
   // Pre-fill the date from mileage (not the stale stored date), so the manager
   // sees a date that agrees with the odometer. They can still override it.
@@ -701,6 +709,15 @@ export function SchedulePMModal({ truck, onClose, onDone, createMode = false }: 
       })).data
     },
   })
+
+  // The Saturday of the picked date's week, when the manager has chosen a day
+  // the shop does not service on. Null when the date is a Saturday, empty or
+  // not yet edited.
+  const offCycleSaturday = (() => {
+    if (!dateEdited || !/^\d{4}-\d{2}-\d{2}$/.test(dueDate)) return null
+    const onServiceDay = nextPmServiceDay(dueDate)
+    return onServiceDay === dueDate ? null : onServiceDay
+  })()
 
   const rescheduling = !!truck.pm_due_date
 
@@ -806,7 +823,12 @@ export function SchedulePMModal({ truck, onClose, onDone, createMode = false }: 
               dayLoad={pmDayLoad}
               onMonthChange={setLoadMonth}
               hint={dateEdited
-                ? 'Custom date — overrides the mileage estimate.'
+                ? (offCycleSaturday
+                  // The date is respected as picked - this informs, it does not
+                  // correct. A truck already in the shop or a customer request
+                  // is a legitimate reason to work off the Saturday rhythm.
+                  ? `Not a Saturday — the shop's PM day that week is ${fmtDay(offCycleSaturday)}.`
+                  : 'Custom date — overrides the mileage estimate.')
                 : `Estimated from mileage (~${AVG_MILES_PER_DAY} mi/day), on the next PM Saturday. Edit to override.`}
             />
           </>

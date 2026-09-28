@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { nextPmServiceDay, projectPmDueDate } from '../helpers'
+import { fmtDay, nextPmServiceDay, projectPmDueDate } from '../helpers'
 
 /* The shop performs PM work on Saturdays, so the date the modal offers must be
    one. Rounding forward rather than back keeps the mileage contract: the truck
@@ -46,5 +46,55 @@ describe('projectPmDueDate', () => {
   it('does not shift a date-only value across a timezone boundary', () => {
     // 2026-03-01 is a Sunday; the PM day is the 7th, regardless of local offset.
     expect(projectPmDueDate(100000, 100000, '2026-03-01')).toBe('2026-03-07')
+  })
+})
+
+describe('projectPmDueDate honours an overdue date, not just mileage', () => {
+  /* A PM is due when EITHER the date or the odometer is reached. Projecting
+     from mileage alone offered a date six weeks out for a truck already 27 days
+     overdue, because it still had 25,000 miles to run. */
+
+  it('offers the next service day when the stored date has passed', () => {
+    // 24,999 mi left (42 days at 600/day) but the due date passed 27 days ago.
+    expect(projectPmDueDate(646565, 621566, '2026-09-28', '2026-09-01')).toBe('2026-10-03')
+  })
+
+  it('does not push an overdue truck out to its mileage date', () => {
+    const offered = projectPmDueDate(646565, 621566, '2026-09-28', '2026-09-01')
+    expect(offered < '2026-11-14').toBe(true)
+  })
+
+  it('still projects from mileage when the stored date is in the future', () => {
+    // Due date far off, mileage close: the mileage governs.
+    expect(projectPmDueDate(101200, 100000, '2026-10-05', '2027-01-01')).toBe('2026-10-10')
+  })
+
+  it('takes whichever trigger comes first', () => {
+    // Stored date sooner than the mileage projection: the date governs.
+    expect(projectPmDueDate(125000, 100000, '2026-10-05', '2026-10-13')).toBe('2026-10-17')
+  })
+
+  it('behaves as before when there is no stored date', () => {
+    expect(projectPmDueDate(101200, 100000, '2026-10-05')).toBe('2026-10-10')
+  })
+
+  it('books the next service day when overdue on both axes', () => {
+    expect(projectPmDueDate(99000, 100000, '2026-09-28', '2026-09-01')).toBe('2026-10-03')
+  })
+})
+
+describe('fmtDay keeps a date-only value on its own day', () => {
+  it('does not render the previous day in a negative-offset zone', () => {
+    // fmtDate parses through new Date(s), which reads a bare date as UTC
+    // midnight and renders Oct 9 for "2026-10-10" west of Greenwich.
+    expect(fmtDay('2026-10-10')).toBe('Oct 10, 2026')
+  })
+
+  it('handles a leap day without shifting', () => {
+    expect(fmtDay('2024-02-29')).toBe('Feb 29, 2024')
+  })
+
+  it('renders nothing for an absent date', () => {
+    expect(fmtDay(null)).toBe('—')
   })
 })

@@ -980,7 +980,12 @@ async def test_completing_pm_rolls_date_and_mileage_forward(db_session):
     import math
     from app.services.internal_fleet import PM_AVG_MILES_PER_DAY, next_pm_service_day
     expected_days = math.ceil(25000 / PM_AVG_MILES_PER_DAY)
-    assert vehicle.pm_due_date == next_pm_service_day(date.today() + timedelta(days=expected_days))
+    # Rounded forward to the shop's PM day: a mid-week date is not one anyone
+    # services the truck on. The completed PM's own (satisfied) due date must
+    # not drag this backward, so the roll-forward projects from mileage alone.
+    raw_next = date.today() + timedelta(days=expected_days)
+    assert vehicle.pm_due_date == next_pm_service_day(raw_next)
+    assert vehicle.pm_due_date >= raw_next
 
 
 @pytest.mark.asyncio
