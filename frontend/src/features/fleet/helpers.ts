@@ -80,12 +80,22 @@ export function projectPmDueDate(
   targetMiles: number,
   odometer: number,
   fromDay: string,
+  storedDueDay?: string | null,
 ): string {
   const remaining = targetMiles - (odometer || 0)
   const days = remaining > 0 ? Math.ceil(remaining / PM_AVG_MILES_PER_DAY) : 0
   const raw = new Date(`${fromDay}T12:00:00Z`)
   raw.setUTCDate(raw.getUTCDate() + days)
-  return nextPmServiceDay(raw.toISOString().slice(0, 10))
+  let rawDay = raw.toISOString().slice(0, 10)
+  // A PM is due when EITHER trigger is reached, so the offer must respect the
+  // date as well as the odometer. A truck weeks overdue on date can still have
+  // a full interval of miles left; projecting from mileage alone offered a
+  // date six weeks out for a truck that needed servicing now.
+  if (storedDueDay && storedDueDay < rawDay) rawDay = storedDueDay
+  // Never offer a date already past: an overdue truck books the next service
+  // day, not a retroactive one.
+  if (rawDay < fromDay) rawDay = fromDay
+  return nextPmServiceDay(rawDay)
 }
 
 export interface PmState { label: string; cls: 'pm-ok' | 'pm-soon' | 'pm-over'; pct: number }

@@ -157,3 +157,31 @@ describe('Schedule PM offers a service day', () => {
     await waitFor(() => expect(new Date(`${field.value}T12:00:00Z`).getUTCDay()).toBe(6))
   })
 })
+
+describe('Schedule PM for an overdue truck', () => {
+  afterEach(() => vi.clearAllMocks())
+
+  it('offers the next service day, not the distant mileage date', async () => {
+    // Truck 603 from the production board: 27 days overdue on date, but still
+    // 24,999 miles from its odometer target. The modal offered 2026-11-14.
+    const overdue = {
+      ...truck,
+      odometer: 621566,
+      next_pm_miles: 646565,
+      pm_due_date: '2026-09-01',
+    } as typeof truck
+    apiMocks.get.mockImplementation(() => Promise.resolve({ data: [] }))
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    render(
+      <QueryClientProvider client={client}>
+        <SchedulePMModal truck={overdue} onClose={vi.fn()} onDone={vi.fn()} />
+      </QueryClientProvider>,
+    )
+    const field = screen.getByLabelText(/next pm due date/i) as HTMLInputElement
+    await waitFor(() => expect(field.value).toMatch(/^\d{4}-\d{2}-\d{2}$/))
+    const today = new Date().toISOString().slice(0, 10)
+    expect(field.value >= today).toBe(true)          // never retroactive
+    expect(field.value < '2026-11-14').toBe(true)    // not the mileage date
+    expect(new Date(`${field.value}T12:00:00Z`).getUTCDay()).toBe(6) // a Saturday
+  })
+})
