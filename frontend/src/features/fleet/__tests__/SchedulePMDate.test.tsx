@@ -70,7 +70,23 @@ describe('Schedule PM due date', () => {
     const calendar = within(screen.getByRole('dialog', { name: /next pm due date/i }))
     await user.click(calendar.getByRole('button', { name: /^Nov 20, 2026$/ }))
     expect(screen.getByLabelText(/next pm due date/i)).toHaveValue('2026-11-20')
+    // Nov 20 2026 is a Friday, so the hint names that week's Saturday rather
+    // than the generic override line. The pick is still honoured.
+    expect(screen.getByText(/Not a Saturday/i)).toBeInTheDocument()
+  })
+})
+
+describe('Schedule PM custom date on a service day', () => {
+  afterEach(() => vi.clearAllMocks())
+
+  it('reads as a plain override when the picked day is a Saturday', async () => {
+    const { user } = renderModal()
+    await user.click(screen.getByRole('button', { name: /choose date/i }))
+    const calendar = within(screen.getByRole('dialog', { name: /next pm due date/i }))
+    await user.click(calendar.getByRole('button', { name: /^Nov 21, 2026$/ })) // Saturday
+    expect(screen.getByLabelText(/next pm due date/i)).toHaveValue('2026-11-21')
     expect(screen.getByText(/overrides the mileage estimate/i)).toBeInTheDocument()
+    expect(screen.queryByText(/Not a Saturday/i)).not.toBeInTheDocument()
   })
 })
 
@@ -183,5 +199,58 @@ describe('Schedule PM for an overdue truck', () => {
     expect(field.value >= today).toBe(true)          // never retroactive
     expect(field.value < '2026-11-14').toBe(true)    // not the mileage date
     expect(new Date(`${field.value}T12:00:00Z`).getUTCDay()).toBe(6) // a Saturday
+  })
+})
+
+describe('Schedule PM warns about an off-cycle date', () => {
+  afterEach(() => vi.clearAllMocks())
+
+  async function openWith(day: string) {
+    apiMocks.get.mockImplementation(() => Promise.resolve({ data: [] }))
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const user = userEvent.setup()
+    render(
+      <QueryClientProvider client={client}>
+        <SchedulePMModal truck={truck} onClose={vi.fn()} onDone={vi.fn()} />
+      </QueryClientProvider>,
+    )
+    const field = screen.getByLabelText(/next pm due date/i)
+    await user.clear(field)
+    await user.type(field, day)
+    return { user, field }
+  }
+
+  it('flags a weekday pick as outside the shop PM day', async () => {
+    await openWith('2026-10-07') // Wednesday
+    expect(await screen.findByText(/not a Saturday|outside the shop/i)).toBeInTheDocument()
+  })
+
+  it('names the Saturday that week so the manager can move it', async () => {
+    await openWith('2026-10-07')
+    expect(await screen.findByText(/Oct 10/)).toBeInTheDocument()
+  })
+
+  it('does not warn when the picked date is a Saturday', async () => {
+    await openWith('2026-10-10')
+    expect(screen.queryByText(/not a Saturday|outside the shop/i)).not.toBeInTheDocument()
+  })
+
+  it('still saves the date the manager picked', async () => {
+    const { field } = await openWith('2026-10-07')
+    // The warning informs; it must not silently rewrite the choice.
+    expect(field).toHaveValue('2026-10-07')
+  })
+
+  it('does not warn before the manager has edited anything', async () => {
+    apiMocks.get.mockImplementation(() => Promise.resolve({ data: [] }))
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    render(
+      <QueryClientProvider client={client}>
+        <SchedulePMModal truck={truck} onClose={vi.fn()} onDone={vi.fn()} />
+      </QueryClientProvider>,
+    )
+    const field = screen.getByLabelText(/next pm due date/i) as HTMLInputElement
+    await waitFor(() => expect(field.value).toMatch(/^\d{4}-\d{2}-\d{2}$/))
+    expect(screen.queryByText(/not a Saturday|outside the shop/i)).not.toBeInTheDocument()
   })
 })

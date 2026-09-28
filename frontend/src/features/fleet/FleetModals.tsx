@@ -17,7 +17,7 @@ import type {
   BoardTruck, TruckDetail, Inspection, InspectionDetail, InspectionItem, InspectionItemResult, InspectionResult, IncidentSeverity, IncidentEntry,
   PMServiceEntry, DriverProfile, LegacyDriverContact, VehicleDriverAssignment, LinkableRepairOrder,
 } from './types'
-import { PM_AVG_MILES_PER_DAY, fleetUnitLabel, fmtDate, fmt, projectPmDueDate } from './helpers'
+import { PM_AVG_MILES_PER_DAY, fleetUnitLabel, fmtDate, fmtDay, fmt, nextPmServiceDay, projectPmDueDate } from './helpers'
 import { isSupportedPhotoFile, runPhotoUploadQueue, uploadDirectPhoto, type PhotoUploadStatus } from '@/lib/photoUpload'
 import { formatUSPhone } from '@/utils/phone'
 import { duplicateVinConflict, duplicateVinTruckLabel, type DuplicateVinConflict } from './duplicateVin'
@@ -710,6 +710,15 @@ export function SchedulePMModal({ truck, onClose, onDone, createMode = false }: 
     },
   })
 
+  // The Saturday of the picked date's week, when the manager has chosen a day
+  // the shop does not service on. Null when the date is a Saturday, empty or
+  // not yet edited.
+  const offCycleSaturday = (() => {
+    if (!dateEdited || !/^\d{4}-\d{2}-\d{2}$/.test(dueDate)) return null
+    const onServiceDay = nextPmServiceDay(dueDate)
+    return onServiceDay === dueDate ? null : onServiceDay
+  })()
+
   const rescheduling = !!truck.pm_due_date
 
   // Services for this PM, seeded from the truck's saved default package. The
@@ -814,7 +823,12 @@ export function SchedulePMModal({ truck, onClose, onDone, createMode = false }: 
               dayLoad={pmDayLoad}
               onMonthChange={setLoadMonth}
               hint={dateEdited
-                ? 'Custom date — overrides the mileage estimate.'
+                ? (offCycleSaturday
+                  // The date is respected as picked - this informs, it does not
+                  // correct. A truck already in the shop or a customer request
+                  // is a legitimate reason to work off the Saturday rhythm.
+                  ? `Not a Saturday — the shop's PM day that week is ${fmtDay(offCycleSaturday)}.`
+                  : 'Custom date — overrides the mileage estimate.')
                 : `Estimated from mileage (~${AVG_MILES_PER_DAY} mi/day), on the next PM Saturday. Edit to override.`}
             />
           </>

@@ -47,6 +47,20 @@ export function fleetIdentity(
   return { company, unit }
 }
 
+/**
+ * Format a date-only `YYYY-MM-DD` string for display.
+ *
+ * `fmtDate` is for timestamps: it parses through `new Date(s)`, which reads a
+ * bare date as UTC midnight and renders the previous day in any negative-offset
+ * zone. Building at noon UTC and reading back in UTC keeps the day intact.
+ */
+export function fmtDay(day?: string | null) {
+  if (!day) return '—'
+  return new Date(`${day}T12:00:00Z`).toLocaleDateString('en-US', {
+    month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC',
+  })
+}
+
 export function fmtDate(s?: string | null) {
   if (!s) return '—'
   return new Date(s).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
