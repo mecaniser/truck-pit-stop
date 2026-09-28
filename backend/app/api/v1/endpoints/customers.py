@@ -24,6 +24,7 @@ from app.db.models.inventory import PartsUsage
 from app.db.models.labor import Labor
 from app.db.models.appointment import Appointment
 from app.db.models.invoice import Invoice, InvoiceStatus
+from app.db.models.fleet_invoice_api_key import FleetInvoiceApiKey
 from app.db.models.payment import Payment, PaymentStatus
 from app.db.models.message_thread import MessageThread
 from app.db.models.sms_message import SMSMessage
@@ -846,7 +847,8 @@ async def merge_customers(
 
     winner_result = await db.execute(select(Customer).where(Customer.id == merge_request.winner_id))
     winner = winner_result.scalar_one_or_none()
-    loser_result = await db.execute(select(Customer).where(Customer.id == merge_request.loser_id))
+    # Serialize deletion with fleet invoice key provisioning for this bill-to.
+    loser_result = await db.execute(select(Customer).where(Customer.id == merge_request.loser_id).with_for_update())
     loser = loser_result.scalar_one_or_none()
 
     if not winner or not loser:
@@ -859,6 +861,17 @@ async def merge_customers(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Cannot merge customers from different tenants",
+        )
+
+    active_fleet_export = (await db.execute(select(FleetInvoiceApiKey.id).where(
+        FleetInvoiceApiKey.tenant_id == loser.tenant_id,
+        FleetInvoiceApiKey.customer_id == loser.id,
+        FleetInvoiceApiKey.revoked_at.is_(None),
+    ).limit(1))).scalar_one_or_none()
+    if active_fleet_export:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="This bill-to account has an active fleet invoice export. Revoke and reconcile the connection before merging it.",
         )
 
     # Vehicles

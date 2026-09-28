@@ -709,6 +709,7 @@ async def auto_create_invoice_for_order(
         inv = Invoice(
             tenant_id=tenant.id,
             repair_order_id=order.id,
+            billed_customer_id=order.customer_id,
             invoice_number=invoice_number,
             status=InvoiceStatus.SENT,
             is_internal=False,
@@ -917,6 +918,7 @@ async def create_invoice(
         invoice = Invoice(
             tenant_id=current_user.tenant_id,
             repair_order_id=order.id,
+            billed_customer_id=order.customer_id,
             invoice_number=invoice_number,
             status=InvoiceStatus.SENT,
             is_internal=order.is_internal,
