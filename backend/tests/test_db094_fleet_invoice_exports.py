@@ -188,6 +188,25 @@ async def test_vehicle_vin_correction_reappears_in_incremental_feed(client, db_s
     assert response.json()["items"][0]["vin"] == "1HGBH41JXMN109187"
 
 
+@pytest.mark.asyncio
+async def test_legacy_invoice_without_verified_bill_to_is_not_exported(client, db_session):
+    owner, customer, invoice, _vehicle = await _seed(db_session, f"legacy-{uuid4().hex}")
+    invoice.billed_customer_id = None
+    await db_session.commit()
+    created = await exports.create_key(exports.KeyRequest(customer_id=customer.id, name="ELIS"), Response(),
+                                       db=db_session, user=owner)
+    now = datetime.now(timezone.utc)
+    response = await client.get("/api/v1/fleet-invoice-exports/invoices",
+                                headers={"X-API-Key": created["api_key"]},
+                                params={"updated_since": (now - timedelta(days=1)).isoformat(),
+                                        "updated_before": now.isoformat()})
+    assert response.status_code == 200
+    assert response.json()["items"] == []
+    pdf = await client.get(f"/api/v1/fleet-invoice-exports/invoices/{invoice.id}/pdf",
+                           headers={"X-API-Key": created["api_key"]})
+    assert pdf.status_code == 404
+
+
 def test_integration_pdf_omits_contacts_notes_and_payment_rails(monkeypatch):
     captured = {}
 
