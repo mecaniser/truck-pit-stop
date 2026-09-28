@@ -1045,7 +1045,7 @@ export default function TruckDetail({
                         <span style={{ ...incidentStatePillStyle, textTransform: 'capitalize' }}>
                           {inc.status === 'voided' ? 'Voided' : 'Resolved'}
                         </span>
-                        <span style={{ marginLeft: 'auto', fontSize: 12, color: 'var(--muted)' }}>
+                        <span style={{ marginLeft: 'auto', fontSize: 12, color: 'var(--muted)', whiteSpace: 'nowrap' }}>
                           {fmtDate(inc.resolved_at || inc.date)}
                         </span>
                       </div>

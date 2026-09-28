@@ -392,3 +392,25 @@ describe('DB-071 a settled incident shows its full history', () => {
     expect(await screen.findByText(/history could not be loaded/i)).toBeInTheDocument()
   })
 })
+
+describe('DB-071 settled incident card layout', () => {
+  afterEach(() => {
+    Object.values(apiMocks).forEach((mock) => mock.mockReset())
+  })
+
+  /**
+   * At 390px a long title squeezed the date into "Sep / 28, / 2026". jsdom does
+   * no layout, so this pins the cause: the date must not be allowed to wrap.
+   */
+  it('keeps the settled date on one line', async () => {
+    mockQueries([{ ...resolvedIncident, type: 'Air leak at the rear brake chamber, I-94 mile 210' }])
+    const user = userEvent.setup()
+    renderTruck()
+
+    await user.click(await screen.findByRole('button', { name: /resolved incidents/i }))
+    const settledCard = (await screen.findByText(/Air leak at the rear brake chamber/)).parentElement as HTMLElement
+    const date = within(settledCard).getByText(/2026/)
+
+    expect(date.style.whiteSpace).toBe('nowrap')
+  })
+})
