@@ -49,6 +49,7 @@ def test_signed_location_is_normalized_with_trusted_account_identity():
         35.1168, -80.7237, 54.5, 92.0
     )
     assert event.located_at == datetime(2026, 9, 28, 12, tzinfo=timezone.utc)
+    assert event.virtual_odometer_miles == 541190.25
     assert event.payload_sha256 == hashlib.sha256(body).hexdigest()
 
 

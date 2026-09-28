@@ -7,6 +7,9 @@ location normalization; persistence, ingestion route, Fleet output, and gates
 remain pending. Current Motive docs confirm that Webhooks v2 use HMAC-SHA1 over
 the raw JSON body and require partner activation. No partner activation is
 assumed or requested by this branch.
+Motive's location documentation distinguishes virtual `odometer` from
+`true_odometer`; this fixture boundary names webhook `odometer` as virtual and
+does not write it into the canonical vehicle mileage field.
 
 Status: Product accepted for bounded sandbox implementation on 2026-08-18.
 

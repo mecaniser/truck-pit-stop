@@ -35,7 +35,7 @@ class MotiveLocationEvent:
     lng: float
     speed_mph: float | None
     bearing_degrees: float | None
-    odometer_miles: float | None
+    virtual_odometer_miles: float | None
     engine_hours: float | None
     payload_sha256: str
 
@@ -131,7 +131,7 @@ def verify_and_normalize_location(
         lng=_number(payload.get("lon"), "lon", minimum=-180, maximum=180),
         speed_mph=_optional_number(payload, "speed", 300),
         bearing_degrees=_optional_number(payload, "bearing", 360),
-        odometer_miles=_optional_number(payload, "odometer", 100_000_000),
+        virtual_odometer_miles=_optional_number(payload, "odometer", 100_000_000),
         engine_hours=_optional_number(payload, "engine_hours", 10_000_000),
         payload_sha256=hashlib.sha256(raw_body).hexdigest(),
     )
