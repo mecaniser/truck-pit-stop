@@ -71,6 +71,7 @@ def project_pm_due_date(
     current_odometer: Optional[int],
     *,
     from_date: Optional[date] = None,
+    stored_due_date: Optional[date] = None,
 ) -> Optional[date]:
     """Estimate the PM due date from the mileage target, so the date and the
     odometer trigger describe the same event instead of drifting apart.
@@ -85,10 +86,19 @@ def project_pm_due_date(
         return None
     base_date = from_date or date.today()
     remaining = next_pm_miles - (current_odometer or 0)
-    if remaining <= 0:
-        return next_pm_service_day(base_date)
-    days = math.ceil(remaining / PM_AVG_MILES_PER_DAY)
-    return next_pm_service_day(base_date + timedelta(days=days))
+    days = math.ceil(remaining / PM_AVG_MILES_PER_DAY) if remaining > 0 else 0
+    raw = base_date + timedelta(days=days)
+    # A PM is due when EITHER trigger is reached, so an existing due date that
+    # falls sooner governs. A truck weeks overdue on date can still hold a full
+    # interval of miles; projecting from mileage alone offered it a date six
+    # weeks out when it needed servicing now.
+    if stored_due_date is not None and stored_due_date < raw:
+        raw = stored_due_date
+    # Never offer a date already past: an overdue truck books the next service
+    # day, not a retroactive one.
+    if raw < base_date:
+        raw = base_date
+    return next_pm_service_day(raw)
 
 
 def advance_vehicle_pm(vehicle, base_odometer: Optional[int], completed_on: Optional[date] = None) -> None:

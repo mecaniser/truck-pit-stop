@@ -660,7 +660,15 @@ export function SchedulePMModal({ truck, onClose, onDone, createMode = false }: 
   // shop's PM day. The same helper backs the server's projection, so the date
   // offered here is the one the server would store.
   const projectDate = (targetMiles: number) =>
-    projectPmDueDate(targetMiles, truck.odometer || 0, new Date().toISOString().slice(0, 10))
+    projectPmDueDate(
+      targetMiles,
+      truck.odometer || 0,
+      new Date().toISOString().slice(0, 10),
+      // The stored date is the other half of the PM condition. Without it an
+      // overdue truck is offered its mileage date, weeks away, despite needing
+      // service now.
+      truck.pm_due_date,
+    )
   const initialMiles = truck.next_pm_miles ?? ((truck.odometer || 0) + intervalMiles)
   // Pre-fill the date from mileage (not the stale stored date), so the manager
   // sees a date that agrees with the odometer. They can still override it.

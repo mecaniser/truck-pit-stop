@@ -3760,7 +3760,12 @@ async def schedule_pm(
     if body.due_date is not None:
         vehicle.pm_due_date = body.due_date
     else:
-        projected = project_pm_due_date(vehicle.next_pm_miles, vehicle.mileage)
+        # Pass the current due date: it is the other half of the PM condition,
+        # so an overdue truck is rescheduled for the next service day rather
+        # than its distant mileage date.
+        projected = project_pm_due_date(
+            vehicle.next_pm_miles, vehicle.mileage, stored_due_date=vehicle.pm_due_date,
+        )
         if projected is not None:
             vehicle.pm_due_date = projected
 

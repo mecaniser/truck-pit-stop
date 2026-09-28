@@ -73,3 +73,40 @@ class TestOverdueSchedulesTheNextSaturday:
 class TestUnchangedBehaviour:
     def test_no_mileage_target_still_projects_nothing(self):
         assert project_pm_due_date(None, 100000, from_date=date(2026, 10, 5)) is None
+
+
+class TestOverdueOnDateBooksTheNextServiceDay:
+    """A PM is due when EITHER trigger is reached.
+
+    Truck 603 on the production board was 27 days overdue on date while still
+    24,999 miles from its odometer target. Projecting from mileage alone offered
+    a date six weeks out for a truck that needed servicing now.
+    """
+
+    def test_a_date_overdue_truck_is_not_pushed_out_to_its_mileage_date(self):
+        due = project_pm_due_date(
+            646565, 621566, from_date=date(2026, 9, 28), stored_due_date=date(2026, 9, 1),
+        )
+        assert due == date(2026, 10, 3)
+        assert due < date(2026, 11, 14)
+
+    def test_never_offers_a_date_already_past(self):
+        due = project_pm_due_date(
+            646565, 621566, from_date=date(2026, 9, 28), stored_due_date=date(2026, 9, 1),
+        )
+        assert due >= date(2026, 9, 28)
+
+    def test_mileage_still_governs_when_the_stored_date_is_far_off(self):
+        due = project_pm_due_date(
+            101200, 100000, from_date=date(2026, 10, 5), stored_due_date=date(2027, 1, 1),
+        )
+        assert due == date(2026, 10, 10)
+
+    def test_the_sooner_trigger_wins(self):
+        due = project_pm_due_date(
+            125000, 100000, from_date=date(2026, 10, 5), stored_due_date=date(2026, 10, 13),
+        )
+        assert due == date(2026, 10, 17)
+
+    def test_unchanged_when_no_stored_date_is_given(self):
+        assert project_pm_due_date(101200, 100000, from_date=date(2026, 10, 5)) == date(2026, 10, 10)
