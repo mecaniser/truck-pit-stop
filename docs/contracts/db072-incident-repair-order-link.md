@@ -1,7 +1,7 @@
 # DB-072: incident to repair-order link contract
 
 - Version: 1.1.0 (adds §3.5, DB-077)
-- Status: Proposed for Architecture review
+- Status: Accepted by the product owner and released (#418, #420); no independent Architecture review was recorded
 - Accountable owner: Architecture & API Contracts
 - Implementing owner: Backend & Integrations, then Frontend & UX
 - Delivery lane: Standard product

@@ -521,6 +521,28 @@ no production implementation resumes before that decision.
 
 ## Inbox
 
+> **Road-incident work released (2026-09-28): DB-070, DB-071, DB-072, DB-073,
+> DB-077.** Merged as #415 (`4f749ab6`), #417 (`1a16846a`), #418 (`15940af4`)
+> and #420 (`d47438bf`), each after all six protected checks passed. All four
+> are ancestors of `733e31a4`, which Railway deployed successfully to
+> `diesel-bridge-network` production on 2026-09-27 (deployment
+> `ca5adc3c-7458-4cb8-975b-b74b530215d1`); `www.dieselbridge.com` returns 200.
+> **Acceptance** was a signed-in Chromium pass on an isolated local runtime
+> (`dev-env.sh`, API 8021, cloned database `truckpitstop_incident_timeline`,
+> tenant `truck-pit-stop-wi`) at 1280px and 390px with zero console or page
+> errors: the action menu offers Edit, Upload photo, Create repair, Assign to
+> repair order, Resolve and Void; the Void confirm label fits its 30px button;
+> Resolve stays disabled until an outcome is typed; completing a linked order
+> through the real API resolved its incident with "Resolved when repair order
+> TPSWS-F90D5493-000003 was completed." and a `resolved_by_repair_order` event;
+> the resolved-incidents section shows both outcomes. That pass ran locally,
+> not signed in against production. **DB-072 governance:** the contract
+> (`docs/contracts/db072-incident-repair-order-link.md`) was accepted by the
+> product owner when #418 was merged; no independent Architecture reviewer
+> read it. **Remaining:** DB-071's event timeline and a date-wrap fix found
+> in the same pass, on `codex/incident-event-timeline`.
+
+
 Intake recorded 2026-09-23 from a product observation on the truck-detail
 "Unresolved road incidents" card. Four items, split by lane: DB-072 is a
 contract change and ships separately, the other three are not.
@@ -596,11 +618,11 @@ contract change and ships separately, the other three are not.
 
 | ID | Priority | State | Outcome | Owner | Lane | Acceptance target |
 |---|---|---|---|---|---|---|
-| DB-070 | P1 | Implemented, PR pending | Require a written outcome before an incident can be resolved | Frontend & UX | Fast UI | Resolving from the incident action menu opens a reason panel; submit stays disabled until a non-blank outcome is typed; the text persists to the existing `resolution_notes` field and is visible afterwards |
-| DB-071 | P1 | Implemented, PR pending | Give resolved and voided road incidents a visible home on the truck | Frontend & UX | Fast UI | A collapsed "Resolved incidents" section on truck detail lists non-open incidents with their outcome text and resolution date; the existing append-only event timeline remains available at `GET /fleet/incidents/{id}/events` and is not yet surfaced |
-| DB-072 | P2 | Contract recorded, PR open | Link a road incident to a repair order that already exists | Architecture & API Contracts | Standard product | An incident with no linked order can be attached to an open repair order for the same truck, and detached; the attach is recorded as an incident event; cross-vehicle and cross-tenant attach are refused |
-| DB-073 | P3 | Implemented, PR pending | Name the incident void action for what it does | Frontend & UX | Fast UI | The action menu and its confirmation say "Void", matching the backend behavior of retaining the record at status `voided` rather than deleting it |
-| DB-077 | P1 | Implemented, PR pending | Resolve a road incident when the repair order answering for it is completed | Backend & Integrations | Standard product | Completing a linked order resolves its open or in-progress incidents, names the order in the outcome unless one was already written, and records a `resolved_by_repair_order` event; voided, already-resolved and unrelated incidents are untouched; cancelled orders resolve nothing |
+| DB-070 | P1 | Done | Require a written outcome before an incident can be resolved | Frontend & UX | Fast UI | Resolving from the incident action menu opens a reason panel; submit stays disabled until a non-blank outcome is typed; the text persists to the existing `resolution_notes` field and is visible afterwards |
+| DB-071 | P1 | Done; event timeline in PR | Give resolved and voided road incidents a visible home on the truck | Frontend & UX | Fast UI | A collapsed "Resolved incidents" section on truck detail lists non-open incidents with their outcome text and resolution date; the existing append-only event timeline remains available at `GET /fleet/incidents/{id}/events` and is not yet surfaced |
+| DB-072 | P2 | Done | Link a road incident to a repair order that already exists | Architecture & API Contracts | Standard product | An incident with no linked order can be attached to an open repair order for the same truck, and detached; the attach is recorded as an incident event; cross-vehicle and cross-tenant attach are refused |
+| DB-073 | P3 | Done | Name the incident void action for what it does | Frontend & UX | Fast UI | The action menu and its confirmation say "Void", matching the backend behavior of retaining the record at status `voided` rather than deleting it |
+| DB-077 | P1 | Done | Resolve a road incident when the repair order answering for it is completed | Backend & Integrations | Standard product | Completing a linked order resolves its open or in-progress incidents, names the order in the outcome unless one was already written, and records a `resolved_by_repair_order` event; voided, already-resolved and unrelated incidents are untouched; cancelled orders resolve nothing |
 
 ## Blocked
 
