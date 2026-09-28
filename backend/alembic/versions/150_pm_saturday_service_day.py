@@ -19,8 +19,8 @@ Idempotent: a Saturday shifts by zero days, so re-running changes nothing.
 """
 from alembic import op
 
-revision = "149_pm_saturday_service_day"
-down_revision = "148_elis_outcome_source"
+revision = "150_pm_saturday_service_day"
+down_revision = "149_google_review_reply_model"
 branch_labels = None
 depends_on = None
 
