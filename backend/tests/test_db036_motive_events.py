@@ -36,7 +36,11 @@ def signed_event(**changes):
 
 def normalize(body, signature, *, tenant_id=TENANT, provider_account_id=ACCOUNT):
     return verify_and_normalize_location(
-        body, signature, SECRET, tenant_id=tenant_id, provider_account_id=provider_account_id
+        body,
+        signature,
+        SECRET,
+        tenant_id=tenant_id,
+        provider_account_id=provider_account_id,
     )
 
 
@@ -46,7 +50,10 @@ def test_signed_location_is_normalized_with_trusted_account_identity():
     assert (event.tenant_id, event.provider_account_id) == (TENANT, ACCOUNT)
     assert (event.event_id, event.vehicle_id) == ("synthetic-location-1", "123")
     assert (event.lat, event.lng, event.speed_mph, event.bearing_degrees) == (
-        35.1168, -80.7237, 54.5, 92.0
+        35.1168,
+        -80.7237,
+        54.5,
+        92.0,
     )
     assert event.located_at == datetime(2026, 9, 28, 12, tzinfo=timezone.utc)
     assert event.virtual_odometer_miles == 541190.25
@@ -54,7 +61,9 @@ def test_signed_location_is_normalized_with_trusted_account_identity():
 
 
 def test_received_action_and_optional_motion_are_supported():
-    body, signature = signed_event(action="vehicle_location_received", speed=None, bearing=None)
+    body, signature = signed_event(
+        action="vehicle_location_received", speed=None, bearing=None
+    )
     event = normalize(body, signature)
     assert event.action == "vehicle_location_received"
     assert event.speed_mph is None and event.bearing_degrees is None
@@ -64,18 +73,30 @@ def test_same_external_event_id_keeps_trusted_account_namespace():
     body, signature = signed_event()
     other_tenant, other_account = uuid4(), uuid4()
     first = normalize(body, signature)
-    second = normalize(body, signature, tenant_id=other_tenant, provider_account_id=other_account)
+    second = normalize(
+        body, signature, tenant_id=other_tenant, provider_account_id=other_account
+    )
     assert first.event_id == second.event_id
     assert (first.tenant_id, first.provider_account_id) != (
-        second.tenant_id, second.provider_account_id
+        second.tenant_id,
+        second.provider_account_id,
     )
 
 
-@pytest.mark.parametrize("change", [
-    {"lat": 91}, {"lon": -181}, {"speed": -1}, {"speed": True},
-    {"bearing": 361}, {"odometer": "541190"}, {"vehicle_id": ""},
-    {"located_at": "2026-09-28T12:00:00"}, {"action": "vehicle_upserted"},
-])
+@pytest.mark.parametrize(
+    "change",
+    [
+        {"lat": 91},
+        {"lon": -181},
+        {"speed": -1},
+        {"speed": True},
+        {"bearing": 361},
+        {"odometer": "541190"},
+        {"vehicle_id": ""},
+        {"located_at": "2026-09-28T12:00:00"},
+        {"action": "vehicle_upserted"},
+    ],
+)
 def test_invalid_location_fields_are_rejected(change):
     body, signature = signed_event(**change)
     with pytest.raises(InvalidMotiveEvent):
@@ -105,4 +126,40 @@ def test_body_limit_prevents_oversized_fixture():
     body = b" " * (64 * 1024 + 1)
     signature = hmac.new(SECRET.encode(), body, hashlib.sha1).hexdigest()
     with pytest.raises(InvalidMotiveEvent, match="body size"):
+        normalize(body, signature)
+
+
+@pytest.mark.parametrize(
+    "body", [b'{"id":' + b"1" * 5000 + b"}", b"[" * 2000 + b"]" * 2000]
+)
+def test_extreme_json_is_rejected_as_an_invalid_event(body):
+    signature = hmac.new(SECRET.encode(), body, hashlib.sha1).hexdigest()
+    with pytest.raises(InvalidMotiveEvent):
+        normalize(body, signature)
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        {"located_at": "0001-01-01T00:00:00+01:00"},
+        {"located_at": "9999-12-31T23:59:59-01:00"},
+        {"action": []},
+    ],
+)
+def test_extreme_timestamp_and_non_scalar_action_are_rejected(change):
+    body, signature = signed_event(**change)
+    with pytest.raises(InvalidMotiveEvent):
+        normalize(body, signature)
+
+
+def test_non_ascii_signature_is_rejected():
+    body, _ = signed_event()
+    with pytest.raises(InvalidMotiveEvent):
+        normalize(body, "é" * 40)
+
+
+@pytest.mark.parametrize("identifier", ["fixture:\x00bad", "fixture:\ud800bad"])
+def test_database_unrepresentable_identifier_is_rejected(identifier):
+    body, signature = signed_event(id=identifier)
+    with pytest.raises(InvalidMotiveEvent):
         normalize(body, signature)

@@ -18,6 +18,9 @@ from app.db.models.identity import (
     WorkOSEventReceipt,
 )
 from app.db.models.vehicle import Vehicle
+from app.db.models.motive import (
+    MotiveAccount, MotiveBinding, MotiveLocationSample, MotiveIngestionReceipt,
+)
 from app.db.models.vehicle_merge import VehicleMergeRecord, VehicleSourceAlias
 from app.db.models.vehicle_relationship import VehicleCustomerRelationship, FleetMembership
 from app.db.models.driver_accountability import (
@@ -134,6 +137,7 @@ __all__ = [
     "TenantInvitationAuditEvent",
     "WorkOSEventReceipt",
     "Vehicle",
+    "MotiveAccount", "MotiveBinding", "MotiveLocationSample", "MotiveIngestionReceipt",
     "VehicleMergeRecord",
     "VehicleSourceAlias",
     "VehicleCustomerRelationship",

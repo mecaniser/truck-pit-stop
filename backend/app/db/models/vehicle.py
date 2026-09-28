@@ -1,4 +1,4 @@
-from sqlalchemy import Boolean, Column, String, Integer, ForeignKey, Text, Float, DateTime, Date
+from sqlalchemy import Boolean, Column, String, Integer, ForeignKey, Text, Float, DateTime, Date, UniqueConstraint
 from sqlalchemy.orm import relationship
 from sqlalchemy.dialects.postgresql import UUID
 from app.db.base import BaseModel
@@ -6,6 +6,7 @@ from app.db.base import BaseModel
 
 class Vehicle(BaseModel):
     __tablename__ = "vehicles"
+    __table_args__ = (UniqueConstraint("tenant_id", "id", name="uq_vehicles_tenant_id"),)
     
     tenant_id = Column(UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=False, index=True)
     tenant = relationship("Tenant", backref="vehicles")

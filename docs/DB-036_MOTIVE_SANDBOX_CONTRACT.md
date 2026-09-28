@@ -1,9 +1,48 @@
 # DB-036 Motive Fleet Telematics Sandbox Contract
 
+## 2026-09-28 two-truck pilot and persistence contract
+
+Product confirmed that both pilot trucks have Motive devices and all trucks are
+under one Motive company. The intended live pilot uses one server-side company
+API credential. This implementation remains fixture-only until account access
+and provider validation are available.
+
+Architecture approved the following persistence slice in this session:
+
+- One fixture account per tenant/provider, disabled by default, with no secret.
+- Explicit reviewed powered-vehicle bindings with immutable half-open time
+  intervals. Closing then creating a binding represents reassignment.
+- Composite foreign keys enforce tenant/account/vehicle consistency. Account
+  row locks serialize binding changes and ingestion; historical intervals must
+  not overlap for a provider vehicle, gateway, or canonical truck.
+- Store normalized location samples and metadata-only delivery receipts. A
+  location ID is scoped to its account. Compare a canonical content fingerprint
+  (excluding action and delivery formatting) to distinguish duplicates from
+  conflicts. Keep the first accepted value and record conflicts without overwrite.
+- Resolve late events against the binding at provider `located_at`. Latest
+  selection uses provider time; equal timestamps retain the first accepted point
+  via a durable sequence allocated under the account lock, including equal
+  receipt timestamps.
+- Reject observations over five minutes in the future or over 30 days old.
+  Filter expired samples from reads and provide explicit purge. Replay identity
+  expires 30 days after first acceptance, without renewal by duplicate delivery.
+- Only active owners/admins manage accounts and bindings. Internal ingestion
+  receives trusted tenant/account identity. Foreign, deleted and missing records
+  share a generic not-found result. Disabled accounts ingest nothing and expose
+  no location overlay. Existing truck mileage/driver/manual location is untouched.
+
+Acceptance: focused tests cover tenant and role denial, database foreign keys,
+duplicate/conflicting delivery, older/equal/newer observations, interval overlaps,
+exact reassignment cutover, retention/replay and manual-field preservation;
+isolated PostgreSQL covers migration roundtrip and concurrent delivery. Independent
+Security/QA review remains required. No HTTP route, worker schedule or Fleet UI
+is claimed by this slice; purge scheduling belongs to the ingestion worker slice.
+
 Implementation resumed 2026-09-28 on `codex/db036-motive-sandbox` from
 `origin/main` `88995fc2`. The predecessor hold below is retained as historical
-context. This first slice only implements offline signature verification and
-location normalization; persistence, ingestion route, Fleet output, and gates
+context. The initial slice implemented offline signature verification and
+location normalization. The persistence slice above now has independent local
+Security and QA GO; the ingestion route, worker, Fleet output and release gates
 remain pending. Current Motive docs confirm that Webhooks v2 use HMAC-SHA1 over
 the raw JSON body and require partner activation. No partner activation is
 assumed or requested by this branch.

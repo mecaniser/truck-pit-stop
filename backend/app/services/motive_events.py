@@ -53,8 +53,16 @@ def _identifier(value: Any, field: str) -> str:
     if isinstance(value, bool) or not isinstance(value, (int, str)):
         raise InvalidMotiveEvent(f"invalid {field}")
     identifier = str(value).strip()
-    if not identifier or len(identifier) > 120:
+    if (
+        not identifier
+        or len(identifier) > 120
+        or any(ord(c) < 32 or ord(c) == 127 for c in identifier)
+    ):
         raise InvalidMotiveEvent(f"invalid {field}")
+    try:
+        identifier.encode("utf-8")
+    except UnicodeEncodeError as exc:
+        raise InvalidMotiveEvent(f"invalid {field}") from exc
     return identifier
 
 
@@ -70,11 +78,32 @@ def _number(value: Any, field: str, *, minimum: float, maximum: float) -> float:
     return number
 
 
-def _optional_number(payload: dict[str, Any], field: str, maximum: float) -> float | None:
+def _optional_number(
+    payload: dict[str, Any], field: str, maximum: float
+) -> float | None:
     value = payload.get(field)
     if value is None:
         return None
     return _number(value, field, minimum=0, maximum=maximum)
+
+
+def verify_signature(raw_body: bytes, signature: str, shared_secret: str) -> None:
+    """Verify bounded raw bytes before any JSON decoding."""
+    if not isinstance(raw_body, bytes) or not 0 < len(raw_body) <= MAX_BODY_BYTES:
+        raise InvalidMotiveEvent("invalid body size")
+    if not isinstance(shared_secret, str) or not shared_secret:
+        raise InvalidMotiveEvent("missing fixture secret")
+    if (
+        not isinstance(signature, str)
+        or len(signature) != 40
+        or not signature.isascii()
+    ):
+        raise InvalidMotiveEvent("invalid signature")
+    expected = hmac.new(
+        shared_secret.encode("utf-8"), raw_body, hashlib.sha1
+    ).hexdigest()
+    if not hmac.compare_digest(signature.lower(), expected):
+        raise InvalidMotiveEvent("invalid signature")
 
 
 def verify_and_normalize_location(
@@ -85,41 +114,35 @@ def verify_and_normalize_location(
     tenant_id: UUID,
     provider_account_id: UUID,
 ) -> MotiveLocationEvent:
-    """Verify Motive's HMAC-SHA1 over raw bytes, then normalize one location.
-
-    The UUIDs must come from trusted tenant-scoped account lookup, never from
-    the webhook body. Replay and latest-point ordering belong to persistence.
-    """
+    """Verify and normalize using tenant/account identity from trusted lookup."""
     if not isinstance(tenant_id, UUID) or not isinstance(provider_account_id, UUID):
         raise InvalidMotiveEvent("missing trusted account identity")
-    if not isinstance(raw_body, bytes) or not 0 < len(raw_body) <= MAX_BODY_BYTES:
-        raise InvalidMotiveEvent("invalid body size")
-    if not isinstance(shared_secret, str) or not shared_secret:
-        raise InvalidMotiveEvent("missing fixture secret")
-    if not isinstance(signature, str) or len(signature) != 40:
-        raise InvalidMotiveEvent("invalid signature")
-    expected = hmac.new(shared_secret.encode("utf-8"), raw_body, hashlib.sha1).hexdigest()
-    if not hmac.compare_digest(signature.lower(), expected):
-        raise InvalidMotiveEvent("invalid signature")
-
+    verify_signature(raw_body, signature, shared_secret)
     try:
         payload = json.loads(raw_body, object_pairs_hook=_unique_keys)
-    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+    except InvalidMotiveEvent:
+        raise
+    except (ValueError, RecursionError) as exc:
         raise InvalidMotiveEvent("invalid JSON") from exc
     if not isinstance(payload, dict):
         raise InvalidMotiveEvent("expected object")
     action = payload.get("action")
-    if action not in LOCATION_ACTIONS:
+    if not isinstance(action, str) or action not in LOCATION_ACTIONS:
         raise InvalidMotiveEvent("unsupported action")
     event_id = _identifier(payload.get("id"), "event id")
     vehicle_id = _identifier(payload.get("vehicle_id"), "vehicle id")
     try:
-        located_at = datetime.fromisoformat(payload["located_at"].replace("Z", "+00:00"))
+        located_at = datetime.fromisoformat(
+            payload["located_at"].replace("Z", "+00:00")
+        )
     except (KeyError, AttributeError, TypeError, ValueError) as exc:
         raise InvalidMotiveEvent("invalid located_at") from exc
     if located_at.tzinfo is None:
         raise InvalidMotiveEvent("located_at must include timezone")
-    located_at = located_at.astimezone(timezone.utc)
+    try:
+        located_at = located_at.astimezone(timezone.utc)
+    except (ValueError, OverflowError) as exc:
+        raise InvalidMotiveEvent("invalid located_at") from exc
     return MotiveLocationEvent(
         tenant_id=tenant_id,
         provider_account_id=provider_account_id,
