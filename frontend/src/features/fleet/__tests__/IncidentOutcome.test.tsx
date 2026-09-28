@@ -325,3 +325,70 @@ describe('DB-072 attaching an incident to an existing order', () => {
     expect(within(menu).queryByRole('button', { name: /assign to repair order/i })).toBeNull()
   })
 })
+
+describe('DB-071 a settled incident shows its full history', () => {
+  afterEach(() => {
+    Object.values(apiMocks).forEach((mock) => mock.mockReset())
+  })
+
+  const events = [
+    {
+      id: 'ev-3',
+      event_type: 'resolved_by_repair_order',
+      actor_user_id: 'u-1',
+      actor_name: 'Dana Shop',
+      reason: null,
+      data: { repair_order_id: 'ro-9', order_number: 'RO-000123' },
+      occurred_at: '2026-08-03T09:00:00Z',
+    },
+    {
+      id: 'ev-1',
+      event_type: 'reported',
+      actor_user_id: 'u-2',
+      actor_name: 'Pat Driver',
+      reason: null,
+      data: {},
+      occurred_at: '2026-08-02T12:00:00Z',
+    },
+  ]
+
+  async function openHistory(user: ReturnType<typeof userEvent.setup>) {
+    await user.click(await screen.findByRole('button', { name: /resolved incidents/i }))
+    await user.click(await screen.findByRole('button', { name: /show history/i }))
+  }
+
+  it('does not load the history until someone asks for it', async () => {
+    mockQueries([resolvedIncident], { '/fleet/incidents/inc-2/events': events })
+    const user = userEvent.setup()
+    renderTruck()
+
+    await user.click(await screen.findByRole('button', { name: /resolved incidents/i }))
+    await screen.findByText('Blown marker lamp')
+
+    expect(apiMocks.get).not.toHaveBeenCalledWith('/fleet/incidents/inc-2/events')
+  })
+
+  it('lists who did what, from report to resolution', async () => {
+    mockQueries([resolvedIncident], { '/fleet/incidents/inc-2/events': events })
+    const user = userEvent.setup()
+    renderTruck()
+
+    await openHistory(user)
+
+    const timeline = await screen.findByRole('list', { name: /incident history/i })
+    expect(within(timeline).getByText(/reported/i)).toBeInTheDocument()
+    expect(within(timeline).getByText(/Pat Driver/)).toBeInTheDocument()
+    expect(within(timeline).getByText(/resolved by repair order RO-000123/i)).toBeInTheDocument()
+    expect(within(timeline).getByText(/Dana Shop/)).toBeInTheDocument()
+  })
+
+  it('says so when the history cannot be loaded', async () => {
+    mockQueries([resolvedIncident])
+    const user = userEvent.setup()
+    renderTruck()
+
+    await openHistory(user)
+
+    expect(await screen.findByText(/history could not be loaded/i)).toBeInTheDocument()
+  })
+})

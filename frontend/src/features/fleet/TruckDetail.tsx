@@ -18,6 +18,7 @@ import DatePicker from '@/components/DatePicker'
 import FleetMap from './FleetMap'
 import { ConfirmModal, TruckEditModal, LogIncidentModal, EditIncidentModal, ResolveIncidentModal, AssignIncidentRepairOrderModal, InspectionsSection, AssignDriverModal, SchedulePMModal, Modal, SidekickPanel, invalidateFleetAndCockpit, type InspectionsSectionHandle } from './FleetModals'
 import FleetPriceBuilderPanel from './FleetPriceBuilderPanel'
+import IncidentHistory from './IncidentHistory'
 import { useAuthStore } from '../../stores/authStore'
 import { getWorkOSCapabilities, startWorkOSLogin, type WorkOSCapabilities } from '../../lib/workosAuth'
 
@@ -1057,6 +1058,7 @@ export default function TruckDetail({
                           No outcome was recorded for this incident.
                         </div>
                       )}
+                      <IncidentHistory incidentId={inc.id} />
                     </div>
                   ))}
                 </div>
