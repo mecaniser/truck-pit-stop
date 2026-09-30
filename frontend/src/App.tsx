@@ -25,6 +25,7 @@ const CustomerPortalPage = lazy(lazyRouteLoader(() => import('./features/custome
 const QuoteApprovalPage = lazy(lazyRouteLoader(() => import('./features/quote-approval/QuoteApprovalPage')))
 const MechanicPortalPage = lazy(lazyRouteLoader(() => import('./features/mechanic-portal/MechanicPortalPage')))
 const FleetApp = lazy(lazyRouteLoader(() => import('./features/fleet/FleetApp')))
+const MotiveCallback = lazy(lazyRouteLoader(() => import('./features/fleet/MotiveCallback')))
 const DriverPortalPage = lazy(lazyRouteLoader(() => import('./features/driver-portal/DriverPortalPage')))
 const InvoiceAccessPage = lazy(lazyRouteLoader(() => import('./features/invoice-access/InvoiceAccessPage')))
 
@@ -76,6 +77,7 @@ function isTokenAccessRoute(pathname: string): boolean {
 }
 
 function isProductAnalyticsRoute(pathname: string, role?: string): boolean {
+  if (pathname === '/fleet/motive/callback') return false
   if (PUBLIC_ANALYTICS_PATHS.has(pathname) || isTokenAccessRoute(pathname)) return true
   if (role === 'super_admin') return false
 
@@ -409,6 +411,7 @@ function App() {
           }
         />
 
+        <Route path="/fleet/motive/callback" element={<FleetRoute><MotiveCallback /></FleetRoute>} />
         <Route
           path="/fleet/*"
           element={

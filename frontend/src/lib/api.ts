@@ -3,6 +3,13 @@ import { useAuthStore } from '../stores/authStore'
 import { requestTokenRefresh, requestWorkOSSessionRefresh } from './authRefresh'
 import { endRejectedSession, isSessionRejection, setSessionRecovering } from './sessionRecovery'
 
+declare module 'axios' {
+  interface AxiosRequestConfig {
+    /** One-use OAuth callbacks must never be replayed by session renewal. */
+    skipAuthRefresh?: boolean
+  }
+}
+
 const api = axios.create({
   baseURL: import.meta.env.VITE_API_URL || '/api/v1',
   headers: {
@@ -99,6 +106,7 @@ api.interceptors.response.use(
     }
 
     const originalRequest = error.config
+    if (originalRequest?.skipAuthRefresh) return Promise.reject(error)
     const isAuthEndpoint = originalRequest?.url?.includes('/auth/')
     const isWorkOSSessionEndpoint = originalRequest?.url?.includes('/auth/workos/session/refresh')
     const session = useAuthStore.getState()

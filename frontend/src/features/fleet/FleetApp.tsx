@@ -6,7 +6,7 @@ import toast from 'react-hot-toast'
 import {
   Truck, LayoutGrid, Map as MapIcon, Calendar, Play, Flag, ClipboardCheck, ArrowLeft,
   Bell, LogOut, Plus, Wrench, Warehouse, Settings, UserRound, KeyRound, Eye, EyeOff,
-  ChevronsLeft, ChevronsRight, Pencil, Search, Check,
+  ChevronsLeft, ChevronsRight, Pencil, Search, Check, Link2,
 } from 'lucide-react'
 import api from '../../lib/api'
 import { useAuthStore } from '../../stores/authStore'
@@ -17,6 +17,7 @@ import { formatUSPhone } from '@/utils/phone'
 import { duplicateVinConflict, duplicateVinTruckLabel, type DuplicateVinConflict } from './duplicateVin'
 import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 import FleetBoard from './FleetBoard'
+import MotiveIntegrationPanel from './MotiveIntegrationPanel'
 import TruckDetail from './TruckDetail'
 import FleetMap from './FleetMap'
 import { SchedulePMModal, SidekickPanel, invalidateFleetAndCockpit } from './FleetModals'
@@ -64,6 +65,7 @@ export default function FleetApp() {
   const [roPanelId, setRoPanelId] = useState<string | null>(null)
   const [adding, setAdding] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [integrationsOpen, setIntegrationsOpen] = useState(() => new URLSearchParams(location.search).get('integrations') === 'motive')
   const [profileMenuOpen, setProfileMenuOpen] = useState(false)
   const [railExpanded, setRailExpanded] = useState(() => localStorage.getItem('tps-fleet-rail') === '1')
   const profileMenuRef = useRef<HTMLDivElement>(null)
@@ -208,6 +210,13 @@ export default function FleetApp() {
                   <Settings size={17} aria-hidden="true" />
                   <span>Settings</span>
                 </button>
+                {canReturnToDashboard && <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => { setProfileMenuOpen(false); setIntegrationsOpen(true) }}
+                >
+                  <Link2 size={17} aria-hidden="true" /><span>Integrations</span>
+                </button>}
                 <button
                   type="button"
                   role="menuitem"
@@ -292,6 +301,11 @@ export default function FleetApp() {
       </div>
 
       {adding && <AddTruckModal onClose={() => setAdding(false)} />}
+      {integrationsOpen && canReturnToDashboard && <MotiveIntegrationPanel
+        trucks={trucks}
+        initialCompanyId={new URLSearchParams(location.search).get('company') || ''}
+        onClose={() => { setIntegrationsOpen(false); navigate('/fleet', { replace: true, state: location.state }) }}
+      />}
       {settingsOpen && <FleetSettingsModal onClose={() => setSettingsOpen(false)} />}
       {roPanelId && <FleetPriceBuilderPanel repairOrderId={roPanelId} onClose={() => setRoPanelId(null)} onChanged={refetch} />}
     </div>

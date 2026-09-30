@@ -227,3 +227,5 @@ __all__ = [
     "PaymentRefund", "PaymentProviderDispute", "PaymentAccountingLink", "ProviderSettlementBatch",
     "ProviderSettlementEntry", "InvoiceSettlementBackfillRun",
 ]
+
+from app.db.models.motive_oauth import MotiveConnection, MotiveAuthorization, MotiveRemoteVehicle  # noqa: F401

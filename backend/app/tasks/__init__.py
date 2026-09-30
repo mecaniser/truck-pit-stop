@@ -27,9 +27,11 @@ celery_app.conf.update(
         "app.tasks.provider_outbox",
         "app.tasks.quickbooks_sync",
         "app.tasks.google_reviews",
+        "app.tasks.motive",
     ),
     # Beat schedule for periodic tasks
     beat_schedule={
+        "reconcile-motive": {"task": "reconcile_motive", "schedule": timedelta(minutes=5)},
         "process-invoice-reminders-daily": {
             "task": "process_invoice_reminders",
             "schedule": crontab(hour=9, minute=0),  # Run daily at 9 AM UTC

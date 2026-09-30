@@ -1,0 +1,17 @@
+.fleet-root .motive-panel { display: grid; gap: 12px; }
+.fleet-root .motive-panel select { width: 100%; min-width: 0; min-height: 44px; padding: 10px; color: var(--text, #eee); background: var(--surface, #20242b); border: 1px solid var(--border, #454b55); border-radius: 8px; }
+.fleet-root .motive-card { padding-top: 20px; border-top: 1px solid var(--border, #454b55); display: grid; gap: 14px; overflow-wrap: anywhere; }
+.fleet-root .motive-card h3, .fleet-root .motive-card h4, .fleet-root .motive-card p { margin: 0; }
+.fleet-root .motive-card h3 { font-size: 20px; }
+.fleet-root .motive-heading { display: flex; justify-content: space-between; align-items: start; gap: 12px; }
+.fleet-root .motive-heading p, .fleet-root .motive-muted { color: var(--muted, #a4abb6); font-size: 13px; }
+.fleet-root .motive-status { padding: 5px 8px; border: 1px solid var(--border, #454b55); border-radius: 6px; white-space: nowrap; font-size: 12px; }
+.fleet-root .motive-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.fleet-root .motive-confirm, .fleet-root .motive-notice { padding: 12px; border: 1px solid var(--border, #454b55); border-radius: 8px; }
+.fleet-root .motive-confirm p { margin-bottom: 12px; }
+.fleet-root .motive-trucks, .fleet-root .motive-truck { display: grid; gap: 10px; }
+.fleet-root .motive-truck { padding: 14px 0; border-top: 1px solid var(--border, #454b55); }
+.fleet-root .motive-mapping { display: flex; gap: 8px; }
+.fleet-root .motive-mapping select { flex: 1; }
+.fleet-root .motive-card button:disabled { opacity: .5; cursor: not-allowed; }
+@media (max-width: 480px) { .fleet-root .motive-mapping { flex-direction: column; } .fleet-root .motive-heading { flex-wrap: wrap; } }

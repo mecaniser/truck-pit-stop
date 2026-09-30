@@ -35,6 +35,8 @@ SENSITIVE_NON_IDEMPOTENT_PATHS = frozenset(
         # The response contains a raw step-up bearer grant that is returned
         # exactly once and must never be persisted outside browser memory.
         "/api/v1/auth/step-up-grants",
+        "/api/v1/fleet/motive/connect",
+        "/api/v1/fleet/motive/callback",
     }
 )
 
