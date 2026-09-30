@@ -28,7 +28,7 @@ beforeEach(() => {
   vi.resetAllMocks()
   window.history.replaceState({}, '', '/')
   useAuthStore.setState({ user: { role: 'garage_owner', id: 'owner' } as NonNullable<ReturnType<typeof useAuthStore.getState>['user']> })
-  mocks.get.mockImplementation(async (url: string) => ({ data: url.endsWith('/connection') ? connected : url.endsWith('/companies') ? [{ id: 'company-a', company_name: 'Pilot fleet', fleet_enabled: true }, { id: 'company-b', company_name: 'Second fleet', fleet_enabled: true }] : { items: [remote], synced_at: null } }))
+  mocks.get.mockImplementation(async (url: string) => ({ data: url.endsWith('/trucks') ? { items: [{ id: 'truck-a', unit_number: '7', vin: 'VIN-7' }] } : url.endsWith('/webhook') ? { status: 'not_configured', url: null, pending_count: 0, failed_count: 0 } : url.endsWith('/connection') ? connected : url.endsWith('/companies') ? { items: [{ id: 'company-a', company_name: 'Pilot fleet', fleet_enabled: true }, { id: 'company-b', company_name: 'Second fleet', fleet_enabled: true }] } : { items: [remote], synced_at: null } }))
 })
 describe('Motive integration', () => {
   it('disables connection while provider configuration is pending without pretending connected', async () => {
@@ -60,7 +60,7 @@ describe('Motive integration', () => {
     expect(screen.queryByText(/secret-token/)).not.toBeInTheDocument()
   })
   it('disables immediate resync during the server cooldown', async () => {
-    mocks.get.mockImplementation(async (url: string) => ({ data: url.endsWith('/connection') ? { ...connected, next_sync_at: new Date(Date.now() + 300000).toISOString() } : { items: [], synced_at: null } }))
+    mocks.get.mockImplementation(async (url: string) => ({ data: url.endsWith('/trucks') ? { items: [{ id: 'truck-a', unit_number: '7', vin: 'VIN-7' }] } : url.endsWith('/webhook') ? { status: 'not_configured', url: null, pending_count: 0, failed_count: 0 } : url.endsWith('/connection') ? { ...connected, next_sync_at: new Date(Date.now() + 300000).toISOString() } : { items: [], synced_at: null } }))
     wrap(<MotiveConnectionCard companyId="company-a" trucks={trucks} />)
     expect(await screen.findByText(/Next sync available:/)).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Sync now' })).toBeDisabled()
@@ -82,8 +82,8 @@ describe('Motive integration', () => {
   })
   it('renders successful sync, stale observation time and a real zero speed', async () => {
     const user = userEvent.setup()
-    mocks.get.mockImplementation(async (url: string) => ({ data: url.endsWith('/connection') ? connected : { items: [{ ...remote, vehicle_id: 'truck-a', telemetry: { location: { lat: 35, lng: -81, located_at: new Date(Date.now() - 3600000).toISOString(), received_at: new Date().toISOString() }, state: 'stale', speed_mph: 0, bearing_degrees: null, source: 'motive' } }], synced_at: null } }))
-    mocks.post.mockResolvedValue({ data: { status: 'connected', counts: { updated: 1 } } })
+    mocks.get.mockImplementation(async (url: string) => ({ data: url.endsWith('/trucks') ? { items: [{ id: 'truck-a', unit_number: '7', vin: 'VIN-7' }] } : url.endsWith('/webhook') ? { status: 'not_configured', url: null, pending_count: 0, failed_count: 0 } : url.endsWith('/connection') ? connected : { items: [{ ...remote, vehicle_id: 'truck-a', telemetry: { location: { lat: 35, lng: -81, located_at: new Date(Date.now() - 3600000).toISOString(), received_at: new Date().toISOString() }, state: 'stale', speed_mph: 0, bearing_degrees: null, source: 'motive' } }], synced_at: null } }))
+    mocks.post.mockResolvedValue({ data: { status: 'connected', counts: { updated: 1 }, completed_at: new Date().toISOString() } })
     wrap(<MotiveConnectionCard companyId="company-a" trucks={trucks} />)
     expect(await screen.findByText(/Motive location · stale/)).toHaveTextContent('0.0 mph')
     await user.click(screen.getByRole('button', { name: 'Sync now' }))
@@ -92,7 +92,7 @@ describe('Motive integration', () => {
   })
   it('unmaps through the company-scoped delete endpoint', async () => {
     const user = userEvent.setup()
-    mocks.get.mockImplementation(async (url: string) => ({ data: url.endsWith('/connection') ? connected : { items: [{ ...remote, vehicle_id: 'truck-a' }], synced_at: null } }))
+    mocks.get.mockImplementation(async (url: string) => ({ data: url.endsWith('/trucks') ? { items: [{ id: 'truck-a', unit_number: '7', vin: 'VIN-7' }] } : url.endsWith('/webhook') ? { status: 'not_configured', url: null, pending_count: 0, failed_count: 0 } : url.endsWith('/connection') ? connected : { items: [{ ...remote, vehicle_id: 'truck-a' }], synced_at: null } }))
     mocks.delete.mockResolvedValue({})
     wrap(<MotiveConnectionCard companyId="company-a" trucks={trucks} />)
     await user.selectOptions(await screen.findByLabelText('DieselBridge truck for Truck 7'), '')
@@ -100,7 +100,7 @@ describe('Motive integration', () => {
     await waitFor(() => expect(mocks.delete).toHaveBeenCalledWith('/fleet/motive/bindings/123', { params: { fleet_customer_id: 'company-a' } }))
   })
   it('offers reconnect and disables sync when authorization expires', async () => {
-    mocks.get.mockImplementation(async (url: string) => ({ data: url.endsWith('/connection') ? { ...connected, status: 'reconnect_required' } : { items: [], synced_at: null } }))
+    mocks.get.mockImplementation(async (url: string) => ({ data: url.endsWith('/trucks') ? { items: [{ id: 'truck-a', unit_number: '7', vin: 'VIN-7' }] } : url.endsWith('/webhook') ? { status: 'not_configured', url: null, pending_count: 0, failed_count: 0 } : url.endsWith('/connection') ? { ...connected, status: 'reconnect_required' } : { items: [], synced_at: null } }))
     wrap(<MotiveConnectionCard companyId="company-a" trucks={trucks} />)
     expect(await screen.findByRole('button', { name: 'Reconnect Motive' })).toBeEnabled()
     expect(screen.getByRole('button', { name: 'Sync now' })).toBeDisabled()
@@ -118,7 +118,7 @@ describe('Motive integration', () => {
     await waitFor(() => expect(mocks.get).toHaveBeenCalledWith('/fleet/motive/connection', expect.objectContaining({ params: { fleet_customer_id: 'company-b' } })))
   })
   it('includes internal fleet companies even when the separate fleet flag is false', async () => {
-    mocks.get.mockImplementation(async (url: string) => ({ data: url.endsWith('/companies') ? [{ id: 'company-a', company_name: 'Internal fleet', fleet_enabled: false, is_internal_fleet: true }] : url.endsWith('/connection') ? connected : { items: [], synced_at: null } }))
+    mocks.get.mockImplementation(async (url: string) => ({ data: url.endsWith('/companies') ? { items: [{ id: 'company-a', company_name: 'Internal fleet', fleet_enabled: false, is_internal_fleet: true }] } : url.endsWith('/connection') ? connected : { items: [], synced_at: null } }))
     wrap(<MotiveIntegrationPanel onClose={() => {}} trucks={trucks} />)
     expect(await screen.findByRole('option', { name: 'Internal fleet' })).toBeInTheDocument()
     expect(await screen.findByLabelText('Motive connection')).toBeInTheDocument()

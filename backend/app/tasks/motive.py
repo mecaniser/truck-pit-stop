@@ -6,7 +6,7 @@ from sqlalchemy import or_, select
 
 from app.core.config import settings
 from app.db.models.customer import Customer
-from app.db.models.motive_oauth import MotiveConnection
+from app.db.models.motive_oauth import MotiveConnection, MotiveWebhookReceipt
 from app.db.models.tenant import Tenant
 from app.db.session import AsyncSessionLocal
 from app.services import motive_oauth as service
@@ -66,7 +66,100 @@ async def reconcile():
             ).scalar_one_or_none()
             if row and service.configured(row.tenant_id):
                 try:
-                    await service.sync(db, row)
+                    generation, webhook_generation = (
+                        row.generation,
+                        row.webhook_generation,
+                    )
+                    receipt_ids = (
+                        (
+                            await db.execute(
+                                select(MotiveWebhookReceipt.id)
+                                .where(
+                                    MotiveWebhookReceipt.connection_id == row.id,
+                                    MotiveWebhookReceipt.status == "pending",
+                                    MotiveWebhookReceipt.connection_generation
+                                    == generation,
+                                    MotiveWebhookReceipt.webhook_generation
+                                    == webhook_generation,
+                                    or_(
+                                        MotiveWebhookReceipt.next_attempt_at.is_(None),
+                                        MotiveWebhookReceipt.next_attempt_at
+                                        <= service.now(),
+                                    ),
+                                )
+                                .order_by(MotiveWebhookReceipt.received_at)
+                                .limit(1000)
+                            )
+                        )
+                        .scalars()
+                        .all()
+                    )
+                    result = await service.sync(db, row)
+                    row = (
+                        await db.execute(
+                            select(MotiveConnection)
+                            .where(MotiveConnection.id == connection_id)
+                            .with_for_update(skip_locked=True)
+                            .execution_options(populate_existing=True)
+                        )
+                    ).scalar_one_or_none()
+                    if row:
+                        from sqlalchemy import update
+
+                        if (
+                            row.generation != generation
+                            or row.webhook_generation != webhook_generation
+                        ):
+                            await db.execute(
+                                update(MotiveWebhookReceipt)
+                                .where(
+                                    MotiveWebhookReceipt.id.in_(receipt_ids),
+                                    MotiveWebhookReceipt.status == "pending",
+                                )
+                                .values(status="discarded", processed_at=service.now())
+                            )
+                        else:
+                            receipts = (
+                                (
+                                    await db.execute(
+                                        select(MotiveWebhookReceipt).where(
+                                            MotiveWebhookReceipt.id.in_(receipt_ids),
+                                            MotiveWebhookReceipt.status == "pending",
+                                        )
+                                    )
+                                )
+                                .scalars()
+                                .all()
+                            )
+                            for receipt in receipts:
+                                continuation = (
+                                    row.last_error_code == "reconciliation_incomplete"
+                                    or (
+                                        result["status"] == "connected"
+                                        and row.last_reconciled_at
+                                        and service.utc(receipt.received_at)
+                                        > service.utc(row.last_reconciled_at)
+                                    )
+                                )
+                                if not continuation:
+                                    receipt.attempts += 1
+                                receipt.status = (
+                                    "pending"
+                                    if continuation
+                                    else "processed"
+                                    if result["status"] == "connected"
+                                    else "dead"
+                                    if receipt.attempts >= 5
+                                    else "pending"
+                                )
+                                receipt.processed_at = (
+                                    service.now()
+                                    if receipt.status in {"processed", "dead"}
+                                    else None
+                                )
+                                receipt.next_attempt_at = row.next_sync_at
+                                receipt.error_code = row.last_error_code
+                        await db.commit()
                     count += 1
                 except Exception:  # noqa: BLE001 - rollback isolation for one company
                     # Never record exception text: provider/SQL exceptions can include credentials.

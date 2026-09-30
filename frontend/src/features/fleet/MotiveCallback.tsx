@@ -17,7 +17,7 @@ export default function MotiveCallback() {
     if (started.current) return
     started.current = true
     const { state, code, error } = takeMotiveCallback()
-    if (!state || (!code && !error) || !['garage_owner', 'garage_admin'].includes(user?.role ?? '')) {
+    if (!state || (!code && !error) || !['garage_owner', 'garage_admin', 'customer'].includes(user?.role ?? '')) {
       setMessage('This connection request is invalid or expired. Start again from Integrations.')
       setFailed(true)
       return
@@ -30,7 +30,7 @@ export default function MotiveCallback() {
           setFailed(true)
           return
         }
-        navigate(`/fleet?integrations=motive&company=${encodeURIComponent(data.fleet_customer_id)}`, { replace: true })
+        navigate(user?.role === 'customer' ? `/portal/integrations?company=${encodeURIComponent(data.fleet_customer_id)}` : `/fleet?integrations=motive&company=${encodeURIComponent(data.fleet_customer_id)}`, { replace: true })
       })
       .catch((failure: unknown) => {
         setMessage(motiveError(failure))
@@ -41,7 +41,7 @@ export default function MotiveCallback() {
     <section className="max-w-md space-y-4" aria-label="Motive authorization">
       <h1 className="text-xl font-semibold">Connect Motive</h1>
       <p role={failed ? 'alert' : 'status'}>{message}</p>
-      {failed && <button className="rounded-lg bg-amber-300 text-slate-950 px-4 py-3" onClick={() => navigate('/fleet?integrations=motive', { replace: true })}>Return to integrations</button>}
+      {failed && <button className="rounded-lg bg-amber-300 text-slate-950 px-4 py-3" onClick={() => navigate(user?.role === 'customer' ? '/portal/integrations' : '/fleet?integrations=motive', { replace: true })}>Return to integrations</button>}
     </section>
   </main>
 }

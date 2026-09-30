@@ -37,6 +37,7 @@ SENSITIVE_NON_IDEMPOTENT_PATHS = frozenset(
         "/api/v1/auth/step-up-grants",
         "/api/v1/fleet/motive/connect",
         "/api/v1/fleet/motive/callback",
+        "/api/v1/fleet/motive/webhook/rotate",
     }
 )
 

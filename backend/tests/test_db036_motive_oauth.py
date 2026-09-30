@@ -45,6 +45,18 @@ class Provider:
     async def company(self, token):
         return "100", "Synthetic carrier"
 
+    async def inventory(self, token):
+        return [{**row, "status": "active"} for row in self.rows]
+
+    async def gateways(self, token):
+        return []
+
+    async def history(self, *args):
+        return []
+
+    async def faults(self, *args):
+        return []
+
     async def vehicles(self, token):
         if self.error:
             raise MotiveProviderError(self.error)
@@ -96,7 +108,9 @@ async def test_oauth_roundtrip_secret_boundary_and_replay(db_session, monkeypatc
     started = await s.start(db_session, actor, truck.customer_id, "session-1")
     query = parse_qs(urlsplit(started["authorization_url"]).query)
     state = query["state"][0]
-    assert query["scope"] == ["companies.read locations.vehicle_locations_list"]
+    from app.services.motive_client import SCOPES
+
+    assert query["scope"] == [SCOPES]
     pending = (await db_session.execute(select(MotiveAuthorization))).scalar_one()
     assert state not in pending.state_hash
     provider = Provider()
@@ -155,7 +169,15 @@ async def test_approved_tenant_and_redirect_guard(db_session, monkeypatch):
     for url in [
         "http://localhost/callback",
         # Build a synthetic userinfo URL to exercise rejection without a secret literal.
-        urlunsplit(("https", "fixture-user:fixture-password@example.test", "/fleet/motive/callback", "", "")),
+        urlunsplit(
+            (
+                "https",
+                "fixture-user:fixture-password@example.test",
+                "/fleet/motive/callback",
+                "",
+                "",
+            )
+        ),
         "https://example.com/evil",
     ]:
         monkeypatch.setattr(settings, "MOTIVE_REDIRECT_URI", url)

@@ -61,6 +61,7 @@ jobs:
         run: |
           python -m pytest \
             tests/test_schema_preflight.py \
+            tests/test_db036*.py \
             tests/test_database_resilience.py \
             tests/test_dashboard_performance.py \
             tests/test_dashboard_zelle_queue.py \

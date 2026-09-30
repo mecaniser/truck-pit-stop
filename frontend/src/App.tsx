@@ -317,6 +317,15 @@ function FleetRoute({ children }: { children: React.ReactNode }) {
   return <>{children}</>
 }
 
+function MotiveRoute({ children }: { children: React.ReactNode }) {
+  const { user, isAuthenticated } = useAuthStore()
+  const { checkingSession, recovering, endReason } = useCookieSessionBootstrap()
+  if (checkingSession) return <SessionBootstrapStatus recovering={recovering} />
+  if (!isAuthenticated) return <Navigate to={endReason ? `/login?reason=${endReason}` : '/login'} replace />
+  if (!['garage_owner', 'garage_admin', 'customer'].includes(user?.role || '')) return <Navigate to="/dashboard" replace />
+  return <>{children}</>
+}
+
 function CustomerRoute({ children }: { children: React.ReactNode }) {
   const { user, isAuthenticated } = useAuthStore()
   
@@ -411,7 +420,7 @@ function App() {
           }
         />
 
-        <Route path="/fleet/motive/callback" element={<FleetRoute><MotiveCallback /></FleetRoute>} />
+        <Route path="/fleet/motive/callback" element={<MotiveRoute><MotiveCallback /></MotiveRoute>} />
         <Route
           path="/fleet/*"
           element={

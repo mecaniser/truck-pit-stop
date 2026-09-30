@@ -76,26 +76,60 @@ def configured(tenant_id):
 
 
 async def authorize(db, actor, company_id):
-    actor = (
+    # User may be a global identity; the selected tenant is authenticated context.
+    tenant_id = actor.tenant_id
+    current = (
         await db.execute(
             select(User)
             .where(User.id == actor.id)
             .execution_options(populate_existing=True)
         )
-    ).scalar_one()
-    if (
-        not actor.is_active
-        or actor.deleted_at is not None
-        or actor.role not in (UserRole.GARAGE_OWNER, UserRole.GARAGE_ADMIN)
-    ):
+    ).scalar_one_or_none()
+    if not current or not current.is_active or current.deleted_at is not None:
         raise HTTPException(403, "Administrator access required")
+    staff = (
+        current.role in (UserRole.GARAGE_OWNER, UserRole.GARAGE_ADMIN)
+        and current.tenant_id == tenant_id
+    )
+    if not staff:
+        from app.db.models.motive_oauth import MotiveFleetAdminGrant
+        from app.db.models.user_customer_link import UserCustomerLink
+
+        if (
+            current.role != UserRole.CUSTOMER
+            or getattr(actor, "customer_id", None) != company_id
+        ):
+            raise HTTPException(403, "Administrator access required")
+        link = (
+            await db.execute(
+                select(UserCustomerLink.id).where(
+                    UserCustomerLink.user_id == current.id,
+                    UserCustomerLink.tenant_id == tenant_id,
+                    UserCustomerLink.customer_id == company_id,
+                    UserCustomerLink.deleted_at.is_(None),
+                )
+            )
+        ).first()
+        grant = (
+            await db.execute(
+                select(MotiveFleetAdminGrant.id).where(
+                    MotiveFleetAdminGrant.user_id == current.id,
+                    MotiveFleetAdminGrant.tenant_id == tenant_id,
+                    MotiveFleetAdminGrant.fleet_customer_id == company_id,
+                    MotiveFleetAdminGrant.revoked_at.is_(None),
+                    MotiveFleetAdminGrant.deleted_at.is_(None),
+                )
+            )
+        ).first()
+        if not link or not grant:
+            raise HTTPException(403, "grant_required")
     company = (
         await db.execute(
             select(Customer)
             .join(Tenant, Tenant.id == Customer.tenant_id)
             .where(
                 Customer.id == company_id,
-                Customer.tenant_id == actor.tenant_id,
+                Customer.tenant_id == tenant_id,
                 Customer.deleted_at.is_(None),
                 or_(
                     Customer.fleet_enabled.is_(True),
@@ -344,6 +378,9 @@ async def bind(db, actor, company_id, provider_id, vehicle_id):
         ).first()
         if existing:
             raise HTTPException(409, "Truck already mapped")
+    from app.services.motive_ingestion import clear_remote_data
+
+    await clear_remote_data(db, remote)
     remote.vehicle_id, remote.mapped_at = vehicle_id, now() if vehicle_id else None
     remote.mapped_by_user_id = actor.id
     clear_point(remote)
@@ -365,6 +402,33 @@ async def disconnect(db, actor, company_id):
     if row:
         row.generation += 1
         row.status = "disconnected"
+        from app.db.models.motive_oauth import (
+            MotiveFault,
+            MotiveHistorySample,
+            MotiveWebhookReceipt,
+        )
+
+        row.reconciliation_cutoff_at = None
+        row.webhook_enabled = False
+        row.webhook_generation += 1
+        row.webhook_id = row.encrypted_webhook_secret = None
+        row.webhook_last_received_at = row.webhook_verified_at = (
+            row.last_reconciled_at
+        ) = None
+        await db.execute(
+            delete(MotiveHistorySample).where(
+                MotiveHistorySample.connection_id == row.id
+            )
+        )
+        await db.execute(delete(MotiveFault).where(MotiveFault.connection_id == row.id))
+        await db.execute(
+            update(MotiveWebhookReceipt)
+            .where(
+                MotiveWebhookReceipt.connection_id == row.id,
+                MotiveWebhookReceipt.status == "pending",
+            )
+            .values(status="discarded", processed_at=now())
+        )
         row.token_key_version = None
         row.encrypted_tokens = row.token_expires_at = row.provider_company_id = (
             row.provider_company_name
@@ -440,8 +504,10 @@ def parse_point(raw, stamp):
         raise MotiveProviderError("invalid_location") from None
 
 
-async def sync(db, row, client=None):
-    # Caller must hold row lock through commit, including rotating token refresh.
+async def sync(db, row, client=None, actor=None):
+    """Caller holds connection lock; successful bounded stages commit independently."""
+    from app.services import motive_ingestion as ingestion
+
     if not configured(row.tenant_id) or row.status not in (
         "connected",
         "provider_error",
@@ -467,130 +533,333 @@ async def sync(db, row, client=None):
     if not company:
         raise HTTPException(404, "Fleet company not found")
     stamp = now()
+    if not row.reconciliation_cutoff_at or utc(
+        row.reconciliation_cutoff_at
+    ) < stamp - timedelta(days=30):
+        row.reconciliation_cutoff_at = stamp
+    cutoff = utc(row.reconciliation_cutoff_at)
     counts = {"discovered": 0, "mapped": 0, "updated": 0, "rejected": 0}
     client = client or MotiveClient()
+    rotated_credentials = {}
     try:
         if row.next_sync_at and utc(row.next_sync_at) > stamp:
             raise HTTPException(429, "Motive sync is cooling down; try again later")
+        if not set(SCOPES.split()).issubset(row.scopes.split()):
+            raise MotiveProviderError("insufficient_scope")
 
-        async def fetch():
+        async def work():
+            async def rotate():
+                token = await refresh(row, client)
+                for field in (
+                    "encrypted_tokens",
+                    "token_expires_at",
+                    "token_key_version",
+                ):
+                    rotated_credentials[field] = getattr(row, field)
+                return token
+
             refreshed = not row.token_expires_at or utc(
                 row.token_expires_at
             ) <= stamp + timedelta(seconds=120)
             token = (
-                await refresh(row, client)
+                await rotate()
                 if refreshed
                 else motive_crypto.decrypt(
                     row.encrypted_tokens, row.id, row.tenant_id, row.fleet_customer_id
                 )["access_token"]
             )
-            try:
-                return await client.vehicles(token)
-            except MotiveProviderError as exc:
-                if exc.code != "reauthorization_required" or refreshed:
-                    raise
-                token = await refresh(row, client)
-                return await client.vehicles(token)
 
-        raw_vehicles = await asyncio.wait_for(fetch(), timeout=20)
-        # Normalize entire inventory before any inventory writes; invalid pagination cannot partially replace it.
-        parsed = [
-            (
-                identifier(v["id"]),
-                safe_text(v.get("number"), 120),
-                safe_text(v.get("vin"), 17),
-                v.get("current_location"),
-            )
-            for v in raw_vehicles
-        ]
-        remotes = {
-            v.provider_vehicle_id: v
-            for v in (
-                await db.execute(
-                    select(MotiveRemoteVehicle).where(
-                        MotiveRemoteVehicle.connection_id == row.id
+            async def provider(method, *args):
+                nonlocal token, refreshed
+                try:
+                    return await method(token, *args)
+                except MotiveProviderError as exc:
+                    if exc.code != "reauthorization_required" or refreshed:
+                        raise
+                    token, refreshed = await rotate(), True
+                    return await method(token, *args)
+
+            inventory = await provider(client.inventory)
+            gateways = await provider(client.gateways)
+            locations = await provider(client.vehicles)
+            current_locations = {
+                identifier(v["id"]): v.get("current_location") for v in locations
+            }
+            assigned = {}
+            for device in gateways:
+                if not device.get("vehicle"):
+                    continue
+                vid = identifier(device["vehicle"]["id"])
+                if vid in assigned:
+                    raise MotiveProviderError("ambiguous_gateway")
+                assigned[vid] = device
+            normalized = []
+            for raw in inventory:
+                if (
+                    raw.get("company_id") is not None
+                    and identifier(raw["company_id"]) != row.provider_company_id
+                ):
+                    raise MotiveProviderError("company_mismatch")
+                vid = identifier(raw["id"])
+                device = assigned.get(vid)
+                embedded = raw.get("eld_device")
+                if embedded and (
+                    not device or identifier(embedded["id"]) != identifier(device["id"])
+                ):
+                    raise MotiveProviderError("ambiguous_gateway")
+                status = safe_text(raw.get("status"), 24)
+                if status not in {"active", "deactivated"}:
+                    raise MotiveProviderError("invalid_inventory")
+                normalized.append(
+                    (
+                        vid,
+                        safe_text(raw.get("number"), 120),
+                        safe_text(raw.get("vin"), 17),
+                        status,
+                        identifier(device["id"]) if device else None,
+                        safe_text(device.get("identifier"), 120) if device else None,
+                        safe_text(device.get("model"), 120) if device else None,
+                        current_locations.get(vid),
                     )
                 )
-            ).scalars()
-        }
-        trucks = {v.id for v in await active_trucks(db, row)}
-        for provider_id, number, vin, raw in parsed:
-            remote = remotes.get(provider_id)
-            if remote is None:
-                remote = MotiveRemoteVehicle(
-                    tenant_id=row.tenant_id,
-                    connection_id=row.id,
-                    provider_vehicle_id=provider_id,
-                    discovered_at=stamp,
+            if actor:
+                await authorize(db, actor, row.fleet_customer_id)
+            remotes = {
+                v.provider_vehicle_id: v
+                for v in (
+                    await db.execute(
+                        select(MotiveRemoteVehicle).where(
+                            MotiveRemoteVehicle.connection_id == row.id
+                        )
+                    )
+                ).scalars()
+            }
+            trucks = {v.id for v in await active_trucks(db, row)}
+            for (
+                vid,
+                number,
+                vin,
+                status,
+                gateway_id,
+                gateway_identifier,
+                gateway_model,
+                raw_point,
+            ) in normalized:
+                remote = remotes.get(vid)
+                if remote is None:
+                    remote = MotiveRemoteVehicle(
+                        id=uuid4(),
+                        tenant_id=row.tenant_id,
+                        connection_id=row.id,
+                        provider_vehicle_id=vid,
+                        discovered_at=stamp,
+                    )
+                    db.add(remote)
+                    remotes[vid] = remote
+                elif remote.gateway_id != gateway_id and remote.vehicle_id:
+                    await ingestion.clear_remote_data(db, remote)
+                    remote.vehicle_id = remote.mapped_at = remote.mapped_by_user_id = (
+                        None
+                    )
+                remote.number, remote.vin, remote.provider_status = number, vin, status
+                remote.gateway_id, remote.gateway_identifier, remote.gateway_model = (
+                    gateway_id,
+                    gateway_identifier,
+                    gateway_model,
                 )
-                db.add(remote)
-            remote.number, remote.vin, remote.discovered_at = number, vin, stamp
-            counts["discovered"] += 1
-            if remote.vehicle_id not in trucks:
-                clear_point(remote)
-                continue
-            counts["mapped"] += 1
-            try:
-                point = parse_point(raw, stamp)
-            except MotiveProviderError:
-                counts["rejected"] += 1
-                continue
-            if point and remote.vehicle_id not in {
-                v.id for v in await active_trucks(db, row, point["located_at"])
-            }:
-                counts["rejected"] += 1
-                continue
-            if (
-                point
-                and remote.mapped_at
-                and utc(remote.mapped_at) <= point["located_at"]
-            ):
-                if remote.located_at is None or point["located_at"] > utc(
-                    remote.located_at
+                remote.discovered_at = stamp
+                counts["discovered"] += 1
+                if remote.vehicle_id not in trucks or status != "active":
+                    await ingestion.clear_remote_data(db, remote)
+                    continue
+                counts["mapped"] += 1
+                try:
+                    point = parse_point(raw_point, stamp)
+                except MotiveProviderError:
+                    counts["rejected"] += 1
+                    continue
+                if point and (
+                    not remote.mapped_at
+                    or point["located_at"] < utc(remote.mapped_at)
+                    or remote.vehicle_id
+                    not in {
+                        v.id for v in await active_trucks(db, row, point["located_at"])
+                    }
+                ):
+                    counts["rejected"] += 1
+                    continue
+                if point and (
+                    remote.located_at is None
+                    or point["located_at"] > utc(remote.located_at)
                 ):
                     for field, value in point.items():
                         setattr(remote, field, value)
                     remote.received_at = stamp
                     counts["updated"] += 1
-                elif point["located_at"] == utc(remote.located_at) and any(
-                    getattr(remote, field) != value
-                    for field, value in point.items()
-                    if field != "located_at"
+                elif (
+                    point
+                    and point["located_at"] == utc(remote.located_at)
+                    and any(
+                        getattr(remote, field) != value
+                        for field, value in point.items()
+                        if field != "located_at"
+                    )
                 ):
                     counts["rejected"] += 1
-            elif point:
-                counts["rejected"] += 1
-        row.last_sync_at, row.last_sync_counts, row.last_error_code = (
-            stamp,
-            counts,
-            None,
-        )
+            seen_ids = {v[0] for v in normalized}
+            for vid, remote in remotes.items():
+                if vid not in seen_ids:
+                    remote.provider_status = "missing"
+                    await ingestion.clear_remote_data(db, remote)
+            await db.flush()
+            eligible = [
+                r
+                for r in remotes.values()
+                if r.vehicle_id in trucks
+                and r.provider_status == "active"
+                and r.gateway_id
+                and r.mapped_at
+                and utc(r.mapped_at) <= cutoff
+            ]
+            eligible.sort(
+                key=lambda r: (
+                    utc(r.history_cursor_at)
+                    if r.history_cursor_at
+                    else utc(r.mapped_at),
+                    str(r.id),
+                )
+            )
+            # Five vehicles per run, oldest cursor first. A partial fleet is explicit continuation.
+            pending = [
+                r
+                for r in eligible
+                if not r.history_cursor_at
+                or utc(r.history_cursor_at) < cutoff
+                or not r.fault_cursor_at
+                or utc(r.fault_cursor_at) < cutoff
+            ]
+            for remote in pending[:5]:
+                lower = max(utc(remote.mapped_at), stamp - timedelta(days=30))
+                covered = (
+                    utc(remote.history_cursor_at) if remote.history_cursor_at else lower
+                )
+                start = max(lower, covered - timedelta(minutes=5))
+                end = min(cutoff, start + timedelta(days=1))
+                history = await provider(
+                    client.history, remote.provider_vehicle_id, start, end, start
+                )
+                if actor:
+                    await authorize(db, actor, row.fleet_customer_id)
+                async with db.begin_nested():
+                    await ingestion.ingest_history(
+                        db, row, remote, history, start, end, stamp
+                    )
+                fault_lower = (
+                    max(lower, utc(remote.fault_cursor_at) - timedelta(minutes=5))
+                    if remote.fault_cursor_at
+                    else lower
+                )
+                fault_end = min(cutoff, fault_lower + timedelta(days=1))
+                faults = await provider(
+                    client.faults,
+                    remote.provider_vehicle_id,
+                    fault_lower,
+                    fault_end,
+                    fault_lower,
+                )
+                if actor:
+                    await authorize(db, actor, row.fleet_customer_id)
+                async with db.begin_nested():
+                    await ingestion.ingest_faults(
+                        db, row, remote, faults, fault_end, stamp
+                    )
+            complete = all(
+                r.history_cursor_at
+                and utc(r.history_cursor_at) >= cutoff
+                and r.fault_cursor_at
+                and utc(r.fault_cursor_at) >= cutoff
+                for r in eligible
+            )
+            if not complete:
+                raise MotiveProviderError("reconciliation_incomplete")
+
+        if actor:
+            # Preserve the connection lock while rolling back data if the actor
+            # loses authorization during provider I/O. Rotated credentials belong
+            # to the fleet and must survive for its other administrators.
+            transaction = await db.begin_nested()
+            try:
+                await asyncio.wait_for(work(), timeout=20)
+            except HTTPException:
+                await transaction.rollback()
+                await db.refresh(row)
+                for field, value in rotated_credentials.items():
+                    setattr(row, field, value)
+                await db.commit()
+                raise
+            except (MotiveProviderError, ValueError, KeyError, TypeError, TimeoutError):
+                await transaction.commit()
+                raise
+            else:
+                await transaction.commit()
+        else:
+            await asyncio.wait_for(work(), timeout=20)
+        (
+            row.last_sync_at,
+            row.last_reconciled_at,
+            row.last_sync_counts,
+            row.last_error_code,
+        ) = stamp, cutoff, counts, None
         row.status, row.failure_count = "connected", 0
+        row.reconciliation_cutoff_at = None
         row.next_sync_at = stamp + timedelta(minutes=5)
     except (MotiveProviderError, ValueError, KeyError, TypeError, TimeoutError) as exc:
         code = exc.code if isinstance(exc, MotiveProviderError) else "invalid_response"
         row.last_error_code = code
         row.status = (
-            "reconnect_required"
+            "connected"
+            if code == "reconciliation_incomplete"
+            else "reconnect_required"
             if code
             in ("reauthorization_required", "reconnect_required", "insufficient_scope")
             else "provider_error"
         )
-        row.failure_count += 1
-        retry_after = getattr(exc, "retry_after", 0)
+        row.failure_count = (
+            0 if code == "reconciliation_incomplete" else row.failure_count + 1
+        )
         row.next_sync_at = stamp + timedelta(
-            seconds=max(retry_after, min(3600, 60 * 2 ** min(row.failure_count, 5)))
+            seconds=60
+            if code == "reconciliation_incomplete"
+            else max(
+                getattr(exc, "retry_after", 0),
+                min(3600, 60 * 2 ** min(row.failure_count, 5)),
+            )
             + secrets.randbelow(30)
         )
-    await (
-        db.commit()
-    )  # Persist rotated refresh tokens even if the subsequent inventory request failed.
-    return {"status": row.status, "counts": counts, "completed_at": stamp}
+    await db.commit()
+    return {
+        "status": row.status,
+        "counts": counts,
+        "completed_at": stamp
+        if row.status == "connected" and not row.last_error_code
+        else None,
+    }
 
 
 async def purge(db):
+    from app.db.models.motive_oauth import (
+        MotiveFault,
+        MotiveHistorySample,
+        MotiveWebhookReceipt,
+    )
+
+    async def execute(statement):
+        return await db.execute(
+            statement.execution_options(synchronize_session="fetch")
+        )
+
     cutoff = now() - timedelta(days=30)
-    await db.execute(
+    await execute(
         update(MotiveRemoteVehicle)
         .where(MotiveRemoteVehicle.located_at < cutoff)
         .values(
@@ -602,7 +871,34 @@ async def purge(db):
             bearing=None,
         )
     )
-    await db.execute(
+    await execute(
+        delete(MotiveHistorySample).where(MotiveHistorySample.observed_at < cutoff)
+    )
+    await execute(
+        delete(MotiveFault).where(
+            or_(
+                MotiveFault.received_at < cutoff,
+                (MotiveFault.status == "closed")
+                & (MotiveFault.last_observed_at < cutoff),
+            )
+        )
+    )
+    await execute(
+        delete(MotiveWebhookReceipt).where(MotiveWebhookReceipt.received_at < cutoff)
+    )
+    await execute(
+        update(MotiveRemoteVehicle)
+        .where(MotiveRemoteVehicle.metrics_observed_at < cutoff)
+        .values(
+            metrics_observed_at=None,
+            metrics_received_at=None,
+            virtual_odometer_miles=None,
+            true_odometer_miles=None,
+            virtual_engine_hours=None,
+            true_engine_hours=None,
+        )
+    )
+    await execute(
         delete(MotiveAuthorization).where(
             MotiveAuthorization.expires_at < now() - timedelta(days=1)
         )

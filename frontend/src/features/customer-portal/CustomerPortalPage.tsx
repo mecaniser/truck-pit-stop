@@ -14,6 +14,7 @@ import ProfileSettingsPage from './ProfileSettingsPage'
 import CustomerInvoicePage from './CustomerInvoicePage'
 import PortalDashboardPage from './PortalDashboardPage'
 import PortalVehiclesPage from './PortalVehiclesPage'
+import MotivePortalPage, { MotivePortalEntry } from './MotivePortalPage'
 import { Camera, CheckCircle, ChevronDown, ChevronUp, ClipboardList, Truck, Wrench, CreditCard, FileText, ArrowLeft, Calendar, Download, Home, User, History, MoreHorizontal, ChevronLeft } from 'lucide-react'
 import type { Stripe } from '@stripe/stripe-js'
 import { Elements, PaymentElement, useStripe, useElements } from '@stripe/react-stripe-js'
@@ -1724,6 +1725,7 @@ export default function CustomerPortalPage() {
               />
             </Link>
 
+            <MotivePortalEntry />
             <div className="hidden items-center gap-1.5 md:flex">
               {!isInvoicePage && navLinks.map(link => (
                 <Link
@@ -1783,6 +1785,7 @@ export default function CustomerPortalPage() {
           <Route path="repairs" element={<CustomerRepairs />} />
           <Route path="invoices/:invoiceId" element={<CustomerInvoicePage />} />
           <Route path="settings" element={<ProfileSettingsPage />} />
+          <Route path="integrations" element={<MotivePortalPage />} />
         </Routes>
       </main>
 

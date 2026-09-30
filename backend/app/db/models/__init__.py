@@ -229,3 +229,5 @@ __all__ = [
 ]
 
 from app.db.models.motive_oauth import MotiveConnection, MotiveAuthorization, MotiveRemoteVehicle  # noqa: F401
+
+from app.db.models.motive_oauth import MotiveFleetAdminGrant, MotiveHistorySample, MotiveFault, MotiveWebhookReceipt  # noqa: F401

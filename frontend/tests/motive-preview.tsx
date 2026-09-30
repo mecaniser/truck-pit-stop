@@ -18,6 +18,10 @@ let mapped: string | null = null
 let synced = false
 let failSync = false
 let nextSync: string | null = null
+let granted = false
+let webhookPrepared = false
+const grantPerson = { user_id: 'fixture-customer', name: 'Example Admin', email: 'admin@example.test' }
+const webhookStatus = () => ({ status: webhookPrepared ? 'awaiting_provider' : 'not_configured', url: webhookPrepared ? 'https://api.example.test/webhooks/motive/fixture/1' : null, last_received_at: null, pending_count: 0, failed_count: 0 })
 const company = { id: companyId, company_name: 'Example Fleet', fleet_enabled: true }
 const truckId = '22222222-2222-4222-8222-222222222222'
 const trucks = [{ id: truckId, unit_number: '101', vin: 'EXAMPLEVIN00000001', fleet_customer_id: companyId }] as BoardTruck[]
@@ -25,7 +29,13 @@ api.defaults.adapter = async (config) => {
   let data: unknown
   const path = config.url
   const method = config.method
-  if (path === '/fleet/companies') data = [company]
+  if (path === '/fleet/motive/companies') data = { items: [{ ...company, can_manage_grants: true }] }
+  else if (path === '/fleet/motive/trucks') data = { items: trucks }
+  else if (path === '/fleet/motive/grant-candidates') data = { items: [grantPerson] }
+  else if (path === '/fleet/motive/grants') data = { items: granted ? [grantPerson] : [] }
+  else if (path === '/fleet/motive/grants/fixture-customer') { granted = method === 'put'; data = grantPerson }
+  else if (path === '/fleet/motive/webhook') data = webhookStatus()
+  else if (path === '/fleet/motive/webhook/rotate') { webhookPrepared = true; data = { ...webhookStatus(), shared_secret: 'synthetic-preview-secret' } }
   else if (path === '/fleet/motive/connection' && method === 'get') data = {
     fleet_customer_id: companyId, configured: status !== 'not_configured', can_connect: status !== 'not_configured', status,
     company: ['connected', 'provider_error'].includes(status) ? { id: 'fixture-company', name: 'Example Fleet' } : null,
@@ -33,9 +43,12 @@ api.defaults.adapter = async (config) => {
     last_sync_counts: synced ? { discovered: 1, mapped: mapped ? 1 : 0, updated: mapped ? 1 : 0, rejected: 0 } : null,
   }
   else if (path === '/fleet/motive/vehicles') data = { items: [{
-    provider_vehicle_id: 'fixture-101', number: '101', vin: 'EXAMPLEVIN00000001', gateway_id: null,
+    provider_vehicle_id: 'fixture-101', number: '101', vin: 'EXAMPLEVIN00000001', gateway_id: 'fixture-gateway', gateway_identifier: 'EXAMPLE-101', gateway_model: 'Vehicle Gateway',
     vehicle_id: mapped, mapping_state: mapped ? 'mapped' : 'unmapped', match_candidates: [{ vehicle_id: truckId, unit_number: '101' }],
     telemetry: mapped && synced ? { location: { lat: 35, lng: -81, located_at: new Date().toISOString(), received_at: new Date().toISOString() }, speed_mph: 0, bearing_degrees: null, state: 'fresh', source: 'motive' } : null,
+    metrics: mapped && synced ? { odometer_miles: 125000, virtual_odometer_miles: 124992, engine_hours: 4800, virtual_engine_hours: 4799, observed_at: new Date().toISOString(), received_at: new Date().toISOString(), source: 'motive' } : null,
+    faults_synced_at: mapped && synced ? new Date().toISOString() : null,
+    faults: mapped && synced ? [{ id: 'fixture-fault', code_label: 'SPN-100', description: 'Synthetic engine diagnostic', status: 'open', first_observed_at: new Date().toISOString(), last_observed_at: new Date().toISOString(), fmi: null }] : [],
   }], synced_at: null }
   else if (path === '/fleet/motive/bindings/fixture-101') { mapped = method === 'put' ? JSON.parse(config.data).vehicle_id : null; synced = false; data = {} }
   else if (path === '/fleet/motive/sync') {
