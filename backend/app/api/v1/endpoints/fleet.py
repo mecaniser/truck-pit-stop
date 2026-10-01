@@ -2090,6 +2090,8 @@ async def fleet_board(
             for v in missing_vehicles
         )
     await _attach_account_context(db, trucks, current_user.tenant_id)
+    from app.services.fleet_telemetry import attach as attach_telemetry
+    await attach_telemetry(db, trucks, current_user.tenant_id)
     trucks.sort(key=lambda truck: ((truck.unit_number or ""), str(truck.id)))
     stats = FleetStats(
         total=len(trucks),
@@ -2170,6 +2172,8 @@ async def truck_detail(
         cid, company, first, last = membership_row
         board.board_membership_customer_id = cid
         board.board_membership_company_name = company or f"{first or ''} {last or ''}".strip() or None
+    from app.services.fleet_telemetry import attach as attach_telemetry
+    await attach_telemetry(db, [board], current_user.tenant_id)
     account_customers = {customer.id: customer for _, customer in account_rows}
     fleet_account = account_customers.get(board.fleet_customer_id)
 

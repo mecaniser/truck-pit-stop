@@ -75,6 +75,15 @@ describe('Fleet board return context', () => {
     window.localStorage.removeItem('tps-fleet-state')
   })
 
+  it('opens Fleet map without implying live telemetry or changing the route', async () => {
+    const user = userEvent.setup()
+    renderFleet(['/fleet'])
+    await user.click(screen.getByRole('button', { name: /Fleet map$/ }))
+    expect(await screen.findByText('Fleet map', { selector: '.topbar-title' })).toBeInTheDocument()
+    expect(screen.getByTestId('current-location')).toHaveTextContent('/fleet')
+    expect(screen.queryByText(/live map/i)).not.toBeInTheDocument()
+  })
+
   it('returns to the Fleet Settings context when that is where the board was opened', async () => {
     const user = userEvent.setup()
     renderFleet([

@@ -6,6 +6,10 @@ import App from './App.tsx'
 import { startStaleDeployWatch } from './lib/staleDeploy'
 import { startStaleBuildWatch } from './lib/staleBuild'
 import './index.css'
+import { captureMotiveCallback } from './lib/motiveCallback'
+
+// Remove OAuth parameters before session bootstrap or analytics can mount.
+captureMotiveCallback()
 
 const queryClient = new QueryClient({
   defaultOptions: {
