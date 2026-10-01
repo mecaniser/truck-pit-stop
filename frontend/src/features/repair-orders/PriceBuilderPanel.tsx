@@ -1208,10 +1208,9 @@ export default function PriceBuilderPanel({
       const response = await api.get(`/repair-orders/${orderId}/photos`, { signal })
       return response.data
     },
-    // Open orders defer this optional request until the panel is expanded.
-    // Finalized orders must check once up front so an empty, read-only photo
-    // section can be omitted instead of displaying a useless disclosure.
-    enabled: !!orderId && !isDeleted && (photosOpen || isFinalizedOrder),
+    // Load attachment metadata up front for the collapsed count. Image elements
+    // remain in the expanded gallery, so the trigger never loads thumbnails.
+    enabled: !!orderId && !isDeleted,
   })
   const repairPhotos = repairPhotosData ?? []
 
@@ -1292,9 +1291,6 @@ export default function PriceBuilderPanel({
       queryClient.invalidateQueries({ queryKey: ['repair-order-photos', orderId] })
     }
   }
-
-  const visiblePhotoThumbs = repairPhotos.slice(0, 5)
-  const hiddenPhotoThumbCount = Math.max(0, repairPhotos.length - visiblePhotoThumbs.length)
 
   // Labor duration/rate steppers debounce their server writes and coalesce
   // into a single PATCH, so `summary.lines[].total_cost` (and everything
@@ -4313,7 +4309,7 @@ export default function PriceBuilderPanel({
             <button
               type="button"
               onClick={() => setPhotosOpen((open) => !open)}
-              className="flex w-full flex-wrap items-center justify-between gap-3 text-left"
+              className="inline-flex shrink-0 items-center gap-2 whitespace-nowrap text-left"
               aria-expanded={photosOpen}
             >
               <span className="min-w-0">
@@ -4328,22 +4324,13 @@ export default function PriceBuilderPanel({
               </span>
               <span className="flex min-w-0 flex-1 items-center justify-end gap-2">
                 {isUploadingRepairPhotos && (
-                  <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-dashed border-orange-300 bg-orange-50">
+                  <span role="status" aria-label="Uploading photos" className="inline-flex h-4 w-4 shrink-0 items-center justify-center">
                     <Spinner size="xs" />
                   </span>
                 )}
-                {photosOpen && visiblePhotoThumbs.length > 0 && (
-                  <span className="flex min-w-0 items-center justify-end gap-1">
-                    {visiblePhotoThumbs.map((photo) => (
-                      <span key={photo.id} className="block h-10 w-10 shrink-0 overflow-hidden rounded-lg border border-gray-200 bg-gray-100">
-                        <img src={photo.image_url} alt={photo.caption || 'Repair photo'} className="h-full w-full object-cover" />
-                      </span>
-                    ))}
-                    {hiddenPhotoThumbCount > 0 && (
-                      <span className="inline-flex h-10 min-w-10 shrink-0 items-center justify-center rounded-lg bg-gray-100 px-2 text-xs font-bold text-gray-600">
-                        +{hiddenPhotoThumbCount}
-                      </span>
-                    )}
+                {repairPhotosData !== undefined && (
+                  <span aria-hidden="true" className="text-xs font-medium tabular-nums text-gray-500">
+                    {repairPhotos.length}
                   </span>
                 )}
                 <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gray-100 text-gray-500">
