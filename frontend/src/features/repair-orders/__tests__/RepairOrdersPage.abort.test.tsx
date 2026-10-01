@@ -325,6 +325,7 @@ describe('RepairOrdersPage request cancellation', () => {
       created_at: '2026-08-14T12:00:00Z', updated_at: '2026-08-14T15:00:00Z',
     }
     apiMocks.get.mockImplementation((url: string) => {
+      if (url === '/repair-orders') return Promise.resolve({ data: { items: [], total: 0, has_more: false } })
       if (url === '/dashboard/action-queue') return Promise.resolve({
         data: {
           orders_needing_action: [{
@@ -354,7 +355,7 @@ describe('RepairOrdersPage request cancellation', () => {
     })
     apiMocks.post
       .mockResolvedValueOnce({ data: { grant_token: 'one-time-grant' } })
-      .mockResolvedValueOnce({ data: {} })
+      .mockResolvedValueOnce({ data: { ...queueOrder, status: 'cancelled' } })
     themeState.presentationVariant = 'new'
 
     const { queryClient } = renderPage(['/?selected=force-void-order&queue=needs_action'])

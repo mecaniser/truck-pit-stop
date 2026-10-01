@@ -358,6 +358,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [initialPriceBuildWarningsByOrder, setInitialPriceBuildWarningsByOrder] = useState<Record<string, PriceBuildWarning[]>>({})
   const [showDangerActions, setShowDangerActions] = useState(false)
+  const [voidedOrderNumber, setVoidedOrderNumber] = useState<string | null>(null)
   const [viewMode, setViewMode] = useViewPreference('repair_orders')
   const [isMobile, setIsMobile] = useState(false)
   const [newCustomer, setNewCustomer] = useState<NewCustomerForm>({
@@ -1032,19 +1033,26 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
   // authorises exactly one void. The password itself never reaches this route.
   const forceVoidOrderMutation = useMutation({
     mutationFn: async ({ reason, password }: { reason: string; password: string }) => {
+      const orderId = selectedOrder!.id
       const grant = await api.post('/auth/step-up-grants', {
         password,
         scope: 'repair_orders.force_void',
       })
-      await api.post(
-        `/repair-orders/${selectedOrder!.id}/force-void`,
+      const response = await api.post(
+        `/repair-orders/${orderId}/force-void`,
         { reason },
         { headers: { 'X-Step-Up-Authorization': grant.data.grant_token } },
       )
+      return response.data as RepairOrder
     },
-    onSuccess: () => {
+    onSuccess: (updated) => {
+      setVoidedOrderNumber(updated.order_number)
+      if (selectedOrder?.id === updated.id) closeDetail()
+      queryClient.invalidateQueries({ queryKey: ['repair-order-workspace', updated.id] })
+      queryClient.invalidateQueries({ queryKey: ['price-build', updated.id] })
+      queryClient.invalidateQueries({ queryKey: ['invoice-for-order', updated.id] })
       queryClient.invalidateQueries({ queryKey: ['repair-orders'] })
-      queryClient.invalidateQueries({ queryKey: ['repair-order-detail', selectedOrder?.id] })
+      queryClient.invalidateQueries({ queryKey: ['repair-order-detail', updated.id] })
       queryClient.invalidateQueries({ queryKey: ['repair-order-status-counts'] })
       // Queue-origin routes render their rows and DB-052 value summary from
       // dashboard projections, so a force-void must refresh those caches too.
@@ -2938,6 +2946,14 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
   const activeValueQuery = isQueueWorkset ? dailyValueQuery : repairOrderValueQuery
   return (
     <div className={`db-repair-orders-workspace flex flex-col h-full ${presentationVariant === 'new' ? 'db-repair-orders-workspace--new' : ''} ${presentationVariant === 'new' && isDetailOpen && selectedOrder ? 'db-repair-orders-workspace--detail-open' : ''}`}>
+      {voidedOrderNumber && (
+        <div role="status" className="mb-3 flex items-center justify-between gap-3 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
+          <span>Order {voidedOrderNumber} voided. The record is preserved.</span>
+          <button type="button" aria-label="Dismiss void confirmation" onClick={() => setVoidedOrderNumber(null)} className="rounded-lg p-2 hover:bg-emerald-100">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+      )}
       {presentationVariant === 'new' ? (
         <RepairOrdersLedger
           key="repair-orders-ledger"
