@@ -8,12 +8,13 @@ Security and QA gates are required before release.
 
 An ELIS connection is bound to one DieselBridge shop tenant and one explicit
 bill-to customer ID. The export includes finalized invoices whose immutable
-`Invoice.billed_customer_id` equals that bill-to ID. Current repair-order
-customer, `Invoice.is_internal`, vehicle owner, operator, and fleet membership
-do not grant access. Historical invoices without this verified snapshot stay
-excluded until separate bill-to review; current RO customer cannot safely
-backfill the snapshot after a merge. Invoice, repair order, customer, vehicle, and credential
-must all belong to the same shop tenant.
+`Invoice.billed_customer_id` equals that bill-to ID, or whose separately
+reviewed historical mapping grants that exact bill-to scope. Current
+repair-order customer, `Invoice.is_internal`, vehicle owner, operator, and
+fleet membership do not grant access. Historical invoices without a verified
+snapshot or approved mapping stay excluded; current RO customer cannot safely
+backfill the snapshot after a merge. Invoice, repair order, customer, vehicle,
+mapping, and credential must all belong to the same shop tenant.
 Merging a bill-to account that has an active export credential returns 409 until
 the connection is revoked and reconciled. After a merge, the deleted bill-to
 identity cannot be used to authorize old invoices; access requires a separate
@@ -50,6 +51,10 @@ stored watermark only after every page has been durably applied.
 well as invoice status, amount, void, and replacement changes. An overlap
 window is required because commit order can differ
 from timestamp order. The keyset cursor must not miss equal-timestamp rows.
+For reviewed historical mappings, approval/update time also participates in
+the revision. A revoked or changed mapping requires a durable scoped removal
+event for the formerly authorized bill-to even though the invoice is no longer
+eligible for the normal query; see below.
 
 Items carry `invoice_id`, `invoice_number`, `repair_order_id`, `vehicle_id`,
 `vin`, `unit_number`, `mileage_in`, `mileage_in_carried`, `invoice_date`,
@@ -110,3 +115,90 @@ or customer mapping is assumed by this document.
 Historical invoices without a verified immutable bill-to are not automatically
 eligible. A separate reviewed mapping/backfill is required if historical import
 is requested. The source API can ship without making that authorization guess.
+
+## Historical bill-to review and mapping follow-up
+
+Migration 150 leaves preexisting `Invoice.billed_customer_id` values null.
+The customer merge endpoint moves the loser's repair orders to the winner and
+deletes the loser, while invoices remain attached to those orders. Therefore
+`RepairOrder.customer_id` after a merge, current customer/vehicle ownership,
+VIN, an account name, and a newly regenerated PDF are insufficient evidence
+of the original bill-to. Review is per invoice; no bulk assignment from those
+fields or from a shared repair order is permitted. A reviewer may group cases
+for display but must inspect and record evidence for every invoice.
+
+### Evidence and owner action
+
+Create a tenant-owned, append-only evidence record per historical invoice.
+It records invoice and repair-order IDs, source type and stable source reference,
+document/content hash, capture time, the original bill-to identity shown by
+the source (customer ID where genuinely preserved, otherwise an explicit
+unknown ID plus verified legal name/reference), and any merge lineage used.
+Acceptable sources are an immutable original invoice/receipt, preserved source
+system record, or contemporaneous billing correspondence with an attributable
+recipient. A regenerated DieselBridge PDF, current RO/customer/vehicle fields,
+VIN match, or owner assertion alone cannot establish the original bill-to.
+Store source documents in restricted storage; the feed exposes none of their
+contents or customer contacts. Preserve their hash and reference after an
+approval is undone.
+
+The shop owner sees the invoice identity, original-evidence summary, proposed
+active bill-to customer, and any merge lineage before deciding. Approval
+requires a reason, evidence ID, target active customer ID, and an explicit
+attestation that the target is the same legal bill-to (or a documented lawful
+successor) shown by the original evidence. The original identity and evidence
+remain immutable; the approved export target is a separate, versioned mapping.
+If the legal continuity is not supported, leave the case pending. The owner
+may reject or revoke a mapping with a reason. Only the shop owner may approve,
+change, or revoke; API keys cannot perform review. Edits use a version
+precondition and idempotency key so stale or repeated submissions cannot
+silently overwrite another decision. A change of target is revoke-old then
+approve-new in one transaction, producing both scope events.
+
+### Tenant boundary, revisions, and undo
+
+Enforce the same tenant on invoice, RO, evidence, mapping, reviewer, target
+customer, and export key at read and write time. The target must be active
+and cannot be inferred from a deleted merge loser. A conflicting native
+`billed_customer_id` cannot be overridden by historical mapping; correction
+of a native snapshot is a separate audited financial-data process. Review
+does not mutate invoice, RO, payment, or ledger facts.
+
+Approval adds the invoice to only the approved target's feed and enables PDF
+access there. Revocation or target change immediately removes list/PDF access
+under the old scope and emits a durable `access_removed` event to that
+bill-to's feed, carrying only shop ID, invoice ID, event ID/revision, and
+effective time. It is not represented as a financial cancellation or void.
+Approval emits an `invoice` representation with a new revision. These events
+must survive key rotation and customer merge so a later key for the same
+bill-to scope can reconcile prior imports. Page ordering and cursor/watermark
+semantics cover mapping events as well as normal invoice changes; repeated
+windows and interrupted pages are idempotent. ELIS marks an imported invoice
+as access/review required on removal and flags any accepted expense for owner
+correction; it never silently deletes or reverses posted entries. A revoked
+mapping may be reapproved only with a new versioned decision and source event.
+
+Every decision appends a tenant-scoped audit event with actor, invoice,
+evidence ID/hash, original identity, old/new target, action, reason, version,
+and timestamp, omitting document contents and contacts. The audit and scope
+events are committed atomically with the mapping state. Review endpoints
+return 404 for cross-tenant IDs, 409 for stale versions or conflicting
+native bill-to, and 422 for missing or inadequate evidence. No production
+historical mapping is made by the migration.
+
+### Migration and acceptance
+
+Add separate historical evidence, versioned mapping/decision, and scoped
+export-change storage with tenant-aware keys and uniqueness for one active
+mapping per invoice. Migrate schema only; leave all old invoices pending and
+keep migration 150's null snapshots unchanged. Backfill candidates may be
+listed for review without granting access. Rollout requires a dry run count by
+tenant and proposed target, sampled source-document verification, and explicit
+owner decisions before any key can retrieve newly mapped history.
+
+Test an unmerged original bill, loser/winner merge before review, unrelated
+same-name customer, cross-tenant evidence/target, deleted target, internal or
+draft invoice, forged evidence, concurrent owner decisions, idempotent retry,
+approval visibility and PDF, revocation/retarget removal to old scope, replay
+after key rotation, cursor continuation across mixed invoice and scope events,
+and ELIS handling of an already accepted expense on access removal.
