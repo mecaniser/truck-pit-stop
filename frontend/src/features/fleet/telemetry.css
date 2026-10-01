@@ -46,3 +46,36 @@
 .fleet-map-marker { border: 2px solid white; border-radius: 50%; background: #d5ab37; color: #10151c; min-width: 32px; height: 32px; font-weight: 700; cursor: pointer; }
 .fleet-map-popup { display: grid; gap: 8px; color: #111; }
 .fleet-map-popup button { text-align: left; padding: 8px; border-bottom: 1px solid #bbb; }
+
+/* Truck detail: one header, with field-level provenance available on tap. */
+.fleet-root .truck-reading { display: inline-flex; align-items: center; gap: 7px; min-height: 44px; padding: 2px 0; border: 0; background: none; text-align: left; color: var(--text); border-radius: 4px; }
+.fleet-root .truck-reading:focus-visible { outline: 2px solid var(--st-shop); outline-offset: 3px; }
+.fleet-root .truck-reading-label { font-size: 11px; color: var(--muted-2); }
+.fleet-root .truck-header-location { min-width: 0; max-width: 340px; }
+.fleet-root .truck-header-location > svg { flex: none; color: var(--muted-2); }
+.fleet-root .truck-header-location strong { display: block; font-size: 13px; overflow-wrap: anywhere; }
+.fleet-root .truck-header-location small { display: block; font-size: 10px; color: var(--muted-2); }
+.fleet-root .truck-odometer-comparison { grid-column: 2; gap: 6px; min-height: 44px; font-size: 14px; color: var(--st-shop); }
+.fleet-root .truck-header-metric { flex-direction: column; align-items: flex-start; justify-content: flex-start; gap: 5px; min-width: 65px; }
+.fleet-root .truck-header-metric .truck-reading-label { text-transform: uppercase; letter-spacing: 1px; }
+.fleet-root .truck-header-metric strong { font: 800 28px/1 var(--display); white-space: nowrap; }
+.fleet-root .truck-reading--speed strong { color: var(--st-shop); }
+.fleet-root .truck-reading--fuel strong { color: var(--st-parts); }
+.fleet-root .truck-vitals-grid { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 12px; }
+.fleet-root .truck-vitals-grid .truck-reading { flex-direction: column; align-items: flex-start; }
+.fleet-root .truck-vitals-grid:empty { display: none; }
+.fleet-root .truck-telemetry-header .dhead-main { gap: 16px; }
+.fleet-root .truck-telemetry-header .dhead-stats { align-items: start; gap: 20px; }
+.truck-reading-tooltip { position: fixed; z-index: 10000; width: 300px; max-width: calc(100vw - 16px); max-height: 152px; overflow: auto; padding: 12px; border-radius: 8px; border: 1px solid #617384; background: #151d26; color: #f7fafc; font: 12px/1.5 sans-serif; box-shadow: 0 8px 24px #0006; overflow-wrap: anywhere; }
+@media (max-width: 1200px) {
+  .fleet-root .truck-telemetry-header .dhead-stats { flex-basis: 100%; margin-top: 0; display: grid; grid-template-columns: minmax(180px,1.2fr) minmax(150px,1fr) minmax(65px,.6fr) minmax(65px,.6fr); gap: 12px; }
+  .fleet-root .truck-telemetry-header .dhead-stat-div { display: none; }
+}
+@media (max-width: 600px) {
+  .fleet-root .truck-telemetry-header .dhead-stats { grid-template-columns: repeat(2,minmax(0,1fr)); }
+  .fleet-root .truck-telemetry-header .dhead-stat-ic { display: none; }
+  .fleet-root .truck-telemetry-header .dhead-stat { grid-template-columns: 1fr; }
+  .fleet-root .truck-odometer-comparison { grid-column: 1; }
+}
+
+.fleet-root .truck-motive-pull { margin: 12px 0 6px; }

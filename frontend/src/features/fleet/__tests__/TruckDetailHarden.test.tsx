@@ -73,7 +73,25 @@ function mockSuccessfulQueries() {
 }
 
 describe('TruckDetail hardening', () => {
+  it('keeps mileage comparison and speed in the header, with hours and entry in details', async () => {
+    const source = { source: 'motive_dashboard_manual' as const, observed_at: null, captured_at: new Date().toISOString(), freshness: 'unknown' as const, snapshot_id: 'fixture', source_age_text: '12s ago' }
+    truck.telemetry = { location: { ...source, label: 'Fixture town', lat: null, lng: null }, odometer: { ...source, value: 625000, unit: 'mi', basis: 'dashboard_unspecified' }, speed: { ...source, value: 0, unit: 'mph', basis: null }, fuel: { ...source, value: 38, unit: 'percent', basis: null }, engine_hours: { ...source, value: 4000, unit: 'h', basis: null }, fault_count: null, motion: 'unknown' }
+    mockSuccessfulQueries(); renderTruck()
+    await screen.findByText('625,000 mi')
+    expect(screen.getByText('621,565')).toBeInTheDocument()
+    expect(screen.getByText('0 mph')).toBeInTheDocument()
+    expect(screen.getByText('38%')).toBeInTheDocument()
+    expect(screen.getByText('Fixture town')).toBeInTheDocument()
+    expect(screen.queryByText('4,000 h')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Reading details' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Add reading' })).not.toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Open truck details' }))
+    expect(screen.getByText('Truck vitals')).toBeInTheDocument()
+    expect(screen.getByText('4,000 h')).toBeInTheDocument()
+  })
+
   afterEach(() => {
+    delete truck.telemetry
     Object.values(apiMocks).forEach((mock) => mock.mockReset())
   })
 
