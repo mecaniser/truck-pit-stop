@@ -294,6 +294,12 @@ async def decide(invoice_id: UUID, body: DecisionRequest, response: Response,
         raise HTTPException(status_code=409, detail="No active mapping to revoke")
     elif body.action == "reject" and old_target is not None:
         raise HTTPException(status_code=409, detail="Revoke the active mapping instead")
+    if evidence is None and mapping and mapping.evidence_id:
+        evidence = (await db.execute(select(HistoricalInvoiceEvidence).where(
+            HistoricalInvoiceEvidence.id == mapping.evidence_id,
+            HistoricalInvoiceEvidence.tenant_id == tenant_id,
+            HistoricalInvoiceEvidence.invoice_id == invoice_id,
+        ))).scalar_one_or_none()
     new_target = target.id if target else None
     now = datetime.now(timezone.utc)
     if not mapping:

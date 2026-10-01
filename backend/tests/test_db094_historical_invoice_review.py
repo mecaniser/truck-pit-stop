@@ -13,7 +13,7 @@ from app.api.v1.endpoints import fleet_invoice_exports as exports
 from app.api.v1.endpoints import historical_invoice_reviews as reviews
 from app.api.v1.endpoints.auth import _resolve_or_create_customer
 from app.db.models.customer import Customer
-from app.db.models.historical_invoice_export import HistoricalInvoiceMapping
+from app.db.models.historical_invoice_export import HistoricalInvoiceDecision, HistoricalInvoiceMapping
 from app.db.models.invoice import Invoice, InvoiceStatus
 from app.db.models.repair_order import RepairOrder
 from app.db.models.user import User, UserRole
@@ -98,6 +98,11 @@ async def test_reviewed_legacy_invoice_and_revocation_event(client, db_session):
     assert (await client.get(f"{url}/{invoice.id}/pdf", headers=headers)).status_code == 200
 
     await reviews.decide(invoice.id, _decision("revoke", 1), Response(), db=db_session, user=owner)
+    revocation = (await db_session.execute(select(HistoricalInvoiceDecision).where(
+        HistoricalInvoiceDecision.invoice_id == invoice.id,
+        HistoricalInvoiceDecision.action == "revoke",
+    ))).scalar_one()
+    assert revocation.evidence_sha256 == evidence["source_sha256"]
     result = await client.get(url, headers=headers, params={**_window(), "limit": 1})
     assert result.status_code == 200
     assert result.json()["items"][0]["event_type"] == "access_removed"
