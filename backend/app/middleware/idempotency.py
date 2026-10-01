@@ -60,6 +60,9 @@ class IdempotencyMiddleware:
             return False
         if path in SENSITIVE_NON_IDEMPOTENT_PATHS:
             return False
+        # Telemetry has durable actor/membership-aware replay checks.
+        if path.startswith("/api/v1/fleet/trucks/") and path.endswith("/telemetry-snapshots"):
+            return False
         if path.startswith("/api/v1/webhooks/"):
             return False
         # DB-038 owns a durable, transaction-coupled replay record. Letting the

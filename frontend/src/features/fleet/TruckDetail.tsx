@@ -16,6 +16,9 @@ import type {
 import { STATUS_META, fleetUnitLabel, fmt, money, fmtDate, pmState, initials } from './helpers'
 import DatePicker from '@/components/DatePicker'
 import FleetMap from './FleetMap'
+import TelemetrySummary from './TelemetrySummary'
+import TelemetryCapture from './TelemetryCapture'
+import { truckCoordinates, truckLocation, truckMotion, useTelemetryClock } from './telemetry'
 import { ConfirmModal, TruckEditModal, LogIncidentModal, EditIncidentModal, ResolveIncidentModal, AssignIncidentRepairOrderModal, InspectionsSection, AssignDriverModal, SchedulePMModal, Modal, SidekickPanel, invalidateFleetAndCockpit, type InspectionsSectionHandle } from './FleetModals'
 import FleetPriceBuilderPanel from './FleetPriceBuilderPanel'
 import IncidentHistory from './IncidentHistory'
@@ -167,6 +170,7 @@ function incidentBody(inc: IncidentEntry): string | null {
 export default function TruckDetail({
   truckId, trucks, onOpen,
 }: { truckId: string; trucks: BoardTruck[]; onOpen: (id: string) => void }) {
+  const now = useTelemetryClock()
   const qc = useQueryClient()
   const { user } = useAuthStore()
   const [historyOpen, setHistoryOpen] = useState(false)
@@ -212,26 +216,30 @@ export default function TruckDetail({
 
   const nearestUnits = useMemo(() => {
     const truck = data?.truck
-    if (!locationOpen || !truck || truck.lat == null || truck.lng == null) return []
+    const origin = truck && truckCoordinates(truck, now)
+    if (!locationOpen || !truck || !origin) return []
 
-    return trucks
-      .filter((candidate) => candidate.id !== truck.id && candidate.lat != null && candidate.lng != null)
-      .map((candidate) => ({
+    return trucks.flatMap((candidate) => {
+      const point = truckCoordinates(candidate, now)
+      return candidate.id !== truck.id && point ? [{
         id: candidate.id,
         unit_number: candidate.display_unit_number || candidate.unit_number,
-        city: candidate.location_city,
+        city: truckLocation(candidate, now)?.label,
         status: candidate.status,
-        miles: haversineMiles(truck.lat!, truck.lng!, candidate.lat!, candidate.lng!),
-      }))
+        miles: haversineMiles(origin[1], origin[0], point[1], point[0]),
+      }] : []
+    })
       .sort((a, b) => a.miles - b.miles)
       .slice(0, 3)
-  }, [data?.truck, locationOpen, trucks])
+  }, [data?.truck, locationOpen, trucks, now])
 
   const mapTrucks = useMemo(() => {
     if (!locationOpen) return []
     const truck = data?.truck
-    if (!truck || trucks.some((candidate) => candidate.id === truck.id)) return trucks
-    return [...trucks, truck]
+    if (!truck) return trucks
+    return trucks.some((candidate) => candidate.id === truck.id)
+      ? trucks.map((candidate) => candidate.id === truck.id ? truck : candidate)
+      : [...trucks, truck]
   }, [data?.truck, locationOpen, trucks])
 
   const handleMapSelect = useCallback((truck: BoardTruck) => {
@@ -590,7 +598,7 @@ export default function TruckDetail({
                   aria-expanded={statusMenuOpen}
                   aria-controls={statusMenuOpen ? statusMenuId : undefined}
                 >
-                  <i className={t.moving ? 'is-moving' : ''} />{meta.label}
+                  <i className={truckMotion(t, now) === 'moving' ? 'is-moving' : ''} />{meta.label}
                   <ChevronDown size={12} style={{ marginLeft: 5, opacity: 0.7 }} />
                 </button>
                 {statusMenuOpen && (
@@ -663,7 +671,7 @@ export default function TruckDetail({
           <div className="dhead-stats">
             <div className="dhead-stat">
               <span className="dhead-stat-ic"><Gauge size={17} /></span>
-              <span className="dhead-stat-k">Odometer</span>
+              <span className="dhead-stat-k">Service odometer</span>
               <span className="dhead-stat-v">{fmt(t.odometer)} <span className="dhead-stat-u">mi</span></span>
             </div>
             <div className="dhead-stat-div" />
@@ -678,6 +686,9 @@ export default function TruckDetail({
           </div>
         </div>
       </div>
+
+      <TelemetrySummary truck={t} />
+      <TelemetryCapture key={t.id} truck={t} />
 
       {t.warning_lights && t.warning_lights.length > 0 && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', margin: '0 0 16px', padding: '10px 14px', borderRadius: 12, background: 'rgba(230,57,70,.12)', border: '1px solid rgba(230,57,70,.35)' }}>
@@ -1137,17 +1148,17 @@ export default function TruckDetail({
           </section>
 
           <Section
-            title="Current location & nearby units"
+            title="Last reported location & nearby units"
             className={`detail-station-section dsec-context${locationOpen ? ' is-open' : ' is-collapsed'}`}
             icon={<MapIcon size={17} />}
             right={
               <div className="location-head-actions">
                 <div className="loc-now">
-                  <i className={'loc-dot' + (t.moving ? ' is-moving' : '')} style={{ background: meta.dot }} />
-                  <span className="loc-label" title={t.location_label || 'Location unknown'}>
-                    {t.location_label || 'Location unknown'}
+                  <i className={'loc-dot' + (truckMotion(t, now) === 'moving' ? ' is-moving' : '')} style={{ background: meta.dot }} />
+                  <span className="loc-label" title={truckLocation(t, now)?.label || 'Location unknown'}>
+                    {truckLocation(t, now)?.label || 'Location unknown'}
                   </span>
-                  {t.speed_mph ? <span className="loc-mph"> · {t.speed_mph} mph {t.heading || ''}</span> : <span className="loc-mph"> · parked</span>}
+                  <span className="loc-mph"> · {truckMotion(t, now) === 'unknown' ? 'motion unknown' : truckMotion(t, now)}</span>
                 </div>
                 <button
                   type="button"
@@ -1165,7 +1176,7 @@ export default function TruckDetail({
               <div className="dmap-wrap">
                 <FleetMap trucks={mapTrucks} focusId={t.id} onSelect={handleMapSelect} />
                 <div className="dmap-side">
-                  <div className="dmap-side-h">Nearest units</div>
+                  <div className="dmap-side-h">Nearest reported positions · straight-line</div>
                   {nearestUnits.length === 0 && <div className="empty-note">No located units nearby.</div>}
                   {nearestUnits.map((nearby) => (
                     <button key={nearby.id} className="near-row" onClick={() => onOpen(nearby.id)}>

@@ -40,3 +40,6 @@ api_router.include_router(twilio_webhooks.router, prefix="/webhooks/twilio", tag
 
 api_router.include_router(motive.router, prefix="/fleet/motive", tags=["motive"])
 api_router.include_router(motive_webhooks.router, prefix="/webhooks/motive", tags=["webhooks"])
+
+from app.api.v1.endpoints import fleet_telemetry
+api_router.include_router(fleet_telemetry.router, prefix="/fleet", tags=["fleet"])

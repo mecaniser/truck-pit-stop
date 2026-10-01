@@ -124,10 +124,10 @@ export default function FleetApp() {
 
   const railItems: [View, React.ReactNode, string, string][] = [
     ['board', <LayoutGrid size={20} />, 'Fleet board', 'FB'],
-    ['map', <MapIcon size={20} />, 'Live map', 'MAP'],
+    ['map', <MapIcon size={20} />, 'Fleet map', 'MAP'],
   ]
   const titles: Record<View, string> = {
-    board: 'Fleet Board', map: 'Live Map', detail: 'Truck Detail',
+    board: 'Fleet Board', map: 'Fleet map', detail: 'Truck Detail',
   }
 
   // Only owner/admin reach the fleet board from their garage dashboard, so only

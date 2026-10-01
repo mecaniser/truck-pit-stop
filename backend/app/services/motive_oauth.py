@@ -847,6 +847,8 @@ async def sync(db, row, client=None, actor=None):
 
 
 async def purge(db):
+    from app.services.fleet_telemetry import purge as purge_manual
+    await purge_manual(db)
     from app.db.models.motive_oauth import (
         MotiveFault,
         MotiveHistorySample,
