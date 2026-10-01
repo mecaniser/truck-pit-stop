@@ -1,3 +1,4 @@
+import type { FleetTelemetry } from './telemetry'
 export type InspectionStatus = 'scheduled' | 'completed' | 'cancelled' | 'missed'
 export type InspectionResult = 'pass' | 'attention' | 'fail'
 export type InspectionItemResult = 'pending' | 'pass' | 'fail' | 'na'
@@ -112,6 +113,7 @@ export interface CatalogService {
 }
 
 export interface BoardTruck {
+  telemetry?: FleetTelemetry | null
   id: string
   unit_number?: string | null
   display_unit_number?: string | null

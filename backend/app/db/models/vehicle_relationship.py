@@ -1,6 +1,6 @@
 """Temporal links between a permanent vehicle and changing business accounts."""
 
-from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Index, String, Text, func
+from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Index, String, Text, UniqueConstraint, func
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 
@@ -62,6 +62,7 @@ class FleetMembership(BaseModel):
     fleet_customer = relationship("Customer", back_populates="fleet_memberships")
 
     __table_args__ = (
+        UniqueConstraint("tenant_id", "vehicle_id", "fleet_customer_id", "id", name="uq_membership_telemetry_identity"),
         Index(
             "ix_fleet_membership_active",
             "tenant_id",
