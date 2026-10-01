@@ -34,6 +34,8 @@ class Invoice(BaseModel):
     
     repair_order_id = Column(UUID(as_uuid=True), ForeignKey("repair_orders.id"), nullable=False, index=True)
     repair_order = relationship("RepairOrder", back_populates="invoices")
+    # Bill-to at issuance; repair_order.customer_id can change during a customer merge.
+    billed_customer_id = Column(UUID(as_uuid=True), nullable=True, index=True)
     
     invoice_number = Column(String(50), unique=True, nullable=False, index=True)
     accounting_policy = Column(String(32), nullable=False, default="standard", server_default="standard")

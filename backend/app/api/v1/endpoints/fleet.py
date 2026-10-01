@@ -26,6 +26,7 @@ from app.db.models.labor import Labor, LaborLineType
 from app.db.models.service import Service, ServicePart
 from app.db.models.tenant import Tenant
 from app.db.models.customer import Customer
+from app.services.historical_invoice_identity import guard_mapped_customer_name
 from app.db.models.fleet import (
     FleetInspection,
     FleetInspectionItem,
@@ -2592,7 +2593,7 @@ async def update_truck(
             Customer.id == customer_update.customer_id,
             Customer.tenant_id == current_user.tenant_id,
             Customer.deleted_at.is_(None),
-        ))).scalar_one_or_none()
+        ).with_for_update())).scalar_one_or_none()
         if not bill_to_customer:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Bill-to customer not found")
 
@@ -2609,6 +2610,7 @@ async def update_truck(
             customer_fields["email"] = customer_fields["email"].strip().lower()
         if "company_name" in customer_fields:
             customer_fields["company_name"] = (customer_fields["company_name"] or "").strip() or None
+        await guard_mapped_customer_name(db, bill_to_customer, customer_fields)
         for field, value in customer_fields.items():
             if isinstance(value, str) and field not in {"email", "phone"}:
                 value = value.strip() or None

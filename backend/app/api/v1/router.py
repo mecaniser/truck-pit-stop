@@ -1,6 +1,6 @@
 from app.api.v1.endpoints import motive, motive_webhooks
 from fastapi import APIRouter
-from app.api.v1.endpoints import auth, workos_lifecycle, customers, vehicles, repair_orders, inventory, dashboard, services, appointments, payments, invoice_settlements, mechanics, suppliers, quotes, invoices, stripe_connect, stripe_webhooks, quickbooks, google_reviews, admin, platform_payments, websocket, invoice_access, messages, twilio_webhooks, fleet, driver_accountability, labor_book_time, activity, reports, conversion_exports, parts_operations, inventory_lifecycle
+from app.api.v1.endpoints import auth, workos_lifecycle, customers, vehicles, repair_orders, inventory, dashboard, services, appointments, payments, invoice_settlements, mechanics, suppliers, quotes, invoices, stripe_connect, stripe_webhooks, quickbooks, google_reviews, admin, platform_payments, websocket, invoice_access, messages, twilio_webhooks, fleet, driver_accountability, labor_book_time, activity, reports, conversion_exports, fleet_invoice_exports, historical_invoice_reviews, parts_operations, inventory_lifecycle
 
 api_router = APIRouter()
 
@@ -19,6 +19,8 @@ api_router.include_router(inventory.router, prefix="/inventory", tags=["inventor
 api_router.include_router(dashboard.router, prefix="/dashboard", tags=["dashboard"])
 api_router.include_router(reports.router, prefix="/reports", tags=["reports"])
 api_router.include_router(conversion_exports.router, prefix="/conversion-exports", tags=["conversion-exports"])
+api_router.include_router(fleet_invoice_exports.router, prefix="/fleet-invoice-exports", tags=["fleet-invoice-exports"])
+api_router.include_router(historical_invoice_reviews.router, prefix="/fleet-invoice-exports", tags=["fleet-invoice-reviews"])
 api_router.include_router(parts_operations.router, prefix="/parts-operations", tags=["parts-operations"])
 api_router.include_router(inventory_lifecycle.router, prefix="/parts-operations", tags=["inventory-lifecycle"])
 api_router.include_router(activity.router, prefix="/activity", tags=["activity"])
