@@ -1850,10 +1850,15 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
       const response = await api.post(`/invoices/${invoiceId}/void`, { reason })
       return response.data
     },
-    onSuccess: () => {
+    onSuccess: (invoice: Invoice) => {
+      const orderId = invoice.repair_order_id
+      // Voiding clears the server pricing lock. Refresh its capabilities as well
+      // as the status so the mounted work editor can accept revisions.
+      queryClient.invalidateQueries({ queryKey: ['price-build', orderId] })
+      queryClient.invalidateQueries({ queryKey: ['repair-order-detail', orderId] })
       queryClient.invalidateQueries({ queryKey: ['repair-orders'] })
       queryClient.invalidateQueries({ queryKey: ['invoice-for-order'] })
-      setSelectedOrder(prev => prev ? { ...prev, status: 'pending_review' } : null)
+      setSelectedOrder(prev => prev?.id === orderId ? { ...prev, status: 'pending_review' } : prev)
       setShowVoidInvoiceConfirm(false)
       setVoidInvoiceReason('')
       toast.success('Invoice voided and preserved. The order is open for revision.')
