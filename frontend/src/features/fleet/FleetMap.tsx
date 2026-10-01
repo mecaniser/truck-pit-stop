@@ -72,11 +72,11 @@ function FleetMap({ trucks, focusId, onSelect, compact }: { trucks: BoardTruck[]
         const select = document.createElement('button'); select.type = 'button'
         select.textContent = `${fleetUnitLabel(truck)} · ${truck.board_membership_company_name || 'Fleet unavailable'} · ${truckLocation(truck, now)?.label || 'Reported coordinates'}`
         select.addEventListener('click', () => onSelectRef.current?.(truck))
-        const source = document.createElement('small'); source.textContent = readingCaption(truckLocation(truck, now)!, now)
+        const source = document.createElement('small'); source.textContent = readingCaption(truckLocation(truck, now)!)
         content.append(select, source)
         captions.current.push({ node: source, reading: truckLocation(truck, now)!, prefix: '' })
         const speed = retained(truck.telemetry?.speed, now)
-        if (speed) { const metric = document.createElement('small'); metric.textContent = `Reported speed ${speed.value} mph · ${readingCaption(speed, now)}`; content.append(metric); captions.current.push({ node: metric, reading: speed, prefix: `Reported speed ${speed.value} mph · ` }) }
+        if (speed) { const metric = document.createElement('small'); metric.textContent = `Reported speed ${speed.value} mph · ${readingCaption(speed)}`; content.append(metric); captions.current.push({ node: metric, reading: speed, prefix: `Reported speed ${speed.value} mph · ` }) }
       })
       markers.current.push(new mb.Marker({ element: button }).setLngLat(point).setPopup(new mb.Popup({ offset: 20 }).setDOMContent(content)).addTo(map))
     })
@@ -88,7 +88,7 @@ function FleetMap({ trucks, focusId, onSelect, compact }: { trucks: BoardTruck[]
     focusRef.current = focusId
   }, [locationData, focusId, ready])
   useEffect(() => {
-    captions.current.forEach(({ node, reading, prefix }) => { node.textContent = prefix + readingCaption(reading, now) })
+    captions.current.forEach(({ node, reading, prefix }) => { node.textContent = prefix + readingCaption(reading) })
   }, [now])
   return <section aria-label="Fleet geographic map">
     {!token || error ? <p role="status">{!token ? 'Map unavailable: Mapbox access is not configured.' : 'Map could not load. Reported locations remain available below.'}</p> : null}
@@ -101,8 +101,8 @@ function FleetMap({ trucks, focusId, onSelect, compact }: { trucks: BoardTruck[]
       return <button type="button" key={truck.id} aria-current={focusId === truck.id ? 'true' : undefined} onClick={() => onSelect?.(truck)}>
         <strong>{fleetUnitLabel(truck)}</strong> · {truck.board_membership_company_name || 'Fleet unavailable'} · {location?.label || (coords ? `${coords[1].toFixed(5)}, ${coords[0].toFixed(5)}` : 'Location unknown')}
         {!coords && <small>No verified coordinates · no map pin</small>}
-        {location && <small>{readingCaption(location, now)}</small>}
-        {speed && <small>Reported speed {speed.value} mph · {readingCaption(speed, now)}</small>}
+        {location && <small>{readingCaption(location)}</small>}
+        {speed && <small>Reported speed {speed.value} mph · {readingCaption(speed)}</small>}
       </button>
     })}</div>
     {!trucks.length && <p>No trucks in this view.</p>}
