@@ -29,6 +29,18 @@ export function readingCaption(reading: ReadingProvenance, now = Date.now()) {
   const time = stamp && Number.isFinite(Date.parse(stamp)) ? new Date(stamp).toLocaleString() : 'Time unavailable'
   return `${source} · ${reading.observed_at ? `Observed ${time} · ${readingFreshness(reading, now)}` : `Captured ${time} · observation time unknown`}${reading.source_age_text ? ` · source displayed ${reading.source_age_text}` : ''}`
 }
+/** Compact age describes the observed reading, or explicitly the manual save. */
+export function readingSummary(reading: ReadingProvenance, now = Date.now()) {
+  const source = reading.source === 'motive_api' ? 'Motive' : 'Manual'
+  const stamp = Date.parse(reading.observed_at ?? reading.captured_at ?? '')
+  if (!Number.isFinite(stamp)) return `${source} · time unknown`
+  const minutes = Math.max(0, Math.floor((now - stamp) / 60000))
+  const age = minutes < 1 ? 'just now' : minutes < 60 ? `${minutes}m ago` : minutes < 1440 ? `${Math.floor(minutes / 60)}h ago` : `${Math.floor(minutes / 1440)}d ago`
+  return reading.observed_at
+    ? `${source} · ${age}${readingFreshness(reading, now) === 'fresh' ? '' : ` · ${readingFreshness(reading, now)}`}`
+    : `${source} · saved ${age} · time unknown`
+}
+
 export function truckLocation(truck: BoardTruck, now = Date.now()) { return retained(truck.telemetry?.location, now) }
 export function truckCoordinates(truck: BoardTruck, now = Date.now()): [number, number] | null {
   const value = truckLocation(truck, now)

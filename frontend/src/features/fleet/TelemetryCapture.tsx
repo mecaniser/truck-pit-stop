@@ -1,4 +1,4 @@
-import { useRef, useState, type FormEvent } from 'react'
+import { useId, useRef, useState, type FormEvent } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { ChevronDown } from 'lucide-react'
 import api from '../../lib/api'
@@ -14,6 +14,7 @@ export default function TelemetryCapture({ truck }: { truck: BoardTruck }) {
   const role = useAuthStore((s) => s.user?.role)
   const queryClient = useQueryClient()
   const [open, setOpen] = useState(false)
+  const formId = useId()
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState('')
   const attempt = useRef<{ payload: string; id: string } | null>(null)
@@ -45,18 +46,20 @@ export default function TelemetryCapture({ truck }: { truck: BoardTruck }) {
       attempt.current = null
       form.reset()
       setMessage('Motive dashboard snapshot saved.')
+      setOpen(false)
       await Promise.all([queryClient.invalidateQueries({ queryKey: ['fleet-board'] }), queryClient.invalidateQueries({ queryKey: ['fleet-truck', truck.id] })])
     } catch (error) {
       const status = (error as { response?: { status?: number } }).response?.status
       setMessage(status === 403 ? 'Your access to capture this truck has changed. Refresh the fleet.' : status === 404 || status === 409 ? 'The truck identity or fleet membership changed. Refresh and verify the VIN and fleet.' : status === 422 ? 'Check the readings, VIN, fleet and observation timestamp.' : 'Snapshot could not be saved. Retry to safely reuse this capture request.')
     } finally { pending.current = false; setBusy(false) }
   }
-  return <section className="telemetry-summary">
-    <button type="button" className="dbtn" aria-expanded={open} onClick={() => setOpen(!open)}>Capture Motive dashboard readings <ChevronDown size={16} style={{ transform: open ? 'rotate(180deg)' : undefined }} /></button>
-    {open && <>
+  return <section className={`telemetry-capture${open ? ' telemetry-capture--open' : ''}`}>
+    <button type="button" className="dbtn" aria-expanded={open} aria-controls={formId} disabled={busy} onClick={() => setOpen(!open)}>Add reading <ChevronDown size={16} style={{ transform: open ? 'rotate(180deg)' : undefined }} /></button>
+    {open && <div id={formId}>
+      <h3>Manual Motive reading</h3>
       <p>Fleet: <strong>{truck.board_membership_company_name || 'Fleet membership unavailable'}</strong> · VIN: <strong>{vin || 'Missing'}</strong></p>
       {!eligible ? <p role="status">A selected fleet membership and valid truck VIN are required.</p> : <form className="telemetry-form" onSubmit={save}>
-        <p className="telemetry-muted">Enter only readings visible in Motive. Leave unknown values blank. Dashboard readings stay separate from service mileage and repair status.</p>
+        <p className="telemetry-muted">Copy a new reading from Motive. Leave unknown values blank; service mileage stays unchanged.</p>
         <fieldset disabled={busy} style={{ border: 0, padding: 0 }}>
           <div className="telemetry-form-grid">
             <label>VIN verified in Motive<input name="confirm_vin" required maxLength={17} autoComplete="off" /></label>
@@ -75,7 +78,7 @@ export default function TelemetryCapture({ truck }: { truck: BoardTruck }) {
           <button className="dbtn" type="submit">{busy ? 'Saving…' : 'Save dashboard snapshot'}</button>
         </fieldset>
       </form>}
-      {message && <p role="status">{message}</p>}
-    </>}
+    </div>}
+    {message && <p role="status">{message}</p>}
   </section>
 }
