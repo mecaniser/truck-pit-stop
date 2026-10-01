@@ -1,3 +1,4 @@
+from app.api.v1.endpoints import motive, motive_webhooks
 from fastapi import APIRouter
 from app.api.v1.endpoints import auth, workos_lifecycle, customers, vehicles, repair_orders, inventory, dashboard, services, appointments, payments, invoice_settlements, mechanics, suppliers, quotes, invoices, stripe_connect, stripe_webhooks, quickbooks, google_reviews, admin, platform_payments, websocket, invoice_access, messages, twilio_webhooks, fleet, driver_accountability, labor_book_time, activity, reports, conversion_exports, fleet_invoice_exports, historical_invoice_reviews, parts_operations, inventory_lifecycle
 
@@ -38,3 +39,9 @@ api_router.include_router(stripe_webhooks.router, prefix="/webhooks/stripe", tag
 api_router.include_router(quickbooks.router, prefix="/quickbooks", tags=["quickbooks"])
 api_router.include_router(google_reviews.router, prefix="/google-reviews", tags=["google-reviews"])
 api_router.include_router(twilio_webhooks.router, prefix="/webhooks/twilio", tags=["webhooks"])
+
+api_router.include_router(motive.router, prefix="/fleet/motive", tags=["motive"])
+api_router.include_router(motive_webhooks.router, prefix="/webhooks/motive", tags=["webhooks"])
+
+from app.api.v1.endpoints import fleet_telemetry
+api_router.include_router(fleet_telemetry.router, prefix="/fleet", tags=["fleet"])

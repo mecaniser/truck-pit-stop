@@ -25,6 +25,7 @@ const CustomerPortalPage = lazy(lazyRouteLoader(() => import('./features/custome
 const QuoteApprovalPage = lazy(lazyRouteLoader(() => import('./features/quote-approval/QuoteApprovalPage')))
 const MechanicPortalPage = lazy(lazyRouteLoader(() => import('./features/mechanic-portal/MechanicPortalPage')))
 const FleetApp = lazy(lazyRouteLoader(() => import('./features/fleet/FleetApp')))
+const MotiveCallback = lazy(lazyRouteLoader(() => import('./features/fleet/MotiveCallback')))
 const DriverPortalPage = lazy(lazyRouteLoader(() => import('./features/driver-portal/DriverPortalPage')))
 const InvoiceAccessPage = lazy(lazyRouteLoader(() => import('./features/invoice-access/InvoiceAccessPage')))
 
@@ -76,6 +77,7 @@ function isTokenAccessRoute(pathname: string): boolean {
 }
 
 function isProductAnalyticsRoute(pathname: string, role?: string): boolean {
+  if (pathname === '/fleet/motive/callback') return false
   if (PUBLIC_ANALYTICS_PATHS.has(pathname) || isTokenAccessRoute(pathname)) return true
   if (role === 'super_admin') return false
 
@@ -315,6 +317,15 @@ function FleetRoute({ children }: { children: React.ReactNode }) {
   return <>{children}</>
 }
 
+function MotiveRoute({ children }: { children: React.ReactNode }) {
+  const { user, isAuthenticated } = useAuthStore()
+  const { checkingSession, recovering, endReason } = useCookieSessionBootstrap()
+  if (checkingSession) return <SessionBootstrapStatus recovering={recovering} />
+  if (!isAuthenticated) return <Navigate to={endReason ? `/login?reason=${endReason}` : '/login'} replace />
+  if (!['garage_owner', 'garage_admin', 'customer'].includes(user?.role || '')) return <Navigate to="/dashboard" replace />
+  return <>{children}</>
+}
+
 function CustomerRoute({ children }: { children: React.ReactNode }) {
   const { user, isAuthenticated } = useAuthStore()
   
@@ -409,6 +420,7 @@ function App() {
           }
         />
 
+        <Route path="/fleet/motive/callback" element={<MotiveRoute><MotiveCallback /></MotiveRoute>} />
         <Route
           path="/fleet/*"
           element={

@@ -4,8 +4,8 @@ from alembic import op
 import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
-revision = "152_historical_invoice_export"
-down_revision = "151_fleet_invoice_api_keys"
+revision = "156_historical_invoice_export"
+down_revision = "155_fleet_invoice_api_keys"
 branch_labels = None
 depends_on = None
 

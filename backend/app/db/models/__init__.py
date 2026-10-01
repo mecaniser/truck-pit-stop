@@ -18,6 +18,9 @@ from app.db.models.identity import (
     WorkOSEventReceipt,
 )
 from app.db.models.vehicle import Vehicle
+from app.db.models.motive import (
+    MotiveAccount, MotiveBinding, MotiveLocationSample, MotiveIngestionReceipt,
+)
 from app.db.models.vehicle_merge import VehicleMergeRecord, VehicleSourceAlias
 from app.db.models.vehicle_relationship import VehicleCustomerRelationship, FleetMembership
 from app.db.models.driver_accountability import (
@@ -139,6 +142,7 @@ __all__ = [
     "TenantInvitationAuditEvent",
     "WorkOSEventReceipt",
     "Vehicle",
+    "MotiveAccount", "MotiveBinding", "MotiveLocationSample", "MotiveIngestionReceipt",
     "VehicleMergeRecord",
     "VehicleSourceAlias",
     "VehicleCustomerRelationship",
@@ -228,3 +232,9 @@ __all__ = [
     "PaymentRefund", "PaymentProviderDispute", "PaymentAccountingLink", "ProviderSettlementBatch",
     "ProviderSettlementEntry", "InvoiceSettlementBackfillRun",
 ]
+
+from app.db.models.motive_oauth import MotiveConnection, MotiveAuthorization, MotiveRemoteVehicle  # noqa: F401
+
+from app.db.models.motive_oauth import MotiveFleetAdminGrant, MotiveHistorySample, MotiveFault, MotiveWebhookReceipt  # noqa: F401
+
+from app.db.models.fleet_telemetry import FleetTelemetrySnapshot  # noqa: F401

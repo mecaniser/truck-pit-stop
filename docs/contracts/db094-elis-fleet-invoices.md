@@ -118,7 +118,7 @@ is requested. The source API can ship without making that authorization guess.
 
 ## Historical bill-to review and mapping follow-up
 
-Migration 151 leaves preexisting `Invoice.billed_customer_id` values null.
+Migration 155 leaves preexisting `Invoice.billed_customer_id` values null.
 The customer merge endpoint moves the loser's repair orders to the winner and
 deletes the loser, while invoices remain attached to those orders. Therefore
 `RepairOrder.customer_id` after a merge, current customer/vehicle ownership,
@@ -207,7 +207,7 @@ historical mapping is made by the migration.
 Add separate historical evidence, versioned mapping/decision, and scoped
 export-change storage with tenant-aware keys and uniqueness for one active
 mapping per invoice. Migrate schema only; leave all old invoices pending and
-keep migration 151's null snapshots unchanged. Backfill candidates may be
+keep migration 155's null snapshots unchanged. Backfill candidates may be
 listed for review without granting access. Rollout requires a dry run count by
 tenant and proposed target, sampled source-document verification, and explicit
 owner decisions before any key can retrieve newly mapped history.

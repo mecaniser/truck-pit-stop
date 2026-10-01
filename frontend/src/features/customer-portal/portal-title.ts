@@ -10,6 +10,7 @@ const portalRouteLabel = (pathname: string, search: string): string => {
       : 'Repair History'
   }
   if (pathname.startsWith('/portal/invoices/')) return 'Invoice'
+  if (pathname === '/portal/integrations') return 'Integrations'
   if (pathname === '/portal/settings') return 'Account'
   return 'Customer Portal'
 }

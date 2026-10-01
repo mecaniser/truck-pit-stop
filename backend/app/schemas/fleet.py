@@ -1,3 +1,4 @@
+from app.schemas.fleet_telemetry import FleetTelemetry
 from datetime import datetime, date
 from decimal import Decimal
 from typing import Any, Optional, List
@@ -242,6 +243,7 @@ class BoardWorkOrder(BaseModel):
 
 
 class BoardTruck(BaseModel):
+    telemetry: Optional[FleetTelemetry] = None
     id: UUID
     unit_number: Optional[str] = None
     display_unit_number: Optional[str] = None

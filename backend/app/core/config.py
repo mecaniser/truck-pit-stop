@@ -75,6 +75,15 @@ class Settings(BaseSettings):
     # permitted only for explicit sandbox use outside production.
     QUICKBOOKS_PAYMENTS_APPROVED_TENANT_IDS: str = ""
 
+    # Motive live traffic remains off until vendor and deployment approval.
+    MOTIVE_ENABLED: bool = False
+    MOTIVE_CLIENT_ID: str = ""
+    MOTIVE_CLIENT_SECRET: str = ""
+    MOTIVE_REDIRECT_URI: str = ""
+    MOTIVE_TOKEN_ENCRYPTION_KEYS: str = "{}"
+    MOTIVE_TOKEN_ACTIVE_KEY_VERSION: str = "v1"
+    MOTIVE_APPROVED_TENANT_IDS: str = ""
+
     # WorkOS is introduced alongside (not in place of) legacy JWT login. Keep
     # this disabled until a tenant has completed the audited dual-run cutover.
     WORKOS_AUTH_ENABLED: bool = False
