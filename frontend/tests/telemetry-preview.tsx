@@ -6,16 +6,19 @@ import { MemoryRouter } from 'react-router-dom'
 import api from '../src/lib/api'
 import { useAuthStore } from '../src/stores/authStore'
 import FleetBoard from '../src/features/fleet/FleetBoard'
-import TelemetrySummary from '../src/features/fleet/TelemetrySummary'
-import TelemetryCapture from '../src/features/fleet/TelemetryCapture'
+import TruckDetail from '../src/features/fleet/TruckDetail'
 import type { BoardTruck } from '../src/features/fleet/types'
 import type { ReadingProvenance } from '../src/features/fleet/telemetry'
 import '../src/index.css'
 import '../src/features/fleet/fleet.css'
 if (!import.meta.env.DEV) throw new Error('Development fixture only')
 api.defaults.adapter = async (config) => {
-  if (config.method !== 'post' || config.url !== '/fleet/trucks/synthetic-truck/telemetry-snapshots') throw new Error('Fixture blocks network')
-  return { data: {}, status: 201, statusText: 'Created', headers: {}, config }
+  let data: unknown = {}
+  if (config.method === 'get' && config.url === '/fleet/motive/connection') data = { configured: false, status: 'not_configured', company: null }
+  else if (config.method === 'get' && config.url === '/fleet/trucks/synthetic-truck') data = { truck, open_work_orders: [], bill_labor_at_customer_rate: false, lifetime_spend: 0, incidents_count: 0, crew: [], history: [], parts: [], incidents: [], nearest: [] }
+  else if (config.method === 'get' && ['/fleet/trucks/synthetic-truck/incidents', '/fleet/inspections'].includes(config.url || '')) data = []
+  else if (config.method !== 'post' || config.url !== '/fleet/trucks/synthetic-truck/telemetry-snapshots') throw new Error(`Fixture blocks network: ${config.url}`)
+  return { data, status: 201, statusText: 'Created', headers: {}, config }
 }
 useAuthStore.persist.setOptions({ name: 'telemetry-fixture-auth', storage: { getItem: () => null, setItem: () => {}, removeItem: () => {} } })
 useAuthStore.setState({ token: null, refreshToken: null, authProvider: null, user: { id: 'fixture-owner', role: 'garage_owner' } as NonNullable<ReturnType<typeof useAuthStore.getState>['user']>, isAuthenticated: true })
@@ -38,7 +41,7 @@ export default function Preview() {
   const [detail, setDetail] = useState(false)
   return <main className="fleet-root" style={{ overflow: 'auto', padding: 20 }}>
     <p style={{ marginBottom: 16 }}>Synthetic UI preview · no live collection</p>
-    {detail ? <><button className="dbtn" onClick={() => setDetail(false)}>Back to fleet</button><h1>Example Fleet · 101</h1><p>Service odometer · 120,000 mi</p><TelemetrySummary truck={truck} /><TelemetryCapture truck={truck} /></> :
+    {detail ? <><button className="dbtn" onClick={() => setDetail(false)}>Back to fleet</button><TruckDetail truckId={truck.id} trucks={[truck]} onOpen={() => {}} /></> :
       <FleetBoard data={{ trucks: [truck], stats: { total: 1, active: 1, shop: 0, pm: 0, parts: 0, open_wo: 0, incidents_total: 0 } }} filter={filter} setFilter={setFilter} query={query} setQuery={setQuery} sort={sort} setSort={setSort} onOpen={() => setDetail(true)} onOpenRepairOrder={() => {}} />}
   </main>
 }

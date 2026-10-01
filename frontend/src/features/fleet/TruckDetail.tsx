@@ -16,8 +16,7 @@ import type {
 import { STATUS_META, fleetUnitLabel, fmt, money, fmtDate, pmState, initials } from './helpers'
 import DatePicker from '@/components/DatePicker'
 import FleetMap from './FleetMap'
-import TelemetrySummary from './TelemetrySummary'
-import TelemetryCapture from './TelemetryCapture'
+import { TruckTelemetryLocation, TruckTelemetryValue, TruckVitals } from './TruckTelemetry'
 import { truckCoordinates, truckLocation, truckMotion, useTelemetryClock } from './telemetry'
 import { ConfirmModal, TruckEditModal, LogIncidentModal, EditIncidentModal, ResolveIncidentModal, AssignIncidentRepairOrderModal, InspectionsSection, AssignDriverModal, SchedulePMModal, Modal, SidekickPanel, invalidateFleetAndCockpit, type InspectionsSectionHandle } from './FleetModals'
 import FleetPriceBuilderPanel from './FleetPriceBuilderPanel'
@@ -581,7 +580,7 @@ export default function TruckDetail({
   )
   return (
     <div className="detail">
-      <div className="dhead">
+      <div className="dhead truck-telemetry-header">
         <div className="dhead-main">
           <div>
             <div className="dhead-unit-row">
@@ -660,6 +659,7 @@ export default function TruckDetail({
               >
                 <Info size={14} /> <span className="dbtn-label">Truck details</span>
               </button>
+              <TruckTelemetryLocation truck={t} />
             </div>
             <div className="dhead-sub">
               {`${t.year || ''} ${t.make} ${t.model}`.trim()}{t.body_type ? ` · ${t.body_type}` : ''}
@@ -673,6 +673,7 @@ export default function TruckDetail({
               <span className="dhead-stat-ic"><Gauge size={17} /></span>
               <span className="dhead-stat-k">Service odometer</span>
               <span className="dhead-stat-v">{fmt(t.odometer)} <span className="dhead-stat-u">mi</span></span>
+              <TruckTelemetryValue truck={t} field="odometer" label="Motive" className="truck-odometer-comparison" />
             </div>
             <div className="dhead-stat-div" />
             <div className="dhead-stat has-note">
@@ -683,12 +684,12 @@ export default function TruckDetail({
               </span>
               <span className={'dhead-stat-note ' + pmDisplayClass}>{pm.label}</span>
             </div>
+            <TruckTelemetryValue truck={t} field="speed" label="Speed" className="truck-header-metric" />
+            <TruckTelemetryValue truck={t} field="fuel" label="Fuel level" className="truck-header-metric" />
           </div>
         </div>
       </div>
 
-      <TelemetrySummary truck={t} />
-      <TelemetryCapture key={t.id} truck={t} />
 
       {t.warning_lights && t.warning_lights.length > 0 && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', margin: '0 0 16px', padding: '10px 14px', borderRadius: 12, background: 'rgba(230,57,70,.12)', border: '1px solid rgba(230,57,70,.35)' }}>
@@ -1603,6 +1604,7 @@ function TruckDetailsModal({ truck, detail, canMerge, canRemoveFromFleet, onChan
         </div>
       </section>
 
+      <TruckVitals truck={truck} />
       <TruckDriverSection truck={truck} detail={detail} onChangeDriver={onChangeDriver} />
       <section className="fleet-reference-section">
         <h3 className="dmap-side-h">Service record</h3>
