@@ -78,3 +78,8 @@ synthetic acceptance and its authenticated-runtime limitation remain unchanged.
 Other open PRs449 and442 overlap this PR only in the delivery board. No pending
 PR implementation was pulled into this branch. All six predecessor CI checks
 passed; successor checks rerun after this push. Not merged/deployed.
+
+PR446 landed during the first push, advancing main to `47179c54`. Integrated it
+too: again only the board conflicted, and all histories were preserved. Fleet
+application files still match `e8c005d3`; all upstream repair-order/CSS files
+match `47179c54` exactly. All 38 focused tests and TypeScript passed after this second reconciliation.
