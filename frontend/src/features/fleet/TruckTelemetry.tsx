@@ -6,7 +6,6 @@ import api from '../../lib/api'
 import { useAuthStore } from '../../stores/authStore'
 import type { BoardTruck } from './types'
 import { readingCaption, readingSummary, retained, useTelemetryClock, type ReadingProvenance } from './telemetry'
-import TelemetryCapture from './TelemetryCapture'
 import './telemetry.css'
 
 /** Touch, pointer and keyboard access to the provenance of an individual reading. */
@@ -16,7 +15,6 @@ function ReadingInfo({ label, reading, children, className = '' }: { label: stri
   const [position, setPosition] = useState({ left: 8, top: 8 })
   const button = useRef<HTMLButtonElement>(null)
   const id = useId()
-  const now = useTelemetryClock()
   useEffect(() => {
     if (!open) return
     const positionTip = () => {
@@ -37,7 +35,7 @@ function ReadingInfo({ label, reading, children, className = '' }: { label: stri
       onBlur={() => { setOpen(false); setPinned(false) }} onKeyDown={(event) => { if (event.key === 'Escape') { setOpen(false); setPinned(false); event.stopPropagation() } }}>
       {children}
     </button>
-    {open && createPortal(<div id={id} role="tooltip" className="truck-reading-tooltip" style={position}><strong>{label}</strong><div>{readingCaption(reading, now)}</div>{'basis' in reading && reading.basis ? <div>Basis: {reading.basis === 'dashboard_unspecified' ? 'Motive dashboard' : String(reading.basis)}</div> : null}</div>, document.body)}
+    {open && createPortal(<div id={id} role="tooltip" className="truck-reading-tooltip" style={position}>{readingCaption(reading)}</div>, document.body)}
   </>
 }
 
@@ -68,7 +66,7 @@ export function PullMotiveReading({ truck }: { truck: BoardTruck }) {
       const params = { fleet_customer_id: companyId }
       const { data } = await api.get<{ configured: boolean; status: string; company: unknown; next_sync_at: string | null }>('/fleet/motive/connection', { params })
       if (!data.configured || !data.company || !['connected', 'provider_error'].includes(data.status)) {
-        return 'Motive connection required. Until access is approved, use Add reading for a manual import.'
+        return 'Motive connection required. API refresh is unavailable until connected.'
       }
       if (data.next_sync_at && Date.parse(data.next_sync_at) > Date.now()) return `Next refresh available at ${new Date(data.next_sync_at).toLocaleTimeString()}.`
       const result = await api.post('/fleet/motive/sync', params)
@@ -90,5 +88,5 @@ export function TruckVitals({ truck }: { truck: BoardTruck }) {
   return <section className="fleet-reference-section"><h3 className="dmap-side-h">Truck vitals</h3><div className="truck-vitals-grid">
     <TruckTelemetryValue truck={truck} field="engine_hours" label="Engine hours" />
     <TruckTelemetryValue truck={truck} field="fault_count" label="Open faults" />
-  </div><PullMotiveReading key={`${truck.id}:${truck.board_membership_customer_id}`} truck={truck} /><TelemetryCapture key={truck.id} truck={truck} /></section>
+  </div><PullMotiveReading key={`${truck.id}:${truck.board_membership_customer_id}`} truck={truck} /></section>
 }

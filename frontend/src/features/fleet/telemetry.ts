@@ -23,22 +23,21 @@ export function readingFreshness(reading: ReadingProvenance, now = Date.now()) {
   const age = now - Date.parse(reading.observed_at)
   return !Number.isFinite(age) || age < -300000 ? 'unknown' : age <= 300000 ? 'fresh' : age <= 900000 ? 'delayed' : 'stale'
 }
-export function readingCaption(reading: ReadingProvenance, now = Date.now()) {
-  const source = reading.source === 'motive_api' ? 'Motive API' : reading.source === 'motive_dashboard_manual' ? 'Motive dashboard · manual capture' : 'Manual location'
-  const stamp = reading.observed_at ?? reading.captured_at
-  const time = stamp && Number.isFinite(Date.parse(stamp)) ? new Date(stamp).toLocaleString() : 'Time unavailable'
-  return `${source} · ${reading.observed_at ? `Observed ${time} · ${readingFreshness(reading, now)}` : `Captured ${time} · observation time unknown`}${reading.source_age_text ? ` · source displayed ${reading.source_age_text}` : ''}`
+/** Display capture time without exposing internal provenance metadata. */
+export function readingCaption(reading: ReadingProvenance) {
+  const stamp = reading.captured_at ?? reading.observed_at
+  if (!stamp || !Number.isFinite(Date.parse(stamp))) return ''
+  return `${reading.captured_at ? 'Captured' : 'Updated'} ${new Date(stamp).toLocaleString()}`
 }
-/** Compact age describes the observed reading, or explicitly the manual save. */
+/** API age uses the observation; manually captured readings use their save time. */
 export function readingSummary(reading: ReadingProvenance, now = Date.now()) {
-  const source = reading.source === 'motive_api' ? 'Motive' : 'Manual'
   const stamp = Date.parse(reading.observed_at ?? reading.captured_at ?? '')
-  if (!Number.isFinite(stamp)) return `${source} · time unknown`
+  if (!Number.isFinite(stamp)) return ''
   const minutes = Math.max(0, Math.floor((now - stamp) / 60000))
-  const age = minutes < 1 ? 'just now' : minutes < 60 ? `${minutes}m ago` : minutes < 1440 ? `${Math.floor(minutes / 60)}h ago` : `${Math.floor(minutes / 1440)}d ago`
-  return reading.observed_at
-    ? `${source} · ${age}${readingFreshness(reading, now) === 'fresh' ? '' : ` · ${readingFreshness(reading, now)}`}`
-    : `${source} · saved ${age} · time unknown`
+  if (minutes < 1) return 'Updated just now'
+  const count = minutes < 60 ? minutes : minutes < 1440 ? Math.floor(minutes / 60) : Math.floor(minutes / 1440)
+  const unit = minutes < 60 ? 'minute' : minutes < 1440 ? 'hour' : 'day'
+  return `Updated ${count} ${unit}${count === 1 ? '' : 's'} ago`
 }
 
 export function truckLocation(truck: BoardTruck, now = Date.now()) { return retained(truck.telemetry?.location, now) }

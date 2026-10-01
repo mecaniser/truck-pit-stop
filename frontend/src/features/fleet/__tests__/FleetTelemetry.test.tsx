@@ -4,7 +4,7 @@ import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { useAuthStore } from '@/stores/authStore'
 import type { BoardTruck } from '../types'
-import { readingFreshness, retained, truckCoordinates, truckMotion, type FleetTelemetry, type ReadingProvenance } from '../telemetry'
+import { readingCaption, readingSummary, readingFreshness, retained, truckCoordinates, truckMotion, type FleetTelemetry, type ReadingProvenance } from '../telemetry'
 import TelemetrySummary from '../TelemetrySummary'
 import TelemetryCapture from '../TelemetryCapture'
 import FleetMap from '../FleetMap'
@@ -28,6 +28,15 @@ beforeEach(() => {
 })
 afterEach(() => vi.unstubAllEnvs())
 describe('reported telemetry semantics', () => {
+  it('uses capture time for tooltips and readable age without internal metadata', () => {
+    expect(readingSummary(provenance, now + 46 * 60000)).toBe('Updated 46 minutes ago')
+    expect(readingSummary(provenance, now + 60000)).toBe('Updated 1 minute ago')
+    const api = { ...provenance, source: 'motive_api' as const, observed_at: new Date(now - 120000).toISOString() }
+    expect(readingCaption(api)).toBe(`Captured ${new Date(provenance.captured_at!).toLocaleString()}`)
+    expect(readingSummary(api, now)).toBe('Updated 2 minutes ago')
+    expect(readingCaption({ ...provenance, captured_at: null })).toBe('')
+    expect(readingSummary({ ...provenance, captured_at: null }, now)).toBe('')
+  })
   it('never uses legacy coordinates and keeps label-only locations unpinned', () => expect(truckCoordinates(truck, now)).toBeNull())
   it('preserves exact zero coordinates without offsets', () => expect(truckCoordinates({ ...truck, telemetry: { ...telemetry, location: { ...telemetry.location!, lat: 0, lng: 0 } } }, now)).toEqual([0, 0]))
   it('retains captured unknown-time readings without claiming fresh or stopped', () => { expect(retained(telemetry.speed, now)?.value).toBe(0); expect(readingFreshness(provenance, now)).toBe('unknown'); expect(truckMotion(truck, now)).toBe('unknown') })
@@ -42,27 +51,27 @@ describe('reported telemetry semantics', () => {
     expect(screen.getByText('0 mph')).toBeInTheDocument()
     expect(screen.queryByText(/odometer/i)).not.toBeInTheDocument()
     expect(screen.queryByText('123,456 mi')).not.toBeInTheDocument()
-    expect(screen.getAllByText(/Manual · saved .* · time unknown/)).toHaveLength(1)
+    expect(screen.getAllByText(/Updated just now/)).toHaveLength(1)
     expect(screen.queryByRole('button')).not.toBeInTheDocument()
     expect(screen.queryByText(/live|stopped/i)).not.toBeInTheDocument()
   })
-  it('keeps reported mileage in detail and reveals full history only on demand', () => {
+  it('keeps reported mileage in detail and reveals only capture times on demand', () => {
     render(<TelemetrySummary truck={truck} />)
     expect(screen.getByText('Motive odometer')).toBeInTheDocument()
     expect(screen.getByText('123,456 mi')).toBeInTheDocument()
     expect(screen.queryByText('100,000 mi')).not.toBeInTheDocument()
     expect(screen.queryByText(/observation time unknown/)).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Reading details' }))
-    expect(screen.getByText('Motive odometer · dashboard')).toBeInTheDocument()
-    expect(screen.getAllByText(/observation time unknown/)).toHaveLength(3)
-    expect(screen.getAllByText(/source displayed 41s ago/)).toHaveLength(3)
+    expect(screen.getAllByText('Motive odometer')).toHaveLength(2)
+    expect(screen.getAllByText(`Captured ${new Date(provenance.captured_at!).toLocaleString()}`)).toHaveLength(3)
+    expect(screen.queryByText(/source displayed|observation time unknown/)).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Reading details' }))
     expect(screen.queryByText(/observation time unknown/)).not.toBeInTheDocument()
   })
   it('does not apply a manual location timestamp to a newer API speed', () => {
     render(<TelemetrySummary compact truck={{ ...truck, telemetry: { ...telemetry, speed: { ...telemetry.speed!, source: 'motive_api', observed_at: new Date(now - 20 * 60000).toISOString() } } }} />)
-    expect(screen.getByText(/Manual · saved .* · time unknown/)).toBeInTheDocument()
-    expect(screen.getByText('Motive · 20m ago · stale')).toBeInTheDocument()
+    expect(screen.getByText(/Updated just now/)).toBeInTheDocument()
+    expect(screen.getByText('Updated 20 minutes ago')).toBeInTheDocument()
   })
   it('omits compact telemetry when only odometer is available', () => {
     render(<TelemetrySummary compact truck={{ ...truck, telemetry: { ...telemetry, location: null, speed: null } }} />)

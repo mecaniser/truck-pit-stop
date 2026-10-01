@@ -25,20 +25,20 @@ export default function TelemetrySummary({ truck, compact = false }: { truck: Bo
   if (!provenance.length) return compact ? null : <p className="telemetry-muted">No truck readings yet.</p>
   const locationLabel = location && (location.label || (location.lat != null && location.lng != null ? `${location.lat.toFixed(5)}, ${location.lng.toFixed(5)}` : 'Location unavailable'))
   return <section className={`telemetry-summary${compact ? ' telemetry-summary--compact' : ''}`} aria-label="Reported truck readings">
-    {location && <div className="telemetry-location" title={readingCaption(location, now)}>
+    {location && <div className="telemetry-location" title={readingCaption(location)}>
       <MapPin size={15} aria-hidden="true" /><div><strong>{locationLabel}</strong>{!shared && <small>{readingSummary(location, now)}</small>}</div>
     </div>}
-    {readings.length > 0 && <dl className="telemetry-metrics">{readings.map(({ label, reading, kind }) => <div className={`telemetry-metric telemetry-metric--${kind}`} key={kind} title={readingCaption(reading, now)}>
+    {readings.length > 0 && <dl className="telemetry-metrics">{readings.map(({ label, reading, kind }) => <div className={`telemetry-metric telemetry-metric--${kind}`} key={kind} title={readingCaption(reading)}>
       <dt>{kind === 'speed' && <Gauge size={13} aria-hidden="true" />}{label}</dt>
       <dd>{valueLabel(reading)}</dd>
       {!shared && <small>{readingSummary(reading, now)}</small>}
     </div>)}</dl>}
     <div className="telemetry-footer">
-      {shared && <small title={readingCaption(shared, now)}>{readingSummary(shared, now)}</small>}
+      {shared && <small title={readingCaption(shared)}>{readingSummary(shared, now)}</small>}
       {!compact && <button type="button" className="telemetry-disclosure" aria-expanded={expanded} aria-controls={detailsId} onClick={() => setExpanded(!expanded)}>Reading details <ChevronDown size={14} aria-hidden="true" style={{ transform: expanded ? 'rotate(180deg)' : undefined }} /></button>}
     </div>
     {!compact && expanded && <div id={detailsId} className="telemetry-provenance">
-      {provenance.map(({ label, reading }) => <div key={label}><strong>{label}{'basis' in reading && reading.basis ? ` · ${reading.basis === 'dashboard_unspecified' ? 'dashboard' : reading.basis}` : ''}</strong><small>{readingCaption(reading, now)}</small></div>)}
+      {provenance.map(({ label, reading }) => <div key={label}><strong>{label}</strong><small>{readingCaption(reading)}</small></div>)}
     </div>}
   </section>
 }

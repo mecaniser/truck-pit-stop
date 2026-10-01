@@ -87,6 +87,8 @@ describe('TruckDetail hardening', () => {
     expect(screen.queryByRole('button', { name: 'Add reading' })).not.toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: 'Open truck details' }))
     expect(screen.getByText('Truck vitals')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Add reading' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('textbox', { name: 'VIN verified in Motive' })).not.toBeInTheDocument()
     expect(screen.getByText('4,000 h')).toBeInTheDocument()
   })
 
