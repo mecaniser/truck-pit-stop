@@ -840,6 +840,41 @@ describe('PriceBuilderPanel pending feedback', () => {
     expect(screen.queryByText('Card processing fee')).not.toBeInTheDocument()
   })
 
+  it('keeps secondary panels mutually exclusive, preserves note drafts, and resets on order navigation', async () => {
+    apiMocks.get.mockImplementation((url: string) => Promise.resolve({
+      data: url.endsWith('/price-build') ? emptySummary : [],
+    }))
+    const user = userEvent.setup()
+    const onAddNote = vi.fn()
+    const onRecommendedServicesOpenChange = vi.fn()
+    const view = renderPanel({ onAddNote, onRecommendedServicesOpenChange })
+    const recommended = screen.getByRole('button', { name: /Recommended Services/ })
+    const notes = screen.getByRole('button', { name: /^Notes/ })
+    const photos = await screen.findByRole('button', { name: 'Photos No photos attached' })
+    const pills = [recommended, notes, photos]
+    for (const selected of [recommended, notes, photos, notes, recommended, photos]) {
+      await user.click(selected)
+      for (const pill of pills) expect(pill).toHaveAttribute('aria-expanded', String(pill === selected))
+      expect(onRecommendedServicesOpenChange).toHaveBeenLastCalledWith(selected === recommended)
+    }
+    await user.click(photos)
+    for (const pill of pills) expect(pill).toHaveAttribute('aria-expanded', 'false')
+    await user.click(notes)
+    await user.click(screen.getByRole('button', { name: 'Add note', exact: true }))
+    const draft = screen.getByPlaceholderText('Note for the shop — never shown to the customer…')
+    await user.type(draft, 'Keep this draft')
+    await user.click(photos)
+    expect(screen.queryByDisplayValue('Keep this draft')).not.toBeInTheDocument()
+    await user.click(notes)
+    expect(screen.getByDisplayValue('Keep this draft')).toBeVisible()
+    notes.focus()
+    await user.keyboard('{Enter}')
+    expect(notes).toHaveAttribute('aria-expanded', 'false')
+    await user.click(photos)
+    view.rerenderPanel({ orderId: 'order-2', onAddNote, onRecommendedServicesOpenChange })
+    for (const pill of pills) expect(pill).toHaveAttribute('aria-expanded', 'false')
+  })
+
   it.each([0, 1, 2, 12])('shows only the count for %i photos in both disclosure states', async (count) => {
     const photos = Array.from({ length: count }, (_, index) => ({
       id: `photo-${index}`, repair_order_id: 'order-1',
@@ -857,9 +892,11 @@ describe('PriceBuilderPanel pending feedback', () => {
       expect(trigger).toHaveAttribute('aria-expanded', String(expanded))
       const countLabel = within(trigger).getByText(String(count), { exact: true })
       expect(countLabel).toBeVisible()
+      expect(countLabel).toHaveClass('inline-flex', 'items-center', 'justify-center', 'align-baseline', 'normal-nums')
+      expect(countLabel).not.toHaveClass('tabular-nums')
       expect(countLabel.parentElement).toHaveTextContent(`Photos${count}`)
       expect(countLabel.parentElement?.parentElement).toHaveClass('text-sm', 'font-semibold')
-      if (count > 0) expect(countLabel).toHaveClass('rounded-full', 'ring-emerald-300', 'bg-emerald-50')
+      if (count > 0) expect(countLabel).toHaveClass('h-5', 'min-w-5', 'rounded-full', 'ring-emerald-300', 'bg-emerald-50')
       else expect(countLabel).not.toHaveClass('ring-emerald-300')
       expect(within(trigger).queryByRole('img')).not.toBeInTheDocument()
       expect(trigger).toHaveClass('whitespace-nowrap', 'shrink-0')
