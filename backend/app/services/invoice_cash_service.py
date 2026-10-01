@@ -68,16 +68,20 @@ def event_history_digest(event, *, value_overrides=None, charge_adjustments=None
 
 def compatible_invoice_history_digests(invoice, *, value_overrides=None, charge_adjustments=None):
     """Return canonical plus exact legacy encodings for additive NULL fields."""
-    digests = {event_history_digest(invoice, value_overrides=value_overrides,
-                                    charge_adjustments=charge_adjustments)}
-    activation_id = (value_overrides.get("qbo_shop_activation_id")
-                     if value_overrides and "qbo_shop_activation_id" in value_overrides
-                     else invoice.qbo_shop_activation_id)
-    if activation_id is None:
-        digests.add(event_history_digest(invoice, value_overrides=value_overrides,
-            charge_adjustments=charge_adjustments,
-            _omit_null_invoice_fields={"qbo_shop_activation_id"}))
-    return digests
+    # These columns were added after older cash reviews were signed. A NULL
+    # value may have been absent from the signed encoding; a non-NULL value
+    # must always remain bound to the digest. Include both migration orders.
+    legacy_null_fields = tuple(name for name in (
+        "qbo_shop_activation_id", "billed_customer_id",
+    ) if (value_overrides[name] if value_overrides and name in value_overrides
+          else getattr(invoice, name)) is None)
+    return {
+        event_history_digest(invoice, value_overrides=value_overrides,
+                             charge_adjustments=charge_adjustments,
+                             _omit_null_invoice_fields={name for index, name in enumerate(legacy_null_fields)
+                                                        if mask & (1 << index)})
+        for mask in range(1 << len(legacy_null_fields))
+    }
 
 
 def compatible_ancestor_snapshot(proof, current, invoice):

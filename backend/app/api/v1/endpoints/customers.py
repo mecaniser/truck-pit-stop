@@ -24,6 +24,9 @@ from app.db.models.inventory import PartsUsage
 from app.db.models.labor import Labor
 from app.db.models.appointment import Appointment
 from app.db.models.invoice import Invoice, InvoiceStatus
+from app.db.models.fleet_invoice_api_key import FleetInvoiceApiKey
+from app.db.models.historical_invoice_export import HistoricalInvoiceMapping, FleetInvoiceScopeEvent
+from app.services.historical_invoice_identity import guard_mapped_customer_name
 from app.db.models.payment import Payment, PaymentStatus
 from app.db.models.message_thread import MessageThread
 from app.db.models.sms_message import SMSMessage
@@ -682,7 +685,7 @@ async def update_customer(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
-    result = await db.execute(select(Customer).where(Customer.id == customer_id))
+    result = await db.execute(select(Customer).where(Customer.id == customer_id).with_for_update())
     customer = result.scalar_one_or_none()
     
     if not customer:
@@ -716,6 +719,7 @@ async def update_customer(
     if "company_name" in update_data:
         company = (update_data.get("company_name") or "").strip()
         update_data["company_name"] = company or None
+    await guard_mapped_customer_name(db, customer, update_data)
     fleet_enabled_changed = (
         "fleet_enabled" in update_data
         and bool(update_data["fleet_enabled"]) != bool(customer.fleet_enabled)
@@ -745,7 +749,7 @@ async def delete_customer(
         UserRole.RECEPTIONIST,
     )),
 ):
-    result = await db.execute(select(Customer).where(Customer.id == customer_id))
+    result = await db.execute(select(Customer).where(Customer.id == customer_id).with_for_update())
     customer = result.scalar_one_or_none()
 
     if not customer:
@@ -759,6 +763,21 @@ async def delete_customer(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Access denied",
         )
+
+    active_mapping = (await db.execute(select(HistoricalInvoiceMapping.id).where(
+        HistoricalInvoiceMapping.tenant_id == customer.tenant_id,
+        HistoricalInvoiceMapping.target_customer_id == customer.id,
+    ).limit(1))).scalar_one_or_none()
+    if active_mapping:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT,
+                            detail="Revoke reviewed historical invoice mappings before deleting bill-to account")
+    pending_export_event = (await db.execute(select(FleetInvoiceScopeEvent.id).where(
+        FleetInvoiceScopeEvent.tenant_id == customer.tenant_id,
+        FleetInvoiceScopeEvent.customer_id == customer.id,
+    ).limit(1))).scalar_one_or_none()
+    if pending_export_event:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT,
+                            detail="Historical export removal events require reconciliation before deleting bill-to account")
 
     repair_order_count_result = await db.execute(
         select(func.count(RepairOrder.id)).where(RepairOrder.customer_id == customer_id)
@@ -846,7 +865,8 @@ async def merge_customers(
 
     winner_result = await db.execute(select(Customer).where(Customer.id == merge_request.winner_id))
     winner = winner_result.scalar_one_or_none()
-    loser_result = await db.execute(select(Customer).where(Customer.id == merge_request.loser_id))
+    # Serialize deletion with fleet invoice key provisioning for this bill-to.
+    loser_result = await db.execute(select(Customer).where(Customer.id == merge_request.loser_id).with_for_update())
     loser = loser_result.scalar_one_or_none()
 
     if not winner or not loser:
@@ -860,6 +880,33 @@ async def merge_customers(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Cannot merge customers from different tenants",
         )
+
+    active_fleet_export = (await db.execute(select(FleetInvoiceApiKey.id).where(
+        FleetInvoiceApiKey.tenant_id == loser.tenant_id,
+        FleetInvoiceApiKey.customer_id == loser.id,
+        FleetInvoiceApiKey.revoked_at.is_(None),
+    ).limit(1))).scalar_one_or_none()
+    if active_fleet_export:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="This bill-to account has an active fleet invoice export. Revoke and reconcile the connection before merging it.",
+        )
+    reviewed_invoice_export = (await db.execute(select(HistoricalInvoiceMapping.id).where(
+        HistoricalInvoiceMapping.tenant_id == loser.tenant_id,
+        HistoricalInvoiceMapping.target_customer_id == loser.id,
+    ).limit(1))).scalar_one_or_none()
+    if reviewed_invoice_export:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="This bill-to account has reviewed historical invoice exports. Revoke the mappings and reconcile ELIS before merging it.",
+        )
+    pending_export_event = (await db.execute(select(FleetInvoiceScopeEvent.id).where(
+        FleetInvoiceScopeEvent.tenant_id == loser.tenant_id,
+        FleetInvoiceScopeEvent.customer_id == loser.id,
+    ).limit(1))).scalar_one_or_none()
+    if pending_export_event:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT,
+                            detail="This bill-to account has historical export removal events requiring reconciliation before merge")
 
     # Vehicles
     vehicles_result = await db.execute(select(Vehicle).where(Vehicle.customer_id == loser.id))

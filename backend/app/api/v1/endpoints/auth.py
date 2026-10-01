@@ -39,6 +39,7 @@ from app.services.tenant_branding import extract_us_state
 from app.db.models.user import User, UserRole
 from app.db.models.tenant import Tenant
 from app.db.models.customer import Customer
+from app.services.historical_invoice_identity import guard_mapped_customer_name
 from app.db.models.user_customer_link import UserCustomerLink
 from app.schemas.auth import (
     UserLogin,
@@ -642,10 +643,13 @@ async def _resolve_or_create_customer(
         result = await db.execute(
             select(Customer).where(
                 and_(Customer.phone == normalized_phone, Customer.tenant_id == tenant_id)
-            )
+            ).with_for_update()
         )
         customer = result.scalar_one_or_none()
         if customer and "@placeholder" in (customer.email or ""):
+            await guard_mapped_customer_name(db, customer, {
+                "first_name": user_data.first_name, "last_name": user_data.last_name,
+            })
             customer.email = user_data.email
             customer.first_name = user_data.first_name
             customer.last_name = user_data.last_name
@@ -1335,12 +1339,15 @@ async def update_current_user(
     if current_user.customer_id and data:
         from app.db.models.customer import Customer
         result = await db.execute(
-            select(Customer).where(Customer.id == current_user.customer_id)
+            select(Customer).where(Customer.id == current_user.customer_id).with_for_update()
         )
         customer = result.scalar_one_or_none()
         if customer:
             # Update matching fields in Customer table
             customer_fields = {'first_name', 'last_name', 'email', 'phone'}
+            await guard_mapped_customer_name(db, customer, {
+                field: value for field, value in data.items() if field in customer_fields
+            })
             for field, value in data.items():
                 if field in customer_fields:
                     setattr(customer, field, value)

@@ -193,6 +193,19 @@ def test_pre142_activation_digest_binds_nonnull_tax_exemption():
     assert legacy not in cash.compatible_invoice_history_digests(invoice)
 
 
+def test_pre_bill_to_digest_accepts_only_null_legacy_bill_to():
+    invoice = Invoice()
+    legacy = cash.event_history_digest(
+        invoice, _omit_null_invoice_fields={"billed_customer_id"})
+    assert legacy in cash.compatible_invoice_history_digests(invoice)
+
+    invoice.billed_customer_id = uuid4()
+    assert legacy not in cash.compatible_invoice_history_digests(invoice)
+    bound = cash.event_history_digest(invoice)
+    invoice.billed_customer_id = uuid4()
+    assert bound not in cash.compatible_invoice_history_digests(invoice)
+
+
 @pytest.mark.parametrize("malformed_digest", [None, [], {}, 1, "short"])
 def test_malformed_legacy_ancestor_digest_denies_safely(malformed_digest):
     invoice = Invoice()
