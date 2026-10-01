@@ -4993,11 +4993,18 @@ export default function PriceBuilderPanel({
                               type="button"
                               disabled={forceVoidPending || forceVoidReason.trim().length < 3 || !forceVoidPassword}
                               onClick={async () => {
-                                await onForceVoidOrder({
-                                  reason: forceVoidReason.trim(),
-                                  password: forceVoidPassword,
-                                })
-                                setForceVoidPassword('')
+                                try {
+                                  await onForceVoidOrder({
+                                    reason: forceVoidReason.trim(),
+                                    password: forceVoidPassword,
+                                  })
+                                  setForceVoidOpen(false)
+                                  setForceVoidReason('')
+                                } catch {
+                                  // The parent reports the error; retain the reason for retry.
+                                } finally {
+                                  setForceVoidPassword('')
+                                }
                               }}
                               className="flex-1 rounded-lg bg-red-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-50"
                             >
