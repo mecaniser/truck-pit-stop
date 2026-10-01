@@ -1,0 +1,19 @@
+.telemetry-summary { display: grid; gap: 12px; padding: 14px; border: 1px solid var(--line, #384152); border-radius: 10px; margin: 12px 0; overflow-wrap: anywhere; }
+.telemetry-summary dl { display: grid; grid-template-columns: repeat(auto-fit, minmax(175px, 1fr)); gap: 14px; margin: 0; }
+.telemetry-summary dt, .telemetry-muted { color: var(--muted, #a4abb6); font-size: 12px; }
+.telemetry-summary dd { margin: 4px 0; font-size: 18px; font-weight: 650; }
+.telemetry-summary small { display: block; color: var(--muted, #a4abb6); font-size: 11px; line-height: 1.6; }
+.telemetry-summary--compact { padding: 8px; margin: 8px 0; }
+.telemetry-summary--compact dd { font-size: 14px; }
+.telemetry-form { display: grid; gap: 12px; max-width: 720px; }
+.telemetry-form label { display: grid; gap: 5px; font-size: 13px; }
+.telemetry-form input, .telemetry-form textarea { min-height: 42px; width: 100%; background: var(--surface-2,#18212d); color: var(--text,#eee); padding: 9px; border: 1px solid var(--line,#384152); border-radius: 8px; }
+.telemetry-form-grid { display: grid; grid-template-columns: repeat(auto-fit,minmax(180px,1fr)); gap: 12px; }
+.fleet-geographic-map { min-height: 330px; height: 430px; width: 100%; }
+.fleet-geographic-map--compact { height: 290px; min-height: 290px; }
+.fleet-map-list { display: grid; grid-template-columns: repeat(auto-fit,minmax(200px,1fr)); gap: 8px; margin-top: 10px; }
+.fleet-map-list button { text-align: left; color: var(--text,#eee); border: 1px solid var(--line,#384152); background: var(--surface,#18212d); border-radius: 8px; padding: 12px; min-height: 44px; overflow-wrap: anywhere; }
+.fleet-map-list small { display: block; color: var(--muted,#a4abb6); margin-top: 5px; line-height: 1.5; }
+.fleet-map-marker { border: 2px solid white; border-radius: 50%; background: #d5ab37; color: #10151c; min-width: 32px; height: 32px; font-weight: 700; cursor: pointer; }
+.fleet-map-popup { display: grid; gap: 8px; color: #111; }
+.fleet-map-popup button { text-align: left; padding: 8px; border-bottom: 1px solid #bbb; }

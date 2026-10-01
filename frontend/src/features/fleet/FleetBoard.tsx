@@ -1,9 +1,11 @@
 import { useState, type CSSProperties } from 'react'
-import { Wrench, Gauge, ClipboardList, MapPin, User, Search, ChevronDown, ChevronRight, Check, AlertTriangle, X } from 'lucide-react'
+import { Wrench, Gauge, ClipboardList, User, Search, ChevronDown, ChevronRight, Check, AlertTriangle, X } from 'lucide-react'
 import type { BoardTruck, FleetBoard as FleetBoardData, TruckStatus } from './types'
 import { STATUS_META, VISIT_STALE_AFTER_DAYS, fleetIdentity, fleetUnitLabel, fmt, pmState, pmUrgency, rank, visitAge, visitIsStale } from './helpers'
 import { formatUSPhone } from '@/utils/phone'
 import FleetActivity from './FleetActivity'
+import TelemetrySummary from './TelemetrySummary'
+import { truckMotion, useTelemetryClock } from './telemetry'
 import ClosedRepairOrders from './ClosedRepairOrders'
 
 type QueueFilter = 'pm_planning' | 'open_work_orders' | 'visits_to_close'
@@ -85,6 +87,7 @@ function TruckCard({ t, onOpen, onOpenRepairOrder }: { t: BoardTruck; onOpen: (t
   const meta = STATUS_META[t.status]
   const pm = pmState(t)
   const reasons = attentionReasons(t)
+  const now = useTelemetryClock()
   const identity = fleetIdentity(t)
   return (
     <article
@@ -110,7 +113,7 @@ function TruckCard({ t, onOpen, onOpenRepairOrder }: { t: BoardTruck; onOpen: (t
           <span className="tcard-mm">{`${t.year || ''} ${t.make} ${t.model}`.trim()}</span>
         </div>
         <div className="tcard-mark">
-          <span className="tcard-badge"><i className={'tcard-bdot' + (t.moving ? ' is-moving' : '')} />{meta.short}</span>
+          <span className="tcard-badge"><i className={'tcard-bdot' + (truckMotion(t, now) === 'moving' ? ' is-moving' : '')} />{meta.short}</span>
           <span className="tcard-unit" data-testid="tcard-unit-mark">{identity.unit}</span>
         </div>
       </div>
@@ -120,20 +123,16 @@ function TruckCard({ t, onOpen, onOpenRepairOrder }: { t: BoardTruck; onOpen: (t
           {reasons.map((reason) => <span key={reason} className="tcard-reason">{reason}</span>)}
         </div>
       )}
-      <div className="tcard-row">
-        <span className="tcard-row-ic"><MapPin size={14} /></span>
-        <span className="tcard-row-tx">{t.location_label || 'Location unknown'}</span>
-      </div>
+      <TelemetrySummary truck={t} compact />
       <div className="tcard-row">
         <span className="tcard-row-ic"><User size={14} /></span>
         <span className="tcard-row-tx">
           {t.driver_name || 'Unassigned'}
           {t.driver_phone && <span className="tcard-row-sub"> · {formatUSPhone(t.driver_phone)}</span>}
         </span>
-        {!!t.speed_mph && <span className="tcard-mph">{t.speed_mph} mph {t.heading || ''}</span>}
       </div>
       <div className="tcard-odo">
-        <span>ODO</span><b>{fmt(t.odometer)}</b><span>mi</span>
+        <span>Service ODO</span><b>{fmt(t.odometer)}</b><span>mi</span>
       </div>
       <div className="tcard-pm">
         <div className="tcard-pm-track">

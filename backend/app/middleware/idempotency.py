@@ -35,6 +35,9 @@ SENSITIVE_NON_IDEMPOTENT_PATHS = frozenset(
         # The response contains a raw step-up bearer grant that is returned
         # exactly once and must never be persisted outside browser memory.
         "/api/v1/auth/step-up-grants",
+        "/api/v1/fleet/motive/connect",
+        "/api/v1/fleet/motive/callback",
+        "/api/v1/fleet/motive/webhook/rotate",
     }
 )
 
@@ -56,6 +59,9 @@ class IdempotencyMiddleware:
         if not path.startswith("/api/v1"):
             return False
         if path in SENSITIVE_NON_IDEMPOTENT_PATHS:
+            return False
+        # Telemetry has durable actor/membership-aware replay checks.
+        if path.startswith("/api/v1/fleet/trucks/") and path.endswith("/telemetry-snapshots"):
             return False
         if path.startswith("/api/v1/webhooks/"):
             return False

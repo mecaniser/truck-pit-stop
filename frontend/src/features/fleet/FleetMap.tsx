@@ -1,167 +1,111 @@
-import { memo, useMemo, useState } from 'react'
+import { memo, useEffect, useRef, useState } from 'react'
+import type { Map as MapboxMap, Marker as MapboxMarker } from 'mapbox-gl'
 import type { BoardTruck } from './types'
-import { fleetUnitLabel, STATUS_META } from './helpers'
+import { fleetUnitLabel } from './helpers'
+import { readingCaption, retained, truckCoordinates, truckLocation } from './telemetry'
+import 'mapbox-gl/dist/mapbox-gl.css'
+import './telemetry.css'
 
-// Schematic regional map. Projects real lat/lng into a 0–100 field centered on the
-// yard. When live telematics is connected this component can be swapped for Mapbox GL
-// with the same props — the rest of the UI is unchanged.
-const YARD = { lat: 35.1168, lng: -80.7237 } // Matthews, NC (Truck Pit Stop)
-const HQ = { x: 50, y: 62 }
-const SCALE = 26 // field-units per degree
-
-const ROADS: { name: string; pts: [number, number][] }[] = [
-  { name: 'I-77', pts: [[50, 0], [49, 30], [50, 62], [51, 100]] },
-  { name: 'I-85', pts: [[0, 78], [28, 70], [50, 62], [74, 50], [100, 38]] },
-  { name: 'I-485', pts: [[50, 62], [70, 64], [80, 50], [74, 34], [54, 30], [34, 38], [28, 56], [40, 68], [50, 62]] },
-  { name: 'US-74', pts: [[0, 50], [26, 56], [50, 62], [72, 70], [100, 82]] },
-  { name: 'I-40', pts: [[0, 18], [30, 22], [60, 16], [100, 22]] },
-]
-const pathD = (pts: [number, number][]) => pts.map((p, i) => (i === 0 ? 'M' : 'L') + p[0] + ' ' + p[1]).join(' ')
-const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v))
-
-function project(t: BoardTruck, i: number): { x: number; y: number } {
-  if (t.lat == null || t.lng == null) {
-    // Park units without telemetry around the yard. The golden-angle pattern
-    // keeps every hit target distinct instead of stacking units on one marker.
-    const angle = i * 2.3999632297
-    const radius = 2.2 + Math.sqrt(i) * 1.35
-    return { x: clamp(HQ.x + Math.cos(angle) * radius, 5, 95), y: clamp(HQ.y + Math.sin(angle) * radius, 5, 95) }
-  }
-  return {
-    x: clamp(HQ.x + (t.lng - YARD.lng) * SCALE, 5, 95),
-    y: clamp(HQ.y - (t.lat - YARD.lat) * SCALE, 5, 95),
-  }
-}
-
-function spreadCollisions(trucks: BoardTruck[]): Map<string, { x: number; y: number }> {
-  const base = trucks.map((truck, index) => project(truck, index))
-  const groups = new Map<string, number[]>()
-  base.forEach((point, index) => {
-    const key = `${Math.round(point.x * 2) / 2}:${Math.round(point.y * 2) / 2}`
-    groups.set(key, [...(groups.get(key) || []), index])
-  })
-  const positions = new Map<string, { x: number; y: number }>()
-  groups.forEach((indexes) => {
-    indexes.forEach((index, order) => {
-      const point = base[index]
-      if (indexes.length === 1) {
-        positions.set(trucks[index].id, point)
-        return
-      }
-      const angle = (Math.PI * 2 * order) / indexes.length - Math.PI / 2
-      const radius = 1.65 + Math.floor(order / 8) * 1.25
-      positions.set(trucks[index].id, {
-        x: clamp(point.x + Math.cos(angle) * radius, 5, 95),
-        y: clamp(point.y + Math.sin(angle) * radius, 5, 95),
-      })
+function FleetMap({ trucks, focusId, onSelect, compact }: { trucks: BoardTruck[]; focusId?: string; onSelect?: (t: BoardTruck) => void; compact?: boolean }) {
+  const container = useRef<HTMLDivElement>(null)
+  const [now, setNow] = useState(Date.now)
+  const [error, setError] = useState(false)
+  const [ready, setReady] = useState(0)
+  const mapRef = useRef<MapboxMap>()
+  const moduleRef = useRef<typeof import('mapbox-gl').default>()
+  const markers = useRef<MapboxMarker[]>([])
+  const captions = useRef<{ node: HTMLElement; reading: Parameters<typeof readingCaption>[0]; prefix: string }[]>([])
+  const fitted = useRef(false)
+  const focusRef = useRef<string | undefined>()
+  const locationData = JSON.stringify(trucks.map((truck) => ({ ...truck, telemetry: {
+    ...truck.telemetry, location: truckLocation(truck, now), speed: retained(truck.telemetry?.speed, now),
+  } })))
+  const token = import.meta.env.VITE_MAPBOX_TOKEN || ''
+  const onSelectRef = useRef(onSelect)
+  onSelectRef.current = onSelect
+  useEffect(() => { const timer = window.setInterval(() => setNow(Date.now()), 30000); return () => window.clearInterval(timer) }, [])
+  useEffect(() => {
+    if (!token || !container.current) return
+    let cancelled = false
+    let map: MapboxMap | undefined
+    let observer: ResizeObserver | undefined
+    setError(false)
+    void import('mapbox-gl').then(({ default: mb }) => {
+      if (cancelled || !container.current) return
+      map = new mb.Map({ container: container.current, accessToken: token, style: 'mapbox://styles/mapbox/streets-v12', center: [-98, 39], zoom: 3, attributionControl: true })
+      map.on('error', () => { if (!cancelled) setError(true) })
+      map.addControl(new mb.NavigationControl(), 'top-right')
+      mapRef.current = map
+      moduleRef.current = mb
+      setReady((value) => value + 1)
+      if (typeof ResizeObserver !== 'undefined') { observer = new ResizeObserver(() => map?.resize()); observer.observe(container.current) }
+    }).catch(() => { if (!cancelled) setError(true) })
+    return () => { cancelled = true; observer?.disconnect(); markers.current.forEach((marker) => marker.remove()); markers.current = []; map?.remove(); mapRef.current = undefined; fitted.current = false }
+  }, [token])
+  useEffect(() => {
+    const map = mapRef.current
+    const mb = moduleRef.current
+    if (!map || !mb) return
+    const trucks = JSON.parse(locationData) as BoardTruck[]
+    const now = Date.now()
+    markers.current.forEach((marker) => marker.remove())
+    markers.current = []
+    captions.current = []
+    const groups = new Map<string, { point: [number, number]; trucks: BoardTruck[] }>()
+    trucks.forEach((truck) => {
+      const point = truckCoordinates(truck, now)
+      if (!point) return
+      const key = point.join(',')
+      const group = groups.get(key) || { point, trucks: [] }
+      group.trucks.push(truck); groups.set(key, group)
     })
-  })
-  return positions
+    const bounds = new mb.LngLatBounds()
+    groups.forEach(({ point, trucks: members }) => {
+      bounds.extend(point)
+      const button = document.createElement('button')
+      button.className = 'fleet-map-marker'
+      button.type = 'button'
+      button.textContent = members.length > 1 ? String(members.length) : fleetUnitLabel(members[0])
+      button.setAttribute('aria-label', members.length > 1 ? `${members.length} trucks at this reported position` : `Reported position for ${fleetUnitLabel(members[0])}`)
+      const content = document.createElement('div'); content.className = 'fleet-map-popup'
+      members.forEach((truck) => {
+        const select = document.createElement('button'); select.type = 'button'
+        select.textContent = `${fleetUnitLabel(truck)} · ${truck.board_membership_company_name || 'Fleet unavailable'} · ${truckLocation(truck, now)?.label || 'Reported coordinates'}`
+        select.addEventListener('click', () => onSelectRef.current?.(truck))
+        const source = document.createElement('small'); source.textContent = readingCaption(truckLocation(truck, now)!, now)
+        content.append(select, source)
+        captions.current.push({ node: source, reading: truckLocation(truck, now)!, prefix: '' })
+        const speed = retained(truck.telemetry?.speed, now)
+        if (speed) { const metric = document.createElement('small'); metric.textContent = `Reported speed ${speed.value} mph · ${readingCaption(speed, now)}`; content.append(metric); captions.current.push({ node: metric, reading: speed, prefix: `Reported speed ${speed.value} mph · ` }) }
+      })
+      markers.current.push(new mb.Marker({ element: button }).setLngLat(point).setPopup(new mb.Popup({ offset: 20 }).setDOMContent(content)).addTo(map))
+    })
+    const focus = trucks.find((truck) => truck.id === focusId)
+    const focusPoint = focus && truckCoordinates(focus, now)
+    if (focusPoint && (!fitted.current || focusRef.current !== focusId)) map.jumpTo({ center: focusPoint, zoom: 10 })
+    else if (groups.size && !fitted.current) map.fitBounds(bounds, { padding: 55, maxZoom: 11, duration: 0 })
+    fitted.current = groups.size > 0
+    focusRef.current = focusId
+  }, [locationData, focusId, ready])
+  useEffect(() => {
+    captions.current.forEach(({ node, reading, prefix }) => { node.textContent = prefix + readingCaption(reading, now) })
+  }, [now])
+  return <section aria-label="Fleet geographic map">
+    {!token || error ? <p role="status">{!token ? 'Map unavailable: Mapbox access is not configured.' : 'Map could not load. Reported locations remain available below.'}</p> : null}
+    {token && <div ref={container} className={`fleet-geographic-map${compact ? ' fleet-geographic-map--compact' : ''}`} style={error ? { display: 'none' } : undefined} aria-label="Geographic truck positions" />}
+    <p className="telemetry-muted">Last reported positions. Source and age are shown for each truck.</p>
+    <div className="fleet-map-list">{trucks.map((truck) => {
+      const location = truckLocation(truck, now)
+      const coords = truckCoordinates(truck, now)
+      const speed = retained(truck.telemetry?.speed, now)
+      return <button type="button" key={truck.id} aria-current={focusId === truck.id ? 'true' : undefined} onClick={() => onSelect?.(truck)}>
+        <strong>{fleetUnitLabel(truck)}</strong> · {truck.board_membership_company_name || 'Fleet unavailable'} · {location?.label || (coords ? `${coords[1].toFixed(5)}, ${coords[0].toFixed(5)}` : 'Location unknown')}
+        {!coords && <small>No verified coordinates · no map pin</small>}
+        {location && <small>{readingCaption(location, now)}</small>}
+        {speed && <small>Reported speed {speed.value} mph · {readingCaption(speed, now)}</small>}
+      </button>
+    })}</div>
+    {!trucks.length && <p>No trucks in this view.</p>}
+  </section>
 }
-
-function haversine(a: BoardTruck, b: BoardTruck): number {
-  if (a.lat == null || a.lng == null || b.lat == null || b.lng == null) return Infinity
-  const R = 3958.8, toRad = (d: number) => (d * Math.PI) / 180
-  const dLat = toRad(b.lat - a.lat), dLng = toRad(b.lng - a.lng)
-  const h = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(a.lat)) * Math.cos(toRad(b.lat)) * Math.sin(dLng / 2) ** 2
-  return Math.round(2 * R * Math.asin(Math.sqrt(h)))
-}
-
-function FleetMap({
-  trucks, focusId, onSelect, compact,
-}: { trucks: BoardTruck[]; focusId?: string; onSelect?: (t: BoardTruck) => void; compact?: boolean }) {
-  const [hover, setHover] = useState<string | null>(null)
-  const pos = useMemo(() => spreadCollisions(trucks), [trucks])
-  const focus = useMemo(
-    () => focusId ? trucks.find((truck) => truck.id === focusId) || null : null,
-    [focusId, trucks],
-  )
-  const near = useMemo(() => focus
-    ? trucks.filter((truck) => truck.id !== focus.id).map((truck) => ({ t: truck, miles: haversine(focus, truck) }))
-        .filter((candidate) => Number.isFinite(candidate.miles)).sort((a, b) => a.miles - b.miles).slice(0, 3)
-    : [], [focus, trucks])
-  const nearIds = useMemo(() => new Set(near.map((candidate) => candidate.t.id)), [near])
-
-  return (
-    <div className={'fmap' + (compact ? ' fmap--compact' : '')}>
-      <div className="fmap-field">
-        <svg className="fmap-svg" viewBox="0 0 100 100" preserveAspectRatio="none">
-          {Array.from({ length: 11 }).map((_, i) => (
-            <line key={'gx' + i} x1={i * 10} y1={0} x2={i * 10} y2={100} className="fmap-grid" />
-          ))}
-          {Array.from({ length: 11 }).map((_, i) => (
-            <line key={'gy' + i} x1={0} y1={i * 10} x2={100} y2={i * 10} className="fmap-grid" />
-          ))}
-          {ROADS.map((r, i) => <path key={'r' + i} d={pathD(r.pts)} className="fmap-road" />)}
-          {focus && near.map((n, i) => {
-            const f = pos.get(focus.id)!, p = pos.get(n.t.id)!
-            return <line key={'c' + i} x1={f.x} y1={f.y} x2={p.x} y2={p.y} className="fmap-link" />
-          })}
-        </svg>
-
-        {!compact && <span className="fmap-rd-label" style={{ left: '51%', top: '8%' }}>I-77</span>}
-        {!compact && <span className="fmap-rd-label" style={{ left: '12%', top: '70%' }}>I-85</span>}
-        {!compact && <span className="fmap-rd-label" style={{ left: '82%', top: '78%' }}>US-74</span>}
-
-        <div className="fmap-hq" style={{ left: HQ.x + '%', top: HQ.y + '%' }}>
-          <div className="fmap-hq-diamond" />
-          <span className="fmap-hq-label">TPS Yard</span>
-        </div>
-
-        {focus && near.map((n, i) => {
-          const f = pos.get(focus.id)!, p = pos.get(n.t.id)!
-          return (
-            <span key={'d' + i} className="fmap-dist" style={{ left: (f.x + p.x) / 2 + '%', top: (f.y + p.y) / 2 + '%' }}>
-              {n.miles} mi
-            </span>
-          )
-        })}
-
-        {trucks.map((t) => {
-          const meta = STATUS_META[t.status]
-          const unitLabel = fleetUnitLabel(t)
-          const p = pos.get(t.id)!
-          const isFocus = !!focus && t.id === focus.id
-          const dim = !!focus && !isFocus && !nearIds.has(t.id)
-          return (
-            <button
-              key={t.id}
-              className={'fmap-mk' + (isFocus ? ' is-focus' : '') + (dim ? ' is-dim' : '')}
-              style={{ left: p.x + '%', top: p.y + '%', ['--mk' as any]: meta.dot }}
-              onMouseEnter={() => setHover(t.id)}
-              onMouseLeave={() => setHover(null)}
-              onFocus={() => setHover(t.id)}
-              onBlur={() => setHover(null)}
-              onClick={() => onSelect && onSelect(t)}
-              aria-label={`Open ${unitLabel}: ${meta.label}`}
-              title={`${unitLabel} · ${meta.label}`}
-            >
-              <span className={'fmap-mk-dot' + (t.moving ? ' is-moving' : '')} />
-              {(isFocus || hover === t.id) && (
-                <span className="fmap-mk-tag">{unitLabel}</span>
-              )}
-              {hover === t.id && (
-                <span className="fmap-tip" role="tooltip">
-                  <b>{unitLabel}</b> · {meta.label}<br />
-                  {t.location_label || '—'}
-                  {focus && t.id !== focus.id && (
-                    <span className="fmap-tip-d">{haversine(focus, t)} mi from {fleetUnitLabel(focus)}</span>
-                  )}
-                </span>
-              )}
-            </button>
-          )
-        })}
-      </div>
-
-      <div className="fmap-legend">
-        {(Object.keys(STATUS_META) as (keyof typeof STATUS_META)[]).map((k) => (
-          <span key={k} className="fmap-leg"><i style={{ background: STATUS_META[k].dot }} />{STATUS_META[k].label}</span>
-        ))}
-        <span className="fmap-leg"><i className="leg-diamond" />Shop / yard</span>
-      </div>
-    </div>
-  )
-}
-
 export default memo(FleetMap)

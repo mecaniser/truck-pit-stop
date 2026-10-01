@@ -53,6 +53,17 @@ describe('api 401 refresh retry', () => {
     useAuthStore.setState({ isAuthenticated: false, authProvider: null, token: null, refreshToken: null, user: null })
   })
 
+  it.each(['legacy', 'workos'] as const)('never renews or replays a one-use OAuth callback for %s', async (provider) => {
+    useAuthStore.setState({ authProvider: provider })
+    const adapter = vi.fn(unauthorizedOnce())
+    await expect(api.post('/fleet/motive/callback', { code: 'fixture', state: 'fixture' }, {
+      adapter, skipAuthRefresh: true,
+    })).rejects.toMatchObject({ response: { status: 401 } })
+    expect(adapter).toHaveBeenCalledTimes(1)
+    expect(refreshMocks.requestTokenRefresh).not.toHaveBeenCalled()
+    expect(refreshMocks.requestWorkOSSessionRefresh).not.toHaveBeenCalled()
+  })
+
   it('retries a transiently failing refresh, then replays the original request', async () => {
     // First refresh attempt fails with a network error (no response), second succeeds.
     refreshMocks.requestTokenRefresh
