@@ -855,7 +855,12 @@ describe('PriceBuilderPanel pending feedback', () => {
     const trigger = await screen.findByRole('button', { name: count ? `Photos ${count} photo${count === 1 ? '' : 's'} attached` : 'Photos No photos attached' })
     const assertTrigger = (expanded: boolean) => {
       expect(trigger).toHaveAttribute('aria-expanded', String(expanded))
-      expect(within(trigger).getByText(String(count), { exact: true })).toBeVisible()
+      const countLabel = within(trigger).getByText(String(count), { exact: true })
+      expect(countLabel).toBeVisible()
+      expect(countLabel.parentElement).toHaveTextContent(`Photos${count}`)
+      expect(countLabel.parentElement?.parentElement).toHaveClass('text-sm', 'font-semibold')
+      if (count > 0) expect(countLabel).toHaveClass('rounded-full', 'ring-emerald-300', 'bg-emerald-50')
+      else expect(countLabel).not.toHaveClass('ring-emerald-300')
       expect(within(trigger).queryByRole('img')).not.toBeInTheDocument()
       expect(trigger).toHaveClass('whitespace-nowrap', 'shrink-0')
     }

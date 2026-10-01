@@ -4313,7 +4313,17 @@ export default function PriceBuilderPanel({
               aria-expanded={photosOpen}
             >
               <span className="min-w-0">
-                <span className="inline-flex items-center gap-2 text-sm font-semibold text-gray-800"><Camera className="h-4 w-4" /> Photos</span>
+                <span className="inline-flex items-center gap-2 text-sm font-semibold text-gray-800">
+                  <Camera className="h-4 w-4" />
+                  <span>
+                    Photos{repairPhotosData !== undefined && (
+                      <span
+                        aria-hidden="true"
+                        className={`ml-1 inline-block tabular-nums ${repairPhotos.length > 0 ? 'min-w-5 rounded-full bg-emerald-50 px-1 text-center text-emerald-700 ring-1 ring-inset ring-emerald-300' : ''}`}
+                      >{repairPhotos.length}</span>
+                    )}
+                  </span>
+                </span>
                 <span className="sr-only">
                   {repairPhotosData === undefined
                     ? 'Open to view repair photos'
@@ -4326,11 +4336,6 @@ export default function PriceBuilderPanel({
                 {isUploadingRepairPhotos && (
                   <span role="status" aria-label="Uploading photos" className="inline-flex h-4 w-4 shrink-0 items-center justify-center">
                     <Spinner size="xs" />
-                  </span>
-                )}
-                {repairPhotosData !== undefined && (
-                  <span aria-hidden="true" className="text-xs font-medium tabular-nums text-gray-500">
-                    {repairPhotos.length}
                   </span>
                 )}
                 <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gray-100 text-gray-500">
