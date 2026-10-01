@@ -6027,6 +6027,12 @@ html.customer-portal-active {
    bone inspector is its connected secondary surface. */
 .db-parts-workbench { grid-template-rows:auto auto auto auto auto minmax(0,1fr); gap:.55rem; }
 .db-parts-workbench__technical-line em { color:var(--parts-status-warning); font-style:normal; }
+/* The sync age is context for every other figure on this line, so it reads
+   quieter than them until it goes stale — at which point it takes the same
+   warning colour the reorder count uses, because the numbers beside it can no
+   longer be trusted. */
+.db-parts-workbench__stat--sync { color:var(--text-secondary); }
+.db-parts-workbench__stat--sync[data-stale="true"] { color:var(--parts-status-warning); }
 .db-parts-workbench__summary .db-parts-workbench__add-part { min-block-size:44px; padding:.55rem .85rem; border:1px solid var(--parts-oxide); border-radius:.75rem; background:var(--parts-oxide); color:var(--parts-oxide-foreground); font-weight:750; }
 .db-parts-workbench__summary .db-parts-workbench__add-part svg { inline-size:1rem; }
 .db-parts-workbench__views button > .db-parts-workbench__view-count { display:inline; min-inline-size:0; min-block-size:0; padding:0; border:0; border-radius:0; color:var(--text-secondary); font-family:var(--font-mono,ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace); font-size:.68rem; font-variant-numeric:tabular-nums; }
