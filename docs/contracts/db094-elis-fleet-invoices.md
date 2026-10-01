@@ -118,7 +118,7 @@ is requested. The source API can ship without making that authorization guess.
 
 ## Historical bill-to review and mapping follow-up
 
-Migration 150 leaves preexisting `Invoice.billed_customer_id` values null.
+Migration 151 leaves preexisting `Invoice.billed_customer_id` values null.
 The customer merge endpoint moves the loser's repair orders to the winner and
 deletes the loser, while invoices remain attached to those orders. Therefore
 `RepairOrder.customer_id` after a merge, current customer/vehicle ownership,
@@ -129,26 +129,40 @@ for display but must inspect and record evidence for every invoice.
 
 ### Evidence and owner action
 
-Create a tenant-owned, append-only evidence record per historical invoice.
-It records invoice and repair-order IDs, source type and stable source reference,
-document/content hash, capture time, the original bill-to identity shown by
+Create a tenant-owned evidence record per historical invoice, with immutable
+source fields and a restricted copy of the source artifact. Staff upload the
+actual PDF, source JSON, or original email; the server computes its hash. It
+records invoice and repair-order IDs, source type and stable source reference,
+source bytes and content hash, capture time, the original bill-to identity shown by
 the source (customer ID where genuinely preserved, otherwise an explicit
 unknown ID plus verified legal name/reference), and any merge lineage used.
 Acceptable sources are an immutable original invoice/receipt, preserved source
 system record, or contemporaneous billing correspondence with an attributable
 recipient. A regenerated DieselBridge PDF, current RO/customer/vehicle fields,
 VIN match, or owner assertion alone cannot establish the original bill-to.
-Store source documents in restricted storage; the feed exposes none of their
-contents or customer contacts. Preserve their hash and reference after an
-approval is undone.
+Only same-tenant staff can download source documents; the feed exposes none of
+their contents or customer contacts. A different staff member must inspect
+the stored artifact and record the observed invoice number, bill-to name,
+target customer ID, matching server-computed hash, and verification note.
+The uploader cannot verify their own evidence. The owner can approve only
+evidence verified for that exact target. Preserve source bytes, hash, and
+reference after an approval is undone.
 
 The shop owner sees the invoice identity, original-evidence summary, proposed
 active bill-to customer, and any merge lineage before deciding. Approval
-requires a reason, evidence ID, target active customer ID, and an explicit
+requires a reason, verified evidence ID, target active customer ID, and an explicit
 attestation that the target is the same legal bill-to (or a documented lawful
 successor) shown by the original evidence. The original identity and evidence
 remain immutable; the approved export target is a separate, versioned mapping.
-If the legal continuity is not supported, leave the case pending. The owner
+The initial implementation requires the target's active legal name to match
+the observed bill-to name and holds cases where multiple active customers in
+the shop share that name. A target name change after verification invalidates
+the approval, and an approved target's legal-name change or deletion is blocked
+until its mapping is revoked. Different-name successors and duplicate-name
+accounts remain pending until separate stable-identity or lineage evidence and
+verification are implemented; a typed customer ID or merge-reference string
+alone never authorizes them. If legal continuity
+is not supported, leave the case pending. The owner
 may reject or revoke a mapping with a reason. Only the shop owner may approve,
 change, or revoke; API keys cannot perform review. Edits use a version
 precondition and idempotency key so stale or repeated submissions cannot
@@ -170,8 +184,10 @@ under the old scope and emits a durable `access_removed` event to that
 bill-to's feed, carrying only shop ID, invoice ID, event ID/revision, and
 effective time. It is not represented as a financial cancellation or void.
 Approval emits an `invoice` representation with a new revision. These events
-must survive key rotation and customer merge so a later key for the same
-bill-to scope can reconcile prior imports. Page ordering and cursor/watermark
+survive key rotation. Customer merge/deletion is blocked while a reviewed
+mapping or scoped removal event exists, since deleting the old bill-to would
+make its key unusable before ELIS can reconcile. A future reconciliation
+acknowledgment is needed before that merge path can reopen. Page ordering and cursor/watermark
 semantics cover mapping events as well as normal invoice changes; repeated
 windows and interrupted pages are idempotent. ELIS marks an imported invoice
 as access/review required on removal and flags any accepted expense for owner
@@ -191,7 +207,7 @@ historical mapping is made by the migration.
 Add separate historical evidence, versioned mapping/decision, and scoped
 export-change storage with tenant-aware keys and uniqueness for one active
 mapping per invoice. Migrate schema only; leave all old invoices pending and
-keep migration 150's null snapshots unchanged. Backfill candidates may be
+keep migration 151's null snapshots unchanged. Backfill candidates may be
 listed for review without granting access. Rollout requires a dry run count by
 tenant and proposed target, sampled source-document verification, and explicit
 owner decisions before any key can retrieve newly mapped history.

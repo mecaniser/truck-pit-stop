@@ -18,6 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.dependencies import get_current_active_user, get_db
 from app.db.models.customer import Customer
 from app.db.models.fleet_invoice_api_key import FleetInvoiceApiKey
+from app.db.models.historical_invoice_export import HistoricalInvoiceMapping, FleetInvoiceScopeEvent
 from app.db.models.invoice import Invoice, InvoiceStatus
 from app.db.models.repair_order import RepairOrder
 from app.db.models.tenant import Tenant
@@ -142,7 +143,10 @@ def _scope(key: FleetInvoiceApiKey):
     return (
         Invoice.tenant_id == key.tenant_id,
         RepairOrder.tenant_id == key.tenant_id,
-        Invoice.billed_customer_id == key.customer_id,
+        or_(Invoice.billed_customer_id == key.customer_id,
+            and_(Invoice.billed_customer_id.is_(None),
+                 HistoricalInvoiceMapping.tenant_id == key.tenant_id,
+                 HistoricalInvoiceMapping.target_customer_id == key.customer_id)),
         Customer.id == key.customer_id,
         Customer.tenant_id == key.tenant_id,
         Vehicle.tenant_id == key.tenant_id,
@@ -155,7 +159,11 @@ def _scope(key: FleetInvoiceApiKey):
 def _invoice_query(key: FleetInvoiceApiKey):
     return (select(Invoice, RepairOrder, Customer, Vehicle)
             .join(RepairOrder, Invoice.repair_order_id == RepairOrder.id)
-            .join(Customer, Invoice.billed_customer_id == Customer.id)
+            .outerjoin(HistoricalInvoiceMapping,
+                       HistoricalInvoiceMapping.invoice_id == Invoice.id)
+            .join(Customer, or_(Invoice.billed_customer_id == Customer.id,
+                                and_(Invoice.billed_customer_id.is_(None),
+                                     HistoricalInvoiceMapping.target_customer_id == Customer.id)))
             .join(Vehicle, RepairOrder.vehicle_id == Vehicle.id)
             .where(*_scope(key)))
 
@@ -165,8 +173,10 @@ def _effective_updated_at():
         (Invoice.updated_at >= RepairOrder.updated_at, Invoice.updated_at),
         else_=RepairOrder.updated_at,
     )
-    return case((invoice_or_order >= Vehicle.updated_at, invoice_or_order),
+    base = case((invoice_or_order >= Vehicle.updated_at, invoice_or_order),
                 else_=Vehicle.updated_at)
+    return case((HistoricalInvoiceMapping.updated_at > base,
+                 HistoricalInvoiceMapping.updated_at), else_=base)
 
 
 def _utc(value: datetime) -> datetime:
@@ -174,17 +184,17 @@ def _utc(value: datetime) -> datetime:
 
 
 def _cursor_encode(key: FleetInvoiceApiKey, since: datetime, before: datetime,
-                   updated_at: datetime, invoice_id: UUID) -> str:
+                   updated_at: datetime, kind: int, item_id: UUID) -> str:
     updated_at = _utc(updated_at)
     payload = json.dumps([str(key.id), since.isoformat(), before.isoformat(),
-                          updated_at.isoformat(), str(invoice_id)], separators=(",", ":"))
+                          updated_at.isoformat(), kind, str(item_id)], separators=(",", ":"))
     encoded = base64.urlsafe_b64encode(payload.encode()).decode().rstrip("=")
     signature = hmac.new(key.key_hash.encode(), encoded.encode(), hashlib.sha256).hexdigest()
     return f"{encoded}.{signature}"
 
 
 def _cursor_decode(value: str, key: FleetInvoiceApiKey,
-                   since: datetime, before: datetime) -> tuple[datetime, UUID]:
+                   since: datetime, before: datetime) -> tuple[datetime, int, UUID]:
     try:
         if len(value) > 512:
             raise ValueError("oversized cursor")
@@ -193,14 +203,16 @@ def _cursor_decode(value: str, key: FleetInvoiceApiKey,
         if not hmac.compare_digest(signature, expected):
             raise ValueError("bad signature")
         raw = base64.urlsafe_b64decode(encoded + "=" * (-len(encoded) % 4))
-        key_id, saved_since, saved_before, timestamp, invoice_id = json.loads(raw)
+        key_id, saved_since, saved_before, timestamp, kind, item_id = json.loads(raw)
         if (key_id != str(key.id) or saved_since != since.isoformat()
                 or saved_before != before.isoformat()):
             raise ValueError("wrong cursor scope")
         dt = datetime.fromisoformat(timestamp)
         if dt.tzinfo is None:
             raise ValueError("timezone required")
-        return dt, UUID(invoice_id)
+        if kind not in (0, 1):
+            raise ValueError("invalid item kind")
+        return dt, kind, UUID(item_id)
     except (ValueError, TypeError, IndexError, UnicodeDecodeError, binascii.Error):
         raise HTTPException(status_code=422, detail="Invalid cursor") from None
 
@@ -300,21 +312,40 @@ async def list_invoices(
         effective >= updated_since,
         effective < updated_before,
     )
+    events = select(FleetInvoiceScopeEvent).where(
+        FleetInvoiceScopeEvent.tenant_id == key.tenant_id,
+        FleetInvoiceScopeEvent.customer_id == key.customer_id,
+        FleetInvoiceScopeEvent.effective_at >= updated_since,
+        FleetInvoiceScopeEvent.effective_at < updated_before,
+    )
     if cursor:
-        cursor_at, cursor_id = _cursor_decode(cursor, key, updated_since, updated_before)
-        if cursor_at < updated_since or cursor_at > updated_before:
+        cursor_at, cursor_kind, cursor_id = _cursor_decode(cursor, key, updated_since, updated_before)
+        if cursor_at < updated_since or cursor_at >= updated_before:
             raise HTTPException(status_code=422, detail="Cursor outside sync window")
         query = query.where(or_(effective > cursor_at,
-                                and_(effective == cursor_at, Invoice.id > cursor_id)))
+                                and_(effective == cursor_at, cursor_kind == 0,
+                                     Invoice.id > cursor_id)))
+        events = events.where(or_(FleetInvoiceScopeEvent.effective_at > cursor_at,
+                                  and_(FleetInvoiceScopeEvent.effective_at == cursor_at,
+                                       or_(cursor_kind == 0, FleetInvoiceScopeEvent.id > cursor_id))))
     rows = (await db.execute(query.order_by(effective, Invoice.id).limit(limit + 1))).all()
-    page = rows[:limit]
+    removal_rows = (await db.execute(events.order_by(FleetInvoiceScopeEvent.effective_at,
+                                                    FleetInvoiceScopeEvent.id).limit(limit + 1))).scalars().all()
+    combined = [(effective_at, 0, inv.id, _item(inv, order, vehicle, effective_at))
+                for inv, order, _customer, vehicle, effective_at in rows]
+    combined += [(event.effective_at, 1, event.id, {
+        "event_type": "access_removed", "shop_id": str(event.tenant_id),
+        "invoice_id": str(event.invoice_id), "event_id": str(event.id),
+        "effective_updated_at": _utc(event.effective_at).isoformat(),
+    }) for event in removal_rows]
+    combined.sort(key=lambda row: (_utc(row[0]), row[1], row[2]))
+    page = combined[:limit]
     next_cursor = _cursor_encode(key, updated_since, updated_before,
-                                 page[-1][4], page[-1][0].id) if len(rows) > limit else None
+                                 page[-1][0], page[-1][1], page[-1][2]) if len(combined) > limit else None
     key.last_used_at = datetime.now(timezone.utc)
     await db.commit()
     response.headers["Cache-Control"] = "no-store"
-    return {"items": [_item(inv, order, vehicle, effective_at)
-                      for inv, order, _customer, vehicle, effective_at in page],
+    return {"items": [row[3] for row in page],
             "next_cursor": next_cursor, "watermark": updated_before.isoformat()}
 
 

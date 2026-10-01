@@ -238,8 +238,8 @@ def test_cursor_rejects_bad_input_and_round_trips():
     key = exports.FleetInvoiceApiKey(id=uuid4(), key_hash="a" * 64)
     since = now - timedelta(days=1)
     before = now + timedelta(days=1)
-    cursor = exports._cursor_encode(key, since, before, now, invoice_id)
-    assert exports._cursor_decode(cursor, key, since, before) == (now, invoice_id)
+    cursor = exports._cursor_encode(key, since, before, now, 0, invoice_id)
+    assert exports._cursor_decode(cursor, key, since, before) == (now, 0, invoice_id)
     with pytest.raises(Exception) as error:
         exports._cursor_decode("not-a-valid-cursor", key, since, before)
     assert error.value.status_code == 422

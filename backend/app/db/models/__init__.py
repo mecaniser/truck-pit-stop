@@ -89,6 +89,10 @@ from app.db.models.description_library import DescriptionLibraryEntry
 from app.db.models.provider_outbox import ProviderOutboxEvent, ProviderOutboxStatus
 from app.db.models.conversion_api_key import ConversionApiKey
 from app.db.models.fleet_invoice_api_key import FleetInvoiceApiKey
+from app.db.models.historical_invoice_export import (
+    HistoricalInvoiceEvidence, HistoricalInvoiceMapping,
+    HistoricalInvoiceDecision, FleetInvoiceScopeEvent,
+)
 from app.db.models.conversion_export_audit import ConversionExportAudit
 from app.db.models.repair_order_history import RepairOrderHistoryEvent
 from app.db.models.quickbooks_connection import QuickBooksConnection, QuickBooksOAuthState, QuickBooksWebhookEvent

@@ -4,8 +4,8 @@ from alembic import op
 import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
-revision = "150_fleet_invoice_api_keys"
-down_revision = "149_google_review_reply_model"
+revision = "151_fleet_invoice_api_keys"
+down_revision = "150_pm_saturday_service_day"
 branch_labels = None
 depends_on = None
 
