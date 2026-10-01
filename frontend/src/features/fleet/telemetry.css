@@ -1,10 +1,39 @@
 .telemetry-summary { display: grid; gap: 12px; padding: 14px; border: 1px solid var(--line, #384152); border-radius: 10px; margin: 12px 0; overflow-wrap: anywhere; }
-.telemetry-summary dl { display: grid; grid-template-columns: repeat(auto-fit, minmax(175px, 1fr)); gap: 14px; margin: 0; }
+.telemetry-summary .telemetry-metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 14px; margin: 0; }
 .telemetry-summary dt, .telemetry-muted { color: var(--muted, #a4abb6); font-size: 12px; }
 .telemetry-summary dd { margin: 4px 0; font-size: 18px; font-weight: 650; }
 .telemetry-summary small { display: block; color: var(--muted, #a4abb6); font-size: 11px; line-height: 1.6; }
-.telemetry-summary--compact { padding: 8px; margin: 8px 0; }
-.telemetry-summary--compact dd { font-size: 14px; }
+
+.fleet-root .telemetry-location { display: flex; gap: 8px; align-items: baseline; min-width: 0; }
+.fleet-root .telemetry-location > svg { flex: none; color: var(--muted-2); }
+.fleet-root .telemetry-location strong { font-size: 14px; }
+.fleet-root .telemetry-metric { border-left: 2px solid var(--line-2); padding-left: 12px; min-width: 0; }
+.fleet-root .telemetry-metric dt { display: flex; gap: 5px; align-items: center; }
+.fleet-root .telemetry-metric--speed { border-color: var(--st-shop); }
+.fleet-root .telemetry-metric--speed dd { color: var(--st-shop); }
+.fleet-root .telemetry-metric--fuel { border-color: var(--st-parts); }
+.fleet-root .telemetry-metric--fuel dd { color: var(--st-parts); }
+.fleet-root .telemetry-metric--faults { border-color: var(--yellow); }
+.fleet-root .telemetry-footer { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px 16px; }
+.fleet-root .telemetry-disclosure { display: inline-flex; gap: 6px; align-items: center; min-height: 32px; border: 0; background: none; padding: 4px 0; font-size: 12px; color: var(--muted); }
+.fleet-root .telemetry-disclosure:focus-visible { outline: 2px solid var(--st-shop); outline-offset: 3px; }
+.fleet-root .telemetry-provenance { display: grid; gap: 10px; border-top: 1px solid var(--line); padding-top: 12px; font-size: 12px; }
+.fleet-root .telemetry-summary--compact { grid-template-columns: minmax(0, 1fr) auto; gap: 8px; padding: 10px; margin: 8px 0; align-items: start; }
+.fleet-root .telemetry-summary--compact .telemetry-metrics { display: block; }
+.fleet-root .telemetry-summary--compact .telemetry-metric { border: 0; padding: 6px 8px; border-radius: 6px; background: color-mix(in srgb, var(--st-shop) 10%, transparent); }
+.fleet-root .telemetry-summary--compact dd { font-size: 15px; margin: 2px 0 0; white-space: nowrap; }
+.fleet-root .telemetry-summary--compact dt { font-size: 10px; }
+.fleet-root .telemetry-summary--compact .telemetry-footer { grid-column: 1 / -1; }
+.fleet-root .telemetry-summary--compact small { font-size: 10px; }
+.fleet-root .telemetry-summary--compact .telemetry-metric small { max-width: 110px; }
+.fleet-root .telemetry-capture { margin: 0 0 16px; }
+.fleet-root .telemetry-capture--open { padding: 14px; border: 1px solid var(--line); border-radius: 10px; }
+.fleet-root .telemetry-capture h3 { margin: 16px 0 8px; font-size: 15px; }
+.fleet-root .telemetry-capture p { font-size: 12px; }
+@media (max-width: 480px) {
+  .fleet-root .telemetry-summary:not(.telemetry-summary--compact) .telemetry-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
 .telemetry-form { display: grid; gap: 12px; max-width: 720px; }
 .telemetry-form label { display: grid; gap: 5px; font-size: 13px; }
 .telemetry-form input, .telemetry-form textarea { min-height: 42px; width: 100%; background: var(--surface-2,#18212d); color: var(--text,#eee); padding: 9px; border: 1px solid var(--line,#384152); border-radius: 8px; }
