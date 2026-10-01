@@ -1245,4 +1245,59 @@ describe('DB-038 Parts & inventory workspace', () => {
     expect(within(overview).getByText('$3,900.00')).toBeInTheDocument()
     expect(within(overview).getByText('$2,450.00')).toBeInTheDocument()
   })
+
+  it('states when parts last synced from Easy Truck Shop, and flags a stale sync', async () => {
+    // Every figure on the technical line is mirrored from Easy Truck Shop, so
+    // the line is meaningless without saying how old the mirror is. A sync that
+    // quietly stopped days ago must not read the same as one from this morning.
+    const syncedAt = new Date(Date.now() - 15 * 60 * 60 * 1000).toISOString()
+    {
+      installApi()
+      const served = apiMocks.get.getMockImplementation()!
+      apiMocks.get.mockImplementation((url: string, config?: { params?: Record<string, unknown> }) => {
+        if (url === '/inventory/sync-status') return Promise.resolve({ data: { ets_last_synced_at: syncedAt } })
+        return served(url, config)
+      })
+      renderWorkspace()
+      await screen.findByRole('heading', { name: 'Alternator' })
+
+      const freshness = await screen.findByTestId('parts-sync-freshness')
+      expect(freshness).toHaveTextContent('SYNCED 15H AGO')
+      expect(freshness).not.toHaveAttribute('data-stale', 'true')
+    }
+  })
+
+  it('marks the sync stale once it is older than a day', async () => {
+    const syncedAt = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString()
+    {
+      installApi()
+      const served = apiMocks.get.getMockImplementation()!
+      apiMocks.get.mockImplementation((url: string, config?: { params?: Record<string, unknown> }) => {
+        if (url === '/inventory/sync-status') return Promise.resolve({ data: { ets_last_synced_at: syncedAt } })
+        return served(url, config)
+      })
+      renderWorkspace()
+      await screen.findByRole('heading', { name: 'Alternator' })
+
+      const freshness = await screen.findByTestId('parts-sync-freshness')
+      expect(freshness).toHaveTextContent('SYNCED 2D AGO')
+      expect(freshness).toHaveAttribute('data-stale', 'true')
+    }
+  })
+
+  it('says so plainly when parts have never synced', async () => {
+    installApi()
+    const served = apiMocks.get.getMockImplementation()!
+    apiMocks.get.mockImplementation((url: string, config?: { params?: Record<string, unknown> }) => {
+      if (url === '/inventory/sync-status') return Promise.resolve({ data: { ets_last_synced_at: null } })
+      return served(url, config)
+    })
+    renderWorkspace()
+    await screen.findByRole('heading', { name: 'Alternator' })
+
+    const freshness = await screen.findByTestId('parts-sync-freshness')
+    expect(freshness).toHaveTextContent('NEVER SYNCED')
+    expect(freshness).toHaveAttribute('data-stale', 'true')
+  })
+
 })

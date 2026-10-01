@@ -658,6 +658,30 @@ export default function PartsInventoryWorkspace({ summary }: { summary: Summary 
     : summary.needs_reorder_count ?? summary.low_stock_count ?? 0
   const counterSalesEnabled = Boolean(summary.capabilities?.counter_sales)
 
+  // Every figure on the technical line is mirrored from Easy Truck Shop by the
+  // nightly sync, so the line is incomplete without saying how old the mirror
+  // is. The sync has failed silently before — a run that aborts still leaves
+  // yesterday's numbers rendering as though they were current.
+  const { data: syncStatus } = useQuery<{ ets_last_synced_at: string | null }>({
+    queryKey: ['inventory-sync-status'],
+    queryFn: async () => (await api.get('/inventory/sync-status')).data,
+    staleTime: 60_000,
+  })
+  const syncFreshness = useMemo(() => {
+    if (!syncStatus) return null
+    const raw = syncStatus.ets_last_synced_at
+    if (!raw) return { label: 'NEVER SYNCED', stale: true, title: 'Parts have never synced from Easy Truck Shop.' }
+    const at = new Date(raw)
+    if (Number.isNaN(at.getTime())) return null
+    const hours = Math.floor((Date.now() - at.getTime()) / 3_600_000)
+    // The sync runs nightly, so anything past a day means a run was missed.
+    const stale = hours >= 26
+    const label = hours < 1 ? 'SYNCED JUST NOW'
+      : hours < 24 ? `SYNCED ${hours}H AGO`
+      : `SYNCED ${Math.floor(hours / 24)}D AGO`
+    return { label, stale, title: `Last synced from Easy Truck Shop: ${at.toLocaleString()}` }
+  }, [syncStatus])
+
   // A delivery landing against the part, not a purchase order: adds to stock
   // and draws the on-order figure down. Purchasing owns PO receiving; this is
   // the ad-hoc "it arrived" path the previous inventory page had.
@@ -780,7 +804,7 @@ export default function PartsInventoryWorkspace({ summary }: { summary: Summary 
 
   return <section className="db-parts-workbench" aria-labelledby="parts-workbench-title">
     <header className="db-parts-workbench__header">
-      <div><h1 id="parts-workbench-title">Parts</h1><p className="db-parts-workbench__technical-line"><span className="db-parts-workbench__stat">{allPartsCount ?? firstPartsPage?.total ?? '—'} TRACKED /</span> <span className="db-parts-workbench__stat"><em>{needsReorderCount} NEEDS REORDER</em> /</span> <span className="db-parts-workbench__stat">{summary.open_purchase_order_count} OPEN PURCHASE ORDERS{summary.total_stock_value == null ? '' : ' /'}</span>{summary.total_stock_value == null ? null : <> <span className="db-parts-workbench__stat">{formatMoney(money(summary.total_stock_value))} STOCK VALUE</span></>}</p></div>
+      <div><h1 id="parts-workbench-title">Parts</h1><p className="db-parts-workbench__technical-line"><span className="db-parts-workbench__stat">{allPartsCount ?? firstPartsPage?.total ?? '—'} TRACKED /</span> <span className="db-parts-workbench__stat"><em>{needsReorderCount} NEEDS REORDER</em> /</span> <span className="db-parts-workbench__stat">{summary.open_purchase_order_count} OPEN PURCHASE ORDERS{summary.total_stock_value == null ? '' : ' /'}</span>{summary.total_stock_value == null ? null : <> <span className="db-parts-workbench__stat">{formatMoney(money(summary.total_stock_value))} STOCK VALUE</span></>}{syncFreshness == null ? null : <> <span className="db-parts-workbench__stat db-parts-workbench__stat--sync" data-testid="parts-sync-freshness" data-stale={syncFreshness.stale ? 'true' : undefined} title={syncFreshness.title}>/ {syncFreshness.label}</span></>}</p></div>
       <div className="db-parts-workbench__summary" aria-label="Parts summary">
         {counterSalesEnabled && <button className="db-parts-workbench__sales-link" type="button" onClick={() => navigate('/dashboard/garage/inventory/sales')}>Parts sales<ArrowRight aria-hidden="true" /></button>}
         {manage && <button className="db-parts-workbench__add-part" type="button" onClick={() => setAddPartOpen(true)}><Plus aria-hidden="true" />Add Part</button>}
