@@ -840,6 +840,39 @@ describe('PriceBuilderPanel pending feedback', () => {
     expect(screen.queryByText('Card processing fee')).not.toBeInTheDocument()
   })
 
+  it.each([0, 1, 2, 12])('shows only the count for %i photos in both disclosure states', async (count) => {
+    const photos = Array.from({ length: count }, (_, index) => ({
+      id: `photo-${index}`, repair_order_id: 'order-1',
+      image_url: `https://example.com/repair-${index}.jpg`,
+      caption: `Repair detail ${index}`, uploaded_at: '2026-10-01T12:00:00Z',
+      uploader_name: 'Shop Admin',
+    }))
+    apiMocks.get.mockImplementation((url: string) => Promise.resolve({
+      data: url.endsWith('/price-build') ? emptySummary : url.endsWith('/photos') ? photos : [],
+    }))
+    const user = userEvent.setup()
+    renderPanel()
+    const trigger = await screen.findByRole('button', { name: count ? `Photos ${count} photo${count === 1 ? '' : 's'} attached` : 'Photos No photos attached' })
+    const assertTrigger = (expanded: boolean) => {
+      expect(trigger).toHaveAttribute('aria-expanded', String(expanded))
+      const countLabel = within(trigger).getByText(String(count), { exact: true })
+      expect(countLabel).toBeVisible()
+      expect(countLabel.parentElement).toHaveTextContent(`Photos${count}`)
+      expect(countLabel.parentElement?.parentElement).toHaveClass('text-sm', 'font-semibold')
+      if (count > 0) expect(countLabel).toHaveClass('rounded-full', 'ring-emerald-300', 'bg-emerald-50')
+      else expect(countLabel).not.toHaveClass('ring-emerald-300')
+      expect(within(trigger).queryByRole('img')).not.toBeInTheDocument()
+      expect(trigger).toHaveClass('whitespace-nowrap', 'shrink-0')
+    }
+    assertTrigger(false)
+    await user.click(trigger)
+    assertTrigger(true)
+    for (const photo of photos) expect(screen.getByRole('img', { name: photo.caption })).toBeVisible()
+    await user.click(trigger)
+    assertTrigger(false)
+    expect(screen.queryByRole('img')).not.toBeInTheDocument()
+  })
+
   it('hides the repair photos section on a finalized order when no photos are attached', async () => {
     apiMocks.get.mockImplementation((url: string) => {
       if (url === '/repair-orders/order-1/price-build') return Promise.resolve({ data: emptySummary })
