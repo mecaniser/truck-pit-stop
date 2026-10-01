@@ -65,3 +65,16 @@ See `docs/DB-036_MOTIVE_SETUP.md`. This UI change does not activate collection.
 PR448, implementation `5eaa33e4`, ready for review; not merged or deployed. Authenticated production smoke check
 must follow an approved release. The earlier manual integration PR443 was merged
 at `73675fd0`; that does not deploy this follow-up.
+
+## Main reconciliation — 2026-10-01
+
+Integrated `c282a2b5` (PR447) into PR448. Only PROJECT_BOARD.md conflicted;
+both sets of entries were retained. Telemetry implementation, fixtures and tests
+are byte-identical to `e8c005d3`; imported PriceBuilderPanel, its tests and global
+CSS are byte-identical to current main. The new global CSS rules are scoped to
+the price builder. All 38 focused tests pass again; diff-check passes. No new
+browser run is needed for the documentation-only conflict resolution; prior
+synthetic acceptance and its authenticated-runtime limitation remain unchanged.
+Other open PRs449 and442 overlap this PR only in the delivery board. No pending
+PR implementation was pulled into this branch. All six predecessor CI checks
+passed; successor checks rerun after this push. Not merged/deployed.

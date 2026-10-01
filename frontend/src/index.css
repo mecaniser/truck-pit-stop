@@ -4052,6 +4052,12 @@ html::-webkit-scrollbar-thumb:hover {
 }
 .db-workspace-secondary > button,
 .db-workspace-photos > button { order: 0; width: auto; border: 1px solid #e5e7eb; border-radius: 8px; padding: 6px 10px; gap: 6px; }
+.db-price-builder .db-workspace-secondary > button[aria-expanded="true"],
+.db-price-builder .db-workspace-photos > button[aria-expanded="true"] {
+  background: var(--accent-soft, #fff7ed);
+  border-color: var(--accent, #f97316);
+  box-shadow: inset 0 0 0 1px var(--accent, #f97316);
+}
 .db-workspace-secondary > button > span:nth-child(2) { display: none; }
 .db-workspace-secondary > div:not(.db-workspace-photos),
 .db-workspace-photos > div { order: 1; flex-basis: 100%; min-width: 0; }
