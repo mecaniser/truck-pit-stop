@@ -44,7 +44,8 @@ Branch: `codex/fleet-telemetry-compact`; base `ab0724c3`.
 Controller switch dry-run blocks on missing approved `backend/.env`. At preflight
 ports 5173/8000 were unbound. The isolated frontend fixture was served from this
 worktree on 127.0.0.1:5173 by Vite PID6645; cwd and command confirmed. HTTP fixture
-returned 200 and browser rendered the changed source. Proxy remains the default
+returned 200 and browser rendered the changed source. The task-owned fixture server
+was stopped after acceptance; the screenshots remain available. Proxy remains the default
 127.0.0.1:8000, but the fixture handles requests in memory and uses no backend or
 provider. No database, shared service, credentials or production records changed.
 Authenticated local full-stack acceptance remains blocked on runtime configuration.
@@ -61,6 +62,6 @@ See `docs/DB-036_MOTIVE_SETUP.md`. This UI change does not activate collection.
 
 ## Release state
 
-Ready for review; not merged or deployed. Authenticated production smoke check
+PR448, implementation `5eaa33e4`, ready for review; not merged or deployed. Authenticated production smoke check
 must follow an approved release. The earlier manual integration PR443 was merged
 at `73675fd0`; that does not deploy this follow-up.
