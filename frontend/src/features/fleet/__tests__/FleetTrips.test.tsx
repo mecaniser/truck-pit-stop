@@ -12,7 +12,7 @@ const truck = { id: 'truck-1', unit_number: '101', display_unit_number: 'Example
 const other = { ...truck, id: 'truck-2', unit_number: '102', display_unit_number: 'Example Fleet 102' }
 const response: FleetTripsResponse = {
   items: [{ id: 'trip-1', vehicle_id: truck.id, unit_number: '101', fleet_customer_id: 'fleet-1', fleet_name: 'Example Fleet', started_at: '2026-10-02T13:00:00Z', ended_at: '2026-10-02T14:00:00Z', origin_label: 'First City, NC', destination_label: 'Second City, NC', distance_miles: 40, driving_seconds: 3600, captured_at: '2026-10-02T15:00:00Z', source: 'motive_dashboard_manual', stops: null }],
-  summary: { trip_count: 1, distance_miles: 40, driving_seconds: 3600 }, total: 1, limit: 50, offset: 0, timezone: 'America/New_York', start_date: '2026-10-02', end_date: '2026-10-02',
+  summary: { coverage: 'partial', truck_count: 1, trip_count: 1, distance_miles: 40, driving_seconds: 3600 }, total: 1, limit: 50, offset: 0, timezone: 'America/New_York', start_date: '2026-10-02', end_date: '2026-10-02',
 }
 function setup(filters: TripFilters = { vehicleId: truck.id, start: '2026-10-02', end: '2026-10-02' }) {
   const open = vi.fn()
@@ -23,6 +23,23 @@ function setup(filters: TripFilters = { vehicleId: truck.id, start: '2026-10-02'
 beforeEach(() => { api.get.mockReset(); api.get.mockResolvedValue({ data: response }) })
 const emptyMetrics = { fuel_used_gallons: null, trip_mpg: null, estimated_fuel_gallons: null, idle_seconds: null, fuel_start_percent: null, fuel_end_percent: null, estimate_baseline_mpg: null, estimate_baseline_captured_at: null, estimate_baseline_period: null }
 describe('Fleet trip history', () => {
+  it('shows full-fleet totals and coverage even when the page contains only one truck', async () => {
+    api.get.mockResolvedValue({ data: { ...response, summary: { coverage: 'partial', truck_count: 13, trip_count: 342, distance_miles: 25072.67, driving_seconds: 1634303 }, total: 342 } })
+    setup({ vehicleId: '', start: '2026-09-28', end: '2026-10-02', preset: 'week' })
+    const totals = await screen.findByLabelText('Imported trip totals')
+    expect(totals).toHaveTextContent('13Trucks with trips')
+    expect(totals).toHaveTextContent('342Trips')
+    expect(totals).toHaveTextContent('25,072.7 mi')
+    expect(totals).toHaveTextContent('453h 58m')
+    expect(screen.getByText(/Partial history/)).toBeInTheDocument()
+    expect(api.get).toHaveBeenCalledWith('/fleet/trips', expect.objectContaining({ params: expect.objectContaining({ vehicle_id: undefined }) }))
+    await userEvent.selectOptions(screen.getByLabelText('Truck'), truck.id)
+    await waitFor(() => expect(api.get).toHaveBeenLastCalledWith('/fleet/trips', expect.objectContaining({ params: expect.objectContaining({ vehicle_id: truck.id }) })))
+  })
+  it('shows seconds for short trips rather than zero minutes', async () => {
+    api.get.mockResolvedValue({ data: { ...response, items: [{ ...response.items[0], driving_seconds: 14, ended_at: response.items[0].started_at, timestamp_precision: 'minute' }] } })
+    setup(); expect(await screen.findByRole('button', { name: /First City/ })).toHaveTextContent('14s')
+  })
   it('labels baseline fuel estimates and never presents them as trip efficiency', async () => {
     api.get.mockResolvedValue({ data: { ...response, items: [{ ...response.items[0], metrics: { ...emptyMetrics, estimated_fuel_gallons: 40 / 6.5, estimate_baseline_mpg: 6.5, estimate_baseline_period: 'last_30_days', estimate_baseline_captured_at: '2026-10-02T15:00:00Z', idle_seconds: 240 } }] } })
     setup(); await userEvent.click(await screen.findByRole('button', { name: /First City/ }))
@@ -93,7 +110,7 @@ describe('Fleet trip history', () => {
     setup({ vehicleId: '', start: '2026-08-01', end: '2026-10-02' }); expect(screen.getByRole('alert')).toHaveTextContent('31 days'); expect(api.get).not.toHaveBeenCalled()
   })
   it('distinguishes missing imported history from no driving', async () => {
-    api.get.mockResolvedValue({ data: { ...response, items: [], total: 0, summary: { trip_count: 0, distance_miles: 0, driving_seconds: 0 } } }); setup()
+    api.get.mockResolvedValue({ data: { ...response, items: [], total: 0, summary: { coverage: 'partial', truck_count: 0, trip_count: 0, distance_miles: 0, driving_seconds: 0 } } }); setup()
     expect(await screen.findByText('No imported trips')).toBeInTheDocument(); expect(screen.queryByText(/no driving/i)).not.toBeInTheDocument()
   })
   it('shows errors instead of misleading zero totals, and retries', async () => {
@@ -107,7 +124,7 @@ describe('Fleet trip history', () => {
     expect(screen.getByText('Rest stop')).toBeInTheDocument(); expect(screen.queryByText(/0m idle|1970/)).not.toBeInTheDocument()
   })
   it('paginates without changing full-period totals', async () => {
-    api.get.mockResolvedValue({ data: { ...response, total: 51, summary: { trip_count: 51, distance_miles: 2040, driving_seconds: 183600 } } }); setup()
+    api.get.mockResolvedValue({ data: { ...response, total: 51, summary: { coverage: 'partial', truck_count: 2, trip_count: 51, distance_miles: 2040, driving_seconds: 183600 } } }); setup()
     await userEvent.click(await screen.findByRole('button', { name: 'Next' }))
     await waitFor(() => expect(api.get).toHaveBeenLastCalledWith('/fleet/trips', expect.objectContaining({ params: expect.objectContaining({ offset: 50 }) })))
     expect(screen.getByLabelText('Imported trip totals')).toHaveTextContent('2,040')

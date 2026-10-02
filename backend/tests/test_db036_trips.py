@@ -63,7 +63,7 @@ async def test_import_retry_conflict_summary_and_preservation(db_session, monkey
     assert vehicle.mileage == 100
     page = await list_trips(db_session, actor.tenant_id, (now()-timedelta(days=1)).date(), now().date(), "UTC", limit=1, offset=1)
     assert page["items"] == []
-    assert page["summary"] == dict(trip_count=1, distance_miles=40, driving_seconds=3600)
+    assert page["summary"] == dict(trip_count=1, truck_count=1, coverage="partial", distance_miles=40, driving_seconds=3600)
     foreign = await list_trips(db_session, uuid4(), (now()-timedelta(days=1)).date(), now().date(), "UTC")
     assert foreign["total"] == 0
     with pytest.raises(HTTPException) as exc:
@@ -244,7 +244,7 @@ async def test_metrics_import_roundtrip_retry_and_legacy_hash(db_session, monkey
     await db_session.commit()
     d = document()
     old_row = parse_rows(d, now())[0]
-    old_payload = old_row.model_dump(mode="json", exclude={"source_read_at", "metrics"})
+    old_payload = old_row.model_dump(mode="json", exclude={"source_read_at", "metrics", "timestamp_precision"})
     assert digest(old_row) == hashlib.sha256(json.dumps(old_payload, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
     from app.schemas.fleet_trip import TripMetrics
     old_row.metrics = TripMetrics()

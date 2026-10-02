@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { ArrowLeft, ArrowRight, ChevronDown, Clock3, MapPin, Route } from 'lucide-react'
+import { ArrowLeft, ArrowRight, ChevronDown, Clock3, MapPin, Route, Truck } from 'lucide-react'
 import api from '@/lib/api'
 import DatePicker from '@/components/DatePicker'
 import { validDay } from '@/components/calendarGrid'
@@ -21,17 +21,19 @@ export interface FleetTrip {
   fleet_customer_id: string; fleet_name: string | null
   started_at: string; ended_at: string; origin_label: string; destination_label: string
   distance_miles: number; driving_seconds: number; captured_at: string
+  timestamp_precision?: 'second' | 'minute'
   metrics?: TripMetrics | null
   source: 'motive_dashboard_manual'
   stops: { location_label: string; arrived_at: string | null; departed_at: string | null; idle_seconds: number | null }[] | null
 }
 export interface FleetTripsResponse {
-  items: FleetTrip[]; summary: { trip_count: number; distance_miles: number; driving_seconds: number }
+  items: FleetTrip[]; summary: { truck_count: number; trip_count: number; distance_miles: number; driving_seconds: number; coverage: 'partial' }
   total: number; limit: number; offset: number; timezone: string; start_date: string; end_date: string
 }
 export interface TripFilters { vehicleId: string; start: string; end: string; preset?: TripPreset | 'custom' }
 const number = (value: number) => value.toLocaleString(undefined, { maximumFractionDigits: 1 })
 function duration(seconds: number) {
+  if (seconds > 0 && seconds < 60) return `${seconds}s`
   const minutes = Math.round(seconds / 60)
   return minutes >= 60 ? `${Math.floor(minutes / 60)}h ${minutes % 60}m` : `${minutes}m`
 }
@@ -60,7 +62,7 @@ export default function FleetTrips({ trucks, filters, onFilters, onOpenTruck }: 
   return (
     <section className="fleet-trips" aria-label="Trip history">
       <div className="trips-heading">
-        <div><h2>Trip history</h2><p>Imported trips · {timezone.replace(/_/g, ' ')}</p></div>
+        <div><h2>Trip history</h2><p>{timezone.replace(/_/g, ' ')}</p></div>
         {selectedTruck && <button type="button" className="dbtn dbtn-ghost" onClick={() => onOpenTruck(selectedTruck.id)}><ArrowLeft size={15} /> Back to truck {selectedTruck.unit_number}</button>}
       </div>
       <div className="trips-presets" role="group" aria-label="Trip time span">
@@ -76,7 +78,9 @@ export default function FleetTrips({ trucks, filters, onFilters, onOpenTruck }: 
         <DatePicker showDayDetails={false} id="trip-end" label="To" value={filters.end} min={validDay(filters.start) ? filters.start : undefined} onChange={end => update({ end, preset: 'custom' })} className="trips-end-date" />
       </div>
       {!validDates ? <p role="alert">Choose a date range of up to 31 days.</p> : !validVehicle ? <p role="alert">This truck is no longer available. Select another truck.</p> : query.isPending ? <p role="status" className="trips-message">Loading trips…</p> : query.isError ? <div role="alert" className="trips-message">Trips could not be loaded. <button type="button" className="dbtn" onClick={() => query.refetch()}>Retry</button></div> : query.data && <>
+        <p className="trips-coverage">Imported trips <span>· Partial history</span></p>
         <div className="trips-totals" aria-label="Imported trip totals">
+          <div><Truck size={18} /><span><strong>{number(query.data.summary.truck_count)}</strong><small>Trucks with trips</small></span></div>
           <div><Route size={18} /><span><strong>{number(query.data.summary.trip_count)}</strong><small>Trips</small></span></div>
           <div><MapPin size={18} /><span><strong>{number(query.data.summary.distance_miles)} <em>mi</em></strong><small>Distance</small></span></div>
           <div><Clock3 size={18} /><span><strong>{duration(query.data.summary.driving_seconds)}</strong><small>Driving</small></span></div>

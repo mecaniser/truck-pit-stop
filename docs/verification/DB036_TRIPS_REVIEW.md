@@ -45,3 +45,31 @@ This report does not authorize deployment or claim production trip data was impo
 ## Calendar refinement — owner Fast UI verification
 
 Added Day, Week (Monday through today), Month (month to date), and Custom quick picks with shared DatePicker From/To calendars. Existing API and tenant contracts unchanged. Shared calendar scheduling detail remains default-on for existing callers and is off for Trips. CUA verified Month dates, calendar month grid, custom selection and viewport bounds at768/390; saved `output/trips-qa/calendar-ipad.png`. Synthetic preview only. Focused Trips and shared DatePicker regressions pass; TypeScript checked.
+
+## Metrics extension independent gate — 2026-10-02
+
+Reviewed release candidate `1e25a345` / PR455, contract v1.1.
+
+**GO** for the metrics delta, subject to required CI and exact production release/import verification.
+
+- Independently ran all trip backend tests after the metrics changes: **41 passed**. Coverage includes zero versus unknown, actual fuel precedence, frozen baseline, partial baseline rejection, range/nonfinite/boolean validation, future and overly old baseline, derived overflow rejection, immutable metric conflicts, and legacy omitted/null/empty metric digest compatibility.
+- Reviewed persistence and projection: nullable metrics JSON is stored in each immutable trip, calculations use that stored basis, actual positive gallons produce Trip MPG, baseline-only input produces estimated gallons, and actual zero yields neither division nor fallback estimate. No current telemetry lookup can rewrite historical estimates. No cross-tenant query or authorization boundary changed.
+- Regenerated actual migration158 SQL and repeated isolated PostgreSQL15 upgrade/downgrade smoke, including metrics JSON roundtrip with null actual gallons, a 6.5 MPG frozen baseline and zero idle. All checks passed; transaction rolled back and leftover schema count zero.
+- Independently opened the synthetic fixture in a separate Chrome QA tab at 768px and expanded the66-mile trip. Verified visible `Est. fuel 10.2 gal`, `Based on 6.5 MPG · 30-day avg`, and `Idle time 4m`; no actual-fuel or Trip MPG claim appeared. Browser interaction initially hit control timeouts, then succeeded through the focused native Enter action. Independent screenshot: `output/trips-qa/metrics-independent-768.png`.
+- Independently visually inspected parent-operated CUA screenshots `metrics-768.png` and `metrics-390.png`. Estimate and idle columns remain legible and distinct without overlap; the basis wraps on390px. Parent operated those captures; reviewer independently judged the images. The inline basis inside expanded details matches the updated contract.
+- Temporary reviewer browser viewport reset; reviewer-created Chrome tab closed. Existing user tabs untouched.
+
+No implementation files were edited by this reviewer. No blocking finding remains. These are synthetic/browser and local database test results, not evidence that production data has been imported.
+
+## Trips release complete — 2026-10-02
+
+- Reviewed head: `1e25a3457b9757392b0b2af41bfbb9abce0b5f8f`; all six CI jobs passed (run37068938148).
+- Merge: `d8cbe69c2bdafaa61cb32f4ad3f40e2c10beb663`.
+- Railway deployment: `e6b8dc5e-63e1-4290-9873-4fb62862a4ec`; public build-version matched merge SHA; readiness database and Redis healthy.
+- Production schema158 verified. Dry run passed, authorized initial batch committed, exact replay unchanged.
+- Initial import: three verified trips for truck609,131miles,2h43m. Estimated gallons use frozen6.5MPG average; observed idle available on two legs. No measured trip MPG or tank-capacity claim.
+- Import verified vehicle, telemetry and repair-order fingerprints unchanged.
+- Authenticated production browser verified Trips navigation, totals, expanded estimate/idle, View truck and return with truck609 selected.
+- Responsive fixture review at768/390 and independent QA/security GO recorded in previous comment. This is browser viewport testing, not physical iPad testing.
+- Motive OAuth automatic collection remains pending; this release uses imported dashboard trip history.
+- Local delivery board updated to Done with release evidence. Private source data, receipts and screenshots remain excluded from Git.

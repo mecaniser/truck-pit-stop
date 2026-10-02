@@ -94,6 +94,7 @@ class TripImport(BaseModel):
     driving_seconds: int = Field(ge=0, le=2678400, strict=True)
     stops: list[TripStop] | None = Field(default=None, max_length=100)
     metrics: TripMetrics | None = None
+    timestamp_precision: Literal["second", "minute"] = "second"
 
     @field_validator("vin")
     @classmethod
@@ -124,13 +125,19 @@ class TripImport(BaseModel):
     @model_validator(mode="after")
     def completed(self):
         duration = (self.ended_at - self.started_at).total_seconds()
-        if duration <= 0 or self.driving_seconds > duration or self.ended_at > self.source_read_at:
+        minute = self.timestamp_precision == "minute"
+        if minute and any(value.second or value.microsecond for value in (self.started_at, self.ended_at)):
+            raise ValueError("Minute timestamps must be minute aligned")
+        limit = duration + (59 if minute else 0)
+        upper = self.ended_at + timedelta(seconds=60 if minute else 0)
+        invalid_interval = duration < 0 or (duration == 0 and (not minute or self.driving_seconds <= 0))
+        if invalid_interval or self.driving_seconds > limit or upper > self.source_read_at:
             raise ValueError("Completed trip with valid driving duration required")
         if self.metrics:
             for denominator in (self.metrics.fuel_used_gallons, self.metrics.estimate_baseline_mpg):
                 if denominator is not None and denominator > 0 and not math.isfinite(self.distance_miles / denominator):
                     raise ValueError("Trip metrics produce a nonfinite derived measurement")
-            if self.metrics.idle_seconds is not None and self.metrics.idle_seconds > duration:
+            if self.metrics.idle_seconds is not None and self.metrics.idle_seconds > limit:
                 raise ValueError("Idle time exceeds trip duration")
             baseline_time = self.metrics.estimate_baseline_captured_at
             if baseline_time is not None and not self.source_read_at - timedelta(days=30) <= baseline_time <= self.source_read_at:
@@ -159,9 +166,12 @@ class TripItem(BaseModel):
     captured_at: datetime
     metrics: TripMetricsRead | None = None
     source: Literal["motive_dashboard_manual"]
+    timestamp_precision: Literal["second", "minute"] = "second"
 
 
 class TripSummary(BaseModel):
+    truck_count: int
+    coverage: Literal["partial"] = "partial"
     trip_count: int
     distance_miles: float
     driving_seconds: int

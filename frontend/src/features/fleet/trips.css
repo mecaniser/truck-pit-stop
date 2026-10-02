@@ -5,7 +5,7 @@
 .fleet-root .trips-filters{display:grid;grid-template-columns:minmax(180px,2fr) repeat(2,minmax(140px,1fr));gap:12px;max-width:760px;margin-bottom:24px}
 .fleet-root .trips-filters label{font-size:12px;color:var(--muted);display:flex;flex-direction:column;gap:7px;min-width:0}
 .fleet-root .trips-filters input,.fleet-root .trips-filters select{min-height:44px;width:100%;min-width:0;background:var(--panel,#151f27);border:1px solid var(--line,#344957);color:var(--text,#eaf0f6);padding:10px 12px;border-radius:8px;color-scheme:dark;font:inherit;font-size:14px}
-.fleet-root .trips-totals{display:grid;grid-template-columns:repeat(3,1fr);border-block:1px solid var(--line,#344957);padding:19px 0;margin-bottom:24px;gap:12px}
+.fleet-root .trips-totals{display:grid;grid-template-columns:repeat(4,1fr);border-block:1px solid var(--line,#344957);padding:19px 0;margin-bottom:24px;gap:12px}
 .fleet-root .trips-totals>div{display:flex;align-items:center;gap:12px;padding-left:16px;border-left:2px solid var(--yellow,#ffd000)}
 .fleet-root .trips-totals>div:nth-child(2){border-color:#43c9ee}.fleet-root .trips-totals>div:nth-child(3){border-color:#af93ff}
 .fleet-root .trips-totals svg{color:var(--muted)}.fleet-root .trips-totals span{display:grid;gap:3px}.fleet-root .trips-totals strong{font-size:25px;line-height:1.2;font-variant-numeric:tabular-nums}.fleet-root .trips-totals small{font-size:12px;color:var(--muted)}.fleet-root .trips-totals em{font-size:14px;font-weight:400;font-style:normal;color:var(--muted)}
@@ -44,3 +44,7 @@
 .fleet-root .trip-vitals>div>small{display:block;color:var(--muted);font-size:11px;margin-top:6px;line-height:1.4}
 .fleet-root .trip-vital-fuel{color:#af93ff}.fleet-root .trip-vital-mpg{color:#2cce86}.fleet-root .trip-vital-idle{color:#ffd000}.fleet-root .trip-vital-level{color:#43c9ee}
 @media(max-width:560px){.fleet-root .trip-vitals{grid-template-columns:repeat(2,minmax(0,1fr));gap:16px 10px}.fleet-root .trip-vitals dd{font-size:20px}}
+
+.fleet-root .trips-coverage{font-size:12px;color:var(--text);margin:0 0 10px}.fleet-root .trips-coverage span{color:#dfb86a}
+.fleet-root .trips-totals>div:nth-child(4){border-color:#2cce86}
+@media(max-width:700px){.fleet-root .trips-totals{grid-template-columns:repeat(2,minmax(0,1fr));row-gap:20px}}

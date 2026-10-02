@@ -1,6 +1,6 @@
 # Motive completed trip import
 
-Requires deployed migration `158_fleet_trips`. This operator CLI imports only
+Requires deployed migration `159_fleet_trip_precision`. This operator CLI imports only
 completed trips visibly observed in Motive. It does not enable API sync or count
 freight loads. Keep source JSON and receipts private and outside Git.
 
@@ -67,3 +67,36 @@ Metrics are part of immutable content: changed values on an existing trip cause
 a conflict. Missing/null/all-null metrics retain the original no-metrics digest,
 so prior exact retries remain safe. Migration 158 includes nullable JSON metrics
 before its first deployment; no existing deployed migration is being modified.
+
+
+## Minute precision and explicit corrections
+
+For source timestamps displayed only to the minute, set `timestamp_precision` to
+`minute`, keep endpoint seconds zero, and use the source's measured driving
+seconds. Same-minute journeys need positive driving seconds. Driving and idle
+may each be at most displayed elapsed time plus 59 seconds; the entire arrival
+minute must be covered by source read, current time, and membership. Default
+`second` keeps legacy validation and retry digests.
+
+Normal imports never rewrite existing trips. To correct previously rounded
+observations, use a separate `--correct` invocation (still dry run by default):
+
+```json
+{"corrections":[{"trip_id":"EXISTING_UUID","expected_digest":"EXACT_64_CHARACTER_DIGEST","reason":"Verified measured source values","row":{"...":"complete TripImport row"}}]}
+```
+
+All existing identity, endpoint timestamps, addresses, stops, and metrics must
+match. Only measured driving seconds, precision, and distance (delta strictly
+less than one mile) can change. Source read must be no earlier than the previous
+read. The tenant-scoped owner/admin operation locks and validates the whole batch
+before applying any change. It records every previous column, digest, and source
+provenance in `fleet_trip_revisions`, along with replacement digest, reason,
+operator, and correction timestamp. The original trip UUID is retained. Exact
+replacement retries require the expected predecessor audit and create no extra
+revision. Wrong predecessor or any invalid row aborts the entire transaction.
+
+The current correction path deliberately preserves all metrics; independently
+verified metric replacements require a separate reviewed correction contract.
+Keep revision 159 on rollback: downgrade refuses to discard minute rows or audit
+history. Read summaries include distinct imported `truck_count` before pagination
+and `coverage: "partial"`; these counts do not certify full fleet history.
