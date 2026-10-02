@@ -2,6 +2,9 @@ import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { ArrowLeft, ArrowRight, ChevronDown, Clock3, MapPin, Route } from 'lucide-react'
 import api from '@/lib/api'
+import DatePicker from '@/components/DatePicker'
+import { validDay } from '@/components/calendarGrid'
+import { tripPreset, type TripPreset } from './tripFilters'
 import type { BoardTruck } from './types'
 import { fleetUnitLabel } from './helpers'
 import './trips.css'
@@ -18,7 +21,7 @@ export interface FleetTripsResponse {
   items: FleetTrip[]; summary: { trip_count: number; distance_miles: number; driving_seconds: number }
   total: number; limit: number; offset: number; timezone: string; start_date: string; end_date: string
 }
-export interface TripFilters { vehicleId: string; start: string; end: string }
+export interface TripFilters { vehicleId: string; start: string; end: string; preset?: TripPreset | 'custom' }
 const number = (value: number) => value.toLocaleString(undefined, { maximumFractionDigits: 1 })
 function duration(seconds: number) {
   const minutes = Math.round(seconds / 60)
@@ -32,7 +35,7 @@ export default function FleetTrips({ trucks, filters, onFilters, onOpenTruck }: 
   const [expanded, setExpanded] = useState<string | null>(null)
   const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
   const dateSpan = (Date.parse(filters.end) - Date.parse(filters.start)) / 86400000
-  const validDates = !!filters.start && !!filters.end && Number.isFinite(dateSpan) && dateSpan >= 0 && dateSpan < 31
+  const validDates = validDay(filters.start) && validDay(filters.end) && Number.isFinite(dateSpan) && dateSpan >= 0 && dateSpan < 31
   const selectedTruck = trucks.find(t => t.id === filters.vehicleId)
   const validVehicle = !filters.vehicleId || !!selectedTruck
   const query = useQuery<FleetTripsResponse>({
@@ -52,13 +55,17 @@ export default function FleetTrips({ trucks, filters, onFilters, onOpenTruck }: 
         <div><h2>Trip history</h2><p>Imported trips · {timezone.replace(/_/g, ' ')}</p></div>
         {selectedTruck && <button type="button" className="dbtn dbtn-ghost" onClick={() => onOpenTruck(selectedTruck.id)}><ArrowLeft size={15} /> Back to truck {selectedTruck.unit_number}</button>}
       </div>
+      <div className="trips-presets" role="group" aria-label="Trip time span">
+        {([['day', 'Day', 'Today'], ['week', 'Week', 'Monday through today'], ['month', 'Month', 'This month through today']] as const).map(([preset, label, title]) => <button key={preset} type="button" title={title} aria-pressed={filters.preset === preset} onClick={() => update({ ...tripPreset(preset), preset })}>{label}</button>)}
+        <button type="button" aria-pressed={!filters.preset || filters.preset === 'custom'} onClick={() => { update({ preset: 'custom' }); document.getElementById('trip-start')?.focus() }}>Custom</button>
+      </div>
       <div className="trips-filters">
         <label>Truck<select value={filters.vehicleId} onChange={e => update({ vehicleId: e.target.value })}>
           <option value="">All trucks</option>
           {trucks.map(t => <option key={t.id} value={t.id}>{fleetUnitLabel(t)}</option>)}
         </select></label>
-        <label>From<input type="date" value={filters.start} max={filters.end} onChange={e => update({ start: e.target.value })} /></label>
-        <label>To<input type="date" value={filters.end} min={filters.start} onChange={e => update({ end: e.target.value })} /></label>
+        <DatePicker showDayDetails={false} id="trip-start" label="From" value={filters.start} max={validDay(filters.end) ? filters.end : undefined} onChange={start => update({ start, preset: 'custom' })} />
+        <DatePicker showDayDetails={false} id="trip-end" label="To" value={filters.end} min={validDay(filters.start) ? filters.start : undefined} onChange={end => update({ end, preset: 'custom' })} className="trips-end-date" />
       </div>
       {!validDates ? <p role="alert">Choose a date range of up to 31 days.</p> : !validVehicle ? <p role="alert">This truck is no longer available. Select another truck.</p> : query.isPending ? <p role="status" className="trips-message">Loading trips…</p> : query.isError ? <div role="alert" className="trips-message">Trips could not be loaded. <button type="button" className="dbtn" onClick={() => query.refetch()}>Retry</button></div> : query.data && <>
         <div className="trips-totals" aria-label="Imported trip totals">

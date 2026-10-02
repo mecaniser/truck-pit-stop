@@ -41,3 +41,7 @@ This report does not authorize deployment or claim production trip data was impo
 ## Independent final gate
 
 **GO for PR review/CI.** No blocking implementation finding remains in the reviewed scope. Deployment and import are still subject to the separate release evidence below.
+
+## Calendar refinement — owner Fast UI verification
+
+Added Day, Week (Monday through today), Month (month to date), and Custom quick picks with shared DatePicker From/To calendars. Existing API and tenant contracts unchanged. Shared calendar scheduling detail remains default-on for existing callers and is off for Trips. CUA verified Month dates, calendar month grid, custom selection and viewport bounds at768/390; saved `output/trips-qa/calendar-ipad.png`. Synthetic preview only. Focused Trips and shared DatePicker regressions pass; TypeScript checked.

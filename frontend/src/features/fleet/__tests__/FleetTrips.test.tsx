@@ -1,8 +1,9 @@
 import { useState } from 'react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen, waitFor, fireEvent } from '@testing-library/react'
+import { render, screen, waitFor, fireEvent, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { tripPreset } from '../tripFilters'
 import type { BoardTruck } from '../types'
 import FleetTrips, { type FleetTripsResponse, type TripFilters } from '../FleetTrips'
 const api = vi.hoisted(() => ({ get: vi.fn() }))
@@ -21,6 +22,33 @@ function setup(filters: TripFilters = { vehicleId: truck.id, start: '2026-10-02'
 }
 beforeEach(() => { api.get.mockReset(); api.get.mockResolvedValue({ data: response }) })
 describe('Fleet trip history', () => {
+  it('uses calendar quick picks while keeping the truck selection', async () => {
+    setup(); await screen.findByText('First City, NC')
+    for (const [label, preset] of [['Day', 'day'], ['Week', 'week'], ['Month', 'month']] as const) {
+      await userEvent.click(screen.getByRole('button', { name: label, exact: true }))
+      const expected = tripPreset(preset)
+      expect(screen.getByLabelText('From')).toHaveValue(expected.start)
+      expect(screen.getByLabelText('To')).toHaveValue(expected.end)
+      expect(screen.getByRole('button', { name: label, exact: true })).toHaveAttribute('aria-pressed', 'true')
+      expect(screen.getByLabelText('Truck')).toHaveValue(truck.id)
+    }
+  })
+  it('opens the app calendar and switches to custom when a day is picked', async () => {
+    setup(); await screen.findByText('First City, NC')
+    await userEvent.click(screen.getAllByRole('button', { name: /Choose date/ })[0])
+    const calendar = screen.getByRole('dialog', { name: 'From' })
+    expect(within(calendar).getByRole('button', { name: 'Previous month' })).toBeInTheDocument()
+    expect(within(calendar).queryByText(/scheduled/)).not.toBeInTheDocument()
+    await userEvent.click(within(calendar).getByRole('button', { name: /Oct 1, 2026/ }))
+    expect(screen.getByLabelText('From')).toHaveValue('2026-10-01')
+    expect(screen.getByRole('button', { name: 'Custom' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  })
+  it('handles week and month boundaries using local calendar dates', () => {
+    expect(tripPreset('week', new Date(2026, 0, 1, 12))).toEqual({ start: '2025-12-29', end: '2026-01-01' })
+    expect(tripPreset('week', new Date(2026, 9, 4, 12))).toEqual({ start: '2026-09-28', end: '2026-10-04' })
+    expect(tripPreset('month', new Date(2024, 1, 29, 12))).toEqual({ start: '2024-02-01', end: '2024-02-29' })
+  })
   it('carries truck filter, expands on tap, returns to the same truck', async () => {
     const user = userEvent.setup(); const open = setup()
     expect(await screen.findByText('First City, NC')).toBeInTheDocument()
