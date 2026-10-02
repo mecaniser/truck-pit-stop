@@ -47,12 +47,13 @@ export function TruckTelemetryLocation({ truck }: { truck: BoardTruck }) {
   return <ReadingInfo label="Last location" reading={location} className="truck-header-location"><MapPin size={15} aria-hidden="true" /><span><strong>{label}</strong><small>{readingSummary(location, now)}</small></span></ReadingInfo>
 }
 
-export function TruckTelemetryValue({ truck, field, label, className = '' }: { truck: BoardTruck; field: 'odometer' | 'speed' | 'fuel' | 'engine_hours' | 'fault_count'; label: string; className?: string }) {
+export function TruckTelemetryValue({ truck, field, label, className = '' }: { truck: BoardTruck; field: 'odometer' | 'speed' | 'fuel' | 'fuel_economy' | 'engine_hours' | 'fault_count'; label: string; className?: string }) {
   const now = useTelemetryClock()
   const reading = retained(truck.telemetry?.[field], now)
   if (!reading) return null
-  const value = `${reading.value.toLocaleString(undefined, { maximumFractionDigits: 1 })}${reading.unit === 'percent' ? '%' : reading.unit === 'count' ? '' : ` ${reading.unit}`}`
-  return <ReadingInfo label={label} reading={reading} className={`truck-reading--${field} ${className}`}><span className="truck-reading-label">{label}</span><strong>{value}</strong></ReadingInfo>
+  if (field === 'fuel_economy' && (!('period' in reading) || reading.period !== 'last_30_days')) return null
+  const value = `${reading.value.toLocaleString(undefined, { maximumFractionDigits: 1 })}${reading.unit === 'percent' ? '%' : reading.unit === 'count' ? '' : ` ${reading.unit === 'mpg' ? 'MPG' : reading.unit}`}`
+  return <ReadingInfo label={label} reading={reading} className={`truck-reading--${field} ${className}`}><span className="truck-reading-label">{label}</span><strong>{value}</strong>{field === 'fuel_economy' && <small>Last 30 days</small>}</ReadingInfo>
 }
 
 export function PullMotiveReading({ truck }: { truck: BoardTruck }) {

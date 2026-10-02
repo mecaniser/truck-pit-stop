@@ -24,6 +24,8 @@ class TelemetryCapture(BaseModel):
     odometer_miles: float | None = Field(None, ge=0, le=100000000)
     engine_hours: float | None = Field(None, ge=0, le=10000000)
     fuel_percent: float | None = Field(None, ge=0, le=100)
+    fuel_economy_mpg: float | None = Field(None, ge=0, le=100)
+    fuel_economy_period: Literal["last_30_days"] | None = None
     fault_count: int | None = Field(None, ge=0, le=2147483647, strict=True)
     evidence_note: str | None = Field(None, max_length=1000)
 
@@ -43,6 +45,7 @@ class TelemetryCapture(BaseModel):
         "odometer_miles",
         "engine_hours",
         "fuel_percent",
+        "fuel_economy_mpg",
         mode="before",
     )
     @classmethod
@@ -84,6 +87,8 @@ class TelemetryCapture(BaseModel):
     def valid(self):
         if (self.lat is None) != (self.lng is None):
             raise ValueError("Coordinates require both values")
+        if (self.fuel_economy_mpg is None) != (self.fuel_economy_period is None):
+            raise ValueError("Fuel economy requires value and reporting period")
         if self.observed_at is not None:
             if self.observed_at.tzinfo is None:
                 raise ValueError("Timezone required")
@@ -96,6 +101,7 @@ class TelemetryCapture(BaseModel):
                 "odometer_miles",
                 "engine_hours",
                 "fuel_percent",
+                "fuel_economy_mpg",
                 "fault_count",
             )
         ):
@@ -118,6 +124,11 @@ class NumericReading(ReadingProvenance):
     basis: Literal["calibrated", "virtual", "dashboard_unspecified"] | None = None
 
 
+class FuelEconomyReading(NumericReading):
+    unit: Literal["mpg"]
+    period: Literal["last_30_days"]
+
+
 class LocationReading(ReadingProvenance):
     lat: float | None = None
     lng: float | None = None
@@ -130,5 +141,6 @@ class FleetTelemetry(BaseModel):
     odometer: NumericReading | None = None
     engine_hours: NumericReading | None = None
     fuel: NumericReading | None = None
+    fuel_economy: FuelEconomyReading | None = None
     fault_count: NumericReading | None = None
     motion: Literal["moving", "stopped", "unknown"] = "unknown"

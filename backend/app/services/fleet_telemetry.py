@@ -141,9 +141,14 @@ async def capture(db, actor, vehicle_id, body):
         or duplicates != 1
     ):
         fail(409, "vehicle_identity_mismatch")
+    digest_data = body.model_dump(mode="json")
+    # Preserve replay hashes for captures made before fuel economy was supported.
+    for name in ("fuel_economy_mpg", "fuel_economy_period"):
+        if digest_data[name] is None:
+            digest_data.pop(name)
     digest = hashlib.sha256(
         json.dumps(
-            {"vehicle_id": str(vehicle_id), **body.model_dump(mode="json")},
+            {"vehicle_id": str(vehicle_id), **digest_data},
             sort_keys=True,
             separators=(",", ":"),
         ).encode()
@@ -218,7 +223,7 @@ async def attach(db, trucks, tenant_id):
         for t in trucks
         if (t.id, t.board_membership_customer_id) in by_pair
     ]
-    # Rank each field independently in SQL: at most six rows per vehicle are
+    # Rank each field independently in SQL: at most seven rows per vehicle are
     # materialized, even if operators captured many observations this month.
     present = [or_(Snapshot.location_label.is_not(None), Snapshot.lat.is_not(None))] + [
         getattr(Snapshot, n).is_not(None)
@@ -227,6 +232,7 @@ async def attach(db, trucks, tenant_id):
             "odometer_miles",
             "engine_hours",
             "fuel_percent",
+            "fuel_economy_mpg",
             "fault_count",
         )
     ]
@@ -282,7 +288,7 @@ async def attach(db, trucks, tenant_id):
             await db.execute(
                 select(Snapshot)
                 .join(ranked, ranked.c.id == Snapshot.id)
-                .where(or_(*[ranked.c[f"rank_{i}"] == 1 for i in range(6)]))
+                .where(or_(*[ranked.c[f"rank_{i}"] == 1 for i in range(len(present))]))
             )
         )
         .scalars()
@@ -383,6 +389,7 @@ async def attach(db, trucks, tenant_id):
         age=None,
         basis=None,
         unit=None,
+        period=None,
     ):
         observed = utc(observed) if observed else None
         captured = utc(captured) if captured else None
@@ -412,6 +419,8 @@ async def attach(db, trucks, tenant_id):
             if field == "location"
             else {"value": value, "unit": unit, "basis": basis}
         )
+        if period is not None:
+            reading["period"] = period
         rank = (
             observed is not None,
             observed or datetime.min.replace(tzinfo=timezone.utc),
@@ -452,6 +461,7 @@ async def attach(db, trucks, tenant_id):
             ("odometer_miles", "odometer", "mi"),
             ("engine_hours", "engine_hours", "h"),
             ("fuel_percent", "fuel", "percent"),
+            ("fuel_economy_mpg", "fuel_economy", "mpg"),
             ("fault_count", "fault_count", "count"),
         ]:
             value = getattr(row, attr)
@@ -465,6 +475,7 @@ async def attach(db, trucks, tenant_id):
                     if field in ("odometer", "engine_hours")
                     else None,
                     unit=unit,
+                    period=row.fuel_economy_period if field == "fuel_economy" else None,
                 )
     for remote, connection in remotes:
         m = by_pair.get((remote.vehicle_id, connection.fleet_customer_id))

@@ -32,4 +32,18 @@ describe('truck header readings', () => {
     view.rerender(<TruckTelemetryValue truck={{ telemetry: { speed: { ...truck.telemetry!.speed!, captured_at: '2020-01-01T00:00:00Z' } } } as BoardTruck} field="speed" label="Speed" />)
     expect(screen.queryByRole('button')).not.toBeInTheDocument()
   })
+  it('shows reported MPG with its period and touch-accessible capture time; zero is valid', () => {
+    const mpgTruck = { telemetry: { fuel_economy: { ...source, value: 6.5, unit: 'mpg', basis: null, period: 'last_30_days' } } } as BoardTruck
+    const view = render(<TruckTelemetryValue truck={mpgTruck} field="fuel_economy" label="Efficiency" />)
+    expect(screen.getByText('6.5 MPG')).toBeInTheDocument()
+    expect(screen.getByText('Last 30 days')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Efficiency: reading information' }))
+    expect(screen.getByRole('tooltip')).toHaveTextContent(`Captured ${new Date(source.captured_at).toLocaleString()}`)
+    mpgTruck.telemetry!.fuel_economy!.value = 0
+    view.rerender(<TruckTelemetryValue truck={mpgTruck} field="fuel_economy" label="Efficiency" />)
+    expect(screen.getByText('0 MPG')).toBeInTheDocument()
+    view.rerender(<TruckTelemetryValue truck={truck} field="fuel_economy" label="Efficiency" />)
+    expect(screen.queryByRole('button')).not.toBeInTheDocument()
+  })
+
 })
