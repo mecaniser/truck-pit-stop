@@ -149,8 +149,8 @@ saved Motive password, or pretend OAuth synchronization is introduced.
 ## Frontend and geometry
 
 Show a compact Recorded trips / miles / driving time summary, city-to-city rows,
-departure/arrival times, and expandable stops. Put date/time capture information
-in the existing touch/keyboard-friendly tooltip. Dates use the response timezone.
+departure/arrival times, and expandable stops. Keep capture date/time in the expanded row footer, without internal provenance prose.
+Dates use the requested IANA timezone, echoed in the response.
 Do not render a reconstructed road route or coordinate pins from city labels;
 route geometry can appear only after a later contract adds actual provider
 coordinates. Plain city-to-city route text satisfies this initial data shape.
