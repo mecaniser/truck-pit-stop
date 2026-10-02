@@ -89,7 +89,7 @@ describe('Fleet board return context', () => {
     const user = userEvent.setup()
     const truck = { id: 'trip-truck', unit_number: '101', display_unit_number: 'Example 101', status: 'active', make: 'VOLVO', model: 'VNR' }
     window.localStorage.setItem('tps-fleet-state', JSON.stringify({ view: 'detail', selId: truck.id }))
-    apiMocks.get.mockImplementation(async (url: string) => ({ data: url === '/fleet/board' ? { ...fleetBoard, trucks: [truck] } : { items: [], total: 0, summary: { trip_count: 0, distance_miles: 0, driving_seconds: 0 } } }))
+    apiMocks.get.mockImplementation(async (url: string) => ({ data: url === '/fleet/board' ? { ...fleetBoard, trucks: [truck] } : { items: [], total: 0, summary: { truck_count: 0, coverage: 'partial', trip_count: 0, distance_miles: 0, driving_seconds: 0 } } }))
     renderFleet(['/fleet'])
     await user.click(await screen.findByRole('button', { name: 'View trips' }))
     expect(await screen.findByLabelText('Truck')).toHaveValue(truck.id)
