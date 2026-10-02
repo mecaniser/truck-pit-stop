@@ -85,7 +85,7 @@ async def list_trips(db, tenant_id, start_date, end_date, zone, vehicle_id=None,
     query = visible_query(tenant_id, start, end, now(), vehicle_id, fleet_customer_id, db.bind.dialect.name)
     selected = query.subquery()
     totals = (await db.execute(select(func.count(), func.count(func.distinct(selected.c.vehicle_id)), func.coalesce(func.sum(selected.c.distance_miles), 0), func.coalesce(func.sum(selected.c.driving_seconds), 0)).select_from(selected))).one()
-    rows = (await db.execute(query.order_by(Trip.started_at.desc(), Trip.id.desc()).limit(limit).offset(offset))).all()
+    rows = (await db.execute(query.order_by(Trip.started_at.asc(), Trip.id.asc()).limit(limit).offset(offset))).all()
     items = []
     for trip, unit, fleet in rows:
         items.append({**{key: getattr(trip, key) for key in (

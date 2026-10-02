@@ -23,6 +23,23 @@ function setup(filters: TripFilters = { vehicleId: truck.id, start: '2026-10-02'
 beforeEach(() => { api.get.mockReset(); api.get.mockResolvedValue({ data: response }) })
 const emptyMetrics = { fuel_used_gallons: null, trip_mpg: null, estimated_fuel_gallons: null, idle_seconds: null, fuel_start_percent: null, fuel_end_percent: null, estimate_baseline_mpg: null, estimate_baseline_captured_at: null, estimate_baseline_period: null }
 describe('Fleet trip history', () => {
+  it('shows selected truck once as a heading and labels each leg endpoints', async () => {
+    setup()
+    const leg = await screen.findByRole('button', { name: /Leg 1/ })
+    expect(screen.getByRole('heading', { name: 'Example Fleet 101' })).toBeInTheDocument()
+    expect(leg).not.toHaveTextContent('Example Fleet 101')
+    expect(leg).toHaveTextContent('From ·')
+    expect(leg).toHaveTextContent('To ·')
+    expect(screen.getByRole('heading', { name: 'Oct 2' })).toBeInTheDocument()
+  })
+  it('retains leg truck identity for all trucks and groups chronological days', async () => {
+    const first = { ...response.items[0], id: 'earlier', started_at: '2026-09-28T13:00:00Z', ended_at: '2026-09-28T14:00:00Z' }
+    api.get.mockResolvedValue({ data: { ...response, items: [first, response.items[0]], total: 2 } })
+    setup({ vehicleId: '', start: '2026-09-28', end: '2026-10-02' })
+    const legs = await screen.findAllByRole('button', { name: /Example Fleet 101/ })
+    expect(legs).toHaveLength(2)
+    expect(screen.getAllByRole('heading', { level: 3 }).map(h => h.textContent)).toEqual(['Sep 28', 'Oct 2'])
+  })
   it('shows full-fleet totals and coverage even when the page contains only one truck', async () => {
     api.get.mockResolvedValue({ data: { ...response, summary: { coverage: 'partial', truck_count: 13, trip_count: 342, distance_miles: 25072.67, driving_seconds: 1634303 }, total: 342 } })
     setup({ vehicleId: '', start: '2026-09-28', end: '2026-10-02', preset: 'week' })
