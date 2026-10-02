@@ -79,3 +79,13 @@
 }
 
 .fleet-root .truck-motive-pull { margin: 12px 0 6px; }
+
+.fleet-root .truck-reading--fuel_economy strong { color: var(--st-active); }
+.fleet-root .truck-reading--fuel_economy small { color: var(--text-secondary, #a7b7c6); font-size: 11px; white-space: nowrap; }
+
+@media (min-width: 740px) and (max-width: 1200px) {
+  .fleet-root .truck-telemetry-header .dhead-stats:has(.truck-reading--fuel_economy) .dhead-stat-ic { display: none; }
+  .fleet-root .truck-telemetry-header .dhead-stats:has(.truck-reading--fuel_economy) .dhead-stat { grid-template-columns: 1fr; }
+  .fleet-root .truck-telemetry-header .dhead-stats:has(.truck-reading--fuel_economy) .truck-odometer-comparison { grid-column: 1; }
+  .fleet-root .truck-telemetry-header .dhead-stats:has(.truck-reading--fuel_economy) { grid-template-columns: minmax(140px,1.2fr) minmax(130px,1fr) minmax(75px,.7fr) minmax(75px,.7fr) minmax(90px,.8fr); }
+}

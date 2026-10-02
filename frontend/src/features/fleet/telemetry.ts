@@ -9,9 +9,10 @@ export interface ReadingProvenance {
   snapshot_id: string | null
   source_age_text: string | null
 }
-export interface NumericReading extends ReadingProvenance { value: number; unit: 'mph' | 'mi' | 'h' | 'percent' | 'count'; basis: 'calibrated' | 'virtual' | 'dashboard_unspecified' | null }
+export interface NumericReading extends ReadingProvenance { value: number; unit: 'mph' | 'mi' | 'h' | 'percent' | 'count' | 'mpg'; basis: 'calibrated' | 'virtual' | 'dashboard_unspecified' | null }
+export interface FuelEconomyReading extends NumericReading { unit: 'mpg'; period: 'last_30_days' }
 export interface LocationReading extends ReadingProvenance { lat: number | null; lng: number | null; label: string | null }
-export interface FleetTelemetry { location: LocationReading | null; speed: NumericReading | null; odometer: NumericReading | null; engine_hours: NumericReading | null; fuel: NumericReading | null; fault_count: NumericReading | null; motion: 'moving' | 'stopped' | 'unknown' }
+export interface FleetTelemetry { location: LocationReading | null; speed: NumericReading | null; odometer: NumericReading | null; engine_hours: NumericReading | null; fuel: NumericReading | null; fuel_economy?: FuelEconomyReading | null; fault_count: NumericReading | null; motion: 'moving' | 'stopped' | 'unknown' }
 export function retained<T extends ReadingProvenance>(reading: T | null | undefined, now = Date.now()): T | null {
   if (!reading) return null
   const stamp = Date.parse(reading.observed_at ?? reading.captured_at ?? '')

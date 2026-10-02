@@ -686,6 +686,7 @@ export default function TruckDetail({
             </div>
             <TruckTelemetryValue truck={t} field="speed" label="Speed" className="truck-header-metric" />
             <TruckTelemetryValue truck={t} field="fuel" label="Fuel level" className="truck-header-metric" />
+            <TruckTelemetryValue truck={t} field="fuel_economy" label="Efficiency" className="truck-header-metric" />
           </div>
         </div>
       </div>

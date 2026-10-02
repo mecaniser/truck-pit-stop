@@ -1,6 +1,7 @@
 """Immutable, tenant-scoped operator observations; no canonical vehicle writes."""
 
 from sqlalchemy import (
+    CheckConstraint,
     Column,
     DateTime,
     Float,
@@ -42,9 +43,18 @@ class FleetTelemetrySnapshot(BaseModel):
     odometer_miles = Column(Float)
     engine_hours = Column(Float)
     fuel_percent = Column(Float)
+    fuel_economy_mpg = Column(Float)
+    fuel_economy_period = Column(String(20))
     fault_count = Column(Integer)
     evidence_note = Column(String(1000))
     __table_args__ = (
+        CheckConstraint(
+            "(fuel_economy_mpg IS NULL AND fuel_economy_period IS NULL) OR "
+            "(fuel_economy_mpg IS NOT NULL AND fuel_economy_period IS NOT NULL "
+            "AND fuel_economy_mpg >= 0 AND fuel_economy_mpg <= 100 "
+            "AND fuel_economy_period = 'last_30_days')",
+            name="ck_telemetry_fuel_economy",
+        ),
         UniqueConstraint("tenant_id", "client_request_id", name="uq_telemetry_request"),
         ForeignKeyConstraint(
             ["tenant_id", "vehicle_id"], ["vehicles.tenant_id", "vehicles.id"]
