@@ -238,3 +238,5 @@ from app.db.models.motive_oauth import MotiveConnection, MotiveAuthorization, Mo
 from app.db.models.motive_oauth import MotiveFleetAdminGrant, MotiveHistorySample, MotiveFault, MotiveWebhookReceipt  # noqa: F401
 
 from app.db.models.fleet_telemetry import FleetTelemetrySnapshot  # noqa: F401
+
+from app.db.models.fleet_trip import FleetTrip  # noqa: F401

@@ -6,7 +6,7 @@ import toast from 'react-hot-toast'
 import {
   Truck, LayoutGrid, Map as MapIcon, Calendar, Play, Flag, ClipboardCheck, ArrowLeft,
   Bell, LogOut, Plus, Wrench, Warehouse, Settings, UserRound, KeyRound, Eye, EyeOff,
-  ChevronsLeft, ChevronsRight, Pencil, Search, Check, Link2,
+  ChevronsLeft, ChevronsRight, Pencil, Search, Check, Link2, Route,
 } from 'lucide-react'
 import api from '../../lib/api'
 import { useAuthStore } from '../../stores/authStore'
@@ -20,11 +20,13 @@ import FleetBoard from './FleetBoard'
 import MotiveIntegrationPanel from './MotiveIntegrationPanel'
 import TruckDetail from './TruckDetail'
 import FleetMap from './FleetMap'
+import FleetTrips from './FleetTrips'
+import { initialTripFilters } from './tripFilters'
 import { SchedulePMModal, SidekickPanel, invalidateFleetAndCockpit } from './FleetModals'
 import FleetPriceBuilderPanel from './FleetPriceBuilderPanel'
 import './fleet.css'
 
-type View = 'board' | 'map' | 'detail'
+type View = 'board' | 'map' | 'detail' | 'trips'
 const STORAGE_KEY = 'tps-fleet-state'
 const FLEET_SETTINGS_RETURN_TO = '/dashboard/settings?section=fleet'
 
@@ -59,6 +61,7 @@ export default function FleetApp() {
   const init = loadState()
   const [view, setView] = useState<View>(init.view === 'detail' && init.selId ? 'detail' : init.view)
   const [selId, setSelId] = useState<string | null>(init.selId)
+  const [tripFilters, setTripFilters] = useState(initialTripFilters)
   const [filter, setFilter] = useState(init.filter)
   const [query, setQuery] = useState('')
   const [sort, setSort] = useState(init.sort)
@@ -95,6 +98,7 @@ export default function FleetApp() {
   const detailTruck = selId ? trucks.find((truck) => truck.id === selId) : undefined
 
   const openTruck = useCallback((id: string) => { setSelId(id); setView('detail'); document.querySelector('.fleet-root .scroll')?.scrollTo(0, 0) }, [])
+  const openTrips = (id: string) => { setTripFilters(current => ({ ...current, vehicleId: id })); setView('trips'); document.querySelector('.fleet-root .scroll')?.scrollTo(0, 0) }
   const goView = (v: View) => { setView(v); if (v !== 'detail') setSelId(null) }
   const toggleRail = () => setRailExpanded((v) => { localStorage.setItem('tps-fleet-rail', v ? '0' : '1'); return !v })
 
@@ -125,9 +129,10 @@ export default function FleetApp() {
   const railItems: [View, React.ReactNode, string, string][] = [
     ['board', <LayoutGrid size={20} />, 'Fleet board', 'FB'],
     ['map', <MapIcon size={20} />, 'Fleet map', 'MAP'],
+    ['trips', <Route size={20} />, 'Trips', 'TRIPS'],
   ]
   const titles: Record<View, string> = {
-    board: 'Fleet Board', map: 'Fleet map', detail: 'Truck Detail',
+    board: 'Fleet Board', map: 'Fleet map', detail: 'Truck Detail', trips: 'Trips',
   }
 
   // Only owner/admin reach the fleet board from their garage dashboard, so only
@@ -287,9 +292,11 @@ export default function FleetApp() {
                   </button>
                 </div>
               ) : view === 'detail' && selId ? (
-                <TruckDetail truckId={selId} trucks={trucks} onOpen={openTruck} />
+                <TruckDetail truckId={selId} trucks={trucks} onOpen={openTruck} onViewTrips={openTrips} />
               ) : view === 'board' ? (
                 <FleetBoard data={data} onOpen={(t) => openTruck(t.id)} onOpenRepairOrder={setRoPanelId} filter={filter} setFilter={setFilter} query={query} setQuery={setQuery} sort={sort} setSort={setSort} />
+              ) : view === 'trips' ? (
+                <FleetTrips trucks={trucks} filters={tripFilters} onFilters={setTripFilters} onOpenTruck={openTruck} />
               ) : view === 'map' ? (
                 <MapPage trucks={trucks} onOpen={openTruck} />
               ) : (

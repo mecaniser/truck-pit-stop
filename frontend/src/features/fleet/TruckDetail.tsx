@@ -4,7 +4,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import type { AxiosError } from 'axios'
 import toast from 'react-hot-toast'
 import {
-  Gauge, Calendar, Wrench, AlertTriangle, History, Truck, User, Box, Map as MapIcon,
+  Gauge, Calendar, Wrench, AlertTriangle, History, Truck, User, Box, Route, Map as MapIcon,
   Shield, Phone, ClipboardList, ClipboardCheck, Pencil, CheckCircle2, ChevronDown, Check, Info, Trash2, Camera, MoreHorizontal,
   Archive, ArrowLeft, ArrowRight, Clock3, Combine, RotateCcw, LogOut, Ban } from 'lucide-react'
 import api from '../../lib/api'
@@ -167,8 +167,8 @@ function incidentBody(inc: IncidentEntry): string | null {
 }
 
 export default function TruckDetail({
-  truckId, trucks, onOpen,
-}: { truckId: string; trucks: BoardTruck[]; onOpen: (id: string) => void }) {
+  truckId, trucks, onOpen, onViewTrips,
+}: { truckId: string; trucks: BoardTruck[]; onOpen: (id: string) => void; onViewTrips?: (id: string) => void }) {
   const now = useTelemetryClock()
   const qc = useQueryClient()
   const { user } = useAuthStore()
@@ -660,6 +660,7 @@ export default function TruckDetail({
                 <Info size={14} /> <span className="dbtn-label">Truck details</span>
               </button>
               <TruckTelemetryLocation truck={t} />
+              {onViewTrips && <button type="button" className="dbtn dbtn-ghost dhead-trips" onClick={() => onViewTrips(t.id)}><Route size={15} /> View trips</button>}
             </div>
             <div className="dhead-sub">
               {`${t.year || ''} ${t.make} ${t.model}`.trim()}{t.body_type ? ` · ${t.body_type}` : ''}

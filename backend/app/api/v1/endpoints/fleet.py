@@ -6,7 +6,7 @@ from decimal import Decimal
 from typing import List, Optional
 from uuid import UUID, uuid4
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status, Query
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status, Query, Response
 from pydantic import BaseModel
 from sqlalchemy import select, and_, case, func, or_
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -88,6 +88,7 @@ from app.schemas.fleet import (
     FleetActivityPage,
     FleetTruckCreate,
 )
+from app.schemas.fleet_trip import TripPage
 from app.schemas.vehicle import VehicleResponse
 from app.schemas.typeahead import VehicleTypeaheadResponse
 from app.core.logging import get_logger
@@ -173,6 +174,27 @@ def require_fleet_access(current_user: User = Depends(get_current_active_user)) 
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="User must be associated with a tenant")
     return current_user
 
+
+
+@router.get("/trips", response_model=TripPage)
+async def get_trips(
+    start_date: date,
+    end_date: date,
+    response: Response,
+    timezone_name: Optional[str] = Query(None, alias="timezone", max_length=100),
+    vehicle_id: Optional[UUID] = None,
+    fleet_customer_id: Optional[UUID] = None,
+    limit: int = Query(50, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_fleet_access),
+):
+    from app.services.fleet_trips import list_trips
+    response.headers["Cache-Control"] = "no-store"
+    if timezone_name is None:
+        timezone_name = (await db.execute(select(Tenant.timezone).where(Tenant.id == current_user.tenant_id))).scalar_one()
+    return await list_trips(db, current_user.tenant_id, start_date, end_date,
+                           timezone_name, vehicle_id, fleet_customer_id, limit, offset)
 
 def require_garage_owner_only(current_user: User = Depends(get_current_active_user)) -> User:
     """Owner-only guard. Fleet managers/admins cannot delete inspection records."""
