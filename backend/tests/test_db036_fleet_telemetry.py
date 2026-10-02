@@ -282,17 +282,21 @@ async def test_board_detail_projection_parity_and_bounded_queries(
     from sqlalchemy import event
 
     actor, v, _m = await prepared(db_session, monkeypatch)
+    v.mileage = 652767
+    v.next_pm_miles = 677767
     await s.capture(
         db_session,
         actor,
         v.id,
-        body(v, speed_mph=0, observed_at=s.now(), location_label="Synthetic depot"),
+        body(v, speed_mph=0, odometer_miles=660951, location_label="Synthetic depot"),
     )
     await db_session.commit()
     legacy = await fleet.fleet_board(db=db_session, current_user=actor)
     assert legacy.trucks[0].telemetry.speed.value == 0
     detail = await fleet.truck_detail(v.id, db=db_session, current_user=actor)
     assert detail.truck.telemetry == legacy.trucks[0].telemetry
+    assert detail.truck.pm_remaining == legacy.trucks[0].pm_remaining == 16816
+    assert detail.truck.odometer == v.mileage == 652767
     db_session.add(
         FleetBoardReadModel(
             vehicle_id=v.id,
@@ -301,6 +305,7 @@ async def test_board_detail_projection_parity_and_bounded_queries(
                 "make": v.make,
                 "model": v.model,
                 "mileage": v.mileage,
+                "next_pm_miles": v.next_pm_miles,
                 "pm_interval_miles": 25000,
                 "pm_interval_days": 70,
             },
@@ -313,6 +318,7 @@ async def test_board_detail_projection_parity_and_bounded_queries(
     await db_session.commit()
     projection = await fleet.fleet_board(db=db_session, current_user=actor)
     assert projection.trucks[0].telemetry == legacy.trucks[0].telemetry
+    assert projection.trucks[0].pm_remaining == 16816
     counts = []
 
     def query(*args):
@@ -378,3 +384,23 @@ async def test_partial_latest_rows_do_not_hide_older_field(db_session, monkeypat
     assert truck.telemetry.speed.value == 19
     assert truck.telemetry.odometer.value == 0
     assert truck.telemetry.odometer.freshness == "stale"
+
+
+async def test_snapshot_due_status_stats_and_service_reset(db_session, monkeypatch):
+    from app.api.v1.endpoints import fleet
+
+    actor, v, _ = await prepared(db_session, monkeypatch)
+    v.mileage, v.next_pm_miles, v.status_override = 100000, 125000, None
+    await s.capture(db_session, actor, v.id, body(v, odometer_miles=126000))
+    await db_session.commit()
+    board_response = await fleet.fleet_board(db=db_session, current_user=actor)
+    detail = await fleet.truck_detail(v.id, db=db_session, current_user=actor)
+    assert board_response.stats.pm == 1
+    assert board_response.trucks[0].status == detail.truck.status == 'pm'
+    assert board_response.trucks[0].pm_remaining == detail.truck.pm_remaining == -1000
+    # Later service mileage supersedes an older lower snapshot after PM completion.
+    v.mileage, v.next_pm_miles = 127000, 152000
+    await db_session.commit()
+    refreshed = await fleet.truck_detail(v.id, db=db_session, current_user=actor)
+    assert refreshed.truck.pm_remaining == 25000
+    assert refreshed.truck.odometer == 127000

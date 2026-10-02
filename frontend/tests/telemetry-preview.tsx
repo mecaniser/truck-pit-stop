@@ -26,7 +26,7 @@ const source: ReadingProvenance = { source: 'motive_dashboard_manual', observed_
 const truck = {
   id: 'synthetic-truck', unit_number: '101', vin: '1TEST234567890123', year: 2020, make: 'VOLVO', model: 'VNR', body_type: 'Truck-Tractor',
   board_membership_customer_id: 'synthetic-company', board_membership_company_name: 'Example Fleet', owner_company_name: 'Example Fleet',
-  status: 'active', odometer: 120000, pm_remaining: 25000, next_pm_miles: 145000, driver_name: 'Example Driver', open_work_order_count: 0,
+  status: 'active', odometer: 120000, pm_remaining: 20433, next_pm_miles: 145000, driver_name: 'Example Driver', open_work_order_count: 0,
   telemetry: {
     location: { ...source, label: 'Charleston, WV', lat: null, lng: null },
     speed: { ...source, value: 65, unit: 'mph', basis: null }, odometer: { ...source, value: 124567, unit: 'mi', basis: 'dashboard_unspecified' },

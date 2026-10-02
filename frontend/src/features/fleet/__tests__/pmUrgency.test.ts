@@ -6,6 +6,14 @@ import { pmState, pmUrgency } from '../helpers'
    "later than" a truck due next week. */
 
 describe('pmState label at the day boundary', () => {
+  it('uses the server countdown for label, progress and urgency without subtracting again', () => {
+    const snapshot = { pm_remaining: 16816, pm_interval_miles: 25000 }
+    expect(pmState(snapshot).label).toBe('16,816 mi to PM')
+    expect(pmState(snapshot).pct).toBeCloseTo(32.736)
+    expect(pmUrgency(snapshot)).toBeCloseTo(16816 / 600)
+    expect(pmState({ ...snapshot, pm_remaining: 0 }).label).toBe('PM due')
+    expect(pmState({ ...snapshot, pm_remaining: -123 }).label).toBe('OVERDUE 123 mi')
+  })
   it('says a truck due today is due today, not "in 0 d"', () => {
     expect(pmState({ pm_remaining: null, pm_days_remaining: 0, pm_interval_miles: 25000 }).label)
       .toBe('Due today')

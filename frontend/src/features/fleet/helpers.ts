@@ -127,7 +127,8 @@ export function pmState(t: Pick<BoardTruck, 'pm_remaining' | 'pm_interval_miles'
   // reads "Due today" rather than "OVERDUE 0 d", which is both wrong and
   // alarming.
   if ((r != null && r <= 0) || (d != null && d <= 0)) {
-    if (r != null && r <= 0) return { label: `OVERDUE ${fmt(Math.abs(r))} mi`, cls: 'pm-over', pct: 100 }
+    if (r === 0) return { label: 'PM due', cls: 'pm-over', pct: 100 }
+    if (r != null && r < 0) return { label: `OVERDUE ${fmt(Math.abs(r))} mi`, cls: 'pm-over', pct: 100 }
     const days = d as number
     const label = days === 0 ? 'Due today' : `OVERDUE ${Math.abs(days)} d`
     return { label, cls: 'pm-over', pct: 100 }
