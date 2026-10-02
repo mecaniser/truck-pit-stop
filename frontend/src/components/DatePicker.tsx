@@ -47,6 +47,8 @@ export interface DatePickerProps {
       booked before another truck is committed to a date. Omit for a plain
       calendar. */
   dayLoad?: DayLoad[]
+  /** Hide scheduling details when selecting a plain date, such as trip history. */
+  showDayDetails?: boolean
   /** Called with the `YYYY-MM` now on screen, so the caller can fetch that
       month's load as the user navigates. */
   onMonthChange?: (month: string) => void
@@ -79,6 +81,7 @@ export default function DatePicker({
   placeholder = 'YYYY-MM-DD',
   hint,
   dayLoad,
+  showDayDetails = true,
   onMonthChange,
   compact,
   surface = 'shell',
@@ -275,7 +278,7 @@ export default function DatePicker({
                   key={day}
                   data-day={day}
                   aria-label={booked ? `${formatDay(day)} — ${bookedNames}` : formatDay(day)}
-                  aria-describedby={`${dialogId}-detail`}
+                  aria-describedby={showDayDetails ? `${dialogId}-detail` : undefined}
                   onMouseEnter={() => setPeekDay(day)}
                   onMouseLeave={() => setPeekDay(prev => (prev === day ? '' : prev))}
                   aria-pressed={day === selected}
@@ -332,7 +335,7 @@ export default function DatePicker({
               in-flow block that appeared on hover pushed the days out from
               under the pointer. A reserved footer does neither, and it is the
               only form that works on touch, where there is no hover at all. */}
-          <div
+          {showDayDetails && <div
             className="db-datepicker__detail"
             data-testid="day-detail"
             id={`${dialogId}-detail`}
@@ -373,7 +376,7 @@ export default function DatePicker({
                 Select a day to see what is already scheduled
               </p>
             )}
-          </div>
+          </div>}
         </div>
       )}
     </div>

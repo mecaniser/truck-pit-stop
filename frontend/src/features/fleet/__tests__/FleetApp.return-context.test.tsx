@@ -12,7 +12,7 @@ vi.mock('@/lib/api', () => ({ default: apiMocks }))
 vi.mock('react-hot-toast', () => ({ default: { success: vi.fn(), error: vi.fn() } }))
 vi.mock('../FleetBoard', () => ({ default: () => <div>Fleet board content</div> }))
 vi.mock('../FleetMap', () => ({ default: () => <div>Fleet map</div> }))
-vi.mock('../TruckDetail', () => ({ default: () => <div>Truck detail</div> }))
+vi.mock('../TruckDetail', () => ({ default: ({ truckId, onViewTrips }: { truckId: string; onViewTrips?: (id: string) => void }) => <div>Truck detail<button onClick={() => onViewTrips?.(truckId)}>View trips</button></div> }))
 vi.mock('../FleetModals', () => ({
   AddTruckModal: () => null,
   SchedulePMModal: () => null,
@@ -50,6 +50,7 @@ function renderFleet(initialEntries: Parameters<typeof MemoryRouter>[0]['initial
 
 describe('Fleet board return context', () => {
   beforeEach(() => {
+    Element.prototype.scrollTo = vi.fn()
     window.localStorage.removeItem('tps-fleet-state')
     apiMocks.get.mockReset()
     apiMocks.get.mockResolvedValue({ data: fleetBoard })
@@ -82,6 +83,20 @@ describe('Fleet board return context', () => {
     expect(await screen.findByText('Fleet map', { selector: '.topbar-title' })).toBeInTheDocument()
     expect(screen.getByTestId('current-location')).toHaveTextContent('/fleet')
     expect(screen.queryByText(/live map/i)).not.toBeInTheDocument()
+  })
+
+  it('connects truck details to Trips and returns with the same truck selected', async () => {
+    const user = userEvent.setup()
+    const truck = { id: 'trip-truck', unit_number: '101', display_unit_number: 'Example 101', status: 'active', make: 'VOLVO', model: 'VNR' }
+    window.localStorage.setItem('tps-fleet-state', JSON.stringify({ view: 'detail', selId: truck.id }))
+    apiMocks.get.mockImplementation(async (url: string) => ({ data: url === '/fleet/board' ? { ...fleetBoard, trucks: [truck] } : { items: [], total: 0, summary: { trip_count: 0, distance_miles: 0, driving_seconds: 0 } } }))
+    renderFleet(['/fleet'])
+    await user.click(await screen.findByRole('button', { name: 'View trips' }))
+    expect(await screen.findByLabelText('Truck')).toHaveValue(truck.id)
+    await user.click(screen.getByRole('button', { name: 'Back to truck 101' }))
+    expect(screen.getByText('Truck detail')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: /TRIPS.*Trips/ }))
+    expect(await screen.findByLabelText('Truck')).toHaveValue(truck.id)
   })
 
   it('returns to the Fleet Settings context when that is where the board was opened', async () => {
