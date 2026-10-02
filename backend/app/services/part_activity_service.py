@@ -34,7 +34,8 @@ ACTIVITY_EVENT_TYPES = {
         "part.created", "part.baseline", "part.identity_changed",
         "part.category_changed", "part.location_changed", "part.unit_changed",
         "part.photo_changed", "part.reorder_level_changed", "part.cost_changed",
-        "part.selling_price_changed", "supplier_source.created",
+        "part.selling_price_changed", "part.core_charge_changed",
+        "part.supplier_text_changed", "supplier_source.created",
         "supplier_source.updated", "supplier_source.preferred_changed",
         "supplier_source.removed",
     }),
@@ -77,7 +78,7 @@ MONEY_FIELDS = frozenset({
     "currency", "cost", "cost_before", "cost_after", "wac_before", "wac_after",
     "list_price", "charged_price", "discount", "item_subtotal", "tax",
     "service_fee", "total", "refund_allocations", "cost_basis", "unit_cost",
-    "selling_price", "core_value", "expected_credit", "actual_credit",
+    "selling_price", "core_charge", "core_value", "expected_credit", "actual_credit",
     "before_unit_cost", "unit_price", "line_total",
 })
 REFUND_ALLOCATION_FIELDS = frozenset({"item", "tax", "fee", "total"})
