@@ -1,4 +1,6 @@
 """Tenant- and membership-scoped imported trip history."""
+import math
+from app.schemas.fleet_trip import TripMetrics
 from datetime import datetime, time, timedelta, timezone
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from sqlalchemy import select, func, or_
@@ -7,6 +9,20 @@ from app.db.models.vehicle import Vehicle
 from app.db.models.customer import Customer
 from app.db.models.vehicle_relationship import FleetMembership as Member
 from app.services.fleet_telemetry import active_membership, fail, now
+
+
+def computed_metrics(raw, distance_miles):
+    if raw is None:
+        return None
+    metrics = TripMetrics.model_validate(raw)
+    result = metrics.model_dump(mode="json")
+    actual = metrics.fuel_used_gallons
+    baseline = metrics.estimate_baseline_mpg
+    trip_mpg = distance_miles / actual if actual is not None and actual > 0 else None
+    estimate = distance_miles / baseline if actual is None and baseline is not None else None
+    result["trip_mpg"] = trip_mpg if trip_mpg is not None and math.isfinite(trip_mpg) else None
+    result["estimated_fuel_gallons"] = estimate if estimate is not None and math.isfinite(estimate) else None
+    return result
 
 
 def date_window(start_date, end_date, zone):
@@ -66,5 +82,5 @@ async def list_trips(db, tenant_id, start_date, end_date, zone, vehicle_id=None,
     for trip, unit, fleet in rows:
         items.append({**{key: getattr(trip, key) for key in (
             "id", "vehicle_id", "fleet_customer_id", "started_at", "ended_at", "origin_label", "destination_label", "distance_miles", "driving_seconds", "stops", "captured_at", "source"
-        )}, "unit_number": unit, "fleet_name": fleet})
+        )}, "unit_number": unit, "fleet_name": fleet, "metrics": computed_metrics(trip.metrics, trip.distance_miles)})
     return dict(items=items, summary=dict(trip_count=totals[0], distance_miles=totals[1], driving_seconds=totals[2]), total=totals[0], limit=limit, offset=offset, timezone=zone, start_date=start_date, end_date=end_date)

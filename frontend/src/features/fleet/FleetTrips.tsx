@@ -9,11 +9,19 @@ import type { BoardTruck } from './types'
 import { fleetUnitLabel } from './helpers'
 import './trips.css'
 
+export interface TripMetrics {
+  fuel_used_gallons: number | null; trip_mpg: number | null
+  estimated_fuel_gallons: number | null; idle_seconds: number | null
+  fuel_start_percent: number | null; fuel_end_percent: number | null
+  estimate_baseline_mpg: number | null; estimate_baseline_captured_at: string | null
+  estimate_baseline_period: 'last_30_days' | null
+}
 export interface FleetTrip {
   id: string; vehicle_id: string; unit_number: string | null
   fleet_customer_id: string; fleet_name: string | null
   started_at: string; ended_at: string; origin_label: string; destination_label: string
   distance_miles: number; driving_seconds: number; captured_at: string
+  metrics?: TripMetrics | null
   source: 'motive_dashboard_manual'
   stops: { location_label: string; arrived_at: string | null; departed_at: string | null; idle_seconds: number | null }[] | null
 }
@@ -87,6 +95,7 @@ export default function FleetTrips({ trucks, filters, onFilters, onOpenTruck }: 
                   <ChevronDown size={18} className={`trip-chevron${open ? ' is-open' : ''}`} />
                 </button>
                 {open && <div className="trip-expanded" id={`trip-${trip.id}`}>
+                  <TripVitals metrics={trip.metrics} />
                   <ol className="trip-timeline">
                     <li><span className="trip-timeline-dot" /><div><small>Departure · {time(trip.started_at)}</small><strong>{trip.origin_label}</strong></div></li>
                     {trip.stops?.map((stop, i) => <li key={i}><span className="trip-timeline-dot stop" /><div><small>Stop{stop.arrived_at ? ` · ${time(stop.arrived_at)}` : ''}{stop.departed_at ? `–${time(stop.departed_at)}` : ''}{stop.idle_seconds != null ? ` · ${duration(stop.idle_seconds)} idle` : ''}</small><strong>{stop.location_label}</strong></div></li>)}
@@ -102,4 +111,22 @@ export default function FleetTrips({ trucks, filters, onFilters, onOpenTruck }: 
       </>}
     </section>
   )
+}
+
+function TripVitals({ metrics: m }: { metrics?: TripMetrics | null }) {
+  if (!m) return null
+  const known = (value: number | null) => value != null && Number.isFinite(value) && value >= 0
+  const actualFuel = known(m.fuel_used_gallons)
+  const estimatedFuel = !actualFuel && known(m.estimated_fuel_gallons) && known(m.estimate_baseline_mpg) && m.estimate_baseline_mpg! > 0 && m.estimate_baseline_period === 'last_30_days'
+  const mpg = actualFuel && m.fuel_used_gallons! > 0 && known(m.trip_mpg)
+  const idle = known(m.idle_seconds)
+  const start = known(m.fuel_start_percent); const end = known(m.fuel_end_percent)
+  if (!actualFuel && !estimatedFuel && !mpg && !idle && !start && !end) return null
+  return <dl className="trip-vitals" aria-label="Trip fuel and efficiency">
+    {actualFuel && <div className="trip-vital-fuel"><dt>Fuel used</dt><dd>{number(m.fuel_used_gallons!)} <small>gal</small></dd></div>}
+    {estimatedFuel && <div className="trip-vital-fuel"><dt>Est. fuel</dt><dd>{number(m.estimated_fuel_gallons!)} <small>gal</small></dd><small>Based on {number(m.estimate_baseline_mpg!)} MPG · 30-day avg</small></div>}
+    {mpg && <div className="trip-vital-mpg"><dt>Trip efficiency</dt><dd>{number(m.trip_mpg!)} <small>MPG</small></dd></div>}
+    {idle && <div className="trip-vital-idle"><dt>Idle time</dt><dd>{duration(m.idle_seconds!)}</dd></div>}
+    {(start || end) && <div className="trip-vital-level"><dt>{start && end ? 'Fuel level' : start ? 'Fuel at start' : 'Fuel at end'}</dt><dd>{start ? `${number(m.fuel_start_percent!)}%` : ''}{start && end ? ' → ' : ''}{end ? `${number(m.fuel_end_percent!)}%` : ''}</dd>{start && end && <small>Start → End</small>}</div>}
+  </dl>
 }

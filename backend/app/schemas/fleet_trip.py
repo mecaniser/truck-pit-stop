@@ -1,8 +1,9 @@
 """Trip read contract and strict operator import validation."""
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Literal
 from uuid import UUID
 import re
+import math
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
@@ -40,6 +41,45 @@ class TripStop(BaseModel):
         return self
 
 
+class TripMetrics(BaseModel):
+    model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
+    fuel_used_gallons: float | None = Field(default=None, ge=0, le=100000)
+    idle_seconds: int | None = Field(default=None, ge=0, strict=True)
+    fuel_start_percent: float | None = Field(default=None, ge=0, le=100)
+    fuel_end_percent: float | None = Field(default=None, ge=0, le=100)
+    estimate_baseline_mpg: float | None = Field(default=None, gt=0, le=100)
+    estimate_baseline_captured_at: datetime | None = None
+    estimate_baseline_period: Literal["last_30_days"] | None = None
+
+    @field_validator("fuel_used_gallons", "fuel_start_percent", "fuel_end_percent", "estimate_baseline_mpg", mode="before")
+    @classmethod
+    def no_bool(cls, value):
+        if isinstance(value, bool):
+            raise ValueError("Measurement must be numeric")
+        return value
+
+    _explicit = field_validator("estimate_baseline_captured_at", mode="before")(explicit_timestamp)
+
+    @field_validator("estimate_baseline_captured_at")
+    @classmethod
+    def aware(cls, value):
+        if value is not None and value.tzinfo is None:
+            raise ValueError("Explicit timezone required")
+        return value.astimezone(timezone.utc) if value is not None else None
+
+    @model_validator(mode="after")
+    def baseline_complete(self):
+        values = (self.estimate_baseline_mpg, self.estimate_baseline_captured_at, self.estimate_baseline_period)
+        if any(value is not None for value in values) and not all(value is not None for value in values):
+            raise ValueError("Complete frozen MPG baseline required")
+        return self
+
+
+class TripMetricsRead(TripMetrics):
+    trip_mpg: float | None = None
+    estimated_fuel_gallons: float | None = None
+
+
 class TripImport(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True, allow_inf_nan=False)
     vin: str
@@ -53,6 +93,7 @@ class TripImport(BaseModel):
     distance_miles: float = Field(ge=0, le=100000)
     driving_seconds: int = Field(ge=0, le=2678400, strict=True)
     stops: list[TripStop] | None = Field(default=None, max_length=100)
+    metrics: TripMetrics | None = None
 
     @field_validator("vin")
     @classmethod
@@ -85,6 +126,15 @@ class TripImport(BaseModel):
         duration = (self.ended_at - self.started_at).total_seconds()
         if duration <= 0 or self.driving_seconds > duration or self.ended_at > self.source_read_at:
             raise ValueError("Completed trip with valid driving duration required")
+        if self.metrics:
+            for denominator in (self.metrics.fuel_used_gallons, self.metrics.estimate_baseline_mpg):
+                if denominator is not None and denominator > 0 and not math.isfinite(self.distance_miles / denominator):
+                    raise ValueError("Trip metrics produce a nonfinite derived measurement")
+            if self.metrics.idle_seconds is not None and self.metrics.idle_seconds > duration:
+                raise ValueError("Idle time exceeds trip duration")
+            baseline_time = self.metrics.estimate_baseline_captured_at
+            if baseline_time is not None and not self.source_read_at - timedelta(days=30) <= baseline_time <= self.source_read_at:
+                raise ValueError("Baseline must be captured within 30 days before the source read")
         previous = self.started_at
         for stop in self.stops or []:
             if (stop.arrived_at is not None and not previous <= stop.arrived_at <= self.ended_at) or (stop.departed_at is not None and not previous <= stop.departed_at <= self.ended_at):
@@ -107,6 +157,7 @@ class TripItem(BaseModel):
     driving_seconds: int
     stops: list[TripStop] | None
     captured_at: datetime
+    metrics: TripMetricsRead | None = None
     source: Literal["motive_dashboard_manual"]
 
 

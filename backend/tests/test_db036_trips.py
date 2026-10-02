@@ -186,3 +186,90 @@ async def test_input_duplicates_unknown_stops_and_time_numbers():
     altered["rows"][0]["stops"] = [dict(location_label="Example", arrived_at=None, departed_at=None, idle_seconds=-1)]
     with pytest.raises(ValueError):
         parse_rows(altered, now())
+
+
+def baseline():
+    return {"estimate_baseline_mpg": 6.5,
+            "estimate_baseline_captured_at": (now()-timedelta(days=1)).isoformat(),
+            "estimate_baseline_period": "last_30_days"}
+
+
+@pytest.mark.parametrize("metrics", [
+    {"fuel_used_gallons": -1}, {"fuel_used_gallons": 100001}, {"fuel_used_gallons": "unknown"}, {"fuel_used_gallons": True}, {"fuel_used_gallons": float("nan")},
+    {"fuel_used_gallons": float("inf")}, {"idle_seconds": True}, {"idle_seconds": -1},
+    {"idle_seconds": 3601}, {"fuel_start_percent": 101}, {"fuel_end_percent": -1},
+    {"estimate_baseline_mpg": 6.5}, {"estimate_baseline_captured_at": "2026-10-02T12:00:00"},
+    {"trip_mpg": 5}, {"estimated_fuel_gallons": 5},
+])
+async def test_invalid_metrics(metrics):
+    d = document(); d["rows"][0]["metrics"] = metrics
+    with pytest.raises(ValueError):
+        parse_rows(d, now())
+
+
+async def test_baseline_dates_numeric_validation():
+    for change in ({"estimate_baseline_mpg": 0}, {"estimate_baseline_mpg": 101}, {"estimate_baseline_mpg": True},
+                   {"estimate_baseline_mpg": float("inf")},
+                   {"estimate_baseline_period": "last_7_days"},
+                   {"estimate_baseline_captured_at": now().isoformat()},
+                   {"estimate_baseline_captured_at": (now()-timedelta(days=31)).isoformat()}):
+        d = document(); d["rows"][0]["metrics"] = {**baseline(), **change}
+        with pytest.raises(ValueError):
+            parse_rows(d, now())
+
+
+async def test_metric_calculations_preserve_zero_and_actual_precedence():
+    from app.services.fleet_trips import computed_metrics
+    assert computed_metrics(None, 40) is None
+    unknown = computed_metrics({}, 40)
+    assert unknown["trip_mpg"] is None and unknown["estimated_fuel_gallons"] is None
+    estimated = computed_metrics(baseline(), 65)
+    assert estimated["estimated_fuel_gallons"] == 10
+    assert estimated["trip_mpg"] is None
+    actual = computed_metrics({**baseline(), "fuel_used_gallons": 5, "fuel_start_percent": 0, "idle_seconds": 0}, 40)
+    assert actual["trip_mpg"] == 8 and actual["estimated_fuel_gallons"] is None
+    assert actual["fuel_start_percent"] == 0 and actual["idle_seconds"] == 0
+    zero = computed_metrics({**baseline(), "fuel_used_gallons": 0}, 40)
+    assert zero["fuel_used_gallons"] == 0
+    assert zero["trip_mpg"] is None and zero["estimated_fuel_gallons"] is None
+    assert computed_metrics({"fuel_used_gallons": 5}, 0)["trip_mpg"] == 0
+
+
+async def test_metrics_import_roundtrip_retry_and_legacy_hash(db_session, monkeypatch):
+    import hashlib
+    import json
+    from scripts.import_motive_trips import digest
+    actor, vehicle, member = await prepared(db_session, monkeypatch)
+    member.effective_from = now()-timedelta(days=7)
+    await db_session.commit()
+    d = document()
+    old_row = parse_rows(d, now())[0]
+    old_payload = old_row.model_dump(mode="json", exclude={"source_read_at", "metrics"})
+    assert digest(old_row) == hashlib.sha256(json.dumps(old_payload, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+    from app.schemas.fleet_trip import TripMetrics
+    old_row.metrics = TripMetrics()
+    assert digest(old_row) == hashlib.sha256(json.dumps(old_payload, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+    d["rows"][0]["metrics"] = {**baseline(), "idle_seconds": 0, "fuel_end_percent": 0}
+    rows = parse_rows(d, now())
+    receipt = await run_import(db_session, rows, actor.tenant_id, actor.id, True)
+    await db_session.commit()
+    retry = await run_import(db_session, rows, actor.tenant_id, actor.id, True)
+    assert retry["rows"][0]["action"] == "unchanged"
+    assert retry["rows"][0]["trip_id"] == receipt["rows"][0]["trip_id"]
+    page = await list_trips(db_session, actor.tenant_id, (now()-timedelta(days=1)).date(), now().date(), "UTC")
+    metrics = page["items"][0]["metrics"]
+    assert metrics["estimated_fuel_gallons"] == pytest.approx(40/6.5)
+    assert metrics["trip_mpg"] is None and metrics["idle_seconds"] == 0 and metrics["fuel_end_percent"] == 0
+    assert metrics["estimate_baseline_captured_at"] == rows[0].metrics.estimate_baseline_captured_at.isoformat().replace("+00:00", "Z")
+    rows[0].metrics.fuel_used_gallons = 5
+    with pytest.raises(ValueError, match="Conflicting"):
+        await run_import(db_session, rows, actor.tenant_id, actor.id, True)
+    assert vehicle.mileage == 100
+
+
+@pytest.mark.parametrize("metric", ["fuel_used_gallons", "estimate_baseline_mpg"])
+async def test_reject_nonfinite_derived_metric(metric):
+    d = document()
+    d["rows"][0]["metrics"] = {**(baseline() if metric == "estimate_baseline_mpg" else {}), metric: 1e-309}
+    with pytest.raises(ValueError, match="nonfinite derived"):
+        parse_rows(d, now())

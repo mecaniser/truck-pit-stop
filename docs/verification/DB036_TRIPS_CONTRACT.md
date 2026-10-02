@@ -170,3 +170,92 @@ old clients remain compatible. App rollback hides the new surface while retainin
 stored trips; destructive migration downgrade is not a routine rollback.
 Live collection/import and deployment need separate accurate release evidence;
 mocked UI acceptance never proves imported production data.
+
+## v1.1 optional fuel and idle metrics
+
+Product owner authorized compact fuel/idle metrics plus deployment and import
+after release gates on 2026-10-02. Architecture approves the following additive
+contract before the migration is released. Add a nullable `metrics` JSON column
+to unreleased migration 158 and its trip model; a second migration is unnecessary
+while 158 has not been deployed. Existing requests may omit metrics; existing
+clients may ignore the new response property.
+
+Import `metrics` is an optional object with these fields, each defaulting to null:
+
+```typescript
+type TripMetricsInput = {
+  fuel_used_gallons: number | null;
+  idle_seconds: number | null;
+  fuel_start_percent: number | null;
+  fuel_end_percent: number | null;
+  estimate_baseline_mpg: number | null;
+  estimate_baseline_captured_at: string | null;
+  estimate_baseline_period: 'last_30_days' | null;
+};
+
+type TripMetrics = TripMetricsInput & {
+  trip_mpg: number | null;
+  estimated_fuel_gallons: number | null;
+};
+// TripItem.metrics: TripMetrics | null
+```
+
+Input validation is strict and rejects extra fields, booleans, nonnumeric
+strings, NaN and Infinity. Gallons are finite 0–100000; each fuel percentage is
+independently nullable and finite 0–100. Idle is a nonnegative integer bounded by
+trip elapsed seconds. Do not require driving plus idle to equal elapsed time:
+provider driving/idle definitions and displayed rounding can differ. Do not
+infer trip idle by summing stops that were not verified to belong to the trip.
+
+The three estimate baseline fields are all populated or all null. Baseline MPG
+must be finite and strictly positive, at most 100. The baseline capture timestamp
+must contain an explicit timezone, must not be later than `source_read_at`,
+and must be no more than 30 days older than that source reading.
+Period is exactly `last_30_days`. The collector supplies an actually observed
+MPG baseline for this VIN, and its original capture timestamp. Persist this
+baseline with the trip; subsequent truck MPG updates must never recalculate old
+trips using a different baseline. It is a historical estimate basis, not an
+assertion of that trip's measured consumption or contemporaneous efficiency.
+
+Server-derived output:
+
+- When verified `fuel_used_gallons > 0`, `trip_mpg = distance_miles /
+  fuel_used_gallons` and `estimated_fuel_gallons = null`.
+- When actual gallons are null and a complete baseline exists,
+  `estimated_fuel_gallons = distance_miles / estimate_baseline_mpg` and
+  `trip_mpg = null`.
+- Verified zero gallons remains zero and yields neither computed MPG nor a fuel
+  estimate, avoiding division by zero and preserving the reported value.
+- Missing fuel and missing baseline yield null computed values. Unknown metrics
+  never become zero. Never calculate gallons from a fuel-percentage drop without
+  a verified tank-capacity/refueling model; tank capacity is not part of trips.
+
+Reject source inputs whose derived division would be nonfinite. Compute from stored unrounded numbers. UI may round gallons/MPG to one decimal;
+rounding never changes persisted source or estimate inputs. Display measured
+`Fuel used`, actual `Trip MPG`, `Idle`, and `Fuel start → end` only when available.
+An estimated gallon figure is always labeled `Est. fuel`; a small line within the expanded row identifies
+the frozen 30-day MPG basis. Never relabel baseline MPG as Trip MPG. If only one
+fuel percentage is available, label that endpoint explicitly rather than showing
+a fabricated pair. Metrics remain within the expanded trip details, preserving
+the compact route list and touch layout.
+
+Metrics participate in immutable payload digest/deduplication. Normalize omitted,
+null and entirely empty metrics equivalently to preserve legacy retries.
+Computed outputs are not importable and do not enter the digest. A different
+nonempty metric payload for an existing trip identity remains a conflict, not a
+silent update. Initial production import can include these values directly.
+
+Source plan: the three verified truck 609 driving segments have 40, 25 and 66
+miles. The first and third may include 240 seconds idle only when confirmed from
+their own source trip. A captured 6.5 MPG, 30-day baseline permits estimated fuel
+of approximately 6.2, 3.8 and 10.2 gallons respectively. These are estimates;
+actual consumed gallons, actual Trip MPG and start/end fuel levels stay null
+unless separately verified in Motive. No production mutation is implied by this
+contract or its illustrative calculations.
+
+Extend gates for absent metrics compatibility, verified zero, actual fuel taking
+precedence, estimated fuel clearly labeled, incomplete baseline rejection,
+invalid/future capture time, out-of-range percentage/idle, frozen baseline after
+later telemetry changes, repeat import no-op and changed metrics conflict.
+Existing pagination summaries remain trip count, distance and driving time;
+mixed measured/estimated fuel is not silently combined into a fleet total.

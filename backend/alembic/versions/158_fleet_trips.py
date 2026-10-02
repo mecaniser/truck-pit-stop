@@ -32,6 +32,7 @@ def upgrade():
         sa.Column("distance_miles", sa.Float(), nullable=False),
         sa.Column("driving_seconds", sa.Integer(), nullable=False),
         sa.Column("stops", sa.JSON()),
+        sa.Column("metrics", sa.JSON()),
         sa.Column("captured_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("captured_by_user_id", postgresql.UUID(as_uuid=True), sa.ForeignKey("users.id"), nullable=False),
         sa.UniqueConstraint("tenant_id", "provider_vehicle_id", "started_at", name="uq_fleet_trip_departure"),

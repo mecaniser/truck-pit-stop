@@ -33,7 +33,11 @@ def parse_rows(document, stamp):
 
 
 def digest(row):
-    return hashlib.sha256(json.dumps(row.model_dump(mode="json", exclude={"source_read_at"}), sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+    payload = row.model_dump(mode="json", exclude={"source_read_at"})
+    # Retain exact hashes from pre-metrics trips and normalize all-unknown input.
+    if payload["metrics"] is None or all(value is None for value in payload["metrics"].values()):
+        payload.pop("metrics")
+    return hashlib.sha256(json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
 
 
 async def run_import(db, rows, tenant_id, actor_id, apply=False):
@@ -64,8 +68,8 @@ async def run_import(db, rows, tenant_id, actor_id, apply=False):
     for row, vehicle, member, existing, checksum in plans:
         trip = existing
         if apply and trip is None:
-            data = row.model_dump(exclude={"vin", "stops", "unit"})
-            trip = FleetTrip(**data, provider_unit=row.unit, stops=[stop.model_dump(mode="json") for stop in row.stops] if row.stops is not None else None,
+            data = row.model_dump(exclude={"vin", "stops", "unit", "metrics"})
+            trip = FleetTrip(**data, provider_unit=row.unit, metrics=row.metrics.model_dump(mode="json") if row.metrics else None, stops=[stop.model_dump(mode="json") for stop in row.stops] if row.stops is not None else None,
                 tenant_id=tenant_id, vehicle_id=vehicle.id, fleet_customer_id=member.fleet_customer_id, fleet_membership_id=member.id,
                 verified_vin=row.vin, request_digest=checksum, source="motive_dashboard_manual", captured_at=stamp, captured_by_user_id=actor_id)
             db.add(trip)

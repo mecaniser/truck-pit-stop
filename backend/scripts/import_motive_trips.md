@@ -37,3 +37,33 @@ Verify GET `/api/v1/fleet/trips` with the corresponding departure date/timezone,
 then open Trips from that truck. Totals describe recorded coverage only. App
 rollback can hide Trips while retaining records; do not downgrade the migration
 as a routine rollback because that would delete imported trip history.
+
+## Optional trip metrics
+
+Rows may include a nullable `metrics` object:
+
+```json
+{"fuel_used_gallons":null,"idle_seconds":0,"fuel_start_percent":80,"fuel_end_percent":null,"estimate_baseline_mpg":6.5,"estimate_baseline_captured_at":"2026-10-02T08:00:00-04:00","estimate_baseline_period":"last_30_days"}
+```
+
+Only enter source-verified trip fuel use, idle time and endpoint fuel percentages.
+Unknown values stay null, including on legacy records; zero is a known reading.
+Percentages cannot establish gallons consumed because refueling and tank capacity
+are unknown. Idle time cannot exceed trip elapsed time. Frozen estimation baseline
+requires all three fields, positive finite MPG, and a timezone-qualified capture
+within the 30 days before `source_read_at`. It is supplied explicitly from that
+truck's verified MPG record, never looked up dynamically during reads.
+
+The API returns `trip_mpg = distance_miles / fuel_used_gallons` only for positive
+actual gallons. If actual gallons are absent and a baseline exists, it returns
+`estimated_fuel_gallons = distance_miles / estimate_baseline_mpg`. Actual zero
+suppresses both division and estimated fallback. Estimated fuel never becomes
+actual fuel or actual trip MPG. Extremely small divisors that overflow are
+rejected during import. The read projection also guards older stored input from
+producing nonfinite JSON. These values do not affect PM,
+service odometer or 30-day fleet MPG.
+
+Metrics are part of immutable content: changed values on an existing trip cause
+a conflict. Missing/null/all-null metrics retain the original no-metrics digest,
+so prior exact retries remain safe. Migration 158 includes nullable JSON metrics
+before its first deployment; no existing deployed migration is being modified.

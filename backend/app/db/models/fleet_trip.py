@@ -23,6 +23,7 @@ class FleetTrip(BaseModel):
     distance_miles = Column(Float, nullable=False)
     driving_seconds = Column(Integer, nullable=False)
     stops = Column(JSON, nullable=True)
+    metrics = Column(JSON, nullable=True)
     captured_at = Column(DateTime(timezone=True), nullable=False)
     captured_by_user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
     __table_args__ = (

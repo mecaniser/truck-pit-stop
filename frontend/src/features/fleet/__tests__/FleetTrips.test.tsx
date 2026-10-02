@@ -21,7 +21,31 @@ function setup(filters: TripFilters = { vehicleId: truck.id, start: '2026-10-02'
   return open
 }
 beforeEach(() => { api.get.mockReset(); api.get.mockResolvedValue({ data: response }) })
+const emptyMetrics = { fuel_used_gallons: null, trip_mpg: null, estimated_fuel_gallons: null, idle_seconds: null, fuel_start_percent: null, fuel_end_percent: null, estimate_baseline_mpg: null, estimate_baseline_captured_at: null, estimate_baseline_period: null }
 describe('Fleet trip history', () => {
+  it('labels baseline fuel estimates and never presents them as trip efficiency', async () => {
+    api.get.mockResolvedValue({ data: { ...response, items: [{ ...response.items[0], metrics: { ...emptyMetrics, estimated_fuel_gallons: 40 / 6.5, estimate_baseline_mpg: 6.5, estimate_baseline_period: 'last_30_days', estimate_baseline_captured_at: '2026-10-02T15:00:00Z', idle_seconds: 240 } }] } })
+    setup(); await userEvent.click(await screen.findByRole('button', { name: /First City/ }))
+    const vitals = screen.getByLabelText('Trip fuel and efficiency')
+    expect(vitals).toHaveTextContent('Est. fuel6.2 gal')
+    expect(vitals).toHaveTextContent('6.5 MPG · 30-day avg')
+    expect(vitals).toHaveTextContent('Idle time4m')
+    expect(within(vitals).queryByText('Trip efficiency')).not.toBeInTheDocument()
+    expect(within(vitals).queryByText('Fuel level')).not.toBeInTheDocument()
+  })
+  it('shows actual fuel, actual efficiency and zero end fuel without estimates', async () => {
+    api.get.mockResolvedValue({ data: { ...response, items: [{ ...response.items[0], metrics: { ...emptyMetrics, fuel_used_gallons: 5, trip_mpg: 8, fuel_start_percent: 10, fuel_end_percent: 0, idle_seconds: 0 } }] } })
+    setup(); await userEvent.click(await screen.findByRole('button', { name: /First City/ }))
+    const vitals = screen.getByLabelText('Trip fuel and efficiency')
+    expect(vitals).toHaveTextContent('Fuel used5 gal'); expect(vitals).toHaveTextContent('Trip efficiency8 MPG')
+    expect(vitals).toHaveTextContent('10% → 0%'); expect(vitals).toHaveTextContent('Idle time0m')
+    expect(within(vitals).queryByText('Est. fuel')).not.toBeInTheDocument()
+  })
+  it('omits all-unknown metrics instead of rendering empty fields', async () => {
+    api.get.mockResolvedValue({ data: { ...response, items: [{ ...response.items[0], metrics: emptyMetrics }] } })
+    setup(); await userEvent.click(await screen.findByRole('button', { name: /First City/ }))
+    expect(screen.queryByLabelText('Trip fuel and efficiency')).not.toBeInTheDocument()
+  })
   it('uses calendar quick picks while keeping the truck selection', async () => {
     setup(); await screen.findByText('First City, NC')
     for (const [label, preset] of [['Day', 'day'], ['Week', 'week'], ['Month', 'month']] as const) {
