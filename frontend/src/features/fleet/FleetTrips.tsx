@@ -92,7 +92,6 @@ export default function FleetTrips({ trucks, filters, onFilters, onOpenTruck }: 
           <div><Clock3 size={18} /><span><strong>{duration(query.data.summary.driving_seconds)}</strong><small>Driving</small></span></div>
         </div>
         {query.data.total === 0 ? <div className="trips-empty"><Route size={28} /><h3>No imported trips</h3><p>No trip history has been imported for this selection.</p></div> : <>
-          <div className="trips-legend" aria-label="Route legend"><span className="legend-departure"><i aria-hidden="true" />Departure</span><span className="legend-arrival"><i aria-hidden="true" />Arrival</span></div>
           {weeks.length > 1 ? <div className="trips-weeks" tabIndex={0} aria-label="Trip weeks">{weeks.map(week => <TripWeek key={`${filters.vehicleId}:${week.start}:${week.end}`} {...week} filters={filters} timezone={timezone} trucks={trucks} />)}</div> : <TripList key={`${filters.vehicleId}:${filters.start}:${filters.end}`} data={query.data} trucks={trucks} selected={!!selectedTruck} timezone={timezone} offset={offset} setOffset={setOffset} />}
         </>}
       </>}
@@ -131,7 +130,7 @@ function TripList({ data, trucks, selected, timezone, offset, setOffset }: TripL
                 </Summary>
                 {open && <div className="trip-expanded" id={`trip-${trip.id}`}>
                   {!!trip.stops?.length && <ol className="trip-timeline">
-                    {trip.stops?.map((stop, i) => <li key={i}><span className="trip-timeline-dot stop" /><div><small>Stop{stop.arrived_at ? ` · ${time(stop.arrived_at)}` : ''}{stop.departed_at ? `–${time(stop.departed_at)}` : ''}{stop.idle_seconds != null ? ` · ${duration(stop.idle_seconds)} idle` : ''}</small><strong>{stop.location_label}</strong></div></li>)}
+                    {trip.stops?.map((stop, i) => <li key={i}><span className="trip-timeline-dot stop" /><div><small>Stop{stop.arrived_at ? ` · ${time(stop.arrived_at)}` : ''}{stop.departed_at ? `–${time(stop.departed_at)}` : ''}{stop.idle_seconds != null && stop.idle_seconds >= 1800 ? ` · ${duration(stop.idle_seconds)} idle` : ''}</small><strong>{stop.location_label}</strong></div></li>)}
                   </ol>}
                   <div className="trip-footer"><span>{trip.stops?.length} stops · Captured {new Date(trip.captured_at).toLocaleString()}</span></div>
                 </div>}
@@ -168,7 +167,7 @@ function TripVitals({ metrics: m }: { metrics?: TripMetrics | null }) {
   const actualFuel = known(m.fuel_used_gallons)
   const estimatedFuel = !actualFuel && known(m.estimated_fuel_gallons) && known(m.estimate_baseline_mpg) && m.estimate_baseline_mpg! > 0 && m.estimate_baseline_period === 'last_30_days'
   const mpg = actualFuel && m.fuel_used_gallons! > 0 && known(m.trip_mpg)
-  const idle = known(m.idle_seconds)
+  const idle = known(m.idle_seconds) && m.idle_seconds! >= 1800
   const start = known(m.fuel_start_percent); const end = known(m.fuel_end_percent)
   if (!actualFuel && !estimatedFuel && !mpg && !idle && !start && !end) return null
   return <span role="group" className="trip-vitals" aria-label="Trip fuel and efficiency">

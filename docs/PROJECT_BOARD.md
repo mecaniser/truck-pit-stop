@@ -1348,3 +1348,5 @@ reload.
 Both sides use the same shapes: a valid response, a null-sha response, a
 non-JSON body (the `index.html` fallback case above), and a network failure.
 No test may reach the network.
+
+Latest user refinement: removed the visible route legend while retaining blue/green endpoints and screen-reader labels. Idle values below1800seconds are hidden in metrics and stop details;1800seconds displays30m. Busy-day synthetic preview now has3,4,5 trips per day across the three weeks; all rows render without a per-day cap. Reverted the horizontal-week scrolling change after clarifying loads meant daily trips.30 focused Trips/navigation tests passed before the final legend-only removal; browser confirms legend absent and endpoint colors retained.
