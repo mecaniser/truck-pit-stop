@@ -63,3 +63,7 @@ Integrity verdict: functional structure passes; styling maintainability needs im
 | P3 | Detector flags summary accent | Retain incumbent treatment for this scoped change | Do not redesign unrelated summary styling during layout repair. |
 
 Positive findings: no empty leg disclosures, no nested day boxes, hollow/filled route markers supplement color, short idle readings suppressed, one selected-truck navigation link,44px visible control heights. Next targeted commands: `impeccable harden` for touch detail access, `impeccable typeset` for small metadata, `impeccable polish` for final consolidation. These audit findings remain explicit follow-ups, not claimed fixed.
+
+## Production release — 2026-10-03
+
+PR #461 merged as029c3e50c616823ab29802d12846cc1ed3833944 after all six CI checks passed. Railway9ae8a22c-8bdc-47b3-80b0-b4d613dbd66a reportsSUCCESS on that commit. Authenticated production reload confirmed day columns Sep28–Oct3, each974px high, outer scroll1250/1250, unchanged full-range356 trips/26,029mi/470h54m. Daily trip counts81+75+64+72+58+6=356. Screenshot: private output/trips-qa/production-day-columns.png. Remaining audit polish is explicitly documented above and was not part of this approved release.
