@@ -94,7 +94,7 @@ describe('Fleet board return context', () => {
     renderFleet(['/fleet'])
     await user.click(await screen.findByRole('button', { name: 'View trips' }))
     expect(await screen.findByLabelText('Truck')).toHaveTextContent('101')
-    await user.click(screen.getByRole('button', { name: 'Back to truck 101' }))
+    await user.click(await screen.findByRole('button', { name: 'Truck 101 View truck' }))
     expect(screen.getByText('Truck detail')).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: /TRIPS.*Trips/ }))
     expect(await screen.findByLabelText('Truck')).toHaveTextContent('101')

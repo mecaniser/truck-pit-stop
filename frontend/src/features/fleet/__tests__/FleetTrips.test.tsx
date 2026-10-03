@@ -3,7 +3,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, screen, waitFor, fireEvent, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { tripPreset } from '../tripFilters'
+import { tripPreset, tripWeeks } from '../tripFilters'
 import type { BoardTruck } from '../types'
 import FleetTrips, { type FleetTripsResponse, type TripFilters } from '../FleetTrips'
 const api = vi.hoisted(() => ({ get: vi.fn() }))
@@ -38,20 +38,41 @@ describe('Fleet trip history', () => {
   })
   it('shows selected truck once as a heading and labels each leg endpoints', async () => {
     setup()
-    const leg = await screen.findByRole('button', { name: /Leg 1/ })
+    const leg = await screen.findByRole('article', { name: /Leg 1/ })
     expect(screen.getByRole('heading', { name: 'Example Fleet 101' })).toBeInTheDocument()
     expect(leg).not.toHaveTextContent('Example Fleet 101')
+    expect(leg).not.toHaveTextContent('Leg 1')
+    expect(screen.queryByLabelText('Route legend')).not.toBeInTheDocument()
     expect(leg).toHaveTextContent('Departure')
     expect(leg).toHaveTextContent('Arrival')
     expect(screen.getByRole('heading', { name: 'Oct 2' })).toBeInTheDocument()
   })
+  it('opens one day per week and switches days without changing other columns', async () => {
+    const rows = ['2026-09-14', '2026-09-15', '2026-09-21'].map((date, i) => ({ ...response.items[0], id: `day-${i}`, started_at: `${date}T13:00:00Z`, ended_at: `${date}T14:00:00Z` }))
+    api.get.mockImplementation((_url, { params }) => {
+      const items = rows.filter(t => t.started_at.slice(0, 10) >= params.start_date && t.started_at.slice(0, 10) <= params.end_date)
+      return Promise.resolve({ data: { ...response, items, total: items.length } })
+    })
+    setup({ vehicleId: truck.id, start: '2026-09-14', end: '2026-09-27' })
+    const first = await screen.findByRole('button', { name: /Sep 14 1 trips/ })
+    const second = screen.getByRole('button', { name: /Sep 15 1 trips/ })
+    const otherWeek = await screen.findByRole('button', { name: /Sep 21 1 trips/ })
+    expect(first).toHaveAttribute('aria-expanded', 'true')
+    expect(second).toHaveAttribute('aria-expanded', 'false')
+    await userEvent.click(second)
+    expect(first).toHaveAttribute('aria-expanded', 'false')
+    expect(second).toHaveAttribute('aria-expanded', 'true')
+    expect(otherWeek).toHaveAttribute('aria-expanded', 'true')
+  })
   it('retains leg truck identity for all trucks and groups chronological days', async () => {
     const first = { ...response.items[0], id: 'earlier', started_at: '2026-09-28T13:00:00Z', ended_at: '2026-09-28T14:00:00Z' }
-    api.get.mockResolvedValue({ data: { ...response, items: [first, response.items[0]], total: 2 } })
+    api.get.mockImplementation((_url, { params }) => {
+      const items = [first, response.items[0]].filter(t => t.started_at.slice(0, 10) >= params.start_date && t.started_at.slice(0, 10) <= params.end_date)
+      return Promise.resolve({ data: { ...response, items, total: items.length, summary: { ...response.summary, trip_count: items.length, distance_miles: items.length * 40 } } })
+    })
     setup({ vehicleId: '', start: '2026-09-28', end: '2026-10-02' })
-    const legs = await screen.findAllByRole('button', { name: /Example Fleet 101/ })
-    expect(legs).toHaveLength(2)
-    expect(screen.getAllByRole('heading', { level: 3 }).map(h => h.textContent)).toEqual(['Sep 28', 'Oct 2'])
+    await waitFor(() => expect(screen.getAllByRole('article', { name: /Example Fleet 101/ })).toHaveLength(2))
+    expect(screen.getAllByRole('heading', { level: 3 }).map(h => h.textContent)).toEqual(['Sep 28', 'Sep 29', 'Sep 30', 'Oct 1', 'Oct 2'])
   })
   it('shows full-fleet totals and coverage even when the page contains only one truck', async () => {
     api.get.mockResolvedValue({ data: { ...response, summary: { coverage: 'partial', truck_count: 13, trip_count: 342, distance_miles: 25072.67, driving_seconds: 1634303 }, total: 342 } })
@@ -79,29 +100,35 @@ describe('Fleet trip history', () => {
   })
   it('shows seconds for short trips rather than zero minutes', async () => {
     api.get.mockResolvedValue({ data: { ...response, items: [{ ...response.items[0], driving_seconds: 14, ended_at: response.items[0].started_at, timestamp_precision: 'minute' }] } })
-    setup(); expect(await screen.findByRole('button', { name: /First City/ })).toHaveTextContent('14s')
+    setup(); expect(await screen.findByRole('article', { name: /First City/ })).toHaveTextContent('14s')
   })
   it('labels baseline fuel estimates and never presents them as trip efficiency', async () => {
     api.get.mockResolvedValue({ data: { ...response, items: [{ ...response.items[0], metrics: { ...emptyMetrics, estimated_fuel_gallons: 40 / 6.5, estimate_baseline_mpg: 6.5, estimate_baseline_period: 'last_30_days', estimate_baseline_captured_at: '2026-10-02T15:00:00Z', idle_seconds: 240 } }] } })
-    setup(); await userEvent.click(await screen.findByRole('button', { name: /First City/ }))
+    setup(); await screen.findByRole('article', { name: /First City/ })
     const vitals = screen.getByLabelText('Trip fuel and efficiency')
     expect(vitals).toHaveTextContent('Est. fuel6.2 gal')
     expect(vitals).toHaveTextContent('6.5 MPG · 30-day avg')
-    expect(vitals).toHaveTextContent('Idle time4m')
+    expect(within(vitals).queryByText('Idle time')).not.toBeInTheDocument()
     expect(within(vitals).queryByText('Trip efficiency')).not.toBeInTheDocument()
     expect(within(vitals).queryByText('Fuel level')).not.toBeInTheDocument()
   })
+  it.each([1799, 1800, 2400])('shows idle only from thirty minutes: %i seconds', async seconds => {
+    api.get.mockResolvedValue({ data: { ...response, items: [{ ...response.items[0], metrics: { ...emptyMetrics, idle_seconds: seconds } }] } })
+    setup(); await screen.findByText('First City, NC')
+    if (seconds < 1800) expect(screen.queryByText('Idle time')).not.toBeInTheDocument()
+    else expect(screen.getByLabelText('Trip fuel and efficiency')).toHaveTextContent(seconds === 1800 ? '30m' : '40m')
+  })
   it('shows actual fuel, actual efficiency and zero end fuel without estimates', async () => {
     api.get.mockResolvedValue({ data: { ...response, items: [{ ...response.items[0], metrics: { ...emptyMetrics, fuel_used_gallons: 5, trip_mpg: 8, fuel_start_percent: 10, fuel_end_percent: 0, idle_seconds: 0 } }] } })
-    setup(); await userEvent.click(await screen.findByRole('button', { name: /First City/ }))
+    setup(); await screen.findByRole('article', { name: /First City/ })
     const vitals = screen.getByLabelText('Trip fuel and efficiency')
     expect(vitals).toHaveTextContent('Fuel used5 gal'); expect(vitals).toHaveTextContent('Trip efficiency8 MPG')
-    expect(vitals).toHaveTextContent('10% → 0%'); expect(vitals).toHaveTextContent('Idle time0m')
+    expect(vitals).toHaveTextContent('10% → 0%'); expect(within(vitals).queryByText('Idle time')).not.toBeInTheDocument()
     expect(within(vitals).queryByText('Est. fuel')).not.toBeInTheDocument()
   })
   it('omits all-unknown metrics instead of rendering empty fields', async () => {
     api.get.mockResolvedValue({ data: { ...response, items: [{ ...response.items[0], metrics: emptyMetrics }] } })
-    setup(); await userEvent.click(await screen.findByRole('button', { name: /First City/ }))
+    setup(); await screen.findByRole('article', { name: /First City/ })
     expect(screen.queryByLabelText('Trip fuel and efficiency')).not.toBeInTheDocument()
   })
   it('uses calendar quick picks while keeping the truck selection', async () => {
@@ -111,7 +138,7 @@ describe('Fleet trip history', () => {
       const expected = tripPreset(preset)
       expect(screen.queryByLabelText('From')).not.toBeInTheDocument()
       expect(screen.queryByLabelText('To')).not.toBeInTheDocument()
-      await waitFor(() => expect(api.get).toHaveBeenLastCalledWith('/fleet/trips', expect.objectContaining({ params: expect.objectContaining({ start_date: expected.start, end_date: expected.end }) })))
+      await waitFor(() => expect(api.get).toHaveBeenCalledWith('/fleet/trips', expect.objectContaining({ params: expect.objectContaining({ start_date: expected.start, end_date: expected.end }) })))
       expect(screen.getByRole('button', { name: label, exact: true })).toHaveAttribute('aria-pressed', 'true')
       expect(screen.getByLabelText('Truck')).toHaveTextContent('Example Fleet 101')
     }
@@ -132,14 +159,16 @@ describe('Fleet trip history', () => {
     expect(tripPreset('week', new Date(2026, 9, 4, 12))).toEqual({ start: '2026-09-28', end: '2026-10-04' })
     expect(tripPreset('month', new Date(2024, 1, 29, 12))).toEqual({ start: '2024-02-01', end: '2024-02-29' })
   })
-  it('carries truck filter, expands on tap, returns to the same truck', async () => {
+  it('shows no empty disclosure and returns through the single summary truck link', async () => {
     const user = userEvent.setup(); const open = setup()
     expect(await screen.findByText('First City, NC')).toBeInTheDocument()
     expect(api.get).toHaveBeenCalledWith('/fleet/trips', expect.objectContaining({ params: expect.objectContaining({ vehicle_id: truck.id, start_date: '2026-10-02', end_date: '2026-10-02' }) }))
-    await user.click(screen.getByRole('button', { name: /First City/ }))
-    expect(screen.getByRole('button', { name: /First City/ })).toHaveAttribute('aria-expanded', 'true')
-    expect(screen.getByText(/Stop details unavailable/)).toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: 'View truck' })); expect(open).toHaveBeenCalledWith(truck.id)
+    expect(screen.queryByRole('button', { name: /First City/ })).not.toBeInTheDocument()
+    expect(screen.queryByText(/Stop details unavailable/)).not.toBeInTheDocument()
+    expect(screen.getAllByText('First City, NC')).toHaveLength(1)
+    expect(screen.getAllByText('Second City, NC')).toHaveLength(1)
+    expect(screen.getAllByRole('button', { name: /View truck/ })).toHaveLength(1)
+    await user.click(screen.getByRole('button', { name: 'Truck 101 View truck' })); expect(open).toHaveBeenCalledWith(truck.id)
   })
   it('changes truck and date filters', async () => {
     const user = userEvent.setup(); setup(); await screen.findByText('First City, NC')
@@ -171,5 +200,51 @@ describe('Fleet trip history', () => {
     await userEvent.click(await screen.findByRole('button', { name: 'Next' }))
     await waitFor(() => expect(api.get).toHaveBeenLastCalledWith('/fleet/trips', expect.objectContaining({ params: expect.objectContaining({ offset: 50 }) })))
     expect(screen.getByLabelText('Imported trip totals')).toHaveTextContent('2,040')
+  })
+})
+
+describe('Weekly columns', () => {
+  it('partitions partial weeks across month/year and DST without overlap', () => {
+    expect(tripWeeks('2026-09-16', '2026-10-03')).toEqual([
+      { start: '2026-09-16', end: '2026-09-20' }, { start: '2026-09-21', end: '2026-09-27' }, { start: '2026-09-28', end: '2026-10-03' },
+    ])
+    expect(tripWeeks('2026-12-31', '2027-01-04')).toEqual([{ start: '2026-12-31', end: '2027-01-03' }, { start: '2027-01-04', end: '2027-01-04' }])
+    expect(tripWeeks('2026-10-26', '2026-11-02')).toEqual([{ start: '2026-10-26', end: '2026-11-01' }, { start: '2026-11-02', end: '2026-11-02' }])
+  })
+  it('shows later weeks immediately, pages each independently and resets when truck changes', async () => {
+    api.get.mockImplementation(async (_url, { params: p }) => {
+      const overall = p.start_date === '2026-09-14' && p.end_date === '2026-10-03'
+      const total = overall ? 53 : p.start_date === '2026-09-14' ? 51 : 1
+      const offset = p.offset || 0
+      return { data: { ...response, total, offset, items: Array.from({length: Math.min(50, total-offset)}, (_, i) => ({...response.items[0], id: `${p.vehicle_id}-${p.start_date}-${offset+i}`, vehicle_id:p.vehicle_id || truck.id, started_at:`${p.start_date}T13:00:00Z`, ended_at:`${p.start_date}T14:00:00Z`})), summary: {coverage:'partial',truck_count:1,trip_count:total,distance_miles:total*40,driving_seconds:total*3600} } }
+    })
+    setup({ vehicleId:truck.id,start:'2026-09-14',end:'2026-10-03',preset:'custom' })
+    const first = await screen.findByRole('region',{name:'Week Sep 14 – Sep 20'})
+    const last = await screen.findByRole('region',{name:'Week Sep 28 – Oct 3'})
+    expect(await within(last).findByRole('article',{name:/Leg 1/})).toBeInTheDocument()
+    expect(screen.getByLabelText('Imported trip totals')).toHaveTextContent('53')
+    await userEvent.click(within(first).getByRole('button',{name:'Next'}))
+    expect(await within(first).findByRole('article',{name:/Leg 51/})).toBeInTheDocument()
+    expect(within(last).getByRole('article',{name:/Leg 1/})).toBeInTheDocument()
+    expect(screen.getByLabelText('Imported trip totals')).toHaveTextContent('53')
+    await userEvent.click(screen.getByLabelText('Truck'))
+    await userEvent.click(screen.getByRole('option',{name:'Example Fleet 102'}))
+    await waitFor(()=>expect(within(screen.getByRole('region',{name:'Week Sep 14 – Sep 20'})).getByRole('button',{name:'Previous'})).toBeDisabled())
+    expect(api.get).toHaveBeenCalledWith('/fleet/trips',expect.objectContaining({params:expect.objectContaining({vehicle_id:other.id,start_date:'2026-09-14',end_date:'2026-09-20',offset:0})}))
+  })
+  it('keeps empty weeks visible and retries a failed week separately', async () => {
+    let failed = true
+    api.get.mockImplementation(async (_url,{params:p})=> {
+      if(p.start_date==='2026-09-21' && failed) throw new Error('offline')
+      return {data:{...response,items:[],total:p.end_date==='2026-10-03' ? 1 : 0}}
+    })
+    setup({vehicleId:truck.id,start:'2026-09-14',end:'2026-10-03',preset:'custom'})
+    const empty=await screen.findByRole('region',{name:'Week Sep 14 – Sep 20'})
+    expect(await within(empty).findByText('No imported trips')).toBeInTheDocument()
+    const broken=screen.getByRole('region',{name:'Week Sep 21 – Sep 27'})
+    expect(await within(broken).findByRole('alert')).toBeInTheDocument()
+    failed=false
+    await userEvent.click(within(broken).getByRole('button',{name:'Retry'}))
+    expect(await within(broken).findByText('No imported trips')).toBeInTheDocument()
   })
 })
