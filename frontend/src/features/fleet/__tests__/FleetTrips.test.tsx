@@ -7,6 +7,7 @@ import { tripPreset } from '../tripFilters'
 import type { BoardTruck } from '../types'
 import FleetTrips, { type FleetTripsResponse, type TripFilters } from '../FleetTrips'
 const api = vi.hoisted(() => ({ get: vi.fn() }))
+vi.mock('@/contexts/ThemeContext', () => ({ useTheme: () => ({ accentColors: { 400: '#ffd000', 500: '#ffd000' } }) }))
 vi.mock('@/lib/api', () => ({ default: api }))
 const truck = { id: 'truck-1', unit_number: '101', display_unit_number: 'Example Fleet 101' } as BoardTruck
 const other = { ...truck, id: 'truck-2', unit_number: '102', display_unit_number: 'Example Fleet 102' }
@@ -28,8 +29,8 @@ describe('Fleet trip history', () => {
     const leg = await screen.findByRole('button', { name: /Leg 1/ })
     expect(screen.getByRole('heading', { name: 'Example Fleet 101' })).toBeInTheDocument()
     expect(leg).not.toHaveTextContent('Example Fleet 101')
-    expect(leg).toHaveTextContent('From ·')
-    expect(leg).toHaveTextContent('To ·')
+    expect(leg).toHaveTextContent('Departure')
+    expect(leg).toHaveTextContent('Arrival')
     expect(screen.getByRole('heading', { name: 'Oct 2' })).toBeInTheDocument()
   })
   it('retains leg truck identity for all trucks and groups chronological days', async () => {
@@ -50,8 +51,19 @@ describe('Fleet trip history', () => {
     expect(totals).toHaveTextContent('453h 58m')
     expect(screen.getByText(/Partial history/)).toBeInTheDocument()
     expect(api.get).toHaveBeenCalledWith('/fleet/trips', expect.objectContaining({ params: expect.objectContaining({ vehicle_id: undefined }) }))
-    await userEvent.selectOptions(screen.getByLabelText('Truck'), truck.id)
+    await userEvent.click(screen.getByLabelText('Truck'))
+    await userEvent.click(screen.getByRole('option', { name: 'Example Fleet 101' }))
     await waitFor(() => expect(api.get).toHaveBeenLastCalledWith('/fleet/trips', expect.objectContaining({ params: expect.objectContaining({ vehicle_id: truck.id }) })))
+  })
+  it('reveals custom calendars only on Custom and hides them on quick picks', async () => {
+    setup({ vehicleId: truck.id, start: '2026-09-28', end: '2026-10-02', preset: 'week' })
+    expect(screen.queryByLabelText('From')).not.toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Custom', exact: true }))
+    expect(screen.getByLabelText('From')).toHaveValue('2026-09-28')
+    expect(screen.getByLabelText('To')).toHaveValue('2026-10-02')
+    expect(screen.getByRole('button', { name: 'Custom' })).toHaveAttribute('aria-expanded', 'true')
+    await userEvent.click(screen.getByRole('button', { name: 'Week', exact: true }))
+    expect(screen.queryByLabelText('From')).not.toBeInTheDocument()
   })
   it('shows seconds for short trips rather than zero minutes', async () => {
     api.get.mockResolvedValue({ data: { ...response, items: [{ ...response.items[0], driving_seconds: 14, ended_at: response.items[0].started_at, timestamp_precision: 'minute' }] } })
@@ -85,10 +97,11 @@ describe('Fleet trip history', () => {
     for (const [label, preset] of [['Day', 'day'], ['Week', 'week'], ['Month', 'month']] as const) {
       await userEvent.click(screen.getByRole('button', { name: label, exact: true }))
       const expected = tripPreset(preset)
-      expect(screen.getByLabelText('From')).toHaveValue(expected.start)
-      expect(screen.getByLabelText('To')).toHaveValue(expected.end)
+      expect(screen.queryByLabelText('From')).not.toBeInTheDocument()
+      expect(screen.queryByLabelText('To')).not.toBeInTheDocument()
+      await waitFor(() => expect(api.get).toHaveBeenLastCalledWith('/fleet/trips', expect.objectContaining({ params: expect.objectContaining({ start_date: expected.start, end_date: expected.end }) })))
       expect(screen.getByRole('button', { name: label, exact: true })).toHaveAttribute('aria-pressed', 'true')
-      expect(screen.getByLabelText('Truck')).toHaveValue(truck.id)
+      expect(screen.getByLabelText('Truck')).toHaveTextContent('Example Fleet 101')
     }
   })
   it('opens the app calendar and switches to custom when a day is picked', async () => {
@@ -118,7 +131,8 @@ describe('Fleet trip history', () => {
   })
   it('changes truck and date filters', async () => {
     const user = userEvent.setup(); setup(); await screen.findByText('First City, NC')
-    await user.selectOptions(screen.getByLabelText('Truck'), other.id)
+    await user.click(screen.getByLabelText('Truck'))
+    await user.click(screen.getByRole('option', { name: 'Example Fleet 102' }))
     await waitFor(() => expect(api.get).toHaveBeenLastCalledWith('/fleet/trips', expect.objectContaining({ params: expect.objectContaining({ vehicle_id: other.id }) })))
     fireEvent.change(screen.getByLabelText('From'), { target: { value: '2026-09-30' } })
     await waitFor(() => expect(api.get).toHaveBeenLastCalledWith('/fleet/trips', expect.objectContaining({ params: expect.objectContaining({ start_date: '2026-09-30' }) })))

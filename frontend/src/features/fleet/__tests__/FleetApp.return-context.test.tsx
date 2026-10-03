@@ -12,6 +12,7 @@ vi.mock('@/lib/api', () => ({ default: apiMocks }))
 vi.mock('react-hot-toast', () => ({ default: { success: vi.fn(), error: vi.fn() } }))
 vi.mock('../FleetBoard', () => ({ default: () => <div>Fleet board content</div> }))
 vi.mock('../FleetMap', () => ({ default: () => <div>Fleet map</div> }))
+vi.mock('@/contexts/ThemeContext', () => ({ useTheme: () => ({ accentColors: { 400: '#ffd000', 500: '#ffd000' } }) }))
 vi.mock('../TruckDetail', () => ({ default: ({ truckId, onViewTrips }: { truckId: string; onViewTrips?: (id: string) => void }) => <div>Truck detail<button onClick={() => onViewTrips?.(truckId)}>View trips</button></div> }))
 vi.mock('../FleetModals', () => ({
   AddTruckModal: () => null,
@@ -92,11 +93,11 @@ describe('Fleet board return context', () => {
     apiMocks.get.mockImplementation(async (url: string) => ({ data: url === '/fleet/board' ? { ...fleetBoard, trucks: [truck] } : { items: [], total: 0, summary: { truck_count: 0, coverage: 'partial', trip_count: 0, distance_miles: 0, driving_seconds: 0 } } }))
     renderFleet(['/fleet'])
     await user.click(await screen.findByRole('button', { name: 'View trips' }))
-    expect(await screen.findByLabelText('Truck')).toHaveValue(truck.id)
+    expect(await screen.findByLabelText('Truck')).toHaveTextContent('101')
     await user.click(screen.getByRole('button', { name: 'Back to truck 101' }))
     expect(screen.getByText('Truck detail')).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: /TRIPS.*Trips/ }))
-    expect(await screen.findByLabelText('Truck')).toHaveValue(truck.id)
+    expect(await screen.findByLabelText('Truck')).toHaveTextContent('101')
   })
 
   it('returns to the Fleet Settings context when that is where the board was opened', async () => {
