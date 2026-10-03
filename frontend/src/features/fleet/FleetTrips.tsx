@@ -67,6 +67,7 @@ export default function FleetTrips({ trucks, filters, onFilters, onOpenTruck }: 
       <div className="trips-heading">
         <div><h2>{selectedTruck ? fleetUnitLabel(selectedTruck) : 'Trip history'}</h2><p>{timezone.replace(/_/g, ' ')}</p></div>
       </div>
+      <div className="trips-toolbar">
       <div className="trips-time-controls">
         <div className="trips-presets" role="group" aria-label="Trip time span">
           {([['day', 'Day', 'Today'], ['week', 'Week', 'Monday through today'], ['month', 'Month', 'This month through today']] as const).map(([preset, label, title]) => <button key={preset} type="button" title={title} aria-pressed={filters.preset === preset} onClick={() => update({ ...tripPreset(preset), preset })}>{label}</button>)}
@@ -80,6 +81,7 @@ export default function FleetTrips({ trucks, filters, onFilters, onOpenTruck }: 
       <div className="trips-filters">
         <label>Truck<BaseSelect variant="dark" heightClass="h-11" optionHeightClass="min-h-11" value={filters.vehicleId} options={[{ value: '', label: 'All trucks' }, ...trucks.map(t => ({ value: t.id, label: fleetUnitLabel(t) }))]} onChange={vehicleId => update({ vehicleId })} /></label>
         <span className="trips-range-label">{day(`${filters.start}T12:00:00`)} – {day(`${filters.end}T12:00:00`)}</span>
+      </div>
       </div>
       {!validDates ? <p role="alert">Choose a date range of up to 31 days.</p> : !validVehicle ? <p role="alert">This truck is no longer available. Select another truck.</p> : query.isPending ? <p role="status" className="trips-message">Loading trips…</p> : query.isError ? <div role="alert" className="trips-message">Trips could not be loaded. <button type="button" className="dbtn" onClick={() => query.refetch()}>Retry</button></div> : query.data && <>
         <p className="trips-coverage" title="Dates show the earliest and latest imported departures. Gaps may remain.">Imported {query.data.imported_start && query.data.imported_end ? `${importedDay(query.data.imported_start)}–${importedDay(query.data.imported_end)}` : 'trips'} <span>· Partial</span></p>

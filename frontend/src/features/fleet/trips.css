@@ -166,3 +166,29 @@
 .fleet-root .trip-truck-link strong{font-size:18px;white-space:nowrap}
 
 .fleet-root .trip-static{cursor:default}.fleet-root .trip-static:hover{background:none}
+
+/* One compact filter toolbar; touch controls keep their existing 44px targets. */
+.fleet-root .trips-heading{margin-bottom:12px}
+.fleet-root .trips-heading>div{display:flex;align-items:baseline;gap:14px;flex-wrap:wrap}
+.fleet-root .trips-heading h2{margin:0;font-size:23px}
+.fleet-root .trips-heading p{font-size:11px}
+.fleet-root .trips-toolbar{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:10px}
+.fleet-root .trips-toolbar .trips-filters{order:-1;margin:0;gap:0}
+.fleet-root .trips-toolbar .trips-filters>label{width:260px;font-size:0;gap:0}
+.fleet-root .trips-toolbar .trips-range-label{display:none}
+.fleet-root .trips-toolbar .trips-time-controls{margin:0;gap:12px}
+.fleet-root .trips-coverage{margin:0 0 6px;font-size:11px}
+.fleet-root .trips-totals{padding:10px 0;margin-bottom:16px}
+.fleet-root .trips-totals strong{font-size:22px}
+.fleet-root .trips-totals .trip-truck-link strong{font-size:18px}
+.fleet-root .trips-totals span{gap:1px}
+@media(max-width:1100px){.fleet-root .trips-toolbar .trips-filters>label{width:220px}.fleet-root .trips-toolbar .trips-time-controls{flex:1;flex-wrap:wrap}.fleet-root .trips-toolbar .trips-custom-dates{min-width:280px}}
+@media(max-width:700px){.fleet-root .trips-toolbar .trips-filters{width:100%}.fleet-root .trips-toolbar .trips-filters>label{width:100%}.fleet-root .trips-toolbar .trips-time-controls{width:100%}.fleet-root .trips-heading>div{gap:4px 12px}}
+/* One surface per week; days and legs use spacing and dividers, not nested boxes. */
+.fleet-root .trip-week .trip-card{border:0;border-radius:0;background:transparent}
+.fleet-root .trip-week .trip-card+.trip-card{border-top:1px solid var(--line,#344957)}
+.fleet-root .trip-week .trip-week-body{padding-inline:0}
+.fleet-root .trip-week .trip-day{padding:12px 12px 4px;color:var(--muted)}
+.fleet-root .trip-week .trip-card+.trip-day{border-top:1px solid var(--line,#344957);margin-top:8px;padding-top:16px}
+
+.fleet-root .trip-week .trip-day+.trip-card,.fleet-root .trip-week .trip-card:has(+.trip-day),.fleet-root .trip-week .trip-card:last-child{border-radius:0}
