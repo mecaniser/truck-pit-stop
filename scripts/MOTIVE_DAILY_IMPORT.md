@@ -16,7 +16,8 @@ the owner to sign in; never store passwords, cookies or session exports.
    Record the visible label and check time in the private run manifest. A mismatch,
    inaccessible page, or expired login stops the run, including empty reports.
 3. Daily window: previous two local dates through today (America/New_York). Resume
-   failed windows first. Historical backfill uses bounded windows of at most31 days;
+   failed windows first. Consult `output/history-run-manifest.json`; superseded
+   captures are not pending windows. Historical backfill uses bounded windows of at most31 days;
    prefer seven days because large rendered tables slow the browser. Daily refresh
    covers trips only; fleet telemetry snapshots use their separate importer.
 4. Import `collect_motive_trips.mjs` in CUA. Navigate to `reportUrl(start,end)` and
@@ -33,6 +34,10 @@ the owner to sign in; never store passwords, cookies or session exports.
    Any conflicting provider/departure identity, missing tail or wrong filters keeps
    the window partial. Company verification is a mandatory caller precondition;
    the module does not claim to check a company label absent from the Trips page.
+   If an ongoing trip changes while scrolling, preserve the conflicting checkpoint.
+   When the entire current report is visibly rendered and its source total matches,
+   a new window may capture that complete current DOM once and finalize independently.
+   Never remove versions merely to force a count match or treat a partial DOM as complete.
 7. Assemble exactly `{tenant_id,company_label,windows}` with each window's
    `start,end,source_read_at,status,rows`. Keep completion/account evidence in the
    separate private manifest. Prepare using:
