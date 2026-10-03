@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import { ArrowLeft, ArrowRight, ChevronDown, Clock3, MapPin, Route, Truck } from 'lucide-react'
 import api from '@/lib/api'
 import DatePicker from '@/components/DatePicker'
+import BaseSelect from '@/components/BaseSelect'
 import { validDay } from '@/components/calendarGrid'
 import { tripPreset, type TripPreset } from './tripFilters'
 import type { BoardTruck } from './types'
@@ -72,15 +73,12 @@ export default function FleetTrips({ trucks, filters, onFilters, onOpenTruck }: 
           <button type="button" aria-pressed={custom} aria-expanded={custom} aria-controls="trip-custom-dates" onClick={() => update({ preset: 'custom' })}>Custom</button>
         </div>
         {custom && <div className="trips-custom-dates" id="trip-custom-dates">
-          <DatePicker showDayDetails={false} id="trip-start" label="From" value={filters.start} max={validDay(filters.end) ? filters.end : undefined} onChange={start => update({ start, preset: 'custom' })} />
-          <DatePicker showDayDetails={false} id="trip-end" label="To" value={filters.end} min={validDay(filters.start) ? filters.start : undefined} onChange={end => update({ end, preset: 'custom' })} className="trips-end-date" />
+          <DatePicker compact showDayDetails={false} id="trip-start" label="From" value={filters.start} max={validDay(filters.end) ? filters.end : undefined} onChange={start => update({ start, preset: 'custom' })} />
+          <DatePicker compact showDayDetails={false} id="trip-end" label="To" value={filters.end} min={validDay(filters.start) ? filters.start : undefined} onChange={end => update({ end, preset: 'custom' })} className="trips-end-date" />
         </div>}
       </div>
       <div className="trips-filters">
-        <label>Truck<select value={filters.vehicleId} onChange={e => update({ vehicleId: e.target.value })}>
-          <option value="">All trucks</option>
-          {trucks.map(t => <option key={t.id} value={t.id}>{fleetUnitLabel(t)}</option>)}
-        </select></label>
+        <label>Truck<BaseSelect variant="dark" heightClass="h-11" optionHeightClass="min-h-11" value={filters.vehicleId} options={[{ value: '', label: 'All trucks' }, ...trucks.map(t => ({ value: t.id, label: fleetUnitLabel(t) }))]} onChange={vehicleId => update({ vehicleId })} /></label>
         <span className="trips-range-label">{day(`${filters.start}T12:00:00`)} – {day(`${filters.end}T12:00:00`)}</span>
       </div>
       {!validDates ? <p role="alert">Choose a date range of up to 31 days.</p> : !validVehicle ? <p role="alert">This truck is no longer available. Select another truck.</p> : query.isPending ? <p role="status" className="trips-message">Loading trips…</p> : query.isError ? <div role="alert" className="trips-message">Trips could not be loaded. <button type="button" className="dbtn" onClick={() => query.refetch()}>Retry</button></div> : query.data && <>

@@ -32,6 +32,8 @@ interface BaseSelectProps {
   /** Control height class (default h-[42px]). Pass e.g. 'h-[34px]' to match a
    *  denser row where the select must line up with 34px-tall siblings. */
   heightClass?: string
+  /** Optional touch sizing for the portaled options. */
+  optionHeightClass?: string
   /** When provided, the parent owns filtering (e.g. server-side search): the
    * typed query is reported here and the built-in substring filter is skipped,
    * so `options` are shown as-is. Called with '' when the dropdown closes. */
@@ -59,6 +61,7 @@ export default function BaseSelect({
   disabled = false,
   variant = 'light',
   heightClass = 'h-[42px]',
+  optionHeightClass = '',
   onQueryChange,
   hideSelectedOption = false,
   loading = false,
@@ -333,7 +336,7 @@ export default function BaseSelect({
                 handleSelect(opt.value)
               }}
               onMouseEnter={() => setActiveIndex(index)}
-              className={`w-full text-left px-4 py-2 text-sm transition-colors ${
+              className={`w-full ${optionHeightClass} text-left px-4 py-2 text-sm transition-colors ${
                 dark
                   ? opt.value === value
                     ? 'text-white'
