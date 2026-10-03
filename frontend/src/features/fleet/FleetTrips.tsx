@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { Fragment, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { ArrowLeft, ArrowRight, ChevronDown, Clock3, MapPin, Route, Truck } from 'lucide-react'
 import api from '@/lib/api'
@@ -62,7 +62,7 @@ export default function FleetTrips({ trucks, filters, onFilters, onOpenTruck }: 
   return (
     <section className="fleet-trips" aria-label="Trip history">
       <div className="trips-heading">
-        <div><h2>Trip history</h2><p>{timezone.replace(/_/g, ' ')}</p></div>
+        <div><h2>{selectedTruck ? fleetUnitLabel(selectedTruck) : 'Trip history'}</h2><p>{timezone.replace(/_/g, ' ')}</p></div>
         {selectedTruck && <button type="button" className="dbtn dbtn-ghost" onClick={() => onOpenTruck(selectedTruck.id)}><ArrowLeft size={15} /> Back to truck {selectedTruck.unit_number}</button>}
       </div>
       <div className="trips-presets" role="group" aria-label="Trip time span">
@@ -78,7 +78,7 @@ export default function FleetTrips({ trucks, filters, onFilters, onOpenTruck }: 
         <DatePicker showDayDetails={false} id="trip-end" label="To" value={filters.end} min={validDay(filters.start) ? filters.start : undefined} onChange={end => update({ end, preset: 'custom' })} className="trips-end-date" />
       </div>
       {!validDates ? <p role="alert">Choose a date range of up to 31 days.</p> : !validVehicle ? <p role="alert">This truck is no longer available. Select another truck.</p> : query.isPending ? <p role="status" className="trips-message">Loading trips…</p> : query.isError ? <div role="alert" className="trips-message">Trips could not be loaded. <button type="button" className="dbtn" onClick={() => query.refetch()}>Retry</button></div> : query.data && <>
-        <p className="trips-coverage">Imported trips <span>· Partial history</span></p>
+        <p className="trips-coverage">Imported trips <span>· Partial history</span> · Oldest first</p>
         <div className="trips-totals" aria-label="Imported trip totals">
           <div><Truck size={18} /><span><strong>{number(query.data.summary.truck_count)}</strong><small>Trucks with trips</small></span></div>
           <div><Route size={18} /><span><strong>{number(query.data.summary.trip_count)}</strong><small>Trips</small></span></div>
@@ -87,14 +87,16 @@ export default function FleetTrips({ trucks, filters, onFilters, onOpenTruck }: 
         </div>
         {query.data.total === 0 ? <div className="trips-empty"><Route size={28} /><h3>No imported trips</h3><p>No trip history has been imported for this selection.</p></div> : <>
           <div className="trips-list">
-            {query.data.items.map(trip => {
+            {query.data.items.map((trip, index) => {
               const open = expanded === trip.id
               const truck = trucks.find(t => t.id === trip.vehicle_id)
               const label = truck ? fleetUnitLabel(truck) : `${trip.fleet_name || 'Truck'} ${trip.unit_number || ''}`
-              return <article className={`trip-card${open ? ' is-open' : ''}`} key={trip.id}>
+              return <Fragment key={trip.id}>
+                {(index === 0 || day(query.data.items[index - 1].started_at) !== day(trip.started_at)) && <h3 className="trip-day">{day(trip.started_at)}</h3>}
+                <article className={`trip-card${open ? ' is-open' : ''}`}>
                 <button className="trip-summary" type="button" aria-expanded={open} aria-controls={`trip-${trip.id}`} onClick={() => setExpanded(open ? null : trip.id)}>
-                  <span className="trip-unit">{label}<small>{day(trip.started_at)} · {time(trip.started_at)}–{day(trip.ended_at) !== day(trip.started_at) ? `${day(trip.ended_at)} ` : ''}{time(trip.ended_at)}</small></span>
-                  <span className="trip-route"><span>{trip.origin_label}</span><ArrowRight size={15} /><span>{trip.destination_label}</span></span>
+                  <span className="trip-unit">{selectedTruck ? `Leg ${offset + index + 1}` : label}</span>
+                  <span className="trip-route"><span><small>From · {time(trip.started_at)}</small>{trip.origin_label}</span><ArrowRight size={15} /><span><small>To · {day(trip.ended_at) !== day(trip.started_at) ? `${day(trip.ended_at)} ` : ''}{time(trip.ended_at)}</small>{trip.destination_label}</span></span>
                   <span className="trip-metrics"><strong>{number(trip.distance_miles)} <small>mi</small></strong><span>{duration(trip.driving_seconds)}</span></span>
                   <ChevronDown size={18} className={`trip-chevron${open ? ' is-open' : ''}`} />
                 </button>
@@ -107,7 +109,7 @@ export default function FleetTrips({ trucks, filters, onFilters, onOpenTruck }: 
                   </ol>
                   <div className="trip-footer"><span>{trip.stops === null ? 'Stop details unavailable' : `${trip.stops.length} stops`} · Captured {new Date(trip.captured_at).toLocaleString()}</span><button type="button" className="dbtn dbtn-ghost" onClick={() => onOpenTruck(trip.vehicle_id)}>View truck <ArrowRight size={14} /></button></div>
                 </div>}
-              </article>
+              </article></Fragment>
             })}
           </div>
           {query.data.total > 50 && <div className="trips-pagination"><button type="button" className="dbtn" disabled={offset === 0} onClick={() => { setOffset(Math.max(0, offset - 50)); setExpanded(null) }}>Previous</button><span>{offset + 1}–{Math.min(offset + 50, query.data.total)} of {query.data.total}</span><button type="button" className="dbtn" disabled={offset + 50 >= query.data.total} onClick={() => { setOffset(offset + 50); setExpanded(null) }}>Next</button></div>}

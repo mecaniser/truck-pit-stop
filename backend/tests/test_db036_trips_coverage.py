@@ -60,6 +60,10 @@ async def test_multiple_trucks_full_pagination_summary(db_session, monkeypatch):
     await run_import(db_session, parse_rows({'rows':rows}, now()), actor.tenant_id, actor.id, True)
     page=await list_trips(db_session, actor.tenant_id, start.date(), now().date(), 'UTC', limit=50)
     assert len(page['items'])==50
+    assert [aware(t['started_at']) for t in page['items']] == [start+timedelta(minutes=i*2) for i in range(50)]
+    following=await list_trips(db_session, actor.tenant_id, start.date(), now().date(), 'UTC', limit=50, offset=50)
+    assert [aware(t['started_at']) for t in following['items']] == [start+timedelta(minutes=i*2) for i in range(50,52)]
+    assert following['summary'] == page['summary']
     assert page['summary']==dict(trip_count=52, truck_count=2, coverage='partial', distance_miles=52, driving_seconds=3120)
     selected=await list_trips(db_session, actor.tenant_id, start.date(), now().date(), 'UTC', vehicle_id=vehicle.id, limit=1, offset=3)
     assert selected['summary']['trip_count']==26 and selected['summary']['truck_count']==1
