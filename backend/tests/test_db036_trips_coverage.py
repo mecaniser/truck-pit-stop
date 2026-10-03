@@ -165,3 +165,42 @@ async def test_correction_failures_leave_everything_untouched(db_session, monkey
         await run_corrections(db_session, parse_corrections({'corrections':corrections}, now()), tenant, actor.id, True)
     assert trip.distance_miles==40
     assert (await db_session.execute(select(func.count()).select_from(FleetTripRevision))).scalar_one()==0
+
+
+async def test_imported_bounds_ignore_filter_but_preserve_scope(db_session, monkeypatch):
+    actor, vehicle, member = await prepared(db_session, monkeypatch)
+    start = (now() - timedelta(days=10)).replace(hour=2, minute=0, second=0, microsecond=0)
+    member.effective_from = start - timedelta(days=1)
+    other = Vehicle(tenant_id=actor.tenant_id, customer_id=vehicle.customer_id, vin='2M8GDM9AXKP042788', year=2020, make='Example', model='Truck')
+    db_session.add(other)
+    await db_session.flush()
+    db_session.add(FleetMembership(tenant_id=actor.tenant_id, vehicle_id=other.id, fleet_customer_id=vehicle.customer_id, effective_from=member.effective_from))
+    await db_session.commit()
+    rows = []
+    for index in range(2):
+        row = minute_document()['rows'][0]
+        departure = start + timedelta(days=index * 3)
+        row.update(started_at=departure.isoformat(), ended_at=(departure+timedelta(hours=1)).isoformat(), driving_seconds=3600)
+        if index:
+            row.update(vin=other.vin, provider_vehicle_id='other')
+        rows.append(row)
+    await run_import(db_session, parse_rows({'rows': rows}, now()), actor.tenant_id, actor.id, True)
+    # Selected date range has no trips; bounds still describe all visible imports.
+    page = await list_trips(db_session, actor.tenant_id, now().date(), now().date(), 'UTC', limit=1, offset=50)
+    assert page['total'] == 0 and page['items'] == []
+    assert page['imported_start'] == start.date()
+    assert page['imported_end'] == (start+timedelta(days=3)).date()
+    selected = await list_trips(db_session, actor.tenant_id, now().date(), now().date(), 'America/New_York', vehicle_id=vehicle.id)
+    # 02:00 UTC belongs to the previous local day.
+    assert selected['imported_start'] == selected['imported_end'] == (start-timedelta(days=1)).date()
+    foreign = await list_trips(db_session, uuid4(), now().date(), now().date(), 'UTC')
+    assert foreign['imported_start'] is None and foreign['imported_end'] is None
+    vehicle.deleted_at = now()
+    await db_session.flush()
+    page = await list_trips(db_session, actor.tenant_id, now().date(), now().date(), 'UTC')
+    assert page['imported_start'] == page['imported_end'] == (start+timedelta(days=3)).date()
+    vehicle.deleted_at = None
+    member.effective_from = start+timedelta(days=1)
+    await db_session.flush()
+    selected = await list_trips(db_session, actor.tenant_id, now().date(), now().date(), 'UTC', vehicle_id=vehicle.id)
+    assert selected['imported_start'] is None and selected['imported_end'] is None
