@@ -92,7 +92,8 @@ export default function FleetTrips({ trucks, filters, onFilters, onOpenTruck }: 
           <div><Clock3 size={18} /><span><strong>{duration(query.data.summary.driving_seconds)}</strong><small>Driving</small></span></div>
         </div>
         {query.data.total === 0 ? <div className="trips-empty"><Route size={28} /><h3>No imported trips</h3><p>No trip history has been imported for this selection.</p></div> : <>
-          {weeks.length > 1 ? <div className="trips-weeks">{weeks.map(week => <TripWeek key={`${filters.vehicleId}:${week.start}:${week.end}`} {...week} filters={filters} timezone={timezone} trucks={trucks} />)}</div> : <TripList key={`${filters.vehicleId}:${filters.start}:${filters.end}`} data={query.data} trucks={trucks} selected={!!selectedTruck} timezone={timezone} offset={offset} setOffset={setOffset} />}
+          <div className="trips-legend" aria-label="Route legend"><span className="legend-departure"><i aria-hidden="true" />Departure</span><span className="legend-arrival"><i aria-hidden="true" />Arrival</span></div>
+          {weeks.length > 1 ? <div className="trips-weeks" tabIndex={0} aria-label="Trip weeks">{weeks.map(week => <TripWeek key={`${filters.vehicleId}:${week.start}:${week.end}`} {...week} filters={filters} timezone={timezone} trucks={trucks} />)}</div> : <TripList key={`${filters.vehicleId}:${filters.start}:${filters.end}`} data={query.data} trucks={trucks} selected={!!selectedTruck} timezone={timezone} offset={offset} setOffset={setOffset} />}
         </>}
       </>}
     </section>
@@ -120,10 +121,10 @@ function TripList({ data, trucks, selected, timezone, offset, setOffset }: TripL
                 {(index === 0 || day(data.items[index - 1].started_at) !== day(trip.started_at)) && <h3 className="trip-day">{day(trip.started_at)}</h3>}
                 <article aria-label={`${selected ? `Leg ${offset + index + 1}` : label} · ${trip.origin_label} → ${trip.destination_label}`} className={`trip-card${open ? ' is-open' : ''}`}>
                 <Summary className={`trip-summary${hasStops ? '' : ' trip-static'}`} title={`Captured ${new Date(trip.captured_at).toLocaleString()}`} type={hasStops ? 'button' : undefined} aria-expanded={hasStops ? open : undefined} aria-controls={hasStops ? `trip-${trip.id}` : undefined} onClick={hasStops ? () => setExpanded(open ? null : trip.id) : undefined}>
-                  <span className="trip-unit">{selected ? `Leg ${offset + index + 1}` : label}</span>
+                  {!selected && <span className="trip-unit">{label}</span>}
                   <span className="trip-route">
-                    <span className="trip-point trip-departure"><time>{time(trip.started_at)}</time><i aria-hidden="true" /><span><small>Departure</small><strong>{trip.origin_label}</strong></span></span>
-                    <span className="trip-point trip-arrival"><time>{day(trip.ended_at) !== day(trip.started_at) ? `${day(trip.ended_at)} ` : ''}{time(trip.ended_at)}</time><i aria-hidden="true" /><span><small>Arrival</small><strong>{trip.destination_label}</strong></span></span>
+                    <span className="trip-point trip-departure"><time>{time(trip.started_at)}</time><i aria-hidden="true" /><span><small className="sr-only">Departure</small><strong>{trip.origin_label}</strong></span></span>
+                    <span className="trip-point trip-arrival"><time>{day(trip.ended_at) !== day(trip.started_at) ? `${day(trip.ended_at)} ` : ''}{time(trip.ended_at)}</time><i aria-hidden="true" /><span><small className="sr-only">Arrival</small><strong>{trip.destination_label}</strong></span></span>
                   </span>
                   <span className="trip-readings"><span className="trip-metrics"><strong>{number(trip.distance_miles)} <small>mi</small></strong><span>{duration(trip.driving_seconds)}</span></span><TripVitals metrics={trip.metrics} /></span>
                   {hasStops && <ChevronDown size={18} className={`trip-chevron${open ? ' is-open' : ''}`} />}

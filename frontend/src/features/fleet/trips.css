@@ -192,3 +192,18 @@
 .fleet-root .trip-week .trip-card+.trip-day{border-top:1px solid var(--line,#344957);margin-top:8px;padding-top:16px}
 
 .fleet-root .trip-week .trip-day+.trip-card,.fleet-root .trip-week .trip-card:has(+.trip-day),.fleet-root .trip-week .trip-card:last-child{border-radius:0}
+
+/* Shared route key removes repetitive leg and endpoint headings. */
+.fleet-root .trips-legend{display:flex;gap:18px;align-items:center;margin:-4px 0 10px;font-size:11px}
+.fleet-root .trips-legend>span{display:flex;align-items:center;gap:6px}
+.fleet-root .trips-legend i{width:8px;height:8px;border:2px solid currentColor;border-radius:50%}
+.fleet-root .legend-departure{color:#69ceef}.fleet-root .legend-arrival{color:#69dfa8}
+.fleet-root .legend-arrival i{background:currentColor}
+.fleet-root .trips-selected-truck .trip-summary{grid-template-columns:minmax(0,1fr) auto 16px}
+.fleet-root .trips-selected-truck .trip-route{grid-column:1;grid-row:1}
+.fleet-root .trips-selected-truck .trip-readings{grid-column:2;grid-row:1}
+.fleet-root .trips-selected-truck .trip-chevron{grid-column:3;grid-row:1}
+.fleet-root .trip-point small.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap}
+.fleet-root .trips-weeks:focus-visible{outline:2px solid var(--yellow);outline-offset:4px}
+@media(min-width:1100px){.fleet-root .trips-weeks{grid-template-columns:none;grid-auto-flow:column;grid-auto-columns:minmax(380px,1fr);overflow-x:auto;padding-bottom:8px;scroll-snap-type:x proximity}.fleet-root .trip-week{scroll-snap-align:start}}
+.fleet-root .trip-departure i:after{height:18px}

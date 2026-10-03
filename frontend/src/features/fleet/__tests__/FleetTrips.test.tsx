@@ -41,6 +41,8 @@ describe('Fleet trip history', () => {
     const leg = await screen.findByRole('article', { name: /Leg 1/ })
     expect(screen.getByRole('heading', { name: 'Example Fleet 101' })).toBeInTheDocument()
     expect(leg).not.toHaveTextContent('Example Fleet 101')
+    expect(leg).not.toHaveTextContent('Leg 1')
+    expect(screen.getByLabelText('Route legend')).toHaveTextContent('DepartureArrival')
     expect(leg).toHaveTextContent('Departure')
     expect(leg).toHaveTextContent('Arrival')
     expect(screen.getByRole('heading', { name: 'Oct 2' })).toBeInTheDocument()
