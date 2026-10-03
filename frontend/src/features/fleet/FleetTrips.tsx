@@ -60,7 +60,7 @@ export default function FleetTrips({ trucks, filters, onFilters, onOpenTruck }: 
   const time = (value: string) => new Date(value).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit', timeZone: timezone })
   const day = (value: string) => new Date(value).toLocaleDateString(undefined, { month: 'short', day: 'numeric', timeZone: timezone })
   return (
-    <section className="fleet-trips" aria-label="Trip history">
+    <section className={`fleet-trips${selectedTruck ? ' trips-selected-truck' : ''}`} aria-label="Trip history">
       <div className="trips-heading">
         <div><h2>{selectedTruck ? fleetUnitLabel(selectedTruck) : 'Trip history'}</h2><p>{timezone.replace(/_/g, ' ')}</p></div>
         {selectedTruck && <button type="button" className="dbtn dbtn-ghost" onClick={() => onOpenTruck(selectedTruck.id)}><ArrowLeft size={15} /> Back to truck {selectedTruck.unit_number}</button>}
