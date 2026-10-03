@@ -46,6 +46,7 @@ export default function FleetTrips({ trucks, filters, onFilters, onOpenTruck }: 
   const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
   const dateSpan = (Date.parse(filters.end) - Date.parse(filters.start)) / 86400000
   const validDates = validDay(filters.start) && validDay(filters.end) && Number.isFinite(dateSpan) && dateSpan >= 0 && dateSpan < 31
+  const custom = !filters.preset || filters.preset === 'custom'
   const selectedTruck = trucks.find(t => t.id === filters.vehicleId)
   const validVehicle = !filters.vehicleId || !!selectedTruck
   const query = useQuery<FleetTripsResponse>({
@@ -65,17 +66,22 @@ export default function FleetTrips({ trucks, filters, onFilters, onOpenTruck }: 
         <div><h2>{selectedTruck ? fleetUnitLabel(selectedTruck) : 'Trip history'}</h2><p>{timezone.replace(/_/g, ' ')}</p></div>
         {selectedTruck && <button type="button" className="dbtn dbtn-ghost" onClick={() => onOpenTruck(selectedTruck.id)}><ArrowLeft size={15} /> Back to truck {selectedTruck.unit_number}</button>}
       </div>
-      <div className="trips-presets" role="group" aria-label="Trip time span">
-        {([['day', 'Day', 'Today'], ['week', 'Week', 'Monday through today'], ['month', 'Month', 'This month through today']] as const).map(([preset, label, title]) => <button key={preset} type="button" title={title} aria-pressed={filters.preset === preset} onClick={() => update({ ...tripPreset(preset), preset })}>{label}</button>)}
-        <button type="button" aria-pressed={!filters.preset || filters.preset === 'custom'} onClick={() => { update({ preset: 'custom' }); document.getElementById('trip-start')?.focus() }}>Custom</button>
+      <div className="trips-time-controls">
+        <div className="trips-presets" role="group" aria-label="Trip time span">
+          {([['day', 'Day', 'Today'], ['week', 'Week', 'Monday through today'], ['month', 'Month', 'This month through today']] as const).map(([preset, label, title]) => <button key={preset} type="button" title={title} aria-pressed={filters.preset === preset} onClick={() => update({ ...tripPreset(preset), preset })}>{label}</button>)}
+          <button type="button" aria-pressed={custom} aria-expanded={custom} aria-controls="trip-custom-dates" onClick={() => update({ preset: 'custom' })}>Custom</button>
+        </div>
+        {custom && <div className="trips-custom-dates" id="trip-custom-dates">
+          <DatePicker showDayDetails={false} id="trip-start" label="From" value={filters.start} max={validDay(filters.end) ? filters.end : undefined} onChange={start => update({ start, preset: 'custom' })} />
+          <DatePicker showDayDetails={false} id="trip-end" label="To" value={filters.end} min={validDay(filters.start) ? filters.start : undefined} onChange={end => update({ end, preset: 'custom' })} className="trips-end-date" />
+        </div>}
       </div>
       <div className="trips-filters">
         <label>Truck<select value={filters.vehicleId} onChange={e => update({ vehicleId: e.target.value })}>
           <option value="">All trucks</option>
           {trucks.map(t => <option key={t.id} value={t.id}>{fleetUnitLabel(t)}</option>)}
         </select></label>
-        <DatePicker showDayDetails={false} id="trip-start" label="From" value={filters.start} max={validDay(filters.end) ? filters.end : undefined} onChange={start => update({ start, preset: 'custom' })} />
-        <DatePicker showDayDetails={false} id="trip-end" label="To" value={filters.end} min={validDay(filters.start) ? filters.start : undefined} onChange={end => update({ end, preset: 'custom' })} className="trips-end-date" />
+        <span className="trips-range-label">{day(`${filters.start}T12:00:00`)} – {day(`${filters.end}T12:00:00`)}</span>
       </div>
       {!validDates ? <p role="alert">Choose a date range of up to 31 days.</p> : !validVehicle ? <p role="alert">This truck is no longer available. Select another truck.</p> : query.isPending ? <p role="status" className="trips-message">Loading trips…</p> : query.isError ? <div role="alert" className="trips-message">Trips could not be loaded. <button type="button" className="dbtn" onClick={() => query.refetch()}>Retry</button></div> : query.data && <>
         <p className="trips-coverage">Imported trips <span>· Partial history</span> · Oldest first</p>
@@ -96,7 +102,10 @@ export default function FleetTrips({ trucks, filters, onFilters, onOpenTruck }: 
                 <article className={`trip-card${open ? ' is-open' : ''}`}>
                 <button className="trip-summary" type="button" aria-expanded={open} aria-controls={`trip-${trip.id}`} onClick={() => setExpanded(open ? null : trip.id)}>
                   <span className="trip-unit">{selectedTruck ? `Leg ${offset + index + 1}` : label}</span>
-                  <span className="trip-route"><span><small>From · {time(trip.started_at)}</small>{trip.origin_label}</span><ArrowRight size={15} /><span><small>To · {day(trip.ended_at) !== day(trip.started_at) ? `${day(trip.ended_at)} ` : ''}{time(trip.ended_at)}</small>{trip.destination_label}</span></span>
+                  <span className="trip-route">
+                    <span className="trip-point trip-departure"><time>{time(trip.started_at)}</time><i aria-hidden="true" /><span><small>Departure</small><strong>{trip.origin_label}</strong></span></span>
+                    <span className="trip-point trip-arrival"><time>{day(trip.ended_at) !== day(trip.started_at) ? `${day(trip.ended_at)} ` : ''}{time(trip.ended_at)}</time><i aria-hidden="true" /><span><small>Arrival</small><strong>{trip.destination_label}</strong></span></span>
+                  </span>
                   <span className="trip-metrics"><strong>{number(trip.distance_miles)} <small>mi</small></strong><span>{duration(trip.driving_seconds)}</span></span>
                   <ChevronDown size={18} className={`trip-chevron${open ? ' is-open' : ''}`} />
                 </button>
