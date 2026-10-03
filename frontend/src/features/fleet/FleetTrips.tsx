@@ -5,7 +5,7 @@ import api from '@/lib/api'
 import DatePicker from '@/components/DatePicker'
 import BaseSelect from '@/components/BaseSelect'
 import { validDay } from '@/components/calendarGrid'
-import { tripPreset, type TripPreset } from './tripFilters'
+import { tripPreset, tripWeeks, type TripPreset } from './tripFilters'
 import type { BoardTruck } from './types'
 import { fleetUnitLabel } from './helpers'
 import './trips.css'
@@ -44,10 +44,10 @@ export default function FleetTrips({ trucks, filters, onFilters, onOpenTruck }: 
   trucks: BoardTruck[]; filters: TripFilters; onFilters: (filters: TripFilters) => void; onOpenTruck: (id: string) => void
 }) {
   const [offset, setOffset] = useState(0)
-  const [expanded, setExpanded] = useState<string | null>(null)
   const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
   const dateSpan = (Date.parse(filters.end) - Date.parse(filters.start)) / 86400000
   const validDates = validDay(filters.start) && validDay(filters.end) && Number.isFinite(dateSpan) && dateSpan >= 0 && dateSpan < 31
+  const weeks = validDates ? tripWeeks(filters.start, filters.end) : []
   const custom = !filters.preset || filters.preset === 'custom'
   const selectedTruck = trucks.find(t => t.id === filters.vehicleId)
   const validVehicle = !filters.vehicleId || !!selectedTruck
@@ -59,8 +59,7 @@ export default function FleetTrips({ trucks, filters, onFilters, onOpenTruck }: 
     } })).data,
     enabled: validDates && validVehicle,
   })
-  const update = (next: Partial<TripFilters>) => { setOffset(0); setExpanded(null); onFilters({ ...filters, ...next }) }
-  const time = (value: string) => new Date(value).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit', timeZone: timezone })
+  const update = (next: Partial<TripFilters>) => { setOffset(0); onFilters({ ...filters, ...next }) }
   const day = (value: string) => new Date(value).toLocaleDateString(undefined, { month: 'short', day: 'numeric', timeZone: timezone })
   const importedDay = (value: string) => new Date(`${value}T12:00:00`).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
   return (
@@ -92,16 +91,33 @@ export default function FleetTrips({ trucks, filters, onFilters, onOpenTruck }: 
           <div><Clock3 size={18} /><span><strong>{duration(query.data.summary.driving_seconds)}</strong><small>Driving</small></span></div>
         </div>
         {query.data.total === 0 ? <div className="trips-empty"><Route size={28} /><h3>No imported trips</h3><p>No trip history has been imported for this selection.</p></div> : <>
+          {weeks.length > 1 ? <div className="trips-weeks">{weeks.map(week => <TripWeek key={`${filters.vehicleId}:${week.start}:${week.end}`} {...week} filters={filters} timezone={timezone} trucks={trucks} onOpenTruck={onOpenTruck} />)}</div> : <TripList key={`${filters.vehicleId}:${filters.start}:${filters.end}`} data={query.data} trucks={trucks} selected={!!selectedTruck} timezone={timezone} offset={offset} setOffset={setOffset} onOpenTruck={onOpenTruck} />}
+        </>}
+      </>}
+    </section>
+  )
+}
+
+
+interface TripListProps {
+  data: FleetTripsResponse; trucks: BoardTruck[]; selected: boolean; timezone: string
+  offset: number; setOffset: (offset: number) => void; onOpenTruck: (id: string) => void
+}
+function TripList({ data, trucks, selected, timezone, offset, setOffset, onOpenTruck }: TripListProps) {
+  const [expanded, setExpanded] = useState<string | null>(null)
+  const time = (value: string) => new Date(value).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit', timeZone: timezone })
+  const day = (value: string) => new Date(value).toLocaleDateString(undefined, { month: 'short', day: 'numeric', timeZone: timezone })
+  return <>
           <div className="trips-list">
-            {query.data.items.map((trip, index) => {
+            {data.items.map((trip, index) => {
               const open = expanded === trip.id
               const truck = trucks.find(t => t.id === trip.vehicle_id)
               const label = truck ? fleetUnitLabel(truck) : `${trip.fleet_name || 'Truck'} ${trip.unit_number || ''}`
               return <Fragment key={trip.id}>
-                {(index === 0 || day(query.data.items[index - 1].started_at) !== day(trip.started_at)) && <h3 className="trip-day">{day(trip.started_at)}</h3>}
+                {(index === 0 || day(data.items[index - 1].started_at) !== day(trip.started_at)) && <h3 className="trip-day">{day(trip.started_at)}</h3>}
                 <article className={`trip-card${open ? ' is-open' : ''}`}>
                 <button className="trip-summary" type="button" aria-expanded={open} aria-controls={`trip-${trip.id}`} onClick={() => setExpanded(open ? null : trip.id)}>
-                  <span className="trip-unit">{selectedTruck ? `Leg ${offset + index + 1}` : label}</span>
+                  <span className="trip-unit">{selected ? `Leg ${offset + index + 1}` : label}</span>
                   <span className="trip-route">
                     <span className="trip-point trip-departure"><time>{time(trip.started_at)}</time><i aria-hidden="true" /><span><small>Departure</small><strong>{trip.origin_label}</strong></span></span>
                     <span className="trip-point trip-arrival"><time>{day(trip.ended_at) !== day(trip.started_at) ? `${day(trip.ended_at)} ` : ''}{time(trip.ended_at)}</time><i aria-hidden="true" /><span><small>Arrival</small><strong>{trip.destination_label}</strong></span></span>
@@ -121,11 +137,28 @@ export default function FleetTrips({ trucks, filters, onFilters, onOpenTruck }: 
               </article></Fragment>
             })}
           </div>
-          {query.data.total > 50 && <div className="trips-pagination"><button type="button" className="dbtn" disabled={offset === 0} onClick={() => { setOffset(Math.max(0, offset - 50)); setExpanded(null) }}>Previous</button><span>{offset + 1}–{Math.min(offset + 50, query.data.total)} of {query.data.total}</span><button type="button" className="dbtn" disabled={offset + 50 >= query.data.total} onClick={() => { setOffset(offset + 50); setExpanded(null) }}>Next</button></div>}
-        </>}
-      </>}
-    </section>
-  )
+          {data.total > 50 && <div className="trips-pagination"><button type="button" className="dbtn" disabled={offset === 0} onClick={() => { setOffset(Math.max(0, offset - 50)); setExpanded(null) }}>Previous</button><span>{offset + 1}–{Math.min(offset + 50, data.total)} of {data.total}</span><button type="button" className="dbtn" disabled={offset + 50 >= data.total} onClick={() => { setOffset(offset + 50); setExpanded(null) }}>Next</button></div>}
+  </>
+}
+
+function TripWeek({ start, end, filters, timezone, trucks, onOpenTruck }: {
+  start: string; end: string; filters: TripFilters; timezone: string; trucks: BoardTruck[]; onOpenTruck: (id: string) => void
+}) {
+  const [offset, setOffset] = useState(0)
+  const query = useQuery<FleetTripsResponse>({
+    queryKey: ['fleet-trips', filters.vehicleId, start, end, timezone, offset],
+    queryFn: async () => (await api.get('/fleet/trips', { params: { start_date: start, end_date: end, timezone, vehicle_id: filters.vehicleId || undefined, limit: 50, offset } })).data,
+  })
+  const label = (value: string) => new Date(`${value}T12:00:00`).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+  const title = `${label(start)} – ${label(end)}`
+  return <section className="trip-week" aria-label={`Week ${title}`}>
+    <header className="trip-week-heading"><h3>{title}</h3>
+      {query.data && <div className="trip-week-totals"><span>{number(query.data.total)} trips</span><strong>{number(query.data.summary.distance_miles)} <small>mi</small></strong><span>{duration(query.data.summary.driving_seconds)}</span></div>}
+    </header>
+    <div className="trip-week-body" tabIndex={0} aria-label={`Trips ${title}`}>
+      {query.isPending ? <p role="status">Loading trips…</p> : query.isError ? <div role="alert">Trips could not be loaded. <button type="button" className="dbtn" onClick={() => query.refetch()}>Retry</button></div> : query.data && (query.data.total === 0 ? <p className="trip-week-empty">No imported trips</p> : <TripList key={`${filters.vehicleId}:${start}:${end}`} data={query.data} trucks={trucks} selected={!!filters.vehicleId} timezone={timezone} offset={offset} setOffset={setOffset} onOpenTruck={onOpenTruck} />)}
+    </div>
+  </section>
 }
 
 function TripVitals({ metrics: m }: { metrics?: TripMetrics | null }) {

@@ -3,7 +3,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, screen, waitFor, fireEvent, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { tripPreset } from '../tripFilters'
+import { tripPreset, tripWeeks } from '../tripFilters'
 import type { BoardTruck } from '../types'
 import FleetTrips, { type FleetTripsResponse, type TripFilters } from '../FleetTrips'
 const api = vi.hoisted(() => ({ get: vi.fn() }))
@@ -171,5 +171,51 @@ describe('Fleet trip history', () => {
     await userEvent.click(await screen.findByRole('button', { name: 'Next' }))
     await waitFor(() => expect(api.get).toHaveBeenLastCalledWith('/fleet/trips', expect.objectContaining({ params: expect.objectContaining({ offset: 50 }) })))
     expect(screen.getByLabelText('Imported trip totals')).toHaveTextContent('2,040')
+  })
+})
+
+describe('Weekly columns', () => {
+  it('partitions partial weeks across month/year and DST without overlap', () => {
+    expect(tripWeeks('2026-09-16', '2026-10-03')).toEqual([
+      { start: '2026-09-16', end: '2026-09-20' }, { start: '2026-09-21', end: '2026-09-27' }, { start: '2026-09-28', end: '2026-10-03' },
+    ])
+    expect(tripWeeks('2026-12-31', '2027-01-04')).toEqual([{ start: '2026-12-31', end: '2027-01-03' }, { start: '2027-01-04', end: '2027-01-04' }])
+    expect(tripWeeks('2026-10-26', '2026-11-02')).toEqual([{ start: '2026-10-26', end: '2026-11-01' }, { start: '2026-11-02', end: '2026-11-02' }])
+  })
+  it('shows later weeks immediately, pages each independently and resets when truck changes', async () => {
+    api.get.mockImplementation(async (_url, { params: p }) => {
+      const overall = p.start_date === '2026-09-14' && p.end_date === '2026-10-03'
+      const total = overall ? 53 : p.start_date === '2026-09-14' ? 51 : 1
+      const offset = p.offset || 0
+      return { data: { ...response, total, offset, items: Array.from({length: Math.min(50, total-offset)}, (_, i) => ({...response.items[0], id: `${p.vehicle_id}-${p.start_date}-${offset+i}`, vehicle_id:p.vehicle_id || truck.id, started_at:`${p.start_date}T13:00:00Z`, ended_at:`${p.start_date}T14:00:00Z`})), summary: {coverage:'partial',truck_count:1,trip_count:total,distance_miles:total*40,driving_seconds:total*3600} } }
+    })
+    setup({ vehicleId:truck.id,start:'2026-09-14',end:'2026-10-03',preset:'custom' })
+    const first = await screen.findByRole('region',{name:'Week Sep 14 – Sep 20'})
+    const last = await screen.findByRole('region',{name:'Week Sep 28 – Oct 3'})
+    expect(await within(last).findByRole('button',{name:/Leg 1/})).toBeInTheDocument()
+    expect(screen.getByLabelText('Imported trip totals')).toHaveTextContent('53')
+    await userEvent.click(within(first).getByRole('button',{name:'Next'}))
+    expect(await within(first).findByRole('button',{name:/Leg 51/})).toBeInTheDocument()
+    expect(within(last).getByRole('button',{name:/Leg 1/})).toBeInTheDocument()
+    expect(screen.getByLabelText('Imported trip totals')).toHaveTextContent('53')
+    await userEvent.click(screen.getByLabelText('Truck'))
+    await userEvent.click(screen.getByRole('option',{name:'Example Fleet 102'}))
+    await waitFor(()=>expect(within(screen.getByRole('region',{name:'Week Sep 14 – Sep 20'})).getByRole('button',{name:'Previous'})).toBeDisabled())
+    expect(api.get).toHaveBeenCalledWith('/fleet/trips',expect.objectContaining({params:expect.objectContaining({vehicle_id:other.id,start_date:'2026-09-14',end_date:'2026-09-20',offset:0})}))
+  })
+  it('keeps empty weeks visible and retries a failed week separately', async () => {
+    let failed = true
+    api.get.mockImplementation(async (_url,{params:p})=> {
+      if(p.start_date==='2026-09-21' && failed) throw new Error('offline')
+      return {data:{...response,items:[],total:p.end_date==='2026-10-03' ? 1 : 0}}
+    })
+    setup({vehicleId:truck.id,start:'2026-09-14',end:'2026-10-03',preset:'custom'})
+    const empty=await screen.findByRole('region',{name:'Week Sep 14 – Sep 20'})
+    expect(await within(empty).findByText('No imported trips')).toBeInTheDocument()
+    const broken=screen.getByRole('region',{name:'Week Sep 21 – Sep 27'})
+    expect(await within(broken).findByRole('alert')).toBeInTheDocument()
+    failed=false
+    await userEvent.click(within(broken).getByRole('button',{name:'Retry'}))
+    expect(await within(broken).findByText('No imported trips')).toBeInTheDocument()
   })
 })

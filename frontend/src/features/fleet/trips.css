@@ -103,3 +103,32 @@
 
 .fleet-root .trips-time-controls{min-height:54px;align-items:center}
 .fleet-root .trips-filters>label>div>button{background:var(--panel,#151f27);border-color:var(--line,#344957);font-size:14px}
+
+/* Weekly lanes keep later weeks visible while each lane pages independently. */
+.fleet-root .trips-weeks{display:grid;grid-template-columns:1fr;gap:20px;align-items:start}
+.fleet-root .trip-week{min-width:0;border:1px solid var(--line,#344957);border-radius:12px;background:var(--panel,#151f27);overflow:hidden}
+.fleet-root .trip-week-heading{padding:16px;border-bottom:1px solid var(--line,#344957)}
+.fleet-root .trip-week-heading h3{margin:0 0 8px;font-size:16px;font-weight:650}
+.fleet-root .trip-week-totals{display:flex;flex-wrap:wrap;gap:8px 16px;align-items:baseline;font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums}
+.fleet-root .trip-week-totals strong{color:#69ceef;font-size:17px}.fleet-root .trip-week-totals small{font-size:12px;font-weight:400}
+.fleet-root .trip-week-body{padding:0 10px 12px;outline-offset:-3px}
+.fleet-root .trip-week-body:focus-visible{outline:2px solid var(--yellow,#ffd000)}
+.fleet-root .trip-week .trip-day{font-size:12px;padding:12px 4px;margin:0}
+.fleet-root .trip-week .trip-summary{grid-template-columns:minmax(0,1fr) auto 16px;gap:8px;padding:12px}
+.fleet-root .trip-week .trip-unit{grid-column:1;grid-row:1}
+.fleet-root .trip-week .trip-route{grid-column:1/-1;grid-row:2;gap:12px;font-size:13px}
+.fleet-root .trip-week .trip-metrics{grid-column:2;grid-row:1;display:flex;align-items:baseline;gap:8px}
+.fleet-root .trip-week .trip-chevron{grid-column:3;grid-row:1}
+.fleet-root .trip-week .trip-point{grid-template-columns:62px 10px minmax(0,1fr);gap:8px}
+.fleet-root .trip-week .trip-point strong{font-size:13px}
+.fleet-root .trip-week .trip-point small{font-size:9px}
+.fleet-root .trip-week .trip-expanded{padding:12px}
+.fleet-root .trip-week .trip-footer{flex-direction:column;align-items:flex-start;gap:12px}
+.fleet-root .trip-week .trip-vitals{grid-template-columns:repeat(2,minmax(0,1fr))}
+.fleet-root .trip-week .trips-pagination{gap:8px;font-size:12px;justify-content:space-between}
+.fleet-root .trip-week-empty{padding:20px 6px;color:var(--muted);font-size:13px}
+@media(min-width:1100px){
+ .fleet-root .fleet-trips{max-width:1800px}
+ .fleet-root .trips-weeks{grid-template-columns:repeat(auto-fit,minmax(330px,1fr))}
+ .fleet-root .trip-week-body{max-height:65vh;overflow-y:auto;scrollbar-gutter:stable}
+}
