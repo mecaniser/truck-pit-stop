@@ -139,7 +139,10 @@ describe('Fleet trip history', () => {
     await user.click(screen.getByRole('button', { name: /First City/ }))
     expect(screen.getByRole('button', { name: /First City/ })).toHaveAttribute('aria-expanded', 'true')
     expect(screen.getByText(/Stop details unavailable/)).toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: 'View truck' })); expect(open).toHaveBeenCalledWith(truck.id)
+    expect(screen.getAllByText('First City, NC')).toHaveLength(1)
+    expect(screen.getAllByText('Second City, NC')).toHaveLength(1)
+    expect(screen.getAllByRole('button', { name: /View truck/ })).toHaveLength(1)
+    await user.click(screen.getByRole('button', { name: 'Truck 101 View truck' })); expect(open).toHaveBeenCalledWith(truck.id)
   })
   it('changes truck and date filters', async () => {
     const user = userEvent.setup(); setup(); await screen.findByText('First City, NC')

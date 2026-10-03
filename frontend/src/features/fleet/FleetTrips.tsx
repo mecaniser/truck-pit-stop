@@ -1,6 +1,6 @@
 import { Fragment, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { ArrowLeft, ArrowRight, ChevronDown, Clock3, MapPin, Route, Truck } from 'lucide-react'
+import { ArrowRight, ChevronDown, Clock3, MapPin, Route, Truck } from 'lucide-react'
 import api from '@/lib/api'
 import DatePicker from '@/components/DatePicker'
 import BaseSelect from '@/components/BaseSelect'
@@ -66,7 +66,6 @@ export default function FleetTrips({ trucks, filters, onFilters, onOpenTruck }: 
     <section className={`fleet-trips${selectedTruck ? ' trips-selected-truck' : ''}`} aria-label="Trip history">
       <div className="trips-heading">
         <div><h2>{selectedTruck ? fleetUnitLabel(selectedTruck) : 'Trip history'}</h2><p>{timezone.replace(/_/g, ' ')}</p></div>
-        {selectedTruck && <button type="button" className="dbtn dbtn-ghost" onClick={() => onOpenTruck(selectedTruck.id)}><ArrowLeft size={15} /> Back to truck {selectedTruck.unit_number}</button>}
       </div>
       <div className="trips-time-controls">
         <div className="trips-presets" role="group" aria-label="Trip time span">
@@ -85,7 +84,7 @@ export default function FleetTrips({ trucks, filters, onFilters, onOpenTruck }: 
       {!validDates ? <p role="alert">Choose a date range of up to 31 days.</p> : !validVehicle ? <p role="alert">This truck is no longer available. Select another truck.</p> : query.isPending ? <p role="status" className="trips-message">Loading trips…</p> : query.isError ? <div role="alert" className="trips-message">Trips could not be loaded. <button type="button" className="dbtn" onClick={() => query.refetch()}>Retry</button></div> : query.data && <>
         <p className="trips-coverage" title="Dates show the earliest and latest imported departures. Gaps may remain.">Imported {query.data.imported_start && query.data.imported_end ? `${importedDay(query.data.imported_start)}–${importedDay(query.data.imported_end)}` : 'trips'} <span>· Partial</span></p>
         <div className="trips-totals" aria-label="Imported trip totals">
-          <div><Truck size={18} /><span><strong>{number(query.data.summary.truck_count)}</strong><small>Trucks with trips</small></span></div>
+          <div><Truck size={18} />{selectedTruck ? <button type="button" className="trip-truck-link" onClick={() => onOpenTruck(selectedTruck.id)}><strong>Truck {selectedTruck.unit_number}</strong><small>View truck <ArrowRight size={14} /></small></button> : <span><strong>{number(query.data.summary.truck_count)}</strong><small>Trucks with trips</small></span>}</div>
           <div><Route size={18} /><span><strong>{number(query.data.summary.trip_count)}</strong><small>Trips</small></span></div>
           <div><MapPin size={18} /><span><strong>{number(query.data.summary.distance_miles)} <em>mi</em></strong><small>Distance</small></span></div>
           <div><Clock3 size={18} /><span><strong>{duration(query.data.summary.driving_seconds)}</strong><small>Driving</small></span></div>
@@ -122,17 +121,14 @@ function TripList({ data, trucks, selected, timezone, offset, setOffset, onOpenT
                     <span className="trip-point trip-departure"><time>{time(trip.started_at)}</time><i aria-hidden="true" /><span><small>Departure</small><strong>{trip.origin_label}</strong></span></span>
                     <span className="trip-point trip-arrival"><time>{day(trip.ended_at) !== day(trip.started_at) ? `${day(trip.ended_at)} ` : ''}{time(trip.ended_at)}</time><i aria-hidden="true" /><span><small>Arrival</small><strong>{trip.destination_label}</strong></span></span>
                   </span>
-                  <span className="trip-metrics"><strong>{number(trip.distance_miles)} <small>mi</small></strong><span>{duration(trip.driving_seconds)}</span></span>
+                  <span className="trip-readings"><span className="trip-metrics"><strong>{number(trip.distance_miles)} <small>mi</small></strong><span>{duration(trip.driving_seconds)}</span></span><TripVitals metrics={trip.metrics} /></span>
                   <ChevronDown size={18} className={`trip-chevron${open ? ' is-open' : ''}`} />
                 </button>
                 {open && <div className="trip-expanded" id={`trip-${trip.id}`}>
-                  <TripVitals metrics={trip.metrics} />
-                  <ol className="trip-timeline">
-                    <li><span className="trip-timeline-dot" /><div><small>Departure · {time(trip.started_at)}</small><strong>{trip.origin_label}</strong></div></li>
+                  {!!trip.stops?.length && <ol className="trip-timeline">
                     {trip.stops?.map((stop, i) => <li key={i}><span className="trip-timeline-dot stop" /><div><small>Stop{stop.arrived_at ? ` · ${time(stop.arrived_at)}` : ''}{stop.departed_at ? `–${time(stop.departed_at)}` : ''}{stop.idle_seconds != null ? ` · ${duration(stop.idle_seconds)} idle` : ''}</small><strong>{stop.location_label}</strong></div></li>)}
-                    <li><span className="trip-timeline-dot end" /><div><small>Arrival · {time(trip.ended_at)}</small><strong>{trip.destination_label}</strong></div></li>
-                  </ol>
-                  <div className="trip-footer"><span>{trip.stops === null ? 'Stop details unavailable' : `${trip.stops.length} stops`} · Captured {new Date(trip.captured_at).toLocaleString()}</span><button type="button" className="dbtn dbtn-ghost" onClick={() => onOpenTruck(trip.vehicle_id)}>View truck <ArrowRight size={14} /></button></div>
+                  </ol>}
+                  <div className="trip-footer"><span>{trip.stops === null ? 'Stop details unavailable' : `${trip.stops.length} stops`} · Captured {new Date(trip.captured_at).toLocaleString()}</span>{!selected && <button type="button" className="dbtn dbtn-ghost" onClick={() => onOpenTruck(trip.vehicle_id)}>View truck <ArrowRight size={14} /></button>}</div>
                 </div>}
               </article></Fragment>
             })}
@@ -170,11 +166,11 @@ function TripVitals({ metrics: m }: { metrics?: TripMetrics | null }) {
   const idle = known(m.idle_seconds)
   const start = known(m.fuel_start_percent); const end = known(m.fuel_end_percent)
   if (!actualFuel && !estimatedFuel && !mpg && !idle && !start && !end) return null
-  return <dl className="trip-vitals" aria-label="Trip fuel and efficiency">
-    {actualFuel && <div className="trip-vital-fuel"><dt>Fuel used</dt><dd>{number(m.fuel_used_gallons!)} <small>gal</small></dd></div>}
-    {estimatedFuel && <div className="trip-vital-fuel"><dt>Est. fuel</dt><dd>{number(m.estimated_fuel_gallons!)} <small>gal</small></dd><small>Based on {number(m.estimate_baseline_mpg!)} MPG · 30-day avg</small></div>}
-    {mpg && <div className="trip-vital-mpg"><dt>Trip efficiency</dt><dd>{number(m.trip_mpg!)} <small>MPG</small></dd></div>}
-    {idle && <div className="trip-vital-idle"><dt>Idle time</dt><dd>{duration(m.idle_seconds!)}</dd></div>}
-    {(start || end) && <div className="trip-vital-level"><dt>{start && end ? 'Fuel level' : start ? 'Fuel at start' : 'Fuel at end'}</dt><dd>{start ? `${number(m.fuel_start_percent!)}%` : ''}{start && end ? ' → ' : ''}{end ? `${number(m.fuel_end_percent!)}%` : ''}</dd>{start && end && <small>Start → End</small>}</div>}
-  </dl>
+  return <span role="group" className="trip-vitals" aria-label="Trip fuel and efficiency">
+    {actualFuel && <span className="trip-vital-fuel"><span className="trip-vital-label">Fuel used</span><span className="trip-vital-value">{number(m.fuel_used_gallons!)} <small>gal</small></span></span>}
+    {estimatedFuel && <span className="trip-vital-fuel" title={`Estimated using ${number(m.estimate_baseline_mpg!)} MPG · 30-day average`}><span className="trip-vital-label">Est. fuel</span><span className="trip-vital-value">{number(m.estimated_fuel_gallons!)} <small>gal</small></span><small className="sr-only">Based on {number(m.estimate_baseline_mpg!)} MPG · 30-day avg</small></span>}
+    {mpg && <span className="trip-vital-mpg"><span className="trip-vital-label">Trip efficiency</span><span className="trip-vital-value">{number(m.trip_mpg!)} <small>MPG</small></span></span>}
+    {idle && <span className="trip-vital-idle"><span className="trip-vital-label">Idle time</span><span className="trip-vital-value">{duration(m.idle_seconds!)}</span></span>}
+    {(start || end) && <span className="trip-vital-level"><span className="trip-vital-label">{start && end ? 'Fuel level' : start ? 'Fuel at start' : 'Fuel at end'}</span><span className="trip-vital-value">{start ? `${number(m.fuel_start_percent!)}%` : ''}{start && end ? ' → ' : ''}{end ? `${number(m.fuel_end_percent!)}%` : ''}</span>{start && end && <small>Start → End</small>}</span>}
+  </span>
 }
