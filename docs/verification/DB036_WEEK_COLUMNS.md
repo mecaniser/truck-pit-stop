@@ -19,3 +19,5 @@ PR461, candidate289e569ef9e5d63c8b752d25a947895b29026cca. CI and authenticated p
 ## Requested refinement
 
 Weekly headers now fit date/trips/miles/time on one row (46px at 768px). Fuel and idle readings are inline below distance/duration. Expanded details retain actual intermediate stops and capture information without repeating endpoints. Selected-truck navigation appears once in the summary. 23 focused tests, TypeScript and ESLint pass; duplicate-endpoint and single-link assertions added. Desktop and768px synthetic browser verified, no horizontal overflow. Refined candidate supersedes289e569e; fresh CI required.
+
+Final refinement: legs without actual intermediate stops are static cards, with no chevron or empty disclosure. Stops, when present, retain accessible tap expansion. Capture time remains a card tooltip.27 Trips/navigation tests pass; TypeScript/ESLint pass. CI caught the previous return-navigation label and its test now follows the single summary link. Preview starts at three weeks after refresh.

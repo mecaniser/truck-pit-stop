@@ -20,7 +20,7 @@ import FleetBoard from './FleetBoard'
 import MotiveIntegrationPanel from './MotiveIntegrationPanel'
 import TruckDetail from './TruckDetail'
 import FleetMap from './FleetMap'
-import FleetTrips from './FleetTrips'
+import FleetTrips, { type TripFilters } from './FleetTrips'
 import { initialTripFilters } from './tripFilters'
 import { SchedulePMModal, SidekickPanel, invalidateFleetAndCockpit } from './FleetModals'
 import FleetPriceBuilderPanel from './FleetPriceBuilderPanel'
@@ -53,7 +53,7 @@ function loadState(): Persisted {
   catch { return { view: 'board', selId: null, filter: 'all', sort: 'attention' } }
 }
 
-export default function FleetApp() {
+export default function FleetApp({ initialTripsFilters }: { initialTripsFilters?: TripFilters } = {}) {
   const navigate = useNavigate()
   const location = useLocation()
   const { user, logout } = useAuthStore()
@@ -61,7 +61,7 @@ export default function FleetApp() {
   const init = loadState()
   const [view, setView] = useState<View>(init.view === 'detail' && init.selId ? 'detail' : init.view)
   const [selId, setSelId] = useState<string | null>(init.selId)
-  const [tripFilters, setTripFilters] = useState(initialTripFilters)
+  const [tripFilters, setTripFilters] = useState(() => initialTripsFilters ?? initialTripFilters())
   const [filter, setFilter] = useState(init.filter)
   const [query, setQuery] = useState('')
   const [sort, setSort] = useState(init.sort)

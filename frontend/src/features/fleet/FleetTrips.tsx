@@ -90,7 +90,7 @@ export default function FleetTrips({ trucks, filters, onFilters, onOpenTruck }: 
           <div><Clock3 size={18} /><span><strong>{duration(query.data.summary.driving_seconds)}</strong><small>Driving</small></span></div>
         </div>
         {query.data.total === 0 ? <div className="trips-empty"><Route size={28} /><h3>No imported trips</h3><p>No trip history has been imported for this selection.</p></div> : <>
-          {weeks.length > 1 ? <div className="trips-weeks">{weeks.map(week => <TripWeek key={`${filters.vehicleId}:${week.start}:${week.end}`} {...week} filters={filters} timezone={timezone} trucks={trucks} onOpenTruck={onOpenTruck} />)}</div> : <TripList key={`${filters.vehicleId}:${filters.start}:${filters.end}`} data={query.data} trucks={trucks} selected={!!selectedTruck} timezone={timezone} offset={offset} setOffset={setOffset} onOpenTruck={onOpenTruck} />}
+          {weeks.length > 1 ? <div className="trips-weeks">{weeks.map(week => <TripWeek key={`${filters.vehicleId}:${week.start}:${week.end}`} {...week} filters={filters} timezone={timezone} trucks={trucks} />)}</div> : <TripList key={`${filters.vehicleId}:${filters.start}:${filters.end}`} data={query.data} trucks={trucks} selected={!!selectedTruck} timezone={timezone} offset={offset} setOffset={setOffset} />}
         </>}
       </>}
     </section>
@@ -100,35 +100,37 @@ export default function FleetTrips({ trucks, filters, onFilters, onOpenTruck }: 
 
 interface TripListProps {
   data: FleetTripsResponse; trucks: BoardTruck[]; selected: boolean; timezone: string
-  offset: number; setOffset: (offset: number) => void; onOpenTruck: (id: string) => void
+  offset: number; setOffset: (offset: number) => void
 }
-function TripList({ data, trucks, selected, timezone, offset, setOffset, onOpenTruck }: TripListProps) {
+function TripList({ data, trucks, selected, timezone, offset, setOffset }: TripListProps) {
   const [expanded, setExpanded] = useState<string | null>(null)
   const time = (value: string) => new Date(value).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit', timeZone: timezone })
   const day = (value: string) => new Date(value).toLocaleDateString(undefined, { month: 'short', day: 'numeric', timeZone: timezone })
   return <>
           <div className="trips-list">
             {data.items.map((trip, index) => {
-              const open = expanded === trip.id
+              const hasStops = !!trip.stops?.length
+              const Summary = hasStops ? 'button' : 'div'
+              const open = hasStops && expanded === trip.id
               const truck = trucks.find(t => t.id === trip.vehicle_id)
               const label = truck ? fleetUnitLabel(truck) : `${trip.fleet_name || 'Truck'} ${trip.unit_number || ''}`
               return <Fragment key={trip.id}>
                 {(index === 0 || day(data.items[index - 1].started_at) !== day(trip.started_at)) && <h3 className="trip-day">{day(trip.started_at)}</h3>}
-                <article className={`trip-card${open ? ' is-open' : ''}`}>
-                <button className="trip-summary" type="button" aria-expanded={open} aria-controls={`trip-${trip.id}`} onClick={() => setExpanded(open ? null : trip.id)}>
+                <article aria-label={`${selected ? `Leg ${offset + index + 1}` : label} · ${trip.origin_label} → ${trip.destination_label}`} className={`trip-card${open ? ' is-open' : ''}`}>
+                <Summary className={`trip-summary${hasStops ? '' : ' trip-static'}`} title={`Captured ${new Date(trip.captured_at).toLocaleString()}`} type={hasStops ? 'button' : undefined} aria-expanded={hasStops ? open : undefined} aria-controls={hasStops ? `trip-${trip.id}` : undefined} onClick={hasStops ? () => setExpanded(open ? null : trip.id) : undefined}>
                   <span className="trip-unit">{selected ? `Leg ${offset + index + 1}` : label}</span>
                   <span className="trip-route">
                     <span className="trip-point trip-departure"><time>{time(trip.started_at)}</time><i aria-hidden="true" /><span><small>Departure</small><strong>{trip.origin_label}</strong></span></span>
                     <span className="trip-point trip-arrival"><time>{day(trip.ended_at) !== day(trip.started_at) ? `${day(trip.ended_at)} ` : ''}{time(trip.ended_at)}</time><i aria-hidden="true" /><span><small>Arrival</small><strong>{trip.destination_label}</strong></span></span>
                   </span>
                   <span className="trip-readings"><span className="trip-metrics"><strong>{number(trip.distance_miles)} <small>mi</small></strong><span>{duration(trip.driving_seconds)}</span></span><TripVitals metrics={trip.metrics} /></span>
-                  <ChevronDown size={18} className={`trip-chevron${open ? ' is-open' : ''}`} />
-                </button>
+                  {hasStops && <ChevronDown size={18} className={`trip-chevron${open ? ' is-open' : ''}`} />}
+                </Summary>
                 {open && <div className="trip-expanded" id={`trip-${trip.id}`}>
                   {!!trip.stops?.length && <ol className="trip-timeline">
                     {trip.stops?.map((stop, i) => <li key={i}><span className="trip-timeline-dot stop" /><div><small>Stop{stop.arrived_at ? ` · ${time(stop.arrived_at)}` : ''}{stop.departed_at ? `–${time(stop.departed_at)}` : ''}{stop.idle_seconds != null ? ` · ${duration(stop.idle_seconds)} idle` : ''}</small><strong>{stop.location_label}</strong></div></li>)}
                   </ol>}
-                  <div className="trip-footer"><span>{trip.stops === null ? 'Stop details unavailable' : `${trip.stops.length} stops`} · Captured {new Date(trip.captured_at).toLocaleString()}</span>{!selected && <button type="button" className="dbtn dbtn-ghost" onClick={() => onOpenTruck(trip.vehicle_id)}>View truck <ArrowRight size={14} /></button>}</div>
+                  <div className="trip-footer"><span>{trip.stops?.length} stops · Captured {new Date(trip.captured_at).toLocaleString()}</span></div>
                 </div>}
               </article></Fragment>
             })}
@@ -137,8 +139,8 @@ function TripList({ data, trucks, selected, timezone, offset, setOffset, onOpenT
   </>
 }
 
-function TripWeek({ start, end, filters, timezone, trucks, onOpenTruck }: {
-  start: string; end: string; filters: TripFilters; timezone: string; trucks: BoardTruck[]; onOpenTruck: (id: string) => void
+function TripWeek({ start, end, filters, timezone, trucks }: {
+  start: string; end: string; filters: TripFilters; timezone: string; trucks: BoardTruck[]
 }) {
   const [offset, setOffset] = useState(0)
   const query = useQuery<FleetTripsResponse>({
@@ -152,7 +154,7 @@ function TripWeek({ start, end, filters, timezone, trucks, onOpenTruck }: {
       {query.data && <div className="trip-week-totals"><span>{number(query.data.total)} trips</span><strong>{number(query.data.summary.distance_miles)} <small>mi</small></strong><span>{duration(query.data.summary.driving_seconds)}</span></div>}
     </header>
     <div className="trip-week-body" tabIndex={0} aria-label={`Trips ${title}`}>
-      {query.isPending ? <p role="status">Loading trips…</p> : query.isError ? <div role="alert">Trips could not be loaded. <button type="button" className="dbtn" onClick={() => query.refetch()}>Retry</button></div> : query.data && (query.data.total === 0 ? <p className="trip-week-empty">No imported trips</p> : <TripList key={`${filters.vehicleId}:${start}:${end}`} data={query.data} trucks={trucks} selected={!!filters.vehicleId} timezone={timezone} offset={offset} setOffset={setOffset} onOpenTruck={onOpenTruck} />)}
+      {query.isPending ? <p role="status">Loading trips…</p> : query.isError ? <div role="alert">Trips could not be loaded. <button type="button" className="dbtn" onClick={() => query.refetch()}>Retry</button></div> : query.data && (query.data.total === 0 ? <p className="trip-week-empty">No imported trips</p> : <TripList key={`${filters.vehicleId}:${start}:${end}`} data={query.data} trucks={trucks} selected={!!filters.vehicleId} timezone={timezone} offset={offset} setOffset={setOffset} />)}
     </div>
   </section>
 }
