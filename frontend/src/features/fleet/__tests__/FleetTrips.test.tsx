@@ -24,6 +24,18 @@ function setup(filters: TripFilters = { vehicleId: truck.id, start: '2026-10-02'
 beforeEach(() => { api.get.mockReset(); api.get.mockResolvedValue({ data: response }) })
 const emptyMetrics = { fuel_used_gallons: null, trip_mpg: null, estimated_fuel_gallons: null, idle_seconds: null, fuel_start_percent: null, fuel_end_percent: null, estimate_baseline_mpg: null, estimate_baseline_captured_at: null, estimate_baseline_period: null }
 describe('Fleet trip history', () => {
+  it('shows imported bounds outside the selected dates without claiming complete history', async () => {
+    api.get.mockResolvedValue({ data: { ...response, imported_start: '2026-07-22', imported_end: '2026-10-02', items: [], total: 0 } })
+    setup({ vehicleId: truck.id, start: '2026-08-01', end: '2026-08-10', preset: 'custom' })
+    const bounds = await screen.findByTitle('Dates show the earliest and latest imported departures. Gaps may remain.')
+    expect(bounds).toHaveTextContent('Imported Jul 22, 2026–Oct 2, 2026 · Partial')
+    expect(screen.getByRole('heading', { name: 'No imported trips' })).toBeInTheDocument()
+  })
+  it('uses a compact fallback when imported bounds are unavailable', async () => {
+    api.get.mockResolvedValue({ data: { ...response, imported_start: null, imported_end: null } })
+    setup()
+    expect(await screen.findByTitle('Dates show the earliest and latest imported departures. Gaps may remain.')).toHaveTextContent('Imported trips · Partial')
+  })
   it('shows selected truck once as a heading and labels each leg endpoints', async () => {
     setup()
     const leg = await screen.findByRole('button', { name: /Leg 1/ })
@@ -49,7 +61,7 @@ describe('Fleet trip history', () => {
     expect(totals).toHaveTextContent('342Trips')
     expect(totals).toHaveTextContent('25,072.7 mi')
     expect(totals).toHaveTextContent('453h 58m')
-    expect(screen.getByText(/Partial history/)).toBeInTheDocument()
+    expect(screen.getByText(/Partial/)).toBeInTheDocument()
     expect(api.get).toHaveBeenCalledWith('/fleet/trips', expect.objectContaining({ params: expect.objectContaining({ vehicle_id: undefined }) }))
     await userEvent.click(screen.getByLabelText('Truck'))
     await userEvent.click(screen.getByRole('option', { name: 'Example Fleet 101' }))

@@ -28,6 +28,7 @@ export interface FleetTrip {
   stops: { location_label: string; arrived_at: string | null; departed_at: string | null; idle_seconds: number | null }[] | null
 }
 export interface FleetTripsResponse {
+  imported_start?: string | null; imported_end?: string | null
   items: FleetTrip[]; summary: { truck_count: number; trip_count: number; distance_miles: number; driving_seconds: number; coverage: 'partial' }
   total: number; limit: number; offset: number; timezone: string; start_date: string; end_date: string
 }
@@ -61,6 +62,7 @@ export default function FleetTrips({ trucks, filters, onFilters, onOpenTruck }: 
   const update = (next: Partial<TripFilters>) => { setOffset(0); setExpanded(null); onFilters({ ...filters, ...next }) }
   const time = (value: string) => new Date(value).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit', timeZone: timezone })
   const day = (value: string) => new Date(value).toLocaleDateString(undefined, { month: 'short', day: 'numeric', timeZone: timezone })
+  const importedDay = (value: string) => new Date(`${value}T12:00:00`).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
   return (
     <section className={`fleet-trips${selectedTruck ? ' trips-selected-truck' : ''}`} aria-label="Trip history">
       <div className="trips-heading">
@@ -82,7 +84,7 @@ export default function FleetTrips({ trucks, filters, onFilters, onOpenTruck }: 
         <span className="trips-range-label">{day(`${filters.start}T12:00:00`)} – {day(`${filters.end}T12:00:00`)}</span>
       </div>
       {!validDates ? <p role="alert">Choose a date range of up to 31 days.</p> : !validVehicle ? <p role="alert">This truck is no longer available. Select another truck.</p> : query.isPending ? <p role="status" className="trips-message">Loading trips…</p> : query.isError ? <div role="alert" className="trips-message">Trips could not be loaded. <button type="button" className="dbtn" onClick={() => query.refetch()}>Retry</button></div> : query.data && <>
-        <p className="trips-coverage">Imported trips <span>· Partial history</span> · Oldest first</p>
+        <p className="trips-coverage" title="Dates show the earliest and latest imported departures. Gaps may remain.">Imported {query.data.imported_start && query.data.imported_end ? `${importedDay(query.data.imported_start)}–${importedDay(query.data.imported_end)}` : 'trips'} <span>· Partial</span></p>
         <div className="trips-totals" aria-label="Imported trip totals">
           <div><Truck size={18} /><span><strong>{number(query.data.summary.truck_count)}</strong><small>Trucks with trips</small></span></div>
           <div><Route size={18} /><span><strong>{number(query.data.summary.trip_count)}</strong><small>Trips</small></span></div>

@@ -178,6 +178,8 @@ class TripSummary(BaseModel):
 
 
 class TripPage(BaseModel):
+    imported_start: date | None = None
+    imported_end: date | None = None
     items: list[TripItem]
     summary: TripSummary
     total: int
