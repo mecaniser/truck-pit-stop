@@ -202,3 +202,36 @@
 .fleet-root .trips-weeks:focus-visible{outline:2px solid var(--yellow);outline-offset:4px}
 
 .fleet-root .trip-departure i:after{height:18px}
+
+/* Viewport-sized weeks with one expanded day in each column. */
+.fleet-root .scroll.trips-scroll{min-height:0;overflow:hidden;display:flex}
+.fleet-root .page-pad.trips-page-pad{height:100%;min-height:0;display:flex;flex-direction:column;padding-bottom:16px}
+.fleet-root .fleet-trips.trips-column-layout{display:flex;flex-direction:column;min-height:0;height:100%;width:100%}
+.fleet-root .fleet-trips.trips-column-layout>:not(.trips-weeks){flex-shrink:0}
+.fleet-root .trips-weeks{flex:1;min-height:0;align-items:stretch;grid-auto-rows:minmax(0,1fr)}
+.fleet-root .trip-week{display:flex;flex-direction:column;min-height:0;height:100%}
+.fleet-root .trip-week-heading{flex-shrink:0}
+.fleet-root .trip-week .trip-week-body{flex:1;min-height:0;max-height:none;overflow-y:auto;overscroll-behavior:contain;padding-bottom:0}
+.fleet-root .trip-day-group>h3{margin:0;font-size:12px}
+.fleet-root .trip-day-toggle{width:100%;min-height:44px;display:flex;align-items:center;gap:8px;padding:10px 12px;border:0;border-bottom:1px solid var(--line);background:transparent;color:var(--text);text-align:left;cursor:pointer}
+.fleet-root .trip-day-toggle>span:first-child{font-weight:650;white-space:nowrap}
+.fleet-root .trip-day-totals{display:flex;align-items:baseline;gap:8px;margin-left:auto;font-size:11px;color:var(--muted);font-weight:400}
+.fleet-root .trip-day-totals strong{font-size:12px;font-weight:600;color:var(--text);white-space:nowrap}
+.fleet-root .trip-day-toggle svg{flex-shrink:0;color:var(--muted)}
+.fleet-root .trip-day-toggle svg.is-open{transform:rotate(180deg)}
+.fleet-root .trip-day-toggle:focus-visible{outline:2px solid var(--yellow);outline-offset:-3px}
+.fleet-root .trip-day-group+.trip-day-group{border-top:1px solid var(--line)}
+@media(max-width:1099px){.fleet-root .trips-weeks{grid-template-columns:none;grid-auto-flow:column;grid-auto-columns:100%;overflow-x:auto;scroll-snap-type:x mandatory}.fleet-root .trip-week{scroll-snap-align:start}}
+
+/* Day columns also remain in the viewport when a single week is selected. */
+.fleet-root .trips-weeks{grid-template-columns:none;grid-auto-flow:column;grid-auto-columns:minmax(330px,1fr);overflow-x:auto;grid-template-rows:minmax(0,1fr);padding-bottom:4px}
+@media(max-width:700px){.fleet-root .trips-weeks{grid-auto-columns:100%}}
+
+/* Narrow columns keep the complete itinerary above its compact readings. */
+.fleet-root .trip-week{container-type:inline-size}
+@container (max-width:420px){
+ .fleet-root .trip-week .trip-summary .trip-route{grid-column:1/-1;grid-row:2}
+ .fleet-root .trip-week .trip-summary .trip-readings{grid-column:1/-1;grid-row:3;width:auto;max-width:none;display:flex;align-items:center;justify-content:flex-end;gap:16px}
+ .fleet-root .trip-week .trip-readings .trip-vitals{display:flex;gap:16px}
+ .fleet-root .trip-week .trip-summary .trip-chevron{grid-column:3;grid-row:1}
+}

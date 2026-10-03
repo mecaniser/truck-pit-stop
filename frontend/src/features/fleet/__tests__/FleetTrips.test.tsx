@@ -47,13 +47,32 @@ describe('Fleet trip history', () => {
     expect(leg).toHaveTextContent('Arrival')
     expect(screen.getByRole('heading', { name: 'Oct 2' })).toBeInTheDocument()
   })
+  it('opens one day per week and switches days without changing other columns', async () => {
+    const rows = ['2026-09-14', '2026-09-15', '2026-09-21'].map((date, i) => ({ ...response.items[0], id: `day-${i}`, started_at: `${date}T13:00:00Z`, ended_at: `${date}T14:00:00Z` }))
+    api.get.mockImplementation((_url, { params }) => {
+      const items = rows.filter(t => t.started_at.slice(0, 10) >= params.start_date && t.started_at.slice(0, 10) <= params.end_date)
+      return Promise.resolve({ data: { ...response, items, total: items.length } })
+    })
+    setup({ vehicleId: truck.id, start: '2026-09-14', end: '2026-09-27' })
+    const first = await screen.findByRole('button', { name: /Sep 14 1 trips/ })
+    const second = screen.getByRole('button', { name: /Sep 15 1 trips/ })
+    const otherWeek = await screen.findByRole('button', { name: /Sep 21 1 trips/ })
+    expect(first).toHaveAttribute('aria-expanded', 'true')
+    expect(second).toHaveAttribute('aria-expanded', 'false')
+    await userEvent.click(second)
+    expect(first).toHaveAttribute('aria-expanded', 'false')
+    expect(second).toHaveAttribute('aria-expanded', 'true')
+    expect(otherWeek).toHaveAttribute('aria-expanded', 'true')
+  })
   it('retains leg truck identity for all trucks and groups chronological days', async () => {
     const first = { ...response.items[0], id: 'earlier', started_at: '2026-09-28T13:00:00Z', ended_at: '2026-09-28T14:00:00Z' }
-    api.get.mockResolvedValue({ data: { ...response, items: [first, response.items[0]], total: 2 } })
+    api.get.mockImplementation((_url, { params }) => {
+      const items = [first, response.items[0]].filter(t => t.started_at.slice(0, 10) >= params.start_date && t.started_at.slice(0, 10) <= params.end_date)
+      return Promise.resolve({ data: { ...response, items, total: items.length, summary: { ...response.summary, trip_count: items.length, distance_miles: items.length * 40 } } })
+    })
     setup({ vehicleId: '', start: '2026-09-28', end: '2026-10-02' })
-    const legs = await screen.findAllByRole('article', { name: /Example Fleet 101/ })
-    expect(legs).toHaveLength(2)
-    expect(screen.getAllByRole('heading', { level: 3 }).map(h => h.textContent)).toEqual(['Sep 28', 'Oct 2'])
+    await waitFor(() => expect(screen.getAllByRole('article', { name: /Example Fleet 101/ })).toHaveLength(2))
+    expect(screen.getAllByRole('heading', { level: 3 }).map(h => h.textContent)).toEqual(['Sep 28', 'Sep 29', 'Sep 30', 'Oct 1', 'Oct 2'])
   })
   it('shows full-fleet totals and coverage even when the page contains only one truck', async () => {
     api.get.mockResolvedValue({ data: { ...response, summary: { coverage: 'partial', truck_count: 13, trip_count: 342, distance_miles: 25072.67, driving_seconds: 1634303 }, total: 342 } })
@@ -119,7 +138,7 @@ describe('Fleet trip history', () => {
       const expected = tripPreset(preset)
       expect(screen.queryByLabelText('From')).not.toBeInTheDocument()
       expect(screen.queryByLabelText('To')).not.toBeInTheDocument()
-      await waitFor(() => expect(api.get).toHaveBeenLastCalledWith('/fleet/trips', expect.objectContaining({ params: expect.objectContaining({ start_date: expected.start, end_date: expected.end }) })))
+      await waitFor(() => expect(api.get).toHaveBeenCalledWith('/fleet/trips', expect.objectContaining({ params: expect.objectContaining({ start_date: expected.start, end_date: expected.end }) })))
       expect(screen.getByRole('button', { name: label, exact: true })).toHaveAttribute('aria-pressed', 'true')
       expect(screen.getByLabelText('Truck')).toHaveTextContent('Example Fleet 101')
     }

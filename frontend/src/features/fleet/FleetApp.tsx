@@ -280,8 +280,8 @@ export default function FleetApp({ initialTripsFilters }: { initialTripsFilters?
             )}
           </header>
 
-          <div className="scroll">
-            <div className="page-pad">
+          <div className={`scroll${view === 'trips' ? ' trips-scroll' : ''}`}>
+            <div className={`page-pad${view === 'trips' ? ' trips-page-pad' : ''}`}>
               {isLoading ? (
                 <div className="loader"><Spinner size="md" /></div>
               ) : isError || !data ? (
