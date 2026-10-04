@@ -8,7 +8,7 @@ vi.mock('mapbox-gl', () => ({ default: {
   Map: class { on(event: string, cb: () => void) { mock.handlers[event] = cb; if (event === 'load') queueMicrotask(cb) } addControl() {} resize() {} fitBounds(...args: unknown[]) { mock.fit(...args) } getSource(id: string) { return mock.sources.has(id) ? { setData: mock.lines } : undefined } addSource(id: string, source: { data: unknown }) { mock.sources.add(id); mock.lines(source.data) } addLayer() {} remove() { mock.remove() } },
   Marker: class {
     pin: { element: HTMLElement; point?: number[]; popup?: HTMLElement }
-    constructor({ element }: { element: HTMLElement }) { this.pin = { element }; mock.pins.push(this.pin) }
+    constructor({ element }: { element: HTMLElement }) { element.classList.add('mapboxgl-marker'); this.pin = { element }; mock.pins.push(this.pin) }
     setLngLat(point: number[]) { this.pin.point = point; return this }
     setPopup(popup: { content: HTMLElement }) { this.pin.popup = popup.content; return this }
     getPopup() { return { remove: vi.fn() } }
@@ -27,7 +27,7 @@ it('selects pins in place and draws supplied road geometry with status and stale
   const select = vi.fn()
   render(<FleetMapCanvas trucks={[truck('Down', 0), truck('Old', 1, true)]} route={{ type: 'LineString', coordinates: [[0, 0], [.3, .4], [1, 0]] }} focusId="Down" nearbyIds={['Old']} now={now} recenter={0} onFocus={select} />)
   await waitFor(() => expect(mock.pins).toHaveLength(2))
-  expect(mock.pins[0].element).toHaveClass('is-selected')
+  expect(mock.pins[0].element).toHaveClass('is-selected', 'mapboxgl-marker')
   expect(mock.pins[0].element).toHaveAccessibleName('Down, Out of service')
   expect(mock.pins[1].element).toHaveClass('is-last-known')
   fireEvent.click(mock.pins[1].element)
@@ -86,6 +86,7 @@ it('keeps marker DOM and camera stable through selection, loading and route resu
   expect(mock.markerRemove).not.toHaveBeenCalled()
   expect(mock.pins[0].element).toBe(firstButton)
   expect(firstButton.firstChild).toBe(firstBadge)
+  expect(firstButton).toHaveClass('mapboxgl-marker')
   expect(firstButton).not.toHaveClass('is-selected')
   expect(mock.pins[1].element).toHaveClass('is-selected')
   expect(mock.fit).toHaveBeenCalledTimes(1)
