@@ -14,7 +14,7 @@ const trucks = [
   ['509', 'yard', 35.9557, -80.0053, 10, 'High Point, NC'],
   ['610', 'available', 35.2281, -80.8441, 120, 'Charlotte, NC'],
   ['711', 'parts', null, null, 0, 'Location unavailable'],
-].map(([id, status, lat, lng, age, label]) => ({ id, unit_number: id, status, make: 'Test', model: 'Truck', driver_name: id === '101' ? 'Example driver' : null,
+].map(([id, status, lat, lng, age, label]) => ({ id, unit_number: id, fleet_company_name: '77 CARGO LLC', status, make: 'Test', model: 'Truck', driver_name: id === '101' ? 'Example driver' : null,
   telemetry: { location: { lat, lng, label, observed_at: new Date(now - Number(age) * 60000).toISOString(), captured_at: new Date(now).toISOString(), source: 'motive_api', freshness: 'fresh', snapshot_id: null, source_age_text: null }, speed: null, fuel: null, odometer: null, engine_hours: null, fault_count: null, motion: 'unknown' },
 })) as BoardTruck[]
 export function Preview() {
