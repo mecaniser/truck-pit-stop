@@ -17,7 +17,7 @@ import { STATUS_META, fleetUnitLabel, fmt, money, fmtDate, pmState, initials } f
 import DatePicker from '@/components/DatePicker'
 import FleetMap from './FleetMap'
 import { TruckTelemetryLocation, TruckTelemetryValue, TruckVitals } from './TruckTelemetry'
-import { truckCoordinates, truckLocation, truckMotion, useTelemetryClock } from './telemetry'
+import { truckLocation, truckMotion, useTelemetryClock } from './telemetry'
 import { ConfirmModal, TruckEditModal, LogIncidentModal, EditIncidentModal, ResolveIncidentModal, AssignIncidentRepairOrderModal, InspectionsSection, AssignDriverModal, SchedulePMModal, Modal, SidekickPanel, invalidateFleetAndCockpit, type InspectionsSectionHandle } from './FleetModals'
 import FleetPriceBuilderPanel from './FleetPriceBuilderPanel'
 import IncidentHistory from './IncidentHistory'
@@ -62,17 +62,6 @@ const incidentMenuItemStyle: React.CSSProperties = {
   textAlign: 'left',
 }
 const MAX_FLEET_PHOTO_BYTES = 10 * 1024 * 1024
-
-function haversineMiles(aLat: number, aLng: number, bLat: number, bLng: number) {
-  const radius = 3958.8
-  const phi1 = aLat * Math.PI / 180
-  const phi2 = bLat * Math.PI / 180
-  const deltaPhi = (bLat - aLat) * Math.PI / 180
-  const deltaLambda = (bLng - aLng) * Math.PI / 180
-  const h = Math.sin(deltaPhi / 2) ** 2
-    + Math.cos(phi1) * Math.cos(phi2) * Math.sin(deltaLambda / 2) ** 2
-  return Math.round(2 * radius * Math.asin(Math.sqrt(h)))
-}
 
 interface PendingIncidentPhoto {
   id: string
@@ -212,25 +201,6 @@ export default function TruckDetail({
     setRecognizingPm(null)
     setStatusMenuOpen(false)
   }, [truckId])
-
-  const nearestUnits = useMemo(() => {
-    const truck = data?.truck
-    const origin = truck && truckCoordinates(truck, now)
-    if (!locationOpen || !truck || !origin) return []
-
-    return trucks.flatMap((candidate) => {
-      const point = truckCoordinates(candidate, now)
-      return candidate.id !== truck.id && point ? [{
-        id: candidate.id,
-        unit_number: candidate.display_unit_number || candidate.unit_number,
-        city: truckLocation(candidate, now)?.label,
-        status: candidate.status,
-        miles: haversineMiles(origin[1], origin[0], point[1], point[0]),
-      }] : []
-    })
-      .sort((a, b) => a.miles - b.miles)
-      .slice(0, 3)
-  }, [data?.truck, locationOpen, trucks, now])
 
   const mapTrucks = useMemo(() => {
     if (!locationOpen) return []
@@ -1176,21 +1146,7 @@ export default function TruckDetail({
             }
           >
             {locationOpen && (
-              <div className="dmap-wrap">
-                <FleetMap trucks={mapTrucks} focusId={t.id} onSelect={handleMapSelect} />
-                <div className="dmap-side">
-                  <div className="dmap-side-h">Nearest reported positions · straight-line</div>
-                  {nearestUnits.length === 0 && <div className="empty-note">No located units nearby.</div>}
-                  {nearestUnits.map((nearby) => (
-                    <button key={nearby.id} className="near-row" onClick={() => onOpen(nearby.id)}>
-                      <i className="near-dot" style={{ background: STATUS_META[nearby.status].dot }} />
-                      <span className="near-unit">{nearby.unit_number}</span>
-                      <span className="near-loc">{nearby.city || '—'}</span>
-                      <span className="near-mi">{nearby.miles} mi</span>
-                    </button>
-                  ))}
-                </div>
-              </div>
+              <FleetMap key={t.id} trucks={mapTrucks} focusId={t.id} onSelect={handleMapSelect} />
             )}
           </Section>
         </div>
