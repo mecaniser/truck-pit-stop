@@ -3,7 +3,8 @@ import { ArrowUpRight, ChevronDown, LocateFixed, Search, X } from 'lucide-react'
 import type { BoardTruck } from './types'
 import { fleetUnitLabel, STATUS_META } from './helpers'
 import { truckCoordinates, truckLocation, useTelemetryClock } from './telemetry'
-import { formatDistance, nearbyTrucks, positionAge, recentPosition } from './proximity'
+import { formatDistance, positionAge, recentPosition } from './proximity'
+import { formatDriveTime, useRoadProximity } from './roadProximity'
 import FleetMapCanvas from './FleetMapCanvas'
 import './proximity.css'
 
@@ -34,13 +35,15 @@ function FleetMap({ trucks, focusId, onFocusChange, onSelect, compact }: Props) 
   useEffect(() => {
     if (moveFocus.current) { (headingRef.current || searchRef.current)?.focus(); moveFocus.current = false }
   }, [focus?.id, query])
-  const nearby = nearbyTrucks(trucks, focus, now, includeLastKnown)
+  const [retry, setRetry] = useState(0)
+  const road = useRoadProximity(trucks, focus, now, includeLastKnown, retry)
+  const nearby = road.nearby
   const visibleNearby = expanded ? nearby : nearby.slice(0, 3)
   const located = trucks.filter(truck => truckCoordinates(truck, now))
   const recentCount = located.filter(truck => recentPosition(truck, now)).length
   const searching = !!query.trim()
   const matches = trucks.filter(truck => `${fleetUnitLabel(truck)} ${truck.driver_name || ''} ${truckLocation(truck, now)?.label || ''}`.toLowerCase().includes(query.trim().toLowerCase()))
-  const rows = searching || !focus ? matches.map(truck => ({ truck, miles: undefined })) : visibleNearby
+  const rows = searching || !focus ? matches.map(truck => ({ truck, miles: undefined, seconds: undefined })) : visibleNearby
   const missingOrigin = focus && !truckCoordinates(focus, now)
   const oldOrigin = focus && !missingOrigin && !recentPosition(focus, now) && !includeLastKnown
   const comparisonIds = visibleNearby.map(({ truck }) => truck.id)
@@ -52,7 +55,7 @@ function FleetMap({ trucks, focusId, onFocusChange, onSelect, compact }: Props) 
     </header>
     <div className="proximity-workspace">
       <div className="proximity-geography">
-        <FleetMapCanvas trucks={trucks} focusId={focus?.id} nearbyIds={comparisonIds} now={now} recenter={recenter} onFocus={select} />
+        <FleetMapCanvas trucks={trucks} focusId={focus?.id} nearbyIds={comparisonIds} route={road.geometry} now={now} recenter={recenter} onFocus={select} />
         <div className="proximity-legend" aria-label="Map legend">
           {[...new Set(located.map(truck => truck.status))].map(status => <span key={status}><i style={{ background: STATUS_META[status].dot }} />{STATUS_META[status].label}</span>)}
           <span className="proximity-last-known-key"><i />Last known</span>
@@ -66,6 +69,13 @@ function FleetMap({ trucks, focusId, onFocusChange, onSelect, compact }: Props) 
           <Status truck={focus} />
           <p>{truckLocation(focus, now)?.label || 'Location unavailable'}</p>
           <small>{positionAge(focus, now)}</small>
+          {nearby[0] && <div className="proximity-route-summary" role="region" aria-label="Closest road route">
+            <span className="proximity-route-caption">Closest by road</span>
+            <div className="proximity-route-endpoints"><strong>{fleetUnitLabel(focus)}</strong><span aria-label="to">→</span><strong>{fleetUnitLabel(nearby[0].truck)}</strong></div>
+            <div className="proximity-route-metrics"><strong>{formatDistance(nearby[0].miles)}</strong><span>{formatDriveTime(nearby[0].seconds)}<small>est. drive</small></span></div>
+            <small>{road.geometryFailed ? 'Route preview unavailable' : road.geometry ? 'Blue route on map' : 'Loading route…'}</small>
+          </div>}
+          {road.phase === 'loading' && <div className="proximity-route-summary" role="status">Calculating road distances…</div>}
           {focus.driver_name && <p className="proximity-driver">{focus.driver_name}</p>}
           <div className="proximity-actions">
             {onSelect && <button type="button" onClick={() => onSelect(focus)}>Truck details<ArrowUpRight size={15} /></button>}
@@ -74,13 +84,14 @@ function FleetMap({ trucks, focusId, onFocusChange, onSelect, compact }: Props) 
         </div>}
         <div className="proximity-list-heading"><h3>{searching ? 'Search results' : focus ? 'Nearby trucks' : 'Select a truck'}</h3><span>{searching ? matches.length : focus ? nearby.length : trucks.length}</span></div>
         {focus && !searching && <>
-          <div className="proximity-basis">Straight-line distance · {includeLastKnown ? 'last-known positions included' : 'positions ≤15 min old'}</div>
+          <div className="proximity-basis">Road miles · fastest driving routes · {includeLastKnown ? 'last-known positions included' : 'positions ≤15 min old'}</div>
           <label className="proximity-toggle"><input type="checkbox" checked={includeLastKnown} onChange={event => { setIncludeLastKnown(event.target.checked); setExpanded(false) }} />Include last-known</label>
-          {missingOrigin ? <p className="proximity-empty">This truck has no verified coordinates. Distance is unavailable.</p> : oldOrigin ? <p className="proximity-empty">This truck’s position is old or undated. Include last-known to compare recorded positions.</p> : nearby.length === 0 ? <p className="proximity-empty">No other {includeLastKnown ? 'located' : 'recently located'} trucks.</p> : null}
+          {missingOrigin ? <p className="proximity-empty">This truck has no verified coordinates. Distance is unavailable.</p> : oldOrigin ? <p className="proximity-empty">This truck’s position is old or undated. Include last-known to compare recorded positions.</p> : road.phase === 'loading' ? null : road.phase === 'unconfigured' ? <p className="proximity-empty" role="status">Road routing is not configured.</p> : road.phase === 'error' ? <p className="proximity-empty" role="status">Road distances unavailable. <button type="button" onClick={() => setRetry(value => value + 1)}>Retry routing</button></p> : road.phase === 'ready' && nearby.length === 0 ? <p className="proximity-empty">No road routes found.</p> : nearby.length === 0 ? <p className="proximity-empty">No other {includeLastKnown ? 'located' : 'recently located'} trucks.</p> : null}
+          {road.unreachable > 0 && <p className="proximity-empty">{road.unreachable} truck{road.unreachable === 1 ? '' : 's'} without a road route.</p>}
         </>}
         <div className="proximity-rows">
-          {rows.map(({ truck, miles }) => <button type="button" className="proximity-row" key={truck.id} aria-pressed={focus?.id === truck.id} onClick={() => select(truck.id)}>
-            <div className="proximity-row-top"><strong>{fleetUnitLabel(truck)}</strong>{miles != null && <b>{formatDistance(miles)}</b>}</div>
+          {rows.map(({ truck, miles, seconds }) => <button type="button" className="proximity-row" key={truck.id} aria-pressed={focus?.id === truck.id} onClick={() => select(truck.id)}>
+            <div className="proximity-row-top"><strong>{fleetUnitLabel(truck)}</strong>{miles != null && <b>{formatDistance(miles)}<small className="proximity-drive-time">{formatDriveTime(seconds!)} est.</small></b>}</div>
             <Status truck={truck} />
             <div className="proximity-row-bottom"><span>{truckLocation(truck, now)?.label || 'Location unavailable'}</span><small>{positionAge(truck, now)}</small></div>
           </button>)}
@@ -88,7 +99,7 @@ function FleetMap({ trucks, focusId, onFocusChange, onSelect, compact }: Props) 
         {focus && !searching && nearby.length > 3 && <button className="proximity-more" type="button" aria-expanded={expanded} onClick={() => setExpanded(value => !value)}>{expanded ? 'Closest 3' : `Show all ${nearby.length}`}<ChevronDown size={16} style={{ transform: expanded ? 'rotate(180deg)' : undefined }} /></button>}
         {searching && !matches.length && <p className="proximity-empty">No trucks match your search.</p>}
         {!trucks.length && <p className="proximity-empty">No trucks in this view.</p>}
-        <footer>{focus ? 'Proximity does not confirm availability.' : `${recentCount} recent · ${located.length - recentCount} last-known positions`}</footer>
+        <footer>{focus ? 'Driving estimates · truck restrictions not applied.' : `${recentCount} recent · ${located.length - recentCount} last-known positions`}</footer>
       </aside>
     </div>
   </section>

@@ -23,22 +23,23 @@ function truck(id: string, lng: number, old = false) {
 }
 beforeEach(() => { mock.pins.length = 0; mock.sources.clear(); vi.clearAllMocks(); vi.stubEnv('VITE_MAPBOX_TOKEN', 'synthetic') })
 afterEach(() => vi.unstubAllEnvs())
-it('selects pins in place and draws geographic connectors with status and stale styling', async () => {
+it('selects pins in place and draws supplied road geometry with status and stale styling', async () => {
   const select = vi.fn()
-  render(<FleetMapCanvas trucks={[truck('Down', 0), truck('Old', 1, true)]} focusId="Down" nearbyIds={['Old']} now={now} recenter={0} onFocus={select} />)
+  render(<FleetMapCanvas trucks={[truck('Down', 0), truck('Old', 1, true)]} route={{ type: 'LineString', coordinates: [[0, 0], [.3, .4], [1, 0]] }} focusId="Down" nearbyIds={['Old']} now={now} recenter={0} onFocus={select} />)
   await waitFor(() => expect(mock.pins).toHaveLength(2))
   expect(mock.pins[0].element).toHaveClass('is-selected')
   expect(mock.pins[0].element).toHaveAccessibleName('Down, Out of service')
   expect(mock.pins[1].element).toHaveClass('is-last-known')
   fireEvent.click(mock.pins[1].element)
   expect(select).toHaveBeenCalledWith('Old')
-  expect(mock.lines.mock.calls[0][0].features[0].geometry.coordinates).toEqual([[0, 0], [1, 0]])
+  expect(mock.lines.mock.calls[0][0].features[0].geometry.coordinates).toEqual([[0, 0], [.3, .4], [1, 0]])
 })
 it('groups coincident pins without moving coordinates and lets each truck be selected', async () => {
   const select = vi.fn()
   render(<FleetMapCanvas trucks={[truck('A', 0), truck('B', 0)]} nearbyIds={[]} now={now} recenter={0} onFocus={select} />)
   await waitFor(() => expect(mock.pins).toHaveLength(1))
   expect(mock.pins[0].point).toEqual([0, 0])
+  expect(mock.lines.mock.calls[0][0].features).toEqual([])
   expect(mock.pins[0].element).toHaveAccessibleName('2 trucks at this position')
   fireEvent.click(mock.pins[0].popup!.querySelectorAll('button')[1])
   expect(select).toHaveBeenCalledWith('B')
@@ -55,4 +56,13 @@ it('preserves viewport on location polling, recenters on demand and cleans up', 
   expect(screen.getByRole('status')).toHaveTextContent('Map could not load')
   result.unmount()
   expect(mock.remove).toHaveBeenCalledTimes(1)
+})
+
+it('clears the previous road geometry immediately while recalculating', async () => {
+  const props = { trucks: [truck('A', 0), truck('B', 1)], focusId: 'A', nearbyIds: ['B'], now, recenter: 0, onFocus: vi.fn() }
+  const result = render(<FleetMapCanvas {...props} route={{ type: 'LineString', coordinates: [[0, 0], [.3, .4], [1, 0]] }} />)
+  await waitFor(() => expect(mock.lines).toHaveBeenCalled())
+  expect(mock.lines.mock.lastCall![0].features).toHaveLength(1)
+  result.rerender(<FleetMapCanvas {...props} focusId="B" nearbyIds={[]} />)
+  expect(mock.lines.mock.lastCall![0].features).toEqual([])
 })

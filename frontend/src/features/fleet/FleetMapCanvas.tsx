@@ -7,9 +7,9 @@ import { recentPosition } from './proximity'
 import 'mapbox-gl/dist/mapbox-gl.css'
 
 interface Pin { id: string; label: string; status: BoardTruck['status']; point: [number, number]; recent: boolean }
-interface Props { trucks: BoardTruck[]; focusId?: string; nearbyIds: string[]; now: number; recenter: number; onFocus: (id: string) => void }
+interface Props { trucks: BoardTruck[]; focusId?: string; nearbyIds: string[]; route?: GeoJSON.LineString; now: number; recenter: number; onFocus: (id: string) => void }
 
-export default function FleetMapCanvas({ trucks, focusId, nearbyIds, now, recenter, onFocus }: Props) {
+export default function FleetMapCanvas({ trucks, focusId, nearbyIds, route, now, recenter, onFocus }: Props) {
   const container = useRef<HTMLDivElement>(null)
   const mapRef = useRef<MapboxMap>()
   const moduleRef = useRef<typeof import('mapbox-gl').default>()
@@ -25,6 +25,7 @@ export default function FleetMapCanvas({ trucks, focusId, nearbyIds, now, recent
     return point ? [{ id: truck.id, label: fleetUnitLabel(truck), status: truck.status, point, recent: recentPosition(truck, now) }] : []
   }))
   const comparisonData = JSON.stringify(nearbyIds)
+  const routeData = JSON.stringify(route || null)
   useEffect(() => {
     if (!token || !container.current) return
     let cancelled = false
@@ -78,26 +79,30 @@ export default function FleetMapCanvas({ trucks, focusId, nearbyIds, now, recent
       markers.current.push(marker.addTo(map))
     })
     const sourceId = 'fleet-proximity-lines'
-    const data: GeoJSON.FeatureCollection = { type: 'FeatureCollection', features: focus ? neighbors.map(pin => ({ type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: [focus.point, pin.point] } })) : [] }
+    const geometry = JSON.parse(routeData) as GeoJSON.LineString | null
+    const data: GeoJSON.FeatureCollection = { type: 'FeatureCollection', features: focus && geometry ? [{ type: 'Feature', properties: {}, geometry }] : [] }
     const source = map.getSource(sourceId) as import('mapbox-gl').GeoJSONSource | undefined
     if (source) source.setData(data)
     else {
       map.addSource(sourceId, { type: 'geojson', data })
-      map.addLayer({ id: sourceId, type: 'line', source: sourceId, paint: { 'line-color': '#b77900', 'line-width': 2, 'line-dasharray': [2, 2] } })
+      map.addLayer({ id: `${sourceId}-casing`, type: 'line', source: sourceId, layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-color': '#ffffff', 'line-width': 10, 'line-opacity': 0.95 } })
+      map.addLayer({ id: sourceId, type: 'line', source: sourceId, layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-color': '#2563eb', 'line-width': 6, 'line-opacity': 1 } })
+      map.addLayer({ id: `${sourceId}-direction`, type: 'symbol', source: sourceId, layout: { 'symbol-placement': 'line', 'symbol-spacing': 90, 'text-field': '▶', 'text-size': 13, 'text-rotation-alignment': 'map', 'text-keep-upright': false, 'text-allow-overlap': true }, paint: { 'text-color': '#ffffff', 'text-halo-color': '#1d4ed8', 'text-halo-width': 1 } })
     }
     // Polling updates positions without stealing the manager's pan/zoom.
-    const frameKey = `${focusId || 'fleet'}:${recenter}:${pins.length ? 'located' : 'empty'}:${nearby.join(',')}`
+    const frameKey = `${focusId || 'fleet'}:${recenter}:${pins.length ? 'located' : 'empty'}:${nearby.join(',')}:${geometry ? 'route' : 'no-route'}`
     if (frameKey !== framing.current && pins.length) {
       const points = focus ? [focus, ...neighbors] : pins
       const bounds = new mb.LngLatBounds()
       points.forEach(pin => bounds.extend(pin.point))
+      geometry?.coordinates.forEach(point => bounds.extend(point as [number, number]))
       map.fitBounds(bounds, { padding: 65, maxZoom: focus ? 12 : 10, duration: 0 })
       framing.current = frameKey
     }
-  }, [pinData, comparisonData, focusId, recenter, ready])
+  }, [pinData, comparisonData, routeData, focusId, recenter, ready])
 
   return <>
-    {(!token || error) && <div className="proximity-map-unavailable" role="status"><strong>Map unavailable</strong><span>{!token ? 'Mapbox access is not configured.' : 'Map could not load.'} Truck selection and distances remain available.</span></div>}
+    {(!token || error) && <div className="proximity-map-unavailable" role="status"><strong>Map unavailable</strong><span>{!token ? 'Mapbox access is not configured.' : 'Map could not load.'} Truck selection remains available.</span></div>}
     {token && <div ref={container} className="proximity-canvas" hidden={error} aria-label="Geographic truck positions" />}
   </>
 }

@@ -75,3 +75,38 @@ the changed component. Committing did not restart or switch that process.
 Status: implementation review candidate. Authenticated full-stack and actual
 basemap acceptance remain required before Done. Merge and deployment are not
 performed by this task.
+
+## 2026-10-04 follow-up: approved Mapbox and live coordinate coverage
+
+User authorized connecting existing Mapbox configuration and checking actual
+fleet coordinates. Reused only the public VITE_MAPBOX_TOKEN from the main
+checkout frontend/.env, passed directly into this preview process environment;
+no token was printed, committed, newly issued or saved in this worktree. The
+process still binds 127.0.0.1:5186 and serves this worktree. Backend remains
+unconfigured; preview is intentionally synthetic, not connected to production.
+
+Real Mapbox streets tiles, six coordinate-backed markers (some outside the
+comparison bounds), status borders, selected outline and dashed connector lines
+rendered in Chrome. Clicked actual map pin204: selection204; nearby101=2.6mi,
+307=10.3mi,408=23.2mi. Clicked nearby307: selection307; nearby204=10.3mi,
+101=12.7mi,408=12.9mi. These numbers refer only to the labeled synthetic fixture.
+Screenshot: output/proximity-map/mapbox-verified.png (local, uncommitted).
+Browser CDP access was unreliable; native CUA accessibility, clicks and screenshots
+provided the successful browser evidence.
+
+PR467 has since merged as d841cf32 at2026-10-04T22:17:52Z (verified through gh).
+The authenticated production Fleet Map exposes the new proximity UI and reports
+0located/21without coordinates. A tenant-scoped production read-only database
+transaction independently ran the existing board read-model and counted stored
+data:21trucks;13manual location labels;8without location;0coordinate pairs;
+32telemetry snapshots and0with coordinates;0Motive remote vehicles;0active
+Motive connection records. No data, credential, provider or production settings
+were changed. Thus no hidden stored coordinates are being dropped by the map.
+
+Usable-coordinate trucks: none. Labels only:77CARGO01,02,03,06,7,77,8,88,W900;
+DONTRANS530,531,860;ELIS609. No location:77CARGO022,04,05,077;DONTRANS532,533,HINO;
+ELIS603. Names/numbers are coverage identifiers, not geocoded positions.
+
+Actual-fleet pin/proximity acceptance remains BLOCKED on coordinate ingestion
+and a connected/mapped provider (or separately authorized verified-coordinate
+captures). Renderer suitability and local Mapbox connection are now VERIFIED.
