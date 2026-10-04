@@ -3,7 +3,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import FleetMapCanvas from '../FleetMapCanvas'
 import type { BoardTruck } from '../types'
 
-const mock = vi.hoisted(() => ({ pins: [] as { element: HTMLElement; point?: number[]; popup?: HTMLElement }[], fit: vi.fn(), lines: vi.fn(), remove: vi.fn(), sources: new Set<string>(), handlers: {} as Record<string, () => void> }))
+const mock = vi.hoisted(() => ({ pins: [] as { element: HTMLElement; point?: number[]; popup?: HTMLElement }[], fit: vi.fn(), lines: vi.fn(), remove: vi.fn(), markerRemove: vi.fn(), sources: new Set<string>(), handlers: {} as Record<string, () => void> }))
 vi.mock('mapbox-gl', () => ({ default: {
   Map: class { on(event: string, cb: () => void) { mock.handlers[event] = cb; if (event === 'load') queueMicrotask(cb) } addControl() {} resize() {} fitBounds(...args: unknown[]) { mock.fit(...args) } getSource(id: string) { return mock.sources.has(id) ? { setData: mock.lines } : undefined } addSource(id: string, source: { data: unknown }) { mock.sources.add(id); mock.lines(source.data) } addLayer() {} remove() { mock.remove() } },
   Marker: class {
@@ -12,7 +12,7 @@ vi.mock('mapbox-gl', () => ({ default: {
     setLngLat(point: number[]) { this.pin.point = point; return this }
     setPopup(popup: { content: HTMLElement }) { this.pin.popup = popup.content; return this }
     getPopup() { return { remove: vi.fn() } }
-    addTo() { return this } remove() {}
+    addTo() { return this } remove() { mock.markerRemove(this.pin.element) }
   },
   Popup: class { content?: HTMLElement; setDOMContent(content: HTMLElement) { this.content = content; return this } },
   NavigationControl: class {}, LngLatBounds: class { extend() { return this } },
@@ -73,4 +73,42 @@ it('uses the supplied company mark only for matching trucks and keeps the unit l
   expect(mock.pins[0].element.querySelector('img')).toHaveAttribute('src', '/fleet/77-cargo-mark.svg')
   expect(mock.pins[0].element.querySelector('.proximity-pin-label')).toHaveTextContent('77-A')
   expect(mock.pins[1].element.querySelector('img')).toBeNull()
+})
+
+it('keeps marker DOM and camera stable through selection, loading and route results', async () => {
+  const props = { trucks: [truck('A', 0), truck('B', 1)], focusId: 'A', nearbyIds: ['B'], now, recenter: 0, onFocus: vi.fn() }
+  const result = render(<FleetMapCanvas {...props} />)
+  await waitFor(() => expect(mock.pins).toHaveLength(2))
+  const firstButton = mock.pins[0].element, firstBadge = firstButton.firstChild
+  result.rerender(<FleetMapCanvas {...props} focusId="B" nearbyIds={[]} />)
+  result.rerender(<FleetMapCanvas {...props} focusId="B" nearbyIds={['A']} route={{ type: 'LineString', coordinates: [[1, 0], [.5, .2], [0, 0]] }} />)
+  expect(mock.pins).toHaveLength(2)
+  expect(mock.markerRemove).not.toHaveBeenCalled()
+  expect(mock.pins[0].element).toBe(firstButton)
+  expect(firstButton.firstChild).toBe(firstBadge)
+  expect(firstButton).not.toHaveClass('is-selected')
+  expect(mock.pins[1].element).toHaveClass('is-selected')
+  expect(mock.fit).toHaveBeenCalledTimes(1)
+  fireEvent.click(firstButton)
+  expect(props.onFocus).toHaveBeenCalledWith('A')
+  result.rerender(<FleetMapCanvas {...props} focusId="B" recenter={1} />)
+  expect(mock.fit).toHaveBeenCalledTimes(2)
+})
+it('moves existing markers, removes only missing groups and reconciles coincident trucks', async () => {
+  const props = { trucks: [truck('A', 0), truck('B', 1)], nearbyIds: [], now, recenter: 0, onFocus: vi.fn() }
+  const result = render(<FleetMapCanvas {...props} />)
+  await waitFor(() => expect(mock.pins).toHaveLength(2))
+  result.rerender(<FleetMapCanvas {...props} trucks={[truck('A', .5), truck('B', 1)]} />)
+  expect(mock.pins).toHaveLength(2)
+  expect(mock.pins[0].point).toEqual([.5, 0])
+  result.rerender(<FleetMapCanvas {...props} trucks={[truck('A', 1), truck('B', 1)]} />)
+  expect(mock.pins).toHaveLength(3)
+  expect(mock.markerRemove).toHaveBeenCalledTimes(2)
+  expect(mock.pins[2].element).toHaveAccessibleName('2 trucks at this position')
+  result.rerender(<FleetMapCanvas {...props} trucks={[truck('B', 1)]} />)
+  expect(mock.markerRemove).toHaveBeenCalledTimes(3)
+  expect(mock.pins).toHaveLength(4)
+  expect(mock.fit).toHaveBeenCalledTimes(1)
+  result.unmount()
+  expect(mock.markerRemove).toHaveBeenCalledTimes(4)
 })
