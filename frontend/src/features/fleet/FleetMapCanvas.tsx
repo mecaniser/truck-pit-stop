@@ -74,7 +74,11 @@ export default function FleetMapCanvas({ trucks, focusId, nearbyIds, route, now,
       const { button, marker } = entry
       const pointKey = representative.point.join(',')
       if (entry.pointKey !== pointKey) { marker.setLngLat(representative.point); entry.pointKey = pointKey }
-      button.className = `proximity-pin${selected ? ' is-selected' : ''}${members.every(pin => !pin.recent) ? ' is-last-known' : ''}${focus && !selected && !members.some(pin => nearby.includes(pin.id)) ? ' is-dimmed' : ''}`
+      // Mapbox owns positioning classes on this element; never replace className.
+      button.classList.add('proximity-pin')
+      button.classList.toggle('is-selected', !!selected)
+      button.classList.toggle('is-last-known', members.every(pin => !pin.recent))
+      button.classList.toggle('is-dimmed', !!focus && !selected && !members.some(pin => nearby.includes(pin.id)))
       button.style.setProperty('--pin-status', STATUS_META[representative.status].dot)
       const contentKey = JSON.stringify([representative.label, representative.company, members.map(pin => pin.company)])
       if (entry.contentKey !== contentKey) {

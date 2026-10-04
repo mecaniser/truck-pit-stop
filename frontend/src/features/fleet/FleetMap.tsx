@@ -91,9 +91,10 @@ function FleetMap({ trucks, focusId, onFocusChange, onSelect, compact }: Props) 
         </>}
         <div className="proximity-rows">
           {rows.map(({ truck, miles, seconds }) => <button type="button" className="proximity-row" key={truck.id} aria-pressed={focus?.id === truck.id} onClick={() => select(truck.id)}>
-            <div className="proximity-row-top"><strong>{fleetUnitLabel(truck)}</strong>{miles != null && <b>{formatDistance(miles)}<small className="proximity-drive-time">{formatDriveTime(seconds!)} est.</small></b>}</div>
-            <Status truck={truck} />
-            <div className="proximity-row-bottom"><span>{truckLocation(truck, now)?.label || 'Location unavailable'}</span><small>{positionAge(truck, now)}</small></div>
+            <span className="proximity-row-unit"><strong>{fleetUnitLabel(truck)}</strong><i role="img" aria-label={STATUS_META[truck.status].label} title={STATUS_META[truck.status].label} style={{ background: STATUS_META[truck.status].dot }} /></span>
+            <span className="proximity-row-location" title={truckLocation(truck, now)?.label || 'Location unavailable'}>{truckLocation(truck, now)?.label || 'Location unavailable'}</span>
+            <small className="proximity-row-age" title={positionAge(truck, now)}>{positionAge(truck, now)}</small>
+            {miles != null && <><b className="proximity-row-miles">{formatDistance(miles)}</b><span className="proximity-row-time" title={`${formatDriveTime(seconds!)} estimated drive`}>{formatDriveTime(seconds!).replace(' hr', 'h').replace(' min', 'm')}</span></>}
           </button>)}
         </div>
         {focus && !searching && nearby.length > 3 && <button className="proximity-more" type="button" aria-expanded={expanded} onClick={() => setExpanded(value => !value)}>{expanded ? 'Closest 3' : `Show all ${nearby.length}`}<ChevronDown size={16} style={{ transform: expanded ? 'rotate(180deg)' : undefined }} /></button>}
