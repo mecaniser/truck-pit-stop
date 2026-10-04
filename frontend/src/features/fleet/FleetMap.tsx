@@ -69,6 +69,13 @@ function FleetMap({ trucks, focusId, onFocusChange, onSelect, compact }: Props) 
           <Status truck={focus} />
           <p>{truckLocation(focus, now)?.label || 'Location unavailable'}</p>
           <small>{positionAge(focus, now)}</small>
+          {nearby[0] && <div className="proximity-route-summary" role="region" aria-label="Closest road route">
+            <span className="proximity-route-caption">Closest by road</span>
+            <div className="proximity-route-endpoints"><strong>{fleetUnitLabel(focus)}</strong><span aria-label="to">→</span><strong>{fleetUnitLabel(nearby[0].truck)}</strong></div>
+            <div className="proximity-route-metrics"><strong>{formatDistance(nearby[0].miles)}</strong><span>{formatDriveTime(nearby[0].seconds)}<small>est. drive</small></span></div>
+            <small>{road.geometryFailed ? 'Route preview unavailable' : road.geometry ? 'Blue route on map' : 'Loading route…'}</small>
+          </div>}
+          {road.phase === 'loading' && <div className="proximity-route-summary" role="status">Calculating road distances…</div>}
           {focus.driver_name && <p className="proximity-driver">{focus.driver_name}</p>}
           <div className="proximity-actions">
             {onSelect && <button type="button" onClick={() => onSelect(focus)}>Truck details<ArrowUpRight size={15} /></button>}
@@ -79,9 +86,8 @@ function FleetMap({ trucks, focusId, onFocusChange, onSelect, compact }: Props) 
         {focus && !searching && <>
           <div className="proximity-basis">Road miles · fastest driving routes · {includeLastKnown ? 'last-known positions included' : 'positions ≤15 min old'}</div>
           <label className="proximity-toggle"><input type="checkbox" checked={includeLastKnown} onChange={event => { setIncludeLastKnown(event.target.checked); setExpanded(false) }} />Include last-known</label>
-          {missingOrigin ? <p className="proximity-empty">This truck has no verified coordinates. Distance is unavailable.</p> : oldOrigin ? <p className="proximity-empty">This truck’s position is old or undated. Include last-known to compare recorded positions.</p> : road.phase === 'loading' ? <p className="proximity-empty" role="status">Calculating road distances…</p> : road.phase === 'unconfigured' ? <p className="proximity-empty" role="status">Road routing is not configured.</p> : road.phase === 'error' ? <p className="proximity-empty" role="status">Road distances unavailable. <button type="button" onClick={() => setRetry(value => value + 1)}>Retry routing</button></p> : road.phase === 'ready' && nearby.length === 0 ? <p className="proximity-empty">No road routes found.</p> : nearby.length === 0 ? <p className="proximity-empty">No other {includeLastKnown ? 'located' : 'recently located'} trucks.</p> : null}
+          {missingOrigin ? <p className="proximity-empty">This truck has no verified coordinates. Distance is unavailable.</p> : oldOrigin ? <p className="proximity-empty">This truck’s position is old or undated. Include last-known to compare recorded positions.</p> : road.phase === 'loading' ? null : road.phase === 'unconfigured' ? <p className="proximity-empty" role="status">Road routing is not configured.</p> : road.phase === 'error' ? <p className="proximity-empty" role="status">Road distances unavailable. <button type="button" onClick={() => setRetry(value => value + 1)}>Retry routing</button></p> : road.phase === 'ready' && nearby.length === 0 ? <p className="proximity-empty">No road routes found.</p> : nearby.length === 0 ? <p className="proximity-empty">No other {includeLastKnown ? 'located' : 'recently located'} trucks.</p> : null}
           {road.unreachable > 0 && <p className="proximity-empty">{road.unreachable} truck{road.unreachable === 1 ? '' : 's'} without a road route.</p>}
-          {nearby[0] && <p className="proximity-basis">Closest by road: {fleetUnitLabel(nearby[0].truck)}{road.geometryFailed ? ' · Route preview unavailable' : road.geometry ? ' · Route shown' : ' · Loading route…'}</p>}
         </>}
         <div className="proximity-rows">
           {rows.map(({ truck, miles, seconds }) => <button type="button" className="proximity-row" key={truck.id} aria-pressed={focus?.id === truck.id} onClick={() => select(truck.id)}>

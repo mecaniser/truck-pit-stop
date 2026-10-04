@@ -85,7 +85,9 @@ export default function FleetMapCanvas({ trucks, focusId, nearbyIds, route, now,
     if (source) source.setData(data)
     else {
       map.addSource(sourceId, { type: 'geojson', data })
-      map.addLayer({ id: sourceId, type: 'line', source: sourceId, paint: { 'line-color': '#b77900', 'line-width': 4, 'line-opacity': 0.85 } })
+      map.addLayer({ id: `${sourceId}-casing`, type: 'line', source: sourceId, layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-color': '#ffffff', 'line-width': 10, 'line-opacity': 0.95 } })
+      map.addLayer({ id: sourceId, type: 'line', source: sourceId, layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-color': '#2563eb', 'line-width': 6, 'line-opacity': 1 } })
+      map.addLayer({ id: `${sourceId}-direction`, type: 'symbol', source: sourceId, layout: { 'symbol-placement': 'line', 'symbol-spacing': 90, 'text-field': '▶', 'text-size': 13, 'text-rotation-alignment': 'map', 'text-keep-upright': false, 'text-allow-overlap': true }, paint: { 'text-color': '#ffffff', 'text-halo-color': '#1d4ed8', 'text-halo-width': 1 } })
     }
     // Polling updates positions without stealing the manager's pan/zoom.
     const frameKey = `${focusId || 'fleet'}:${recenter}:${pins.length ? 'located' : 'empty'}:${nearby.join(',')}:${geometry ? 'route' : 'no-route'}`

@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen } from '@testing-library/react'
+import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import FleetMap from '../FleetMap'
 import type { BoardTruck } from '../types'
@@ -48,8 +48,9 @@ describe('map workspace', async () => {
     fireEvent.click(screen.getByRole('button', { name: /Down Out of service/ }))
     expect(screen.getByText('Comparing from')).toBeInTheDocument()
     await settle()
-    expect(screen.getByText('6.9 mi')).toBeInTheDocument()
+    expect(screen.getAllByText('6.9 mi')).toHaveLength(2)
     expect(screen.queryByRole('button', { name: /Old Available/ })).not.toBeInTheDocument()
+    expect(within(screen.getByRole('region', { name: 'Closest road route' })).getByText('10 min')).toBeInTheDocument()
     expect(open).not.toHaveBeenCalled()
     fireEvent.click(screen.getByRole('button', { name: /Truck details/ }))
     expect(open).toHaveBeenCalledWith(origin)
@@ -87,7 +88,7 @@ describe('map workspace', async () => {
   it('ages out candidates and drops a selected truck removed from scope', async () => {
     const result = render(<FleetMap focusId={origin.id} trucks={[origin, truck('Aging', .1, 14.9)]} />)
     await settle()
-    expect(screen.getByText('6.9 mi')).toBeInTheDocument()
+    expect(screen.getAllByText('6.9 mi')).toHaveLength(2)
     act(() => vi.advanceTimersByTime(30000))
     expect(screen.queryByText('6.9 mi')).not.toBeInTheDocument()
     result.rerender(<FleetMap focusId={origin.id} trucks={[near]} />)
@@ -99,6 +100,6 @@ describe('map workspace', async () => {
     expect(screen.queryByText('Old')).not.toBeInTheDocument()
     result.rerender(<FleetMap trucks={[origin, truck('Near', .2)]} focusId={origin.id} />)
     await settle()
-    expect(screen.getByText('13.8 mi')).toBeInTheDocument()
+    expect(within(screen.getByRole('region', { name: 'Closest road route' })).getByText('13.8 mi')).toBeInTheDocument()
   })
 })

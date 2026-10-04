@@ -32,3 +32,7 @@ The tenant has an accessible Motive dashboard account; the absent connection rec
 -390px iframe browser acceptance: fresh results present; Include last-known brought610 into first place0.4mi/3min. Selecting610 changed origin with Last known2h ago and returned1010.4mi/4min,2043.8mi/12min,30714.2mi/21min. Controls remained accessible; no production changes.
 - Browser automation CDP timed out; native Chrome accessibility actions succeeded. Native screenshot capture returned only a257x160window thumbnail, inadequate for a detailed visual/overflow review. Full-resolution visual review and authenticated real-fleet routing remain pending; do not call the complete release gate done.
 - Real Motive account access confirmed separately above. Exact last-known coordinate discovery is available via dashboard; importing verified manual snapshots remains separate from this routing-code change.
+
+## Route contrast and quick-info refinement
+
+Fast UI follow-up on PR468: blue6px road route with10px white casing and repeated forward arrows; side-panel card displays selected→closest IDs, prominent road miles and estimated drive time. Loading clears the card metrics; existing missing-route behavior retained.12affected component/canvas tests and TypeScript/ESLint pass. Native browser verified card at desktop and390px, then selection307→204updated to12.5mi/19min. Same source-aligned frontend PID9315/5186; backend remains absent. Screenshot capture still thumbnail-only; no claim of new full-resolution visual review or production deployment.

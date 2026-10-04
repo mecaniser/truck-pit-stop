@@ -68,3 +68,14 @@
 .proximity-unit:focus-visible { outline: 2px solid var(--yellow, #ffc400); outline-offset: 4px; border-radius: 2px; }
 
 .proximity-drive-time { display: block; font-size: 11px; font-weight: 500; color: var(--fleet-text-muted, #94a3b8); text-align: right; }
+
+.proximity-route-summary { margin-top: 14px; padding: 12px; border: 1px solid #3b82f680; border-radius: 10px; background: #2563eb18; }
+.proximity-route-caption { display: block; color: #93c5fd; font-size: 11px; }
+.proximity-route-endpoints { display: flex; align-items: center; gap: 10px; margin: 7px 0 10px; font-size: 16px; }
+.proximity-route-endpoints strong { overflow-wrap: anywhere; min-width: 0; }
+.proximity-route-endpoints > span { color: #60a5fa; flex: none; }
+.proximity-route-metrics { display: flex; justify-content: space-between; gap: 10px; align-items: baseline; }
+.proximity-route-metrics > strong { font-size: 24px; line-height: 1.2; color: #f8fafc; }
+.proximity-route-metrics > span { font-size: 16px; text-align: right; white-space: nowrap; }
+.proximity-route-metrics small { display: block; }
+.proximity-route-summary > small { display: block; margin-top: 10px; }
