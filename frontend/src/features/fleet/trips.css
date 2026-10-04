@@ -235,3 +235,256 @@
  .fleet-root .trip-week .trip-readings .trip-vitals{display:flex;gap:16px}
  .fleet-root .trip-week .trip-summary .trip-chevron{grid-column:3;grid-row:1}
 }
+
+/* OTR owner overview: a flat comparison surface and deliberate route drilldown. */
+.fleet-root .trips-owner-layout{display:flex;flex-direction:column;height:100%;min-height:0;width:100%}
+.fleet-root .trips-owner-layout>.otr-overview{flex:1;min-height:0;overflow:auto;overscroll-behavior:contain;padding-right:8px}
+.fleet-root .trips-owner-layout>:not(.otr-overview){flex-shrink:0}
+.fleet-root .otr-section-heading{display:flex;align-items:center;justify-content:space-between;gap:16px;margin:0 0 12px}
+.fleet-root .otr-section-heading h3{font-size:16px;font-weight:650;margin:0}
+.fleet-root .otr-section-heading p,.fleet-root .otr-section-heading small,.fleet-root .otr-footnote{font-size:12px;color:var(--muted);margin:4px 0 0;line-height:1.5}
+.fleet-root .otr-metric{display:flex;gap:4px;flex-shrink:0}
+.fleet-root .otr-metric button{min-height:44px;padding:0 12px;border-bottom:2px solid transparent;color:var(--muted)}
+.fleet-root .otr-metric button[aria-pressed=true]{color:var(--text);border-color:#45c7e8}
+.fleet-root .otr-comparison{overflow-x:auto;margin-bottom:20px}
+.fleet-root .otr-comparison table{width:100%;border-collapse:collapse;font-size:13px;text-align:left;font-variant-numeric:tabular-nums}
+.fleet-root .otr-comparison th,.fleet-root .otr-comparison td{padding:5px 16px;border-bottom:1px solid var(--line);white-space:nowrap}
+.fleet-root .otr-comparison th:first-child{padding-left:0;width:28%}
+.fleet-root .otr-comparison thead th{color:var(--muted);font-size:11px;font-weight:500;padding-bottom:8px}
+.fleet-root .otr-comparison tbody th button{min-height:44px;display:flex;align-items:center;gap:12px;font-weight:550;text-align:left}
+.fleet-root .otr-comparison tbody th button svg{color:var(--muted)}
+.fleet-root .otr-comparison td:nth-child(2){width:42%}
+.fleet-root .otr-bar-value{display:flex;align-items:center;gap:20px}
+.fleet-root .otr-bar-value strong{min-width:80px;text-align:right;font-weight:550}
+.fleet-root .otr-bar-track{height:7px;background:#23323c;flex:1;min-width:80px;overflow:hidden;border-radius:2px}
+.fleet-root .otr-bar-track i{display:block;height:100%;background:#45c7e8}
+.fleet-root .otr-missing{color:var(--muted);font-size:12px}
+.fleet-root .otr-daily{border-top:1px solid var(--line);padding-top:16px}
+.fleet-root .otr-chart{display:flex;gap:12px;overflow-x:auto;padding:4px 0 10px;align-items:stretch}
+.fleet-root .otr-chart button{flex:1;min-width:64px;display:flex;flex-direction:column;align-items:center;gap:8px;font-size:12px;min-height:150px;padding:4px;border-radius:4px}
+.fleet-root .otr-chart button:hover{background:#17252e}
+.fleet-root .otr-chart strong{font-weight:550;white-space:nowrap}
+.fleet-root .otr-chart-track{height:88px;width:100%;max-width:72px;display:flex;align-items:flex-end}
+.fleet-root .otr-chart-track i{display:block;width:100%;background:#45c7e8;border-radius:3px 3px 0 0}
+.fleet-root .otr-day-list{margin-top:16px}
+.fleet-root .otr-day-list button{width:100%;min-height:48px;display:flex;gap:20px;align-items:center;border-top:1px solid var(--line);font-size:13px;text-align:left}
+.fleet-root .otr-day-list button strong{margin-right:auto}
+.fleet-root .otr-footnote{border-top:1px solid var(--line);padding:12px 0;margin-top:16px}
+.fleet-root .otr-detail .trip-card{border:0;border-bottom:1px solid var(--line);border-radius:0;background:none}
+.fleet-root .otr-detail .trip-summary{padding:16px 0}
+.fleet-root .otr-detail .dbtn{display:flex;align-items:center;gap:8px;min-height:44px}
+.fleet-root .otr-overview button:focus-visible{outline:2px solid var(--yellow);outline-offset:2px}
+@media(max-width:700px){.fleet-root .otr-section-heading{align-items:flex-start;flex-wrap:wrap;gap:8px}.fleet-root .otr-comparison table{min-width:610px}.fleet-root .otr-day-list button{gap:10px;font-size:12px}.fleet-root .otr-day-list button span:nth-last-child(2){display:none}.fleet-root .otr-section-heading p{max-width:38ch}}
+.fleet-root .otr-comparison table,.fleet-root .otr-comparison td,.fleet-root .otr-comparison tbody th,.fleet-root .otr-comparison button{color:var(--text)}
+.fleet-root .otr-pattern td:nth-child(2){width:auto}
+.fleet-root .otr-pattern th:first-child{width:auto}
+.fleet-root .otr-pattern td button{min-height:44px;min-width:60px;color:#64d8ee;font-size:12px}
+.fleet-root .otr-pattern td{padding:3px 8px;text-align:right}
+.fleet-root .otr-pattern thead th:not(:first-child){text-align:right}
+@media(min-width:1100px){
+ .fleet-root .otr-overview{display:flex;flex-direction:column}
+ .fleet-root .otr-workspace.is-fleet{display:grid;grid-template-columns:minmax(540px,1.6fr) minmax(310px,1fr);grid-template-rows:auto 1fr;gap:0 28px;min-height:0;flex:1}
+ .fleet-root .otr-workspace.is-fleet>.otr-comparison{grid-row:1/3;overflow:auto;margin:0}
+ .fleet-root .otr-workspace.is-fleet .otr-chart{gap:3px}
+ .fleet-root .otr-workspace.is-fleet .otr-chart button{min-width:44px;font-size:10px}
+ .fleet-root .otr-workspace.is-fleet>.otr-footnote{align-self:start}
+ .fleet-root .otr-workspace.is-fleet .otr-comparison th,.fleet-root .otr-workspace.is-fleet .otr-comparison td{padding:0 8px}
+ .fleet-root .otr-workspace.is-fleet .otr-comparison th:first-child{padding-left:0}
+ .fleet-root .otr-workspace.is-fleet .otr-comparison thead{position:sticky;top:0;background:var(--bg);z-index:1}
+ .fleet-root .otr-workspace.is-fleet .otr-bar-value{gap:10px}
+ .fleet-root .otr-workspace.is-fleet .otr-bar-track{min-width:35px}
+}
+
+/* DieselBridge operations: warm distance, sage driving; color follows the metric. */
+.fleet-root .otr-overview{--otr-accent:#e9be48;--otr-tint:rgba(233,190,72,.1)}
+.fleet-root .otr-overview[data-metric=seconds]{--otr-accent:#97bea2;--otr-tint:rgba(151,190,162,.1)}
+.fleet-root .otr-overview>.otr-section-heading{min-height:52px;margin-bottom:16px;padding-bottom:12px;border-bottom:1px solid var(--line);align-items:center}
+.fleet-root .otr-context{display:flex;align-items:center;gap:16px}
+.fleet-root .otr-context>span{font-size:10px;text-transform:uppercase;letter-spacing:.13em;color:var(--muted-2)}
+.fleet-root .otr-context>strong{font-size:14px;font-weight:550;color:var(--otr-accent)}
+.fleet-root .otr-panel-heading{height:72px;display:flex;flex-direction:column;justify-content:center;border-bottom:1px solid var(--line);margin-bottom:12px}
+.fleet-root .otr-panel-heading h3{font-size:16px;line-height:22px;margin:0;font-weight:650;letter-spacing:-.015em}
+.fleet-root .otr-panel-heading p{margin:4px 0 0;font-size:11px;line-height:16px;color:var(--muted-2)}
+.fleet-root .otr-daily{border:0;padding-top:0}
+.fleet-root .otr-metric{gap:4px}
+.fleet-root .otr-metric button{border:1px solid transparent;border-radius:6px;font-size:12px;min-height:44px}
+.fleet-root .otr-metric button[aria-pressed=true]{background:var(--otr-tint);border-color:var(--otr-accent);color:var(--otr-accent)}
+.fleet-root .otr-metric button:first-child:not(:last-child){margin-right:8px}
+.fleet-root .otr-bar-track{height:6px;background:rgba(255,255,255,.06)}
+.fleet-root .otr-bar-track i,.fleet-root .otr-chart-track i{background:var(--otr-accent)}
+.fleet-root .otr-chart{padding-top:8px}
+.fleet-root .otr-chart-track{height:128px}
+.fleet-root .otr-chart button{min-height:190px}
+.fleet-root .otr-chart button:hover,.fleet-root .otr-day-list button:hover,.fleet-root .otr-comparison tbody tr:hover{background:var(--otr-tint)}
+.fleet-root .otr-chart button:hover strong,.fleet-root .otr-comparison tbody tr:hover th button{color:var(--otr-accent)}
+.fleet-root .otr-chart button>span:last-child{color:var(--muted-2)}
+.fleet-root .otr-pattern td button{color:var(--otr-accent);border-radius:3px}
+.fleet-root .otr-comparison tbody th button{font-size:13px}
+.fleet-root .otr-bar-value strong{font-variant-numeric:tabular-nums;font-size:12px}
+.fleet-root .otr-footnote{color:var(--muted-2);font-size:11px}
+.fleet-root .trips-owner-layout .trips-totals>div{border-left-color:var(--line)}
+.fleet-root .trips-owner-layout .trips-totals>div:nth-child(3){border-left-color:#e9be48}
+.fleet-root .trips-owner-layout .trips-totals>div:nth-child(4){border-left-color:#97bea2}
+.fleet-root .trips-owner-layout[data-motion=on] .otr-bar-track i{transition:transform 180ms cubic-bezier(.23,1,.32,1),background-color 180ms ease}
+.fleet-root .trips-owner-layout[data-motion=on] .otr-chart-track i{transition:transform 180ms cubic-bezier(.23,1,.32,1),background-color 180ms ease}
+.fleet-root .trips-owner-layout[data-motion=on] .otr-overview button{transition:background-color 120ms ease,color 120ms ease,transform 120ms cubic-bezier(.23,1,.32,1)}
+.fleet-root .trips-owner-layout[data-motion=on] .otr-overview button:active{transform:scale(.98)}
+@media(min-width:1100px){.fleet-root .otr-workspace.is-fleet{gap:0 28px}.fleet-root .otr-workspace.is-fleet .otr-comparison thead{height:30px}.fleet-root .otr-workspace.is-fleet .otr-chart button{min-height:200px}}
+@media(max-width:700px){.fleet-root .otr-context{gap:8px;flex-wrap:wrap}.fleet-root .otr-overview>.otr-section-heading{align-items:flex-start}.fleet-root .otr-metric button{padding-inline:10px}.fleet-root .otr-panel-heading{height:64px}}
+@media(prefers-reduced-motion:reduce){.fleet-root .trips-owner-layout[data-motion] .otr-overview *{transition:none!important;animation:none!important;scroll-behavior:auto!important}}
+.fleet-root .trips-owner-layout[data-motion=on] .otr-workspace{animation:otr-context-in 180ms cubic-bezier(.23,1,.32,1)}
+@keyframes otr-context-in{from{opacity:.65;transform:translateY(3px)}to{opacity:1;transform:translateY(0)}}
+
+.fleet-root .otr-bar-track i{width:100%;transform-origin:left center}
+.fleet-root .otr-chart-track i{height:100%;transform-origin:center bottom}
+
+/* Color identifies the view: truck comparison versus activity over time. */
+.fleet-root .otr-overview,.fleet-root .otr-overview[data-metric=seconds]{--otr-accent:#e9be48;--otr-tint:rgba(233,190,72,.1)}
+.fleet-root .otr-daily{--otr-accent:#8baff5;--otr-tint:rgba(139,175,245,.12)}
+.fleet-root .otr-daily .otr-panel-heading h3{color:#8baff5}
+.fleet-root .otr-comparison .otr-panel-heading h3{color:#e9be48}
+
+/* View and measure are independent choices, each with one selected option. */
+.fleet-root .otr-control-groups{display:flex;align-items:center;gap:24px;flex-wrap:wrap}
+.fleet-root .otr-control-set{display:flex;align-items:center;gap:10px}
+.fleet-root .otr-control-set>span{font-size:11px;color:var(--muted-2)}
+.fleet-root .otr-control-set .otr-metric{gap:2px}
+.fleet-root .otr-control-set .otr-metric button:first-child:not(:last-child){margin-right:0}
+@media(max-width:1100px){.fleet-root .otr-overview>.otr-section-heading{flex-wrap:wrap;gap:8px}.fleet-root .otr-control-groups{gap:8px 20px}}
+@media(max-width:560px){.fleet-root .otr-control-set>span{width:48px}.fleet-root .otr-control-groups{width:100%;gap:4px}.fleet-root .otr-control-set{width:100%}}
+
+/* Both fleet views share the same bounded two-panel workspace. */
+.fleet-root .otr-overview>.otr-section-heading{flex-shrink:0}
+.fleet-root .otr-workspace{min-width:0;min-height:0}
+.fleet-root .otr-comparison,.fleet-root .otr-daily{min-width:0;min-height:0}
+@media(min-width:1100px){
+ .fleet-root .trips-owner-layout>.otr-overview{overflow:hidden}
+ .fleet-root .otr-workspace.is-fleet{overflow:hidden;grid-template-columns:minmax(0,1.6fr) minmax(310px,1fr)}
+ .fleet-root .otr-workspace.is-fleet>.otr-comparison{min-height:0;min-width:0;overflow:auto;overscroll-behavior:contain}
+ .fleet-root .otr-workspace.is-fleet>.otr-daily{grid-column:2;grid-row:1;overflow:hidden}
+ .fleet-root .otr-workspace.is-fleet>.otr-footnote{grid-column:2;grid-row:2}
+ .fleet-root .otr-workspace.is-fleet .otr-pattern table{min-width:640px}
+ .fleet-root .otr-workspace.is-fleet .otr-pattern th:first-child{min-width:110px}
+ .fleet-root .otr-workspace.is-fleet .otr-pattern td{min-width:72px}
+ .fleet-root .otr-workspace:not(.is-fleet),.fleet-root .otr-detail{overflow:auto}
+}
+@media(min-width:1100px){.fleet-root .otr-workspace.is-fleet .otr-pattern td{padding:3px 8px}.fleet-root .otr-workspace.is-fleet .otr-pattern th{padding-top:3px;padding-bottom:3px}}
+.fleet-root .otr-band{display:block;font-size:10px;font-weight:500;line-height:14px;color:var(--muted-2)}
+.fleet-root .otr-band.high{color:#97bea2}.fleet-root .otr-band.low{color:#dda878}
+.fleet-root .otr-comparison tbody th button>span{display:flex;flex-direction:column;gap:2px}
+.fleet-root .otr-fuel{display:flex;flex-direction:column;gap:2px;font-size:12px}.fleet-root .otr-fuel strong{font-weight:500}.fleet-root .otr-fuel small{font-size:10px;color:var(--muted-2)}
+.fleet-root .otr-unit-driver{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;white-space:normal;line-height:18px}
+.fleet-root .otr-driver{font-size:11px;font-weight:400;color:var(--muted)}
+.fleet-root .otr-unit-driver .otr-driver:before{content:'·';margin-right:8px;color:var(--muted-2)}
+.fleet-root .otr-comparison tbody th{min-width:190px}
+
+/* Truck identity first; continuous activity replaces repetitive category labels. */
+.fleet-root .otr-unit-driver{gap:12px;align-items:center}
+.fleet-root .otr-truck-number{font-size:23px;line-height:28px;letter-spacing:-.04em;font-weight:700;font-variant-numeric:tabular-nums;color:var(--text)}
+.fleet-root .otr-unit-driver .otr-driver{font-size:13px;line-height:19px;font-weight:500;color:#b7c9ee}
+.fleet-root .otr-unit-driver .otr-driver:before{content:none}
+.fleet-root .otr-leader{color:#e9be48;flex-shrink:0}
+.fleet-root .otr-relative{display:flex;align-items:center;gap:8px;width:130px;max-width:100%;margin:3px 0}
+.fleet-root .otr-relative>span{height:4px;flex:1;background:rgba(255,255,255,.08);border-radius:2px;overflow:hidden}
+.fleet-root .otr-relative i{display:block;width:100%;height:100%;background:#e9be48;transform-origin:left center}
+.fleet-root .otr-relative small{font-size:10px;color:var(--muted-2);font-variant-numeric:tabular-nums}
+.fleet-root .otr-comparison tbody th button{padding-block:6px}
+.fleet-root .otr-comparison tbody th button svg.otr-leader{color:#e9be48}
+
+/* Anchored activity criteria: portal escapes the table's scrolling boundary. */
+.fleet-root .otr-truck-identity{display:flex;align-items:center;gap:4px}
+.fleet-root .otr-comparison tbody th .otr-rank-trigger{min-width:44px;min-height:44px;justify-content:center;padding:6px;color:#e9be48;border-radius:6px}
+.fleet-root .otr-rank-trigger:hover,.fleet-root .otr-rank-trigger[data-open]{background:rgba(233,190,72,.12)}
+.fleet-root .otr-pattern .otr-truck-identity{flex-wrap:wrap}
+.fleet-root .otr-comparison tbody th .otr-rank-trigger>.otr-relative{flex-direction:row;align-items:center}
+.otr-activity-popover{z-index:100;width:350px;max-width:calc(100vw - 24px);padding:16px;background:#162229;color:#e9eef2;border:1px solid #40535f;border-radius:10px;box-shadow:0 12px 35px #0006;font-size:13px;line-height:1.5;--anchor-max-height:calc(100vh - 24px);overflow:auto}
+.otr-activity-popover header{display:flex;justify-content:space-between;align-items:center;gap:12px}
+.otr-activity-popover header small,.otr-popover-period{color:#b6c3cd;font-size:12px}
+.otr-activity-popover h4{margin:2px 0;font-size:18px;color:#e9be48}
+.otr-activity-popover button{min-height:44px;min-width:44px;display:flex;align-items:center;justify-content:center;gap:8px;border-radius:6px}
+.otr-activity-popover button:hover{background:#ffffff0d}
+.otr-activity-popover button:focus-visible,.fleet-root .otr-rank-trigger:focus-visible{outline:2px solid #e9be48;outline-offset:2px}
+.otr-activity-popover dl{margin:12px 0;border-block:1px solid #354650;padding-block:8px}
+.otr-activity-popover dl>div{display:flex;justify-content:space-between;gap:12px;padding:4px 0}
+.otr-activity-popover dt{color:#b6c3cd}.otr-activity-popover dd{margin:0;font-weight:600;font-variant-numeric:tabular-nums}
+.otr-activity-popover h5{margin:12px 0 4px;font-size:13px}.otr-activity-popover p{margin:4px 0 10px}
+.otr-activity-popover .otr-popover-note{font-size:11px;color:#a9b8c2}
+.otr-activity-popover .otr-popover-route{color:#8baff5;width:100%;justify-content:flex-start}
+
+.otr-activity-popover{background:#293946;border:1px solid #8fa4b4;box-shadow:0 18px 60px #000b,0 0 0 4px #0a121a80;width:360px;padding:18px;color:#f6f8fa}
+.otr-activity-popover h4{color:#fff;font-size:17px;font-weight:650}
+.otr-activity-popover header small{color:#d0dbe4}
+.otr-delta-hero{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:18px 0 14px;border-bottom:1px solid #657785}
+.otr-delta-hero>strong{font-size:32px;line-height:1.1;color:#ffe083;font-variant-numeric:tabular-nums}
+.otr-delta-hero strong small{font-size:15px;font-weight:500}
+.otr-delta-hero>span{font-size:20px;color:#ffe083;text-align:right}
+.otr-delta-hero>span small{display:block;font-size:11px;color:#d0dbe4}
+.otr-delta-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;padding:14px 0}
+.otr-delta-grid strong{display:block;font-size:23px;font-variant-numeric:tabular-nums}.otr-delta-grid strong small{font-size:12px;font-weight:400}.otr-delta-grid span{font-size:12px;color:#d0dbe4}
+.otr-delta-baseline{font-size:11px;color:#d0dbe4;padding-bottom:12px}
+.otr-fuel-evidence{border-block:1px solid #657785;padding:10px 0;margin-bottom:10px;display:grid;gap:3px;font-size:12px}.otr-fuel-evidence>span{color:#d0dbe4}.otr-fuel-evidence strong{font-weight:550}.otr-fuel-evidence small{color:#ffe083}
+.otr-activity-popover .otr-popover-note{color:#c4d0da}.otr-activity-popover .otr-popover-route{color:#b7d4ff}
+
+/* Keep the activity trigger's focus ring inside clipped table scrollports. */
+.fleet-root .otr-comparison tbody th .otr-rank-trigger:focus-visible{outline:2px solid #ffe083;outline-offset:-3px;box-shadow:none}
+
+.otr-fuel-evidence .otr-delta-grid{padding:6px 0}.otr-fuel-difference{font-size:18px;color:#d9c2ff}.otr-fuel-difference small{display:block;font-size:11px;color:#d0dbe4;font-weight:400}.otr-fuel-evidence>small{color:#d0dbe4}
+
+.otr-comparison-verdict{font-size:22px;font-weight:650;color:#ffe083;padding:16px 0 12px}.otr-comparison-verdict small{display:block;font-size:12px;font-weight:400;color:#d0dbe4;margin-top:3px}.otr-facts{width:100%;border-collapse:collapse;font-size:13px;margin-bottom:10px}.otr-facts th,.otr-facts td{padding:8px 0;text-align:right;border-bottom:1px solid #657785}.otr-facts th:first-child{text-align:left;font-weight:400;color:#d0dbe4}.otr-facts thead th{font-size:11px;color:#d0dbe4;font-weight:400}.otr-facts td{font-variant-numeric:tabular-nums}.otr-facts td:nth-child(2){font-weight:650;color:#fff}.otr-facts td:nth-child(3){color:#d0dbe4}
+
+.otr-comparison-verdict{font-size:30px;padding:12px 0}.otr-comparison-verdict small{font-size:13px;color:#e6edf3}
+
+.fleet-root .otr-comparison[hidden]{display:none!important}
+.fleet-root .otr-panel-detail{min-width:0;min-height:0;display:flex;flex-direction:column;overflow:hidden}
+.fleet-root .otr-panel-detail>.otr-panel-heading{height:auto;min-height:72px;display:flex;flex-wrap:wrap;align-items:center;gap:6px 16px;flex-shrink:0;margin:0;padding-block:8px}
+.fleet-root .otr-panel-detail .otr-panel-heading h3{margin:0}.fleet-root .otr-panel-detail .otr-panel-heading p{margin:0}
+.fleet-root .otr-panel-routes{min-height:0;overflow:auto;overscroll-behavior:contain;padding-right:8px}
+.fleet-root .otr-panel-detail.is-truck-day .trip-unit{display:none}
+.fleet-root .otr-panel-detail.is-truck-day .trip-summary{grid-template-columns:minmax(0,1fr) auto 18px;gap:12px;padding:14px 0}
+@media(min-width:1100px){.fleet-root .otr-workspace.is-fleet>.otr-panel-detail{grid-column:1;grid-row:1/3;overflow:hidden}}
+@media(max-width:1099px){.fleet-root .otr-panel-routes{max-height:60vh}}
+.fleet-root .otr-panel-detail>.otr-panel-heading{flex-direction:row;justify-content:flex-start;text-align:left}
+.fleet-root .otr-panel-detail>.otr-panel-heading p{margin-left:auto}
+
+/* Dense route ledger within the comparison panel. */
+.fleet-root .otr-panel-routes{container-type:inline-size}
+.fleet-root .otr-panel-detail.is-truck-day .trip-summary{grid-template-columns:minmax(0,1fr) auto 16px;min-height:68px;padding:10px 0;gap:12px}
+.fleet-root .otr-panel-detail .trip-route{gap:6px;min-width:0}
+.fleet-root .otr-panel-detail .trip-route>.trip-point{grid-template-columns:76px 10px minmax(0,1fr);gap:9px}
+.fleet-root .otr-panel-detail .trip-point strong{font-size:13px;font-weight:550;overflow-wrap:anywhere}
+.fleet-root .otr-panel-detail .trip-point time{font-size:11px}
+.fleet-root .otr-panel-detail .trip-departure i:after{height:18px;top:7px}
+.fleet-root .otr-panel-detail .trip-readings{display:flex;align-items:center;justify-content:flex-end;gap:18px}
+.fleet-root .otr-panel-detail .trip-metrics{display:flex;align-items:center;gap:14px;white-space:nowrap}
+.fleet-root .otr-panel-detail .trip-metrics strong{font-size:16px;min-width:65px;text-align:right}
+.fleet-root .otr-panel-detail .trip-metrics>span{font-size:12px;min-width:55px;text-align:right}
+.fleet-root .otr-panel-detail .trip-vitals{gap:12px;min-width:55px}
+.fleet-root .otr-panel-detail .trip-vital-value{font-size:14px}
+@container(max-width:720px){
+ .fleet-root .otr-panel-detail .trip-readings{display:grid;gap:5px}
+ .fleet-root .otr-panel-detail .trip-metrics{gap:8px}
+ .fleet-root .otr-panel-detail .trip-vitals{display:flex}
+ .fleet-root .otr-panel-detail.is-truck-day .trip-summary{gap:8px;grid-template-columns:minmax(0,1fr) auto 12px}
+ .fleet-root .otr-panel-detail .trip-route>.trip-point{grid-template-columns:65px 8px minmax(0,1fr);gap:6px}
+}
+@container(max-width:440px){
+ .fleet-root .otr-panel-detail.is-truck-day .trip-summary{grid-template-columns:minmax(0,1fr) 16px}
+ .fleet-root .otr-panel-detail .trip-route{grid-column:1/-1}
+ .fleet-root .otr-panel-detail .trip-readings{grid-column:1;display:flex;flex-wrap:wrap;justify-content:flex-start;padding-left:79px}
+ .fleet-root .otr-panel-detail .trip-chevron{grid-column:2;grid-row:2}
+}
+
+.fleet-root .otr-route-story{padding:12px 0;border-bottom:1px solid var(--line);flex-shrink:0}.fleet-root .otr-story-main{display:flex;justify-content:space-between;align-items:baseline;gap:12px}.fleet-root .otr-story-main strong{font-size:18px}.fleet-root .otr-story-main>span{color:#e9be48;font-size:16px;font-variant-numeric:tabular-nums}.fleet-root .otr-route-story p{margin:5px 0 9px;font-size:12px;color:var(--muted)}.fleet-root .otr-route-story p strong{color:var(--text)}.fleet-root .otr-short-summary{display:flex;justify-content:space-between;align-items:center;gap:12px;font-size:12px}.fleet-root .otr-short-summary small{display:block;font-size:10px;color:var(--muted);margin-top:3px}.fleet-root .otr-short-summary button{min-height:44px;padding:8px 10px;color:#9dbcff;border:1px solid var(--line);border-radius:6px;flex-shrink:0}.fleet-root .otr-route-date-note{display:block;color:var(--muted);font-size:10px;margin-top:6px}
+@media(max-width:560px){.fleet-root .otr-short-summary{flex-wrap:wrap}}
+
+.fleet-root .otr-route-footer{display:flex;align-items:center;flex-wrap:wrap;gap:14px 24px;padding:14px 0;border-top:1px solid var(--line);flex-shrink:0;background:var(--bg)}
+.fleet-root .otr-footer-stat{display:grid;gap:4px}.fleet-root .otr-footer-stat>span{color:var(--muted);font-size:12px}.fleet-root .otr-footer-stat strong{font-size:20px;color:var(--text);font-variant-numeric:tabular-nums;line-height:1.2}.fleet-root .otr-footer-stat strong small{font-size:12px;font-weight:400;color:var(--muted)}
+.fleet-root .otr-footer-actions{display:flex;align-items:center;gap:8px;margin-left:auto}.fleet-root .otr-show-movements,.fleet-root .otr-summary-info{min-height:44px;border:1px solid var(--line);border-radius:6px;padding:8px 12px;color:#9dbcff}.fleet-root .otr-summary-info{min-width:44px;display:flex;justify-content:center;align-items:center;padding:8px}.fleet-root .otr-footer-actions button:focus-visible{outline:2px solid #ffe083;outline-offset:-3px}
+@media(max-width:560px){.fleet-root .otr-route-footer{gap:12px 16px}.fleet-root .otr-footer-actions{margin-left:0}}
+
+/* Period boundaries are emphasized directly in the itinerary. */
+.fleet-root .otr-panel-detail .trip-point.is-period-first{color:#ffe083}
+.fleet-root .otr-panel-detail .trip-point.is-period-last{color:#c5a3ff}
+.fleet-root .otr-panel-detail .trip-point.is-period-first strong,.fleet-root .otr-panel-detail .trip-point.is-period-last strong{font-size:16px;font-weight:700}
+.fleet-root .otr-panel-detail .trip-point.is-period-first time,.fleet-root .otr-panel-detail .trip-point.is-period-last time{color:inherit;font-weight:650}
+.fleet-root .otr-panel-detail .trip-point.is-period-first i,.fleet-root .otr-panel-detail .trip-point.is-period-last i{width:11px;height:11px}
