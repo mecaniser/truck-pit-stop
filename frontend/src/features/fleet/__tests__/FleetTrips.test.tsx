@@ -237,6 +237,24 @@ describe('OTR fleet overview', () => {
     setup({ vehicleId: 'unknown', start: '2026-10-01', end: '2026-10-02' })
     expect(screen.getByRole('alert')).toHaveTextContent('no longer available'); expect(api.get).not.toHaveBeenCalled()
   })
+  it('navigates previous/current periods without losing the truck filter', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] }); vi.setSystemTime(new Date(2026, 9, 7, 12))
+    try {
+      setup({ vehicleId: truck.id, ...tripPreset('week'), preset: 'week' })
+      expect(screen.getByRole('button', { name: 'Next week' })).toBeDisabled()
+      await userEvent.click(screen.getByRole('button', { name: 'Previous week' }))
+      await waitFor(() => expect(api.get).toHaveBeenLastCalledWith('/fleet/trips', expect.objectContaining({ params: expect.objectContaining({ vehicle_id: truck.id, start_date: '2026-09-28', end_date: '2026-10-04' }) })))
+      await userEvent.click(screen.getByRole('button', { name: 'This week', exact: true }))
+      await waitFor(() => expect(api.get).toHaveBeenLastCalledWith('/fleet/trips', expect.objectContaining({ params: expect.objectContaining({ start_date: '2026-10-05', end_date: '2026-10-07' }) })))
+      await userEvent.click(screen.getByRole('button', { name: 'Month', exact: true }))
+      await userEvent.click(screen.getByRole('button', { name: 'Previous month' }))
+      await waitFor(() => expect(api.get).toHaveBeenLastCalledWith('/fleet/trips', expect.objectContaining({ params: expect.objectContaining({ vehicle_id: truck.id, start_date: '2026-09-01', end_date: '2026-09-30' }) })))
+      await userEvent.click(screen.getByRole('button', { name: 'Next month' }))
+      expect(screen.getByRole('button', { name: 'Next month' })).toBeDisabled()
+      await userEvent.click(screen.getByRole('button', { name: 'Custom', exact: true }))
+      expect(screen.queryByRole('group', { name: 'Month navigation' })).not.toBeInTheDocument()
+    } finally { vi.useRealTimers() }
+  })
   it('preserves calendar preset boundaries', () => {
     expect(tripPreset('week', new Date(2026, 9, 4, 12))).toEqual({ start: '2026-09-28', end: '2026-10-04' })
     expect(tripPreset('month', new Date(2026, 9, 4, 12))).toEqual({ start: '2026-10-01', end: '2026-10-04' })

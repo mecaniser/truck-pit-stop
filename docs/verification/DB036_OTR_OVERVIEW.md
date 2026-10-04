@@ -137,3 +137,12 @@ User approved replacing dots with continuous muted tracks. Shared comparison/con
 
 ## Chart release gate — 2026-10-04
 User approved release of calendar grouping, column/line modes, fleet contribution drilldowns, leading empty-period trimming and final continuous-track/cascade styling.44focused tests and changed-source ESLint passed.1024px overview width=scrollWidth895px, screenshot output/chart-release-compact.png; viewport restored. Frontend PID62713 source still this worktree. Private preview/data excluded.
+
+## Production acceptance — chart release, 2026-10-04
+PR #464 merged f915467c58eda9e68f2e46737fb003d69ef1c8a2; all six protected checks passed, run37232695957. Railway41b8e09e-87e5-498c-b635-e1c7b1d240f0 SUCCESS; public build-version matches and health=alive. Authenticated fleet smoke: Year13trucks/2541segments/175179.5mi/3160h25m, only Aug/Sep/Oct chart buckets; line mode; August9-truck contribution graph; truck530 routes111trips7123.7mi130.9h; Back restores August fleet graph. Track6px/#52616d confirmed. Screenshot output/chart-production-verified.png. Private preview/data excluded. Post-release receipt saved locally after merge and mirrored in PR.
+
+## Previous/current week and month — 2026-10-04 (local only)
+Branch codex/trip-period-navigation from f915467c; frontend5173 PID62713 verified worktree/frontend. Intentional isolated preview uses imported mock snapshot; backend8000 absent and no production API target used. Week/month controls include previous/next, exact dates and return-to-current. Historical periods complete; current periods end today; forward disabled at current. Truck filter preserved.27focused tests passed including Sunday/Monday, leap-month/year transitions and truck scope; changed-source lint passed. Browser verified Sep21–27 previous week, return current, September full month117974.8mi; compact700px navigation width=scrollWidth251px and44px buttons. Viewport restored. Screenshot output/trip-period-navigation.png. Not deployed.
+
+## Period navigation release gate — 2026-10-04
+User explicitly approved commit/push/deploy.37focused tests passed (FleetTrips24, tripFilters3, ActivityChart6, return-context4); changed-source lint and diff checks passed. Prior browser acceptance covers previous/current week/month and700px controls. No contract, auth, tenant, migration or dependency changes. Private preview files and snapshots excluded.

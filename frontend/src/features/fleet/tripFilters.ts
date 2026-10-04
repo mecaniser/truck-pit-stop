@@ -12,6 +12,21 @@ export function tripPreset(preset: TripPreset, today = new Date()): Pick<TripFil
   return { start: localDate(start), end: localDate(today) }
 }
 
+/** Navigate complete past periods; the current period ends today, never in the future. */
+export function adjacentTripPeriod(preset: 'week' | 'month', start: string, direction: -1 | 1, today = new Date()): Pick<TripFilters, 'start' | 'end'> {
+  const current = tripPreset(preset, today)
+  const anchor = new Date(`${start}T12:00:00`)
+  const first = new Date(`${tripPreset(preset, anchor).start}T12:00:00`)
+  if (preset === 'week') first.setDate(first.getDate() + direction * 7)
+  else first.setMonth(first.getMonth() + direction)
+  const nextStart = localDate(first)
+  if (nextStart >= current.start) return current
+  const last = new Date(first)
+  if (preset === 'week') last.setDate(last.getDate() + 6)
+  else last.setMonth(last.getMonth() + 1, 0)
+  return { start: nextStart, end: localDate(last) }
+}
+
 export function initialTripFilters(): TripFilters {
   return { vehicleId: '', ...tripPreset('week'), preset: 'week' }
 }
