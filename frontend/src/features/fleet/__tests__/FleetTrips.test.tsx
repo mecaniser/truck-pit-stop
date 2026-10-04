@@ -72,7 +72,22 @@ describe('Fleet trip history', () => {
     })
     setup({ vehicleId: '', start: '2026-09-28', end: '2026-10-02' })
     await waitFor(() => expect(screen.getAllByRole('article', { name: /Example Fleet 101/ })).toHaveLength(2))
-    expect(screen.getAllByRole('heading', { level: 3 }).map(h => h.textContent)).toEqual(['Sep 28', 'Sep 29', 'Sep 30', 'Oct 1', 'Oct 2'])
+    expect(screen.getAllByRole('heading', { level: 3 }).map(h => h.textContent)).toEqual(['Sep 28', 'Oct 2'])
+  })
+  it('keeps failed and loading days visible while hiding confirmed empty days', async () => {
+    api.get.mockImplementation((_url, { params }) => {
+      if (params.start_date === params.end_date) {
+        if (params.start_date === '2026-09-29') return Promise.reject(new Error('Unavailable'))
+        if (params.start_date === '2026-09-30') return new Promise(() => {})
+        return Promise.resolve({ data: { ...response, items: [], total: 0 } })
+      }
+      return Promise.resolve({ data: response })
+    })
+    setup({ vehicleId: truck.id, start: '2026-09-28', end: '2026-09-30' })
+    expect(await screen.findByRole('alert')).toHaveTextContent('Trips could not be loaded')
+    expect(screen.queryByRole('region', { name: 'Day Sep 28' })).not.toBeInTheDocument()
+    expect(screen.getByRole('region', { name: 'Day Sep 29' })).toHaveTextContent('Retry')
+    expect(screen.getByRole('region', { name: 'Day Sep 30' })).toHaveTextContent('Loading trips')
   })
   it('shows full-fleet totals and coverage even when the page contains only one truck', async () => {
     api.get.mockResolvedValue({ data: { ...response, summary: { coverage: 'partial', truck_count: 13, trip_count: 342, distance_miles: 25072.67, driving_seconds: 1634303 }, total: 342 } })
@@ -232,19 +247,18 @@ describe('Weekly columns', () => {
     await waitFor(()=>expect(within(screen.getByRole('region',{name:'Week Sep 14 – Sep 20'})).getByRole('button',{name:'Previous'})).toBeDisabled())
     expect(api.get).toHaveBeenCalledWith('/fleet/trips',expect.objectContaining({params:expect.objectContaining({vehicle_id:other.id,start_date:'2026-09-14',end_date:'2026-09-20',offset:0})}))
   })
-  it('keeps empty weeks visible and retries a failed week separately', async () => {
+  it('hides empty weeks and retries a failed week separately', async () => {
     let failed = true
     api.get.mockImplementation(async (_url,{params:p})=> {
       if(p.start_date==='2026-09-21' && failed) throw new Error('offline')
       return {data:{...response,items:[],total:p.end_date==='2026-10-03' ? 1 : 0}}
     })
     setup({vehicleId:truck.id,start:'2026-09-14',end:'2026-10-03',preset:'custom'})
-    const empty=await screen.findByRole('region',{name:'Week Sep 14 – Sep 20'})
-    expect(await within(empty).findByText('No imported trips')).toBeInTheDocument()
-    const broken=screen.getByRole('region',{name:'Week Sep 21 – Sep 27'})
+    await waitFor(() => expect(screen.queryByRole('region',{name:'Week Sep 14 – Sep 20'})).not.toBeInTheDocument())
+    const broken=await screen.findByRole('region',{name:'Week Sep 21 – Sep 27'})
     expect(await within(broken).findByRole('alert')).toBeInTheDocument()
     failed=false
     await userEvent.click(within(broken).getByRole('button',{name:'Retry'}))
-    expect(await within(broken).findByText('No imported trips')).toBeInTheDocument()
+    await waitFor(() => expect(screen.queryByRole('region',{name:'Week Sep 21 – Sep 27'})).not.toBeInTheDocument())
   })
 })

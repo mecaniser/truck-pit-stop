@@ -171,6 +171,8 @@ function TripWeek({ start, end, filters, timezone, trucks, singleDay = false }: 
     queryKey: ['fleet-trips', filters.vehicleId, start, end, timezone, offset],
     queryFn: async () => (await api.get('/fleet/trips', { params: { start_date: start, end_date: end, timezone, vehicle_id: filters.vehicleId || undefined, limit: 50, offset } })).data,
   })
+  // An empty imported interval is not useful as a full-height itinerary column.
+  if (query.isSuccess && query.data.total === 0) return null
   const label = (value: string) => new Date(`${value}T12:00:00`).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
   const title = singleDay ? label(start) : `${label(start)} – ${label(end)}`
   return <section className="trip-week" aria-label={`${singleDay ? 'Day' : 'Week'} ${title}`}>

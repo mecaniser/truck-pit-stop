@@ -1,3 +1,5 @@
+> **DB-036 Empty trip columns / COMPONENT VERIFIED (2026-10-04), Frontend & UX, Fast UI:** Hide successfully loaded zero-trip columns. Keep pending/error columns and full-range empty state; preserve totals and date selection. Existing API and tenant contracts unchanged. 28 focused tests pass, including retained loading/error states and retry-to-empty. Not deployed. Three separate local design alternatives use the same33 imported truck609 trips (2486.61mi); selection pending.
+
 > **DB-036 Trip columns / LOCAL PREVIEW VERIFIED (2026-10-03), Frontend & UX accountable, Fast UI:** Single-week selections now use day columns; multi-week selections retain week columns with one expanded day per column. Equal viewport-contained height, per-column pagination and totals, readable narrow-column routes. Acceptance: chronological columns, independent day queries, unchanged overall totals, no outer vertical scroll, keyboard/touch controls. 31 focused tests, TypeScript and FleetTrips ESLint pass. PR #461 updated; not merged/deployed. Impeccable/Emil audit recorded in `docs/verification/DB036_WEEK_COLUMNS.md`; remaining polish explicitly listed.
 
 # DieselBridge Delivery Board
