@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { ChartColumn, ChartLine } from 'lucide-react'
 import BaseSelect from '@/components/BaseSelect'
 import type { FleetTripsResponse } from './FleetTrips'
-import { activityBuckets, defaultActivityInterval, type ActivityInterval } from './tripAggregation'
+import { activityBuckets, availableActivityIntervals, defaultActivityInterval, type ActivityInterval } from './tripAggregation'
 
 const dateLabel = (date: string) => new Date(`${date}T12:00:00`).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
 const number = (n: number) => n.toLocaleString(undefined, { maximumFractionDigits: 1 })
@@ -10,7 +10,9 @@ export default function ActivityChart({ data, timezone, metric, selected, preset
   data: FleetTripsResponse; timezone: string; metric: 'miles' | 'seconds'; selected: boolean; preset?: string
   onOpen: (start: string, end: string, trigger: HTMLButtonElement) => void
 }) {
-  const [interval, setInterval] = useState<ActivityInterval>(() => defaultActivityInterval(data.start_date, data.end_date, preset))
+  const [chosenInterval, setInterval] = useState<ActivityInterval>(() => defaultActivityInterval(data.start_date, data.end_date, preset))
+  const intervals = availableActivityIntervals(data.start_date, data.end_date, preset)
+  const interval = intervals.includes(chosenInterval) ? chosenInterval : defaultActivityInterval(data.start_date, data.end_date, preset)
   const [style, setStyle] = useState<'columns' | 'line'>('columns')
   const calendarBuckets = activityBuckets(data.items, timezone, data.start_date, data.end_date, interval)
   const firstRecorded = calendarBuckets.findIndex(bucket => bucket.count > 0)
@@ -26,7 +28,7 @@ export default function ActivityChart({ data, timezone, metric, selected, preset
   return <section className="otr-daily" aria-label="Daily activity chart">
     <div className="otr-panel-heading otr-chart-heading">
       <div className="otr-chart-title"><h3>{selected ? 'Truck activity' : 'Fleet activity'}</h3>
-        <label className="otr-interval"><span className="sr-only">Activity grouping</span><BaseSelect value={interval} onChange={v => setInterval(v as ActivityInterval)} options={(['day', 'week', 'month', 'year'] as const).map(v => ({ value: v, label: `By ${v}` }))} searchable={false} variant="dark" heightClass="h-11" optionHeightClass="min-h-11" /></label>
+        {intervals.length > 1 ? <label className="otr-interval"><span className="sr-only">Activity grouping</span><BaseSelect value={interval} onChange={v => setInterval(v as ActivityInterval)} options={intervals.map(v => ({ value: v, label: `By ${v}` }))} searchable={false} variant="dark" heightClass="h-11" optionHeightClass="min-h-11" /></label> : <span className="otr-fixed-grouping">{data.start_date === data.end_date ? 'Day total' : 'By day'}</span>}
         <div className="otr-chart-style" role="group" aria-label="Chart style"><button aria-label="Columns" title="Columns" aria-pressed={style === 'columns'} onClick={() => setStyle('columns')}><ChartColumn size={18} /></button><button aria-label="Line" title="Line" aria-pressed={style === 'line'} onClick={() => setStyle('line')}><ChartLine size={18} /></button></div>
       </div>
       <p>{metric === 'miles' ? 'Distance' : 'Driving hours'} · by departure date · {selected ? 'select a period for routes' : 'select a period to compare trucks'}</p>

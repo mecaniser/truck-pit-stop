@@ -3,7 +3,7 @@ import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { ThemeProvider } from '@/contexts/ThemeContext'
 import ActivityChart from '../ActivityChart'
-import { activityBuckets, defaultActivityInterval, loadTripRange } from '../tripAggregation'
+import { activityBuckets, availableActivityIntervals, defaultActivityInterval, loadTripRange } from '../tripAggregation'
 import { tripPreset } from '../tripFilters'
 import type { FleetTrip, FleetTripsResponse } from '../FleetTrips'
 const trips = [
@@ -56,6 +56,27 @@ describe('calendar activity', () => {
     expect(screen.getByText('No imported trips in this period')).toBeVisible()
     expect(document.querySelectorAll('.otr-period-chart > button')).toHaveLength(0)
   })
+  it('limits available grouping by preset and custom range length', () => {
+    expect(availableActivityIntervals('2026-10-01','2026-10-01','day')).toEqual(['day'])
+    expect(availableActivityIntervals('2026-09-28','2026-10-04','week')).toEqual(['day'])
+    expect(availableActivityIntervals('2026-10-01','2026-10-04','month')).toEqual(['day','week'])
+    expect(availableActivityIntervals('2026-01-01','2026-01-04','year')).toEqual(['day','week','month'])
+    expect(availableActivityIntervals('2026-10-01','2026-10-04','custom')).toEqual(['day'])
+    expect(availableActivityIntervals('2026-10-01','2026-10-20','custom')).toEqual(['day','week'])
+    expect(availableActivityIntervals('2026-09-01','2026-10-20','custom')).toEqual(['day','week','month'])
+  })
+  it('hides the grouping menu for week/day and rejects stale monthly grouping', () => {
+    const props = { data, timezone: 'UTC', metric: 'miles' as const, selected: false, onOpen: vi.fn() }
+    const { rerender } = render(<ThemeProvider><ActivityChart {...props} preset="year" /></ThemeProvider>)
+    expect(screen.getByRole('button', {name:'Activity grouping'})).toHaveTextContent('By month')
+    rerender(<ThemeProvider><ActivityChart {...props} preset="week" /></ThemeProvider>)
+    expect(screen.queryByRole('button', {name:'Activity grouping'})).not.toBeInTheDocument()
+    expect(screen.getByText('By day')).toBeVisible()
+    expect(screen.getByRole('button', {name:/Sep 1: 100 miles/})).toBeVisible()
+    rerender(<ThemeProvider><ActivityChart {...props} data={{...data,end_date:data.start_date}} preset="day" /></ThemeProvider>)
+    expect(screen.getByText('Day total')).toBeVisible()
+    expect(document.querySelectorAll('.otr-period-chart > button')).toHaveLength(1)
+  })
   it('switches grouping and chart style independently and drills into the entire bucket', async () => {
     const onOpen = vi.fn(); const user = userEvent.setup()
     render(<ThemeProvider><ActivityChart data={data} timezone="UTC" metric="miles" selected={false} preset="month" onOpen={onOpen} /></ThemeProvider>)
@@ -66,8 +87,8 @@ describe('calendar activity', () => {
     await user.click(bucket)
     expect(onOpen).toHaveBeenCalledWith('2026-09-01','2026-09-06',bucket)
     await user.click(screen.getByRole('button',{name:'Activity grouping'}))
-    await user.click(screen.getByRole('option',{name:'By month'}))
-    expect(screen.getByRole('button',{name:'Sep 1 – Sep 30: 300 miles, 3.0h driving. Compare trucks'})).toBeVisible()
+    await user.click(screen.getByRole('option',{name:'By day'}))
+    expect(screen.getByRole('button',{name:'Sep 1: 100 miles, 1.0h driving. Compare trucks'})).toBeVisible()
     expect(screen.getByRole('button',{name:'Line',exact:true})).toHaveAttribute('aria-pressed','true')
   })
 })

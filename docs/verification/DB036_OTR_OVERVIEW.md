@@ -146,3 +146,12 @@ Branch codex/trip-period-navigation from f915467c; frontend5173 PID62713 verifie
 
 ## Period navigation release gate — 2026-10-04
 User explicitly approved commit/push/deploy.37focused tests passed (FleetTrips24, tripFilters3, ActivityChart6, return-context4); changed-source lint and diff checks passed. Prior browser acceptance covers previous/current week/month and700px controls. No contract, auth, tenant, migration or dependency changes. Private preview files and snapshots excluded.
+
+## Production acceptance — period navigation, 2026-10-04
+PR#465 merged6adc53b72cc98042222795290715ab9d294eecec; all6protected CI checks passed, run37234243714. Railway2f154507-9882-4759-8e7d-f05f52a5d6ad SUCCESS. Public build-version matches and health=alive. Authenticated browser verified previous weekSep21–27, This weekSep28–Oct4, previous monthSep1–30 with1748segments117974.8mi, This monthOct1–4, next month disabled. Screenshot output/period-navigation-production.png. Private previews/data excluded. Post-release receipt saved locally and mirrored in PR.
+
+## Timeframe-aware grouping — 2026-10-04 (local only)
+Branch codex/activity-grouping-options from production main; runtime5173 PID62713 still worktree/frontend, intentional isolated imported-snapshot preview with no backend. Day and Week daily-only with static labels; Month day/week(default week); Year day/week/month(default month). Custom<=7days daily,<=31days day/week, longer day/week/month. Invalid retained grouping falls back to preset default.32focused tests and changed-source lint passed. Browser verified no Week menu, Month day/week options, Year day/week/month options, Day total without grouping menu. Screenshot output/timeframe-grouping-options.png. Not deployed.
+
+## Timeframe grouping release gate — 2026-10-04
+User approved commit/push/deploy.43focused tests passed: ActivityChart8, FleetTrips24, aggregation11. Changed-source lint and diff check passed. Existing preview acceptance verifies all four preset menus. Private previews and data excluded.
