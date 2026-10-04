@@ -11,7 +11,7 @@ const apiMocks = vi.hoisted(() => ({ get: vi.fn() }))
 vi.mock('@/lib/api', () => ({ default: apiMocks }))
 vi.mock('react-hot-toast', () => ({ default: { success: vi.fn(), error: vi.fn() } }))
 vi.mock('../FleetBoard', () => ({ default: () => <div>Fleet board content</div> }))
-vi.mock('../FleetMap', () => ({ default: () => <div>Fleet map</div> }))
+vi.mock('../FleetMap', () => ({ default: ({ trucks, focusId, onFocusChange, onSelect }: { trucks: { id: string }[]; focusId?: string; onFocusChange: (id: string) => void; onSelect: (truck: { id: string }) => void }) => <div>Fleet map<span data-testid="map-focus">{focusId || 'none'}</span><button onClick={() => onFocusChange(trucks[0].id)}>Select map truck</button><button onClick={() => onSelect(trucks[0])}>Open map truck</button></div> }))
 vi.mock('@/contexts/ThemeContext', () => ({ useTheme: () => ({ accentColors: { 400: '#ffd000', 500: '#ffd000' } }) }))
 vi.mock('../TruckDetail', () => ({ default: ({ truckId, onViewTrips }: { truckId: string; onViewTrips?: (id: string) => void }) => <div>Truck detail<button onClick={() => onViewTrips?.(truckId)}>View trips</button></div> }))
 vi.mock('../FleetModals', () => ({
@@ -98,6 +98,19 @@ describe('Fleet board return context', () => {
     expect(screen.getByText('Truck detail')).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: /TRIPS.*Trips/ }))
     expect(await screen.findByLabelText('Truck')).toHaveTextContent('101')
+  })
+
+  it('retains the comparison truck when returning from details to the map', async () => {
+    const user = userEvent.setup()
+    apiMocks.get.mockResolvedValue({ data: { ...fleetBoard, trucks: [{ id: 'map-truck', status: 'out_of_service', unit_number: '101' }] } })
+    renderFleet(['/fleet'])
+    await user.click(screen.getByRole('button', { name: /Fleet map$/ }))
+    await user.click(await screen.findByRole('button', { name: 'Select map truck' }))
+    expect(screen.getByTestId('map-focus')).toHaveTextContent('map-truck')
+    await user.click(screen.getByRole('button', { name: 'Open map truck' }))
+    expect(screen.getByText('Truck detail')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: /Fleet map$/ }))
+    expect(screen.getByTestId('map-focus')).toHaveTextContent('map-truck')
   })
 
   it('returns to the Fleet Settings context when that is where the board was opened', async () => {

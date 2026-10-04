@@ -1,111 +1,101 @@
 import { memo, useEffect, useRef, useState } from 'react'
-import type { Map as MapboxMap, Marker as MapboxMarker } from 'mapbox-gl'
+import { ArrowUpRight, ChevronDown, LocateFixed, Search, X } from 'lucide-react'
 import type { BoardTruck } from './types'
-import { fleetUnitLabel } from './helpers'
-import { readingCaption, retained, truckCoordinates, truckLocation } from './telemetry'
-import 'mapbox-gl/dist/mapbox-gl.css'
-import './telemetry.css'
+import { fleetUnitLabel, STATUS_META } from './helpers'
+import { truckCoordinates, truckLocation, useTelemetryClock } from './telemetry'
+import { formatDistance, nearbyTrucks, positionAge, recentPosition } from './proximity'
+import FleetMapCanvas from './FleetMapCanvas'
+import './proximity.css'
 
-function FleetMap({ trucks, focusId, onSelect, compact }: { trucks: BoardTruck[]; focusId?: string; onSelect?: (t: BoardTruck) => void; compact?: boolean }) {
-  const container = useRef<HTMLDivElement>(null)
-  const [now, setNow] = useState(Date.now)
-  const [error, setError] = useState(false)
-  const [ready, setReady] = useState(0)
-  const mapRef = useRef<MapboxMap>()
-  const moduleRef = useRef<typeof import('mapbox-gl').default>()
-  const markers = useRef<MapboxMarker[]>([])
-  const captions = useRef<{ node: HTMLElement; reading: Parameters<typeof readingCaption>[0]; prefix: string }[]>([])
-  const fitted = useRef(false)
-  const focusRef = useRef<string | undefined>()
-  const locationData = JSON.stringify(trucks.map((truck) => ({ ...truck, telemetry: {
-    ...truck.telemetry, location: truckLocation(truck, now), speed: retained(truck.telemetry?.speed, now),
-  } })))
-  const token = import.meta.env.VITE_MAPBOX_TOKEN || ''
-  const onSelectRef = useRef(onSelect)
-  onSelectRef.current = onSelect
-  useEffect(() => { const timer = window.setInterval(() => setNow(Date.now()), 30000); return () => window.clearInterval(timer) }, [])
+interface Props {
+  trucks: BoardTruck[]
+  focusId?: string
+  onFocusChange?: (id: string | undefined) => void
+  onSelect?: (truck: BoardTruck) => void
+  compact?: boolean
+}
+
+function FleetMap({ trucks, focusId, onFocusChange, onSelect, compact }: Props) {
+  const now = useTelemetryClock()
+  const headingRef = useRef<HTMLElement>(null)
+  const searchRef = useRef<HTMLInputElement>(null)
+  const moveFocus = useRef(false)
+  const [selection, setSelection] = useState(focusId)
+  const [query, setQuery] = useState('')
+  const [includeLastKnown, setIncludeLastKnown] = useState(false)
+  const [expanded, setExpanded] = useState(false)
+  const [recenter, setRecenter] = useState(0)
+  const selectedId = onFocusChange ? focusId : selection
+  const focus = trucks.find(truck => truck.id === selectedId)
+  const select = (id: string | undefined) => {
+    moveFocus.current = true
+    setSelection(id); onFocusChange?.(id); setQuery(''); setExpanded(false)
+  }
   useEffect(() => {
-    if (!token || !container.current) return
-    let cancelled = false
-    let map: MapboxMap | undefined
-    let observer: ResizeObserver | undefined
-    setError(false)
-    void import('mapbox-gl').then(({ default: mb }) => {
-      if (cancelled || !container.current) return
-      map = new mb.Map({ container: container.current, accessToken: token, style: 'mapbox://styles/mapbox/streets-v12', center: [-98, 39], zoom: 3, attributionControl: true })
-      map.on('error', () => { if (!cancelled) setError(true) })
-      map.addControl(new mb.NavigationControl(), 'top-right')
-      mapRef.current = map
-      moduleRef.current = mb
-      setReady((value) => value + 1)
-      if (typeof ResizeObserver !== 'undefined') { observer = new ResizeObserver(() => map?.resize()); observer.observe(container.current) }
-    }).catch(() => { if (!cancelled) setError(true) })
-    return () => { cancelled = true; observer?.disconnect(); markers.current.forEach((marker) => marker.remove()); markers.current = []; map?.remove(); mapRef.current = undefined; fitted.current = false }
-  }, [token])
-  useEffect(() => {
-    const map = mapRef.current
-    const mb = moduleRef.current
-    if (!map || !mb) return
-    const trucks = JSON.parse(locationData) as BoardTruck[]
-    const now = Date.now()
-    markers.current.forEach((marker) => marker.remove())
-    markers.current = []
-    captions.current = []
-    const groups = new Map<string, { point: [number, number]; trucks: BoardTruck[] }>()
-    trucks.forEach((truck) => {
-      const point = truckCoordinates(truck, now)
-      if (!point) return
-      const key = point.join(',')
-      const group = groups.get(key) || { point, trucks: [] }
-      group.trucks.push(truck); groups.set(key, group)
-    })
-    const bounds = new mb.LngLatBounds()
-    groups.forEach(({ point, trucks: members }) => {
-      bounds.extend(point)
-      const button = document.createElement('button')
-      button.className = 'fleet-map-marker'
-      button.type = 'button'
-      button.textContent = members.length > 1 ? String(members.length) : fleetUnitLabel(members[0])
-      button.setAttribute('aria-label', members.length > 1 ? `${members.length} trucks at this reported position` : `Reported position for ${fleetUnitLabel(members[0])}`)
-      const content = document.createElement('div'); content.className = 'fleet-map-popup'
-      members.forEach((truck) => {
-        const select = document.createElement('button'); select.type = 'button'
-        select.textContent = `${fleetUnitLabel(truck)} · ${truck.board_membership_company_name || 'Fleet unavailable'} · ${truckLocation(truck, now)?.label || 'Reported coordinates'}`
-        select.addEventListener('click', () => onSelectRef.current?.(truck))
-        const source = document.createElement('small'); source.textContent = readingCaption(truckLocation(truck, now)!)
-        content.append(select, source)
-        captions.current.push({ node: source, reading: truckLocation(truck, now)!, prefix: '' })
-        const speed = retained(truck.telemetry?.speed, now)
-        if (speed) { const metric = document.createElement('small'); metric.textContent = `Reported speed ${speed.value} mph · ${readingCaption(speed)}`; content.append(metric); captions.current.push({ node: metric, reading: speed, prefix: `Reported speed ${speed.value} mph · ` }) }
-      })
-      markers.current.push(new mb.Marker({ element: button }).setLngLat(point).setPopup(new mb.Popup({ offset: 20 }).setDOMContent(content)).addTo(map))
-    })
-    const focus = trucks.find((truck) => truck.id === focusId)
-    const focusPoint = focus && truckCoordinates(focus, now)
-    if (focusPoint && (!fitted.current || focusRef.current !== focusId)) map.jumpTo({ center: focusPoint, zoom: 10 })
-    else if (groups.size && !fitted.current) map.fitBounds(bounds, { padding: 55, maxZoom: 11, duration: 0 })
-    fitted.current = groups.size > 0
-    focusRef.current = focusId
-  }, [locationData, focusId, ready])
-  useEffect(() => {
-    captions.current.forEach(({ node, reading, prefix }) => { node.textContent = prefix + readingCaption(reading) })
-  }, [now])
-  return <section aria-label="Fleet geographic map">
-    {!token || error ? <p role="status">{!token ? 'Map unavailable: Mapbox access is not configured.' : 'Map could not load. Reported locations remain available below.'}</p> : null}
-    {token && <div ref={container} className={`fleet-geographic-map${compact ? ' fleet-geographic-map--compact' : ''}`} style={error ? { display: 'none' } : undefined} aria-label="Geographic truck positions" />}
-    <p className="telemetry-muted">Last reported positions. Source and age are shown for each truck.</p>
-    <div className="fleet-map-list">{trucks.map((truck) => {
-      const location = truckLocation(truck, now)
-      const coords = truckCoordinates(truck, now)
-      const speed = retained(truck.telemetry?.speed, now)
-      return <button type="button" key={truck.id} aria-current={focusId === truck.id ? 'true' : undefined} onClick={() => onSelect?.(truck)}>
-        <strong>{fleetUnitLabel(truck)}</strong> · {truck.board_membership_company_name || 'Fleet unavailable'} · {location?.label || (coords ? `${coords[1].toFixed(5)}, ${coords[0].toFixed(5)}` : 'Location unknown')}
-        {!coords && <small>No verified coordinates · no map pin</small>}
-        {location && <small>{readingCaption(location)}</small>}
-        {speed && <small>Reported speed {speed.value} mph · {readingCaption(speed)}</small>}
-      </button>
-    })}</div>
-    {!trucks.length && <p>No trucks in this view.</p>}
+    if (moveFocus.current) { (headingRef.current || searchRef.current)?.focus(); moveFocus.current = false }
+  }, [focus?.id, query])
+  const nearby = nearbyTrucks(trucks, focus, now, includeLastKnown)
+  const visibleNearby = expanded ? nearby : nearby.slice(0, 3)
+  const located = trucks.filter(truck => truckCoordinates(truck, now))
+  const recentCount = located.filter(truck => recentPosition(truck, now)).length
+  const searching = !!query.trim()
+  const matches = trucks.filter(truck => `${fleetUnitLabel(truck)} ${truck.driver_name || ''} ${truckLocation(truck, now)?.label || ''}`.toLowerCase().includes(query.trim().toLowerCase()))
+  const rows = searching || !focus ? matches.map(truck => ({ truck, miles: undefined })) : visibleNearby
+  const missingOrigin = focus && !truckCoordinates(focus, now)
+  const oldOrigin = focus && !missingOrigin && !recentPosition(focus, now) && !includeLastKnown
+  const comparisonIds = visibleNearby.map(({ truck }) => truck.id)
+
+  return <section className={`proximity${compact ? ' proximity--compact' : ''}`} aria-label="Fleet proximity map">
+    <header className="proximity-toolbar">
+      <div><strong>Fleet map</strong><span>{located.length} located · {trucks.length - located.length} without coordinates</span></div>
+      <button type="button" onClick={() => setRecenter(value => value + 1)}><LocateFixed size={16} />{focus ? 'Recenter' : 'Fit fleet'}</button>
+    </header>
+    <div className="proximity-workspace">
+      <div className="proximity-geography">
+        <FleetMapCanvas trucks={trucks} focusId={focus?.id} nearbyIds={comparisonIds} now={now} recenter={recenter} onFocus={select} />
+        <div className="proximity-legend" aria-label="Map legend">
+          {[...new Set(located.map(truck => truck.status))].map(status => <span key={status}><i style={{ background: STATUS_META[status].dot }} />{STATUS_META[status].label}</span>)}
+          <span className="proximity-last-known-key"><i />Last known</span>
+        </div>
+      </div>
+      <aside className="proximity-panel" aria-label="Truck proximity">
+        <label className="proximity-search"><Search size={17} /><input ref={searchRef} type="search" aria-label="Find truck" placeholder="Find truck or driver" value={query} onChange={event => setQuery(event.target.value)} /></label>
+        {focus && <div className="proximity-focus">
+          <div className="proximity-focus-heading"><span>Comparing from</span><button type="button" aria-label="Clear selected truck" onClick={() => select(undefined)}><X size={17} /></button></div>
+          <strong ref={headingRef} tabIndex={-1} className="proximity-unit">{fleetUnitLabel(focus)}</strong>
+          <Status truck={focus} />
+          <p>{truckLocation(focus, now)?.label || 'Location unavailable'}</p>
+          <small>{positionAge(focus, now)}</small>
+          {focus.driver_name && <p className="proximity-driver">{focus.driver_name}</p>}
+          <div className="proximity-actions">
+            {onSelect && <button type="button" onClick={() => onSelect(focus)}>Truck details<ArrowUpRight size={15} /></button>}
+            {focus.driver_phone && /^[+\d\s().-]+$/.test(focus.driver_phone) && <a href={`tel:${focus.driver_phone.replace(/[^+\d]/g, '')}`}>Call driver</a>}
+          </div>
+        </div>}
+        <div className="proximity-list-heading"><h3>{searching ? 'Search results' : focus ? 'Nearby trucks' : 'Select a truck'}</h3><span>{searching ? matches.length : focus ? nearby.length : trucks.length}</span></div>
+        {focus && !searching && <>
+          <div className="proximity-basis">Straight-line distance · {includeLastKnown ? 'last-known positions included' : 'positions ≤15 min old'}</div>
+          <label className="proximity-toggle"><input type="checkbox" checked={includeLastKnown} onChange={event => { setIncludeLastKnown(event.target.checked); setExpanded(false) }} />Include last-known</label>
+          {missingOrigin ? <p className="proximity-empty">This truck has no verified coordinates. Distance is unavailable.</p> : oldOrigin ? <p className="proximity-empty">This truck’s position is old or undated. Include last-known to compare recorded positions.</p> : nearby.length === 0 ? <p className="proximity-empty">No other {includeLastKnown ? 'located' : 'recently located'} trucks.</p> : null}
+        </>}
+        <div className="proximity-rows">
+          {rows.map(({ truck, miles }) => <button type="button" className="proximity-row" key={truck.id} aria-pressed={focus?.id === truck.id} onClick={() => select(truck.id)}>
+            <div className="proximity-row-top"><strong>{fleetUnitLabel(truck)}</strong>{miles != null && <b>{formatDistance(miles)}</b>}</div>
+            <Status truck={truck} />
+            <div className="proximity-row-bottom"><span>{truckLocation(truck, now)?.label || 'Location unavailable'}</span><small>{positionAge(truck, now)}</small></div>
+          </button>)}
+        </div>
+        {focus && !searching && nearby.length > 3 && <button className="proximity-more" type="button" aria-expanded={expanded} onClick={() => setExpanded(value => !value)}>{expanded ? 'Closest 3' : `Show all ${nearby.length}`}<ChevronDown size={16} style={{ transform: expanded ? 'rotate(180deg)' : undefined }} /></button>}
+        {searching && !matches.length && <p className="proximity-empty">No trucks match your search.</p>}
+        {!trucks.length && <p className="proximity-empty">No trucks in this view.</p>}
+        <footer>{focus ? 'Proximity does not confirm availability.' : `${recentCount} recent · ${located.length - recentCount} last-known positions`}</footer>
+      </aside>
+    </div>
   </section>
+}
+
+function Status({ truck }: { truck: BoardTruck }) {
+  const meta = STATUS_META[truck.status]
+  return <span className="proximity-status"><i style={{ background: meta.dot }} />{meta.label}</span>
 }
 export default memo(FleetMap)

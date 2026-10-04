@@ -61,6 +61,7 @@ export default function FleetApp({ initialTripsFilters }: { initialTripsFilters?
   const init = loadState()
   const [view, setView] = useState<View>(init.view === 'detail' && init.selId ? 'detail' : init.view)
   const [selId, setSelId] = useState<string | null>(init.selId)
+  const [mapFocusId, setMapFocusId] = useState<string | undefined>()
   const [tripFilters, setTripFilters] = useState(() => initialTripsFilters ?? initialTripFilters())
   const [filter, setFilter] = useState(init.filter)
   const [query, setQuery] = useState('')
@@ -298,7 +299,7 @@ export default function FleetApp({ initialTripsFilters }: { initialTripsFilters?
               ) : view === 'trips' ? (
                 <FleetTrips trucks={trucks} filters={tripFilters} onFilters={setTripFilters} onOpenTruck={openTruck} />
               ) : view === 'map' ? (
-                <MapPage trucks={trucks} onOpen={openTruck} />
+                <MapPage trucks={trucks} onOpen={openTruck} focusId={mapFocusId} onFocusChange={setMapFocusId} />
               ) : (
                 <FleetBoard data={data} onOpen={(t) => openTruck(t.id)} onOpenRepairOrder={setRoPanelId} filter={filter} setFilter={setFilter} query={query} setQuery={setQuery} sort={sort} setSort={setSort} />
               )}
@@ -321,11 +322,11 @@ export default function FleetApp({ initialTripsFilters }: { initialTripsFilters?
 
 /* ---- secondary views ---- */
 
-function MapPage({ trucks, onOpen }: { trucks: BoardTruck[]; onOpen: (id: string) => void }) {
+function MapPage({ trucks, onOpen, focusId, onFocusChange }: { trucks: BoardTruck[]; onOpen: (id: string) => void; focusId?: string; onFocusChange: (id: string | undefined) => void }) {
   const handleSelect = useCallback((truck: BoardTruck) => onOpen(truck.id), [onOpen])
   return (
     <div className="mappage">
-      <FleetMap trucks={trucks} onSelect={handleSelect} />
+      <FleetMap trucks={trucks} focusId={focusId} onFocusChange={onFocusChange} onSelect={handleSelect} />
     </div>
   )
 }

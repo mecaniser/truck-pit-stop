@@ -12,7 +12,7 @@ import FleetMap from '../FleetMap'
 const mocks = vi.hoisted(() => ({ post: vi.fn(), positions: [] as number[][], maps: [] as Record<string, unknown>[], errors: [] as (() => void)[], removed: vi.fn(), markerRemoved: vi.fn() }))
 vi.mock('@/lib/api', () => ({ default: { post: mocks.post } }))
 vi.mock('mapbox-gl', () => ({ default: {
-  Map: class { constructor(options: Record<string, unknown>) { mocks.maps.push(options) } on(_event: string, cb: () => void) { mocks.errors.push(cb) } addControl() {} jumpTo() {} fitBounds() {} remove() { mocks.removed() } resize() {} },
+  Map: class { constructor(options: Record<string, unknown>) { mocks.maps.push(options) } on(event: string, cb: () => void) { if (event === 'error') mocks.errors.push(cb); if (event === 'load') queueMicrotask(cb) } getSource() { return undefined } addSource() {} addLayer() {} addControl() {} jumpTo() {} fitBounds() {} remove() { mocks.removed() } resize() {} },
   Marker: class { setLngLat(point: number[]) { mocks.positions.push(point); return this } setPopup() { return this } addTo() { return this } remove() { mocks.markerRemoved() } },
   Popup: class { setDOMContent() { return this } }, NavigationControl: class {}, LngLatBounds: class { extend() { return this } },
 } }))
@@ -79,13 +79,13 @@ describe('reported telemetry semantics', () => {
   })
 })
 describe('geographic map', () => {
-  it('provides an accessible location list when no token exists', () => { const select = vi.fn(); render(<FleetMap trucks={[truck]} onSelect={select} />); expect(screen.getByRole('status')).toHaveTextContent('not configured'); expect(screen.getByText(/No verified coordinates/)).toBeInTheDocument(); fireEvent.click(screen.getByRole('button')); expect(select).toHaveBeenCalledWith(truck); expect(mocks.maps).toHaveLength(0) })
+  it('provides an accessible location list when no token exists', () => { const select = vi.fn(); render(<FleetMap trucks={[truck]} onSelect={select} />); expect(screen.getByRole('status')).toHaveTextContent('not configured'); expect(screen.getByText('No coordinates')).toBeInTheDocument(); fireEvent.click(screen.getByRole('button', { name: /TEST-1/ })); expect(select).not.toHaveBeenCalled(); fireEvent.click(screen.getByRole('button', { name: /Truck details/ })); expect(select).toHaveBeenCalledWith(truck); expect(mocks.maps).toHaveLength(0) })
   it('groups coincident coordinates without changing positions and excludes unlocated trucks', async () => {
     vi.stubEnv('VITE_MAPBOX_TOKEN', 'synthetic-token')
     const located = { ...truck, telemetry: { ...telemetry, location: { ...telemetry.location!, lat: 37.25, lng: -105.125 } } }
     render(<FleetMap trucks={[located, { ...located, id: 'second' }, { ...truck, id: 'unknown' }]} />)
     await waitFor(() => expect(mocks.positions).toEqual([[-105.125, 37.25]]))
-    expect(screen.getAllByText(/Selected fleet/)).toHaveLength(3)
+    expect(screen.getAllByRole('button', { name: /TEST-1/ })).toHaveLength(3)
     fireEvent.click(screen.getAllByRole('button')[0])
   })
   it('does not recreate the map or markers when freshness updates', async () => {
@@ -99,7 +99,7 @@ describe('geographic map', () => {
     expect(mocks.maps).toHaveLength(1); expect(mocks.removed).not.toHaveBeenCalled(); expect(mocks.markerRemoved).not.toHaveBeenCalled()
     vi.useRealTimers(); result.unmount()
   })
-  it('keeps the accessible list on map error', async () => { vi.stubEnv('VITE_MAPBOX_TOKEN', 'synthetic-token'); render(<FleetMap trucks={[truck]} />); await waitFor(() => expect(mocks.errors).toHaveLength(1)); fireEvent(window, new Event('resize')); act(() => mocks.errors[0]()); expect(await screen.findByRole('status')).toHaveTextContent('could not load'); expect(screen.getByRole('button')).toHaveTextContent('TEST-1') })
+  it('keeps the accessible list on map error', async () => { vi.stubEnv('VITE_MAPBOX_TOKEN', 'synthetic-token'); render(<FleetMap trucks={[truck]} />); await waitFor(() => expect(mocks.errors).toHaveLength(1)); fireEvent(window, new Event('resize')); act(() => mocks.errors[0]()); expect(await screen.findByRole('status')).toHaveTextContent('could not load'); expect(screen.getByRole('button', { name: /TEST-1/ })).toBeInTheDocument() })
 })
 describe('manual capture', () => {
   async function open() { const user = userEvent.setup(); wrap(<TelemetryCapture truck={truck} />); await user.click(screen.getByRole('button', { name: 'Add reading' })); return user }

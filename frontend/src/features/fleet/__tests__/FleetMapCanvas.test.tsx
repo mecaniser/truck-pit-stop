@@ -1,0 +1,58 @@
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { afterEach, beforeEach, expect, it, vi } from 'vitest'
+import FleetMapCanvas from '../FleetMapCanvas'
+import type { BoardTruck } from '../types'
+
+const mock = vi.hoisted(() => ({ pins: [] as { element: HTMLElement; point?: number[]; popup?: HTMLElement }[], fit: vi.fn(), lines: vi.fn(), remove: vi.fn(), sources: new Set<string>(), handlers: {} as Record<string, () => void> }))
+vi.mock('mapbox-gl', () => ({ default: {
+  Map: class { on(event: string, cb: () => void) { mock.handlers[event] = cb; if (event === 'load') queueMicrotask(cb) } addControl() {} resize() {} fitBounds(...args: unknown[]) { mock.fit(...args) } getSource(id: string) { return mock.sources.has(id) ? { setData: mock.lines } : undefined } addSource(id: string, source: { data: unknown }) { mock.sources.add(id); mock.lines(source.data) } addLayer() {} remove() { mock.remove() } },
+  Marker: class {
+    pin: { element: HTMLElement; point?: number[]; popup?: HTMLElement }
+    constructor({ element }: { element: HTMLElement }) { this.pin = { element }; mock.pins.push(this.pin) }
+    setLngLat(point: number[]) { this.pin.point = point; return this }
+    setPopup(popup: { content: HTMLElement }) { this.pin.popup = popup.content; return this }
+    getPopup() { return { remove: vi.fn() } }
+    addTo() { return this } remove() {}
+  },
+  Popup: class { content?: HTMLElement; setDOMContent(content: HTMLElement) { this.content = content; return this } },
+  NavigationControl: class {}, LngLatBounds: class { extend() { return this } },
+} }))
+const now = Date.now()
+function truck(id: string, lng: number, old = false) {
+  return { id, unit_number: id, status: 'out_of_service', telemetry: { location: { lat: 0, lng, observed_at: new Date(now - (old ? 3600000 : 0)).toISOString(), captured_at: new Date(now).toISOString() } } } as BoardTruck
+}
+beforeEach(() => { mock.pins.length = 0; mock.sources.clear(); vi.clearAllMocks(); vi.stubEnv('VITE_MAPBOX_TOKEN', 'synthetic') })
+afterEach(() => vi.unstubAllEnvs())
+it('selects pins in place and draws geographic connectors with status and stale styling', async () => {
+  const select = vi.fn()
+  render(<FleetMapCanvas trucks={[truck('Down', 0), truck('Old', 1, true)]} focusId="Down" nearbyIds={['Old']} now={now} recenter={0} onFocus={select} />)
+  await waitFor(() => expect(mock.pins).toHaveLength(2))
+  expect(mock.pins[0].element).toHaveClass('is-selected')
+  expect(mock.pins[0].element).toHaveAccessibleName('Down, Out of service')
+  expect(mock.pins[1].element).toHaveClass('is-last-known')
+  fireEvent.click(mock.pins[1].element)
+  expect(select).toHaveBeenCalledWith('Old')
+  expect(mock.lines.mock.calls[0][0].features[0].geometry.coordinates).toEqual([[0, 0], [1, 0]])
+})
+it('groups coincident pins without moving coordinates and lets each truck be selected', async () => {
+  const select = vi.fn()
+  render(<FleetMapCanvas trucks={[truck('A', 0), truck('B', 0)]} nearbyIds={[]} now={now} recenter={0} onFocus={select} />)
+  await waitFor(() => expect(mock.pins).toHaveLength(1))
+  expect(mock.pins[0].point).toEqual([0, 0])
+  expect(mock.pins[0].element).toHaveAccessibleName('2 trucks at this position')
+  fireEvent.click(mock.pins[0].popup!.querySelectorAll('button')[1])
+  expect(select).toHaveBeenCalledWith('B')
+})
+it('preserves viewport on location polling, recenters on demand and cleans up', async () => {
+  const props = { trucks: [truck('A', 0)], nearbyIds: [], now, recenter: 0, onFocus: vi.fn() }
+  const result = render(<FleetMapCanvas {...props} />)
+  await waitFor(() => expect(mock.fit).toHaveBeenCalledTimes(1))
+  result.rerender(<FleetMapCanvas {...props} trucks={[truck('A', 1)]} />)
+  expect(mock.fit).toHaveBeenCalledTimes(1)
+  result.rerender(<FleetMapCanvas {...props} recenter={1} />)
+  expect(mock.fit).toHaveBeenCalledTimes(2)
+  act(() => mock.handlers.error())
+  expect(screen.getByRole('status')).toHaveTextContent('Map could not load')
+  result.unmount()
+  expect(mock.remove).toHaveBeenCalledTimes(1)
+})
