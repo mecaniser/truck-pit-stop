@@ -7,19 +7,21 @@ import { recentPosition } from './proximity'
 import 'mapbox-gl/dist/mapbox-gl.css'
 
 interface Pin { id: string; label: string; company: string; status: BoardTruck['status']; point: [number, number]; recent: boolean }
-interface Props { trucks: BoardTruck[]; focusId?: string; nearbyIds: string[]; route?: GeoJSON.LineString; now: number; recenter: number; onFocus: (id: string) => void }
+interface Props { trucks: BoardTruck[]; focusId?: string; nearbyIds: string[]; route?: GeoJSON.LineString; now: number; recenter: number; onFocus: (id: string) => void; onClusterOpen?: (ids: string[]) => void }
 
-export default function FleetMapCanvas({ trucks, focusId, nearbyIds, route, now, recenter, onFocus }: Props) {
+export default function FleetMapCanvas({ trucks, focusId, nearbyIds, route, now, recenter, onFocus, onClusterOpen }: Props) {
   const container = useRef<HTMLDivElement>(null)
   const mapRef = useRef<MapboxMap>()
   const moduleRef = useRef<typeof import('mapbox-gl').default>()
-  const markers = useRef(new Map<string, { marker: MapboxMarker; button: HTMLButtonElement; contentKey: string; popupKey: string; pointKey: string }>())
+  const markers = useRef(new Map<string, { marker: MapboxMarker; button: HTMLButtonElement; contentKey: string; pointKey: string }>())
   const [ready, setReady] = useState(false)
   const [error, setError] = useState(false)
   const [viewportRevision, setViewportRevision] = useState(0)
   const framing = useRef('')
   const selectRef = useRef(onFocus)
   selectRef.current = onFocus
+  const clusterRef = useRef(onClusterOpen)
+  clusterRef.current = onClusterOpen
   const token = import.meta.env.VITE_MAPBOX_TOKEN || ''
   const pinData = JSON.stringify(trucks.flatMap(truck => {
     const point = truckCoordinates(truck, now)
@@ -87,8 +89,11 @@ export default function FleetMapCanvas({ trucks, focusId, nearbyIds, route, now,
       if (!entry) {
         const button = document.createElement('button'); button.type = 'button'
         const marker = new mb.Marker({ element: button }).setLngLat(anchor).addTo(map)
-        if (members.length === 1) button.addEventListener('click', () => selectRef.current(members[0].id))
-        entry = { marker, button, contentKey: '', popupKey: '', pointKey: anchor.join(',') }
+        button.addEventListener('click', () => {
+          if (members.length === 1) selectRef.current(members[0].id)
+          else clusterRef.current?.(members.map(pin => pin.id))
+        })
+        entry = { marker, button, contentKey: '', pointKey: anchor.join(',') }
         markers.current.set(key, entry)
       }
       const { button, marker } = entry
@@ -125,19 +130,9 @@ export default function FleetMapCanvas({ trucks, focusId, nearbyIds, route, now,
         entry.contentKey = contentKey
       }
       button.setAttribute('aria-label', members.length > 1 ? `${members.length} trucks ${coincident ? 'at this position' : 'nearby'}` : `${representative.label}, ${STATUS_META[representative.status].label}${representative.recent ? '' : ', last-known position'}`)
+      button.setAttribute('role', 'button')
       button.setAttribute('aria-pressed', String(!!selected))
-      const popupKey = JSON.stringify(members.map(pin => [pin.id, pin.label, pin.status, pin.recent]))
-      if (members.length > 1 && entry.popupKey !== popupKey) {
-        const content = document.createElement('div'); content.className = 'proximity-popup'
-        members.forEach(pin => {
-          const option = document.createElement('button'); option.type = 'button'
-          option.textContent = `${pin.label} · ${STATUS_META[pin.status].label}${pin.recent ? '' : ' · Last known'}`
-          option.addEventListener('click', () => { selectRef.current(pin.id); marker.getPopup()?.remove() })
-          content.append(option)
-        })
-        marker.setPopup(new mb.Popup({ offset: 24 }).setDOMContent(content))
-        entry.popupKey = popupKey
-      }
+
     })
     markers.current.forEach((entry, key) => {
       if (!liveKeys.has(key)) { entry.marker.remove(); markers.current.delete(key) }

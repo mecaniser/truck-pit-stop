@@ -52,3 +52,9 @@ Root cause of pin/route offset: updating button.className after Marker construct
 ## Opaque markers and overlap callouts
 
 All badge states now use solid white with charcoal text; unrelated markers no longer lower opacity. Clustering uses projected screen overlap (96x56px neighborhood), recomputed after map movement/resize. Each cluster has an offset count billboard, leader and location dot anchored at an actual member coordinate; it does not fabricate an average truck position. Popup exposes each member and last-known status. Zoom can split nearby coordinates while identical coordinates stay grouped.16affected tests, TypeScript/ESLint pass, including screen-overlap grouping, zoom separation, preserved coordinates and no unsolicited camera fit. Native preview verified3-truck cluster101/204/610, member chooser, and610selection preserving last-known eligibility messaging. Full-resolution capture limitation unchanged; no release.
+
+## Polished cluster chooser without map occlusion
+
+PR468 merged the road-routing and route-summary/color work, before subsequent marker/cluster refinements. Branch codex/fleet-cluster-popover starts from current main c1037855 and carries those later commits forward. The chooser is now a rounded white card in the existing side panel (compact view: below map), with status dots, stronger unit text, muted labels, blue keyboard focus and a close control. No floating map popup can hide a truck. Cluster click brings the card into view; member selection dismisses it.
+
+17affected tests, TypeScript/ESLint/diff checks pass. Native Chrome verified cluster101/204/610opens in side panel and204selection closes it. Runtime realigned: frontend5186PID85747, worktree fleet-proximity-map, branch codex/fleet-cluster-popover, startup HEADd45f25f5plus verified edits. No local backend/database configured; synthetic preview with live approved Mapbox only. Full-resolution screenshot limitation unchanged. Not deployed.

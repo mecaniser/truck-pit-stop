@@ -20,17 +20,23 @@ function FleetMap({ trucks, focusId, onFocusChange, onSelect, compact }: Props) 
   const now = useTelemetryClock()
   const headingRef = useRef<HTMLElement>(null)
   const searchRef = useRef<HTMLInputElement>(null)
+  const clusterCardRef = useRef<HTMLElement>(null)
   const moveFocus = useRef(false)
   const [selection, setSelection] = useState(focusId)
   const [query, setQuery] = useState('')
+  const [clusterIds, setClusterIds] = useState<string[]>([])
+  const clusterTrucks = trucks.filter(truck => clusterIds.includes(truck.id) && truckCoordinates(truck, now))
   const [includeLastKnown, setIncludeLastKnown] = useState(false)
   const [expanded, setExpanded] = useState(false)
   const [recenter, setRecenter] = useState(0)
+  useEffect(() => {
+    if (clusterIds.length) { clusterCardRef.current?.focus({ preventScroll: true }); clusterCardRef.current?.scrollIntoView?.({ block: 'nearest' }) }
+  }, [clusterIds])
   const selectedId = onFocusChange ? focusId : selection
   const focus = trucks.find(truck => truck.id === selectedId)
   const select = (id: string | undefined) => {
     moveFocus.current = true
-    setSelection(id); onFocusChange?.(id); setQuery(''); setExpanded(false)
+    setClusterIds([]); setSelection(id); onFocusChange?.(id); setQuery(''); setExpanded(false)
   }
   useEffect(() => {
     if (moveFocus.current) { (headingRef.current || searchRef.current)?.focus(); moveFocus.current = false }
@@ -55,7 +61,7 @@ function FleetMap({ trucks, focusId, onFocusChange, onSelect, compact }: Props) 
     </header>
     <div className="proximity-workspace">
       <div className="proximity-geography">
-        <FleetMapCanvas trucks={trucks} focusId={focus?.id} nearbyIds={comparisonIds} route={road.geometry} now={now} recenter={recenter} onFocus={select} />
+        <FleetMapCanvas trucks={trucks} focusId={focus?.id} nearbyIds={comparisonIds} route={road.geometry} now={now} recenter={recenter} onFocus={select} onClusterOpen={ids => { setClusterIds(ids); setQuery('') }} />
         <div className="proximity-legend" aria-label="Map legend">
           {[...new Set(located.map(truck => truck.status))].map(status => <span key={status}><i style={{ background: STATUS_META[status].dot }} />{STATUS_META[status].label}</span>)}
           <span className="proximity-last-known-key"><i />Last known</span>
@@ -63,6 +69,14 @@ function FleetMap({ trucks, focusId, onFocusChange, onSelect, compact }: Props) 
       </div>
       <aside className="proximity-panel" aria-label="Truck proximity">
         <label className="proximity-search"><Search size={17} /><input ref={searchRef} type="search" aria-label="Find truck" placeholder="Find truck or driver" value={query} onChange={event => setQuery(event.target.value)} /></label>
+        {clusterTrucks.length > 0 && <section ref={clusterCardRef} tabIndex={-1} className="proximity-cluster-card" aria-label="Trucks in selected cluster">
+          <header><span>{clusterTrucks.length} trucks nearby</span><button type="button" aria-label="Close cluster" onClick={() => setClusterIds([])}><X size={15} /></button></header>
+          {clusterTrucks.map(truck => <button type="button" className="proximity-popup-row" key={truck.id} onClick={() => select(truck.id)}>
+            <i style={{ background: STATUS_META[truck.status].dot }} aria-hidden="true" /><strong>{fleetUnitLabel(truck)}</strong>
+            <span className="proximity-popup-detail"><span>{STATUS_META[truck.status].label}</span>{!recentPosition(truck, now) && <small>Last known</small>}</span>
+            <span className="proximity-popup-arrow" aria-hidden="true">›</span>
+          </button>)}
+        </section>}
         {focus && <div className="proximity-focus">
           <div className="proximity-focus-heading"><span>Comparing from</span><button type="button" aria-label="Clear selected truck" onClick={() => select(undefined)}><X size={17} /></button></div>
           <strong ref={headingRef} tabIndex={-1} className="proximity-unit">{fleetUnitLabel(focus)}</strong>

@@ -34,15 +34,16 @@ it('selects pins in place and draws supplied road geometry with status and stale
   expect(select).toHaveBeenCalledWith('Old')
   expect(mock.lines.mock.calls[0][0].features[0].geometry.coordinates).toEqual([[0, 0], [.3, .4], [1, 0]])
 })
-it('groups coincident pins without moving coordinates and lets each truck be selected', async () => {
+it('groups coincident pins without moving coordinates and opens the side-panel chooser', async () => {
   const select = vi.fn()
-  render(<FleetMapCanvas trucks={[truck('A', 0), truck('B', 0)]} nearbyIds={[]} now={now} recenter={0} onFocus={select} />)
+  render(<FleetMapCanvas onClusterOpen={select} trucks={[truck('A', 0), truck('B', 0)]} nearbyIds={[]} now={now} recenter={0} onFocus={select} />)
   await waitFor(() => expect(mock.pins).toHaveLength(1))
   expect(mock.pins[0].point).toEqual([0, 0])
   expect(mock.lines.mock.calls[0][0].features).toEqual([])
   expect(mock.pins[0].element).toHaveAccessibleName('2 trucks at this position')
-  fireEvent.click(mock.pins[0].popup!.querySelectorAll('button')[1])
-  expect(select).toHaveBeenCalledWith('B')
+  fireEvent.click(mock.pins[0].element)
+  expect(select).toHaveBeenCalledWith(['A', 'B'])
+  expect(mock.pins[0].popup).toBeUndefined()
 })
 it('preserves viewport on location polling, recenters on demand and cleans up', async () => {
   const props = { trucks: [truck('A', 0)], nearbyIds: [], now, recenter: 0, onFocus: vi.fn() }
@@ -116,14 +117,15 @@ it('moves existing markers, removes only missing groups and reconciles coinciden
 
 it('clusters overlapping nearby positions and separates them when zoom provides room', async () => {
   const select = vi.fn()
-  render(<FleetMapCanvas trucks={[truck('A', 0), truck('B', .1)]} nearbyIds={[]} now={now} recenter={0} onFocus={select} />)
+  render(<FleetMapCanvas onClusterOpen={select} trucks={[truck('A', 0), truck('B', .1)]} nearbyIds={[]} now={now} recenter={0} onFocus={select} />)
   await waitFor(() => expect(mock.pins).toHaveLength(1))
   expect(mock.pins[0].element).toHaveClass('is-cluster', 'mapboxgl-marker')
   expect(mock.pins[0].element).toHaveAccessibleName('2 trucks nearby')
   expect(mock.pins[0].element.querySelector('.proximity-cluster-leader')).not.toBeNull()
   expect(mock.pins[0].point).toEqual([0, 0])
-  fireEvent.click(mock.pins[0].popup!.querySelectorAll('button')[1])
-  expect(select).toHaveBeenCalledWith('B')
+  fireEvent.click(mock.pins[0].element)
+  expect(select).toHaveBeenCalledWith(['A', 'B'])
+  expect(mock.pins[0].popup).toBeUndefined()
   mock.scale = 2000
   act(() => mock.handlers.moveend())
   expect(mock.pins).toHaveLength(3)

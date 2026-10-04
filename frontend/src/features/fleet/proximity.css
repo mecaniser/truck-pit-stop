@@ -60,8 +60,18 @@
 .proximity-pin.is-dimmed .proximity-pin-badge { border-color: #cbd5e1; }
 .proximity-pin:focus-visible { outline: none; }
 .proximity-pin:focus-visible .proximity-pin-badge { outline: 2px solid #2563eb; outline-offset: 2px; }
-.proximity-popup { display: grid; gap: 4px; color: #111; }
-.proximity-popup button { min-height: 44px; background: #fff; border: 0; padding: 8px; text-align: left; color: #111; cursor: pointer; }
+.proximity-cluster-card { margin-top: 12px; padding: 7px; border-radius: 12px; border: 1px solid #e2e8f0; box-shadow: 0 6px 16px #0002; background: #fff; color: #17202a; }
+.proximity-cluster-card > header { display: flex; align-items: center; justify-content: space-between; padding-left: 8px; color: #64748b; font-size: 11px; font-weight: 600; }
+.fleet-root .proximity-cluster-card > header button { display: grid; place-items: center; min-height: 32px; width: 32px; border: 0; border-radius: 7px; background: transparent; color: #64748b; }
+.proximity-cluster-card > header button:hover { background: #f1f5f9; }
+.fleet-root .proximity-popup-row { display: flex; align-items: center; gap: 8px; min-height: 44px; width: 100%; background: #fff; border: 0; border-radius: 8px; padding: 9px 8px; text-align: left; color: #17202a; cursor: pointer; transition: background-color 120ms ease; }
+.proximity-popup-row > i { width: 6px; height: 6px; border-radius: 50%; flex: none; }
+.proximity-popup-row > strong { min-width: 32px; max-width: 72px; overflow-wrap: anywhere; font-size: 13px; }
+.proximity-popup-detail { display: grid; gap: 2px; flex: 1; color: #526174; font-size: 11px; }
+.proximity-popup-detail small { font-size: 10px; color: #7b8795; }
+.proximity-popup-arrow { color: #94a3b8; font-size: 20px; }
+.fleet-root .proximity-popup-row:hover { background: #f1f5f9; }
+.fleet-root .proximity-popup-row:focus-visible { background: #eff6ff; outline: 2px solid #93c5fd; outline-offset: -2px; }
 .proximity--compact .proximity-geography { min-height: 400px; }
 @media (max-width: 1000px) { .proximity-workspace { grid-template-columns: minmax(0, 1fr) 280px; } .proximity-legend { gap: 6px 10px; } }
 @media (max-width: 680px) {
