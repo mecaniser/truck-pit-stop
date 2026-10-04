@@ -72,7 +72,15 @@ export function routeMovementSummary(items: FleetTrip[]) {
 
 export type ActivityInterval = 'day' | 'week' | 'month' | 'year'
 const shiftDay = (day: string, amount: number) => new Date(Date.parse(day) + amount * 86400000).toISOString().slice(0, 10)
+export function availableActivityIntervals(start: string, end: string, preset?: string): ActivityInterval[] {
+  if (preset === 'day' || preset === 'week') return ['day']
+  if (preset === 'month') return ['day', 'week']
+  if (preset === 'year') return ['day', 'week', 'month']
+  const days = (Date.parse(end) - Date.parse(start)) / 86400000 + 1
+  return days <= 7 ? ['day'] : days <= 31 ? ['day', 'week'] : ['day', 'week', 'month']
+}
 export function defaultActivityInterval(start: string, end: string, preset?: string): ActivityInterval {
+  if (preset === 'day' || preset === 'week') return 'day'
   if (preset === 'year') return 'month'
   if (preset === 'month') return 'week'
   const days = (Date.parse(end) - Date.parse(start)) / 86400000 + 1
