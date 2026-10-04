@@ -42,7 +42,7 @@ Branch: `codex/fleet-proximity-map`; base `6adc53b72cc98042222795290715ab9d294ee
 
 Production build passes. TypeScript passes. Strict focused lint passes on new
 production code/tests; FleetApp has pre-existing lint debt, so the repository's
-baseline-aware changed-source gate is used for the final commit.
+baseline-aware changed-source gate passes across all 10 changed TypeScript files.
 
 ## Runtime receipt and browser evidence
 
@@ -67,6 +67,10 @@ baseline-aware changed-source gate is used for the final commit.
   DOM confirms viewport390/document width390 and focused selected summary.
   Temporary viewport reset; preview left open.
 - Local screenshot: `output/proximity-map/desktop.jpg` (uncommitted).
+
+Draft PR: https://github.com/mecaniser/truck-pit-stop/pull/467; implementation `92421704`.
+The preview process was started at the base SHA; rendered source checks verify
+the changed component. Committing did not restart or switch that process.
 
 Status: implementation review candidate. Authenticated full-stack and actual
 basemap acceptance remain required before Done. Merge and deployment are not
