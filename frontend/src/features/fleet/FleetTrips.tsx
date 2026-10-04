@@ -1,11 +1,11 @@
 import { Fragment, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { ArrowRight, ChevronDown, Clock3, MapPin, Route, Truck } from 'lucide-react'
+import { ArrowRight, ChevronLeft, ChevronRight, ChevronDown, Clock3, MapPin, Route, Truck } from 'lucide-react'
 import api from '@/lib/api'
 import DatePicker from '@/components/DatePicker'
 import BaseSelect from '@/components/BaseSelect'
 import { validDay } from '@/components/calendarGrid'
-import { tripPreset, type TripPreset } from './tripFilters'
+import { adjacentTripPeriod, tripPreset, type TripPreset } from './tripFilters'
 import type { BoardTruck } from './types'
 import { fleetUnitLabel } from './helpers'
 import './trips.css'
@@ -49,6 +49,9 @@ export default function FleetTrips({ trucks, filters, onFilters, onOpenTruck }: 
   const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
   const dateSpan = (Date.parse(filters.end) - Date.parse(filters.start)) / 86400000
   const validDates = validDay(filters.start) && validDay(filters.end) && Number.isFinite(dateSpan) && dateSpan >= 0 && dateSpan < 366
+  const navigable = filters.preset === 'week' || filters.preset === 'month' ? filters.preset : null
+  const currentPeriod = navigable ? tripPreset(navigable) : null
+  const atCurrentPeriod = !!currentPeriod && filters.start >= currentPeriod.start
   const custom = !filters.preset || filters.preset === 'custom'
   const selectedTruck = trucks.find(t => t.id === filters.vehicleId)
   const validVehicle = !filters.vehicleId || !!selectedTruck
@@ -62,6 +65,7 @@ export default function FleetTrips({ trucks, filters, onFilters, onOpenTruck }: 
   })
   const update = (next: Partial<TripFilters>) => { onFilters({ ...filters, ...next }) }
   const day = (value: string) => new Date(value).toLocaleDateString(undefined, { month: 'short', day: 'numeric', timeZone: timezone })
+  const periodDate = (value: string) => new Date(`${value}T12:00:00`).toLocaleDateString(undefined, { month: 'short', day: 'numeric', ...(filters.start.slice(0, 4) !== filters.end.slice(0, 4) || filters.start.slice(0, 4) !== String(new Date().getFullYear()) ? { year: 'numeric' as const } : {}) })
   const importedDay = (value: string) => new Date(`${value}T12:00:00`).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
   return (
     <section className={`fleet-trips trips-owner-layout${selectedTruck ? ' trips-selected-truck' : ''}`} aria-label="Trip history" data-motion={pointerMotion ? 'on' : 'off'} onPointerDownCapture={() => setPointerMotion(true)} onKeyDownCapture={() => setPointerMotion(false)}>
@@ -74,6 +78,12 @@ export default function FleetTrips({ trucks, filters, onFilters, onOpenTruck }: 
           {([['day', 'Day', 'Today'], ['week', 'Week', 'Monday through today'], ['month', 'Month', 'This month through today'], ['year', 'Year', 'This year through today']] as const).map(([preset, label, title]) => <button key={preset} type="button" title={title} aria-pressed={filters.preset === preset} onClick={() => update({ ...tripPreset(preset), preset })}>{label}</button>)}
           <button type="button" aria-pressed={custom} aria-expanded={custom} aria-controls="trip-custom-dates" onClick={() => update({ preset: 'custom' })}>Custom</button>
         </div>
+        {navigable && <div className="trips-period-navigation" role="group" aria-label={`${navigable === 'week' ? 'Week' : 'Month'} navigation`}>
+          <button type="button" aria-label={`Previous ${navigable}`} title={`Previous ${navigable}`} onClick={() => update(adjacentTripPeriod(navigable, filters.start, -1))}><ChevronLeft size={18} /></button>
+          <span aria-live="polite">{periodDate(filters.start)} – {periodDate(filters.end)}</span>
+          <button type="button" aria-label={`Next ${navigable}`} title={`Next ${navigable}`} disabled={atCurrentPeriod} onClick={() => update(adjacentTripPeriod(navigable, filters.start, 1))}><ChevronRight size={18} /></button>
+          <button type="button" className="trips-current-period" disabled={atCurrentPeriod} onClick={() => update(tripPreset(navigable))}>This {navigable}</button>
+        </div>}
         {custom && <div className="trips-custom-dates" id="trip-custom-dates">
           <DatePicker compact showDayDetails={false} id="trip-start" label="From" value={filters.start} max={validDay(filters.end) ? filters.end : undefined} onChange={start => update({ start, preset: 'custom' })} />
           <DatePicker compact showDayDetails={false} id="trip-end" label="To" value={filters.end} min={validDay(filters.start) ? filters.start : undefined} onChange={end => update({ end, preset: 'custom' })} className="trips-end-date" />
