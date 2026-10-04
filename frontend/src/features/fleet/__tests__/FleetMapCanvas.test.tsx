@@ -3,9 +3,9 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import FleetMapCanvas from '../FleetMapCanvas'
 import type { BoardTruck } from '../types'
 
-const mock = vi.hoisted(() => ({ pins: [] as { element: HTMLElement; point?: number[]; popup?: HTMLElement }[], fit: vi.fn(), lines: vi.fn(), remove: vi.fn(), markerRemove: vi.fn(), sources: new Set<string>(), handlers: {} as Record<string, () => void> }))
+const mock = vi.hoisted(() => ({ pins: [] as { element: HTMLElement; point?: number[]; popup?: HTMLElement }[], scale: 200, fit: vi.fn(), lines: vi.fn(), remove: vi.fn(), markerRemove: vi.fn(), sources: new Set<string>(), handlers: {} as Record<string, () => void> }))
 vi.mock('mapbox-gl', () => ({ default: {
-  Map: class { on(event: string, cb: () => void) { mock.handlers[event] = cb; if (event === 'load') queueMicrotask(cb) } addControl() {} resize() {} fitBounds(...args: unknown[]) { mock.fit(...args) } getSource(id: string) { return mock.sources.has(id) ? { setData: mock.lines } : undefined } addSource(id: string, source: { data: unknown }) { mock.sources.add(id); mock.lines(source.data) } addLayer() {} remove() { mock.remove() } },
+  Map: class { project(point: number[]) { return { x: point[0] * mock.scale, y: point[1] * mock.scale } } on(event: string, cb: () => void) { mock.handlers[event] = cb; if (event === 'load') queueMicrotask(cb) } addControl() {} resize() {} fitBounds(...args: unknown[]) { mock.fit(...args) } getSource(id: string) { return mock.sources.has(id) ? { setData: mock.lines } : undefined } addSource(id: string, source: { data: unknown }) { mock.sources.add(id); mock.lines(source.data) } addLayer() {} remove() { mock.remove() } },
   Marker: class {
     pin: { element: HTMLElement; point?: number[]; popup?: HTMLElement }
     constructor({ element }: { element: HTMLElement }) { element.classList.add('mapboxgl-marker'); this.pin = { element }; mock.pins.push(this.pin) }
@@ -21,7 +21,7 @@ const now = Date.now()
 function truck(id: string, lng: number, old = false) {
   return { id, unit_number: id, status: 'out_of_service', telemetry: { location: { lat: 0, lng, observed_at: new Date(now - (old ? 3600000 : 0)).toISOString(), captured_at: new Date(now).toISOString() } } } as BoardTruck
 }
-beforeEach(() => { mock.pins.length = 0; mock.sources.clear(); vi.clearAllMocks(); vi.stubEnv('VITE_MAPBOX_TOKEN', 'synthetic') })
+beforeEach(() => { mock.scale = 200; mock.pins.length = 0; mock.sources.clear(); vi.clearAllMocks(); vi.stubEnv('VITE_MAPBOX_TOKEN', 'synthetic') })
 afterEach(() => vi.unstubAllEnvs())
 it('selects pins in place and draws supplied road geometry with status and stale styling', async () => {
   const select = vi.fn()
@@ -112,4 +112,23 @@ it('moves existing markers, removes only missing groups and reconciles coinciden
   expect(mock.fit).toHaveBeenCalledTimes(1)
   result.unmount()
   expect(mock.markerRemove).toHaveBeenCalledTimes(4)
+})
+
+it('clusters overlapping nearby positions and separates them when zoom provides room', async () => {
+  const select = vi.fn()
+  render(<FleetMapCanvas trucks={[truck('A', 0), truck('B', .1)]} nearbyIds={[]} now={now} recenter={0} onFocus={select} />)
+  await waitFor(() => expect(mock.pins).toHaveLength(1))
+  expect(mock.pins[0].element).toHaveClass('is-cluster', 'mapboxgl-marker')
+  expect(mock.pins[0].element).toHaveAccessibleName('2 trucks nearby')
+  expect(mock.pins[0].element.querySelector('.proximity-cluster-leader')).not.toBeNull()
+  expect(mock.pins[0].point).toEqual([0, 0])
+  fireEvent.click(mock.pins[0].popup!.querySelectorAll('button')[1])
+  expect(select).toHaveBeenCalledWith('B')
+  mock.scale = 2000
+  act(() => mock.handlers.moveend())
+  expect(mock.pins).toHaveLength(3)
+  expect(mock.markerRemove).toHaveBeenCalledTimes(1)
+  expect(mock.pins[1].point).toEqual([0, 0])
+  expect(mock.pins[2].point).toEqual([.1, 0])
+  expect(mock.fit).toHaveBeenCalledTimes(1)
 })

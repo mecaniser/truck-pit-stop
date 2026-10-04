@@ -16,6 +16,7 @@ export default function FleetMapCanvas({ trucks, focusId, nearbyIds, route, now,
   const markers = useRef(new Map<string, { marker: MapboxMarker; button: HTMLButtonElement; contentKey: string; popupKey: string; pointKey: string }>())
   const [ready, setReady] = useState(false)
   const [error, setError] = useState(false)
+  const [viewportRevision, setViewportRevision] = useState(0)
   const framing = useRef('')
   const selectRef = useRef(onFocus)
   selectRef.current = onFocus
@@ -38,6 +39,8 @@ export default function FleetMapCanvas({ trucks, focusId, nearbyIds, route, now,
       if (cancelled || !container.current) return
       map = new mb.Map({ container: container.current, accessToken: token, style: 'mapbox://styles/mapbox/streets-v12', center: [-98, 39], zoom: 3, attributionControl: true })
       map.on('error', () => { if (!cancelled) setError(true) })
+      map.on('moveend', () => { if (!cancelled) setViewportRevision(value => value + 1) })
+      map.on('resize', () => { if (!cancelled) setViewportRevision(value => value + 1) })
       map.on('load', () => { if (!cancelled) setReady(true) })
       map.addControl(new mb.NavigationControl(), 'top-right')
       mapRef.current = map; moduleRef.current = mb
@@ -53,8 +56,23 @@ export default function FleetMapCanvas({ trucks, focusId, nearbyIds, route, now,
     const nearby = JSON.parse(comparisonData) as string[]
     const focus = pins.find(pin => pin.id === focusId)
     const neighbors = pins.filter(pin => nearby.includes(pin.id))
-    const groups = new Map<string, Pin[]>()
-    pins.forEach(pin => { const key = pin.point.join(','); groups.set(key, [...(groups.get(key) || []), pin]) })
+    // Cluster by visible overlap, not exact GPS equality. Re-evaluate after zoom/pan.
+    const projected = [...pins].sort((a, b) => a.id.localeCompare(b.id)).map(pin => ({ pin, pixel: map.project(pin.point) }))
+    const remaining = new Set(projected)
+    const groups: Pin[][] = []
+    for (const seed of projected) {
+      if (!remaining.delete(seed)) continue
+      const connected = [seed]
+      for (let index = 0; index < connected.length; index++) {
+        const current = connected[index]
+        for (const candidate of remaining) {
+          if (Math.abs(current.pixel.x - candidate.pixel.x) < 96 && Math.abs(current.pixel.y - candidate.pixel.y) < 56) {
+            connected.push(candidate); remaining.delete(candidate)
+          }
+        }
+      }
+      groups.push(connected.map(item => item.pin))
+    }
     const liveKeys = new Set<string>()
     groups.forEach(group => {
       const members = [...group].sort((a, b) => a.id.localeCompare(b.id))
@@ -62,20 +80,23 @@ export default function FleetMapCanvas({ trucks, focusId, nearbyIds, route, now,
       const key = JSON.stringify(members.map(pin => pin.id))
       liveKeys.add(key)
       const selected = members.find(pin => pin.id === focusId)
+      const anchor = members[0].point
+      const coincident = members.every(pin => pin.point.join(',') === anchor.join(','))
       const representative = selected || members.find(pin => pin.status === 'out_of_service') || members[0]
       let entry = markers.current.get(key)
       if (!entry) {
         const button = document.createElement('button'); button.type = 'button'
-        const marker = new mb.Marker({ element: button }).setLngLat(representative.point).addTo(map)
+        const marker = new mb.Marker({ element: button }).setLngLat(anchor).addTo(map)
         if (members.length === 1) button.addEventListener('click', () => selectRef.current(members[0].id))
-        entry = { marker, button, contentKey: '', popupKey: '', pointKey: representative.point.join(',') }
+        entry = { marker, button, contentKey: '', popupKey: '', pointKey: anchor.join(',') }
         markers.current.set(key, entry)
       }
       const { button, marker } = entry
-      const pointKey = representative.point.join(',')
-      if (entry.pointKey !== pointKey) { marker.setLngLat(representative.point); entry.pointKey = pointKey }
+      const pointKey = anchor.join(',')
+      if (entry.pointKey !== pointKey) { marker.setLngLat(anchor); entry.pointKey = pointKey }
       // Mapbox owns positioning classes on this element; never replace className.
       button.classList.add('proximity-pin')
+      button.classList.toggle('is-cluster', members.length > 1)
       button.classList.toggle('is-selected', !!selected)
       button.classList.toggle('is-last-known', members.every(pin => !pin.recent))
       button.classList.toggle('is-dimmed', !!focus && !selected && !members.some(pin => nearby.includes(pin.id)))
@@ -92,10 +113,18 @@ export default function FleetMapCanvas({ trucks, focusId, nearbyIds, route, now,
         label.textContent = members.length > 1 ? `${members.length} trucks` : representative.label
         const status = document.createElement('i'); status.className = 'proximity-pin-status'; status.setAttribute('aria-hidden', 'true')
         badge.append(label, status); button.replaceChildren(badge)
+        if (members.length > 1) {
+          const leader = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
+          leader.classList.add('proximity-cluster-leader'); leader.setAttribute('aria-hidden', 'true')
+          const line = document.createElementNS('http://www.w3.org/2000/svg', 'path')
+          line.setAttribute('d', 'M0 0 L24 -28 L40 -28'); leader.append(line)
+          const dot = document.createElement('span'); dot.className = 'proximity-cluster-anchor'; dot.setAttribute('aria-hidden', 'true')
+          button.prepend(leader, dot)
+        }
         button.title = `${representative.company ? `${representative.company} · ` : ''}${label.textContent}`
         entry.contentKey = contentKey
       }
-      button.setAttribute('aria-label', members.length > 1 ? `${members.length} trucks at this position` : `${representative.label}, ${STATUS_META[representative.status].label}${representative.recent ? '' : ', last-known position'}`)
+      button.setAttribute('aria-label', members.length > 1 ? `${members.length} trucks ${coincident ? 'at this position' : 'nearby'}` : `${representative.label}, ${STATUS_META[representative.status].label}${representative.recent ? '' : ', last-known position'}`)
       button.setAttribute('aria-pressed', String(!!selected))
       const popupKey = JSON.stringify(members.map(pin => [pin.id, pin.label, pin.status, pin.recent]))
       if (members.length > 1 && entry.popupKey !== popupKey) {
@@ -135,7 +164,7 @@ export default function FleetMapCanvas({ trucks, focusId, nearbyIds, route, now,
       map.fitBounds(bounds, { padding: 65, maxZoom: focus ? 12 : 10, duration: 0 })
       framing.current = frameKey
     }
-  }, [pinData, comparisonData, routeData, focusId, recenter, ready])
+  }, [pinData, comparisonData, routeData, focusId, recenter, ready, viewportRevision])
 
   return <>
     {(!token || error) && <div className="proximity-map-unavailable" role="status"><strong>Map unavailable</strong><span>{!token ? 'Mapbox access is not configured.' : 'Map could not load.'} Truck selection remains available.</span></div>}
