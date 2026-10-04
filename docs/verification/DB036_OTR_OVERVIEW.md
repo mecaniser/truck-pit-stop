@@ -94,3 +94,46 @@ Inline endpoint correction: removed separate journey strip/navigation. Pass sele
 
 ## Release gate — 2026-10-04
 User approved release. Production build passed; focused FleetTrips (22), aggregation (11), and return-context (4) tests passed: 37 total. Private preview entrypoints and output data excluded from commit. Production www.dieselbridge.com is served by Railway diesel-bridge-network with frontend bundled through backend/Dockerfile.
+
+## Production acceptance — 2026-10-04
+PR #463 merged f570963f26d9d52ba5774a20e826202929cbef55; all six CI checks passed (run37224821946). Railway9d41ee5b-d2b0-4989-bf6b-e0829f0970ec SUCCESS; public build-version matches. Authenticated production smoke verified weekly13trucks/368segments/26963.4mi/486h15m,609median/fuel popover,531Sep28 inline travel routes,4-to-7 movement toggle, preserved daily chart and Back focus restoration. Screenshot output/otr-production-inline-routes.png. Private preview/data excluded from release.
+Post-release receipt recorded locally after the released commit.
+
+## Activity chart periods — 2026-10-04 (local only)
+Owner Frontend & UX. Branch codex/fleet-activity-charts, base f570963f. Runtime frontend5173 PID62713 worktree/frontend verified; served ActivityChart source and CUA confirm current uncommitted code. Preview remains intentionally isolated with imported snapshot mock API; local backend8000/config unavailable, no production requests.
+Day/week/month/year grouping and columns/line modes beside heading. Month preset defaults weekly; Year preset monthly. Year-to-date and custom up to366days use sequential disjoint31day API windows with existing page reconciliation and global unique IDs; original tenant/auth/truck/timezone contracts preserved. Partial selected weeks/months clipped; no-record buckets rendered as missing and line paths break over them. Compact labels retain exact values in accessible names/tooltips.
+Production build, changed-source lint and41focused tests passed. CUA September totals117974.8mi with5weekly columns, first Sep1–6 drilldown270trips18582.8mi, Back, Year monthly line and missingJan–Jul confirmed.1024px chart width=scrollWidth887px, all controls44px, styled menu visible; viewport reset. Private screenshots output/activity-month-columns.png and output/activity-year-line.png. Mechanical design audit found only pre-existing totals border at trips.css:9; no new chart findings. Not committed or deployed.
+
+## Fleet period contributions — 2026-10-04 (local only)
+Fleet activity selections now render ranked truck contribution bars, amounts and share of selected bucket total. No raw route articles or addresses until a specific truck is chosen. Truck routes retain the bucket dates and return to its fleet graph; heatmap truck/day and selected-truck behavior preserved. Chart action labels distinguish Compare trucks from View routes.
+27focused component tests passed, including no-address fleet state, exact truck scope, back navigation, percentage and metric switching. TypeScript and changed-source lint passed. CUA August:9reporting trucks,645segments47093.1mi840.5h; truck530 drilldown111trips7123.7mi130.9h; Back returns to August graph and0route articles. Chart remains visible. Screenshot output/fleet-period-contributions.png. Same aligned frontend62713 and private mock snapshot; no backend requests or deployment.
+
+## Flat controls — 2026-10-04
+CSS-only: View/Measure/chart style selection now uses color and bottom underline with transparent background; grouping trigger/input flat while portaled menu retains its surface. Browser verified44px selection target,0px top border,2px underline; keyboard Tab focuses Line with2px outline, clicking switches pressed state. Screenshot output/flat-chart-controls.png. Existing preview runtime/source unchanged. No logic tests added for this reversible visual change. Local only.
+
+## Control hierarchy — 2026-10-04 (local only)
+View and Measure now sit above their option groups as muted 10px uppercase captions. Selected options use 650 weight with the existing colored underline. Browser measurements confirm caption above option and 44px control height; full preview visually verified. Screenshot output/chart-control-hierarchy.png. CSS-only; no logic changes or additional tests. Not committed or deployed.
+
+## Activity history start — 2026-10-04 (local only)
+Leading empty chart buckets removed using imported record count; recorded zero miles and interior gaps retained. No-data selections show one empty state. Calendar boundaries and totals unchanged. Six focused ActivityChart tests passed, including weekly/monthly trimming, zero-mile preservation, missing line segments and empty state. CUA Year selection verified only Aug47.1K, Sep118K, Oct10.1K; screenshot output/activity-history-start.png. Existing isolated preview runtime; not deployed.
+
+## Comparison bar tracks — 2026-10-04 (local only)
+Replaced barely visible empty bar background with neutral dotted track. Filled bar proportions and accessible labels unchanged. CUA confirmed 6px track and rendered dotted remainder at Year scope; full screenshot output/comparison-dotted-tracks.png. CSS-only, diff check passed; no additional logic tests. Not deployed.
+
+## Shared graph tracks — 2026-10-04 (local only)
+Shared dotted remainder across comparison, period contribution and compact rank bars for both metrics. CSS-only; diff check passed. CUA confirmed all12 contribution tracks on Oct1–4 driving-hours view and screenshot output/shared-graph-tracks.png. No value or interaction changes. Not deployed.
+
+## Cascading graph entry — 2026-10-04 (local only)
+Whole comparison, contribution and compact ranking tracks settle top-to-bottom with translate/tilt/opacity; 280ms each,35ms stagger capped at15rows. Dotted background and fill travel together; initial version kept text fixed; final version animates each complete row. Row keys replay on metric/period changes; metric controls stay mounted. Existing keyboard motion gate preserved.23FleetTrips tests passed; TypeScript rerun passed after removing unused index. Browser computed track timings confirmed sequential0/35/70ms onward; emulated reduced motion returned animation:none, then override cleared. Screenshot output/cascading-graph-tracks.png. Not deployed.
+
+User clarified entry applies to each entire truck row. Moved animation from track to comparison/heatmap rows and contribution buttons so identity, values and dotted track enter together.
+Browser verified complete contribution row animation delays0/35/70ms. Screenshot output/cascading-truck-rows.png; diff check passed.
+
+## Consistent bar finish — 2026-10-04 (local only)
+All three horizontal ranking tracks now use6px height and3px rounded fill ends.6px antialiased dots originate at the fill endpoint in a flex remainder instead of being arbitrarily clipped beneath the fill. Comparison/compact values use proportional width to preserve round caps; whole-row animation remains.23FleetTrips tests passed, diff check clean. Browser verified contribution and comparison heights/caps, screenshots output/unified-bar-contributions.png and output/unified-bar-comparison.png. Not deployed.
+
+## Continuous graph tracks — 2026-10-04 (local only)
+User approved replacing dots with continuous muted tracks. Shared comparison/contribution/compact selector uses6px rounded track in #52616d with yellow fill; removed radial-dot rules and remainder pseudo-element. Row cascade unchanged. Browser confirmed6px height, solid background and no pattern; screenshot output/continuous-graph-tracks.png. CSS-only; diff check passed. Not deployed.
+
+## Chart release gate — 2026-10-04
+User approved release of calendar grouping, column/line modes, fleet contribution drilldowns, leading empty-period trimming and final continuous-track/cascade styling.44focused tests and changed-source ESLint passed.1024px overview width=scrollWidth895px, screenshot output/chart-release-compact.png; viewport restored. Frontend PID62713 source still this worktree. Private preview/data excluded.
