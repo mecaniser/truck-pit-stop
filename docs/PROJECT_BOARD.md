@@ -1,3 +1,39 @@
+> **DB-036 OTR overview release / REVIEW (2026-10-04), Frontend & UX accountable, Fast UI:** User approved commit/push/deploy. Production build and 37 focused tests pass; prior desktop/tablet preview and changed-source lint verified. Eight scoped source/test/evidence files only; private snapshots and preview entrypoints excluded. Existing API/auth/data contracts unchanged. PR CI, merge, Railway deployment and authenticated production smoke pending.
+
+> **DB-036 inline journey emphasis / LOCAL VERIFIED (2026-10-04), Frontend & UX:** Supersedes separate journey strip: larger bold amber first-period departure and violet latest-period arrival in existing route rows. Strip removed.22component tests, TypeScript, lint and browser verification pass; local only.
+
+> **DB-036 journey bookends / LOCAL VERIFIED (2026-10-04), Frontend & UX, Fast UI:** Show first/latest recorded period endpoints with date, distinguish selected-day position, jump to endpoint day without losing scope. Preserve overnight timestamps and partial-history meaning.
+
+> **DB-036 route footer / LOCAL VERIFIED (2026-10-04), Frontend & UX, Fast UI:** Routes first; concise numerical footer beneath list; grouping/date explanations behind accessible info popover. Preserve full-record toggle and totals.
+
+> **DB-036 route meaning / LOCAL VERIFIED (2026-10-04), Frontend & UX, Fast UI:** Route view prioritizes travel with an explicit short-movement rule (at most1mi and15min), reconciled counts/distance, full chronology toggle, no inferred fuel/yard/load purposes. Each overview subtitle explains its reading.
+
+> **DB-036 compact route ledger / LOCAL VERIFIED (2026-10-04), Frontend & UX, Fast UI:** Reduce route height with paired endpoints and horizontal distance/time/fuel, preserve complete addresses, all trips and compact responsive fallback. CSS only.
+
+> **DB-036 in-panel routes / LOCAL VERIFIED (2026-10-04), Frontend & UX, Fast UI:** Selected truck/day replaces only comparison panel; retain chart/totals/filters, preserve matrix scroll and restore triggering-cell focus on Back. No contract changes.
+
+> **DB-036 comparison clarity / LOCAL VERIFIED (2026-10-04), Frontend & UX, Fast UI:** Actual truck and median values side by side; explicit above/below/at-median interpretation; distinguish 30-day fuel model from measured weekly outcomes. Preserve aggregates.
+
+> **DB-036 diesel comparison / LOCAL VERIFIED (2026-10-04), Frontend & UX:** Gallons and gal/100mi versus same-source reporting fleet median; match fuel to covered miles, never mix measured/estimated or extrapolate missing fuel. Focused math and preview verification.
+
+> **DB-036 popover distillation / LOCAL VERIFIED (2026-10-04), Frontend & UX, Fast UI:** Higher contrast surface; replace prose/repeated ranks with median deltas, miles per imported day and fuel coverage. No inferred fuel savings; missing/zero comparator states supported.
+
+> **DB-036 activity explanations / LOCAL VERIFIED (2026-10-04), Frontend & UX, Fast UI:** Clickable leader/activity indicators explain selected-period ranking, peer comparison, coverage and actionable review prompts. Acceptance: keyboard/touch popover, Escape/outside dismissal, no nested controls, no unsupported driver-performance attribution; unchanged aggregation.
+
+> **DB-036 scan hierarchy / LOCAL VERIFIED (2026-10-04), Frontend & UX, Fast UI:** Larger unit number and distinct driver color; replace median-band labels with proportional activity bars and highest-selected-measure leader indicator, tie-aware and no leader for absent/zero activity. Preserve measure/period scope.
+
+> **DB-036 current driver labels / LOCAL VERIFIED (2026-10-04), Frontend & UX, Fast UI:** Reuse existing BoardTruck.driver_name beside truck identity in comparison and daily pattern. Explicit current-assignment label; missing values Unassigned. No attribution of historical trips to current drivers. Private preview uses names verified on Fleet Board.
+
+> **DB-036 heatmap layout / LOCAL VERIFIED (2026-10-04), Frontend & UX, Fast UI:** Keep daily-pattern matrix beside daily chart on wide screens; constrain grid children and scrolling so table cannot paint over controls/totals. Preserve touch targets and narrower-screen stacking.
+
+> **DB-036 independent overview controls / LOCAL VERIFIED (2026-10-04), Frontend & UX, Fast UI:** Separate View (Comparison/Daily pattern) from Measure (Miles/Driving hours). One pressed choice per group; changing either preserves the other;44px touch targets and wrapping. Existing aggregation unchanged.
+
+> **DB-036 color clarification / LOCAL VERIFIED (2026-10-04):** User wants color to distinguish panels. Comparison now stays amber; daily activity stays blue across both metrics. Browser verified on the existing monthly selection. Not deployed.
+
+> **DB-036 OTR visual refinement / LOCAL PREVIEW VERIFIED (2026-10-04), Frontend & UX, Fast UI:** Align comparison/chart heading and divider baselines; amber distance and sage driving palette; explicit selected control states and reduced-motion/keyboard-safe feedback. Preserve aggregation and route drilldown. Same preview branch. Desktop header coordinates align; tablet and keyboard state feedback checked;27 focused tests pass. No deploy.
+
+> **DB-036 OTR owner overview / LOCAL PREVIEW VERIFIED (2026-10-04), Frontend & UX accountable, Fast UI:** Replace the raw column wall with fleet distance/driving comparisons, daily activity and selected-truck/day drilldown. All trucks OTR; no local comparison or invented load count. Acceptance: reconcile every paginated row before aggregate display; day/week/month/custom and vehicle changes reset detail; missing imports distinct from zero work; estimated fuel excluded from efficiency rankings; touch/keyboard drilldown, compact responsive layout. 27 focused aggregation, date-filter, metrics and navigation tests pass; TypeScript/build and focused ESLint pass. Desktop and tablet-size CUA checks show comparison, daily pattern, truck/day drilldown and return. Evidence: `docs/verification/DB036_OTR_OVERVIEW.md`. Not deployed. Existing API/auth/data contracts unchanged. Branch `codex/otr-fleet-overview`; local fixture preview intentionally uses no backend (approved backend config absent).
+
 > **DB-036 Empty trip columns / COMPONENT VERIFIED (2026-10-04), Frontend & UX, Fast UI:** Hide successfully loaded zero-trip columns. Keep pending/error columns and full-range empty state; preserve totals and date selection. Existing API and tenant contracts unchanged. 28 focused tests pass, including retained loading/error states and retry-to-empty. Not deployed. Three separate local design alternatives use the same33 imported truck609 trips (2486.61mi); selection pending.
 
 > **DB-036 Trip columns / LOCAL PREVIEW VERIFIED (2026-10-03), Frontend & UX accountable, Fast UI:** Single-week selections now use day columns; multi-week selections retain week columns with one expanded day per column. Equal viewport-contained height, per-column pagination and totals, readable narrow-column routes. Acceptance: chronological columns, independent day queries, unchanged overall totals, no outer vertical scroll, keyboard/touch controls. 31 focused tests, TypeScript and FleetTrips ESLint pass. PR #461 updated; not merged/deployed. Impeccable/Emil audit recorded in `docs/verification/DB036_WEEK_COLUMNS.md`; remaining polish explicitly listed.
