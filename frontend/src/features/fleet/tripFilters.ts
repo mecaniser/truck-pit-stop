@@ -1,6 +1,6 @@
 import type { TripFilters } from './FleetTrips'
 
-export type TripPreset = 'day' | 'week' | 'month'
+export type TripPreset = 'day' | 'week' | 'month' | 'year'
 const localDate = (date: Date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
 
 /** Calendar periods through today, in the same local timezone used by Trips. */
@@ -8,6 +8,7 @@ export function tripPreset(preset: TripPreset, today = new Date()): Pick<TripFil
   const start = new Date(today.getFullYear(), today.getMonth(), today.getDate())
   if (preset === 'week') start.setDate(start.getDate() - (start.getDay() + 6) % 7)
   if (preset === 'month') start.setDate(1)
+  if (preset === 'year') start.setMonth(0, 1)
   return { start: localDate(start), end: localDate(today) }
 }
 

@@ -307,10 +307,10 @@
 .fleet-root .otr-panel-heading p{margin:4px 0 0;font-size:11px;line-height:16px;color:var(--muted-2)}
 .fleet-root .otr-daily{border:0;padding-top:0}
 .fleet-root .otr-metric{gap:4px}
-.fleet-root .otr-metric button{border:1px solid transparent;border-radius:6px;font-size:12px;min-height:44px}
-.fleet-root .otr-metric button[aria-pressed=true]{background:var(--otr-tint);border-color:var(--otr-accent);color:var(--otr-accent)}
+.fleet-root .otr-metric button{border:0;border-bottom:2px solid transparent;border-radius:0;background:transparent;font-size:12px;min-height:44px}
+.fleet-root .otr-metric button[aria-pressed=true]{background:transparent;border-bottom-color:var(--otr-accent);color:var(--otr-accent)}
 .fleet-root .otr-metric button:first-child:not(:last-child){margin-right:8px}
-.fleet-root .otr-bar-track{height:6px;background:rgba(255,255,255,.06)}
+.fleet-root .otr-bar-track{height:6px}
 .fleet-root .otr-bar-track i,.fleet-root .otr-chart-track i{background:var(--otr-accent)}
 .fleet-root .otr-chart{padding-top:8px}
 .fleet-root .otr-chart-track{height:128px}
@@ -346,12 +346,13 @@
 
 /* View and measure are independent choices, each with one selected option. */
 .fleet-root .otr-control-groups{display:flex;align-items:center;gap:24px;flex-wrap:wrap}
-.fleet-root .otr-control-set{display:flex;align-items:center;gap:10px}
-.fleet-root .otr-control-set>span{font-size:11px;color:var(--muted-2)}
+.fleet-root .otr-control-set{display:flex;flex-direction:column;align-items:flex-start;gap:0}
+.fleet-root .otr-control-set>span{padding-left:12px;font-size:10px;line-height:14px;font-weight:500;letter-spacing:.06em;text-transform:uppercase;color:var(--muted-2)}
+.fleet-root .otr-control-set .otr-metric button[aria-pressed=true]{font-weight:650}
 .fleet-root .otr-control-set .otr-metric{gap:2px}
 .fleet-root .otr-control-set .otr-metric button:first-child:not(:last-child){margin-right:0}
 @media(max-width:1100px){.fleet-root .otr-overview>.otr-section-heading{flex-wrap:wrap;gap:8px}.fleet-root .otr-control-groups{gap:8px 20px}}
-@media(max-width:560px){.fleet-root .otr-control-set>span{width:48px}.fleet-root .otr-control-groups{width:100%;gap:4px}.fleet-root .otr-control-set{width:100%}}
+@media(max-width:560px){.fleet-root .otr-control-set>span{width:auto;padding-left:10px}.fleet-root .otr-control-groups{width:100%;gap:4px}.fleet-root .otr-control-set{width:100%}}
 
 /* Both fleet views share the same bounded two-panel workspace. */
 .fleet-root .otr-overview>.otr-section-heading{flex-shrink:0}
@@ -488,3 +489,67 @@
 .fleet-root .otr-panel-detail .trip-point.is-period-first strong,.fleet-root .otr-panel-detail .trip-point.is-period-last strong{font-size:16px;font-weight:700}
 .fleet-root .otr-panel-detail .trip-point.is-period-first time,.fleet-root .otr-panel-detail .trip-point.is-period-last time{color:inherit;font-weight:650}
 .fleet-root .otr-panel-detail .trip-point.is-period-first i,.fleet-root .otr-panel-detail .trip-point.is-period-last i{width:11px;height:11px}
+
+/* Calendar aggregation and chart mode belong beside the activity heading. */
+.fleet-root .otr-chart-title{display:flex;align-items:center;gap:10px;width:100%;flex-wrap:wrap}
+.fleet-root .otr-chart-title h3{white-space:nowrap}
+.fleet-root .otr-interval{width:118px;font-size:12px;font-weight:500}
+.fleet-root .otr-chart-heading{height:auto;min-height:72px;padding-block:4px}
+.fleet-root .otr-chart-style{display:flex;margin-left:auto;gap:2px}
+.fleet-root .otr-chart-style button{width:44px;height:44px;display:grid;place-items:center;border:0;border-bottom:2px solid transparent;border-radius:0;background:transparent;color:var(--muted);cursor:pointer}
+.fleet-root .otr-chart-style button[aria-pressed=true]{color:var(--otr-accent);border-bottom-color:var(--otr-accent);background:transparent}
+.fleet-root .otr-chart-style button:focus-visible,.fleet-root .otr-period-chart button:focus-visible{outline:2px solid var(--otr-accent);outline-offset:-3px}
+.fleet-root .otr-period-scroll{overflow-x:auto;padding-bottom:8px}
+.fleet-root .otr-period-chart{position:relative;display:flex;width:100%;padding-top:8px}
+.fleet-root .otr-period-chart button{position:relative;flex:1;min-width:0;display:flex;flex-direction:column;gap:0;align-items:center;padding:0 4px 8px;border:0;border-radius:4px;background:transparent;color:var(--text);cursor:pointer;font-size:11px;font-variant-numeric:tabular-nums}
+.fleet-root .otr-period-chart button:disabled{cursor:default;color:var(--muted)}
+.fleet-root .otr-period-chart button strong{font-size:11px;line-height:24px;white-space:nowrap;font-weight:600}
+.fleet-root .otr-period-track{position:relative;height:170px;width:100%;display:flex;align-items:flex-end;padding-bottom:10px;justify-content:center}
+.fleet-root .otr-period-track>i{display:block;background:var(--otr-accent);border-radius:3px 3px 0 0;width:65%;max-width:64px}
+.fleet-root .otr-period-label{line-height:22px;white-space:nowrap;color:var(--muted)}
+.fleet-root .otr-trend{position:absolute;top:32px;left:0;width:100%;height:170px;color:var(--otr-accent);pointer-events:none}
+.fleet-root .otr-period-track>i.otr-trend-dot{position:absolute;width:8px;height:8px;border-radius:50%;transform:translateY(-50%)}
+.fleet-root .otr-chart-missing{font-size:11px;color:var(--muted);margin:4px 0}
+@media(hover:hover){.fleet-root .otr-period-chart button:not(:disabled):hover{background:var(--otr-tint)}.fleet-root .otr-chart-style button:hover{color:var(--otr-accent)}}
+@media(max-width:700px){.fleet-root .otr-chart-title{gap:6px}.fleet-root .otr-chart-title h3{font-size:14px}.fleet-root .otr-interval{width:110px}}
+
+/* Fleet periods summarize contributions; route detail requires a truck. */
+.fleet-root .otr-fleet-period{overflow:auto;min-height:0;padding-top:16px}
+.fleet-root .otr-period-intro{display:flex;align-items:baseline;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-bottom:12px}
+.fleet-root .otr-period-intro h4{margin:0;color:var(--otr-accent);font-size:15px}
+.fleet-root .otr-period-intro>span{color:var(--muted);font-size:11px}
+.fleet-root .otr-contributions button{display:grid;grid-template-columns:minmax(110px,1fr) minmax(80px,2fr) 100px 48px 16px;align-items:center;gap:12px;width:100%;min-height:56px;padding:8px 10px;border:0;border-bottom:1px solid var(--line);background:transparent;color:var(--text);text-align:right;cursor:pointer;font-size:13px;font-variant-numeric:tabular-nums}
+.fleet-root .otr-contribution-truck{display:flex;align-items:baseline;gap:12px;text-align:left;min-width:0}
+.fleet-root .otr-contribution-truck>strong{font-size:20px}
+.fleet-root .otr-contribution-truck>span{color:#bed2f7;font-size:12px;overflow-wrap:anywhere}
+.fleet-root .otr-contribution-track{height:12px;display:block;background:var(--otr-tint);border-radius:2px;overflow:hidden}
+.fleet-root .otr-contribution-track i{display:block;height:100%;background:var(--otr-accent)}
+.fleet-root .otr-contribution-share{color:var(--muted);font-size:11px}
+.fleet-root .otr-contributions button:focus-visible{outline:2px solid var(--otr-accent);outline-offset:-3px}
+@media(hover:hover){.fleet-root .otr-contributions button:hover{background:var(--otr-tint)}}
+@media(max-width:700px){.fleet-root .otr-contributions button{grid-template-columns:minmax(80px,1fr) minmax(44px,1fr) 80px 36px;gap:8px;padding-inline:4px}.fleet-root .otr-contributions button>svg{display:none}.fleet-root .otr-contribution-truck{flex-direction:column;gap:0}}
+
+/* Flat chart controls; the menu keeps its floating surface. */
+.fleet-root .otr-interval button,.fleet-root .otr-interval input{border:0;border-radius:0;background:transparent;padding-inline:8px;box-shadow:none;color:var(--muted);font-size:12px}
+.fleet-root .otr-interval button:focus-visible,.fleet-root .otr-interval input:focus-visible,.fleet-root .otr-metric button:focus-visible{outline:2px solid var(--otr-accent);outline-offset:-3px}
+@media(hover:hover){.fleet-root .otr-interval button:hover,.fleet-root .otr-metric button:hover{color:var(--otr-accent)}}
+
+/* Each complete truck row settles in rank order, including its continuous track. */
+@media(prefers-reduced-motion:no-preference){
+ .fleet-root .trips-owner-layout[data-motion=on] :is(.otr-comparison tbody tr,.otr-contributions>button){
+  transform-origin:left center;
+  animation:otr-track-settle 280ms cubic-bezier(.23,1,.32,1) both;
+ }
+}
+@keyframes otr-track-settle{
+ from{opacity:0;transform:perspective(600px) translateY(-12px) rotateX(35deg) rotateZ(-.7deg)}
+ to{opacity:1;transform:perspective(600px) translateY(0) rotateX(0) rotateZ(0)}
+}
+
+/* Consistent, continuous tracks across all horizontal ranking views. */
+.fleet-root :is(.otr-bar-track,.otr-contribution-track,.otr-relative>span){
+ display:block;height:6px;background:#52616d;border-radius:3px;overflow:hidden;
+}
+.fleet-root :is(.otr-bar-track,.otr-contribution-track,.otr-relative>span)>i{
+ height:100%;border-radius:3px;transform:none;
+}

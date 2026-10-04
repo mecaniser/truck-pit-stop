@@ -25,6 +25,28 @@ beforeEach(() => { api.get.mockReset(); api.get.mockResolvedValue({ data: respon
 const emptyMetrics = { fuel_used_gallons: null, trip_mpg: null, estimated_fuel_gallons: null, idle_seconds: null, fuel_start_percent: null, fuel_end_percent: null, estimate_baseline_mpg: null, estimate_baseline_captured_at: null, estimate_baseline_period: null }
 async function openDay() { await userEvent.click(await screen.findByRole('button', { name: /Oct 2: .*View routes/ })) }
 describe('OTR fleet overview', () => {
+  it('keeps fleet period drilldown aggregated until a truck is selected', async () => {
+    api.get.mockResolvedValue({ data: { ...response, total: 2,
+      items: [...response.items, { ...response.items[0], id: 'trip-2', vehicle_id: other.id, distance_miles: 20, driving_seconds: 1800 }],
+      summary: { ...response.summary, truck_count: 2, trip_count: 2, distance_miles: 60, driving_seconds: 5400 },
+    } })
+    setup({ vehicleId: '', start: '2026-10-02', end: '2026-10-02' })
+    await userEvent.click(await screen.findByRole('button', { name: /Oct 2: .*Compare trucks/ }))
+    const fleet = screen.getByRole('region', { name: 'Fleet period breakdown' })
+    expect(fleet).toHaveTextContent('60 mi')
+    expect(fleet).toHaveTextContent('66.7%')
+    expect(screen.queryByRole('article')).not.toBeInTheDocument()
+    expect(screen.queryByText('First City, NC')).not.toBeInTheDocument()
+    await userEvent.click(within(fleet).getByRole('button', { name: 'Example Fleet 101: 40 mi. View truck routes for this period' }))
+    expect(screen.getByRole('region', { name: 'Selected day routes' })).toHaveTextContent('First City, NC')
+    expect(screen.getAllByRole('article')).toHaveLength(1)
+    await userEvent.click(screen.getByRole('button', { name: 'Back to fleet period' }))
+    expect(screen.getByRole('region', { name: 'Fleet period breakdown' })).toHaveTextContent('60 mi')
+    expect(screen.queryByRole('article')).not.toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Driving hours', exact: true }))
+    expect(screen.getByRole('heading', { name: 'Driving hours by truck' })).toBeVisible()
+    expect(screen.getByRole('button', { name: 'Example Fleet 101: 1.0h. View truck routes for this period' })).toBeVisible()
+  })
   it('emphasizes first departure and latest arrival inside the route list', async () => {
     setup(); await openDay()
     expect(screen.getByLabelText('First recorded departure in selected period')).toHaveClass('is-period-first')
@@ -103,7 +125,7 @@ describe('OTR fleet overview', () => {
     expect(screen.queryByRole('article')).not.toBeInTheDocument()
     expect(screen.getByText('No imported trips')).toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: /Example Fleet 101 Current driver: Unassigned/ }))
-    expect(await screen.findByRole('heading', { name: 'Daily activity' })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'Truck activity' })).toBeInTheDocument()
   })
   it('opens a day and returns to overview without repeating the truck link', async () => {
     const open = setup(); await openDay()
@@ -158,7 +180,7 @@ describe('OTR fleet overview', () => {
   })
   it('labels fuel estimates and excludes them from overview efficiency rankings', async () => {
     api.get.mockResolvedValue({ data: { ...response, items: [{ ...response.items[0], metrics: { ...emptyMetrics, estimated_fuel_gallons: 6.2, estimate_baseline_mpg: 6.5, estimate_baseline_period: 'last_30_days' } }] } })
-    setup(); await screen.findByRole('heading', { name: 'Daily activity' })
+    setup(); await screen.findByRole('heading', { name: 'Truck activity' })
     expect(screen.queryByText('Est. fuel')).not.toBeInTheDocument(); await openDay()
     expect(screen.getByText('Est. fuel')).toBeInTheDocument()
     expect(screen.queryByText('Trip efficiency')).not.toBeInTheDocument()
@@ -181,8 +203,8 @@ describe('OTR fleet overview', () => {
     expect(await screen.findByRole('heading', { name: 'No imported trips' })).toBeInTheDocument()
   })
   it('rejects invalid dates and unknown trucks without API calls', () => {
-    setup({ vehicleId: 'unknown', start: '2026-09-01', end: '2026-10-04' })
-    expect(screen.getByRole('alert')).toHaveTextContent('up to 31 days'); expect(api.get).not.toHaveBeenCalled()
+    setup({ vehicleId: 'unknown', start: '2025-09-01', end: '2026-10-04' })
+    expect(screen.getByRole('alert')).toHaveTextContent('up to 366 days'); expect(api.get).not.toHaveBeenCalled()
   })
   it('fetches every page before showing comparisons', async () => {
     const rows = Array.from({ length: 101 }, (_, i) => ({ ...response.items[0], id: String(i) }))

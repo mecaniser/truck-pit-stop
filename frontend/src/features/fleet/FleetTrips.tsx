@@ -10,7 +10,7 @@ import type { BoardTruck } from './types'
 import { fleetUnitLabel } from './helpers'
 import './trips.css'
 import TripOverview from './TripOverview'
-import { loadTripOverview } from './tripAggregation'
+import { loadTripRange } from './tripAggregation'
 
 export interface TripMetrics {
   fuel_used_gallons: number | null; trip_mpg: number | null
@@ -48,14 +48,14 @@ export default function FleetTrips({ trucks, filters, onFilters, onOpenTruck }: 
   const [pointerMotion, setPointerMotion] = useState(false)
   const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
   const dateSpan = (Date.parse(filters.end) - Date.parse(filters.start)) / 86400000
-  const validDates = validDay(filters.start) && validDay(filters.end) && Number.isFinite(dateSpan) && dateSpan >= 0 && dateSpan < 31
+  const validDates = validDay(filters.start) && validDay(filters.end) && Number.isFinite(dateSpan) && dateSpan >= 0 && dateSpan < 366
   const custom = !filters.preset || filters.preset === 'custom'
   const selectedTruck = trucks.find(t => t.id === filters.vehicleId)
   const validVehicle = !filters.vehicleId || !!selectedTruck
   const query = useQuery<FleetTripsResponse>({
     queryKey: ['fleet-trip-overview', filters.vehicleId, filters.start, filters.end, timezone, 0],
-    queryFn: ({ signal }) => loadTripOverview(async offset => (await api.get('/fleet/trips', { signal, params: {
-      start_date: filters.start, end_date: filters.end, timezone,
+    queryFn: ({ signal }) => loadTripRange(filters.start, filters.end, async (start, end, offset) => (await api.get('/fleet/trips', { signal, params: {
+      start_date: start, end_date: end, timezone,
       vehicle_id: filters.vehicleId || undefined, limit: 100, offset,
     } })).data),
     enabled: validDates && validVehicle,
@@ -71,7 +71,7 @@ export default function FleetTrips({ trucks, filters, onFilters, onOpenTruck }: 
       <div className="trips-toolbar">
       <div className="trips-time-controls">
         <div className="trips-presets" role="group" aria-label="Trip time span">
-          {([['day', 'Day', 'Today'], ['week', 'Week', 'Monday through today'], ['month', 'Month', 'This month through today']] as const).map(([preset, label, title]) => <button key={preset} type="button" title={title} aria-pressed={filters.preset === preset} onClick={() => update({ ...tripPreset(preset), preset })}>{label}</button>)}
+          {([['day', 'Day', 'Today'], ['week', 'Week', 'Monday through today'], ['month', 'Month', 'This month through today'], ['year', 'Year', 'This year through today']] as const).map(([preset, label, title]) => <button key={preset} type="button" title={title} aria-pressed={filters.preset === preset} onClick={() => update({ ...tripPreset(preset), preset })}>{label}</button>)}
           <button type="button" aria-pressed={custom} aria-expanded={custom} aria-controls="trip-custom-dates" onClick={() => update({ preset: 'custom' })}>Custom</button>
         </div>
         {custom && <div className="trips-custom-dates" id="trip-custom-dates">
@@ -84,7 +84,7 @@ export default function FleetTrips({ trucks, filters, onFilters, onOpenTruck }: 
         <span className="trips-range-label">{day(`${filters.start}T12:00:00`)} – {day(`${filters.end}T12:00:00`)}</span>
       </div>
       </div>
-      {!validDates ? <p role="alert">Choose a date range of up to 31 days.</p> : !validVehicle ? <p role="alert">This truck is no longer available. Select another truck.</p> : query.isPending ? <p role="status" className="trips-message">Loading trips…</p> : query.isError ? <div role="alert" className="trips-message">Trips could not be loaded. <button type="button" className="dbtn" onClick={() => query.refetch()}>Retry</button></div> : query.data && <>
+      {!validDates ? <p role="alert">Choose a date range of up to 366 days.</p> : !validVehicle ? <p role="alert">This truck is no longer available. Select another truck.</p> : query.isPending ? <p role="status" className="trips-message">Loading trips…</p> : query.isError ? <div role="alert" className="trips-message">Trips could not be loaded. <button type="button" className="dbtn" onClick={() => query.refetch()}>Retry</button></div> : query.data && <>
         <p className="trips-coverage" title="Dates show the earliest and latest imported departures. Gaps may remain.">Imported {query.data.imported_start && query.data.imported_end ? `${importedDay(query.data.imported_start)}–${importedDay(query.data.imported_end)}` : 'trips'} <span>· Partial</span></p>
         <div className="trips-totals" aria-label="Imported trip totals">
           <div><Truck size={18} />{selectedTruck ? <button type="button" className="trip-truck-link" onClick={() => onOpenTruck(selectedTruck.id)}><strong>Truck {selectedTruck.unit_number}</strong><small>View truck <ArrowRight size={14} /></small></button> : <span><strong>{number(query.data.summary.truck_count)}</strong><small>Trucks with trips</small></span>}</div>
@@ -93,7 +93,7 @@ export default function FleetTrips({ trucks, filters, onFilters, onOpenTruck }: 
           <div><Clock3 size={18} /><span><strong>{duration(query.data.summary.driving_seconds)}</strong><small>Driving</small></span></div>
         </div>
         {query.data.total === 0 ? <div className="trips-empty"><Route size={28} /><h3>No imported trips</h3><p>No trip history has been imported for this selection.</p></div> : <>
-          <TripOverview key={`${filters.vehicleId}:${filters.start}:${filters.end}:${timezone}`} data={query.data} trucks={selectedTruck ? [selectedTruck] : trucks} timezone={timezone} selected={!!selectedTruck} onSelectTruck={vehicleId => update({ vehicleId })} renderDetails={(items, endpoints) => <TripDetails endpoints={endpoints} items={items} data={query.data!} trucks={trucks} selected={!!selectedTruck} timezone={timezone} />} />
+          <TripOverview key={`${filters.vehicleId}:${filters.start}:${filters.end}:${timezone}:${filters.preset}`} data={query.data} preset={filters.preset} trucks={selectedTruck ? [selectedTruck] : trucks} timezone={timezone} selected={!!selectedTruck} onSelectTruck={vehicleId => update({ vehicleId })} renderDetails={(items, endpoints) => <TripDetails endpoints={endpoints} items={items} data={query.data!} trucks={trucks} selected={!!selectedTruck} timezone={timezone} />} />
         </>}
       </>}
     </section>
