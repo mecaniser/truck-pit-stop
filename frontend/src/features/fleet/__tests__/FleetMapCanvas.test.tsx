@@ -66,3 +66,11 @@ it('clears the previous road geometry immediately while recalculating', async ()
   result.rerender(<FleetMapCanvas {...props} focusId="B" nearbyIds={[]} />)
   expect(mock.lines.mock.lastCall![0].features).toEqual([])
 })
+
+it('uses the supplied company mark only for matching trucks and keeps the unit label', async () => {
+  render(<FleetMapCanvas trucks={[{ ...truck('77-A', 0), fleet_company_name: '77 CARGO LLC' }, { ...truck('Other', 1), fleet_company_name: 'Another fleet' }]} nearbyIds={[]} now={now} recenter={0} onFocus={vi.fn()} />)
+  await waitFor(() => expect(mock.pins).toHaveLength(2))
+  expect(mock.pins[0].element.querySelector('img')).toHaveAttribute('src', '/fleet/77-cargo-mark.svg')
+  expect(mock.pins[0].element.querySelector('.proximity-pin-label')).toHaveTextContent('77-A')
+  expect(mock.pins[1].element.querySelector('img')).toBeNull()
+})

@@ -6,7 +6,7 @@ import { truckCoordinates } from './telemetry'
 import { recentPosition } from './proximity'
 import 'mapbox-gl/dist/mapbox-gl.css'
 
-interface Pin { id: string; label: string; status: BoardTruck['status']; point: [number, number]; recent: boolean }
+interface Pin { id: string; label: string; company: string; status: BoardTruck['status']; point: [number, number]; recent: boolean }
 interface Props { trucks: BoardTruck[]; focusId?: string; nearbyIds: string[]; route?: GeoJSON.LineString; now: number; recenter: number; onFocus: (id: string) => void }
 
 export default function FleetMapCanvas({ trucks, focusId, nearbyIds, route, now, recenter, onFocus }: Props) {
@@ -22,7 +22,7 @@ export default function FleetMapCanvas({ trucks, focusId, nearbyIds, route, now,
   const token = import.meta.env.VITE_MAPBOX_TOKEN || ''
   const pinData = JSON.stringify(trucks.flatMap(truck => {
     const point = truckCoordinates(truck, now)
-    return point ? [{ id: truck.id, label: fleetUnitLabel(truck), status: truck.status, point, recent: recentPosition(truck, now) }] : []
+    return point ? [{ id: truck.id, label: fleetUnitLabel(truck), company: truck.fleet_company_name || truck.board_membership_company_name || truck.owner_company_name || '', status: truck.status, point, recent: recentPosition(truck, now) }] : []
   }))
   const comparisonData = JSON.stringify(nearbyIds)
   const routeData = JSON.stringify(route || null)
@@ -61,7 +61,17 @@ export default function FleetMapCanvas({ trucks, focusId, nearbyIds, route, now,
       button.type = 'button'
       button.className = `proximity-pin${selected ? ' is-selected' : ''}${members.every(pin => !pin.recent) ? ' is-last-known' : ''}${focus && !selected && !members.some(pin => nearby.includes(pin.id)) ? ' is-dimmed' : ''}`
       button.style.setProperty('--pin-status', STATUS_META[representative.status].dot)
-      button.textContent = members.length > 1 ? `${members.length} trucks` : representative.label
+      const badge = document.createElement('span'); badge.className = 'proximity-pin-badge'
+      const sameCompany = members.every(pin => pin.company.trim().toLowerCase() === representative.company.trim().toLowerCase())
+      if (sameCompany && /^77\s*cargo(?:[\s,]+l\.?l\.?c\.?)?$/i.test(representative.company.trim())) {
+        const mark = document.createElement('img'); mark.src = '/fleet/77-cargo-mark.svg'; mark.alt = ''; mark.setAttribute('aria-hidden', 'true'); mark.className = 'proximity-pin-brand'
+        badge.append(mark)
+      }
+      const label = document.createElement('span'); label.className = 'proximity-pin-label'
+      label.textContent = members.length > 1 ? `${members.length} trucks` : representative.label
+      const status = document.createElement('i'); status.className = 'proximity-pin-status'; status.setAttribute('aria-hidden', 'true')
+      badge.append(label, status); button.append(badge)
+      button.title = `${representative.company ? `${representative.company} · ` : ''}${label.textContent}`
       button.setAttribute('aria-label', members.length > 1 ? `${members.length} trucks at this position` : `${representative.label}, ${STATUS_META[representative.status].label}${representative.recent ? '' : ', last-known position'}`)
       button.setAttribute('aria-pressed', String(!!selected))
       const marker = new mb.Marker({ element: button }).setLngLat(representative.point)

@@ -36,3 +36,7 @@ The tenant has an accessible Motive dashboard account; the absent connection rec
 ## Route contrast and quick-info refinement
 
 Fast UI follow-up on PR468: blue6px road route with10px white casing and repeated forward arrows; side-panel card displays selected→closest IDs, prominent road miles and estimated drive time. Loading clears the card metrics; existing missing-route behavior retained.12affected component/canvas tests and TypeScript/ESLint pass. Native browser verified card at desktop and390px, then selection307→204updated to12.5mi/19min. Same source-aligned frontend PID9315/5186; backend remains absent. Screenshot capture still thumbnail-only; no claim of new full-resolution visual review or production deployment.
+
+## Compact company markers
+
+User-supplied77Cargo reference translated to a red/black SVG wing mark without company text. Matching operating company (fallback board membership/owner) gets the mark beside unit number; other or mixed-company pins remain neutral. Translucent light rectangular badge roughly30px tall,44px transparent target, status dot, blue selection outline and dashed last-known boundary. Preview fixtures explicitly identify as77Cargo; no production identity changes.5canvas tests, TypeScript and ESLint pass. Native Chrome verified six markers with77Cargo company tooltip and preserved nearby-origin selection. SVG served200 from existing5186runtime. Full-size visual capture remains unavailable; user-visible preview updated.
