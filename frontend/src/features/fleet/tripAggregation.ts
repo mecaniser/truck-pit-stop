@@ -120,3 +120,14 @@ export async function loadTripRange(start: string, end: string, fetchPage: (star
   return { ...windows[0], start_date: start, end_date: end, items, total: items.length, offset: 0,
     summary: { ...windows[0].summary, truck_count: new Set(items.map(t => t.vehicle_id)).size, trip_count: sum.count, distance_miles: sum.miles, driving_seconds: sum.seconds } }
 }
+
+/** Calendar completeness is independent of import completeness. */
+export function activityPeriodNote(start: string, end: string, interval: ActivityInterval, timezone: string, now = new Date()) {
+  const today = tripDay(now.toISOString(), timezone)
+  if (start <= today && end >= today) return 'To date'
+  const first = new Date(`${start}T12:00:00Z`)
+  const last = new Date(`${end}T12:00:00Z`)
+  if (interval === 'week' && (first.getUTCDay() !== 1 || last.getUTCDay() !== 0)) return 'Partial week'
+  if (interval === 'month' && (first.getUTCDate() !== 1 || last.getUTCDate() !== new Date(Date.UTC(last.getUTCFullYear(), last.getUTCMonth() + 1, 0)).getUTCDate())) return 'Partial month'
+  return null
+}

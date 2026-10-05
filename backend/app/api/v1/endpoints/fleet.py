@@ -88,6 +88,7 @@ from app.schemas.fleet import (
     FleetActivityPage,
     FleetTruckCreate,
 )
+from app.schemas.fleet_fuel import FuelDailyPage
 from app.schemas.fleet_trip import TripPage
 from app.schemas.vehicle import VehicleResponse
 from app.schemas.typeahead import VehicleTypeaheadResponse
@@ -174,6 +175,24 @@ def require_fleet_access(current_user: User = Depends(get_current_active_user)) 
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="User must be associated with a tenant")
     return current_user
 
+
+
+@router.get("/fuel-daily", response_model=FuelDailyPage)
+async def get_fuel_daily(
+    start_date: date,
+    end_date: date,
+    response: Response,
+    vehicle_id: Optional[UUID] = None,
+    fleet_customer_id: Optional[UUID] = None,
+    limit: int = Query(50, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_fleet_access),
+):
+    from app.services.fleet_fuel import list_fuel_daily
+    response.headers["Cache-Control"] = "no-store"
+    return await list_fuel_daily(db, current_user.tenant_id, start_date, end_date,
+                                 vehicle_id, fleet_customer_id, limit, offset)
 
 
 @router.get("/trips", response_model=TripPage)

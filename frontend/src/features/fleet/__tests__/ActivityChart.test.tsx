@@ -3,7 +3,7 @@ import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { ThemeProvider } from '@/contexts/ThemeContext'
 import ActivityChart from '../ActivityChart'
-import { activityBuckets, availableActivityIntervals, defaultActivityInterval, loadTripRange } from '../tripAggregation'
+import { activityBuckets, activityPeriodNote, availableActivityIntervals, defaultActivityInterval, loadTripRange } from '../tripAggregation'
 import { tripPreset } from '../tripFilters'
 import type { FleetTrip, FleetTripsResponse } from '../FleetTrips'
 const trips = [
@@ -91,4 +91,18 @@ describe('calendar activity', () => {
     expect(screen.getByRole('button',{name:'Sep 1: 100 miles, 1.0h driving. Compare trucks'})).toBeVisible()
     expect(screen.getByRole('button',{name:'Line',exact:true})).toHaveAttribute('aria-pressed','true')
   })
+})
+
+it('distinguishes clipped calendar buckets from the current incomplete day in fleet timezone', () => {
+  const now = new Date('2026-10-05T02:00:00Z')
+  expect(activityPeriodNote('2026-10-04','2026-10-04','day','America/New_York',now)).toBe('To date')
+  expect(activityPeriodNote('2026-09-01','2026-09-06','week','UTC',now)).toBe('Partial week')
+  expect(activityPeriodNote('2026-09-07','2026-09-13','week','UTC',now)).toBeNull()
+  expect(activityPeriodNote('2026-09-01','2026-09-30','month','UTC',now)).toBeNull()
+  expect(activityPeriodNote('2026-09-15','2026-09-30','month','UTC',now)).toBe('Partial month')
+})
+it('counts unique reporting trucks rather than segments, keeping zero-mile records', () => {
+  render(<ThemeProvider><ActivityChart data={{...data, items:[trips[0], {...trips[0], id:'again'}, {...trips[0], id:'zero', vehicle_id:'b', distance_miles:0}]}} timezone="UTC" metric="miles" selected={false} preset="month" onOpen={vi.fn()} /></ThemeProvider>)
+  expect(screen.getByText('2 reporting')).toBeVisible()
+  expect(screen.getAllByText('Partial week')).toHaveLength(2)
 })
