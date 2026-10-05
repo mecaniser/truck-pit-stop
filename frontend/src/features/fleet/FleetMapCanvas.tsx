@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import type { Map as MapboxMap, Marker as MapboxMarker } from 'mapbox-gl'
 import type { BoardTruck } from './types'
-import { fleetUnitLabel, STATUS_META } from './helpers'
+import { STATUS_META } from './helpers'
+import { mapUnitLabel } from './mapLabels'
 import { truckCoordinates } from './telemetry'
 import { recentPosition } from './proximity'
 import 'mapbox-gl/dist/mapbox-gl.css'
@@ -26,7 +27,7 @@ export default function FleetMapCanvas({ trucks, focusId, nearbyIds, route, now,
   const token = import.meta.env.VITE_MAPBOX_TOKEN || ''
   const pinData = JSON.stringify(trucks.flatMap(truck => {
     const point = truckCoordinates(truck, now)
-    return point ? [{ id: truck.id, label: fleetUnitLabel(truck), company: truck.fleet_company_name || truck.board_membership_company_name || truck.owner_company_name || '', status: truck.status, point, recent: recentPosition(truck, now) }] : []
+    return point ? [{ id: truck.id, label: mapUnitLabel(truck), company: truck.fleet_company_name || truck.board_membership_company_name || truck.owner_company_name || '', status: truck.status, point, recent: recentPosition(truck, now) }] : []
   }))
   const comparisonData = JSON.stringify(nearbyIds)
   const routeData = JSON.stringify(route || null)
