@@ -21,8 +21,13 @@ def timestamp(value):
 
 
 def endpoint(value):
-    clock, label = value.split("\n", 1)
-    naive = datetime.strptime(clock.strip(), "%m/%d/%Y %I:%M %p")
+    clock, separator, label = value.partition("\n")
+    if not separator or not label.strip():
+        raise ValueError("missing_endpoint_location")
+    try:
+        naive = datetime.strptime(clock.strip(), "%m/%d/%Y %I:%M %p")
+    except ValueError:
+        raise ValueError("invalid_endpoint_timestamp") from None
     candidates = {naive.replace(tzinfo=ZONE, fold=fold).astimezone(timezone.utc) for fold in (0, 1)
                   if naive.replace(tzinfo=ZONE, fold=fold).astimezone(timezone.utc).astimezone(ZONE).replace(tzinfo=None) == naive}
     if len(candidates) != 1:
@@ -110,7 +115,7 @@ def normalize(document, mapping, prior=None, now=None):
                 departure, origin = endpoint(cells[1])
                 if not start <= departure.astimezone(ZONE).date() <= end:
                     raise ValueError("outside_window")
-                if "PROGRESS" in cells[2].upper():
+                if cells[2].split("\n", 1)[0].strip().upper() == "IN PROGRESS":
                     raise ValueError("ongoing")
                 arrival, destination = endpoint(cells[2])
                 measurement = re.fullmatch(r"((?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?)\s*(?:mi)?\n(\d+)h (\d+)m (\d+)s", cells[3].strip())
