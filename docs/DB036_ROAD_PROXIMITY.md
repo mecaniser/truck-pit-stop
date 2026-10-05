@@ -62,3 +62,16 @@ PR468 merged the road-routing and route-summary/color work, before subsequent ma
 ## Zoom-first cluster interaction
 
 Cluster click now uses member bounds to ease the camera inward (at least one zoom level, capped18). Nearby distinct positions separate progressively instead of opening a special panel. Identical coordinates or still-overlapping pins at zoom18retain the chooser as a usable fallback. Single-truck selection still never reframes the camera. Persistent click handlers read the latest member positions.17affected tests, TypeScript/ESLint pass. Native browser verified the three-truck group separates204from the closer101/610pair with no card. Clustering is screen-space96x56px and has no effect on road-mile ranking.
+
+
+### Home overview — 2026-10-04
+
+Frontend & UX / Fast UI, PR469. Initial preview no longer selects101. Production FleetApp already initializes mapFocusId undefined; explicit detail/return selections remain supported. Initial fit and Recenter always bound every located truck. Home and the clickable address move to the geocoded home at zoom15 and Home clears selection. A separate home marker identifies the base.
+
+Address:416 Seaboard Drive, Matthews, NC28104. Mapbox v6 forward geocoding returned an exact address match (number, street, postcode, place and region matched). Temporary coordinates remain in memory. The address is enabled for authenticated tenant_slug truck-pit-stop only, passed as an optional component prop; other tenants do not inherit this base. Preview supplies it explicitly. No tenant data or configuration is written.
+
+Home-to-truck Matrix road miles rank all usable positions, with last-known age labels and missing/unreachable trucks retained after ranked entries. This uses miles along the provider fastest driving routes, not global minimum-mile optimization. No overview Directions geometry is requested. Selected-truck routing and freshness opt-in remain unchanged. Failed home lookup disables Home and retains the full truck list without distances.
+
+Checks:37 tests across canvas, proximity, routing and FleetApp return context pass; TypeScript and affected map/hook/test lint pass. Native Chrome desktop and390px preview show unselected Closest to home, all7fixture trucks and road ordering101(15mi),610(15.1mi,last-known),204(17.8mi), etc. Selecting101 switches to truck comparison; Home clears it back to overview. Camera bounds/Home transitions have focused tests. Screenshot capture remains distorted/thumbnail-only, so no full-resolution visual sign-off is claimed.
+
+Runtime:5186/PID85747 still serves this worktree on codex/fleet-cluster-popover; pre-edit HEAD babde0e4 plus these source edits. HTTP200 and rendered Home/road results verify served source. Backend8000 absent; no approved local database configuration, authenticated full-stack acceptance unavailable. Synthetic data with real Mapbox only. Not merged/deployed.

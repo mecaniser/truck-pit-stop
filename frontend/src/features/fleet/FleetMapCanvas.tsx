@@ -7,9 +7,9 @@ import { recentPosition } from './proximity'
 import 'mapbox-gl/dist/mapbox-gl.css'
 
 interface Pin { id: string; label: string; company: string; status: BoardTruck['status']; point: [number, number]; recent: boolean }
-interface Props { trucks: BoardTruck[]; focusId?: string; nearbyIds: string[]; route?: GeoJSON.LineString; now: number; recenter: number; onFocus: (id: string) => void; onClusterOpen?: (ids: string[]) => void }
+interface Props { trucks: BoardTruck[]; focusId?: string; nearbyIds: string[]; route?: GeoJSON.LineString; now: number; recenter: number; homePoint?: [number, number]; homeVisit?: number; onFocus: (id: string) => void; onClusterOpen?: (ids: string[]) => void }
 
-export default function FleetMapCanvas({ trucks, focusId, nearbyIds, route, now, recenter, onFocus, onClusterOpen }: Props) {
+export default function FleetMapCanvas({ trucks, focusId, nearbyIds, route, now, recenter, homePoint, homeVisit = 0, onFocus, onClusterOpen }: Props) {
   const container = useRef<HTMLDivElement>(null)
   const mapRef = useRef<MapboxMap>()
   const moduleRef = useRef<typeof import('mapbox-gl').default>()
@@ -17,6 +17,7 @@ export default function FleetMapCanvas({ trucks, focusId, nearbyIds, route, now,
   const [ready, setReady] = useState(false)
   const [error, setError] = useState(false)
   const [viewportRevision, setViewportRevision] = useState(0)
+  const homeFraming = useRef(0)
   const framing = useRef('')
   const selectRef = useRef(onFocus)
   selectRef.current = onFocus
@@ -57,7 +58,6 @@ export default function FleetMapCanvas({ trucks, focusId, nearbyIds, route, now,
     const pins = JSON.parse(pinData) as Pin[]
     const nearby = JSON.parse(comparisonData) as string[]
     const focus = pins.find(pin => pin.id === focusId)
-    const neighbors = pins.filter(pin => nearby.includes(pin.id))
     // Cluster by visible overlap, not exact GPS equality. Re-evaluate after zoom/pan.
     const projected = [...pins].sort((a, b) => a.id.localeCompare(b.id)).map(pin => ({ pin, pixel: map.project(pin.point) }))
     const remaining = new Set(projected)
@@ -159,14 +159,29 @@ export default function FleetMapCanvas({ trucks, focusId, nearbyIds, route, now,
     const frameKey = String(recenter)
     if (!pins.length) framing.current = ''
     if (frameKey !== framing.current && pins.length) {
-      const points = framing.current && focus ? [focus, ...neighbors] : pins
       const bounds = new mb.LngLatBounds()
-      points.forEach(pin => bounds.extend(pin.point))
-      geometry?.coordinates.forEach(point => bounds.extend(point as [number, number]))
-      map.fitBounds(bounds, { padding: 65, maxZoom: focus ? 12 : 10, duration: 0 })
+      pins.forEach(pin => bounds.extend(pin.point))
+      map.fitBounds(bounds, { padding: 65, maxZoom: 10, duration: 0 })
       framing.current = frameKey
     }
   }, [pinData, comparisonData, routeData, focusId, recenter, ready, viewportRevision])
+
+  const homeKey = homePoint?.join(',')
+  useEffect(() => {
+    const map = mapRef.current, mb = moduleRef.current
+    if (!ready || !homeKey || !map || !mb) return
+    const label = document.createElement('span')
+    label.className = 'proximity-home-pin'
+    label.textContent = '⌂ Home'
+    label.setAttribute('aria-label', 'Home base')
+    const marker = new mb.Marker({ element: label }).setLngLat(homeKey.split(',').map(Number) as [number, number]).addTo(map)
+    return () => { marker.remove() }
+  }, [ready, homeKey])
+  useEffect(() => {
+    if (!ready || !homeKey || !homeVisit || homeVisit === homeFraming.current) return
+    mapRef.current?.easeTo({ center: homeKey.split(',').map(Number) as [number, number], zoom: 15, duration: 500 })
+    homeFraming.current = homeVisit
+  }, [ready, homeKey, homeVisit])
 
   return <>
     {(!token || error) && <div className="proximity-map-unavailable" role="status"><strong>Map unavailable</strong><span>{!token ? 'Mapbox access is not configured.' : 'Map could not load.'} Truck selection remains available.</span></div>}

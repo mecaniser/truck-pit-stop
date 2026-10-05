@@ -62,16 +62,19 @@ export async function fetchRoadGeometry(origin: [number, number], destination: [
   return geometry
 }
 
-export function useRoadProximity(trucks: BoardTruck[], focus: BoardTruck | undefined, now: number, includeLastKnown: boolean, retry: number) {
+export function useRoadProximity(trucks: BoardTruck[], focus: BoardTruck | undefined, now: number, includeLastKnown: boolean, retry: number, homeOrigin?: [number, number]) {
   const token = import.meta.env.VITE_MAPBOX_TOKEN || ''
-  const candidates = roadCandidates(trucks, focus, now, includeLastKnown)
-  const origin = focus && truckCoordinates(focus, now)
-  const key = JSON.stringify({ origin, focus: focus?.id, candidates, includeLastKnown, retry })
+  const candidates = homeOrigin ? trucks.flatMap(truck => {
+    const point = truckCoordinates(truck, now)
+    return point ? [{ id: truck.id, point }] : []
+  }).sort((a, b) => a.id.localeCompare(b.id)) : roadCandidates(trucks, focus, now, includeLastKnown)
+  const origin = homeOrigin || (focus && truckCoordinates(focus, now))
+  const key = JSON.stringify({ origin, focus: focus?.id, candidates, includeLastKnown, retry, overview: !!homeOrigin })
   const active = !!origin && candidates.length > 0
   const [state, setState] = useState<State>({ key: '', phase: 'idle', routes: [], unreachable: 0 })
   useEffect(() => {
     if (!active || !token) return
-    const input = JSON.parse(key) as { origin: [number, number]; candidates: RoadPoint[] }
+    const input = JSON.parse(key) as { origin: [number, number]; candidates: RoadPoint[]; overview: boolean }
     const controller = new AbortController()
     // Avoid provider calls for selections that are immediately superseded.
     const timer = setTimeout(() => {
@@ -80,6 +83,7 @@ export function useRoadProximity(trucks: BoardTruck[], focus: BoardTruck | undef
           const result = await fetchRoadDistances(input.origin, input.candidates, token, controller.signal)
           if (controller.signal.aborted) return
           setState({ ...result, key, phase: 'ready' })
+          if (input.overview) return
           const closest = input.candidates.find(candidate => candidate.id === result.routes[0]?.id)
           if (!closest) return
           try {

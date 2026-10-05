@@ -15,7 +15,7 @@ vi.mock('mapbox-gl', () => ({ default: {
     addTo() { return this } remove() { mock.markerRemove(this.pin.element) }
   },
   Popup: class { content?: HTMLElement; setDOMContent(content: HTMLElement) { this.content = content; return this } },
-  NavigationControl: class {}, LngLatBounds: class { extend() { return this } },
+  NavigationControl: class {}, LngLatBounds: class { points: number[][] = []; extend(point: number[]) { this.points.push(point); return this } },
 } }))
 const now = Date.now()
 function truck(id: string, lng: number, old = false) {
@@ -134,4 +134,16 @@ it('clusters overlapping nearby positions and separates them when zoom provides 
   expect(mock.pins[1].point).toEqual([0, 0])
   expect(mock.pins[2].point).toEqual([.1, 0])
   expect(mock.fit).toHaveBeenCalledTimes(1)
+})
+
+it('fits the full fleet after selection and supports a separate home camera action', async () => {
+  const props = { trucks: [truck('A', 0), truck('B', 1), truck('Far', 20)], nearbyIds: ['B'], focusId: 'A', now, recenter: 0, onFocus: vi.fn(), homePoint: [4, 5] as [number, number] }
+  const view = render(<FleetMapCanvas {...props} />)
+  await waitFor(() => expect(mock.fit).toHaveBeenCalledTimes(1))
+  expect(mock.fit.mock.lastCall![0].points).toContainEqual([20, 0])
+  view.rerender(<FleetMapCanvas {...props} homeVisit={1} />)
+  expect(mock.ease).toHaveBeenLastCalledWith({ center: [4, 5], zoom: 15, duration: 500 })
+  view.rerender(<FleetMapCanvas {...props} homeVisit={1} recenter={1} />)
+  expect(mock.fit.mock.lastCall![0].points).toContainEqual([20, 0])
+  expect(mock.ease).toHaveBeenCalledTimes(1)
 })

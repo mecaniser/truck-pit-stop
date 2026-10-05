@@ -19,6 +19,7 @@ import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 import FleetBoard from './FleetBoard'
 import MotiveIntegrationPanel from './MotiveIntegrationPanel'
 import TruckDetail from './TruckDetail'
+import { FLEET_HOME_ADDRESS } from './fleetHome'
 import FleetMap from './FleetMap'
 import FleetTrips, { type TripFilters } from './FleetTrips'
 import { initialTripFilters } from './tripFilters'
@@ -323,10 +324,11 @@ export default function FleetApp({ initialTripsFilters }: { initialTripsFilters?
 /* ---- secondary views ---- */
 
 function MapPage({ trucks, onOpen, focusId, onFocusChange }: { trucks: BoardTruck[]; onOpen: (id: string) => void; focusId?: string; onFocusChange: (id: string | undefined) => void }) {
+  const homeAddress = useAuthStore(state => state.user?.tenant_slug === 'truck-pit-stop' ? FLEET_HOME_ADDRESS : undefined)
   const handleSelect = useCallback((truck: BoardTruck) => onOpen(truck.id), [onOpen])
   return (
     <div className="mappage">
-      <FleetMap trucks={trucks} focusId={focusId} onFocusChange={onFocusChange} onSelect={handleSelect} />
+      <FleetMap homeAddress={homeAddress} trucks={trucks} focusId={focusId} onFocusChange={onFocusChange} onSelect={handleSelect} />
     </div>
   )
 }

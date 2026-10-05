@@ -103,3 +103,11 @@
 .proximity-cluster-leader { position: absolute; left: 50%; top: 50%; width: 1px; height: 1px; overflow: visible; pointer-events: none; }
 .proximity-cluster-leader path { fill: none; stroke: #17202a; stroke-width: 2; stroke-linecap: round; }
 .proximity-cluster-anchor { position: absolute; left: 50%; top: 50%; width: 8px; height: 8px; border: 2px solid #ffffff; border-radius: 50%; background: #17202a; transform: translate(-50%, -50%); }
+
+.proximity-home-summary { margin-bottom: 12px; }
+.proximity-home-summary button { color: #93c5fd; background: none; border: 0; padding: 4px 0; text-align: left; font-size: 12px; }
+.proximity-map-controls { flex-shrink: 0; }
+.proximity-toolbar button:disabled, .proximity-home-summary button:disabled { opacity: .5; cursor: default; }
+@media (max-width: 600px) { .proximity-toolbar { flex-wrap: wrap; } }
+
+.proximity-home-pin { color: #fff; background: #334155; border: 2px solid #fff; border-radius: 7px; padding: 5px 9px; font: 600 12px system-ui; box-shadow: 0 2px 6px #0003; }

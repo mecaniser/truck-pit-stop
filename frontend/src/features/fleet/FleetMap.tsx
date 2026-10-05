@@ -1,10 +1,11 @@
 import { memo, useEffect, useRef, useState } from 'react'
-import { ArrowUpRight, ChevronDown, LocateFixed, Search, X } from 'lucide-react'
+import { ArrowUpRight, ChevronDown, Home, LocateFixed, Search, X } from 'lucide-react'
 import type { BoardTruck } from './types'
 import { fleetUnitLabel, STATUS_META } from './helpers'
 import { truckCoordinates, truckLocation, useTelemetryClock } from './telemetry'
 import { formatDistance, positionAge, recentPosition } from './proximity'
 import { formatDriveTime, useRoadProximity } from './roadProximity'
+import { useFleetHome } from './fleetHome'
 import FleetMapCanvas from './FleetMapCanvas'
 import './proximity.css'
 
@@ -13,10 +14,13 @@ interface Props {
   focusId?: string
   onFocusChange?: (id: string | undefined) => void
   onSelect?: (truck: BoardTruck) => void
+  homeAddress?: string
   compact?: boolean
 }
 
-function FleetMap({ trucks, focusId, onFocusChange, onSelect, compact }: Props) {
+function FleetMap({ trucks, focusId, onFocusChange, onSelect, compact, homeAddress }: Props) {
+  const home = useFleetHome(homeAddress)
+  const [homeVisit, setHomeVisit] = useState(0)
   const now = useTelemetryClock()
   const headingRef = useRef<HTMLElement>(null)
   const searchRef = useRef<HTMLInputElement>(null)
@@ -42,14 +46,15 @@ function FleetMap({ trucks, focusId, onFocusChange, onSelect, compact }: Props) 
     if (moveFocus.current) { (headingRef.current || searchRef.current)?.focus(); moveFocus.current = false }
   }, [focus?.id, query])
   const [retry, setRetry] = useState(0)
-  const road = useRoadProximity(trucks, focus, now, includeLastKnown, retry)
+  const road = useRoadProximity(trucks, focus, now, includeLastKnown, retry, !focus ? home.point : undefined)
   const nearby = road.nearby
   const visibleNearby = expanded ? nearby : nearby.slice(0, 3)
   const located = trucks.filter(truck => truckCoordinates(truck, now))
   const recentCount = located.filter(truck => recentPosition(truck, now)).length
   const searching = !!query.trim()
   const matches = trucks.filter(truck => `${fleetUnitLabel(truck)} ${truck.driver_name || ''} ${truckLocation(truck, now)?.label || ''}`.toLowerCase().includes(query.trim().toLowerCase()))
-  const rows = searching || !focus ? matches.map(truck => ({ truck, miles: undefined, seconds: undefined })) : visibleNearby
+  const overviewRows = [...nearby, ...trucks.filter(truck => !nearby.some(row => row.truck.id === truck.id)).map(truck => ({ truck, miles: undefined, seconds: undefined }))]
+  const rows = searching ? overviewRows.filter(row => matches.some(truck => truck.id === row.truck.id)) : !focus ? overviewRows : visibleNearby
   const missingOrigin = focus && !truckCoordinates(focus, now)
   const oldOrigin = focus && !missingOrigin && !recentPosition(focus, now) && !includeLastKnown
   const comparisonIds = visibleNearby.map(({ truck }) => truck.id)
@@ -57,11 +62,11 @@ function FleetMap({ trucks, focusId, onFocusChange, onSelect, compact }: Props) 
   return <section className={`proximity${compact ? ' proximity--compact' : ''}`} aria-label="Fleet proximity map">
     <header className="proximity-toolbar">
       <div><strong>Fleet map</strong><span>{located.length} located · {trucks.length - located.length} without coordinates</span></div>
-      <button type="button" onClick={() => setRecenter(value => value + 1)}><LocateFixed size={16} />{focus ? 'Recenter' : 'Fit fleet'}</button>
+      <div className="proximity-map-controls">{homeAddress && <button type="button" title={homeAddress} disabled={!home.point} onClick={() => { select(undefined); setHomeVisit(value => value + 1) }}><Home size={16} />Home</button>}<button type="button" onClick={() => setRecenter(value => value + 1)}><LocateFixed size={16} />Recenter</button></div>
     </header>
     <div className="proximity-workspace">
       <div className="proximity-geography">
-        <FleetMapCanvas trucks={trucks} focusId={focus?.id} nearbyIds={comparisonIds} route={road.geometry} now={now} recenter={recenter} onFocus={select} onClusterOpen={ids => { setClusterIds(ids); setQuery('') }} />
+        <FleetMapCanvas trucks={trucks} focusId={focus?.id} nearbyIds={comparisonIds} route={road.geometry} now={now} recenter={recenter} homePoint={home.point} homeVisit={homeVisit} onFocus={select} onClusterOpen={ids => { setClusterIds(ids); setQuery('') }} />
         <div className="proximity-legend" aria-label="Map legend">
           {[...new Set(located.map(truck => truck.status))].map(status => <span key={status}><i style={{ background: STATUS_META[status].dot }} />{STATUS_META[status].label}</span>)}
           <span className="proximity-last-known-key"><i />Last known</span>
@@ -96,7 +101,11 @@ function FleetMap({ trucks, focusId, onFocusChange, onSelect, compact }: Props) 
             {focus.driver_phone && /^[+\d\s().-]+$/.test(focus.driver_phone) && <a href={`tel:${focus.driver_phone.replace(/[^+\d]/g, '')}`}>Call driver</a>}
           </div>
         </div>}
-        <div className="proximity-list-heading"><h3>{searching ? 'Search results' : focus ? 'Nearby trucks' : 'Select a truck'}</h3><span>{searching ? matches.length : focus ? nearby.length : trucks.length}</span></div>
+        <div className="proximity-list-heading"><h3>{searching ? 'Search results' : focus ? 'Nearby trucks' : homeAddress ? 'Closest to home' : 'Select a truck'}</h3><span>{searching ? matches.length : focus ? nearby.length : trucks.length}</span></div>
+        {!focus && homeAddress && <div className="proximity-home-summary">
+          <button type="button" disabled={!home.point} onClick={() => setHomeVisit(value => value + 1)}>{homeAddress}</button>
+          <div className="proximity-basis">{home.failed ? 'Home location unavailable.' : !home.point ? 'Locating home…' : road.phase === 'loading' ? 'Calculating road miles…' : road.phase === 'error' ? 'Road distances unavailable.' : 'Road miles from home · includes last-known positions'}</div>
+        </div>}
         {focus && !searching && <>
           <div className="proximity-basis">Road miles · fastest driving routes · {includeLastKnown ? 'last-known positions included' : 'positions ≤15 min old'}</div>
           <label className="proximity-toggle"><input type="checkbox" checked={includeLastKnown} onChange={event => { setIncludeLastKnown(event.target.checked); setExpanded(false) }} />Include last-known</label>
