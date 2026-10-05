@@ -1,5 +1,6 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
+import cargoMarkUrl from '../../../assets/fleet/77-cargo-mark.svg'
 import FleetMapCanvas from '../FleetMapCanvas'
 import type { BoardTruck } from '../types'
 
@@ -71,7 +72,7 @@ it('clears the previous road geometry immediately while recalculating', async ()
 it('uses the supplied company mark only for matching trucks and keeps the unit label', async () => {
   render(<FleetMapCanvas trucks={[{ ...truck('77-A', 0), fleet_company_name: '77 CARGO LLC' }, { ...truck('Other', 1), fleet_company_name: 'Another fleet' }]} nearbyIds={[]} now={now} recenter={0} onFocus={vi.fn()} />)
   await waitFor(() => expect(mock.pins).toHaveLength(2))
-  expect(mock.pins[0].element.querySelector('img')).toHaveAttribute('src', '/fleet/77-cargo-mark.svg')
+  expect(mock.pins[0].element.querySelector('img')).toHaveAttribute('src', cargoMarkUrl)
   expect(mock.pins[0].element.querySelector('.proximity-pin-label')).toHaveTextContent('77-A')
   expect(mock.pins[1].element.querySelector('img')).toBeNull()
 })

@@ -1,3 +1,4 @@
+import cargoMarkUrl from '../../assets/fleet/77-cargo-mark.svg'
 import { useEffect, useRef, useState } from 'react'
 import type { Map as MapboxMap, Marker as MapboxMarker } from 'mapbox-gl'
 import type { BoardTruck } from './types'
@@ -119,7 +120,7 @@ export default function FleetMapCanvas({ trucks, focusId, nearbyIds, route, now,
         const badge = document.createElement('span'); badge.className = 'proximity-pin-badge'
         const sameCompany = members.every(pin => pin.company.trim().toLowerCase() === representative.company.trim().toLowerCase())
         if (sameCompany && /^77\s*cargo(?:[\s,]+l\.?l\.?c\.?)?$/i.test(representative.company.trim())) {
-          const mark = document.createElement('img'); mark.src = '/fleet/77-cargo-mark.svg'; mark.alt = ''; mark.setAttribute('aria-hidden', 'true'); mark.className = 'proximity-pin-brand'
+          const mark = document.createElement('img'); mark.src = cargoMarkUrl; mark.alt = ''; mark.setAttribute('aria-hidden', 'true'); mark.className = 'proximity-pin-brand'
           badge.append(mark)
         }
         const label = document.createElement('span'); label.className = 'proximity-pin-label'
