@@ -31,6 +31,38 @@ class PreparationTests(unittest.TestCase):
         self.assertIsNone(rows[0]["metrics"])
         self.assertEqual(report["coverage"], "partial")
 
+    def test_completed_progress_way_is_retained(self):
+        self.raw["cells"][2] = "09/28/2026 10:00 AM\n100 Progress Way, NC"
+        rows, report = self.run_rows()
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["destination_label"], "100 Progress Way, NC")
+        self.assertEqual(report["exclusions"], [])
+
+    def test_explicit_ongoing_status_is_excluded(self):
+        for destination in ("IN PROGRESS", " In Progress \nExample City, NC"):
+            with self.subTest(destination=destination):
+                self.raw["cells"][2] = destination
+                rows, report = self.run_rows()
+                self.assertEqual(rows, [])
+                self.assertEqual(report["exclusions"][0]["reason"], "ongoing")
+
+    def test_missing_endpoint_location_stays_quarantined(self):
+        for index in (1, 2):
+            original = self.raw["cells"][index]
+            for value in ("09/28/2026 10:00 AM", "09/28/2026 10:00 AM\n  "):
+                with self.subTest(index=index, value=value):
+                    self.raw["cells"][index] = value
+                    rows, report = self.run_rows()
+                    self.assertEqual(rows, [])
+                    self.assertEqual(report["exclusions"][0]["reason"], "missing_endpoint_location")
+            self.raw["cells"][index] = original
+
+    def test_malformed_endpoint_is_not_ongoing(self):
+        self.raw["cells"][2] = "invalid time\n100 Progress Way, NC"
+        rows, report = self.run_rows()
+        self.assertEqual(rows, [])
+        self.assertEqual(report["exclusions"][0]["reason"], "invalid_endpoint_timestamp")
+
     def test_frozen_prior_metrics_and_read_time(self):
         rows, _ = self.run_rows()
         rows[0]["metrics"] = {"estimate_baseline_mpg": 6.5}
