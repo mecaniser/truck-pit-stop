@@ -3,9 +3,9 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import FleetMapCanvas from '../FleetMapCanvas'
 import type { BoardTruck } from '../types'
 
-const mock = vi.hoisted(() => ({ pins: [] as { element: HTMLElement; point?: number[]; popup?: HTMLElement }[], scale: 200, fit: vi.fn(), lines: vi.fn(), remove: vi.fn(), markerRemove: vi.fn(), sources: new Set<string>(), handlers: {} as Record<string, () => void> }))
+const mock = vi.hoisted(() => ({ pins: [] as { element: HTMLElement; point?: number[]; popup?: HTMLElement }[], scale: 200, zoom: 8, ease: vi.fn(), fit: vi.fn(), lines: vi.fn(), remove: vi.fn(), markerRemove: vi.fn(), sources: new Set<string>(), handlers: {} as Record<string, () => void> }))
 vi.mock('mapbox-gl', () => ({ default: {
-  Map: class { project(point: number[]) { return { x: point[0] * mock.scale, y: point[1] * mock.scale } } on(event: string, cb: () => void) { mock.handlers[event] = cb; if (event === 'load') queueMicrotask(cb) } addControl() {} resize() {} fitBounds(...args: unknown[]) { mock.fit(...args) } getSource(id: string) { return mock.sources.has(id) ? { setData: mock.lines } : undefined } addSource(id: string, source: { data: unknown }) { mock.sources.add(id); mock.lines(source.data) } addLayer() {} remove() { mock.remove() } },
+  Map: class { getZoom() { return mock.zoom } cameraForBounds() { return { center: [0, 0], zoom: 12 } } easeTo(options: unknown) { mock.ease(options) } project(point: number[]) { return { x: point[0] * mock.scale, y: point[1] * mock.scale } } on(event: string, cb: () => void) { mock.handlers[event] = cb; if (event === 'load') queueMicrotask(cb) } addControl() {} resize() {} fitBounds(...args: unknown[]) { mock.fit(...args) } getSource(id: string) { return mock.sources.has(id) ? { setData: mock.lines } : undefined } addSource(id: string, source: { data: unknown }) { mock.sources.add(id); mock.lines(source.data) } addLayer() {} remove() { mock.remove() } },
   Marker: class {
     pin: { element: HTMLElement; point?: number[]; popup?: HTMLElement }
     constructor({ element }: { element: HTMLElement }) { element.classList.add('mapboxgl-marker'); this.pin = { element }; mock.pins.push(this.pin) }
@@ -21,7 +21,7 @@ const now = Date.now()
 function truck(id: string, lng: number, old = false) {
   return { id, unit_number: id, status: 'out_of_service', telemetry: { location: { lat: 0, lng, observed_at: new Date(now - (old ? 3600000 : 0)).toISOString(), captured_at: new Date(now).toISOString() } } } as BoardTruck
 }
-beforeEach(() => { mock.scale = 200; mock.pins.length = 0; mock.sources.clear(); vi.clearAllMocks(); vi.stubEnv('VITE_MAPBOX_TOKEN', 'synthetic') })
+beforeEach(() => { mock.scale = 200; mock.zoom = 8; mock.pins.length = 0; mock.sources.clear(); vi.clearAllMocks(); vi.stubEnv('VITE_MAPBOX_TOKEN', 'synthetic') })
 afterEach(() => vi.unstubAllEnvs())
 it('selects pins in place and draws supplied road geometry with status and stale styling', async () => {
   const select = vi.fn()
@@ -124,7 +124,8 @@ it('clusters overlapping nearby positions and separates them when zoom provides 
   expect(mock.pins[0].element.querySelector('.proximity-cluster-leader')).not.toBeNull()
   expect(mock.pins[0].point).toEqual([0, 0])
   fireEvent.click(mock.pins[0].element)
-  expect(select).toHaveBeenCalledWith(['A', 'B'])
+  expect(select).toHaveBeenCalledWith([])
+  expect(mock.ease).toHaveBeenCalledWith(expect.objectContaining({ zoom: 12, duration: 400 }))
   expect(mock.pins[0].popup).toBeUndefined()
   mock.scale = 2000
   act(() => mock.handlers.moveend())

@@ -70,7 +70,7 @@ function FleetMap({ trucks, focusId, onFocusChange, onSelect, compact }: Props) 
       <aside className="proximity-panel" aria-label="Truck proximity">
         <label className="proximity-search"><Search size={17} /><input ref={searchRef} type="search" aria-label="Find truck" placeholder="Find truck or driver" value={query} onChange={event => setQuery(event.target.value)} /></label>
         {clusterTrucks.length > 0 && <section ref={clusterCardRef} tabIndex={-1} className="proximity-cluster-card" aria-label="Trucks in selected cluster">
-          <header><span>{clusterTrucks.length} trucks nearby</span><button type="button" aria-label="Close cluster" onClick={() => setClusterIds([])}><X size={15} /></button></header>
+          <header><span>{clusterTrucks.length} overlapping positions</span><button type="button" aria-label="Close cluster" onClick={() => setClusterIds([])}><X size={15} /></button></header>
           {clusterTrucks.map(truck => <button type="button" className="proximity-popup-row" key={truck.id} onClick={() => select(truck.id)}>
             <i style={{ background: STATUS_META[truck.status].dot }} aria-hidden="true" /><strong>{fleetUnitLabel(truck)}</strong>
             <span className="proximity-popup-detail"><span>{STATUS_META[truck.status].label}</span>{!recentPosition(truck, now) && <small>Last known</small>}</span>

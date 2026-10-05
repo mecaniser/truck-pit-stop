@@ -89,14 +89,21 @@ export default function FleetMapCanvas({ trucks, focusId, nearbyIds, route, now,
       if (!entry) {
         const button = document.createElement('button'); button.type = 'button'
         const marker = new mb.Marker({ element: button }).setLngLat(anchor).addTo(map)
-        button.addEventListener('click', () => {
-          if (members.length === 1) selectRef.current(members[0].id)
-          else clusterRef.current?.(members.map(pin => pin.id))
-        })
+
         entry = { marker, button, contentKey: '', pointKey: anchor.join(',') }
         markers.current.set(key, entry)
       }
       const { button, marker } = entry
+      button.onclick = () => {
+        if (members.length === 1) { selectRef.current(members[0].id); return }
+        if (coincident || map.getZoom() >= 18) { clusterRef.current?.(members.map(pin => pin.id)); return }
+        clusterRef.current?.([])
+        const bounds = new mb.LngLatBounds()
+        members.forEach(pin => bounds.extend(pin.point))
+        const camera = map.cameraForBounds(bounds, { padding: 90, maxZoom: 18 })
+        if (camera) map.easeTo({ ...camera, zoom: Math.min(18, Math.max(map.getZoom() + 1, camera.zoom ?? map.getZoom() + 2)), duration: 400 })
+      }
+
       const pointKey = anchor.join(',')
       if (entry.pointKey !== pointKey) { marker.setLngLat(anchor); entry.pointKey = pointKey }
       // Mapbox owns positioning classes on this element; never replace className.
