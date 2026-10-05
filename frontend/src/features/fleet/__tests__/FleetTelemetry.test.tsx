@@ -12,7 +12,7 @@ import FleetMap from '../FleetMap'
 const mocks = vi.hoisted(() => ({ post: vi.fn(), positions: [] as number[][], maps: [] as Record<string, unknown>[], errors: [] as (() => void)[], removed: vi.fn(), markerRemoved: vi.fn() }))
 vi.mock('@/lib/api', () => ({ default: { post: mocks.post } }))
 vi.mock('mapbox-gl', () => ({ default: {
-  Map: class { constructor(options: Record<string, unknown>) { mocks.maps.push(options) } on(event: string, cb: () => void) { if (event === 'error') mocks.errors.push(cb); if (event === 'load') queueMicrotask(cb) } getSource() { return undefined } addSource() {} addLayer() {} addControl() {} jumpTo() {} fitBounds() {} remove() { mocks.removed() } resize() {} },
+  Map: class { project(point: number[]) { return { x: point[0] * 200, y: point[1] * 200 } } constructor(options: Record<string, unknown>) { mocks.maps.push(options) } on(event: string, cb: () => void) { if (event === 'error') mocks.errors.push(cb); if (event === 'load') queueMicrotask(cb) } getSource() { return undefined } addSource() {} addLayer() {} addControl() {} jumpTo() {} fitBounds() {} remove() { mocks.removed() } resize() {} },
   Marker: class { setLngLat(point: number[]) { mocks.positions.push(point); return this } setPopup() { return this } addTo() { return this } remove() { mocks.markerRemoved() } },
   Popup: class { setDOMContent() { return this } }, NavigationControl: class {}, LngLatBounds: class { extend() { return this } },
 } }))
@@ -26,7 +26,7 @@ beforeEach(() => {
   vi.stubEnv('VITE_MAPBOX_TOKEN', '')
   useAuthStore.setState({ user: { id: 'staff', role: 'garage_owner' } as NonNullable<ReturnType<typeof useAuthStore.getState>['user']> })
 })
-afterEach(() => vi.unstubAllEnvs())
+afterEach(() => { vi.useRealTimers(); vi.unstubAllEnvs() })
 describe('reported telemetry semantics', () => {
   it('uses capture time for tooltips and readable age without internal metadata', () => {
     expect(readingSummary(provenance, now + 46 * 60000)).toBe('Updated 46 minutes ago')

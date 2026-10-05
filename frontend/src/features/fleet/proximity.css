@@ -16,6 +16,8 @@
 .proximity-last-known-key i { background: transparent; border: 1px dashed currentColor; }
 .proximity-panel { display: flex; flex-direction: column; min-width: 0; border-left: 1px solid var(--line, #344453); padding: 14px; max-height: 720px; overflow: auto; }
 .proximity-search { display: flex; gap: 8px; align-items: center; border: 1px solid var(--line, #344453); padding: 0 10px; border-radius: 8px; flex-shrink: 0; }
+.proximity-search:focus-within { outline: 2px solid var(--yellow, #ffc400); outline-offset: -2px; }
+.proximity .proximity-search input:focus { outline: none; box-shadow: none; }
 .proximity-search svg { color: var(--muted-2, #93a3b2); flex: none; }
 .proximity-search input { width: 100%; min-width: 0; min-height: 44px; border: 0; background: transparent; font: inherit; font-size: 12px; color: inherit; }
 .proximity-focus { padding: 4px 0 16px; border-bottom: 1px solid var(--line, #344453); }
@@ -33,27 +35,45 @@
 .proximity-toggle { display: flex; align-items: center; gap: 8px; min-height: 44px; font-size: 12px; cursor: pointer; }
 .proximity-toggle input { accent-color: var(--yellow, #ffc400); width: 16px; height: 16px; }
 .proximity-rows { display: grid; }
-.proximity-row { width: 100%; text-align: left; border: 0; border-bottom: 1px solid var(--line, #344453); background: transparent; padding: 12px 6px; color: inherit; border-radius: 6px; }
+.proximity-row { display: flex; align-items: center; gap: 8px; width: 100%; min-width: 0; min-height: 44px; text-align: left; border: 0; border-bottom: 1px solid var(--line, #344453); background: transparent; padding: 8px 6px; color: inherit; border-radius: 6px; white-space: nowrap; }
 .proximity-row:hover, .proximity-row[aria-pressed=true] { background: var(--surface-2, #1c2732); }
-.proximity-row-top { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; margin-bottom: 7px; }
-.proximity-row-top strong { font-size: 15px; overflow-wrap: anywhere; }
-.proximity-row-top b { white-space: nowrap; font: 600 13px var(--mono, monospace); color: var(--yellow, #ffc400); }
-.proximity-row-bottom { display: flex; flex-direction: column; gap: 4px; margin-top: 7px; color: var(--muted-2, #93a3b2); font-size: 11px; }
-.proximity-row-bottom span { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-.proximity-row-bottom small { font-size: 10px; }
+.proximity-row-unit { position: relative; flex: none; max-width: 65px; padding-right: 8px; font-size: 13px; }
+.proximity-row-unit strong { display: block; overflow: hidden; text-overflow: ellipsis; }
+.proximity-row-unit i { position: absolute; top: 1px; right: 0; width: 5px; height: 5px; border-radius: 50%; }
+.proximity-row-location { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; font-size: 11px; color: var(--muted, #c3ced8); }
+.proximity-row-age { max-width: 68px; flex: 0 1 auto; overflow: hidden; text-overflow: ellipsis; font-size: 10px; color: var(--muted-2, #93a3b2); }
+.proximity-row-miles { flex: none; font: 600 11px var(--mono, monospace); color: var(--yellow, #ffc400); }
+.proximity-row-time { flex: none; color: var(--muted-2, #93a3b2); font-size: 10px; }
 .proximity-more { margin-top: 8px; width: 100%; }
 .proximity-empty { color: var(--muted, #c3ced8); font-size: 12px; line-height: 1.6; padding: 10px 0; }
 .proximity-panel footer { margin-top: auto; padding-top: 14px; }
 .proximity-map-unavailable { padding: 36px; flex: 1; min-height: 280px; display: flex; flex-direction: column; justify-content: center; gap: 10px; color: #354553; background: #e8eced; }
 .proximity-map-unavailable strong { font-size: 18px; }
 .proximity-map-unavailable span { font-size: 13px; max-width: 280px; line-height: 1.6; }
-.proximity-pin { --pin-status: #94a3b8; min-height: 44px; min-width: 44px; max-width: 200px; padding: 5px 10px; border: 3px solid var(--pin-status); border-radius: 9px; background: #151d26; color: #fff; font: 700 12px/1.3 sans-serif; box-shadow: 0 2px 8px #0005; cursor: pointer; overflow-wrap: anywhere; }
-.proximity-pin.is-last-known { border-style: dashed; }
-.proximity-pin.is-selected { box-shadow: 0 0 0 3px #fff, 0 0 0 6px #151d26; z-index: 2; }
-.proximity-pin.is-dimmed { opacity: .55; }
-.proximity-pin:focus-visible { outline: 3px solid #ffc400; outline-offset: 3px; }
-.proximity-popup { display: grid; gap: 4px; color: #111; }
-.proximity-popup button { min-height: 44px; background: #fff; border: 0; padding: 8px; text-align: left; color: #111; cursor: pointer; }
+/* Keep a generous target around the compact visual badge. */
+.proximity-pin { --pin-status: #94a3b8; display: flex; align-items: center; justify-content: center; min-height: 44px; min-width: 44px; max-width: 160px; padding: 7px 4px; border: 0; background: transparent; color: #17202a; cursor: pointer; }
+.proximity-pin-badge { display: inline-flex; align-items: center; gap: 5px; min-height: 26px; min-width: 44px; max-width: 100%; padding: 3px 7px 3px 5px; border: 1px solid #ffffffed; border-radius: 5px; background: #ffffff; box-shadow: 0 1px 4px #17202a40; }
+.proximity-pin-brand { display: block; width: 20px; height: 22px; flex: none; object-fit: contain; }
+.proximity-pin-label { color: #17202a; font: 750 11px/1.2 sans-serif; overflow-wrap: anywhere; min-width: 0; }
+.proximity-pin-status { width: 5px; height: 5px; border-radius: 50%; flex: none; background: var(--pin-status); margin-left: 1px; }
+.proximity-pin.is-last-known .proximity-pin-badge { border: 1px dashed #64748b; }
+.proximity-pin.is-selected .proximity-pin-badge { background: #ffffff; outline: 2px solid #2563eb; outline-offset: 1px; box-shadow: 0 2px 8px #17202a40; }
+.proximity-pin.is-selected { z-index: 2; }
+.proximity-pin.is-dimmed .proximity-pin-badge { border-color: #cbd5e1; }
+.proximity-pin:focus-visible { outline: none; }
+.proximity-pin:focus-visible .proximity-pin-badge { outline: 2px solid #2563eb; outline-offset: 2px; }
+.proximity-cluster-card { margin-top: 12px; padding: 7px; border-radius: 12px; border: 1px solid #e2e8f0; box-shadow: 0 6px 16px #0002; background: #fff; color: #17202a; }
+.proximity-cluster-card > header { display: flex; align-items: center; justify-content: space-between; padding-left: 8px; color: #64748b; font-size: 11px; font-weight: 600; }
+.fleet-root .proximity-cluster-card > header button { display: grid; place-items: center; min-height: 32px; width: 32px; border: 0; border-radius: 7px; background: transparent; color: #64748b; }
+.proximity-cluster-card > header button:hover { background: #f1f5f9; }
+.fleet-root .proximity-popup-row { display: flex; align-items: center; gap: 8px; min-height: 44px; width: 100%; background: #fff; border: 0; border-radius: 8px; padding: 9px 8px; text-align: left; color: #17202a; cursor: pointer; transition: background-color 120ms ease; }
+.proximity-popup-row > i { width: 6px; height: 6px; border-radius: 50%; flex: none; }
+.proximity-popup-row > strong { min-width: 32px; max-width: 72px; overflow-wrap: anywhere; font-size: 13px; }
+.proximity-popup-detail { display: grid; gap: 2px; flex: 1; color: #526174; font-size: 11px; }
+.proximity-popup-detail small { font-size: 10px; color: #7b8795; }
+.proximity-popup-arrow { color: #94a3b8; font-size: 20px; }
+.fleet-root .proximity-popup-row:hover { background: #f1f5f9; }
+.fleet-root .proximity-popup-row:focus-visible { background: #eff6ff; outline: 2px solid #93c5fd; outline-offset: -2px; }
 .proximity--compact .proximity-geography { min-height: 400px; }
 @media (max-width: 1000px) { .proximity-workspace { grid-template-columns: minmax(0, 1fr) 280px; } .proximity-legend { gap: 6px 10px; } }
 @media (max-width: 680px) {
@@ -79,3 +99,17 @@
 .proximity-route-metrics > span { font-size: 16px; text-align: right; white-space: nowrap; }
 .proximity-route-metrics small { display: block; }
 .proximity-route-summary > small { display: block; margin-top: 10px; }
+
+.proximity-pin.is-cluster { width: 44px; height: 44px; overflow: visible; }
+.proximity-pin.is-cluster .proximity-pin-badge { position: absolute; left: calc(50% + 40px); top: calc(50% - 28px); transform: translateY(-50%); max-width: none; white-space: nowrap; }
+.proximity-cluster-leader { position: absolute; left: 50%; top: 50%; width: 1px; height: 1px; overflow: visible; pointer-events: none; }
+.proximity-cluster-leader path { fill: none; stroke: #17202a; stroke-width: 2; stroke-linecap: round; }
+.proximity-cluster-anchor { position: absolute; left: 50%; top: 50%; width: 8px; height: 8px; border: 2px solid #ffffff; border-radius: 50%; background: #17202a; transform: translate(-50%, -50%); }
+
+.proximity-home-summary { margin-bottom: 12px; }
+.proximity-home-summary button { color: #93c5fd; background: none; border: 0; padding: 4px 0; text-align: left; font-size: 12px; }
+.proximity-map-controls { flex-shrink: 0; }
+.proximity-toolbar button:disabled, .proximity-home-summary button:disabled { opacity: .5; cursor: default; }
+@media (max-width: 600px) { .proximity-toolbar { flex-wrap: wrap; } }
+
+.proximity-home-pin { color: #fff; background: #334155; border: 2px solid #fff; border-radius: 7px; padding: 5px 9px; font: 600 12px system-ui; box-shadow: 0 2px 6px #0003; }

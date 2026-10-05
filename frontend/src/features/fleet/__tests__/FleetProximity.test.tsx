@@ -4,7 +4,7 @@ import FleetMap from '../FleetMap'
 import type { BoardTruck } from '../types'
 import { positionAge, recentPosition } from '../proximity'
 import { roadCandidates } from '../roadProximity'
-vi.mock('../FleetMapCanvas', () => ({ default: () => <div>Map fixture</div> }))
+vi.mock('../FleetMapCanvas', () => ({ default: ({ onClusterOpen }: { onClusterOpen: (ids: string[]) => void }) => <button onClick={() => onClusterOpen(['Down', 'Near'])}>Open test cluster</button> }))
 
 const now = new Date('2026-10-04T12:00:00Z').getTime()
 function truck(id: string, longitude = 0, ageMinutes: number | null = 0): BoardTruck {
@@ -16,9 +16,11 @@ const origin = { ...truck('Down'), status: 'out_of_service' as const }
 const near = truck('Near', .1), old = truck('Old', .01, 60), undated = truck('Undated', .001, null)
 const missing = { ...truck('Missing'), telemetry: null, lat: 0, lng: .001 }
 beforeEach(() => { vi.useFakeTimers(); vi.setSystemTime(now); vi.stubEnv('VITE_MAPBOX_TOKEN', 'test-token'); vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+  if (url.includes('/geocode/')) return { ok: true, json: async () => ({ features: [{ geometry: { coordinates: [.3, 0] } }] }) }
   if (url.includes('/directions/v5/')) return { ok: true, json: async () => ({ code: 'Ok', routes: [{ geometry: { type: 'LineString', coordinates: [[0, 0], [.1, .05], [.2, 0]] } }] }) }
   const points = new URL(url).pathname.split('/').pop()!.split(';').map(point => point.split(',').map(Number))
-  return { ok: true, json: async () => ({ code: 'Ok', distances: [points.slice(1).map(point => Math.abs(point[0] - points[0][0]) * 111000)], durations: [points.slice(1).map(() => 600)] }) }
+  const destinations = new URL(url).searchParams.get('destinations')!.split(';').map(index => points[Number(index)])
+  return { ok: true, json: async () => ({ code: 'Ok', distances: [destinations.map(point => Math.abs(point[0] - points[0][0]) * 111000)], durations: [destinations.map(() => 600)] }) }
 })) })
 afterEach(() => { vi.useRealTimers(); vi.unstubAllEnvs(); vi.unstubAllGlobals() })
 
@@ -102,4 +104,52 @@ describe('map workspace', async () => {
     await settle()
     expect(within(screen.getByRole('region', { name: 'Closest road route' })).getByText('13.8 mi')).toBeInTheDocument()
   })
+})
+
+it('opens the cluster chooser in the side panel and closes it when a member is selected', async () => {
+  render(<FleetMap trucks={[origin, near]} />)
+  fireEvent.click(screen.getByRole('button', { name: 'Open test cluster' }))
+  const chooser = screen.getByRole('region', { name: 'Trucks in selected cluster' })
+  expect(chooser.closest('.proximity-panel')).not.toBeNull()
+  expect(chooser.closest('.proximity-geography')).toBeNull()
+  fireEvent.click(within(chooser).getByRole('button', { name: /Near Available/ }))
+  expect(screen.queryByRole('region', { name: 'Trucks in selected cluster' })).not.toBeInTheDocument()
+  expect(screen.getByText('Near', { selector: '.proximity-unit' })).toBeInTheDocument()
+})
+
+ it('starts unselected, ranks from home, retains missing trucks and returns home after selection', async () => {
+  render(<FleetMap trucks={[origin, near, missing]} homeAddress="416 Seaboard Drive, Matthews, NC" />)
+  await settle()
+  await settle()
+  expect(screen.queryByText('Comparing from')).not.toBeInTheDocument()
+  expect(screen.getByText('Closest to home')).toBeInTheDocument()
+  const rows = document.querySelectorAll('.proximity-row')
+  expect(rows[0]).toHaveTextContent('Near')
+  expect(rows[1]).toHaveTextContent('Down')
+  expect(rows[2]).toHaveTextContent('Missing')
+  expect(rows[2].querySelector('.proximity-row-miles')).toBeNull()
+  expect(vi.mocked(fetch).mock.calls.some(([url]) => String(url).includes('/directions/v5/'))).toBe(false)
+  fireEvent.click(rows[0])
+  expect(screen.getByText('Comparing from')).toBeInTheDocument()
+  fireEvent.click(screen.getByRole('button', { name: 'Home', exact: true }))
+  expect(screen.queryByText('Comparing from')).not.toBeInTheDocument()
+ })
+ it('keeps all trucks available when home lookup fails', async () => {
+  vi.mocked(fetch).mockRejectedValue(new Error('offline'))
+  render(<FleetMap trucks={[origin, missing]} homeAddress="Unresolved home" />)
+  await settle()
+  expect(screen.getByText('Home location unavailable.')).toBeInTheDocument()
+  expect(screen.getByRole('button', { name: 'Home', exact: true })).toBeDisabled()
+  expect(document.querySelectorAll('.proximity-row')).toHaveLength(2)
+  expect(document.querySelector('.proximity-row-miles')).toBeNull()
+ })
+
+it('shows shop to selected truck miles while keeping nearby trucks listed', async () => {
+  render(<FleetMap trucks={[near, truck('Far', 1)]} focusId="Near" homeAddress="416 Seaboard Drive, Matthews, NC" />)
+  await settle(); await settle()
+  const summary = screen.getByRole('region', { name: 'Closest road route' })
+  expect(summary).toHaveTextContent('Shop is closest')
+  expect(summary).toHaveTextContent('Shop→Near')
+  expect(summary).toHaveTextContent('13.8 mi')
+  expect(screen.getByRole('button', { name: /Far Available/ })).toBeInTheDocument()
 })

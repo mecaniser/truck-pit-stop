@@ -3,7 +3,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { fetchRoadDistances, fetchRoadGeometry, useRoadProximity } from '../roadProximity'
 import type { BoardTruck } from '../types'
 const reply = (body: unknown) => ({ ok: true, json: async () => body })
-const matrix = (distances: (number | null)[], durations = distances.map(value => value === null ? null : 300)) => reply({ code: 'Ok', distances: [distances], durations: [durations] })
+const matrix = (distances: (number | null)[], durations = distances.map(value => value === null ? null : 300)) => reply({ code: 'Ok', distances: [distances.length === 1 ? [0, ...distances] : distances], durations: [durations.length === 1 ? [0, ...durations] : durations] })
 const signal = () => new AbortController().signal
 beforeEach(() => { vi.stubGlobal('fetch', vi.fn()); vi.stubEnv('VITE_MAPBOX_TOKEN', 'synthetic') })
 afterEach(() => { vi.unstubAllGlobals(); vi.unstubAllEnvs(); vi.useRealTimers() })
@@ -80,4 +80,62 @@ it('times out hung provider calls with a retryable error', async () => {
   const hook = renderHook(() => useRoadProximity([a, b], a, now, false, 0))
   await act(async () => { await vi.advanceTimersByTimeAsync(15251) })
   expect(hook.result.current.phase).toBe('error')
+})
+
+
+it.each([
+  { shopMeters: 1000, truckMeters: 5000, kind: 'shop', from: '3,0;0,0' },
+  { shopMeters: 5000, truckMeters: 1000, kind: 'truck', from: '0,0;1,0' },
+  { shopMeters: 1000, truckMeters: 1000, kind: 'shop', from: '3,0;0,0' },
+  { shopMeters: null, truckMeters: 1000, kind: 'truck', from: '0,0;1,0' },
+])('chooses $kind with correct travel direction', async ({ shopMeters, truckMeters, kind, from }) => {
+  vi.useFakeTimers()
+  vi.mocked(fetch).mockImplementation(async url => {
+    const path = new URL(String(url)).pathname
+    if (path.includes('/directions/v5/')) return reply({ code: 'Ok', routes: [{ geometry: { type: 'LineString', coordinates: [[3, 0], [0, 0]] } }] }) as Response
+    return matrix([path.endsWith('3,0;0,0') ? shopMeters : truckMeters]) as Response
+  })
+  const hook = renderHook(() => useRoadProximity([a, b], a, now, false, 0, [3, 0]))
+  await settle()
+  expect(hook.result.current.recommendation?.kind).toBe(kind)
+  expect(hook.result.current.nearby[0].truck.id).toBe('b')
+  const paths = vi.mocked(fetch).mock.calls.map(([url]) => new URL(String(url)).pathname)
+  expect(paths).toContain('/directions-matrix/v1/mapbox/driving/3,0;0,0')
+  expect(paths).toContain('/directions/v5/mapbox/driving/' + from)
+})
+it('routes from shop for a lone truck but retains stale-position gating', async () => {
+  vi.useFakeTimers()
+  vi.mocked(fetch).mockResolvedValue(matrix([1609]) as Response)
+  const hook = renderHook(({ time, include }) => useRoadProximity([a], a, time, include, 0, [3, 0]), { initialProps: { time: now, include: false } })
+  await settle()
+  expect(hook.result.current.recommendation?.kind).toBe('shop')
+  hook.rerender({ time: now + 3600000, include: false })
+  expect(hook.result.current.recommendation).toBeUndefined()
+  expect(hook.result.current.geometry).toBeUndefined()
+  hook.rerender({ time: now + 3600000, include: true })
+  await settle()
+  expect(hook.result.current.recommendation?.kind).toBe('shop')
+})
+it('does not claim a winner if the shop comparison fails and clears it on scope changes', async () => {
+  vi.useFakeTimers()
+  vi.mocked(fetch).mockImplementation(async url => {
+    if (String(url).includes('3,0;0,0')) throw new Error('offline')
+    return matrix([1000]) as Response
+  })
+  const hook = renderHook(({ home }) => useRoadProximity([a, b], a, now, false, 0, home), { initialProps: { home: [3, 0] as [number, number] | undefined } })
+  await settle()
+  expect(hook.result.current.phase).toBe('error')
+  expect(hook.result.current.recommendation).toBeUndefined()
+  hook.rerender({ home: undefined })
+  await settle()
+  expect(hook.result.current.recommendation?.kind).toBe('truck')
+  hook.rerender({ home: [3, 0] })
+  expect(hook.result.current.recommendation).toBeUndefined()
+})
+
+it('requests two matrix cells for one destination and ignores the self-distance', async () => {
+  vi.mocked(fetch).mockResolvedValue(reply({ code: 'Ok', distances: [[0, 1609.344]], durations: [[0, 600]] }) as Response)
+  const result = await fetchRoadDistances([0, 0], [{ id: 'only', point: [1, 0] }], 'synthetic', signal())
+  expect(new URL(String(vi.mocked(fetch).mock.calls[0][0])).searchParams.get('destinations')).toBe('0;1')
+  expect(result.routes).toEqual([{ id: 'only', miles: 1, seconds: 600 }])
 })
