@@ -7,8 +7,9 @@ import '../src/index.css'
 import '../src/features/fleet/fleet.css'
 if (!import.meta.env.DEV) throw new Error('Development fixture only')
 const now = Date.now()
+const shopCloser = new URLSearchParams(window.location.search).get('scenario') === 'shop-closer'
 const trucks = [
-  ['101', 'out_of_service', 35.2271, -80.8431, 1, 'Charlotte, NC'],
+  ['101', 'out_of_service', shopCloser ? 35.1 : 35.2271, shopCloser ? -80.68 : -80.8431, 1, shopCloser ? 'Matthews, NC' : 'Charlotte, NC'],
   ['204', 'available', 35.2621, -80.8601, 2, 'Charlotte, NC'],
   ['307', 'active', 35.4107, -80.8429, 4, 'Huntersville, NC'],
   ['408', 'shop', 35.5951, -80.8101, 6, 'Mooresville, NC'],

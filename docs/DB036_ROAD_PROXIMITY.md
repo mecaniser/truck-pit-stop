@@ -75,3 +75,12 @@ Home-to-truck Matrix road miles rank all usable positions, with last-known age l
 Checks:37 tests across canvas, proximity, routing and FleetApp return context pass; TypeScript and affected map/hook/test lint pass. Native Chrome desktop and390px preview show unselected Closest to home, all7fixture trucks and road ordering101(15mi),610(15.1mi,last-known),204(17.8mi), etc. Selecting101 switches to truck comparison; Home clears it back to overview. Camera bounds/Home transitions have focused tests. Screenshot capture remains distorted/thumbnail-only, so no full-resolution visual sign-off is claimed.
 
 Runtime:5186/PID85747 still serves this worktree on codex/fleet-cluster-popover; pre-edit HEAD babde0e4 plus these source edits. HTTP200 and rendered Home/road results verify served source. Backend8000 absent; no approved local database configuration, authenticated full-stack acceptance unavailable. Synthetic data with real Mapbox only. Not merged/deployed.
+
+
+### Shop priority and search focus — 2026-10-04
+
+Frontend & UX, Fast UI follow-up on PR469. For a selected eligible truck, compare directed shop-to-selected miles with selected-to-nearest-truck miles. Shop wins when nearer or tied, including when no other truck is routable. Recommendation controls summary endpoints, miles/time and Directions origin/destination; nearby rows retain truck comparisons. Stale/absent selected positions retain the existing eligibility rules. Errors in either comparison do not claim a winner; selection/scope changes invalidate recommendation and geometry immediately.
+
+Live provider check found Matrix rejects a single cell with422 InvalidInput. Singleton batches now request destinations0;1, validate both returned entries and discard the self-distance. This also repairs existing one-other-truck and single-truck-home-overview cases.
+
+40focused routing/proximity/canvas tests pass; TypeScript, scoped ESLint and diff checks pass. Native Chrome scenario `tests/proximity-preview.html?scenario=shop-closer` displays Shop→101,1.5mi/7min, blue route, and other trucks at17.2mi/31.2mi/42.8mi. Scenario is explicit synthetic data. Same aligned5186process/worktree; no backend or production mutation. CSS focus-within now outlines the full search label including its icon; inner input outline suppressed. Served stylesheet verified and native search focus exercised; prior screenshot capture limitation persists. Not deployed.

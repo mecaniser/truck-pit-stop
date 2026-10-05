@@ -46,7 +46,8 @@ function FleetMap({ trucks, focusId, onFocusChange, onSelect, compact, homeAddre
     if (moveFocus.current) { (headingRef.current || searchRef.current)?.focus(); moveFocus.current = false }
   }, [focus?.id, query])
   const [retry, setRetry] = useState(0)
-  const road = useRoadProximity(trucks, focus, now, includeLastKnown, retry, !focus ? home.point : undefined)
+  const road = useRoadProximity(trucks, focus, now, includeLastKnown, retry, home.point)
+  const recommended = road.recommendation
   const nearby = road.nearby
   const visibleNearby = expanded ? nearby : nearby.slice(0, 3)
   const located = trucks.filter(truck => truckCoordinates(truck, now))
@@ -88,10 +89,10 @@ function FleetMap({ trucks, focusId, onFocusChange, onSelect, compact, homeAddre
           <Status truck={focus} />
           <p>{truckLocation(focus, now)?.label || 'Location unavailable'}</p>
           <small>{positionAge(focus, now)}</small>
-          {nearby[0] && <div className="proximity-route-summary" role="region" aria-label="Closest road route">
-            <span className="proximity-route-caption">Closest by road</span>
-            <div className="proximity-route-endpoints"><strong>{fleetUnitLabel(focus)}</strong><span aria-label="to">→</span><strong>{fleetUnitLabel(nearby[0].truck)}</strong></div>
-            <div className="proximity-route-metrics"><strong>{formatDistance(nearby[0].miles)}</strong><span>{formatDriveTime(nearby[0].seconds)}<small>est. drive</small></span></div>
+          {recommended && <div className="proximity-route-summary" role="region" aria-label="Closest road route">
+            <span className="proximity-route-caption">{recommended.kind === 'shop' ? 'Shop is closest' : 'Closest truck by road'}</span>
+            <div className="proximity-route-endpoints"><strong>{recommended.kind === 'shop' ? 'Shop' : fleetUnitLabel(focus)}</strong><span aria-label="to">→</span><strong>{recommended.kind === 'shop' ? fleetUnitLabel(focus) : fleetUnitLabel(nearby[0].truck)}</strong></div>
+            <div className="proximity-route-metrics"><strong>{formatDistance(recommended.distance.miles)}</strong><span>{formatDriveTime(recommended.distance.seconds)}<small>est. drive</small></span></div>
             <small>{road.geometryFailed ? 'Route preview unavailable' : road.geometry ? 'Blue route on map' : 'Loading route…'}</small>
           </div>}
           {road.phase === 'loading' && <div className="proximity-route-summary" role="status">Calculating road distances…</div>}
@@ -109,7 +110,7 @@ function FleetMap({ trucks, focusId, onFocusChange, onSelect, compact, homeAddre
         {focus && !searching && <>
           <div className="proximity-basis">Road miles · fastest driving routes · {includeLastKnown ? 'last-known positions included' : 'positions ≤15 min old'}</div>
           <label className="proximity-toggle"><input type="checkbox" checked={includeLastKnown} onChange={event => { setIncludeLastKnown(event.target.checked); setExpanded(false) }} />Include last-known</label>
-          {missingOrigin ? <p className="proximity-empty">This truck has no verified coordinates. Distance is unavailable.</p> : oldOrigin ? <p className="proximity-empty">This truck’s position is old or undated. Include last-known to compare recorded positions.</p> : road.phase === 'loading' ? null : road.phase === 'unconfigured' ? <p className="proximity-empty" role="status">Road routing is not configured.</p> : road.phase === 'error' ? <p className="proximity-empty" role="status">Road distances unavailable. <button type="button" onClick={() => setRetry(value => value + 1)}>Retry routing</button></p> : road.phase === 'ready' && nearby.length === 0 ? <p className="proximity-empty">No road routes found.</p> : nearby.length === 0 ? <p className="proximity-empty">No other {includeLastKnown ? 'located' : 'recently located'} trucks.</p> : null}
+          {missingOrigin ? <p className="proximity-empty">This truck has no verified coordinates. Distance is unavailable.</p> : oldOrigin ? <p className="proximity-empty">This truck’s position is old or undated. Include last-known to compare recorded positions.</p> : road.phase === 'loading' ? null : road.phase === 'unconfigured' ? <p className="proximity-empty" role="status">Road routing is not configured.</p> : road.phase === 'error' ? <p className="proximity-empty" role="status">Road distances unavailable. <button type="button" onClick={() => setRetry(value => value + 1)}>Retry routing</button></p> : road.phase === 'ready' && nearby.length === 0 ? <p className="proximity-empty">No road routes to other trucks.</p> : nearby.length === 0 ? <p className="proximity-empty">No other {includeLastKnown ? 'located' : 'recently located'} trucks.</p> : null}
           {road.unreachable > 0 && <p className="proximity-empty">{road.unreachable} truck{road.unreachable === 1 ? '' : 's'} without a road route.</p>}
         </>}
         <div className="proximity-rows">

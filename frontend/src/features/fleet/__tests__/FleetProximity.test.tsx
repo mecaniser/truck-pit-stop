@@ -19,7 +19,8 @@ beforeEach(() => { vi.useFakeTimers(); vi.setSystemTime(now); vi.stubEnv('VITE_M
   if (url.includes('/geocode/')) return { ok: true, json: async () => ({ features: [{ geometry: { coordinates: [.3, 0] } }] }) }
   if (url.includes('/directions/v5/')) return { ok: true, json: async () => ({ code: 'Ok', routes: [{ geometry: { type: 'LineString', coordinates: [[0, 0], [.1, .05], [.2, 0]] } }] }) }
   const points = new URL(url).pathname.split('/').pop()!.split(';').map(point => point.split(',').map(Number))
-  return { ok: true, json: async () => ({ code: 'Ok', distances: [points.slice(1).map(point => Math.abs(point[0] - points[0][0]) * 111000)], durations: [points.slice(1).map(() => 600)] }) }
+  const destinations = new URL(url).searchParams.get('destinations')!.split(';').map(index => points[Number(index)])
+  return { ok: true, json: async () => ({ code: 'Ok', distances: [destinations.map(point => Math.abs(point[0] - points[0][0]) * 111000)], durations: [destinations.map(() => 600)] }) }
 })) })
 afterEach(() => { vi.useRealTimers(); vi.unstubAllEnvs(); vi.unstubAllGlobals() })
 
@@ -142,3 +143,13 @@ it('opens the cluster chooser in the side panel and closes it when a member is s
   expect(document.querySelectorAll('.proximity-row')).toHaveLength(2)
   expect(document.querySelector('.proximity-row-miles')).toBeNull()
  })
+
+it('shows shop to selected truck miles while keeping nearby trucks listed', async () => {
+  render(<FleetMap trucks={[near, truck('Far', 1)]} focusId="Near" homeAddress="416 Seaboard Drive, Matthews, NC" />)
+  await settle(); await settle()
+  const summary = screen.getByRole('region', { name: 'Closest road route' })
+  expect(summary).toHaveTextContent('Shop is closest')
+  expect(summary).toHaveTextContent('Shop→Near')
+  expect(summary).toHaveTextContent('13.8 mi')
+  expect(screen.getByRole('button', { name: /Far Available/ })).toBeInTheDocument()
+})

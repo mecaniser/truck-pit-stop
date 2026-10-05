@@ -7,7 +7,8 @@ export interface RoadPoint { id: string; point: [number, number] }
 export interface RoadDistance { id: string; miles: number; seconds: number }
 interface RoadResult { routes: RoadDistance[]; unreachable: number }
 type Phase = 'idle' | 'loading' | 'ready' | 'error' | 'unconfigured'
-interface State extends RoadResult { key: string; phase: Phase; geometry?: GeoJSON.LineString; geometryFailed?: boolean }
+interface Recommendation { kind: 'shop' | 'truck'; distance: RoadDistance }
+interface State extends RoadResult { recommendation?: Recommendation; key: string; phase: Phase; geometry?: GeoJSON.LineString; geometryFailed?: boolean }
 const validNumber = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value) && value >= 0
 
 export function roadCandidates(trucks: BoardTruck[], focus: BoardTruck | undefined, now: number, includeLastKnown: boolean): RoadPoint[] {
@@ -39,14 +40,16 @@ export async function fetchRoadDistances(origin: [number, number], candidates: R
     if (signal.aborted) throw new DOMException('Aborted', 'AbortError')
     const batch = candidates.slice(start, start + 24)
     const coordinates = [origin, ...batch.map(row => row.point)].map(point => point.join(',')).join(';')
+    // Mapbox requires at least two matrix cells, even for one destination.
+    const offset = batch.length === 1 ? 1 : 0
     const body = await request(`directions-matrix/v1/mapbox/driving/${coordinates}`, {
-      sources: '0', destinations: batch.map((_, index) => String(index + 1)).join(';'), annotations: 'distance,duration',
+      sources: '0', destinations: offset ? '0;1' : batch.map((_, index) => String(index + 1)).join(';'), annotations: 'distance,duration',
     }, token, signal)
     if (body.code === 'NoRoute') { unreachable += batch.length; continue }
     const distances = body.distances?.[0], durations = body.durations?.[0]
-    if (body.code !== 'Ok' || !Array.isArray(distances) || !Array.isArray(durations) || distances.length !== batch.length || durations.length !== batch.length) throw new Error('Invalid routing response')
+    if (body.code !== 'Ok' || !Array.isArray(distances) || !Array.isArray(durations) || distances.length !== batch.length + offset || durations.length !== batch.length + offset) throw new Error('Invalid routing response')
     batch.forEach((candidate, index) => {
-      const meters = distances[index], seconds = durations[index]
+      const meters = distances[index + offset], seconds = durations[index + offset]
       if (meters === null || seconds === null) { unreachable++; return }
       if (!validNumber(meters) || !validNumber(seconds)) throw new Error('Invalid routing distance')
       routes.push({ id: candidate.id, miles: meters / 1609.344, seconds })
@@ -62,35 +65,48 @@ export async function fetchRoadGeometry(origin: [number, number], destination: [
   return geometry
 }
 
-export function useRoadProximity(trucks: BoardTruck[], focus: BoardTruck | undefined, now: number, includeLastKnown: boolean, retry: number, homeOrigin?: [number, number]) {
+export function useRoadProximity(trucks: BoardTruck[], focus: BoardTruck | undefined, now: number, includeLastKnown: boolean, retry: number, homePoint?: [number, number]) {
   const token = import.meta.env.VITE_MAPBOX_TOKEN || ''
-  const candidates = homeOrigin ? trucks.flatMap(truck => {
+  const overview = !focus && !!homePoint
+  const eligibleFocus = !!focus && !!truckCoordinates(focus, now) && (includeLastKnown || recentPosition(focus, now))
+  const shopOrigin = eligibleFocus ? homePoint : undefined
+  const candidates = overview ? trucks.flatMap(truck => {
     const point = truckCoordinates(truck, now)
     return point ? [{ id: truck.id, point }] : []
   }).sort((a, b) => a.id.localeCompare(b.id)) : roadCandidates(trucks, focus, now, includeLastKnown)
-  const origin = homeOrigin || (focus && truckCoordinates(focus, now))
-  const key = JSON.stringify({ origin, focus: focus?.id, candidates, includeLastKnown, retry, overview: !!homeOrigin })
-  const active = !!origin && candidates.length > 0
+  const origin = overview ? homePoint : (focus && truckCoordinates(focus, now))
+  const key = JSON.stringify({ origin, focus: focus?.id, candidates, includeLastKnown, retry, overview, shopOrigin })
+  const active = !!origin && (candidates.length > 0 || !!shopOrigin)
   const [state, setState] = useState<State>({ key: '', phase: 'idle', routes: [], unreachable: 0 })
   useEffect(() => {
     if (!active || !token) return
-    const input = JSON.parse(key) as { origin: [number, number]; candidates: RoadPoint[]; overview: boolean }
+    const input = JSON.parse(key) as { origin: [number, number]; candidates: RoadPoint[]; overview: boolean; shopOrigin?: [number, number] }
     const controller = new AbortController()
     // Avoid provider calls for selections that are immediately superseded.
     const timer = setTimeout(() => {
       void (async () => {
         try {
-          const result = await fetchRoadDistances(input.origin, input.candidates, token, controller.signal)
+          // Shop travel is directed shop -> selected truck, not the reverse.
+          const [result, shop] = await Promise.all([
+            fetchRoadDistances(input.origin, input.candidates, token, controller.signal),
+            input.shopOrigin ? fetchRoadDistances(input.shopOrigin, [{ id: 'shop-to-selected', point: input.origin }], token, controller.signal) : Promise.resolve(undefined),
+          ])
           if (controller.signal.aborted) return
-          setState({ ...result, key, phase: 'ready' })
-          if (input.overview) return
           const closest = input.candidates.find(candidate => candidate.id === result.routes[0]?.id)
-          if (!closest) return
+          const shopDistance = shop?.routes[0]
+          const recommendation: Recommendation | undefined = input.overview ? undefined
+            : shopDistance && (!result.routes[0] || shopDistance.miles <= result.routes[0].miles) ? { kind: 'shop', distance: shopDistance }
+              : result.routes[0] ? { kind: 'truck', distance: result.routes[0] } : undefined
+          const ready: State = { ...result, key, phase: 'ready', recommendation }
+          setState(ready)
+          if (!recommendation) return
+          const from = recommendation.kind === 'shop' ? input.shopOrigin! : input.origin
+          const to = recommendation.kind === 'shop' ? input.origin : closest!.point
           try {
-            const geometry = await fetchRoadGeometry(input.origin, closest.point, token, controller.signal)
-            if (!controller.signal.aborted) setState({ ...result, key, phase: 'ready', geometry })
+            const geometry = await fetchRoadGeometry(from, to, token, controller.signal)
+            if (!controller.signal.aborted) setState({ ...ready, geometry })
           } catch {
-            if (!controller.signal.aborted) setState({ ...result, key, phase: 'ready', geometryFailed: true })
+            if (!controller.signal.aborted) setState({ ...ready, geometryFailed: true })
           }
         } catch {
           if (!controller.signal.aborted) setState({ key, phase: 'error', routes: [], unreachable: 0 })

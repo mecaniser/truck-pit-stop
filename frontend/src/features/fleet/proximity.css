@@ -16,6 +16,8 @@
 .proximity-last-known-key i { background: transparent; border: 1px dashed currentColor; }
 .proximity-panel { display: flex; flex-direction: column; min-width: 0; border-left: 1px solid var(--line, #344453); padding: 14px; max-height: 720px; overflow: auto; }
 .proximity-search { display: flex; gap: 8px; align-items: center; border: 1px solid var(--line, #344453); padding: 0 10px; border-radius: 8px; flex-shrink: 0; }
+.proximity-search:focus-within { outline: 2px solid var(--yellow, #ffc400); outline-offset: -2px; }
+.proximity .proximity-search input:focus { outline: none; box-shadow: none; }
 .proximity-search svg { color: var(--muted-2, #93a3b2); flex: none; }
 .proximity-search input { width: 100%; min-width: 0; min-height: 44px; border: 0; background: transparent; font: inherit; font-size: 12px; color: inherit; }
 .proximity-focus { padding: 4px 0 16px; border-bottom: 1px solid var(--line, #344453); }
