@@ -11,6 +11,8 @@ import { fleetUnitLabel } from './helpers'
 import './trips.css'
 import TripOverview from './TripOverview'
 import { loadTripRange } from './tripAggregation'
+import { loadFuelRange } from './fuelDaily'
+import SourceFuel from './SourceFuel'
 
 export interface TripMetrics {
   fuel_used_gallons: number | null; trip_mpg: number | null
@@ -63,6 +65,14 @@ export default function FleetTrips({ trucks, filters, onFilters, onOpenTruck }: 
     } })).data),
     enabled: validDates && validVehicle,
   })
+  const fuelQuery = useQuery({
+    queryKey: ['fleet-fuel-daily', filters.vehicleId, filters.start, filters.end],
+    queryFn: ({ signal }) => loadFuelRange(filters.start, filters.end, async (start, end, offset) => (await api.get('/fleet/fuel-daily', { signal, params: {
+      start_date: start, end_date: end, vehicle_id: filters.vehicleId || undefined, limit: 100, offset,
+    } })).data),
+    enabled: validDates && validVehicle,
+    retry: false,
+  })
   const update = (next: Partial<TripFilters>) => { onFilters({ ...filters, ...next }) }
   const day = (value: string) => new Date(value).toLocaleDateString(undefined, { month: 'short', day: 'numeric', timeZone: timezone })
   const periodDate = (value: string) => new Date(`${value}T12:00:00`).toLocaleDateString(undefined, { month: 'short', day: 'numeric', ...(filters.start.slice(0, 4) !== filters.end.slice(0, 4) || filters.start.slice(0, 4) !== String(new Date().getFullYear()) ? { year: 'numeric' as const } : {}) })
@@ -95,15 +105,18 @@ export default function FleetTrips({ trucks, filters, onFilters, onOpenTruck }: 
       </div>
       </div>
       {!validDates ? <p role="alert">Choose a date range of up to 366 days.</p> : !validVehicle ? <p role="alert">This truck is no longer available. Select another truck.</p> : query.isPending ? <p role="status" className="trips-message">Loading trips…</p> : query.isError ? <div role="alert" className="trips-message">Trips could not be loaded. <button type="button" className="dbtn" onClick={() => query.refetch()}>Retry</button></div> : query.data && <>
-        <p className="trips-coverage" title="Dates show the earliest and latest imported departures. Gaps may remain.">Imported {query.data.imported_start && query.data.imported_end ? `${importedDay(query.data.imported_start)}–${importedDay(query.data.imported_end)}` : 'trips'} <span>· Partial</span></p>
+        <p className="trips-coverage" title="Dates show the earliest and latest imported departures. Gaps may remain.">Imported {query.data.imported_start && query.data.imported_end ? `${importedDay(query.data.imported_start)}–${importedDay(query.data.imported_end)}` : 'trips'} <span>· {number(query.data.summary.trip_count)} driving segments</span></p>
         <div className="trips-totals" aria-label="Imported trip totals">
-          <div><Truck size={18} />{selectedTruck ? <button type="button" className="trip-truck-link" onClick={() => onOpenTruck(selectedTruck.id)}><strong>Truck {selectedTruck.unit_number}</strong><small>View truck <ArrowRight size={14} /></small></button> : <span><strong>{number(query.data.summary.truck_count)}</strong><small>Trucks with trips</small></span>}</div>
-          <div><Route size={18} /><span><strong>{number(query.data.summary.trip_count)}</strong><small>Driving segments</small></span></div>
+          <div><Truck size={18} />{selectedTruck ? <button type="button" className="trip-truck-link" onClick={() => onOpenTruck(selectedTruck.id)}><strong>Truck {selectedTruck.unit_number}</strong><small>View truck <ArrowRight size={14} /></small></button> : <span><strong>{number(query.data.summary.truck_count)}</strong><small>Reporting trucks</small></span>}</div>
+          <div><Route size={18} /><span><strong>Partial</strong><small>Import coverage</small></span></div>
           <div><MapPin size={18} /><span><strong>{number(query.data.summary.distance_miles)} <em>mi</em></strong><small>Distance</small></span></div>
           <div><Clock3 size={18} /><span><strong>{duration(query.data.summary.driving_seconds)}</strong><small>Driving</small></span></div>
         </div>
-        {query.data.total === 0 ? <div className="trips-empty"><Route size={28} /><h3>No imported trips</h3><p>No trip history has been imported for this selection.</p></div> : <>
-          <TripOverview key={`${filters.vehicleId}:${filters.start}:${filters.end}:${timezone}:${filters.preset}`} data={query.data} preset={filters.preset} trucks={selectedTruck ? [selectedTruck] : trucks} timezone={timezone} selected={!!selectedTruck} onSelectTruck={vehicleId => update({ vehicleId })} renderDetails={(items, endpoints) => <TripDetails endpoints={endpoints} items={items} data={query.data!} trucks={trucks} selected={!!selectedTruck} timezone={timezone} />} />
+        <div className="trips-source-fuel-status">
+          {fuelQuery.isPending ? <span role="status">Loading Motive fuel reports…</span> : fuelQuery.isError ? <span role="status">Fuel reports unavailable. <button type="button" onClick={() => fuelQuery.refetch()}>Retry fuel</button></span> : <><span>Motive fuel · partial reports</span><SourceFuel records={fuelQuery.data || []} /></>}
+        </div>
+        {query.data.total === 0 && !fuelQuery.data?.length ? <div className="trips-empty"><Route size={28} /><h3>No imported trips</h3><p>No trip history has been imported for this selection.</p></div> : <>
+          <TripOverview key={`${filters.vehicleId}:${filters.start}:${filters.end}:${timezone}:${filters.preset}`} data={query.data} fuelRecords={fuelQuery.data || []} preset={filters.preset} trucks={selectedTruck ? [selectedTruck] : trucks} timezone={timezone} selected={!!selectedTruck} onSelectTruck={vehicleId => update({ vehicleId })} renderDetails={(items, endpoints) => <TripDetails endpoints={endpoints} items={items} data={query.data!} trucks={trucks} selected={!!selectedTruck} timezone={timezone} />} />
         </>}
       </>}
     </section>

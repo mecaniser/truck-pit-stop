@@ -240,3 +240,5 @@ from app.db.models.motive_oauth import MotiveFleetAdminGrant, MotiveHistorySampl
 from app.db.models.fleet_telemetry import FleetTelemetrySnapshot  # noqa: F401
 
 from app.db.models.fleet_trip import FleetTrip  # noqa: F401
+
+from app.db.models.fleet_fuel import FleetFuelDaily  # noqa: F401

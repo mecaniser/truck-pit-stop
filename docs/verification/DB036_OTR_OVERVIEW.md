@@ -155,3 +155,22 @@ Branch codex/activity-grouping-options from production main; runtime5173 PID6271
 
 ## Timeframe grouping release gate — 2026-10-04
 User approved commit/push/deploy.43focused tests passed: ActivityChart8, FleetTrips24, aggregation11. Changed-source lint and diff check passed. Existing preview acceptance verifies all four preset menus. Private previews and data excluded.
+
+## Production acceptance — timeframe grouping, 2026-10-04
+PR#466 merged7bc347da36c2bad1e341ab48fe43ff68a89ccfb4; all6protected checks passed, run37236346123. Railway158a6ea5-bc4b-46f1-bc78-b8866a9c0312 SUCCESS; public build-version matches and health=alive. Authenticated browser verified Week has0grouping menus/By day label, Month options day/week, Year options day/week/month, Day has0grouping menus/Day total label. Returned live page to current Week. Screenshot output/grouping-production-verified.png. Private preview/data excluded. Receipt saved locally after merge and mirrored in PR.
+
+## Data visualization clarity — 2026-10-05
+- Branch `codex/fleet-data-clarity`, base `51a1f380a180fbabdbc571ea6033e2a45721535f`, scoped uncommitted frontend changes; existing release receipts preserved.
+- Runtime preflight renewed across midnight: frontend PID 4641 cwd this worktree `/frontend`, port5173 HTTP200; proxy default localhost8000, no backend listener. Intentional standalone private-snapshot preview, no database/provider requests. Rendered median/fuel coverage corroborates changed source.
+- 46 focused tests pass (FleetTrips25, ActivityChart10, aggregation11), build including TypeScript passes; changed-source lint passes. Desktop and700px compact rendering inspected; disclosure opens/closes, heatmap semantics verified. Screenshot `output/fleet-data-clarity.png`. Aligned and browser-verified for isolated preview only.
+- Production unchanged; calendar partial labels do not assert import completeness; missing trips remain distinct from zero mileage.
+
+- Share tooltip refinement: hovering the contribution percentage explains selected-period fleet share with truck amount, fleet total, units, dates and reporting count; same explanation is in the row accessible name. Supports distance and driving hours and an undefined-share fallback. FleetTrips25 tests and changed-source lint pass.
+
+## Daily source fuel import — 2026-10-05
+
+- Owner: Backend & Integrations; Architecture contract: immutable source-report daily fuel, separate from trips and calculated estimates.
+- Source acceptance: 13 fresh source unit/provider/VIN checks;414 daily rows prepared,43 unmatched rows quarantined. Source dates Aug15–Oct3; Oct4 explicitly has no report. Three source idle-duration outliers preserved, not clamped.
+- Runtime: codex/fleet-data-clarity at51a1f380; frontend5173 PID4641 from this worktree, HTTP200 and source fuel popup browser verified. Backend8000 absent intentionally: private static preview, isolated backend tests; no production DB local connection.
+- Checks:36 backend/import runner tests,52 frontend focused tests; build/TypeScript/lint pass. Independent PostgreSQL15 full migration chain, downgrade/re-upgrade and committed replay/tenant isolation verified. Final duration-bound independent re-review GO (29 daily-fuel tests pass).
+- Deployment and committed production import pending. Private receipts remain output/fuel-history-2026-10-05 and are excluded from Git.
