@@ -49,6 +49,7 @@ describe('map workspace', async () => {
     render(<FleetMap trucks={[origin, near, old, undated, missing]} onSelect={open} />)
     fireEvent.click(screen.getByRole('button', { name: /Down Out of service/ }))
     expect(screen.getByText('Comparing from')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Include last-known' }))
     await settle()
     expect(screen.getAllByText('6.9 mi')).toHaveLength(2)
     expect(screen.queryByRole('button', { name: /Old Available/ })).not.toBeInTheDocument()
@@ -80,15 +81,17 @@ describe('map workspace', async () => {
     expect(screen.getByText(/This truck has no verified coordinates/)).toBeInTheDocument()
     expect(screen.queryByText('6.9 mi')).not.toBeInTheDocument()
   })
-  it('permits old-origin comparison only after explicit last-known selection', async () => {
+  it('uses last-known positions by default and can restrict to recent positions', async () => {
     render(<FleetMap focusId={old.id} trucks={[old, near]} />)
-    expect(screen.getByText(/position is old or undated/)).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('checkbox'))
+    expect(screen.getByRole('checkbox')).toBeChecked()
     await settle()
     expect(screen.getByRole('button', { name: /Near.*Available/ })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('checkbox'))
+    expect(screen.getByText(/position is old or undated/)).toBeInTheDocument()
   })
   it('ages out candidates and drops a selected truck removed from scope', async () => {
     const result = render(<FleetMap focusId={origin.id} trucks={[origin, truck('Aging', .1, 14.9)]} />)
+    fireEvent.click(screen.getByRole('checkbox'))
     await settle()
     expect(screen.getAllByText('6.9 mi')).toHaveLength(2)
     act(() => vi.advanceTimersByTime(30000))
@@ -152,4 +155,12 @@ it('shows shop to selected truck miles while keeping nearby trucks listed', asyn
   expect(summary).toHaveTextContent('Shop→Near')
   expect(summary).toHaveTextContent('13.8 mi')
   expect(screen.getByRole('button', { name: /Far Available/ })).toBeInTheDocument()
+})
+
+it('shows raw units and only cities for production-shaped labels', () => {
+  const row = { ...origin, unit_number: '01', display_unit_number: '77 CARGO LLC 01', telemetry: { ...origin.telemetry!, location: { ...origin.telemetry!.location!, label: 'I 85, Belle Meade, SC 29605' } } }
+  render(<FleetMap trucks={[row]} />)
+  expect(screen.getByRole('button', { name: /01 Out of service Belle Meade/ })).toBeInTheDocument()
+  expect(screen.queryByText('77 CARGO LLC 01')).not.toBeInTheDocument()
+  expect(screen.queryByText(/I 85/)).not.toBeInTheDocument()
 })

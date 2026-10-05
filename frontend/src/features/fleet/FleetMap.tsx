@@ -1,7 +1,8 @@
 import { memo, useEffect, useRef, useState } from 'react'
 import { ArrowUpRight, ChevronDown, Home, LocateFixed, Search, X } from 'lucide-react'
 import type { BoardTruck } from './types'
-import { fleetUnitLabel, STATUS_META } from './helpers'
+import { STATUS_META } from './helpers'
+import { mapUnitLabel, mapCity } from './mapLabels'
 import { truckCoordinates, truckLocation, useTelemetryClock } from './telemetry'
 import { formatDistance, positionAge, recentPosition } from './proximity'
 import { formatDriveTime, useRoadProximity } from './roadProximity'
@@ -30,7 +31,7 @@ function FleetMap({ trucks, focusId, onFocusChange, onSelect, compact, homeAddre
   const [query, setQuery] = useState('')
   const [clusterIds, setClusterIds] = useState<string[]>([])
   const clusterTrucks = trucks.filter(truck => clusterIds.includes(truck.id) && truckCoordinates(truck, now))
-  const [includeLastKnown, setIncludeLastKnown] = useState(false)
+  const [includeLastKnown, setIncludeLastKnown] = useState(true)
   const [expanded, setExpanded] = useState(false)
   const [recenter, setRecenter] = useState(0)
   useEffect(() => {
@@ -53,7 +54,7 @@ function FleetMap({ trucks, focusId, onFocusChange, onSelect, compact, homeAddre
   const located = trucks.filter(truck => truckCoordinates(truck, now))
   const recentCount = located.filter(truck => recentPosition(truck, now)).length
   const searching = !!query.trim()
-  const matches = trucks.filter(truck => `${fleetUnitLabel(truck)} ${truck.driver_name || ''} ${truckLocation(truck, now)?.label || ''}`.toLowerCase().includes(query.trim().toLowerCase()))
+  const matches = trucks.filter(truck => `${mapUnitLabel(truck)} ${truck.driver_name || ''} ${truckLocation(truck, now)?.label || ''}`.toLowerCase().includes(query.trim().toLowerCase()))
   const overviewRows = [...nearby, ...trucks.filter(truck => !nearby.some(row => row.truck.id === truck.id)).map(truck => ({ truck, miles: undefined, seconds: undefined }))]
   const rows = searching ? overviewRows.filter(row => matches.some(truck => truck.id === row.truck.id)) : !focus ? overviewRows : visibleNearby
   const missingOrigin = focus && !truckCoordinates(focus, now)
@@ -78,20 +79,20 @@ function FleetMap({ trucks, focusId, onFocusChange, onSelect, compact, homeAddre
         {clusterTrucks.length > 0 && <section ref={clusterCardRef} tabIndex={-1} className="proximity-cluster-card" aria-label="Trucks in selected cluster">
           <header><span>{clusterTrucks.length} overlapping positions</span><button type="button" aria-label="Close cluster" onClick={() => setClusterIds([])}><X size={15} /></button></header>
           {clusterTrucks.map(truck => <button type="button" className="proximity-popup-row" key={truck.id} onClick={() => select(truck.id)}>
-            <i style={{ background: STATUS_META[truck.status].dot }} aria-hidden="true" /><strong>{fleetUnitLabel(truck)}</strong>
+            <i style={{ background: STATUS_META[truck.status].dot }} aria-hidden="true" /><strong>{mapUnitLabel(truck)}</strong>
             <span className="proximity-popup-detail"><span>{STATUS_META[truck.status].label}</span>{!recentPosition(truck, now) && <small>Last known</small>}</span>
             <span className="proximity-popup-arrow" aria-hidden="true">›</span>
           </button>)}
         </section>}
         {focus && <div className="proximity-focus">
           <div className="proximity-focus-heading"><span>Comparing from</span><button type="button" aria-label="Clear selected truck" onClick={() => select(undefined)}><X size={17} /></button></div>
-          <strong ref={headingRef} tabIndex={-1} className="proximity-unit">{fleetUnitLabel(focus)}</strong>
+          <strong ref={headingRef} tabIndex={-1} className="proximity-unit">{mapUnitLabel(focus)}</strong>
           <Status truck={focus} />
-          <p>{truckLocation(focus, now)?.label || 'Location unavailable'}</p>
+          <p>{mapCity(truckLocation(focus, now)?.label)}</p>
           <small>{positionAge(focus, now)}</small>
           {recommended && <div className="proximity-route-summary" role="region" aria-label="Closest road route">
             <span className="proximity-route-caption">{recommended.kind === 'shop' ? 'Shop is closest' : 'Closest truck by road'}</span>
-            <div className="proximity-route-endpoints"><strong>{recommended.kind === 'shop' ? 'Shop' : fleetUnitLabel(focus)}</strong><span aria-label="to">→</span><strong>{recommended.kind === 'shop' ? fleetUnitLabel(focus) : fleetUnitLabel(nearby[0].truck)}</strong></div>
+            <div className="proximity-route-endpoints"><strong>{recommended.kind === 'shop' ? 'Shop' : mapUnitLabel(focus)}</strong><span aria-label="to">→</span><strong>{recommended.kind === 'shop' ? mapUnitLabel(focus) : mapUnitLabel(nearby[0].truck)}</strong></div>
             <div className="proximity-route-metrics"><strong>{formatDistance(recommended.distance.miles)}</strong><span>{formatDriveTime(recommended.distance.seconds)}<small>est. drive</small></span></div>
             <small>{road.geometryFailed ? 'Route preview unavailable' : road.geometry ? 'Blue route on map' : 'Loading route…'}</small>
           </div>}
@@ -115,8 +116,8 @@ function FleetMap({ trucks, focusId, onFocusChange, onSelect, compact, homeAddre
         </>}
         <div className="proximity-rows">
           {rows.map(({ truck, miles, seconds }) => <button type="button" className="proximity-row" key={truck.id} aria-pressed={focus?.id === truck.id} onClick={() => select(truck.id)}>
-            <span className="proximity-row-unit"><strong>{fleetUnitLabel(truck)}</strong><i role="img" aria-label={STATUS_META[truck.status].label} title={STATUS_META[truck.status].label} style={{ background: STATUS_META[truck.status].dot }} /></span>
-            <span className="proximity-row-location" title={truckLocation(truck, now)?.label || 'Location unavailable'}>{truckLocation(truck, now)?.label || 'Location unavailable'}</span>
+            <span className="proximity-row-unit"><strong>{mapUnitLabel(truck)}</strong><i role="img" aria-label={STATUS_META[truck.status].label} title={STATUS_META[truck.status].label} style={{ background: STATUS_META[truck.status].dot }} /></span>
+            <span className="proximity-row-location" title={mapCity(truckLocation(truck, now)?.label)}>{mapCity(truckLocation(truck, now)?.label)}</span>
             <small className="proximity-row-age" title={positionAge(truck, now)}>{positionAge(truck, now)}</small>
             {miles != null && <><b className="proximity-row-miles">{formatDistance(miles)}</b><span className="proximity-row-time" title={`${formatDriveTime(seconds!)} estimated drive`}>{formatDriveTime(seconds!).replace(' hr', 'h').replace(' min', 'm')}</span></>}
           </button>)}
