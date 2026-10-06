@@ -1,6 +1,6 @@
 # DB-036 dedicated VM coordinate import
 
-Owner: Backend & Integrations. Status: In progress.
+Owner: Backend & Integrations. Status: Review, PR #474.
 
 ## Contract
 
@@ -18,7 +18,7 @@ Windows guest Computer Use can inspect the documented import form after window a
 
 ## Gates
 
-Independent pre-implementation review of existing API: tenant/actor, unique VIN, membership, trusted cookie origin and replay are server-enforced. Caller must still implement unchanged/older guards and verify projection. Independent Security/QA review passed for supervised import after immutable baseline checks, GET-only verification after a receipt, and session/membership guards. Fourteen focused tests and scoped ESLint pass. Synthetic browser acceptance completed validation, simulated HTTP 201, persisted receipt and matching fleet-board readback at desktop and 390px widths. Receipt Blob contents and cleanup are tested; actual browser file download remains unverified because browser download observation timed out. No production receipt or fleet-map verification yet.
+Independent pre-implementation review of existing API: tenant/actor, unique VIN, membership, trusted cookie origin and replay are server-enforced. Caller must still implement unchanged/older guards and verify projection. Independent Security/QA review passed for supervised import after immutable baseline checks, GET-only verification after a receipt, and session/membership guards. Fourteen focused tests, scoped ESLint and production build pass. Synthetic browser acceptance completed validation, simulated HTTP 201, persisted receipt and matching fleet-board readback at desktop and 390px widths. Receipt Blob contents and cleanup are tested; actual browser file download remains unverified because browser download observation timed out. No production receipt or fleet-map verification yet.
 
 ## Release and live acceptance still required
 
