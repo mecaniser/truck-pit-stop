@@ -24,6 +24,7 @@ const DashboardLayout = lazy(lazyRouteLoader(() => import('./components/layout/D
 const CustomerPortalPage = lazy(lazyRouteLoader(() => import('./features/customer-portal/CustomerPortalPage')))
 const QuoteApprovalPage = lazy(lazyRouteLoader(() => import('./features/quote-approval/QuoteApprovalPage')))
 const MechanicPortalPage = lazy(lazyRouteLoader(() => import('./features/mechanic-portal/MechanicPortalPage')))
+const CoordinateImport = lazy(lazyRouteLoader(() => import('./features/fleet/CoordinateImport')))
 const FleetApp = lazy(lazyRouteLoader(() => import('./features/fleet/FleetApp')))
 const MotiveCallback = lazy(lazyRouteLoader(() => import('./features/fleet/MotiveCallback')))
 const DriverPortalPage = lazy(lazyRouteLoader(() => import('./features/driver-portal/DriverPortalPage')))
@@ -420,6 +421,7 @@ function App() {
           }
         />
 
+        <Route path="/fleet/coordinate-import" element={<FleetRoute><CoordinateImport /></FleetRoute>} />
         <Route path="/fleet/motive/callback" element={<MotiveRoute><MotiveCallback /></MotiveRoute>} />
         <Route
           path="/fleet/*"
