@@ -10,6 +10,12 @@ function vinFrom(text){
  const values=Array.from(text.matchAll(/\bVIN\s*[:\t ]*\s*([A-HJ-NPR-Z0-9]{17})\b/g),m=>m[1]);
  const unique=[...new Set(values)];return unique.length===1?unique[0]:null;
 }
+function addressFrom(text){
+ const lines=text.split('\n').map(s=>s.trim()).filter(Boolean);
+ const boundary=lines.includes('CURRENT DRIVER')?lines.indexOf('CURRENT DRIVER'):lines.indexOf('Telematics');
+ const candidate=boundary>0?lines[boundary-1]:'';
+ return /,\s*[A-Z]{2}\s+\d{5}(?:-\d{4})?$/.test(candidate)?candidate:null;
+}
 async function collect(output){
  if(!process.env.MOTIVE_EMAIL||!process.env.MOTIVE_PASSWORD)throw new Error('missing_credentials');
  const browser=await chromium.launch({headless:true});
@@ -57,11 +63,11 @@ async function collect(output){
     if(!row.vin)throw new Error('vin_unavailable');
     await page.getByRole('link',{name:'Live',exact:true}).filter({visible:true}).first().click();
     await page.getByText(row.vin,{exact:true}).first().waitFor();
-    await page.locator('.current-location-status').waitFor();
-    const lines=(await page.locator('body').innerText()).split('\n').map(s=>s.trim()).filter(Boolean);
-    const driver=lines.indexOf('CURRENT DRIVER');
-    if(driver<1)throw new Error('address_unavailable');
-    const address=lines[driver-1];
+    const liveText=await page.locator('body').innerText();
+    if(liveText.includes('Add Vehicle Gateway to see location data'))throw new Error('provider_location_unavailable');
+    await page.locator('.current-location-status').waitFor().catch(()=>{throw new Error('unsupported_location_timestamp');});
+    const address=addressFrom(await page.locator('body').innerText());
+    if(!address)throw new Error('address_unavailable');
     async function timestamp(){
      await page.getByRole('link',{name:'Live',exact:true}).filter({visible:true}).first().hover();
      const prior=page.locator('.phx-tooltip-content:visible').filter({hasText:stampPattern});
@@ -84,7 +90,7 @@ async function collect(output){
     Object.assign(row,{status:'located',lat:a[0],lng:a[1],address,rawTimestamp:after,sourceAge:await page.locator('.current-location-status').innerText(),sourceReadTime:new Date().toISOString(),...time});
    }catch(e){
     if(new URL(page.url()).origin!==ORIGIN)throw new Error('session_lost');
-    const safe=['vin_unavailable','address_unavailable','invalid_coordinates','source_changed_during_capture','vin_changed','unowned_timestamp_tooltip'];
+    const safe=['provider_location_unavailable','unsupported_location_timestamp','vin_unavailable','address_unavailable','invalid_coordinates','source_changed_during_capture','vin_changed','unowned_timestamp_tooltip'];
     row.reason=safe.includes(e.message)?e.message:'ui_data_unavailable';
    }
    row.sourceReadTime=row.sourceReadTime||new Date().toISOString();
@@ -100,4 +106,4 @@ if(require.main===module){
  if(!output){console.error('Output file required');process.exitCode=1;}
  else collect(output).then(r=>console.log(JSON.stringify({stage:'collection_complete',complete:r.complete,count:r.vehicles.length,located:r.vehicles.filter(x=>x.status==='located').length}))).catch(()=>{console.error('Motive collection failed; no import permitted');process.exitCode=1;});
 }
-module.exports={collect,vinFrom,coordinates};
+module.exports={collect,vinFrom,coordinates,addressFrom};

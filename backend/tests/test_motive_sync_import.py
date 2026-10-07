@@ -265,3 +265,73 @@ async def test_cross_replica_lock_and_release(monkeypatch):
         "SELECT pg_try_advisory_lock(:key)",
         "SELECT pg_advisory_unlock(:key)",
     ]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "excluded", ["ended", "deleted", "future", "disabled_customer"]
+)
+async def test_outside_current_fleet_is_reported_without_capture(
+    db_session, monkeypatch, excluded
+):
+    from app.db.models.customer import Customer
+
+    actor, truck, membership = await prepared(db_session, monkeypatch)
+    if excluded == "ended":
+        membership.effective_to = telemetry.now() - timedelta(minutes=2)
+    elif excluded == "deleted":
+        membership.deleted_at = telemetry.now()
+    elif excluded == "future":
+        membership.effective_from = telemetry.now() + timedelta(hours=1)
+    else:
+        customer = await db_session.get(Customer, membership.fleet_customer_id)
+        customer.fleet_enabled = False
+        customer.is_internal_fleet = False
+    await db_session.commit()
+    doc = source()
+    _, plans, report = await worker.prepare(
+        db_session,
+        doc["vehicles"],
+        actor.tenant_id,
+        actor.id,
+        doc["company_label"],
+        doc["company_id"],
+    )
+    assert not plans
+    assert report == [
+        {
+            "unit": "609",
+            "vin": VIN,
+            "status": "outside_current_fleet",
+            "vehicle_id": str(truck.id),
+        }
+    ]
+    assert not (await db_session.execute(select(Snapshot))).scalars().all()
+
+
+@pytest.mark.asyncio
+async def test_empty_source_vin_never_covers_vinless_fleet_vehicle(
+    db_session, monkeypatch
+):
+    actor, truck, _ = await prepared(db_session, monkeypatch)
+    truck.vin = None
+    await db_session.commit()
+    doc = source()
+    row = doc["vehicles"][0]
+    row.update(vin="", status="unavailable", reason="vin_unavailable")
+    _, plans, report = await worker.prepare(
+        db_session,
+        doc["vehicles"],
+        actor.tenant_id,
+        actor.id,
+        doc["company_label"],
+        doc["company_id"],
+    )
+    assert not plans
+    assert report[0]["status"] == "vin_unavailable"
+    assert report[1] == {
+        "vehicle_id": str(truck.id),
+        "unit": truck.unit_number,
+        "status": "source_missing",
+        "vin": None,
+    }

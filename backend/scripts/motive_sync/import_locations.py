@@ -270,7 +270,10 @@ async def prepare(db, rows, tenant_id, actor_id, company_label, company_id):
             .scalars()
             .all()
         )
-        if len(members) != 1:
+        if not members:
+            item.update(vehicle_id=str(vehicle.id), status="outside_current_fleet")
+            continue
+        if len(members) > 1:
             raise ValueError("Expected unique current fleet membership")
         member = members[0]
         if row["status"] == "located" and not telemetry.within(
@@ -371,7 +374,7 @@ async def prepare(db, rows, tenant_id, actor_id, company_label, company_id):
         .scalars()
         .all()
     )
-    source_vins = {row["vin"] for row in rows}
+    source_vins = {row["vin"] for row in rows if row["vin"]}
     seen = set()
     for vehicle in current:
         if vehicle.id in seen:

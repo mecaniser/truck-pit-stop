@@ -20,7 +20,7 @@ MOTIVE_COMPANY_ID are required. Company is verified by the collector before and
 after collection. Database checks require active tenant and owner/admin actor,
 unique exact VIN and one current tenant fleet membership covering source capture
 and observation. Members may belong to different fleet customers; unit numbers
-never determine identity. Unmatched source VINs are reported, duplicate source or
+never determine identity. Unmatched source VINs are reported. A matched tenant vehicle with no eligible current fleet membership is reported as outside_current_fleet and never written; multiple current memberships remain a hard ambiguity error. Duplicate source or
 ambiguous database identities abort. Unavailable rows retain saved positions.
 
 ## Import and ordering
