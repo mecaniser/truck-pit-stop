@@ -112,7 +112,13 @@ function FleetMap({ trucks, focusId, onFocusChange, onSelect, compact, homeAddre
         {focus && !searching && nearby.length > 3 && <button className="proximity-more" type="button" aria-expanded={expanded} onClick={() => setExpanded(value => !value)}>{expanded ? 'Closest 3' : `Show all ${nearby.length}`}<ChevronDown size={16} style={{ transform: expanded ? 'rotate(180deg)' : undefined }} /></button>}
         {searching && !matches.length && <p className="proximity-empty">No trucks match your search.</p>}
         {!trucks.length && <p className="proximity-empty">No trucks in this view.</p>}
-        <footer>{focus ? 'Driving estimates · truck restrictions not applied.' : `${recentCount} recent · ${located.length - recentCount} last-known positions`}</footer>
+        <footer>
+          {!focus && homeAddress && <div className="proximity-distance-legend" aria-label="Road distance to home color legend">
+            <span className="proximity-distance-scale" aria-hidden="true" />
+            <div><span>Nearest to home</span><span>Farthest from home</span></div>
+          </div>}
+          {focus ? 'Driving estimates · truck restrictions not applied.' : `${recentCount} recent · ${located.length - recentCount} last-known positions`}
+        </footer>
       </aside>
     </div>
   </section>

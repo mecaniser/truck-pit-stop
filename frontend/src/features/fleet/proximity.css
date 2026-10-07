@@ -118,3 +118,7 @@
 .proximity-pin.is-individual .proximity-cluster-leader,
 .proximity-pin.is-individual .proximity-cluster-anchor { left: 0; top: 0; }
 .proximity-pin.is-selected .proximity-cluster-leader path { stroke: #2563eb; }
+
+.proximity-distance-legend { margin-bottom: 12px; }
+.proximity-distance-scale { display: block; height: 4px; border-radius: 2px; background: linear-gradient(to right, rgb(74, 222, 128), rgb(251, 191, 36), rgb(248, 113, 113)); }
+.proximity-distance-legend > div { display: flex; justify-content: space-between; gap: 12px; margin-top: 6px; font-size: 10px; color: var(--muted-2, #93a3b2); }
