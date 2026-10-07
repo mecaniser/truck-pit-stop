@@ -9,3 +9,5 @@ Runtime: codex/fleet-map-toolbar, base 232dcd14bb84670446794853471412cfea8ba310.
 Follow-up: search now fills the entire header cell without an inset border; focus outlines the cell. Map toolbar vertical padding reduced from 12px to 4px while retaining 44px controls. Desktop and 390px browser rendering verified; CSS-only change, diff check passes.
 
 Home/Recenter follow-up: removed individual button boxes, reduced horizontal padding to 8px and icon gap to 6px; retained 44px targets, focus outlines and pointer hover feedback.
+
+Footer alignment: home-distance footer uses the same 43px desktop height as the map legend, aligning its top divider with the bottom of the map canvas.

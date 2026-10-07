@@ -55,6 +55,8 @@
 .proximity-empty { color: var(--muted, #c3ced8); font-size: 12px; line-height: 1.6; padding: 10px 0; }
 .proximity-panel footer { flex-shrink: 0; padding: 12px 14px; background: var(--surface, #151d26); border-top: 1px solid var(--line, #344453); }
 .proximity-panel footer:empty { display: none; }
+.proximity-panel footer:has(.proximity-distance-legend) { height: 43px; box-sizing: border-box; display: flex; align-items: center; padding: 0 14px; }
+.proximity-panel footer .proximity-distance-legend { width: 100%; }
 .proximity-map-unavailable { padding: 36px; flex: 1; min-height: 280px; display: flex; flex-direction: column; justify-content: center; gap: 10px; color: #354553; background: #e8eced; }
 .proximity-map-unavailable strong { font-size: 18px; }
 .proximity-map-unavailable span { font-size: 13px; max-width: 280px; line-height: 1.6; }
