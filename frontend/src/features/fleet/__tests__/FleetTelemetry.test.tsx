@@ -12,7 +12,7 @@ import FleetMap from '../FleetMap'
 const mocks = vi.hoisted(() => ({ post: vi.fn(), positions: [] as number[][], maps: [] as Record<string, unknown>[], errors: [] as (() => void)[], removed: vi.fn(), markerRemoved: vi.fn() }))
 vi.mock('@/lib/api', () => ({ default: { post: mocks.post } }))
 vi.mock('mapbox-gl', () => ({ default: {
-  Map: class { project(point: number[]) { return { x: point[0] * 200, y: point[1] * 200 } } constructor(options: Record<string, unknown>) { mocks.maps.push(options) } on(event: string, cb: () => void) { if (event === 'error') mocks.errors.push(cb); if (event === 'load') queueMicrotask(cb) } getSource() { return undefined } addSource() {} addLayer() {} addControl() {} jumpTo() {} fitBounds() {} remove() { mocks.removed() } resize() {} },
+  Map: class { getContainer() { return { getBoundingClientRect: () => ({ width: 900, height: 700 }) } } project(point: number[]) { return { x: point[0] * 200, y: point[1] * 200 } } constructor(options: Record<string, unknown>) { mocks.maps.push(options) } on(event: string, cb: () => void) { if (event === 'error') mocks.errors.push(cb); if (event === 'load') queueMicrotask(cb) } getSource() { return undefined } addSource() {} addLayer() {} addControl() {} jumpTo() {} fitBounds() {} remove() { mocks.removed() } resize() {} },
   Marker: class { setLngLat(point: number[]) { mocks.positions.push(point); return this } setPopup() { return this } addTo() { return this } remove() { mocks.markerRemoved() } },
   Popup: class { setDOMContent() { return this } }, NavigationControl: class {}, LngLatBounds: class { extend() { return this } },
 } }))
@@ -80,11 +80,11 @@ describe('reported telemetry semantics', () => {
 })
 describe('geographic map', () => {
   it('provides an accessible location list when no token exists', () => { const select = vi.fn(); render(<FleetMap trucks={[truck]} onSelect={select} />); expect(screen.getByRole('status')).toHaveTextContent('not configured'); expect(screen.getByText('No coordinates')).toBeInTheDocument(); fireEvent.click(screen.getByRole('button', { name: /TEST-1/ })); expect(select).not.toHaveBeenCalled(); fireEvent.click(screen.getByRole('button', { name: /Truck details/ })); expect(select).toHaveBeenCalledWith(truck); expect(mocks.maps).toHaveLength(0) })
-  it('groups coincident coordinates without changing positions and excludes unlocated trucks', async () => {
+  it('preserves individual coincident markers without changing positions and excludes unlocated trucks', async () => {
     vi.stubEnv('VITE_MAPBOX_TOKEN', 'synthetic-token')
     const located = { ...truck, telemetry: { ...telemetry, location: { ...telemetry.location!, lat: 37.25, lng: -105.125 } } }
     render(<FleetMap trucks={[located, { ...located, id: 'second' }, { ...truck, id: 'unknown' }]} />)
-    await waitFor(() => expect(mocks.positions).toEqual([[-105.125, 37.25]]))
+    await waitFor(() => expect(mocks.positions).toEqual([[-105.125, 37.25], [-105.125, 37.25]]))
     expect(screen.getAllByRole('button', { name: /TEST-1/ })).toHaveLength(3)
     fireEvent.click(screen.getAllByRole('button')[0])
   })
