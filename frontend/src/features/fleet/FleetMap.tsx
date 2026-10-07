@@ -74,28 +74,30 @@ function FleetMap({ trucks, focusId, onFocusChange, onSelect, compact, homeAddre
       <aside className="proximity-panel" aria-label="Truck proximity">
         <label className="proximity-search"><Search size={17} /><input ref={searchRef} type="search" aria-label="Find truck" placeholder="Find truck or driver" value={query} onChange={event => setQuery(event.target.value)} /></label>
         {focus && <div className="proximity-focus">
-          <div className="proximity-focus-heading"><span>Comparing from</span><button type="button" aria-label="Clear selected truck" onClick={() => select(undefined)}><X size={17} /></button></div>
-          <strong ref={headingRef} tabIndex={-1} className="proximity-unit">{mapUnitLabel(focus)}</strong>
-          <Status truck={focus} />
-          <p>{mapCity(truckLocation(focus, now)?.label)}</p>
-          <small>{positionAge(focus, now)}</small>
+          <span className="sr-only">Comparing from</span>
+          <div className="proximity-focus-heading">
+            <strong ref={headingRef} tabIndex={-1} className="proximity-unit">{mapUnitLabel(focus)}</strong>
+            {onSelect && <button className="proximity-details" type="button" onClick={() => onSelect(focus)}>Truck details<ArrowUpRight size={15} /></button>}
+            <button className="proximity-clear" type="button" aria-label="Clear selected truck" onClick={() => select(undefined)}><X size={17} /></button>
+          </div>
+          <div className="proximity-focus-meta"><Status truck={focus} /><small>{positionAge(focus, now)}</small></div>
+          <p className="proximity-focus-location">{mapCity(truckLocation(focus, now)?.label)}</p>
           {recommended && <div className="proximity-route-summary" role="region" aria-label="Closest road route">
             <span className="proximity-route-caption">{recommended.kind === 'shop' ? 'Shop is closest' : 'Closest truck by road'}</span>
-            <div className="proximity-route-endpoints"><strong>{recommended.kind === 'shop' ? 'Shop' : mapUnitLabel(focus)}</strong><span aria-label="to">→</span><strong>{recommended.kind === 'shop' ? mapUnitLabel(focus) : mapUnitLabel(nearby[0].truck)}</strong></div>
-            <div className="proximity-route-metrics"><strong>{formatDistance(recommended.distance.miles)}</strong><span>{formatDriveTime(recommended.distance.seconds)}<small>est. drive</small></span></div>
-            <small>{road.geometryFailed ? 'Route preview unavailable' : road.geometry ? 'Blue route on map' : 'Loading route…'}</small>
+            <div className="proximity-route-endpoints">
+              <strong>{recommended.kind === 'shop' ? 'Shop' : mapUnitLabel(focus)}</strong>
+              <div className="proximity-route-metrics"><strong>{formatDistance(recommended.distance.miles)}</strong><span aria-hidden="true">→</span><small>{formatDriveTime(recommended.distance.seconds)}</small></div>
+              <strong>{recommended.kind === 'shop' ? mapUnitLabel(focus) : mapUnitLabel(nearby[0].truck)}</strong>
+            </div>
+            {(road.geometryFailed || !road.geometry) && <small role="status">{road.geometryFailed ? 'Route preview unavailable' : 'Loading route…'}</small>}
           </div>}
           {road.phase === 'loading' && <div className="proximity-route-summary" role="status">Calculating road distances…</div>}
           {focus.driver_name && <p className="proximity-driver">{focus.driver_name}</p>}
-          <div className="proximity-actions">
-            {onSelect && <button type="button" onClick={() => onSelect(focus)}>Truck details<ArrowUpRight size={15} /></button>}
-            {focus.driver_phone && /^[+\d\s().-]+$/.test(focus.driver_phone) && <a href={`tel:${focus.driver_phone.replace(/[^+\d]/g, '')}`}>Call driver</a>}
-          </div>
+          {focus.driver_phone && /^[+\d\s().-]+$/.test(focus.driver_phone) && <div className="proximity-actions"><a href={`tel:${focus.driver_phone.replace(/[^+\d]/g, '')}`}>Call driver</a></div>}
         </div>}
         {(searching || focus || !homeAddress) && <div className="proximity-list-heading"><h3>{searching ? 'Search results' : focus ? 'Nearby trucks' : 'Select a truck'}</h3><span>{searching ? matches.length : focus ? nearby.length : trucks.length}</span></div>}
         {!focus && homeAddress && homeStatus && <div className="proximity-basis" role="status">{homeStatus}</div>}
         {focus && !searching && <>
-          <div className="proximity-basis">Road miles · fastest driving routes · {includeLastKnown ? 'last-known positions included' : 'positions ≤15 min old'}</div>
           <label className="proximity-toggle"><input type="checkbox" checked={includeLastKnown} onChange={event => { setIncludeLastKnown(event.target.checked); setExpanded(false) }} />Include last-known</label>
           {missingOrigin ? <p className="proximity-empty">This truck has no verified coordinates. Distance is unavailable.</p> : oldOrigin ? <p className="proximity-empty">This truck’s position is old or undated. Include last-known to compare recorded positions.</p> : road.phase === 'loading' ? null : road.phase === 'unconfigured' ? <p className="proximity-empty" role="status">Road routing is not configured.</p> : road.phase === 'error' ? <p className="proximity-empty" role="status">Road distances unavailable. <button type="button" onClick={() => setRetry(value => value + 1)}>Retry routing</button></p> : road.phase === 'ready' && nearby.length === 0 ? <p className="proximity-empty">No road routes to other trucks.</p> : nearby.length === 0 ? <p className="proximity-empty">No other {includeLastKnown ? 'located' : 'recently located'} trucks.</p> : null}
           {road.unreachable > 0 && <p className="proximity-empty">{road.unreachable} truck{road.unreachable === 1 ? '' : 's'} without a road route.</p>}
