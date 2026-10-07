@@ -4,9 +4,9 @@ import cargoMarkUrl from '../../../assets/fleet/77-cargo-mark.svg'
 import FleetMapCanvas from '../FleetMapCanvas'
 import type { BoardTruck } from '../types'
 
-const mock = vi.hoisted(() => ({ pins: [] as { element: HTMLElement; point?: number[]; popup?: HTMLElement }[], scale: 200, zoom: 8, ease: vi.fn(), fit: vi.fn(), lines: vi.fn(), remove: vi.fn(), markerRemove: vi.fn(), sources: new Set<string>(), handlers: {} as Record<string, () => void> }))
+const mock = vi.hoisted(() => ({ pins: [] as { element: HTMLElement; point?: number[]; popup?: HTMLElement }[], scale: 200, width: 900, height: 700, zoom: 8, ease: vi.fn(), fit: vi.fn(), lines: vi.fn(), remove: vi.fn(), markerRemove: vi.fn(), sources: new Set<string>(), handlers: {} as Record<string, () => void> }))
 vi.mock('mapbox-gl', () => ({ default: {
-  Map: class { getContainer() { return { getBoundingClientRect: () => ({ width: 900, height: 700 }) } } getZoom() { return mock.zoom } cameraForBounds() { return { center: [0, 0], zoom: 12 } } easeTo(options: unknown) { mock.ease(options) } project(point: number[]) { return { x: point[0] * mock.scale, y: point[1] * mock.scale } } on(event: string, cb: () => void) { mock.handlers[event] = cb; if (event === 'load') queueMicrotask(cb) } addControl() {} resize() {} fitBounds(...args: unknown[]) { mock.fit(...args) } getSource(id: string) { return mock.sources.has(id) ? { setData: mock.lines } : undefined } addSource(id: string, source: { data: unknown }) { mock.sources.add(id); mock.lines(source.data) } addLayer() {} remove() { mock.remove() } },
+  Map: class { getContainer() { return { getBoundingClientRect: () => ({ width: mock.width, height: mock.height }) } } getZoom() { return mock.zoom } cameraForBounds() { return { center: [0, 0], zoom: 12 } } easeTo(options: unknown) { mock.ease(options) } project(point: number[]) { return { x: point[0] * mock.scale, y: point[1] * mock.scale } } on(event: string, cb: () => void) { mock.handlers[event] = cb; if (event === 'load') queueMicrotask(cb) } addControl() {} resize() {} fitBounds(...args: unknown[]) { mock.fit(...args) } getSource(id: string) { return mock.sources.has(id) ? { setData: mock.lines } : undefined } addSource(id: string, source: { data: unknown }) { mock.sources.add(id); mock.lines(source.data) } addLayer() {} remove() { mock.remove() } },
   Marker: class {
     pin: { element: HTMLElement; point?: number[]; popup?: HTMLElement }
     constructor({ element }: { element: HTMLElement }) { element.classList.add('mapboxgl-marker'); this.pin = { element }; mock.pins.push(this.pin) }
@@ -22,7 +22,7 @@ const now = Date.now()
 function truck(id: string, lng: number, old = false) {
   return { id, unit_number: id, status: 'out_of_service', telemetry: { location: { lat: 0, lng, observed_at: new Date(now - (old ? 3600000 : 0)).toISOString(), captured_at: new Date(now).toISOString() } } } as BoardTruck
 }
-beforeEach(() => { mock.scale = 200; mock.zoom = 8; mock.pins.length = 0; mock.sources.clear(); vi.clearAllMocks(); vi.stubEnv('VITE_MAPBOX_TOKEN', 'synthetic') })
+beforeEach(() => { mock.width = 900; mock.height = 700; mock.scale = 200; mock.zoom = 8; mock.pins.length = 0; mock.sources.clear(); vi.clearAllMocks(); vi.stubEnv('VITE_MAPBOX_TOKEN', 'synthetic') })
 afterEach(() => vi.unstubAllEnvs())
 it('selects pins in place and draws supplied road geometry with status and stale styling', async () => {
   const select = vi.fn()
@@ -127,9 +127,26 @@ it('fits the full fleet after selection and supports a separate home camera acti
   const view = render(<FleetMapCanvas {...props} />)
   await waitFor(() => expect(mock.fit).toHaveBeenCalledTimes(1))
   expect(mock.fit.mock.lastCall![0].points).toContainEqual([20, 0])
+  expect(mock.fit.mock.lastCall![0].points).toContainEqual([4, 5])
   view.rerender(<FleetMapCanvas {...props} homeVisit={1} />)
   expect(mock.ease).toHaveBeenLastCalledWith({ center: [4, 5], zoom: 15, duration: 500 })
   view.rerender(<FleetMapCanvas {...props} homeVisit={1} recenter={1} />)
   expect(mock.fit.mock.lastCall![0].points).toContainEqual([20, 0])
   expect(mock.ease).toHaveBeenCalledTimes(1)
+})
+
+it('refits all fleet anchors after tablet rotation but not ordinary map movement', async () => {
+  render(<FleetMapCanvas trucks={[truck('A', 0), truck('Far', 20)]} nearbyIds={[]} now={now} recenter={0} onFocus={vi.fn()} />)
+  await waitFor(() => expect(mock.fit).toHaveBeenCalledTimes(1))
+  mock.width = 425; mock.height = 677
+  act(() => mock.handlers.resize())
+  expect(mock.fit).toHaveBeenCalledTimes(2)
+  expect(mock.fit.mock.lastCall![0].points).toContainEqual([20, 0])
+  act(() => mock.handlers.moveend())
+  act(() => mock.handlers.resize())
+  expect(mock.fit).toHaveBeenCalledTimes(2)
+  mock.width = 760; mock.height = 517
+  act(() => mock.handlers.resize())
+  expect(mock.fit).toHaveBeenCalledTimes(3)
+  expect(mock.pins).toHaveLength(2)
 })
