@@ -205,7 +205,7 @@ export default function CustomerVehicleModals({
   const [deleteConfirmVehicle, setDeleteConfirmVehicle] = useState<Vehicle | null>(null)
   const [isVehicleMergeOpen, setIsVehicleMergeOpen] = useState(false)
   const [mergeDuplicateVehicleId, setMergeDuplicateVehicleId] = useState<string | null>(null)
-  const [mergeVinConfirmed, setMergeVinConfirmed] = useState(false)
+  const [mergeIdentityConfirmed, setMergeIdentityConfirmed] = useState(false)
 
   const { data: vehicleLinkCandidates = [], isFetching: isFetchingVehicleLinkCandidates } = useQuery<VehicleLinkCandidate[]>({
     queryKey: ['vehicle-link-candidates', debouncedVehicleLinkSearch],
@@ -409,7 +409,9 @@ export default function CustomerVehicleModals({
         : selectedVehicleInPanel.id
       const response = await api.post<VehicleMergeResult>(`/vehicles/${canonicalId}/merge`, {
         duplicate_vehicle_id: archivedId,
-        confirm_vin: vehicleMergePreview.match_value,
+        ...(vehicleMergePreview.match_basis === 'vin'
+          ? { confirm_vin: vehicleMergePreview.match_value }
+          : { confirm_unit_number: vehicleMergePreview.match_value }),
       })
       return response.data
     },
@@ -422,7 +424,7 @@ export default function CustomerVehicleModals({
       setSelectedVehicleInPanel(result.canonical_vehicle)
       setIsVehicleMergeOpen(false)
       setMergeDuplicateVehicleId(null)
-      setMergeVinConfirmed(false)
+      setMergeIdentityConfirmed(false)
       const movedHistory = (result.moved.repair_orders || 0) + (result.moved.inspections || 0) + (result.moved.incidents || 0)
       toast.success(`Trucks merged. ${movedHistory} history record${movedHistory === 1 ? '' : 's'} moved to the kept truck.`)
     },
@@ -505,7 +507,7 @@ export default function CustomerVehicleModals({
     closeVehicleModal()
     setSelectedVehicleInPanel(truckToKeep)
     setMergeDuplicateVehicleId(duplicate.id)
-    setMergeVinConfirmed(false)
+    setMergeIdentityConfirmed(false)
     setIsVehicleMergeOpen(true)
   }
 
@@ -626,7 +628,7 @@ export default function CustomerVehicleModals({
 
   const openVehicleMerge = () => {
     setMergeDuplicateVehicleId(null)
-    setMergeVinConfirmed(false)
+    setMergeIdentityConfirmed(false)
     setIsVehicleMergeOpen(true)
   }
 
@@ -634,7 +636,7 @@ export default function CustomerVehicleModals({
     if (mergeVehicleMutation.isPending) return
     setIsVehicleMergeOpen(false)
     setMergeDuplicateVehicleId(null)
-    setMergeVinConfirmed(false)
+    setMergeIdentityConfirmed(false)
   }
 
   const confirmDeleteVehicle = () => {
@@ -652,9 +654,11 @@ const {
   isError: isVehicleMergeCandidatesError,
   refetch: refetchVehicleMergeCandidates,
 } = useQuery<VehicleMergeSummary[]>({
-  queryKey: ['vehicle-merge-candidates', selectedVehicleInPanel?.id],
+  queryKey: ['vehicle-merge-candidates', selectedVehicleInPanel?.id, 'include-unit-matches'],
   queryFn: async () => (
-    await api.get(`/vehicles/${selectedVehicleInPanel!.id}/duplicate-candidates`)
+    await api.get(`/vehicles/${selectedVehicleInPanel!.id}/duplicate-candidates`, {
+      params: { include_unit_matches: true },
+    })
   ).data,
   enabled: isVehicleMergeOpen && !!selectedVehicleInPanel,
 })
@@ -677,6 +681,12 @@ const {
   ).data,
   enabled: isVehicleMergeOpen && !!selectedVehicleInPanel && !!mergeDuplicateVehicleId,
 })
+
+  const archivedMergeVehicle = vehicleMergePreview
+    ? (vehicleMergePreview.recommended_canonical_id === vehicleMergePreview.canonical.id
+      ? vehicleMergePreview.duplicate
+      : vehicleMergePreview.canonical)
+    : null
 
   controlsRef.current = {
     openAdd: openAddVehicleModal,
@@ -1237,15 +1247,15 @@ const {
                 <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-gray-200 pb-5">
                   <span className="font-semibold text-gray-900">Opened for cleanup:</span>
                   <span className="text-gray-800">{vehicleDisplayLabel(selectedVehicleInPanel)}</span>
-                  <span className="font-mono text-sm text-gray-500">VIN {selectedVehicleInPanel.vin}</span>
+                  <span className="font-mono text-sm text-gray-500">VIN {selectedVehicleInPanel.vin || 'not recorded'}</span>
                 </div>
 
                 <div className="py-5">
-                  <h4 className="font-semibold text-gray-900">Choose the duplicate to archive</h4>
-                  <p className="mt-1 text-sm text-gray-600">Only active records with this exact 17-character VIN are eligible.</p>
+                  <h4 className="font-semibold text-gray-900">Choose a record to compare</h4>
+                  <p className="mt-1 text-sm text-gray-600">Matches use the same VIN, or the same unit number within a shared customer or fleet. Conflicting VINs cannot be merged.</p>
 
                   {isLoadingVehicleMergeCandidates ? (
-                    <LoadingLine className="mt-4 text-gray-500">Checking for exact VIN matches…</LoadingLine>
+                    <LoadingLine className="mt-4 text-gray-500">Checking for matching trucks…</LoadingLine>
                   ) : isVehicleMergeCandidatesError ? (
                     <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-xl bg-red-50 p-4 text-sm text-red-800">
                       <span>Duplicate records could not be loaded.</span>
@@ -1253,7 +1263,7 @@ const {
                     </div>
                   ) : vehicleMergeCandidates.length === 0 ? (
                     <div className="mt-4 rounded-xl bg-gray-50 p-4 text-sm text-gray-700">
-                      No other active truck uses VIN <span className="font-mono font-semibold">{selectedVehicleInPanel.vin}</span>. Nothing can be safely merged from this record.
+                      No eligible duplicate found. Records must share a VIN or a unit number within the same customer or fleet.
                     </div>
                   ) : (
                     <div className="mt-4 space-y-2">
@@ -1273,7 +1283,7 @@ const {
                             checked={mergeDuplicateVehicleId === candidate.id}
                             onChange={() => {
                               setMergeDuplicateVehicleId(candidate.id)
-                              setMergeVinConfirmed(false)
+                              setMergeIdentityConfirmed(false)
                             }}
                             className="mt-1 h-5 w-5 accent-amber-500"
                           />
@@ -1320,10 +1330,10 @@ const {
                           <h4 className="font-semibold text-gray-900">What will move</h4>
                           <div className="mt-3 grid grid-cols-2 gap-x-6 gap-y-3 sm:grid-cols-4">
                             {[
-                              ['Repair orders', vehicleMergePreview.duplicate.repair_order_count],
-                              ['Appointments', vehicleMergePreview.duplicate.appointment_count],
-                              ['Inspections', vehicleMergePreview.duplicate.inspection_count],
-                              ['Incidents', vehicleMergePreview.duplicate.incident_count],
+                              ['Repair orders', archivedMergeVehicle?.repair_order_count],
+                              ['Appointments', archivedMergeVehicle?.appointment_count],
+                              ['Inspections', archivedMergeVehicle?.inspection_count],
+                              ['Incidents', archivedMergeVehicle?.incident_count],
                             ].map(([label, count]) => (
                               <div key={String(label)}>
                                 <p className="text-2xl font-bold text-gray-900">{count}</p>
@@ -1343,12 +1353,12 @@ const {
                         <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-gray-200 p-4">
                           <input
                             type="checkbox"
-                            checked={mergeVinConfirmed}
-                            onChange={(event) => setMergeVinConfirmed(event.target.checked)}
+                            checked={mergeIdentityConfirmed}
+                            onChange={(event) => setMergeIdentityConfirmed(event.target.checked)}
                             className="mt-0.5 h-5 w-5 flex-none accent-amber-500"
                           />
                           <span className="text-sm leading-6 text-gray-800">
-                            I verified both records are the same physical truck with VIN <span className="font-mono font-semibold">{vehicleMergePreview.match_value}</span>. Keep the recommended record and archive the weaker duplicate after moving its history.
+                            I verified both records are the same physical truck with {vehicleMergePreview.match_basis === 'vin' ? 'VIN' : 'unit number'} <span className="font-mono font-semibold">{vehicleMergePreview.match_value}</span>. Keep the recommended record and archive the weaker duplicate after moving its history.
                           </span>
                         </label>
                       </div>
@@ -1364,11 +1374,11 @@ const {
                 <button
                   type="button"
                   onClick={() => mergeVehicleMutation.mutate()}
-                  disabled={!vehicleMergePreview || !mergeVinConfirmed || mergeVehicleMutation.isPending}
-                  className="min-h-11 px-5 py-2.5 bg-red-600 hover:bg-red-700 disabled:bg-red-300 disabled:cursor-not-allowed text-white font-semibold rounded-lg transition-colors flex items-center justify-center gap-2"
+                  disabled={!vehicleMergePreview || !mergeIdentityConfirmed || mergeVehicleMutation.isPending}
+                  className="min-h-11 whitespace-nowrap px-5 py-2.5 bg-red-600 hover:bg-red-700 disabled:bg-red-300 disabled:cursor-not-allowed text-white font-semibold rounded-lg transition-colors flex items-center justify-center gap-2"
                 >
                   {mergeVehicleMutation.isPending ? <Spinner size="xs" className="border-white/40 border-t-white" /> : <Combine className="h-4 w-4" />}
-                  Merge and archive duplicate
+                  Merge trucks
                 </button>
               </div>
             </div>
