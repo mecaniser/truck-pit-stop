@@ -13,6 +13,7 @@ class TelemetryCapture(BaseModel):
     fleet_customer_id: UUID
     vin: str = Field(min_length=17, max_length=17)
     observed_at: datetime | None = None
+    observed_precision: Literal["second", "minute"] | None = None
     source_age_text: str | None = Field(None, max_length=120)
     provider_company_label: str | None = Field(None, max_length=255)
     provider_vehicle_id: str | None = Field(None, max_length=120)
@@ -93,6 +94,12 @@ class TelemetryCapture(BaseModel):
             if self.observed_at.tzinfo is None:
                 raise ValueError("Timezone required")
             self.observed_at = self.observed_at.astimezone(timezone.utc)
+        if self.observed_precision is not None and self.observed_at is None:
+            raise ValueError("Observation precision requires observation time")
+        if self.observed_precision == "minute" and (
+            self.observed_at.second or self.observed_at.microsecond
+        ):
+            raise ValueError("Minute precision requires minute-aligned interval start")
         if not self.location_label and all(
             getattr(self, f) is None
             for f in (
@@ -112,6 +119,7 @@ class TelemetryCapture(BaseModel):
 class ReadingProvenance(BaseModel):
     source: Literal["motive_api", "motive_dashboard_manual", "manual_location"]
     observed_at: datetime | None = None
+    observed_precision: Literal["second", "minute"] | None = None
     captured_at: datetime | None = None
     freshness: Literal["fresh", "delayed", "stale", "unknown"]
     snapshot_id: str | None = None

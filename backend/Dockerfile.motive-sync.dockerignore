@@ -1,0 +1,11 @@
+.git
+**/.env
+**/.env.*
+**/.venv
+**/node_modules
+**/__pycache__
+**/.pytest_cache
+output
+frontend
+security-review
+Claude outputs

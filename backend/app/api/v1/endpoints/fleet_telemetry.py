@@ -62,6 +62,7 @@ async def capture(
             "fleet_customer_id",
             "source",
             "observed_at",
+            "observed_precision",
             "captured_at",
             "captured_by_user_id",
         )

@@ -59,6 +59,17 @@ def within(m, stamp):
     )
 
 
+def observation_interval(observed, precision=None):
+    """Closed possible-time bounds; minute end excludes the following minute."""
+    start = utc(observed)
+    end = (
+        start + timedelta(minutes=1) - timedelta(microseconds=1)
+        if precision == "minute"
+        else start
+    )
+    return start, end
+
+
 async def capture(db, actor, vehicle_id, body):
     stamp = now()
     tenant_id, actor_id = actor.tenant_id, actor.id
@@ -143,7 +154,7 @@ async def capture(db, actor, vehicle_id, body):
         fail(409, "vehicle_identity_mismatch")
     digest_data = body.model_dump(mode="json")
     # Preserve replay hashes for captures made before fuel economy was supported.
-    for name in ("fuel_economy_mpg", "fuel_economy_period"):
+    for name in ("fuel_economy_mpg", "fuel_economy_period", "observed_precision"):
         if digest_data[name] is None:
             digest_data.pop(name)
     digest = hashlib.sha256(
@@ -176,6 +187,50 @@ async def capture(db, actor, vehicle_id, body):
         or not within(member, body.observed_at)
     ):
         fail(422, "invalid_observation_time")
+    if body.observed_at and body.observed_precision == "minute":
+        last_possible = (
+            body.observed_at + timedelta(minutes=1) - timedelta(microseconds=1)
+        )
+        if last_possible > stamp + timedelta(minutes=5) or not within(
+            member, last_possible
+        ):
+            fail(422, "invalid_observation_time")
+    # Preserve legacy exact captures, but never let an uncertain minute interval
+    # replace a location observation anywhere within that interval (or vice versa).
+    if body.observed_at and (body.lat is not None or body.location_label):
+        start, end = observation_interval(body.observed_at, body.observed_precision)
+        previous = (
+            (
+                await db.execute(
+                    select(Snapshot).where(
+                        Snapshot.tenant_id == tenant_id,
+                        Snapshot.vehicle_id == vehicle_id,
+                        Snapshot.fleet_membership_id == member.id,
+                        Snapshot.deleted_at.is_(None),
+                        Snapshot.observed_at.is_not(None),
+                        Snapshot.observed_at >= start - timedelta(minutes=1),
+                        Snapshot.observed_at <= end,
+                        or_(
+                            Snapshot.lat.is_not(None),
+                            Snapshot.location_label.is_not(None),
+                        ),
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        for prior in previous:
+            if (
+                body.observed_precision != "minute"
+                and prior.observed_precision != "minute"
+            ):
+                continue
+            old_start, old_end = observation_interval(
+                prior.observed_at, prior.observed_precision
+            )
+            if max(start, old_start) <= min(end, old_end):
+                fail(409, "overlapping_observation_interval")
     data = body.model_dump(exclude={"vin"})
     row = Snapshot(
         **data,
@@ -390,6 +445,7 @@ async def attach(db, trucks, tenant_id):
         basis=None,
         unit=None,
         period=None,
+        precision=None,
     ):
         observed = utc(observed) if observed else None
         captured = utc(captured) if captured else None
@@ -409,6 +465,7 @@ async def attach(db, trucks, tenant_id):
         reading = {
             "source": source,
             "observed_at": observed,
+            "observed_precision": precision,
             "captured_at": captured,
             "freshness": freshness,
             "snapshot_id": str(sid) if sid else None,
@@ -455,6 +512,7 @@ async def attach(db, trucks, tenant_id):
                 "location",
                 {"lat": row.lat, "lng": row.lng, "label": row.location_label},
                 *common,
+                precision=row.observed_precision,
             )
         for attr, field, unit in [
             ("speed_mph", "speed", "mph"),
@@ -476,6 +534,7 @@ async def attach(db, trucks, tenant_id):
                     else None,
                     unit=unit,
                     period=row.fuel_economy_period if field == "fuel_economy" else None,
+                    precision=row.observed_precision,
                 )
     for remote, connection in remotes:
         m = by_pair.get((remote.vehicle_id, connection.fleet_customer_id))

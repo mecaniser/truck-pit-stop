@@ -1,0 +1,15 @@
+const assert=require('node:assert/strict');
+const {vinFrom,coordinates,addressFrom}=require('./collect.cjs');
+assert.equal(vinFrom('VIN\n1XKYD49X6LJ311465'),'1XKYD49X6LJ311465');
+assert.equal(vinFrom('VIN\t1XKYD49X6LJ311465'),'1XKYD49X6LJ311465');
+assert.equal(vinFrom('VIN: 1XKYD49X6LJ311465'),'1XKYD49X6LJ311465');
+assert.equal(vinFrom('unit 533'),null);
+assert.equal(vinFrom('VIN\n1XKYD49X6LJ311465\nVIN\n4V4WC9EG2LN250024'),null);
+assert.throws(()=>coordinates('Charlotte, NC'),/invalid_coordinates/);
+assert.throws(()=>coordinates('91,-80'),/invalid_coordinates/);
+assert.deepEqual(coordinates('35.1, -80.9'),[35.1,-80.9]);
+assert.equal(addressFrom('Status\nStationary\n260 Seaboard Dr, Stallings, NC 28104\nTelematics\nFUEL'), '260 Seaboard Dr, Stallings, NC 28104');
+assert.equal(addressFrom('Status\nI 85, Charlotte, NC 28201\nCURRENT DRIVER\nDriver name\nTelematics'), 'I 85, Charlotte, NC 28201');
+assert.equal(addressFrom('Status\nAdd Vehicle Gateway to see location data\nTelematics'), null);
+assert.equal(addressFrom('Status\nIn service\nTelematics'), null);
+console.log('12 collector identity/coordinate/address assertions passed');

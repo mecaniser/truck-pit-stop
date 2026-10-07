@@ -95,8 +95,20 @@ async def test_legacy_capture_digest_still_replays(db_session, monkeypatch):
     actor, v, _ = await prepared(db_session, monkeypatch)
     request = body(v, speed_mph=20)
     row, _ = await s.capture(db_session, actor, v.id, request)
-    legacy = request.model_dump(mode="json", exclude={"fuel_economy_mpg", "fuel_economy_period"})
+    # Freeze the pre-fuel-economy wire shape: future optional schema fields
+    # must not silently become part of this historical stored digest.
+    legacy = request.model_dump(mode="json", include={
+        "client_request_id", "fleet_customer_id", "vin", "observed_at",
+        "source_age_text", "provider_company_label", "provider_vehicle_id",
+        "provider_vehicle_number", "location_label", "lat", "lng", "speed_mph",
+        "odometer_miles", "engine_hours", "fuel_percent", "fault_count",
+        "evidence_note",
+    })
     row.request_digest = hashlib.sha256(json.dumps({"vehicle_id": str(v.id), **legacy}, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
     await db_session.commit()
     replay, created = await s.capture(db_session, actor, v.id, request)
     assert replay.id == row.id and not created
+    with pytest.raises(HTTPException) as exc:
+        await s.capture(db_session, actor, v.id, request.model_copy(update={"speed_mph": 21}))
+    assert exc.value.status_code == 409
+    assert exc.value.detail["code"] == "request_conflict"

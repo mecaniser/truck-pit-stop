@@ -4,7 +4,7 @@ import type { BoardTruck } from './types'
 import { readingCaption, readingSummary, retained, useTelemetryClock, type NumericReading, type ReadingProvenance } from './telemetry'
 import './telemetry.css'
 
-const provenanceKey = (reading: ReadingProvenance) => JSON.stringify([reading.source, reading.observed_at, reading.captured_at, reading.source_age_text])
+const provenanceKey = (reading: ReadingProvenance) => JSON.stringify([reading.source, reading.observed_at, reading.observed_precision ?? null, reading.captured_at, reading.source_age_text])
 const valueLabel = (reading: NumericReading) => `${reading.value.toLocaleString(undefined, { maximumFractionDigits: 1 })}${reading.unit === 'percent' ? '%' : reading.unit === 'count' ? '' : ` ${reading.unit}`}`
 
 export default function TelemetrySummary({ truck, compact = false }: { truck: BoardTruck; compact?: boolean }) {
