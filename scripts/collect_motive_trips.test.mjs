@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {captureStep, finalizeWindow, newWindow, reportUrl} from './collect_motive_trips.mjs';
+import {captureStep, finalizeWindow, newWindow, reportUrl, readReport} from './collect_motive_trips.mjs';
 const headers=['','Origin (MDY EDT)','Destination (MDY EDT)','Dist. (mi) / Duration','Vehicle ID / Mode','Driver / ID','','Notes',''];
 const row=(id,text='City')=>({cells:['',`09/28/2026 09:00 AM\n${text}`,'09/28/2026 10:00 AM\nOther','40\n1h 0m 0s'],links:[`#/fleetview/vehicles/summary/${id}`]});
 const report=(rows,extra={})=>({state:'rows',url:reportUrl('2026-09-28','2026-09-28'),headers,rows,footer:`Showing ${rows.length} results`,...extra});
@@ -75,7 +75,7 @@ test('directory rejects partial pages and conflicting identity, missing VIN rema
 test('server report traversal never commits a truncated or perpetually loading window',async()=>{
  const adapter={reportUrl,newWindow,captureStep,finalizeWindow};
  const initial=report([row(1)],{footer:'Showing 2 results'});
- const fake={goto:async()=>{},url:()=>initial.url,evaluate:async fn=>fn.toString().includes('document.querySelector')?initial:true,waitForTimeout:async()=>{}};
+ const fake={waitForFunction:async()=>{},goto:async()=>{},url:()=>initial.url,evaluate:async fn=>fn.toString().includes('document.querySelector')?initial:true,waitForTimeout:async()=>{}};
  let last;
  await assert.rejects(server.collectWindow(fake,{start:'2026-09-28',end:'2026-09-28'},async r=>{last=r;},adapter,{maxSteps:5}),/step_limit/);
  assert.equal(last.status,'partial');
@@ -83,7 +83,7 @@ test('server report traversal never commits a truncated or perpetually loading w
 test('server completion requires bottom evidence even when visible count matches',async()=>{
  const adapter={reportUrl,newWindow,captureStep,finalizeWindow};
  const source=report([row(1)]);let bottom=false,last;
- const fake={goto:async()=>{},url:()=>source.url,evaluate:async fn=>fn.toString().includes('const headers =')?source:bottom,waitForTimeout:async()=>{}};
+ const fake={waitForFunction:async()=>{},goto:async()=>{},url:()=>source.url,evaluate:async fn=>fn.toString().includes('const headers =')?source:bottom,waitForTimeout:async()=>{}};
  const checkpoint=async r=>{last=r;};
  await assert.rejects(server.collectWindow(fake,{start:'2026-09-28',end:'2026-09-28'},checkpoint,adapter,{maxSteps:5}),/step_limit/);
  assert.equal(last.status,'partial');bottom=true;
@@ -95,7 +95,7 @@ test('server completion requires bottom evidence even when visible count matches
 test('finalized producer windows carry backend count contract including explicit empty',async()=>{
  const adapter={reportUrl,newWindow,captureStep,finalizeWindow};
  const source=report([row(1)]);
- const fake={goto:async()=>{},url:()=>source.url,evaluate:async fn=>fn.toString().includes('const headers =')?source:true,waitForTimeout:async()=>{}};
+ const fake={waitForFunction:async()=>{},goto:async()=>{},url:()=>source.url,evaluate:async fn=>fn.toString().includes('const headers =')?source:true,waitForTimeout:async()=>{}};
  const filled=await server.collectWindow(fake,{start:'2026-09-28',end:'2026-09-28'},async()=>{},adapter,{maxSteps:5});
  for(const key of ['expected_total','footerShown'])assert.equal(filled[key],filled.rows.length);
  assert.equal(filled.status,'captured');assert.ok(filled.terminal_evidence);
@@ -127,4 +127,20 @@ test('fresh vehicle page closes when session or source changes',async()=>{
  const context={newPage:async()=>({setDefaultTimeout:()=>{},goto:async()=>{},url:()=>'https://auth.gomotive.com/login',getByRole:()=>ready,waitForFunction:async()=>{},close:async()=>{closed=true;}})};
  await assert.rejects(server.readVehicleVin(context,{href:'#/fleetview/vehicles/summary/1'}),/vehicle_source_changed/);
  assert.ok(closed);
+});
+test('report DOM ignores unrelated tables and blank placeholders while loading',async()=>{
+ const priorDocument=globalThis.document,priorLocation=globalThis.location;
+ const placeholder={querySelectorAll:selector=>selector==='th'?[]:[{querySelectorAll:()=>[{innerText:''}]}]};
+ let records=[];
+ const table={querySelectorAll:selector=>selector==='th'?headers.map(innerText=>({innerText})):records};
+ globalThis.document={querySelector:()=>({innerText:'Loading',querySelectorAll:()=>[placeholder,table]})};
+ globalThis.location={href:reportUrl('2026-09-28','2026-09-28')};
+ try {
+  const p={evaluate:async fn=>fn()};
+  assert.equal((await readReport(p)).state,'loading');
+  records=[{querySelectorAll:selector=>selector==='td'?[{innerText:''},{innerText:' '}]:[]}];
+  assert.equal((await readReport(p)).state,'loading');
+  records=[{querySelectorAll:selector=>selector==='td'?row(1).cells.map(innerText=>({innerText})):[{getAttribute:()=>row(1).links[0]}]}];
+  const ready=await readReport(p);assert.equal(ready.state,'rows');assert.equal(ready.rows.length,1);assert.equal(ready.headers.length,9);
+ } finally {globalThis.document=priorDocument;globalThis.location=priorLocation;}
 });

@@ -34,6 +34,7 @@ async function reportModule() {
 async function collectWindow(page, window, checkpoint, adapter, {maxSteps=120}={}) {
  const {reportUrl,newWindow,captureStep,finalizeWindow}=adapter;
  await page.goto(reportUrl(window.start,window.end),{waitUntil:'domcontentloaded',timeout:45000});
+ await page.waitForFunction(()=>Array.from(document.querySelectorAll('main table th')).some(el=>/^Origin \(MDY (?:EDT|EST)\)$/.test(el.innerText.trim())&&el.getBoundingClientRect().height>0),null,{timeout:45000});
  let receipt=newWindow(window.start,window.end), settled=0, previousCount=-1, atBottom=false;
  for(let step=0;step<maxSteps;step++) {
   if(new URL(page.url()).origin!==ORIGIN) throw new Error('session_lost');
@@ -113,7 +114,9 @@ async function collect(output) {
    if(vin)seenVins.set(vin,link.href.split('/').pop());
    result.vehicles.push({provider_vehicle_id:link.href.split('/').pop(),unit:link.unit,vin,...(!vin?{reason:'vin_unavailable'}:{})});save();
   }
-  await collectWindow(page,recentWindow(),async receipt=>{result.windows=[receipt];save();},adapter);
+  const reportPage=await context.newPage();reportPage.setDefaultTimeout(15000);
+  try {await collectWindow(reportPage,recentWindow(),async receipt=>{result.windows=[receipt];save();},adapter);}
+  finally {await reportPage.close();}
   await company();result.company_verified_after=true;result.complete=true;result.finished_at=new Date().toISOString();save();
   return result;
  } finally {await browser.close();}

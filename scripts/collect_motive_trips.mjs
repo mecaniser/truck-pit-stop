@@ -14,13 +14,17 @@ export async function readReport(page) {
   return page.evaluate(() => {
     const main = document.querySelector('main');
     if (!main) return { state: 'unavailable', rows: [] };
-    const headers = Array.from(main.querySelectorAll('th')).map(el => el.innerText.trim());
+    // Other UI panels include placeholder tables. Only the report's Origin-header table owns rows.
+    const tables = Array.from(main.querySelectorAll('table')).filter(table => Array.from(table.querySelectorAll('th')).some(el => /^Origin \(MDY (?:EDT|EST)\)$/.test(el.innerText.trim())));
+    if (tables.length !== 1) return {state: tables.length ? 'unavailable' : 'loading', rows: []};
+    const table = tables[0];
+    const headers = Array.from(table.querySelectorAll('th')).map(el => el.innerText.trim());
     const body = main.innerText;
-    const rows = Array.from(main.querySelectorAll('tbody tr')).map(tr => {
+    const rows = Array.from(table.querySelectorAll('tbody tr')).map(tr => {
       const cells = Array.from(tr.querySelectorAll('td')).map(td => td.innerText.trim());
       // Deliberately exclude driver identity and notes from capture.
       return { cells: cells.slice(0, 5), links: Array.from(tr.querySelectorAll('a[href*="/fleetview/vehicles/summary/"]')).map(a => a.getAttribute('href')) };
-    }).filter(row => row.cells.length);
+    }).filter(row => row.cells.length && row.cells.some(cell => cell.trim()));
     return { url: location.href, state: body.includes('No trips found. Try updating your filter/search criteria.') ? 'empty' : rows.length ? 'rows' : 'loading', headers, rows, footer: body.match(/Showing [\d,]+ results/)?.[0] ?? null };
   });
 }
