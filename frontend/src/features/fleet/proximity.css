@@ -117,7 +117,8 @@
 .proximity-cluster-anchor { position: absolute; left: 50%; top: 50%; width: 8px; height: 8px; border: 2px solid #ffffff; border-radius: 50%; background: #17202a; transform: translate(-50%, -50%); }
 
 .proximity-map-controls { display: flex; flex-wrap: wrap; gap: 8px; flex-shrink: 0; }
-.proximity-map-controls button { white-space: nowrap; }
+.proximity-map-controls button { white-space: nowrap; border: 0; padding: 0 8px; gap: 6px; }
+@media (hover: hover) and (pointer: fine) { .proximity-map-controls button:hover { background: var(--surface-2, #1c2732); } }
 .proximity-toolbar button:disabled { opacity: .5; cursor: default; }
 @media (max-width: 600px) { .proximity-toolbar { flex-wrap: wrap; } }
 
