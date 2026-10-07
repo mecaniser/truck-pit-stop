@@ -59,6 +59,18 @@ async function collectWindow(page, window, checkpoint, adapter, {maxSteps=120}={
  }
  throw new Error('report_step_limit');
 }
+async function readVehicleVin(context,link) {
+ // A hash-only navigation can leave the previous vehicle's rendered summary in place.
+ // A fresh document per vehicle prevents a ready old Live/VIN node satisfying the waits.
+ const page=await context.newPage();page.setDefaultTimeout(15000);
+ try {
+  await page.goto(ORIGIN+'/en-US/'+link.href,{waitUntil:'domcontentloaded',timeout:45000});
+  await page.getByRole('link',{name:'Live',exact:true}).filter({visible:true}).first().waitFor();
+  await page.waitForFunction(()=>/\bVIN\s*[:\t ]*\s*[A-HJ-NPR-Z0-9]{17}\b/.test(document.body.innerText),null,{timeout:15000}).catch(()=>{});
+  if(new URL(page.url()).origin!==ORIGIN||!page.url().endsWith(link.href))throw new Error('vehicle_source_changed');
+  return summaryVin(await page.locator('body').innerText());
+ } finally {await page.close();}
+}
 async function collect(output) {
  if(!process.env.MOTIVE_EMAIL||!process.env.MOTIVE_PASSWORD)throw new Error('missing_credentials');
  const {chromium}=require('playwright'), adapter=await reportModule();
@@ -91,14 +103,14 @@ async function collect(output) {
   const total=(await page.locator('body').innerText()).match(/Showing (\d+) of (\d+)/);
   const links=await page.locator('a[href*="/vehicles/summary/"]').evaluateAll(es=>es.map(el=>({unit:el.innerText.trim(),href:el.getAttribute('href')})));
   const directory=validateDirectory(links,Number(total?.[1]),Number(total?.[2]));
-  result.directory_count=directory.length;save();const seenVins=new Set();
+  result.directory_count=directory.length;save();const seenVins=new Map();
   for(const link of directory) {
-   await page.goto(ORIGIN+'/en-US/'+link.href,{waitUntil:'domcontentloaded'});
-   await page.getByRole('link',{name:'Live',exact:true}).filter({visible:true}).first().waitFor();
-   await page.waitForFunction(()=>/\bVIN\s*[:\t ]*\s*[A-HJ-NPR-Z0-9]{17}\b/.test(document.body.innerText),null,{timeout:15000}).catch(()=>{});
-   if(new URL(page.url()).origin!==ORIGIN||!page.url().endsWith(link.href))throw new Error('vehicle_source_changed');
-   const vin=summaryVin(await page.locator('body').innerText());
-   if(vin&&seenVins.has(vin))throw new Error('duplicate_vin');if(vin)seenVins.add(vin);
+   const vin=await readVehicleVin(context,link);
+   if(vin&&seenVins.has(vin)) {
+    result.failure={reason:'duplicate_vin',current_provider_vehicle_id:link.href.split('/').pop(),prior_provider_vehicle_id:seenVins.get(vin),unit:link.unit};save();
+    throw new Error('duplicate_vin');
+   }
+   if(vin)seenVins.set(vin,link.href.split('/').pop());
    result.vehicles.push({provider_vehicle_id:link.href.split('/').pop(),unit:link.unit,vin,...(!vin?{reason:'vin_unavailable'}:{})});save();
   }
   await collectWindow(page,recentWindow(),async receipt=>{result.windows=[receipt];save();},adapter);
@@ -128,4 +140,4 @@ if(require.main===module) {
  if(!process.argv[2]){console.error('Output file required');process.exitCode=1;}
  else collect(process.argv[2]).then(r=>console.log(JSON.stringify({stage:'trip_collection_complete',complete:r.complete,vehicles:r.vehicles.length,rows:r.windows.reduce((n,w)=>n+w.rows.length,0)}))).catch(error=>{console.error(JSON.stringify({stage:'trip_collection_failed',reason:safeFailure(error),import_permitted:false}));process.exitCode=1;});
 }
-module.exports={collect,collectWindow,recentWindow,summaryVin,validateDirectory,safeFailure};
+module.exports={collect,collectWindow,recentWindow,summaryVin,validateDirectory,safeFailure,readVehicleVin};

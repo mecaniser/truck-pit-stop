@@ -110,3 +110,21 @@ test('collector error diagnostics never echo unknown errors or authentication co
  assert.equal(server.safeFailure({name:'TimeoutError',message:'password contents secret'}),'ui_timeout');
  assert.equal(server.safeFailure(new Error('my email and password contents')),'collection_failed');
 });
+test('each vehicle VIN comes from a fresh document, never previous SPA summary',async()=>{
+ const pages=[];const vins=['1FUJGLDR0DLBY1234','1FUJGLDR0DLBY1235'];
+ const context={newPage:async()=>{
+  const index=pages.length;let url='about:blank';
+  const ready={filter:()=>ready,first:()=>ready,waitFor:async()=>{}};
+  const p={setDefaultTimeout:()=>{},goto:async value=>{url=value;},url:()=>url,getByRole:()=>ready,waitForFunction:async()=>{},locator:()=>({innerText:async()=>`VIN ${vins[index]}`}),close:async()=>{p.closed=true;}};
+  pages.push(p);return p;
+ }};
+ assert.equal(await server.readVehicleVin(context,{href:'#/fleetview/vehicles/summary/1'}),vins[0]);
+ assert.equal(await server.readVehicleVin(context,{href:'#/fleetview/vehicles/summary/2'}),vins[1]);
+ assert.equal(pages.length,2);assert.ok(pages.every(p=>p.closed));
+});
+test('fresh vehicle page closes when session or source changes',async()=>{
+ let closed=false;const ready={filter:()=>ready,first:()=>ready,waitFor:async()=>{}};
+ const context={newPage:async()=>({setDefaultTimeout:()=>{},goto:async()=>{},url:()=>'https://auth.gomotive.com/login',getByRole:()=>ready,waitForFunction:async()=>{},close:async()=>{closed=true;}})};
+ await assert.rejects(server.readVehicleVin(context,{href:'#/fleetview/vehicles/summary/1'}),/vehicle_source_changed/);
+ assert.ok(closed);
+});
