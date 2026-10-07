@@ -21,6 +21,7 @@ import { truckLocation, truckMotion, useTelemetryClock } from './telemetry'
 import { ConfirmModal, TruckEditModal, LogIncidentModal, EditIncidentModal, ResolveIncidentModal, AssignIncidentRepairOrderModal, InspectionsSection, AssignDriverModal, SchedulePMModal, Modal, SidekickPanel, invalidateFleetAndCockpit, type InspectionsSectionHandle } from './FleetModals'
 import FleetPriceBuilderPanel from './FleetPriceBuilderPanel'
 import IncidentHistory from './IncidentHistory'
+import TruckDiagnostics from './TruckDiagnostics'
 import { useAuthStore } from '../../stores/authStore'
 import { getWorkOSCapabilities, startWorkOSLogin, type WorkOSCapabilities } from '../../lib/workosAuth'
 
@@ -1119,6 +1120,8 @@ export default function TruckDetail({
               </div>
             </div>
           </section>
+
+          <TruckDiagnostics key={truckId} truckId={truckId} />
 
           <Section
             title="Last reported location & nearby units"
