@@ -77,3 +77,26 @@ Do not enable automatic deployment retries to generate replacement evidence.
 Rollback is stopping the dedicated service or restoring its prior image; no
 schema, web-service deployment, provider activation, or historical deletion is
 part of this worker release.
+
+## Runtime acceptance, 2026-10-07
+
+Two full visible directory traversals covered 22 Motive vehicles. The current
+DieselBridge fleet contained 21 vehicles: 12 received verified locations across
+the two runs, five had no successful capture, and four had no source VIN match.
+The runs committed 11 and 10 snapshots respectively (21 observations for 12
+unique vehicles). Replaying each original file created zero additional snapshots
+and recovered the same request and snapshot IDs. Both saved receipts and board
+projection were checked after commit on fresh database sessions.
+
+The live fleet map displayed the imported cities, observation ages and routes.
+Unit 8 showed Stallings with an approximately 80-minute-old source observation;
+it correctly remained last-known. Unavailable rows retained their prior positions.
+The collection has remaining source/reader gaps: missing gateways, unverified
+VINs, a legacy timestamp layout, and transient address/UI reads. These are not a
+claim of complete or uniformly fresh fleet coverage.
+
+The dedicated service's one-shot acceptance deployment was stopped after receipt
+verification. Default commit remains false, restart policy Never, no cron. Source
+and receipts are retained privately on the attached volume and in local evidence;
+they are intentionally not included in this repository. Hourly activation and PR
+merge are separate from this successful one-shot acceptance.
