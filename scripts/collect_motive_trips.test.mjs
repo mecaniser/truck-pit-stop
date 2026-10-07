@@ -87,7 +87,7 @@ test('server completion requires bottom evidence even when visible count matches
  const checkpoint=async r=>{last=r;};
  await assert.rejects(server.collectWindow(fake,{start:'2026-09-28',end:'2026-09-28'},checkpoint,adapter,{maxSteps:5}),/step_limit/);
  assert.equal(last.status,'partial');bottom=true;
- assert.equal((await server.collectWindow(fake,{start:'2026-09-28',end:'2026-09-28'},checkpoint,adapter,{maxSteps:5})).status,'captured');
+ assert.equal((await server.collectWindow(fake,{start:'2026-09-28',end:'2026-09-28'},checkpoint,adapter,{maxSteps:20})).status,'captured');
  source.state='loading';source.rows=[];
  await assert.rejects(server.collectWindow(fake,{start:'2026-09-28',end:'2026-09-28'},checkpoint,adapter,{maxSteps:5}),/step_limit/);
  assert.equal(last.status,'loading');
@@ -96,7 +96,7 @@ test('finalized producer windows carry backend count contract including explicit
  const adapter={reportUrl,newWindow,captureStep,finalizeWindow};
  const source=report([row(1)]);
  const fake={waitForFunction:async()=>{},goto:async()=>{},url:()=>source.url,evaluate:async fn=>fn.toString().includes('const headers =')?source:true,waitForTimeout:async()=>{}};
- const filled=await server.collectWindow(fake,{start:'2026-09-28',end:'2026-09-28'},async()=>{},adapter,{maxSteps:5});
+ const filled=await server.collectWindow(fake,{start:'2026-09-28',end:'2026-09-28'},async()=>{},adapter,{maxSteps:20});
  for(const key of ['expected_total','footerShown'])assert.equal(filled[key],filled.rows.length);
  assert.equal(filled.status,'captured');assert.ok(filled.terminal_evidence);
  source.state='empty';source.rows=[];source.footer=null;
@@ -171,4 +171,35 @@ test('completed duration changes remain conflicting revisions',async()=>{
  let receipt=await captureStep(page(report([first])),newWindow('2026-09-28','2026-09-28'));
  receipt=await captureStep(page(report([later])),receipt);
  assert.equal(receipt.rows.length,2);assert.throws(()=>finalizeWindow(receipt,1,'Showing 1 results'),/ambiguous/);
+});
+test('scrolling unchanged loaded rows never consumes the bottom quiet period; delayed page restarts it',async()=>{
+ const adapter={reportUrl,newWindow,captureStep,finalizeWindow};
+ let ticks=0,firstBottom=null,secondPageAt=null;
+ const source=report([row(1)]);
+ const fake={waitForFunction:async()=>{},goto:async()=>{},url:()=>source.url,waitForTimeout:async()=>{ticks++;},evaluate:async fn=>{
+  if(fn.toString().includes('const headers =')) {
+   if(ticks===13){source.rows=[row(1),row(2)];source.footer='Showing 2 results';secondPageAt=ticks;}
+   return source;
+  }
+  const bottom=ticks>=8;if(bottom&&firstBottom===null)firstBottom=ticks;return bottom;
+ }};
+ const final=await server.collectWindow(fake,{start:'2026-09-28',end:'2026-09-28'},async()=>{},adapter,{maxSteps:40});
+ assert.equal(final.rows.length,2);assert.equal(final.footerShown,2);
+ assert.ok(ticks>=firstBottom+12);assert.ok(ticks>=secondPageAt+12);
+});
+test('scrolling uses the report table viewport and cannot infer a bottom without one',async()=>{
+ const oldDocument=globalThis.document,oldStyle=globalThis.getComputedStyle;
+ let top=0;
+ const viewport={clientHeight:528,scrollHeight:3752,overflowY:'auto',parentElement:null,get scrollTop(){return top;},set scrollTop(value){top=Math.min(value,this.scrollHeight-this.clientHeight);}};
+ const table={parentElement:viewport,querySelectorAll:()=>[{innerText:'ORIGIN (MDY EDT)'}]};
+ globalThis.document={querySelector:()=>({querySelectorAll:()=>[table]})};
+ globalThis.getComputedStyle=el=>({overflowY:el.overflowY});
+ try {
+  const p={evaluate:async fn=>fn()};
+  assert.equal(await server.advanceReportViewport(p),false);assert.equal(top,468);
+  for(let i=0;i<5;i++)assert.equal(await server.advanceReportViewport(p),false);
+  assert.equal(await server.advanceReportViewport(p),true);
+  table.parentElement=null;
+  await assert.rejects(server.advanceReportViewport(p),/report_viewport_unavailable/);
+ } finally {globalThis.document=oldDocument;globalThis.getComputedStyle=oldStyle;}
 });

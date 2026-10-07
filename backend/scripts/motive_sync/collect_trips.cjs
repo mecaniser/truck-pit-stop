@@ -41,24 +41,31 @@ async function collectWindow(page, window, checkpoint, adapter, {maxSteps=120}={
   receipt=await captureStep(page,receipt,{verifiedTimezone:'America/New_York'});await checkpoint(receipt);
   if(receipt.status==='empty') { receipt=finalizeWindow(receipt,0,receipt.terminal_evidence);await checkpoint(receipt);return receipt; }
   const total=Number(receipt.footer?.match(/^Showing ([\d,]+) results$/)?.[1]?.replaceAll(',',''));
-  settled=receipt.rows.length===previousCount?settled+1:0;previousCount=receipt.rows.length;
-  // Read to the end, then require repeated stable rendered observations and exact visible count.
-  if(atBottom && settled>=3 && receipt.rows.length>0 && Number.isInteger(total) && total===receipt.rows.length) {
+  settled=atBottom&&receipt.status==='partial'&&receipt.rows.length===previousCount?settled+1:0;previousCount=receipt.rows.length;
+  // Require nine seconds of consecutive stable observations at the bottom; scrolling
+  // through an unchanged loaded page is not terminal evidence for lazy pagination.
+  if(atBottom && settled>=12 && receipt.rows.length>0 && Number.isInteger(total) && total===receipt.rows.length) {
    receipt=finalizeWindow(receipt,total,receipt.footer);await checkpoint(receipt);return receipt;
   }
   if(settled>=12 && receipt.status!=='loading') throw new Error('report_incomplete');
-  // DOM-backed scroll geometry only. No framework state, network calls or hidden data.
-  atBottom=await page.evaluate(()=>{
-   const main=document.querySelector('main'); if(!main)return false;
-   const nodes=[main,...main.querySelectorAll('*')].filter(el=>el.scrollHeight>el.clientHeight+10&&el.clientHeight>80&&/(auto|scroll)/.test(getComputedStyle(el).overflowY));
-   for(const el of nodes)el.scrollTop+=Math.max(300,el.clientHeight-60);
-   window.scrollBy(0,Math.max(300,innerHeight-60));
-   const scrolling=document.scrollingElement;
-   return nodes.every(el=>el.scrollTop+el.clientHeight>=el.scrollHeight-2)&&(!scrolling||scrolling.scrollTop+innerHeight>=scrolling.scrollHeight-2);
-  });
+  atBottom=await advanceReportViewport(page);
   await page.waitForTimeout(750);
  }
  throw new Error('report_step_limit');
+}
+async function advanceReportViewport(page) {
+ return page.evaluate(()=>{
+  const main=document.querySelector('main');
+  const tables=main?Array.from(main.querySelectorAll('table')).filter(table=>Array.from(table.querySelectorAll('th')).some(el=>/^Origin \(MDY (?:EDT|EST)\)$/i.test(el.innerText.trim()))):[];
+  if(tables.length!==1)throw new Error('report_viewport_unavailable');
+  // Live DOM evidence identifies the report's ant-table-body ancestor as its viewport.
+  // Walk only this table's ancestors, never unrelated panels or the document window.
+  let viewport=tables[0].parentElement;
+  while(viewport&&!(viewport.clientHeight>0&&/(auto|scroll)/.test(getComputedStyle(viewport).overflowY)))viewport=viewport.parentElement;
+  if(!viewport)throw new Error('report_viewport_unavailable');
+  viewport.scrollTop+=Math.max(300,viewport.clientHeight-60);
+  return viewport.scrollTop+viewport.clientHeight>=viewport.scrollHeight-2;
+ });
 }
 async function readVehicleVin(context,link) {
  // A hash-only navigation can leave the previous vehicle's rendered summary in place.
@@ -122,7 +129,7 @@ async function collect(output) {
  } finally {await browser.close();}
 }
 function safeFailure(error) {
- const known=new Set(['missing_credentials','ambiguous_vin','directory_incomplete','vehicle_link_invalid','ambiguous_directory','session_lost','report_incomplete','report_step_limit','login_origin','company_mismatch','timezone_unverified','vehicle_source_changed','duplicate_vin']);
+ const known=new Set(['missing_credentials','ambiguous_vin','directory_incomplete','vehicle_link_invalid','ambiguous_directory','session_lost','report_incomplete','report_step_limit','login_origin','company_mismatch','timezone_unverified','vehicle_source_changed','duplicate_vin','report_viewport_unavailable']);
  const adapterFailures=new Map([
   ['Motive report unavailable: check login','report_unavailable'],
   ['New York timezone verification required','timezone_unverified'],
@@ -143,4 +150,4 @@ if(require.main===module) {
  if(!process.argv[2]){console.error('Output file required');process.exitCode=1;}
  else collect(process.argv[2]).then(r=>console.log(JSON.stringify({stage:'trip_collection_complete',complete:r.complete,vehicles:r.vehicles.length,rows:r.windows.reduce((n,w)=>n+w.rows.length,0)}))).catch(error=>{console.error(JSON.stringify({stage:'trip_collection_failed',reason:safeFailure(error),import_permitted:false}));process.exitCode=1;});
 }
-module.exports={collect,collectWindow,recentWindow,summaryVin,validateDirectory,safeFailure,readVehicleVin};
+module.exports={collect,collectWindow,recentWindow,summaryVin,validateDirectory,safeFailure,readVehicleVin,advanceReportViewport};

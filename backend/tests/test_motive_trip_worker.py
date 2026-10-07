@@ -4,6 +4,7 @@ import copy
 import json
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
@@ -301,3 +302,83 @@ async def test_stale_attempt_recovery_preserves_source_time_and_identity(
         await worker.recover(
             factory, document, uuid4(), actor_id, "77 CARGO LLC", "KT8934277", path
         )
+
+
+@pytest.mark.asyncio
+async def test_truncated_overlap_rejected_before_new_trip_is_written(
+    _db_engine, db_session, monkeypatch, tmp_path
+):
+    actor, _, member = await prepared(db_session, monkeypatch)
+    member.effective_from = datetime.now(timezone.utc) - timedelta(days=7)
+    await db_session.commit()
+    tenant_id, actor_id = actor.tenant_id, actor.id
+    factory = async_sessionmaker(_db_engine, expire_on_commit=False)
+    original = source()
+    args = (tenant_id, actor_id, "77 CARGO LLC", "KT8934277")
+    await worker.run(factory, original, *args, tmp_path / "original.json", True)
+    new_row = copy.deepcopy(original["windows"][0]["rows"][0])
+    new_row["cells"][1] = new_row["cells"][1].replace("01:00 PM", "03:00 PM")
+    new_row["cells"][2] = new_row["cells"][2].replace("02:00 PM", "04:00 PM")
+    truncated = copy.deepcopy(original)
+    truncated["windows"][0]["rows"] = [new_row]
+    # A matching footer alone cannot prove that a date filter actually applied.
+    with pytest.raises(
+        ValueError, match="incomplete_prior_coverage: prior=1 covered=0 missing=1"
+    ):
+        await worker.run(factory, truncated, *args, tmp_path / "truncated.json", True)
+    assert not (tmp_path / "truncated.json").exists()
+    async with factory() as session:
+        assert (
+            await session.execute(select(func.count()).select_from(FleetTrip))
+        ).scalar_one() == 1
+    complete = copy.deepcopy(original)
+    complete["windows"][0]["rows"].append(new_row)
+    malformed = copy.deepcopy(new_row)
+    malformed["cells"][1] = malformed["cells"][1].split("\n")[0]
+    complete["windows"][0]["rows"].append(malformed)
+    complete["windows"][0].update(expected_total=3, footerShown=3)
+    malformed_prior = copy.deepcopy(complete)
+    malformed_prior["windows"][0]["rows"][0]["cells"][1] = "unreadable"
+    with pytest.raises(
+        ValueError, match="incomplete_prior_coverage: prior=1 covered=0 missing=1"
+    ):
+        await worker.run(
+            factory, malformed_prior, *args, tmp_path / "malformed-prior.json", True
+        )
+    receipt = await worker.run(
+        factory, complete, *args, tmp_path / "complete.json", True
+    )
+    assert receipt["report"]["prior_identity_count"] == 1
+    assert receipt["report"]["prior_identity_covered"] == 1
+    assert [row["action"] for row in receipt["rows"]] == ["unchanged", "created"]
+    assert receipt["report"]["exclusions"][0]["reason"] == "missing_endpoint_location"
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        {"cells": []},
+        {"links": []},
+        {
+            "links": [
+                "#/fleetview/vehicles/summary/123",
+                "#/fleetview/vehicles/summary/124",
+            ]
+        },
+        {"cells": ["", "bad date\\nCity A"]},
+        {"links": ["https://untrusted.example/123"]},
+    ],
+)
+def test_unprovable_new_identity_is_quarantined_but_cannot_cover_prior(change):
+    document = source()
+    departure, _ = worker.endpoint(document["windows"][0]["rows"][0]["cells"][1])
+    prior = SimpleNamespace(provider_vehicle_id="123", started_at=departure)
+    document["windows"][0]["rows"][0].update(change)
+    assert worker.verify_prior_coverage(document["windows"], []) == {
+        "prior_identity_count": 0,
+        "prior_identity_covered": 0,
+    }
+    with pytest.raises(
+        ValueError, match="incomplete_prior_coverage: prior=1 covered=0 missing=1"
+    ):
+        worker.verify_prior_coverage(document["windows"], [prior])

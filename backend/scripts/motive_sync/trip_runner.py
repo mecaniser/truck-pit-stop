@@ -17,7 +17,7 @@ from app.db.models.vehicle_relationship import FleetMembership
 from app.schemas.fleet_trip import TripImport
 from app.services.fleet_telemetry import active_membership
 from scripts.motive_sync.runner import private_json
-from scripts.prepare_motive_trip_history import ZONE, normalize, timestamp
+from scripts.prepare_motive_trip_history import ZONE, endpoint, normalize, timestamp
 from sqlalchemy import func, select
 
 from scripts import import_motive_trips as importer
@@ -120,6 +120,51 @@ def prior_payload(trip):
     return payload.model_dump(mode="json")
 
 
+def verify_prior_coverage(windows, previous):
+    """A complete overlapping report must still contain every retained identity."""
+    source_identities = set()
+    for window in windows:
+        for raw in window["rows"]:
+            try:
+                if not isinstance(raw, dict):
+                    raise TypeError("invalid_row")
+                cells, links = raw.get("cells"), raw.get("links")
+                if (
+                    not isinstance(cells, list)
+                    or len(cells) < 2
+                    or not isinstance(cells[1], str)
+                    or not isinstance(links, list)
+                    or len(links) != 1
+                    or not isinstance(links[0], str)
+                ):
+                    raise ValueError("invalid_identity")
+                provider = re.fullmatch(
+                    r"(?:https://app\.gomotive\.com/en-US/)?#/fleetview/vehicles/summary/([0-9]+)",
+                    links[0],
+                )
+                if provider is None:
+                    raise ValueError("invalid_provider_link")
+                departure, _ = endpoint(cells[1])
+                source_identities.add((provider.group(1), departure))
+            except (ValueError, TypeError, KeyError, OverflowError):
+                # New malformed rows remain explicit normalization exclusions.
+                # They cannot satisfy coverage for an existing saved identity.
+                continue
+    stored_identities = {
+        (trip.provider_vehicle_id, importer.aware(trip.started_at)) for trip in previous
+    }
+    covered = len(stored_identities & source_identities)
+    missing = len(stored_identities - source_identities)
+    if missing:
+        raise ValueError(
+            f"incomplete_prior_coverage: prior={len(stored_identities)} covered={covered} missing={missing}"
+        )
+    return {
+        "prior_identity_count": len(stored_identities),
+        "prior_identity_covered": covered,
+    }
+
+
 async def prepare(db, document, tenant_id, actor_id, stamp):
     await importer.authorize(db, tenant_id, actor_id)
     mappings, exclusions = [], []
@@ -210,6 +255,7 @@ async def prepare(db, document, tenant_id, actor_id, stamp):
         .scalars()
         .all()
     )
+    prior_coverage = verify_prior_coverage(document["windows"], previous)
     windows = [
         {key: w[key] for key in ("start", "end", "source_read_at", "status", "rows")}
         for w in document["windows"]
@@ -221,6 +267,7 @@ async def prepare(db, document, tenant_id, actor_id, stamp):
         {"rows": [prior_payload(trip) for trip in previous]},
         now=stamp,
     )
+    report.update(prior_coverage)
     report["vehicle_exclusions"] = exclusions
     report["directory_count"] = len(document["vehicles"])
     report["matched_vehicles"] = len(mappings)
