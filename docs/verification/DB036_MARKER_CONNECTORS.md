@@ -1,0 +1,7 @@
+# Marker connector routing — 2026-10-07
+
+Frontend & UX, Fast UI, PR477. Labels avoid location dots; route leaders after every final label rectangle is known. A visibility graph uses inflated card corners and edge ports to find short clear polylines. Exact segment/rectangle intersection replaces approximate sampling. Connectors end on their own card edge; stroke is 1.5px with rounded joins. Geographic points, APIs, marker selection and deterministic priority remain unchanged.
+
+Validation: 17 tests across FleetMapCanvas, mapLabelLayout and mapLeaderRouting pass; tests cover 21 coincident markers at 390/900px, every final card against every connector segment, a blocking card, thin obstacles, edge termination, stable ordering and offscreen behavior. Changed-source ESLint, TypeScript and diff checks pass. CUA desktop/390px actual component synthetic preview verifies nearby Charlotte labels, recenter and clear selection. Local Vite PID34597 on 5187, compact-map-markers checkout. No authenticated backend or production acceptance.
+
+Limits: leader lines may cross each other; exact coincident dots necessarily share an origin. When a fixed overlay covers a true point, its first segment may exit that overlay. In an overcrowded layout with no clear corridor, omit the connector rather than draw a misleading line through a card. No route is claimed universally possible at arbitrary viewport/density. No production release performed.
