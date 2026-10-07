@@ -22,6 +22,31 @@ class PreparationTests(unittest.TestCase):
     def run_rows(self, prior=None):
         return MODULE.normalize(self.doc, self.mapping, prior, NOW)
 
+    def test_observed_english_and_numeric_endpoint_formats_are_equivalent(self):
+        expected = (datetime(2026, 10, 7, 19, 25, tzinfo=timezone.utc), "Example City, NC")
+        for clock in ("10/07/2026 03:25 PM", "Oct 7, 2026, 3:25 PM"):
+            with self.subTest(clock=clock):
+                self.assertEqual(MODULE.endpoint(clock + "\nExample City, NC"), expected)
+
+    def test_english_endpoints_normalize_as_minute_precision(self):
+        original, _ = self.run_rows()
+        self.raw["cells"][1] = "Sep 28, 2026, 9:00 AM\nExample City, NC"
+        self.raw["cells"][2] = "Sep 28, 2026, 10:00 AM\nOther City, NC"
+        rows, report = self.run_rows()
+        self.assertEqual(rows, original)
+        self.assertEqual(rows[0]["timestamp_precision"], "minute")
+        self.assertEqual(report["exclusions"], [])
+
+    def test_both_endpoint_formats_reject_dst_ambiguity_and_gap(self):
+        for clock in ("11/01/2026 01:30 AM", "Nov 1, 2026, 1:30 AM", "03/08/2026 02:30 AM", "Mar 8, 2026, 2:30 AM"):
+            with self.subTest(clock=clock), self.assertRaisesRegex(ValueError, "Ambiguous or nonexistent"):
+                MODULE.endpoint(clock + "\nExample City, NC")
+
+    def test_unobserved_endpoint_formats_are_not_guessed(self):
+        for clock in ("2026-10-07 15:25", "Oct 7, 2026, 3:25:12 PM", "7 Oct 2026 15:25", "October 7, 2026, 3:25 PM"):
+            with self.subTest(clock=clock), self.assertRaisesRegex(ValueError, "invalid_endpoint_timestamp"):
+                MODULE.endpoint(clock + "\nExample City, NC")
+
     def test_measured_values_null_metrics_and_dedupe(self):
         self.doc["windows"][0]["rows"].append(copy.deepcopy(self.raw))
         rows, report = self.run_rows()
