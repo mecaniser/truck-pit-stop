@@ -123,7 +123,7 @@ export default function FleetMapCanvas({ trucks, focusId, nearbyIds, route, now,
       const pixel = map.project(pin.point)
       const entry = markers.current.get(pin.id)!
       const badge = entry.button.querySelector<HTMLElement>('.proximity-pin-badge')!
-      return { id: pin.id, x: pixel.x, y: pixel.y, width: badge.offsetWidth || 90, height: badge.offsetHeight || 36,
+      return { id: pin.id, x: pixel.x, y: pixel.y, width: badge.offsetWidth || 90, height: badge.offsetHeight || 28,
         priority: pin.id === focusId ? 2 : nearby.includes(pin.id) ? 1 : 0 }
     }), bounds.width, bounds.height, obstacles)
     placements.forEach(({ id, dx, dy }) => {
