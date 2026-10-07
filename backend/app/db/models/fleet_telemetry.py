@@ -28,6 +28,7 @@ class FleetTelemetrySnapshot(BaseModel):
     request_digest = Column(String(64), nullable=False)
     source = Column(String(40), nullable=False)
     observed_at = Column(DateTime(timezone=True))
+    observed_precision = Column(String(10))
     captured_at = Column(DateTime(timezone=True), nullable=False)
     captured_by_user_id = Column(
         UUID(as_uuid=True), ForeignKey("users.id"), nullable=False
@@ -48,6 +49,10 @@ class FleetTelemetrySnapshot(BaseModel):
     fault_count = Column(Integer)
     evidence_note = Column(String(1000))
     __table_args__ = (
+        CheckConstraint(
+            "observed_precision IS NULL OR (observed_at IS NOT NULL AND observed_precision IN ('second', 'minute'))",
+            name="ck_telemetry_observed_precision",
+        ),
         CheckConstraint(
             "(fuel_economy_mpg IS NULL AND fuel_economy_period IS NULL) OR "
             "(fuel_economy_mpg IS NOT NULL AND fuel_economy_period IS NOT NULL "

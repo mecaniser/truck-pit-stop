@@ -33,6 +33,21 @@ describe('proximity eligibility', async () => {
     expect(positionAge(undated, now)).toBe('Time unknown')
     expect(positionAge(old, now)).toBe('Last known · 1h ago')
   })
+  it('marks minute precision without changing freshness or unknown-time eligibility', () => {
+    const minute = (age: number | null) => { const row = truck('Minute', 0, age); row.telemetry!.location!.observed_precision = 'minute'; return row }
+    expect(positionAge(minute(5), now)).toBe('~5m ago')
+    expect(positionAge(minute(60), now)).toBe('Last known · ~1h ago')
+    expect(positionAge(minute(.5), now)).toBe('<1m ago')
+    expect(positionAge(minute(null), now)).toBe('Time unknown')
+    expect(positionAge(minute(-6), now)).toBe('No coordinates')
+    expect(positionAge(minute(31 * 1440), now)).toBe('No coordinates')
+    expect(recentPosition(minute(15), now)).toBe(true)
+    expect(recentPosition(minute(15), now + 1)).toBe(false)
+    for (const observed_precision of [undefined, null, 'second'] as const) {
+      const row = minute(5); row.telemetry!.location!.observed_precision = observed_precision
+      expect(positionAge(row, now)).toBe('5m ago')
+    }
+  })
   it('requires an eligible origin and never resurrects expired or invalid coordinates', async () => {
     expect(roadCandidates([near], old, now, false)).toEqual([])
     expect(roadCandidates([near], missing, now, true)).toEqual([])

@@ -1,7 +1,6 @@
 # DB-036 Motive server worker contract
 
-Backend & Integrations owns this high-risk slice. No migration, provider activation,
-scheduler, or live import is implied by the implementation. Independent Security
+Backend & Integrations owns this high-risk slice. Additive migration161 is required for minute observation support. No provider activation, scheduler, or live import is implied by the implementation. Independent Security
 and QA and deployment acceptance are required before release.
 
 ## Input and identity
@@ -34,11 +33,30 @@ service locks the tenant to serialize database writers. Collector orchestration
 must hold its own exclusive process lock during collection and import.
 
 Known older or unchanged observations are skipped. Same-time changed coordinates
-are quarantined. Unknown prior timestamps stop replacement unless the current verified observation begins strictly after the prior capture time. Capture files older than 30 minutes are rejected. Unavailable source rows may lack VIN and are reported as vin_unavailable; they never map by unit. Minute intervals are
-preserved in evidence_note without manufacturing seconds. Because existing board
-projection prefers exact observed_at over null, a minute-only candidate with an
-existing known observation is quarantined as precision_insufficient_for_projection.
-No shared projection contract is changed here.
+are quarantined. Unknown prior timestamps stop replacement unless the current verified observation begins strictly after the prior capture time. Capture files older than 30 minutes are rejected. Unavailable source rows may lack VIN and are reported as vin_unavailable; they never map by unit. Minute intervals are preserved as first-class observed_precision="minute" and
+observed_at equal to the interval's UTC minute start. This means [start,start+60s),
+not an invented exact second. The raw timestamp, timezone and interval remain in
+evidence_note. Minute starts must be aligned and the entire interval must belong
+to the membership. A new observation is admitted only when its possible-time
+interval is wholly newer than the previous one. Overlapping intervals retain
+prior data; identical bounds and coordinates are unchanged.
+
+TelemetryCapture, snapshot storage, capture receipts and ReadingProvenance expose
+optional observed_precision="second"|"minute"|null. Omitted/null preserves legacy
+semantics and request digests; existing rows are not backfilled. Minute precision
+requires observed_at; null observed_at cannot carry a precision. Worker exact
+captures continue omitting precision to preserve their previous request IDs.
+Capture itself rejects overlapping location intervals when either observation
+has minute precision, including later exact timestamps inside a prior minute.
+Existing exact-only captures retain their old behavior. Projection carries the
+precision and calculates conservative age from minute start (up to59seconds older
+than the unknown exact observation). Frontend must identify minute accuracy.
+
+Migration161 adds the nullable observed_precision column and checks supported
+values/time presence/minute alignment. Backend and worker must not run against a
+pre161 schema. Downgrade refuses to erase precision while minute rows exist,
+because doing so would misrepresent interval starts as exact observations.
+
 
 Request IDs derive from tenant and full immutable payload. Current authorization and membership are rechecked before existing request lookup; immutable capture digests verify equality. Matching committed receipts can be recovered after the 30-minute input freshness window, while unmatched expired input is never written. Replay the SAME private
 input after an uncertain outcome. Do not regenerate timestamps or evidence for a

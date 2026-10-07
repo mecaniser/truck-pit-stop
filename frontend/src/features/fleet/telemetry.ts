@@ -4,6 +4,8 @@ import type { BoardTruck } from './types'
 export interface ReadingProvenance {
   source: 'motive_api' | 'motive_dashboard_manual' | 'manual_location'
   observed_at: string | null
+  /** Minute observations represent [observed_at, observed_at + 60 seconds). */
+  observed_precision?: 'second' | 'minute' | null
   captured_at: string | null
   freshness: 'fresh' | 'delayed' | 'stale' | 'unknown'
   snapshot_id: string | null
@@ -24,8 +26,13 @@ export function readingFreshness(reading: ReadingProvenance, now = Date.now()) {
   const age = now - Date.parse(reading.observed_at)
   return !Number.isFinite(age) || age < -300000 ? 'unknown' : age <= 300000 ? 'fresh' : age <= 900000 ? 'delayed' : 'stale'
 }
-/** Display capture time without exposing internal provenance metadata. */
+/** Keep approximate observations distinct from the exact capture time. */
 export function readingCaption(reading: ReadingProvenance) {
+  if (reading.observed_precision === 'minute' && reading.observed_at && Number.isFinite(Date.parse(reading.observed_at))) {
+    const observed = new Date(reading.observed_at).toLocaleString(undefined, { year: 'numeric', month: 'numeric', day: 'numeric', hour: 'numeric', minute: '2-digit' })
+    const captured = reading.captured_at && Number.isFinite(Date.parse(reading.captured_at)) ? ` · Captured ${new Date(reading.captured_at).toLocaleString()}` : ''
+    return `Observed around ${observed}${captured}`
+  }
   const stamp = reading.captured_at ?? reading.observed_at
   if (!stamp || !Number.isFinite(Date.parse(stamp))) return ''
   return `${reading.captured_at ? 'Captured' : 'Updated'} ${new Date(stamp).toLocaleString()}`
@@ -35,10 +42,11 @@ export function readingSummary(reading: ReadingProvenance, now = Date.now()) {
   const stamp = Date.parse(reading.observed_at ?? reading.captured_at ?? '')
   if (!Number.isFinite(stamp)) return ''
   const minutes = Math.max(0, Math.floor((now - stamp) / 60000))
-  if (minutes < 1) return 'Updated just now'
+  const approximate = reading.observed_precision === 'minute' && !!reading.observed_at
+  if (minutes < 1) return approximate ? 'Updated within the last minute' : 'Updated just now'
   const count = minutes < 60 ? minutes : minutes < 1440 ? Math.floor(minutes / 60) : Math.floor(minutes / 1440)
   const unit = minutes < 60 ? 'minute' : minutes < 1440 ? 'hour' : 'day'
-  return `Updated ${count} ${unit}${count === 1 ? '' : 's'} ago`
+  return `Updated ${approximate ? 'about ' : ''}${count} ${unit}${count === 1 ? '' : 's'} ago`
 }
 
 export function truckLocation(truck: BoardTruck, now = Date.now()) { return retained(truck.telemetry?.location, now) }

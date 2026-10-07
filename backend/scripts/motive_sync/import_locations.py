@@ -129,6 +129,9 @@ def make_body(row, tenant_id, customer_id, company_label, company_id):
         "provider_vehicle_number": row.get("unit"),
         "evidence_note": json.dumps(evidence, sort_keys=True, separators=(",", ":")),
     }
+    if row.get("precision") == "minute":
+        values["observed_at"] = row["observed_minute_start"]
+        values["observed_precision"] = "minute"
     if values["lat"] is None or values["lng"] is None:
         raise ValueError("Located row requires coordinate pair")
     digest = hashlib.sha256(
@@ -154,36 +157,35 @@ def disposition(row, prior):
     if row["status"] == "unavailable":
         return "unavailable"
     start, end = interval(row)
+    if row["precision"] == "minute":
+        end -= timedelta(microseconds=1)
     for old in prior:
         if old.observed_at is not None:
-            if row["precision"] == "minute":
-                return "precision_insufficient_for_projection"
-            previous = telemetry.utc(old.observed_at)
-            if start < previous:
-                return "older"
-            if start == previous:
-                return (
-                    "unchanged"
-                    if old.lat == row["lat"] and old.lng == row["lng"]
-                    else "conflicting_observation"
-                )
+            previous_start, previous_end = telemetry.observation_interval(
+                old.observed_at, getattr(old, "observed_precision", None)
+            )
         else:
             try:
                 note = json.loads(old.evidence_note or "{}")
                 previous_start, previous_end = interval(note)
+                if note.get("precision") == "minute":
+                    previous_end -= timedelta(microseconds=1)
             except (ValueError, TypeError, KeyError):
                 captured = getattr(old, "captured_at", None)
                 if captured is not None and start > telemetry.utc(captured):
                     continue
                 return "prior_time_unknown"
-            if end <= previous_start:
-                return "older"
-            if start < previous_end:
-                return (
-                    "unchanged"
-                    if old.lat == row["lat"] and old.lng == row["lng"]
-                    else "overlapping_observation_interval"
-                )
+        if end < previous_start:
+            return "older"
+        if start > previous_end:
+            continue
+        if start == previous_start and end == previous_end:
+            return (
+                "unchanged"
+                if old.lat == row["lat"] and old.lng == row["lng"]
+                else "conflicting_observation"
+            )
+        return "overlapping_observation_interval"
     return "update"
 
 
@@ -306,7 +308,10 @@ async def prepare(db, rows, tenant_id, actor_id, company_label, company_id):
         if start < stamp - timedelta(days=30):
             item["status"] = "older"
             continue
-        if not telemetry.within(member, start) or not telemetry.within(member, end):
+        if not telemetry.within(member, start) or not telemetry.within(
+            member,
+            end - timedelta(microseconds=1) if row["precision"] == "minute" else end,
+        ):
             raise ValueError("Membership does not cover observation")
         prior = (
             (

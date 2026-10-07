@@ -98,7 +98,7 @@ def test_ordering_does_not_refresh_unknown_or_old():
     assert worker.disposition(row, [old(t)]) == "conflicting_observation"
 
 
-def test_minute_precision_cannot_replace_known():
+def test_minute_precision_retains_interval_and_can_replace_older_known():
     row = source()["vehicles"][0]
     t = worker.time_value(row["observed_at"]).replace(second=0, microsecond=0)
     row.update(
@@ -107,12 +107,10 @@ def test_minute_precision_cannot_replace_known():
         observed_minute_start=t.isoformat(),
         observed_minute_end=(t + timedelta(minutes=1)).isoformat(),
     )
-    assert (
-        worker.disposition(row, [old(t - timedelta(hours=1))])
-        == "precision_insufficient_for_projection"
-    )
+    assert worker.disposition(row, [old(t - timedelta(hours=1))]) == "update"
     body = worker.make_body(row, uuid4(), uuid4(), "77 CARGO LLC", "KT8934277")
-    assert body.observed_at is None and "observed_minute_start" in body.evidence_note
+    assert body.observed_at == t and body.observed_precision == "minute"
+    assert "observed_minute_start" in body.evidence_note
 
 
 @pytest.mark.asyncio
@@ -335,3 +333,58 @@ async def test_empty_source_vin_never_covers_vinless_fleet_vehicle(
         "status": "source_missing",
         "vin": None,
     }
+
+
+@pytest.mark.asyncio
+async def test_minute_worker_commit_projects_and_replays(
+    db_session, monkeypatch, _db_engine
+):
+    actor, truck, _ = await prepared(db_session, monkeypatch)
+    truck.last_lat = None
+    truck.last_lng = None
+    await db_session.commit()
+    doc = source()
+    row = doc["vehicles"][0]
+    minute = worker.time_value(row["observed_at"]).replace(second=0, microsecond=0)
+    row.update(
+        precision="minute",
+        observed_at=None,
+        observed_minute_start=minute.isoformat(),
+        observed_minute_end=(minute + timedelta(minutes=1)).isoformat(),
+    )
+    factory = async_sessionmaker(_db_engine, expire_on_commit=False)
+    args = (
+        factory,
+        doc,
+        actor.tenant_id,
+        actor.id,
+        doc["company_label"],
+        doc["company_id"],
+    )
+    receipt = await worker.run_import(*args, commit=True)
+    assert receipt["rows"][0]["board_verified_after_commit"]
+    replay = await worker.run_import(*args, commit=True)
+    assert replay["rows"][0]["snapshot_id"] == receipt["rows"][0]["snapshot_id"]
+    saved = (await db_session.execute(select(Snapshot))).scalar_one()
+    assert saved.observed_precision == "minute"
+    assert telemetry.utc(saved.observed_at) == minute
+
+
+def test_worker_minute_overlaps_retain_prior_and_adjacent_intervals_advance():
+    row = source()["vehicles"][0]
+    minute = worker.time_value(row["observed_at"]).replace(second=0, microsecond=0)
+    row.update(observed_at=(minute + timedelta(seconds=30)).isoformat())
+    previous = old(minute, observed_precision="minute")
+    assert worker.disposition(row, [previous]) == "overlapping_observation_interval"
+    row["observed_at"] = (minute + timedelta(minutes=1)).isoformat()
+    assert worker.disposition(row, [previous]) == "update"
+    row.update(
+        precision="minute",
+        observed_at=None,
+        observed_minute_start=minute.isoformat(),
+        observed_minute_end=(minute + timedelta(minutes=1)).isoformat(),
+    )
+    assert (
+        worker.disposition(row, [old(minute + timedelta(seconds=30))])
+        == "overlapping_observation_interval"
+    )

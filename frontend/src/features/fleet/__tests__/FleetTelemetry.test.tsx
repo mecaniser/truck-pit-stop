@@ -37,6 +37,32 @@ describe('reported telemetry semantics', () => {
     expect(readingCaption({ ...provenance, captured_at: null })).toBe('')
     expect(readingSummary({ ...provenance, captured_at: null }, now)).toBe('')
   })
+  it('labels minute observations approximately and keeps capture time separate', () => {
+    const observed_at = new Date(now - 5 * 60000).toISOString()
+    const minute = { ...provenance, observed_at, observed_precision: 'minute' as const }
+    expect(readingSummary(minute, now)).toBe('Updated about 5 minutes ago')
+    expect(readingSummary(minute, Date.parse(observed_at) + 30000)).toBe('Updated within the last minute')
+    const observed = new Date(observed_at).toLocaleString(undefined, { year: 'numeric', month: 'numeric', day: 'numeric', hour: 'numeric', minute: '2-digit' })
+    expect(readingCaption(minute)).toBe(`Observed around ${observed} · Captured ${new Date(provenance.captured_at!).toLocaleString()}`)
+    expect(readingCaption({ ...minute, captured_at: null })).toBe(`Observed around ${observed}`)
+    for (const observed_precision of [undefined, null, 'second'] as const) {
+      expect(readingSummary({ ...minute, observed_precision }, now)).toBe('Updated 5 minutes ago')
+      expect(readingCaption({ ...minute, observed_precision })).toBe(readingCaption(provenance))
+    }
+    expect(readingSummary({ ...provenance, observed_precision: 'minute' }, now)).toBe('Updated just now')
+    expect(readingCaption({ ...provenance, observed_precision: 'minute' })).toBe(readingCaption(provenance))
+    expect(readingCaption({ ...minute, observed_at: 'invalid', captured_at: null })).toBe('')
+    expect(readingSummary({ ...minute, observed_at: 'invalid' }, now)).toBe('')
+  })
+  it('does not share an approximate age with a second-precision reading', () => {
+    const observed_at = new Date(now - 5 * 60000).toISOString()
+    render(<TelemetrySummary compact truck={{ ...truck, telemetry: { ...telemetry,
+      location: { ...telemetry.location!, observed_at, observed_precision: 'minute' },
+      speed: { ...telemetry.speed!, observed_at, observed_precision: 'second' },
+    } }} />)
+    expect(screen.getByText('Updated about 5 minutes ago')).toBeInTheDocument()
+    expect(screen.getByText('Updated 5 minutes ago')).toBeInTheDocument()
+  })
   it('never uses legacy coordinates and keeps label-only locations unpinned', () => expect(truckCoordinates(truck, now)).toBeNull())
   it('preserves exact zero coordinates without offsets', () => expect(truckCoordinates({ ...truck, telemetry: { ...telemetry, location: { ...telemetry.location!, lat: 0, lng: 0 } } }, now)).toEqual([0, 0]))
   it('retains captured unknown-time readings without claiming fresh or stopped', () => { expect(retained(telemetry.speed, now)?.value).toBe(0); expect(readingFreshness(provenance, now)).toBe('unknown'); expect(truckMotion(truck, now)).toBe('unknown') })
