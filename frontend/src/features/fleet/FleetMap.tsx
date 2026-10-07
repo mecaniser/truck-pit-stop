@@ -60,8 +60,12 @@ function FleetMap({ trucks, focusId, onFocusChange, onSelect, compact, homeAddre
 
   return <section className={`proximity${compact ? ' proximity--compact' : ''}`} aria-label="Fleet proximity map">
     <header className="proximity-toolbar">
-      <div><strong>Fleet map</strong><span>{located.length} located · {trucks.length - located.length} without coordinates</span></div>
+      <div className="proximity-map-toolbar"><div className="proximity-map-title"><strong>Fleet map</strong><span>{located.length} located · {trucks.length - located.length} without coordinates</span></div>
       <div className="proximity-map-controls">{homeAddress && <button type="button" title={homeAddress} disabled={!home.point} onClick={() => { select(undefined); setHomeVisit(value => value + 1) }}><Home size={16} />Home</button>}<button type="button" onClick={() => setRecenter(value => value + 1)}><LocateFixed size={16} />Recenter</button></div>
+      </div>
+      <div className="proximity-search-toolbar">
+        <label className="proximity-search"><Search size={17} /><input ref={searchRef} type="search" aria-label="Find truck" placeholder="Find truck or driver" value={query} onChange={event => setQuery(event.target.value)} /></label>
+      </div>
     </header>
     <div className="proximity-workspace">
       <div className="proximity-geography">
@@ -72,7 +76,7 @@ function FleetMap({ trucks, focusId, onFocusChange, onSelect, compact, homeAddre
         </div>
       </div>
       <aside className="proximity-panel" aria-label="Truck proximity">
-        <label className="proximity-search"><Search size={17} /><input ref={searchRef} type="search" aria-label="Find truck" placeholder="Find truck or driver" value={query} onChange={event => setQuery(event.target.value)} /></label>
+        <div className="proximity-panel-content">
         {focus && <div className="proximity-focus">
           <span className="sr-only">Comparing from</span>
           <div className="proximity-focus-heading">
@@ -113,7 +117,8 @@ function FleetMap({ trucks, focusId, onFocusChange, onSelect, compact, homeAddre
         {focus && !searching && nearby.length > 3 && <button className="proximity-more" type="button" aria-expanded={expanded} onClick={() => setExpanded(value => !value)}>{expanded ? 'Closest 3' : `Show all ${nearby.length}`}<ChevronDown size={16} style={{ transform: expanded ? 'rotate(180deg)' : undefined }} /></button>}
         {searching && !matches.length && <p className="proximity-empty">No trucks match your search.</p>}
         {!trucks.length && <p className="proximity-empty">No trucks in this view.</p>}
-        <footer>
+        </div>
+        <footer className={!focus && homeAddress ? 'proximity-home-footer' : undefined}>
           {!focus && homeAddress && <div className="proximity-distance-legend" aria-label="Road distance to home color legend">
             <span className="proximity-distance-scale" aria-hidden="true" />
             <div><span>Nearest to home</span><span>Farthest from home</span></div>
