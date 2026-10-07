@@ -1,3 +1,4 @@
+import { routeLeader } from './mapLeaderRouting'
 import { layoutTruckLabels } from './mapLabelLayout'
 import cargoMarkUrl from '../../assets/fleet/77-cargo-mark.svg'
 import { useEffect, useRef, useState } from 'react'
@@ -119,19 +120,27 @@ export default function FleetMapCanvas({ trucks, focusId, nearbyIds, route, now,
     const bounds = map.getContainer().getBoundingClientRect()
     const homePixel = homePoint ? map.project(homePoint) : undefined
     const obstacles = [{ x: bounds.width / 2, y: bounds.height - 16, width: bounds.width, height: 32 }, { x: bounds.width - 25, y: 75, width: 40, height: 140 }, ...(homePixel ? [{ x: homePixel.x, y: homePixel.y, width: 76, height: 36 }] : [])]
-    const placements = layoutTruckLabels(pins.map(pin => {
+    const labelInputs = pins.map(pin => {
       const pixel = map.project(pin.point)
       const entry = markers.current.get(pin.id)!
       const badge = entry.button.querySelector<HTMLElement>('.proximity-pin-badge')!
       return { id: pin.id, x: pixel.x, y: pixel.y, width: badge.offsetWidth || 90, height: badge.offsetHeight || 28,
         priority: pin.id === focusId ? 2 : nearby.includes(pin.id) ? 1 : 0 }
-    }), bounds.width, bounds.height, obstacles)
+    })
+    const placements = layoutTruckLabels(labelInputs, bounds.width, bounds.height, obstacles)
+    const cards = placements.map(placement => {
+      const label = labelInputs.find(item => item.id === placement.id)!
+      return { ...label, x: label.x + placement.dx, y: label.y + placement.dy }
+    })
     placements.forEach(({ id, dx, dy }) => {
       const button = markers.current.get(id)!.button
       const badge = button.querySelector<HTMLElement>('.proximity-pin-badge')!
       badge.style.left = `${dx}px`; badge.style.top = `${dy}px`
       const leader = button.querySelector<SVGPathElement>('path')!
-      leader.setAttribute('d', `M0 0 L${dx} ${dy}`)
+      const anchor = labelInputs.find(label => label.id === id)!
+      const target = cards.find(card => card.id === id)!
+      const points = routeLeader(anchor, target, [...obstacles, ...cards.filter(card => card.id !== id)])
+      leader.setAttribute('d', points.map((point, index) => `${index ? 'L' : 'M'}${point.x - anchor.x} ${point.y - anchor.y}`).join(' '))
       button.style.zIndex = id === focusId ? '3' : nearby.includes(id) ? '2' : '1'
     })
     const sourceId = 'fleet-proximity-lines'

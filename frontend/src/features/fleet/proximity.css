@@ -106,7 +106,7 @@
 .proximity-pin.is-cluster { width: 44px; height: 44px; overflow: visible; }
 .proximity-pin.is-cluster .proximity-pin-badge { position: absolute; left: calc(50% + 40px); top: calc(50% - 28px); transform: translateY(-50%); max-width: none; white-space: nowrap; }
 .proximity-cluster-leader { position: absolute; left: 50%; top: 50%; width: 1px; height: 1px; overflow: visible; pointer-events: none; }
-.proximity-cluster-leader path { fill: none; stroke: #17202a; stroke-width: 2; stroke-linecap: round; }
+.proximity-cluster-leader path { fill: none; stroke: #17202a; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
 .proximity-cluster-anchor { position: absolute; left: 50%; top: 50%; width: 8px; height: 8px; border: 2px solid #ffffff; border-radius: 50%; background: #17202a; transform: translate(-50%, -50%); }
 
 .proximity-map-controls { flex-shrink: 0; }
