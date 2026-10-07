@@ -28,25 +28,29 @@ export async function readReport(page) {
 /** One step is intentionally bounded; caller persists the returned receipt after every step.
  * Stagnation never means all history was imported: it yields partial for operator review.
  */
-export async function captureStep(page, receipt, { maxRows = 20000 } = {}) {
+export async function captureStep(page, receipt, { maxRows = 20000, verifiedTimezone = null } = {}) {
   const report = await readReport(page);
   if (report.state === 'unavailable') throw new Error('Motive report unavailable: check login');
   if (report.state === 'loading') return { ...receipt, status: 'loading' };
-  const expectedHeaders = ['', 'Origin (MDY EDT)', 'Destination (MDY EDT)', 'Dist. (mi) / Duration', 'Vehicle ID / Mode', 'Driver / ID', '', 'Notes', ''];
+  const zone = report.headers?.[1]?.match(/^Origin \(MDY (EDT|EST)\)$/)?.[1];
+  if (zone === 'EST' && verifiedTimezone !== 'America/New_York') throw new Error('New York timezone verification required');
+  const expectedHeaders = ['', `Origin (MDY ${zone})`, `Destination (MDY ${zone})`, 'Dist. (mi) / Duration', 'Vehicle ID / Mode', 'Driver / ID', '', 'Notes', ''];
   const clean = value => value.replace(/\s+/g, ' ').trim().toLowerCase();
   if (JSON.stringify(report.headers?.map(clean)) !== JSON.stringify(expectedHeaders.map(clean))) throw new Error('Motive table layout or timezone changed');
+  if (!zone) throw new Error('Motive table layout or timezone changed');
+  if (receipt.header_timezone && receipt.header_timezone !== zone) throw new Error('Report timezone changed during collection');
   const actual = new URL(report.url);
   if (actual.origin !== 'https://app.gomotive.com' || !actual.hash.startsWith('#/fleetview/list/trips/trips;')) throw new Error('Unexpected source page');
   const filters = Object.fromEntries(actual.hash.split(';').slice(1).map(part => part.split('=')));
   if (filters.start_date !== receipt.start || filters.end_date !== receipt.end || Object.keys(filters).some(key => !['sort_field', 'sort_direction', 'start_date', 'end_date', 'driving_period_start_date'].includes(key))) throw new Error('Source filters do not match requested window');
   if (report.state === 'empty') {
     if (receipt.rows.length) throw new Error('Source became empty during collection');
-    return { ...receipt, source_read_at: new Date().toISOString(), status: 'empty', terminal_evidence: 'No trips found. Try updating your filter/search criteria.' };
+    return { ...receipt, source_read_at: new Date().toISOString(), status: 'empty', header_timezone: zone, terminal_evidence: 'No trips found. Try updating your filter/search criteria.' };
   }
   const seen = new Map(receipt.rows.map(row => [JSON.stringify(row), row]));
   for (const row of report.rows) seen.set(JSON.stringify(row), row);
   if (seen.size > maxRows) throw new Error('Collection row limit reached');
-  return { ...receipt, source_read_at: new Date().toISOString(), status: 'partial', rows: [...seen.values()], last_page_rows: report.rows.length, footer: report.footer, stagnant_steps: seen.size === receipt.rows.length ? (receipt.stagnant_steps ?? 0) + 1 : 0 };
+  return { ...receipt, source_read_at: new Date().toISOString(), status: 'partial', header_timezone: zone, rows: [...seen.values()], last_page_rows: report.rows.length, footer: report.footer, stagnant_steps: seen.size === receipt.rows.length ? (receipt.stagnant_steps ?? 0) + 1 : 0 };
 }
 
 export function newWindow(start, end) {
@@ -57,12 +61,12 @@ export function newWindow(start, end) {
 /** Completion requires independently observed source total, not scroll stagnation. */
 export function finalizeWindow(receipt, expectedTotal, countEvidence) {
   if (!Number.isInteger(expectedTotal) || expectedTotal < 0 || !countEvidence?.trim()) throw new Error('Source count evidence required');
-  if (receipt.status === 'empty' && expectedTotal === 0 && receipt.rows.length === 0) return receipt;
+  if (receipt.status === 'empty' && expectedTotal === 0 && receipt.rows.length === 0) return {...receipt, expected_total: 0, footerShown: 0, terminal_evidence: countEvidence};
   const shown = Number(receipt.footer?.match(/^Showing ([\d,]+) results$/)?.[1]?.replaceAll(',', ''));
   const identities = new Set(receipt.rows.map(row => JSON.stringify([row.links, row.cells[1]?.split('\n')[0]])));
   if (identities.size !== receipt.rows.length) throw new Error('Conflicting or ambiguous source identities');
   if (receipt.status !== 'partial' || receipt.rows.length !== expectedTotal || shown !== expectedTotal) throw new Error('Incomplete source window');
-  return {...receipt, status: 'captured', expected_total: expectedTotal, terminal_evidence: countEvidence};
+  return {...receipt, status: 'captured', expected_total: expectedTotal, footerShown: shown, terminal_evidence: countEvidence};
 }
 
 /** Caller supplies the already-authorized CUA page and a private checkpoint writer.

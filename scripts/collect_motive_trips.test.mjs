@@ -48,3 +48,65 @@ test('private checkpoints are atomic and exclusive across runners',async()=>{
  await assert.rejects(state.write('../escape.json',{}));await state.close();const again=await openState(dir);await again.close();
  }finally{await rm(dir,{recursive:true,force:true});}
 });
+test('EST requires verified New York settings; mismatched or changing header zones fail',async()=>{
+ const winter=headers.map(s=>s.replaceAll('EDT','EST'));
+ const initial=newWindow('2026-09-28','2026-09-28');
+ await assert.rejects(captureStep(page(report([row(1)],{headers:winter})),initial),/verification/);
+ const r=await captureStep(page(report([row(1)],{headers:winter})),initial,{verifiedTimezone:'America/New_York'});
+ assert.equal(r.header_timezone,'EST');
+ await assert.rejects(captureStep(page(report([row(1)])),r,{verifiedTimezone:'America/New_York'}),/timezone changed/);
+ const mixed=[...headers];mixed[2]='Destination (MDY EST)';
+ await assert.rejects(captureStep(page(report([row(1)],{headers:mixed})),initial,{verifiedTimezone:'America/New_York'}),/layout/);
+});
+import server from '../backend/scripts/motive_sync/collect_trips.cjs';
+test('daily overlap follows New York calendar across midnight and DST',()=>{
+ assert.deepEqual(server.recentWindow(new Date('2026-10-08T02:00:00Z')),{start:'2026-10-05',end:'2026-10-07'});
+ assert.deepEqual(server.recentWindow(new Date('2026-03-09T04:01:00Z')),{start:'2026-03-07',end:'2026-03-09'});
+});
+test('directory rejects partial pages and conflicting identity, missing VIN remains unknown',()=>{
+ const links=[{href:'#/fleetview/vehicles/summary/123',unit:'1'}];
+ assert.equal(server.validateDirectory(links,1,1).length,1);
+ assert.throws(()=>server.validateDirectory(links,1,2),/incomplete/);
+ assert.throws(()=>server.validateDirectory([...links,{...links[0],unit:'2'}],1,1),/ambiguous/);
+ assert.equal(server.summaryVin('VIN —'),null);
+ assert.equal(server.summaryVin('VIN 1FUJGLDR0DLBY1234'),'1FUJGLDR0DLBY1234');
+ assert.throws(()=>server.summaryVin('VIN 1FUJGLDR0DLBY1234 VIN 1FUJGLDR0DLBY1235'),/ambiguous/);
+});
+test('server report traversal never commits a truncated or perpetually loading window',async()=>{
+ const adapter={reportUrl,newWindow,captureStep,finalizeWindow};
+ const initial=report([row(1)],{footer:'Showing 2 results'});
+ const fake={goto:async()=>{},url:()=>initial.url,evaluate:async fn=>fn.toString().includes('document.querySelector')?initial:true,waitForTimeout:async()=>{}};
+ let last;
+ await assert.rejects(server.collectWindow(fake,{start:'2026-09-28',end:'2026-09-28'},async r=>{last=r;},adapter,{maxSteps:5}),/step_limit/);
+ assert.equal(last.status,'partial');
+});
+test('server completion requires bottom evidence even when visible count matches',async()=>{
+ const adapter={reportUrl,newWindow,captureStep,finalizeWindow};
+ const source=report([row(1)]);let bottom=false,last;
+ const fake={goto:async()=>{},url:()=>source.url,evaluate:async fn=>fn.toString().includes('const headers =')?source:bottom,waitForTimeout:async()=>{}};
+ const checkpoint=async r=>{last=r;};
+ await assert.rejects(server.collectWindow(fake,{start:'2026-09-28',end:'2026-09-28'},checkpoint,adapter,{maxSteps:5}),/step_limit/);
+ assert.equal(last.status,'partial');bottom=true;
+ assert.equal((await server.collectWindow(fake,{start:'2026-09-28',end:'2026-09-28'},checkpoint,adapter,{maxSteps:5})).status,'captured');
+ source.state='loading';source.rows=[];
+ await assert.rejects(server.collectWindow(fake,{start:'2026-09-28',end:'2026-09-28'},checkpoint,adapter,{maxSteps:5}),/step_limit/);
+ assert.equal(last.status,'loading');
+});
+test('finalized producer windows carry backend count contract including explicit empty',async()=>{
+ const adapter={reportUrl,newWindow,captureStep,finalizeWindow};
+ const source=report([row(1)]);
+ const fake={goto:async()=>{},url:()=>source.url,evaluate:async fn=>fn.toString().includes('const headers =')?source:true,waitForTimeout:async()=>{}};
+ const filled=await server.collectWindow(fake,{start:'2026-09-28',end:'2026-09-28'},async()=>{},adapter,{maxSteps:5});
+ for(const key of ['expected_total','footerShown'])assert.equal(filled[key],filled.rows.length);
+ assert.equal(filled.status,'captured');assert.ok(filled.terminal_evidence);
+ source.state='empty';source.rows=[];source.footer=null;
+ const empty=await server.collectWindow(fake,{start:'2026-09-28',end:'2026-09-28'},async()=>{},adapter,{maxSteps:5});
+ assert.equal(empty.expected_total,0);assert.equal(empty.footerShown,0);assert.equal(empty.status,'empty');
+ assert.ok(empty.terminal_evidence.includes('No trips found'));
+});
+test('collector error diagnostics never echo unknown errors or authentication contents',()=>{
+ assert.equal(server.safeFailure(new Error('duplicate_vin')),'duplicate_vin');
+ assert.equal(server.safeFailure(new Error('Motive table layout or timezone changed')),'report_layout_changed');
+ assert.equal(server.safeFailure({name:'TimeoutError',message:'password contents secret'}),'ui_timeout');
+ assert.equal(server.safeFailure(new Error('my email and password contents')),'collection_failed');
+});
