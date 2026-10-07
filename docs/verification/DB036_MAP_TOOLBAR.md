@@ -11,3 +11,5 @@ Follow-up: search now fills the entire header cell without an inset border; focu
 Home/Recenter follow-up: removed individual button boxes, reduced horizontal padding to 8px and icon gap to 6px; retained 44px targets, focus outlines and pointer hover feedback.
 
 Footer alignment: home-distance footer uses the same 43px desktop height as the map legend, aligning its top divider with the bottom of the map canvas.
+
+Release CI repair: replaced footer :has selector with an explicit conditional class after jsdom failed seven FleetTelemetry tests. FleetTelemetry + FleetProximity now pass 38/38; ESLint, TypeScript and local visual alignment pass. Runtime 5187 PID45590 still serves this checkout; backend unavailable.

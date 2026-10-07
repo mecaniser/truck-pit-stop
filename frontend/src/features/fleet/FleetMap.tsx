@@ -118,7 +118,7 @@ function FleetMap({ trucks, focusId, onFocusChange, onSelect, compact, homeAddre
         {searching && !matches.length && <p className="proximity-empty">No trucks match your search.</p>}
         {!trucks.length && <p className="proximity-empty">No trucks in this view.</p>}
         </div>
-        <footer>
+        <footer className={!focus && homeAddress ? 'proximity-home-footer' : undefined}>
           {!focus && homeAddress && <div className="proximity-distance-legend" aria-label="Road distance to home color legend">
             <span className="proximity-distance-scale" aria-hidden="true" />
             <div><span>Nearest to home</span><span>Farthest from home</span></div>
