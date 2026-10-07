@@ -21,9 +21,12 @@
 .proximity-search svg { color: var(--muted-2, #93a3b2); flex: none; }
 .proximity-search input { width: 100%; min-width: 0; min-height: 44px; border: 0; background: transparent; font: inherit; font-size: 12px; color: inherit; }
 .proximity-focus { padding: 4px 0 16px; border-bottom: 1px solid var(--line, #344453); }
-.proximity-focus-heading { display: flex; justify-content: space-between; align-items: center; font-size: 10px; text-transform: uppercase; letter-spacing: 1px; color: var(--muted-2, #93a3b2); }
-.proximity-focus-heading button { width: 44px; border: 0; background: transparent; color: inherit; display: grid; place-items: center; }
-.proximity-unit { display: block; font: 700 28px/1.15 var(--display, sans-serif); margin-bottom: 8px; overflow-wrap: anywhere; }
+.proximity-focus-heading { display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: center; }
+.proximity-focus-heading .proximity-unit { flex: 1; min-width: 0; margin: 0; font: 700 24px/1.2 var(--display, sans-serif); overflow-wrap: anywhere; }
+.proximity-focus-heading button { flex: none; display: inline-flex; align-items: center; justify-content: center; gap: 5px; padding: 0 8px; border: 0; border-radius: 6px; background: transparent; color: inherit; white-space: nowrap; font-size: 12px; }
+.proximity-focus-heading .proximity-clear { width: 44px; padding: 0; color: var(--muted-2, #93a3b2); }
+.proximity-focus-meta { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px 12px; }
+.proximity-focus .proximity-focus-location { margin: 4px 0 0; }
 .proximity-status { font-size: 11px; color: var(--muted, #c3ced8); }
 .proximity-focus p { font-size: 12px; margin: 10px 0 4px; overflow-wrap: anywhere; }
 .proximity-focus small { font-size: 11px; color: var(--muted-2, #93a3b2); }
@@ -52,7 +55,7 @@
 .proximity-map-unavailable span { font-size: 13px; max-width: 280px; line-height: 1.6; }
 /* Keep a generous target around the compact visual badge. */
 .proximity-pin { --pin-status: #94a3b8; display: flex; align-items: center; justify-content: center; min-height: 44px; min-width: 44px; max-width: 160px; padding: 7px 4px; border: 0; background: transparent; color: #17202a; cursor: pointer; }
-.proximity-pin-badge { display: inline-flex; align-items: center; gap: 5px; min-height: 26px; min-width: 44px; max-width: 100%; padding: 3px 7px 3px 5px; border: 1px solid #ffffffed; border-radius: 5px; background: #ffffff; box-shadow: 0 1px 4px #17202a40; }
+.proximity-pin-badge { display: inline-flex; align-items: center; gap: 5px; min-height: 28px; min-width: 44px; max-width: 100%; padding: 2px 7px 2px 5px; border: 1px solid #ffffffed; border-radius: 5px; background: #ffffff; box-shadow: 0 1px 4px #17202a40; }
 .proximity-pin-brand { display: block; width: 20px; height: 22px; flex: none; object-fit: contain; }
 .proximity-pin-label { color: #17202a; font: 750 11px/1.2 sans-serif; overflow-wrap: anywhere; min-width: 0; }
 .proximity-pin-status { width: 5px; height: 5px; border-radius: 50%; flex: none; background: var(--pin-status); margin-left: 1px; }
@@ -89,34 +92,36 @@
 
 .proximity-drive-time { display: block; font-size: 11px; font-weight: 500; color: var(--fleet-text-muted, #94a3b8); text-align: right; }
 
-.proximity-route-summary { margin-top: 14px; padding: 12px; border: 1px solid #3b82f680; border-radius: 10px; background: #2563eb18; }
-.proximity-route-caption { display: block; color: #93c5fd; font-size: 11px; }
-.proximity-route-endpoints { display: flex; align-items: center; gap: 10px; margin: 7px 0 10px; font-size: 16px; }
-.proximity-route-endpoints strong { overflow-wrap: anywhere; min-width: 0; }
-.proximity-route-endpoints > span { color: #60a5fa; flex: none; }
-.proximity-route-metrics { display: flex; justify-content: space-between; gap: 10px; align-items: baseline; }
-.proximity-route-metrics > strong { font-size: 24px; line-height: 1.2; color: #f8fafc; }
-.proximity-route-metrics > span { font-size: 16px; text-align: right; white-space: nowrap; }
-.proximity-route-metrics small { display: block; }
-.proximity-route-summary > small { display: block; margin-top: 10px; }
+.proximity-route-summary { margin-top: 10px; padding: 10px; border: 1px solid var(--line, #344453); border-radius: 8px; background: var(--surface-2, #1c2732); }
+.proximity-route-caption { display: block; color: var(--muted, #c3ced8); font-size: 11px; }
+.proximity-route-endpoints { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: 8px; margin-top: 8px; font-size: 16px; }
+.proximity-route-endpoints > strong { overflow-wrap: anywhere; min-width: 0; }
+.proximity-route-endpoints > strong:last-child { text-align: right; }
+.proximity-route-metrics { display: grid; grid-template-columns: auto auto; align-items: center; gap: 2px 6px; text-align: center; }
+.proximity-route-metrics > strong { font-size: 18px; line-height: 1.2; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.proximity-route-metrics > span { color: var(--muted-2, #93a3b2); }
+.proximity-route-metrics small { grid-column: 1 / -1; }
+.proximity-route-summary > small { display: block; margin-top: 6px; }
 
 .proximity-pin.is-cluster { width: 44px; height: 44px; overflow: visible; }
 .proximity-pin.is-cluster .proximity-pin-badge { position: absolute; left: calc(50% + 40px); top: calc(50% - 28px); transform: translateY(-50%); max-width: none; white-space: nowrap; }
 .proximity-cluster-leader { position: absolute; left: 50%; top: 50%; width: 1px; height: 1px; overflow: visible; pointer-events: none; }
-.proximity-cluster-leader path { fill: none; stroke: #17202a; stroke-width: 2; stroke-linecap: round; }
+.proximity-cluster-leader path { fill: none; stroke: #17202a; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
 .proximity-cluster-anchor { position: absolute; left: 50%; top: 50%; width: 8px; height: 8px; border: 2px solid #ffffff; border-radius: 50%; background: #17202a; transform: translate(-50%, -50%); }
 
-.proximity-home-summary { margin-bottom: 12px; }
-.proximity-home-summary button { color: #93c5fd; background: none; border: 0; padding: 4px 0; text-align: left; font-size: 12px; }
 .proximity-map-controls { flex-shrink: 0; }
-.proximity-toolbar button:disabled, .proximity-home-summary button:disabled { opacity: .5; cursor: default; }
+.proximity-toolbar button:disabled { opacity: .5; cursor: default; }
 @media (max-width: 600px) { .proximity-toolbar { flex-wrap: wrap; } }
 
 .proximity-home-pin { color: #fff; background: #334155; border: 2px solid #fff; border-radius: 7px; padding: 5px 9px; font: 600 12px system-ui; box-shadow: 0 2px 6px #0003; }
 
 /* Mapbox positions the zero-size geographic anchor; only its tag is displaced. */
 .proximity-pin.is-individual { width: 0; height: 0; min-width: 0; min-height: 0; padding: 0; overflow: visible; pointer-events: none; }
-.proximity-pin.is-individual .proximity-pin-badge { position: absolute; transform: translate(-50%, -50%); max-width: none; min-height: 36px; white-space: nowrap; pointer-events: auto; }
+.proximity-pin.is-individual .proximity-pin-badge { position: absolute; transform: translate(-50%, -50%); max-width: none; white-space: nowrap; pointer-events: auto; }
 .proximity-pin.is-individual .proximity-cluster-leader,
 .proximity-pin.is-individual .proximity-cluster-anchor { left: 0; top: 0; }
 .proximity-pin.is-selected .proximity-cluster-leader path { stroke: #2563eb; }
+
+.proximity-distance-legend { margin-bottom: 0; }
+.proximity-distance-scale { display: block; height: 4px; border-radius: 2px; background: linear-gradient(to right, rgb(74, 222, 128), rgb(251, 191, 36), rgb(248, 113, 113)); }
+.proximity-distance-legend > div { display: flex; justify-content: space-between; gap: 12px; margin-top: 6px; font-size: 10px; color: var(--muted-2, #93a3b2); }
