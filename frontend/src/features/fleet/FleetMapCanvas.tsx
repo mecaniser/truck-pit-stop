@@ -1,3 +1,4 @@
+import { layoutTruckLabels } from './mapLabelLayout'
 import cargoMarkUrl from '../../assets/fleet/77-cargo-mark.svg'
 import { useEffect, useRef, useState } from 'react'
 import type { Map as MapboxMap, Marker as MapboxMarker } from 'mapbox-gl'
@@ -9,9 +10,9 @@ import { recentPosition } from './proximity'
 import 'mapbox-gl/dist/mapbox-gl.css'
 
 interface Pin { id: string; label: string; company: string; status: BoardTruck['status']; point: [number, number]; recent: boolean }
-interface Props { trucks: BoardTruck[]; focusId?: string; nearbyIds: string[]; route?: GeoJSON.LineString; now: number; recenter: number; homePoint?: [number, number]; homeVisit?: number; onFocus: (id: string) => void; onClusterOpen?: (ids: string[]) => void }
+interface Props { trucks: BoardTruck[]; focusId?: string; nearbyIds: string[]; route?: GeoJSON.LineString; now: number; recenter: number; homePoint?: [number, number]; homeVisit?: number; onFocus: (id: string) => void }
 
-export default function FleetMapCanvas({ trucks, focusId, nearbyIds, route, now, recenter, homePoint, homeVisit = 0, onFocus, onClusterOpen }: Props) {
+export default function FleetMapCanvas({ trucks, focusId, nearbyIds, route, now, recenter, homePoint, homeVisit = 0, onFocus }: Props) {
   const container = useRef<HTMLDivElement>(null)
   const mapRef = useRef<MapboxMap>()
   const moduleRef = useRef<typeof import('mapbox-gl').default>()
@@ -23,8 +24,6 @@ export default function FleetMapCanvas({ trucks, focusId, nearbyIds, route, now,
   const framing = useRef('')
   const selectRef = useRef(onFocus)
   selectRef.current = onFocus
-  const clusterRef = useRef(onClusterOpen)
-  clusterRef.current = onClusterOpen
   const token = import.meta.env.VITE_MAPBOX_TOKEN || ''
   const pinData = JSON.stringify(trucks.flatMap(truck => {
     const point = truckCoordinates(truck, now)
@@ -60,33 +59,13 @@ export default function FleetMapCanvas({ trucks, focusId, nearbyIds, route, now,
     const pins = JSON.parse(pinData) as Pin[]
     const nearby = JSON.parse(comparisonData) as string[]
     const focus = pins.find(pin => pin.id === focusId)
-    // Cluster by visible overlap, not exact GPS equality. Re-evaluate after zoom/pan.
-    const projected = [...pins].sort((a, b) => a.id.localeCompare(b.id)).map(pin => ({ pin, pixel: map.project(pin.point) }))
-    const remaining = new Set(projected)
-    const groups: Pin[][] = []
-    for (const seed of projected) {
-      if (!remaining.delete(seed)) continue
-      const connected = [seed]
-      for (let index = 0; index < connected.length; index++) {
-        const current = connected[index]
-        for (const candidate of remaining) {
-          if (Math.abs(current.pixel.x - candidate.pixel.x) < 96 && Math.abs(current.pixel.y - candidate.pixel.y) < 56) {
-            connected.push(candidate); remaining.delete(candidate)
-          }
-        }
-      }
-      groups.push(connected.map(item => item.pin))
-    }
+    // Labels move independently; every marker remains anchored to its own GPS point.
     const liveKeys = new Set<string>()
-    groups.forEach(group => {
-      const members = [...group].sort((a, b) => a.id.localeCompare(b.id))
-      // Identity follows group membership, not position or current selection.
-      const key = JSON.stringify(members.map(pin => pin.id))
+    pins.forEach(representative => {
+      const key = representative.id
       liveKeys.add(key)
-      const selected = members.find(pin => pin.id === focusId)
-      const anchor = members[0].point
-      const coincident = members.every(pin => pin.point.join(',') === anchor.join(','))
-      const representative = selected || members.find(pin => pin.status === 'out_of_service') || members[0]
+      const selected = representative.id === focusId
+      const anchor = representative.point
       let entry = markers.current.get(key)
       if (!entry) {
         const button = document.createElement('button'); button.type = 'button'
@@ -96,38 +75,29 @@ export default function FleetMapCanvas({ trucks, focusId, nearbyIds, route, now,
         markers.current.set(key, entry)
       }
       const { button, marker } = entry
-      button.onclick = () => {
-        if (members.length === 1) { selectRef.current(members[0].id); return }
-        if (coincident || map.getZoom() >= 18) { clusterRef.current?.(members.map(pin => pin.id)); return }
-        clusterRef.current?.([])
-        const bounds = new mb.LngLatBounds()
-        members.forEach(pin => bounds.extend(pin.point))
-        const camera = map.cameraForBounds(bounds, { padding: 90, maxZoom: 18 })
-        if (camera) map.easeTo({ ...camera, zoom: Math.min(18, Math.max(map.getZoom() + 1, camera.zoom ?? map.getZoom() + 2)), duration: 400 })
-      }
+      button.onclick = () => selectRef.current(representative.id)
 
       const pointKey = anchor.join(',')
       if (entry.pointKey !== pointKey) { marker.setLngLat(anchor); entry.pointKey = pointKey }
       // Mapbox owns positioning classes on this element; never replace className.
       button.classList.add('proximity-pin')
-      button.classList.toggle('is-cluster', members.length > 1)
+      button.classList.add('is-individual')
       button.classList.toggle('is-selected', !!selected)
-      button.classList.toggle('is-last-known', members.every(pin => !pin.recent))
-      button.classList.toggle('is-dimmed', !!focus && !selected && !members.some(pin => nearby.includes(pin.id)))
+      button.classList.toggle('is-last-known', !representative.recent)
+      button.classList.toggle('is-dimmed', !!focus && !selected && !nearby.includes(representative.id))
       button.style.setProperty('--pin-status', STATUS_META[representative.status].dot)
-      const contentKey = JSON.stringify([representative.label, representative.company, members.map(pin => pin.company)])
+      const contentKey = JSON.stringify([representative.label, representative.company])
       if (entry.contentKey !== contentKey) {
         const badge = document.createElement('span'); badge.className = 'proximity-pin-badge'
-        const sameCompany = members.every(pin => pin.company.trim().toLowerCase() === representative.company.trim().toLowerCase())
-        if (sameCompany && /^77\s*cargo(?:[\s,]+l\.?l\.?c\.?)?$/i.test(representative.company.trim())) {
+        if ( /^77\s*cargo(?:[\s,]+l\.?l\.?c\.?)?$/i.test(representative.company.trim())) {
           const mark = document.createElement('img'); mark.src = cargoMarkUrl; mark.alt = ''; mark.setAttribute('aria-hidden', 'true'); mark.className = 'proximity-pin-brand'
           badge.append(mark)
         }
         const label = document.createElement('span'); label.className = 'proximity-pin-label'
-        label.textContent = members.length > 1 ? `${members.length} trucks` : representative.label
+        label.textContent = representative.label
         const status = document.createElement('i'); status.className = 'proximity-pin-status'; status.setAttribute('aria-hidden', 'true')
         badge.append(label, status); button.replaceChildren(badge)
-        if (members.length > 1) {
+        {
           const leader = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
           leader.classList.add('proximity-cluster-leader'); leader.setAttribute('aria-hidden', 'true')
           const line = document.createElementNS('http://www.w3.org/2000/svg', 'path')
@@ -138,13 +108,31 @@ export default function FleetMapCanvas({ trucks, focusId, nearbyIds, route, now,
         button.title = `${representative.company ? `${representative.company} · ` : ''}${label.textContent}`
         entry.contentKey = contentKey
       }
-      button.setAttribute('aria-label', members.length > 1 ? `${members.length} trucks ${coincident ? 'at this position' : 'nearby'}` : `${representative.label}, ${STATUS_META[representative.status].label}${representative.recent ? '' : ', last-known position'}`)
+      button.setAttribute('aria-label', `${representative.label}, ${STATUS_META[representative.status].label}${representative.recent ? '' : ', last-known position'}`)
       button.setAttribute('role', 'button')
       button.setAttribute('aria-pressed', String(!!selected))
 
     })
     markers.current.forEach((entry, key) => {
       if (!liveKeys.has(key)) { entry.marker.remove(); markers.current.delete(key) }
+    })
+    const bounds = map.getContainer().getBoundingClientRect()
+    const homePixel = homePoint ? map.project(homePoint) : undefined
+    const obstacles = [{ x: bounds.width / 2, y: bounds.height - 16, width: bounds.width, height: 32 }, { x: bounds.width - 25, y: 75, width: 40, height: 140 }, ...(homePixel ? [{ x: homePixel.x, y: homePixel.y, width: 76, height: 36 }] : [])]
+    const placements = layoutTruckLabels(pins.map(pin => {
+      const pixel = map.project(pin.point)
+      const entry = markers.current.get(pin.id)!
+      const badge = entry.button.querySelector<HTMLElement>('.proximity-pin-badge')!
+      return { id: pin.id, x: pixel.x, y: pixel.y, width: badge.offsetWidth || 90, height: badge.offsetHeight || 36,
+        priority: pin.id === focusId ? 2 : nearby.includes(pin.id) ? 1 : 0 }
+    }), bounds.width, bounds.height, obstacles)
+    placements.forEach(({ id, dx, dy }) => {
+      const button = markers.current.get(id)!.button
+      const badge = button.querySelector<HTMLElement>('.proximity-pin-badge')!
+      badge.style.left = `${dx}px`; badge.style.top = `${dy}px`
+      const leader = button.querySelector<SVGPathElement>('path')!
+      leader.setAttribute('d', `M0 0 L${dx} ${dy}`)
+      button.style.zIndex = id === focusId ? '3' : nearby.includes(id) ? '2' : '1'
     })
     const sourceId = 'fleet-proximity-lines'
     const geometry = JSON.parse(routeData) as GeoJSON.LineString | null
@@ -166,7 +154,7 @@ export default function FleetMapCanvas({ trucks, focusId, nearbyIds, route, now,
       map.fitBounds(bounds, { padding: 65, maxZoom: 10, duration: 0 })
       framing.current = frameKey
     }
-  }, [pinData, comparisonData, routeData, focusId, recenter, ready, viewportRevision])
+  }, [pinData, comparisonData, routeData, focusId, recenter, ready, viewportRevision, homePoint])
 
   const homeKey = homePoint?.join(',')
   useEffect(() => {

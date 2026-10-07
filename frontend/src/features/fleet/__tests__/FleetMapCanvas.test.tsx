@@ -6,7 +6,7 @@ import type { BoardTruck } from '../types'
 
 const mock = vi.hoisted(() => ({ pins: [] as { element: HTMLElement; point?: number[]; popup?: HTMLElement }[], scale: 200, zoom: 8, ease: vi.fn(), fit: vi.fn(), lines: vi.fn(), remove: vi.fn(), markerRemove: vi.fn(), sources: new Set<string>(), handlers: {} as Record<string, () => void> }))
 vi.mock('mapbox-gl', () => ({ default: {
-  Map: class { getZoom() { return mock.zoom } cameraForBounds() { return { center: [0, 0], zoom: 12 } } easeTo(options: unknown) { mock.ease(options) } project(point: number[]) { return { x: point[0] * mock.scale, y: point[1] * mock.scale } } on(event: string, cb: () => void) { mock.handlers[event] = cb; if (event === 'load') queueMicrotask(cb) } addControl() {} resize() {} fitBounds(...args: unknown[]) { mock.fit(...args) } getSource(id: string) { return mock.sources.has(id) ? { setData: mock.lines } : undefined } addSource(id: string, source: { data: unknown }) { mock.sources.add(id); mock.lines(source.data) } addLayer() {} remove() { mock.remove() } },
+  Map: class { getContainer() { return { getBoundingClientRect: () => ({ width: 900, height: 700 }) } } getZoom() { return mock.zoom } cameraForBounds() { return { center: [0, 0], zoom: 12 } } easeTo(options: unknown) { mock.ease(options) } project(point: number[]) { return { x: point[0] * mock.scale, y: point[1] * mock.scale } } on(event: string, cb: () => void) { mock.handlers[event] = cb; if (event === 'load') queueMicrotask(cb) } addControl() {} resize() {} fitBounds(...args: unknown[]) { mock.fit(...args) } getSource(id: string) { return mock.sources.has(id) ? { setData: mock.lines } : undefined } addSource(id: string, source: { data: unknown }) { mock.sources.add(id); mock.lines(source.data) } addLayer() {} remove() { mock.remove() } },
   Marker: class {
     pin: { element: HTMLElement; point?: number[]; popup?: HTMLElement }
     constructor({ element }: { element: HTMLElement }) { element.classList.add('mapboxgl-marker'); this.pin = { element }; mock.pins.push(this.pin) }
@@ -35,16 +35,14 @@ it('selects pins in place and draws supplied road geometry with status and stale
   expect(select).toHaveBeenCalledWith('Old')
   expect(mock.lines.mock.calls[0][0].features[0].geometry.coordinates).toEqual([[0, 0], [.3, .4], [1, 0]])
 })
-it('groups coincident pins without moving coordinates and opens the side-panel chooser', async () => {
+it('keeps coincident trucks individually selectable with separate tags and true anchors', async () => {
   const select = vi.fn()
-  render(<FleetMapCanvas onClusterOpen={select} trucks={[truck('A', 0), truck('B', 0)]} nearbyIds={[]} now={now} recenter={0} onFocus={select} />)
-  await waitFor(() => expect(mock.pins).toHaveLength(1))
-  expect(mock.pins[0].point).toEqual([0, 0])
-  expect(mock.lines.mock.calls[0][0].features).toEqual([])
-  expect(mock.pins[0].element).toHaveAccessibleName('2 trucks at this position')
-  fireEvent.click(mock.pins[0].element)
-  expect(select).toHaveBeenCalledWith(['A', 'B'])
-  expect(mock.pins[0].popup).toBeUndefined()
+  render(<FleetMapCanvas trucks={[truck('A', 0), truck('B', 0)]} nearbyIds={[]} now={now} recenter={0} onFocus={select} />)
+  await waitFor(() => expect(mock.pins).toHaveLength(2))
+  expect(mock.pins.map(pin => pin.point)).toEqual([[0, 0], [0, 0]])
+  fireEvent.click(mock.pins[1].element)
+  expect(select).toHaveBeenCalledWith('B')
+  expect(mock.pins[0].element.querySelector('path')?.getAttribute('d')).not.toEqual(mock.pins[1].element.querySelector('path')?.getAttribute('d'))
 })
 it('preserves viewport on location polling, recenters on demand and cleans up', async () => {
   const props = { trucks: [truck('A', 0)], nearbyIds: [], now, recenter: 0, onFocus: vi.fn() }
@@ -105,36 +103,23 @@ it('moves existing markers, removes only missing groups and reconciles coinciden
   expect(mock.pins).toHaveLength(2)
   expect(mock.pins[0].point).toEqual([.5, 0])
   result.rerender(<FleetMapCanvas {...props} trucks={[truck('A', 1), truck('B', 1)]} />)
-  expect(mock.pins).toHaveLength(3)
-  expect(mock.markerRemove).toHaveBeenCalledTimes(2)
-  expect(mock.pins[2].element).toHaveAccessibleName('2 trucks at this position')
+  expect(mock.pins).toHaveLength(2)
+  expect(mock.markerRemove).not.toHaveBeenCalled()
   result.rerender(<FleetMapCanvas {...props} trucks={[truck('B', 1)]} />)
-  expect(mock.markerRemove).toHaveBeenCalledTimes(3)
-  expect(mock.pins).toHaveLength(4)
-  expect(mock.fit).toHaveBeenCalledTimes(1)
+  expect(mock.markerRemove).toHaveBeenCalledTimes(1)
   result.unmount()
-  expect(mock.markerRemove).toHaveBeenCalledTimes(4)
+  expect(mock.markerRemove).toHaveBeenCalledTimes(2)
 })
 
-it('clusters overlapping nearby positions and separates them when zoom provides room', async () => {
-  const select = vi.fn()
-  render(<FleetMapCanvas onClusterOpen={select} trucks={[truck('A', 0), truck('B', .1)]} nearbyIds={[]} now={now} recenter={0} onFocus={select} />)
-  await waitFor(() => expect(mock.pins).toHaveLength(1))
-  expect(mock.pins[0].element).toHaveClass('is-cluster', 'mapboxgl-marker')
-  expect(mock.pins[0].element).toHaveAccessibleName('2 trucks nearby')
-  expect(mock.pins[0].element.querySelector('.proximity-cluster-leader')).not.toBeNull()
-  expect(mock.pins[0].point).toEqual([0, 0])
-  fireEvent.click(mock.pins[0].element)
-  expect(select).toHaveBeenCalledWith([])
-  expect(mock.ease).toHaveBeenCalledWith(expect.objectContaining({ zoom: 12, duration: 400 }))
-  expect(mock.pins[0].popup).toBeUndefined()
+it('retains every tag and route endpoint across zoom changes', async () => {
+  render(<FleetMapCanvas trucks={[truck('609', 0), truck('531', .1)]} focusId="609" nearbyIds={['531']} now={now} recenter={0} onFocus={vi.fn()} />)
+  await waitFor(() => expect(mock.pins).toHaveLength(2))
   mock.scale = 2000
   act(() => mock.handlers.moveend())
-  expect(mock.pins).toHaveLength(3)
-  expect(mock.markerRemove).toHaveBeenCalledTimes(1)
-  expect(mock.pins[1].point).toEqual([0, 0])
-  expect(mock.pins[2].point).toEqual([.1, 0])
-  expect(mock.fit).toHaveBeenCalledTimes(1)
+  expect(mock.pins).toHaveLength(2)
+  expect(mock.markerRemove).not.toHaveBeenCalled()
+  expect(mock.pins[0].element).toHaveAccessibleName('609, Out of service')
+  expect(mock.pins[1].element).toHaveAccessibleName('531, Out of service')
 })
 
 it('fits the full fleet after selection and supports a separate home camera action', async () => {
