@@ -113,3 +113,10 @@
 @media (max-width: 600px) { .proximity-toolbar { flex-wrap: wrap; } }
 
 .proximity-home-pin { color: #fff; background: #334155; border: 2px solid #fff; border-radius: 7px; padding: 5px 9px; font: 600 12px system-ui; box-shadow: 0 2px 6px #0003; }
+
+/* Mapbox positions the zero-size geographic anchor; only its tag is displaced. */
+.proximity-pin.is-individual { width: 0; height: 0; min-width: 0; min-height: 0; padding: 0; overflow: visible; pointer-events: none; }
+.proximity-pin.is-individual .proximity-pin-badge { position: absolute; transform: translate(-50%, -50%); max-width: none; min-height: 36px; white-space: nowrap; pointer-events: auto; }
+.proximity-pin.is-individual .proximity-cluster-leader,
+.proximity-pin.is-individual .proximity-cluster-anchor { left: 0; top: 0; }
+.proximity-pin.is-selected .proximity-cluster-leader path { stroke: #2563eb; }

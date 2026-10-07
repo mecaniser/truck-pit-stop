@@ -4,7 +4,7 @@ import FleetMap from '../FleetMap'
 import type { BoardTruck } from '../types'
 import { positionAge, recentPosition } from '../proximity'
 import { roadCandidates } from '../roadProximity'
-vi.mock('../FleetMapCanvas', () => ({ default: ({ onClusterOpen }: { onClusterOpen: (ids: string[]) => void }) => <button onClick={() => onClusterOpen(['Down', 'Near'])}>Open test cluster</button> }))
+vi.mock('../FleetMapCanvas', () => ({ default: ({ onFocus }: { onFocus: (id: string) => void }) => <button onClick={() => onFocus('Near')}>Select map truck</button> }))
 
 const now = new Date('2026-10-04T12:00:00Z').getTime()
 function truck(id: string, longitude = 0, ageMinutes: number | null = 0): BoardTruck {
@@ -109,13 +109,9 @@ describe('map workspace', async () => {
   })
 })
 
-it('opens the cluster chooser in the side panel and closes it when a member is selected', async () => {
+it('selects an individual map tag without a cluster chooser', () => {
   render(<FleetMap trucks={[origin, near]} />)
-  fireEvent.click(screen.getByRole('button', { name: 'Open test cluster' }))
-  const chooser = screen.getByRole('region', { name: 'Trucks in selected cluster' })
-  expect(chooser.closest('.proximity-panel')).not.toBeNull()
-  expect(chooser.closest('.proximity-geography')).toBeNull()
-  fireEvent.click(within(chooser).getByRole('button', { name: /Near Available/ }))
+  fireEvent.click(screen.getByRole('button', { name: 'Select map truck' }))
   expect(screen.queryByRole('region', { name: 'Trucks in selected cluster' })).not.toBeInTheDocument()
   expect(screen.getByText('Near', { selector: '.proximity-unit' })).toBeInTheDocument()
 })
