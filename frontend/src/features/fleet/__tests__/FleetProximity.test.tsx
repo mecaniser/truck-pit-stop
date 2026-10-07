@@ -137,6 +137,7 @@ it('selects an individual map tag without a cluster chooser', () => {
   await settle()
   expect(screen.queryByText('Comparing from')).not.toBeInTheDocument()
   expect(screen.queryByText('To home')).not.toBeInTheDocument()
+  expect(screen.queryByText(/recent · .*last-known positions/)).not.toBeInTheDocument()
   expect(document.querySelector('.proximity-list-heading')).toBeNull()
   expect(screen.getByLabelText('Road distance to home color legend')).toHaveTextContent('Nearest to homeFarthest from home')
   const rows = document.querySelectorAll('.proximity-row')

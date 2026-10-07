@@ -47,7 +47,6 @@ function FleetMap({ trucks, focusId, onFocusChange, onSelect, compact, homeAddre
   const nearby = road.nearby
   const visibleNearby = expanded ? nearby : nearby.slice(0, 3)
   const located = trucks.filter(truck => truckCoordinates(truck, now))
-  const recentCount = located.filter(truck => recentPosition(truck, now)).length
   const searching = !!query.trim()
   const matches = trucks.filter(truck => `${mapUnitLabel(truck)} ${truck.driver_name || ''} ${truckLocation(truck, now)?.label || ''}`.toLowerCase().includes(query.trim().toLowerCase()))
   const overviewRows = [...nearby, ...trucks.filter(truck => !nearby.some(row => row.truck.id === truck.id)).map(truck => ({ truck, miles: undefined, seconds: undefined }))]
@@ -117,7 +116,7 @@ function FleetMap({ trucks, focusId, onFocusChange, onSelect, compact, homeAddre
             <span className="proximity-distance-scale" aria-hidden="true" />
             <div><span>Nearest to home</span><span>Farthest from home</span></div>
           </div>}
-          {focus ? 'Driving estimates · truck restrictions not applied.' : `${recentCount} recent · ${located.length - recentCount} last-known positions`}
+          {focus && 'Driving estimates · truck restrictions not applied.'}
         </footer>
       </aside>
     </div>
