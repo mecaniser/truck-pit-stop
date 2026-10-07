@@ -1,0 +1,12 @@
+const assert=require('node:assert/strict');
+const {normalize:n}=require('./timestamp.cjs');
+assert.equal(n('10/7/2026, 2:21:31 PM',true).observed_at,'2026-10-07T18:21:31.000Z');
+assert.equal(n('Oct 7, 2026, 2:22 PM',true).observed_minute_start,'2026-10-07T18:22:00.000Z');
+assert.equal(n('Oct 7, 2026, 2:22 PM',true).observed_at,null);
+assert.equal(n('1/7/2026, 2:21:31 PM',true).observed_at,'2026-01-07T19:21:31.000Z');
+assert.equal(n('11/1/2026, 1:30:00 AM',true).reason,'ambiguous_or_nonexistent_time');
+assert.equal(n('3/8/2026, 2:30:00 AM',true).reason,'ambiguous_or_nonexistent_time');
+assert.equal(n('2/30/2026, 2:30:00 AM',true).observed_at,null);
+assert.equal(n('10/7/2026, 2:21:31 PM',false).reason,'timezone_unverified');
+assert.equal(n('1m ago',true).observed_at,null);
+console.log('9 timestamp assertions passed');

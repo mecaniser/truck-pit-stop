@@ -1,0 +1,11 @@
+const assert=require('node:assert/strict');
+const {vinFrom,coordinates}=require('./collect.cjs');
+assert.equal(vinFrom('VIN\n1XKYD49X6LJ311465'),'1XKYD49X6LJ311465');
+assert.equal(vinFrom('VIN\t1XKYD49X6LJ311465'),'1XKYD49X6LJ311465');
+assert.equal(vinFrom('VIN: 1XKYD49X6LJ311465'),'1XKYD49X6LJ311465');
+assert.equal(vinFrom('unit 533'),null);
+assert.equal(vinFrom('VIN\n1XKYD49X6LJ311465\nVIN\n4V4WC9EG2LN250024'),null);
+assert.throws(()=>coordinates('Charlotte, NC'),/invalid_coordinates/);
+assert.throws(()=>coordinates('91,-80'),/invalid_coordinates/);
+assert.deepEqual(coordinates('35.1, -80.9'),[35.1,-80.9]);
+console.log('8 collector identity/coordinate assertions passed');

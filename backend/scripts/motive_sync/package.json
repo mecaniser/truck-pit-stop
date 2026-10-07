@@ -1,0 +1,11 @@
+{
+  "name": "dieselbridge-motive-sync",
+  "private": true,
+  "version": "1.0.0",
+  "dependencies": {
+    "playwright": "1.61.1"
+  },
+  "scripts": {
+    "test": "node timestamp.test.cjs && node copy_coordinates.test.cjs && node collector.test.cjs"
+  }
+}
