@@ -132,7 +132,7 @@ test('report DOM ignores unrelated tables and blank placeholders while loading',
  const priorDocument=globalThis.document,priorLocation=globalThis.location;
  const placeholder={querySelectorAll:selector=>selector==='th'?[]:[{querySelectorAll:()=>[{innerText:''}]}]};
  let records=[];
- const table={querySelectorAll:selector=>selector==='th'?headers.map(innerText=>({innerText})):records};
+ const table={querySelectorAll:selector=>selector==='th'?headers.map(innerText=>({innerText:innerText.toUpperCase()})):records};
  globalThis.document={querySelector:()=>({innerText:'Loading',querySelectorAll:()=>[placeholder,table]})};
  globalThis.location={href:reportUrl('2026-09-28','2026-09-28')};
  try {
@@ -143,4 +143,32 @@ test('report DOM ignores unrelated tables and blank placeholders while loading',
   records=[{querySelectorAll:selector=>selector==='td'?row(1).cells.map(innerText=>({innerText})):[{getAttribute:()=>row(1).links[0]}]}];
   const ready=await readReport(p);assert.equal(ready.state,'rows');assert.equal(ready.rows.length,1);assert.equal(ready.headers.length,9);
  } finally {globalThis.document=priorDocument;globalThis.location=priorLocation;}
+});
+test('rendered uppercase report headers preserve EDT and verified EST acceptance',async()=>{
+ const initial=newWindow('2026-09-28','2026-09-28');
+ for(const zone of ['EDT','EST']) {
+  const source=report([row(1)],{headers:headers.map(value=>value.replaceAll('EDT',zone).toUpperCase())});
+  const capture=await captureStep(page(source),initial,{verifiedTimezone:'America/New_York'});
+  assert.equal(capture.header_timezone,zone);assert.equal(capture.rows.length,1);
+ }
+});
+test('only ongoing ticking duration is deduplicated, preserving first raw observation',async()=>{
+ const first=row(1);first.cells[2]='IN PROGRESS';first.cells[3]='40\n1h 0m 1s';
+ let receipt=await captureStep(page(report([first])),newWindow('2026-09-28','2026-09-28'));
+ const later=structuredClone(first);later.cells[3]='40\n1h 0m 3s';
+ receipt=await captureStep(page(report([later])),receipt);
+ assert.equal(receipt.rows.length,1);assert.equal(receipt.rows[0].cells[3],'40\n1h 0m 1s');
+ assert.equal(finalizeWindow(receipt,1,'Showing 1 results').status,'captured');
+ const changedDistance=structuredClone(later);changedDistance.cells[3]='41\n1h 0m 4s';
+ const conflict=await captureStep(page(report([changedDistance])),receipt);
+ assert.equal(conflict.rows.length,2);assert.throws(()=>finalizeWindow(conflict,1,'Showing 1 results'),/ambiguous/);
+ const completed=row(1);completed.cells[3]='40\n1h 0m 3s';
+ const transitioned=await captureStep(page(report([completed])),receipt);
+ assert.equal(transitioned.rows.length,2);assert.throws(()=>finalizeWindow(transitioned,1,'Showing 1 results'),/ambiguous/);
+});
+test('completed duration changes remain conflicting revisions',async()=>{
+ const first=row(1),later=structuredClone(first);later.cells[3]='40\n1h 0m 3s';
+ let receipt=await captureStep(page(report([first])),newWindow('2026-09-28','2026-09-28'));
+ receipt=await captureStep(page(report([later])),receipt);
+ assert.equal(receipt.rows.length,2);assert.throws(()=>finalizeWindow(receipt,1,'Showing 1 results'),/ambiguous/);
 });

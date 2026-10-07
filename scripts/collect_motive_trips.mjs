@@ -15,7 +15,7 @@ export async function readReport(page) {
     const main = document.querySelector('main');
     if (!main) return { state: 'unavailable', rows: [] };
     // Other UI panels include placeholder tables. Only the report's Origin-header table owns rows.
-    const tables = Array.from(main.querySelectorAll('table')).filter(table => Array.from(table.querySelectorAll('th')).some(el => /^Origin \(MDY (?:EDT|EST)\)$/.test(el.innerText.trim())));
+    const tables = Array.from(main.querySelectorAll('table')).filter(table => Array.from(table.querySelectorAll('th')).some(el => /^Origin \(MDY (?:EDT|EST)\)$/i.test(el.innerText.trim())));
     if (tables.length !== 1) return {state: tables.length ? 'unavailable' : 'loading', rows: []};
     const table = tables[0];
     const headers = Array.from(table.querySelectorAll('th')).map(el => el.innerText.trim());
@@ -36,7 +36,7 @@ export async function captureStep(page, receipt, { maxRows = 20000, verifiedTime
   const report = await readReport(page);
   if (report.state === 'unavailable') throw new Error('Motive report unavailable: check login');
   if (report.state === 'loading') return { ...receipt, status: 'loading' };
-  const zone = report.headers?.[1]?.match(/^Origin \(MDY (EDT|EST)\)$/)?.[1];
+  const zone = report.headers?.[1]?.match(/^Origin \(MDY (EDT|EST)\)$/i)?.[1]?.toUpperCase();
   if (zone === 'EST' && verifiedTimezone !== 'America/New_York') throw new Error('New York timezone verification required');
   const expectedHeaders = ['', `Origin (MDY ${zone})`, `Destination (MDY ${zone})`, 'Dist. (mi) / Duration', 'Vehicle ID / Mode', 'Driver / ID', '', 'Notes', ''];
   const clean = value => value.replace(/\s+/g, ' ').trim().toLowerCase();
@@ -51,8 +51,18 @@ export async function captureStep(page, receipt, { maxRows = 20000, verifiedTime
     if (receipt.rows.length) throw new Error('Source became empty during collection');
     return { ...receipt, source_read_at: new Date().toISOString(), status: 'empty', header_timezone: zone, terminal_evidence: 'No trips found. Try updating your filter/search criteria.' };
   }
-  const seen = new Map(receipt.rows.map(row => [JSON.stringify(row), row]));
-  for (const row of report.rows) seen.set(JSON.stringify(row), row);
+  const rowKey = row => {
+    // The live elapsed-duration clock is not a new trip revision. Preserve the first
+    // raw observation; completed rows and every other ongoing field remain immutable.
+    if (row.cells[2]?.split('\n')[0] === 'IN PROGRESS') {
+      const cells = [...row.cells];
+      cells[3] = cells[3]?.replace(/(?:\d+h\s*)?(?:\d+m\s*)?\d+s$/, '<ongoing-duration>');
+      return JSON.stringify({...row, cells});
+    }
+    return JSON.stringify(row);
+  };
+  const seen = new Map(receipt.rows.map(row => [rowKey(row), row]));
+  for (const row of report.rows) if (!seen.has(rowKey(row))) seen.set(rowKey(row), row);
   if (seen.size > maxRows) throw new Error('Collection row limit reached');
   return { ...receipt, source_read_at: new Date().toISOString(), status: 'partial', header_timezone: zone, rows: [...seen.values()], last_page_rows: report.rows.length, footer: report.footer, stagnant_steps: seen.size === receipt.rows.length ? (receipt.stagnant_steps ?? 0) + 1 : 0 };
 }

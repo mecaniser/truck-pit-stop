@@ -34,7 +34,7 @@ async function reportModule() {
 async function collectWindow(page, window, checkpoint, adapter, {maxSteps=120}={}) {
  const {reportUrl,newWindow,captureStep,finalizeWindow}=adapter;
  await page.goto(reportUrl(window.start,window.end),{waitUntil:'domcontentloaded',timeout:45000});
- await page.waitForFunction(()=>Array.from(document.querySelectorAll('main table th')).some(el=>/^Origin \(MDY (?:EDT|EST)\)$/.test(el.innerText.trim())&&el.getBoundingClientRect().height>0),null,{timeout:45000});
+ await page.waitForFunction(()=>Array.from(document.querySelectorAll('main table th')).some(el=>/^Origin \(MDY (?:EDT|EST)\)$/i.test(el.innerText.trim())&&el.getBoundingClientRect().height>0),null,{timeout:45000});
  let receipt=newWindow(window.start,window.end), settled=0, previousCount=-1, atBottom=false;
  for(let step=0;step<maxSteps;step++) {
   if(new URL(page.url()).origin!==ORIGIN) throw new Error('session_lost');
