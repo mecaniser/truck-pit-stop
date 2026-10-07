@@ -16,11 +16,11 @@ function parseCard(text,expandedCount) {
   return {explicit_empty:true,codes:[]};
  }
  if(lines.includes('Show details')||lines.includes('No fault codes'))throw new Error('details_unavailable');
- const starts=lines.flatMap((line,index)=>/^SPN \d+ FMI \d+\s*·/.test(line)?[index]:[]);
+ const starts=lines.flatMap((line,index)=>/^(?:SPN|SID|PID) \d+ FMI \d+\s*·/.test(line)?[index]:[]);
  if(!starts.length||starts.length!==expandedCount||lines.filter(x=>x==='Hide details').length!==starts.length)throw new Error('details_unavailable');
  const codes=starts.map((start,i)=>{
   const part=lines.slice(start,starts[i+1]??lines.length);
-  const match=part[0].match(/^SPN (\d+) FMI (\d+)\s*·\s*(.+)$/);
+  const match=part[0].match(/^(SPN|SID|PID) (\d+) FMI (\d+)\s*·\s*(.+)$/);
   const hide=part.indexOf('Hide details');
   if(!match||hide<2)throw new Error('code_layout_changed');
   const labels=new Set(['Network','Source address','First detected','Last observed','Occurrence count','Hide details','Show details']);
@@ -34,7 +34,7 @@ function parseCard(text,expandedCount) {
   const occurrence_count=occurrences===null||occurrences==='—'?null:Number(occurrences);
   if(occurrence_count!==null&&!Number.isSafeInteger(occurrence_count))throw new Error('occurrence_invalid');
   const first=field('First detected'),last=field('Last observed');
-  return {code:null,spn:match[1],fmi:match[2],description:match[3],severity:part[hide-1].startsWith('First detected on ')?null:part[hide-1],network:field('Network'),source_address:field('Source address'),source_status:SCOPE,provider_fault_id:null,occurrence_count,first_detected_text:first,last_observed_text:last,first_detected_at:null,last_observed_at:null,timestamp_precision:'unknown',timezone_basis:'unverified'};
+  return {code:match[1]==='SPN'?null:`${match[1]} ${match[2]}`,spn:match[1]==='SPN'?match[2]:null,fmi:match[3],description:match[4],severity:part[hide-1].startsWith('First detected on ')?null:part[hide-1],network:field('Network'),source_address:field('Source address'),source_status:SCOPE,provider_fault_id:null,occurrence_count,first_detected_text:first,last_observed_text:last,first_detected_at:null,last_observed_at:null,timestamp_precision:'unknown',timezone_basis:'unverified'};
  });
  const identities=codes.map(c=>JSON.stringify([c.code,c.spn,c.fmi,c.network,c.source_address]));
  if(new Set(identities).size!==codes.length)throw new Error('duplicate_code');

@@ -46,3 +46,11 @@ test('missing field values never consume the next diagnostic label',()=>{
  const code=parseCard('Current fault codes\n'+blank,1).codes[0];
  assert.equal(code.source_address,null);assert.equal(code.first_detected_text,null);assert.equal(code.last_observed_text,null);assert.equal(code.occurrence_count,0);assert.equal(code.timestamp_precision,'unknown');
 });
+test('observed J1708 SID and PID retain their own code namespace, never fabricate SPN',()=>{
+ const sid=detail('00232','0').replace('SPN 00232','SID 00232').replace('J1939','J1708');
+ const pid=detail('00110','0').replace('SPN 00110','PID 00110').replace('J1939','J1708');
+ const codes=parseCard('Current fault codes\n'+sid+'\n'+pid,2).codes;
+ assert.equal(codes[0].code,'SID 00232');assert.equal(codes[1].code,'PID 00110');
+ assert.ok(codes.every(c=>c.spn===null&&c.fmi==='03'&&c.network==='J1708'&&c.occurrence_count===0));
+ assert.ok(codes.every(c=>c.last_observed_at===null&&c.timezone_basis==='unverified'));
+});

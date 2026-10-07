@@ -414,3 +414,66 @@ def test_incomplete_or_foreign_health_document_rejected(change):
 
     with pytest.raises(ValueError):
         validate({**document(), **change}, "77 CARGO LLC", "KT8934277")
+
+
+@pytest.mark.asyncio
+async def test_current_vin_and_membership_read_bounds_hide_old_capture(
+    db_session, monkeypatch
+):
+    actor, vehicle, member = await prepared(db_session, monkeypatch)
+    member.effective_from = now() - timedelta(days=1)
+    await db_session.commit()
+    first = body()
+    await service.capture(
+        db_session,
+        actor.tenant_id,
+        actor.id,
+        first,
+        "77 CARGO LLC",
+        "KT8934277",
+        apply=True,
+    )
+    second = first.model_copy(
+        update={
+            "client_request_id": uuid4(),
+            "source_read_at": now() - timedelta(seconds=30),
+        }
+    )
+    await service.capture(
+        db_session,
+        actor.tenant_id,
+        actor.id,
+        second,
+        "77 CARGO LLC",
+        "KT8934277",
+        apply=True,
+    )
+    await db_session.commit()
+    original = await service.read(db_session, actor.tenant_id, vehicle.id)
+    assert original.coverage == "complete" and len(original.previously_reported) == 1
+    vehicle.vin = f"  {VIN.lower()}  "
+    await db_session.commit()
+    normalized = await service.read(db_session, actor.tenant_id, vehicle.id)
+    assert (
+        normalized.capture_id == original.capture_id
+        and len(normalized.previously_reported) == 1
+    )
+    vehicle.vin = "2M8GDM9AXKP042788"
+    await db_session.commit()
+    changed = await service.read(db_session, actor.tenant_id, vehicle.id)
+    assert changed.coverage == "unknown" and changed.capture_id is None
+    assert changed.codes == [] and changed.previously_reported == []
+    vehicle.vin = VIN
+    member.effective_from = now() - timedelta(seconds=10)
+    await db_session.commit()
+    rebound = await service.read(db_session, actor.tenant_id, vehicle.id)
+    assert rebound.coverage == "unknown" and rebound.last_checked_at is None
+    assert rebound.codes == [] and rebound.previously_reported == []
+    from app.db.models.tenant import Tenant
+
+    tenant = await db_session.get(Tenant, actor.tenant_id)
+    tenant.is_active = False
+    await db_session.commit()
+    with pytest.raises(HTTPException) as exc:
+        await service.read(db_session, actor.tenant_id, vehicle.id)
+    assert exc.value.status_code == 404

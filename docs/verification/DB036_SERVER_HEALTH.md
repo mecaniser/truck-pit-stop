@@ -170,31 +170,38 @@ by this source discovery alone.
 
 ## Implementation checkpoint
 
-2026-10-07 source-only canary completed at23:30:35Z:16/16 Health inventory,
-14 captured vehicles,22 current codes,3 explicit-empty captures. Unit26 lacked
-VIN and unit900 returned an unsupported detail layout; neither became a healthy
-zero. Source company verified before/after. Full private evidence is retained
-outsideGit in output/motive-trips/health-source-canary.json. No diagnostic writes.
+The source-only canary completed at 2026-10-07 23:30:35 UTC: 16/16 Health
+inventory vehicles, 14 captures, 22 current codes and three explicit empty
+captures. Unit 26 lacked a VIN; unit 900 used J1708 SID/PID cards. Its verified
+five-card source fixture now parses with the original SID/PID code namespace,
+null SPN and original FMI. Fresh source-only validation at 23:42:50 UTC captured 15 vehicles and 27 codes, including all five unit-900 cards; three explicit empty captures and only unit 26 unavailable.
+No diagnostic data has been written to production.
 
-Separate Railway service4da46413-32b0-429c-9bab-f022ec5e41b7
-(`diesel-bridge-motive-health`), volume8f1dbc87-e1fa-4022-8111-0cbc117ae667
-at/data. Credentials/configuration reference the authorized locationworker.
-MOTIVE_HEALTH_COMMIT=false, no schedule, no deployedhealthimage at this checkpoint.
+Private source evidence remains outside Git in `output/motive-trips/`.
+Dedicated Railway service: `diesel-bridge-motive-health`
+(`4da46413-32b0-429c-9bab-f022ec5e41b7`), volume
+`8f1dbc87-e1fa-4022-8111-0cbc117ae667` at `/data`. Configuration references the
+existing authorized location worker. `MOTIVE_HEALTH_COMMIT=false`; no schedule.
+Deployment `4b0ffc02-d12f-4091-96c1-cda55a4b46fb` runs collection only and never
+invokes the importer. Restore the normal start command
+`python -m scripts.motive_health.run_worker` after the committed canary.
+Target health schedule is hourly at :30, offset from hourly location collection;
+activate only after all release gates pass.
 
-Frontend focused8tests, TypeScript and scopedlint passed. CUA syntheticpreview
-athttp://127.0.0.1:5179/tests/diagnostics-preview.html verifies reportedcodes,
-explicit-empty andunknown states, desktop and390pxviewport. Actual source
-checkout/PID57620 verified; backend/authenticatedlocalruntime remains unavailable.
-The preview is synthetic, not productionacceptance.
+Frontend checks: eight related tests, TypeScript and scoped lint passed. CUA
+synthetic preview at `http://127.0.0.1:5179/tests/diagnostics-preview.html`
+verified reported, explicit empty and unknown states at desktop and 390px width.
+Checkout/PID 57620 was verified; no approved local backend configuration exists.
+This is synthetic UI acceptance, not authenticated production acceptance.
 
-Independent review requires startup reconciliation of uncertain receipts and
-actor-row locking before saving. Backend tests and isolated PostgreSQL15 migration,
-replay, compositeFK and populated-downgrade gates are being finalized. Schedule,
-productionmigration, committedreceipt and authenticatedUI acceptance remain pending.
+Independent review findings are fixed: pending commit receipts reconcile under
+the worker's exclusive lock before a fresh capture; saving-disabled mode refuses
+recovery writes. Authorization locks the actor row, and a PostgreSQL test proves
+concurrent revocation waits until transaction release. Seven collector and 34
+backend/process tests pass. PostgreSQL full migration 001→162, replay/readback,
+composite foreign keys and protected downgrade passed. The real 14-vehicle source
+validated offline with all event instants unknown, as required.
 
-Independent review findings addressed: workerstartup now reconciles pendingcommit
-receipts under its exclusive lock before newcapture and refuses recoverywrites
-when saving is disabled. Capture authorization locks the actorrow; PostgreSQL
-concurrent-deactivation test confirms revocation waits until transactionrelease.
-Six collector and eight orchestration tests pass. Actual private14vehicle/22code
-source validates offline; no diagnosticdata has been committed toproduction.
+Protected CI, production migration 162, current identity dry run, committed
+receipt, unchanged replay and authenticated fleet UI verification remain release
+gates. Neither source-only success nor a merged PR enables scheduling by itself.
