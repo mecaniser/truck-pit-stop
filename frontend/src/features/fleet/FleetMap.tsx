@@ -93,7 +93,7 @@ function FleetMap({ trucks, focusId, onFocusChange, onSelect, compact, homeAddre
             {focus.driver_phone && /^[+\d\s().-]+$/.test(focus.driver_phone) && <a href={`tel:${focus.driver_phone.replace(/[^+\d]/g, '')}`}>Call driver</a>}
           </div>
         </div>}
-        <div className="proximity-list-heading"><h3>{searching ? 'Search results' : focus ? 'Nearby trucks' : homeAddress ? 'To home' : 'Select a truck'}</h3><span>{searching ? matches.length : focus ? nearby.length : trucks.length}</span></div>
+        {(searching || focus || !homeAddress) && <div className="proximity-list-heading"><h3>{searching ? 'Search results' : focus ? 'Nearby trucks' : 'Select a truck'}</h3><span>{searching ? matches.length : focus ? nearby.length : trucks.length}</span></div>}
         {!focus && homeAddress && homeStatus && <div className="proximity-basis" role="status">{homeStatus}</div>}
         {focus && !searching && <>
           <div className="proximity-basis">Road miles · fastest driving routes · {includeLastKnown ? 'last-known positions included' : 'positions ≤15 min old'}</div>
