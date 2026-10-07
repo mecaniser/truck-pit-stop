@@ -41,7 +41,7 @@ worker, not copied credentials: `MOTIVE_EMAIL`, `MOTIVE_PASSWORD`,
 `MOTIVE_COMPANY_ID`, plus the existing approved application/database configuration.
 `MOTIVE_TRIPS_COMMIT=false` is the default; `true` enables saving after gates.
 `MOTIVE_TRIPS_STATE_DIR=/data/motive-trips` isolates receipts and process lock.
-Daily target: 09:00 UTC (04:00 EST / 05:00 EDT); the data window itself always uses
+Daily target: 09:15 UTC (04:15 EST / 05:15 EDT); the data window itself always uses
 America/New_York, independent of server timezone. The overlap repairs late arrivals
 without claiming complete historical coverage.
 
@@ -60,12 +60,23 @@ replay conflicts, unexpected coverage loss or repeated authentication failures.
 
 ## Evidence
 
-Independent QA/security GO for isolated dry run at `b29f8377`: 18 worker/process,
-13 collector and 82 existing trip/history/coverage/batch tests pass. Initial dry-run
-deployment `3a188eeb-3eb1-4aa9-9351-ed84cfd4e42c` is building; commit remains false
-and no schedule is enabled. [PR480](https://github.com/mecaniser/truck-pit-stop/pull/480).
-Pending: live source validation, committed receipt, unchanged repeat, fleet activity
-readback, protected CI and final release.
+Independent QA/security GO for isolated dry run at `8f4526dc`: 21 collector
+and 24 worker/process tests pass, alongside existing trip/history regressions.
+Live dry run deployment `2af09c4c-8935-41a8-98f1-8718cf359abd` captured 308
+source rows across October 5–7, 2026. All 27 previously stored overlap identities
+were present and unchanged; 201 new trips validated. Exclusions: 10 ongoing,
+27 unverified-vehicle rows, and 43 outside current membership dates. The directory
+contains 22 vehicles, 21 with verified VINs; unit 26 remains without a VIN.
+
+Earlier canaries exposed stale SPA vehicle DOM, case-sensitive report headers,
+and an apparent 50-row footer that actually counted only loaded rows. The final
+collector uses isolated pages, the actual report scroll viewport, bottom-only
+settling and a prior-identity coverage gate. The truncated capture was never
+committed. Source checkpoints and receipts stay on the private volume and outside
+Git. Saving remains disabled and the daily schedule remains unset at this gate.
+[PR 480](https://github.com/mecaniser/truck-pit-stop/pull/480).
+Pending: protected CI, controlled committed receipt, unchanged replay, fleet
+activity readback, and final scheduled release. Historical coverage remains partial.
 
 Railway rejected setting a new legacy config-file path. This service uses explicit
 service build/start/restart settings. CLI deploy archives exclude the repository
