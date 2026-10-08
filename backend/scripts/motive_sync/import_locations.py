@@ -66,9 +66,11 @@ def parse_document(document, company_label, company_id, stamp, allow_replay=Fals
             read < stamp - timedelta(minutes=30) and not allow_replay
         ):
             raise ValueError("Stale or future capture file")
-        if row.get("timezone") != "America/New_York" or not row.get("rawTimestamp"):
-            raise ValueError("Verified timestamp timezone and source text required")
         precision = row.get("precision")
+        if precision != "unknown" and (
+            row.get("timezone") != "America/New_York" or not row.get("rawTimestamp")
+        ):
+            raise ValueError("Verified timestamp timezone and source text required")
         if precision == "second":
             start = end = time_value(row.get("observed_at"))
             if row.get("observed_minute_start") or row.get("observed_minute_end"):
@@ -87,11 +89,28 @@ def parse_document(document, company_label, company_id, stamp, allow_replay=Fals
                 raise ValueError(
                     "Minute interval must not invent exact observation time"
                 )
+        elif precision == "unknown":
+            if any(
+                row.get(key) is not None
+                for key in (
+                    "observed_at",
+                    "observed_minute_start",
+                    "observed_minute_end",
+                )
+            ):
+                raise ValueError("Unknown precision must not carry an observation time")
+            if any(
+                row.get(key) is not None and not isinstance(row[key], str)
+                for key in ("rawTimestamp", "timezone")
+            ):
+                raise ValueError("Unknown timestamp evidence must be text or null")
+            start = end = None
         else:
             raise ValueError("Unverified observation timestamp")
-        if (
-            start < stamp - timedelta(days=30) and not allow_replay
-        ) or start > read + timedelta(minutes=5):
+        if start is not None and (
+            (start < stamp - timedelta(days=30) and not allow_replay)
+            or start > read + timedelta(minutes=5)
+        ):
             raise ValueError("Observation outside admissible window")
         make_body(
             row,
@@ -156,6 +175,20 @@ def disposition(row, prior):
     """Never use capture time as evidence that a source position is newer."""
     if row["status"] == "unavailable":
         return "unavailable"
+    if row["precision"] == "unknown":
+        if not prior:
+            return "update"
+        if any(old.observed_at is not None for old in prior):
+            return "prior_time_unknown"
+        return (
+            "unchanged"
+            if all(
+                getattr(old, "lat", None) == row["lat"]
+                and getattr(old, "lng", None) == row["lng"]
+                for old in prior
+            )
+            else "prior_time_unknown"
+        )
     start, end = interval(row)
     if row["precision"] == "minute":
         end -= timedelta(microseconds=1)
@@ -304,15 +337,18 @@ async def prepare(db, rows, tenant_id, actor_id, company_label, company_id):
         if time_value(row["sourceReadTime"]) < stamp - timedelta(minutes=30):
             item["status"] = "stale_source_file"
             continue
-        start, end = interval(row)
-        if start < stamp - timedelta(days=30):
-            item["status"] = "older"
-            continue
-        if not telemetry.within(member, start) or not telemetry.within(
-            member,
-            end - timedelta(microseconds=1) if row["precision"] == "minute" else end,
-        ):
-            raise ValueError("Membership does not cover observation")
+        if row["precision"] != "unknown":
+            start, end = interval(row)
+            if start < stamp - timedelta(days=30):
+                item["status"] = "older"
+                continue
+            if not telemetry.within(member, start) or not telemetry.within(
+                member,
+                end - timedelta(microseconds=1)
+                if row["precision"] == "minute"
+                else end,
+            ):
+                raise ValueError("Membership does not cover observation")
         prior = (
             (
                 await db.execute(
@@ -322,7 +358,11 @@ async def prepare(db, rows, tenant_id, actor_id, company_label, company_id):
                         Snapshot.vehicle_id == vehicle.id,
                         Snapshot.fleet_membership_id == member.id,
                         Snapshot.deleted_at.is_(None),
-                        Snapshot.captured_at >= stamp - timedelta(days=30),
+                        *(
+                            []
+                            if row["precision"] == "unknown"
+                            else [Snapshot.captured_at >= stamp - timedelta(days=30)]
+                        ),
                         Snapshot.lat.is_not(None),
                         Snapshot.lng.is_not(None),
                     )
@@ -340,14 +380,40 @@ async def prepare(db, rows, tenant_id, actor_id, company_label, company_id):
             item["status"] = "history_review_required"
             continue
         # Include canonical unknown-time position: never silently replace it.
-        if not prior and vehicle.last_lat is not None and vehicle.last_lng is not None:
-            prior = [
+        if (
+            (not prior or row["precision"] == "unknown")
+            and vehicle.last_lat is not None
+            and vehicle.last_lng is not None
+        ):
+            prior += [
                 SimpleNamespace(
                     observed_at=None,
                     evidence_note=None,
                     captured_at=vehicle.last_location_at,
+                    lat=vehicle.last_lat,
+                    lng=vehicle.last_lng,
                 )
             ]
+        if row["precision"] == "unknown":
+            # Include the effective projection (for example an API position or
+            # a timestamped address-only observation), not just coordinate rows.
+            projected = SimpleNamespace(
+                id=vehicle.id,
+                board_membership_customer_id=member.fleet_customer_id,
+                telemetry=None,
+            )
+            await telemetry.attach(db, [projected], tenant_id)
+            location = projected.telemetry.location if projected.telemetry else None
+            if location is not None:
+                prior.append(
+                    SimpleNamespace(
+                        observed_at=location.observed_at,
+                        evidence_note=None,
+                        captured_at=location.captured_at,
+                        lat=location.lat,
+                        lng=location.lng,
+                    )
+                )
         item["status"] = disposition(row, prior)
         if item["status"] != "update":
             continue
