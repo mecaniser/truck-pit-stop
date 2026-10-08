@@ -64,7 +64,7 @@
 .proximity-pin { --pin-status: #94a3b8; display: flex; align-items: center; justify-content: center; min-height: 44px; min-width: 44px; max-width: 160px; padding: 7px 4px; border: 0; background: transparent; color: #17202a; cursor: pointer; }
 .proximity-pin-badge { display: inline-flex; align-items: center; gap: 5px; min-height: 28px; min-width: 44px; max-width: 100%; padding: 2px 7px 2px 5px; border: 1px solid #ffffffed; border-radius: 5px; background: #ffffff; box-shadow: 0 1px 4px #17202a40; }
 .proximity-pin-brand { display: block; width: 20px; height: 22px; flex: none; object-fit: contain; }
-.proximity-pin-label { color: #17202a; font: 750 11px/1.2 sans-serif; overflow-wrap: anywhere; min-width: 0; }
+.proximity-pin-label { color: #17202a; font: 750 11px/1.2 sans-serif; flex: none; white-space: nowrap; }
 .proximity-pin-status { width: 5px; height: 5px; border-radius: 50%; flex: none; background: var(--pin-status); margin-left: 1px; }
 .proximity-pin.is-last-known .proximity-pin-badge { border: 1px dashed #64748b; }
 .proximity-pin.is-selected .proximity-pin-badge { background: #ffffff; outline: 2px solid #2563eb; outline-offset: 1px; box-shadow: 0 2px 8px #17202a40; }
@@ -128,7 +128,7 @@
 
 /* Mapbox positions the zero-size geographic anchor; only its tag is displaced. */
 .proximity-pin.is-individual { width: 0; height: 0; min-width: 0; min-height: 0; padding: 0; overflow: visible; pointer-events: none; }
-.proximity-pin.is-individual .proximity-pin-badge { position: absolute; transform: translate(-50%, -50%); max-width: none; white-space: nowrap; pointer-events: auto; }
+.proximity-pin.is-individual .proximity-pin-badge { position: absolute; transform: translate(-50%, -50%); width: max-content; max-width: none; white-space: nowrap; pointer-events: auto; }
 .proximity-pin.is-individual .proximity-cluster-leader,
 .proximity-pin.is-individual .proximity-cluster-anchor { left: 0; top: 0; }
 .proximity-pin.is-selected .proximity-cluster-leader path { stroke: #2563eb; }
