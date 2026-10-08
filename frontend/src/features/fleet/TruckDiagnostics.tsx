@@ -1,6 +1,6 @@
-import { useId, useState } from 'react'
+import { Popover, PopoverButton, PopoverPanel } from '@headlessui/react'
 import { useQuery } from '@tanstack/react-query'
-import { Activity, ChevronDown, RotateCcw } from 'lucide-react'
+import { Activity, RotateCcw, X } from 'lucide-react'
 import api from '@/lib/api'
 import './truckDiagnostics.css'
 
@@ -30,21 +30,22 @@ function checkedTime(value: string) {
 }
 
 export default function TruckDiagnostics({ truckId }: { truckId: string }) {
-  const [open, setOpen] = useState(false)
-  const panelId = useId()
+  return <Popover className="truck-health">
+    <PopoverButton className="dbtn dbtn-ghost dhead-health"><Activity size={15} aria-hidden="true" /> View health</PopoverButton>
+    <PopoverPanel className="truck-health-panel" focus>
+      <div className="truck-health-heading"><h2>Truck health</h2><PopoverButton className="truck-health-close" aria-label="Close truck health"><X size={18} aria-hidden="true" /></PopoverButton></div>
+      <TruckDiagnosticsContent truckId={truckId} />
+    </PopoverPanel>
+  </Popover>
+}
+
+function TruckDiagnosticsContent({ truckId }: { truckId: string }) {
   const query = useQuery<DiagnosticsResponse>({
     queryKey: ['fleet-truck-diagnostics', truckId],
     queryFn: async () => (await api.get(`/fleet/trucks/${truckId}/diagnostics`)).data,
-    enabled: open,
   })
   const data = query.data
-  return <section className="detail-station-section truck-diagnostics">
-    <button type="button" className="diagnostics-toggle" aria-expanded={open} aria-controls={panelId} onClick={() => setOpen(!open)}>
-      <Activity size={19} aria-hidden="true" />
-      <span>Reported fault codes</span>
-      <ChevronDown size={17} aria-hidden="true" className={open ? 'is-open' : ''} />
-    </button>
-    {open && <div id={panelId} className="diagnostics-body">
+  return <div className="diagnostics-body">
       {query.isLoading ? <p role="status">Loading fault codes…</p>
         : query.isError ? <div role="alert"><p>Fault codes could not be loaded.</p><button type="button" className="btn" onClick={() => void query.refetch()} disabled={query.isFetching}><RotateCcw size={14} />Try again</button></div>
         : !data?.last_checked_at ? <p>No verified dashboard check is available for this truck.</p>
@@ -67,6 +68,5 @@ export default function TruckDiagnostics({ truckId }: { truckId: string }) {
             </li>)}</ul>}
           <p className="diagnostics-meta">Codes reflect the last dashboard check. Missing codes do not confirm a repair.</p>
         </>}
-    </div>}
-  </section>
+  </div>
 }
