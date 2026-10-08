@@ -24,10 +24,15 @@ def endpoint(value):
     clock, separator, label = value.partition("\n")
     if not separator or not label.strip():
         raise ValueError("missing_endpoint_location")
-    try:
-        naive = datetime.strptime(clock.strip(), "%m/%d/%Y %I:%M %p")
-    except ValueError:
-        raise ValueError("invalid_endpoint_timestamp") from None
+    # Both formats are observed in the en-US rendered report, at minute precision.
+    for pattern in ("%m/%d/%Y %I:%M %p", "%b %d, %Y, %I:%M %p"):
+        try:
+            naive = datetime.strptime(clock.strip(), pattern)  # noqa: DTZ007 - both NY folds are validated below
+            break
+        except ValueError:
+            continue
+    else:
+        raise ValueError("invalid_endpoint_timestamp")
     candidates = {naive.replace(tzinfo=ZONE, fold=fold).astimezone(timezone.utc) for fold in (0, 1)
                   if naive.replace(tzinfo=ZONE, fold=fold).astimezone(timezone.utc).astimezone(ZONE).replace(tzinfo=None) == naive}
     if len(candidates) != 1:

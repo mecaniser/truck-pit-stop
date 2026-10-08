@@ -8,6 +8,8 @@ from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status, Query, Response
 from pydantic import BaseModel
+from app.schemas.fleet_diagnostic import TruckDiagnosticsRead
+from app.services import fleet_diagnostics
 from sqlalchemy import select, and_, case, func, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload, selectinload
@@ -2344,6 +2346,18 @@ async def truck_detail(
         # than issuing a full-fleet + open-work-order scan on every truck click.
         nearest=[],
     )
+
+
+@router.get("/trucks/{vehicle_id}/diagnostics", response_model=TruckDiagnosticsRead)
+async def truck_diagnostics(
+    vehicle_id: UUID,
+    response: Response,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_fleet_access),
+):
+    await _load_fleet_vehicle_or_404(db, current_user.tenant_id, vehicle_id)
+    response.headers["Cache-Control"] = "no-store"
+    return await fleet_diagnostics.read(db, current_user.tenant_id, vehicle_id)
 
 
 @router.get("/trucks/{vehicle_id}/history", response_model=List[HistoryEntry])
