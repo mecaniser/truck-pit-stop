@@ -61,3 +61,14 @@ export function summarizeFuel(rows: FuelDaily[], vehicleId?: string, start?: str
     last: records.map(row => row.report_date).sort()[records.length - 1],
   }
 }
+
+/** Median of per-truck period totals; missing components do not count as zero. */
+export function medianFuel(rows: FuelDaily[], vehicleIds: string[]) {
+  const summaries = [...new Set(vehicleIds)].map(id => summarizeFuel(rows, id))
+  const component = (key: 'driving' | 'idling') => {
+    const values = summaries.flatMap(fuel => fuel?.[key] == null ? [] : [fuel[key]!]).sort((a, b) => a - b)
+    const mid = Math.floor(values.length / 2)
+    return { value: values.length ? values.length % 2 ? values[mid] : (values[mid - 1] + values[mid]) / 2 : null, count: values.length }
+  }
+  return { driving: component('driving'), idling: component('idling') }
+}

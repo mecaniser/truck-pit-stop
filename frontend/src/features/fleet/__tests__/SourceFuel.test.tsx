@@ -5,6 +5,14 @@ import SourceFuel from '../SourceFuel'
 import type { FuelDaily } from '../fuelDaily'
 const record: FuelDaily = { vehicle_id: 'a', report_date: '2026-10-05', source_timezone: null, timezone_status: 'unverified', driving_fuel_gallons: 0, idling_fuel_gallons: null, reported_total_fuel_gallons: null, source_distance_miles: 0, source_driving_seconds: 0, source_idling_seconds: null }
 describe('reported fuel states', () => {
+  it('shows fleet medians separately from the total report detail', async () => {
+    render(<SourceFuel records={[record, { ...record, vehicle_id: 'b', driving_fuel_gallons: 20, idling_fuel_gallons: 4 }]} medianVehicleIds={['a', 'b', 'missing']} />)
+    expect(screen.getByText('Driving median')).toBeVisible()
+    expect(screen.getByText('Idling median')).toBeVisible()
+    await userEvent.click(screen.getByRole('button', { name: 'Fleet fuel median: 10 gallons driving, 4 gallons idling' }))
+    expect(screen.getByRole('dialog')).toHaveTextContent('driving from 2 trucks; idling from 1 truck')
+    expect(screen.getByRole('dialog')).toHaveTextContent('Driving fuel20 gal')
+  })
   it('labels an absent report without making up zeros', () => {
     render(<SourceFuel records={[]} />)
     expect(screen.getByText('No fuel report')).toBeVisible()
