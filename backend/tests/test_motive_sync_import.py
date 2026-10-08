@@ -388,3 +388,158 @@ def test_worker_minute_overlaps_retain_prior_and_adjacent_intervals_advance():
         worker.disposition(row, [old(minute + timedelta(seconds=30))])
         == "overlapping_observation_interval"
     )
+
+
+def unknown_source(stamp=None):
+    doc = source(stamp)
+    doc["vehicles"][0].update(
+        precision="unknown",
+        observed_at=None,
+        observed_minute_start=None,
+        observed_minute_end=None,
+        rawTimestamp=None,
+        timezone=None,
+        address=None,
+    )
+    return doc
+
+
+def test_unknown_timestamp_contract_keeps_read_and_source_text_separate():
+    doc = unknown_source()
+    row = worker.parse_document(doc, "77 CARGO LLC", "KT8934277", telemetry.now())[0]
+    body = worker.make_body(row, uuid4(), uuid4(), "77 CARGO LLC", "KT8934277")
+    assert (
+        body.observed_at is None
+        and body.observed_precision is None
+        and body.location_label is None
+    )
+    assert body.source_age_text == "1m" and '"sourceReadTime"' in body.evidence_note
+    for key in ("observed_at", "observed_minute_start", "observed_minute_end"):
+        bad = unknown_source()
+        bad["vehicles"][0][key] = telemetry.now().isoformat()
+        with pytest.raises(ValueError, match="must not carry"):
+            worker.parse_document(bad, "77 CARGO LLC", "KT8934277", telemetry.now())
+
+
+def test_unknown_never_displaces_prior_and_does_not_refresh_identical_unknown():
+    row = unknown_source()["vehicles"][0]
+    assert worker.disposition(row, []) == "update"
+    assert worker.disposition(row, [old(telemetry.now())]) == "prior_time_unknown"
+    assert worker.disposition(row, [old()]) == "unchanged"
+    row["lat"] = 36
+    assert worker.disposition(row, [old()]) == "prior_time_unknown"
+
+
+@pytest.mark.asyncio
+async def test_unknown_first_capture_nullable_address_replay_and_freshness(
+    db_session, monkeypatch, _db_engine
+):
+    actor, truck, _ = await prepared(db_session, monkeypatch)
+    truck.last_lat = truck.last_lng = None
+    await db_session.commit()
+    tenant_id, actor_id, truck_id, customer_id = (
+        actor.tenant_id,
+        actor.id,
+        truck.id,
+        truck.customer_id,
+    )
+    factory = async_sessionmaker(_db_engine, expire_on_commit=False)
+    doc = unknown_source()
+    args = (factory, doc, tenant_id, actor_id, "77 CARGO LLC", "KT8934277")
+    saved = await worker.run_import(*args, commit=True)
+    assert (
+        saved["rows"][0]["saved_receipt_verified"]
+        and saved["rows"][0]["board_verified_after_commit"]
+    )
+    replay = await worker.run_import(*args, commit=True)
+    assert replay["rows"][0]["snapshot_id"] == saved["rows"][0]["snapshot_id"]
+    later = deepcopy(doc)
+    later["vehicles"][0]["sourceReadTime"] = telemetry.now().isoformat()
+    later["vehicles"][0]["sourceAge"] = "5m"
+    repeated = await worker.run_import(
+        factory, later, tenant_id, actor_id, "77 CARGO LLC", "KT8934277", commit=True
+    )
+    assert (
+        repeated["rows"][0]["status"] == "unchanged"
+        and "snapshot_id" not in repeated["rows"][0]
+    )
+    snapshots = (await db_session.execute(select(Snapshot))).scalars().all()
+    assert (
+        len(snapshots) == 1
+        and snapshots[0].observed_at is None
+        and snapshots[0].location_label is None
+    )
+    board = SimpleNamespace(
+        id=truck_id, board_membership_customer_id=customer_id, telemetry=None
+    )
+    await telemetry.attach(db_session, [board], tenant_id)
+    assert (
+        board.telemetry.location.freshness == "unknown"
+        and board.telemetry.location.observed_at is None
+    )
+    await db_session.rollback()
+    with pytest.raises(ValueError, match="Active tenant"):
+        await worker.run_import(
+            factory, later, uuid4(), actor_id, "77 CARGO LLC", "KT8934277", commit=True
+        )
+
+
+@pytest.mark.asyncio
+async def test_unknown_preserves_known_snapshot_outside_retention(
+    db_session, monkeypatch, _db_engine
+):
+    actor, truck, _ = await prepared(db_session, monkeypatch)
+    truck.last_lat = truck.last_lng = None
+    await db_session.commit()
+    tenant_id, actor_id = actor.tenant_id, actor.id
+    factory = async_sessionmaker(_db_engine, expire_on_commit=False)
+    await worker.run_import(
+        factory, source(), tenant_id, actor_id, "77 CARGO LLC", "KT8934277", commit=True
+    )
+    saved = (await db_session.execute(select(Snapshot))).scalars().one()
+    saved.captured_at = saved.observed_at = telemetry.now() - timedelta(days=40)
+    await db_session.commit()
+    result = await worker.run_import(
+        factory,
+        unknown_source(),
+        tenant_id,
+        actor_id,
+        "77 CARGO LLC",
+        "KT8934277",
+        commit=True,
+    )
+    assert result["rows"][0]["status"] == "prior_time_unknown"
+    assert len((await db_session.execute(select(Snapshot))).scalars().all()) == 1
+
+
+@pytest.mark.asyncio
+async def test_unknown_does_not_replace_timestamped_address_projection(
+    db_session, monkeypatch, _db_engine
+):
+    from app.schemas.fleet_telemetry import TelemetryCapture
+
+    actor, truck, member = await prepared(db_session, monkeypatch)
+    truck.last_lat = truck.last_lng = None
+    await db_session.commit()
+    tenant_id, actor_id = actor.tenant_id, actor.id
+    body = TelemetryCapture(
+        client_request_id=uuid4(),
+        fleet_customer_id=member.fleet_customer_id,
+        vin=VIN,
+        location_label="Known city",
+        observed_at=telemetry.now() - timedelta(minutes=1),
+    )
+    await telemetry.capture(db_session, actor, truck.id, body)
+    await db_session.commit()
+    factory = async_sessionmaker(_db_engine, expire_on_commit=False)
+    result = await worker.run_import(
+        factory,
+        unknown_source(),
+        tenant_id,
+        actor_id,
+        "77 CARGO LLC",
+        "KT8934277",
+        commit=True,
+    )
+    assert result["rows"][0]["status"] == "prior_time_unknown"
+    assert len((await db_session.execute(select(Snapshot))).scalars().all()) == 1
