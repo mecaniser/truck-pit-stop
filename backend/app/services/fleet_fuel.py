@@ -13,6 +13,7 @@ def visible_query(tenant_id, stamp, vehicle_id=None, fleet_customer_id=None):
         Fuel.tenant_id == tenant_id, Fuel.deleted_at.is_(None), Vehicle.tenant_id == tenant_id, Vehicle.deleted_at.is_(None),
         Member.tenant_id == tenant_id, Member.vehicle_id == Fuel.vehicle_id, Member.fleet_customer_id == Fuel.fleet_customer_id,
         Customer.tenant_id == tenant_id, Customer.deleted_at.is_(None), *active_membership(stamp),
+        func.upper(func.trim(Vehicle.vin)) == Fuel.verified_vin,
         Fuel.coverage_start >= Member.effective_from,
         or_(Member.effective_to.is_(None), Fuel.coverage_end <= Member.effective_to),
         Fuel.coverage_end <= Fuel.source_read_at, Fuel.source_read_at <= stamp,

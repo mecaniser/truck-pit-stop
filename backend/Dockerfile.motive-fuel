@@ -1,0 +1,15 @@
+FROM node:22-bookworm-slim AS browser
+WORKDIR /browser
+COPY backend/scripts/motive_sync/package*.json ./
+RUN npm ci --omit=dev
+
+FROM python:3.11-slim-bookworm
+WORKDIR /app
+COPY --from=browser /usr/local/bin/node /usr/local/bin/node
+COPY --from=browser /browser/node_modules /app/scripts/motive_sync/node_modules
+COPY backend/requirements.txt ./
+RUN pip install --no-cache-dir -r requirements.txt
+RUN node /app/scripts/motive_sync/node_modules/playwright/cli.js install --with-deps chromium
+COPY backend/ ./
+ENV MOTIVE_FUEL_COMMIT=false
+CMD ["python", "-m", "scripts.motive_sync.run_fuel_worker"]
