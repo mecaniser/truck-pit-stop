@@ -4,6 +4,7 @@ import ReactDOM from 'react-dom/client'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter } from 'react-router-dom'
 import { ThemeProvider } from '../src/contexts/ThemeContext'
+import SourceFuel from '../src/features/fleet/SourceFuel'
 import TripOverview from '../src/features/fleet/TripOverview'
 import type { FleetTripsResponse } from '../src/features/fleet/FleetTrips'
 import type { BoardTruck } from '../src/features/fleet/types'
@@ -19,4 +20,4 @@ const items = trucks.map((truck, i) => ({ id: `trip-${i}`, vehicle_id: truck.id,
 const data: FleetTripsResponse = { items, summary: { coverage: 'partial', truck_count: 4, trip_count: 4, distance_miles: 600, driving_seconds: 43200 }, total: 4, limit: 50, offset: 0, timezone: 'America/New_York', start_date: '2026-10-05', end_date: '2026-10-05' }
 const base: FuelDaily = { vehicle_id: '0', report_date: '2026-10-05', source_timezone: null, timezone_status: 'unverified', driving_fuel_gallons: 28, idling_fuel_gallons: 2, reported_total_fuel_gallons: 30, source_distance_miles: 180, source_driving_seconds: 10800, source_idling_seconds: 1200 }
 const fuel = [base, { ...base, vehicle_id: '1', driving_fuel_gallons: 25, idling_fuel_gallons: null, reported_total_fuel_gallons: null }, { ...base, vehicle_id: '2', driving_fuel_gallons: 0, idling_fuel_gallons: 0, reported_total_fuel_gallons: 0 }]
-ReactDOM.createRoot(document.getElementById('root')!).render(<QueryClientProvider client={new QueryClient()}><MemoryRouter><ThemeProvider><main className="fleet-root" style={{ padding: 24, minHeight: '100vh', overflow: 'auto' }}><h1>Fuel report acceptance preview</h1><TripOverview data={data} trucks={trucks} timezone="America/New_York" selected={false} onSelectTruck={() => {}} renderDetails={() => null} fuelRecords={fuel} /></main></ThemeProvider></MemoryRouter></QueryClientProvider>)
+ReactDOM.createRoot(document.getElementById('root')!).render(<QueryClientProvider client={new QueryClient()}><MemoryRouter><ThemeProvider><main className="fleet-root" style={{ padding: 24, minHeight: '100vh', overflow: 'auto' }}><h1>Fuel report acceptance preview</h1><TripOverview fuelSummary={<div className="trips-source-fuel-status"><span>Motive fuel · partial reports</span><SourceFuel records={fuel} medianVehicleIds={trucks.map(truck => truck.id)} /></div>} data={data} trucks={trucks} timezone="America/New_York" selected={false} onSelectTruck={() => {}} renderDetails={() => null} fuelRecords={fuel} /></main></ThemeProvider></MemoryRouter></QueryClientProvider>)
