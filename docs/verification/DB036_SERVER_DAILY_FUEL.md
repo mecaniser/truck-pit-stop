@@ -90,3 +90,36 @@ Parent runtime verification: frontend preview on port 5173, PID 97505, using an
 in-memory synthetic API adapter; desktop and 700px source-fuel/overview checked
 through CUA, 35 focused frontend tests, TypeScript and scoped ESLint passed.
 This is frontend evidence, not production import or a local backend claim.
+
+## Release evidence — 2026-10-08
+
+PR #489 merged as `c9affe42ddf73809f3743ffeb0f621ae6389f7b2` after
+all six protected checks passed. Independent QA/security approved code, source,
+dry-run and committed/replayed receipts. Focused checks: 47 backend tests,
+11 collector tests, 35 frontend tests, TypeScript, scoped lint and build.
+
+Source capture 16:08:59–16:18:54 UTC verified company before/after and all
+66 provider/date reports for 22 vehicles on October 5–7. Of 39 populated reports,
+30 were eligible and saved across 12 trucks. The remaining source exclusions
+were 27 explicit empty reports, three dates with missing VIN (26), and six
+full-date membership gaps (533/728). Three additional target-coverage diagnostic
+entries refer to the same unit 26; they are not additional missing vehicles.
+
+Commit and independent repeat both verified 30 IDs, current-fleet projection and
+unchanged hashes. Repeat created zero records. No trip metrics were altered.
+
+Fuel service `c48703db-1a9e-409d-9929-edb31565d086`, deployment
+`c7afd6cb-8807-41f3-aeca-c4b62f05e18d`, uses the merged source, persistent /data,
+explicit saving enabled, one replica, no restart retry and daily 13:30 UTC.
+This is 09:30 Eastern daylight / 08:30 Eastern standard time. The first calendar
+trigger is still pending; controlled live collection and import have passed.
+Location/trips/health schedules remained unchanged. Temporary source canary stopped.
+
+Web deployment `c351dd53-97a1-48ca-a285-bcb4a079ebe4` is successful at the same
+merged SHA; /health and /health/ready returned 200. Authenticated fleet activity
+shows 2,022.1 driving gallons and 111.7 idling gallons for October 5–7, separate
+source total 2,134.1 gallons, partial coverage and unverified report timezone.
+Rows 533/728 visibly show No fuel report. Estimates remain separately labeled
+when present; no estimate was fabricated for this release. Private source,
+receipts and screenshot are under output/motive-daily-fuel in the primary checkout
+and are excluded from Git.
