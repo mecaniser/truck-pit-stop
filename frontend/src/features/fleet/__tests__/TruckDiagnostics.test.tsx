@@ -26,13 +26,13 @@ describe('dashboard diagnostics', () => {
     expect(await screen.findByText('No current fault codes were reported at this check.')).toBeVisible()
     expect(screen.getByText(/Dashboard checked/)).toBeVisible()
   })
-  it('preserves code zeroes, occurrence zero and uncertain source times', async () => {
+  it('preserves code zeroes and source timestamps without the timezone note', async () => {
     await open({ last_checked_at: '2026-10-07T20:00:00Z', coverage: 'complete', explicit_empty: false, codes: [{ code: null, spn: '0012', fmi: '00', description: 'Example diagnostic', severity: 'High', network: 'J1939', source_address: null, occurrence_count: 0, first_detected_text: null, last_observed_text: 'Oct 7, 2026, 3:12 PM', timezone_basis: 'unverified' }] })
     expect(await screen.findByText('SPN 0012 · FMI 00')).toBeVisible()
     expect(screen.getByText('0')).toBeVisible()
     expect(screen.getByText('Unknown')).toBeVisible()
     expect(screen.getByText('Oct 7, 2026, 3:12 PM')).toBeVisible()
-    expect(screen.getByText('Source times · timezone unverified')).toBeVisible()
+    expect(screen.queryByText('Source times · timezone unverified')).not.toBeInTheDocument()
   })
   it('does not call a partial empty capture healthy', async () => {
     await open({ last_checked_at: '2026-10-07T20:00:00Z', coverage: 'partial', explicit_empty: true, codes: [] })

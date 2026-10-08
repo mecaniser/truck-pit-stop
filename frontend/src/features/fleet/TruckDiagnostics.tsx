@@ -57,14 +57,13 @@ function TruckDiagnosticsContent({ truckId }: { truckId: string }) {
             : !data.codes.length ? <p>Fault-code details are unavailable.</p>
             : <ul className="diagnostics-codes">{data.codes.map((code, index) => <li key={`${code.spn}-${code.fmi}-${code.code}-${index}`}>
               <div className="diagnostics-code-title"><strong>{code.spn ? `SPN ${code.spn}` : code.code || 'Code unavailable'}{code.fmi ? ` · FMI ${code.fmi}` : ''}</strong>{code.severity && <span>{code.severity}</span>}</div>
-              <p>{code.description || 'Description unavailable'}</p>
+              <p className="diagnostics-cause">{code.description || 'Description unavailable'}</p>
               <dl>
                 <div><dt>First detected</dt><dd>{code.first_detected_text || 'Unknown'}</dd></div>
                 <div><dt>Last observed</dt><dd>{code.last_observed_text || 'Unknown'}</dd></div>
                 {code.occurrence_count != null && <div><dt>Occurrences</dt><dd>{code.occurrence_count}</dd></div>}
                 {code.network && <div><dt>Network</dt><dd>{code.network}</dd></div>}
               </dl>
-              {code.timezone_basis === 'unverified' && (code.first_detected_text || code.last_observed_text) && <small className="diagnostics-meta">Source times · timezone unverified</small>}
             </li>)}</ul>}
           <p className="diagnostics-meta">Codes reflect the last dashboard check. Missing codes do not confirm a repair.</p>
         </>}

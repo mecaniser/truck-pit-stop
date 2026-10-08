@@ -20,3 +20,11 @@ Intended checkout `/Users/sergio_m1_promax/.codex/worktrees/truck-health-popover
 Frontend-only Vite PID77357 on http://127.0.0.1:5173 served this worktree (cwd and command verified), with default API proxy http://127.0.0.1:8000. Backend absent. Synthetic fixture intercepted diagnostics in the temporary preview only. Full-stack runtime is **blocked**, not aligned/authenticated browser-verified. Preview server stopped after checks.
 
 Protected PR CI, authenticated worker-backed acceptance, merge and deployment remain outstanding. Not Done.
+
+## Color and separators follow-up — 2026-10-08
+
+Frontend & UX, Fast UI; branch `codex/truck-health-colors` based on current main `2162a553`. Cyan identifiers (`--st-shop`) and amber description/cause (`--yellow`) distinguish content roles, not inferred severity. Removed nested fault-card borders/radii/padding; adjacent codes have one horizontal divider. Eight existing diagnostics tests, changed-source ESLint and production build pass. Synthetic desktop and 390px browser checks confirm colors, zero side borders/radii, 1px separator only on subsequent rows, and no horizontal overflow. Screenshot: local `output/health-popover/colors.jpg`.
+
+Runtime: Vite PID94671 on http://127.0.0.1:5173 from this worktree, default proxy8000; backend/env absent. Controller dry-run stops on retained untracked output; no secrets/configuration changes. Synthetic preview only, full-stack runtime blocked. Preview server stopped after verification. Authenticated acceptance and merge/deployment remain outstanding.
+
+Timezone-note follow-up (2026-10-08): removed the repeated unverified-timezone line at user request; source timestamp text and API provenance unchanged. Existing regression now asserts the note is absent while source time remains visible; 8/8 diagnostics tests and changed-source ESLint pass. No new browser pass for this single-line copy removal; authenticated runtime remains blocked. Included in PR488, not deployed.
