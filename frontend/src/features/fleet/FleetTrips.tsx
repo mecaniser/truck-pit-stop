@@ -112,11 +112,12 @@ export default function FleetTrips({ trucks, filters, onFilters, onOpenTruck }: 
           <div><MapPin size={18} /><span><strong>{number(query.data.summary.distance_miles)} <em>mi</em></strong><small>Distance</small></span></div>
           <div><Clock3 size={18} /><span><strong>{duration(query.data.summary.driving_seconds)}</strong><small>Driving</small></span></div>
         </div>
-        <div className="trips-source-fuel-status">
+        {query.data.total === 0 && !fuelQuery.data?.length ? <div className="trips-empty"><div className="trips-source-fuel-status">
           {fuelQuery.isPending ? <span role="status">Loading Motive fuel reports…</span> : fuelQuery.isError ? <span role="status">Fuel reports unavailable. <button type="button" onClick={() => fuelQuery.refetch()}>Retry fuel</button></span> : <><span>Motive fuel · partial reports</span><SourceFuel records={fuelQuery.data || []} /></>}
-        </div>
-        {query.data.total === 0 && !fuelQuery.data?.length ? <div className="trips-empty"><Route size={28} /><h3>No imported trips</h3><p>No trip history has been imported for this selection.</p></div> : <>
-          <TripOverview key={`${filters.vehicleId}:${filters.start}:${filters.end}:${timezone}:${filters.preset}`} data={query.data} fuelStatus={fuelQuery.isError ? 'error' : fuelQuery.isPending ? 'loading' : 'ready'} fuelRecords={fuelQuery.data || []} preset={filters.preset} trucks={selectedTruck ? [selectedTruck] : trucks} timezone={timezone} selected={!!selectedTruck} onSelectTruck={vehicleId => update({ vehicleId })} renderDetails={(items, endpoints) => <TripDetails endpoints={endpoints} items={items} data={query.data!} trucks={trucks} selected={!!selectedTruck} timezone={timezone} />} />
+        </div><Route size={28} /><h3>No imported trips</h3><p>No trip history has been imported for this selection.</p></div> : <>
+          <TripOverview fuelSummary={<div className="trips-source-fuel-status">
+          {fuelQuery.isPending ? <span role="status">Loading Motive fuel reports…</span> : fuelQuery.isError ? <span role="status">Fuel reports unavailable. <button type="button" onClick={() => fuelQuery.refetch()}>Retry fuel</button></span> : <><span>Motive fuel · partial reports</span><SourceFuel records={fuelQuery.data || []} medianVehicleIds={selectedTruck ? undefined : trucks.map(truck => truck.id)} /></>}
+        </div>} key={`${filters.vehicleId}:${filters.start}:${filters.end}:${timezone}:${filters.preset}`} data={query.data} fuelStatus={fuelQuery.isError ? 'error' : fuelQuery.isPending ? 'loading' : 'ready'} fuelRecords={fuelQuery.data || []} preset={filters.preset} trucks={selectedTruck ? [selectedTruck] : trucks} timezone={timezone} selected={!!selectedTruck} onSelectTruck={vehicleId => update({ vehicleId })} renderDetails={(items, endpoints) => <TripDetails endpoints={endpoints} items={items} data={query.data!} trucks={trucks} selected={!!selectedTruck} timezone={timezone} />} />
         </>}
       </>}
     </section>
