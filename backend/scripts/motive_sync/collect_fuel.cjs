@@ -33,6 +33,7 @@ function readings(cells){
 }
 function validateSnapshot(snapshot,date,vehicle){
  verifyUrl(snapshot.url,date,vehicle.provider_vehicle_id);
+ if(!snapshot.headers.length||snapshot.visible_date_text===null||snapshot.selected_unit===null)return null;
  if(JSON.stringify(snapshot.headers.map(s=>s.trim().toUpperCase()))!==JSON.stringify(HEADERS))throw Error('report_layout_changed');
  const label=new Intl.DateTimeFormat('en-US',{month:'short',day:'numeric',timeZone:'UTC'}).format(new Date(`${date}T12:00:00Z`));
  if(snapshot.visible_date_text!==label||snapshot.selected_unit!==vehicle.unit)throw Error('report_filter_changed');
@@ -47,17 +48,18 @@ function finalizeReport(snapshot,date,vehicle,sourceRead){
  const values=snapshot.rows.length?readings(snapshot.rows[0]):{};
  const reported=snapshot.rows.length&&[values.driving_fuel_gallons,values.idling_fuel_gallons,values.reported_total_fuel_gallons].some(x=>x!==null);
  const terminal=snapshot.explicit_empty?'No results found. Please update search criteria.':'Single provider daily report: one stable row';
- return {record:{report_date:date,state:reported?'reported':'source_missing',source_read_at:sourceRead,...values,...(!reported?{reason:snapshot.explicit_empty?'explicit_no_results':'fuel_readings_missing'}:{})},report:{report_date:date,provider_vehicle_id:vehicle.provider_vehicle_id,filter_start:date,filter_end:date,report_url:snapshot.url,visible_date_text:snapshot.visible_date_text,selected_unit:snapshot.selected_unit,headers:snapshot.headers,complete:true,source_read_at:sourceRead,row_count:snapshot.rows.length,explicit_empty:snapshot.explicit_empty,terminal_evidence:terminal}};
+ return {record:{report_date:date,state:reported?'reported':'source_missing',source_read_at:sourceRead,...values,...(!reported?{reason:snapshot.explicit_empty?'explicit_no_results':'fuel_readings_missing'}:{})},report:{report_date:date,provider_vehicle_id:vehicle.provider_vehicle_id,filter_start:date,filter_end:date,report_url:snapshot.url,visible_date_text:snapshot.visible_date_text,selected_unit:snapshot.selected_unit,headers:snapshot.headers,complete:true,source_read_at:sourceRead,row_count:snapshot.rows.length,explicit_empty:snapshot.explicit_empty,raw_cells:snapshot.rows.map(row=>Object.fromEntries(['vehicle','driving-fuel','idle-fuel','total-fuel','total-distance','driving-time','idle-time'].map(key=>[key,row[key]]))),terminal_evidence:terminal}};
 }
 function save(output,result){const temp=output+'.tmp';fs.writeFileSync(temp,JSON.stringify(result,null,2),{mode:0o600});fs.chmodSync(temp,0o600);fs.renameSync(temp,output);}
 async function readReport(page,date,vehicle){
  const label=new Intl.DateTimeFormat('en-US',{month:'short',day:'numeric',timeZone:'UTC'}).format(new Date(`${date}T12:00:00Z`));
  return page.evaluate(({label,unit})=>{
   const visible=e=>e.getBoundingClientRect().height>0&&getComputedStyle(e).visibility!=='hidden';
-  const leafTexts=[...document.querySelectorAll('body *')].filter(e=>visible(e)&&!e.children.length&&!e.closest('table')).map(e=>e.innerText?.trim());
+  const dateLabels=[...document.querySelectorAll('.phx-date-picker-range-labels .phx-date-picker-label')].filter(visible).map(e=>e.innerText.trim());
+  const selectedValues=[...document.querySelectorAll('phx-select[phx-non-default-selected="true"] .phx-select-value')].filter(visible).map(e=>e.innerText.trim());
   const headerTables=[...document.querySelectorAll('table')].filter(t=>visible(t)&&[...t.querySelectorAll('th')].some(e=>e.innerText.trim().toUpperCase()==='VEHICLE NUMBER'));
   const rows=[...document.querySelectorAll('tr[data-e2e="table-row"]')].filter(visible).map(r=>Object.fromEntries([...r.querySelectorAll('td[data-e2e]')].map(c=>[c.getAttribute('data-e2e'),c.innerText.trim()])));
-  return {url:location.href,headers:headerTables.length===1?[...headerTables[0].querySelectorAll('th')].map(e=>e.innerText.trim()):[],visible_date_text:leafTexts.includes(label)?label:null,selected_unit:leafTexts.includes(unit)?unit:null,rows,explicit_empty:document.body.innerText.includes('No results found. Please update search criteria.')};
+  return {url:location.href,headers:headerTables.length===1?[...headerTables[0].querySelectorAll('th')].map(e=>e.innerText.trim()):[],visible_date_text:dateLabels.length===1?dateLabels[0]:null,selected_unit:selectedValues.length===1?selectedValues[0]:null,rows,explicit_empty:document.body.innerText.includes('No results found. Please update search criteria.')};
  },{label,unit:vehicle.unit});
 }
 async function collectReport(context,date,vehicle){
@@ -98,4 +100,4 @@ async function collect(output){
 }
 function safeFailure(error){return ['invalid_days','missing_credentials','login_origin','company_mismatch','duplicate_vin','directory_incomplete','ambiguous_directory','vehicle_link_invalid','vehicle_source_changed','ambiguous_vin','report_identity_changed','report_layout_changed','report_filter_changed','report_not_single_vehicle','report_ambiguous_empty','report_vehicle_changed','report_incomplete','invalid_numeric_cell','invalid_duration_cell'].includes(error.message)?error.message:'browser_collection_unavailable';}
 if(require.main===module){if(!process.argv[2])throw Error('Output file required');collect(process.argv[2]).then(r=>console.log(JSON.stringify({stage:'fuel_collection_complete',vehicles:r.vehicles.length,reports:r.reports.length}))).catch(e=>{console.error(JSON.stringify({stage:'fuel_collection_failed',reason:safeFailure(e),import_permitted:false}));process.exitCode=1;});}
-module.exports={HEADERS,dates,reportUrl,verifyUrl,number,duration,readings,validateSnapshot,finalizeReport,collectReport,collect,safeFailure};
+module.exports={HEADERS,dates,reportUrl,verifyUrl,number,duration,readings,validateSnapshot,finalizeReport,readReport,collectReport,collect,safeFailure};

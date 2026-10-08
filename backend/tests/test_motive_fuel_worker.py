@@ -39,7 +39,9 @@ def source(stamp=None):
                 "filter_start": day,
                 "filter_end": day,
                 "report_url": f"https://app.gomotive.com/en-US/#/reports/vehicle-fuel-performance;start_date={day};end_date={day};report_id=48;report_type=normal;vehicle_ids=123",
-                "visible_date_text": day,
+                "visible_date_text": datetime.fromisoformat(day).strftime("%b")
+                + " "
+                + str(datetime.fromisoformat(day).day),
                 "complete": True,
                 "terminal_evidence": "Showing 1 result",
                 "row_count": 1,
@@ -109,6 +111,7 @@ def test_report_date_binding_count_and_full_grid_gates():
     for change in (
         {"complete": False},
         {"filter_start": "2020-01-01"},
+        {"visible_date_text": "Jan 1"},
         {"row_count": 2},
         {"provider_vehicle_id": "999"},
         {"report_url": original["reports"][0]["report_url"] + ";vehicle=777"},

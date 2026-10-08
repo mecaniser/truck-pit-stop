@@ -46,3 +46,8 @@ test('layout revisions and raw browser errors fail closed',()=>{
  assert.throws(()=>validateSnapshot({...snapshot(),headers:HEADERS.slice(1)},date,vehicle),/layout_changed/);
  assert.equal(safeFailure(Error('locator fill password secret')),'browser_collection_unavailable');
 });
+
+test('incomplete filter controls wait without accepting stale data',()=>{
+ for(const change of [{headers:[]},{selected_unit:null},{visible_date_text:null}]){const s={...snapshot(),...change};assert.equal(validateSnapshot(s,date,vehicle),null);assert.throws(()=>finalizeReport(s,date,vehicle,'2026-10-08T13:00:00Z'),/incomplete/);}
+ assert.throws(()=>validateSnapshot({...snapshot(),selected_unit:'7'},date,vehicle),/filter_changed/);
+});

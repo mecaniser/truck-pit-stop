@@ -96,9 +96,25 @@ def validate_report(report, day, provider):
     ):
         raise ValueError("Source report URL does not match requested date")
     visible = report.get("visible_date_text")
+    parsed_day = date.fromisoformat(day)
+    months = (
+        "Jan",
+        "Feb",
+        "Mar",
+        "Apr",
+        "May",
+        "Jun",
+        "Jul",
+        "Aug",
+        "Sep",
+        "Oct",
+        "Nov",
+        "Dec",
+    )
+    expected_visible = f"{months[parsed_day.month - 1]} {parsed_day.day}"
     if (
         not isinstance(visible, str)
-        or not visible.strip()
+        or visible != expected_visible
         or not report.get("terminal_evidence")
     ):
         raise ValueError("Visible report date and terminal evidence required")
