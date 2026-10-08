@@ -95,8 +95,8 @@ describe('OTR fleet overview', () => {
       ], summary: {...response.summary, truck_count:2, trip_count:3, distance_miles:60, driving_seconds:10800},
     } })
     setup({vehicleId:'', start:'2026-10-02', end:'2026-10-02'})
-    expect(await screen.findByText('Est. · 75% of miles')).toBeVisible()
-    expect(screen.getByText('Measured · 100% of miles')).toBeVisible()
+    expect(await screen.findByText('Calculated estimate · 75% of trip miles')).toBeVisible()
+    expect(screen.getByText('Reported trip fuel · 100% of trip miles')).toBeVisible()
     expect(screen.getByText(/Fleet median 30 mi/)).toBeVisible()
     expect(screen.getAllByRole('img', {name:/fleet median 30 mi/})).toHaveLength(2)
     await userEvent.click(screen.getByRole('button', {name:'Driving hours', exact:true}))
@@ -281,8 +281,9 @@ describe('OTR fleet overview', () => {
     const daily = { vehicle_id: truck.id, report_date: '2026-10-02', driving_fuel_gallons: 6, idling_fuel_gallons: 2, reported_total_fuel_gallons: 8.1, source_distance_miles: 35, source_driving_seconds: 3300, source_idling_seconds: 600, timezone_status: 'unverified', source_timezone: null }
     api.get.mockImplementation((url) => Promise.resolve({ data: url === '/fleet/fuel-daily' ? { items: [daily], total: 1, offset: 0, limit: 100, start_date: response.start_date, end_date: response.end_date, date_basis: 'source_report_date', coverage: 'partial' } : { ...response, items: [{ ...response.items[0], metrics: { ...emptyMetrics, estimated_fuel_gallons: 5, estimate_baseline_mpg: 8, estimate_baseline_period: 'last_30_days' } }] } }))
     setup({ vehicleId: '', start: response.start_date, end: response.end_date })
-    expect(await screen.findByRole('columnheader', { name: 'Motive diesel · gal' })).toBeVisible()
+    expect(await screen.findByRole('columnheader', { name: 'Diesel · gal' })).toBeVisible()
     expect(screen.getByLabelText('Imported trip totals')).toHaveTextContent('40 mi')
+    expect(screen.getByText('Calculated estimate · 100% of trip miles')).toBeVisible()
     await userEvent.click(screen.getAllByRole('button', { name: 'Motive fuel details: 6 gallons driving, 2 gallons idling' })[0])
     const details = screen.getByRole('dialog', { name: 'Motive fuel report' })
     expect(details).toHaveTextContent('8.1 gal')
@@ -295,11 +296,18 @@ describe('OTR fleet overview', () => {
     expect(activity).toHaveTextContent('5 gal')
     expect(activity).not.toHaveTextContent('fuel / mile')
   })
+  it('distinguishes failed report loading from absent fuel reports', async () => {
+    api.get.mockImplementation(url => url === '/fleet/fuel-daily' ? Promise.reject(new Error('unavailable')) : Promise.resolve({ data: response }))
+    setup({ vehicleId: '', start: response.start_date, end: response.end_date })
+    expect(await screen.findByRole('button', { name: 'Retry fuel' })).toBeVisible()
+    expect(screen.getByText('Fuel reports unavailable')).toBeVisible()
+    expect(screen.queryByText('No fuel report')).not.toBeInTheDocument()
+  })
   it('keeps idling-only trucks visible in comparison and period breakdown', async () => {
     const daily = { vehicle_id: other.id, report_date: '2026-10-02', driving_fuel_gallons: 0, idling_fuel_gallons: 3, reported_total_fuel_gallons: 3, source_distance_miles: 0, source_driving_seconds: 0, source_idling_seconds: 7200, timezone_status: 'unverified', source_timezone: null }
     api.get.mockImplementation(url => Promise.resolve({ data: url === '/fleet/fuel-daily' ? { items: [daily], total: 1, offset: 0, date_basis: 'source_report_date' } : response }))
     setup({ vehicleId: '', start: response.start_date, end: response.end_date })
-    expect(await screen.findByRole('columnheader', { name: 'Motive diesel · gal' })).toBeVisible()
+    expect(await screen.findByRole('columnheader', { name: 'Diesel · gal' })).toBeVisible()
     expect(screen.getByRole('button', { name: /Explain activity for Example Fleet 102/ })).toBeVisible()
     expect(screen.queryByRole('button', { name: /Show 1 truck without/ })).not.toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: /Oct 2: .*Compare trucks/ }))
