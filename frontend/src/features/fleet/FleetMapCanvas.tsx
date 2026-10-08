@@ -154,12 +154,13 @@ export default function FleetMapCanvas({ trucks, focusId, nearbyIds, route, now,
       map.addLayer({ id: sourceId, type: 'line', source: sourceId, layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-color': '#2563eb', 'line-width': 6, 'line-opacity': 1 } })
       map.addLayer({ id: `${sourceId}-direction`, type: 'symbol', source: sourceId, layout: { 'symbol-placement': 'line', 'symbol-spacing': 90, 'text-field': '▶', 'text-size': 13, 'text-rotation-alignment': 'map', 'text-keep-upright': false, 'text-allow-overlap': true }, paint: { 'text-color': '#ffffff', 'text-halo-color': '#1d4ed8', 'text-halo-width': 1 } })
     }
-    // Initial fit and explicit recenter only; selection/routing never moves the camera.
-    const frameKey = String(recenter)
+    // Fit after viewport changes as well as explicit recenter; selection/routing stay stable.
+    const frameKey = `${recenter}:${Math.round(bounds.width)}:${Math.round(bounds.height)}:${homePoint?.join(',') || ''}`
     if (!pins.length) framing.current = ''
     if (frameKey !== framing.current && pins.length) {
       const bounds = new mb.LngLatBounds()
       pins.forEach(pin => bounds.extend(pin.point))
+      if (homePoint) bounds.extend(homePoint)
       map.fitBounds(bounds, { padding: 65, maxZoom: 10, duration: 0 })
       framing.current = frameKey
     }
