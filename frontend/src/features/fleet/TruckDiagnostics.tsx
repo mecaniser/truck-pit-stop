@@ -57,7 +57,7 @@ function TruckDiagnosticsContent({ truckId }: { truckId: string }) {
             : !data.codes.length ? <p>Fault-code details are unavailable.</p>
             : <ul className="diagnostics-codes">{data.codes.map((code, index) => <li key={`${code.spn}-${code.fmi}-${code.code}-${index}`}>
               <div className="diagnostics-code-title"><strong>{code.spn ? `SPN ${code.spn}` : code.code || 'Code unavailable'}{code.fmi ? ` · FMI ${code.fmi}` : ''}</strong>{code.severity && <span>{code.severity}</span>}</div>
-              <p>{code.description || 'Description unavailable'}</p>
+              <p className="diagnostics-cause">{code.description || 'Description unavailable'}</p>
               <dl>
                 <div><dt>First detected</dt><dd>{code.first_detected_text || 'Unknown'}</dd></div>
                 <div><dt>Last observed</dt><dd>{code.last_observed_text || 'Unknown'}</dd></div>
