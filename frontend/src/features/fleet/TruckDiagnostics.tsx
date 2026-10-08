@@ -64,7 +64,6 @@ function TruckDiagnosticsContent({ truckId }: { truckId: string }) {
                 {code.occurrence_count != null && <div><dt>Occurrences</dt><dd>{code.occurrence_count}</dd></div>}
                 {code.network && <div><dt>Network</dt><dd>{code.network}</dd></div>}
               </dl>
-              {code.timezone_basis === 'unverified' && (code.first_detected_text || code.last_observed_text) && <small className="diagnostics-meta">Source times · timezone unverified</small>}
             </li>)}</ul>}
           <p className="diagnostics-meta">Codes reflect the last dashboard check. Missing codes do not confirm a repair.</p>
         </>}
