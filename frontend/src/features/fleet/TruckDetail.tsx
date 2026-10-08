@@ -632,6 +632,7 @@ export default function TruckDetail({
               </button>
               <TruckTelemetryLocation truck={t} />
               {onViewTrips && <button type="button" className="dbtn dbtn-ghost dhead-trips" onClick={() => onViewTrips(t.id)}><Route size={15} /> View trips</button>}
+              <TruckDiagnostics key={truckId} truckId={truckId} />
             </div>
             <div className="dhead-sub">
               {`${t.year || ''} ${t.make} ${t.model}`.trim()}{t.body_type ? ` · ${t.body_type}` : ''}
@@ -1120,8 +1121,6 @@ export default function TruckDetail({
               </div>
             </div>
           </section>
-
-          <TruckDiagnostics key={truckId} truckId={truckId} />
 
           <Section
             title="Last reported location & nearby units"
