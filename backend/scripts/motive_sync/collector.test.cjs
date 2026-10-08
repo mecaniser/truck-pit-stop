@@ -79,3 +79,18 @@ test('location control accepts state-only labels and no label, rejects ambiguity
  assert.equal((await locationControl(page)).address,'OH');labels=0;assert.equal((await locationControl(page)).address,null);
  count=2;await assert.rejects(locationControl(page),/location_control_unavailable/);
 });
+const {newTooltip}=require('./collect.cjs');
+test('status hover owns only a new unique tooltip, ignores persistent unrelated content',()=>{
+ assert.equal(newTooltip(['Help tip'],['Help tip','Oct 7, 2026, 1:49 PM']),'Oct 7, 2026, 1:49 PM');
+ assert.equal(newTooltip(['Help tip'],['Help tip','Yesterday afternoon']),'Yesterday afternoon');
+ assert.equal(newTooltip(['Oct 7, 2026, 1:49 PM'],['Oct 7, 2026, 1:49 PM']),null);
+ assert.throws(()=>newTooltip(['Help tip'],['Help tip','First new','Second new']),/unowned_timestamp_tooltip/);
+});
+const {leafTooltipTexts}=require('./collect.cjs');
+test('observed nested tooltip wrappers count once but distinct copies still reject',()=>{
+ const leaf={innerText:'Oct 7, 2026, 1:49 PM',querySelector:()=>null};
+ const wrapper={innerText:leaf.innerText,querySelector:()=>leaf};
+ assert.deepEqual(leafTooltipTexts([wrapper,leaf]),[leaf.innerText]);
+ assert.equal(newTooltip([],leafTooltipTexts([wrapper,leaf])),leaf.innerText);
+ assert.throws(()=>newTooltip([],leafTooltipTexts([leaf,{...leaf}])),/unowned_timestamp_tooltip/);
+});

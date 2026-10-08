@@ -64,6 +64,17 @@ async function locationControl(page){
  const count=await label.count();
  return {control,address:count===1?(await label.innerText()).trim()||null:null};
 }
+function leafTooltipTexts(elements){
+ // Motive nests .phx-tooltip-content inside a wrapper with the same class.
+ // Retain the actual text leaf so one rendered tooltip is counted once.
+ return elements.filter(e=>!e.querySelector('.phx-tooltip-content')).map(e=>e.innerText);
+}
+function newTooltip(before,after){
+ const prior=new Set(before.map(t=>t.trim()).filter(Boolean));
+ const added=after.map(t=>t.trim()).filter(t=>t&&!prior.has(t));
+ if(added.length>1)throw new Error('unowned_timestamp_tooltip');
+ return added[0]||null;
+}
 async function readVehiclePage(page,link,bind){
  await page.goto(ORIGIN+'/en-US/'+link.href,{waitUntil:'domcontentloaded',timeout:45000});
  await page.getByRole('link',{name:'Live',exact:true}).filter({visible:true}).first().waitFor().catch(()=>{throw new Error('vehicle_summary_unavailable');});
@@ -81,15 +92,19 @@ async function readVehiclePage(page,link,bind){
   if(await status.count()===0)return {rawTimestamp:null,sourceAge:null,timestampReason:'status_unavailable'};
   if(await status.count()!==1)throw new Error('unowned_timestamp_tooltip');
   const sourceAge=(await status.innerText()).trim()||null;
-  await page.mouse.move(0,0);
-  const prior=page.locator('.phx-tooltip-content:visible');
-  if(await prior.count())await prior.last().waitFor({state:'hidden',timeout:5000});
-  if(await prior.count())throw new Error('unowned_timestamp_tooltip');
+  // Ignore unchanged unrelated tooltips; only a unique newly rendered tooltip
+  // following this exact status hover can supply its source timestamp.
+  await page.getByRole('link',{name:'Live',exact:true}).filter({visible:true}).first().hover();
+  await page.waitForTimeout(350);
+  const tips=page.locator('.phx-tooltip-content:visible');
+  const prior=await tips.evaluateAll(leafTooltipTexts);
   await status.hover();
-  const tip=page.locator('.phx-tooltip-content:visible');
-  try{await tip.first().waitFor({timeout:5000});}catch(error){if(error.name!=='TimeoutError')throw error;return {rawTimestamp:null,sourceAge,timestampReason:'timestamp_tooltip_unavailable'};}
-  if(await tip.count()!==1)throw new Error('unowned_timestamp_tooltip');
-  return {rawTimestamp:(await tip.innerText()).trim(),sourceAge,timestampReason:null};
+  for(let i=0;i<30;i++){
+   const rawTimestamp=newTooltip(prior,await tips.evaluateAll(leafTooltipTexts));
+   if(rawTimestamp)return {rawTimestamp,sourceAge,timestampReason:null};
+   await page.waitForTimeout(100);
+  }
+  return {rawTimestamp:null,sourceAge,timestampReason:'timestamp_tooltip_unavailable'};
  }
  async function point(){
   assertLiveProvider(page.url(),link.href.split('/').pop());bind(await page.locator('body').innerText());
@@ -150,4 +165,4 @@ if(require.main===module){
  if(!output){console.error('Output file required');process.exitCode=1;}
  else collect(output).then(r=>console.log(JSON.stringify({stage:'collection_complete',complete:r.complete,count:r.vehicles.length,located:r.vehicles.filter(x=>x.status==='located').length}))).catch(()=>{console.error('Motive collection failed; no import permitted');process.exitCode=1;});
 }
-module.exports={collect,vinFrom,coordinates,addressFrom,bindVin,observationTime,stableObservation,collectWithRetries,assertLiveProvider,locationControl};
+module.exports={collect,vinFrom,coordinates,addressFrom,bindVin,observationTime,stableObservation,collectWithRetries,assertLiveProvider,locationControl,newTooltip,leafTooltipTexts};
