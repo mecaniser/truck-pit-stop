@@ -1,11 +1,9 @@
 /* Visible Motive UI only. No application internals, cookies or private endpoints. */
-const {chromium}=require('playwright');
 const fs=require('node:fs');
 const {normalize}=require('./timestamp.cjs');
 const {coordinates,copyFresh}=require('./copy_coordinates.cjs');
 const ORIGIN='https://app.gomotive.com';
 const COMPANY='77 CARGO LLC', COMPANY_ID='KT8934277';
-const stampPattern=/^(?:[A-Z][a-z]{2} \d{1,2}, \d{4}|\d{1,2}\/\d{1,2}\/\d{4}), \d{1,2}:\d{2}(?::\d{2})? [AP]M$/;
 function vinFrom(text){
  const values=Array.from(text.matchAll(/\bVIN\s*[:\t ]*\s*([A-HJ-NPR-Z0-9]{17})\b/g),m=>m[1]);
  const unique=[...new Set(values)];return unique.length===1?unique[0]:null;
@@ -16,8 +14,93 @@ function addressFrom(text){
  const candidate=boundary>0?lines[boundary-1]:'';
  return /,\s*[A-Z]{2}\s+\d{5}(?:-\d{4})?$/.test(candidate)?candidate:null;
 }
+function bindVin(expected,text){
+ const values=[...new Set(Array.from(text.matchAll(/\bVIN\s*[:\t ]*\s*([A-HJ-NPR-Z0-9]{17})\b/g),m=>m[1]))];
+ if(values.length>1)throw new Error('ambiguous_vin');
+ if(!values.length)throw new Error('vin_unavailable');
+ if(expected&&expected!==values[0])throw new Error('vin_changed');return values[0];
+}
+function observationTime(raw){
+ if(raw){const parsed=normalize(raw,true);if(!parsed.reason)return {...parsed,timestampReason:null};}
+ return {observed_at:null,observed_minute_start:null,observed_minute_end:null,precision:'unknown',timezone:null,timestampReason:raw?normalize(raw,true).reason:'timestamp_unavailable'};
+}
+async function stableObservation({timestamp,point,verifyVin,address}){
+ const before=await timestamp(),a=await point(),after=await timestamp(),b=await point();
+ if(before.rawTimestamp!==after.rawTimestamp||before.timestampReason!==after.timestampReason||(!before.rawTimestamp&&before.sourceAge!==after.sourceAge)||JSON.stringify(a)!==JSON.stringify(b))throw new Error('source_changed_during_capture');
+ await verifyVin();
+ return {status:'located',lat:a[0],lng:a[1],address:address||null,rawTimestamp:after.rawTimestamp,sourceAge:after.sourceAge,sourceReadTime:new Date().toISOString(),...observationTime(after.rawTimestamp),timestampReason:after.timestampReason||observationTime(after.rawTimestamp).timestampReason};
+}
+async function collectWithRetries(context,link,readPage=readVehiclePage){
+ let expected=null,reason='ui_data_unavailable',fallback=null;
+ const row={provider_vehicle_id:link.href.split('/').pop(),unit:link.unit,status:'unavailable',vin:null};
+ for(let attempt=0;attempt<2;attempt++){
+  const page=await context.newPage();page.setDefaultTimeout(15000);
+  try{
+   const bind=text=>{expected=bindVin(expected,text);row.vin=expected;return expected;};
+   const captured={...row,...await readPage(page,link,bind),vin:expected};
+   if(captured.status==='located'&&captured.precision==='unknown'&&attempt===0){fallback=captured;continue;}
+   return captured;
+  }catch(error){
+   if(!['about:blank',ORIGIN].includes(page.url()==='about:blank'?'about:blank':new URL(page.url()).origin))throw new Error('session_lost');
+   const fatal=['vin_changed','ambiguous_vin','session_lost','vehicle_source_changed'];
+   if(fatal.includes(error.message))throw error;
+   const safe=['provider_location_unavailable','vin_unavailable','invalid_coordinates','source_changed_during_capture','unowned_timestamp_tooltip','location_control_unavailable','clipboard_clear_failed','clipboard_write_timeout','vehicle_summary_unavailable','live_vin_unavailable','copy_control_unavailable'];
+   reason=safe.includes(error.message)?error.message:'ui_data_unavailable';
+  }finally{await page.close();}
+ }
+ return fallback?{...fallback,retryReason:reason}:{...row,reason,sourceReadTime:new Date().toISOString()};
+}
+function assertLiveProvider(url,providerId){
+ const source=new URL(url),match=source.hash.match(/^#\/fleetview\/map\/vehicle\/([^/]+)\/(\d+)\/live$/);
+ if(source.origin!==ORIGIN||!match||match[2]!==providerId||!match[1].startsWith(providerId+'-'))throw new Error('vehicle_source_changed');
+}
+async function locationControl(page){
+ // Grounded 531/6/609/77 UI probes: this unique container opens Copy coordinates,
+ // including state-only labels and absent status timestamps. Label parsing is optional.
+ const control=page.locator('.container.mt-4.pos-relative').filter({visible:true});
+ await control.first().waitFor().catch(()=>{throw new Error('location_control_unavailable');});
+ if(await control.count()!==1)throw new Error('location_control_unavailable');
+ const label=control.locator(':scope > span.grey-70.regular-14');
+ const count=await label.count();
+ return {control,address:count===1?(await label.innerText()).trim()||null:null};
+}
+async function readVehiclePage(page,link,bind){
+ await page.goto(ORIGIN+'/en-US/'+link.href,{waitUntil:'domcontentloaded',timeout:45000});
+ await page.getByRole('link',{name:'Live',exact:true}).filter({visible:true}).first().waitFor().catch(()=>{throw new Error('vehicle_summary_unavailable');});
+ await page.waitForFunction(()=>/\bVIN\s*[:\t ]*\s*[A-HJ-NPR-Z0-9]{17}\b/.test(document.body.innerText),null,{timeout:15000}).catch(()=>{});
+ if(!page.url().endsWith(link.href))throw new Error('vin_changed');
+ const vin=bind(await page.locator('body').innerText());
+ await page.getByRole('link',{name:'Live',exact:true}).filter({visible:true}).first().click();
+ await page.getByText(vin,{exact:true}).first().waitFor().catch(()=>{throw new Error('live_vin_unavailable');});
+ const liveText=await page.locator('body').innerText();bind(liveText);
+ assertLiveProvider(page.url(),link.href.split('/').pop());
+ if(liveText.includes('Add Vehicle Gateway to see location data'))throw new Error('provider_location_unavailable');
+ const {control,address}=await locationControl(page);
+ async function timestamp(){
+  const status=page.locator('.current-location-status').filter({visible:true});
+  if(await status.count()===0)return {rawTimestamp:null,sourceAge:null,timestampReason:'status_unavailable'};
+  if(await status.count()!==1)throw new Error('unowned_timestamp_tooltip');
+  const sourceAge=(await status.innerText()).trim()||null;
+  await page.mouse.move(0,0);
+  const prior=page.locator('.phx-tooltip-content:visible');
+  if(await prior.count())await prior.last().waitFor({state:'hidden',timeout:5000});
+  if(await prior.count())throw new Error('unowned_timestamp_tooltip');
+  await status.hover();
+  const tip=page.locator('.phx-tooltip-content:visible');
+  try{await tip.first().waitFor({timeout:5000});}catch(error){if(error.name!=='TimeoutError')throw error;return {rawTimestamp:null,sourceAge,timestampReason:'timestamp_tooltip_unavailable'};}
+  if(await tip.count()!==1)throw new Error('unowned_timestamp_tooltip');
+  return {rawTimestamp:(await tip.innerText()).trim(),sourceAge,timestampReason:null};
+ }
+ async function point(){
+  assertLiveProvider(page.url(),link.href.split('/').pop());bind(await page.locator('body').innerText());
+  await page.mouse.move(0,0);await control.click();
+  return copyFresh({clear:()=>page.evaluate(()=>navigator.clipboard.writeText('')),click:async()=>{const copy=page.locator('[phxcontent="Copy coordinates"]').filter({visible:true});await copy.first().waitFor().catch(()=>{throw new Error('copy_control_unavailable');});if(await copy.count()!==1)throw new Error('copy_control_unavailable');await copy.click();},read:()=>page.evaluate(()=>navigator.clipboard.readText()),pause:ms=>page.waitForTimeout(ms)});
+ }
+ return stableObservation({timestamp,point,verifyVin:async()=>{assertLiveProvider(page.url(),link.href.split('/').pop());bind(await page.locator('body').innerText());},address});
+}
 async function collect(output){
  if(!process.env.MOTIVE_EMAIL||!process.env.MOTIVE_PASSWORD)throw new Error('missing_credentials');
+ const {chromium}=require('playwright');
  const browser=await chromium.launch({headless:true});
  const result={company_label:COMPANY,company_id:COMPANY_ID,company_verified_before:false,company_verified_after:false,complete:false,started_at:new Date().toISOString(),vehicles:[]};
  const save=()=>fs.writeFileSync(output,JSON.stringify(result,null,2),{mode:0o600});
@@ -54,46 +137,7 @@ async function collect(output){
   result.directory_count=vehicles.length;save();
   for(const link of vehicles){
    if(!/^#\/fleetview\/vehicles\/summary\/\d+$/.test(link.href))throw new Error('vehicle_link_invalid');
-   const row={provider_vehicle_id:link.href.split('/').pop(),unit:link.unit,status:'unavailable',vin:null};
-   try{
-    await page.goto(ORIGIN+'/en-US/'+link.href,{waitUntil:'domcontentloaded'});
-    await page.getByRole('link',{name:'Live',exact:true}).filter({visible:true}).first().waitFor();
-    await page.waitForFunction(()=>/\bVIN\s*[:\t ]*\s*[A-HJ-NPR-Z0-9]{17}\b/.test(document.body.innerText),null,{timeout:15000}).catch(()=>{});
-    row.vin=vinFrom(await page.locator('body').innerText());
-    if(!row.vin)throw new Error('vin_unavailable');
-    await page.getByRole('link',{name:'Live',exact:true}).filter({visible:true}).first().click();
-    await page.getByText(row.vin,{exact:true}).first().waitFor();
-    const liveText=await page.locator('body').innerText();
-    if(liveText.includes('Add Vehicle Gateway to see location data'))throw new Error('provider_location_unavailable');
-    await page.locator('.current-location-status').waitFor().catch(()=>{throw new Error('unsupported_location_timestamp');});
-    const address=addressFrom(await page.locator('body').innerText());
-    if(!address)throw new Error('address_unavailable');
-    async function timestamp(){
-     await page.getByRole('link',{name:'Live',exact:true}).filter({visible:true}).first().hover();
-     const prior=page.locator('.phx-tooltip-content:visible').filter({hasText:stampPattern});
-     if(await prior.count())await prior.last().waitFor({state:'hidden',timeout:5000});
-     // Require the date tooltip to appear only after hovering this status.
-     if(await page.locator('.phx-tooltip-content:visible').filter({hasText:stampPattern}).count())throw new Error('unowned_timestamp_tooltip');
-     await page.locator('.current-location-status').hover();
-     const tip=page.locator('.phx-tooltip-content:visible').filter({hasText:stampPattern}).last();
-     await tip.waitFor();return (await tip.innerText()).trim();
-    }
-    async function point(){
-     await page.mouse.move(0,0);
-     await page.getByText(address,{exact:true}).click();
-     return copyFresh({clear:()=>page.evaluate(()=>navigator.clipboard.writeText('')),click:()=>page.locator('[phxcontent="Copy coordinates"]').click(),read:()=>page.evaluate(()=>navigator.clipboard.readText()),pause:ms=>page.waitForTimeout(ms)});
-    }
-    const before=await timestamp(),a=await point(),after=await timestamp(),b=await point();
-    if(before!==after||JSON.stringify(a)!==JSON.stringify(b))throw new Error('source_changed_during_capture');
-    if(vinFrom(await page.locator('body').innerText())!==row.vin)throw new Error('vin_changed');
-    const time=normalize(after,true);if(time.reason)throw new Error(time.reason);
-    Object.assign(row,{status:'located',lat:a[0],lng:a[1],address,rawTimestamp:after,sourceAge:await page.locator('.current-location-status').innerText(),sourceReadTime:new Date().toISOString(),...time});
-   }catch(e){
-    if(new URL(page.url()).origin!==ORIGIN)throw new Error('session_lost');
-    const safe=['provider_location_unavailable','unsupported_location_timestamp','vin_unavailable','address_unavailable','invalid_coordinates','source_changed_during_capture','vin_changed','unowned_timestamp_tooltip'];
-    row.reason=safe.includes(e.message)?e.message:'ui_data_unavailable';
-   }
-   row.sourceReadTime=row.sourceReadTime||new Date().toISOString();
+   const row=await collectWithRetries(context,link);
    result.vehicles.push(row);save();
    console.log(JSON.stringify({stage:'progress',attempted:result.vehicles.length,total:vehicles.length,located:result.vehicles.filter(x=>x.status==='located').length}));
   }
@@ -106,4 +150,4 @@ if(require.main===module){
  if(!output){console.error('Output file required');process.exitCode=1;}
  else collect(output).then(r=>console.log(JSON.stringify({stage:'collection_complete',complete:r.complete,count:r.vehicles.length,located:r.vehicles.filter(x=>x.status==='located').length}))).catch(()=>{console.error('Motive collection failed; no import permitted');process.exitCode=1;});
 }
-module.exports={collect,vinFrom,coordinates,addressFrom};
+module.exports={collect,vinFrom,coordinates,addressFrom,bindVin,observationTime,stableObservation,collectWithRetries,assertLiveProvider,locationControl};
