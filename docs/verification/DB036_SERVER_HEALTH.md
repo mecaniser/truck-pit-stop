@@ -205,3 +205,30 @@ validated offline with all event instants unknown, as required.
 Protected CI, production migration 162, current identity dry run, committed
 receipt, unchanged replay and authenticated fleet UI verification remain release
 gates. Neither source-only success nor a merged PR enables scheduling by itself.
+
+## Release verification (October 7, 2026)
+
+PR #482 merged as `cf05f14a97a508aec7617ddb581adf02a36abaac` after all six
+protected checks passed. Web deployment `aec55706-0573-4535-a039-8805b586c916`
+succeeded; migration 162 and required constraints were verified read-only.
+`/health/ready` reports database and Redis ready.
+
+Worker canary `40100baa-8b21-45a6-9d58-dcfdeec2cd05` matches the merged collector,
+runner and diagnostic-service hashes. Fresh source collection checked all 16
+Health entries. Its rollback-only dry run validated 15 captures; controlled
+commit saved those 15 captures with 27 codes and three explicit-empty checks.
+An exact-source replay returned 15 unchanged with identical IDs; all 15 saved
+records were verified through the current-membership diagnostics read service.
+
+The source entry for unit 26 has no verified VIN. Seven board entries lack a
+verified health capture, including the unmatched unit; these categories overlap
+and must not be summed as distinct trucks. Unknown event timestamps remain null,
+with original source text and separate dashboard-check time retained. Missing
+source data never clears faults or asserts that a truck is healthy.
+
+Final scheduled deployment `bcc62504-5b3d-4d31-af29-1f36d1b72438` succeeded.
+Hourly collection at :30 and saving are enabled for the separate service, with
+normal `python -m scripts.motive_health.run_worker` entrypoint. First scheduled
+execution remains pending. Authenticated browser acceptance awaits user sign-in
+after session expiry; server readback is verified, UI acceptance is not claimed.
+Private receipts and source data remain on the worker volume and outside Git.

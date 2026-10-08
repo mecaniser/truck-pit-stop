@@ -164,6 +164,10 @@ async def test_unknown_vin_recent_membership_and_changed_source_quarantined(
     document = source()
     args = (tenant_id, actor_id, "77 CARGO LLC", "KT8934277")
     # Current membership cannot manufacture historical eligibility.
+    # The shared fixture starts yesterday, which may precede the 1 PM trip.
+    # Start membership at capture time so this exclusion is time-of-day independent.
+    member.effective_from = datetime.fromisoformat(document["finished_at"])
+    await db_session.commit()
     receipt = await worker.run(factory, document, *args, tmp_path / "recent.json", True)
     assert receipt["rows"] == []
     assert receipt["report"]["exclusions"][0]["reason"] == "outside_membership"

@@ -85,3 +85,19 @@ worker. No source code or dependencies are changed in that release archive.
 Local fullstack is unavailable because this worktree has no approved backend
 configuration. An existing frontend at 5173 belongs to the location checkout and
 is preserved. Isolated tests do not establish production behavior.
+
+## Release verification (October 7, 2026)
+
+PR #480 merged as `71606ef180131c4b3a1a6efa734ca23126727b79` after all six
+protected checks passed. Committed deployment `e0c569c1-e75f-4bc0-a380-d7a3fbcc1fa7`
+saved 203 new trips and retained 27 unchanged. All 230 passed unchanged replay
+and committed readback. The Fleet Activity read service returned 230 trips across
+13 trucks, 12,796.27 miles and 848,889 driving seconds for October 5–7. Coverage
+remains partial; excluded observations were not converted to zero activity.
+
+Final scheduled deployment `ff68b9f4-6ff2-4d8b-b557-81d39f88425a` uses the same
+merged source, normal entrypoint, saving enabled and daily 09:15 UTC schedule.
+Railway confirms successful build and applied schedule. The first scheduled
+execution remains pending. The existing hourly coordinate worker is unchanged.
+The authenticated browser session expired; UI acceptance awaits user sign-in.
+This is server import/read-service verification, not authenticated browser proof.
