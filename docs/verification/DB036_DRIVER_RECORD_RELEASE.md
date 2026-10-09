@@ -26,3 +26,9 @@ Before activation: two complete live source captures with useful extracted metri
 ## Release plan
 
 Use one focused PR from `codex/motive-driver-release`. Required CI now includes the collector tests and driver service/import/process/journal regressions. Merge only after independent review and protected checks. The normal web release applies migration164. Deploy the separate worker from an immutable archive of that merged backend, configured for database journal mode and private `/tmp` working files. Start with saving false and no schedule; validate a dry run, then run one controlled import with immutable receipt/replay/readback evidence before enabling daily13:45 UTC. Preserve other workers and all existing volumes.
+
+## Source gate follow-up
+
+A full capture of candidate `a38ddfc0` completed 22/22 directory rows (20 captured, one unassigned, one VIN unavailable), with no summary-read fallback or hydration timeout. It exposed five explicit zero-fuel/no-event source states. Motive omits the percent sign for zero utilization; the parser must preserve that observed zero and driver-specific empty event state. Independent QA also reproduced malformed utilization substring matches (negative, malformed decimal and multiple percent values); these are returned to the collector owner for strict parsing tests. PR493 remains draft until the revised candidate passes independent review and two complete captures.
+
+The correction is candidate SHA256 `5ccd7cba19d7c31cd434e9e6abd9344c257b56f31db05324d8784d96e5bdca96`: exact complete fuel-card parsing accepts only the observed bare zero as unitless, and a unique driver-specific empty-event message yields the existing `empty` section state. Malformed/duplicate utilization and contradictory/wrong-driver empty evidence are rejected or unavailable. All 25 collector tests pass; two revised-candidate full captures and independent re-review are in progress. No database-journal implementation changed.

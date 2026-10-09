@@ -21,6 +21,20 @@ test('preserves explicit zero and unknown readings independently',()=>{
  const value=parseSummary(source,ranges);assert.equal(value.safety.score,0);assert.equal(value.safety.band,'unknown');assert.equal(value.fuel.utilization_percent,0);
  const missing=parseSummary({},ranges);assert.equal(missing.sections.safety,'unavailable');assert.equal(missing.sections.fuel,'unavailable');assert.equal(missing.sections.recent_events,'unavailable');
 });
+test('preserves the observed bare-zero fuel state without inventing a driver score',()=>{
+ const source={fuel_text:'Fuel performance LAST 30 DAYS 0 UTILIZATION Summary Active time 0m Idle time 0m'};
+ const value=parseSummary(source,ranges);
+ assert.equal(value.sections.fuel,'available');assert.equal(value.fuel.utilization_percent,0);
+ assert.equal(value.fuel.active_time_text,'0m');assert.equal(value.fuel.idle_time_text,'0m');
+ assert.equal(value.sections.safety,'unavailable');assert.equal(value.sections.coaching,'unavailable');
+});
+test('fuel rejects malformed, duplicate, missing, out-of-range and nonzero unitted readings',()=>{
+ for(const reading of ['-10%','.5%','1.2.3%','41.4% 20%','101%','Infinity%','NaN%','','20','0.0','10','-0']) {
+  const source=snapshot();source.fuel_text=`Fuel performance LAST 30 DAYS ${reading} UTILIZATION Summary Active time 1h Idle time 1h`;
+  const result=parseSummary(source,ranges);assert.equal(result.sections.fuel,'unavailable',reading);assert.equal(result.fuel.utilization_percent,undefined,reading);
+ }
+ const source=snapshot();source.fuel_text+=' 20% UTILIZATION';assert.equal(parseSummary(source,ranges).sections.fuel,'unavailable');
+});
 test('ambiguous scores are unavailable and malformed impact/event rows fail',()=>{
  const a=snapshot();a.safety_score_texts.push('100');assert.equal(parseSummary(a,ranges).sections.safety,'unavailable');
  const b=snapshot();b.safety_lines.push('Unexpected metric');assert.throws(()=>parseSummary(b,ranges));
@@ -71,6 +85,24 @@ test('recent safety events reject ambiguous headers and row alignment changes',(
  const duplicate=snapshot();duplicate.event_headers.push('STATUS');duplicate.events[0].push('Pending');
  assert.equal(parseSummary(duplicate,ranges).sections.recent_events,'unavailable');
  const truncated=snapshot();truncated.event_headers.push('');assert.throws(()=>parseSummary(truncated,ranges),/event_layout/);
+});
+test('explicit driver-specific empty events are preserved separately from unavailable',()=>{
+ const source=snapshot();source.events=[];source.event_empty_texts=['There are no safety events for Sample Driver.'];
+ const result=parseSummary(source,ranges,'Sample Driver');
+ assert.equal(result.sections.recent_events,'empty');assert.deepEqual(result.recent_events,[]);
+});
+test('missing ambiguous malformed and other-driver empty labels stay unavailable',()=>{
+ const source=snapshot();source.events=[];
+ for(const labels of [[],['There are no safety events.'],['There are no safety events for Other Driver.'],['There are no safety events for Sample.'],['There are no safety events for Sample Driver.','There are no safety events for Sample Driver.'],['There are no safety events for Sample Driver. Additional text']]) {
+  source.event_empty_texts=labels;assert.equal(parseSummary(source,ranges,'Sample Driver').sections.recent_events,'unavailable');
+ }
+ source.event_empty_texts=['There are no safety events for Sample Driver.'];
+ assert.equal(parseSummary(source,ranges).sections.recent_events,'unavailable');
+ source.event_headers.push('STATUS');assert.equal(parseSummary(source,ranges,'Sample Driver').sections.recent_events,'unavailable');
+});
+test('a rendered event row contradicting an empty-state label fails closed',()=>{
+ const source=snapshot();source.event_empty_texts=['There are no safety events for Sample Driver.'];
+ assert.throws(()=>parseSummary(source,ranges,'Sample Driver'),/event_layout/);
 });
 
 

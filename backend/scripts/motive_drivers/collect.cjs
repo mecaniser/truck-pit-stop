@@ -53,7 +53,7 @@ function validateDirectory(snapshot) {
 function emptyContent(reason) {
  return {safety:{},fuel:{},coaching:{},recent_events:[],sections:{safety:'unavailable',fuel:'unavailable',coaching:'unavailable',recent_events:'unavailable'},coverage:'partial',unavailable_reasons:[reason],source_timezone:'America/New_York'};
 }
-function parseSummary(snapshot, ranges) {
+function parseSummary(snapshot, ranges, driverName = null) {
  const result = emptyContent('Recent safety events are a summary sample; full event history is not collected.');
  const safety = (snapshot.safety_lines??[]).map(clean).filter(Boolean);
  const behaviorIndex = safety.indexOf('Top behaviors impacting score');
@@ -72,10 +72,12 @@ function parseSummary(snapshot, ranges) {
   } else result.unavailable_reasons.push('Safety score unavailable or ambiguous.');
  } else result.unavailable_reasons.push('Safety summary unavailable.');
  const fuel=clean(snapshot.fuel_text);
- const utilization=fuel.match(/(\d+(?:\.\d+)?)\s*%\s*UTILIZATION/i);
- const active=fuel.match(/Active time\s+((?:\d+h\s*)?\d+m|\d+h)/i),idle=fuel.match(/Idle time\s+((?:\d+h\s*)?\d+m|\d+h)/i);
- if(utilization&&Number(utilization[1])<=100&&active&&idle&&/LAST 30 DAYS/i.test(fuel)) {
-  result.fuel={period_text:'LAST 30 DAYS',utilization_percent:Number(utilization[1]),active_time_text:active[1],idle_time_text:idle[1],metrics:[]};result.sections.fuel='available';
+ // Motive renders a bare 0 for its zero-utilization state. All other values
+ // require %, and the whole card must match so malformed/duplicate values fail.
+ const fuelValues=fuel.match(/^Fuel performance LAST 30 DAYS (\d+(?:\.\d+)?\s*%|0) UTILIZATION (?:Summary )?Active time ((?:\d+h\s*)?\d+m|\d+h) Idle time ((?:\d+h\s*)?\d+m|\d+h)$/i);
+ const utilization=fuelValues?Number(fuelValues[1].replace('%','').trim()):null;
+ if(fuelValues&&utilization<=100) {
+  result.fuel={period_text:'LAST 30 DAYS',utilization_percent:utilization,active_time_text:fuelValues[2],idle_time_text:fuelValues[3],metrics:[]};result.sections.fuel='available';
  } else result.unavailable_reasons.push('Fuel summary unavailable.');
  const coaching=clean(snapshot.coaching_text);
  const needs=coaching.match(/^Driver needs coaching\s+(.+?)\s+(\d+)$/i);
@@ -93,8 +95,15 @@ function parseSummary(snapshot, ranges) {
    if(!date||!parts[0])throw new Error('event_layout');
    return {occurred_at_text:date[1],location:optional(date[2]),vehicle_label:optional(row[1].split('\n')[0]),status:optional(row[2]),behavior:parts[0],severity:optional(parts.slice(1).join(' '))};
   });
-  if(result.recent_events.length)result.sections.recent_events='available';
-  // Empty table alone is not proof of no events.
+  const emptyLabels=(snapshot.event_empty_texts??[]).map(clean);
+  if(result.recent_events.length) {
+   if(emptyLabels.length)throw new Error('event_layout');
+   result.sections.recent_events='available';
+  } else if(clean(driverName)&&emptyLabels.length===1&&emptyLabels[0]===`There are no safety events for ${clean(driverName)}.`) {
+   result.sections.recent_events='empty';
+  }
+  // An empty table alone, an ambiguous label, or another driver's label is not
+  // proof of no events for this verified driver.
  } else result.unavailable_reasons.push('Recent safety events unavailable.');
  return result;
 }
@@ -171,10 +180,11 @@ async function summary(context, identity, ranges) {
     const label=item.querySelector('a.phx-breadcrumb-link,[data-testid="breadcrumb-title"]');
     return {text:label?.textContent??'',href:label?.getAttribute('href')??null};
    }));
-   return {breadcrumbs,safety_lines:linesWithoutSvg(safety),safety_score_texts:safety?Array.from(safety.querySelectorAll('#score-trend-tooltip #score-text')).filter(visible).map(el=>el.textContent.trim()):[],coaching_annotation:safety?.textContent.includes('Coaching')??false,fuel_text:fuel?Array.from(fuel.querySelectorAll('*')).filter(el=>el.children.length===0&&visible(el)).map(el=>el.textContent.trim()).filter(Boolean).join(' '):'',coaching_text:Array.from(document.querySelectorAll('a[href*="/coaching/"]')).map(a=>a.innerText).filter(t=>t.includes('Driver needs coaching'))[0]??'',event_headers:table?Array.from(table.querySelectorAll('th')).map(x=>x.innerText):[],events:table?Array.from(table.querySelectorAll('tbody tr')).slice(0,100).map(tr=>Array.from(tr.querySelectorAll('td')).map(td=>td.innerText)):[]};
+   const eventContainer=table?.closest('.ant-table-wrapper,nz-table');
+   return {breadcrumbs,safety_lines:linesWithoutSvg(safety),safety_score_texts:safety?Array.from(safety.querySelectorAll('#score-trend-tooltip #score-text')).filter(visible).map(el=>el.textContent.trim()):[],coaching_annotation:safety?.textContent.includes('Coaching')??false,fuel_text:fuel?Array.from(fuel.querySelectorAll('*')).filter(el=>el.children.length===0&&visible(el)).map(el=>el.textContent.trim()).filter(Boolean).join(' '):'',coaching_text:Array.from(document.querySelectorAll('a[href*="/coaching/"]')).map(a=>a.innerText).filter(t=>t.includes('Driver needs coaching'))[0]??'',event_headers:table?Array.from(table.querySelectorAll('th')).map(x=>x.innerText):[],event_empty_texts:eventContainer?Array.from(eventContainer.querySelectorAll('empty-table .message')).filter(visible).map(el=>el.innerText):[],events:table?Array.from(table.querySelectorAll('tbody tr')).slice(0,100).map(tr=>Array.from(tr.querySelectorAll('td')).map(td=>td.innerText)):[]};
   });
   validateSummaryIdentity(page.url(),snapshot.breadcrumbs,identity);
-  const result=parseSummary(snapshot,ranges);
+  const result=parseSummary(snapshot,ranges,identity.driver_name);
   if(sectionsTimedOut)result.unavailable_reasons.push('Some summary sections did not finish loading.');
   return result;
  }finally{await page.close();}
