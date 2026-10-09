@@ -32,3 +32,20 @@ Use one focused PR from `codex/motive-driver-release`. Required CI now includes 
 A full capture of candidate `a38ddfc0` completed 22/22 directory rows (20 captured, one unassigned, one VIN unavailable), with no summary-read fallback or hydration timeout. It exposed five explicit zero-fuel/no-event source states. Motive omits the percent sign for zero utilization; the parser must preserve that observed zero and driver-specific empty event state. Independent QA also reproduced malformed utilization substring matches (negative, malformed decimal and multiple percent values); these are returned to the collector owner for strict parsing tests. PR493 remains draft until the revised candidate passes independent review and two complete captures.
 
 The correction is candidate SHA256 `5ccd7cba19d7c31cd434e9e6abd9344c257b56f31db05324d8784d96e5bdca96`: exact complete fuel-card parsing accepts only the observed bare zero as unitless, and a unique driver-specific empty-event message yields the existing `empty` section state. Malformed/duplicate utilization and contradictory/wrong-driver empty evidence are rejected or unavailable. All 25 collector tests pass; two revised-candidate full captures and independent re-review are in progress. No database-journal implementation changed.
+
+## Merge and deployment handoff
+
+PR493 merged at `854898418df3c891b2c44e75289a57b8f2a5afbf` on2026-10-09 20:49:28 UTC. All six protected checks passed; full backend suite:2,647 passed/107 skipped. Independent final collector/source GO covers two complete captures (22 directory rows,20 retained driver observations,1 unassigned,1 VIN unavailable). Both preserve20 fuel summaries,14 scores,15 coaching statuses,15 populated event samples and5 explicit empty states. One intervening incomplete identity-mismatch capture failed closed and remains an undiagnosed reliability observation; it was rejected by validation and never imported.
+
+The separate worker is deploying from an immutable archive of that merged backend. Database journal references are configured with saving false, stable key `db036-motive-driver-safety`, and `/tmp` working files. No plan, volume, or other worker schedule was changed. Production migration/import/schedule evidence follows below.
+
+## Build transport recovery
+
+Production Web `c3a4507e-ded8-4c2e-b497-26b57a29b6f7` is SUCCESS at `85489841`. Read-only verification confirms migration `164_motive_driver_journal`, the journal table, and healthy database/Redis readiness. Driver builds `3b378000-85b4-4cff-a0cc-a987de301bd7` and `dcef7873-9bd3-4936-9454-413034027d87` both failed before startup when Docker Hub returned HTTP429 for base-image metadata.
+
+The focused build fix uses Docker Official Images hosted in public ECR. Both multi-platform index byte hashes match the current Docker Hub originals; the worker Dockerfile pins those exact digests. Only image download location and reproducibility change; application source and existing worker Dockerfiles remain unchanged.
+
+- `python:3.11-slim-bookworm`: `sha256:0a310eeecf4e1f5a0743f9a6520c90c88d089c903ca5fd283f501e3a805f5f89`.
+- `node:22-bookworm-slim`: `sha256:c3de60bf2f9dd0ac6370e6117950ff62d6e339527e7472301c9c78a017978392`.
+
+2026-10-09 20:59 UTC local preflight: branch `codex/motive-driver-image-source` at85489841; Vite5173/PID76897 still serves this worktree; proxy targets8000, which has no listener and no approved backend/.env. Local full-stack remains blocked; no runtime or database was replaced. Image validation is registry-level and production build evidence follows.
