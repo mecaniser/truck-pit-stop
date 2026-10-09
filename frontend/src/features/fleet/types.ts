@@ -1,4 +1,5 @@
 import type { FleetTelemetry } from './telemetry'
+import type { DriverRecordSummary } from './driverRecordTypes'
 export type InspectionStatus = 'scheduled' | 'completed' | 'cancelled' | 'missed'
 export type InspectionResult = 'pass' | 'attention' | 'fail'
 export type InspectionItemResult = 'pending' | 'pass' | 'fail' | 'na'
@@ -128,6 +129,7 @@ export interface BoardTruck {
   driver_name?: string | null
   driver_phone?: string | null
   odometer?: number | null
+  driver_record?: DriverRecordSummary | null
   pm_interval_miles: number
   next_pm_miles?: number | null
   pm_remaining?: number | null

@@ -8,6 +8,8 @@ from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status, Query, Response
 from pydantic import BaseModel
+from app.schemas.fleet_driver_record import TruckDriverRecordRead
+from app.services import fleet_driver_records
 from app.schemas.fleet_diagnostic import TruckDiagnosticsRead
 from app.services import fleet_diagnostics
 from sqlalchemy import select, and_, case, func, or_
@@ -2136,6 +2138,7 @@ async def fleet_board(
     await _attach_account_context(db, trucks, current_user.tenant_id)
     from app.services.fleet_telemetry import attach as attach_telemetry
     await attach_telemetry(db, trucks, current_user.tenant_id)
+    await fleet_driver_records.attach(db, trucks, current_user.tenant_id)
     from app.services.fleet_pm import apply_pm_mileage
     for truck in trucks:
         apply_pm_mileage(truck)
@@ -2221,6 +2224,7 @@ async def truck_detail(
         board.board_membership_company_name = company or f"{first or ''} {last or ''}".strip() or None
     from app.services.fleet_telemetry import attach as attach_telemetry
     await attach_telemetry(db, [board], current_user.tenant_id)
+    await fleet_driver_records.attach(db, [board], current_user.tenant_id)
     from app.services.fleet_pm import apply_pm_mileage
     apply_pm_mileage(board)
     account_customers = {customer.id: customer for _, customer in account_rows}
@@ -2346,6 +2350,17 @@ async def truck_detail(
         # than issuing a full-fleet + open-work-order scan on every truck click.
         nearest=[],
     )
+
+
+@router.get("/trucks/{vehicle_id}/driver-record", response_model=TruckDriverRecordRead)
+async def truck_driver_record(
+    vehicle_id: UUID,
+    response: Response,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_fleet_access),
+):
+    response.headers["Cache-Control"] = "no-store"
+    return await fleet_driver_records.read(db, current_user.tenant_id, vehicle_id)
 
 
 @router.get("/trucks/{vehicle_id}/diagnostics", response_model=TruckDiagnosticsRead)

@@ -7,6 +7,7 @@ import FleetActivity from './FleetActivity'
 import TelemetrySummary from './TelemetrySummary'
 import { truckMotion, useTelemetryClock } from './telemetry'
 import ClosedRepairOrders from './ClosedRepairOrders'
+import DriverRecord from './DriverRecord'
 
 type QueueFilter = 'pm_planning' | 'open_work_orders' | 'visits_to_close'
 type Filter = 'all' | TruckStatus | QueueFilter
@@ -126,8 +127,9 @@ function TruckCard({ t, onOpen, onOpenRepairOrder }: { t: BoardTruck; onOpen: (t
       <TelemetrySummary truck={t} compact />
       <div className="tcard-row">
         <span className="tcard-row-ic"><User size={14} /></span>
-        <span className="tcard-row-tx">
-          {t.driver_name || 'Unassigned'}
+        <span className="tcard-row-tx tcard-driver">
+          <span className="tcard-driver-name">{t.driver_name || 'Unassigned'}</span>
+          <DriverRecord truck={t} />
           {t.driver_phone && <span className="tcard-row-sub"> · {formatUSPhone(t.driver_phone)}</span>}
         </span>
       </div>

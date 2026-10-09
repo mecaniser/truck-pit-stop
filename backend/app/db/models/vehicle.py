@@ -32,6 +32,8 @@ class Vehicle(BaseModel):
     # Assigned driver (simple fields; not a managed entity in v1).
     driver_name = Column(String(160), nullable=True)
     driver_phone = Column(String(20), nullable=True)
+    driver_assignment_revision = Column(Integer, nullable=False, default=0, server_default="0")
+    driver_assignment_changed_at = Column(DateTime(timezone=True), nullable=True)
 
     # Fleet invoices are addressed to the person responsible for this specific
     # truck, not the shared internal-fleet house-account customer.
@@ -94,3 +96,18 @@ class Vehicle(BaseModel):
     fleet_memberships = relationship(
         "FleetMembership", back_populates="vehicle", cascade="all, delete-orphan"
     )
+
+
+# The database trigger covers SQL/bulk writes in PostgreSQL. This hook also
+# protects ORM-backed SQLite tests and advances the in-memory value on flush.
+from sqlalchemy import event, inspect  # noqa: E402
+
+
+@event.listens_for(Vehicle, "before_update")
+def _advance_driver_assignment_revision(_mapper, _connection, vehicle):
+    from datetime import datetime, timezone
+
+    state = inspect(vehicle)
+    if any(state.attrs[field].history.has_changes() for field in ("driver_name", "driver_phone")):
+        vehicle.driver_assignment_revision = (vehicle.driver_assignment_revision or 0) + 1
+        vehicle.driver_assignment_changed_at = datetime.now(timezone.utc)
