@@ -53,3 +53,17 @@ The focused build fix uses Docker Official Images hosted in public ECR. Both mul
 The same Docker Hub unauthenticated quota also prevented the protected Playwright job from starting its PostgreSQL15 service (three HTTP429 pull attempts, no tests ran). Apply the same verified official-image mirror to the two CI-only service containers. Their OCI indexes also match Docker Hub byte for byte; no workflow gates or database/runtime configuration change.
 - CI `postgres:15`: `sha256:c961aa287d8698297cb26cdfadfbe9fd2cbaf77e53cfffe9636e8d8a1e4d842c`.
 - CI `redis:7-alpine`: `sha256:858f009f9709ce576febc734aa78b8f6d624b82571f9ddb6bda4377c833b3499`.
+
+## Production PostgreSQL acceptance
+
+PR494 merged `799be0826cdd3de8fef262a2e76cc99a192beeb1` after six protected checks (2,647 backend tests passed,107 skipped). Independent review verified all official mirror manifests byte for byte. A local linux/amd64 image build and isolated Chromium launch/DOM read passed. Railway standby deployment `3cc722b3-e603-4664-a007-da4205907e69` is SUCCESS; reported runtime image digest `sha256:12c497f41914a786794b9bf4de9a8f73754a43f68f599c58e38e493a91e3c616`. Seven running file hashes match the merged source.
+
+Read-only production validation confirmed migration164, enabled journal trigger, authorized tenant/admin/fleet identity and an initially empty driver store. Dry run `6dd06b28-46ca-4d3e-ab82-1dcb738d44ed` changed no captures. Commit `33dc255d-1e1e-466c-afb1-f17e88391306` saved18 driver records and one directory observation; all18 passed replay and committed readback. Separate replay `107917a0-efbd-4a44-96c4-b0c0c33e2381` retained all18 IDs and unchanged capture/directory fingerprints. Other fleet/tenant scopes remained unchanged. All receipts and source evidence are durable in the existing PostgreSQL journal; private export copies are excluded from Git.
+
+Coverage: two otherwise captured source rows lack unique current fleet membership; two directory rows have no assigned driver vehicle or usable VIN; two current fleet trucks have no captured record. The current projection has1available record (no source safety score),17assignment_unverified records due exact local/provider name mismatch, and2unknown records. Worker storage/recovery acceptance does not imply safety scores are displayed beside those unverified local names. Do not overwrite names or relax identity matching during release. Backend/Architecture own a separate verified driver-identity linking follow-up; signed-in UI acceptance remains open.
+
+## Shared build follow-up
+
+Automatic Web799be082 deployment `794460f0-5418-418a-bd24-4528845c37e4` and app-worker `fcf0c3b5-7be1-4e5b-89e9-73e0b879ce3c` failed before startup on the same Docker Hub HTTP429. Prior Web `c3a4507e-ded8-4c2e-b497-26b57a29b6f7` and app-worker `5d32685d-2214-4ee3-ada1-55cfb96517b9` remain live at85489841; SSH confirms matching journal/service/migration bytes, and readiness has healthy database/Redis. The shared Dockerfile gets the same official mirror remedy, with no application changes.
+
+Python3.11-slim Docker Hub/public ECR raw indexes are byte-equal and pinned at `sha256:e88e9763f943ec1834f992a4b51e0f24500486803e8bc534e5767af9ea65f6ce`. Local preflight on `codex/motive-driver-rollout-evidence` at799be082 preserves Vite5173/PID76897 in this checkout and missing backend8000/config; no local full-stack claim or runtime replacement. Scheduled driver activation and shared-image production build evidence remain pending.
