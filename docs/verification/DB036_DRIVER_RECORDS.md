@@ -1,5 +1,7 @@
 # DB-036 Motive driver records
 
+
+> Subsequent deployment authorization and database-journal release evidence are tracked in [DB036_DRIVER_RECORD_RELEASE.md](DB036_DRIVER_RECORD_RELEASE.md). The notes below preserve the original implementation-stage evidence.
 Accountable owner: Backend & Integrations. High-risk worker lane.
 Branch: `codex/motive-driver-records`, base `5fcff895`. Implementation `8004ca30`; [draft PR492](https://github.com/mecaniser/truck-pit-stop/pull/492).
 State: implementation and isolated verification; live collection and release gates outstanding.

@@ -19,30 +19,47 @@ function classify(score, ranges) {
  const range = ranges.find(r=>score>=r.min&&score<=r.max);
  return range ? {band:range.band,band_label:`${range.label} (${range.min}–${range.max})`} : {band:'unknown',band_label:null};
 }
+function directoryColumns(headers) {
+ if(!Array.isArray(headers)||headers.some(header=>typeof header!=='string'))throw new Error('driver_directory_layout');
+ const normalized=headers.map(header=>clean(header).toUpperCase());
+ const find=label=>{
+  const matches=normalized.flatMap((header,index)=>header===label?[index]:[]);
+  if(matches.length!==1)throw new Error('driver_directory_layout');
+  return matches[0];
+ };
+ return {driver:find('DRIVER NAME / ID'),vehicle:find('VEHICLE ID')};
+}
 function validateDirectory(snapshot) {
+ const columns=directoryColumns(snapshot.headers);
  const footer = snapshot.footer?.match(/^Showing ([\d,]+) of ([\d,]+)$/);
  const count = Number(footer?.[2]?.replaceAll(',',''));
- if (!footer || Number(footer[1].replaceAll(',',''))!==count || count!==snapshot.rows.length || count<0 || count>250) throw new Error('driver_directory_incomplete');
- if(clean(snapshot.headers[0]).toUpperCase()!=='DRIVER NAME / ID'||clean(snapshot.headers[1]).toUpperCase()!=='VEHICLE ID') throw new Error('driver_directory_layout');
+ if (!footer || !Array.isArray(snapshot.rows) || Number(footer[1].replaceAll(',',''))!==count || count!==snapshot.rows.length || count<0 || count>250) throw new Error('driver_directory_incomplete');
  const drivers = new Set(), vehicles = new Set();
  return snapshot.rows.map(row=>{
-  const driver = row.driver_href?.match(/^#\/fleetview\/drivers\/summary\/(\d+)$/);
-  const vehicle = row.vehicle_href?.match(/^#\/fleetview\/vehicles\/summary\/(\d+)$/);
-  if(!driver||!clean(row.driver_name)||drivers.has(driver[1])||(row.vehicle_href&&!vehicle)) throw new Error('driver_identity_invalid');
+  if(!Array.isArray(row.cells)||row.cells.length!==snapshot.headers.length||row.cells.some(cell=>!cell||!Array.isArray(cell.anchors)||(cell.colspan??1)!==1||(cell.rowspan??1)!==1))throw new Error('driver_directory_layout');
+  const driverCell=row.cells[columns.driver],vehicleCell=row.cells[columns.vehicle];
+  const driverLinks=driverCell.anchors.filter(link=>typeof link.href==='string'&&link.href.includes('/drivers/summary/'));
+  const vehicleLinks=vehicleCell.anchors.filter(link=>typeof link.href==='string'&&link.href.includes('/vehicles/summary/'));
+  if(driverLinks.length!==1||vehicleLinks.length>1||(!vehicleLinks.length&&optional(vehicleCell.text)!==null))throw new Error('driver_identity_invalid');
+  const driverLink=driverLinks[0],vehicleLink=vehicleLinks[0];
+  const driver = driverLink.href.match(/^#\/fleetview\/drivers\/summary\/(\d+)$/);
+  const vehicle = vehicleLink?.href.match(/^#\/fleetview\/vehicles\/summary\/(\d+)$/);
+  if(!driver||!clean(driverLink.text)||drivers.has(driver[1])||(vehicleLink&&(!vehicle||!clean(vehicleLink.text)))) throw new Error('driver_identity_invalid');
   if(vehicle&&vehicles.has(vehicle[1])) throw new Error('ambiguous_driver_assignment');
   drivers.add(driver[1]); if(vehicle)vehicles.add(vehicle[1]);
-  return {provider_driver_id:driver[1],driver_name:clean(row.driver_name),provider_vehicle_id:vehicle?.[1]??null,unit:vehicle?clean(row.unit):null};
+  return {provider_driver_id:driver[1],driver_name:clean(driverLink.text),provider_vehicle_id:vehicle?.[1]??null,unit:vehicle?clean(vehicleLink.text):null};
  });
 }
 function emptyContent(reason) {
  return {safety:{},fuel:{},coaching:{},recent_events:[],sections:{safety:'unavailable',fuel:'unavailable',coaching:'unavailable',recent_events:'unavailable'},coverage:'partial',unavailable_reasons:[reason],source_timezone:'America/New_York'};
 }
-function parseSummary(snapshot, ranges) {
+function parseSummary(snapshot, ranges, driverName = null) {
  const result = emptyContent('Recent safety events are a summary sample; full event history is not collected.');
  const safety = (snapshot.safety_lines??[]).map(clean).filter(Boolean);
  const behaviorIndex = safety.indexOf('Top behaviors impacting score');
  if(safety[0]==='Safety Score' && behaviorIndex>=2) {
-  const scores=safety.slice(2,behaviorIndex).filter(x=>/^\d+(?:\.\d+)?$/.test(x)).map(Number);
+  const labels=(snapshot.safety_score_texts??[]).map(clean);
+  const scores=labels.length===1&&/^\d+(?:\.\d+)?$/.test(labels[0])?labels.map(Number):[];
   if(scores.length===1&&scores[0]>=0&&scores[0]<=100) {
    const behaviors=[]; const lines=safety.slice(behaviorIndex+1);
    for(let i=0;i<lines.length;i++) {
@@ -55,27 +72,38 @@ function parseSummary(snapshot, ranges) {
   } else result.unavailable_reasons.push('Safety score unavailable or ambiguous.');
  } else result.unavailable_reasons.push('Safety summary unavailable.');
  const fuel=clean(snapshot.fuel_text);
- const utilization=fuel.match(/(\d+(?:\.\d+)?)\s*%\s*UTILIZATION/i);
- const active=fuel.match(/Active time\s+((?:\d+h\s*)?\d+m|\d+h)/i),idle=fuel.match(/Idle time\s+((?:\d+h\s*)?\d+m|\d+h)/i);
- if(utilization&&Number(utilization[1])<=100&&active&&idle&&/LAST 30 DAYS/i.test(fuel)) {
-  result.fuel={period_text:'LAST 30 DAYS',utilization_percent:Number(utilization[1]),active_time_text:active[1],idle_time_text:idle[1],metrics:[]};result.sections.fuel='available';
+ // Motive renders a bare 0 for its zero-utilization state. All other values
+ // require %, and the whole card must match so malformed/duplicate values fail.
+ const fuelValues=fuel.match(/^Fuel performance LAST 30 DAYS (\d+(?:\.\d+)?\s*%|0) UTILIZATION (?:Summary )?Active time ((?:\d+h\s*)?\d+m|\d+h) Idle time ((?:\d+h\s*)?\d+m|\d+h)$/i);
+ const utilization=fuelValues?Number(fuelValues[1].replace('%','').trim()):null;
+ if(fuelValues&&utilization<=100) {
+  result.fuel={period_text:'LAST 30 DAYS',utilization_percent:utilization,active_time_text:fuelValues[2],idle_time_text:fuelValues[3],metrics:[]};result.sections.fuel='available';
  } else result.unavailable_reasons.push('Fuel summary unavailable.');
  const coaching=clean(snapshot.coaching_text);
  const needs=coaching.match(/^Driver needs coaching\s+(.+?)\s+(\d+)$/i);
  if(needs){result.coaching={status_label:'Driver needs coaching',last_coached_text:needs[1],open_count:Number(needs[2])};result.sections.coaching='available';}
  else result.unavailable_reasons.push('Coaching status unavailable.');
  const expected=['DATE (MDY EDT) / LOCATION','VEHICLE ID / MMY','STATUS','BEHAVIOR / SEVERITY'];
- const headers=(snapshot.event_headers??[]).map(s=>clean(s).toUpperCase());
- if(headers.length===4&&headers.every((s,i)=>s.replace('EST','EDT')===expected[i])) {
-  result.recent_events=(snapshot.events??[]).map(row=>{
-   if(row.length!==4)throw new Error('event_layout');
+ const headers=(snapshot.event_headers??[]).map(s=>clean(s).toUpperCase().replace('EST','EDT'));
+ const eventColumns=expected.map(label=>headers.flatMap((header,index)=>header===label?[index]:[]));
+ if(eventColumns.every(indices=>indices.length===1)) {
+  result.recent_events=(snapshot.events??[]).map(cells=>{
+   if(!Array.isArray(cells)||cells.length!==headers.length)throw new Error('event_layout');
+   const row=eventColumns.map(indices=>cells[indices[0]]);
    const date=row[0].match(/^([A-Za-z]+ \d{1,2}, \d{4}, \d{1,2}:\d{2} [AP]M)\s*([\s\S]*)$/);
    const parts=row[3].split('\n').map(clean).filter(Boolean);
    if(!date||!parts[0])throw new Error('event_layout');
    return {occurred_at_text:date[1],location:optional(date[2]),vehicle_label:optional(row[1].split('\n')[0]),status:optional(row[2]),behavior:parts[0],severity:optional(parts.slice(1).join(' '))};
   });
-  if(result.recent_events.length)result.sections.recent_events='available';
-  // Empty table alone is not proof of no events.
+  const emptyLabels=(snapshot.event_empty_texts??[]).map(clean);
+  if(result.recent_events.length) {
+   if(emptyLabels.length)throw new Error('event_layout');
+   result.sections.recent_events='available';
+  } else if(clean(driverName)&&emptyLabels.length===1&&emptyLabels[0]===`There are no safety events for ${clean(driverName)}.`) {
+   result.sections.recent_events='empty';
+  }
+  // An empty table alone, an ambiguous label, or another driver's label is not
+  // proof of no events for this verified driver.
  } else result.unavailable_reasons.push('Recent safety events unavailable.');
  return result;
 }
@@ -88,24 +116,50 @@ async function directory(context) {
   await page.goto(ORIGIN+DIRECTORY,{waitUntil:'domcontentloaded',timeout:45000});
   await page.getByText(/Showing [\d,]+ of [\d,]+/).waitFor({timeout:30000});
   const snapshot=await page.evaluate(()=>{
-   const table=Array.from(document.querySelectorAll('table')).find(t=>/DRIVER NAME\s*\/\s*ID/i.test(t.innerText));
-   if(!table)return {headers:[],rows:[],footer:null};
-   return {headers:Array.from(table.querySelectorAll('th')).map(x=>x.innerText),footer:document.body.innerText.match(/Showing [\d,]+ of [\d,]+/)?.[0],rows:Array.from(table.querySelectorAll('tbody tr')).map(tr=>{
-    const cells=tr.querySelectorAll('td'),drivers=cells[0]?.querySelectorAll('a[href*="/drivers/summary/"]'),vehicles=cells[1]?.querySelectorAll('a[href*="/vehicles/summary/"]');
-    if(drivers?.length!==1||vehicles?.length>1)throw new Error('driver_identity_invalid');
-    return {driver_href:drivers[0].getAttribute('href'),driver_name:drivers[0].innerText,vehicle_href:vehicles?.[0]?.getAttribute('href')??null,unit:vehicles?.[0]?.innerText??null};
-   })};
+   const tables=Array.from(document.querySelectorAll('table')).filter(t=>Array.from(t.querySelectorAll('th')).some(th=>/^DRIVER NAME\s*\/\s*ID$/i.test(th.innerText.trim())));
+   if(tables.length!==1)return {headers:[],rows:[],footer:null};
+   const table=tables[0],headers=Array.from(table.querySelectorAll('th'));
+   if(headers.some(th=>th.colSpan!==1||th.rowSpan!==1))return {headers:[],rows:[],footer:null};
+   return {headers:headers.map(th=>th.innerText),footer:document.body.innerText.match(/Showing [\d,]+ of [\d,]+/)?.[0],rows:Array.from(table.querySelectorAll('tbody tr')).map(tr=>({
+    cells:Array.from(tr.querySelectorAll('td')).map(td=>({text:td.innerText,colspan:td.colSpan,rowspan:td.rowSpan,anchors:Array.from(td.querySelectorAll('a')).map(a=>({href:a.getAttribute('href'),text:a.innerText}))}))
+   }))};
   });
   if(page.url()!==ORIGIN+DIRECTORY)throw new Error('driver_source_changed');
   return {rows:validateDirectory(snapshot),terminal_evidence:snapshot.footer};
  }finally{await page.close();}
+}
+function validateSummaryIdentity(url,breadcrumbs,identity) {
+ const expectedUrl=ORIGIN+'/en-US/#/fleetview/drivers/summary/'+identity.provider_driver_id;
+ if(url!==expectedUrl||!Array.isArray(breadcrumbs)||breadcrumbs.length!==1)throw new Error('driver_identity_changed');
+ const items=breadcrumbs[0];
+ if(!Array.isArray(items)||items.length!==3
+  ||clean(items[0].text)!=='Fleet View'||items[0].href!=='#/fleetview/map'
+  ||clean(items[1].text)!=='Drivers'||items[1].href!=='#/fleetview/list/drivers'
+  ||clean(items[2].text)!==clean(identity.driver_name)||items[2].href!==null)throw new Error('driver_identity_changed');
+}
+function summaryDomReady() {
+ const visible=el=>el.getBoundingClientRect().height>0&&getComputedStyle(el).visibility!=='hidden';
+ // Action-center/profile loaders are independent of the Ant table spinner.
+ // The optional message-button spinner does not gate driver data readiness.
+ if(Array.from(document.querySelectorAll('.ant-spin-spinning,.phx-loading-icon,loader.loading')).some(visible))return false;
+ const safety=document.querySelector('.safety-score-card');
+ return !safety?.querySelector('#score-trend-graph')||Array.from(safety.querySelectorAll('#score-trend-tooltip #score-text')).some(el=>visible(el)&&el.textContent.trim());
 }
 async function summary(context, identity, ranges) {
  const page=await context.newPage();page.setDefaultTimeout(15000);
  const href=`#/fleetview/drivers/summary/${identity.provider_driver_id}`;
  try {
   await page.goto(ORIGIN+'/en-US/'+href,{waitUntil:'domcontentloaded',timeout:45000});
-  await page.getByText('Safety Score',{exact:true}).waitFor({timeout:30000});
+  await page.locator('.safety-score-card:visible').waitFor({timeout:30000});
+  // Breadcrumb identity loads independently of the summary cards and actions.
+  await page.waitForFunction(()=>Array.from(document.querySelectorAll('phx-breadcrumb [data-testid="breadcrumb-title"]')).some(el=>el.getBoundingClientRect().height>0&&el.textContent.trim()),{},{timeout:30000});
+  let sectionsTimedOut=false;
+  try {
+   await page.waitForFunction(summaryDomReady,{},{timeout:30000});
+  } catch(error) {
+   if(error.name!=='TimeoutError')throw error;
+   sectionsTimedOut=true;
+  }
   const snapshot=await page.evaluate(()=>{
    const visible=el=>el.getBoundingClientRect().height>0;
    const leaves=Array.from(document.querySelectorAll('*')).filter(el=>el.children.length===0&&visible(el));
@@ -122,10 +176,17 @@ async function summary(context, identity, ranges) {
    }
    const safety=card('Safety Score','Top behaviors impacting score'),fuel=card('Fuel performance','Idle time');
    const table=Array.from(document.querySelectorAll('table')).find(t=>/BEHAVIOR\s*\/\s*SEVERITY/i.test(t.innerText));
-   return {identity_text:document.body.innerText,safety_lines:linesWithoutSvg(safety),coaching_annotation:safety?.textContent.includes('Coaching')??false,fuel_text:fuel?Array.from(fuel.querySelectorAll('*')).filter(el=>el.children.length===0&&visible(el)).map(el=>el.textContent.trim()).filter(Boolean).join(' '):'',coaching_text:Array.from(document.querySelectorAll('a[href*="/coaching/"]')).map(a=>a.innerText).filter(t=>t.includes('Driver needs coaching'))[0]??'',event_headers:table?Array.from(table.querySelectorAll('th')).map(x=>x.innerText):[],events:table?Array.from(table.querySelectorAll('tbody tr')).slice(0,100).map(tr=>Array.from(tr.querySelectorAll('td')).map(td=>td.innerText)):[]};
+   const breadcrumbs=Array.from(document.querySelectorAll('phx-breadcrumb')).filter(visible).map(breadcrumb=>Array.from(breadcrumb.querySelectorAll('phx-breadcrumb-item')).map(item=>{
+    const label=item.querySelector('a.phx-breadcrumb-link,[data-testid="breadcrumb-title"]');
+    return {text:label?.textContent??'',href:label?.getAttribute('href')??null};
+   }));
+   const eventContainer=table?.closest('.ant-table-wrapper,nz-table');
+   return {breadcrumbs,safety_lines:linesWithoutSvg(safety),safety_score_texts:safety?Array.from(safety.querySelectorAll('#score-trend-tooltip #score-text')).filter(visible).map(el=>el.textContent.trim()):[],coaching_annotation:safety?.textContent.includes('Coaching')??false,fuel_text:fuel?Array.from(fuel.querySelectorAll('*')).filter(el=>el.children.length===0&&visible(el)).map(el=>el.textContent.trim()).filter(Boolean).join(' '):'',coaching_text:Array.from(document.querySelectorAll('a[href*="/coaching/"]')).map(a=>a.innerText).filter(t=>t.includes('Driver needs coaching'))[0]??'',event_headers:table?Array.from(table.querySelectorAll('th')).map(x=>x.innerText):[],event_empty_texts:eventContainer?Array.from(eventContainer.querySelectorAll('empty-table .message')).filter(visible).map(el=>el.innerText):[],events:table?Array.from(table.querySelectorAll('tbody tr')).slice(0,100).map(tr=>Array.from(tr.querySelectorAll('td')).map(td=>td.innerText)):[]};
   });
-  if(!page.url().endsWith(href)||!clean(snapshot.identity_text).includes('Fleet View / Drivers / '+identity.driver_name+' Message driver'))throw new Error('driver_identity_changed');
-  return parseSummary(snapshot,ranges);
+  validateSummaryIdentity(page.url(),snapshot.breadcrumbs,identity);
+  const result=parseSummary(snapshot,ranges,identity.driver_name);
+  if(sectionsTimedOut)result.unavailable_reasons.push('Some summary sections did not finish loading.');
+  return result;
  }finally{await page.close();}
 }
 async function collect(output) {
@@ -191,4 +252,4 @@ if(require.main===module) {
  if(!process.argv[2]){console.error('Output file required');process.exitCode=1;}
  else collect(process.argv[2]).then(r=>console.log(JSON.stringify({stage:'driver_collection_complete',drivers:r.drivers.length}))).catch(e=>{console.error(JSON.stringify({stage:'driver_collection_failed',reason:safeReason(e),import_permitted:false}));process.exitCode=1;});
 }
-module.exports={collect,parseRanges,classify,validateDirectory,emptyContent,parseSummary,safeReason};
+module.exports={collect,parseRanges,classify,directoryColumns,validateDirectory,validateSummaryIdentity,summaryDomReady,emptyContent,parseSummary,safeReason};

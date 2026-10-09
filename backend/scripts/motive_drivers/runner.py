@@ -39,6 +39,7 @@ async def run(
     commit=False,
     recovery=False,
     expected_customer_id=None,
+    durable=None,
 ):
     if not expected_customer_id:
         raise ValueError("Explicit fleet customer configuration required")
@@ -54,27 +55,48 @@ async def run(
         "source_sha256": source_hash(document),
     }
     attempt_path = str(receipt_path) + ".attempt.json"
+    saved = await durable.load() if durable is not None else None
+    if saved is not None and (
+        source_hash(saved["source"]) != identity["source_sha256"]
+        or saved["receipt"]["mode"] != ("commit" if commit else "dry_run")
+        or any(saved["receipt"].get(key) != value for key, value in identity.items())
+    ):
+        raise ValueError("Recovery intent or immutable identity mismatch")
+    attempt = None
     if recovery:
         if not commit:
             raise ValueError("Recovery requires explicit commit")
-        receipt = json.loads(Path(receipt_path).read_text())
-        attempt = json.loads(Path(attempt_path).read_text())
-        if (
-            receipt.get("mode") != "commit"
-            or receipt.get("stage")
-            not in {"validated", "commit_pending", "committed", "verified"}
-            or receipt.get("attempt_sha256") != source_hash(attempt)
-            or any(attempt.get(key) != value for key, value in identity.items())
+        receipt = (
+            saved["receipt"] if saved else json.loads(Path(receipt_path).read_text())
+        )
+        attempt = (
+            saved["attempt"] if saved else json.loads(Path(attempt_path).read_text())
+        )
+        source_only = (
+            saved is not None
+            and receipt.get("stage") == "source_saved"
+            and attempt is None
+        )
+        if receipt.get("mode") != "commit" or (
+            not source_only
+            and (
+                receipt.get("stage")
+                not in {"validated", "commit_pending", "committed", "verified"}
+                or receipt.get("attempt_sha256") != source_hash(attempt)
+                or any(attempt.get(key) != value for key, value in identity.items())
+            )
         ):
             raise ValueError("Recovery intent or immutable identity mismatch")
-        if (
+        if saved is None and (
             source_hash(
                 json.loads(Path(str(receipt_path) + ".source.json").read_text())
             )
             != identity["source_sha256"]
         ):
             raise ValueError("Saved source evidence changed")
-        eligible = set(attempt["eligible_requests"])
+        if saved is not None and receipt.get("stage") == "verified":
+            return receipt
+        eligible = set(attempt["eligible_requests"]) if attempt is not None else None
     else:
         eligible = None
     async with factory() as db:
@@ -95,11 +117,16 @@ async def run(
         for row in dry
         if row["status"] in {"would_create", "unchanged"}
     }
-    if recovery and eligible != set(attempt["eligible_requests"]):
+    if (
+        recovery
+        and attempt is not None
+        and eligible != set(attempt["eligible_requests"])
+    ):
         raise ValueError("Recovery eligible captures changed")
     attempt = {**identity, "eligible_requests": sorted(eligible)}
-    immutable(attempt_path, attempt)
-    immutable(str(receipt_path) + ".source.json", document)
+    if durable is None:
+        immutable(attempt_path, attempt)
+        immutable(str(receipt_path) + ".source.json", document)
     receipt = {
         **identity,
         "attempt_sha256": source_hash(attempt),
@@ -109,7 +136,18 @@ async def run(
         "rows": dry,
         "recovery": recovery,
     }
-    private_json(receipt_path, receipt)
+    if durable is not None:
+        receipt["journal_run_id"] = str(durable.id)
+
+    async def checkpoint(*, first=False):
+        # This connection commits independently before the application commit.
+        # Files in database mode are working copies, never recovery authority.
+        if durable is not None:
+            await durable.checkpoint(receipt, attempt=attempt if first else None)
+        if receipt_path is not None:
+            private_json(receipt_path, receipt)
+
+    await checkpoint(first=True)
     if not commit:
         return receipt
     async with factory() as db:
@@ -142,10 +180,10 @@ async def run(
         ):
             raise ValueError("Driver record unchanged replay failed")
         receipt.update(stage="commit_pending", rows=applied)
-        private_json(receipt_path, receipt)
+        await checkpoint()
         await db.commit()
     receipt.update(stage="committed", committed=True)
-    private_json(receipt_path, receipt)
+    await checkpoint()
     async with factory() as db:
         verified = await batch(
             db,
@@ -192,16 +230,63 @@ async def run(
             row.get("projection") == "assignment_unverified" for row in verified
         ),
     )
-    private_json(receipt_path, receipt)
+    await checkpoint()
     return receipt
+
+
+async def database_cli(factory, engine, args):
+    from scripts.motive_drivers.journal import (
+        DurableRun,
+        Identity,
+        authorize_configuration,
+        database_journal,
+    )
+
+    identity = Identity.from_environment()
+    async with database_journal(
+        engine, identity, os.environ.get("MOTIVE_DRIVER_JOURNAL_KEY", "motive-driver")
+    ) as journal:
+        await authorize_configuration(factory, identity)
+        if args.recover:
+            if not args.journal_run_id or not args.commit:
+                raise ValueError(
+                    "Database recovery requires explicit run ID and commit"
+                )
+            durable = DurableRun(journal, UUID(args.journal_run_id))
+            document = (await durable.load())["source"]
+            if args.input and source_hash(
+                json.loads(Path(args.input).read_text())
+            ) != source_hash(document):
+                raise ValueError("Recovery source differs from durable source")
+        else:
+            if args.journal_run_id or not args.input:
+                raise ValueError("New database import requires source input")
+            if await journal.pending():
+                raise ValueError("Pending driver commits require worker recovery first")
+            document = json.loads(Path(args.input).read_text())
+            durable = await journal.create(document, commit=args.commit)
+        return await run(
+            factory,
+            document,
+            identity.tenant_id,
+            identity.actor_id,
+            identity.company_label,
+            identity.company_id,
+            args.receipt,
+            commit=args.commit,
+            recovery=args.recover,
+            expected_customer_id=identity.customer_id,
+            durable=durable,
+        )
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--input", required=True)
+    parser.add_argument("--input")
     parser.add_argument("--receipt", required=True)
     parser.add_argument("--commit", action="store_true")
     parser.add_argument("--recover", action="store_true")
+    parser.add_argument("--journal-run-id")
     args = parser.parse_args()
     required = [
         "MOTIVE_SYNC_TENANT_ID",
@@ -216,20 +301,30 @@ def main():
     expected = os.environ.get("MOTIVE_DRIVER_FLEET_CUSTOMER_ID")
     if not expected:
         parser.error("Explicit fleet customer configuration required")
-    receipt = asyncio.run(
-        run(
-            AsyncSessionLocal,
-            json.loads(Path(args.input).read_text()),
-            UUID(os.environ[required[0]]),
-            UUID(os.environ[required[1]]),
-            os.environ[required[2]],
-            os.environ[required[3]],
-            args.receipt,
-            commit=args.commit,
-            recovery=args.recover,
-            expected_customer_id=UUID(expected) if expected else None,
+    journal_mode = os.environ.get("MOTIVE_DRIVER_JOURNAL", "file")
+    if journal_mode == "database":
+        from app.db.session import engine
+
+        receipt = asyncio.run(database_cli(AsyncSessionLocal, engine, args))
+    elif journal_mode == "file":
+        if not args.input or args.journal_run_id:
+            parser.error("File mode requires input and does not accept journal run IDs")
+        receipt = asyncio.run(
+            run(
+                AsyncSessionLocal,
+                json.loads(Path(args.input).read_text()),
+                UUID(os.environ[required[0]]),
+                UUID(os.environ[required[1]]),
+                os.environ[required[2]],
+                os.environ[required[3]],
+                args.receipt,
+                commit=args.commit,
+                recovery=args.recover,
+                expected_customer_id=UUID(expected) if expected else None,
+            )
         )
-    )
+    else:
+        raise ValueError("Unsupported driver journal mode")
     counts = {}
     for row in receipt["rows"]:
         counts[row["status"]] = counts.get(row["status"], 0) + 1
@@ -240,6 +335,7 @@ def main():
                 "stage": receipt["stage"],
                 "committed": receipt["committed"],
                 "counts": counts,
+                "journal_run_id": receipt.get("journal_run_id"),
             }
         )
     )
