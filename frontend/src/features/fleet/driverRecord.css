@@ -1,0 +1,73 @@
+.fleet-root .driver-record{display:inline-flex;vertical-align:middle;flex:none;line-height:1;}
+.fleet-root .driver-record-trigger{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:30px;padding:5px 6px;border:1px solid transparent;border-radius:5px;background:transparent;color:var(--muted);white-space:nowrap;font-size:12px;}
+.fleet-root .driver-record-trigger:hover,.fleet-root .driver-record-trigger[data-open]{background:var(--surface-3);border-color:var(--line);color:var(--text);}
+.fleet-root .driver-record-trigger:focus-visible,.driver-record-panel button:focus-visible{outline:2px solid #42c8ff;outline-offset:2px;}
+.driver-safety-dashes{display:inline-flex;align-items:center;gap:3px;flex:none;}
+.driver-safety-dashes i{display:block;width:9px;height:5px;border-radius:2px;background:#617384;}
+.driver-safety-dashes .is-red{background:#ff6673;}
+.driver-safety-dashes .is-yellow{background:#ffc400;}
+.driver-safety-dashes .is-green{background:#35df85;}
+.driver-record-score{font-variant-numeric:tabular-nums;font-weight:600;}
+.driver-record-panel{z-index:160;width:420px;max-width:calc(100vw - 24px);max-height:min(660px,calc(100dvh - 24px));overflow:auto;border:1px solid #617384;border-radius:12px;background:#151d26;color:#f7fafc;box-shadow:0 18px 60px #0009;font-family:'Archivo',sans-serif;font-size:13px;line-height:1.5;text-align:left;overflow-wrap:anywhere;overscroll-behavior:contain;}
+.driver-record-panel *{box-sizing:border-box;}
+.driver-record-panel button{font:inherit;cursor:pointer;color:inherit;}
+.driver-record-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:16px 18px 12px;}
+.driver-record-heading small{font-size:11px;letter-spacing:.04em;color:#93a3b2;}
+.driver-record-heading h2{font-size:17px;font-weight:650;line-height:1.35;margin:2px 0 0;}
+.driver-record-close{display:grid;place-items:center;width:36px;height:36px;flex:none;border:0;border-radius:6px;background:transparent;}
+.driver-record-close:hover{background:#263442;}
+.driver-record-body{padding:0 18px 18px;}
+.driver-record-provenance{display:flex;flex-wrap:wrap;gap:4px 12px;color:#93a3b2;font-size:11px;padding-bottom:12px;}
+.driver-record-provenance strong{display:inline-flex;align-items:center;gap:4px;font-weight:500;color:#ffc400;}
+.driver-record-section{padding:14px 0;border-top:1px solid #344453;}
+.driver-record-section:last-child{padding-bottom:0;}
+.driver-record-section-heading{display:flex;align-items:baseline;justify-content:space-between;flex-wrap:wrap;gap:4px 12px;margin-bottom:10px;}
+.driver-record-section h3{font-size:13px;font-weight:650;margin:0;}
+.driver-record-section-heading>span{color:#93a3b2;font-size:11px;}
+.driver-record-section h4{font-size:11px;color:#93a3b2;font-weight:500;margin:14px 0 4px;}
+.driver-safety-summary{display:flex;align-items:center;flex-wrap:wrap;gap:8px 14px;}
+.driver-safety-summary>strong,.driver-fuel-summary>strong{font-size:32px;line-height:1.1;font-weight:650;letter-spacing:-.04em;font-variant-numeric:tabular-nums;}
+.driver-safety-summary>div{display:flex;flex-direction:column;align-items:flex-start;gap:6px;}
+.driver-safety-summary>div>span:last-child{color:#c3ced8;font-size:12px;}
+.driver-safety-summary .driver-safety-dashes i{width:18px;height:5px;}
+.driver-safety-coaching{margin-left:auto;color:#c3ced8;font-size:12px;}
+.driver-record-facts{margin:0;}
+.driver-record-facts>div{display:flex;align-items:baseline;justify-content:space-between;gap:16px;padding:5px 0;}
+.driver-record-facts dt{color:#c3ced8;}
+.driver-record-facts dd{margin:0;text-align:right;font-weight:500;font-variant-numeric:tabular-nums;}
+.driver-fuel-summary{display:flex;align-items:baseline;gap:10px;}
+.driver-fuel-summary>strong{font-size:26px;color:#42c8ff;}
+.driver-fuel-summary>span{color:#93a3b2;font-size:12px;}
+.driver-fuel-track{height:5px;background:#344453;border-radius:3px;overflow:hidden;margin:12px 0 8px;}
+.driver-fuel-track>i{display:block;height:100%;background:#42c8ff;}
+.driver-record-events{list-style:none;margin:0;padding:0;}
+.driver-record-events>li{padding:10px 0;}
+.driver-record-events>li:first-child{padding-top:0;}
+.driver-record-events>li:last-child{padding-bottom:0;}
+.driver-record-events>li+li{border-top:1px solid #344453;}
+.driver-record-events>li>div{display:flex;justify-content:space-between;flex-wrap:wrap;gap:3px 12px;}
+.driver-record-events strong{font-weight:500;}
+.driver-event-status{color:#ffc400;font-size:11px;}
+.driver-record-events p{color:#93a3b2;font-size:11px;margin:4px 0 0;}
+.driver-record-muted{color:#93a3b2;margin:0;}
+.driver-record-gaps{margin:0;padding:12px 0 0 16px;border-top:1px solid #344453;color:#93a3b2;font-size:11px;}
+.driver-record-message{padding:0 18px 18px;margin:0;color:#c3ced8;}
+.driver-record-message p{margin:0 0 12px;}
+.driver-record-retry{display:inline-flex;align-items:center;gap:6px;padding:8px 12px;border:1px solid #617384;border-radius:6px;white-space:nowrap;background:transparent;}
+.fleet-root .tcard-row-tx.tcard-driver{display:flex;align-items:center;flex-wrap:wrap;gap:0 4px;overflow:visible;white-space:normal;}
+.fleet-root .tcard-driver-name{overflow-wrap:anywhere;}
+.fleet-root .tcard-driver .tcard-row-sub{white-space:nowrap;}
+.fleet-root .person-name.driver-name-record{display:flex;align-items:center;flex-wrap:wrap;gap:2px 5px;}
+.fleet-root .driver-contact-card{cursor:pointer;}
+.fleet-root .proximity-driver{display:flex;align-items:center;flex-wrap:wrap;gap:4px;}
+.fleet-root .otr-comparison tbody th .driver-record-trigger{gap:6px;min-height:36px;font-size:12px;}
+.fleet-root .otr-comparison tbody th .driver-record-trigger>.driver-safety-dashes{flex-direction:row;gap:3px;}
+@media(max-width:600px){
+  .fleet-root .driver-record-trigger{min-height:36px;}
+  /* A bottom-edge trigger must not shrink the record to the remaining anchor
+     space. Keep Headless UI's portal/focus behavior and use a compact sheet. */
+  .driver-record-panel{position:fixed!important;top:auto!important;left:12px!important;right:12px!important;bottom:12px!important;width:auto!important;max-height:min(640px,calc(100dvh - 24px))!important;}
+  .driver-record-heading{padding:14px 16px 10px;}
+  .driver-record-body{padding:0 16px 16px;}
+  .driver-record-close{width:40px;height:40px;}
+}

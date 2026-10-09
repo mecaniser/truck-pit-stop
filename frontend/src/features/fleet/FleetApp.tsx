@@ -17,6 +17,7 @@ import { formatUSPhone } from '@/utils/phone'
 import { duplicateVinConflict, duplicateVinTruckLabel, type DuplicateVinConflict } from './duplicateVin'
 import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 import FleetBoard from './FleetBoard'
+import DriverRecord from './DriverRecord'
 import MotiveIntegrationPanel from './MotiveIntegrationPanel'
 import TruckDetail from './TruckDetail'
 import { FLEET_HOME_ADDRESS } from './fleetHome'
@@ -509,15 +510,15 @@ function DriversPage({ trucks, onOpen }: { trucks: BoardTruck[]; onOpen: (id: st
   return (
     <div className="sgrid">
       {trucks.map((t) => (
-        <button key={t.id} className="scard" onClick={() => onOpen(t.id)} style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+        <article key={t.id} className="scard driver-contact-card" role="button" tabIndex={0} aria-label={`Open ${fleetUnitLabel(t)} truck details`} onClick={() => onOpen(t.id)} onKeyDown={event => { if (event.target === event.currentTarget && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); onOpen(t.id) } }} style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <div className="avatar">{initials(t.driver_name)}</div>
           <div style={{ textAlign: 'left', minWidth: 0 }}>
-            <div className="person-name">{t.driver_name || 'Unassigned'}</div>
+            <div className="person-name driver-name-record">{t.driver_name || 'Unassigned'}<DriverRecord truck={t} /></div>
             <div className="person-role">{fleetUnitLabel(t)} · {`${t.make} ${t.model}`}</div>
             {t.driver_phone && <div className="person-role">{formatUSPhone(t.driver_phone)}</div>}
           </div>
           <i className="lrow-dot" style={{ background: STATUS_META[t.status].dot, marginLeft: 'auto' }} />
-        </button>
+        </article>
       ))}
     </div>
   )

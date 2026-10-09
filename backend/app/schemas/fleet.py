@@ -1,3 +1,4 @@
+from app.schemas.fleet_driver_record import DriverRecordSummary
 from app.schemas.fleet_telemetry import FleetTelemetry
 from datetime import datetime, date
 from decimal import Decimal
@@ -243,6 +244,7 @@ class BoardWorkOrder(BaseModel):
 
 
 class BoardTruck(BaseModel):
+    driver_record: Optional[DriverRecordSummary] = None
     telemetry: Optional[FleetTelemetry] = None
     id: UUID
     unit_number: Optional[str] = None

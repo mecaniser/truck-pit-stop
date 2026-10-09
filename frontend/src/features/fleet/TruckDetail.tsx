@@ -22,6 +22,7 @@ import { ConfirmModal, TruckEditModal, LogIncidentModal, EditIncidentModal, Reso
 import FleetPriceBuilderPanel from './FleetPriceBuilderPanel'
 import IncidentHistory from './IncidentHistory'
 import TruckDiagnostics from './TruckDiagnostics'
+import DriverRecord from './DriverRecord'
 import { useAuthStore } from '../../stores/authStore'
 import { getWorkOSCapabilities, startWorkOSLogin, type WorkOSCapabilities } from '../../lib/workosAuth'
 
@@ -636,8 +637,9 @@ export default function TruckDetail({
             </div>
             <div className="dhead-sub">
               {`${t.year || ''} ${t.make} ${t.model}`.trim()}{t.body_type ? ` · ${t.body_type}` : ''}
-              <span style={{ marginLeft: 8, display: 'inline-flex', alignItems: 'center', gap: 4, color: 'var(--muted)' }}>
+              <span style={{ marginLeft: 8, display: 'inline-flex', alignItems: 'center', flexWrap: 'wrap', gap: 4, color: 'var(--muted)' }}>
                 · <User size={12} /> {t.driver_name || 'No driver'}
+                <DriverRecord truck={t} />
               </span>
             </div>
           </div>
@@ -1459,7 +1461,7 @@ function TruckDriverSection({ truck, detail, onChangeDriver }: {
       <div className="person person-driver fleet-driver-profile-row">
         <div className="avatar">{initials(displayName)}</div>
         <div className="fleet-driver-profile-copy">
-          <div className="person-name">{displayName || 'No driver assigned'}</div>
+          <div className="person-name driver-name-record">{displayName || 'No driver assigned'}<DriverRecord truck={truck} displayName={displayName} /></div>
           <div className="person-role">{driver ? 'Managed driver profile' : truck.driver_name ? 'Legacy contact — profile not created' : 'Assign a profile to begin custody tracking'}</div>
         </div>
         {phone && <a className="person-call" href={`tel:${phone}`} aria-label={`Call ${displayName || 'driver'}`}><Phone size={15} /></a>}

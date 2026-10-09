@@ -4,6 +4,7 @@ import { ArrowLeft, ArrowUpRight, Trophy, Info, X, ChevronDown } from 'lucide-re
 import type { FleetTrip, FleetTripsResponse } from './FleetTrips'
 import ActivityChart from './ActivityChart'
 import SourceFuel from './SourceFuel'
+import DriverRecord from './DriverRecord'
 import { summarizeFuel, type FuelDaily } from './fuelDaily'
 import type { BoardTruck } from './types'
 import { fleetUnitLabel } from './helpers'
@@ -58,6 +59,7 @@ export default function TripOverview({ data, trucks, timezone, selected, onSelec
     const measure = metric === 'miles' ? 'distance' : 'driving hours'
     return <div className="otr-truck-identity">
       <button onClick={() => onSelectTruck(truck.id)}><span className="otr-identity"><span className="otr-unit-driver"><strong className="otr-truck-number"><span className="sr-only">{fleetUnitLabel(truck)} </span><span aria-hidden="true">{truck.unit_number || '—'}</span></strong><span className="otr-driver" aria-label={`Current driver: ${truck.driver_name || 'Unassigned'}`}>{truck.driver_name || 'Unassigned'}</span></span></span><ArrowUpRight size={15} /></button>
+      <DriverRecord truck={truck} />
       <Popover className="otr-activity-explanation" key={metric}>
         <PopoverButton className="otr-rank-trigger" aria-label={`Explain activity for ${fleetUnitLabel(truck)}`}>
           {ranking?.leader ? <Trophy size={17} className="otr-leader" /> : <Info size={16} />}

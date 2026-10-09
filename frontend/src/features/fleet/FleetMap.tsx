@@ -9,6 +9,7 @@ import { distanceColor } from './distanceColor'
 import { formatDriveTime, useRoadProximity } from './roadProximity'
 import { useFleetHome } from './fleetHome'
 import FleetMapCanvas from './FleetMapCanvas'
+import DriverRecord from './DriverRecord'
 import './proximity.css'
 
 interface Props {
@@ -96,7 +97,7 @@ function FleetMap({ trucks, focusId, onFocusChange, onSelect, compact, homeAddre
             {(road.geometryFailed || !road.geometry) && <small role="status">{road.geometryFailed ? 'Route preview unavailable' : 'Loading route…'}</small>}
           </div>}
           {road.phase === 'loading' && <div className="proximity-route-summary" role="status">Calculating road distances…</div>}
-          {focus.driver_name && <p className="proximity-driver">{focus.driver_name}</p>}
+          {focus.driver_name && <p className="proximity-driver">{focus.driver_name}<DriverRecord truck={focus} /></p>}
           {focus.driver_phone && /^[+\d\s().-]+$/.test(focus.driver_phone) && <div className="proximity-actions"><a href={`tel:${focus.driver_phone.replace(/[^+\d]/g, '')}`}>Call driver</a></div>}
         </div>}
         {(searching || focus || !homeAddress) && <div className="proximity-list-heading"><h3>{searching ? 'Search results' : focus ? 'Nearby trucks' : 'Select a truck'}</h3><span>{searching ? matches.length : focus ? nearby.length : trucks.length}</span></div>}
