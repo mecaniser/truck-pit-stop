@@ -49,3 +49,7 @@ The focused build fix uses Docker Official Images hosted in public ECR. Both mul
 - `node:22-bookworm-slim`: `sha256:c3de60bf2f9dd0ac6370e6117950ff62d6e339527e7472301c9c78a017978392`.
 
 2026-10-09 20:59 UTC local preflight: branch `codex/motive-driver-image-source` at85489841; Vite5173/PID76897 still serves this worktree; proxy targets8000, which has no listener and no approved backend/.env. Local full-stack remains blocked; no runtime or database was replaced. Image validation is registry-level and production build evidence follows.
+
+The same Docker Hub unauthenticated quota also prevented the protected Playwright job from starting its PostgreSQL15 service (three HTTP429 pull attempts, no tests ran). Apply the same verified official-image mirror to the two CI-only service containers. Their OCI indexes also match Docker Hub byte for byte; no workflow gates or database/runtime configuration change.
+- CI `postgres:15`: `sha256:c961aa287d8698297cb26cdfadfbe9fd2cbaf77e53cfffe9636e8d8a1e4d842c`.
+- CI `redis:7-alpine`: `sha256:858f009f9709ce576febc734aa78b8f6d624b82571f9ddb6bda4377c833b3499`.
