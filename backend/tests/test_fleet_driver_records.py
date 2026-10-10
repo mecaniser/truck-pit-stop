@@ -6,14 +6,18 @@ from uuid import uuid4
 
 import httpx
 import pytest
-from app.db.models.fleet_driver_record import FleetDriverRecordCapture
+from fastapi import FastAPI, HTTPException
+from sqlalchemy import func, select
+
+from app.db.models.fleet_driver_record import (
+    FleetDriverDirectoryCapture,
+    FleetDriverRecordCapture,
+)
 from app.db.models.user import UserRole
 from app.db.models.vehicle_relationship import FleetMembership
 from app.schemas.fleet_driver_record import DriverRecordCapture, DriverSafety
 from app.services import fleet_driver_records as service
 from app.services.fleet_telemetry import now
-from fastapi import FastAPI, HTTPException
-from sqlalchemy import func, select
 from tests.test_db036_fleet_telemetry import VIN, prepared
 
 
@@ -74,18 +78,40 @@ async def fixture(db, monkeypatch):
     return actor, vehicle, member
 
 
-async def save(db, actor, member, source=None, apply=True, **kwargs):
-    return await service.capture(
+async def save(
+    db, actor, member, source=None, apply=True, with_directory=True, **kwargs
+):
+    source = source or body()
+    row, status = await service.capture(
         db,
         actor.tenant_id,
         actor.id,
-        source or body(),
+        source,
         "Synthetic Fleet",
         "KT123",
         apply=apply,
         expected_customer_id=member.fleet_customer_id,
         **kwargs,
     )
+    if status == "created" and with_directory:
+        db.add(
+            FleetDriverDirectoryCapture(
+                tenant_id=actor.tenant_id,
+                fleet_customer_id=member.fleet_customer_id,
+                source_company_id=source.source_company_id,
+                source_company_label=source.source_company_label,
+                source_read_at=source.source_read_at,
+                source_sha256=source.client_request_id.hex * 2,
+                assignments=[
+                    {
+                        "provider_driver_id": source.provider_driver_id,
+                        "provider_vehicle_id": source.provider_vehicle_id,
+                    }
+                ],
+            )
+        )
+        await db.flush()
+    return row, status
 
 
 @pytest.mark.parametrize(
@@ -159,6 +185,13 @@ async def test_dry_run_replay_projection_and_bounded_batch(db_session, monkeypat
     board.driver_name = "Different cached label"
     await service.attach(db_session, [board], actor.tenant_id)
     assert board.driver_record is None
+    board.driver_name = vehicle.driver_name
+    board.board_membership_customer_id = uuid4()
+    await service.attach(db_session, [board], actor.tenant_id)
+    assert board.driver_record is None
+    board.board_membership_customer_id = member.fleet_customer_id
+    await service.attach(db_session, [board], actor.tenant_id)
+    assert board.driver_record.capture_id == row.id
     altered = source.model_copy(update={"provider_driver_id": "changed"})
     with pytest.raises(HTTPException) as error:
         await save(db_session, actor, member, altered)
@@ -215,7 +248,152 @@ async def test_provider_identity_change_and_name_mismatch_do_not_resurface_old_d
     )
     await db_session.commit()
     result = await service.read(db_session, actor.tenant_id, vehicle.id)
-    assert result.availability == "assignment_unverified" and result.record is None
+    assert result.availability == "available"
+    assert result.record.provider_driver_id == "new-driver"
+    assert result.record.driver_name == "Other Driver"
+    assert result.record.local_driver_name == "Synthetic Driver"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("alias", ["Local nickname", None, "Synthetic Driver"])
+async def test_provider_identity_is_separate_from_unchanged_local_contact(
+    db_session, monkeypatch, alias
+):
+    actor, vehicle, member = await fixture(db_session, monkeypatch)
+    vehicle.driver_name = alias
+    await db_session.commit()
+    revision, phone = vehicle.driver_assignment_revision, vehicle.driver_phone
+    row, _ = await save(db_session, actor, member)
+    await db_session.commit()
+    result = await service.read(db_session, actor.tenant_id, vehicle.id)
+    assert result.availability == "available" and result.unavailable_reason is None
+    record = result.record
+    assert record.identity_basis == "motive_current_assignment"
+    assert record.driver_name == "Synthetic Driver"
+    assert record.local_driver_name == alias
+    assert record.local_assignment_revision == revision
+    assert record.source_company_id == "KT123"
+    assert record.provider_vehicle_id == "vehicle-123"
+    assert record.assignment_verified_at == row.source_read_at
+    board = SimpleNamespace(id=vehicle.id, driver_name=alias)
+    await service.attach(db_session, [board], actor.tenant_id)
+    assert board.driver_record.provider_driver_id == record.provider_driver_id
+    assert board.driver_name == vehicle.driver_name == alias
+    assert vehicle.driver_phone == phone
+    assert vehicle.driver_assignment_revision == revision
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "change",
+    [
+        "missing",
+        "older",
+        "future",
+        "company",
+        "label",
+        "empty",
+        "driver",
+        "duplicate_driver",
+        "duplicate_vehicle",
+    ],
+)
+async def test_complete_directory_is_required_and_identity_must_be_unique(
+    db_session, monkeypatch, change
+):
+    actor, vehicle, member = await fixture(db_session, monkeypatch)
+    row, _ = await save(db_session, actor, member)
+    directory = await db_session.scalar(select(FleetDriverDirectoryCapture))
+    if change == "missing":
+        await db_session.delete(directory)
+    elif change == "older":
+        directory.source_read_at = row.source_read_at - timedelta(seconds=1)
+    elif change == "future":
+        directory.source_read_at = now() + timedelta(minutes=1)
+    elif change == "company":
+        directory.source_company_id = "OTHER"
+    elif change == "label":
+        directory.source_company_label = "Other Fleet"
+    elif change == "empty":
+        directory.assignments = []
+    elif change == "driver":
+        directory.assignments = [
+            {
+                "provider_driver_id": "new-person",
+                "provider_vehicle_id": row.provider_vehicle_id,
+            }
+        ]
+    elif change == "duplicate_driver":
+        directory.assignments = [
+            *directory.assignments,
+            {
+                "provider_driver_id": row.provider_driver_id,
+                "provider_vehicle_id": "other-truck",
+            },
+        ]
+    elif change == "duplicate_vehicle":
+        directory.assignments = [
+            *directory.assignments,
+            {
+                "provider_driver_id": "other-person",
+                "provider_vehicle_id": row.provider_vehicle_id,
+            },
+        ]
+    await db_session.commit()
+    result = await service.read(db_session, actor.tenant_id, vehicle.id)
+    assert result.record is None and result.availability == "assignment_unverified"
+    assert result.unavailable_reason == (
+        "directory_missing" if change == "missing" else "provider_assignment_unverified"
+    )
+
+
+@pytest.mark.asyncio
+async def test_same_provider_ids_cannot_use_another_fleets_directory(
+    db_session, monkeypatch
+):
+    from app.db.models.customer import Customer
+
+    actor, vehicle, member = await fixture(db_session, monkeypatch)
+    await save(db_session, actor, member)
+    other = Customer(
+        tenant_id=actor.tenant_id,
+        first_name="Other",
+        last_name="Fleet",
+        email="other-fleet@example.test",
+        phone="+15555550999",
+    )
+    db_session.add(other)
+    await db_session.flush()
+    directory = await db_session.scalar(select(FleetDriverDirectoryCapture))
+    directory.fleet_customer_id = other.id
+    await db_session.commit()
+    result = await service.read(db_session, actor.tenant_id, vehicle.id)
+    assert result.record is None and result.unavailable_reason == "directory_missing"
+
+
+@pytest.mark.asyncio
+async def test_identical_provider_ids_in_two_tenants_keep_separate_people(
+    db_session, monkeypatch
+):
+    actor, vehicle, member = await fixture(db_session, monkeypatch)
+    first, _ = await save(db_session, actor, member)
+    other_actor, other_vehicle, other_member = await fixture(db_session, monkeypatch)
+    second, _ = await save(
+        db_session,
+        other_actor,
+        other_member,
+        body(driver_name="Another Person", safety={"score": 51}),
+    )
+    await db_session.commit()
+    own = await service.read(db_session, actor.tenant_id, vehicle.id)
+    other = await service.read(db_session, other_actor.tenant_id, other_vehicle.id)
+    assert own.record.capture_id == first.id and own.record.safety_score == 82
+    assert other.record.capture_id == second.id and other.record.safety_score == 51
+    assert own.record.driver_name == "Synthetic Driver"
+    assert other.record.driver_name == "Another Person"
+    with pytest.raises(HTTPException) as denied:
+        await service.read(db_session, actor.tenant_id, other_vehicle.id)
+    assert denied.value.status_code == 404
 
 
 @pytest.mark.asyncio

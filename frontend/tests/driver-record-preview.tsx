@@ -17,18 +17,22 @@ const sourceRecord: DriverRecordDetail = { ...driverRecord, safety: { ...driverR
 let scenario = 'source'
 function recordForScenario(): DriverRecordDetail | null {
   if (scenario === 'unknown') return null
+  if (scenario === 'alias-free') return { ...sourceRecord, local_driver_name: null }
+  if (scenario === 'missing-score') return { ...sourceRecord, safety_score: null, safety_band: 'unknown', safety_band_label: null, safety: { ...sourceRecord.safety, score: null, band: 'unknown', band_label: null } }
   if (scenario === 'stale') return { ...sourceRecord, stale: true }
   if (scenario === 'zero') return { ...driverRecord, safety_score: 0, safety_band: 'unknown', safety_band_label: null, safety: { ...driverRecord.safety, score: 0, band: 'unknown', band_label: null }, fuel: { ...driverRecord.fuel, utilization_percent: 0 }, coaching: { ...driverRecord.coaching, open_count: 0 } }
   return sourceRecord
 }
-const previewTruck = (): BoardTruck => ({ ...driverTruck, driver_record: recordForScenario() })
+const previewTruck = (): BoardTruck => ({ ...driverTruck, driver_name: scenario === 'alias-free' ? null : driverTruck.driver_name, driver_record: recordForScenario() })
 api.defaults.adapter = async config => {
   if (config.method !== 'get') throw new Error(`Fixture blocks mutation: ${config.url}`)
   let data: unknown
   if (config.url === '/fleet/trucks/synthetic-truck/driver-record') {
     if (scenario === 'error') throw new Error('Synthetic read failure')
-    data = { ...driverResponse, availability: scenario === 'unknown' ? 'unknown' : 'available', record: recordForScenario() }
+    data = { ...driverResponse, availability: scenario === 'unknown' ? 'unknown' : 'available', unavailable_reason: scenario === 'unknown' ? 'no_capture' : null, record: recordForScenario() }
   } else if (config.url === '/fleet/trucks/synthetic-truck') data = { truck: previewTruck(), open_work_orders: [], bill_labor_at_customer_rate: false, lifetime_spend: 0, incidents_count: 0, crew: [], history: [], parts: [], incidents: [], nearest: [] }
+  else if (config.url === '/auth/workos/capabilities') data = { session_provider: scenario === 'managed' ? 'workos' : 'legacy', driver_invitation_management: { available: false } }
+  else if (config.url === '/fleet-identity/vehicles/synthetic-truck/driver') data = { driver: { id: 'managed-driver', first_name: 'Managed', last_name: 'Custodian', phone: '7045550199' } }
   else if (config.url === '/fleet/motive/connection') data = { configured: false, status: 'not_configured', company: null }
   else if (['/fleet/trucks/synthetic-truck/incidents', '/fleet/inspections'].includes(config.url || '')) data = []
   else throw new Error(`Fixture blocks network: ${config.url}`)
@@ -45,7 +49,7 @@ export default function Preview() {
   const [selected, setSelected] = useState(scenario)
   const truck = previewTruck()
   return <main className="fleet-root" style={{ overflow: 'auto', padding: 20 }}>
-    <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 16, marginBottom: 16 }}><p style={{ color: 'var(--muted)' }}>Synthetic driver records · no fleet connection</p><label>Scenario <select value={selected} onChange={event => { scenario = event.target.value; client.clear(); setSelected(scenario) }} style={{ background: '#263442', padding: 8, borderRadius: 6 }}><option value="source">Captured detail</option><option value="unknown">Unknown</option><option value="stale">Stale</option><option value="zero">Zero / unrated</option><option value="error">Read failure</option></select></label></div>
+    <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 16, marginBottom: 16 }}><p style={{ color: 'var(--muted)' }}>Synthetic driver records · no fleet connection</p><label>Scenario <select value={selected} onChange={event => { scenario = event.target.value; client.clear(); setSelected(scenario) }} style={{ background: '#263442', padding: 8, borderRadius: 6 }}><option value="source">Different local alias</option><option value="alias-free">No local name</option><option value="managed">Managed profile</option><option value="missing-score">Missing source score</option><option value="unknown">Unknown</option><option value="stale">Stale</option><option value="zero">Zero / unrated</option><option value="error">Read failure</option></select></label></div>
     {detail ? <><button className="dbtn" onClick={() => setDetail(false)}>Back to fleet</button><TruckDetail key={selected} truckId={truck.id} trucks={[truck]} onOpen={() => {}} /></> : <FleetBoard key={selected} data={{ trucks: [truck], stats: { total: 1, active: 1, shop: 0, pm: 0, parts: 0, open_wo: 0, incidents_total: 0 } }} filter={filter} setFilter={setFilter} query={query} setQuery={setQuery} sort={sort} setSort={setSort} onOpen={() => setDetail(true)} onOpenRepairOrder={() => {}} />}
   </main>
 }

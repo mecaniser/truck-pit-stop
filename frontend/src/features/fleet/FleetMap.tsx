@@ -9,7 +9,8 @@ import { distanceColor } from './distanceColor'
 import { formatDriveTime, useRoadProximity } from './roadProximity'
 import { useFleetHome } from './fleetHome'
 import FleetMapCanvas from './FleetMapCanvas'
-import DriverRecord from './DriverRecord'
+import CurrentDriver from './CurrentDriver'
+import { currentDriverName, currentDriverRecord } from './driverIdentity'
 import './proximity.css'
 
 interface Props {
@@ -49,7 +50,7 @@ function FleetMap({ trucks, focusId, onFocusChange, onSelect, compact, homeAddre
   const visibleNearby = expanded ? nearby : nearby.slice(0, 3)
   const located = trucks.filter(truck => truckCoordinates(truck, now))
   const searching = !!query.trim()
-  const matches = trucks.filter(truck => `${mapUnitLabel(truck)} ${truck.driver_name || ''} ${truckLocation(truck, now)?.label || ''}`.toLowerCase().includes(query.trim().toLowerCase()))
+  const matches = trucks.filter(truck => `${mapUnitLabel(truck)} ${truck.driver_name || ''} ${currentDriverName(truck) || ''} ${truckLocation(truck, now)?.label || ''}`.toLowerCase().includes(query.trim().toLowerCase()))
   const overviewRows = [...nearby, ...trucks.filter(truck => !nearby.some(row => row.truck.id === truck.id)).map(truck => ({ truck, miles: undefined, seconds: undefined }))]
   const rows = searching ? overviewRows.filter(row => matches.some(truck => truck.id === row.truck.id)) : !focus ? overviewRows : visibleNearby
   const homeMiles = !focus && homeAddress ? nearby.map(row => row.miles).filter(value => Number.isFinite(value) && value >= 0) : []
@@ -97,8 +98,8 @@ function FleetMap({ trucks, focusId, onFocusChange, onSelect, compact, homeAddre
             {(road.geometryFailed || !road.geometry) && <small role="status">{road.geometryFailed ? 'Route preview unavailable' : 'Loading route…'}</small>}
           </div>}
           {road.phase === 'loading' && <div className="proximity-route-summary" role="status">Calculating road distances…</div>}
-          {focus.driver_name && <p className="proximity-driver">{focus.driver_name}<DriverRecord truck={focus} /></p>}
-          {focus.driver_phone && /^[+\d\s().-]+$/.test(focus.driver_phone) && <div className="proximity-actions"><a href={`tel:${focus.driver_phone.replace(/[^+\d]/g, '')}`}>Call driver</a></div>}
+          {currentDriverName(focus) && <p className="proximity-driver"><CurrentDriver truck={focus} /></p>}
+          {focus.driver_phone && /^[+\d\s().-]+$/.test(focus.driver_phone) && <div className="proximity-actions"><a href={`tel:${focus.driver_phone.replace(/[^+\d]/g, '')}`}>{currentDriverRecord(focus) ? 'Call local contact' : 'Call driver'}</a></div>}
         </div>}
         {(searching || focus || !homeAddress) && <div className="proximity-list-heading"><h3>{searching ? 'Search results' : focus ? 'Nearby trucks' : 'Select a truck'}</h3><span>{searching ? matches.length : focus ? nearby.length : trucks.length}</span></div>}
         {!focus && homeAddress && homeStatus && <div className="proximity-basis" role="status">{homeStatus}</div>}

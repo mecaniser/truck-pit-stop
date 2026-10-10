@@ -2,12 +2,12 @@ import { useState, type CSSProperties } from 'react'
 import { Wrench, Gauge, ClipboardList, User, Search, ChevronDown, ChevronRight, Check, AlertTriangle, X } from 'lucide-react'
 import type { BoardTruck, FleetBoard as FleetBoardData, TruckStatus } from './types'
 import { STATUS_META, VISIT_STALE_AFTER_DAYS, fleetIdentity, fleetUnitLabel, fmt, pmState, pmUrgency, rank, visitAge, visitIsStale } from './helpers'
-import { formatUSPhone } from '@/utils/phone'
 import FleetActivity from './FleetActivity'
 import TelemetrySummary from './TelemetrySummary'
 import { truckMotion, useTelemetryClock } from './telemetry'
 import ClosedRepairOrders from './ClosedRepairOrders'
-import DriverRecord from './DriverRecord'
+import CurrentDriver from './CurrentDriver'
+import { currentDriverName } from './driverIdentity'
 
 type QueueFilter = 'pm_planning' | 'open_work_orders' | 'visits_to_close'
 type Filter = 'all' | TruckStatus | QueueFilter
@@ -128,9 +128,7 @@ function TruckCard({ t, onOpen, onOpenRepairOrder }: { t: BoardTruck; onOpen: (t
       <div className="tcard-row">
         <span className="tcard-row-ic"><User size={14} /></span>
         <span className="tcard-row-tx tcard-driver">
-          <span className="tcard-driver-name">{t.driver_name || 'Unassigned'}</span>
-          <DriverRecord truck={t} />
-          {t.driver_phone && <span className="tcard-row-sub"> · {formatUSPhone(t.driver_phone)}</span>}
+          <CurrentDriver truck={t} />
         </span>
       </div>
       <div className="tcard-odo">
@@ -216,7 +214,7 @@ export default function FleetBoard({
     const words = query.toLowerCase().trim().split(/\s+/)
     list = list.filter((t) => {
       const haystack =
-        `${fleetUnitLabel(t)} ${t.unit_number || ''} ${t.make} ${t.model} ${t.driver_name || ''} ${t.vin || ''} ${t.plate || ''} ${t.body_type || ''} ${t.fleet_company_name || ''} ${t.owner_company_name || ''}`.toLowerCase()
+        `${fleetUnitLabel(t)} ${t.unit_number || ''} ${t.make} ${t.model} ${t.driver_name || ''} ${currentDriverName(t) || ''} ${t.vin || ''} ${t.plate || ''} ${t.body_type || ''} ${t.fleet_company_name || ''} ${t.owner_company_name || ''}`.toLowerCase()
       const squashedHaystack = squash(haystack)
       return words.every((word) => {
         if (haystack.includes(word)) return true

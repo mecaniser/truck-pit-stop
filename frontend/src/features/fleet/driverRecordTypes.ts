@@ -5,6 +5,12 @@ export interface DriverRecordSummary {
   capture_id: string
   provider_driver_id: string
   driver_name: string
+  identity_basis: 'motive_current_assignment'
+  source_company_id: string
+  provider_vehicle_id: string
+  local_driver_name: string | null
+  local_assignment_revision: number
+  assignment_verified_at: string
   safety_score: number | null
   safety_band: DriverSafetyBand
   safety_band_label: string | null
@@ -42,5 +48,6 @@ export interface DriverRecordResponse {
   vehicle_id: string
   source: 'motive_dashboard'
   availability: 'unknown' | 'available' | 'assignment_unverified'
+  unavailable_reason: 'no_capture' | 'directory_missing' | 'provider_assignment_unverified' | 'local_assignment_changed' | 'vehicle_identity_changed' | null
   record: DriverRecordDetail | null
 }

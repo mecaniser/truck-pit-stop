@@ -142,7 +142,7 @@ async def _contexts(db, tenant_id, vehicle_ids):
 
 async def _latest(db, tenant_id, contexts):
     if not contexts:
-        return {}
+        return {}, {}
     ranked = (
         select(
             FleetDriverRecordCapture.id,
@@ -213,42 +213,56 @@ async def _latest(db, tenant_id, contexts):
         .all()
     )
     directory_by_customer = {row.fleet_customer_id: row for row in latest_directories}
-    result = {}
-    for row in rows:
-        directory = directory_by_customer.get(row.fleet_customer_id)
-        if directory:
-            current = [
-                item
-                for item in directory.assignments
-                if item["provider_vehicle_id"] == row.provider_vehicle_id
-            ]
-            if (
-                directory.source_company_id != row.source_company_id
-                or len(current) != 1
-                or current[0]["provider_driver_id"] != row.provider_driver_id
-            ):
-                continue
-        result[row.vehicle_id] = row
-    return result
+    return {row.vehicle_id: row for row in rows}, directory_by_customer
 
 
-def _view(vehicle, member, row):
+def _view(vehicle, member, row, directory):
     result = TruckDriverRecordRead(vehicle_id=vehicle.id)
     if not row:
+        result.unavailable_reason = "no_capture"
         return result
     if (
         row.verified_vin != (vehicle.vin or "").strip().upper()
         or row.fleet_customer_id != member.fleet_customer_id
         or not within(member, utc(row.source_read_at))
     ):
+        result.unavailable_reason = "vehicle_identity_changed"
         return result
     if (
         row.driver_assignment_revision != (vehicle.driver_assignment_revision or 0)
         or row.local_driver_name != vehicle.driver_name
         or row.local_driver_phone != vehicle.driver_phone
-        or row.driver_name != (vehicle.driver_name or "").strip()
     ):
         result.availability = "assignment_unverified"
+        result.unavailable_reason = "local_assignment_changed"
+        return result
+    if not directory:
+        result.availability = "assignment_unverified"
+        result.unavailable_reason = "directory_missing"
+        return result
+    vehicle_assignments = [
+        item
+        for item in directory.assignments
+        if item.get("provider_vehicle_id") == row.provider_vehicle_id
+    ]
+    driver_assignments = [
+        item
+        for item in directory.assignments
+        if item.get("provider_driver_id") == row.provider_driver_id
+    ]
+    if (
+        directory.source_company_id != row.source_company_id
+        or directory.source_company_label != row.source_company_label
+        or utc(directory.source_read_at) < utc(row.source_read_at)
+        or utc(directory.source_read_at) > now()
+        or not within(member, utc(directory.source_read_at))
+        or len(vehicle_assignments) != 1
+        or len(driver_assignments) != 1
+        or vehicle_assignments[0].get("provider_driver_id") != row.provider_driver_id
+        or driver_assignments[0].get("provider_vehicle_id") != row.provider_vehicle_id
+    ):
+        result.availability = "assignment_unverified"
+        result.unavailable_reason = "provider_assignment_unverified"
         return result
     payload = DriverRecordContent.model_validate(row.payload)
     result.availability = "available"
@@ -256,6 +270,11 @@ def _view(vehicle, member, row):
         capture_id=row.id,
         provider_driver_id=row.provider_driver_id,
         driver_name=row.driver_name,
+        source_company_id=row.source_company_id,
+        provider_vehicle_id=row.provider_vehicle_id,
+        local_driver_name=row.local_driver_name,
+        local_assignment_revision=row.driver_assignment_revision,
+        assignment_verified_at=utc(directory.source_read_at),
         safety_score=payload.safety.score,
         safety_band=payload.safety.band,
         safety_band_label=payload.safety.band_label,
@@ -271,24 +290,35 @@ async def read(db, tenant_id, vehicle_id):
     contexts = await _contexts(db, tenant_id, [vehicle_id])
     if vehicle_id not in contexts:
         fail(404, "not_found")
-    rows = await _latest(db, tenant_id, contexts)
-    return _view(*contexts[vehicle_id], rows.get(vehicle_id))
+    rows, directories = await _latest(db, tenant_id, contexts)
+    vehicle, member = contexts[vehicle_id]
+    return _view(
+        vehicle, member, rows.get(vehicle_id), directories.get(member.fleet_customer_id)
+    )
 
 
 async def attach(db, trucks, tenant_id):
     if not trucks:
         return
     contexts = await _contexts(db, tenant_id, [truck.id for truck in trucks])
-    rows = await _latest(db, tenant_id, contexts)
+    rows, directories = await _latest(db, tenant_id, contexts)
     for truck in trucks:
         truck.driver_record = None
         if truck.id not in contexts:
             continue
-        result = _view(*contexts[truck.id], rows.get(truck.id))
-        # A stale board read-model driver label must not inherit a current score.
+        vehicle, member = contexts[truck.id]
+        result = _view(
+            vehicle,
+            member,
+            rows.get(truck.id),
+            directories.get(member.fleet_customer_id),
+        )
+        # Stale board contact or fleet labels must not inherit a current score.
         if (
             result.record
-            and (truck.driver_name or "").strip() == result.record.driver_name
+            and truck.driver_name == vehicle.driver_name
+            and getattr(truck, "board_membership_customer_id", member.fleet_customer_id)
+            == member.fleet_customer_id
         ):
             truck.driver_record = DriverRecordSummary.model_validate(
                 result.record.model_dump()
