@@ -1,10 +1,17 @@
 """Bounded Motive driver observations; source labels are not inferred risk ratings."""
 
 from datetime import datetime, timezone
-from typing import Literal
+from typing import Annotated, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    StringConstraints,
+    field_validator,
+    model_validator,
+)
 
 
 class DriverSourceModel(BaseModel):
@@ -184,7 +191,10 @@ class DriverRecordSummary(BaseModel):
     identity_basis: Literal["motive_current_assignment"] = "motive_current_assignment"
     source_company_id: str
     provider_vehicle_id: str
-    local_driver_name: str | None = None
+    # This is an exact assignment snapshot, not normalized provider source text.
+    local_driver_name: (
+        Annotated[str, StringConstraints(strip_whitespace=False)] | None
+    ) = None
     local_assignment_revision: int = Field(ge=0)
     assignment_verified_at: datetime
     safety_score: float | None = None

@@ -255,7 +255,17 @@ async def test_provider_identity_change_and_name_mismatch_do_not_resurface_old_d
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("alias", ["Local nickname", None, "Synthetic Driver"])
+@pytest.mark.parametrize(
+    "alias",
+    [
+        "Local nickname",
+        None,
+        "Synthetic Driver",
+        "  Leading alias",
+        "Trailing alias  ",
+        "\t Raw  alias \n",
+    ],
+)
 async def test_provider_identity_is_separate_from_unchanged_local_contact(
     db_session, monkeypatch, alias
 ):
@@ -263,7 +273,9 @@ async def test_provider_identity_is_separate_from_unchanged_local_contact(
     vehicle.driver_name = alias
     await db_session.commit()
     revision, phone = vehicle.driver_assignment_revision, vehicle.driver_phone
-    row, _ = await save(db_session, actor, member)
+    source = body(driver_name="  Synthetic Driver  ")
+    assert source.driver_name == "Synthetic Driver"
+    row, _ = await save(db_session, actor, member, source)
     await db_session.commit()
     result = await service.read(db_session, actor.tenant_id, vehicle.id)
     assert result.availability == "available" and result.unavailable_reason is None
@@ -271,6 +283,9 @@ async def test_provider_identity_is_separate_from_unchanged_local_contact(
     assert record.identity_basis == "motive_current_assignment"
     assert record.driver_name == "Synthetic Driver"
     assert record.local_driver_name == alias
+    assert result.model_dump(mode="json")["record"]["local_driver_name"] == alias
+    restored = type(result).model_validate_json(result.model_dump_json())
+    assert restored.record.local_driver_name == alias
     assert record.local_assignment_revision == revision
     assert record.source_company_id == "KT123"
     assert record.provider_vehicle_id == "vehicle-123"
@@ -278,9 +293,30 @@ async def test_provider_identity_is_separate_from_unchanged_local_contact(
     board = SimpleNamespace(id=vehicle.id, driver_name=alias)
     await service.attach(db_session, [board], actor.tenant_id)
     assert board.driver_record.provider_driver_id == record.provider_driver_id
+    assert board.driver_record.local_driver_name == alias
+    assert board.driver_record.model_dump(mode="json")["local_driver_name"] == alias
     assert board.driver_name == vehicle.driver_name == alias
     assert vehicle.driver_phone == phone
     assert vehicle.driver_assignment_revision == revision
+
+
+@pytest.mark.asyncio
+async def test_alias_whitespace_edit_still_invalidates_exact_assignment_snapshot(
+    db_session, monkeypatch
+):
+    actor, vehicle, member = await fixture(db_session, monkeypatch)
+    vehicle.driver_name = "  Local alias  "
+    await db_session.commit()
+    row, _ = await save(db_session, actor, member)
+    await db_session.commit()
+    assert row.local_driver_name == "  Local alias  "
+    revision = row.driver_assignment_revision
+    vehicle.driver_name = "Local alias"
+    await db_session.commit()
+    assert vehicle.driver_assignment_revision == revision + 1
+    result = await service.read(db_session, actor.tenant_id, vehicle.id)
+    assert result.availability == "assignment_unverified" and result.record is None
+    assert result.unavailable_reason == "local_assignment_changed"
 
 
 @pytest.mark.asyncio

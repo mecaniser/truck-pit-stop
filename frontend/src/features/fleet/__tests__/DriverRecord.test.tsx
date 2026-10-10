@@ -118,6 +118,39 @@ describe('current-driver record', () => {
     expect(await screen.findByText('68h 14m')).toBeVisible()
   })
 
+  it.each(['Example ', ' Example', ' Example '])('shows the provider record with the exact whitespace-bearing alias %j', async localAlias => {
+    const record = { ...driverRecord, local_driver_name: localAlias }
+    const truck = { ...driverTruck, driver_name: localAlias, driver_record: record }
+    get.mockResolvedValue({ data: { ...driverResponse, record } })
+    render(<QueryClientProvider client={client()}><CurrentDriver truck={truck} /></QueryClientProvider>)
+
+    expect(screen.getByText('Example Driver')).toBeVisible()
+    expect(trigger()).toHaveAccessibleName(/Driver record for Example Driver/)
+    expect(trigger()).toHaveTextContent('82')
+    const localContact = screen.getByText(/Local contact · Example/)
+    expect(localContact.textContent).toContain(`Local contact · ${localAlias} ·`)
+
+    await userEvent.click(trigger())
+    const panel = screen.getByRole('dialog', { name: 'Driver record for Example Driver' })
+    expect(await within(panel).findByText('68h 14m')).toBeVisible()
+    expect(within(panel).getByRole('heading', { name: 'Example Driver' })).toBeVisible()
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    expect(truck.driver_name).toBe(localAlias)
+  })
+
+  it.each(['Example', 'Different local alias'])('rejects a non-exact alias snapshot %j even when the board alias contains whitespace', async captureAlias => {
+    const record = { ...driverRecord, local_driver_name: captureAlias }
+    get.mockResolvedValue({ data: { ...driverResponse, record } })
+    render(<QueryClientProvider client={client()}><CurrentDriver truck={{ ...driverTruck, driver_name: 'Example ', driver_record: record }} /></QueryClientProvider>)
+
+    expect(screen.queryByText('Example Driver')).not.toBeInTheDocument()
+    expect(trigger()).toHaveTextContent('—')
+    expect(trigger()).toHaveAccessibleName(/Safety score unavailable/)
+    await userEvent.click(trigger())
+    expect(await screen.findByRole('alert')).toBeVisible()
+    expect(screen.queryByText('68h 14m')).not.toBeInTheDocument()
+  })
+
   it('does not attach a stale summary to a changed or unassigned local alias', () => {
     const { rerender } = render(<CurrentDriver truck={{ ...driverTruck, driver_name: null }} />)
     expect(screen.queryByRole('button')).not.toBeInTheDocument()
