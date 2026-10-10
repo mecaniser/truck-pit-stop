@@ -3,11 +3,10 @@ import { Popover, PopoverButton, PopoverPanel } from '@headlessui/react'
 import { useQuery } from '@tanstack/react-query'
 import { Clock3, RotateCcw, X } from 'lucide-react'
 import api from '@/lib/api'
-import type { BoardTruck } from './types'
 import type { DriverRecordDetail, DriverRecordResponse, DriverRecordSection, DriverSafetyBand } from './driverRecordTypes'
+import { currentDriverName, currentDriverRecord, sameDriverContext, type DriverTruck } from './driverIdentity'
 import './driverRecord.css'
 
-type DriverTruck = Pick<BoardTruck, 'id' | 'driver_name' | 'driver_record' | 'board_membership_customer_id'>
 const number = (value: number) => value.toLocaleString(undefined, { maximumFractionDigits: 1 })
 const checkedTime = (value: string) => new Date(value).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
 
@@ -16,10 +15,10 @@ function SafetyDashes({ band }: { band: DriverSafetyBand }) {
 }
 
 /** Only use with the truck's current assigned driver, never a historical trip driver. */
-export default function DriverRecord({ truck, displayName }: { truck: DriverTruck; displayName?: string | null }) {
-  const name = displayName ?? truck.driver_name
-  if (!name || (displayName && displayName.trim() !== truck.driver_name?.trim())) return null
-  const summary = truck.driver_record?.driver_name.trim() === name.trim() ? truck.driver_record : null
+export default function DriverRecord({ truck }: { truck: DriverTruck }) {
+  const name = currentDriverName(truck)
+  if (!name) return null
+  const summary = currentDriverRecord(truck)
   const score = summary?.safety_score
   const band = summary?.stale ? 'unknown' : summary?.safety_band ?? 'unknown'
   const description = score == null ? 'Safety score unavailable' : `Safety score ${number(score)}`
@@ -37,21 +36,30 @@ export default function DriverRecord({ truck, displayName }: { truck: DriverTruc
 }
 
 function DriverRecordContent({ truck }: { truck: DriverTruck }) {
+  const summary = currentDriverRecord(truck)
   const query = useQuery<DriverRecordResponse>({
-    queryKey: ['fleet-driver-record', truck.id, truck.board_membership_customer_id, truck.driver_record?.provider_driver_id, truck.driver_record?.capture_id, truck.driver_name],
+    queryKey: ['fleet-driver-record', truck.id, truck.board_membership_customer_id, summary, truck.driver_name],
     gcTime: 0,
     queryFn: async () => {
       const data: DriverRecordResponse = (await api.get(`/fleet/trucks/${truck.id}/driver-record`)).data
-      if (data.vehicle_id !== truck.id || (data.record && (data.record.driver_name.trim() !== truck.driver_name?.trim() || (truck.driver_record && data.record.provider_driver_id !== truck.driver_record.provider_driver_id)))) throw new Error('Driver assignment changed')
+      if (data.vehicle_id !== truck.id || data.source !== 'motive_dashboard' || (data.record && (!summary || !sameDriverContext(summary, data.record)))) throw new Error('Driver assignment changed')
       return data
     },
   })
   if (query.isLoading || query.isFetching) return <p className="driver-record-message" role="status">Loading driver record…</p>
   if (query.isError) return <div className="driver-record-message" role="alert"><p>Driver record could not be loaded.</p><button type="button" className="driver-record-retry" onClick={() => void query.refetch()} disabled={query.isFetching}><RotateCcw size={14} aria-hidden="true" />Try again</button></div>
   const data = query.data
+  const unavailableCopy: Partial<Record<NonNullable<DriverRecordResponse['unavailable_reason']>, string>> = {
+    no_capture: 'No Motive driver record has been captured for this truck.',
+    directory_missing: 'Motive assignment verification is not available yet.',
+    provider_assignment_unverified: 'Motive has not verified the current driver assignment for this truck.',
+    local_assignment_changed: 'The local driver assignment changed. A new Motive check is needed.',
+    vehicle_identity_changed: 'The truck identity changed. A new Motive check is needed.',
+  }
+  if (data?.unavailable_reason) return <p className="driver-record-message">{unavailableCopy[data.unavailable_reason]}</p>
   if (data?.availability === 'assignment_unverified') return <p className="driver-record-message">Motive has not verified the current driver assignment for this truck.</p>
   if (data?.availability !== 'available' || !data.record) return <p className="driver-record-message">No verified Motive record is available for this driver.</p>
-  return <RecordDetails record={data.record} />
+  return <><div className="driver-record-assignment">Current Motive assignment · Verified <time dateTime={data.record.assignment_verified_at}>{checkedTime(data.record.assignment_verified_at)}</time>{data.record.local_driver_name && data.record.local_driver_name !== data.record.driver_name && <span>Local contact · {data.record.local_driver_name}</span>}</div><RecordDetails record={data.record} /></>
 }
 
 function Section({ title, period, state, children }: { title: string; period?: string | null; state: DriverRecordSection; children: ReactNode }) {

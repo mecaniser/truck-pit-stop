@@ -3,6 +3,8 @@ import type { BoardTruck } from '../types'
 
 export const driverRecord: DriverRecordDetail = {
   capture_id: 'synthetic-capture', provider_driver_id: 'synthetic-driver', driver_name: 'Example Driver',
+  identity_basis: 'motive_current_assignment', source_company_id: 'synthetic-motive-company', provider_vehicle_id: 'synthetic-motive-vehicle',
+  local_driver_name: 'Example', local_assignment_revision: 2, assignment_verified_at: '2026-10-09T16:00:00Z',
   safety_score: 82, safety_band: 'red', safety_band_label: 'Fair (50–84)', safety_period_text: 'Sep 28 – Oct 4, 2026',
   last_checked_at: '2026-10-09T16:00:00Z', coverage: 'partial', stale: false,
   safety: { score: 82, band: 'red', band_label: 'Fair (50–84)', period_text: 'Sep 28 – Oct 4, 2026', coaching_label: 'Coaching', top_behaviors: [{ behavior: 'Close following', score_impact: -9 }, { behavior: 'Stop sign violation', score_impact: -4.7 }, { behavior: 'Speeding', score_impact: -4 }], history: [{ period_text: 'Sep 21 – 27, 2026', score: 78 }] },
@@ -14,8 +16,8 @@ export const driverRecord: DriverRecordDetail = {
 }
 export const driverTruck = {
   id: 'synthetic-truck', unit_number: 'TEST-1', year: 2020, make: 'VOLVO', model: 'VNR', body_type: 'Truck-Tractor',
-  driver_name: 'Example Driver', driver_phone: '(704) 555-0123', driver_record: driverRecord,
+  driver_name: 'Example', driver_phone: '(704) 555-0123', driver_record: driverRecord,
   board_membership_customer_id: 'synthetic-company', board_membership_company_name: 'Example Fleet', owner_company_name: 'Example Fleet',
   status: 'active', moving: false, odometer: 120000, pm_interval_miles: 25000, pm_remaining: 20433, next_pm_miles: 145000, open_work_order_count: 0, open_incident_count: 0,
 } satisfies BoardTruck
-export const driverResponse: DriverRecordResponse = { vehicle_id: driverTruck.id, source: 'motive_dashboard', availability: 'available', record: driverRecord }
+export const driverResponse: DriverRecordResponse = { vehicle_id: driverTruck.id, source: 'motive_dashboard', availability: 'available', unavailable_reason: null, record: driverRecord }

@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
@@ -23,6 +23,7 @@ vi.mock('react-hot-toast', () => ({
 vi.mock('../FleetMap', () => ({ default: () => <div data-testid="fleet-map" /> }))
 
 import TruckDetail from '../TruckDetail'
+import { driverTruck } from './driverRecordFixture'
 
 const truck: BoardTruck = {
   id: 'truck-603',
@@ -73,6 +74,29 @@ function mockSuccessfulQueries() {
 }
 
 describe('TruckDetail hardening', () => {
+  it('keeps a managed custody profile separate from the current Motive identity and score', async () => {
+    const sourceTruck = { ...driverTruck, id: truck.id }
+    apiMocks.get.mockImplementation((url: string) => {
+      if (url === `/fleet/trucks/${truck.id}`) return Promise.resolve({ data: { ...detail, truck: sourceTruck } })
+      if (url === '/auth/workos/capabilities') return Promise.resolve({ data: { session_provider: 'workos', driver_invitation_management: { available: false } } })
+      if (url === `/fleet-identity/vehicles/${truck.id}/driver`) return Promise.resolve({ data: { driver: { id: 'managed-driver', first_name: 'Managed', last_name: 'Custodian', phone: '7045550199' } } })
+      if (url === `/fleet/trucks/${truck.id}/incidents` || url === '/fleet/inspections') return Promise.resolve({ data: [] })
+      return Promise.reject(new Error(`Unexpected GET ${url}`))
+    })
+    renderTruck([sourceTruck])
+    expect(await screen.findByText('Example Driver')).toBeVisible()
+    await userEvent.click(screen.getByRole('button', { name: 'Open truck details' }))
+    const managed = await screen.findByText('Managed Custodian')
+    const custodyRow = managed.closest('.fleet-driver-profile-row') as HTMLElement
+    expect(within(custodyRow).getByText('Managed driver profile')).toBeVisible()
+    expect(within(custodyRow).queryByRole('button', { name: /Driver record/ })).not.toBeInTheDocument()
+    expect(within(custodyRow).getByRole('link', { name: 'Call Managed Custodian' })).toHaveAttribute('href', 'tel:7045550199')
+    const providerRow = document.querySelector('.fleet-motive-driver') as HTMLElement
+    expect(within(providerRow).getByText('Example Driver')).toBeVisible()
+    expect(within(providerRow).getByRole('button', { name: /Driver record for Example Driver/ })).toHaveTextContent('82')
+    expect(within(providerRow).getByText('Local contact · Example · (704) 555-0123')).toBeVisible()
+  })
+
   it('keeps mileage comparison and speed in the header, with hours and entry in details', async () => {
     const source = { source: 'motive_dashboard_manual' as const, observed_at: null, captured_at: new Date().toISOString(), freshness: 'unknown' as const, snapshot_id: 'fixture', source_age_text: '12s ago' }
     truck.telemetry = { location: { ...source, label: 'Fixture town', lat: null, lng: null }, odometer: { ...source, value: 625000, unit: 'mi', basis: 'dashboard_unspecified' }, speed: { ...source, value: 0, unit: 'mph', basis: null }, fuel: { ...source, value: 38, unit: 'percent', basis: null }, engine_hours: { ...source, value: 4000, unit: 'h', basis: null }, fault_count: null, motion: 'unknown' }

@@ -181,6 +181,12 @@ class DriverRecordSummary(BaseModel):
     capture_id: UUID
     provider_driver_id: str
     driver_name: str
+    identity_basis: Literal["motive_current_assignment"] = "motive_current_assignment"
+    source_company_id: str
+    provider_vehicle_id: str
+    local_driver_name: str | None = None
+    local_assignment_revision: int = Field(ge=0)
+    assignment_verified_at: datetime
     safety_score: float | None = None
     safety_band: Literal["red", "yellow", "green", "unknown"] = "unknown"
     safety_band_label: str | None = None
@@ -198,4 +204,14 @@ class TruckDriverRecordRead(BaseModel):
     vehicle_id: UUID
     source: Literal["motive_dashboard"] = "motive_dashboard"
     availability: Literal["unknown", "available", "assignment_unverified"] = "unknown"
+    unavailable_reason: (
+        Literal[
+            "no_capture",
+            "directory_missing",
+            "provider_assignment_unverified",
+            "local_assignment_changed",
+            "vehicle_identity_changed",
+        ]
+        | None
+    ) = None
     record: DriverRecordDetail | None = None

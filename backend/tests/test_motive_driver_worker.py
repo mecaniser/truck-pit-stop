@@ -5,6 +5,9 @@ import json
 from datetime import timedelta
 
 import pytest
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import async_sessionmaker
+
 from app.db.models.fleet_driver_record import (
     FleetDriverDirectoryCapture,
     FleetDriverRecordCapture,
@@ -14,8 +17,6 @@ from app.services import fleet_driver_records as service
 from app.services.fleet_telemetry import now
 from scripts.motive_drivers import runner
 from scripts.motive_drivers.import_records import body_for, validate
-from sqlalchemy import func, select
-from sqlalchemy.ext.asyncio import async_sessionmaker
 from tests.test_fleet_driver_records import body, fixture
 
 
@@ -246,10 +247,10 @@ async def test_missing_new_assignment_and_empty_directory_suppress_prior_score(
 
 
 @pytest.mark.asyncio
-async def test_local_name_mismatch_keeps_capture_but_never_projects_score(
+async def test_local_name_mismatch_projects_only_explicit_provider_identity(
     _db_engine, db_session, monkeypatch, tmp_path
 ):
-    actor, _vehicle, member = await fixture(db_session, monkeypatch)
+    actor, vehicle, member = await fixture(db_session, monkeypatch)
     source = document()
     source["drivers"][0]["driver_name"] = "Different Driver"
     receipt = await runner.run(
@@ -263,8 +264,12 @@ async def test_local_name_mismatch_keeps_capture_but_never_projects_score(
         commit=True,
         expected_customer_id=member.fleet_customer_id,
     )
-    assert receipt["readback_verified"] == 1 and receipt["assignment_unverified"] == 1
-    assert receipt["projection_available"] == 0
+    assert receipt["readback_verified"] == 1 and receipt["assignment_unverified"] == 0
+    assert receipt["projection_available"] == 1
+    result = await service.read(db_session, actor.tenant_id, vehicle.id)
+    assert result.record.driver_name == "Different Driver"
+    assert result.record.local_driver_name == vehicle.driver_name == "Synthetic Driver"
+    assert result.record.identity_basis == "motive_current_assignment"
 
 
 @pytest.mark.asyncio
