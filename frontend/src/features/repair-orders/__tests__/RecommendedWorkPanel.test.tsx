@@ -11,10 +11,11 @@ const mocks = vi.hoisted(() => ({
 vi.mock('@/lib/api', () => ({ default: mocks }))
 vi.mock('@/stores/authStore', () => ({ useAuthStore: (selector: (state: { user: typeof mocks.user }) => unknown) => selector({ user: mocks.user }) }))
 
-const item = (id = 'rec-1', description = 'Inspect left rear seal') => ({
-  id, description, priority: 'urgent', created_at: '2026-09-10T14:00:00Z',
-  vehicle: { id: 'truck-a', unit_number: '031', year: 2022, make: 'Freightliner', model: 'Cascadia' },
-  source_order: { id: 'source-1', order_number: 'RO-0101', status: 'paid', created_at: '2026-09-09T14:00:00Z' },
+const sourceId = '00000000-0000-4000-8000-000000000099'
+const item = (id = 1, description = 'Inspect left rear seal') => ({
+  id: `00000000-0000-4000-8000-${String(id).padStart(12, '0')}`, description, priority: 'urgent', created_at: '2026-09-10T14:00:00Z',
+  vehicle: { id: '00000000-0000-4000-8000-000000000098', unit_number: '031', year: 2022, make: 'Freightliner', model: 'Cascadia' },
+  source_order: { id: sourceId, order_number: 'RO-0101', status: 'paid', created_at: '2026-09-09T14:00:00Z' },
 })
 const page = (items = [item()], total = items.length, skip = 0) => ({ data: { items, total, skip, limit: 25 } })
 
@@ -49,9 +50,9 @@ describe('truck recommendation continuity', () => {
     })
     expect(client.getQueryCache().getAll()[0].queryKey).toEqual(['recommended-work', 'tenant-a', 'truck-a', 'customer-a', 'current-a', 0, 25])
     const link = screen.getByRole('link', { name: 'Open source order RO-0101' })
-    expect(link).toHaveAttribute('href', '/dashboard/repair-orders?selected=source-1')
+    expect(link).toHaveAttribute('href', `/dashboard/repair-orders?selected=${sourceId}`)
     fireEvent.click(link)
-    expect(screen.getByTestId('location')).toHaveTextContent('/dashboard/repair-orders?selected=source-1')
+    expect(screen.getByTestId('location')).toHaveTextContent(`/dashboard/repair-orders?selected=${sourceId}`)
     expect(screen.queryByRole('button', { name: /add|convert|resolve|delete/i })).not.toBeInTheDocument()
     expect(mocks.post).not.toHaveBeenCalled()
     expect(mocks.patch).not.toHaveBeenCalled()
@@ -84,8 +85,57 @@ describe('truck recommendation continuity', () => {
     expect(await screen.findByText('No open recommendations on other orders.')).toBeInTheDocument()
   })
 
+  it.each([
+    ['null body', null],
+    ['legacy list', []],
+    ['string body', 'unavailable'],
+    ['missing items', { total: 0, skip: 0, limit: 25 }],
+    ['non-array items', { ...page().data, items: {} }],
+    ['null row', { ...page().data, items: [null] }],
+    ['missing source order', { ...page().data, items: [{ ...item(), source_order: undefined }] }],
+    ['malformed source id', { ...page().data, items: [{ ...item(), source_order: { ...item().source_order, id: 'invalid' } }] }],
+    ['invalid recorded date', { ...page().data, items: [{ ...item(), created_at: 'not-a-date' }] }],
+    ['invalid source date', { ...page().data, items: [{ ...item(), source_order: { ...item().source_order, created_at: 'not-a-date' } }] }],
+    ['object description', { ...page().data, items: [{ ...item(), description: { text: 'unsafe' } }] }],
+    ['unknown priority', { ...page().data, items: [{ ...item(), priority: 'unknown' }] }],
+    ['missing vehicle', { ...page().data, items: [{ ...item(), vehicle: undefined }] }],
+    ['missing total', { items: [], skip: 0, limit: 25 }],
+    ['negative count', { items: [], total: -1, skip: 0, limit: 25 }],
+    ['string count', { items: [], total: '0', skip: 0, limit: 25 }],
+    ['mismatched page offset', { ...page().data, skip: 25 }],
+    ['wrong page size', { ...page().data, limit: 100 }],
+    ['false empty count', { ...page().data, total: 0 }],
+  ])('shows unavailable for a malformed HTTP 200: %s', async (_label, data) => {
+    mocks.get.mockResolvedValueOnce({ data })
+    setup()
+    expect(await screen.findByRole('alert')).toHaveTextContent('Could not load recommendations.')
+    expect(screen.queryByText('No open recommendations on other orders.')).not.toBeInTheDocument()
+    expect(screen.queryByRole('link')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Retry' })).toBeEnabled()
+  })
+
+  it('removes an earlier empty result when its refresh response is malformed', async () => {
+    mocks.get.mockResolvedValueOnce(page([]))
+    setup()
+    await screen.findByText('No open recommendations on other orders.')
+    mocks.get.mockResolvedValueOnce({ data: [] })
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh recommendations' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('Could not refresh recommendations.')
+    expect(screen.queryByText('No open recommendations on other orders.')).not.toBeInTheDocument()
+  })
+
+  it('retains a validated page with an unavailable notice after a malformed refresh', async () => {
+    setup()
+    await screen.findByText('Inspect left rear seal')
+    mocks.get.mockResolvedValueOnce({ data: { total: 0 } })
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh recommendations' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('Could not refresh recommendations. Showing the last loaded page.')
+    expect(screen.getByText('Inspect left rear seal')).toBeInTheDocument()
+    expect(screen.queryByText('No open recommendations on other orders.')).not.toBeInTheDocument()
+  })
+
   it('pages beyond 25, retains distinct recommendations with matching descriptions and permits a failed-page retry', async () => {
-    mocks.get.mockResolvedValueOnce(page(Array.from({ length: 25 }, (_, i) => item(`rec-${i}`)), 27))
+    mocks.get.mockResolvedValueOnce(page(Array.from({ length: 25 }, (_, i) => item(i + 1)), 27))
     const { client } = setup()
     expect(await screen.findByText('1–25 of 27')).toBeInTheDocument()
     expect(screen.getAllByText('Inspect left rear seal')).toHaveLength(25)
@@ -94,7 +144,7 @@ describe('truck recommendation continuity', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('Could not load recommendations.')
     expect(screen.queryByText('Inspect left rear seal')).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Previous' })).toBeEnabled()
-    mocks.get.mockResolvedValueOnce(page([item('rec-25'), item('rec-26')], 27, 25))
+    mocks.get.mockResolvedValueOnce(page([item(25), item(26)], 27, 25))
     fireEvent.click(screen.getByRole('button', { name: 'Retry' }))
     expect(await screen.findByText('26–27 of 27')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Next' })).toBeDisabled()
@@ -106,7 +156,7 @@ describe('truck recommendation continuity', () => {
     mocks.get.mockImplementationOnce(() => new Promise((resolve) => { resolveOld = resolve }))
     const view = setup()
     const oldSignal = mocks.get.mock.calls[0][1].signal as AbortSignal
-    mocks.get.mockResolvedValueOnce(page([item('rec-b', 'New truck recommendation')]))
+    mocks.get.mockResolvedValueOnce(page([item(101, 'New truck recommendation')]))
     view.change({ vehicleId: 'truck-b', customerId: 'customer-b', contextOrderId: 'current-b' })
     expect(oldSignal.aborted).toBe(true)
     expect(await screen.findByText('New truck recommendation')).toBeInTheDocument()
@@ -119,7 +169,7 @@ describe('truck recommendation continuity', () => {
     mocks.get.mockResolvedValueOnce(page([item()], 26))
     const view = setup()
     await screen.findByText('Inspect left rear seal')
-    mocks.get.mockResolvedValueOnce(page([item('rec-26', 'Second page')], 26, 25))
+    mocks.get.mockResolvedValueOnce(page([item(26, 'Second page')], 26, 25))
     fireEvent.click(screen.getByRole('button', { name: 'Next' }))
     await screen.findByText('Second page')
     mocks.get.mockImplementationOnce(() => new Promise(() => {}))

@@ -47,3 +47,19 @@ Implementation agent read and ran the local-runtime preflight/controller status 
 Required next actions: fresh independent Security review of aggregate visibility; independent QA against a synthetic authenticated full-stack desktop/compact journey, including open-source navigation and no overflow; record current process/source/database alignment. No browser acceptance, PR, merge or deployment is claimed by this implementation agent. Do not mark Done until required evidence exists.
 
 Return condition: any contract mismatch, tenant/role exposure, stale-context rows, source navigation failure, or layout issue returns to the implementation owner with reproduction evidence.
+
+## Independent gate and signed-in acceptance — 2026-10-12T16:24Z
+
+Fresh independent reviewer `independent_gates` reran the focused negative suites and inspected source/contracts plus all four desktop/390px screenshots. **Security and final QA GO**, no blocking findings. Approval covers local reviewed source, not protected CI, merge or deployment.
+
+Combined preview branch `codex/ets-parity-preview` HEAD `b03cf1f9` contains DB098 `4462851a`, DB099 `724c4249`, DB100 `6b1eac5b`; application source merged without conflict. Vite5174 PID52233 cwd is the preview checkout frontend; API8001 container `42e9f351…` binds the same checkout backend. Direct/proxied `/health/ready`200, isolated local DB `truckpitstop_ets_workflow_parity_20261012` at164, Redis9. Real UI login into new synthetic tenant; no endpoint mocking, production or provider writes. Original local DB/other5173 task preserved. User approved alternate ports.
+
+Recommendation journey: prior urgent/monitor issues appear with original dates; resolved fixture absent; source navigation opens original RO and excludes its own recommendations; mobile controls fit390px. Reporting journey:200/120→80/40%;300/220 sublet with4hours→80/26.67%; partial1of2 leaves profit unavailable;100/120→−20/−20%; source RO link works. Mobile no document overflow. Screenshots and full runtime receipt retained in the combined preview checkout under `output/ets-parity/` and `docs/verification/ETS_PARITY_PREVIEW.md`. Zero, failure and old-backend cases are automated evidence, not fabricated browser outcomes.
+
+Feature implementation is locally verified and ready for protected PR CI. No merge or deployment is authorized by this receipt.
+
+## CI correction — 2026-10-12
+
+PR498 full frontend CI exposed a malformed200 payload crash in RecommendedWorkPanel that broke existing void/revision test workspaces. The query now validates the full reduced response with existing Zod before caching/rendering; invalid initial data produces an unavailable state, never empty/all-clear. Invalid refresh retains only validated prior rows with a visible error, and clears an empty/all-clear claim. Exact endpoint mocks and a malformed-response RO regression were added.
+
+Full frontend suite:136files/1195tests passed; final additional cached-empty regression:35panel tests passed. Fresh independent reviewer reran41panel/force-void/void-revision tests plus scoped ESLint/diff check: Security and automated QA GO. TypeScript/Vite build pass. API/schema/permissions unchanged. Corrected real-API preview smoke remains required before final runtime GO; earlier approval applies only to the earlier source.
