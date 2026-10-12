@@ -6947,3 +6947,8 @@ html.customer-portal-active {
 @media (max-width: 639px) {
   .db-price-builder .db-workspace-header > div:first-child > div:last-child button { min-width: 44px; min-height: 44px; }
 }
+/* The desktop sheet must not retain the phone document's scroll offset. */
+@media (min-width: 640px) {
+  .db-repair-order-detail-new--price-builder .db-price-builder { overflow: clip; }
+}
+.db-presentation-new .db-price-builder .db-workspace-body th { color: #4b5563 !important; }
