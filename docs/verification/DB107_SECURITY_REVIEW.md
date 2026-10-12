@@ -1,7 +1,8 @@
 # DB107 independent Security & Identity review
 
-**Gate: GO for the reviewed local implementation.** Reviewed commit
-`9a633b5bb14acf8e3a82d60fb8cc23cb9b6934a4` on 2026-10-12.
+**Gate: GO for the reviewed local implementation.** Original review covered
+`9a633b5bb14acf8e3a82d60fb8cc23cb9b6934a4`; follow-up review covers
+`2bfcabb54e6c5acb42652154722a8a1d0479a653` on 2026-10-12.
 Reviewer: independent `conversion_security` agent, with no implementation or
 contract authorship. The reviewer changed only this report. This is not merge,
 deployment, production migration, or browser acceptance evidence.
@@ -49,6 +50,36 @@ Existing SQLAlchemy/Pydantic deprecation warnings were the only test warnings.
 No production/customer data, preview database, browser session, server lifecycle
 or migration was changed by this reviewer. PostgreSQL tests used uniquely named
 synthetic tenants in the disposable test database.
+
+## Query-budget correction recheck
+
+Protected CI exposed an additional read in pricing adjustments. The scoped
+correction consolidates labor provenance into one query and joins inventory
+within the existing parts load. Security independently reviewed the delta:
+
+- The three-role gate remains at the staff summary boundary. Conversion,
+  source order, target order, customer, truck and labor predicates retain their
+  tenant constraints. Source availability uses a correlated existence check;
+  it does not fetch additional source/customer details.
+- Shared lifecycle-state precedence is unchanged. Removed, cancelled, deleted
+  and superseded states remain distinguishable. Mutation responses still
+  contain the immutable provenance; the optimization does not omit fields or
+  bypass availability checks.
+- The inventory loader remains an outer relationship join inside the parts
+  load. This changes query count without widening authorization or row locks.
+- **42 independently passed:** DB107 conversion and pricing-discount suites.
+  This includes ten projection lifecycle/isolation cases, foreign-tenant
+  rejection, minimized nonstaff responses, and unchanged six-query budgets for
+  orders with zero, one and three conversions.
+- Executed the new consolidated query against the existing disposable
+  PostgreSQL database in a read-only check. The returned source reference and
+  active state matched the canonical projection. No schema or fixture mutation
+  was needed for this recheck.
+
+No new security issue was found. Prior concurrency/replay findings and their
+independent verification remain applicable; the correction changes neither
+write transactions nor lifecycle locks. Browser rendering and protected CI
+remain the responsibility of their existing gates.
 
 ## Remaining delivery boundaries
 

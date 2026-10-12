@@ -150,3 +150,27 @@ Conversion remains disabled. Hiding that unavailable panel is a separate shell
 cleanup; this does not prevent or weaken the verified restoration guard.
 
 Draft [PR506](https://github.com/mecaniser/truck-pit-stop/pull/506) is stacked on PR505. Final-head Quality gates are dispatched explicitly because the workflow automatic PR filter targets main.
+
+## CI pricing correction
+
+Initial run38321070670 oncc8ab0f0 passed the migration graph, both frontend jobs
+and Playwright smoke, but the required backend job caught an added pricing
+projection query (7, existing budget6). Source2bfcabb5 corrects response graph
+loading rather than relaxing the budget: inventory is joined within the existing
+parts load, and reduced labor provenance is loaded by one tenant-scoped query.
+
+Owner107 focused tests, independent QA98 focused tests and independent Security42
+focused tests passed. New regressions cover ordinary and1/3-conversion query
+budgets and10 projection lifecycle/tenant cases. PostgreSQL concurrency and
+projection equivalence were independently rechecked. Combined preview6fbd1a64
+includes this backend-only correction; readiness remains healthy. The earlier
+actual UI acceptance remains valid evidence for unchanged interactions. A final
+browser recheck encountered an expired login session; this is recorded separately
+from the successful prior signed-in desktop/mobile workflows.
+
+Final synthetic database receipt: six historical conversions, three current,
+one per source recommendation. The steering recommendation explicitly resolves
+against QA107-DESKTOP; the air-line and wheel-seal recommendations remain open.
+QA107-MOBILE has two distinct current operations totaling253.75; DESKTOP72.50.
+The superseded RECOVERY target remains deleted. Immutable source snapshots and
+invoice/payment/provider fingerprints match the baseline.

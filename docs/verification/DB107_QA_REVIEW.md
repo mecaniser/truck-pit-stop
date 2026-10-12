@@ -8,12 +8,25 @@ all database/schema changes; QA has not restarted or migrated any service.
 
 ## Current gate
 
+**CI performance correction independently accepted at `2bfcabb5`.** The earlier
+required backend suite reported477 passed,one failed,11 skipped:
+`test_pricing_adjustments_stay_within_query_budget` measured7 queries against the
+unchanged maximum6. Backend corrected graph/provenance loading without relaxing
+the budget. Independent QA recheck passes98 pricing/conversion/continuity/service
+tests and5 real PostgreSQL races. The unchanged response contract preserves the
+prior browser acceptance below. Required CI must still rerun on the corrected
+head before release readiness is claimed.
+
 **GO for local DB107 acceptance.** Reviewed source `2075ccfc` and combined preview
 `b25bafc1`; all blocking QA findings are corrected. The independent reviewer ran
 the automated checks and inspected the owner's actual browser screenshots,
 interaction receipts and runtime identity, without implementing the feature.
 This is not a release approval. Security separately records GO; protected CI,
 merge and deployment remain separate gates.
+
+The later backend-only correction `2bfcabb5` also has local QA GO. Runtime
+integration of that correction and final protected CI belong to the parent;
+this addendum does not claim a new browser pass for the optimized projection.
 
 ## Independently reproduced findings
 
@@ -183,3 +196,26 @@ Only isolated synthetic local fixtures were mutated. QA ran additional unique
 synthetic PostgreSQL fixtures in the dedicated disposable database. No production
 migration, deployment, real invoice/provider operation, or physical phone test was
 performed by this gatekeeper. Owner retains final runtime cleanup and PR/CI work.
+
+## CI query-budget follow-up — 2bfcabb5
+
+Independent command from backend:
+
+```text
+python -m pytest tests/test_ro_pricing_discounts.py tests/test_db107_recommendation_conversion.py tests/test_db099_recommended_work.py tests/test_price_build_service.py -q
+98 passed
+```
+
+The original maximum6 query assertion remains unchanged. Added one- and
+three-conversion pricing cases enforce the same maximum while checking source
+identity, lifecycle state, canonical rate and exact totals. Ten projection cases
+compare the single-query result with the canonical result across deleted and
+malformed source/target identities, cancellation, line removal and supersession;
+each enforces exactly one projection query and denies the foreign tenant.
+
+QA separately reran the real PostgreSQL suite:5 passed. A read-only query against
+an existing synthetic conversion in the dedicated PostgreSQL database also
+confirmed that the optimized labor provenance equals the canonical projection
+for source availability, state and description. No migration, runtime restart or
+data-model/API change was needed. Existing desktop/mobile acceptance remains
+valid for the unchanged contract; corrected-head CI is separate evidence.
