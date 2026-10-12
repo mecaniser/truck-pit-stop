@@ -32,6 +32,8 @@ import {
   X, StickyNote, Pencil, Star } from 'lucide-react'
 
 import api from '@/lib/api'
+import { ConversionLink, type ConversionContext } from './RecommendationConversionAction'
+import RecommendationSourceLink from './RecommendationSourceLink'
 import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 import QuantityStepper from '@/components/QuantityStepper'
 import StartWorkAction from './StartWorkAction'
@@ -236,7 +238,9 @@ type Props = {
   restorePending?: boolean
   onReopenWorkOrder?: () => void
   reopenPending?: boolean
-  recommendedWorkPanel?: ReactNode
+  recommendedWorkPanel?: ReactNode | ((context: ConversionContext) => ReactNode)
+  focusedOperationId?: string | null
+  focusedRecommendationId?: string | null
   recommendedServices?: RecommendedService[]
   recommendedServicesLoading?: boolean
   showAddRecommendedService?: boolean
@@ -933,6 +937,8 @@ export default function PriceBuilderPanel({
   onReopenWorkOrder,
   reopenPending = false,
   recommendedWorkPanel,
+  focusedOperationId,
+  focusedRecommendationId,
   recommendedServices,
   recommendedServicesLoading = false,
   showAddRecommendedService,
@@ -961,6 +967,15 @@ export default function PriceBuilderPanel({
   const [historyOpen, setHistoryOpen] = useState(false)
   const [historyVisibleCount, setHistoryVisibleCount] = useState(5)
   const [openLineIds, setOpenLineIds] = useState<Set<string>>(new Set())
+  const focusedLink = useRef<string | null>(null)
+  const openLinkedOperation = (id: string) => {
+    setOpenLineIds((current) => new Set([...current, id]))
+    requestAnimationFrame(() => {
+      const trigger = document.getElementById(`operation-trigger-${id}`)
+      trigger?.focus({ preventScroll: true })
+      trigger?.scrollIntoView?.({ block: 'nearest' })
+    })
+  }
   const [discountsOpen, setDiscountsOpen] = useState(false)
   const [footerDetailsOpen, setFooterDetailsOpen] = useState<'parts' | 'labor' | 'discounts' | 'savings' | null>(null)
   const [totalJustChanged, setTotalJustChanged] = useState(false)
@@ -1092,9 +1107,23 @@ export default function PriceBuilderPanel({
   // prevents a panel opened for one order from silently triggering optional
   // reads for the next order in the work queue.
   useEffect(() => {
-    setSecondaryPanel(null)
-    onRecommendedServicesOpenChange?.(false)
-  }, [orderId, onRecommendedServicesOpenChange])
+    setSecondaryPanel(focusedRecommendationId ? 'recommended' : null)
+    onRecommendedServicesOpenChange?.(!!focusedRecommendationId)
+    focusedLink.current = null
+  }, [orderId, focusedRecommendationId, onRecommendedServicesOpenChange])
+
+  useEffect(() => {
+    if (!focusedRecommendationId || !recommendedServices?.some((item) => item.id === focusedRecommendationId)) return
+    const key = `recommendation-${focusedRecommendationId}`
+    if (focusedLink.current === key) return
+    const frame = requestAnimationFrame(() => {
+      const row = document.getElementById(key)
+      row?.focus({ preventScroll: true })
+      row?.scrollIntoView?.({ block: 'nearest' })
+      if (row) focusedLink.current = key
+    })
+    return () => cancelAnimationFrame(frame)
+  }, [focusedRecommendationId, recommendedServices])
 
   useEffect(() => {
     setStockShortages({})
@@ -1408,12 +1437,20 @@ export default function PriceBuilderPanel({
     ? invoiceSettlement.state === 'paid'
     : orderStatus === 'paid'
   const canCreateInvoice = !isInternalOrder && orderStatus === 'completed' && !!onCreateInvoice
-  const showRecommendedServicesPanel = !['completed', 'invoiced', 'paid'].includes(orderStatus)
+  const recommendationsReadOnly = isDeleted || ['completed', 'invoiced', 'paid', 'cancelled'].includes(orderStatus)
+  const showRecommendedServicesPanel = !recommendationsReadOnly || !!focusedRecommendationId
   // Work-first: the repair order is editable throughout active shop work. The
   // server capability is authoritative; the fallback supports older responses.
   const INTERNAL_FROZEN_STATUSES: RepairOrderStatus[] = ['completed', 'invoiced', 'paid', 'cancelled']
   const isEditableStatus = summary?.can_edit_work ?? !INTERNAL_FROZEN_STATUSES.includes(orderStatus)
   const canMutate = canEdit && !isLocked && isEditableStatus
+  useEffect(() => {
+    if (!focusedOperationId || !summary?.lines.some((line) => line.id === focusedOperationId)) return
+    const key = `operation-${focusedOperationId}`
+    if (focusedLink.current === key) return
+    focusedLink.current = key
+    openLinkedOperation(focusedOperationId)
+  }, [focusedOperationId, summary?.lines])
   // The add bar must follow the same editable-status rule as canMutate, or an
   // internal in-progress order shows "start by adding…" with no add controls.
   // Quality review is still pre-finalization: managers may discover another
@@ -1481,6 +1518,8 @@ export default function PriceBuilderPanel({
       queryClient.invalidateQueries({ queryKey: ['inventory-typeahead'] }),
       queryClient.invalidateQueries({ queryKey: ['repair-order-detail', orderId] }),
       queryClient.invalidateQueries({ queryKey: ['repair-orders'] }),
+      queryClient.invalidateQueries({ queryKey: ['recommended-work'] }),
+      queryClient.invalidateQueries({ queryKey: ['recommended-services'] }),
     ])
     onUpdated?.()
   }
@@ -3893,6 +3932,7 @@ export default function PriceBuilderPanel({
                 return (
                   <div key={line.id} className="py-1">
                     <button
+                      id={`operation-trigger-${line.id}`}
                       type="button"
                       onClick={() => toggleLine(line.id)}
                       aria-expanded={isOpen}
@@ -3921,6 +3961,7 @@ export default function PriceBuilderPanel({
                         </span>
                       </span>
                     </button>
+                    {line.recommendation_source && <RecommendationSourceLink source={line.recommendation_source} />}
                     {isOpen && (
                       <div id={`service-line-${line.id}`} className="db-workspace-line-details ml-3 space-y-2 pb-2 pr-2">
                         {warningsForLine.length > 0 && (
@@ -4008,7 +4049,12 @@ export default function PriceBuilderPanel({
 
       <div className="db-workspace-secondary pb-2">
 
-        {recommendedWorkPanel}
+        {typeof recommendedWorkPanel === 'function' ? recommendedWorkPanel({
+          canConvert: canMutate && !isDeleted && summary?.can_convert_recommendations === true,
+          hourlyRate: summary?.recommendation_hourly_rate != null ? Number(summary.recommendation_hourly_rate) : undefined,
+          rateReadOnly: isInternalOrder,
+          onOpenOperation: openLinkedOperation,
+        }) : recommendedWorkPanel}
         {showRecommendedServicesPanel && (
           <button
             type="button"
@@ -4033,14 +4079,14 @@ export default function PriceBuilderPanel({
         )}
         {showRecommendedServicesPanel && recommendedOpen && (
           <div className="rounded-xl bg-gray-50 p-3">
-            <button
+            {!recommendationsReadOnly && <button
               type="button"
               onClick={onToggleAddRecommendedService}
               className="mb-3 inline-flex items-center gap-1 rounded-lg bg-white px-3 py-2 text-xs font-bold text-orange-700 ring-1 ring-gray-200"
             >
               <Plus className="h-3.5 w-3.5" /> Add recommended service
-            </button>
-            {showAddRecommendedService && recommendedServiceForm && onRecommendedServiceFormChange && (
+            </button>}
+            {!recommendationsReadOnly && showAddRecommendedService && recommendedServiceForm && onRecommendedServiceFormChange && (
               <div className="mb-3 space-y-2 rounded-xl border border-gray-200 bg-white p-3">
                 <textarea
                   value={recommendedServiceForm.description}
@@ -4087,7 +4133,7 @@ export default function PriceBuilderPanel({
             ) : recommendedServices?.length ? (
               <ul className="divide-y divide-gray-200 rounded-xl bg-white">
                 {recommendedServices.map((svc) => (
-                  <li key={svc.id} className={`flex items-start gap-3 p-3 ${svc.is_resolved ? 'opacity-50' : ''}`}>
+                  <li key={svc.id} id={`recommendation-${svc.id}`} tabIndex={-1} className={`flex flex-wrap items-start gap-3 p-3 focus-visible:outline focus-visible:outline-2 focus-visible:outline-orange-500 ${svc.is_resolved ? 'opacity-50' : ''}`}>
                     <div className="min-w-0 flex-1">
                       <div className="flex flex-wrap items-center gap-2">
                         <span className={`rounded px-1.5 py-0.5 text-[11px] font-semibold ${
@@ -4101,18 +4147,20 @@ export default function PriceBuilderPanel({
                         {svc.is_resolved && <span className="text-xs font-medium text-emerald-600">Resolved</span>}
                       </div>
                       <p className="mt-1 text-sm text-gray-800">{svc.description}</p>
+                      {svc.conversion && <ConversionLink conversion={svc.conversion} contextOrderId={orderId} onOpenOperation={openLinkedOperation} />}
                     </div>
-                    {!svc.is_resolved && (
+                    {!svc.is_resolved && (!recommendationsReadOnly || svc.conversion?.can_resolve) && (
                       <div className="flex shrink-0 gap-1">
                         <button
                           type="button"
                           onClick={() => onResolveRecommendedService?.(svc.id)}
-                          disabled={resolveRecommendedPending}
+                          disabled={resolveRecommendedPending || (!!svc.conversion && !svc.conversion.can_resolve)}
+                          title={svc.conversion && !svc.conversion.can_resolve ? 'Complete the linked work before resolving this recommendation.' : undefined}
                           className="rounded-lg px-2 py-1 text-xs font-bold text-emerald-700 hover:bg-emerald-50 disabled:opacity-50"
                         >
                           Resolve
                         </button>
-                        <button
+                        {!svc.conversion && <button
                           type="button"
                           onClick={() => onDeleteRecommendedService?.(svc.id)}
                           disabled={deleteRecommendedPending}
@@ -4120,7 +4168,7 @@ export default function PriceBuilderPanel({
                           aria-label="Delete recommended service"
                         >
                           <Trash2 className="h-4 w-4" />
-                        </button>
+                        </button>}
                       </div>
                     )}
                   </li>

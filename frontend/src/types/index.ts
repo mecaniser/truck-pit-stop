@@ -257,6 +257,13 @@ export interface PartsUsage {
 }
 
 export interface Labor {
+  recommendation_source?: {
+    conversion_id: string
+    recommendation_id: string
+    source_order: { id: string; order_number: string; available: boolean }
+    description: string
+    state: string
+  } | null
   id: string
   repair_order_id: string
   description: string
@@ -408,6 +415,8 @@ export interface RepairOperationCandidate {
 export interface PriceBuildLine extends Labor {}
 
 export interface PriceBuildSummary {
+  can_convert_recommendations?: boolean
+  recommendation_hourly_rate?: string | null
   order_id: string
   labor_total: string
   parts_total: string
@@ -507,6 +516,7 @@ export interface PartSuggestionsResponse {
 export type RecommendedServicePriority = 'urgent' | 'soon' | 'monitor'
 
 export interface RecommendedService {
+  conversion?: import('@/features/repair-orders/recommendationConversion').RecommendationConversion | null
   id: string
   repair_order_id: string
   tenant_id: string

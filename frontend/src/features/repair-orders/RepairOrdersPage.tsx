@@ -41,6 +41,7 @@ import type { ViewMode } from '@/components/ViewToggle'
 import type { CustomerHistoryResponse } from '../customers/customerDetailFormat'
 import PriceBuilderPanel from './PriceBuilderPanel'
 import RecommendedWorkPanel from './RecommendedWorkPanel'
+import { recommendationErrorMessage } from './recommendationConversion'
 import RepairOrdersLedger, { type RepairOrdersLedgerRow } from './RepairOrdersLedger'
 import SectionInfoTooltip from '@/components/SectionInfoTooltip'
 import SuggestingTextarea from '@/components/SuggestingTextarea'
@@ -1046,11 +1047,20 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
 
   const resolveRecServiceMutation = useMutation({
     mutationFn: async (serviceId: string) => {
-      await api.patch(`/repair-orders/${selectedOrder!.id}/recommended-services/${serviceId}`, { is_resolved: true })
+      const conversion = recommendedServices?.find((item) => item.id === serviceId)?.conversion
+      await api.patch(`/repair-orders/${selectedOrder!.id}/recommended-services/${serviceId}`, {
+        is_resolved: true,
+        ...(conversion ? { resolved_by_repair_order_id: conversion.target_order.id } : {}),
+      })
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['recommended-work'] })
       return refetchRecServices()
+    },
+    onError: (error) => {
+      toast.error(recommendationErrorMessage(error, 'Could not resolve the recommendation. Please retry.'))
+      void refetchRecServices()
+      void queryClient.invalidateQueries({ queryKey: ['recommended-work'] })
     },
   })
 
@@ -4547,7 +4557,9 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
 
                 {showPriceBuilder && (
                   <PriceBuilderPanel
-                    recommendedWorkPanel={<RecommendedWorkPanel vehicleId={selectedOrder.vehicle_id} contextOrderId={selectedOrder.id} />}
+                    focusedOperationId={searchParams.get('operation')}
+                    focusedRecommendationId={searchParams.get('recommendation')}
+                    recommendedWorkPanel={(context) => <RecommendedWorkPanel vehicleId={selectedOrder.vehicle_id} contextOrderId={selectedOrder.id} {...context} />}
                     orderId={selectedOrder.id}
                     workflowInfo={orderDetail ?? selectedOrder}
                     orderStatus={(orderDetail ?? selectedOrder).status}
@@ -4714,7 +4726,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                     restorePending={restoreRepairOrderMutation.isPending}
                     onReopenWorkOrder={() => selectedOrder.id && reopenWorkOrderMutation.mutate(selectedOrder.id)}
                     reopenPending={reopenWorkOrderMutation.isPending}
-                    recommendedServices={['completed', 'invoiced', 'paid'].includes((orderDetail ?? selectedOrder).status) ? [] : recommendedServices}
+                    recommendedServices={recommendedServices}
                     recommendedServicesLoading={recommendedServicesFetching}
                     showAddRecommendedService={showAddRecService}
                     recommendedServiceForm={recServiceForm}
