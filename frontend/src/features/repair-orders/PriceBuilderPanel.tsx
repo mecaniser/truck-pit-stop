@@ -812,7 +812,7 @@ function PartPricePopover({
             left: menuPos.left,
             transform: 'translateX(-100%)',
           }}
-          className="z-[70] w-[min(320px,calc(100vw-32px))] rounded-[14px] border border-gray-200 bg-white p-3 text-sm shadow-[0_10px_30px_rgba(20,25,35,.10)]"
+          className="db-part-price-panel z-[70] w-[min(320px,calc(100vw-32px))] rounded-[14px] border border-gray-200 bg-white p-3 text-sm shadow-[0_10px_30px_rgba(20,25,35,.10)]"
         >
           <div className="mb-3 flex items-start justify-between gap-3">
             <div>
@@ -822,6 +822,7 @@ function PartPricePopover({
             <button
               type="button"
               onClick={() => setOpen(false)}
+              aria-label="Close part pricing"
               className="rounded-md p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-700"
             >
               <X className="h-4 w-4" />
@@ -2911,7 +2912,7 @@ export default function PriceBuilderPanel({
               the tab strip entirely; the History panel below carries its own
               header. */}
           {!addBarReadOnly && (
-          <div className="grid w-full grid-cols-4 shrink-0 gap-1 text-xs font-bold sm:w-auto">
+          <div className="db-workspace-tool-tabs grid w-full grid-cols-4 shrink-0 gap-1 text-xs font-bold sm:w-auto">
             {([
               ['operation', Wrench, 'Operation'],
               ['part', Box, 'Part'],
@@ -3560,17 +3561,17 @@ export default function PriceBuilderPanel({
           const hasSavings = parts.some((part) => parseFloat(part.savings || '0') > 0)
           return (
           <div className="db-parts-table overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-left text-[11px] text-slate-600 border-b border-gray-200">
-                  <th className="py-1.5 px-2.5 font-medium">Part</th>
-                  <th className="py-1.5 px-2.5 font-medium text-right">Qty</th>
-                  <th className="py-1.5 px-2.5 font-medium text-right">Unit price</th>
-                  {hasSavings && <th className="py-1.5 px-2.5 font-medium text-right">Savings</th>}
-                  <th className="py-1.5 px-2.5 font-medium text-right">Line total</th>
+            <table role="table" aria-label="Parts" className="w-full text-sm">
+              <thead role="rowgroup">
+                <tr role="row" className="text-left text-[11px] text-slate-600 border-b border-gray-200">
+                  <th role="columnheader" scope="col" className="py-1.5 px-2.5 font-medium">Part</th>
+                  <th role="columnheader" scope="col" className="py-1.5 px-2.5 font-medium text-right">Qty</th>
+                  <th role="columnheader" scope="col" className="py-1.5 px-2.5 font-medium text-right">Unit price</th>
+                  {hasSavings && <th role="columnheader" scope="col" className="py-1.5 px-2.5 font-medium text-right">Savings</th>}
+                  <th role="columnheader" scope="col" className="py-1.5 px-2.5 font-medium text-right">Line total</th>
                 </tr>
               </thead>
-              <tbody>
+              <tbody role="rowgroup">
                 {parts.map((pu) => {
                   const shortageKey = partQuantityKey(pu.id)
                   const shortage = stockShortages[shortageKey]
@@ -3578,8 +3579,8 @@ export default function PriceBuilderPanel({
                   const retryQuantity = quantityOverride ?? (shortage ? Number(shortage.requestedQuantity) : parseFloat(pu.quantity) || 0)
                   const quantityUpdatePending = partQuantitySavingKey === shortageKey
                   return (
-                    <tr key={pu.id} className="border-b border-gray-100 last:border-0">
-                      <td className="db-part-name py-1.5 px-2.5 text-gray-800">
+                    <tr role="row" key={pu.id} className="border-b border-gray-100 last:border-0">
+                      <td role="cell" className="db-part-name py-1.5 px-2.5 text-gray-800">
                         <div className="font-medium">{pu.inventory_name}</div>
                         <div className="flex flex-wrap items-center gap-1.5 text-xs text-slate-600">
                           <span>{pu.inventory_sku}</span>
@@ -3600,7 +3601,8 @@ export default function PriceBuilderPanel({
                           />
                         )}
                       </td>
-                      <td className="py-1.5 px-2.5 text-right text-gray-800">
+                      <td role="cell" className="db-part-qty py-1.5 px-2.5 text-right text-gray-800">
+                        <span aria-hidden="true" className="db-part-mobile-label">Qty</span>
                         {canMutate ? (
                           <span className="inline-flex justify-end">
                             <PartQtyStepper
@@ -3641,7 +3643,8 @@ export default function PriceBuilderPanel({
                           })()
                         )}
                       </td>
-                      <td className="py-1.5 px-2.5 text-right text-gray-600">
+                      <td role="cell" className="db-part-unit-price py-1.5 px-2.5 text-right text-gray-600">
+                        <span aria-hidden="true" className="db-part-mobile-label">Unit price</span>
                         {canMutate ? (
                           (() => {
                             const saving = priceSavingId === pu.id
@@ -3669,7 +3672,8 @@ export default function PriceBuilderPanel({
                           <>${parseFloat(pu.unit_price).toFixed(2)}</>
                         )}
                       </td>
-                      {hasSavings && <td className="py-1.5 px-2.5 text-right">
+                      {hasSavings && <td role="cell" className="db-part-savings py-1.5 px-2.5 text-right">
+                        <span aria-hidden="true" className="db-part-mobile-label">Savings</span>
                         {parseFloat(pu.savings || '0') > 0 ? (
                           <span className="text-emerald-600 font-medium">
                             −${parseFloat(pu.savings).toFixed(2)}
@@ -3678,7 +3682,7 @@ export default function PriceBuilderPanel({
                           <span className="text-slate-500">—</span>
                         )}
                       </td>}
-                      <td className="py-1.5 px-2.5 text-right text-gray-900 font-medium">${parseFloat(pu.total_price).toFixed(2)}</td>
+                      <td role="cell" className="db-part-total py-1.5 px-2.5 text-right text-gray-900 font-medium"><span aria-hidden="true" className="db-part-mobile-label">Line total</span>${parseFloat(pu.total_price).toFixed(2)}</td>
                     </tr>
                   )
                 })}
