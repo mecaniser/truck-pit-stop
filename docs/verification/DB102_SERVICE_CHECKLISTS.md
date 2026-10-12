@@ -134,3 +134,7 @@ Mandatory runtime preflight rerun after integration/restarts; matching rendered 
 ## Release gate
 
 Land the additive migration165 after164 before serving checklist code; verify a single migration head. DB099's compact Modern scrolling change should precede or accompany the UI rollout. Existing orders receive no retroactive tasks. Roll back application code while retaining additive schema/evidence; do not downgrade away collected checklist history. Watch template/task errors, completion409 reasons and completion rates on synthetic then operator-approved rollout; stop if required tasks can be bypassed, cross-tenant data appears, or historical orders regress. Protected PR checks, merge and production migration/deployment remain outstanding.
+
+## REA editor follow-up, 2026-10-12
+
+Source58089a4f fixes checklist drafts lost on Done/X/backdrop. Five new failing regressions became green;18focused cases/build pass, zero new lint violations. Desktop/390px synthetic owner browser save/reopen, invalid-task retention and fixture restoration verified in preview8b6b3db5. Existing contracts/schema/permissions unchanged. Detailed scope and limitations: [REA pilot](REA_ETS_CHECKLIST_PILOT.md). DraftPR501, CI/merge/deployment pending for this follow-up.
