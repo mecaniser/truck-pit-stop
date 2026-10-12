@@ -30,6 +30,7 @@ import { useAuthStore } from '@/stores/authStore'
 import CustomerDetailPanel from '../customers/CustomerDetailPanel'
 import CustomerHistoryOrderDetail from '../customers/CustomerHistoryOrderDetail'
 import CustomerVehicleDetail from '../customers/CustomerVehicleDetail'
+import CustomerVehicleFooter from '../customers/CustomerVehicleFooter'
 import CustomerDetailFooter from '../customers/CustomerDetailFooter'
 import CustomerFormModals, { type CustomerFormModalsHandle } from '../customers/CustomerFormModals'
 import CustomerContactModals, { type CustomerContactModalsHandle } from '../customers/CustomerContactModals'
@@ -4134,14 +4135,14 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
             </div>
             {/* Delete, Merge and Edit for the company itself, in place. */}
             <div className="db-customer-embedded__actions">
-              {customerViewVehicle ? <div className="db-customer-actions db-customer-vehicle-actions flex flex-wrap items-center justify-between">
-                <div className="flex flex-wrap items-center">
-                  <button type="button" onClick={() => customerVehicleControls.current?.requestDelete(customerViewVehicle)}>Delete vehicle</button>
-                  {(currentUser?.role === 'garage_owner' || currentUser?.role === 'garage_admin') && <button type="button" disabled={customerViewVehicle.vin?.replace(/[\s-]/g, '').length !== 17} onClick={() => customerVehicleControls.current?.openMerge()}>Merge duplicate</button>}
-                  <button type="button" onClick={() => customerVehicleControls.current?.openManageLinks(customerViewVehicle)}>Manage connections</button>
-                </div>
-                <button type="button" className="rounded-lg bg-amber-500 text-white" onClick={() => customerVehicleControls.current?.openEdit(customerViewVehicle)}>Edit vehicle</button>
-              </div> : <CustomerDetailFooter
+              {customerViewVehicle ? <CustomerVehicleFooter
+                vehicle={customerViewVehicle}
+                canMerge={currentUser?.role === 'garage_owner' || currentUser?.role === 'garage_admin'}
+                onDelete={(vehicle) => customerVehicleControls.current?.requestDelete(vehicle)}
+                onMerge={() => customerVehicleControls.current?.openMerge()}
+                onManage={(vehicle) => customerVehicleControls.current?.openManageLinks(vehicle)}
+                onEdit={(vehicle) => customerVehicleControls.current?.openEdit(vehicle)}
+              /> : <CustomerDetailFooter
                 selectedCustomer={customerViewRecord}
                 handleDeleteClick={(customer) => customerFormControls.current?.requestDelete(customer)}
                 onMerge={() => customerFormControls.current?.openMerge()}
