@@ -39,7 +39,8 @@ export type CustomerDetailPanelProps = {
   setDetailTab: (tab: 'overview' | 'history') => void
   expandedHistoryId: string | null
   setExpandedHistoryId: (id: string | null) => void
-  HistoryRoDetail: (props: { customerId: string; orderId: string }) => ReactNode
+  HistoryRoDetail: (props: { customerId: string; orderId: string; onOpenOrder?: (orderId: string) => void }) => ReactNode
+  onOpenHistoryOrder?: (orderId: string) => void
 
   customerVehicles?: Vehicle[]
   customerContacts?: Contact[]
@@ -47,6 +48,8 @@ export type CustomerDetailPanelProps = {
   isLoadingVehicles?: boolean
   isLoadingContacts?: boolean
   isLoadingHistory?: boolean
+  historyError?: boolean
+  onRetryHistory?: () => void
 
   ownedVehicles: Vehicle[]
   authorityVehicles: Vehicle[]
@@ -90,12 +93,15 @@ export default function CustomerDetailPanel({
   expandedHistoryId,
   setExpandedHistoryId,
   HistoryRoDetail,
+  onOpenHistoryOrder,
   customerVehicles,
   customerContacts,
   customerHistory,
   isLoadingVehicles,
   isLoadingContacts,
   isLoadingHistory,
+  historyError,
+  onRetryHistory,
   ownedVehicles,
   authorityVehicles,
   visibleCustomerVehicleGroups,
@@ -158,7 +164,7 @@ export default function CustomerDetailPanel({
         </button>
       </div>
 
-      {detailTab === 'history' ? (
+      {detailTab === 'history' && historyError ? <div role="alert">Could not load customer history. <button type="button" onClick={onRetryHistory}>Retry customer history</button></div> : detailTab === 'history' ? (
         <div className="db-customer-record__history">
           {/* Lifetime stats */}
           <div className="db-customer-history__stats grid grid-cols-3 gap-3">
@@ -253,7 +259,7 @@ export default function CustomerDetailPanel({
                           {isExpanded && selectedCustomer && (
                             <tr className="bg-white">
                               <td colSpan={5} className="px-4 py-3 border-t border-amber-100">
-                                <HistoryRoDetail customerId={selectedCustomer.id} orderId={ro.id} />
+                                <HistoryRoDetail customerId={selectedCustomer.id} orderId={ro.id} onOpenOrder={onOpenHistoryOrder} />
                               </td>
                             </tr>
                           )}
