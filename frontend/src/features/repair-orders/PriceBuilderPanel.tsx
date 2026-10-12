@@ -33,6 +33,7 @@ import {
 import api from '@/lib/api'
 import { ConversionLink, type ConversionContext } from './RecommendationConversionAction'
 import RecommendationSourceLink from './RecommendationSourceLink'
+import { revealWorkspaceContent } from './recommendationConversion'
 import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 import QuantityStepper from '@/components/QuantityStepper'
 import StartWorkAction from './StartWorkAction'
@@ -973,7 +974,7 @@ export default function PriceBuilderPanel({
     requestAnimationFrame(() => {
       const trigger = document.getElementById(`operation-trigger-${id}`)
       trigger?.focus({ preventScroll: true })
-      trigger?.scrollIntoView?.({ block: 'nearest' })
+      if (trigger) revealWorkspaceContent(trigger)
     })
   }
   const [discountsOpen, setDiscountsOpen] = useState(false)
@@ -1108,6 +1109,7 @@ export default function PriceBuilderPanel({
   // reads for the next order in the work queue.
   useEffect(() => {
     setSecondaryPanel(focusedRecommendationId ? 'recommended' : null)
+    setArmWoComplete(false)
     onRecommendedServicesOpenChange?.(!!focusedRecommendationId)
     focusedLink.current = null
   }, [orderId, focusedRecommendationId, onRecommendedServicesOpenChange])
@@ -1119,7 +1121,7 @@ export default function PriceBuilderPanel({
     const frame = requestAnimationFrame(() => {
       const row = document.getElementById(key)
       row?.focus({ preventScroll: true })
-      row?.scrollIntoView?.({ block: 'nearest' })
+      if (row) revealWorkspaceContent(row)
       if (row) focusedLink.current = key
     })
     return () => cancelAnimationFrame(frame)
