@@ -7001,7 +7001,7 @@ html.customer-portal-active {
   .db-parts-table .db-part-name > div:last-child { font-size: 11px; }
   .db-presentation-new .db-price-builder .db-parts-table :is(button, input) { min-height: 28px !important; height: 28px !important; padding-block: 2px; }
   .db-presentation-new .db-price-builder .db-part-quantity button { min-width: 28px; width: 28px !important; padding-inline: 0; }
-  .db-presentation-new .db-price-builder .db-part-quantity input { width: 40px !important; padding-inline: 2px; font-size: 13px !important; }
+  .db-presentation-new .db-price-builder .db-part-quantity input { width: 40px !important; padding-inline: 2px; font-size: calc(var(--font-size-body) * 0.8125) !important; }
   .db-part-quantity > span:first-child { box-shadow: none; border-radius: 5px; }
   .db-part-quantity > span:last-child:not(:first-child) { width: auto; }
   .db-presentation-new .db-price-builder .db-part-price { min-width: 76px; border-radius: 5px; box-shadow: none; }
