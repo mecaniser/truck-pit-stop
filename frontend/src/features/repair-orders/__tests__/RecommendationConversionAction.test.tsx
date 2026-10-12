@@ -18,11 +18,12 @@ const receipt = { data: { conversion, replayed: false, warnings: [] } }
 function setup(overrides: Partial<React.ComponentProps<typeof RecommendationConversionAction>> = {}) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
   const onOpenOperation = vi.fn()
-  const view = render(<QueryClientProvider client={client}><MemoryRouter initialEntries={['/dashboard?queue=on_floor&selected=old']}>
+  const content = (props: typeof overrides) => <QueryClientProvider client={client}><MemoryRouter initialEntries={['/dashboard?queue=on_floor&selected=old']}>
     <RecommendationConversionAction recommendationId={id(2)} description="Inspect seal" contextOrderId={id(4)}
-      canConvert hourlyRate={145} onOpenOperation={onOpenOperation} {...overrides} />
-  </MemoryRouter></QueryClientProvider>)
-  return { ...view, client, onOpenOperation }
+      canConvert hourlyRate={145} onOpenOperation={onOpenOperation} {...props} />
+  </MemoryRouter></QueryClientProvider>
+  const view = render(content(overrides))
+  return { ...view, client, onOpenOperation, change: (props: typeof overrides) => view.rerender(content(props)) }
 }
 const open = () => fireEvent.click(screen.getByRole('button', { name: 'Add to this order: Inspect seal' }))
 const fill = () => fireEvent.change(screen.getByRole('textbox', { name: 'Hours' }), { target: { value: '1:30' } })
@@ -111,6 +112,18 @@ describe('tracked recommendation conversion', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Add replacement' }))
     await waitFor(() => expect(api.post).toHaveBeenCalledTimes(1))
     expect(api.post.mock.calls[0][1].replaces_conversion_id).toBe(id(1))
+  })
+
+  it('reconciles an earlier conflict when refresh reveals the operation was removed', async () => {
+    api.post.mockRejectedValueOnce({ response: { status: 409, data: { detail: { message: 'Already added.', conversion } } } })
+    const view = setup(); open(); fill()
+    fireEvent.click(screen.getByRole('button', { name: 'Add operation' }))
+    await screen.findByText('Already added.')
+    expect(screen.queryByRole('button', { name: 'Add again: Inspect seal' })).not.toBeInTheDocument()
+    view.change({ conversion: { ...conversion, state: 'operation_removed', can_replace: true } })
+    expect(screen.getByText('Operation removed from')).toBeInTheDocument()
+    // The preserved form can now explicitly replace the current removed receipt.
+    expect(screen.getByRole('button', { name: 'Add replacement' })).toBeInTheDocument()
   })
 
   it('cancels and restores focus without a write', () => {
