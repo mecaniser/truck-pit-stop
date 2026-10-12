@@ -1011,9 +1011,6 @@ export default function PriceBuilderPanel({
   const [openLineIds, setOpenLineIds] = useState<Set<string>>(new Set())
   const [discountsOpen, setDiscountsOpen] = useState(false)
   const [footerDetailsOpen, setFooterDetailsOpen] = useState<'parts' | 'labor' | 'discounts' | 'savings' | null>(null)
-  const [expandedInvoiceAction, setExpandedInvoiceAction] = useState<'payment' | 'resend' | 'void'>(
-    orderStatus === 'paid' ? 'resend' : 'payment',
-  )
   const [totalJustChanged, setTotalJustChanged] = useState(false)
   const [totalMotionActive, setTotalMotionActive] = useState(false)
   const previousTotalRef = useRef<string | null>(null)
@@ -1154,10 +1151,6 @@ export default function PriceBuilderPanel({
     setPartQuantityOverrides({})
     setPartQuantitySavingKey(null)
   }, [orderId])
-
-  useEffect(() => {
-    setExpandedInvoiceAction(orderStatus === 'paid' ? 'resend' : 'payment')
-  }, [orderId, orderStatus])
 
   useEffect(() => {
     const targetedWarnings = initialLineWarnings.filter((warning) => warning.line_id)
@@ -2401,19 +2394,22 @@ export default function PriceBuilderPanel({
         style={{
           background: isInternalOrder
             ? 'linear-gradient(100deg,#1e3a8a,#0f172a)'
-            : 'linear-gradient(100deg,#f7a823,#e07c05)',
+            : 'linear-gradient(100deg,#9a4416,#75340f)',
         }}
       >
         <div className="flex items-start justify-between gap-4">
           <div className="min-w-0">
-            {/* Internal fleet gets a small qualifier; a plain repair order needs
-                no label — the #number is self-evidently the order. */}
-            {isInternalOrder && (
-              <p className="hidden text-[11px] font-bold uppercase tracking-[0.18em] text-white/75 sm:block">
-                Internal Fleet Order
-              </p>
-            )}
-            <OrderNumberHeader value={`#${orderNumber || orderId.slice(0, 8)}`} />
+            <h2 className="db-job-title">
+              <button type="button" onClick={() => setCustomerOpen((open) => !open)} aria-expanded={customerOpen} title="Customer and vehicle details" className="db-job-vehicle">
+                <Truck className="h-5 w-5 shrink-0" />
+                <span>{[vehicleUnit, vehicleLabel].filter(Boolean).join(' · ') || 'Truck'}</span>
+                <ChevronRight className={`h-4 w-4 shrink-0 ${customerOpen ? 'rotate-90' : ''}`} />
+              </button>
+            </h2>
+            <div className="db-job-reference">
+              <OrderNumberHeader value={`#${orderNumber || orderId.slice(0, 8)}`} />
+              <span className="db-job-stage">{isDeleted ? 'Deleted' : orderStatus.replace(/_/g, ' ')}</span>
+            </div>
             {quoteNumber && (
               <p className="mt-1 truncate font-['JetBrains_Mono',monospace] text-[11px] font-semibold text-white/70">
                 {quoteNumber}
@@ -2492,11 +2488,7 @@ export default function PriceBuilderPanel({
               Shop fleet
             </span>
           )}
-          {/* Keep unique vehicle/order details accessible without a duplicate row. */}
-          <button type="button" onClick={() => setCustomerOpen((open) => !open)} aria-expanded={customerOpen} title="Customer and vehicle details" className="inline-flex items-center gap-1 rounded-full bg-white/14 px-3 py-1.5 text-white ring-1 ring-white/20">
-            <Truck className="h-3.5 w-3.5" />
-            {[vehicleUnit, vehicleLabel].filter(Boolean).join(' · ') || 'Truck'}
-          </button>
+
         </div>
       </div>
 
@@ -2504,8 +2496,8 @@ export default function PriceBuilderPanel({
           records and appear as a secondary action, never as a work gate. */}
       {!isInternalOrder && !isDeleted && (
         <>
-        <div className="flex items-center border-b border-gray-100 bg-white px-5 py-1.5 text-xs">
-          <WorkflowInfoGroup className="flex w-full min-w-0 items-center gap-2 overflow-x-auto whitespace-nowrap">
+        <div className="db-job-workflow flex items-center border-b border-gray-100 bg-white px-5 py-1.5 text-xs">
+          <WorkflowInfoGroup className="db-job-stages flex w-full min-w-0 flex-wrap items-center gap-2">
             <WorkflowInfoStep key={`intake-${orderId}`} stage="intake" label={orderStatus === 'draft' ? 'Checked in' : '✓ Checked in'} className={orderStatus === 'draft' ? 'bg-orange-500 text-white' : 'bg-emerald-100 text-emerald-700'} info={workflowInfo} status={orderStatus} description={description} mileage={mileageIn} />
             <span className="text-gray-300" aria-hidden="true">→</span>
             <WorkflowInfoStep key={`tech-${orderId}`} stage="technician" label={hasAssignedTechnician ? `Technician: ${assignedTechnicianName}` : technicianAssignmentBypassed ? 'Shop-managed · no technician' : 'No technician assigned'} className={hasAssignedTechnician || technicianAssignmentBypassed ? 'bg-emerald-100 text-emerald-700' : 'text-gray-500'} info={workflowInfo} status={orderStatus} technician={assignedTechnicianName} />
@@ -3918,7 +3910,9 @@ export default function PriceBuilderPanel({
                     <button
                       type="button"
                       onClick={() => toggleLine(line.id)}
-                      className="db-workspace-line-trigger grid w-full grid-cols-[auto_auto_1fr_auto] items-center gap-3 rounded-xl px-2 py-3 text-left hover:bg-gray-50"
+                      aria-expanded={isOpen}
+                      aria-controls={`service-line-${line.id}`}
+                      className="db-workspace-line-trigger grid w-full grid-cols-[auto_auto_1fr_auto] items-center gap-3 rounded-xl px-2 py-2 text-left hover:bg-gray-50"
                     >
                       <ChevronRight className={`h-4 w-4 text-gray-400 transition-transform ${isOpen ? 'rotate-90' : ''}`} />
                       <span className={`inline-flex h-9 w-9 items-center justify-center rounded-lg ${
@@ -3936,14 +3930,14 @@ export default function PriceBuilderPanel({
                         </span>
                       </span>
                       <span className="text-right">
-                        <span className="block font-['Barlow_Condensed',sans-serif] text-2xl font-extrabold leading-none text-gray-900">{money(lineTotal)}</span>
-                        <span className="block font-['JetBrains_Mono',monospace] text-[10px] text-slate-600">
+                        <span className="db-service-total block text-base font-bold tabular-nums text-gray-900">{money(lineTotal)}</span>
+                        <span className="db-service-breakdown block text-[11px] text-slate-600">
                           {money(line.total_cost)} labor · {money(partTotal)} parts
                         </span>
                       </span>
                     </button>
                     {isOpen && (
-                      <div className="db-workspace-line-details ml-3 space-y-2 pb-2 pr-2">
+                      <div id={`service-line-${line.id}`} className="db-workspace-line-details ml-3 space-y-2 pb-2 pr-2">
                         {warningsForLine.length > 0 && (
                           <div role="alert" className="space-y-1 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
                             {warningsForLine.map((warning) => (
@@ -4714,88 +4708,40 @@ export default function PriceBuilderPanel({
                   )}
                 </div>
               ) : hasInvoice && invoice ? (
-                <div className="flex min-w-0 items-center justify-end gap-1.5 sm:flex-wrap sm:gap-2">
+                <div className="db-invoice-actions">
                   {!invoiceFinanciallyPaid && (
                     <button
                       type="button"
-                      onClick={() => {
-                        const compact = typeof window.matchMedia === 'function'
-                          && window.matchMedia('(max-width: 639px)').matches
-                        if (compact && expandedInvoiceAction !== 'payment') {
-                          setExpandedInvoiceAction('payment')
-                          return
-                        }
-                        onRecordPayment?.()
-                      }}
+                      onClick={() => onRecordPayment?.()}
                       disabled={invoiceActionPending || !onRecordPayment}
-                      className={`inline-flex h-10 shrink-0 items-center justify-center overflow-hidden whitespace-nowrap rounded-xl bg-green-600 text-xs font-extrabold text-white shadow-[0_6px_16px_rgba(22,163,74,.28)] transition-[width,padding,gap,background-color] duration-200 ease-out hover:bg-green-700 disabled:bg-gray-300 sm:h-11 sm:w-auto sm:gap-2 sm:px-4 sm:text-sm ${
-                        expandedInvoiceAction === 'payment'
-                          ? 'w-[136px] gap-1.5 px-3 max-[360px]:w-[116px] max-[360px]:px-2 max-[360px]:text-[11px]'
-                          : 'w-10 gap-0 px-0'
-                      }`}
+                      className="db-stage-action db-stage-action--primary"
                       aria-label={invoice.pending_zelle_confirmation ? 'Confirm Zelle payment' : 'Record payment'}
                     >
                       <CreditCard className="h-4 w-4 shrink-0" />
-                      <span className={`overflow-hidden transition-[max-width,opacity] duration-150 sm:max-w-40 sm:opacity-100 ${
-                        expandedInvoiceAction === 'payment' ? 'max-w-40 opacity-100' : 'max-w-0 opacity-0'
-                      }`}>
-                        {invoice.pending_zelle_confirmation ? 'Confirm Zelle payment' : 'Record payment'}
-                      </span>
+                      <span>{invoice.pending_zelle_confirmation ? 'Confirm Zelle payment' : 'Record payment'}</span>
                     </button>
                   )}
                   <button
                     type="button"
-                    onClick={() => {
-                      const compact = typeof window.matchMedia === 'function'
-                        && window.matchMedia('(max-width: 639px)').matches
-                      if (compact && expandedInvoiceAction !== 'resend') {
-                        setExpandedInvoiceAction('resend')
-                        return
-                      }
-                      onResendInvoice?.()
-                    }}
+                    onClick={() => onResendInvoice?.()}
                     disabled={invoiceActionPending || !onResendInvoice}
-                    className={`inline-flex h-10 shrink-0 items-center justify-center overflow-hidden whitespace-nowrap rounded-xl bg-purple-600 text-xs font-extrabold text-white shadow-[0_6px_16px_rgba(147,51,234,.24)] transition-[width,padding,gap,background-color] duration-200 ease-out hover:bg-purple-700 disabled:bg-gray-300 sm:h-11 sm:w-auto sm:gap-2 sm:px-4 sm:text-sm ${
-                      expandedInvoiceAction === 'resend'
-                        ? 'w-[136px] gap-1.5 px-3 max-[360px]:w-[116px] max-[360px]:px-2 max-[360px]:text-[11px]'
-                        : 'w-10 gap-0 px-0'
-                    }`}
+                    className="db-stage-action db-stage-action--secondary"
                     aria-label={invoiceFinanciallyPaid ? 'Resend copy' : 'Resend invoice'}
                   >
                     <Mail className="h-4 w-4 shrink-0" />
-                    <span className={`overflow-hidden transition-[max-width,opacity] duration-150 sm:max-w-32 sm:opacity-100 ${
-                      expandedInvoiceAction === 'resend' ? 'max-w-32 opacity-100' : 'max-w-0 opacity-0'
-                    }`}>
-                      {invoiceFinanciallyPaid ? 'Resend copy' : 'Resend invoice'}
-                    </span>
+                    <span>{invoiceFinanciallyPaid ? 'Resend copy' : 'Resend invoice'}</span>
                   </button>
                   {!invoiceFinanciallyPaid && !invoice.pending_zelle_confirmation && onVoidInvoice && (
                     <button
                       type="button"
-                      onClick={() => {
-                        const compact = typeof window.matchMedia === 'function'
-                          && window.matchMedia('(max-width: 639px)').matches
-                        if (compact && expandedInvoiceAction !== 'void') {
-                          setExpandedInvoiceAction('void')
-                          return
-                        }
-                        onVoidInvoice()
-                      }}
+                      onClick={onVoidInvoice}
                       disabled={invoiceActionPending}
-                      className={`inline-flex h-10 shrink-0 items-center justify-center overflow-hidden whitespace-nowrap rounded-xl border border-gray-300 bg-white text-xs font-semibold text-gray-700 transition-[width,padding,gap,background-color] duration-200 ease-out hover:bg-gray-50 disabled:opacity-50 sm:h-11 sm:w-auto sm:gap-2 sm:px-4 sm:text-sm ${
-                        expandedInvoiceAction === 'void'
-                          ? 'w-[136px] gap-1.5 px-3 max-[360px]:w-[116px] max-[360px]:px-2 max-[360px]:text-[11px]'
-                          : 'w-10 gap-0 px-0'
-                      }`}
+                      className="db-stage-action db-stage-action--secondary"
                       title="Preserve this invoice as voided and reopen the order for revision"
                       aria-label="Void & revise"
                     >
                       <RotateCcw className="h-4 w-4 shrink-0" />
-                      <span className={`overflow-hidden transition-[max-width,opacity] duration-150 sm:max-w-32 sm:opacity-100 ${
-                        expandedInvoiceAction === 'void' ? 'max-w-32 opacity-100' : 'max-w-0 opacity-0'
-                      }`}>
-                        Void &amp; revise
-                      </span>
+                      <span>Void &amp; revise</span>
                     </button>
                   )}
                 </div>

@@ -6878,3 +6878,63 @@ html.customer-portal-active {
   inline-size: .9rem;
   block-size: .9rem;
 }
+
+/* The queue supports the job; detail keeps the working space. */
+.db-queue-reference { display: flex; min-width: 0; align-items: center; gap: 8px; }
+.db-queue-reference .db-repair-orders-ledger__reference { align-self: center; }
+.db-repair-orders-ledger__row-shell[data-selected='true'] { outline: 1px solid var(--db-ledger-focus); outline-offset: -1px; }
+@media (min-width: 1100px) {
+  .db-repair-orders-workspace--new.db-repair-orders-workspace--detail-open { grid-template-columns: minmax(300px, .29fr) minmax(0, .71fr); }
+  .db-repair-orders-workspace--detail-open .db-repair-orders-ledger__row { padding-inline: 12px; }
+  .db-repair-orders-workspace--detail-open .db-repair-orders-ledger__record { grid-template-columns: minmax(0, 1fr) 72px; min-height: 80px; gap: 8px; padding-block: 10px; }
+  .db-repair-orders-workspace--detail-open .db-repair-orders-ledger__order-line strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; line-height: 1.4; }
+  .db-repair-orders-workspace--detail-open .db-repair-orders-ledger__vehicle { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .db-repair-orders-workspace--detail-open .db-repair-orders-ledger__money { padding-bottom: 24px; }
+  .db-repair-orders-workspace--detail-open .db-repair-orders-ledger__money strong { font-size: 14px; }
+  .db-repair-orders-workspace--detail-open .db-repair-orders-ledger__details-toggle { bottom: 4px; right: 8px; min-height: 28px; padding: 2px 4px; }
+}
+.db-price-builder .db-job-title { margin: 0; color: #fff !important; font-size: 20px !important; line-height: 1.3; }
+.db-job-vehicle { display: flex; align-items: center; gap: 8px; min-height: 36px; max-width: 100%; text-align: left; font-weight: 700; }
+.db-job-vehicle span { min-width: 0; overflow-wrap: anywhere; }
+.db-job-reference { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 2px; }
+.db-price-builder .db-workspace-header .db-job-reference h3 { font-size: 12px !important; line-height: 1.5; font-weight: 600; }
+.db-job-stage { padding: 2px 8px; border: 1px solid #ffffff60; border-radius: 6px; font-size: 11px; font-weight: 700; text-transform: capitalize; white-space: nowrap; }
+.db-price-builder .db-job-workflow { padding: 8px 16px; }
+.db-job-stages > span[aria-hidden='true'] { display: none; }
+.db-price-builder .db-job-stages .db-pipeline-step { min-height: 32px; white-space: nowrap; font-size: 11px; }
+.db-presentation-new .db-price-builder .db-job-stages .bg-emerald-100 { background: #ecfdf5 !important; color: #065f46 !important; }
+.db-presentation-new .db-price-builder .db-job-stages .text-gray-500 { color: #4b5563 !important; }
+.db-price-builder .db-job-stages > button { margin-left: 0; }
+.db-price-builder .db-workspace-line-trigger { min-height: 56px; gap: 8px; border-radius: 6px; }
+.db-price-builder .db-workspace-line-trigger > span:nth-child(2) { width: 28px; height: 28px; }
+.db-price-builder .db-workspace-line-trigger .db-service-breakdown { display: none; }
+.db-price-builder .db-workspace-line-trigger > span:nth-child(3) > span:first-child > span:last-child { display: none; }
+.db-price-builder .db-workspace-line-trigger > span:nth-child(3) > span:first-child > span:first-child { white-space: normal; overflow-wrap: anywhere; font-size: 14px; }
+.db-price-builder .db-workspace-line-trigger .db-service-total { font-size: 16px; white-space: nowrap; }
+.db-price-builder .db-workspace-footer { padding: 10px 16px; box-shadow: none; }
+.db-workspace-actions > div { flex-wrap: wrap; }
+.db-invoice-actions { display: flex; min-width: 0; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 6px; }
+.db-stage-action { display: inline-flex; min-height: 36px; align-items: center; justify-content: center; gap: 6px; padding: 8px 12px; border-radius: 8px; font-size: 12px; font-weight: 600; white-space: nowrap; }
+.db-stage-action--primary { background: #087252; color: #fff; }
+.db-stage-action--primary:hover { background: #065f46; }
+.db-stage-action--secondary { border: 1px solid #d1d5db; color: #374151; background: #fff; }
+.db-stage-action--secondary:hover { background: #f3f4f6; }
+.db-stage-action:disabled { opacity: .5; cursor: not-allowed; }
+.db-stage-action:focus-visible, .db-job-vehicle:focus-visible { outline: 2px solid currentColor; outline-offset: 3px; }
+@media (max-width: 639px) {
+  .db-price-builder .db-workspace-header > div:first-child > div:last-child { justify-content: flex-start; }
+  .db-price-builder .db-workspace-header { padding: 12px; }
+  .db-price-builder .db-job-title { font-size: 18px !important; }
+  .db-price-builder .db-job-workflow { padding-inline: 12px; }
+  .db-price-builder .db-workspace-body { padding-inline: 12px; }
+  .db-price-builder .db-workspace-footer { padding: 12px; }
+  .db-invoice-actions { width: 100%; justify-content: flex-start; }
+  .db-stage-action { min-height: 44px; }
+  .db-invoice-actions .db-stage-action--primary { flex-basis: 100%; }
+  .db-price-builder .db-job-stages .db-pipeline-step { min-height: 44px; }
+  .db-job-vehicle { min-height: 44px; }
+  .db-workspace-header .db-order-customer-pill { max-width: 100%; }
+}
+@media (pointer: coarse) {
+  .db-stage-action, .db-job-vehicle, .db-price-builder .db-job-stages .db-pipeline-step { min-height: 44px; }
+}
