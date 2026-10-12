@@ -292,6 +292,34 @@ describe('PriceBuilderPanel pending feedback', () => {
     vi.unstubAllGlobals()
   })
 
+  it('opens truck details in an anchored popover and returns keyboard focus to the truck', async () => {
+    apiMocks.get.mockResolvedValue({ data: emptySummary })
+    const user = userEvent.setup()
+    const { container } = renderPanel({ vehicleUnit: '609', vehicleVin: 'TESTVIN609', customerName: 'Carrier' })
+    const trigger = screen.getByRole('button', { name: '609' })
+    await user.click(trigger)
+    const panel = screen.getByLabelText('Truck and customer details')
+    expect(panel).toHaveTextContent('VIN: TESTVIN609')
+    expect(container.querySelector('.db-workspace-body')).not.toContainElement(panel)
+    expect(screen.getByRole('heading', { name: 'Truck and customer' })).toHaveFocus()
+    await user.keyboard('{Escape}')
+    await waitFor(() => expect(screen.queryByLabelText('Truck and customer details')).not.toBeInTheDocument())
+    expect(trigger).toHaveFocus()
+  })
+
+  it.each(['0.00', '2.50'])('only allocates a Savings column when a part has savings (%s)', async (savings) => {
+    const part = {
+      id: 'usage-1', repair_order_id: 'order-1', inventory_id: 'part-1', inventory_sku: 'BS-1', inventory_name: 'Brake Shoes',
+      quantity: '1', unit_type: 'each', unit_price: '50', total_price: '50', savings, source_service_id: null, source_line_id: null,
+    }
+    apiMocks.get.mockImplementation((url: string) => Promise.resolve({ data: url.endsWith('/price-build') ? { ...emptySummary, parts: [part] } : [] }))
+    renderPanel()
+    await screen.findByText('Brake Shoes')
+    expect(screen.getByRole('textbox', { name: 'Quantity for Brake Shoes' })).toHaveValue('1')
+    if (savings === '0.00') expect(screen.queryByRole('columnheader', { name: 'Savings' })).not.toBeInTheDocument()
+    else expect(screen.getByRole('columnheader', { name: 'Savings' })).toBeInTheDocument()
+  })
+
   it('keeps one selected-order header without duplicating Shop Work return controls', async () => {
     apiMocks.get.mockResolvedValue({ data: emptySummary })
 

@@ -1,5 +1,6 @@
 import OrderChecklist from '@/features/service-checklists/OrderChecklist'
 import { type ReactNode, type ChangeEvent, type MouseEvent as ReactMouseEvent, useEffect, useRef, useState } from 'react'
+import { Popover, PopoverButton, PopoverPanel } from '@headlessui/react'
 import DatePicker from '@/components/DatePicker'
 import { Spinner } from '@/components/ui'
 import { createPortal } from 'react-dom'
@@ -438,6 +439,8 @@ function PartQtyStepper({
       step={step}
       unitLabel={unitAbbr}
       disabled={disabled}
+      className="db-part-quantity"
+      align="start"
       ariaLabel={`Quantity for ${part.inventory_name}`}
       removeAtMin
       onRemove={onDelete}
@@ -793,7 +796,7 @@ function PartPricePopover({
         type="button"
         disabled={disabled}
         onClick={toggleOpen}
-        className={`h-8 min-w-[84px] whitespace-nowrap rounded-lg border bg-white px-2 text-right font-['JetBrains_Mono',monospace] text-xs text-gray-900 shadow-sm disabled:opacity-60 ${
+        className={`db-part-price h-8 min-w-[84px] whitespace-nowrap rounded-lg border bg-white px-2 text-right font-['JetBrains_Mono',monospace] text-xs text-gray-900 shadow-sm disabled:opacity-60 ${
           isCustom ? 'border-orange-400 ring-2 ring-orange-100' : 'border-gray-200'
         }`}
       >
@@ -1016,7 +1019,6 @@ export default function PriceBuilderPanel({
   const [totalMotionActive, setTotalMotionActive] = useState(false)
   const previousTotalRef = useRef<string | null>(null)
   const totalMotionTimerRef = useRef<number | null>(null)
-  const [customerOpen, setCustomerOpen] = useState(false)
   const [secondaryPanel, setSecondaryPanel] = useState<'recommended' | 'notes' | 'photos' | null>(null)
   const recommendedOpen = secondaryPanel === 'recommended'
   const notesOpen = secondaryPanel === 'notes'
@@ -2400,16 +2402,77 @@ export default function PriceBuilderPanel({
       >
         <div className="flex items-start justify-between gap-4">
           <div className="min-w-0">
-            <h2 className="db-job-title">
-              <button type="button" onClick={() => setCustomerOpen((open) => !open)} aria-expanded={customerOpen} title="Customer and vehicle details" className="db-job-vehicle">
-                <Truck className="h-5 w-5 shrink-0" />
-                <span>{[vehicleUnit, vehicleLabel].filter(Boolean).join(' · ') || 'Truck'}</span>
-                <ChevronRight className={`h-4 w-4 shrink-0 ${customerOpen ? 'rotate-90' : ''}`} />
-              </button>
-            </h2>
+            <Popover key={`vehicle-${orderId}`} className="db-job-identity">
+              {({ open, close }) => <>
+                <h2 className="db-job-title">
+                  <PopoverButton title="Customer and vehicle details" className="db-job-vehicle">
+                    <Truck className="h-5 w-5 shrink-0" />
+                    <span>{[vehicleUnit, vehicleLabel].filter(Boolean).join(' · ') || 'Truck'}</span>
+                    <ChevronDown className={`h-4 w-4 shrink-0 ${open ? 'rotate-180' : ''}`} />
+                  </PopoverButton>
+                </h2>
+                <PopoverPanel anchor="bottom start" focus aria-label="Truck and customer details" className="db-job-details z-[100] w-[min(560px,calc(100vw-32px))] max-h-[min(480px,calc(100dvh-100px))] overflow-y-auto rounded-xl bg-white p-4 text-gray-900 shadow-lg ring-1 ring-gray-200 [--anchor-gap:8px] [--anchor-padding:16px]">
+                  <div className="mb-3 flex items-center justify-between gap-2">
+                    <h3 tabIndex={0} data-autofocus className="font-semibold outline-none">Truck and customer</h3>
+                    <button type="button" onClick={() => close()} aria-label="Close truck and customer details" className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg hover:bg-gray-100"><X className="h-4 w-4" /></button>
+                  </div>
+                  <div className="grid gap-3 text-sm sm:grid-cols-2">
+                    <div>
+                      <p className="text-[11px] font-bold uppercase tracking-wide text-gray-400">Customer</p>
+                      <p className="font-semibold text-gray-900">{customerName || 'Customer'}</p>
+                      {customerEmail && <p className="text-xs text-gray-500">{customerEmail}</p>}
+                      {customerPhone && <p className="text-xs text-gray-500">{customerPhone}</p>}
+                    </div>
+                    <div>
+                      <p className="text-[11px] font-bold uppercase tracking-wide text-gray-400">Vehicle</p>
+                      <p className="font-semibold text-gray-900">{[vehicleUnit, vehicleLabel].filter(Boolean).join(' · ') || 'Vehicle'}</p>
+                      {vehicleVin && <p className="text-xs text-gray-500">VIN: {vehicleVin}</p>}
+                      {vehiclePlate && <p className="text-xs text-gray-500">Plate: {vehiclePlate}</p>}
+                    </div>
+                    <div className="grid grid-cols-2 gap-2 border-t border-gray-200 pt-3 sm:col-span-2 sm:grid-cols-4">
+                      <div><p className="text-[11px] uppercase text-gray-400">Mileage In</p><p className="font-medium text-gray-800">{mileageIn ?? '—'}</p></div>
+                      <div><p className="text-[11px] uppercase text-gray-400">Mileage Out</p><p className="font-medium text-gray-800">{mileageOut ?? '—'}</p></div>
+                      <div><p className="text-[11px] uppercase text-gray-400">PO Number</p><p className="font-medium text-gray-800">{poNumber || '—'}</p></div>
+                      <div><p className="text-[11px] uppercase text-gray-400">Type</p><p className="font-medium text-gray-800">{orderTypeLabel || 'Standard'}</p></div>
+                    </div>
+                  </div>
+                </PopoverPanel>
+              </>}
+            </Popover>
             <div className="db-job-reference">
               <OrderNumberHeader value={`#${orderNumber || orderId.slice(0, 8)}`} />
               <span className="db-job-stage">{isDeleted ? 'Deleted' : orderStatus.replace(/_/g, ' ')}</span>
+              {/* The company is the way into the customer's record — from here you
+                  can see their other trucks and what they owe without hunting for
+                  them in the ledger. The star marks a fleet-plan carrier, which is
+                  a different question from whose truck this is: the shop's own
+                  fleet is isInternalOrder, and a paying carrier can be on a fleet
+                  plan too. */}
+              {onOpenCustomer ? (
+                <button
+                  type="button"
+                  onClick={onOpenCustomer}
+                  title={`Open ${customerName || 'customer'}`}
+                  className="db-order-customer-pill inline-flex items-center gap-1 rounded-full bg-white/14 px-3 py-1.5 text-white ring-1 ring-white/20 transition-colors hover:bg-white/24"
+                >
+                  <Building2 className="h-3.5 w-3.5" />
+                  {customerName || 'Customer'}
+                  {isFleetMember && <Star className="h-3.5 w-3.5 flex-none fill-current text-amber-300" aria-label="Fleet member" />}
+                </button>
+              ) : (
+                <span className="inline-flex items-center gap-1 rounded-full bg-white/14 px-3 py-1.5 text-white ring-1 ring-white/20">
+                  <Building2 className="h-3.5 w-3.5" />
+                  {customerName || 'Customer'}
+                  {isFleetMember && <Star className="h-3.5 w-3.5 flex-none fill-current text-amber-300" aria-label="Fleet member" />}
+                </span>
+              )}
+              {isInternalOrder && (
+                <span className="inline-flex items-center gap-1 rounded-full bg-white/24 px-2.5 py-1.5 text-[11px] uppercase tracking-[0.08em] text-white ring-1 ring-white/30">
+                  <Truck className="h-3.5 w-3.5" />
+                  Shop fleet
+                </span>
+              )}
+
             </div>
             {quoteNumber && (
               <p className="mt-1 truncate font-['JetBrains_Mono',monospace] text-[11px] font-semibold text-white/70">
@@ -2417,7 +2480,7 @@ export default function PriceBuilderPanel({
               </p>
             )}
           </div>
-          <div className="flex flex-wrap items-center justify-end gap-2">
+          <div className="db-job-navigation flex flex-wrap items-center justify-end gap-2">
             <button type="button" onClick={onToggleDangerActions} aria-expanded={showDangerActions} aria-label="Order actions" title="Order actions" className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-white/14 text-white ring-1 ring-white/20">⋯</button>
             {onPrev && (
               <button
@@ -2458,39 +2521,7 @@ export default function PriceBuilderPanel({
             )}
           </div>
         </div>
-        <div className="mt-4 flex flex-wrap items-center gap-2 text-xs font-semibold">
-          {/* The company is the way into the customer's record — from here you
-              can see their other trucks and what they owe without hunting for
-              them in the ledger. The star marks a fleet-plan carrier, which is
-              a different question from whose truck this is: the shop's own
-              fleet is isInternalOrder, and a paying carrier can be on a fleet
-              plan too. */}
-          {onOpenCustomer ? (
-            <button
-              type="button"
-              onClick={onOpenCustomer}
-              title={`Open ${customerName || 'customer'}`}
-              className="db-order-customer-pill inline-flex items-center gap-1 rounded-full bg-white/14 px-3 py-1.5 text-white ring-1 ring-white/20 transition-colors hover:bg-white/24"
-            >
-              <Building2 className="h-3.5 w-3.5" />
-              {customerName || 'Customer'}
-              {isFleetMember && <Star className="h-3.5 w-3.5 flex-none fill-current text-amber-300" aria-label="Fleet member" />}
-            </button>
-          ) : (
-            <span className="inline-flex items-center gap-1 rounded-full bg-white/14 px-3 py-1.5 text-white ring-1 ring-white/20">
-              <Building2 className="h-3.5 w-3.5" />
-              {customerName || 'Customer'}
-              {isFleetMember && <Star className="h-3.5 w-3.5 flex-none fill-current text-amber-300" aria-label="Fleet member" />}
-            </span>
-          )}
-          {isInternalOrder && (
-            <span className="inline-flex items-center gap-1 rounded-full bg-white/24 px-2.5 py-1.5 text-[11px] uppercase tracking-[0.08em] text-white ring-1 ring-white/30">
-              <Truck className="h-3.5 w-3.5" />
-              Shop fleet
-            </span>
-          )}
 
-        </div>
       </div>
 
       {/* Operational workflow is primary. Estimates are optional authorization
@@ -2552,8 +2583,8 @@ export default function PriceBuilderPanel({
       <div className="db-workspace-body min-h-0 flex-1 space-y-4 overflow-y-auto px-5 py-5 pb-4">
 
       {(onSaveDescription || (description && description.trim())) && (
-        <div>
-          <div className="mb-1 flex items-center justify-between gap-2">
+        <div className="db-intake" data-editing={descriptionEditing}>
+          <div className="db-intake-heading mb-1 flex items-center justify-between gap-2">
             <p className="text-xs font-medium text-gray-400 uppercase tracking-wider">Work Requested</p>
             {onSaveDescription && !descriptionEditing && (
               <button
@@ -2599,11 +2630,11 @@ export default function PriceBuilderPanel({
               </div>
             </div>
           ) : description && description.trim() ? (
-            <div className="rounded-lg bg-gray-50 p-3 text-sm text-gray-800 whitespace-pre-wrap">
+            <div className="db-intake-description text-sm text-gray-800 whitespace-pre-wrap">
               {description}
             </div>
           ) : (
-            <p className="rounded-lg bg-gray-50 p-3 text-sm text-gray-400">No work requested recorded.</p>
+            <p className="db-intake-description text-sm text-gray-400">No work requested recorded.</p>
           )}
         </div>
       )}
@@ -3525,15 +3556,17 @@ export default function PriceBuilderPanel({
           return byLine.length ? [...byLine, ...byService] : byService
         }
 
-        const renderPartsRows = (parts: typeof allParts) => (
-          <div className="overflow-x-auto rounded-md border border-gray-200 bg-gray-50/50">
+        const renderPartsRows = (parts: typeof allParts) => {
+          const hasSavings = parts.some((part) => parseFloat(part.savings || '0') > 0)
+          return (
+          <div className="db-parts-table overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="text-left text-[11px] text-slate-600 border-b border-gray-200">
                   <th className="py-1.5 px-2.5 font-medium">Part</th>
                   <th className="py-1.5 px-2.5 font-medium text-right">Qty</th>
-                  <th className="py-1.5 px-2.5 font-medium text-right">Unit</th>
-                  <th className="py-1.5 px-2.5 font-medium text-right">Savings</th>
+                  <th className="py-1.5 px-2.5 font-medium text-right">Unit price</th>
+                  {hasSavings && <th className="py-1.5 px-2.5 font-medium text-right">Savings</th>}
                   <th className="py-1.5 px-2.5 font-medium text-right">Line total</th>
                 </tr>
               </thead>
@@ -3546,7 +3579,7 @@ export default function PriceBuilderPanel({
                   const quantityUpdatePending = partQuantitySavingKey === shortageKey
                   return (
                     <tr key={pu.id} className="border-b border-gray-100 last:border-0">
-                      <td className="py-1.5 px-2.5 text-gray-800">
+                      <td className="db-part-name py-1.5 px-2.5 text-gray-800">
                         <div className="font-medium">{pu.inventory_name}</div>
                         <div className="flex flex-wrap items-center gap-1.5 text-xs text-slate-600">
                           <span>{pu.inventory_sku}</span>
@@ -3636,7 +3669,7 @@ export default function PriceBuilderPanel({
                           <>${parseFloat(pu.unit_price).toFixed(2)}</>
                         )}
                       </td>
-                      <td className="py-1.5 px-2.5 text-right">
+                      {hasSavings && <td className="py-1.5 px-2.5 text-right">
                         {parseFloat(pu.savings || '0') > 0 ? (
                           <span className="text-emerald-600 font-medium">
                             −${parseFloat(pu.savings).toFixed(2)}
@@ -3644,7 +3677,7 @@ export default function PriceBuilderPanel({
                         ) : (
                           <span className="text-slate-500">—</span>
                         )}
-                      </td>
+                      </td>}
                       <td className="py-1.5 px-2.5 text-right text-gray-900 font-medium">${parseFloat(pu.total_price).toFixed(2)}</td>
                     </tr>
                   )
@@ -3652,7 +3685,8 @@ export default function PriceBuilderPanel({
               </tbody>
             </table>
           </div>
-        )
+          )
+        }
 
         const renderOperationPartPicker = (line: typeof lines[number], groupedParts: typeof allParts) => {
           if (operationPartPickerLineId !== line.id) return null
@@ -3845,7 +3879,7 @@ export default function PriceBuilderPanel({
                   <div className="h-4 w-12 rounded-full bg-gray-100" />
                 </span>
               </div>
-              <div className="divide-y divide-gray-100 border-y border-gray-100">
+              <div className="db-service-list divide-y divide-gray-100 border-y border-gray-100">
                 {[0, 1, 2].map((i) => (
                   <div key={i} className="flex items-center gap-3 px-2 py-3">
                     <div className="h-9 w-9 shrink-0 rounded-lg bg-gray-200" />
@@ -3898,7 +3932,7 @@ export default function PriceBuilderPanel({
               </span>
               <SectionInfoTooltip text="Each card is one billable item. Service packages bundle labor with their required parts — edit hours, rate, or part quantity inline. Stock adjusts automatically." tooltipClassName="w-72" />
             </div>
-            <div className="divide-y divide-gray-100 border-y border-gray-100">
+            <div className="db-service-list divide-y divide-gray-100 border-y border-gray-100">
               {lines.map((line) => {
                 const groupedParts = groupedPartsForLine(line)
                 const isOpen = openLineIds.has(line.id)
@@ -3923,13 +3957,13 @@ export default function PriceBuilderPanel({
                       }`}>
                         <Icon className="h-4 w-4" />
                       </span>
-                      <span className="min-w-0">
+                      <span className="db-service-label min-w-0">
                         <span className="flex min-w-0 flex-wrap items-center gap-2">
                           <span className="truncate font-semibold text-gray-900">{line.description || lineTypeLabel(line)}</span>
                           <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-slate-600">{lineTypeLabel(line)}</span>
                         </span>
                         <span className="mt-0.5 block truncate text-xs text-slate-600">
-                          {formatHoursMinutes(line.hours)} labor · {groupedParts.length} parts{partSavings > 0 ? ` · saves ${money(partSavings)}` : ''}
+                          {formatHoursMinutes(line.hours)}{groupedParts.length > 0 ? ` · ${groupedParts.length} parts` : ''}{partSavings > 0 ? ` · saves ${money(partSavings)}` : ''}
                         </span>
                       </span>
                       <span className="text-right">
@@ -3992,8 +4026,8 @@ export default function PriceBuilderPanel({
                 )
               })}
               {orphanParts.length > 0 && (
-                <div className="py-3">
-                  <div className="mb-2 flex items-center gap-2 px-2">
+                <div className="db-standalone-parts py-3">
+                  <div className="db-standalone-heading mb-2 flex items-center gap-2 px-2">
                     <span className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-emerald-50 text-emerald-700">
                       <Box className="h-4 w-4" />
                     </span>
@@ -4002,12 +4036,12 @@ export default function PriceBuilderPanel({
                       <p className="text-xs text-gray-500">{orphanParts.length} parts · {money(orphanParts.reduce((sum, p) => sum + (parseFloat(p.total_price || '0') || 0), 0))}</p>
                     </div>
                   </div>
-                  <div className="ml-[60px]">{renderPartsRows(orphanParts)}</div>
+                  <div className="db-standalone-table">{renderPartsRows(orphanParts)}</div>
                 </div>
               )}
               {isAddingStandalonePart && lines.length > 0 && (
-                <div className="py-3">
-                  <div className="mb-2 flex items-center gap-2 px-2">
+                <div className="db-standalone-parts py-3">
+                  <div className="db-standalone-heading mb-2 flex items-center gap-2 px-2">
                     <span className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-emerald-50 text-emerald-700">
                       <Box className="h-4 w-4" />
                     </span>
@@ -4016,7 +4050,7 @@ export default function PriceBuilderPanel({
                       <p className="text-xs text-gray-500">Adding a part…</p>
                     </div>
                   </div>
-                  <div className="ml-[60px]"><PendingWorkRows message="Adding standalone part…" /></div>
+                  <div className="db-standalone-table"><PendingWorkRows message="Adding standalone part…" /></div>
                 </div>
               )}
             </div>
@@ -4025,28 +4059,7 @@ export default function PriceBuilderPanel({
       })()}
 
       <div className="db-workspace-secondary pb-2">
-        {customerOpen && (
-          <div className="grid gap-3 rounded-xl bg-gray-50 px-4 py-3 text-sm sm:grid-cols-2">
-            <div>
-              <p className="text-[11px] font-bold uppercase tracking-wide text-gray-400">Customer</p>
-              <p className="font-semibold text-gray-900">{customerName || 'Customer'}</p>
-              {customerEmail && <p className="text-xs text-gray-500">{customerEmail}</p>}
-              {customerPhone && <p className="text-xs text-gray-500">{customerPhone}</p>}
-            </div>
-            <div>
-              <p className="text-[11px] font-bold uppercase tracking-wide text-gray-400">Vehicle</p>
-              <p className="font-semibold text-gray-900">{[vehicleUnit, vehicleLabel].filter(Boolean).join(' · ') || 'Vehicle'}</p>
-              {vehicleVin && <p className="text-xs text-gray-500">VIN: {vehicleVin}</p>}
-              {vehiclePlate && <p className="text-xs text-gray-500">Plate: {vehiclePlate}</p>}
-            </div>
-            <div className="grid grid-cols-2 gap-2 border-t border-gray-200 pt-3 sm:col-span-2 sm:grid-cols-4">
-              <div><p className="text-[11px] uppercase text-gray-400">Mileage In</p><p className="font-medium text-gray-800">{mileageIn ?? '—'}</p></div>
-              <div><p className="text-[11px] uppercase text-gray-400">Mileage Out</p><p className="font-medium text-gray-800">{mileageOut ?? '—'}</p></div>
-              <div><p className="text-[11px] uppercase text-gray-400">PO Number</p><p className="font-medium text-gray-800">{poNumber || '—'}</p></div>
-              <div><p className="text-[11px] uppercase text-gray-400">Type</p><p className="font-medium text-gray-800">{orderTypeLabel || 'Standard'}</p></div>
-            </div>
-          </div>
-        )}
+
         {recommendedWorkPanel}
         {showRecommendedServicesPanel && (
           <button
