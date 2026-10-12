@@ -6884,7 +6884,7 @@ html.customer-portal-active {
 .db-queue-reference .db-repair-orders-ledger__reference { align-self: center; }
 .db-repair-orders-ledger__row-shell[data-selected='true'] { outline: 1px solid var(--db-ledger-focus); outline-offset: -1px; }
 @media (min-width: 1100px) {
-  .db-repair-orders-workspace--new.db-repair-orders-workspace--detail-open { grid-template-columns: minmax(300px, .29fr) minmax(0, .71fr); }
+  .db-repair-orders-workspace--new.db-repair-orders-workspace--detail-open { grid-template-columns: minmax(300px, 29fr) minmax(0, 71fr); }
   .db-repair-orders-workspace--detail-open .db-repair-orders-ledger__row { padding-inline: 12px; }
   .db-repair-orders-workspace--detail-open .db-repair-orders-ledger__record { grid-template-columns: minmax(0, 1fr) 72px; min-height: 80px; gap: 8px; padding-block: 10px; }
   .db-repair-orders-workspace--detail-open .db-repair-orders-ledger__order-line strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; line-height: 1.4; }

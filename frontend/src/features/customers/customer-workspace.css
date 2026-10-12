@@ -149,3 +149,25 @@
 @media (max-width: 359px) {
   .db-customer-actions > div button svg { display: none; }
 }
+
+/* A carrier opened from Shop Work is a record, not a full-height job editor. */
+.db-repair-orders-workspace--new > .db-customer-embedded-workspace {
+  height: auto;
+  min-height: 0;
+  max-height: 100%;
+  align-self: start;
+}
+.db-customer-embedded { min-width: 0; }
+.db-customer-embedded__header { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; padding: 8px 12px; border-bottom: 1px solid var(--workspace-border, #d5dde6); }
+.db-customer-embedded__header > button { white-space: nowrap; flex-shrink: 0; }
+.db-customer-embedded__header h2 { min-width: 0; margin-left: auto; overflow-wrap: anywhere; font-size: var(--font-size-body, 16px); font-weight: 600; }
+.db-customer-embedded__actions { border-top: 1px solid var(--workspace-border, #d5dde6); padding: 8px 12px; }
+.db-customer-embedded__body { min-width: 0; }
+@media (max-width: 639px) {
+  .db-repair-orders-workspace--new > .db-customer-embedded-workspace { max-height: none; }
+  .db-customer-embedded-workspace > .slide-panel-content { overflow: visible; }
+  .db-customer-embedded__header { flex-direction: column; align-items: flex-start; gap: 4px; }
+  .db-customer-embedded__header h2 { margin-left: 0; }
+  .db-customer-embedded__header > button { min-height: 44px; }
+  .db-customer-embedded__actions { padding: 4px 8px; }
+}
