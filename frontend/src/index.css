@@ -6938,3 +6938,12 @@ html.customer-portal-active {
 @media (pointer: coarse) {
   .db-stage-action, .db-job-vehicle, .db-price-builder .db-job-stages .db-pipeline-step { min-height: 44px; }
 }
+
+/* Keep the white job sheet legible inside a dark staff shell. */
+.db-presentation-new .db-price-builder :is(.db-workspace-body, .db-workspace-footer) :is(.text-gray-400, .text-gray-500, .text-gray-600, .text-gray-700) { color: #4b5563 !important; }
+.db-presentation-new .db-price-builder :is(.db-workspace-body, .db-workspace-footer) :is(.text-gray-800, .text-gray-900) { color: #111827 !important; }
+.db-presentation-new .db-price-builder [data-authorization-quote-action] { color: #92400e !important; border-color: #d1d5db; }
+.db-presentation-new .db-price-builder [data-authorization-quote-action].bg-emerald-600 { color: #fff !important; }
+@media (max-width: 639px) {
+  .db-price-builder .db-workspace-header > div:first-child > div:last-child button { min-width: 44px; min-height: 44px; }
+}
