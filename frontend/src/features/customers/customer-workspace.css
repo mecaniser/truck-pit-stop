@@ -26,8 +26,8 @@
 .db-customer-record .db-customer-record__tabs button { min-height: 32px; padding: 4px 0; }
 /* Account data stays visible; density comes from compact rows, not disclosure. */
 .db-customer-record__facts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px 16px; padding: 0 0 10px; }
-.db-customer-record__account > section[aria-label='Customer sales tax'] { padding: 8px 0; }
-.db-customer-record__account > section[aria-label='Customer sales tax'] > label:first-child { padding: 0; gap: 8px; }
+.db-customer-business-settings section[aria-label='Customer sales tax'] { padding: 8px 0; }
+.db-customer-business-settings section[aria-label='Customer sales tax'] > label:first-child { padding: 0; gap: 8px; }
 .db-customer-record__facts dt { color: var(--customer-muted); font-size: calc(var(--font-size-body, 16px) * .75); }
 .db-customer-record__facts dd { font-size: calc(var(--font-size-body, 16px) * .8125); overflow-wrap: anywhere; }
 .db-customer-record__facts dd span { display: block; }
@@ -170,4 +170,12 @@
 @media (max-width: 639px) {
   .db-staff-content:has(> .db-customers-workspace--detail-open) > .db-mobile-nav-spacer { display: none !important; }
   .db-presentation-new .db-customers-workspace--detail-open { flex: 1 1 0; min-height: 0; }
+}
+
+.db-customer-business-settings { border-top: 1px solid var(--customer-rule); padding-top: 8px; }
+.db-customer-business-settings > button { display: inline-flex; align-items: center; gap: 6px; min-height: 32px; font-size: calc(var(--font-size-body, 16px) * .8125); font-weight: 600; }
+.db-customer-business-settings > button svg { width: 14px; height: 14px; }
+.db-customer-business-settings > section[hidden] { display: none; }
+@media (max-width: 639px) {
+  .db-customer-business-settings > button { min-height: 44px; }
 }
