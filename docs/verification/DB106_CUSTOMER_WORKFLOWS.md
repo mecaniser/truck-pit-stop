@@ -61,3 +61,7 @@ The earlier DB104 audit remains the source for documented ETS behaviors versus d
 6. Existing embedded base-customer/vehicle/contact fetch-error handling deserves a separate recovery audit; this item explicitly covers the three history request paths.
 
 Full ETS parity is not claimed. Payment/provider actions and destructive writes remain outside this local read-workflow verification.
+
+## Review handoff
+
+[Draft PR505](https://github.com/mecaniser/truck-pit-stop/pull/505) is stacked on PR504. Final-head Quality gates are dispatched manually after this evidence commit; local acceptance does not substitute for those checks. Parent PR504 run38313246736 completed successfully across all six jobs, separately from this item's gates. No merge or deployment performed.
