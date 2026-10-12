@@ -6963,6 +6963,7 @@ html.customer-portal-active {
 .db-parts-table th { white-space: nowrap; }
 .db-parts-table .db-part-name { width: 100%; min-width: 160px; }
 .db-part-quantity { min-width: 0; white-space: nowrap; }
+.db-part-mobile-label { display: none; }
 .db-standalone-parts .db-standalone-heading { margin: 0 0 4px; padding: 0; gap: 8px; }
 .db-standalone-heading > span { display: none; }
 .db-standalone-heading > div { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px; }
@@ -7012,4 +7013,39 @@ html.customer-portal-active {
 }
 @media (max-width: 639px), (pointer: coarse) {
   .db-price-builder .db-part-quantity :is(button, input), .db-price-builder .db-part-price { min-height: 44px !important; }
+}
+
+/* A phone reads the job as one document. The staff content owns scrolling;
+   none of the nested desktop sheets may trap a second scroll area. */
+@media (max-width: 639px) {
+  .db-staff-content:has(> .db-repair-orders-workspace--detail-open) > .db-mobile-nav-spacer { display: none !important; }
+  .db-repair-orders-workspace--new.db-repair-orders-workspace--detail-open { height: auto; flex: 0 0 auto; }
+  .db-repair-orders-workspace--new > .db-repair-order-detail-new--price-builder { height: auto; min-height: 0; overflow: visible; }
+  .db-repair-order-detail-new--price-builder > .slide-panel-content { flex: none; overflow: visible; clip-path: none; }
+  .db-repair-order-detail-new--price-builder .db-repair-order-price-shell-new,
+  .db-repair-order-detail-new--price-builder .db-price-builder { height: auto; min-height: 0; overflow: visible; }
+  .db-repair-order-detail-new--price-builder .db-price-builder { border-radius: 11px; }
+  .db-repair-order-detail-new--price-builder .db-workspace-header { border-radius: 11px 11px 0 0; }
+  .db-price-builder .db-workspace-tool-tabs { gap: 4px; }
+  .db-price-builder .db-workspace-tool-tabs button { white-space: nowrap; min-width: 0; min-height: 44px !important; padding-inline: 4px; }
+  .db-price-builder .db-workspace-tool-tabs button svg { display: none; }
+  .db-price-builder .db-workspace-tool-row input { min-height: 44px !important; font-size: 16px; }
+  .db-price-builder .db-job-stages .db-pipeline-step { min-height: 44px !important; }
+  .db-price-builder .db-workspace-line-details { margin-left: 0; padding-right: 0; }
+  .db-parts-table { overflow: visible; }
+  .db-parts-table :is(table, tbody) { display: block; width: 100%; }
+  .db-parts-table thead { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  .db-parts-table tbody > tr { display: grid; grid-template-columns: minmax(168px, 1fr) minmax(0, 1fr); gap: 8px; padding: 12px 0; }
+  .db-parts-table td { display: block; min-width: 0; padding: 0; }
+  .db-parts-table .db-part-name { grid-column: 1 / -1; width: auto; min-width: 0; overflow-wrap: anywhere; }
+  .db-parts-table .db-part-qty { text-align: left; }
+  .db-part-mobile-label { display: block; margin-bottom: 4px; color: #4b5563; font-size: 11px; font-weight: 500; }
+  .db-parts-table .db-part-total { grid-column: 2; align-self: end; }
+  .db-parts-table .db-part-savings { grid-column: 1; text-align: left; }
+  .db-parts-table :is(.db-part-total, .db-part-savings) .db-part-mobile-label { display: inline; margin-right: 6px; }
+  .db-presentation-new .db-price-builder .db-part-quantity :is(button, input) { width: 44px !important; min-width: 44px; padding-inline: 0; }
+  .db-price-builder .db-part-quantity input { font-size: 16px !important; }
+  .db-part-price-panel :is(button, input) { min-height: 44px; }
+  .db-part-price-panel button[aria-label='Close part pricing'] { min-width: 44px; display: inline-flex; align-items: center; justify-content: center; }
+  .db-part-price-panel input { font-size: 16px; }
 }
