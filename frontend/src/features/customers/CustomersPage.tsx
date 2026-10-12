@@ -6,11 +6,12 @@ import api from '../../lib/api'
 import { Customer, Vehicle, Contact } from '../../types'
 import { customerDisplayName, customerPersonalName } from '../../lib/customerName'
 import { vehicleDisplayLabel } from '../../lib/vehicleName'
-import { Combine, ArrowDown, ArrowRight, ArrowUp, ChevronDown, Mail, Pencil, Phone, Plus, Search, Star, Trash2, Truck } from 'lucide-react'
+import { ArrowDown, ArrowRight, ArrowUp, ChevronDown, Mail, Phone, Plus, Search, Star, Truck } from 'lucide-react'
 import SlidePanel from '@/components/SlidePanel'
 import CustomerDetailPanel from './CustomerDetailPanel'
 import CustomerHistoryOrderDetail from './CustomerHistoryOrderDetail'
 import CustomerVehicleDetail from './CustomerVehicleDetail'
+import CustomerVehicleFooter from './CustomerVehicleFooter'
 import CustomerDetailFooter from './CustomerDetailFooter'
 import CustomerFormModals, { type CustomerFormModalsHandle } from './CustomerFormModals'
 import CustomerContactModals, { type CustomerContactModalsHandle } from './CustomerContactModals'
@@ -1038,20 +1039,7 @@ export default function CustomersPage() {
             </div>
           ) : null
         }
-        headerExtra={selectedVehicleInPanel ? (
-          <div className="flex justify-end">
-            <button
-              type="button"
-              onClick={() => openEditVehicleModal(selectedVehicleInPanel)}
-              className="inline-flex min-h-11 items-center gap-2 rounded-lg bg-white px-4 py-2.5 font-semibold text-slate-800 shadow-sm transition-colors hover:bg-slate-100"
-            >
-              <Pencil className="h-4 w-4" />
-              Edit Vehicle
-            </button>
-          </div>
-        ) : selectedCustomer?.fleet_enabled ? (
-          <FleetMemberBadge variant="header" />
-        ) : undefined}
+        headerExtra={!selectedVehicleInPanel && selectedCustomer?.fleet_enabled ? <FleetMemberBadge variant="header" /> : undefined}
         onBack={
           selectedVehicleInPanel
             ? returnToCustomer
@@ -1068,38 +1056,14 @@ export default function CustomersPage() {
         }
         footer={
           selectedVehicleInPanel ? (
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <button
-                type="button"
-                onClick={() => handleDeleteVehicleClick(selectedVehicleInPanel)}
-                className="flex min-h-11 items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium text-red-600 transition-colors hover:bg-red-50"
-              >
-                <Trash2 className="h-4 w-4" />
-                Delete Vehicle
-              </button>
-              <div className="flex flex-wrap items-center justify-end gap-2">
-                {(currentUser?.role === 'garage_owner' || currentUser?.role === 'garage_admin') && (
-                  <button
-                    type="button"
-                    onClick={openVehicleMerge}
-                    disabled={!selectedVehicleInPanel.vin || selectedVehicleInPanel.vin.replace(/[\s-]/g, '').length !== 17}
-                    title={!selectedVehicleInPanel.vin || selectedVehicleInPanel.vin.replace(/[\s-]/g, '').length !== 17 ? 'A complete VIN is required to find safe duplicates' : undefined}
-                    className="flex min-h-11 items-center gap-2 rounded-lg bg-gray-100 px-4 py-2.5 font-medium text-gray-700 transition-colors hover:bg-gray-200 disabled:cursor-not-allowed disabled:opacity-45"
-                  >
-                    <Combine className="h-4 w-4" />
-                    Merge duplicate
-                  </button>
-                )}
-                <button
-                  type="button"
-                  onClick={() => openManageVehicleLinks(selectedVehicleInPanel)}
-                  className="flex min-h-11 items-center gap-2 rounded-lg bg-amber-50 px-4 py-2.5 font-medium text-amber-700 transition-colors hover:bg-amber-100"
-                >
-                  <Truck className="h-4 w-4" />
-                  Manage Connections
-                </button>
-              </div>
-            </div>
+            <CustomerVehicleFooter
+              vehicle={selectedVehicleInPanel}
+              canMerge={currentUser?.role === 'garage_owner' || currentUser?.role === 'garage_admin'}
+              onDelete={handleDeleteVehicleClick}
+              onMerge={openVehicleMerge}
+              onManage={openManageVehicleLinks}
+              onEdit={openEditVehicleModal}
+            />
           ) : selectedCustomer ? (
             <CustomerDetailFooter
               selectedCustomer={selectedCustomer}
