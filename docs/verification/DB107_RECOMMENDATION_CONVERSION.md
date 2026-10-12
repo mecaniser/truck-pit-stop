@@ -54,7 +54,7 @@ order identity. See the [approved contract](../contracts/DB107_RECOMMENDATION_CO
   network retry payload identity, conflict refresh, manual time entry, half-even
   monetary preview and fresh completion confirmation when switching orders.
 - Source production build passed after final changes. Combined production build
-  passed; final combined verification follows the integration correction.
+  and126 focused frontend tests passed after the integration correction.
 - Changed product TypeScript lint: zero errors, two pre-existing hooks warnings
   in RepairOrdersPage. No warning suppression or dependency changes.
 - Independent Security:55 API tests, five real PostgreSQL concurrency/lifecycle
@@ -148,3 +148,5 @@ still requests the optional recommendations panel with a deleted context, so it
 can display a refresh error and cached rows above its restoration controls.
 Conversion remains disabled. Hiding that unavailable panel is a separate shell
 cleanup; this does not prevent or weaken the verified restoration guard.
+
+Draft [PR506](https://github.com/mecaniser/truck-pit-stop/pull/506) is stacked on PR505. Final-head Quality gates are dispatched explicitly because the workflow automatic PR filter targets main.
