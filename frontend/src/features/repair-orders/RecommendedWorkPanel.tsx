@@ -1,11 +1,13 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Link } from 'react-router-dom'
+import { Link, useLocation } from 'react-router-dom'
 import { ArrowUpRight, ChevronLeft, ChevronRight, RotateCcw } from 'lucide-react'
 import { format } from 'date-fns'
 import { z } from 'zod'
 import api from '@/lib/api'
 import { useAuthStore } from '@/stores/authStore'
+import RecommendationConversionAction, { type ConversionContext } from './RecommendationConversionAction'
+import { conversionSchema, recommendationLink } from './recommendationConversion'
 
 const RECOMMENDED_WORK_QUERY_KEY = ['recommended-work'] as const
 const PAGE_SIZE = 25
@@ -20,6 +22,7 @@ const recommendedWorkPageSchema = z.object({
     description: z.string(),
     priority: z.enum(['urgent', 'soon', 'monitor']),
     created_at: timestampSchema,
+    conversion: conversionSchema.nullish(),
     vehicle: z.object({
       id: z.string().uuid(),
       unit_number: z.string().nullable(),
@@ -39,7 +42,7 @@ const recommendedWorkPageSchema = z.object({
   limit: z.literal(PAGE_SIZE),
 })
 
-interface Props {
+interface Props extends Partial<ConversionContext> {
   vehicleId: string
   customerId?: string
   contextOrderId?: string
@@ -62,7 +65,8 @@ export default function RecommendedWorkPanel(props: Props) {
   />
 }
 
-function RecommendedWorkContext({ tenantId, vehicleId, customerId, contextOrderId }: Props & { tenantId: string }) {
+function RecommendedWorkContext({ tenantId, vehicleId, customerId, contextOrderId, canConvert = false, hourlyRate, rateReadOnly, onOpenOperation }: Props & { tenantId: string }) {
+  const location = useLocation()
   const [skip, setSkip] = useState(0)
   const query = useQuery({
     queryKey: [...RECOMMENDED_WORK_QUERY_KEY, tenantId, vehicleId, customerId ?? null, contextOrderId ?? null, skip, PAGE_SIZE],
@@ -108,11 +112,14 @@ function RecommendedWorkContext({ tenantId, vehicleId, customerId, contextOrderI
             </div>
             <p className="break-words text-sm text-gray-900">{item.description}</p>
           </div>
-          <Link to={`/dashboard/repair-orders?selected=${item.source_order.id}`}
+          <Link to={recommendationLink(location.pathname, location.search, item.source_order.id, { recommendation: item.id })}
             aria-label={`Open source order ${item.source_order.order_number}`}
             className="db-prior-source inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-md px-1 py-1 text-xs font-medium text-gray-700 underline decoration-gray-300 underline-offset-4 hover:bg-gray-50">
             {item.source_order.order_number}<ArrowUpRight className="h-3.5 w-3.5" />
           </Link>
+          <RecommendationConversionAction recommendationId={item.id} description={item.description} contextOrderId={contextOrderId}
+            conversion={item.conversion} canConvert={canConvert && !query.isError} hourlyRate={hourlyRate}
+            rateReadOnly={rateReadOnly} onOpenOperation={onOpenOperation} />
         </li>)}
       </ul>}
       {(skip > 0 || (page && page.total > PAGE_SIZE)) && <div className="mt-2 flex flex-wrap items-center justify-between gap-2 border-t border-gray-100 pt-3">

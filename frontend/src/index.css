@@ -6970,6 +6970,10 @@ html.customer-portal-active {
 .db-standalone-heading p:first-child { font-size: 13px; }
 .db-prior-recommendations { border-top: 1px solid #e5e7eb; padding: 8px 0; }
 .db-prior-recommendations h3 { font-size: 13px; }
+.db-prior-recommendation > .db-recommendation-conversion { display: block; }
+@media (max-width: 639px), (pointer: coarse) {
+  .db-recommendation-conversion :is(button, input, a) { min-height: 44px; }
+}
 .db-presentation-new .db-price-builder .db-workspace-body .db-prior-source { color: #374151; }
 @media (min-width: 640px) and (pointer: fine) {
   .db-price-builder .db-workspace-header { padding: 8px 14px; }

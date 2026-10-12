@@ -1,3 +1,4 @@
+import type { ComponentProps } from 'react'
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter, useLocation } from 'react-router-dom'
@@ -24,7 +25,7 @@ function Location() {
   return <output data-testid="location">{location.pathname}{location.search}</output>
 }
 
-function setup(props = { vehicleId: 'truck-a', customerId: 'customer-a', contextOrderId: 'current-a' }) {
+function setup(props: ComponentProps<typeof RecommendedWorkPanel> = { vehicleId: 'truck-a', customerId: 'customer-a', contextOrderId: 'current-a' }) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   const content = (nextProps: typeof props) => <QueryClientProvider client={client}><MemoryRouter>
     <RecommendedWorkPanel {...nextProps} /><Location />
@@ -50,9 +51,9 @@ describe('truck recommendation continuity', () => {
     })
     expect(client.getQueryCache().getAll()[0].queryKey).toEqual(['recommended-work', 'tenant-a', 'truck-a', 'customer-a', 'current-a', 0, 25])
     const link = screen.getByRole('link', { name: 'Open source order RO-0101' })
-    expect(link).toHaveAttribute('href', `/dashboard/repair-orders?selected=${sourceId}`)
+    expect(link).toHaveAttribute('href', `/dashboard/repair-orders?selected=${sourceId}&recommendation=${item().id}`)
     fireEvent.click(link)
-    expect(screen.getByTestId('location')).toHaveTextContent(`/dashboard/repair-orders?selected=${sourceId}`)
+    expect(screen.getByTestId('location')).toHaveTextContent(`/dashboard/repair-orders?selected=${sourceId}&recommendation=${item().id}`)
     expect(screen.queryByRole('button', { name: /add|convert|resolve|delete/i })).not.toBeInTheDocument()
     expect(mocks.post).not.toHaveBeenCalled()
     expect(mocks.patch).not.toHaveBeenCalled()
