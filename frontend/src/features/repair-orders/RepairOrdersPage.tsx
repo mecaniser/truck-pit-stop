@@ -1,3 +1,4 @@
+import { openChecklistOnCompletionError } from '@/features/service-checklists/queries'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import DatePicker from '@/components/DatePicker'
 import { Dialog, DialogBackdrop, DialogPanel, DialogTitle } from '@headlessui/react'
@@ -1657,7 +1658,8 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
       setMileageOut('')
       toast.success('Repair finalized — invoice created and fleet billing contact notified')
     },
-    onError: (error: unknown) => {
+    onError: (error: unknown, variables) => {
+      openChecklistOnCompletionError(error, variables.orderId)
       toast.error(getErrorDetail(error, 'Failed to complete work order'))
     },
   })
@@ -1675,7 +1677,8 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
       setSelectedOrder((current) => retainRepairOrderPresentation(current, updated))
       toast.success('Work marked complete - ready for review')
     },
-    onError: (error: unknown) => {
+    onError: (error: unknown, variables) => {
+      openChecklistOnCompletionError(error, variables)
       toast.error(getErrorDetail(error, 'Failed to mark work complete'))
     },
   })
@@ -1701,7 +1704,8 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
         toast('Repair finalized, but the invoice still needs to be created.', { icon: '⚠️' })
       }
     },
-    onError: (error: unknown) => {
+    onError: (error: unknown, variables) => {
+      openChecklistOnCompletionError(error, variables.orderId)
       toast.error(getErrorDetail(error, 'Failed to finalize repair order'))
     },
   })

@@ -1,3 +1,4 @@
+import OrderChecklist from '@/features/service-checklists/OrderChecklist'
 import { type ChangeEvent, type MouseEvent as ReactMouseEvent, useEffect, useRef, useState } from 'react'
 import DatePicker from '@/components/DatePicker'
 import { Spinner } from '@/components/ui'
@@ -2612,6 +2613,8 @@ export default function PriceBuilderPanel({
           )}
         </div>
       )}
+
+      <OrderChecklist orderId={orderId} orderStatus={orderStatus} refreshToken={summary} />
 
       {!!summary?.warnings?.filter((w) => !w.line_id).length && (
         <div className="space-y-1 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">

@@ -1,3 +1,5 @@
+import { checklistOpenEvent } from '@/features/service-checklists/queries'
+import OrderChecklist from '@/features/service-checklists/OrderChecklist'
 /**
  * The FleetBoard repair-order builder.
  *
@@ -113,6 +115,13 @@ export default function FleetPriceBuilderPanel({ repairOrderId, onClose, onChang
   const [adHocOpen, setAdHocOpen] = useState(false)
   const [view, setView] = useState<'work' | 'activity'>('work')
   const [completeOpen, setCompleteOpen] = useState(false)
+  useEffect(() => {
+    const openChecklist = (event: Event) => {
+      if ((event as CustomEvent<{ orderId: string }>).detail.orderId === repairOrderId) setCompleteOpen(false)
+    }
+    window.addEventListener(checklistOpenEvent, openChecklist)
+    return () => window.removeEventListener(checklistOpenEvent, openChecklist)
+  }, [repairOrderId])
   // Extra work found after the job started, opened on request.
   const [addOpen, setAddOpen] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
@@ -371,6 +380,8 @@ export default function FleetPriceBuilderPanel({ repairOrderId, onClose, onChang
                 )}
               </section>
             )}
+
+            <OrderChecklist orderId={repairOrderId} orderStatus={detail.status} refreshToken={summary} />
 
             {/* ---- work / activity ---- */}
             {/* Activity is a second view of this order, not a setting on it, so
