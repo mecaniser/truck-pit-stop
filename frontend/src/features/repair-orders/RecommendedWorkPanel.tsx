@@ -90,7 +90,7 @@ function RecommendedWorkContext({ tenantId, vehicleId, customerId, contextOrderI
           <RotateCcw className="h-3.5 w-3.5" /> Refresh
         </button>
       </div>
-      <p className="mt-1 text-xs !text-gray-600">Unresolved work recorded on other orders.</p>
+      {page?.total !== 0 && <p className="mt-1 text-xs !text-gray-600">Unresolved work recorded on other orders.</p>}
       <div role="status" aria-live="polite">
         {query.isPending && <p className="py-3 text-sm !text-gray-600">Loading recommendations…</p>}
         {query.isFetching && !query.isPending && <p className="pt-2 text-xs !text-gray-600">Refreshing recommendations…</p>}
@@ -99,7 +99,7 @@ function RecommendedWorkContext({ tenantId, vehicleId, customerId, contextOrderI
         {page ? 'Could not refresh recommendations. Showing the last loaded page.' : 'Could not load recommendations.'}
         <button type="button" className="ml-2 whitespace-nowrap underline" onClick={() => { void query.refetch() }}>Retry</button>
       </div>}
-      {page && !query.isError && page.total === 0 && <p className="py-3 text-sm !text-gray-600">No open recommendations on other orders.</p>}
+      {page && !query.isError && page.total === 0 && <p className="pt-1 text-xs !text-gray-600">No open recommendations on other orders.</p>}
       {!!page?.items.length && <ul className="mt-3 divide-y divide-gray-100">
         {page.items.map((item) => <li key={item.id} className="flex flex-wrap items-start justify-between gap-2 py-3 first:pt-0">
           <div className="min-w-0 flex-1 basis-48">

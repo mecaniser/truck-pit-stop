@@ -727,7 +727,7 @@ describe('PriceBuilderPanel pending feedback', () => {
       onOverrideTechnicianAssignment: vi.fn(),
     }
     const view = renderPanel(props)
-    expect(await screen.findByLabelText('Technician status')).toHaveTextContent('Technician: Mike Johnson')
+    expect(await screen.findByLabelText('Technician status')).toHaveTextContent('Mike Johnson')
     const trigger = screen.getByRole('button', { name: 'Change technician…' })
     await user.click(trigger)
     const options = screen.getByLabelText('Change technician options')

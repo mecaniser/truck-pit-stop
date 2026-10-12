@@ -362,8 +362,8 @@ export default function RepairOrdersLedger({
                 row.quoteSent === false ? { label: 'Estimate', value: 'Not sent' } : null,
               ].filter((fact): fact is { label: string; value: string } => fact !== null)
               const vehicleLine = [
-                [row.vehicleYear, row.vehicleMake, row.vehicleModel].filter(Boolean).join(' ').trim() || row.vehicleInfo || null,
                 row.vehicleUnitNumber ? `Unit ${row.vehicleUnitNumber}` : null,
+                [row.vehicleYear, row.vehicleMake, row.vehicleModel].filter(Boolean).join(' ').trim() || row.vehicleInfo || null,
               ].filter(Boolean).join(' · ') || null
 
               return (
