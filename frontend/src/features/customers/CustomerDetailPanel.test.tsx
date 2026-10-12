@@ -69,6 +69,8 @@ describe('compact customer record', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Account details' }))
     view.rerender(<QueryClientProvider client={client}><Harness record={{ ...customer, id: 'customer-b' }} /></QueryClientProvider>)
     expect(screen.getByRole('button', { name: 'Account details' })).toHaveAttribute('aria-expanded', 'false')
+    view.rerender(<QueryClientProvider client={client}><Harness /></QueryClientProvider>)
+    expect(screen.getByRole('button', { name: 'Account details' })).toHaveAttribute('aria-expanded', 'false')
   })
   it.each([['-50', 'Account credit', '$50.00'], [undefined, 'Balance', '—']])('keeps %s balance meaning', (balance, label, amount) => {
     setup({ selectedCustomer: { ...customer, balance } as Customer })
