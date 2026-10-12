@@ -84,6 +84,15 @@ describe('compact customer record', () => {
     expect(balanceRegion).toHaveTextContent(label!)
     expect(balanceRegion).toHaveTextContent(amount!)
   })
+  it('shows history load failure with retry instead of fabricated empty totals', () => {
+    const retry = vi.fn()
+    setup({ detailTab: 'history', historyError: true, onRetryHistory: retry, customerHistory: undefined })
+    fireEvent.click(screen.getByRole('button', { name: 'History', exact: true }))
+    expect(screen.getByRole('alert')).toHaveTextContent('Could not load customer history')
+    expect(screen.queryByText('Lifetime spend')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Retry customer history' }))
+    expect(retry).toHaveBeenCalledOnce()
+  })
   it('keeps history keyboard expandable without repeating activity tiles', async () => {
     setup()
     expect(screen.queryByRole('heading', { name: 'Activity' })).not.toBeInTheDocument()

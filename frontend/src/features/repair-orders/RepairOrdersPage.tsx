@@ -28,6 +28,8 @@ import { useTheme } from '../../contexts/ThemeContext'
 import { useWebSocket } from '../../hooks/useWebSocket'
 import { useAuthStore } from '@/stores/authStore'
 import CustomerDetailPanel from '../customers/CustomerDetailPanel'
+import CustomerHistoryOrderDetail from '../customers/CustomerHistoryOrderDetail'
+import CustomerVehicleDetail from '../customers/CustomerVehicleDetail'
 import CustomerDetailFooter from '../customers/CustomerDetailFooter'
 import CustomerFormModals, { type CustomerFormModalsHandle } from '../customers/CustomerFormModals'
 import CustomerContactModals, { type CustomerContactModalsHandle } from '../customers/CustomerContactModals'
@@ -675,11 +677,15 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
   // The customer *list* lives on its own tab; this is the single-customer view.
   const customerViewId = searchParams.get('customer')
   const openCustomerView = (customerId: string) => {
+    setCustomerTruckSelection(null)
+    setCustomerViewTab('overview')
+    setCustomerViewExpandedHistoryId(null)
     const next = new URLSearchParams(searchParams)
     next.set('customer', customerId)
     setSearchParams(next, { replace: false })
   }
   const closeCustomerView = () => {
+    setCustomerTruckSelection(null)
     const next = new URLSearchParams(searchParams)
     next.delete('customer')
     setSearchParams(next, { replace: true })
@@ -705,11 +711,25 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
   })
   const [customerViewTab, setCustomerViewTab] = useState<'overview' | 'history'>('overview')
   const [customerViewExpandedHistoryId, setCustomerViewExpandedHistoryId] = useState<string | null>(null)
-  const { data: customerViewHistory, isLoading: customerViewHistoryLoading } = useQuery<CustomerHistoryResponse>({
+  const { data: customerViewHistory, isLoading: customerViewHistoryLoading, isError: customerHistoryError, refetch: refetchCustomerHistory } = useQuery<CustomerHistoryResponse>({
     queryKey: ['customerHistory', customerViewId],
     queryFn: async () => (await api.get(`/customers/${customerViewId}/history`)).data,
     enabled: !!customerViewId && customerViewTab === 'history',
   })
+
+  const [customerTruckSelection, setCustomerTruckSelection] = useState<{ customerId: string; vehicleId: string } | null>(null)
+  const customerViewVehicle = customerTruckSelection?.customerId === customerViewId
+    ? customerViewVehicles?.find(vehicle => vehicle.id === customerTruckSelection.vehicleId) ?? null
+    : null
+  const selectCustomerTruck = (vehicle: Vehicle | null) => setCustomerTruckSelection(vehicle && customerViewId ? { customerId: customerViewId, vehicleId: vehicle.id } : null)
+  const openCustomerHistoryOrder = (orderId: string) => {
+    if (selectedOrder?.id && selectedOrder.id !== orderId) cancelOrderQueries(selectedOrder.id)
+    setCustomerTruckSelection(null)
+    const next = new URLSearchParams(searchParams)
+    next.delete('customer')
+    next.set('selected', orderId)
+    setSearchParams(next, { replace: true })
+  }
 
   const customerContactControls = useRef<CustomerContactModalsHandle | null>(null)
   const customerVehicleControls = useRef<CustomerVehicleModalsHandle | null>(null)
@@ -4069,30 +4089,33 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
             <header className="db-customer-embedded__header">
               <button
                 type="button"
-                onClick={closeCustomerView}
+                onClick={customerViewVehicle ? () => selectCustomerTruck(null) : closeCustomerView}
                 className="db-inline-text-action inline-flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-sm font-semibold text-orange-700 hover:bg-orange-50"
               >
                 <ChevronLeft className="h-4 w-4" />
-                Back to {selectedOrder ? `#${selectedOrder.order_number}` : 'the repair order'}
+                Back to {customerViewVehicle ? customerNameOf(customerViewRecord, 'Customer') : selectedOrder ? `#${selectedOrder.order_number}` : 'the repair order'}
               </button>
               <h2>
-                {customerNameOf(customerViewRecord, 'Customer')}
+                {customerViewVehicle ? vehicleDisplayLabel(customerViewVehicle) : customerNameOf(customerViewRecord, 'Customer')}
               </h2>
             </header>
-            <div className="db-customer-embedded__body">
-              <CustomerDetailPanel
+            <div className="db-customer-embedded__body" key={customerViewVehicle?.id || customerViewId}>
+              {customerViewVehicle ? <CustomerVehicleDetail customer={customerViewRecord} vehicle={customerViewVehicle} onOpenOrder={openDetail} /> : <CustomerDetailPanel
                 selectedCustomer={customerViewRecord}
                 detailTab={customerViewTab}
                 setDetailTab={setCustomerViewTab}
                 expandedHistoryId={customerViewExpandedHistoryId}
                 setExpandedHistoryId={setCustomerViewExpandedHistoryId}
-                HistoryRoDetail={() => null}
+                HistoryRoDetail={CustomerHistoryOrderDetail}
+                onOpenHistoryOrder={openCustomerHistoryOrder}
                 customerVehicles={customerViewVehicles}
                 customerContacts={customerViewContacts}
                 customerHistory={customerViewHistory}
                 isLoadingVehicles={customerViewVehiclesLoading}
                 isLoadingContacts={customerViewContactsLoading}
                 isLoadingHistory={customerViewHistoryLoading}
+                historyError={customerHistoryError}
+                onRetryHistory={() => void refetchCustomerHistory()}
                 {...customerViewGroups}
                 vehiclesViewMode={customerViewVehiclesMode}
                 setVehiclesViewMode={setCustomerViewVehiclesMode}
@@ -4100,26 +4123,33 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                 setVehicleRelationshipSearch={setCustomerViewVehicleSearch}
                 vehicleRelationshipFilter={customerViewVehicleFilter}
                 setVehicleRelationshipFilter={setCustomerViewVehicleFilter}
-                setSelectedVehicleInPanel={() => undefined}
+                setSelectedVehicleInPanel={selectCustomerTruck}
                 openAddContactModal={() => customerContactControls.current?.openAdd()}
                 openEditContactModal={(contact) => customerContactControls.current?.openEdit(contact)}
                 handleDeleteContactClick={(contact) => customerContactControls.current?.requestDelete(contact)}
                 openAddVehicleModal={() => customerVehicleControls.current?.openAdd()}
                 openEditVehicleModal={(vehicle) => customerVehicleControls.current?.openEdit(vehicle)}
                 handleDeleteVehicleClick={(vehicle) => customerVehicleControls.current?.requestDelete(vehicle)}
-              />
+              />}
             </div>
             {/* Delete, Merge and Edit for the company itself, in place. */}
             <div className="db-customer-embedded__actions">
-              <CustomerDetailFooter
+              {customerViewVehicle ? <div className="db-customer-actions db-customer-vehicle-actions flex flex-wrap items-center justify-between">
+                <div className="flex flex-wrap items-center">
+                  <button type="button" onClick={() => customerVehicleControls.current?.requestDelete(customerViewVehicle)}>Delete vehicle</button>
+                  {(currentUser?.role === 'garage_owner' || currentUser?.role === 'garage_admin') && <button type="button" disabled={customerViewVehicle.vin?.replace(/[\s-]/g, '').length !== 17} onClick={() => customerVehicleControls.current?.openMerge()}>Merge duplicate</button>}
+                  <button type="button" onClick={() => customerVehicleControls.current?.openManageLinks(customerViewVehicle)}>Manage connections</button>
+                </div>
+                <button type="button" className="rounded-lg bg-amber-500 text-white" onClick={() => customerVehicleControls.current?.openEdit(customerViewVehicle)}>Edit vehicle</button>
+              </div> : <CustomerDetailFooter
                 selectedCustomer={customerViewRecord}
                 handleDeleteClick={(customer) => customerFormControls.current?.requestDelete(customer)}
                 onMerge={() => customerFormControls.current?.openMerge()}
                 handleEditFromDetail={() => customerFormControls.current?.openEdit(customerViewRecord)}
-              />
+              />}
             </div>
             <CustomerContactModals customer={customerViewRecord} controlsRef={customerContactControls} />
-            <CustomerVehicleModals customer={customerViewRecord} controlsRef={customerVehicleControls} />
+            <CustomerVehicleModals customer={customerViewRecord} selectedVehicleInPanel={customerViewVehicle} setSelectedVehicleInPanel={selectCustomerTruck} controlsRef={customerVehicleControls} />
             <CustomerFormModals
               selectedCustomer={customerViewRecord}
               controlsRef={customerFormControls}

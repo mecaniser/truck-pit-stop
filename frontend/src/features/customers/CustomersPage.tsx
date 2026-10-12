@@ -3,12 +3,14 @@ import { Spinner, LoadingLine, StaffSearchField } from '@/components/ui'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { useQuery, useQueryClient, keepPreviousData } from '@tanstack/react-query'
 import api from '../../lib/api'
-import { Customer, Vehicle, Contact, RepairOrder } from '../../types'
+import { Customer, Vehicle, Contact } from '../../types'
 import { customerDisplayName, customerPersonalName } from '../../lib/customerName'
 import { vehicleDisplayLabel } from '../../lib/vehicleName'
-import { Combine, ArrowDown, ArrowRight, ArrowUp, ChevronDown, Mail, Pencil, Phone, Plus, Search, Star, Trash2, Truck, Wrench } from 'lucide-react'
+import { Combine, ArrowDown, ArrowRight, ArrowUp, ChevronDown, Mail, Pencil, Phone, Plus, Search, Star, Trash2, Truck } from 'lucide-react'
 import SlidePanel from '@/components/SlidePanel'
 import CustomerDetailPanel from './CustomerDetailPanel'
+import CustomerHistoryOrderDetail from './CustomerHistoryOrderDetail'
+import CustomerVehicleDetail from './CustomerVehicleDetail'
 import CustomerDetailFooter from './CustomerDetailFooter'
 import CustomerFormModals, { type CustomerFormModalsHandle } from './CustomerFormModals'
 import CustomerContactModals, { type CustomerContactModalsHandle } from './CustomerContactModals'
@@ -155,13 +157,6 @@ export default function CustomersPage() {
     return new URLSearchParams(location.search).get('selected')
   }, [location.search, presentationVariant])
 
-  // Mechanic lookup for vehicle history
-  interface Mechanic {
-    id: string
-    first_name: string
-    last_name: string
-  }
-  
   // Vehicle form state
 
   // Contact form state
@@ -276,25 +271,7 @@ export default function CustomersPage() {
     enabled: !!selectedCustomer?.id && isDetailOpen,
   })
 
-  const { data: customerRepairOrders, isLoading: isLoadingOrders } = useQuery<RepairOrder[]>({
-    queryKey: ['customerVehicleRepairOrders', selectedVehicleInPanel?.id],
-    queryFn: async () => {
-      if (!selectedVehicleInPanel?.id) return []
-      const response = await api.get('/repair-orders', {
-        params: {
-          vehicle_id: selectedVehicleInPanel.id,
-        },
-      })
-      return response.data
-    },
-    // The overview already has a dedicated History tab. Fetch orders only
-    // after a vehicle is opened, and only for that vehicle rather than every
-    // order the customer has ever created.
-    enabled: !!selectedVehicleInPanel?.id && isDetailOpen,
-    staleTime: 30_000,
-  })
-
-  const { data: customerHistory, isLoading: isLoadingHistory } = useQuery<CustomerHistoryResponse>({
+  const { data: customerHistory, isLoading: isLoadingHistory, isError: historyError, refetch: refetchHistory } = useQuery<CustomerHistoryResponse>({
     queryKey: ['customerHistory', selectedCustomer?.id],
     queryFn: async () => {
       const response = await api.get(`/customers/${selectedCustomer!.id}/history`)
@@ -303,133 +280,7 @@ export default function CustomersPage() {
     enabled: !!selectedCustomer?.id && isDetailOpen && detailTab === 'history',
   })
 
-  interface HistoryRoDetailData {
-    id: string
-    order_number: string
-    mechanic_name: string | null
-    amount_paid: string | null
-    total_cost: string
-    customer_notes: string | null
-    internal_notes: string | null
-    labor: { id: string; description: string; hours: string; hourly_rate: string; total_cost: string }[]
-    parts: { id: string; name: string | null; sku: string | null; quantity: number; unit_price: string; total_price: string }[]
-  }
 
-  const HistoryRoDetail = ({ customerId, orderId }: { customerId: string; orderId: string }) => {
-    const { data, isLoading } = useQuery<HistoryRoDetailData>({
-      queryKey: ['customerHistoryDetail', customerId, orderId],
-      queryFn: async () => {
-        const response = await api.get(`/customers/${customerId}/history/${orderId}`)
-        return response.data
-      },
-    })
-    if (isLoading) return <p className="text-xs text-gray-400">Loading…</p>
-    if (!data) return <p className="text-xs text-gray-400">No details available</p>
-    // Try to pull a human-readable internal-notes body if it's not JSON.
-    let internalNotesDisplay: string | null = null
-    if (data.internal_notes) {
-      try {
-        JSON.parse(data.internal_notes)
-      } catch {
-        internalNotesDisplay = data.internal_notes
-      }
-    }
-    return (
-      <div className="space-y-3 text-sm">
-        <div className="flex flex-wrap gap-x-6 gap-y-1 text-xs">
-          <div>
-            <span className="text-gray-500">Mechanic: </span>
-            <span className="font-medium text-gray-800">{data.mechanic_name || '—'}</span>
-          </div>
-          <div>
-            <span className="text-gray-500">Amount paid: </span>
-            <span className="font-medium text-emerald-700">
-              {data.amount_paid ? `$${parseFloat(data.amount_paid).toFixed(2)}` : 'Not paid'}
-            </span>
-          </div>
-          <div>
-            <span className="text-gray-500">RO total: </span>
-            <span className="font-medium text-gray-800">${parseFloat(data.total_cost).toFixed(2)}</span>
-          </div>
-        </div>
-
-        <div>
-          <p className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-1">Work performed</p>
-          {data.labor.length === 0 ? (
-            <p className="text-xs text-gray-400">No labor recorded</p>
-          ) : (
-            <ul className="space-y-1">
-              {data.labor.map((li) => (
-                <li key={li.id} className="flex items-baseline justify-between gap-3">
-                  <span className="text-gray-800">{li.description || 'Labor'}</span>
-                  <span className="text-xs text-gray-500 whitespace-nowrap">
-                    {parseFloat(li.hours).toFixed(2)} hr × ${parseFloat(li.hourly_rate).toFixed(2)} ={' '}
-                    <span className="font-medium text-gray-800">${parseFloat(li.total_cost).toFixed(2)}</span>
-                  </span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-
-        <div>
-          <p className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-1">Parts used</p>
-          {data.parts.length === 0 ? (
-            <p className="text-xs text-gray-400">No parts used</p>
-          ) : (
-            <ul className="space-y-1">
-              {data.parts.map((p) => (
-                <li key={p.id} className="flex items-baseline justify-between gap-3">
-                  <span className="text-gray-800">
-                    {p.name || 'Part'}
-                    {p.sku && <span className="text-xs text-gray-500 ml-1">· {p.sku}</span>}
-                  </span>
-                  <span className="text-xs text-gray-500 whitespace-nowrap">
-                    {p.quantity} × ${parseFloat(p.unit_price).toFixed(2)} ={' '}
-                    <span className="font-medium text-gray-800">${parseFloat(p.total_price).toFixed(2)}</span>
-                  </span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-
-        {(data.customer_notes || internalNotesDisplay) && (
-          <div>
-            <p className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-1">Notes</p>
-            {data.customer_notes && (
-              <p className="text-xs text-gray-700 whitespace-pre-wrap"><span className="text-gray-500">Customer: </span>{data.customer_notes}</p>
-            )}
-            {internalNotesDisplay && (
-              <p className="text-xs text-gray-700 whitespace-pre-wrap mt-1"><span className="text-gray-500">Internal: </span>{internalNotesDisplay}</p>
-            )}
-          </div>
-        )}
-      </div>
-    )
-  }
-
-  // Fetch mechanics for displaying who worked on the vehicle
-  const { data: mechanics } = useQuery<Mechanic[]>({
-    queryKey: ['mechanics'],
-    queryFn: async () => {
-      const response = await api.get('/mechanics')
-      return response.data
-    },
-    enabled: !!selectedVehicleInPanel,
-  })
-
-
-
-  // Filter repair orders for the selected vehicle
-  const vehicleRepairOrders = customerRepairOrders || []
-
-  // Create mechanic lookup map
-  const mechanicLookup = useMemo(() => {
-    const map = new Map<string, Mechanic>()
-    mechanics?.forEach(m => map.set(m.id, m))
-    return map
-  }, [mechanics])
 
 
   // VIN Decoder
@@ -1234,142 +1085,8 @@ export default function CustomersPage() {
         }
       >
         {!selectedCustomer ? null : selectedVehicleInPanel ? (
-          /* Vehicle Detail Content */
-          <div className="p-6 space-y-6">
-            {/* Owner */}
-            <div>
-              <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">Owner</h3>
-              <div className="bg-gray-50 rounded-xl p-4 flex items-center gap-3">
-                <div className="w-10 h-10 rounded-lg bg-amber-100 flex items-center justify-center text-amber-700 font-bold">
-                  {selectedCustomer.first_name.charAt(0)}{selectedCustomer.last_name.charAt(0)}
-                </div>
-                <div>
-                  <p className="text-gray-900 font-semibold">
-                    {customerDisplayName(selectedCustomer)}
-                  </p>
-                  {selectedCustomer.company_name && customerPersonalName(selectedCustomer) && (
-                    <p className="text-sm text-gray-500">{customerPersonalName(selectedCustomer)}</p>
-                  )}
-                  <p className="text-sm text-gray-500">{selectedCustomer.email}</p>
-                </div>
-              </div>
-            </div>
-
-            {/* Key Details */}
-            <div>
-              <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">Key Details</h3>
-              <div className="grid grid-cols-2 gap-3 bg-gray-50 rounded-xl p-4 text-sm text-gray-700">
-                <div>
-                  <p className="text-gray-500">VIN</p>
-                  <p className="font-mono break-all">{selectedVehicleInPanel.vin || '—'}</p>
-                </div>
-                <div>
-                  <p className="text-gray-500">Plate</p>
-                  <p className="font-semibold">{selectedVehicleInPanel.license_plate || '—'}</p>
-                </div>
-                <div>
-                  <p className="text-gray-500">Color</p>
-                  <p className="font-semibold">{selectedVehicleInPanel.color || '—'}</p>
-                </div>
-                <div>
-                  <p className="text-gray-500">Mileage</p>
-                  <p className="font-semibold">
-                    {typeof selectedVehicleInPanel.mileage === 'number'
-                      ? `${selectedVehicleInPanel.mileage.toLocaleString()} mi`
-                      : '—'}
-                  </p>
-                </div>
-              </div>
-            </div>
-
-            {/* Unit Number */}
-            {selectedVehicleInPanel.unit_number && (
-              <div>
-                <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">Unit Number</h3>
-                <div className="bg-amber-50 rounded-xl p-4">
-                  <p className="text-amber-800 font-mono font-semibold text-lg">{selectedVehicleInPanel.unit_number}</p>
-                </div>
-              </div>
-            )}
-
-            {/* Notes */}
-            {selectedVehicleInPanel.notes && (
-              <div>
-                <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">Notes</h3>
-                <div className="bg-gray-50 rounded-xl p-4">
-                  <p className="text-gray-700 whitespace-pre-wrap">{selectedVehicleInPanel.notes}</p>
-                </div>
-              </div>
-            )}
-
-            {/* Repair History */}
-            <div>
-              <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">
-                Repair History{isLoadingOrders ? '' : ` (${vehicleRepairOrders.length})`}
-              </h3>
-              {isLoadingOrders ? (
-                <div className="bg-gray-50 rounded-xl p-4 text-center">
-                  <LoadingLine className="text-gray-400">Loading repair history…</LoadingLine>
-                </div>
-              ) : vehicleRepairOrders.length === 0 ? (
-                <div className="bg-gray-50 rounded-xl p-4 text-center">
-                  <p className="text-gray-500 text-sm">No repair orders for this vehicle yet</p>
-                </div>
-              ) : (
-                <div className="space-y-2">
-                  {vehicleRepairOrders.map((order) => {
-                    const mechanic = order.assigned_mechanic_id ? mechanicLookup.get(order.assigned_mechanic_id) : null
-                    const statusColors: Record<string, string> = {
-                      draft: 'bg-gray-100 text-gray-700',
-                      quoted: 'bg-blue-100 text-blue-700',
-                      declined: 'bg-red-100 text-red-700',
-                      approved: 'bg-cyan-100 text-cyan-700',
-                      assigned: 'bg-amber-100 text-amber-700',
-                      acknowledged: 'bg-amber-100 text-amber-700',
-                      in_progress: 'bg-amber-100 text-amber-700',
-                      pending_review: 'bg-purple-100 text-purple-700',
-                      completed: 'bg-green-100 text-green-700',
-                      invoiced: 'bg-indigo-100 text-indigo-700',
-                      paid: 'bg-green-100 text-green-700',
-                      cancelled: 'bg-gray-100 text-gray-500',
-                    }
-                    return (
-                      <div
-                        key={order.id}
-                        className="bg-gray-50 rounded-xl p-3 hover:bg-gray-100 transition-colors cursor-pointer"
-                        onClick={() => {
-                          // Navigate to repair order (SPA nav, not a hard reload —
-                          // a full page reload here would blow away the RO list's
-                          // React Query cache and force the whole paginated fetch
-                          // to run again just to open one panel)
-                          navigate(`/dashboard/repair-orders?selected=${order.id}`)
-                        }}
-                      >
-                        <div className="flex items-center justify-between mb-1">
-                          <span className="font-mono text-sm font-semibold text-gray-900">#{order.order_number}</span>
-                          <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${statusColors[order.status] || 'bg-gray-100 text-gray-700'}`}>
-                            {order.status.replace(/_/g, ' ')}
-                          </span>
-                        </div>
-                        <p className="text-sm text-gray-600 line-clamp-1">{order.description || 'No description'}</p>
-                        <div className="flex items-center justify-between mt-2 text-xs text-gray-500">
-                          <span>{new Date(order.created_at).toLocaleDateString()}</span>
-                          {mechanic && (
-                            <span className="flex items-center gap-1">
-                              <Wrench className="w-3 h-3" />
-                              {mechanic.first_name} {mechanic.last_name}
-                            </span>
-                          )}
-                          <span className="font-semibold text-gray-700">${parseFloat(order.total_cost).toFixed(2)}</span>
-                        </div>
-                      </div>
-                    )
-                  })}
-                </div>
-              )}
-            </div>
-
-          </div>
+          <CustomerVehicleDetail customer={selectedCustomer} vehicle={selectedVehicleInPanel}
+            onOpenOrder={order => navigate(`/dashboard/repair-orders?selected=${order.id}`)} />
               ) : (
                 <CustomerDetailPanel
                   selectedCustomer={selectedCustomer}
@@ -1377,13 +1094,16 @@ export default function CustomersPage() {
                   setDetailTab={setDetailTab}
                   expandedHistoryId={expandedHistoryId}
                   setExpandedHistoryId={setExpandedHistoryId}
-                  HistoryRoDetail={HistoryRoDetail}
+                  HistoryRoDetail={CustomerHistoryOrderDetail}
+                  onOpenHistoryOrder={orderId => navigate(`/dashboard/repair-orders?selected=${orderId}`)}
                   customerVehicles={customerVehicles}
                   customerContacts={customerContacts}
                   customerHistory={customerHistory}
                   isLoadingVehicles={isLoadingVehicles}
                   isLoadingContacts={isLoadingContacts}
                   isLoadingHistory={isLoadingHistory}
+                  historyError={historyError}
+                  onRetryHistory={() => void refetchHistory()}
                   ownedVehicles={ownedVehicles}
                   authorityVehicles={authorityVehicles}
                   visibleCustomerVehicleGroups={visibleCustomerVehicleGroups}
