@@ -42,3 +42,13 @@ export function recommendationErrorMessage(failure: unknown, fallback: string): 
   if (detail && typeof detail === 'object' && 'message' in detail && typeof detail.message === 'string') return detail.message
   return fallback
 }
+
+/** Reveal within the workspace, without scrolling outer shells beneath mobile nav. */
+export function revealWorkspaceContent(element: HTMLElement) {
+  for (let parent = element.parentElement; parent; parent = parent.parentElement) {
+    if (['auto', 'scroll'].includes(getComputedStyle(parent).overflowY) && parent.scrollHeight > parent.clientHeight) {
+      parent.scrollTo?.({ top: parent.scrollTop + element.getBoundingClientRect().top - parent.getBoundingClientRect().top - 8 })
+      return
+    }
+  }
+}

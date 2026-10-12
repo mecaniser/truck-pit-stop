@@ -4,7 +4,7 @@ import { Link, useLocation } from 'react-router-dom'
 import { ArrowUpRight, Plus } from 'lucide-react'
 import { z } from 'zod'
 import api from '@/lib/api'
-import { conversionHours, conversionTotal, conversionSchema, recommendationLink, type RecommendationConversion } from './recommendationConversion'
+import { conversionHours, conversionTotal, conversionSchema, recommendationLink, revealWorkspaceContent, type RecommendationConversion } from './recommendationConversion'
 
 export interface ConversionContext {
   canConvert: boolean
@@ -56,6 +56,12 @@ export default function RecommendationConversionAction({ recommendationId, descr
   useEffect(() => { setConflict(null) }, [conversion])
   const submission = useRef<Submission | null>(null)
   const trigger = useRef<HTMLButtonElement>(null)
+  const form = useRef<HTMLFormElement>(null)
+  useEffect(() => {
+    if (!open) return
+    const frame = requestAnimationFrame(() => { if (form.current) revealWorkspaceContent(form.current) })
+    return () => cancelAnimationFrame(frame)
+  }, [open])
   const restoreFocus = useRef(false)
   useEffect(() => {
     if (!open && restoreFocus.current) { trigger.current?.focus(); restoreFocus.current = false }
@@ -111,7 +117,7 @@ export default function RecommendationConversionAction({ recommendationId, descr
         <Plus className="h-3.5 w-3.5" />{effective ? 'Add again' : 'Add to this order'}
       </button>}
     </div>
-    {open && mayAdd && <form className="mt-1 rounded-lg border border-orange-200 bg-orange-50/40 p-2" aria-label={`Add recommendation: ${description}`}
+    {open && mayAdd && <form ref={form} className="mt-1 rounded-lg border border-orange-200 bg-orange-50/40 p-2" aria-label={`Add recommendation: ${description}`}
       onKeyDown={(event) => { if (event.key === 'Escape') { event.stopPropagation(); close() } }}
       onSubmit={(event) => {
         event.preventDefault()
@@ -122,7 +128,7 @@ export default function RecommendationConversionAction({ recommendationId, descr
         }
         setError(''); mutation.mutate(submission.current)
       }}>
-      {effective?.can_replace && <p className="mb-2 text-xs text-amber-800">This creates a replacement operation. The previous link stays in the work history.</p>}
+      {effective?.can_replace && <p className="db-recommendation-replacement-warning mb-2 text-xs">This creates a replacement operation. The previous link stays in the work history.</p>}
       <div className="flex flex-wrap items-end gap-2">
         <label className="min-w-0 flex-1 basis-24 text-xs font-medium text-gray-700">Hours
           <input autoFocus type="text" inputMode="decimal" aria-describedby={helpId} placeholder="1.5 or 1:30"
