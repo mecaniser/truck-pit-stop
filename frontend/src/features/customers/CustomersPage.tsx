@@ -1049,7 +1049,7 @@ export default function CustomersPage() {
         }
         backLabel={
           selectedVehicleInPanel && selectedCustomer
-            ? `Back to ${selectedCustomer.first_name}`
+            ? `Back to ${customerDisplayName(selectedCustomer)}`
             : presentationVariant === 'new'
               ? 'Back to Customers'
               : undefined

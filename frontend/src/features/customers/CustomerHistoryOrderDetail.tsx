@@ -44,6 +44,6 @@ export default function CustomerHistoryOrderDetail({ customerId, orderId, onOpen
     {data.parts.length ? <ul>{data.parts.map(part => <li key={part.id}><span>{part.name || 'Part'}{part.sku && ` · ${part.sku}`}</span><span>{part.quantity} × {money(part.unit_price)} = {money(part.total_price)}</span></li>)}</ul> : <p>No parts used</p>}
     {data.customer_notes && <p className="whitespace-pre-wrap">Customer: {data.customer_notes}</p>}
     {internalNotes && <p className="whitespace-pre-wrap">Internal: {internalNotes}</p>}
-    {onOpenOrder && <button type="button" className="db-customer-history-detail__open" onClick={() => onOpenOrder(orderId)}>Open repair order {data.order_number}</button>}
+    {onOpenOrder && <button type="button" className="db-customer-history-detail__open" aria-label={`Open repair order ${data.order_number}`} onClick={() => onOpenOrder(orderId)}>Open repair order</button>}
   </section>
 }

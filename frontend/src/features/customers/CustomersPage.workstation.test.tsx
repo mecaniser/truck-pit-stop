@@ -131,6 +131,22 @@ describe('DB-035C customer workstation', () => {
     expect(document.querySelector('.db-customers-workspace--detail-open')).toBeInTheDocument()
   })
 
+  it('returns from a truck to the company using its visible name', async () => {
+    installApiFixture()
+    const defaultGet = apiMocks.get.getMockImplementation()!
+    apiMocks.get.mockImplementation((url: string) => {
+      if (url === '/customers/customer-1/vehicles') return Promise.resolve({ data: [{ id: 'truck-1', customer_id: customer.id, year: 2021, make: 'Freightliner', model: 'Cascadia', unit_number: 'C-001' }] })
+      if (url === '/repair-orders') return Promise.resolve({ data: { items: [], total: 0, has_more: false } })
+      return defaultGet(url)
+    })
+    renderPage('/dashboard/customers?selected=customer-1')
+    fireEvent.click(await screen.findByRole('button', { name: 'Open 2021 Freightliner Cascadia · Unit C-001' }))
+    expect(await screen.findByRole('heading', { name: 'Repair history (0)' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Edit vehicle' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Back to Northline Logistics' }))
+    expect(screen.getByRole('region', { name: 'Account details' })).toBeInTheDocument()
+  })
+
   it('restores a deep-linked customer using the existing customer endpoint', async () => {
     installApiFixture([])
     renderPage('/dashboard/customers?filter=active&selected=customer-1')
