@@ -166,7 +166,7 @@ describe('DB-035C customer workstation', () => {
     expect(await screen.findByRole(presentation === 'new' ? 'region' : 'dialog', { name: '2020 Freightliner Cascadia' })).toBeInTheDocument()
     expect(screen.getByText('VIN144')).toBeInTheDocument()
     expect(apiMocks.get).toHaveBeenCalledWith('/customers/customer-1/vehicles/vehicle-144', expect.objectContaining({ signal: expect.any(AbortSignal) }))
-    fireEvent.click(screen.getByRole('button', { name: 'Back to Nora' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Back to Northline Logistics' }))
     expect(await screen.findByRole(presentation === 'new' ? 'region' : 'dialog', { name: /Northline Logistics/ })).toBeInTheDocument()
     expect(screen.getByTestId('customers-location')).toHaveTextContent('?view=list&selected=customer-1')
     expect(screen.getByTestId('customers-location')).not.toHaveTextContent('vehicle=')
