@@ -34,6 +34,8 @@ import api from '@/lib/api'
 import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 import QuantityStepper from '@/components/QuantityStepper'
 import StartWorkAction from './StartWorkAction'
+import OrderIntakeDetails, { type OrderIntakePatch } from './OrderIntakeDetails'
+import { holdReasonLabel } from './holdReason'
 import DiscountAmountInput from './DiscountAmountInput'
 import WorkflowInfoStep, { WorkflowInfoGroup, type WorkflowInfo } from './WorkflowInfoStep'
 import DurationStepper from '@/components/DurationStepper'
@@ -149,6 +151,8 @@ type Props = {
   customerEmail?: string | null
   customerPhone?: string | null
   vehiclePlate?: string | null
+  mileageInCarried?: boolean
+  onSaveIntake?: (patch: OrderIntakePatch) => Promise<void>
   mileageIn?: number | null
   mileageOut?: number | null
   poNumber?: string | null
@@ -848,6 +852,8 @@ export default function PriceBuilderPanel({
   customerPhone,
   vehiclePlate,
   mileageIn,
+  mileageInCarried,
+  onSaveIntake,
   mileageOut,
   poNumber,
   orderTypeLabel,
@@ -1384,6 +1390,8 @@ export default function PriceBuilderPanel({
   const [priceSavingId, setPriceSavingId] = useState<string | null>(null)
 
 
+  const isOnHold = orderStatus === 'in_progress' && !!workflowInfo?.hold_reason
+  const holdLabel = isOnHold ? holdReasonLabel(workflowInfo!.hold_reason!) : ''
   const isLocked = !!summary?.pricing_locked
   const hasInvoice = !!invoice && ['invoiced', 'paid'].includes(orderStatus)
   const invoiceDisplayTotal = invoiceSettlement
@@ -2370,19 +2378,14 @@ export default function PriceBuilderPanel({
                       {vehicleVin && <p className="text-xs text-gray-500">VIN: {vehicleVin}</p>}
                       {vehiclePlate && <p className="text-xs text-gray-500">Plate: {vehiclePlate}</p>}
                     </div>
-                    <div className="grid grid-cols-2 gap-2 border-t border-gray-200 pt-3 sm:col-span-2 sm:grid-cols-4">
-                      <div><p className="text-[11px] uppercase text-gray-400">Mileage In</p><p className="font-medium text-gray-800">{mileageIn ?? '—'}</p></div>
-                      <div><p className="text-[11px] uppercase text-gray-400">Mileage Out</p><p className="font-medium text-gray-800">{mileageOut ?? '—'}</p></div>
-                      <div><p className="text-[11px] uppercase text-gray-400">PO Number</p><p className="font-medium text-gray-800">{poNumber || '—'}</p></div>
-                      <div><p className="text-[11px] uppercase text-gray-400">Type</p><p className="font-medium text-gray-800">{orderTypeLabel || 'Standard'}</p></div>
-                    </div>
+                    <OrderIntakeDetails key={orderId} mileageIn={mileageIn} mileageOut={mileageOut} mileageInCarried={mileageInCarried} poNumber={poNumber} orderTypeLabel={orderTypeLabel} canEdit={canMutate && !isDeleted && !['completed', 'invoiced', 'paid', 'cancelled'].includes(orderStatus)} onSave={onSaveIntake} />
                   </div>
                 </PopoverPanel>
               </>}
             </Popover>
             <div className="db-job-reference">
               <OrderNumberHeader value={`#${orderNumber || orderId.slice(0, 8)}`} />
-              <span className="db-job-stage">{isDeleted ? 'Deleted' : orderStatus.replace(/_/g, ' ')}</span>
+              <span className="db-job-stage">{isDeleted ? 'Deleted' : isOnHold ? 'On hold' : orderStatus.replace(/_/g, ' ')}</span>
               {/* The company is the way into the customer's record — from here you
                   can see their other trucks and what they owe without hunting for
                   them in the ledger. The star marks a fleet-plan carrier, which is
@@ -2475,7 +2478,7 @@ export default function PriceBuilderPanel({
             <span className="text-gray-300" aria-hidden="true">→</span>
             <WorkflowInfoStep key={`tech-${orderId}`} stage="technician" label={hasAssignedTechnician ? assignedTechnicianName || 'Technician assigned' : technicianAssignmentBypassed ? 'Shop-managed · no technician' : 'No technician assigned'} className={hasAssignedTechnician || technicianAssignmentBypassed ? 'bg-emerald-100 text-emerald-700' : 'text-gray-500'} info={workflowInfo} status={orderStatus} technician={assignedTechnicianName} />
             <span className="text-gray-300" aria-hidden="true">→</span>
-            <WorkflowInfoStep key={`bay-${orderId}`} stage="bay" label={['pending_review', 'completed', 'invoiced', 'paid'].includes(orderStatus) ? '✓ Work complete' : 'In the bay'} className={['in_progress', 'pending_review', 'completed', 'invoiced', 'paid'].includes(orderStatus) ? 'bg-emerald-100 text-emerald-700' : 'text-gray-500'} info={workflowInfo} status={orderStatus} operationCount={summary?.lines.length} />
+            <WorkflowInfoStep key={`bay-${orderId}`} stage="bay" label={isOnHold ? 'On hold' : ['pending_review', 'completed', 'invoiced', 'paid'].includes(orderStatus) ? '✓ Work complete' : 'In the bay'} className={isOnHold ? 'bg-amber-100 text-amber-800' : ['in_progress', 'pending_review', 'completed', 'invoiced', 'paid'].includes(orderStatus) ? 'bg-emerald-100 text-emerald-700' : 'text-gray-500'} info={workflowInfo} status={orderStatus} operationCount={summary?.lines.length} />
             <span className="text-gray-300" aria-hidden="true">→</span>
             <WorkflowInfoStep key={`review-${orderId}`} stage="review" label="Quality review" className={orderStatus === 'pending_review' ? 'bg-orange-500 text-white' : ['completed', 'invoiced', 'paid'].includes(orderStatus) ? 'bg-emerald-100 text-emerald-700' : 'text-gray-500'} info={workflowInfo} status={orderStatus} reviewDraft={reviewNotesValue} />
             {onQuoteAction && canMutate && (
@@ -4728,6 +4731,7 @@ export default function PriceBuilderPanel({
                 <span className="max-w-64 text-right text-sm font-medium text-gray-600" role="status">
                   {hasAssignedTechnician && ['draft', 'quoted', 'declined', 'approved', 'assigned', 'acknowledged'].includes(orderStatus)
                     ? `Waiting for ${assignedTechnicianName} to start`
+                    : isOnHold ? `On hold · ${holdLabel}`
                     : orderStatus === 'in_progress' ? 'Work in progress'
                     : orderStatus === 'draft' ? 'Checked in · work order open' : 'Work order open'}
                 </span>

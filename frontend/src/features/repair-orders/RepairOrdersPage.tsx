@@ -1,3 +1,4 @@
+import type { OrderIntakePatch } from './OrderIntakeDetails'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import DatePicker from '@/components/DatePicker'
 import { Dialog, DialogBackdrop, DialogPanel, DialogTitle } from '@headlessui/react'
@@ -1082,6 +1083,21 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
       toast.success('Work requested updated')
     },
     onError: (error: unknown) => toast.error(getErrorDetail(error, 'Could not save work requested')),
+  })
+
+  const saveIntakeMutation = useMutation({
+    mutationFn: async ({ orderId, patch }: { orderId: string; patch: OrderIntakePatch }) => {
+      const response = await api.put(`/repair-orders/${orderId}`, patch)
+      return response.data as RepairOrder
+    },
+    onSuccess: (updated) => {
+      queryClient.invalidateQueries({ queryKey: ['repair-orders'] })
+      queryClient.invalidateQueries({ queryKey: ['repair-order-detail', updated.id] })
+      queryClient.invalidateQueries({ queryKey: ['repair-order-workspace', updated.id] })
+      // A save may finish after the operator navigates to the next order.
+      setSelectedOrder(current => current?.id === updated.id ? retainRepairOrderPresentation(current, updated) : current)
+      toast.success('Intake updated')
+    },
   })
 
   const addOrderNoteMutation = useMutation({
@@ -4517,6 +4533,8 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                     customerPhone={selectedOrderCustomer?.phone}
                     vehiclePlate={selectedOrderVehicle?.license_plate}
                     mileageIn={selectedOrder.mileage_in}
+                    mileageInCarried={selectedOrder.mileage_in_carried}
+                    onSaveIntake={async (patch) => { await saveIntakeMutation.mutateAsync({ orderId: selectedOrder.id, patch }) }}
                     mileageOut={selectedOrder.mileage_out}
                     poNumber={selectedOrder.po_number}
                     isFleetMember={!!selectedOrderCustomer?.fleet_enabled}
