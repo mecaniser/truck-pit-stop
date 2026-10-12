@@ -355,6 +355,7 @@ export interface RepairOrder {
   work_completed_at?: string | null
   pricing_locked_at?: string | null
   pricing_lock_reason?: string | null
+  mileage_in_carried?: boolean
   mileage_in?: number | null
   mileage_out?: number | null
   po_number?: string | null
