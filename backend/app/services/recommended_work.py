@@ -6,6 +6,7 @@ from fastapi import HTTPException
 from sqlalchemy import and_, case, exists, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.services.recommendation_conversion import projections
 from app.db.models.customer import Customer
 from app.db.models.recommended_service import RecommendedService, RecommendedServicePriority
 from app.db.models.repair_order import RepairOrder, RepairOrderStatus
@@ -131,8 +132,10 @@ async def list_recommended_work(
     rows = (await db.execute(query.order_by(
         priority_order, RecommendedService.created_at.asc(), RecommendedService.id.asc(),
     ).offset(skip).limit(limit))).mappings().all()
+    conversion_map = await projections(db, tenant_id, [row["id"] for row in rows])
     return RecommendedWorkPage(
         items=[RecommendedWorkItem(
+            conversion=conversion_map.get(row["id"]),
             id=row["id"], description=row["description"], priority=row["priority"],
             created_at=row["created_at"],
             vehicle=RecommendedWorkVehicle(

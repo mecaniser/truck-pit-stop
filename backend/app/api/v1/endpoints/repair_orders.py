@@ -76,6 +76,8 @@ from app.core.websocket import broadcast_mechanic_attendance_update
 from app.schemas.order_value import FilteredRepairOrderValueSummary
 from app.schemas.recommended_work import RecommendedWorkPage
 from app.services.recommended_work import list_recommended_work
+from app.services import recommendation_conversion
+from app.schemas.recommendation_conversion import RecommendationConvertRequest, RecommendationConvertResponse
 from app.services.mechanic_time_service import fetch_tenant_and_mechanic, get_active_session, start_session, stop_active_session
 from app.services.cloudinary_service import create_direct_image_upload_signature, is_cloudinary_configured, upload_work_photo
 from app.db.models.mechanic_time import MechanicSessionType, MechanicTimeSession
@@ -202,18 +204,31 @@ def require_role(*allowed_roles: UserRole):
     return role_checker
 
 
-def _to_price_build_summary(
+async def _to_price_build_summary(
+    db: AsyncSession,
+    current_user: User,
     order: RepairOrder,
     *,
     warnings: Optional[list[PriceBuildWarning]] = None,
 ) -> PriceBuildSummaryResponse:
     labor_resp = [LaborResponse.model_validate(li) for li in order.labor_items]
+    default_rate = None
+    staff_can_convert = False
+    if current_user.role in recommendation_conversion.STAFF_ROLES:
+        provenance = await recommendation_conversion.line_sources(db, order.tenant_id, order.id, [li.id for li in order.labor_items])
+        for line in labor_resp:
+            line.recommendation_source = provenance.get(line.id)
+        tenant = await db.get(Tenant, order.tenant_id)
+        default_rate = recommendation_conversion.policy_rate(order, tenant)
+        staff_can_convert = recommendation_conversion.can_convert(order)
     pricing_locked = _is_pricing_locked_for_edits(order)
     can_edit_work = not pricing_locked and (
         (order.is_internal and order.status not in INTERNAL_FROZEN_RO_STATUSES)
         or (not order.is_internal and order.status in EDITABLE_RO_STATUSES)
     )
     return PriceBuildSummaryResponse(
+        recommendation_hourly_rate=default_rate,
+        can_convert_recommendations=staff_can_convert,
         order_id=order.id,
         labor_total=order.total_labor_cost,
         parts_total=order.total_parts_cost,
@@ -1846,6 +1861,8 @@ async def update_repair_order(
             detail="Access denied",
         )
 
+    if order_data.status is not None and order_data.status != RepairOrderStatus.CANCELLED:
+        await recommendation_conversion.guard_reactivation(db, order, current_user)
     cancelling_now = (
         order_data.status == RepairOrderStatus.CANCELLED
         and order.status != RepairOrderStatus.CANCELLED
@@ -2080,6 +2097,7 @@ async def assign_mechanic(
         RepairOrderStatus.APPROVED,
         RepairOrderStatus.ACKNOWLEDGED,
     ):
+        await recommendation_conversion.guard_reactivation(db, order, current_user)
         order.status = RepairOrderStatus.ASSIGNED
     
     await db.commit()
@@ -2242,6 +2260,7 @@ async def start_work(
     
     resume_existing = False
     if order.status in (RepairOrderStatus.ASSIGNED, RepairOrderStatus.ACKNOWLEDGED):
+        await recommendation_conversion.guard_reactivation(db, order, current_user)
         order.status = RepairOrderStatus.IN_PROGRESS
         order.work_started_at = datetime.now(timezone.utc)
     elif order.status == RepairOrderStatus.IN_PROGRESS:
@@ -3329,6 +3348,7 @@ async def restore_repair_order(
     if order.deleted_at is None:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Repair order is not deleted")
 
+    await recommendation_conversion.guard_reactivation(db, order, current_user)
     order.deleted_at = None
     order.deleted_by_user_id = None
 
@@ -3390,6 +3410,7 @@ async def reopen_repair_order(
     if order.status != RepairOrderStatus.COMPLETED:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Only completed work orders can be reopened")
 
+    await recommendation_conversion.guard_reactivation(db, order, current_user)
     order.status = RepairOrderStatus.IN_PROGRESS
     order.work_completed_at = None
     await db.commit()
@@ -3741,7 +3762,7 @@ async def get_price_build_summary(
     try:
         order = await _load_tenant_price_build_order(db, order_id, current_user)
         _check_ro_access(current_user, order)
-        return _to_price_build_summary(order)
+        return await _to_price_build_summary(db, current_user, order)
     except Exception as exc:
         raise _map_price_build_error(exc)
 
@@ -3786,7 +3807,7 @@ async def add_price_build_flat_service(
             ),
         )
         await db.commit()
-        return _to_price_build_summary(
+        return await _to_price_build_summary(db, current_user,
             result.order,
             warnings=[PriceBuildWarning(code=w.code, message=w.message, line_id=w.line_id) for w in result.warnings],
         )
@@ -3862,7 +3883,7 @@ async def apply_price_build_repair_operation(
             detail=body.name or "Repair operation",
         )
         await db.commit()
-        return _to_price_build_summary(
+        return await _to_price_build_summary(db, current_user,
             result.order,
             warnings=[PriceBuildWarning(code=w.code, message=w.message, line_id=w.line_id) for w in result.warnings],
         )
@@ -3890,7 +3911,7 @@ async def update_price_build_line(
             hourly_rate=body.hourly_rate,
             auto_recalc_enabled=body.auto_recalc_enabled,
         )
-        return _to_price_build_summary(
+        return await _to_price_build_summary(db, current_user,
             result.order,
             warnings=[PriceBuildWarning(code=w.code, message=w.message, line_id=w.line_id) for w in result.warnings],
         )
@@ -3923,7 +3944,7 @@ async def delete_price_build_line(
             entity_id=line_id,
         )
         await db.commit()
-        return _to_price_build_summary(
+        return await _to_price_build_summary(db, current_user,
             result.order,
             warnings=[PriceBuildWarning(code=w.code, message=w.message, line_id=w.line_id) for w in result.warnings],
         )
@@ -3941,7 +3962,7 @@ async def recalculate_price_build(
         order = await _load_tenant_price_build_order(db, order_id, current_user)
         _check_ro_access(current_user, order)
         result = await price_build_service.recalculate_order(db, order)
-        return _to_price_build_summary(
+        return await _to_price_build_summary(db, current_user,
             result.order,
             warnings=[PriceBuildWarning(code=w.code, message=w.message, line_id=w.line_id) for w in result.warnings],
         )
@@ -3986,7 +4007,7 @@ async def add_sublet_to_price_build(
         if order is None:
             raise PriceBuildNotFoundError("Repair order not found")
         order = await _load_tenant_price_build_order(db, order_id, current_user)
-        return _to_price_build_summary(order)
+        return await _to_price_build_summary(db, current_user, order)
     except HTTPException:
         raise
     except Exception as exc:
@@ -4775,7 +4796,7 @@ async def set_parts_pricing_mode(
     _apply_parts_mode(order, body.mode)
     _apply_repair_order_totals(order)
     await db.commit()
-    return _to_price_build_summary(order)
+    return await _to_price_build_summary(db, current_user, order)
 
 
 @router.patch("/{order_id}/discounts", response_model=PriceBuildSummaryResponse)
@@ -4805,7 +4826,7 @@ async def update_repair_order_discounts(
     order.order_discount_amount = total.quantize(Decimal('0.01'))
     _apply_repair_order_totals(order)
     await db.commit()
-    return _to_price_build_summary(order)
+    return await _to_price_build_summary(db, current_user, order)
 
 
 @router.delete("/{order_id}/parts/{parts_usage_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -5117,6 +5138,22 @@ async def remove_labor_from_repair_order(
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
+@router.post("/{order_id}/recommended-work/{recommendation_id}/convert", response_model=RecommendationConvertResponse)
+async def convert_recommendation_to_operation(
+    order_id: UUID,
+    recommendation_id: UUID,
+    body: RecommendationConvertRequest,
+    response: Response,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role(*recommendation_conversion.STAFF_ROLES)),
+):
+    conversion, replayed = await recommendation_conversion.convert(
+        db, target_id=order_id, recommendation_id=recommendation_id, body=body, user=current_user)
+    await db.commit()
+    response.status_code = status.HTTP_200_OK if replayed else status.HTTP_201_CREATED
+    return RecommendationConvertResponse(conversion=conversion, replayed=replayed)
+
+
 # --- Recommended Services ---
 
 RECOMMENDED_SERVICES_ROLES = (
@@ -5186,7 +5223,8 @@ async def list_recommended_services(
         )
     )
     svcs = svcs_result.scalars().all()
-    return [RecommendedServiceResponse.model_validate(s) for s in svcs]
+    projected = await recommendation_conversion.projections(db, current_user.tenant_id, [s.id for s in svcs]) if current_user.role in recommendation_conversion.STAFF_ROLES else {}
+    return [RecommendedServiceResponse.model_validate(s).model_copy(update={"conversion": projected.get(s.id)}) for s in svcs]
 
 
 @router.patch("/{order_id}/recommended-services/{service_id}", response_model=RecommendedServiceResponse)
@@ -5199,6 +5237,7 @@ async def update_recommended_service(
 ):
     if not current_user.tenant_id:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="User must be associated with a tenant")
+    await recommendation_conversion.lock_tenant_financials(db, current_user.tenant_id)
     result = await db.execute(
         tenant_repair_order_statement(order_id, current_user)
     )
@@ -5212,18 +5251,23 @@ async def update_recommended_service(
                 RecommendedService.id == service_id,
                 RecommendedService.repair_order_id == order_id,
                 RecommendedService.tenant_id == current_user.tenant_id,
+                RecommendedService.deleted_at.is_(None),
             )
-        )
+        ).with_for_update()
     )
     svc = svc_result.scalar_one_or_none()
     if not svc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Recommended service not found")
     update_data = body.model_dump(exclude_unset=True)
+    await recommendation_conversion.guard_resolution(db, svc, update_data, current_user)
     for field, value in update_data.items():
         setattr(svc, field, value)
     await db.commit()
     await db.refresh(svc)
-    return RecommendedServiceResponse.model_validate(svc)
+    result = RecommendedServiceResponse.model_validate(svc)
+    if current_user.role in recommendation_conversion.STAFF_ROLES:
+        result.conversion = (await recommendation_conversion.projections(db, current_user.tenant_id, [svc.id])).get(svc.id)
+    return result
 
 
 @router.delete("/{order_id}/recommended-services/{service_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -5235,6 +5279,7 @@ async def delete_recommended_service(
 ):
     if not current_user.tenant_id:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="User must be associated with a tenant")
+    await recommendation_conversion.lock_tenant_financials(db, current_user.tenant_id)
     result = await db.execute(
         tenant_repair_order_statement(order_id, current_user)
     )
@@ -5248,12 +5293,14 @@ async def delete_recommended_service(
                 RecommendedService.id == service_id,
                 RecommendedService.repair_order_id == order_id,
                 RecommendedService.tenant_id == current_user.tenant_id,
+                RecommendedService.deleted_at.is_(None),
             )
-        )
+        ).with_for_update()
     )
     svc = svc_result.scalar_one_or_none()
     if not svc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Recommended service not found")
+    await recommendation_conversion.guard_source_delete(db, svc)
     await db.delete(svc)
     await db.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
