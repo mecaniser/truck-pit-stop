@@ -54,8 +54,8 @@ function parseMinutes(value: string): number | null {
     else if (units && (units[1] || units[2])) minutes = Number(units[1] || 0) * 60 + Number(units[2] || 0)
     else return null
   }
-  const rounded = Math.round(minutes)
-  return Number.isSafeInteger(rounded) ? rounded : null
+  // Preserve typed hundredths of an hour; only the readout rounds to minutes.
+  return Number.isSafeInteger(Math.round(minutes)) ? minutes : null
 }
 
 /** Editable duration with minute precision and quarter-hour shortcuts. */
