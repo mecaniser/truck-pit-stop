@@ -168,6 +168,6 @@
   .db-customer-embedded-workspace > .slide-panel-content { overflow: visible; }
   .db-customer-embedded__header { flex-direction: column; align-items: flex-start; gap: 4px; }
   .db-customer-embedded__header h2 { margin-left: 0; }
-  .db-customer-embedded__header > button { min-height: 44px; }
+  .db-customer-embedded__header > button { min-height: 44px !important; }
   .db-customer-embedded__actions { padding: 4px 8px; }
 }
