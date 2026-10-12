@@ -208,3 +208,9 @@
   .db-customer-vehicle-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px 8px; }
   .db-customer-vehicle-actions__edit { margin-left: 0; }
 }
+
+@container customer-record (max-width: 500px) {
+  /* Grid cells must grow with expanded details; the staff table height would
+     otherwise constrain them to one row and overlap every following record. */
+  .db-presentation-new .db-staff-content .db-customer-history__table tbody td { height: auto; }
+}
