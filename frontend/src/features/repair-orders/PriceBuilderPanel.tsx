@@ -4136,7 +4136,7 @@ export default function PriceBuilderPanel({
             ) : recommendedServices?.length ? (
               <ul className="divide-y divide-gray-200 rounded-xl bg-white">
                 {recommendedServices.map((svc) => (
-                  <li key={svc.id} id={`recommendation-${svc.id}`} tabIndex={-1} className={`flex flex-wrap items-start gap-3 p-3 focus-visible:outline focus-visible:outline-2 focus-visible:outline-orange-500 ${svc.is_resolved ? 'opacity-50' : ''}`}>
+                  <li key={svc.id} id={`recommendation-${svc.id}`} tabIndex={-1} className="flex flex-wrap items-start gap-3 p-3 focus-visible:outline focus-visible:outline-2 focus-visible:outline-orange-500">
                     <div className="min-w-0 flex-1">
                       <div className="flex flex-wrap items-center gap-2">
                         <span className={`rounded px-1.5 py-0.5 text-[11px] font-semibold ${
@@ -4147,7 +4147,7 @@ export default function PriceBuilderPanel({
                           {svc.priority.charAt(0).toUpperCase() + svc.priority.slice(1)}
                         </span>
                         {svc.estimated_cost && <span className="text-xs text-gray-500">{money(svc.estimated_cost)}</span>}
-                        {svc.is_resolved && <span className="text-xs font-medium text-emerald-600">Resolved</span>}
+                        {svc.is_resolved && <span className="db-recommendation-resolved rounded bg-emerald-50 px-1.5 py-0.5 text-xs font-medium">Resolved</span>}
                       </div>
                       <p className="mt-1 text-sm text-gray-800">{svc.description}</p>
                       {svc.conversion && <ConversionLink conversion={svc.conversion} contextOrderId={orderId} onOpenOperation={openLinkedOperation} />}
