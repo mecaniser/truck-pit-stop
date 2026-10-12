@@ -3605,7 +3605,7 @@ async def _load_pricing_order_for_update(
         .where(RepairOrder.id == order_id, RepairOrder.deleted_at.is_(None))
         .options(
             joinedload(RepairOrder.tenant, innerjoin=True),
-            selectinload(RepairOrder.parts_usage).selectinload(PartsUsage.inventory_item),
+            selectinload(RepairOrder.parts_usage).joinedload(PartsUsage.inventory_item),
             selectinload(RepairOrder.labor_items),
         )
         .execution_options(populate_existing=True)
