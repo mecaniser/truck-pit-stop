@@ -26,7 +26,7 @@ async function typeDuration(value: string) {
 afterEach(() => vi.useRealTimers())
 
 describe('DurationStepper manual entry', () => {
-  it.each([['1:20', 1.33], ['1.5', 1.5], ['90m', 1.5], ['1h 20m', 1.33]])('saves %s on Enter without rounding to a quarter hour', async (text, hours) => {
+  it.each([['1:20', 1.33], ['1.5', 1.5], ['1.01', 1.01], ['1.99', 1.99], ['90m', 1.5], ['1h 20m', 1.33]])('saves %s on Enter without rounding to a quarter hour', async (text, hours) => {
     const { change } = setup()
     const user = await typeDuration(text)
     expect(change).not.toHaveBeenCalled()
