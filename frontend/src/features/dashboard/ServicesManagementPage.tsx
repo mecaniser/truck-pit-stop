@@ -18,7 +18,7 @@ import { useViewPreference } from '@/hooks/useViewPreference'
 import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 import { getServiceStockStatus } from '@/utils/serviceStock'
 import { useAuthStore } from '@/stores/authStore'
-import ServiceChecklistEditor from '@/features/service-checklists/ServiceChecklistEditor'
+import ServiceChecklistEditor, { type ServiceChecklistEditorHandle } from '@/features/service-checklists/ServiceChecklistEditor'
 import TemplateTaskEditor from '@/features/service-checklists/TemplateTaskEditor'
 import { checklistKeys, errorDetail } from '@/features/service-checklists/queries'
 import type { ServiceChecklistTemplate, TemplateTaskDraft } from '@/features/service-checklists/types'
@@ -112,6 +112,9 @@ function ServicesManagementWorkspace() {
   const canEditChecklist = !!checklistUser?.tenant_id && ['garage_owner', 'garage_admin'].includes(checklistUser.role)
   const [newChecklistTasks, setNewChecklistTasks] = useState<TemplateTaskDraft[]>([])
   const [unsavedCreatedChecklist, setUnsavedCreatedChecklist] = useState<TemplateTaskDraft[] | undefined>()
+  const checklistEditorRef = useRef<ServiceChecklistEditorHandle>(null)
+  const closingServiceRef = useRef(false)
+  const [isClosingService, setIsClosingService] = useState(false)
   const [editingService, setEditingService] = useState<Service | null>(null)
   const [isAddingNew, setIsAddingNew] = useState(false)
   const [showClearConfirm, setShowClearConfirm] = useState(false)
@@ -497,12 +500,20 @@ function ServicesManagementWorkspace() {
     })
   }
 
-  const cancelEdit = () => {
-    if (createMutation.isPending) return
-    setEditingService(null)
-    setIsAddingNew(false)
-    setPartError(null)
-    reset()
+  const cancelEdit = async () => {
+    if (createMutation.isPending || closingServiceRef.current) return
+    closingServiceRef.current = true
+    setIsClosingService(true)
+    try {
+      if (editingService && checklistEditorRef.current && !(await checklistEditorRef.current.saveBeforeClose())) return
+      setEditingService(null)
+      setIsAddingNew(false)
+      setPartError(null)
+      reset()
+    } finally {
+      closingServiceRef.current = false
+      setIsClosingService(false)
+    }
   }
 
   const onSubmit = (data: ServiceFormData) => {
@@ -892,7 +903,7 @@ function ServicesManagementWorkspace() {
                 <button
                   type="button"
                   onClick={cancelEdit}
-                  disabled={createMutation.isPending}
+                  disabled={createMutation.isPending || isClosingService}
                   className={[
                     'p-2',
                     'text-gray-500',
@@ -1245,6 +1256,7 @@ function ServicesManagementWorkspace() {
                   !createMutation.isPending && <ServiceChecklistEditor
                     key={editingService.id}
                     serviceId={editingService.id}
+                    editorRef={checklistEditorRef}
                     initialDraft={unsavedCreatedChecklist}
                     onSaved={() => setUnsavedCreatedChecklist(undefined)}
                   />
@@ -1272,7 +1284,7 @@ function ServicesManagementWorkspace() {
                     </span>
                   ) : (
                     <span key="idle" className="animate-status-swap text-xs text-gray-400">
-                      Service details save automatically
+                      {canEditChecklist ? 'Details autosave · Checklist saves on close' : 'Service details save automatically'}
                     </span>
                   )
                 ) : (
@@ -1282,10 +1294,10 @@ function ServicesManagementWorkspace() {
                   <button
                     type="button"
                     onClick={cancelEdit}
-                    disabled={createMutation.isPending}
+                    disabled={createMutation.isPending || isClosingService}
                     className="px-5 py-2 bg-white/10 hover:bg-white/20 text-gray-700 rounded-lg text-sm font-medium"
                   >
-                    {editingService ? 'Done' : 'Cancel'}
+                    {isClosingService ? 'Saving…' : editingService ? 'Done' : 'Cancel'}
                   </button>
                   {!editingService && (
                     <button

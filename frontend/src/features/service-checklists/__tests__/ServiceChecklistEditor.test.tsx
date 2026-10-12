@@ -98,3 +98,61 @@ describe('service checklist templates', () => {
     await waitFor(() => expect(mocks.post).toHaveBeenCalledWith('/services', expect.objectContaining({ name: service.name })))
   })
 })
+
+
+describe('closing a service with checklist edits', () => {
+  async function editTask() {
+    const service = { id: 'service-a', name: 'QA Oil service', category_id: null, description: null, duration_minutes: 60, base_price: null, icon: null, sort_order: 0, is_active: true, requires_vehicle: true, parts: [], labor_cost: '100', parts_cost: '0', computed_total_price: '100' }
+    mocks.get.mockImplementation((url: string) => Promise.resolve({ data: url === '/services' ? [service] : url.endsWith('/checklist') ? template : [] }))
+    const user = userEvent.setup()
+    mount(<ThemeProvider><ServicesManagementPage /></ThemeProvider>)
+    await user.click(await screen.findByRole('button', { name: 'Edit', exact: true }))
+    const field = await screen.findByRole('textbox', { name: 'Task 1', exact: true })
+    await user.clear(field)
+    await user.type(field, 'Check oil level before release')
+    return { user, field }
+  }
+
+  it.each(['Done', 'Close service form'])('saves the pending revision before closing with %s', async closeLabel => {
+    const { user } = await editTask()
+    let resolveSave!: (value: unknown) => void
+    mocks.put.mockImplementation(() => new Promise(resolve => { resolveSave = resolve }))
+    await user.click(screen.getByRole('button', { name: closeLabel, exact: true }))
+    await waitFor(() => expect(mocks.put).toHaveBeenCalledWith('/services/service-a/checklist', {
+      expected_version: 2, items: [{ ...template.items[0], label: 'Check oil level before release' }, template.items[1]],
+    }))
+    expect(screen.getByRole('dialog', { name: 'Edit Service' })).toBeVisible()
+    await act(async () => resolveSave({ data: { ...template, version: 3 } }))
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Edit Service' })).not.toBeInTheDocument())
+    expect(mocks.put).toHaveBeenCalledTimes(1)
+    expect(mocks.post).not.toHaveBeenCalled()
+  })
+
+  it('retains the draft when the close-triggered save fails', async () => {
+    const { user, field } = await editTask()
+    mocks.put.mockRejectedValue({ response: { status: 500 } })
+    await user.click(screen.getByRole('button', { name: 'Done', exact: true }))
+    await screen.findByRole('alert')
+    expect(screen.getByRole('dialog', { name: 'Edit Service' })).toBeVisible()
+    expect(field).toHaveValue('Check oil level before release')
+  })
+
+  it('keeps blank tasks visible instead of closing or sending an invalid revision', async () => {
+    const { user, field } = await editTask()
+    await user.clear(field)
+    await user.click(screen.getByRole('button', { name: 'Done', exact: true }))
+    await screen.findByRole('alert')
+    expect(screen.getByRole('dialog', { name: 'Edit Service' })).toBeVisible()
+    expect(field).toHaveValue('')
+    expect(mocks.put).not.toHaveBeenCalled()
+  })
+
+  it('does not close on a malformed successful response', async () => {
+    const { user, field } = await editTask()
+    mocks.put.mockResolvedValue({ data: {} })
+    await user.click(screen.getByRole('button', { name: 'Done', exact: true }))
+    await screen.findByRole('alert')
+    expect(screen.getByRole('dialog', { name: 'Edit Service' })).toBeVisible()
+    expect(field).toHaveValue('Check oil level before release')
+  })
+})
