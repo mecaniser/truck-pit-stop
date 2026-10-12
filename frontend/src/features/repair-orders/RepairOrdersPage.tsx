@@ -1343,8 +1343,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
   }
 
   const getErrorDetail = (error: unknown, fallback: string) => {
-    const detail = (error as ApiErrorLike)?.response?.data?.detail
-    return typeof detail === 'string' && detail.trim() ? detail : fallback
+    return recommendationErrorMessage(error, fallback)
   }
 
   const parseMoney = (value: string | number | null | undefined): number => {

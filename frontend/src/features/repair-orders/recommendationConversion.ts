@@ -38,8 +38,8 @@ export function conversionTotal(hours: number, rate: number): number {
 
 export function recommendationErrorMessage(failure: unknown, fallback: string): string {
   const detail = (failure as { response?: { data?: { detail?: unknown } } })?.response?.data?.detail
-  if (typeof detail === 'string') return detail
-  if (detail && typeof detail === 'object' && 'message' in detail && typeof detail.message === 'string') return detail.message
+  if (typeof detail === 'string' && detail.trim()) return detail
+  if (detail && typeof detail === 'object' && 'message' in detail && typeof detail.message === 'string' && detail.message.trim()) return detail.message
   return fallback
 }
 
