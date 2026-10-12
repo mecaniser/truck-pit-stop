@@ -1,8 +1,8 @@
-import React, { useEffect, useId, useState, type ReactNode } from 'react'
+import React, { type ReactNode } from 'react'
 import type { ViewMode } from '@/components/ViewToggle'
 import type { LucideIcon } from 'lucide-react'
 import {
-  ChevronDown, ChevronRight, DollarSign, Mail, Pencil, Phone, Plus, Search, Star, Trash2, Truck, User, Wrench, X,
+  ChevronRight, DollarSign, Mail, Pencil, Phone, Plus, Search, Star, Trash2, Truck, User, Wrench, X,
 } from 'lucide-react'
 
 import { LoadingLine } from '@/components/ui'
@@ -117,10 +117,6 @@ export default function CustomerDetailPanel({
   openEditVehicleModal,
   handleDeleteVehicleClick,
 }: CustomerDetailPanelProps) {
-  const accountDetailsId = useId()
-  const [expandedAccountId, setExpandedAccountId] = useState<string | null>(null)
-  useEffect(() => setExpandedAccountId(null), [selectedCustomer.id])
-  const accountExpanded = expandedAccountId === selectedCustomer.id
   return (
     <div className="db-customer-record">
       <div className="db-customer-record__summary">
@@ -272,16 +268,7 @@ export default function CustomerDetailPanel({
         </div>
       ) : (
       <>
-      <div className="db-customer-record__account">
-        <div className="db-customer-record__account-bar">
-          <button type="button" aria-expanded={accountExpanded} aria-controls={accountDetailsId}
-            onClick={() => setExpandedAccountId(accountExpanded ? null : selectedCustomer.id)}>
-            <ChevronDown aria-hidden="true" className={accountExpanded ? 'rotate-180' : ''} />Account details
-          </button>
-          {selectedCustomer.usdot_number && <span>US DOT {stripRegNumber(selectedCustomer.usdot_number)}</span>}
-          {selectedCustomer.mc_number && <span>MC {stripRegNumber(selectedCustomer.mc_number)}</span>}
-        </div>
-        <section id={accountDetailsId} aria-label="Account details" hidden={!accountExpanded}>
+      <section className="db-customer-record__account" aria-label="Account details">
           <dl className="db-customer-record__facts">
             <div><dt>Billing address</dt><dd>
               {selectedCustomer.billing_address_line1 || selectedCustomer.billing_city ? <>
@@ -298,8 +285,7 @@ export default function CustomerDetailPanel({
             {selectedCustomer.source && <div><dt>Source</dt><dd>{formatCustomerSource(selectedCustomer.source)}</dd></div>}
           </dl>
           <CustomerTaxExemptionControl key={selectedCustomer.id} customerId={selectedCustomer.id} />
-        </section>
-      </div>
+      </section>
 
       <section className="db-customer-record__trucks">
         <div className="db-customer-record__section-heading mb-4 flex flex-wrap items-center justify-between gap-3">

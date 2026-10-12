@@ -24,13 +24,10 @@
 .db-customer-record__balance strong { font-size: calc(var(--font-size-body, 16px) * 1.125); }
 .db-customer-record__tabs { display: flex; border-bottom: 1px solid var(--customer-rule); gap: 16px; }
 .db-customer-record .db-customer-record__tabs button { min-height: 32px; padding: 4px 0; }
-.db-customer-record__account-bar { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 16px; }
-.db-customer-record__account-bar button { display: inline-flex; gap: 6px; align-items: center; min-height: 28px; font-size: calc(var(--font-size-body, 16px) * .8125); font-weight: 600; }
-.db-customer-record__account-bar svg { width: 14px; height: 14px; }
-.db-customer-record__account-bar > span { color: var(--customer-muted); font-size: calc(var(--font-size-body, 16px) * .75); }
-.db-customer-record__account section[hidden] { display: none; }
-.db-customer-record__account section:not([hidden]) { margin-top: 8px; }
-.db-customer-record__facts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px 16px; padding: 12px; background: var(--surface-raised, #f6f8fb); border-radius: 8px; }
+/* Account data stays visible; density comes from compact rows, not disclosure. */
+.db-customer-record__facts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px 16px; padding: 0 0 10px; }
+.db-customer-record__account > section[aria-label='Customer sales tax'] { padding: 8px 0; }
+.db-customer-record__account > section[aria-label='Customer sales tax'] > label:first-child { padding: 0; gap: 8px; }
 .db-customer-record__facts dt { color: var(--customer-muted); font-size: calc(var(--font-size-body, 16px) * .75); }
 .db-customer-record__facts dd { font-size: calc(var(--font-size-body, 16px) * .8125); overflow-wrap: anywhere; }
 .db-customer-record__facts dd span { display: block; }
@@ -115,9 +112,9 @@
   .db-customer-actions button { gap: 6px; }
   .db-customer-actions > div { gap: 0; }
   .db-presentation-new .db-customer-detail-workspace .slide-panel-footer { padding: 4px 8px; }
-  .db-presentation-new .db-customer-detail-workspace { height: auto; min-height: 100%; overflow: visible; }
-  .db-presentation-new .db-customer-detail-workspace .slide-panel-content { overflow: visible; flex: none; }
-  .db-presentation-new .db-customer-detail-workspace .slide-panel-footer { position: sticky; bottom: 0; z-index: 1; margin-top: auto; }
+  .db-presentation-new .db-customer-detail-workspace { height: 100%; min-height: 0; overflow: hidden; }
+  .db-presentation-new .db-customer-detail-workspace .slide-panel-content { overflow-y: auto; flex: 1 1 0; }
+  .db-presentation-new .db-customer-detail-workspace .slide-panel-footer { flex-shrink: 0; }
 }
 
 .db-customer-record .db-customer-truck-card { padding: 8px; display: flex; flex-wrap: wrap; align-items: flex-start; gap: 8px; }
@@ -150,24 +147,27 @@
   .db-customer-actions > div button svg { display: none; }
 }
 
-/* A carrier opened from Shop Work is a record, not a full-height job editor. */
+/* Customer and repair-order records share the same full-height workspace. */
 .db-repair-orders-workspace--new > .db-customer-embedded-workspace {
-  height: auto;
+  height: 100%;
   min-height: 0;
-  max-height: 100%;
-  align-self: start;
+  align-self: stretch;
 }
-.db-customer-embedded { min-width: 0; }
-.db-customer-embedded__header { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; padding: 8px 12px; border-bottom: 1px solid var(--workspace-border, #d5dde6); }
+.db-customer-embedded-workspace > .slide-panel-content { overflow: hidden; }
+.db-customer-embedded { display: flex; flex-direction: column; height: 100%; min-height: 0; min-width: 0; }
+.db-customer-embedded__header { flex-shrink: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; padding: 8px 12px; border-bottom: 1px solid var(--workspace-border, #d5dde6); }
 .db-customer-embedded__header > button { white-space: nowrap; flex-shrink: 0; }
 .db-customer-embedded__header h2 { min-width: 0; margin-left: auto; overflow-wrap: anywhere; font-size: var(--font-size-body, 16px); font-weight: 600; }
-.db-customer-embedded__actions { border-top: 1px solid var(--workspace-border, #d5dde6); padding: 8px 12px; }
-.db-customer-embedded__body { min-width: 0; }
+.db-customer-embedded__actions { flex-shrink: 0; border-top: 1px solid var(--workspace-border, #d5dde6); padding: 8px 12px; }
+.db-customer-embedded__body { flex: 1 1 0; min-height: 0; min-width: 0; overflow-y: auto; overscroll-behavior: contain; }
 @media (max-width: 639px) {
-  .db-repair-orders-workspace--new > .db-customer-embedded-workspace { max-height: none; }
-  .db-customer-embedded-workspace > .slide-panel-content { overflow: visible; }
   .db-customer-embedded__header { flex-direction: column; align-items: flex-start; gap: 4px; }
   .db-customer-embedded__header h2 { margin-left: 0; }
   .db-customer-embedded__header > button { min-height: 44px !important; }
   .db-customer-embedded__actions { padding: 4px 8px; }
+}
+
+@media (max-width: 639px) {
+  .db-staff-content:has(> .db-customers-workspace--detail-open) > .db-mobile-nav-spacer { display: none !important; }
+  .db-presentation-new .db-customers-workspace--detail-open { flex: 1 1 0; min-height: 0; }
 }
