@@ -7015,15 +7015,17 @@ html.customer-portal-active {
   .db-price-builder .db-part-quantity :is(button, input), .db-price-builder .db-part-price { min-height: 44px !important; }
 }
 
-/* A phone reads the job as one document. The staff content owns scrolling;
-   none of the nested desktop sheets may trap a second scroll area. */
+/* Phone workspaces fill the available staff area. A single inner sheet owns
+   scrolling, with its action bar pinned to the bottom. */
 @media (max-width: 639px) {
   .db-staff-content:has(> .db-repair-orders-workspace--detail-open) > .db-mobile-nav-spacer { display: none !important; }
-  .db-repair-orders-workspace--new.db-repair-orders-workspace--detail-open { height: auto; flex: 0 0 auto; }
-  .db-repair-orders-workspace--new > .db-repair-order-detail-new--price-builder { height: auto; min-height: 0; overflow: visible; }
-  .db-repair-order-detail-new--price-builder > .slide-panel-content { flex: none; overflow: visible; clip-path: none; }
+  .db-repair-orders-workspace--new.db-repair-orders-workspace--detail-open { height: 100%; flex: 1 1 0; min-height: 0; }
+  .db-repair-orders-workspace--new > .db-repair-order-detail-new--price-builder { height: 100%; min-height: 0; overflow: hidden; }
+  .db-repair-order-detail-new--price-builder > .slide-panel-content { flex: 1 1 0; overflow: hidden; clip-path: none; }
   .db-repair-order-detail-new--price-builder .db-repair-order-price-shell-new,
-  .db-repair-order-detail-new--price-builder .db-price-builder { height: auto; min-height: 0; overflow: visible; }
+  .db-repair-order-detail-new--price-builder .db-price-builder { height: 100%; min-height: 0; overflow: hidden; }
+  .db-repair-order-detail-new--price-builder .db-price-builder { overflow-y: auto; }
+  .db-repair-order-detail-new--price-builder .db-workspace-footer { position: sticky; bottom: 0; margin-top: auto; }
   .db-repair-order-detail-new--price-builder .db-price-builder { border-radius: 11px; }
   .db-repair-order-detail-new--price-builder .db-workspace-header { border-radius: 11px 11px 0 0; }
   .db-price-builder .db-job-navigation > span { padding-inline: 4px; font-size: 12px; }

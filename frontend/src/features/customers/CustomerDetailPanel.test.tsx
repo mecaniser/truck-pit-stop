@@ -30,26 +30,21 @@ function setup(props: Partial<CustomerDetailPanelProps> = {}) {
   return render(<QueryClientProvider client={client}><Harness {...props} /></QueryClientProvider>)
 }
 describe('compact customer record', () => {
-  it('keeps contact and balance visible while secondary account fields are collapsed', () => {
+  it('shows account information immediately alongside contact and balance', async () => {
     setup()
     expect(screen.getByRole('link', { name: 'dispatch@example.invalid' })).toBeVisible()
     expect(screen.getByText('$145.00')).toBeVisible()
-    expect(screen.getByRole('button', { name: 'Account details' })).toHaveAttribute('aria-expanded', 'false')
-    expect(screen.queryByRole('region', { name: 'Account details' })).not.toBeInTheDocument()
+    const details = screen.getByRole('region', { name: 'Account details' })
+    expect(within(details).getByText('Suite 2')).toBeVisible()
+    expect(await within(details).findByRole('checkbox')).toBeVisible()
+    expect(screen.queryByRole('button', { name: 'Account details' })).not.toBeInTheDocument()
     expect(screen.queryByRole('heading', { name: 'Summary' })).not.toBeInTheDocument()
   })
-  it('reveals account details next to the trigger and preserves a tax draft when collapsed', async () => {
+  it('keeps an unsaved tax draft for the same customer without writing it', async () => {
     setup()
-    const toggle = screen.getByRole('button', { name: 'Account details' })
-    fireEvent.click(toggle)
     const details = screen.getByRole('region', { name: 'Account details' })
-    expect(details.previousElementSibling).toContainElement(toggle)
-    expect(within(details).getByText('Suite 2')).toBeVisible()
     fireEvent.click(await within(details).findByRole('checkbox'))
     fireEvent.change(within(details).getByRole('textbox'), { target: { value: 'Certificate draft' } })
-    fireEvent.click(toggle)
-    expect(details).not.toBeVisible()
-    fireEvent.click(toggle)
     expect(within(details).getByRole('textbox')).toHaveValue('Certificate draft')
     expect(api.put).not.toHaveBeenCalled()
   })
@@ -63,14 +58,16 @@ describe('compact customer record', () => {
     await userEvent.keyboard('{Enter}')
     expect(openTruck).toHaveBeenCalledWith(truck)
   })
-  it('resets the account disclosure for a different customer', () => {
+  it('does not carry an unsaved tax draft into a different customer', async () => {
+    api.get.mockResolvedValue({ data: { tax_exempt: false, support_reference: null, version: 1, updated_at: null } })
     const client = new QueryClient()
     const view = render(<QueryClientProvider client={client}><Harness /></QueryClientProvider>)
-    fireEvent.click(screen.getByRole('button', { name: 'Account details' }))
+    fireEvent.click(await screen.findByRole('checkbox'))
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: 'Certificate draft' } })
     view.rerender(<QueryClientProvider client={client}><Harness record={{ ...customer, id: 'customer-b' }} /></QueryClientProvider>)
-    expect(screen.getByRole('button', { name: 'Account details' })).toHaveAttribute('aria-expanded', 'false')
-    view.rerender(<QueryClientProvider client={client}><Harness /></QueryClientProvider>)
-    expect(screen.getByRole('button', { name: 'Account details' })).toHaveAttribute('aria-expanded', 'false')
+    expect(await screen.findByRole('checkbox')).not.toBeChecked()
+    expect(screen.queryByRole('textbox')).not.toBeInTheDocument()
+    expect(api.put).not.toHaveBeenCalled()
   })
   it.each([['-50', 'Account credit', '$50.00'], [undefined, 'Balance', '—']])('keeps %s balance meaning', (balance, label, amount) => {
     setup({ selectedCustomer: { ...customer, balance } as Customer })
