@@ -163,10 +163,7 @@ export default function DurationStepper({
         aria-describedby={error ? `${helpId} ${errorId}` : helpId}
         title="Type hours (1.5) or h:mm (1:30). Enter to save; Escape to cancel."
         value={draft ?? formatHoursMinutes(displayHours)}
-        onFocus={(e) => {
-          if (draft == null) setDraft(`${Math.floor(totalMinutes / 60)}:${String(totalMinutes % 60).padStart(2, '0')}`)
-          e.currentTarget.select()
-        }}
+        onFocus={(e) => e.currentTarget.select()}
         onChange={(e) => { setDraft(e.target.value); dirtyDraft.current = true; setError(false) }}
         onBlur={() => {
           if (skipBlur.current) { skipBlur.current = false; return }
