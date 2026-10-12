@@ -111,3 +111,26 @@ protected PR checks, merge, production migration and release remain separate
 required evidence. Root owns browser/runtime integration and outbound messaging
 suppression for synthetic acceptance. No production mutation, release, or
 provider-account change was performed by this backend work.
+
+## Final local acceptance and independent gates — 2026-10-12
+
+Frontend source45baf26f adds explicit checklist light/dark contrast after the first Modern browser pass exposed unreadable task fields. The correction is confined to checklist components/styles. Frontend137files/1173tests, final13focusedcases, TypeScript/Vite and scoped ESLint pass. Fresh independent review reran184backend,4real PostgreSQL races and13initialfrontend tests, then48combined recommendation/checklist frontend cases after visual corrections. Security/data integrity and final local QA: **GO**; reviewer had no implementation participation. Detailed local report: `/tmp/db102-independent-gates.md`.
+
+Authenticated real-API acceptance ran in the synthetic `ets-parity-qa` tenant:
+
+1. Owner created a service with two required tasks and one optional task, saved it, then applied it to assigned `QA-CHECKLIST-JOB`. All three tasks were read-only before work started.
+2. Owner edited the template first task to include air hoses; existing job retained its original wording. A subsequently created fleet PM got the updated wording.
+3. Assigned synthetic mechanic clocked in and started work. Quick Job Done returned409 for two missing required tasks, left the timer/order active, and opened the checklist. First check recorded Casey Checklist QA and server time and survived reload. Both required tasks complete with the optional unchecked allowed pending review.
+4. Owner finalized review into a synthetic local invoice. All task controls immediately became read-only; names/times and optional-open evidence remained. No payment was recorded.
+5. Fleet PM creation produced the same shared checklist. Its actual completion submit returned409 with one required task still open and displayed guidance. Checking it allowed completion200; truck returned On the road and next-PM mileage advanced by its25,000-mile interval. An existing missing invoice-contact guard was respected; only the synthetic truck received an `.invalid` invoice address for acceptance.
+6. Started PM scope reseeding returned409 without changing checked task identity/time/actor/version. A separate draft PM retained three task IDs while labor rows were reseeded; adding/removing/re-adding scope created, archived and then created fresh unchecked task identity correctly. Auxiliary draft was soft-deleted and temporary service deactivated. Receipt: `/tmp/db102_pm_api_receipt.json`.
+
+Modern desktop and compact template inputs, required status, task text, actor/time and read-only controls were visually checked after correction. Compact mechanic checklist is readable and usable. A separate DB099 mobile scrolling correction is needed alongside this feature to make Modern staff RO content comfortably scroll; it is tested in the combined preview and should land before DB102's Modern rollout. Desktop/compact evidence stays local in preview `output/ets-parity/checklist-{template-fixed-desktop,template-fixed-mobile,mechanic-mobile,finalized-desktop,finalized-mobile,fleet-desktop,fleet-blocked}.jpg`.
+
+Final combined preview source: `a0ba3f5324aa48dbe665ae9c39dbd9ce93f23568`, including DB0984462851a, DB0996c8dac80, DB1006b1eac5b and DB10245baf26f. FrontendPID61599 at `http://127.0.0.1:5174` serves its confirmed preview/frontend cwd and explicit API8001 proxy. API container `da0d8e5e2be1…` binds preview/backend. Direct and proxied `/health/ready`200; database/Redis healthy. Isolated database `truckpitstop_ets_workflow_parity_20261012` upgraded164→165; original local database retained149. Redis9; no worker. Only preview process Resend/Twilio credentials were blanked with a temporary compose override to prevent synthetic notification transport. Original environment/provider configuration is unchanged. UI wording about customer notification is not evidence of delivery; test notifications were not sent.
+
+Mandatory runtime preflight rerun after integration/restarts; matching rendered build indicator and changed feature checked. Combined142files/1247frontendtests pass. Production build passed3219modules before the final CSS-only refinement; the final focused CSS branch build also passes. This is **aligned and browser-verified local work**, not merge/deployment evidence.
+
+## Release gate
+
+Land the additive migration165 after164 before serving checklist code; verify a single migration head. DB099's compact Modern scrolling change should precede or accompany the UI rollout. Existing orders receive no retroactive tasks. Roll back application code while retaining additive schema/evidence; do not downgrade away collected checklist history. Watch template/task errors, completion409 reasons and completion rates on synthetic then operator-approved rollout; stop if required tasks can be bypassed, cross-tenant data appears, or historical orders regress. Protected PR checks, merge and production migration/deployment remain outstanding.
