@@ -1,0 +1,11 @@
+/* The catalog drawer is a light sheet inside Modern's dark shell. Its create
+   heading lives in the parent page; keep this correction within checklist scope.
+   Component text uses explicit important colors so shell utility remaps cannot
+   replace light-sheet ink with the surrounding dark workspace foreground. */
+.db-services-workspace [aria-label='New service checklist'] > div > h3 {
+  color: #111827 !important;
+}
+
+.db-services-workspace [aria-label='New service checklist'] > div > p.text-gray-500 {
+  color: #4b5563 !important;
+}
