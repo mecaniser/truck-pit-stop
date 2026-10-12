@@ -125,14 +125,6 @@ type CustomerLookupItem = Pick<CustomerTypeaheadItem, 'id' | 'first_name' | 'las
 
 type VehicleLookupItem = VehicleTypeaheadItem
 
-type ApiErrorLike = {
-  response?: {
-    data?: {
-      detail?: string
-    }
-  }
-}
-
 type ZelleModalMode = 'collect' | 'confirm_pending'
 type EvidencePaymentMethod = 'check' | 'ach' | 'fleet_payment'
 type WorkQueueLane = 'needs_action' | 'on_floor' | 'ready_to_close' | 'closed_today'
