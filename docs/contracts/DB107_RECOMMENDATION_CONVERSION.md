@@ -174,7 +174,9 @@ optimistically invent a labor row before receiving the exact returned identity.
    recommendation can be replaced. Mark prior row superseded and insert new row
    atomically with the new work. Any failure rolls both changes back.
 6. Insert work and conversion, recompute totals through existing logic, and add
-   one ordinary repair-order history event explaining the source order. Commit
+   one ordinary repair-order history event recording the added work. The event
+   references the new line; source identity stays in staff-only provenance, never
+   in broadly serialized history text. Commit
    once. No nested service commit, notification/provider call, or completion write.
    Unique constraints are a final backstop; on a race re-query the winning
    conversion under tenant scope and return replay/conflict, never500.

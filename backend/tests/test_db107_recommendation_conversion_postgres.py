@@ -69,3 +69,56 @@ async def test_postgres_concurrent_conversion_once(scenario):
             assert await db.scalar(select(func.count()).select_from(RepairOrderHistoryEvent).where(RepairOrderHistoryEvent.tenant_id==tenant_id,RepairOrderHistoryEvent.event_type=='recommendation_converted'))==1
     finally:
         await engine.dispose()
+
+
+@pytest.mark.asyncio
+@pytest.mark.skipif(not os.environ.get('DB107_POSTGRES_URL'),reason='requires dedicated migrated PostgreSQL DB107 database')
+@pytest.mark.parametrize('internal',[False,True])
+async def test_start_serializes_with_cancellation_and_replacement(internal):
+    from app.api.v1.endpoints import fleet, repair_orders
+    from app.db.models.repair_order import RepairOrder
+    from app.services.financial_transaction_lock import lock_tenant_financials
+    engine=create_async_engine(os.environ['DB107_POSTGRES_URL'])
+    factory=async_sessionmaker(engine,expire_on_commit=False)
+    try:
+        async with factory() as db:
+            tenant=Tenant(name='DB107 Lifecycle Shop',slug=f'db107-lifecycle-{uuid4().hex}',labor_rate=Decimal('145'))
+            db.add(tenant);await db.flush()
+            payer=await customer(db,tenant)
+            truck=await vehicle(db,tenant,payer)
+            if internal:
+                from app.db.models.vehicle_relationship import FleetMembership
+                db.add(FleetMembership(tenant_id=tenant.id,vehicle_id=truck.id,fleet_customer_id=payer.id))
+                await db.flush()
+            target=await order(db,tenant,payer,truck,is_internal=internal,is_fleet_work=internal,status=RepairOrderStatus.DRAFT)
+            user=await actor(db,tenant,UserRole.GARAGE_ADMIN)
+            await db.commit()
+            tenant_id,target_id,user_id=tenant.id,target.id,user.id
+        async with factory() as cancellation:
+            await lock_tenant_financials(cancellation,tenant_id)
+            target=await cancellation.get(RepairOrder,target_id)
+            target.status=RepairOrderStatus.CANCELLED
+            await cancellation.flush()
+            async with factory() as start:
+                user=await start.get(User,user_id)
+                with pytest.raises(SettlementDomainError) as blocked:
+                    if internal:
+                        await fleet.start_work_order(target_id,db=start,current_user=user)
+                    else:
+                        await repair_orders.override_start_work_without_mechanic(target_id,db=start,current_user=user)
+                assert blocked.value.code=='invoice_busy'
+                await start.rollback()
+            await cancellation.commit()
+        async with factory() as start:
+            user=await start.get(User,user_id)
+            with pytest.raises(HTTPException) as refused:
+                if internal:
+                    await fleet.start_work_order(target_id,db=start,current_user=user)
+                else:
+                    await repair_orders.override_start_work_without_mechanic(target_id,db=start,current_user=user)
+            assert refused.value.status_code==400
+            await start.rollback()
+        async with factory() as check:
+            assert (await check.get(RepairOrder,target_id)).status==RepairOrderStatus.CANCELLED
+    finally:
+        await engine.dispose()

@@ -54,6 +54,11 @@ class _FakeAsyncSession:
             return _ScalarResult(self.mechanic)
         raise AssertionError(f"Unexpected query call #{self.execute_calls} for entity {entity}")
 
+    async def scalars(self, statement):
+        from app.db.models.recommendation_conversion import RecommendationConversion
+        assert statement.column_descriptions[0].get("entity") is RecommendationConversion
+        return _ScalarResult([])
+
     async def commit(self):
         self.commit_count += 1
 
@@ -84,6 +89,11 @@ class _FakeOverrideSession:
 
     def add(self, obj):
         self.added.append(obj)
+
+    async def scalars(self, statement):
+        from app.db.models.recommendation_conversion import RecommendationConversion
+        assert statement.column_descriptions[0].get("entity") is RecommendationConversion
+        return _ScalarResult([])
 
     async def commit(self):
         self.commit_count += 1

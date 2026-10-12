@@ -225,3 +225,69 @@ async def test_converted_resolution_reference_and_nonstaff_error_privacy(client,
     reopened=await client.patch(src,json={'is_resolved':False},headers=headers(f['owner']))
     assert reopened.status_code==200
     assert reopened.json()['resolved_by_repair_order_id'] is None
+
+
+@pytest.mark.asyncio
+async def test_vehicle_snapshot_drift_does_not_release_live_operation(client,db_session,fixture):
+    f=fixture
+    creation=await client.post(path(f),json=body(),headers=headers(f['owner']))
+    assert creation.status_code==201
+    conversion=await db_session.scalar(select(RecommendationConversion))
+    # A canonical vehicle merge may rewrite current order truck IDs, while the
+    # historical conversion snapshot deliberately remains immutable.
+    conversion.vehicle_id=f['y'].id
+    await db_session.commit()
+    other=await order(db_session,f['a'],f['new'],f['x'])
+    await db_session.commit()
+    refused=await client.post(path(f,target=other.id),json=body(replaces_conversion_id=str(conversion.id)),headers=headers(f['owner']))
+    assert refused.status_code==409
+    assert refused.json()['detail']['code']=='already_converted'
+    assert refused.json()['detail']['conversion']['can_replace'] is False
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('role',[UserRole.MECHANIC,UserRole.FLEET_MANAGER,UserRole.CUSTOMER])
+async def test_shared_order_detail_does_not_disclose_source_order(client,db_session,fixture,role):
+    from app.db.models.user_customer_link import UserCustomerLink
+    f=fixture
+    created=await client.post(path(f),json=body(),headers=headers(f['owner']))
+    assert created.status_code==201
+    user=await actor(db_session,f['a'],role)
+    if role==UserRole.MECHANIC: f['context'].assigned_mechanic_id=user.id
+    if role==UserRole.FLEET_MANAGER: f['context'].is_fleet_work=True
+    if role==UserRole.CUSTOMER:
+        user.customer_id=f['new'].id
+        db_session.add(UserCustomerLink(user_id=user.id,tenant_id=f['a'].id,customer_id=f['new'].id))
+    await db_session.commit()
+    response=await client.get(f"/api/v1/repair-orders/{f['context'].id}/detail",headers=headers(user))
+    assert response.status_code==200,response.text
+    assert f['source'].order_number not in response.text
+    assert str(f['source'].id) not in response.text
+    assert str(f['rec'].id) not in response.text
+
+
+@pytest.mark.asyncio
+async def test_failed_replacement_rolls_back_supersession_and_new_work(client,db_session,fixture,monkeypatch):
+    from fastapi import HTTPException
+    from app.api.v1.endpoints import repair_orders
+    from app.db.models.repair_order_history import RepairOrderHistoryEvent
+    f=fixture
+    auth=headers(f['owner'])
+    first=await client.post(path(f),json=body(),headers=auth)
+    original=first.json()['conversion']
+    removed=await client.delete(f"/api/v1/repair-orders/{f['context'].id}/price-build/lines/{original['labor_id']}",headers=auth)
+    assert removed.status_code==200
+    original_refresh=repair_orders._refresh_repair_order_totals
+    async def fail_totals(*args,**kwargs):
+        raise HTTPException(status_code=503,detail='Synthetic totals failure')
+    monkeypatch.setattr(repair_orders,'_refresh_repair_order_totals',fail_totals)
+    retrybody=body(replaces_conversion_id=original['id'])
+    failed=await client.post(path(f),json=retrybody,headers=auth)
+    assert failed.status_code==503
+    conversions=(await db_session.scalars(select(RecommendationConversion))).all()
+    assert len(conversions)==1 and conversions[0].superseded_at is None
+    assert await db_session.scalar(select(func.count()).select_from(Labor))==0
+    assert await db_session.scalar(select(func.count()).select_from(RepairOrderHistoryEvent).where(RepairOrderHistoryEvent.event_type=='recommendation_converted'))==1
+    monkeypatch.setattr(repair_orders,'_refresh_repair_order_totals',original_refresh)
+    successful=await client.post(path(f),json=retrybody,headers=auth)
+    assert successful.status_code==201,successful.text

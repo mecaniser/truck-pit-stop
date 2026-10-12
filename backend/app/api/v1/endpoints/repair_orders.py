@@ -1956,6 +1956,7 @@ async def override_start_work_without_mechanic(
     )),
 ):
     """Owner/admin: start active customer work without assigning a mechanic."""
+    await recommendation_conversion.lock_tenant_financials(db, current_user.tenant_id)
     result = await db.execute(
         select(RepairOrder)
         .where(
@@ -1991,6 +1992,7 @@ async def override_start_work_without_mechanic(
             detail="Work can only be started from an active checked-in repair order",
         )
 
+    await recommendation_conversion.guard_reactivation(db, order, current_user)
     order.status = RepairOrderStatus.IN_PROGRESS
     if order.work_started_at is None:
         order.work_started_at = datetime.now(timezone.utc)
@@ -2033,6 +2035,7 @@ async def assign_mechanic(
     )),
 ):
     """Assign/reassign mechanic, set status to assigned when needed, and notify mechanic."""
+    await recommendation_conversion.lock_tenant_financials(db, current_user.tenant_id)
     result = await db.execute(
         select(RepairOrder)
         .where(RepairOrder.id == order_id, RepairOrder.deleted_at.is_(None))
@@ -2201,6 +2204,7 @@ async def acknowledge_job(
     current_user: User = Depends(require_role(UserRole.MECHANIC)),
 ):
     """Mechanic acknowledges job assignment"""
+    await recommendation_conversion.lock_tenant_financials(db, current_user.tenant_id)
     result = await db.execute(
         select(RepairOrder).where(RepairOrder.id == order_id, RepairOrder.deleted_at.is_(None))
     )
@@ -2218,6 +2222,7 @@ async def acknowledge_job(
             detail=f"Cannot acknowledge job in '{order.status.value}' status",
         )
     
+    await recommendation_conversion.guard_reactivation(db, order, current_user)
     order.status = RepairOrderStatus.ACKNOWLEDGED
     order.acknowledged_at = datetime.now(timezone.utc)
     await db.commit()
@@ -2245,6 +2250,7 @@ async def start_work(
     current_user: User = Depends(require_role(UserRole.MECHANIC)),
 ):
     """Mechanic starts work - notifies customer"""
+    await recommendation_conversion.lock_tenant_financials(db, current_user.tenant_id)
     result = await db.execute(
         select(RepairOrder)
         .where(RepairOrder.id == order_id, RepairOrder.deleted_at.is_(None))
@@ -2441,6 +2447,7 @@ async def hold_repair_order(
     current_user: User = Depends(require_role(UserRole.MECHANIC)),
 ):
     """Mechanic puts an in-progress RO on hold (waiting for parts, customer approval, etc.)"""
+    await recommendation_conversion.lock_tenant_financials(db, current_user.tenant_id)
     result = await db.execute(
         select(RepairOrder).where(RepairOrder.id == order_id, RepairOrder.deleted_at.is_(None))
     )
@@ -2513,6 +2520,7 @@ async def resume_repair_order(
     current_user: User = Depends(require_role(UserRole.MECHANIC)),
 ):
     """Mechanic resumes a held RO — clears hold state and restarts the timer."""
+    await recommendation_conversion.lock_tenant_financials(db, current_user.tenant_id)
     result = await db.execute(
         select(RepairOrder)
         .where(RepairOrder.id == order_id, RepairOrder.deleted_at.is_(None))
@@ -2608,6 +2616,7 @@ async def complete_work(
     current_user: User = Depends(require_role(UserRole.MECHANIC)),
 ):
     """Mechanic marks work as complete - awards points and notifies manager"""
+    await recommendation_conversion.lock_tenant_financials(db, current_user.tenant_id)
     result = await db.execute(
         select(RepairOrder)
         .where(RepairOrder.id == order_id, RepairOrder.deleted_at.is_(None))
@@ -2627,6 +2636,7 @@ async def complete_work(
             detail=f"Cannot complete job in '{order.status.value}' status",
         )
     
+    await recommendation_conversion.guard_reactivation(db, order, current_user)
     order.status = RepairOrderStatus.PENDING_REVIEW
     order.work_completed_at = datetime.now(timezone.utc)
     # Clear hold state if completing from hold
@@ -2877,6 +2887,7 @@ async def admin_complete_unassigned_work(
     current_user: User = Depends(require_role(UserRole.GARAGE_OWNER, UserRole.GARAGE_ADMIN)),
 ):
     """Admin marks an override-started customer repair order ready for review."""
+    await recommendation_conversion.lock_tenant_financials(db, current_user.tenant_id)
     result = await db.execute(
         select(RepairOrder)
         .where(RepairOrder.id == order_id, RepairOrder.deleted_at.is_(None))
@@ -2902,6 +2913,7 @@ async def admin_complete_unassigned_work(
             detail=f"Cannot complete job in '{order.status.value}' status",
         )
 
+    await recommendation_conversion.guard_reactivation(db, order, current_user)
     order.status = RepairOrderStatus.PENDING_REVIEW
     order.work_completed_at = datetime.now(timezone.utc)
     order.hold_reason = None
