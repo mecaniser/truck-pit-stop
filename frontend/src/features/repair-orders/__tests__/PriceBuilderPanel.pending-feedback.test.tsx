@@ -472,6 +472,24 @@ describe('PriceBuilderPanel pending feedback', () => {
     })
   })
 
+  it('persists manually entered labor duration through the optimistic pricing rollup', async () => {
+    apiMocks.get.mockImplementation((url: string) => {
+      if (url.endsWith('/price-build')) return Promise.resolve({ data: {
+        ...emptySummary,
+        lines: [{ id: 'labor-1', repair_order_id: 'order-1', description: 'Duration test', hours: '1.00', hourly_rate: '100.00', total_cost: '100.00', line_type: 'manual', source_service_id: null }],
+      } })
+      return Promise.resolve({ data: [] })
+    })
+    apiMocks.patch.mockResolvedValue({ data: {} })
+    const user = userEvent.setup()
+    renderPanel()
+    await user.click(await screen.findByRole('button', { name: /Duration test/ }))
+    const duration = screen.getByRole('textbox', { name: 'Labor duration', exact: true })
+    await user.click(duration)
+    await user.keyboard('1:20{Enter}')
+    await waitFor(() => expect(apiMocks.patch).toHaveBeenCalledWith('/repair-orders/order-1/price-build/lines/labor-1', { hours: 1.33 }))
+  })
+
   it.each(['main', 'operation'])('offers a new part alongside similar results in the %s picker', async (picker) => {
     const matches = [
       { id: 'connector-1', name: 'Connector brass', sku: 'CB-1', stock_quantity: 12, unit_type: 'each', selling_price: '5.00' },

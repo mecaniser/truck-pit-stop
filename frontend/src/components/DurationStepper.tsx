@@ -103,7 +103,9 @@ export default function DurationStepper({
     dirtyDraft.current = false
     setError(false)
     const clamped = Math.max(floor, mins)
-    const nextHours = clamped / 60
+    // Existing labor APIs accept hundredths of an hour. Keep non-quarter
+    // minute entry without sending repeating decimals such as 80 / 60.
+    const nextHours = Number((clamped / 60).toFixed(2))
     onLocalChange?.(nextHours)
     if (commitDebounceMs == null) {
       onChange(nextHours)

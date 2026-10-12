@@ -26,7 +26,7 @@ async function typeDuration(value: string) {
 afterEach(() => vi.useRealTimers())
 
 describe('DurationStepper manual entry', () => {
-  it.each([['1:20', 80 / 60], ['1.5', 1.5], ['90m', 1.5], ['1h 20m', 80 / 60]])('saves %s on Enter without rounding to a quarter hour', async (text, hours) => {
+  it.each([['1:20', 1.33], ['1.5', 1.5], ['90m', 1.5], ['1h 20m', 1.33]])('saves %s on Enter without rounding to a quarter hour', async (text, hours) => {
     const { change } = setup()
     const user = await typeDuration(text)
     expect(change).not.toHaveBeenCalled()
@@ -38,7 +38,7 @@ describe('DurationStepper manual entry', () => {
     const user = userEvent.setup()
     await user.click(field())
     await user.keyboard('1:20{Enter}')
-    expect(change).toHaveBeenCalledExactlyOnceWith(80 / 60)
+    expect(change).toHaveBeenCalledExactlyOnceWith(1.33)
   })
   it('saves when leaving the field', async () => {
     const { change } = setup()
@@ -78,7 +78,7 @@ describe('DurationStepper manual entry', () => {
     const { change } = setup()
     const user = await typeDuration('1:20')
     await user.click(screen.getByRole('button', { name: 'Increase duration' }))
-    expect(change).toHaveBeenLastCalledWith(95 / 60)
+    expect(change).toHaveBeenLastCalledWith(1.58)
     expect(field()).toHaveValue('1h 35m')
   })
   it('does not write when merely focusing and leaving the field', async () => {
@@ -94,6 +94,20 @@ describe('DurationStepper manual entry', () => {
     expect(screen.getByRole('button', { name: 'Increase duration' })).toBeDisabled()
     expect(screen.getByRole('button', { name: 'Decrease duration' })).toBeDisabled()
   })
+  it('persists when the parent reflects optimistic hours immediately', () => {
+    vi.useFakeTimers()
+    const saved = vi.fn()
+    function OptimisticParent() {
+      const [hours, setHours] = useState(1)
+      return <DurationStepper hours={hours} onChange={saved} onLocalChange={setHours} commitDebounceMs={500} ariaLabel="Labor duration" />
+    }
+    render(<OptimisticParent />)
+    fireEvent.focus(field())
+    fireEvent.change(field(), { target: { value: '1:20' } })
+    fireEvent.blur(field())
+    act(() => { vi.advanceTimersByTime(500) })
+    expect(saved).toHaveBeenCalledExactlyOnceWith(1.33)
+  })
   it('debounces typed entries and subsequent steps into one persisted value', () => {
     vi.useFakeTimers()
     const localChange = vi.fn()
@@ -103,8 +117,8 @@ describe('DurationStepper manual entry', () => {
     fireEvent.blur(field())
     fireEvent.click(screen.getByRole('button', { name: 'Increase duration' }))
     expect(change).not.toHaveBeenCalled()
-    expect(localChange).toHaveBeenLastCalledWith(95 / 60)
+    expect(localChange).toHaveBeenLastCalledWith(1.58)
     act(() => { vi.advanceTimersByTime(400) })
-    expect(change).toHaveBeenCalledExactlyOnceWith(95 / 60)
+    expect(change).toHaveBeenCalledExactlyOnceWith(1.58)
   })
 })
