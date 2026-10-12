@@ -18,6 +18,7 @@ from app.db.models.fleet import FleetIncident
 from app.db.models.repair_order_history import RepairOrderHistoryEvent
 from app.db.models.repair_order import RepairOrder, RepairOrderStatus
 from app.db.models.tenant import Tenant
+from app.db.models.service_checklist import RepairOrderChecklistItem
 from app.db.models.user import User, UserRole
 from app.db.models.vehicle import Vehicle
 
@@ -27,6 +28,9 @@ class _ScalarResult:
         self._value = value
 
     def scalar_one_or_none(self):
+        return self._value
+
+    def one(self):
         return self._value
 
     def scalars(self):
@@ -85,6 +89,13 @@ class _FakeOverrideSession:
             return _ScalarResult(None)
         if entity is FleetIncident:
             return _ScalarResult([])
+        if entity is None and len(statement.selected_columns) == 4:
+            # The combined checklist branch counts the active task subquery
+            # before completion. These notification fixtures contain no tasks;
+            # answer that specific aggregate without bypassing either guard.
+            scope = statement.get_final_froms()[0].element
+            assert scope.column_descriptions[0].get("entity") is RepairOrderChecklistItem
+            return _ScalarResult((0, 0, 0, 0))
         raise AssertionError(f"Unexpected query call #{self.execute_calls} for entity {entity}")
 
     def add(self, obj):
