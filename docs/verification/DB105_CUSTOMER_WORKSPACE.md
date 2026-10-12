@@ -52,4 +52,27 @@ page or descendant overflow.320 account view has one content scroller.
 Captures and command receipts: `output/db105/` (local, untracked).
 Physical phone browsers/keyboards are not tested.
 
-Final confirming pass, PR and protected CI evidence follow. Not merged/deployed.
+## Final local acceptance
+
+- 1280x800: header49px and footer49px (previous77+77); truck heading
+  y371.7 (previous913.7), truck row75px. Desktop actions32px high.
+- 960x800: single-panel view fits; no horizontal overflow.
+- 390x844 and320x740: phone controls44px high, Back44x44, footer stays on
+  one row at320px (53px including padding/border). Currency remains whole.
+- Account details are directly after their trigger, including at320px. History
+  expands by keyboard and reflows into labeled records. No page or component
+  horizontal overflow in inspected overview, disclosure and expanded history.
+- 40 source-focused tests and43 combined-preview tests passed; both builds pass.
+  Exact changed-source lint has zero errors/warnings. Existing toolchain notices
+  (Browserslist/React Router future flags) do not indicate test failures.
+- The additional customer-switch round trip regression failed first and was
+  fixed: returning A→B→A does not reopen A's old account disclosure.
+- Layout detector returned an empty finding list. Rendered checks, rather than
+  the detector alone, establish the density result. Account links, labels and
+  new rows use existing staff color/scale tokens; no animation added.
+
+Final captures: `customer-desktop-final.png`, `customer-mobile-final.png`,
+`customer-mobile-320-final.png`, `customer-history-320-final.png`.
+
+Local acceptance only. PR, CI, merge and deployment are separate gates.
+

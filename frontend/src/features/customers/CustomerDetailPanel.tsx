@@ -1,4 +1,4 @@
-import React, { useId, useState, type ReactNode } from 'react'
+import React, { useEffect, useId, useState, type ReactNode } from 'react'
 import type { ViewMode } from '@/components/ViewToggle'
 import type { LucideIcon } from 'lucide-react'
 import {
@@ -119,6 +119,7 @@ export default function CustomerDetailPanel({
 }: CustomerDetailPanelProps) {
   const accountDetailsId = useId()
   const [expandedAccountId, setExpandedAccountId] = useState<string | null>(null)
+  useEffect(() => setExpandedAccountId(null), [selectedCustomer.id])
   const accountExpanded = expandedAccountId === selectedCustomer.id
   return (
     <div className="db-customer-record">
