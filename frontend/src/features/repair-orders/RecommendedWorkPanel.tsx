@@ -83,7 +83,7 @@ function RecommendedWorkContext({ tenantId, vehicleId, customerId, contextOrderI
   return (
     <section className="w-full min-w-0 rounded-xl border border-gray-200 bg-white p-3" aria-label="Open recommendations for this truck">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h3 className="text-sm font-semibold text-gray-900">Open recommendations for this truck</h3>
+        <h3 className="text-sm font-semibold !text-gray-900">Open recommendations for this truck</h3>
         <button type="button" onClick={() => { void query.refetch() }} disabled={query.isFetching}
           className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-md px-2 py-1 text-xs text-gray-600 hover:bg-gray-100 disabled:opacity-50"
           aria-label="Refresh recommendations">
