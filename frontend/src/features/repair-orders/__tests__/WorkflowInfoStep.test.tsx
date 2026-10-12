@@ -4,6 +4,13 @@ import { describe, expect, it } from 'vitest'
 import WorkflowInfoStep, { type WorkflowInfo } from '../WorkflowInfoStep'
 const info: WorkflowInfo = { created_at: '2026-09-12T09:00:00Z', work_started_at: '2026-09-12T10:00:00Z', work_completed_at: '2026-09-12T13:30:00Z', actual_tracked_minutes: 75, internal_notes: null }
 describe('Workflow informational steps', () => {
+  it('puts the blocking reason before timing details in a held job', async () => {
+    const user = userEvent.setup()
+    render(<WorkflowInfoStep stage="bay" label="On hold" className="" status="in_progress" info={{ ...info, work_completed_at: null, hold_reason: 'waiting_for_customer_approval' }} />)
+    await user.click(screen.getByRole('button', { name: 'On hold' }))
+    const reason = screen.getByText('Waiting for customer approval')
+    expect(reason.compareDocumentPosition(screen.getByText('Job started')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
   it('separates elapsed job duration from tracked labor and provides no mutation', async () => {
     const user = userEvent.setup()
     render(<WorkflowInfoStep stage="bay" label="In the bay" className="" status="pending_review" info={info} operationCount={3} />)
