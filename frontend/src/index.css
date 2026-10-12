@@ -6972,6 +6972,7 @@ html.customer-portal-active {
 .db-prior-recommendations h3 { font-size: 13px; }
 .db-prior-recommendation > .db-recommendation-conversion { display: block; }
 .db-price-builder .db-recommendation-replacement-warning { color: #78350f !important; }
+.db-price-builder .db-recommendation-conversion [role='alert'] { color: #991b1b !important; }
 @media (min-width: 640px) and (pointer: fine) {
   .db-price-builder .db-recommendation-conversion input { height: 32px !important; min-height: 32px !important; }
 }

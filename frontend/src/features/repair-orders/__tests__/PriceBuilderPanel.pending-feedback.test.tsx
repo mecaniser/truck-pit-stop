@@ -1007,6 +1007,19 @@ describe('PriceBuilderPanel pending feedback', () => {
     expect(onAdminCompleteWork).toHaveBeenCalledTimes(1)
   })
 
+  it('requires fresh completion confirmation when switching orders through a recommendation link', async () => {
+    apiMocks.get.mockImplementation((url: string) => Promise.resolve({ data: url.endsWith('/price-build') ? emptySummary : [] }))
+    const user = userEvent.setup()
+    const props = { orderStatus: 'in_progress' as const, quoteIsApproved: true, onAdminCompleteWork: vi.fn() }
+    const view = renderPanel(props)
+    await user.click(await screen.findByRole('button', { name: 'Mark Completed' }))
+    expect(screen.getByText('Mark work completed')).toBeInTheDocument()
+    view.rerenderPanel({ ...props, orderId: 'order-2' })
+    expect(screen.queryByText('Mark work completed')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Mark Completed' })).toBeEnabled()
+    expect(props.onAdminCompleteWork).not.toHaveBeenCalled()
+  })
+
   it('keeps labeled invoice actions one-tap on phones and retains paid and pending guards', async () => {
     apiMocks.get.mockImplementation((url: string) => Promise.resolve({ data: url.endsWith('/price-build') ? emptySummary : [] }))
     const compact = vi.spyOn(window, 'matchMedia').mockImplementation((query) => ({
