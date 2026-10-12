@@ -57,3 +57,7 @@ This implementation improves the transfer: intake corrections stay beside the tr
 - Cleanup: temporary viewport/network overrides reset. Disposable `QA-DB104-HOLD` removed after verifying no parts/labor/invoice children. Original PERF-0000001 total988, no hold, null PO/mileage, carried=false preserved. Physical devices, mobile OS keyboards and native mobile Safari are not tested.
 
 Local screenshots: `output/db104/intake-desktop-edit.png`, `intake-mobile-validation.png`, `intake-mobile-retry.png`, `intake-mobile-320.png`, `hold-desktop.png`, `hold-mobile-details.png`, `hold-mobile-footer.png`. These contain only synthetic local fixtures. File hashes are in `output/db104/sha256-manifest.json`.
+
+## Review handoff
+
+[Draft PR503](https://github.com/mecaniser/truck-pit-stop/pull/503) is stacked on PR502. Both implementation and combined-preview builds pass. Earlier PR501/502 final runs38304209375/38304581908 independently finished successfully; they do not substitute for this PR’s checks. Quality workflow must be manually dispatched because automatic PR checks target main only. Merge/deployment are not performed.
