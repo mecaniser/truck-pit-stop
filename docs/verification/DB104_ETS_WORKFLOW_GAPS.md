@@ -61,3 +61,7 @@ Local screenshots: `output/db104/intake-desktop-edit.png`, `intake-mobile-valida
 ## Review handoff
 
 [Draft PR503](https://github.com/mecaniser/truck-pit-stop/pull/503) is stacked on PR502. Both implementation and combined-preview builds pass. Earlier PR501/502 final runs38304209375/38304581908 independently finished successfully; they do not substitute for this PR’s checks. Quality workflow must be manually dispatched because automatic PR checks target main only. Merge/deployment are not performed.
+
+## CI correction
+
+Run38306918765 passed required frontend, backend, migration and Playwright jobs, but the informational full frontend suite failed `staffTypeScale` (1failure/1239passes). Root cause was an inherited desktop parts-quantity `font-size:13px` rule from DB103, not the new intake labels. Reproduced locally before changing it. Source `dae34c87` uses `calc(var(--font-size-body) * 0.8125)` to preserve default13px and honor the staff text scale.73affected tests pass (108unique focused checks including the unchanged recommendation tests). Combined preview0613cff2 reverified desktop13px/28px quantity input and phone16px/44px input,390px scrollWidth390; fresh capture also confirms12orders after fixture cleanup. Final code CI is attached to PR503. This correction changes no API or data behavior.
