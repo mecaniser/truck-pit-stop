@@ -21,6 +21,7 @@ import { useViewPreference } from '@/hooks/useViewPreference'
 import { useTheme } from '../../contexts/ThemeContext'
 import useTenantBranding from '@/hooks/useTenantBranding'
 import { PartsInventoryGate } from './PartsInventoryWorkspace'
+import { useAuthStore } from '@/stores/authStore'
 
 // Category ↔ unit linkage: fluid parts are dispensed by volume, so setting one
 // side fills in the other and saves a second click. Only defaults get touched —
@@ -287,6 +288,8 @@ function LegacyInventoryPage() {
   const { data: tenantBranding } = useTenantBranding()
   const fallbackPartImageUrl = tenantBranding?.logo_url || null
   const [searchParams, setSearchParams] = useSearchParams()
+  const user = useAuthStore(state => state.user)
+  const linkedItemId = searchParams.get('selected')
   const [searchQuery, setSearchQuery] = useState('')
   const [showLowStock, setShowLowStock] = useState(false)
   const [stockSort, setStockSort] = useState<'none' | 'low-high' | 'high-low'>('none')
@@ -420,18 +423,21 @@ function LegacyInventoryPage() {
     },
   })
 
-  // Handle ?selected= query param to auto-open an inventory item
+  const linkedItemQuery = useQuery<InventoryItem>({
+    queryKey: ['inventory-search-selection', user?.tenant_id, user?.id, linkedItemId],
+    queryFn: async ({ signal }) => (await api.get(`/inventory/${linkedItemId}`, { signal })).data,
+    enabled: !!linkedItemId,
+    retry: false,
+  })
+
+  // Resolve a deep link directly, including items outside the loaded catalog.
   useEffect(() => {
-    const selectedId = searchParams.get('selected')
-    if (selectedId && inventory) {
-      const item = inventory.find(i => i.id === selectedId)
-      if (item) {
-        setSelectedItem(item)
-        // Clear the query param after opening
-        setSearchParams({}, { replace: true })
-      }
-    }
-  }, [searchParams, inventory, setSearchParams])
+    if (!linkedItemId || linkedItemQuery.data?.id !== linkedItemId) return
+    setSelectedItem(linkedItemQuery.data)
+    const params = new URLSearchParams(searchParams)
+    params.delete('selected')
+    setSearchParams(params, { replace: true })
+  }, [linkedItemId, linkedItemQuery.data, searchParams, setSearchParams])
 
   const filteredInventory = useMemo(() => {
     if (!inventory) return inventory
@@ -937,6 +943,8 @@ function LegacyInventoryPage() {
 
   return (
     <div className="db-inventory-workspace flex flex-col gap-3 lg:h-full lg:min-h-0">
+      {linkedItemId && linkedItemQuery.isFetching && <p role="status" className="p-3 text-sm">Opening inventory item…</p>}
+      {linkedItemId && linkedItemQuery.isError && <p role="alert" className="p-3 text-sm text-red-600">That inventory item is unavailable with your current access.</p>}
       {syncStatus?.ets_last_synced_at && (
         <div className="text-xs text-gray-400 px-1">
           Last synced from Easy Truck Shop: {new Date(syncStatus.ets_last_synced_at).toLocaleString()}

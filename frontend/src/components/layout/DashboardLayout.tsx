@@ -12,6 +12,7 @@ import DieselBridgeWordmark from '../brand/DieselBridgeWordmark'
 import TenantBrandLogo from '../brand/TenantBrandLogo'
 import DevRuntimeIdentity from '../dev/DevRuntimeIdentity'
 import useTenantBranding from '@/hooks/useTenantBranding'
+import { ShopSearchButton, ShopSearchProvider } from '@/features/global-search/ShopSearch'
 
 const STAFF_RAIL_STORAGE_KEY = 'db-staff-rail-expanded'
 const CustomersPage = lazy(lazyRouteLoader(() => import('@/features/customers/CustomersPage')))
@@ -304,6 +305,7 @@ export default function DashboardLayout() {
   )
 
   return (
+    <ShopSearchProvider>
     <div
       className={`db-staff-shell db-presentation-${presentationVariant} h-screen overflow-hidden ${isGarageUser ? 'bg-blueNoir-900' : ''}`}
       data-presentation={presentationVariant}
@@ -378,6 +380,7 @@ export default function DashboardLayout() {
               )}
             </div>
 
+            <ShopSearchButton mobile />
             {/* Desktop nav */}
             <div id="db-staff-primary-navigation" className="db-staff-primary-nav hidden md:flex md:items-center md:space-x-6">
               {isNewStaffPresentation ? (
@@ -394,6 +397,7 @@ export default function DashboardLayout() {
                 navLinks.map((link) => renderDesktopNavLink(link))
               )}
               <div className="db-staff-nav__profile" aria-label="Account">
+                <ShopSearchButton />
                 {utilityMessagesLink && (
                   <Link
                     to={utilityMessagesLink.to}
@@ -679,5 +683,6 @@ export default function DashboardLayout() {
       </div>
 
     </div>
+    </ShopSearchProvider>
   )
 }
