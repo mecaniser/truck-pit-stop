@@ -284,7 +284,6 @@ export default function CustomerDetailPanel({
             <div><dt>MC Number</dt><dd>{stripRegNumber(selectedCustomer.mc_number) || '—'}</dd></div>
             {selectedCustomer.source && <div><dt>Source</dt><dd>{formatCustomerSource(selectedCustomer.source)}</dd></div>}
           </dl>
-          <CustomerTaxExemptionControl key={selectedCustomer.id} customerId={selectedCustomer.id} />
       </section>
 
       <section className="db-customer-record__trucks">
@@ -666,6 +665,8 @@ export default function CustomerDetailPanel({
           <p className="text-xs text-amber-600 mt-2">Published initial estimates at or below this amount may be approved automatically. Additional work still requires the customer.</p>
         </div>
       )}
+
+      <CustomerTaxExemptionControl key={selectedCustomer.id} customerId={selectedCustomer.id} collapsible />
 
       {/* Notes */}
       {selectedCustomer.notes && (
