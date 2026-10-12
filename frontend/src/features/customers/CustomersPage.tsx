@@ -1167,7 +1167,7 @@ export default function CustomersPage() {
         subtitle={
           selectedVehicleInPanel
             ? selectedVehicleInPanel.license_plate || undefined
-            : selectedCustomer
+            : selectedCustomer && presentationVariant !== 'new'
             ? `Customer since ${new Date(selectedCustomer.created_at).toLocaleDateString()}`
             : undefined
         }
