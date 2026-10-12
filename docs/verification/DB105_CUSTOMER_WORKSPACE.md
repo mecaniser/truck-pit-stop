@@ -75,4 +75,3 @@ Final captures: `customer-desktop-final.png`, `customer-mobile-final.png`,
 `customer-mobile-320-final.png`, `customer-history-320-final.png`.
 
 Local acceptance only. PR, CI, merge and deployment are separate gates.
-
