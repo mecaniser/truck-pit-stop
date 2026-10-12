@@ -722,11 +722,7 @@ function PartPricePopover({
   saving?: boolean
   onApply: (value: number) => Promise<void>
 }) {
-  const [open, setOpen] = useState(false)
   const [draft, setDraft] = useState('')
-  const [menuPos, setMenuPos] = useState<{ top: number; left: number; openUp: boolean } | null>(null)
-  const buttonRef = useRef<HTMLButtonElement>(null)
-  const menuRef = useRef<HTMLDivElement>(null)
   const unit = parseFloat(part.unit_price || '0')
   const stock = part.unit_cost != null ? parseFloat(part.unit_cost) : null
   const list = part.list_price != null ? parseFloat(part.list_price) : unit
@@ -741,78 +737,24 @@ function PartPricePopover({
   const resetValue = resetToStock ? stock : list
   const isCustom = Number.isFinite(list) && Math.abs(unit - list) >= 0.005
 
-  const computePosition = () => {
-    if (!buttonRef.current) return
-    const rect = buttonRef.current.getBoundingClientRect()
-    const estimatedMenuHeight = 250
-    const estimatedMenuWidth = Math.min(320, window.innerWidth - 32)
-    const spaceBelow = window.innerHeight - rect.bottom
-    const openUp = spaceBelow < estimatedMenuHeight && rect.top > estimatedMenuHeight
-    setMenuPos({
-      top: openUp ? rect.top - 4 : rect.bottom + 4,
-      left: Math.min(window.innerWidth - 16, Math.max(16 + estimatedMenuWidth, rect.right)),
-      openUp,
-    })
-  }
-
-  const toggleOpen = () => {
-    if (!open) {
-      setDraft(unit.toFixed(2))
-      computePosition()
-    }
-    setOpen((o) => !o)
-  }
-
-  // Rendered via a portal to document.body (position: fixed) so the menu can
-  // never be clipped by an ancestor's overflow — e.g. the RO detail modal's
-  // own max-h-[90vh] overflow-y-auto scroll box. Close on any scroll/resize
-  // since a fixed menu would otherwise visually detach from the button.
-  useEffect(() => {
-    if (!open) return
-    const onClickOutside = (e: MouseEvent) => {
-      const target = e.target as Node
-      if (buttonRef.current?.contains(target) || menuRef.current?.contains(target)) return
-      setOpen(false)
-    }
-    // Ignore the reflow/scroll that can fire in the same tick the menu mounts
-    // (e.g. the modal's scrollbar appearing) — otherwise the menu closes the
-    // instant it opens. Only user-driven scroll/resize after that should close.
-    const openedAt = Date.now()
-    const onScrollOrResize = () => { if (Date.now() - openedAt > 150) setOpen(false) }
-    document.addEventListener('mousedown', onClickOutside)
-    window.addEventListener('scroll', onScrollOrResize, true)
-    window.addEventListener('resize', onScrollOrResize)
-    return () => {
-      document.removeEventListener('mousedown', onClickOutside)
-      window.removeEventListener('scroll', onScrollOrResize, true)
-      window.removeEventListener('resize', onScrollOrResize)
-    }
-  }, [open])
-
   return (
-    <>
-      <button
-        ref={buttonRef}
+    <Popover as="span" className="inline-block">
+      {({ close }) => <>
+      <PopoverButton
         type="button"
         disabled={disabled}
-        onClick={toggleOpen}
+        onClick={() => setDraft(unit.toFixed(2))}
         className={`db-part-price h-8 min-w-[84px] whitespace-nowrap rounded-lg border bg-white px-2 text-right font-['JetBrains_Mono',monospace] text-xs text-gray-900 shadow-sm disabled:opacity-60 ${
           isCustom ? 'border-orange-400 ring-2 ring-orange-100' : 'border-gray-200'
         }`}
       >
         {money(unit)} <ChevronDown className="ml-1 inline h-3 w-3 text-gray-400" />
-      </button>
-      {open && menuPos && createPortal(
-        <div
-          ref={menuRef}
-          style={{
-            position: 'fixed',
-            top: menuPos.openUp ? undefined : menuPos.top,
-            bottom: menuPos.openUp ? window.innerHeight - menuPos.top : undefined,
-            left: menuPos.left,
-            transform: 'translateX(-100%)',
-          }}
-          className="db-part-price-panel z-[70] w-[min(320px,calc(100vw-32px))] rounded-[14px] border border-gray-200 bg-white p-3 text-sm shadow-[0_10px_30px_rgba(20,25,35,.10)]"
+      </PopoverButton>
+      <PopoverPanel
+          anchor="bottom end"
+          focus
+          aria-label={`Part pricing for ${part.inventory_name}`}
+          className="db-part-price-panel z-[70] w-[min(320px,calc(100vw-32px))] max-h-[calc(100dvh-32px)] overflow-y-auto rounded-[14px] border border-gray-200 bg-white p-3 text-sm shadow-[0_10px_30px_rgba(20,25,35,.10)] [--anchor-gap:4px] [--anchor-padding:16px]"
         >
           <div className="mb-3 flex items-start justify-between gap-3">
             <div>
@@ -821,7 +763,7 @@ function PartPricePopover({
             </div>
             <button
               type="button"
-              onClick={() => setOpen(false)}
+              onClick={() => close()}
               aria-label="Close part pricing"
               className="rounded-md p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-700"
             >
@@ -874,17 +816,16 @@ function PartPricePopover({
                   return
                 }
                 await onApply(next)
-                setOpen(false)
+                close()
               }}
               className="rounded-lg bg-orange-500 px-3 py-1.5 text-xs font-bold text-white shadow-[0_6px_16px_rgba(239,138,18,.32)] disabled:opacity-60"
             >
               {saving ? 'Applying…' : 'Apply'}
             </button>
           </div>
-        </div>,
-        document.body,
-      )}
-    </>
+      </PopoverPanel>
+      </>}
+    </Popover>
   )
 }
 

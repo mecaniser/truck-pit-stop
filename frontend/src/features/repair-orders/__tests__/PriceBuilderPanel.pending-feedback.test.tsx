@@ -320,6 +320,32 @@ describe('PriceBuilderPanel pending feedback', () => {
     else expect(screen.getByRole('columnheader', { name: 'Savings' })).toBeInTheDocument()
   })
 
+  it('dismisses part pricing without saving and preserves explicit price application', async () => {
+    const part = {
+      id: 'usage-1', repair_order_id: 'order-1', inventory_id: 'part-1', inventory_sku: 'BS-1', inventory_name: 'Brake Shoes',
+      quantity: '1', unit_type: 'each', unit_price: '50', total_price: '50', savings: '0', source_service_id: null, source_line_id: null,
+    }
+    apiMocks.get.mockImplementation((url: string) => Promise.resolve({ data: url.endsWith('/price-build') ? { ...emptySummary, parts: [part] } : [] }))
+    apiMocks.patch.mockResolvedValue({ data: {} })
+    const user = userEvent.setup()
+    renderPanel()
+    const trigger = await screen.findByRole('button', { name: '$50.00' })
+    await user.click(trigger)
+    await user.clear(screen.getByRole('textbox', { name: 'Customer price' }))
+    await user.type(screen.getByRole('textbox', { name: 'Customer price' }), '42')
+    await user.keyboard('{Escape}')
+    await waitFor(() => expect(screen.queryByLabelText('Part pricing for Brake Shoes')).not.toBeInTheDocument())
+    expect(trigger).toHaveFocus()
+    expect(apiMocks.patch).not.toHaveBeenCalled()
+    await user.click(trigger)
+    expect(screen.getByRole('textbox', { name: 'Customer price' })).toHaveValue('50.00')
+    await user.clear(screen.getByRole('textbox', { name: 'Customer price' }))
+    await user.type(screen.getByRole('textbox', { name: 'Customer price' }), '45')
+    await user.click(screen.getByRole('button', { name: 'Apply', exact: true }))
+    await waitFor(() => expect(apiMocks.patch).toHaveBeenCalledWith('/repair-orders/order-1/parts/usage-1', { unit_price: 45 }))
+    await waitFor(() => expect(screen.queryByLabelText('Part pricing for Brake Shoes')).not.toBeInTheDocument())
+  })
+
   it('keeps one selected-order header without duplicating Shop Work return controls', async () => {
     apiMocks.get.mockResolvedValue({ data: emptySummary })
 
