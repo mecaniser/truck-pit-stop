@@ -33,6 +33,8 @@ from app.db.models.mechanic_points import MechanicPoints, MechanicPointsBalance,
 from app.db.models.description_library import DescriptionLibraryEntry
 from app.db.models.work_photo import WorkPhoto
 from app.db.models.repair_order_history import RepairOrderHistoryEvent
+from app.services import service_checklist
+from app.schemas.service_checklist import ChecklistPage, ChecklistTaskUpdate, ChecklistTaskUpdateResponse
 from app.core.payment_step_up import (
     PaymentStepUpContext,
     PaymentStepUpScope,
@@ -1526,7 +1528,8 @@ async def get_repair_order_detail(
         )
         .order_by(RepairOrderHistoryEvent.created_at.asc())
     )
-    history_resp = [RepairOrderHistoryEventResponse.model_validate(event) for event in history_result.scalars().all()]
+    history_resp = [RepairOrderHistoryEventResponse.model_validate(event) for event in history_result.scalars().all()
+                    if current_user.role != UserRole.CUSTOMER or event.event_type not in service_checklist.INTERNAL_EVENT_TYPES]
 
     # Selected PM services (fleet PM work orders). Ordered as chosen.
     from app.db.models.fleet import RepairOrderPMService
@@ -1831,7 +1834,7 @@ async def update_repair_order(
 ):
     from app.services.financial_transaction_lock import lock_tenant_financials
     await lock_tenant_financials(db, current_user.tenant_id)
-    result = await db.execute(select(RepairOrder).where(RepairOrder.id == order_id, RepairOrder.deleted_at.is_(None)))
+    result = await db.execute(select(RepairOrder).where(RepairOrder.id == order_id, RepairOrder.tenant_id == current_user.tenant_id, RepairOrder.deleted_at.is_(None)).with_for_update(of=RepairOrder).execution_options(populate_existing=True))
     order = result.scalar_one_or_none()
     
     if not order:
@@ -1845,6 +1848,9 @@ async def update_repair_order(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Access denied",
         )
+
+    if order_data.status != order.status and order_data.status in {RepairOrderStatus.PENDING_REVIEW, RepairOrderStatus.COMPLETED, RepairOrderStatus.INVOICED, RepairOrderStatus.PAID}:
+        await service_checklist.guard_completion(db, order)
 
     cancelling_now = (
         order_data.status == RepairOrderStatus.CANCELLED
@@ -2020,6 +2026,8 @@ async def assign_mechanic(
         select(RepairOrder)
         .where(RepairOrder.id == order_id, RepairOrder.deleted_at.is_(None))
         .options(selectinload(RepairOrder.customer), selectinload(RepairOrder.vehicle))
+        .with_for_update(of=RepairOrder)
+        .execution_options(populate_existing=True)
     )
     order = result.scalar_one_or_none()
     
@@ -2591,8 +2599,10 @@ async def complete_work(
     """Mechanic marks work as complete - awards points and notifies manager"""
     result = await db.execute(
         select(RepairOrder)
-        .where(RepairOrder.id == order_id, RepairOrder.deleted_at.is_(None))
+        .where(RepairOrder.id == order_id, RepairOrder.tenant_id == current_user.tenant_id, RepairOrder.deleted_at.is_(None))
         .options(selectinload(RepairOrder.customer), selectinload(RepairOrder.vehicle))
+        .with_for_update(of=RepairOrder)
+        .execution_options(populate_existing=True)
     )
     order = result.scalar_one_or_none()
     
@@ -2608,6 +2618,8 @@ async def complete_work(
             detail=f"Cannot complete job in '{order.status.value}' status",
         )
     
+    await service_checklist.guard_completion(db, order)
+
     order.status = RepairOrderStatus.PENDING_REVIEW
     order.work_completed_at = datetime.now(timezone.utc)
     # Clear hold state if completing from hold
@@ -2860,8 +2872,10 @@ async def admin_complete_unassigned_work(
     """Admin marks an override-started customer repair order ready for review."""
     result = await db.execute(
         select(RepairOrder)
-        .where(RepairOrder.id == order_id, RepairOrder.deleted_at.is_(None))
+        .where(RepairOrder.id == order_id, RepairOrder.tenant_id == current_user.tenant_id, RepairOrder.deleted_at.is_(None))
         .options(selectinload(RepairOrder.customer), selectinload(RepairOrder.vehicle))
+        .with_for_update(of=RepairOrder)
+        .execution_options(populate_existing=True)
     )
     order = result.scalar_one_or_none()
 
@@ -2882,6 +2896,8 @@ async def admin_complete_unassigned_work(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Cannot complete job in '{order.status.value}' status",
         )
+
+    await service_checklist.guard_completion(db, order)
 
     order.status = RepairOrderStatus.PENDING_REVIEW
     order.work_completed_at = datetime.now(timezone.utc)
@@ -2969,7 +2985,8 @@ async def approve_completion(
             selectinload(RepairOrder.parts_usage).selectinload(PartsUsage.inventory_item),
             selectinload(RepairOrder.labor_items),
         )
-        .with_for_update()
+        .with_for_update(of=RepairOrder)
+        .execution_options(populate_existing=True)
     )
     order = result.scalar_one_or_none()
     
@@ -2981,6 +2998,8 @@ async def approve_completion(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Cannot approve job in '{order.status.value}' status",
         )
+
+    await service_checklist.guard_completion(db, order)
 
     # Finalization shares the repair-order row lock with every price mutation.
     # Reconcile canonical children before authorization checks and invoice
@@ -3245,7 +3264,7 @@ async def delete_repair_order(
 ):
     from app.services.financial_transaction_lock import lock_tenant_financials
     await lock_tenant_financials(db, current_user.tenant_id)
-    result = await db.execute(select(RepairOrder).where(RepairOrder.id == order_id))
+    result = await db.execute(select(RepairOrder).where(RepairOrder.id == order_id, RepairOrder.tenant_id == current_user.tenant_id).with_for_update(of=RepairOrder).execution_options(populate_existing=True))
     order = result.scalar_one_or_none()
 
     if not order:
@@ -3317,7 +3336,7 @@ async def restore_repair_order(
     when deleted — restoring never changes status on its own."""
     from app.services.financial_transaction_lock import lock_tenant_financials
     await lock_tenant_financials(db, current_user.tenant_id)
-    result = await db.execute(select(RepairOrder).where(RepairOrder.id == order_id))
+    result = await db.execute(select(RepairOrder).where(RepairOrder.id == order_id, RepairOrder.tenant_id == current_user.tenant_id).with_for_update(of=RepairOrder).execution_options(populate_existing=True))
     order = result.scalar_one_or_none()
 
     if not order:
@@ -3378,7 +3397,7 @@ async def reopen_repair_order(
     from app.services.financial_transaction_lock import lock_tenant_financials
     await lock_tenant_financials(db, current_user.tenant_id)
     result = await db.execute(
-        select(RepairOrder).where(RepairOrder.id == order_id, RepairOrder.deleted_at.is_(None))
+        select(RepairOrder).where(RepairOrder.id == order_id, RepairOrder.tenant_id == current_user.tenant_id, RepairOrder.deleted_at.is_(None)).with_for_update(of=RepairOrder).execution_options(populate_existing=True)
     )
     order = result.scalar_one_or_none()
     if not order:
@@ -3768,6 +3787,7 @@ async def add_price_build_flat_service(
             order,
             body.service_id,
             quantity=body.quantity,
+            actor=current_user,
             mechanic_additive_only=current_user.role == UserRole.MECHANIC,
             mechanic_id=(
                 current_user.id if current_user.role == UserRole.MECHANIC else None
@@ -3848,6 +3868,7 @@ async def apply_price_build_repair_operation(
             estimated_hours=body.estimated_hours,
             provider=body.provider,
             auto_recalc_enabled=body.auto_recalc_enabled,
+            actor=current_user,
             mechanic_additive_only=current_user.role == UserRole.MECHANIC,
             mechanic_id=(
                 current_user.id if current_user.role == UserRole.MECHANIC else None
@@ -3912,7 +3933,7 @@ async def delete_price_build_line(
         # removed rather than only that something was.
         removed = next((li for li in order.labor_items if li.id == line_id), None)
         removed_label = removed.description if removed else None
-        result = await price_build_service.remove_line(db, order, line_id=line_id)
+        result = await price_build_service.remove_line(db, order, line_id=line_id, actor=current_user)
         _record_repair_order_history_event(
             db,
             order=result.order,
@@ -4989,6 +5010,11 @@ async def add_labor_to_repair_order(
         source_service_id=body.source_service_id,
     )
     db.add(labor)
+    if body.source_service_id:
+        source = (await db.execute(select(Service).where(Service.id == body.source_service_id, Service.tenant_id == order.tenant_id, Service.deleted_at.is_(None), Service.is_active.is_(True)))).scalar_one_or_none()
+        if source is None:
+            raise HTTPException(404, "Source reference not found")
+        await service_checklist.snapshot_service(db, order, labor, source, current_user)
     await _refresh_repair_order_totals(db, order_id)
     await db.commit()
     await db.refresh(labor)
@@ -5063,6 +5089,7 @@ async def update_repair_order_labor(
     if not labor:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Labor item not found")
     update_data = body.model_dump(exclude_unset=True)
+    await service_checklist.forbid_source_change(db, order, labor, update_data.get("source_service_id", labor.source_service_id))
     await _validate_source_references(
         db,
         tenant_id=current_user.tenant_id,
@@ -5111,6 +5138,7 @@ async def remove_labor_from_repair_order(
     labor = result.scalar_one_or_none()
     if not labor:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Labor item not found")
+    await service_checklist.archive_labor(db, order, labor, current_user)
     await db.delete(labor)
     await _refresh_repair_order_totals(db, order_id)
     await db.commit()
@@ -5257,3 +5285,31 @@ async def delete_recommended_service(
     await db.delete(svc)
     await db.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.get("/{order_id}/checklist", response_model=ChecklistPage)
+async def get_order_checklist(
+    order_id: UUID,
+    response: Response,
+    skip: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=100),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    response.headers["Cache-Control"] = "no-store"
+    return await service_checklist.read_checklist(db, order_id, current_user, skip, limit)
+
+
+@router.patch("/{order_id}/checklist/{item_id}", response_model=ChecklistTaskUpdateResponse)
+async def patch_order_checklist(
+    order_id: UUID,
+    item_id: UUID,
+    body: ChecklistTaskUpdate,
+    response: Response,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    response.headers["Cache-Control"] = "no-store"
+    result = await service_checklist.update_task(db, order_id, item_id, current_user, body)
+    await db.commit()
+    return result

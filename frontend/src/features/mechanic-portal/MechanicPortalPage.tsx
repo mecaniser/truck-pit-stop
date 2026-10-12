@@ -1,3 +1,5 @@
+import OrderChecklist from '@/features/service-checklists/OrderChecklist'
+import { errorDetail as checklistErrorDetail, openChecklistOnCompletionError } from '@/features/service-checklists/queries'
 import { useState, useEffect, useCallback, useRef } from 'react'
 import DatePicker from '@/components/DatePicker'
 import { Spinner } from '@/components/ui'
@@ -480,7 +482,14 @@ export default function MechanicPortalPage() {
       setSelectedJobId(null)
       toast.success('🎉 Job completed!')
     },
-    onError: (error: any) => toast.error(error.response?.data?.detail || 'Failed'),
+    onError: (error: unknown, orderId: string) => {
+      if (openChecklistOnCompletionError(error, orderId)) {
+        // Quick Job Done can run from a collapsed card: reveal the tasks.
+        setExpandedJobId(orderId)
+        queryClient.invalidateQueries({ queryKey: ['order-checklist', user?.tenant_id, orderId] })
+      }
+      toast.error(checklistErrorDetail(error, 'Failed'))
+    },
   })
 
   const holdOrderMutation = useMutation({
@@ -1065,6 +1074,8 @@ export default function MechanicPortalPage() {
               </div>
             </div>
           )}
+
+          <div className="px-4"><OrderChecklist orderId={jobDetail.id} orderStatus={jobDetail.status} refreshToken={jobDetail} dark /></div>
 
           {/* BIG ACTION BUTTON */}
           <div className="p-4 mt-auto">
@@ -2508,6 +2519,8 @@ export default function MechanicPortalPage() {
                             </div>
                           )}
                           
+                          <OrderChecklist orderId={job.id} orderStatus={job.status} refreshToken={detail} dark />
+
                           {/* Work Photos Section */}
                           {['assigned', 'acknowledged', 'in_progress'].includes(job.status) && (
                             <div>

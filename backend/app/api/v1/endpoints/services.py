@@ -20,6 +20,8 @@ from app.db.models.service import Service, ServiceCategory, ServicePart
 from app.db.models.description_library import DescriptionLibraryEntry
 from app.core.config import settings
 from app.schemas.typeahead import ServiceTypeaheadResponse
+from app.schemas.service_checklist import ChecklistTemplateResponse, ChecklistTemplateUpdate
+from app.services import service_checklist
 from app.tasks.description_library_refresh import process_on_demand_library_regenerate
 from app.core.work_value_validation import validate_part_quantity
 
@@ -858,3 +860,28 @@ async def delete_service_part(
     service_loaded = await _load_service_with_parts(db, service_id)
     labor_rate = await _get_labor_rate(db, current_user.tenant_id)
     return _serialize_service(service_loaded, labor_rate, include_category=True)
+
+
+# Internal checklist definitions deliberately do not extend customer ServiceResponse.
+
+
+@router.get("/{service_id}/checklist", response_model=ChecklistTemplateResponse)
+async def get_service_checklist(
+    service_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    service = await service_checklist.load_template(db, service_id, current_user)
+    return service_checklist.template_response(service)
+
+
+@router.put("/{service_id}/checklist", response_model=ChecklistTemplateResponse)
+async def put_service_checklist(
+    service_id: UUID,
+    body: ChecklistTemplateUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    result = await service_checklist.save_template(db, service_id, current_user, body)
+    await db.commit()
+    return result

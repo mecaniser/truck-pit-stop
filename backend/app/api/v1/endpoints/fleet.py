@@ -27,6 +27,7 @@ from app.db.models.inventory import PartsUsage, Inventory
 from app.db.models.repair_order import RepairOrder, RepairOrderStatus
 from app.db.models.repair_order_history import RepairOrderHistoryEvent
 from app.db.models.labor import Labor, LaborLineType
+from app.services import service_checklist
 from app.db.models.service import Service, ServicePart
 from app.db.models.tenant import Tenant
 from app.db.models.customer import Customer
@@ -2814,6 +2815,8 @@ async def complete_work_order(
     ro = await _load_fleet_ro_or_404(db, current_user.tenant_id, ro_id, for_update=True)
     from app.api.v1.endpoints.repair_orders import _refresh_repair_order_totals
 
+    await service_checklist.guard_completion(db, ro)
+
     # Rebuild the invoice source values from the locked canonical children.
     # Price mutations use the same repair-order lock, so completion either
     # precedes the entire mutation or observes all of it.
@@ -3105,7 +3108,7 @@ async def _set_vehicle_pm_services(
 
 async def _apply_pm_services_to_ro(
     db: AsyncSession, tenant_id: UUID, ro: RepairOrder, services: list[Service],
-    *, rewrite_description: bool = True,
+    *, rewrite_description: bool = True, actor: Optional[User] = None,
 ) -> None:
     """Attach `services` to the PM work order: record the per-PM service list,
     roll the service names into the description (manager-facing scope), and
@@ -3120,42 +3123,39 @@ async def _apply_pm_services_to_ro(
     # mutating any repair-order data.
     validated_values = _validated_service_work_values(services)
 
+    # Serialize reseeding with completion/task edits; newly created rows have
+    # been flushed by the caller and are owned by this same transaction.
+    await db.execute(select(RepairOrder.id).where(RepairOrder.id == ro.id, RepairOrder.tenant_id == tenant_id).with_for_update(of=RepairOrder))
+
     # 1) Replace the per-PM service rows, remembering which services this PM had
     # so step 2 can tell PM-seeded lines apart from separately added work.
     existing = await db.execute(
-        select(RepairOrderPMService).where(RepairOrderPMService.repair_order_id == ro.id)
+        select(RepairOrderPMService).where(RepairOrderPMService.repair_order_id == ro.id, RepairOrderPMService.tenant_id == tenant_id)
     )
     existing_rows = list(existing.scalars().all())
     prior_pm_service_ids = {row.service_id for row in existing_rows}
+    reseeded_service_ids = prior_pm_service_ids | {s.id for s in services}
+    old_lines = list((await db.execute(select(Labor).where(
+        Labor.repair_order_id == ro.id, Labor.tenant_id == tenant_id,
+        Labor.deleted_at.is_(None), Labor.source_service_id.in_(reseeded_service_ids),
+    ))).scalars().all()) if reseeded_service_ids else []
+    old_by_service = {}
+    for line in old_lines:
+        if line.source_service_id in old_by_service:
+            raise HTTPException(409, "Duplicate service lines must be resolved before changing PM services.")
+        old_by_service[line.source_service_id] = line
+    # Validate mappings before any scope mutation. A retained source with no
+    # tasks is deliberately retained as an empty historical snapshot.
     for row in existing_rows:
         await db.delete(row)
-    for i, s in enumerate(services):
-        db.add(RepairOrderPMService(
-            id=uuid4(), tenant_id=tenant_id, repair_order_id=ro.id,
-            service_id=s.id, sort_order=i,
-        ))
-
-    # 2) Clear the lines this PM previously seeded, so they can be rebuilt from
-    # the new selection. Scope the delete to the PM's own services: a flat
-    # service added through the price builder also carries a source_service_id,
-    # and deleting on "source_service_id IS NOT NULL" would silently discard
-    # work someone added to the PM. Manual lines (NULL) were never in scope.
-    reseeded_service_ids = prior_pm_service_ids | {s.id for s in services}
+    await db.flush()
+    for i, service in enumerate(services):
+        db.add(RepairOrderPMService(id=uuid4(), tenant_id=tenant_id, repair_order_id=ro.id, service_id=service.id, sort_order=i))
     if reseeded_service_ids:
-        old_labor = await db.execute(
-            select(Labor).where(and_(
-                Labor.repair_order_id == ro.id,
-                Labor.source_service_id.in_(reseeded_service_ids),
-            ))
-        )
-        for row in old_labor.scalars().all():
-            await db.delete(row)
-        old_parts = await db.execute(
-            select(PartsUsage).where(and_(
-                PartsUsage.repair_order_id == ro.id,
-                PartsUsage.source_service_id.in_(reseeded_service_ids),
-            ))
-        )
+        old_parts = await db.execute(select(PartsUsage).where(
+            PartsUsage.repair_order_id == ro.id, PartsUsage.tenant_id == tenant_id,
+            PartsUsage.source_service_id.in_(reseeded_service_ids),
+        ))
         for row in old_parts.scalars().all():
             await db.delete(row)
 
@@ -3177,12 +3177,19 @@ async def _apply_pm_services_to_ro(
 
     for s in services:
         hours, part_quantities = validated_values[s.id]
-        db.add(Labor(
+        new_labor = Labor(
             id=uuid4(), tenant_id=tenant_id, repair_order_id=ro.id,
             description=s.name, hours=hours, hourly_rate=labor_rate,
             total_cost=(hours * labor_rate).quantize(Decimal("0.01")),
             line_type=LaborLineType.FLAT_SERVICE, source_service_id=s.id,
-        ))
+        )
+        db.add(new_labor)
+        await db.flush()
+        prior_labor = old_by_service.get(s.id)
+        if prior_labor is not None:
+            await service_checklist.preserve_labor_snapshot(db, ro, prior_labor, new_labor)
+        elif s.id not in prior_pm_service_ids:
+            await service_checklist.snapshot_service(db, ro, new_labor, s, actor)
         for sp in s.service_parts:
             inv = sp.inventory_item
             if inv is None:
@@ -3197,6 +3204,13 @@ async def _apply_pm_services_to_ro(
                 total_price=(unit_price * qty).quantize(Decimal("0.01")),
                 source_service_id=s.id,
             ))
+
+    selected_ids = {service.id for service in services}
+    for old_labor in old_lines:
+        if old_labor.source_service_id not in selected_ids:
+            await service_checklist.archive_labor(db, ro, old_labor, actor)
+        await db.delete(old_labor)
+    await db.flush()
 
 
 def _validated_service_work_values(
@@ -3435,7 +3449,7 @@ async def set_wo_pm_services(
             status_code=status.HTTP_409_CONFLICT,
             detail="PM services can only be changed while the work order is a draft.",
         )
-    await _apply_pm_services_to_ro(db, current_user.tenant_id, ro, services)
+    await _apply_pm_services_to_ro(db, current_user.tenant_id, ro, services, actor=current_user)
     await _refresh_repair_order_totals(db, ro.id)
     await db.commit()
     return _pm_service_entries(services)
@@ -3526,12 +3540,14 @@ async def add_service_to_work_order(
         (tenant.labor_rate if fleet_labor_uses_customer_rate(ro) else tenant.internal_labor_rate) if tenant else 0
     ))
 
-    db.add(Labor(
+    new_labor = Labor(
         id=uuid4(), tenant_id=current_user.tenant_id, repair_order_id=ro.id,
         description=service.name, hours=hours, hourly_rate=labor_rate,
         total_cost=(hours * labor_rate).quantize(Decimal("0.01")),
         line_type=LaborLineType.FLAT_SERVICE, source_service_id=service.id,
-    ))
+    )
+    db.add(new_labor)
+    await service_checklist.snapshot_service(db, ro, new_labor, service, current_user)
     for sp in service.service_parts:
         inv = sp.inventory_item
         if inv is None:
@@ -3756,7 +3772,7 @@ async def new_work_order(
     # panel would add one at a time, so the order opens ready to assign.
     if services:
         await _apply_pm_services_to_ro(
-            db, current_user.tenant_id, ro, services, rewrite_description=False,
+            db, current_user.tenant_id, ro, services, rewrite_description=False, actor=current_user,
         )
 
     tenant = await db.get(Tenant, current_user.tenant_id)
@@ -3863,7 +3879,7 @@ async def schedule_pm(
             commit=False,
         )
         if services:
-            await _apply_pm_services_to_ro(db, current_user.tenant_id, ro, services)
+            await _apply_pm_services_to_ro(db, current_user.tenant_id, ro, services, actor=current_user)
             from app.api.v1.endpoints.repair_orders import _refresh_repair_order_totals
 
             await _refresh_repair_order_totals(db, ro.id)

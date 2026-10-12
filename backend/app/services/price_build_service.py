@@ -20,6 +20,8 @@ from app.db.models.labor import Labor, LaborLineType
 from app.db.models.labor_operation_memory import LaborOperationMemory
 from app.db.models.repair_order import RepairOrder, RepairOrderStatus
 from app.db.models.service import Service, ServicePart
+from app.db.models.user import User
+from app.services import service_checklist
 from app.db.models.tenant import Tenant
 from app.core.logging import get_logger
 from app.services.repair_operation_library import (
@@ -263,7 +265,7 @@ class PriceBuildService:
         if tenant_id is not None:
             statement = statement.where(RepairOrder.tenant_id == tenant_id)
         if for_update:
-            statement = statement.with_for_update()
+            statement = statement.with_for_update(of=RepairOrder)
         result = await db.execute(statement)
         order = result.scalar_one_or_none()
         if not order:
@@ -279,6 +281,7 @@ class PriceBuildService:
         quantity: int = 1,
         mechanic_additive_only: bool = False,
         mechanic_id: Optional[UUID] = None,
+        actor: Optional[User] = None,
     ) -> PriceBuildResult:
         if quantity < 1:
             raise PriceBuildInputError("quantity must be >= 1")
@@ -328,7 +331,7 @@ class PriceBuildService:
             (
                 li
                 for li in order.labor_items
-                if li.source_service_id == service.id
+                if li.source_service_id == service.id and li.deleted_at is None
             ),
             None,
         )
@@ -368,6 +371,7 @@ class PriceBuildService:
             )
             db.add(line)
             await db.flush()
+            await service_checklist.snapshot_service(db, order, line, service, actor)
 
         inventory_ids = sorted(
             {
@@ -535,6 +539,7 @@ class PriceBuildService:
         auto_recalc_enabled: bool = True,
         mechanic_additive_only: bool = False,
         mechanic_id: Optional[UUID] = None,
+        actor: Optional[User] = None,
     ) -> PriceBuildResult:
         # Service-catalog candidates (operation_id="service:<uuid>") carry their own
         # parts bundle and pricing — route to the existing flat-service path instead
@@ -549,6 +554,7 @@ class PriceBuildService:
                 quantity=1,
                 mechanic_additive_only=mechanic_additive_only,
                 mechanic_id=mechanic_id,
+                actor=actor,
             )
 
         warnings: list[OperationWarning] = []
@@ -678,8 +684,9 @@ class PriceBuildService:
         order: RepairOrder,
         *,
         line_id: UUID,
+        actor: Optional[User] = None,
     ) -> PriceBuildResult:
-        order = await self.load_order(db, order.id, for_update=True)
+        order = await self.load_order(db, order.id, for_update=True, tenant_id=order.tenant_id)
         self._assert_editable(order)
         line_result = await db.execute(
             select(Labor).where(
@@ -705,6 +712,7 @@ class PriceBuildService:
             .where(PartsUsage.source_line_id == line.id)
             .values(source_line_id=None)
         )
+        await service_checklist.archive_labor(db, order, line, actor)
         await db.delete(line)
         return await self.recalculate_order(db, order)
 

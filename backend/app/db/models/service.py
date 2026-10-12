@@ -1,6 +1,6 @@
-from sqlalchemy import Column, String, Integer, Numeric, Boolean, ForeignKey, Text
+from sqlalchemy import Column, String, Integer, Numeric, Boolean, ForeignKey, Text, JSON, text
 from sqlalchemy.orm import relationship
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import UUID, JSONB
 from decimal import Decimal
 from app.db.base import BaseModel
 
@@ -51,6 +51,9 @@ class Service(BaseModel):
     # For display
     icon = Column(String(50), nullable=True)
     sort_order = Column(Integer, default=0, nullable=False)
+
+    checklist_template = Column(JSON().with_variant(JSONB(), "postgresql"), nullable=False, default=list, server_default=text("'[]'"))
+    checklist_version = Column(Integer, nullable=False, default=0, server_default="0")
 
     appointments = relationship("Appointment", back_populates="service")
     service_parts = relationship(
