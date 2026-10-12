@@ -54,8 +54,8 @@ The inspection covered global navigation/search, customer and vehicle workspaces
 
 These are the relevant implementation locations, not declarations of deployed acceptance:
 
-- `frontend/src/components/DashboardLayout.tsx`: staff navigation/shell; separate search endpoints live in customer, vehicle, inventory and repair-order APIs.
-- `backend/app/db/models/service.py`, `frontend/src/components/repair-orders/PriceBuilderPanel.tsx`: service-package labor and parts.
+- `frontend/src/components/layout/DashboardLayout.tsx`: staff navigation/shell; separate search endpoints live in customer, vehicle, inventory and repair-order APIs.
+- `backend/app/db/models/service.py`, `frontend/src/features/repair-orders/PriceBuilderPanel.tsx`: service-package labor and parts.
 - `backend/app/api/v1/endpoints/quotes.py`: quote revision and authorization lifecycle.
 - `backend/app/api/v1/endpoints/mechanics.py`: attendance, break, job and miscellaneous timers.
 - `backend/app/api/v1/endpoints/parts_operations.py`: demand, procurement, receipts, core and supplier returns.
@@ -64,7 +64,7 @@ These are the relevant implementation locations, not declarations of deployed ac
 - `backend/app/db/models/recommended_service.py`, `backend/app/api/v1/endpoints/repair_orders.py`: original per-order recommendations.
 - `backend/app/api/v1/endpoints/appointments.py`: existing single-resource slot logic.
 - `backend/app/services/pricing.py`, `backend/app/api/v1/endpoints/reports.py`, `backend/app/db/models/inventory.py`, `backend/app/db/models/labor.py`: billed totals versus part cost snapshots and vendor cost.
-- `backend/app/api/v1/endpoints/invoices.py`, `backend/app/services/invoice_settlements.py`: invoice and credit semantics; credit aging is not receivables aging.
+- `backend/app/api/v1/endpoints/invoices.py`, `backend/app/api/v1/endpoints/invoice_settlements.py`: invoice and credit semantics; credit aging is not receivables aging.
 
 ## Delivery priorities
 
