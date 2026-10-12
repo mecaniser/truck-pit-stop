@@ -131,3 +131,21 @@
 @media (max-width: 639px) {
   .db-customer-truck-card__actions button { width: 44px; height: 44px; }
 }
+/* Staff-wide touch defaults must not inflate pointer-operated desktop rows. */
+@media (min-width: 640px) and (pointer: fine) {
+  .db-customer-record .db-customer-record__tabs button,
+  .db-customer-record .db-customer-record__section-heading button,
+  .db-customer-actions button,
+  .db-presentation-new .db-customer-detail-workspace .db-slide-panel-workspace__back { min-height: 32px !important; }
+}
+@container customer-record (max-width: 500px) {
+  .db-customer-history__stats { grid-template-columns: minmax(0, 1fr); gap: 0; }
+  .db-customer-history__stats > div { display: flex; flex-direction: row-reverse; align-items: baseline; justify-content: space-between; gap: 8px; padding: 6px 8px; border-radius: 0; }
+  .db-customer-history__stats > div > p:first-child { white-space: nowrap; font-size: calc(var(--font-size-body, 16px) * 1.125) !important; }
+}
+@media (max-width: 639px) {
+  .db-presentation-new .db-customer-detail-workspace .db-slide-panel-workspace__back { min-width: 44px; }
+}
+@media (max-width: 359px) {
+  .db-customer-actions > div button svg { display: none; }
+}
