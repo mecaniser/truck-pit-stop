@@ -64,6 +64,7 @@ describe('Void and revise work editing', () => {
     useAuthStore.setState({ user: owner, isAuthenticated: true })
     apiMocks.get.mockImplementation((url: string) => {
       const current = { ...order, status: voided ? 'cancelled' : 'invoiced' }
+      if (url === '/repair-orders/recommended-work') return Promise.resolve({ data: { items: [], total: 0, skip: 0, limit: 25 } })
       if (url === '/repair-orders') return Promise.resolve({ data: { items: [current], total: 1, has_more: false } })
       if (url.endsWith('/workspace')) return Promise.resolve({ data: current })
       if (url.endsWith('/detail')) return Promise.resolve({ data: { ...current, parts_usage: [], labor_items: [], history_events: [] } })
@@ -83,6 +84,23 @@ describe('Void and revise work editing', () => {
     })
   })
   afterEach(() => { vi.clearAllMocks(); vi.unstubAllGlobals(); useAuthStore.setState({ user: null, isAuthenticated: false }) })
+
+  it('keeps the original order and its actions available when recommendations return malformed HTTP 200 data', async () => {
+    const defaultGet = apiMocks.get.getMockImplementation()!
+    apiMocks.get.mockImplementation((url: string) => url === '/repair-orders/recommended-work'
+      ? Promise.resolve({ data: { items: [{ description: 'Malformed row without source' }], total: 1, skip: 0, limit: 25 } })
+      : defaultGet(url))
+    renderRevision()
+    const user = userEvent.setup()
+    expect(await screen.findByText('Could not load recommendations.')).toBeVisible()
+    expect(screen.queryByText('No open recommendations on other orders.')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Order actions' })).toBeEnabled()
+    await user.click(screen.getByRole('button', { name: 'Order actions' }))
+    await user.click(screen.getByRole('button', { name: 'Void this order…' }))
+    expect(screen.getByPlaceholderText('Why is this being voided? (recorded)')).toBeVisible()
+    expect(screen.getByPlaceholderText('Your password')).toBeVisible()
+    expect(apiMocks.post).not.toHaveBeenCalled()
+  })
 
   it('closes the successful void form and workspace and leaves a dismissible confirmation', async () => {
     renderRevision()

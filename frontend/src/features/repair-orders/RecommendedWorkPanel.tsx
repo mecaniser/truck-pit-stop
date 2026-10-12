@@ -3,28 +3,41 @@ import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { ArrowUpRight, ChevronLeft, ChevronRight, RotateCcw } from 'lucide-react'
 import { format } from 'date-fns'
+import { z } from 'zod'
 import api from '@/lib/api'
 import { useAuthStore } from '@/stores/authStore'
-import type { RecommendedServicePriority, RepairOrderStatus } from '@/types'
 
 const RECOMMENDED_WORK_QUERY_KEY = ['recommended-work'] as const
 const PAGE_SIZE = 25
 
-interface RecommendedWorkItem {
-  id: string
-  description: string
-  priority: RecommendedServicePriority
-  created_at: string
-  vehicle: { id: string; unit_number: string | null; year: number | null; make: string | null; model: string | null }
-  source_order: { id: string; order_number: string; status: RepairOrderStatus; created_at: string }
-}
-
-interface RecommendedWorkPage {
-  items: RecommendedWorkItem[]
-  total: number
-  skip: number
-  limit: number
-}
+// Treat successful HTTP responses as untrusted until the full reduced shape is
+// valid. A bad nested row must fail the query, never crash the order workspace
+// or become a false "no recommendations" result.
+const timestampSchema = z.string().datetime({ offset: true })
+const recommendedWorkPageSchema = z.object({
+  items: z.array(z.object({
+    id: z.string().uuid(),
+    description: z.string(),
+    priority: z.enum(['urgent', 'soon', 'monitor']),
+    created_at: timestampSchema,
+    vehicle: z.object({
+      id: z.string().uuid(),
+      unit_number: z.string().nullable(),
+      year: z.number().int().nullable(),
+      make: z.string().nullable(),
+      model: z.string().nullable(),
+    }),
+    source_order: z.object({
+      id: z.string().uuid(),
+      order_number: z.string(),
+      status: z.enum(['draft', 'quoted', 'declined', 'approved', 'assigned', 'acknowledged', 'in_progress', 'pending_review', 'completed', 'invoiced', 'paid', 'cancelled']),
+      created_at: timestampSchema,
+    }),
+  })).max(PAGE_SIZE),
+  total: z.number().int().nonnegative(),
+  skip: z.number().int().nonnegative(),
+  limit: z.literal(PAGE_SIZE),
+})
 
 interface Props {
   vehicleId: string
@@ -54,11 +67,15 @@ function RecommendedWorkContext({ tenantId, vehicleId, customerId, contextOrderI
   const query = useQuery({
     queryKey: [...RECOMMENDED_WORK_QUERY_KEY, tenantId, vehicleId, customerId ?? null, contextOrderId ?? null, skip, PAGE_SIZE],
     queryFn: async ({ signal }) => {
-      const response = await api.get<RecommendedWorkPage>('/repair-orders/recommended-work', {
+      const response = await api.get<unknown>('/repair-orders/recommended-work', {
         params: { vehicle_id: vehicleId, customer_id: customerId, context_order_id: contextOrderId, skip, limit: PAGE_SIZE },
         signal,
       })
-      return response.data
+      const result = recommendedWorkPageSchema.safeParse(response.data)
+      if (!result.success || result.data.skip !== skip || result.data.items.length > result.data.total) {
+        throw new Error('Recommended work response is unavailable')
+      }
+      return result.data
     },
     refetchOnMount: 'always',
   })

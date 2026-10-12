@@ -57,3 +57,9 @@ Combined preview branch `codex/ets-parity-preview` HEAD `b03cf1f9` contains DB09
 Recommendation journey: prior urgent/monitor issues appear with original dates; resolved fixture absent; source navigation opens original RO and excludes its own recommendations; mobile controls fit390px. Reporting journey:200/120→80/40%;300/220 sublet with4hours→80/26.67%; partial1of2 leaves profit unavailable;100/120→−20/−20%; source RO link works. Mobile no document overflow. Screenshots and full runtime receipt retained in the combined preview checkout under `output/ets-parity/` and `docs/verification/ETS_PARITY_PREVIEW.md`. Zero, failure and old-backend cases are automated evidence, not fabricated browser outcomes.
 
 Feature implementation is locally verified and ready for protected PR CI. No merge or deployment is authorized by this receipt.
+
+## CI correction — 2026-10-12
+
+PR498 full frontend CI exposed a malformed200 payload crash in RecommendedWorkPanel that broke existing void/revision test workspaces. The query now validates the full reduced response with existing Zod before caching/rendering; invalid initial data produces an unavailable state, never empty/all-clear. Invalid refresh retains only validated prior rows with a visible error, and clears an empty/all-clear claim. Exact endpoint mocks and a malformed-response RO regression were added.
+
+Full frontend suite:136files/1195tests passed; final additional cached-empty regression:35panel tests passed. Fresh independent reviewer reran41panel/force-void/void-revision tests plus scoped ESLint/diff check: Security and automated QA GO. TypeScript/Vite build pass. API/schema/permissions unchanged. Corrected real-API preview smoke remains required before final runtime GO; earlier approval applies only to the earlier source.
