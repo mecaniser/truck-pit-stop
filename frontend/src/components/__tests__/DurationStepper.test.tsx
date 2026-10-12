@@ -33,6 +33,13 @@ describe('DurationStepper manual entry', () => {
     await user.keyboard('{Enter}')
     expect(change).toHaveBeenCalledExactlyOnceWith(hours)
   })
+  it('selects the displayed duration so typing replaces it immediately', async () => {
+    const { change } = setup()
+    const user = userEvent.setup()
+    await user.click(field())
+    await user.keyboard('1:20{Enter}')
+    expect(change).toHaveBeenCalledExactlyOnceWith(80 / 60)
+  })
   it('saves when leaving the field', async () => {
     const { change } = setup()
     const user = await typeDuration('2.25')
