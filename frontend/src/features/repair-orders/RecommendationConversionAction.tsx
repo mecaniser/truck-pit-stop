@@ -51,6 +51,9 @@ export default function RecommendationConversionAction({ recommendationId, descr
   const [rate, setRate] = useState(hourlyRate == null ? '' : hourlyRate.toFixed(2))
   const [error, setError] = useState('')
   const [conflict, setConflict] = useState<RecommendationConversion | null>(null)
+  // A refresh can reveal removal/cancellation after a concurrent-add conflict.
+  // Let the authoritative latest receipt replace that earlier error snapshot.
+  useEffect(() => { setConflict(null) }, [conversion])
   const submission = useRef<Submission | null>(null)
   const trigger = useRef<HTMLButtonElement>(null)
   const restoreFocus = useRef(false)

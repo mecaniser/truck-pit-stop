@@ -2,7 +2,7 @@ import { Link, useLocation } from 'react-router-dom'
 import type { Labor } from '@/types'
 import { recommendationLink } from './recommendationConversion'
 
-export default function RecommendationSourceLink({ source }: { source: NonNullable<Labor['recommendation_source']> }) {
+export default function RecommendationSourceLink({ source, currentDescription }: { source: NonNullable<Labor['recommendation_source']>; currentDescription?: string }) {
   const location = useLocation()
   return <div className="flex min-w-0 flex-wrap items-baseline gap-x-1 px-2 pb-1 text-xs text-slate-600">
     <span>From recommendation</span>
@@ -12,6 +12,6 @@ export default function RecommendationSourceLink({ source }: { source: NonNullab
       aria-label={`Open source recommendation on ${source.source_order.order_number}`}>
       {source.source_order.order_number}
     </Link> : <span>{source.source_order.order_number} (unavailable)</span>}
-    <span className="basis-full break-words">{source.description}</span>
+    {source.description !== currentDescription && <span className="basis-full break-words">{source.description}</span>}
   </div>
 }

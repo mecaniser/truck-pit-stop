@@ -505,6 +505,7 @@ function LaborLineEditor({
     <>
       <div className="mb-2 flex items-center gap-1.5">
         <input
+          aria-label="Labor description"
           defaultValue={line.description}
           onBlur={(e) => {
             const value = e.target.value.trim()
@@ -3961,7 +3962,7 @@ export default function PriceBuilderPanel({
                         </span>
                       </span>
                     </button>
-                    {line.recommendation_source && <RecommendationSourceLink source={line.recommendation_source} />}
+                    {line.recommendation_source && <RecommendationSourceLink source={line.recommendation_source} currentDescription={line.description} />}
                     {isOpen && (
                       <div id={`service-line-${line.id}`} className="db-workspace-line-details ml-3 space-y-2 pb-2 pr-2">
                         {warningsForLine.length > 0 && (
