@@ -71,9 +71,9 @@ function Details({ stage, info, technician, status, description, mileage, operat
       {waitBeforeStart && <p className="text-sm text-gray-600">Started {waitBeforeStart} after order opened</p>}
     </>}
     {stage === 'bay' && <>
-      <dl className="space-y-3">{row('Work status', status === 'in_progress' && info?.hold_reason ? 'On hold' : status.replace(/_/g, ' '))}{row('Work scope', operationCount == null ? 'Not available' : `${operationCount} labor / operation ${operationCount === 1 ? 'line' : 'lines'}`)}{row('Job started', timestamp(info?.work_started_at))}{row('Work completed', timestamp(info?.work_completed_at))}{row(info?.work_completed_at ? 'Elapsed job time' : 'Elapsed since job started', elapsed)}{row('Recorded labor time', info?.actual_tracked_minutes != null && Number.isFinite(info.actual_tracked_minutes) && info.actual_tracked_minutes >= 0 ? duration(info.actual_tracked_minutes) : 'Not recorded')}</dl>
+      <dl className="space-y-3">{row('Work status', status === 'in_progress' && info?.hold_reason ? 'On hold' : status.replace(/_/g, ' '))}{info?.hold_reason && row('Recorded hold reason', holdReasonLabel(info.hold_reason))}{row('Work scope', operationCount == null ? 'Not available' : `${operationCount} labor / operation ${operationCount === 1 ? 'line' : 'lines'}`)}{row('Job started', timestamp(info?.work_started_at))}{row('Work completed', timestamp(info?.work_completed_at))}{row(info?.work_completed_at ? 'Elapsed job time' : 'Elapsed since job started', elapsed)}{row('Recorded labor time', info?.actual_tracked_minutes != null && Number.isFinite(info.actual_tracked_minutes) && info.actual_tracked_minutes >= 0 ? duration(info.actual_tracked_minutes) : 'Not recorded')}</dl>
       <p className="text-xs text-gray-500">Elapsed time includes pauses. Labor time counts tracked work only.</p>
-      <div><p className="text-xs text-gray-500">Recorded hold reason</p><p className="mt-1 text-sm">{info?.hold_reason ? holdReasonLabel(info.hold_reason) : 'No hold reason recorded.'}</p></div>
+
     </>}
     {stage === 'review' && <>
       <p className="text-sm font-medium">{status === 'pending_review' ? 'Awaiting quality review' : ['completed', 'invoiced', 'paid'].includes(status) ? 'Work finalized' : status === 'cancelled' ? 'Order cancelled' : 'Work has not reached quality review'}</p>
