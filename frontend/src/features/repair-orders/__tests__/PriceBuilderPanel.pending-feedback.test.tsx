@@ -793,6 +793,40 @@ describe('PriceBuilderPanel pending feedback', () => {
     expect(onAdminCompleteWork).toHaveBeenCalledTimes(1)
   })
 
+  it('keeps labeled invoice actions one-tap on phones and retains paid and pending guards', async () => {
+    apiMocks.get.mockImplementation((url: string) => Promise.resolve({ data: url.endsWith('/price-build') ? emptySummary : [] }))
+    const compact = vi.spyOn(window, 'matchMedia').mockImplementation((query) => ({
+      matches: query.includes('max-width'), media: query, onchange: null,
+      addListener: vi.fn(), removeListener: vi.fn(), addEventListener: vi.fn(), removeEventListener: vi.fn(), dispatchEvent: vi.fn(),
+    }))
+    const onRecordPayment = vi.fn()
+    const onResendInvoice = vi.fn()
+    const onVoidInvoice = vi.fn()
+    const invoice = {
+      id: 'invoice-1', tenant_id: 'tenant-1', repair_order_id: 'order-1', invoice_number: 'INV-1001',
+      status: 'sent' as const, subtotal: '100', tax_amount: '0', discount_amount: '0', total_amount: '100',
+      due_date: null, paid_at: null, notes: null, created_at: '2026-10-12T00:00:00Z', updated_at: '2026-10-12T00:00:00Z',
+    }
+    const props = { orderStatus: 'invoiced' as const, invoice, onRecordPayment, onResendInvoice, onVoidInvoice }
+    const view = renderPanel(props)
+    const user = userEvent.setup()
+    await user.click(screen.getByRole('button', { name: 'Record payment' }))
+    await user.click(screen.getByRole('button', { name: 'Resend invoice' }))
+    await user.click(screen.getByRole('button', { name: 'Void & revise' }))
+    expect(onRecordPayment).toHaveBeenCalledOnce()
+    expect(onResendInvoice).toHaveBeenCalledOnce()
+    expect(onVoidInvoice).toHaveBeenCalledOnce()
+    view.rerenderPanel({ ...props, invoiceActionPending: true })
+    expect(screen.getByRole('button', { name: 'Record payment' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Resend invoice' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Void & revise' })).toBeDisabled()
+    view.rerenderPanel({ ...props, orderStatus: 'paid', invoice: { ...invoice, status: 'paid', paid_at: '2026-10-12T12:00:00Z' } })
+    expect(screen.queryByRole('button', { name: 'Record payment' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Void & revise' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Resend copy' })).toBeEnabled()
+    compact.mockRestore()
+  })
+
   it('shows Zelle confirmation actions and the non-card total for an invoiced internal fleet order', async () => {
     apiMocks.get.mockImplementation((url: string) => {
       if (url === '/repair-orders/order-1/price-build') return Promise.resolve({ data: emptySummary })
