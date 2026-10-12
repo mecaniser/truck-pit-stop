@@ -3942,9 +3942,9 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
         headerVariant={presentationVariant === 'new' ? 'minimal' : 'amber'}
         width={presentationVariant === 'new' ? 'max-w-full md:max-w-[84vw] xl:max-w-[76vw] 2xl:max-w-[1400px]' : 'max-w-full sm:max-w-[90vw] xl:max-w-[72vw] 2xl:max-w-[1400px]'}
         panelClassName={presentationVariant === 'new'
-          ? `db-repair-order-detail-new${priceBuilderOwnsShell ? ' db-repair-order-detail-new--price-builder' : ''}`
+          ? `db-repair-order-detail-new${priceBuilderOwnsShell ? ' db-repair-order-detail-new--price-builder' : ''}${customerViewId ? ' db-customer-embedded-workspace' : ''}`
           : ''}
-        hideHeader={priceBuilderOwnsShell}
+        hideHeader={priceBuilderOwnsShell || !!customerViewId}
         onPrev={showNavigation || hasPrev ? goToPrevOrder : undefined}
         onNext={showNavigation || hasNext ? goToNextOrder : undefined}
         prevDisabled={!hasPrev}
@@ -3969,7 +3969,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
           })()
         }
         footer={
-          !priceBuilderOwnsShell && selectedOrder && showDangerZone && (
+          !customerViewId && !priceBuilderOwnsShell && selectedOrder && showDangerZone && (
             <div className="-mx-6 -my-4 space-y-2 bg-red-50 px-6 py-3">
               <button
                 type="button"
@@ -4069,8 +4069,8 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
             there is exactly one way back — to the order. The customer *list*
             is the left-hand tab's job, and it is deliberately not here. */}
         {customerViewId && customerViewRecord && (
-          <div className="flex h-full min-h-0 flex-col">
-            <div className="flex items-center gap-3 border-b border-gray-200 px-5 py-3">
+          <section className="db-customer-embedded" aria-label={`${customerNameOf(customerViewRecord, 'Customer')} customer workspace`}>
+            <header className="db-customer-embedded__header">
               <button
                 type="button"
                 onClick={closeCustomerView}
@@ -4079,11 +4079,11 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                 <ChevronLeft className="h-4 w-4" />
                 Back to {selectedOrder ? `#${selectedOrder.order_number}` : 'the repair order'}
               </button>
-              <span className="ml-auto truncate text-sm font-semibold text-gray-900">
+              <h2>
                 {customerNameOf(customerViewRecord, 'Customer')}
-              </span>
-            </div>
-            <div className="min-h-0 flex-1 overflow-y-auto">
+              </h2>
+            </header>
+            <div className="db-customer-embedded__body">
               <CustomerDetailPanel
                 selectedCustomer={customerViewRecord}
                 detailTab={customerViewTab}
@@ -4114,7 +4114,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
               />
             </div>
             {/* Delete, Merge and Edit for the company itself, in place. */}
-            <div className="border-t border-gray-200 px-5 py-3">
+            <div className="db-customer-embedded__actions">
               <CustomerDetailFooter
                 selectedCustomer={customerViewRecord}
                 handleDeleteClick={(customer) => customerFormControls.current?.requestDelete(customer)}
@@ -4130,7 +4130,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
               onUpdated={() => queryClient.invalidateQueries({ queryKey: ['customer', customerViewId] })}
               onDeleted={closeCustomerView}
             />
-          </div>
+          </section>
         )}
         {!customerViewId && selectedOrder && (!isOrderDetailLoading || !!orderDetail || priceBuilderOwnsShell) && (
           <div className={priceBuilderOwnsShell
