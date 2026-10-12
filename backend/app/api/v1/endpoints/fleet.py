@@ -31,6 +31,7 @@ from app.services import service_checklist
 from app.db.models.service import Service, ServicePart
 from app.db.models.tenant import Tenant
 from app.db.models.customer import Customer
+from app.services import recommendation_conversion
 from app.services.historical_invoice_identity import guard_mapped_customer_name
 from app.db.models.fleet import (
     FleetInspection,
@@ -2788,7 +2789,9 @@ async def start_work_order(
 ):
     """Move an internal work order into progress. Fleet-manager driven —
     assigning a mechanic is optional, not required to start."""
+    await recommendation_conversion.lock_tenant_financials(db, current_user.tenant_id)
     ro = await _load_fleet_ro_or_404(db, current_user.tenant_id, ro_id)
+    await recommendation_conversion.guard_reactivation(db, ro, current_user)
     startable = (
         RepairOrderStatus.DRAFT, RepairOrderStatus.ASSIGNED,
         RepairOrderStatus.ACKNOWLEDGED, RepairOrderStatus.IN_PROGRESS,
@@ -2812,7 +2815,9 @@ async def complete_work_order(
     current_user: User = Depends(require_fleet_access),
 ):
     """Approve fleet work and atomically create its billable customer invoice."""
+    await recommendation_conversion.lock_tenant_financials(db, current_user.tenant_id)
     ro = await _load_fleet_ro_or_404(db, current_user.tenant_id, ro_id, for_update=True)
+    await recommendation_conversion.guard_reactivation(db, ro, current_user)
     from app.api.v1.endpoints.repair_orders import _refresh_repair_order_totals
 
     await service_checklist.guard_completion(db, ro)

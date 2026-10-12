@@ -87,7 +87,7 @@ async def project(db, conversion, context=None):
     rec = recs.get(conversion.recommendation_id)
     if conversion.superseded_at is not None:
         state = 'superseded'
-    elif target is None or target.deleted_at is not None or target.vehicle_id != conversion.vehicle_id:
+    elif target is None or target.deleted_at is not None:
         state = 'target_deleted'
     elif target.status == RepairOrderStatus.CANCELLED:
         state = 'target_cancelled'
@@ -225,7 +225,7 @@ async def convert(db, *, target_id, recommendation_id, body, user):
         existing.superseded_by_conversion_id = conversion_id
     db.add(RepairOrderHistoryEvent(
         tenant_id=tenant_id, repair_order_id=target.id, event_type='recommendation_converted',
-        label='Recommended work added', detail=f'{rec.description} · From #{source.order_number}',
+        label='Recommended work added', detail=rec.description,
         entity_id=line_id, actor_user_id=user.id,
         actor_name=f'{user.first_name} {user.last_name}'.strip()))
     # Import lazily to reuse the canonical totals validation without an endpoint
