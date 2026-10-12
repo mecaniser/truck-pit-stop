@@ -42,6 +42,78 @@ async def test_convert_replay_provenance_and_no_resolution(client, db_session, f
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize('change,state,source_available', [
+    ('none', 'active', True),
+    ('source_deleted', 'active', False),
+    ('source_customer_deleted', 'active', False),
+    ('source_foreign_customer', 'active', False),
+    ('source_foreign_vehicle', 'active', False),
+    ('target_foreign_customer', 'target_deleted', True),
+    ('target_deleted', 'target_deleted', True),
+    ('target_cancelled', 'target_cancelled', True),
+    ('line_deleted', 'operation_removed', True),
+    ('superseded_cancelled', 'superseded', True),
+])
+async def test_single_query_line_provenance_preserves_scope_and_lifecycle(
+    client, db_session, fixture, change, state, source_available,
+):
+    from datetime import datetime, timezone
+    from uuid import UUID
+    from sqlalchemy import event
+    from app.services import recommendation_conversion
+
+    f = fixture
+    response = await client.post(path(f), json=body(), headers=headers(f['owner']))
+    assert response.status_code == 201, response.text
+    conversion = await db_session.get(RecommendationConversion, UUID(response.json()['conversion']['id']))
+    line = await db_session.get(Labor, conversion.target_labor_id)
+    now = datetime.now(timezone.utc)
+    if change == 'source_deleted':
+        f['source'].deleted_at = now
+    elif change == 'source_customer_deleted':
+        f['old'].deleted_at = now
+    elif change == 'source_foreign_customer':
+        f['source'].customer_id = f['foreign'].id
+    elif change == 'source_foreign_vehicle':
+        f['source'].vehicle_id = f['foreign_truck'].id
+    elif change == 'target_foreign_customer':
+        f['context'].customer_id = f['foreign'].id
+    elif change == 'target_deleted':
+        f['context'].deleted_at = now
+    elif change in ('target_cancelled', 'superseded_cancelled'):
+        f['context'].status = RepairOrderStatus.CANCELLED
+        if change == 'superseded_cancelled':
+            conversion.superseded_at = now
+    elif change == 'line_deleted':
+        line.deleted_at = now
+    await db_session.commit()
+    canonical = await recommendation_conversion.project(db_session, conversion)
+    query_count = 0
+
+    def count_query(*_args):
+        nonlocal query_count
+        query_count += 1
+
+    sync_engine = db_session.bind.sync_engine
+    event.listen(sync_engine, 'before_cursor_execute', count_query)
+    try:
+        sources = await recommendation_conversion.line_sources(
+            db_session, f['a'].id, f['context'].id, [line.id],
+        )
+    finally:
+        event.remove(sync_engine, 'before_cursor_execute', count_query)
+    assert query_count == 1
+    provenance = sources[line.id]
+    assert provenance.state == canonical.state == state
+    assert provenance.source_order == canonical.source_order
+    assert provenance.source_order.available is source_available
+    assert provenance.description == conversion.source_description
+    assert await recommendation_conversion.line_sources(
+        db_session, f['b'].id, f['context'].id, [line.id],
+    ) == {}
+
+
+@pytest.mark.asyncio
 async def test_duplicate_different_key_and_changed_payload(client, db_session, fixture):
     f=fixture
     payload=body()

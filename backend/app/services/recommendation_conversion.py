@@ -85,16 +85,9 @@ async def project(db, conversion, context=None):
     target = orders.get(conversion.target_order_id)
     line = (conversion.target_labor_id, conversion.target_order_id) in lines
     rec = recs.get(conversion.recommendation_id)
-    if conversion.superseded_at is not None:
-        state = 'superseded'
-    elif target is None or target.deleted_at is not None:
-        state = 'target_deleted'
-    elif target.status == RepairOrderStatus.CANCELLED:
-        state = 'target_cancelled'
-    elif not line:
-        state = 'operation_removed'
-    else:
-        state = 'active'
+    state = _conversion_state(
+        conversion, target.status if target else None,
+        target is not None and target.deleted_at is None, line)
     unresolved = rec is not None and rec.deleted_at is None and not rec.is_resolved and rec.resolved_by_repair_order_id is None
     return RecommendationConversionResponse(
         id=conversion.id, recommendation_id=conversion.recommendation_id,
@@ -120,20 +113,49 @@ async def projections(db, tenant_id, recommendation_ids):
 
 
 async def line_sources(db, tenant_id, order_id, labor_ids):
+    """Read the reduced labor provenance in one query, including lifecycle state."""
     if not labor_ids:
         return {}
-    rows = (await db.scalars(select(RecommendationConversion).where(
+    target = scoped_order(order_id, tenant_id, include_deleted=True).with_only_columns(
+        RepairOrder.id, RepairOrder.status, RepairOrder.deleted_at).subquery()
+    source_available = scoped_order(
+        RecommendationConversion.source_order_id, tenant_id,
+    ).with_only_columns(RepairOrder.id).correlate(RecommendationConversion).exists()
+    rows = (await db.execute(select(
+        RecommendationConversion, target.c.id, target.c.status, target.c.deleted_at,
+        Labor.id, source_available,
+    ).outerjoin(target, target.c.id == RecommendationConversion.target_order_id).outerjoin(
+        Labor, and_(Labor.id == RecommendationConversion.target_labor_id,
+                    Labor.tenant_id == tenant_id,
+                    Labor.repair_order_id == RecommendationConversion.target_order_id,
+                    Labor.deleted_at.is_(None)),
+    ).where(
         RecommendationConversion.tenant_id == tenant_id,
         RecommendationConversion.target_order_id == order_id,
         RecommendationConversion.target_labor_id.in_(labor_ids)))).all()
     result = {}
-    context = await projection_context(db, rows)
-    for row in rows:
-        value = await project(db, row, context)
+    for row, target_id, target_status, target_deleted_at, labor_id, source_exists in rows:
         result[row.target_labor_id] = RecommendationSourceResponse(
             conversion_id=row.id, recommendation_id=row.recommendation_id,
-            source_order=value.source_order, description=row.source_description, state=value.state)
+            source_order=dict(id=row.source_order_id, order_number=row.source_order_number,
+                              available=source_exists),
+            description=row.source_description,
+            state=_conversion_state(row, target_status,
+                                    target_id is not None and target_deleted_at is None,
+                                    labor_id is not None))
     return result
+
+
+def _conversion_state(conversion, target_status, target_available, line_available):
+    if conversion.superseded_at is not None:
+        return 'superseded'
+    if not target_available:
+        return 'target_deleted'
+    if target_status == RepairOrderStatus.CANCELLED:
+        return 'target_cancelled'
+    if not line_available:
+        return 'operation_removed'
+    return 'active'
 
 
 def request_hash(target_id, recommendation_id, body):
