@@ -7037,6 +7037,7 @@ html.customer-portal-active {
   .db-parts-table thead { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
   .db-parts-table tbody > tr { display: grid; grid-template-columns: minmax(168px, 1fr) minmax(0, 1fr); gap: 8px; padding: 12px 0; }
   .db-parts-table td { display: block; min-width: 0; padding: 0; }
+  .db-presentation-new .db-price-builder .db-parts-table td { height: auto; }
   .db-parts-table .db-part-name { grid-column: 1 / -1; width: auto; min-width: 0; overflow-wrap: anywhere; }
   .db-parts-table .db-part-qty { text-align: left; }
   .db-part-mobile-label { display: block; margin-bottom: 4px; color: #4b5563; font-size: 11px; font-weight: 500; }
