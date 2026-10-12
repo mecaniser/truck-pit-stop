@@ -33,3 +33,9 @@ IAB desktop and 390×844 responsive viewport, using a new synthetic tenant creat
 Database `truckpitstop_ets_workflow_parity_20261012` was cloned from local `truckpitstop` and migrated149→164; original database retained at149. Redis database9. Existing provider sandbox settings retained; no live rails, worker or tenant-flag activation. Default5173 belongs to another worktree and was preserved. User explicitly approved5174/8001. This receipt expires when the combined preview replaces these task-owned services.
 
 Status: source and scoped signed-in browser acceptance, pending combined preview, PR/CI, merge and deployment. Not Done or live.
+
+## Combined preview completion — 2026-10-12
+
+Final TypeScript/Vite production build passed on preview `b03cf1f9` containing DB098 `4462851a`, DB099 `724c4249` and DB100 `6b1eac5b`. Updated API/frontend both serve `/Users/sergio_m1_promax/.codex/worktrees/ets-parity-preview/truck-pit-stop` at approved5174/8001, VitePID52233/API container42e9f351, same isolated DB at164/Redis9. Direct and proxied readiness200 plus rendered branch indicator confirmed.
+
+Additional signed-in acceptance switched only the synthetic QA tenant to Modern using the normal settings UI. Search opens the actual selected-part inspector on desktop and390px. Back to parts → search the same part → choose it reopens the inspector. Escape closes search and restores focus to Search shop. Singular result count corrected. No customer/provider/financial mutation. Existing Classic customer/truck/part checks and new Modern checks pass. PR/CI, merge and release remain separate.
