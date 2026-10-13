@@ -64,6 +64,7 @@ describe('Void and revise work editing', () => {
     useAuthStore.setState({ user: owner, isAuthenticated: true })
     apiMocks.get.mockImplementation((url: string) => {
       const current = { ...order, status: voided ? 'pending_review' : 'invoiced' }
+      if (url === '/repair-orders/recommended-work') return Promise.resolve({ data: { items: [], total: 0, skip: 0, limit: 25 } })
       if (url === '/repair-orders') return Promise.resolve({ data: { items: [current], total: 1, has_more: false } })
       if (url.endsWith('/workspace')) return Promise.resolve({ data: current })
       if (url.endsWith('/detail')) return Promise.resolve({ data: { ...current, parts_usage: [], labor_items: [], history_events: [] } })
