@@ -3,7 +3,8 @@ import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { useAuthStore } from '@/stores/authStore'
-import { MechanicOperations, OperationExecutionControls, OperationExecutionFeedback, OperationExecutionStatus, trackedTimeLabel } from '../OperationExecution'
+import { MechanicOperations, OperationExecutionControls, OperationExecutionFeedback, OperationExecutionStatus } from '../OperationExecution'
+import { trackedTimeLabel } from '../format'
 import { operationKeys, useOperationExecution, type OperationExecution, type OperationPage } from '../queries'
 
 const api = vi.hoisted(() => ({ get: vi.fn(), put: vi.fn(), post: vi.fn() }))

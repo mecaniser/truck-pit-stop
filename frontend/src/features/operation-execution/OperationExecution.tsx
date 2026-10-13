@@ -1,19 +1,11 @@
 import { useState } from 'react'
+import { trackedTimeLabel } from './format'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Check, Play, RefreshCw, RotateCcw, Square } from 'lucide-react'
 import api from '@/lib/api'
 import { useAuthStore } from '@/stores/authStore'
 import { checklistOpenEvent, errorDetail } from '@/features/service-checklists/queries'
 import { invalidateOperationExecution, operationPageSchema, useOperationExecution, type OperationExecution } from './queries'
-
-export function trackedTimeLabel(seconds: number | null): string {
-  if (seconds === null) return 'Time not tracked'
-  if (seconds === 0) return 'No tracked time'
-  const total = Math.floor(seconds)
-  const hours = Math.floor(total / 3600)
-  const minutes = Math.floor((total % 3600) / 60)
-  return hours ? `${hours}h ${minutes}m tracked` : `${minutes}m ${total % 60}s tracked`
-}
 
 export function OperationExecutionStatus({ item, dark = false }: { item: OperationExecution; dark?: boolean }) {
   return <span className={`db-operation-status inline-flex max-w-full flex-wrap items-center gap-x-2 gap-y-0.5 text-xs ${dark ? 'text-zinc-300' : 'text-slate-600'}`}>

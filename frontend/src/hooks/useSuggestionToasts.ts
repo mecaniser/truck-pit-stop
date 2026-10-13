@@ -123,7 +123,6 @@ export function useSuggestionToasts({ userId, view, isClockedIn, suggestion }: U
     view,
     isClockedIn,
     userId,
-    suggestion.action,
-    suggestion.recommendedJob?.id,
+    suggestion,
   ])
 }
