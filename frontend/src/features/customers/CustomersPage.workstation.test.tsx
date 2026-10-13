@@ -9,13 +9,14 @@ import type { Customer, Vehicle } from '../../types'
 const apiMocks = vi.hoisted(() => ({
   get: vi.fn(),
   put: vi.fn(),
+  post: vi.fn(),
 }))
 const themeState = vi.hoisted(() => ({ presentationVariant: 'new' as 'legacy' | 'new' }))
 
 vi.mock('../../lib/api', () => ({
   default: {
     get: apiMocks.get,
-    post: vi.fn(),
+    post: apiMocks.post,
     put: apiMocks.put,
     delete: vi.fn(),
   },
@@ -117,6 +118,7 @@ describe('DB-035C customer workstation', () => {
   afterEach(() => {
     apiMocks.get.mockReset()
     apiMocks.put.mockReset()
+    apiMocks.post.mockReset()
     themeState.presentationVariant = 'new'
   })
 
@@ -479,4 +481,51 @@ it('uses the regular full-height workspace shell when a customer cannot load', a
   const retry = await screen.findByRole('button', {name:'Retry customer'})
   expect(retry.closest('.db-slide-panel-workspace')).not.toBeNull()
   expect(screen.queryByText(/No customers found/)).not.toBeInTheDocument()
+})
+
+
+it('names the merge dialog, contains keyboard focus, and dismisses with Escape or its named close button', async () => {
+  installApiFixture([customer, secondCustomer])
+  renderPage('/dashboard/customers?selected=customer-1')
+  const user = userEvent.setup()
+  const trigger = await screen.findByRole('button', { name: 'Merge', exact: true })
+  await user.click(trigger)
+  const dialog = screen.getByRole('dialog', { name: 'Merge Duplicate Customer' })
+  const search = within(dialog).getByRole('textbox', { name: 'Search duplicate customers' })
+  await user.type(search, 'Miles')
+  await user.tab()
+  expect(dialog).toContainElement(document.activeElement as HTMLElement)
+  await user.keyboard('{Escape}')
+  await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+  expect(trigger).toHaveFocus()
+  await user.click(trigger)
+  expect(screen.getByRole('textbox', { name: 'Search duplicate customers' })).toHaveValue('')
+  await user.click(screen.getByRole('button', { name: 'Close merge dialog' }))
+  await waitFor(() => expect(trigger).toHaveFocus())
+  expect(apiMocks.post).not.toHaveBeenCalled()
+})
+
+it('keeps a pending merge open and allows Escape after a failure without losing the selected duplicate', async () => {
+  installApiFixture([customer, secondCustomer])
+  let rejectMerge!: (reason: Error) => void
+  apiMocks.post.mockImplementationOnce(() => new Promise((_, reject) => { rejectMerge = reject }))
+  renderPage('/dashboard/customers?selected=customer-1')
+  const user = userEvent.setup()
+  await user.click(await screen.findByRole('button', { name: 'Merge', exact: true }))
+  const dialog = screen.getByRole('dialog', { name: 'Merge Duplicate Customer' })
+  await user.type(within(dialog).getByRole('textbox', { name: 'Search duplicate customers' }), 'Miles')
+  await user.click(await within(dialog).findByRole('button', { name: /Miles Freight/ }))
+  await user.click(within(dialog).getByRole('button', { name: 'Merge Customers' }))
+  await waitFor(() => expect(apiMocks.post).toHaveBeenCalledTimes(1))
+  expect(apiMocks.post).toHaveBeenCalledWith('/customers/merge', { winner_id: 'customer-1', loser_id: 'customer-2' })
+  expect(within(dialog).getByRole('button', { name: 'Close merge dialog' })).toBeDisabled()
+  expect(within(dialog).getByRole('button', { name: 'Back', exact: true })).toBeDisabled()
+  await user.keyboard('{Escape}')
+  expect(dialog).toBeVisible()
+  await act(async () => rejectMerge(new Error('Temporary failure')))
+  expect(dialog).toHaveTextContent('Miles Freight')
+  await waitFor(() => expect(within(dialog).getByRole('button', { name: 'Merge Customers' })).toBeEnabled())
+  await user.keyboard('{Escape}')
+  await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+  expect(apiMocks.post).toHaveBeenCalledTimes(1)
 })
