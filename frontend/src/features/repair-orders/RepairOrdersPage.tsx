@@ -3495,7 +3495,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">Select Customer</label>
                         <div className="flex items-start gap-3">
-                          <div className="flex-1">
+                          <div className="min-w-0 flex-1">
                             <CustomerSelect
                               customers={customerOptions}
                               isLoading={isLoadingCustomers && customerOptions.length === 0}
@@ -3534,7 +3534,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                               setSelectedVehicleOption(null)
                               setShowNewVehicleForm(true)
                             }}
-                            className="inline-flex h-[42px] items-center gap-1 px-3 text-sm font-medium text-amber-700 border border-amber-200 rounded-lg hover:bg-amber-50 transition-colors"
+                            className="inline-flex min-h-11 shrink-0 items-center gap-1 px-3 text-sm font-medium text-amber-700 border border-amber-200 rounded-lg hover:bg-amber-50 transition-colors"
                           >
                             <Plus className="w-4 h-4" />
                             Add
@@ -3566,7 +3566,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                                 setSelectedVehicleOption(null)
                                 setShowNewVehicleForm(true)
                               }}
-                              className="inline-flex h-[42px] items-center gap-1 px-3 text-sm font-medium text-amber-700 border border-amber-200 rounded-lg hover:bg-amber-50 transition-colors"
+                              className="inline-flex min-h-11 shrink-0 items-center gap-1 px-3 text-sm font-medium text-amber-700 border border-amber-200 rounded-lg hover:bg-amber-50 transition-colors"
                             >
                               <Plus className="w-4 h-4" />
                               Add
@@ -3577,7 +3577,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                               <Spinner size="sm" className="mr-2" /> Loading company trucks…
                             </div>
                           ) : filteredVehicles.length > 0 ? (
-                            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+                            <div className="grid grid-cols-1 gap-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
                               {filteredVehicles.map((vehicle) => {
                                 const selected = selectedVehicleId === vehicle.id
                                 const vehicleName = vehicleDisplayLabel(vehicle, { includeYear: false })
@@ -3893,7 +3893,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                                     setSelectedServiceOptions((prev) => [...prev.filter((item) => item.id !== svc.id), svc])
                                   }
                                 }}
-                                className="ps-2.5 pe-1.5 focus:outline-none"
+                                className="min-h-11 ps-2.5 pe-1.5 focus:outline-none sm:min-h-7"
                               >
                                 {svc.name}
                               </button>
@@ -3904,7 +3904,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                                     setSelectedServiceIds((prev) => prev.filter((id) => id !== svc.id))
                                     setSelectedServiceOptions((prev) => prev.filter((item) => item.id !== svc.id))
                                   }}
-                                  className="inline-flex w-4 shrink-0 items-center justify-center self-stretch leading-none text-amber-700 hover:text-amber-900"
+                                  className="inline-flex min-h-11 w-11 shrink-0 sm:min-h-7 sm:w-7 items-center justify-center self-stretch leading-none text-amber-700 hover:text-amber-900"
                                   aria-label={`Remove ${svc.name}`}
                                 >
                                   <X aria-hidden="true" className="h-3 w-3" />
@@ -3936,7 +3936,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                 </div>
 
                 <div>
-                  <div className="mb-1 flex min-h-[20px] items-baseline justify-between gap-3">
+                  <div className="mb-1 flex min-h-[20px] flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
                     <label className="text-sm font-medium text-gray-700">Mileage In</label>
                     {lastKnownMileage !== null && (
                       mileageInCarried ? (
@@ -3967,7 +3967,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                   />
                 </div>
 
-                <div className="flex items-center justify-end gap-3 pt-4 border-t border-gray-200">
+                <div className="flex flex-wrap items-center justify-end gap-3 pt-4 border-t border-gray-200">
                   <button
                     type="button"
                     onClick={closeModal}
