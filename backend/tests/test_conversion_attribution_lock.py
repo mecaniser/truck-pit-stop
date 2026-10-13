@@ -53,4 +53,7 @@ async def test_attribution_update_cannot_cross_tenant(db_session):
         await repair_orders.update_repair_order(
             order.id, RepairOrderUpdate(utm_campaign="stolen"), db=db_session, current_user=user_b,
         )
-    assert exc.value.status_code == 403
+    # Tenant-scoped lookup deliberately does not disclose another tenant's order.
+    assert exc.value.status_code == 404
+    assert exc.value.detail == "Repair order not found"
+    assert order.utm_campaign is None

@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 from datetime import datetime, timezone
 from decimal import Decimal
+from unittest.mock import AsyncMock
 from uuid import uuid4
 
 import pytest
@@ -93,6 +94,14 @@ class _FakeOverrideSession:
 
     async def refresh(self, _obj, **_kwargs):
         return None
+
+
+@pytest.fixture
+def completed_checklist(monkeypatch):
+    """Keep history/notification fakes separate from real-DB checklist coverage."""
+    guard = AsyncMock()
+    monkeypatch.setattr(repair_orders.service_checklist, "guard_completion", guard)
+    return guard
 
 
 def _build_context(mechanic_phone: str | None):
@@ -321,7 +330,7 @@ async def test_admin_override_starts_quoted_ro_without_mechanic(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_admin_completes_override_started_ro_without_mechanic(monkeypatch):
+async def test_admin_completes_override_started_ro_without_mechanic(monkeypatch, completed_checklist):
     order, _mechanic, manager = _build_context(mechanic_phone=None)
     order.status = RepairOrderStatus.IN_PROGRESS
     order.work_started_at = datetime.now(timezone.utc)
@@ -342,6 +351,7 @@ async def test_admin_completes_override_started_ro_without_mechanic(monkeypatch)
     )
 
     assert response.status == RepairOrderStatus.PENDING_REVIEW
+    completed_checklist.assert_awaited_once_with(fake_db, order)
     assert response.assigned_mechanic_id is None
     assert response.work_completed_at is not None
     assert fake_db.commit_count == 1
@@ -380,7 +390,7 @@ async def test_admin_complete_override_rejects_assigned_ro(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_admin_approval_of_internal_override_ro_records_admin_history(monkeypatch):
+async def test_admin_approval_of_internal_override_ro_records_admin_history(monkeypatch, completed_checklist):
     order, _mechanic, manager = _build_context(mechanic_phone=None)
     order.status = RepairOrderStatus.PENDING_REVIEW
     order.work_started_at = datetime.now(timezone.utc)
@@ -410,6 +420,7 @@ async def test_admin_approval_of_internal_override_ro_records_admin_history(monk
     )
 
     assert response.status == RepairOrderStatus.COMPLETED
+    completed_checklist.assert_awaited_once_with(fake_db, order)
     assert order.mileage_out == 123456
     assert fake_db.commit_count == 1
     assert len(fake_db.added) == 1
@@ -421,7 +432,7 @@ async def test_admin_approval_of_internal_override_ro_records_admin_history(monk
 
 
 @pytest.mark.asyncio
-async def test_approving_completion_resolves_incidents_linked_to_the_order(monkeypatch):
+async def test_approving_completion_resolves_incidents_linked_to_the_order(monkeypatch, completed_checklist):
     """Both completion paths hand the order to the incident resolver.
 
     fleet.complete_work_order is covered end to end against a real database in
@@ -457,3 +468,4 @@ async def test_approving_completion_resolves_incidents_linked_to_the_order(monke
     )
 
     assert resolved_for == [(order, manager.id)]
+    completed_checklist.assert_awaited_once_with(fake_db, order)
