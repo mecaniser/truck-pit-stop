@@ -35,7 +35,7 @@ export default function StartWorkAction({
             anchor="top end"
             focus
             aria-label={`${title} options`}
-            className="z-[100] w-80 max-w-[calc(100vw-2rem)] overflow-y-auto rounded-xl bg-white p-4 text-gray-900 shadow-lg ring-1 ring-gray-200 [--anchor-gap:8px] [--anchor-padding:16px]"
+            className="db-technician-options z-[100] w-80 max-w-[calc(100vw-2rem)] overflow-y-auto rounded-xl bg-white p-4 text-gray-900 shadow-lg ring-1 ring-gray-200 [--anchor-gap:8px] [--anchor-padding:16px]"
           >
             <div className="mb-3 flex items-center justify-between gap-2">
               <h3 className="text-base font-bold">{title}</h3>

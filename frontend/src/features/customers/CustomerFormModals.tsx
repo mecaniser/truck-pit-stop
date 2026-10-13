@@ -1,4 +1,5 @@
 import React, { useCallback, useRef, useState } from 'react'
+import { Dialog, DialogPanel, DialogTitle } from '@headlessui/react'
 import type { AxiosError } from 'axios'
 import { createPortal } from 'react-dom'
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
@@ -575,7 +576,8 @@ const getPostalLabel = () => {
 }
 
 const renderCustomerForm = (onCancel: () => void) => (
-  <form onSubmit={handleSubmit} className="p-6 space-y-6">
+  <form onSubmit={handleSubmit} className="db-customer-form p-6 space-y-6">
+    <div className="db-customer-form__fields space-y-6">
     {/* Name Row */}
     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
       <div>
@@ -1083,8 +1085,9 @@ const renderCustomerForm = (onCancel: () => void) => (
       </div>
     )}
 
+    </div>
     {/* Actions */}
-    <div className="flex items-center justify-end gap-3 pt-4 border-t border-gray-200">
+    <div className="db-customer-form__actions flex items-center justify-end gap-3 pt-4 border-t border-gray-200">
       <button
         type="button"
         onClick={onCancel}
@@ -1125,8 +1128,8 @@ const renderCustomerForm = (onCancel: () => void) => (
   return createPortal(
     <>
       {isModalOpen && (
-        <div className="fixed inset-0 z-50 overflow-y-auto">
-          <div className="flex min-h-full items-center justify-center p-4">
+        <Dialog open onClose={closeModal} className="db-customer-editor-overlay fixed inset-0 z-[120] overflow-y-auto">
+          <div className="db-customer-editor-layout flex min-h-full items-center justify-center p-4">
             {/* Backdrop */}
             <div 
               className="fixed inset-0 bg-black/60 backdrop-blur-sm"
@@ -1134,15 +1137,16 @@ const renderCustomerForm = (onCancel: () => void) => (
             />
       
             {/* Modal */}
-            <div className="db-customer-modal relative bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+            <DialogPanel className="db-customer-modal db-customer-editor relative bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
               {/* Header */}
               <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 rounded-t-2xl">
                 <div className="flex items-center justify-between">
-                  <h2 className="text-xl font-bold text-gray-900">
+                  <DialogTitle as="h2" className="text-xl font-bold text-gray-900">
                     {editingCustomer ? 'Edit Customer' : 'Add New Customer'}
-                  </h2>
+                  </DialogTitle>
                 <button
                   onClick={closeModal}
+                  aria-label="Close customer editor"
                   className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
                 >
                   <X className="w-5 h-5 text-gray-500" />
@@ -1152,9 +1156,9 @@ const renderCustomerForm = (onCancel: () => void) => (
 
               {/* Form */}
               {renderCustomerForm(closeModal)}
-            </div>
+            </DialogPanel>
           </div>
-        </div>
+        </Dialog>
       )}
       {deleteConfirmCustomer && (
         <div className="fixed inset-0 z-[80] overflow-y-auto">

@@ -8,6 +8,7 @@ import type { Customer, Vehicle } from '../../types'
 
 const apiMocks = vi.hoisted(() => ({
   get: vi.fn(),
+  put: vi.fn(),
 }))
 const themeState = vi.hoisted(() => ({ presentationVariant: 'new' as 'legacy' | 'new' }))
 
@@ -15,7 +16,7 @@ vi.mock('../../lib/api', () => ({
   default: {
     get: apiMocks.get,
     post: vi.fn(),
-    put: vi.fn(),
+    put: apiMocks.put,
     delete: vi.fn(),
   },
 }))
@@ -115,7 +116,33 @@ function installApiFixture(pageCustomers: Customer[] = [customer]) {
 describe('DB-035C customer workstation', () => {
   afterEach(() => {
     apiMocks.get.mockReset()
+    apiMocks.put.mockReset()
     themeState.presentationVariant = 'new'
+  })
+
+  it('keeps failed customer edits in the dialog and completes retry with focus restored', async () => {
+    installApiFixture()
+    apiMocks.put.mockRejectedValueOnce({ response: { data: { detail: 'Temporary save failure' } } })
+      .mockResolvedValueOnce({ data: { ...customer, notes: 'Retained draft' } })
+    renderPage('/dashboard/customers?selected=customer-1')
+    const user = userEvent.setup()
+    const edit = await screen.findByRole('button', { name: 'Edit Customer' })
+    await user.click(edit)
+    const dialog = screen.getByRole('dialog', { name: 'Edit Customer' })
+    const notes = within(dialog).getByPlaceholderText('Any additional notes about this customer...')
+    await user.type(notes, 'Retained draft')
+    await user.click(within(dialog).getByRole('button', { name: 'Save Changes' }))
+    await waitFor(() => expect(apiMocks.put).toHaveBeenCalledTimes(1))
+    expect(notes).toHaveValue('Retained draft')
+    expect(dialog).toBeVisible()
+    await user.click(within(dialog).getByRole('button', { name: 'Save Changes' }))
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Edit Customer' })).not.toBeInTheDocument())
+    expect(apiMocks.put).toHaveBeenLastCalledWith('/customers/customer-1', expect.objectContaining({ notes: 'Retained draft' }))
+    await waitFor(() => expect(edit).toHaveFocus())
+    await user.click(edit)
+    await user.keyboard('{Escape}')
+    await waitFor(() => expect(edit).toHaveFocus())
+    expect(apiMocks.put).toHaveBeenCalledTimes(2)
   })
 
   it('opens the canonical page-owned workspace and preserves unrelated query state', async () => {

@@ -1020,7 +1020,7 @@ describe('PriceBuilderPanel pending feedback', () => {
     expect(props.onAdminCompleteWork).not.toHaveBeenCalled()
   })
 
-  it('keeps labeled invoice actions one-tap on phones and retains paid and pending guards', async () => {
+  it('keeps the primary invoice action visible and secondary actions reachable on phones with paid and pending guards', async () => {
     apiMocks.get.mockImplementation((url: string) => Promise.resolve({ data: url.endsWith('/price-build') ? emptySummary : [] }))
     const compact = vi.spyOn(window, 'matchMedia').mockImplementation((query) => ({
       matches: query.includes('max-width'), media: query, onchange: null,
@@ -1038,13 +1038,17 @@ describe('PriceBuilderPanel pending feedback', () => {
     const view = renderPanel(props)
     const user = userEvent.setup()
     await user.click(screen.getByRole('button', { name: 'Record payment' }))
+    expect(screen.queryByRole('button', { name: 'Resend invoice' })).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Repair order actions', exact: true }))
     await user.click(screen.getByRole('button', { name: 'Resend invoice' }))
+    await user.click(screen.getByRole('button', { name: 'Repair order actions', exact: true }))
     await user.click(screen.getByRole('button', { name: 'Void & revise' }))
     expect(onRecordPayment).toHaveBeenCalledOnce()
     expect(onResendInvoice).toHaveBeenCalledOnce()
     expect(onVoidInvoice).toHaveBeenCalledOnce()
     view.rerenderPanel({ ...props, invoiceActionPending: true })
     expect(screen.getByRole('button', { name: 'Record payment' })).toBeDisabled()
+    await user.click(screen.getByRole('button', { name: 'Repair order actions', exact: true }))
     expect(screen.getByRole('button', { name: 'Resend invoice' })).toBeDisabled()
     expect(screen.getByRole('button', { name: 'Void & revise' })).toBeDisabled()
     view.rerenderPanel({ ...props, orderStatus: 'paid', invoice: { ...invoice, status: 'paid', paid_at: '2026-10-12T12:00:00Z' } })
