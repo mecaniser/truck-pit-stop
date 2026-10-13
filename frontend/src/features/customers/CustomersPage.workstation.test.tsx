@@ -1,7 +1,7 @@
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { MemoryRouter, useLocation } from 'react-router-dom'
+import { MemoryRouter, useLocation, useNavigate } from 'react-router-dom'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import type { Customer } from '../../types'
@@ -75,7 +75,8 @@ const secondCustomer = {
 
 function LocationProbe() {
   const location = useLocation()
-  return <output data-testid="customers-location">{location.search}</output>
+  const navigate = useNavigate()
+  return <><output data-testid="customers-location">{location.search}</output><button onClick={() => navigate('/dashboard/customers?selected=missing-customer')}>Test missing customer navigation</button></>
 }
 
 function renderPage(initialEntry = '/dashboard/customers?view=list') {
@@ -358,4 +359,49 @@ describe('DB-035C customer workstation', () => {
     expect(document.documentElement.scrollWidth).toBe(document.documentElement.clientWidth)
     expect(navigator).toHaveClass('db-customer-navigator')
   })
+})
+
+it('retries an unavailable canonical customer without claiming an access denial', async () => {
+  installApiFixture([])
+  const base = apiMocks.get.getMockImplementation()!
+  let failed = true
+  apiMocks.get.mockImplementation((url: string) => url === '/customers/customer-1' && failed ? Promise.reject(new Error('Network')) : base(url))
+  renderPage('/dashboard/customers?selected=customer-1')
+  expect(await screen.findByRole('button', {name:'Retry customer'})).toBeVisible()
+  expect(screen.queryByText(/current access/)).not.toBeInTheDocument()
+  failed = false
+  fireEvent.click(screen.getByRole('button', {name:'Retry customer'}))
+  expect(await screen.findByRole('heading', {name:'Northline Logistics'})).toBeVisible()
+})
+it('removes previous customer actions when the next identity cannot load', async () => {
+  installApiFixture()
+  const base = apiMocks.get.getMockImplementation()!
+  apiMocks.get.mockImplementation((url: string) => url === '/customers/missing-customer' ? Promise.reject(new Error('Not found')) : base(url))
+  renderPage('/dashboard/customers?selected=customer-1')
+  expect(await screen.findByRole('button', {name:'Edit Customer'})).toBeVisible()
+  fireEvent.click(screen.getByRole('button', {name:'Test missing customer navigation'}))
+  expect(await screen.findByRole('button', {name:'Retry customer'})).toBeVisible()
+  expect(screen.queryByRole('heading', {name:'Northline Logistics'})).not.toBeInTheDocument()
+  expect(screen.queryByRole('button', {name:'Edit Customer'})).not.toBeInTheDocument()
+  fireEvent.click(screen.getByRole('button', {name:'Back to Customers'}))
+  expect(screen.getByTestId('customers-location')).not.toHaveTextContent('selected=')
+})
+
+it('ignores a late response from the previously selected customer', async () => {
+  installApiFixture()
+  const base = apiMocks.get.getMockImplementation()!
+  let finish!: (value: { data: Customer }) => void
+  apiMocks.get.mockImplementation((url: string) => {
+    if (url === '/customers/customer-2') return new Promise(resolve => { finish = resolve })
+    if (url === '/customers/missing-customer') return Promise.reject(new Error('Not found'))
+    return base(url)
+  })
+  renderPage('/dashboard/customers?selected=customer-2')
+  expect(await screen.findByText('Loading customer workspace…')).toBeVisible()
+  fireEvent.click(screen.getByRole('button', {name:'Test missing customer navigation'}))
+  expect(await screen.findByRole('button', {name:'Retry customer'})).toBeVisible()
+  await act(async () => { finish({ data: secondCustomer }) })
+  expect(screen.getByRole('button', {name:'Retry customer'})).toBeVisible()
+  expect(screen.queryByRole('heading', {name:'Miles Freight'})).not.toBeInTheDocument()
+  expect(screen.queryByRole('button', {name:'Edit Customer'})).not.toBeInTheDocument()
 })

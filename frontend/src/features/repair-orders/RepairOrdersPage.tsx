@@ -30,6 +30,7 @@ import { useTheme } from '../../contexts/ThemeContext'
 import { useWebSocket } from '../../hooks/useWebSocket'
 import { useAuthStore } from '@/stores/authStore'
 import CustomerDetailPanel from '../customers/CustomerDetailPanel'
+import CustomerLoadError from '../customers/CustomerLoadError'
 import CustomerHistoryOrderDetail from '../customers/CustomerHistoryOrderDetail'
 import CustomerVehicleDetail from '../customers/CustomerVehicleDetail'
 import CustomerVehicleFooter from '../customers/CustomerVehicleFooter'
@@ -694,17 +695,17 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
   // Same query keys the Customers screen uses, so the two share one cache: open
   // a carrier from an order and their tab already has it, and an edit on either
   // screen invalidates both.
-  const { data: customerViewRecord } = useQuery<Customer>({
+  const { data: customerViewRecord, isError: customerViewError, isFetching: customerViewFetching, refetch: refetchCustomerView } = useQuery<Customer>({
     queryKey: ['customer', customerViewId],
     queryFn: async () => (await api.get(`/customers/${customerViewId}`)).data,
     enabled: !!customerViewId,
   })
-  const { data: customerViewVehicles, isLoading: customerViewVehiclesLoading } = useQuery<Vehicle[]>({
+  const { data: customerViewVehicles, isLoading: customerViewVehiclesLoading, isError: customerVehiclesError, isFetching: customerVehiclesFetching, refetch: refetchCustomerVehicles } = useQuery<Vehicle[]>({
     queryKey: ['customerVehicles', customerViewId],
     queryFn: async () => (await api.get(`/customers/${customerViewId}/vehicles`)).data,
     enabled: !!customerViewId,
   })
-  const { data: customerViewContacts, isLoading: customerViewContactsLoading } = useQuery<Contact[]>({
+  const { data: customerViewContacts, isLoading: customerViewContactsLoading, isError: customerContactsError, isFetching: customerContactsFetching, refetch: refetchCustomerContacts } = useQuery<Contact[]>({
     queryKey: ['customerContacts', customerViewId],
     queryFn: async () => (await api.get(`/customers/${customerViewId}/contacts`)).data,
     enabled: !!customerViewId,
@@ -4140,6 +4141,19 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
             change: the ledger keeps its scroll position and its selection, and
             there is exactly one way back — to the order. The customer *list*
             is the left-hand tab's job, and it is deliberately not here. */}
+        {customerViewId && !customerViewRecord && (
+          <section className="db-customer-embedded" aria-label="Customer workspace">
+            <header className="db-customer-embedded__header">
+              <button type="button" onClick={closeCustomerView} className="db-inline-text-action inline-flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-sm font-semibold">
+                <ChevronLeft className="h-4 w-4" />Back to {selectedOrder ? `#${selectedOrder.order_number}` : 'the repair order'}
+              </button>
+              <h2>Customer</h2>
+            </header>
+            <div className="db-customer-embedded__body db-customer-recovery">
+              {customerViewError ? <CustomerLoadError subject="customer" onRetry={() => void refetchCustomerView()} isRetrying={customerViewFetching} /> : <LoadingLine>Loading customer workspace…</LoadingLine>}
+            </div>
+          </section>
+        )}
         {customerViewId && customerViewRecord && (
           <section className="db-customer-embedded" aria-label={`${customerNameOf(customerViewRecord, 'Customer')} customer workspace`}>
             <header className="db-customer-embedded__header">
@@ -4156,6 +4170,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
               </h2>
             </header>
             <div className="db-customer-embedded__body" key={customerViewVehicle?.id || customerViewId}>
+              {customerViewError && <div className="db-customer-recovery"><CustomerLoadError subject="customer updates" onRetry={() => void refetchCustomerView()} isRetrying={customerViewFetching} /></div>}
               {customerViewVehicle ? <CustomerVehicleDetail customer={customerViewRecord} vehicle={customerViewVehicle} onOpenOrder={openDetail} onCreateOrder={canStartCustomerOrder(currentUser?.role) ? () => startCustomerOrder(customerViewRecord.id, customerViewVehicle.id) : undefined} /> : <CustomerDetailPanel
                 selectedCustomer={customerViewRecord}
                 onCreateOrder={canStartCustomerOrder(currentUser?.role) ? () => startCustomerOrder(customerViewRecord.id) : undefined}
@@ -4168,6 +4183,12 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                 customerVehicles={customerViewVehicles}
                 customerContacts={customerViewContacts}
                 customerHistory={customerViewHistory}
+                vehiclesError={customerVehiclesError}
+                contactsError={customerContactsError}
+                isFetchingVehicles={customerVehiclesFetching}
+                isFetchingContacts={customerContactsFetching}
+                onRetryVehicles={() => void refetchCustomerVehicles()}
+                onRetryContacts={() => void refetchCustomerContacts()}
                 isLoadingVehicles={customerViewVehiclesLoading}
                 isLoadingContacts={customerViewContactsLoading}
                 isLoadingHistory={customerViewHistoryLoading}

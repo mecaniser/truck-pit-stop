@@ -156,3 +156,44 @@ it('keeps a failed draft and blocks repeated submit and cancel until the pending
   await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
   expect(api.post).toHaveBeenCalledTimes(2)
 })
+
+it.each(['/dashboard?selected=order-1&queue=on_floor&customer=customer-1', '/dashboard/customers?selected=customer-1'])('recovers truck and contact reads in place from %s', async (route) => {
+  const base = api.get.getMockImplementation()!
+  let failed = true
+  api.get.mockImplementation((url: string) => failed && /customer-1\/(vehicles|contacts)$/.test(url) ? Promise.reject(new Error('Network unavailable')) : base(url))
+  setup(route)
+  expect(await screen.findByRole('button', {name:'Retry trucks'})).toBeVisible()
+  expect(screen.getByRole('button', {name:'Retry contacts'})).toBeVisible()
+  expect(screen.queryByText('No vehicles on file')).not.toBeInTheDocument()
+  expect(screen.queryByText('Using company contact details above.')).not.toBeInTheDocument()
+  failed = false
+  fireEvent.click(screen.getByRole('button', {name:'Retry trucks'}))
+  fireEvent.click(screen.getByRole('button', {name:'Retry contacts'}))
+  expect(await screen.findByRole('button', {name:/Open .*Unit C-001/})).toBeVisible()
+  expect(await screen.findByText('Using company contact details above.')).toBeVisible()
+  expect(screen.getByTestId('location')).toHaveTextContent(route.split('?')[1])
+  expect(api.post).not.toHaveBeenCalled()
+})
+it('provides an embedded customer retry and escape route without losing the order', async () => {
+  const base = api.get.getMockImplementation()!
+  let failed = true
+  api.get.mockImplementation((url: string) => url === '/customers/customer-1' && failed ? Promise.reject(new Error('Unavailable')) : base(url))
+  setup()
+  expect(await screen.findByRole('button', {name:'Retry customer'})).toBeVisible()
+  expect(screen.queryByRole('button', {name:'Edit Customer'})).not.toBeInTheDocument()
+  expect(screen.getByRole('button', {name:'Back to #RO-1'})).toBeVisible()
+  failed = false
+  fireEvent.click(screen.getByRole('button', {name:'Retry customer'}))
+  expect(await screen.findByRole('region', {name:'Northline Logistics customer workspace'})).toBeVisible()
+  fireEvent.click(screen.getByRole('button', {name:'Back to #RO-1'}))
+  expect(screen.getByTestId('location')).toHaveTextContent('?selected=order-1&queue=on_floor')
+})
+it('can return to the order even while the customer request is unresolved', async () => {
+  const base = api.get.getMockImplementation()!
+  api.get.mockImplementation((url: string) => url === '/customers/customer-1' ? new Promise(() => {}) : base(url))
+  setup()
+  expect(await screen.findByText('Loading customer workspace…')).toBeVisible()
+  fireEvent.click(await screen.findByRole('button', {name:'Back to #RO-1'}))
+  expect(screen.getByTestId('location')).toHaveTextContent('?selected=order-1&queue=on_floor')
+  expect(screen.queryByRole('region', {name:'Customer workspace'})).not.toBeInTheDocument()
+})

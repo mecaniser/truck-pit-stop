@@ -19,6 +19,7 @@ import {
   stripRegNumber,
 } from './customerDetailFormat'
 import type { CustomerHistoryResponse } from './customerDetailFormat'
+import CustomerLoadError from './CustomerLoadError'
 import CustomerTaxExemptionControl from './CustomerTaxExemptionControl'
 import './customer-workspace.css'
 
@@ -49,6 +50,12 @@ export type CustomerDetailPanelProps = {
   customerHistory?: CustomerHistoryResponse | null
   isLoadingVehicles?: boolean
   isLoadingContacts?: boolean
+  vehiclesError?: boolean
+  contactsError?: boolean
+  isFetchingVehicles?: boolean
+  isFetchingContacts?: boolean
+  onRetryVehicles?: () => void
+  onRetryContacts?: () => void
   isLoadingHistory?: boolean
   historyError?: boolean
   onRetryHistory?: () => void
@@ -103,6 +110,12 @@ export default function CustomerDetailPanel({
   customerHistory,
   isLoadingVehicles,
   isLoadingContacts,
+  vehiclesError,
+  contactsError,
+  isFetchingVehicles,
+  isFetchingContacts,
+  onRetryVehicles,
+  onRetryContacts,
   isLoadingHistory,
   historyError,
   onRetryHistory,
@@ -300,7 +313,7 @@ export default function CustomerDetailPanel({
       <section className="db-customer-record__trucks">
         <div className="db-customer-record__section-heading mb-4 flex flex-wrap items-center justify-between gap-3">
           <div>
-            <h3 className="text-sm font-semibold uppercase tracking-wider text-gray-500">Truck relationships <span className="db-customer-record__count">{isLoadingVehicles ? "…" : vehicleCount}</span></h3>
+            <h3 className="text-sm font-semibold uppercase tracking-wider text-gray-500">Truck relationships <span className="db-customer-record__count">{vehiclesError ? "—" : isLoadingVehicles ? "…" : vehicleCount}</span></h3>
           </div>
           <div className="flex items-center justify-end gap-2">
             {isLoadingVehicles && <span className="text-xs text-gray-400">Loading...</span>}
@@ -313,7 +326,7 @@ export default function CustomerDetailPanel({
             </button>
           </div>
         </div>
-        {customerVehicles && customerVehicles.length > 0 && (
+        {!vehiclesError && customerVehicles && customerVehicles.length > 0 && (
           <div className="db-customer-record__truck-tools">
             <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
               {shouldShowVehicleSearch && (
@@ -386,7 +399,7 @@ export default function CustomerDetailPanel({
             )}
           </div>
         )}
-        {isLoadingVehicles ? <LoadingLine>Loading trucks…</LoadingLine> : customerVehicles && customerVehicles.length > 0 ? (
+        {vehiclesError ? <CustomerLoadError subject="trucks" onRetry={onRetryVehicles} isRetrying={isFetchingVehicles} /> : isLoadingVehicles ? <LoadingLine>Loading trucks…</LoadingLine> : customerVehicles && customerVehicles.length > 0 ? (
           visibleCustomerVehicleGroups.length === 0 ? (
             <div className="rounded-xl border border-dashed border-gray-300 bg-gray-50 px-5 py-8 text-center">
               <Search className="mx-auto h-7 w-7 text-gray-400" />
@@ -590,7 +603,7 @@ export default function CustomerDetailPanel({
             </button>
           </div>
         </div>
-        {(() => {
+        {contactsError ? <CustomerLoadError subject="contacts" onRetry={onRetryContacts} isRetrying={isFetchingContacts} /> : isLoadingContacts ? <LoadingLine>Loading contacts…</LoadingLine> : (() => {
           const namedContacts = (customerContacts || []).filter((c) => c.first_name || c.last_name)
           if (namedContacts.length === 0) {
             return (

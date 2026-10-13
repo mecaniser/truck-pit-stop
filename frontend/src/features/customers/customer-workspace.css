@@ -219,3 +219,28 @@
 .db-customer-record__work-actions button { display: inline-flex; align-items: center; gap: 6px; min-height: 32px; padding: 4px 10px; border: 1px solid var(--customer-border, #cbd5e1); border-radius: 8px; color: var(--customer-text, #17283f); font-weight: 600; white-space: nowrap; }
 .db-customer-record__work-actions svg { width: 16px; height: 16px; }
 @media (max-width: 639px) { .db-customer-record__work-actions button { min-height: 44px; } }
+
+/* Keep failures next to the affected data, with whole-label touch controls. */
+.db-customer-load-error {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 16px;
+  padding: 8px 12px;
+  border: 1px solid var(--workspace-border, #d5dde6);
+  border-radius: 8px;
+  font-size: 14px;
+}
+.db-customer-load-error button {
+  min-height: 44px;
+  flex-shrink: 0;
+  white-space: nowrap;
+  padding: 6px 10px;
+  border: 1px solid currentColor;
+  border-radius: 6px;
+  font-weight: 600;
+}
+.db-customer-load-error button:disabled { opacity: .6; cursor: wait; }
+.db-customer-recovery { padding: 16px; }
+.db-customer-recovery__back { min-height: 44px; margin-bottom: 12px; white-space: nowrap; }
