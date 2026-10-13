@@ -433,3 +433,23 @@ it('ignores a late response from the previously selected customer', async () => 
   expect(screen.queryByRole('heading', {name:'Miles Freight'})).not.toBeInTheDocument()
   expect(screen.queryByRole('button', {name:'Edit Customer'})).not.toBeInTheDocument()
 })
+
+it('recovers a failed customer list without inviting duplicate customer creation', async () => {
+  installApiFixture()
+  const base = apiMocks.get.getMockImplementation()!
+  let failed = true
+  apiMocks.get.mockImplementation((url: string) => url === '/customers' && failed ? Promise.reject(new Error('Network')) : base(url))
+  renderPage()
+  expect(await screen.findByRole('button', {name:'Retry customers'})).toBeVisible()
+  expect(screen.queryByText(/No customers found/)).not.toBeInTheDocument()
+  failed = false
+  fireEvent.click(screen.getByRole('button', {name:'Retry customers'}))
+  expect(await screen.findByRole('button', {name:'Open Northline Logistics customer workspace'})).toBeVisible()
+})
+it('uses the regular full-height workspace shell when a customer cannot load', async () => {
+  apiMocks.get.mockRejectedValue(new Error('Network'))
+  renderPage('/dashboard/customers?selected=customer-1')
+  const retry = await screen.findByRole('button', {name:'Retry customer'})
+  expect(retry.closest('.db-slide-panel-workspace')).not.toBeNull()
+  expect(screen.queryByText(/No customers found/)).not.toBeInTheDocument()
+})

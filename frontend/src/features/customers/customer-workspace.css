@@ -243,4 +243,3 @@
 }
 .db-customer-load-error button:disabled { opacity: .6; cursor: wait; }
 .db-customer-recovery { padding: 16px; }
-.db-customer-recovery__back { min-height: 44px; margin-bottom: 12px; white-space: nowrap; }
