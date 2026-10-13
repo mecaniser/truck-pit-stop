@@ -1,0 +1,40 @@
+{
+  "observed_at": "2026-10-13",
+  "read_only": true,
+  "assets": [
+    {
+      "url": "https://static.easytruck.shop/2026-10-12-16-25-52/build/assets/CustomerNavigation.Bx3bT8W_.js",
+      "sha256": "f6bfd57567aa14d7c7d70fd07060e76e83e8d1cfd4256553e94d859a6d4d6c4a",
+      "bytes": 7701
+    },
+    {
+      "url": "https://static.easytruck.shop/2026-10-12-16-25-52/build/assets/ServiceItem.D5gc5712.js",
+      "sha256": "ec420698a7f81c634e279ba712bcc2c67bb631733a79b2b4b75f620461894cdc",
+      "bytes": 733
+    },
+    {
+      "url": "https://static.easytruck.shop/2026-10-12-16-25-52/build/assets/ServiceItemProgress.CnxI0hfl.js",
+      "sha256": "1dcf4c40e6a9b3c44ca44b4004a84a2b7240e2f45852ae25d7827092d922092b",
+      "bytes": 2659
+    },
+    {
+      "url": "https://static.easytruck.shop/2026-10-12-16-25-52/build/assets/VehicleCard.Fsgrd8bN.js",
+      "sha256": "a0cd59429b79bd9724243ec3245a3fda85b7f92834c2d0a75debdf97d7edfd1c",
+      "bytes": 1553
+    }
+  ],
+  "statistics": {
+    "relevant_files": 4,
+    "nested_asar_containers": 0,
+    "text_bytes_read": 12646,
+    "invalid_utf8_files": 0,
+    "parsed_javascript_files": 4,
+    "visited_ast_nodes": 2706,
+    "findings": 48,
+    "modules": 0,
+    "parse_failures": 0
+  },
+  "artifact_sha256": "b7d1e5363a316f71b3e066c74ec643368272943f7f32ec0259c70b2286701a99",
+  "semantic_unknowns": 451,
+  "interpretation": "Partial static navigation evidence; not proof of runtime semantics or full parity."
+}
