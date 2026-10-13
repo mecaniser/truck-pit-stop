@@ -205,7 +205,7 @@ export default function CustomersPage() {
     })
     return response.data as { items: Customer[]; total: number; has_more: boolean }
   }
-  const { data: customerPage, isLoading, isPlaceholderData, isFetching } = useQuery({
+  const { data: customerPage, isLoading, isPlaceholderData, isFetching, isError: customersError, refetch: refetchCustomers } = useQuery({
     queryKey: customerPageKey(page),
     queryFn: () => fetchCustomerPage(page),
     placeholderData: keepPreviousData,
@@ -634,6 +634,7 @@ export default function CustomersPage() {
         </div>
 
         <div className="db-operating-surface__scroller">
+        {customersError && <div className="db-customer-recovery"><CustomerLoadError subject="customers" onRetry={() => void refetchCustomers()} isRetrying={isFetching} /></div>}
         <div className="db-operating-surface__card relative">
           {/* Loading overlay for page/search/sort changes (first load uses the
               full skeleton below; this covers subsequent batch fetches). */}
@@ -1004,13 +1005,13 @@ export default function CustomersPage() {
         )}
       </div>
 
-      {filteredCustomers?.length === 0 && searchQuery && (
+      {!selectedCustomerId && !customersError && filteredCustomers?.length === 0 && searchQuery && (
         <div className="text-center py-12 text-white/70">
           No customers match your search. Try a different term.
         </div>
       )}
 
-      {(!customers || customers.length === 0) && !searchQuery && (
+      {!selectedCustomerId && !customersError && (!customers || customers.length === 0) && !searchQuery && (
         <div className="text-center py-12 text-white/70">
           No customers found. Add your first customer to get started.
         </div>
@@ -1148,20 +1149,23 @@ export default function CustomersPage() {
               )}
       </SlidePanel>
 
-      {presentationVariant === 'new' && selectedCustomerId && !selectedCustomer && (
-        <section
-          className="db-customer-detail-workspace db-customer-detail-workspace--unavailable"
-          role="region"
-          aria-label="Customer workspace"
-        >
-          <div className="db-customer-recovery">
-            <button className="db-customer-recovery__back" type="button" onClick={closeDetailPanel}>Back to Customers</button>
-            {isSelectedCustomerUnavailable ? (
-              <CustomerLoadError subject="customer" onRetry={() => void refetchSelectedCustomer()} isRetrying={isFetchingSelectedCustomer} />
-            ) : <LoadingLine>Loading customer workspace…</LoadingLine>}
-          </div>
-        </section>
-      )}
+      <SlidePanel
+        isOpen={presentationVariant === 'new' && !!selectedCustomerId && !selectedCustomer}
+        layout="workspace"
+        onClose={closeDetailPanel}
+        onBack={closeDetailPanel}
+        backLabel="Back to Customers"
+        title="Customer workspace"
+        headerVariant="minimal"
+        hideClose
+        panelClassName="db-customer-detail-workspace"
+      >
+        <div className="db-customer-recovery">
+          {isSelectedCustomerUnavailable ? (
+            <CustomerLoadError subject="customer" onRetry={() => void refetchSelectedCustomer()} isRetrying={isFetchingSelectedCustomer} />
+          ) : <LoadingLine>Loading customer workspace…</LoadingLine>}
+        </div>
+      </SlidePanel>
 
       {/* Delete Confirmation Modal */}
 
