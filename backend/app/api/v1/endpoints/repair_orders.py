@@ -76,6 +76,8 @@ from app.core.websocket import broadcast_repair_order_update
 from app.core.websocket import broadcast_mechanic_timer_update
 from app.core.websocket import broadcast_mechanic_attendance_update
 from app.schemas.order_value import FilteredRepairOrderValueSummary
+from app.schemas.recommended_work import RecommendedWorkPage
+from app.services.recommended_work import list_recommended_work
 from app.services.mechanic_time_service import fetch_tenant_and_mechanic, get_active_session, start_session, stop_active_session
 from app.services.cloudinary_service import create_direct_image_upload_signature, is_cloudinary_configured, upload_work_photo
 from app.db.models.mechanic_time import MechanicSessionType, MechanicTimeSession
@@ -716,6 +718,32 @@ async def quick_create_repair_order(
             status_code=500,
             detail=f"Failed to create order: {type(e).__name__}: {str(e)}"
         )
+
+
+@router.get("/recommended-work", response_model=RecommendedWorkPage)
+async def get_recommended_work(
+    response: Response,
+    vehicle_id: Optional[UUID] = None,
+    customer_id: Optional[UUID] = None,
+    context_order_id: Optional[UUID] = None,
+    skip: int = Query(0, ge=0),
+    limit: int = Query(25, ge=1, le=100),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    # This aggregate boundary intentionally excludes per-order-only staff roles.
+    if current_user.role not in (
+        UserRole.GARAGE_OWNER, UserRole.GARAGE_ADMIN, UserRole.RECEPTIONIST,
+    ):
+        raise HTTPException(status_code=403, detail="Access denied")
+    if not current_user.tenant_id:
+        raise HTTPException(status_code=400, detail="User must be associated with a tenant")
+    response.headers["Cache-Control"] = "no-store"
+    return await list_recommended_work(
+        db, tenant_id=current_user.tenant_id, vehicle_id=vehicle_id,
+        customer_id=customer_id, context_order_id=context_order_id,
+        skip=skip, limit=limit,
+    )
 
 
 class DescriptionSuggestion(BaseModel):

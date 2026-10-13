@@ -36,6 +36,7 @@ import { useCustomerVehicleGroups } from '../customers/useCustomerVehicleGroups'
 import type { ViewMode } from '@/components/ViewToggle'
 import type { CustomerHistoryResponse } from '../customers/customerDetailFormat'
 import PriceBuilderPanel from './PriceBuilderPanel'
+import RecommendedWorkPanel from './RecommendedWorkPanel'
 import RepairOrdersLedger, { type RepairOrdersLedgerRow } from './RepairOrdersLedger'
 import SectionInfoTooltip from '@/components/SectionInfoTooltip'
 import SuggestingTextarea from '@/components/SuggestingTextarea'
@@ -1015,6 +1016,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
     onSuccess: () => {
       setQuoteToConfirm(null)
       refetchRecServices()
+      queryClient.invalidateQueries({ queryKey: ['recommended-work'] })
       setShowAddRecService(false)
       setRecServiceForm({ description: '', priority: 'soon', estimated_cost: '', notes: '' })
     },
@@ -1024,7 +1026,10 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
     mutationFn: async (serviceId: string) => {
       await api.patch(`/repair-orders/${selectedOrder!.id}/recommended-services/${serviceId}`, { is_resolved: true })
     },
-    onSuccess: () => refetchRecServices(),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['recommended-work'] })
+      return refetchRecServices()
+    },
   })
 
   // Notes are history events: appended, signed, never overwritten. The single
@@ -1108,7 +1113,10 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
     mutationFn: async (serviceId: string) => {
       await api.delete(`/repair-orders/${selectedOrder!.id}/recommended-services/${serviceId}`)
     },
-    onSuccess: () => refetchRecServices(),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['recommended-work'] })
+      return refetchRecServices()
+    },
   })
 
   const { data: zelleSettings } = useQuery<{ zelle_email: string | null; zelle_phone: string | null; zelle_qr_image: string | null }>({
@@ -4492,6 +4500,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
 
                 {showPriceBuilder && (
                   <PriceBuilderPanel
+                    recommendedWorkPanel={<RecommendedWorkPanel vehicleId={selectedOrder.vehicle_id} contextOrderId={selectedOrder.id} />}
                     orderId={selectedOrder.id}
                     workflowInfo={orderDetail ?? selectedOrder}
                     orderStatus={(orderDetail ?? selectedOrder).status}
@@ -4679,6 +4688,10 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                       queryClient.invalidateQueries({ queryKey: ['repair-orders'] })
                     }}
                   />
+                )}
+
+                {!priceBuilderOwnsShell && (
+                  <RecommendedWorkPanel vehicleId={selectedOrder.vehicle_id} contextOrderId={selectedOrder.id} />
                 )}
 
                 {showLaborBreakdown && !priceBuilderOwnsShell && (

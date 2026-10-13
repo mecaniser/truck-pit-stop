@@ -1,5 +1,5 @@
 import OrderChecklist from '@/features/service-checklists/OrderChecklist'
-import { type ChangeEvent, type MouseEvent as ReactMouseEvent, useEffect, useRef, useState } from 'react'
+import { type ReactNode, type ChangeEvent, type MouseEvent as ReactMouseEvent, useEffect, useRef, useState } from 'react'
 import DatePicker from '@/components/DatePicker'
 import { Spinner } from '@/components/ui'
 import { createPortal } from 'react-dom'
@@ -231,6 +231,7 @@ type Props = {
   restorePending?: boolean
   onReopenWorkOrder?: () => void
   reopenPending?: boolean
+  recommendedWorkPanel?: ReactNode
   recommendedServices?: RecommendedService[]
   recommendedServicesLoading?: boolean
   showAddRecommendedService?: boolean
@@ -980,6 +981,7 @@ export default function PriceBuilderPanel({
   restorePending = false,
   onReopenWorkOrder,
   reopenPending = false,
+  recommendedWorkPanel,
   recommendedServices,
   recommendedServicesLoading = false,
   showAddRecommendedService,
@@ -4051,6 +4053,7 @@ export default function PriceBuilderPanel({
             </div>
           </div>
         )}
+        {recommendedWorkPanel}
         {showRecommendedServicesPanel && (
           <button
             type="button"
