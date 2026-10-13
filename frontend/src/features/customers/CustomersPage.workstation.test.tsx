@@ -4,7 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter, useLocation } from 'react-router-dom'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import type { Customer } from '../../types'
+import type { Customer, Vehicle } from '../../types'
 
 const apiMocks = vi.hoisted(() => ({
   get: vi.fn(),
@@ -138,6 +138,34 @@ describe('DB-035C customer workstation', () => {
     expect(await screen.findByRole('region', { name: 'Northline Logistics' })).toBeInTheDocument()
     expect(apiMocks.get).toHaveBeenCalledWith('/customers/customer-1')
     expect(screen.getByTestId('customers-location')).toHaveTextContent('?filter=active&selected=customer-1')
+  })
+
+  it.each(['new', 'legacy'] as const)('opens a direct customer/vehicle search result in the %s presentation', async presentation => {
+    themeState.presentationVariant = presentation
+    installApiFixture([])
+    const original = apiMocks.get.getMockImplementation()!
+    const vehicle = { id: 'vehicle-144', customer_id: customer.id, make: 'Freightliner', model: 'Cascadia', year: 2020, unit_number: '144', vin: 'VIN144', license_plate: 'ABC144', notes: null, mileage: 1000 } as Vehicle
+    apiMocks.get.mockImplementation((url: string) => url === '/customers/customer-1/vehicles/vehicle-144' ? Promise.resolve({ data: vehicle }) : original(url))
+    renderPage('/dashboard/customers?view=list&selected=customer-1&vehicle=vehicle-144')
+    expect(await screen.findByRole(presentation === 'new' ? 'region' : 'dialog', { name: '2020 Freightliner Cascadia' })).toBeInTheDocument()
+    expect(screen.getByText('VIN144')).toBeInTheDocument()
+    expect(apiMocks.get).toHaveBeenCalledWith('/customers/customer-1/vehicles/vehicle-144', expect.objectContaining({ signal: expect.any(AbortSignal) }))
+    fireEvent.click(screen.getByRole('button', { name: 'Back to Nora' }))
+    expect(await screen.findByRole(presentation === 'new' ? 'region' : 'dialog', { name: /Northline Logistics/ })).toBeInTheDocument()
+    expect(screen.getByTestId('customers-location')).toHaveTextContent('?view=list&selected=customer-1')
+    expect(screen.getByTestId('customers-location')).not.toHaveTextContent('vehicle=')
+    fireEvent.click(screen.getByRole('button', { name: presentation === 'new' ? 'Back to Customers' : 'Close' }))
+    expect(screen.getByTestId('customers-location')).toHaveTextContent('?view=list')
+    expect(screen.getByTestId('customers-location')).not.toHaveTextContent('selected=')
+  })
+
+  it('shows an unavailable vehicle instead of substituting another record', async () => {
+    installApiFixture([])
+    const original = apiMocks.get.getMockImplementation()!
+    apiMocks.get.mockImplementation((url: string) => url === '/customers/customer-1/vehicles/foreign-vehicle' ? Promise.reject({ response: { status: 403 } }) : original(url))
+    renderPage('/dashboard/customers?selected=customer-1&vehicle=foreign-vehicle')
+    expect(await screen.findByRole('alert')).toHaveTextContent('That vehicle is unavailable for this customer.')
+    expect(screen.queryByRole('button', { name: 'Edit Vehicle' })).not.toBeInTheDocument()
   })
 
   it('moves focus into the workspace for keyboard activation and restores it on Back', async () => {
