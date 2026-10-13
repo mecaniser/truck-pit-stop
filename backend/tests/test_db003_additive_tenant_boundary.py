@@ -255,7 +255,7 @@ async def test_cross_tenant_mechanic_additive_http_paths_are_generic_404_and_noo
     for path, payload in unassigned_requests:
         response = await client.post(path, json=payload, headers=unassigned_headers)
         assert response.status_code == 403
-        assert response.json()["detail"] == "Access denied"
+        assert response.json()["detail"] == "Use your assigned operation workspace for this job."
 
     def additive_requests(candidate_order_id):
         candidate_base = f"/api/v1/repair-orders/{candidate_order_id}"

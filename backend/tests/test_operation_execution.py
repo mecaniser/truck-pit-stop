@@ -225,7 +225,7 @@ async def test_order_timer_failure_does_not_commit_stage_change(db_session,monke
     await db_session.refresh(a.order)
     assert (a.order.status==Status.ASSIGNED) if transition=='start' else a.order.hold_reason=='Waiting for parts'
 
-@pytest.mark.parametrize('route',['mechanic','admin','approve','fleet','pending_review','completed','invoiced','paid','invoice_helper'])
+@pytest.mark.parametrize('route',['mechanic','admin','approve','fleet','pending_review','completed','invoiced','paid','invoice_helper','invoice_manual'])
 async def test_pending_operations_guard_every_completion_entrypoint(db_session,monkeypatch,route):
     from unittest.mock import AsyncMock
     from app.api.v1.endpoints import fleet,invoices
@@ -233,6 +233,7 @@ async def test_pending_operations_guard_every_completion_entrypoint(db_session,m
     a=await seed(db_session)
     if route=='admin':a.order.assigned_mechanic_id=None
     if route=='approve':a.order.status=Status.PENDING_REVIEW
+    if route=='invoice_manual':a.order.status=Status.COMPLETED
     await db_session.commit()
     side_effect=AsyncMock(side_effect=AssertionError('Completion side effect before operation gate'))
     monkeypatch.setattr(repair_orders,'broadcast_repair_order_update',side_effect)
@@ -243,6 +244,7 @@ async def test_pending_operations_guard_every_completion_entrypoint(db_session,m
     elif route=='approve':call=repair_orders.approve_completion(a.order.id,body=None,idempotency_key=None,db=db_session,current_user=a.owner)
     elif route=='fleet':call=fleet.complete_work_order(a.order.id,db=db_session,current_user=a.owner)
     elif route=='invoice_helper':call=invoices.auto_create_invoice_for_order(db_session,a.order,a.tenant,a.owner.id,commit=False,notify=False)
+    elif route=='invoice_manual':call=invoices.create_invoice(invoices.InvoiceCreate(repair_order_id=a.order.id),db=db_session,current_user=a.owner)
     else:call=repair_orders.update_repair_order(a.order.id,RepairOrderUpdate(status=Status(route)),db_session,a.owner)
     await assert_error(409,call,'remaining operations')
     side_effect.assert_not_awaited()

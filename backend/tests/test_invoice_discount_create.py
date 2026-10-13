@@ -17,6 +17,13 @@ from app.db.models.tenant import Tenant
 from app.db.models.user import User, UserRole
 
 
+@pytest.fixture(autouse=True)
+def completed_order_guard(monkeypatch):
+    # These query-count fakes own invoice discount math. The real-DB operation
+    # suite covers the manual invoice route rejecting incomplete work.
+    monkeypatch.setattr("app.services.service_checklist.guard_completion", AsyncMock())
+
+
 class _ScalarResult:
     def __init__(self, value):
         self._value = value
