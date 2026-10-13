@@ -109,7 +109,7 @@ Temporary QA tab closed and viewport override reset after verification.
   `/health/ready` via5174 confirms database and Redis healthy. No server restart,
   DB migration/reseed, credentials or5173 ownership change. The Vite startup badge
   retains its startup SHA; current source was confirmed by rendered features.
-- Independent QA GO at d36f89a7 / preview7029d4c5. PR/CI handoff follows; no merge/deployment. DB-108 is not release-Done.
+- Independent QA GO at d36f89a7 / preview7029d4c5. Draft PR #507 (https://github.com/mecaniser/truck-pit-stop/pull/507), stacked on PR #506; Quality gates dispatched on the final branch; no merge/deployment. DB-108 is not release-Done.
 
 
 ## Remaining audit scope
