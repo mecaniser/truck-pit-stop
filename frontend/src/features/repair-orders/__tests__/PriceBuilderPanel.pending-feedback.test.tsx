@@ -1216,6 +1216,22 @@ describe('PriceBuilderPanel pending feedback', () => {
     expect(screen.queryByText('Upload photo')).not.toBeInTheDocument()
   })
 
+  it.each([
+    ['invoiced', 'Invoiced'],
+    ['paid', 'Paid'],
+    ['completed', 'Work complete'],
+    ['cancelled', 'Cancelled'],
+  ] as const)('keeps the %s footer canonical while invoice detail is absent', async (orderStatus, label) => {
+    apiMocks.get.mockImplementation((url: string) => Promise.resolve({ data: url.endsWith('/price-build') ? emptySummary : [] }))
+
+    const { container } = renderPanel({ orderStatus })
+    const footer = container.querySelector('.db-workspace-footer') as HTMLElement
+
+    expect(within(footer).getByText(label)).toHaveAttribute('role', 'status')
+    expect(within(footer).queryByText('Work order open')).not.toBeInTheDocument()
+    await waitFor(() => expect(within(footer).getByText('$0.00')).toBeVisible())
+  })
+
   it('uses one canonical finalize-and-invoice action for fleet orders in quality review', async () => {
     apiMocks.get.mockImplementation((url: string) => {
       if (url === '/repair-orders/order-1/price-build') return Promise.resolve({ data: emptySummary })
