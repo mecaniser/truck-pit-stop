@@ -10,9 +10,9 @@ const customer = { id: 'bill-to', company_name: 'Carrier' }
 const vehicle = { id: 'truck', customer_id: 'different-owner' }
 beforeEach(() => { vi.clearAllMocks() })
 it('loads only the chosen customer and their linked truck without changing its owner', async () => {
-  api.get.mockResolvedValueOnce({ data: customer }).mockResolvedValueOnce({ data: [vehicle] })
+  api.get.mockResolvedValueOnce({ data: customer }).mockResolvedValueOnce({ data: vehicle })
   expect(await loadRepairOrderEntry('bill-to', 'truck')).toEqual({ customer, vehicle })
-  expect(api.get.mock.calls.map(([path]) => path)).toEqual(['/customers/bill-to', '/customers/bill-to/vehicles'])
+  expect(api.get.mock.calls.map(([path]) => path)).toEqual(['/customers/bill-to', '/customers/bill-to/vehicles/truck'])
   expect(api.post).not.toHaveBeenCalled()
 })
 it('leaves truck selection deliberate when starting from the company', async () => {
@@ -26,7 +26,7 @@ it('rejects a mismatched customer response before loading trucks', async () => {
   expect(api.get).toHaveBeenCalledTimes(1)
 })
 it('rejects missing or unrelated trucks instead of opening a misleading draft', async () => {
-  api.get.mockResolvedValueOnce({ data: customer }).mockResolvedValueOnce({ data: [{id:'unrelated'}] })
+  api.get.mockResolvedValueOnce({ data: customer }).mockResolvedValueOnce({ data: {id:'unrelated'} })
   await expect(loadRepairOrderEntry('bill-to', 'truck')).rejects.toThrow('no longer linked')
 })
 it.each([403,404,500])('preserves an inaccessible lookup (%s) as failure', async (status) => {
