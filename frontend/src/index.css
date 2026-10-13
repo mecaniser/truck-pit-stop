@@ -4003,6 +4003,27 @@ html::-webkit-scrollbar-thumb:hover {
 .db-repair-orders-workspace--detail-open .db-repair-orders-ledger > header > div:first-child { flex-wrap: wrap; gap: 4px 8px; }
 .db-repair-orders-workspace--detail-open .db-repair-orders-ledger > header h2 { white-space: nowrap; }
 @media (max-width: 639px) {
+  /* At phone widths the wrapped header, workflow and footer can consume the
+     entire fixed-height order sheet. Scroll that sheet as one document instead
+     of squeezing the job content into a tiny independently scrolling strip. */
+  .db-repair-order-detail-new--price-builder .db-price-builder {
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior-y: contain;
+  }
+  .db-repair-order-detail-new--price-builder .db-price-builder > * {
+    flex-shrink: 0;
+  }
+  .db-repair-order-detail-new--price-builder .db-price-builder > .db-workspace-body {
+    flex: 0 0 auto;
+    overflow: visible;
+  }
+  .db-repair-order-detail-new--price-builder .db-workspace-actions {
+    flex-basis: 100%;
+  }
+  .db-repair-order-detail-new--price-builder .db-workspace-actions button {
+    white-space: nowrap;
+  }
   .db-price-builder .db-workspace-line-trigger { grid-template-columns: auto minmax(0, 1fr) auto; gap: 8px; }
   .db-workspace-line-trigger > span:nth-child(2) { display: none; }
   .db-workspace-line-trigger > span:last-child > span:last-child { display: none; }
