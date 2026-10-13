@@ -28,7 +28,7 @@ vi.mock('../../contexts/ThemeContext', () => ({
 }))
 
 vi.mock('../../stores/authStore', () => ({
-  useAuthStore: (selector: (state: { user: { role: string } }) => unknown) => selector({ user: { role: 'shop_owner' } }),
+  useAuthStore: (selector: (state: { user: { role: string } }) => unknown) => selector({ user: { role: 'garage_owner' } }),
 }))
 
 import CustomersPage from './CustomersPage'

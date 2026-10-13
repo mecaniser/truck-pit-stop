@@ -25,9 +25,8 @@ export async function loadRepairOrderEntry(customerId: string, vehicleId: string
   const customer = (await api.get<Customer>(`/customers/${encodeURIComponent(customerId)}`, { signal })).data
   if (customer?.id !== customerId) throw new Error('Customer is unavailable')
   if (!vehicleId) return { customer }
-  const vehicles = (await api.get<Vehicle[]>(`/customers/${encodeURIComponent(customerId)}/vehicles`, { signal })).data
-  const vehicle = Array.isArray(vehicles) ? vehicles.find(item => item.id === vehicleId) : undefined
-  if (!vehicle) throw new Error('Truck is no longer linked to this customer')
+  const vehicle = (await api.get<Vehicle>(`/customers/${encodeURIComponent(customerId)}/vehicles/${encodeURIComponent(vehicleId)}`, { signal })).data
+  if (vehicle?.id !== vehicleId) throw new Error('Truck is no longer linked to this customer')
   return { customer, vehicle }
 }
 

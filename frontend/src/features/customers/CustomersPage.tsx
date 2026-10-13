@@ -175,7 +175,9 @@ export default function CustomersPage() {
   }, [])
 
   const startCustomerOrder = (customer: Customer, vehicle?: Vehicle) => {
-    const origin: RepairOrderReturn = { pathname: '/dashboard/customers', search: `?selected=${encodeURIComponent(customer.id)}`, customerId: customer.id, vehicleId: vehicle?.id }
+    const params = new URLSearchParams(location.search)
+    params.set('selected', customer.id)
+    const origin: RepairOrderReturn = { pathname: '/dashboard/customers', search: `?${params}`,  customerId: customer.id, vehicleId: vehicle?.id }
     navigate(`/dashboard/repair-orders${repairOrderEntrySearch(customer.id, vehicle?.id)}`, { state: { repairOrderReturn: origin } })
   }
 
@@ -224,9 +226,11 @@ export default function CustomersPage() {
     retry: false,
   })
 
+  const workspaceCustomerId = useRef<string | null>(null)
   useEffect(() => {
     if (!selectedCustomerId) {
       if (presentationVariant !== 'new') return
+      workspaceCustomerId.current = null
       setIsDetailOpen(false)
       setSelectedCustomer(null)
       setSelectedVehicleInPanel(null)
@@ -242,8 +246,11 @@ export default function CustomersPage() {
     }
     setSelectedCustomer(customer)
     setIsDetailOpen(true)
-    setDetailTab('overview')
-    setSelectedVehicleInPanel(null)
+    if (workspaceCustomerId.current !== selectedCustomerId) {
+      workspaceCustomerId.current = selectedCustomerId
+      setDetailTab('overview')
+      setSelectedVehicleInPanel(null)
+    }
   }, [customerOnCurrentPage, presentationVariant, selectedCustomerId, selectedCustomerRecord])
 
   const linkedVehicleQuery = useQuery<Vehicle>({

@@ -1218,7 +1218,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
   const vehicleOptions = useMemo(() => {
     const byId = new Map<string, VehicleTypeaheadItem>()
     vehicleResults.forEach((item) => byId.set(item.id, item))
-    if (selectedVehicleOption) byId.set(selectedVehicleOption.id, selectedVehicleOption)
+    if (selectedVehicleOption) byId.set(selectedVehicleOption.id, { ...selectedVehicleOption, ...byId.get(selectedVehicleOption.id) })
     return [...byId.values()]
   }, [vehicleResults, selectedVehicleOption])
 
@@ -3442,27 +3442,22 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
       />}
       {/* New Repair Order Modal */}
       {isModalOpen && (
-        <div className="fixed inset-0 z-50 overflow-hidden">
+        <Dialog open={isModalOpen} onClose={closeModal} className="fixed inset-0 z-50 overflow-hidden">
           <div className="flex h-full h-[100dvh] items-stretch justify-center sm:items-center sm:p-4">
-            <div 
-              className="fixed inset-0 bg-black/60 backdrop-blur-sm"
-              onClick={closeModal}
-            />
+            <DialogBackdrop className="fixed inset-0 bg-black/60 backdrop-blur-sm" />
             
-            <div
-              role="dialog"
-              aria-modal="true"
-              aria-labelledby="new-repair-order-title"
+            <DialogPanel
               className="relative flex h-full h-[100dvh] w-full max-w-4xl flex-col overflow-hidden bg-white shadow-2xl sm:h-auto sm:max-h-[90vh] sm:max-h-[90dvh] sm:rounded-2xl"
             >
               <div className="z-10 shrink-0 border-b border-gray-200 bg-white px-4 py-4 sm:rounded-t-2xl sm:px-6">
                 <div className="flex items-center justify-between">
-                  <h2 id="new-repair-order-title" className="text-xl font-bold text-gray-900">New Repair Order</h2>
+                  <DialogTitle className="text-xl font-bold text-gray-900">New Repair Order</DialogTitle>
                   <button
                     onClick={closeModal}
+                    data-autofocus
                     aria-label="Close new repair order"
                     disabled={isSubmitting}
-                    className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                    className="min-h-11 min-w-11 p-2 hover:bg-gray-100 rounded-lg transition-colors"
                   >
                     <svg className="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -3595,6 +3590,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                                     key={vehicle.id}
                                     type="button"
                                     aria-label={`Select ${vehicleName} · ${unitLabel}`}
+                                    aria-pressed={selected}
                                     title={`${vehicleName} · ${unitLabel}`}
                                     onClick={() => {
                                       clearFormErrors('vehicle', 'vehicleMake', 'vehicleModel', 'root')
@@ -3978,7 +3974,8 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                   <button
                     type="button"
                     onClick={closeModal}
-                    className="px-5 py-2.5 text-gray-700 font-medium hover:bg-gray-100 rounded-lg transition-colors"
+                    disabled={isSubmitting}
+                    className="min-h-11 px-5 py-2.5 text-gray-700 font-medium hover:bg-gray-100 rounded-lg transition-colors"
                   >
                     Cancel
                   </button>
@@ -3990,7 +3987,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                       createCustomerMutation.isPending ||
                       createVehicleMutation.isPending
                     }
-                    className="px-5 py-2.5 disabled:opacity-50 text-white font-medium rounded-lg transition-colors flex items-center gap-2"
+                    className="min-h-11 whitespace-nowrap px-5 py-2.5 disabled:opacity-50 text-white font-medium rounded-lg transition-colors flex items-center gap-2"
                     style={{ backgroundColor: accentColors[500] }}
                   >
                     {(isSubmitting ||
@@ -4003,9 +4000,9 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                   </button>
                 </div>
               </form>
-            </div>
+            </DialogPanel>
           </div>
-        </div>
+        </Dialog>
       )}
 
       {/* Repair Order Detail Panel */}
