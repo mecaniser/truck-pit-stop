@@ -1,3 +1,4 @@
+import { useWorkspaceViewport } from '@/hooks/useWorkspaceViewport'
 import { Routes, Route, Link, Navigate, useLocation } from 'react-router-dom'
 import { lazyRouteLoader } from '@/lib/staleDeploy'
 import { useQuery } from '@tanstack/react-query'
@@ -42,6 +43,7 @@ function getStaffRailCanExpand() {
 }
 
 export default function DashboardLayout() {
+  useWorkspaceViewport()
   const { user } = useAuthStore()
   const location = useLocation()
   const [mobileNavPage, setMobileNavPage] = useState<'primary' | 'secondary'>('primary')

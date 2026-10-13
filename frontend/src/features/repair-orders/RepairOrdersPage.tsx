@@ -749,14 +749,12 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
   const closeDetail = () => {
     clearDetailState()
     if (!searchParams.get('selected')) return
-    // Opened via in-app navigation: going back lands on whatever view launched
-    // the panel (dashboard work queue or this list). A deep link / fresh tab
-    // has no in-app history entry, so just strip the param and stay here.
-    if (location.key !== 'default') {
-      navigate(-1)
-    } else {
-      setSearchParams({}, { replace: true })
-    }
+    // Customer/history drill-ins can leave another selected order behind us in
+    // browser history. Dismiss the record explicitly, preserving this queue's
+    // list context instead of reopening that historical selection.
+    const next = new URLSearchParams(searchParams)
+    for (const key of ['selected', 'customer', 'operation', 'recommendation']) next.delete(key)
+    setSearchParams(next, { replace: true })
   }
 
   const showAllOrders = () => {
@@ -4176,7 +4174,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
           <section className="db-customer-embedded" aria-label="Customer workspace">
             <header className="db-customer-embedded__header">
               <button type="button" onClick={closeCustomerView} className="db-inline-text-action inline-flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-sm font-semibold">
-                <ChevronLeft className="h-4 w-4" />Back to {selectedOrder ? `#${selectedOrder.order_number}` : 'the repair order'}
+                <ChevronLeft className="h-4 w-4" /><span className="db-customer-back-label">Back to {selectedOrder ? `#${selectedOrder.order_number}` : 'the repair order'}</span>
               </button>
               <h2>Customer</h2>
             </header>
@@ -4194,7 +4192,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                 className="db-inline-text-action inline-flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-sm font-semibold text-orange-700 hover:bg-orange-50"
               >
                 <ChevronLeft className="h-4 w-4" />
-                Back to {customerViewVehicle ? customerNameOf(customerViewRecord, 'Customer') : selectedOrder ? `#${selectedOrder.order_number}` : 'the repair order'}
+                <span className="db-customer-back-label">Back to {customerViewVehicle ? customerNameOf(customerViewRecord, 'Customer') : selectedOrder ? `#${selectedOrder.order_number}` : 'the repair order'}</span>
               </button>
               <h2>
                 {customerViewVehicle ? vehicleDisplayLabel(customerViewVehicle) : customerNameOf(customerViewRecord, 'Customer')}
@@ -6165,14 +6163,15 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                 { value: 'cash', label: 'Cash' },
                 { value: 'zelle', label: 'Zelle' },
                 { value: 'check', label: 'Check' },
-                { value: 'ach', label: 'ACH / Bank Transfer' },
+                { value: 'ach', label: 'ACH / Bank Transfer', compactLabel: 'Bank transfer' },
                 { value: 'fleet_payment', label: 'Fleet Check / Code' },
               ].map((method) => (
                 <button
                   key={method.value}
                   type="button"
+                  aria-label={method.label}
                   onClick={() => setSelectedPaymentMethod(method.value)}
-                  className={`rounded-xl border px-3 py-3 text-sm font-semibold transition ${
+                  className={`db-payment-method whitespace-nowrap rounded-xl border px-3 py-3 text-sm font-semibold transition ${
                     method.value === 'fleet_payment' ? 'col-span-2 ' : ''
                   }${
                     selectedPaymentMethod === method.value
@@ -6180,7 +6179,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                       : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50'
                   }`}
                 >
-                  {method.label}
+                  {method.compactLabel ? <><span className="db-payment-method__full">{method.label}</span><span className="db-payment-method__compact">{method.compactLabel}</span></> : method.label}
                 </button>
               ))}
             </div>

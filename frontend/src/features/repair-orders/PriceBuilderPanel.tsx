@@ -3,6 +3,8 @@ import { useOperationExecution } from '@/features/operation-execution/queries'
 import OrderChecklist from '@/features/service-checklists/OrderChecklist'
 import { type ReactNode, type ChangeEvent, type MouseEvent as ReactMouseEvent, useEffect, useRef, useState } from 'react'
 import { Popover, PopoverButton, PopoverPanel } from '@headlessui/react'
+import WorkspaceActionOverflow from '@/components/WorkspaceActionOverflow'
+import { useCompactWorkspace } from '@/hooks/useCompactWorkspace'
 import DatePicker from '@/components/DatePicker'
 import { Spinner } from '@/components/ui'
 import { createPortal } from 'react-dom'
@@ -2386,9 +2388,271 @@ export default function PriceBuilderPanel({
     // No-op placeholder: keeps default labor rate available for future quick-add UX.
   }, [defaultLaborRate, canMutate])
 
+  const compactWorkspace = useCompactWorkspace()
+  const pricingControls = (
+        <details key={orderId} className="db-workspace-pricing">
+          <summary className="inline-flex cursor-pointer items-center gap-1 rounded-lg border border-gray-200 px-2 py-1.5 text-xs font-semibold">Pricing <ChevronUp className="h-3.5 w-3.5" /></summary>
+        <div ref={footerDetailsRef} className="relative mb-3 flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={() => { setFooterDetailsOpen((open) => open === 'parts' ? null : 'parts'); setDiscountsOpen(false) }}
+            className="db-summary-pill rounded-full bg-blue-50 px-3 py-1 text-xs font-bold text-blue-700 hover:bg-blue-100"
+          >
+            Parts {isInitialSummaryLoad || summaryLoadFailed ? '…' : money(summary?.parts_total)}
+          </button>
+          <button
+            type="button"
+            onClick={() => { setFooterDetailsOpen((open) => open === 'labor' ? null : 'labor'); setDiscountsOpen(false) }}
+            className="db-summary-pill rounded-full bg-orange-50 px-3 py-1 text-xs font-bold text-orange-700 hover:bg-orange-100"
+          >
+            Labor {isInitialSummaryLoad || summaryLoadFailed ? '…' : money(effectiveLaborTotal)}
+          </button>
+          {/* Discounts / Customer saves add noise at $0 — only show them once
+              they carry a value. While still loading, keep them (showing "…") so
+              the footer doesn't reflow when the numbers land. */}
+          {(isInitialSummaryLoad || summaryLoadFailed || discountTotal > 0.005) && (
+            <button
+              type="button"
+              onClick={() => { setFooterDetailsOpen((open) => open === 'discounts' ? null : 'discounts'); setDiscountsOpen(false) }}
+              className="db-summary-pill rounded-full bg-red-50 px-3 py-1 text-xs font-bold text-red-700 hover:bg-red-100"
+            >
+              Discounts -{isInitialSummaryLoad || summaryLoadFailed ? '…' : money(discountTotal)}
+            </button>
+          )}
+          {(isInitialSummaryLoad || summaryLoadFailed || customerSavesTotal > 0.005) && (
+            <button
+              type="button"
+              onClick={() => { setFooterDetailsOpen((open) => open === 'savings' ? null : 'savings'); setDiscountsOpen(false) }}
+              className="db-summary-pill rounded-full bg-emerald-50 px-3 py-1 text-xs font-bold text-emerald-700 hover:bg-emerald-100"
+            >
+              Customer saves {isInitialSummaryLoad || summaryLoadFailed ? '…' : money(customerSavesTotal)}
+            </button>
+          )}
+          {footerDetailsOpen && (
+            <div className="absolute bottom-full left-0 z-20 mb-2 w-[min(380px,calc(100vw-40px))] rounded-[14px] border border-gray-200 bg-white p-4 shadow-[0_10px_30px_rgba(20,25,35,.10)]">
+              {renderFooterDetails(footerDetailsOpen)}
+            </div>
+          )}
+          {!hasInvoice && (
+            <span className="ml-auto inline-flex" title={!canMutate ? lockContextMessage : undefined}>
+              <button
+                ref={discountsButtonRef}
+                type="button"
+                onClick={() => {
+                  setDiscountsOpen((open) => {
+                    const next = !open
+                    if (next) setDraftPartsPricingMode(partsPricingMode)
+                    return next
+                  })
+                  setFooterDetailsOpen(null)
+                }}
+                disabled={!canMutate}
+                className="rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-bold text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+              >
+                Discounts & pricing
+              </button>
+            </span>
+          )}
+          {!hasInvoice && discountsOpen && (
+            <div
+              ref={discountsPopoverRef}
+              className="absolute bottom-full right-0 mb-2 w-[320px] rounded-[14px] border border-gray-200 bg-white p-4 shadow-[0_10px_30px_rgba(20,25,35,.10)]"
+            >
+              <div className="mb-3 flex items-center justify-between">
+                <p className="font-semibold text-gray-900">Discounts & pricing</p>
+                <button type="button" aria-label="Close discounts and pricing" onClick={() => setDiscountsOpen(false)} className="rounded-md p-1 text-slate-600 hover:bg-gray-100">
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+              <fieldset className="mb-3" disabled={discountsSaving}>
+                <legend className="mb-1 text-xs font-bold uppercase tracking-wide text-slate-600">Parts pricing</legend>
+                <div className="grid grid-cols-2 gap-1 rounded-lg bg-gray-100 p-1">
+                  {(['stock', 'list'] as const).map((mode) => (
+                    <label
+                      key={mode}
+                      className="relative cursor-pointer"
+                      onMouseDown={(event) => {
+                        if (event.button !== 0 || discountsSaving) return
+                        // Focus the radio before the label's default click forwards
+                        // to it. Otherwise the focusable order panel briefly gains
+                        // focus and dismisses this popover before selection occurs.
+                        event.preventDefault()
+                        event.currentTarget.querySelector('input')?.focus()
+                      }}
+                    >
+                      <input
+                        type="radio"
+                        name={`parts-pricing-${orderId}`}
+                        value={mode}
+                        checked={draftPartsPricingMode === mode}
+                        onChange={() => setDraftPartsPricingMode(mode)}
+                        className="peer absolute inset-0 z-10 m-0 h-full w-full cursor-pointer opacity-0 disabled:cursor-not-allowed"
+                      />
+                      <span className="flex min-h-8 items-center justify-center rounded-md px-3 py-1.5 text-xs font-semibold text-slate-600 peer-checked:bg-white peer-checked:text-slate-950 peer-checked:shadow-sm peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-slate-500 peer-disabled:cursor-not-allowed peer-disabled:opacity-60 [@media(pointer:coarse)]:min-h-11">
+                        {mode === 'stock' ? 'Stock price' : 'List price'}
+                      </span>
+                    </label>
+                  ))}
+                </div>
+              </fieldset>
+              <div className="mb-3 flex items-center justify-between gap-3 text-sm">
+                <span className="font-medium text-gray-700">Labor discount</span>
+                <span className="flex items-center gap-1.5">
+                  <DiscountAmountInput
+                    label="Labor discount"
+                    value={laborDiscount}
+                    onChange={setLaborDiscount}
+                    disabled={discountsSaving}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setLaborDiscount('')}
+                    disabled={!laborDiscount}
+                    className="h-9 rounded-lg px-2 text-xs font-semibold text-slate-600 hover:bg-gray-100 hover:text-gray-900 disabled:text-slate-600 disabled:opacity-100"
+                  >
+                    Reset
+                  </button>
+                </span>
+              </div>
+              <div className="mb-3 flex items-center justify-between gap-3 text-sm">
+                <span className="font-medium text-gray-700">Order discount</span>
+                <span className="flex items-center gap-1.5">
+                  <DiscountAmountInput
+                    label="Order discount"
+                    value={orderDiscount}
+                    onChange={setOrderDiscount}
+                    disabled={discountsSaving}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setOrderDiscount('')}
+                    disabled={!orderDiscount}
+                    className="h-9 rounded-lg px-2 text-xs font-semibold text-slate-600 hover:bg-gray-100 hover:text-gray-900 disabled:text-slate-600 disabled:opacity-100"
+                  >
+                    Reset
+                  </button>
+                </span>
+              </div>
+              <p className="mb-2 text-[11px] text-slate-500">Available discount: labor {money(maxLaborDiscount)} · order {money(maxOrderDiscount)}</p>
+              {discountValidation && <p role="alert" className="mb-2 text-xs text-amber-800">{discountValidation}</p>}
+              <div className="flex items-center justify-between border-t border-gray-100 pt-3">
+                <span className="text-xs font-semibold text-emerald-700">Customer saves {draftCustomerSavesTotal.toLocaleString('en-US', { style: 'currency', currency: 'USD' })}</span>
+                <button
+                  type="button"
+                  disabled={discountsSaving || !pricingAdjustmentsChanged || !!discountValidation}
+                  onClick={async () => {
+                    if (await savePricingAdjustments()) setDiscountsOpen(false)
+                  }}
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-orange-500 px-3 py-1.5 text-xs font-bold text-white disabled:opacity-60"
+                >
+                  {discountsSaving && <Spinner size="xs" />}
+                  {discountsSaving ? 'Applying…' : 'Apply'}
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+        </details>
+  )
+  const operationProgress = <>
+            {!isFinalizedOrder && operationExecution.allowed && (operationExecution.isError ? <span className="text-xs text-red-700">Operation status unverified</span> : operationExecution.data && operationExecution.data.summary.tracked > 0 ? (
+              <button type="button" className="min-h-8 max-w-44 text-left text-xs font-medium text-slate-600 underline decoration-dotted underline-offset-2" onClick={() => {
+                const next = operationExecution.data.items.find(item => item.status === 'pending') || operationExecution.data.items[0]
+                if (next) openLinkedOperation(next.labor_id)
+              }}>{operationExecution.data.summary.remaining > 0 ? `${operationExecution.data.summary.remaining} operation${operationExecution.data.summary.remaining === 1 ? '' : 's'} remaining` : `Operations ${operationExecution.data.summary.completed}/${operationExecution.data.summary.tracked} complete`}</button>
+            ) : null)}
+  </>
+  const invoiceSecondaryActions = <>
+                  <button
+                    type="button"
+                    onClick={() => onResendInvoice?.()}
+                    disabled={invoiceActionPending || !onResendInvoice}
+                    className="db-stage-action db-stage-action--secondary"
+                    aria-label={invoiceFinanciallyPaid ? 'Resend copy' : 'Resend invoice'}
+                  >
+                    <Mail className="h-4 w-4 shrink-0" />
+                    <span>{invoiceFinanciallyPaid ? 'Resend copy' : 'Resend invoice'}</span>
+                  </button>
+                  {!invoiceFinanciallyPaid && !invoice?.pending_zelle_confirmation && onVoidInvoice && (
+                    <button
+                      type="button"
+                      onClick={onVoidInvoice}
+                      disabled={invoiceActionPending}
+                      className="db-stage-action db-stage-action--secondary"
+                      title="Preserve this invoice as voided and reopen the order for revision"
+                      aria-label="Void & revise"
+                    >
+                      <RotateCcw className="h-4 w-4 shrink-0" />
+                      <span>Void &amp; revise</span>
+                    </button>
+                  )}
+  </>
+  const technicianActions = <>
+            {canEdit && !isDeleted && canManageTechnician && onAssignTechnician && availableTechnicians.length > 0
+              && (hasAssignedTechnician || orderStatus === 'in_progress') && (
+              <StartWorkAction
+                key={`technician-${orderId}`}
+                mode={hasAssignedTechnician ? 'reassign' : 'assign'}
+                technicians={availableTechnicians}
+                onAssign={onAssignTechnician}
+                assignmentPending={technicianAssignmentPending}
+                startPending={false}
+              />
+            )}
+  </>
+  const customerIdentity = <>
+              {onOpenCustomer ? (
+                <button
+                  type="button"
+                  onClick={onOpenCustomer}
+                  title={`Open ${customerName || 'customer'}`}
+                  className="db-order-customer-pill inline-flex items-center gap-1 rounded-full bg-white/14 px-3 py-1.5 text-white ring-1 ring-white/20 transition-colors hover:bg-white/24"
+                >
+                  <Building2 className="h-3.5 w-3.5" />
+                  {customerName || 'Customer'}
+                  {isFleetMember && <Star className="h-3.5 w-3.5 flex-none fill-current text-amber-300" aria-label="Fleet member" />}
+                </button>
+              ) : (
+                <span className="inline-flex items-center gap-1 rounded-full bg-white/14 px-3 py-1.5 text-white ring-1 ring-white/20">
+                  <Building2 className="h-3.5 w-3.5" />
+                  {customerName || 'Customer'}
+                  {isFleetMember && <Star className="h-3.5 w-3.5 flex-none fill-current text-amber-300" aria-label="Fleet member" />}
+                </span>
+              )}
+  </>
+  const orderNavigation = <>
+            <button type="button" onClick={onToggleDangerActions} aria-expanded={showDangerActions} aria-label="Order actions" title="Order actions" className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-white/14 text-white ring-1 ring-white/20">⋯</button>
+            {onPrev && (
+              <button
+                type="button"
+                onClick={onPrev}
+                disabled={prevDisabled}
+                className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-white/14 text-white ring-1 ring-white/20 disabled:opacity-35"
+                aria-label="Previous repair order"
+              >
+                <ChevronRight className="h-4 w-4 rotate-180" />
+              </button>
+            )}
+            {navigationLabel && (
+              <span className="whitespace-nowrap rounded-full bg-white/14 px-3.5 py-1.5 font-['JetBrains_Mono',monospace] text-sm font-semibold tabular-nums text-white/90">
+                {navigationLabel}
+              </span>
+            )}
+            {onNext && (
+              <button
+                type="button"
+                onClick={onNext}
+                disabled={nextDisabled}
+                className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-white/14 text-white ring-1 ring-white/20 disabled:opacity-35"
+                aria-label="Next repair order"
+              >
+                <ChevronRight className="h-4 w-4" />
+              </button>
+            )}
+  </>
+
   return (
     <div className="db-price-builder relative flex h-full min-h-full flex-col overflow-hidden bg-white">
-      <div className="db-workspace-scroll">
       <div
         className="db-workspace-header px-5 py-4 text-white"
         style={{
@@ -2440,24 +2704,7 @@ export default function PriceBuilderPanel({
                   a different question from whose truck this is: the shop's own
                   fleet is isInternalOrder, and a paying carrier can be on a fleet
                   plan too. */}
-              {onOpenCustomer ? (
-                <button
-                  type="button"
-                  onClick={onOpenCustomer}
-                  title={`Open ${customerName || 'customer'}`}
-                  className="db-order-customer-pill inline-flex items-center gap-1 rounded-full bg-white/14 px-3 py-1.5 text-white ring-1 ring-white/20 transition-colors hover:bg-white/24"
-                >
-                  <Building2 className="h-3.5 w-3.5" />
-                  {customerName || 'Customer'}
-                  {isFleetMember && <Star className="h-3.5 w-3.5 flex-none fill-current text-amber-300" aria-label="Fleet member" />}
-                </button>
-              ) : (
-                <span className="inline-flex items-center gap-1 rounded-full bg-white/14 px-3 py-1.5 text-white ring-1 ring-white/20">
-                  <Building2 className="h-3.5 w-3.5" />
-                  {customerName || 'Customer'}
-                  {isFleetMember && <Star className="h-3.5 w-3.5 flex-none fill-current text-amber-300" aria-label="Fleet member" />}
-                </span>
-              )}
+              {!compactWorkspace && customerIdentity}
               {isInternalOrder && (
                 <span className="inline-flex items-center gap-1 rounded-full bg-white/24 px-2.5 py-1.5 text-[11px] uppercase tracking-[0.08em] text-white ring-1 ring-white/30">
                   <Truck className="h-3.5 w-3.5" />
@@ -2473,34 +2720,7 @@ export default function PriceBuilderPanel({
             )}
           </div>
           <div className="db-job-navigation flex flex-wrap items-center justify-end gap-2">
-            <button type="button" onClick={onToggleDangerActions} aria-expanded={showDangerActions} aria-label="Order actions" title="Order actions" className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-white/14 text-white ring-1 ring-white/20">⋯</button>
-            {onPrev && (
-              <button
-                type="button"
-                onClick={onPrev}
-                disabled={prevDisabled}
-                className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-white/14 text-white ring-1 ring-white/20 disabled:opacity-35"
-                aria-label="Previous repair order"
-              >
-                <ChevronRight className="h-4 w-4 rotate-180" />
-              </button>
-            )}
-            {navigationLabel && (
-              <span className="whitespace-nowrap rounded-full bg-white/14 px-3.5 py-1.5 font-['JetBrains_Mono',monospace] text-sm font-semibold tabular-nums text-white/90">
-                {navigationLabel}
-              </span>
-            )}
-            {onNext && (
-              <button
-                type="button"
-                onClick={onNext}
-                disabled={nextDisabled}
-                className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-white/14 text-white ring-1 ring-white/20 disabled:opacity-35"
-                aria-label="Next repair order"
-              >
-                <ChevronRight className="h-4 w-4" />
-              </button>
-            )}
+            {!compactWorkspace && orderNavigation}
             {onClose && (
               <button
                 type="button"
@@ -2516,6 +2736,8 @@ export default function PriceBuilderPanel({
 
       </div>
 
+      <div className="db-workspace-scroll">
+      {compactWorkspace && <div className="db-job-customer-mobile">{customerIdentity}</div>}
       {/* Operational workflow is primary. Estimates are optional authorization
           records and appear as a secondary action, never as a work gate. */}
       {!isInternalOrder && !isDeleted && (
@@ -2573,6 +2795,7 @@ export default function PriceBuilderPanel({
       )}
 
       <div className="db-workspace-body min-h-0 flex-1 space-y-4 overflow-y-auto px-5 py-5 pb-4">
+      {compactWorkspace && operationExecution.isError && operationProgress}
 
       {(onSaveDescription || (description && description.trim())) && (
         <div className="db-intake" data-editing={descriptionEditing}>
@@ -4461,175 +4684,13 @@ export default function PriceBuilderPanel({
       </div>
 
       <div className="db-workspace-footer z-10 border-t border-gray-200 bg-white/95 px-3 py-4 shadow-[0_-10px_30px_rgba(20,25,35,.08)] backdrop-blur sm:px-5">
-        <details key={orderId} className="db-workspace-pricing">
-          <summary className="inline-flex cursor-pointer items-center gap-1 rounded-lg border border-gray-200 px-2 py-1.5 text-xs font-semibold">Pricing <ChevronUp className="h-3.5 w-3.5" /></summary>
-        <div ref={footerDetailsRef} className="relative mb-3 flex flex-wrap items-center gap-2">
-          <button
-            type="button"
-            onClick={() => { setFooterDetailsOpen((open) => open === 'parts' ? null : 'parts'); setDiscountsOpen(false) }}
-            className="db-summary-pill rounded-full bg-blue-50 px-3 py-1 text-xs font-bold text-blue-700 hover:bg-blue-100"
-          >
-            Parts {isInitialSummaryLoad || summaryLoadFailed ? '…' : money(summary?.parts_total)}
-          </button>
-          <button
-            type="button"
-            onClick={() => { setFooterDetailsOpen((open) => open === 'labor' ? null : 'labor'); setDiscountsOpen(false) }}
-            className="db-summary-pill rounded-full bg-orange-50 px-3 py-1 text-xs font-bold text-orange-700 hover:bg-orange-100"
-          >
-            Labor {isInitialSummaryLoad || summaryLoadFailed ? '…' : money(effectiveLaborTotal)}
-          </button>
-          {/* Discounts / Customer saves add noise at $0 — only show them once
-              they carry a value. While still loading, keep them (showing "…") so
-              the footer doesn't reflow when the numbers land. */}
-          {(isInitialSummaryLoad || summaryLoadFailed || discountTotal > 0.005) && (
-            <button
-              type="button"
-              onClick={() => { setFooterDetailsOpen((open) => open === 'discounts' ? null : 'discounts'); setDiscountsOpen(false) }}
-              className="db-summary-pill rounded-full bg-red-50 px-3 py-1 text-xs font-bold text-red-700 hover:bg-red-100"
-            >
-              Discounts -{isInitialSummaryLoad || summaryLoadFailed ? '…' : money(discountTotal)}
-            </button>
-          )}
-          {(isInitialSummaryLoad || summaryLoadFailed || customerSavesTotal > 0.005) && (
-            <button
-              type="button"
-              onClick={() => { setFooterDetailsOpen((open) => open === 'savings' ? null : 'savings'); setDiscountsOpen(false) }}
-              className="db-summary-pill rounded-full bg-emerald-50 px-3 py-1 text-xs font-bold text-emerald-700 hover:bg-emerald-100"
-            >
-              Customer saves {isInitialSummaryLoad || summaryLoadFailed ? '…' : money(customerSavesTotal)}
-            </button>
-          )}
-          {footerDetailsOpen && (
-            <div className="absolute bottom-full left-0 z-20 mb-2 w-[min(380px,calc(100vw-40px))] rounded-[14px] border border-gray-200 bg-white p-4 shadow-[0_10px_30px_rgba(20,25,35,.10)]">
-              {renderFooterDetails(footerDetailsOpen)}
-            </div>
-          )}
-          {!hasInvoice && (
-            <span className="ml-auto inline-flex" title={!canMutate ? lockContextMessage : undefined}>
-              <button
-                ref={discountsButtonRef}
-                type="button"
-                onClick={() => {
-                  setDiscountsOpen((open) => {
-                    const next = !open
-                    if (next) setDraftPartsPricingMode(partsPricingMode)
-                    return next
-                  })
-                  setFooterDetailsOpen(null)
-                }}
-                disabled={!canMutate}
-                className="rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-bold text-gray-700 hover:bg-gray-50 disabled:opacity-50"
-              >
-                Discounts & pricing
-              </button>
-            </span>
-          )}
-          {!hasInvoice && discountsOpen && (
-            <div
-              ref={discountsPopoverRef}
-              className="absolute bottom-full right-0 mb-2 w-[320px] rounded-[14px] border border-gray-200 bg-white p-4 shadow-[0_10px_30px_rgba(20,25,35,.10)]"
-            >
-              <div className="mb-3 flex items-center justify-between">
-                <p className="font-semibold text-gray-900">Discounts & pricing</p>
-                <button type="button" onClick={() => setDiscountsOpen(false)} className="rounded-md p-1 text-slate-600 hover:bg-gray-100">
-                  <X className="h-4 w-4" />
-                </button>
-              </div>
-              <fieldset className="mb-3" disabled={discountsSaving}>
-                <legend className="mb-1 text-xs font-bold uppercase tracking-wide text-slate-600">Parts pricing</legend>
-                <div className="grid grid-cols-2 gap-1 rounded-lg bg-gray-100 p-1">
-                  {(['stock', 'list'] as const).map((mode) => (
-                    <label
-                      key={mode}
-                      className="relative cursor-pointer"
-                      onMouseDown={(event) => {
-                        if (event.button !== 0 || discountsSaving) return
-                        // Focus the radio before the label's default click forwards
-                        // to it. Otherwise the focusable order panel briefly gains
-                        // focus and dismisses this popover before selection occurs.
-                        event.preventDefault()
-                        event.currentTarget.querySelector('input')?.focus()
-                      }}
-                    >
-                      <input
-                        type="radio"
-                        name={`parts-pricing-${orderId}`}
-                        value={mode}
-                        checked={draftPartsPricingMode === mode}
-                        onChange={() => setDraftPartsPricingMode(mode)}
-                        className="peer absolute inset-0 z-10 m-0 h-full w-full cursor-pointer opacity-0 disabled:cursor-not-allowed"
-                      />
-                      <span className="flex min-h-8 items-center justify-center rounded-md px-3 py-1.5 text-xs font-semibold text-slate-600 peer-checked:bg-white peer-checked:text-slate-950 peer-checked:shadow-sm peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-slate-500 peer-disabled:cursor-not-allowed peer-disabled:opacity-60 [@media(pointer:coarse)]:min-h-11">
-                        {mode === 'stock' ? 'Stock price' : 'List price'}
-                      </span>
-                    </label>
-                  ))}
-                </div>
-              </fieldset>
-              <div className="mb-3 flex items-center justify-between gap-3 text-sm">
-                <span className="font-medium text-gray-700">Labor discount</span>
-                <span className="flex items-center gap-1.5">
-                  <DiscountAmountInput
-                    label="Labor discount"
-                    value={laborDiscount}
-                    onChange={setLaborDiscount}
-                    disabled={discountsSaving}
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setLaborDiscount('')}
-                    disabled={!laborDiscount}
-                    className="h-9 rounded-lg px-2 text-xs font-semibold text-slate-600 hover:bg-gray-100 hover:text-gray-900 disabled:text-slate-600 disabled:opacity-100"
-                  >
-                    Reset
-                  </button>
-                </span>
-              </div>
-              <div className="mb-3 flex items-center justify-between gap-3 text-sm">
-                <span className="font-medium text-gray-700">Order discount</span>
-                <span className="flex items-center gap-1.5">
-                  <DiscountAmountInput
-                    label="Order discount"
-                    value={orderDiscount}
-                    onChange={setOrderDiscount}
-                    disabled={discountsSaving}
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setOrderDiscount('')}
-                    disabled={!orderDiscount}
-                    className="h-9 rounded-lg px-2 text-xs font-semibold text-slate-600 hover:bg-gray-100 hover:text-gray-900 disabled:text-slate-600 disabled:opacity-100"
-                  >
-                    Reset
-                  </button>
-                </span>
-              </div>
-              <p className="mb-2 text-[11px] text-slate-500">Available discount: labor {money(maxLaborDiscount)} · order {money(maxOrderDiscount)}</p>
-              {discountValidation && <p role="alert" className="mb-2 text-xs text-amber-800">{discountValidation}</p>}
-              <div className="flex items-center justify-between border-t border-gray-100 pt-3">
-                <span className="text-xs font-semibold text-emerald-700">Customer saves {draftCustomerSavesTotal.toLocaleString('en-US', { style: 'currency', currency: 'USD' })}</span>
-                <button
-                  type="button"
-                  disabled={discountsSaving || !pricingAdjustmentsChanged || !!discountValidation}
-                  onClick={async () => {
-                    if (await savePricingAdjustments()) setDiscountsOpen(false)
-                  }}
-                  className="inline-flex items-center gap-1.5 rounded-lg bg-orange-500 px-3 py-1.5 text-xs font-bold text-white disabled:opacity-60"
-                >
-                  {discountsSaving && <Spinner size="xs" />}
-                  {discountsSaving ? 'Applying…' : 'Apply'}
-                </button>
-              </div>
-            </div>
-          )}
-        </div>
-        </details>
+        {!compactWorkspace && pricingControls}
         <div className="db-workspace-actions flex flex-wrap items-center justify-between gap-3">
           <div className={hasInvoice
             ? 'flex w-full min-w-0 items-end justify-between gap-2'
             : 'ml-auto flex min-w-0 flex-wrap items-center justify-end gap-3'
           }>
-            <div className={hasInvoice ? 'shrink-0 text-left' : 'text-right'}>
+            <div className={`db-workspace-total ${hasInvoice ? 'shrink-0 text-left' : 'text-right'}`}>
               <div className="flex items-center justify-end gap-2">
                 <p className={`inline-flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-[0.18em] ${
                   summaryLoadFailed ? 'text-red-600' : totalMotionActive || isInitialSummaryLoad ? 'text-orange-700' : 'text-gray-400'
@@ -4655,12 +4716,7 @@ export default function PriceBuilderPanel({
                 {isInitialSummaryLoad || summaryLoadFailed ? '…' : money(orderTotalValue)}
               </p>
             </div>
-            {!isFinalizedOrder && operationExecution.allowed && (operationExecution.isError ? <span className="text-xs text-red-700">Operation status unverified</span> : operationExecution.data && operationExecution.data.summary.tracked > 0 ? (
-              <button type="button" className="min-h-8 max-w-44 text-left text-xs font-medium text-slate-600 underline decoration-dotted underline-offset-2" onClick={() => {
-                const next = operationExecution.data.items.find(item => item.status === 'pending') || operationExecution.data.items[0]
-                if (next) openLinkedOperation(next.labor_id)
-              }}>{operationExecution.data.summary.remaining > 0 ? `${operationExecution.data.summary.remaining} operation${operationExecution.data.summary.remaining === 1 ? '' : 's'} remaining` : `Operations ${operationExecution.data.summary.completed}/${operationExecution.data.summary.tracked} complete`}</button>
-            ) : null)}
+            {!compactWorkspace && operationProgress}
             {(!isInternalOrder || hasInvoice || completionMode) && (
               canCreateInvoice ? (
                 <div className="relative">
@@ -4749,42 +4805,23 @@ export default function PriceBuilderPanel({
                       aria-label={invoice.pending_zelle_confirmation ? 'Confirm Zelle payment' : 'Record payment'}
                     >
                       <CreditCard className="h-4 w-4 shrink-0" />
-                      <span>{invoice.pending_zelle_confirmation ? 'Confirm Zelle payment' : 'Record payment'}</span>
+                      <span>{invoice.pending_zelle_confirmation ? compactWorkspace ? 'Confirm Zelle' : 'Confirm Zelle payment' : 'Record payment'}</span>
                     </button>
                   )}
-                  <button
-                    type="button"
-                    onClick={() => onResendInvoice?.()}
-                    disabled={invoiceActionPending || !onResendInvoice}
-                    className="db-stage-action db-stage-action--secondary"
-                    aria-label={invoiceFinanciallyPaid ? 'Resend copy' : 'Resend invoice'}
-                  >
-                    <Mail className="h-4 w-4 shrink-0" />
-                    <span>{invoiceFinanciallyPaid ? 'Resend copy' : 'Resend invoice'}</span>
-                  </button>
-                  {!invoiceFinanciallyPaid && !invoice.pending_zelle_confirmation && onVoidInvoice && (
-                    <button
-                      type="button"
-                      onClick={onVoidInvoice}
-                      disabled={invoiceActionPending}
-                      className="db-stage-action db-stage-action--secondary"
-                      title="Preserve this invoice as voided and reopen the order for revision"
-                      aria-label="Void & revise"
-                    >
-                      <RotateCcw className="h-4 w-4 shrink-0" />
-                      <span>Void &amp; revise</span>
-                    </button>
+                  {!compactWorkspace ? invoiceSecondaryActions : invoiceFinanciallyPaid && (
+                    <button type="button" onClick={() => onResendInvoice?.()} disabled={invoiceActionPending || !onResendInvoice} className="db-stage-action db-stage-action--primary"><Mail className="h-4 w-4 shrink-0" />Resend copy</button>
                   )}
                 </div>
               ) : completionMode ? (
                 <button
                   type="button"
                   onClick={onApproveCompletion}
+                  aria-label="Finalize & Send Invoice"
                   disabled={completionPending || !onApproveCompletion}
                   className="inline-flex h-11 items-center gap-2 rounded-xl bg-green-600 px-4 text-sm font-extrabold text-white shadow-[0_6px_16px_rgba(22,163,74,.28)] hover:bg-green-700 disabled:bg-gray-300"
                 >
                   {completionPending ? <Spinner size="xs" /> : <CheckCircle className="h-4 w-4" />}
-                  {completionPending ? 'Finalizing...' : 'Finalize & Send Invoice'}
+                  {completionPending ? 'Finalizing...' : compactWorkspace ? 'Finalize' : 'Finalize & Send Invoice'}
                 </button>
               ) : canEdit && !isDeleted && canManageTechnician && !hasAssignedTechnician
                 && ['draft', 'quoted', 'declined', 'approved'].includes(orderStatus)
@@ -4798,7 +4835,7 @@ export default function PriceBuilderPanel({
                   startPending={technicianOverridePending}
                 />
               ) : (
-                <span className="max-w-64 text-right text-sm font-medium text-gray-600" role="status">
+                <span className="db-workspace-stage-caption max-w-64 text-right text-sm font-medium text-gray-600" role="status">
                   {hasAssignedTechnician && ['draft', 'quoted', 'declined', 'approved', 'assigned', 'acknowledged'].includes(orderStatus)
                     ? `Waiting for ${assignedTechnicianName} to start`
                     : isOnHold ? `On hold · ${holdLabel}`
@@ -4812,17 +4849,7 @@ export default function PriceBuilderPanel({
                 </span>
               )
             )}
-            {canEdit && !isDeleted && canManageTechnician && onAssignTechnician && availableTechnicians.length > 0
-              && (hasAssignedTechnician || orderStatus === 'in_progress') && (
-              <StartWorkAction
-                key={`technician-${orderId}`}
-                mode={hasAssignedTechnician ? 'reassign' : 'assign'}
-                technicians={availableTechnicians}
-                onAssign={onAssignTechnician}
-                assignmentPending={technicianAssignmentPending}
-                startPending={false}
-              />
-            )}
+            {!compactWorkspace && technicianActions}
             {canAdminCompleteBypassedWork && !isDeleted && !armWoComplete && (
               <button
                 type="button"
@@ -4830,7 +4857,7 @@ export default function PriceBuilderPanel({
                 className="inline-flex h-11 items-center gap-2 rounded-xl bg-yellow-500 px-4 text-sm font-extrabold text-white shadow-[0_6px_16px_rgba(234,179,8,.28)] hover:bg-yellow-600"
               >
                 <CheckCircle className="h-4 w-4" />
-                Mark Completed
+                {compactWorkspace ? 'Complete' : 'Mark Completed'}
               </button>
             )}
             {isInternalOrder && !isDeleted && (
@@ -4851,10 +4878,10 @@ export default function PriceBuilderPanel({
                   className="inline-flex h-11 items-center gap-2 rounded-xl bg-yellow-500 px-4 text-sm font-extrabold text-white shadow-[0_6px_16px_rgba(234,179,8,.28)] hover:bg-yellow-600"
                 >
                   <CheckCircle className="h-4 w-4" />
-                  Finalize &amp; Invoice
+                  {compactWorkspace ? 'Finalize' : 'Finalize & Invoice'}
                 </button>
               ) : orderStatus === 'completed' ? (
-                <span className="inline-flex items-center gap-3">
+                <span className="db-internal-complete-state inline-flex items-center gap-3">
                   <span className="inline-flex items-center gap-1.5 text-sm font-semibold text-green-700">
                     <CheckCircle className="h-4 w-4" /> Completed
                   </span>
@@ -4872,6 +4899,13 @@ export default function PriceBuilderPanel({
               ) : null
             )}
           </div>
+          {compactWorkspace && <WorkspaceActionOverflow label="Repair order actions">{close => <>
+            <div className="db-workspace-order-navigation" onClick={() => close()}>{orderNavigation}</div>
+            {!operationExecution.isError && operationProgress}
+            {technicianActions}
+            {hasInvoice && invoice && !invoiceFinanciallyPaid && <div className="db-workspace-secondary-actions" onClick={() => close()}>{invoiceSecondaryActions}</div>}
+            {pricingControls}
+          </>}</WorkspaceActionOverflow>}
         </div>
       </div>
 
