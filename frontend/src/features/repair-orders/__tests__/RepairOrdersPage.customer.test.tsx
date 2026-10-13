@@ -147,6 +147,7 @@ it('keeps a failed draft and blocks repeated submit and cancel until the pending
   fireEvent.click(within(dialog).getByRole('button', {name:'Close new repair order'}))
   expect(dialog).toBeVisible()
   await act(async () => rejectSave(new Error('offline')))
+  expect(within(dialog).getByRole('alert')).toHaveTextContent('Failed to create repair order')
   expect(within(dialog).getByPlaceholderText('Briefly describe the repair work or concern...')).toHaveValue('Check air leak')
   expect(within(dialog).getByRole('button', {name:/Select Freightliner/})).toHaveAttribute('aria-pressed','true')
   expect(submit).toBeEnabled()
