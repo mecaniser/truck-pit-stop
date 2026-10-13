@@ -1,0 +1,149 @@
+{
+  "date": "2026-10-13",
+  "tool": "rea-agents@6.4.0",
+  "root_artifact_sha256": "1de375d9d398f5bebc52f6153351eb6112f693b1ff8e6dedda57863b3d8e88e4",
+  "statistics": {
+    "relevant_files": 4,
+    "nested_asar_containers": 0,
+    "text_bytes_read": 19385,
+    "invalid_utf8_files": 0,
+    "parsed_javascript_files": 4,
+    "visited_ast_nodes": 4309,
+    "findings": 65,
+    "modules": 0,
+    "parse_failures": 0
+  },
+  "coverage": {
+    "application": {
+      "status": "complete",
+      "truncated": false,
+      "omitted_count": 0,
+      "limits": []
+    },
+    "semantic": {
+      "status": "unknown",
+      "truncated": false,
+      "omitted_nodes": 0,
+      "omitted_relations": 0,
+      "limits": [],
+      "families": [
+        {
+          "family": "boundary",
+          "status": "partial",
+          "retained_relations": 0,
+          "omitted_relations": 0,
+          "unknown_count": 0
+        },
+        {
+          "family": "call-flow",
+          "status": "partial",
+          "retained_relations": 4,
+          "omitted_relations": 0,
+          "unknown_count": 238
+        },
+        {
+          "family": "child-process",
+          "status": "partial",
+          "retained_relations": 0,
+          "omitted_relations": 0,
+          "unknown_count": 0
+        },
+        {
+          "family": "closure",
+          "status": "partial",
+          "retained_relations": 74,
+          "omitted_relations": 0,
+          "unknown_count": 0
+        },
+        {
+          "family": "configuration",
+          "status": "partial",
+          "retained_relations": 0,
+          "omitted_relations": 0,
+          "unknown_count": 0
+        },
+        {
+          "family": "data-flow",
+          "status": "partial",
+          "retained_relations": 1828,
+          "omitted_relations": 0,
+          "unknown_count": 135
+        },
+        {
+          "family": "event",
+          "status": "partial",
+          "retained_relations": 0,
+          "omitted_relations": 0,
+          "unknown_count": 0
+        },
+        {
+          "family": "object-flow",
+          "status": "partial",
+          "retained_relations": 262,
+          "omitted_relations": 0,
+          "unknown_count": 366
+        },
+        {
+          "family": "promise-ownership",
+          "status": "partial",
+          "retained_relations": 16,
+          "omitted_relations": 0,
+          "unknown_count": 3
+        },
+        {
+          "family": "request",
+          "status": "partial",
+          "retained_relations": 0,
+          "omitted_relations": 0,
+          "unknown_count": 0
+        },
+        {
+          "family": "resource-lifecycle",
+          "status": "partial",
+          "retained_relations": 0,
+          "omitted_relations": 0,
+          "unknown_count": 0
+        },
+        {
+          "family": "timer",
+          "status": "partial",
+          "retained_relations": 0,
+          "omitted_relations": 0,
+          "unknown_count": 0
+        }
+      ]
+    },
+    "application_unknowns": 0,
+    "semantic_unknowns": 742
+  },
+  "assets": [
+    {
+      "name": "ServiceForm.Bojymmqm.js",
+      "url": "https://static.easytruck.shop/2026-10-12-16-25-52/build/assets/ServiceForm.Bojymmqm.js",
+      "bytes": 7483,
+      "sha256": "74ae10c43751e597fe00dd64b86b88f1f775bedac46a3e649d5c71f33eaf8b45"
+    },
+    {
+      "name": "VehicleSelect.CF-MbvKG.js",
+      "url": "https://static.easytruck.shop/2026-10-12-16-25-52/build/assets/VehicleSelect.CF-MbvKG.js",
+      "bytes": 2648,
+      "sha256": "d5415c5e2f51b47b594b96c7e6393d6955821cbf6d65de33694727ad6cf2985e"
+    },
+    {
+      "name": "CustomerNavigation.Bx3bT8W_.js",
+      "url": "https://static.easytruck.shop/2026-10-12-16-25-52/build/assets/CustomerNavigation.Bx3bT8W_.js",
+      "bytes": 7701,
+      "sha256": "f6bfd57567aa14d7c7d70fd07060e76e83e8d1cfd4256553e94d859a6d4d6c4a"
+    },
+    {
+      "name": "VehicleCard.Fsgrd8bN.js",
+      "url": "https://static.easytruck.shop/2026-10-12-16-25-52/build/assets/VehicleCard.Fsgrd8bN.js",
+      "bytes": 1553,
+      "sha256": "a0cd59429b79bd9724243ec3245a3fda85b7f92834c2d0a75debdf97d7edfd1c"
+    }
+  ],
+  "limitations": [
+    "Static findings are partial navigation evidence, not proof of complete workflow parity.",
+    "No vendor code, credentials or private payloads included."
+  ]
+}
