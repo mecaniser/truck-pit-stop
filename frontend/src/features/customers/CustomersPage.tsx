@@ -275,6 +275,8 @@ export default function CustomersPage() {
     enabled: !!selectedCustomer?.id && isDetailOpen,
   })
   const restoredVehicleForLocation = useRef<string | null>(null)
+  const restoredOrderFocus = useRef<string | null>(null)
+  const createOrderButtonRef = useRef<HTMLButtonElement>(null)
   useEffect(() => {
     const origin = location.state?.restoreOrderOrigin as RepairOrderReturn | undefined
     if (!origin || restoredVehicleForLocation.current === location.key || !customerVehicles || selectedCustomer?.id !== origin.customerId) return
@@ -282,6 +284,17 @@ export default function CustomersPage() {
     setSelectedVehicleInPanel(customerVehicles.find(vehicle => vehicle.id === origin.vehicleId) ?? null)
   }, [location.key, location.state, customerVehicles, selectedCustomer?.id])
 
+
+  useEffect(() => {
+    const origin = location.state?.restoreOrderOrigin as RepairOrderReturn | undefined
+    if (!origin || restoredOrderFocus.current === location.key || selectedCustomer?.id !== origin.customerId
+      || (selectedVehicleInPanel?.id ?? undefined) !== origin.vehicleId) return
+    const frame = requestAnimationFrame(() => {
+      createOrderButtonRef.current?.focus({ preventScroll: true })
+      restoredOrderFocus.current = location.key
+    })
+    return () => cancelAnimationFrame(frame)
+  }, [location.key, location.state, selectedCustomer?.id, selectedVehicleInPanel?.id])
 
   const { data: customerContacts, isLoading: isLoadingContacts } = useQuery<Contact[]>({
     queryKey: ['customerContacts', selectedCustomer?.id],
@@ -1070,11 +1083,12 @@ export default function CustomersPage() {
         }
       >
         {!selectedCustomer ? null : selectedVehicleInPanel ? (
-          <CustomerVehicleDetail customer={selectedCustomer} vehicle={selectedVehicleInPanel}
+          <CustomerVehicleDetail createOrderButtonRef={createOrderButtonRef} customer={selectedCustomer} vehicle={selectedVehicleInPanel}
             onCreateOrder={canStartCustomerOrder(currentUser?.role) ? () => startCustomerOrder(selectedCustomer, selectedVehicleInPanel) : undefined}
             onOpenOrder={order => navigate(`/dashboard/repair-orders?selected=${order.id}`)} />
               ) : (
                 <CustomerDetailPanel
+                  createOrderButtonRef={createOrderButtonRef}
                   onCreateOrder={canStartCustomerOrder(currentUser?.role) ? () => startCustomerOrder(selectedCustomer) : undefined}
                   selectedCustomer={selectedCustomer}
                   detailTab={detailTab}

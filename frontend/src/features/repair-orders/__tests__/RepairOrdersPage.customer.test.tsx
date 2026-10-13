@@ -113,6 +113,7 @@ it('returns to the exact Customers truck and query after cancel, retaining it on
   fireEvent.click(within(dialog).getByRole('button', {name:'Cancel'}))
   expect(await screen.findByRole('heading', {name:/Repair history/})).toBeVisible()
   expect(screen.getByTestId('location')).toHaveTextContent('?view=list&filter=active&selected=customer-1')
+  await waitFor(() => expect(screen.getByRole('button', {name:'New repair order',exact:true})).toHaveFocus())
   await act(async () => { client.setQueriesData({queryKey:['customers']}, {items:[{...customer, balance:'200'}],total:1,has_more:false}) })
   expect(screen.getByRole('heading', {name:/Repair history/})).toBeVisible()
   expect(screen.getByRole('button', {name:'Edit vehicle'})).toBeVisible()
