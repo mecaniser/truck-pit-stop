@@ -4002,9 +4002,9 @@ html::-webkit-scrollbar-thumb:hover {
 .db-repair-orders-workspace--detail-open .db-repair-orders-ledger > header { flex-wrap: wrap; gap: 4px 8px; margin-bottom: 6px; padding: 4px 2px; }
 .db-repair-orders-workspace--detail-open .db-repair-orders-ledger > header > div:first-child { flex-wrap: wrap; gap: 4px 8px; }
 .db-repair-orders-workspace--detail-open .db-repair-orders-ledger > header h2 { white-space: nowrap; }
-/* Match the selected-order queue's amount column, including its reserved
-   scrollbar gutter and row inset. Keep the summary label at the left. */
-.db-repair-orders-workspace--detail-open .db-repair-orders-ledger__header-actions { width: 100%; padding-right: calc(14px + var(--scrollbar-size, 8px)); }
+/* The header already reserves the scrollbar gutter. Match the row's 12px
+   inset minus the header's 2px padding; keep the summary label at the left. */
+.db-repair-orders-workspace--detail-open .db-repair-orders-ledger__header-actions { width: 100%; padding-right: 10px; }
 .db-repair-orders-workspace--detail-open .db-repair-orders-ledger__value-summary { width: 100%; justify-content: space-between; white-space: normal; }
 .db-repair-orders-workspace--detail-open .db-repair-orders-ledger__value-summary strong { margin-left: auto; white-space: nowrap; }
 
