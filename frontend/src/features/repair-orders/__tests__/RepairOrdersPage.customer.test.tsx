@@ -6,7 +6,7 @@ import { beforeEach, expect, it, vi } from 'vitest'
 vi.mock('@/stores/authStore', () => ({ useAuthStore: (select: (state: {user: {role: string}}) => unknown) => select({user: {role: 'garage_owner'}}) }))
 vi.mock('@/hooks/useWebSocket', () => ({ useWebSocket: vi.fn() }))
 vi.mock('@/contexts/ThemeContext', () => ({ useTheme: () => ({ presentationVariant: 'new', accentColors: { 500: '#d97706' } }) }))
-vi.mock('../PriceBuilderPanel', () => ({ default: () => <div>Repair order workspace</div> }))
+vi.mock('../PriceBuilderPanel', () => ({ default: ({ onClose, onOpenCustomer }: { onClose: () => void; onOpenCustomer: () => void }) => <div>Repair order workspace<button onClick={onClose}>Close repair order</button><button onClick={onOpenCustomer}>Open customer</button></div> }))
 const api = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn(), put: vi.fn() }))
 vi.mock('@/lib/api', () => ({ default: api }))
 import RepairOrdersPage from '../RepairOrdersPage'
@@ -32,9 +32,9 @@ beforeEach(() => {
     return Promise.resolve({ data: [] })
   })
 })
-function setup(initialEntry = '/dashboard?selected=order-1&queue=on_floor&customer=customer-1') {
+function setup(initialEntry: string | string[] = '/dashboard?selected=order-1&queue=on_floor&customer=customer-1') {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
-  render(<QueryClientProvider client={client}><MemoryRouter initialEntries={[initialEntry]}><Routes><Route path='/dashboard/customers' element={<CustomersPage />} /><Route path='/dashboard/*' element={<RepairOrdersPage />} /></Routes><Probe /></MemoryRouter></QueryClientProvider>)
+  render(<QueryClientProvider client={client}><MemoryRouter initialEntries={Array.isArray(initialEntry) ? initialEntry : [initialEntry]}><Routes><Route path='/dashboard/customers' element={<CustomersPage />} /><Route path='/dashboard/*' element={<RepairOrdersPage />} /></Routes><Probe /></MemoryRouter></QueryClientProvider>)
   return client
 }
 it('names the embedded customer workspace and returns to the same repair-order queue', async () => {
@@ -196,4 +196,23 @@ it('can return to the order even while the customer request is unresolved', asyn
   fireEvent.click(await screen.findByRole('button', {name:'Back to #RO-1'}))
   expect(screen.getByTestId('location')).toHaveTextContent('?selected=order-1&queue=on_floor')
   expect(screen.queryByRole('region', {name:'Customer workspace'})).not.toBeInTheDocument()
+})
+
+
+it('closes to the queue after a customer round trip instead of reopening a historical order', async () => {
+  setup(['/dashboard?queue=on_floor', '/dashboard?selected=order-1&queue=on_floor'])
+  fireEvent.click(await screen.findByRole('button', { name: 'Open customer', exact: true }))
+  fireEvent.click(await screen.findByRole('button', { name: 'Back to #RO-1' }))
+  fireEvent.click(await screen.findByRole('button', { name: 'Close repair order', exact: true }))
+  await waitFor(() => expect(screen.getByTestId('location').textContent).toBe('?queue=on_floor'))
+  expect(screen.queryByText('Repair order workspace')).not.toBeInTheDocument()
+  expect(api.post).not.toHaveBeenCalled()
+  expect(api.put).not.toHaveBeenCalled()
+})
+
+it('closes a direct-linked order while retaining list filters and removing record-only context', async () => {
+  setup('/dashboard/repair-orders?selected=order-1&queue=on_floor&operation=labor-1&recommendation=rec-1&filter=active')
+  fireEvent.click(await screen.findByRole('button', { name: 'Close repair order', exact: true }))
+  await waitFor(() => expect(screen.getByTestId('location').textContent).toBe('?queue=on_floor&filter=active'))
+  expect(screen.queryByText('Repair order workspace')).not.toBeInTheDocument()
 })

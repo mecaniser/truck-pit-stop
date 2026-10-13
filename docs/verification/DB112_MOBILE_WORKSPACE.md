@@ -33,7 +33,7 @@ Implementation is isolated in the checkpoint managed worktree. The user-authoriz
 
 137 focused tests passed across nine files, including the shared menu, nested technician focus, failed customer save/retry/Escape, compact invoice paid/pending guards, customer recovery/navigation, viewport shrink/pan/zoom/cleanup, and DashboardLayout. TypeScript/Vite production build passed. Changed-source lint: zero errors; two existing unchanged dependency warnings in RepairOrdersPage. Diff whitespace check passed.
 
-Signed-in local browser checks completed before the session expired:
+Signed-in local browser checks (including the restored-session final pass):
 
 - Measured1280px pointer desktop: queue and dense order rows, expanded labor editor, inline customer actions, customer/truck/history navigation, contact edit/save and restored order values.
 - Measured390px/320px portrait plus coarse-pointer emulation: customer notes edit/save/reload/restore; local contact creation/reload and later desktop edit; merge dialog open/cancel; truck drill-in and secondary actions; history-to-order navigation.
@@ -48,9 +48,19 @@ Signed-in local browser checks completed before the session expired:
 
 Local-only fixture mutation: created `DB112 QA Contact` on Performance Carrier001, role `Desktop and mobile QA`, notes identifying synthetic verification. Reversible customer/order edits restored; phone formatting was normalized by the existing customer save. No records deleted, outbound messages sent, payments recorded, invoice revisions or production writes.
 
-## Remaining evidence boundary
+## Final navigation and operation acceptance — 2026-10-13
 
-The local session expired during the final Back/navigation recheck. User sign-in requested; final operation and final-source navigation acceptance pending. Physical iPhone/Android and native Safari keyboard testing are not claimed. ETS parity remains paused. This branch is not merged or deployed.
+After the user restored local login, the final customer→order→Close check reproduced a history defect: closing replayed an earlier selected-order URL and reopened the workspace. Close now removes record-only query parameters explicitly while retaining the queue and list filters. Two regression tests failed before the fix; all30 customer/navigation/request-cancellation tests passed afterward. The final production build passes; changed-source lint remains zero errors/two unchanged warnings.
+
+- At measured320px/coarse pointer, customer→truck→customer→order→Close restores Shop Work and mobile navigation. Direct-linked order Close also restores the list; record-only operation/recommendation context is cleared.
+- On local DB110-MOBILE: reopened the steering operation; reassigned QA110 Alex→QA110 Blair; reloaded and confirmed persistence; restored QA110 Alex and completed the operation. The source recommendation remains linked, tracked time remains2m9s, booked duration30m, rate145, total253.75. More reports2/2 operations complete. The completion timestamp/audit trail advances from the QA actions; no timer session or order financial state was changed.
+- At320px, Record payment displays Bank transfer on one line with the original full accessible name; the dialog closes without submission.
+- Final1280×800 pointer desktop retains queue density, inline footer actions,15m/rate100 labor values, and total988, with no horizontal overflow.
+- All11 owned product files still match the authorized preview. VitePID23640/source mount and API8001 remain unchanged; direct/proxied `/health/ready` pass, isolated database and migration168 identity reconfirmed. Preview is aligned and browser-verified at `http://127.0.0.1:5174`.
+
+Physical iPhone/Android and native Safari/software-keyboard testing are not claimed. Browser acceptance covers actual signed-in Chromium UI with measured viewport and touch emulation. ETS parity remains paused for this layout delivery. This branch is not merged or deployed.
+
+![1280px desktop repair order](assets/db112-desktop-order.png)
 
 ![320px invoiced order workspace](assets/db112-mobile-invoice.png)
 ![390px customer workspace](assets/db112-mobile-customer.png)
@@ -65,7 +75,7 @@ All owned frontend product files match the intentional shared preview byte-for-b
 - `frontend/src/features/customers/CustomerFormModals.tsx` — `d45e64d00c05324d`
 - `frontend/src/features/customers/CustomerVehicleFooter.tsx` — `a661092b93b3edc4`
 - `frontend/src/features/repair-orders/PriceBuilderPanel.tsx` — `eda8fb439b360923`
-- `frontend/src/features/repair-orders/RepairOrdersPage.tsx` — `d2689817ed1b4f76`
+- `frontend/src/features/repair-orders/RepairOrdersPage.tsx` — `3a1a13640475b628`
 - `frontend/src/features/repair-orders/StartWorkAction.tsx` — `50ee973474cb5de6`
 - `frontend/src/components/WorkspaceActionOverflow.tsx` — `cc8cd3115a876d25`
 - `frontend/src/components/workspace-mobile.css` — `d23b5f43ff8b195b`
@@ -74,4 +84,4 @@ All owned frontend product files match the intentional shared preview byte-for-b
 
 ## Review handoff
 
-Draft [PR513](https://github.com/mecaniser/truck-pit-stop/pull/513), source `86e11a447292e5925f907395b010d1ee772d059f`; protected [Quality gates](https://github.com/mecaniser/truck-pit-stop/actions/runs/38475099360) started. Later commits that only update this receipt do not alter tested product source. Final local login/navigation/operation acceptance remains pending.
+[PR513](https://github.com/mecaniser/truck-pit-stop/pull/513) contains the shared layout and final navigation correction. All six protected checks passed at2b636797 ([run38475138237](https://github.com/mecaniser/truck-pit-stop/actions/runs/38475138237)); the final correction requires a fresh current-head CI gate. Local acceptance is complete with the device boundaries above. Frontend & UX owns the Fast UI evidence; merge/deployment and release smoke are still required before Done.

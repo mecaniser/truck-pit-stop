@@ -749,14 +749,12 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
   const closeDetail = () => {
     clearDetailState()
     if (!searchParams.get('selected')) return
-    // Opened via in-app navigation: going back lands on whatever view launched
-    // the panel (dashboard work queue or this list). A deep link / fresh tab
-    // has no in-app history entry, so just strip the param and stay here.
-    if (location.key !== 'default') {
-      navigate(-1)
-    } else {
-      setSearchParams({}, { replace: true })
-    }
+    // Customer/history drill-ins can leave another selected order behind us in
+    // browser history. Dismiss the record explicitly, preserving this queue's
+    // list context instead of reopening that historical selection.
+    const next = new URLSearchParams(searchParams)
+    for (const key of ['selected', 'customer', 'operation', 'recommendation']) next.delete(key)
+    setSearchParams(next, { replace: true })
   }
 
   const showAllOrders = () => {
