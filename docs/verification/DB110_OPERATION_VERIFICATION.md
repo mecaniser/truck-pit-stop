@@ -78,4 +78,8 @@ Final screenshots in local output/db110: desktop-final.png, mobile-staff-320-fix
 
 Final mobile patch:88focused frontend tests, TypeScript, production build, explicit touched-source ESLint and diff checks passed. Independent QA reran50backend checks including all40operation cases and4cutoff/credit probes, and independently repeated populated168→167→168 migration on the isolated test DB: legacy2h/$200 and3600s session preserved, null attribution retained. Preview database was not downgraded.
 
-CI run38454039584 covers260f37dc; final dba05f84 changes only gradient selector targeting and four finalized-label test cases. Exact final-head Quality gates run will be linked below. This remains a draft stacked PR, with no production migration, merge or deployment.
+### Final CI acceptance
+
+[Quality gates run 38454803809](https://github.com/mecaniser/truck-pit-stop/actions/runs/38454803809) passed all six jobs on c5aedbd6552d9e91136bf599474d66e64f3c6d68. Logs confirm the full backend suite passed with 2,856 passed and 125 skipped; the full frontend suite passed all 1,399 tests across 152 files. Critical suites passed 530 backend tests (11 skipped) and 203 frontend tests; all five Playwright smoke tests and migration graph checks passed. These suites overlap and are not additive coverage counts.
+
+The earlier run 38454039584 was superseded and cancelled while its informational backend suite was running; the completed final run above is the acceptance evidence. Changes after c5aedbd6 only record this evidence, with no product or test changes. Draft PR #509 remains stacked, unmerged and undeployed; no production migration was performed.
