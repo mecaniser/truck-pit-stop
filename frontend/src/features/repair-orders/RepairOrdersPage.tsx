@@ -1,4 +1,6 @@
 import { openChecklistOnCompletionError } from '@/features/service-checklists/queries'
+import RepairOrderEntryGate from './RepairOrderEntryGate'
+import { canStartCustomerOrder, readRepairOrderReturn, type RepairOrderEntry, type RepairOrderReturn } from './repairOrderEntry'
 import type { OrderIntakePatch } from './OrderIntakeDetails'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import DatePicker from '@/components/DatePicker'
@@ -355,6 +357,10 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
   const [selectedOrder, setSelectedOrder] = useState<RepairOrder | null>(null)
   const [workspaceFocusRequest, setWorkspaceFocusRequest] = useState(0)
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const submittingOrder = useRef(false)
+  const entryReturn = useRef<RepairOrderReturn | null>(null)
+  const newCustomerId = searchParams.get('newCustomer')
+  const newVehicleId = searchParams.get('newVehicle')
   const [initialPriceBuildWarningsByOrder, setInitialPriceBuildWarningsByOrder] = useState<Record<string, PriceBuildWarning[]>>({})
   const [showDangerActions, setShowDangerActions] = useState(false)
   const [voidedOrderNumber, setVoidedOrderNumber] = useState<string | null>(null)
@@ -832,7 +838,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
     ),
   })
 
-  const { data: vehicleResults = [], isLoading: isLoadingVehicles, isFetching: isFetchingVehicles } = useQuery<VehicleTypeaheadItem[]>({
+  const { data: vehicleResultPage, isLoading: isLoadingVehicles, isFetching: isFetchingVehicles } = useQuery<{ customerId: string; items: VehicleTypeaheadItem[] }>({
     queryKey: ['vehicle-typeahead', selectedCustomerId, debouncedVehicleQuery],
     queryFn: async ({ signal }) => {
       const response = await api.get('/vehicles/typeahead', {
@@ -846,12 +852,14 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
           limit: 50,
         },
       })
-      return response.data
+      return { customerId: selectedCustomerId, items: response.data }
     },
     enabled: isModalOpen && !!selectedCustomerId && selectedCustomerId !== 'add_new',
     placeholderData: keepPreviousData,
     staleTime: 30_000,
   })
+
+  const vehicleResults = useMemo(() => vehicleResultPage?.customerId === selectedCustomerId ? vehicleResultPage.items : [], [vehicleResultPage, selectedCustomerId])
 
   const { data: serviceResults = [], isLoading: isLoadingServices, isFetching: isFetchingServices } = useQuery<ServiceTypeaheadItem[]>({
     queryKey: ['service-typeahead', debouncedServiceSearch],
@@ -1237,10 +1245,9 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
     return chosen?.last_known_mileage ?? null
   }, [selectedVehicleId, vehicleOptions])
 
-  const filteredVehicles = useMemo(
-    () => vehicleOptions.filter((vehicle) => vehicle.customer_id === selectedCustomerId),
-    [vehicleOptions, selectedCustomerId],
-  )
+  // The scoped endpoint includes active operator/owner relationships. Filtering
+  // again by current owner would hide valid trucks from their bill-to account.
+  const filteredVehicles = vehicleOptions
 
   // Seed the lookups from each order's denormalized customer/vehicle summary so
   // list rows render without loading the full customer/vehicle tables. Include
@@ -2665,6 +2672,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
     setShowNewVehicleForm(false)
     setDescription('')
     setMileageIn('')
+    setMileageInCarried(false)
     setServiceSearch('')
     setSelectedServiceIds([])
     setSelectedServiceOptions([])
@@ -2675,13 +2683,50 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
   }
 
   const openModal = () => {
+    entryReturn.current = null
     resetModal()
     setIsModalOpen(true)
   }
 
+  const clearEntryParams = () => {
+    const next = new URLSearchParams(searchParams)
+    next.delete('newCustomer')
+    next.delete('newVehicle')
+    setSearchParams(next, { replace: true, state: null })
+  }
+  const returnFromEntry = (origin: RepairOrderReturn | null) => {
+    if (origin) navigate({ pathname: origin.pathname, search: origin.search }, { replace: true, state: { restoreOrderOrigin: origin } })
+  }
+  const cancelEntry = () => {
+    const origin = readRepairOrderReturn(location.state)
+    clearEntryParams()
+    returnFromEntry(origin)
+  }
+  const acceptEntry = ({ customer, vehicle }: RepairOrderEntry) => {
+    openModal()
+    entryReturn.current = readRepairOrderReturn(location.state)
+    setSelectedCustomerId(customer.id)
+    setSelectedCustomerOption(customer)
+    if (vehicle) {
+      setSelectedVehicleId(vehicle.id)
+      setSelectedVehicleOption(vehicle)
+    }
+    clearEntryParams()
+  }
+  const startCustomerOrder = (customerId: string, vehicleId?: string) => {
+    const next = new URLSearchParams(searchParams)
+    next.set('newCustomer', customerId)
+    if (vehicleId) next.set('newVehicle', vehicleId)
+    else next.delete('newVehicle')
+    setSearchParams(next, { replace: true })
+  }
   const closeModal = () => {
+    if (submittingOrder.current) return
     setIsModalOpen(false)
     resetModal()
+    const origin = entryReturn.current
+    entryReturn.current = null
+    returnFromEntry(origin)
   }
 
   const returnToCustomerSearch = () => {
@@ -2739,8 +2784,9 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!validateRepairOrderForm()) return
+    if (submittingOrder.current || !validateRepairOrderForm()) return
 
+    submittingOrder.current = true
     setIsSubmitting(true)
 
     try {
@@ -2882,13 +2928,16 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
       queryClient.invalidateQueries({ queryKey: ['vehicle-typeahead'] })
       queryClient.invalidateQueries({ queryKey: ['customerRepairOrders'] })
       toast.success(`Repair order ${createdOrder.order_number} checked in`)
-      closeModal()
+      entryReturn.current = null
+      setIsModalOpen(false)
+      resetModal()
       // Drop the operator straight into the new order's drawer so they can start
       // building it, instead of hunting for it back in the list.
       openDetail(createdOrderWithPresentation)
     } catch (err: unknown) {
       setFormErrors((current) => ({ ...current, root: getErrorDetail(err, 'Failed to create repair order') }))
     } finally {
+      submittingOrder.current = false
       setIsSubmitting(false)
     }
   }
@@ -3387,6 +3436,10 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
         </>
       )}
 
+      {newCustomerId && canStartCustomerOrder(currentUser?.role) && <RepairOrderEntryGate
+        key={`${newCustomerId}:${newVehicleId ?? ''}`}
+        customerId={newCustomerId} vehicleId={newVehicleId} onReady={acceptEntry} onCancel={cancelEntry}
+      />}
       {/* New Repair Order Modal */}
       {isModalOpen && (
         <div className="fixed inset-0 z-50 overflow-hidden">
@@ -3407,6 +3460,8 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                   <h2 id="new-repair-order-title" className="text-xl font-bold text-gray-900">New Repair Order</h2>
                   <button
                     onClick={closeModal}
+                    aria-label="Close new repair order"
+                    disabled={isSubmitting}
                     className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
                   >
                     <svg className="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -4106,8 +4161,9 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
               </h2>
             </header>
             <div className="db-customer-embedded__body" key={customerViewVehicle?.id || customerViewId}>
-              {customerViewVehicle ? <CustomerVehicleDetail customer={customerViewRecord} vehicle={customerViewVehicle} onOpenOrder={openDetail} /> : <CustomerDetailPanel
+              {customerViewVehicle ? <CustomerVehicleDetail customer={customerViewRecord} vehicle={customerViewVehicle} onOpenOrder={openDetail} onCreateOrder={canStartCustomerOrder(currentUser?.role) ? () => startCustomerOrder(customerViewRecord.id, customerViewVehicle.id) : undefined} /> : <CustomerDetailPanel
                 selectedCustomer={customerViewRecord}
+                onCreateOrder={canStartCustomerOrder(currentUser?.role) ? () => startCustomerOrder(customerViewRecord.id) : undefined}
                 detailTab={customerViewTab}
                 setDetailTab={setCustomerViewTab}
                 expandedHistoryId={customerViewExpandedHistoryId}

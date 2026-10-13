@@ -1,3 +1,4 @@
+import { canStartCustomerOrder, repairOrderEntrySearch, type RepairOrderReturn } from '../repair-orders/repairOrderEntry'
 import React, { useState, useMemo, useEffect, useRef } from 'react'
 import { Spinner, LoadingLine, StaffSearchField } from '@/components/ui'
 import { useLocation, useNavigate } from 'react-router-dom'
@@ -173,6 +174,11 @@ export default function CustomersPage() {
     return () => window.removeEventListener('resize', checkMobile)
   }, [])
 
+  const startCustomerOrder = (customer: Customer, vehicle?: Vehicle) => {
+    const origin: RepairOrderReturn = { pathname: '/dashboard/customers', search: `?selected=${encodeURIComponent(customer.id)}`, customerId: customer.id, vehicleId: vehicle?.id }
+    navigate(`/dashboard/repair-orders${repairOrderEntrySearch(customer.id, vehicle?.id)}`, { state: { repairOrderReturn: origin } })
+  }
+
   const activeViewMode = isMobile ? 'list' : viewMode
 
   const queryClient = useQueryClient()
@@ -286,6 +292,14 @@ export default function CustomersPage() {
     },
     enabled: !!selectedCustomer?.id && isDetailOpen,
   })
+  const restoredVehicleForLocation = useRef<string | null>(null)
+  useEffect(() => {
+    const origin = location.state?.restoreOrderOrigin as RepairOrderReturn | undefined
+    if (!origin || restoredVehicleForLocation.current === location.key || !customerVehicles || selectedCustomer?.id !== origin.customerId) return
+    restoredVehicleForLocation.current = location.key
+    setSelectedVehicleInPanel(customerVehicles.find(vehicle => vehicle.id === origin.vehicleId) ?? null)
+  }, [location.key, location.state, customerVehicles, selectedCustomer?.id])
+
 
   const { data: customerContacts, isLoading: isLoadingContacts } = useQuery<Contact[]>({
     queryKey: ['customerContacts', selectedCustomer?.id],
@@ -1078,9 +1092,11 @@ export default function CustomersPage() {
         {selectedVehicleId && linkedVehicleQuery.isError && <div role="alert" className="flex flex-wrap items-center gap-3 p-4 text-sm text-red-700"><span>That vehicle is unavailable for this customer.</span><button type="button" onClick={returnToCustomer} className="min-h-11 whitespace-nowrap font-semibold underline">Back to customer</button></div>}
         {!selectedCustomer ? null : selectedVehicleInPanel ? (
           <CustomerVehicleDetail customer={selectedCustomer} vehicle={selectedVehicleInPanel}
+            onCreateOrder={canStartCustomerOrder(currentUser?.role) ? () => startCustomerOrder(selectedCustomer, selectedVehicleInPanel) : undefined}
             onOpenOrder={order => navigate(`/dashboard/repair-orders?selected=${order.id}`)} />
               ) : (
                 <CustomerDetailPanel
+                  onCreateOrder={canStartCustomerOrder(currentUser?.role) ? () => startCustomerOrder(selectedCustomer) : undefined}
                   selectedCustomer={selectedCustomer}
                   detailTab={detailTab}
                   setDetailTab={setDetailTab}

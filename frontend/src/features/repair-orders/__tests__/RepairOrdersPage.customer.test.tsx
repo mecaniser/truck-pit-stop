@@ -1,8 +1,9 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter, useLocation } from 'react-router-dom'
 import { beforeEach, expect, it, vi } from 'vitest'
 
+vi.mock('@/stores/authStore', () => ({ useAuthStore: (select: (state: {user: {role: string}}) => unknown) => select({user: {role: 'garage_owner'}}) }))
 vi.mock('@/hooks/useWebSocket', () => ({ useWebSocket: vi.fn() }))
 vi.mock('@/contexts/ThemeContext', () => ({ useTheme: () => ({ presentationVariant: 'new', accentColors: { 500: '#d97706' } }) }))
 vi.mock('../PriceBuilderPanel', () => ({ default: () => <div>Repair order workspace</div> }))
@@ -62,4 +63,36 @@ it('expands repair history with real work details and can reopen its order', asy
   fireEvent.click(screen.getByRole('button', { name: 'Open repair order RO-1' }))
   await waitFor(() => expect(screen.getByTestId('location')).not.toHaveTextContent('customer='))
   expect(screen.getByTestId('location')).toHaveTextContent('queue=on_floor')
+})
+
+it('starts a truck draft with exact context and cancels back to the same queued truck', async () => {
+  setup()
+  fireEvent.click(await screen.findByRole('button', { name: /Open .*Unit C-001/ }))
+  fireEvent.click(await within(screen.getByRole('region', {name:'Northline Logistics customer workspace'})).findByRole('button', { name: 'New repair order', exact: true }))
+  const dialog = await screen.findByRole('dialog', { name: 'New Repair Order' })
+  expect(dialog).toHaveTextContent('Northline Logistics')
+  expect(await screen.findByRole('button', { name: 'Select Freightliner Cascadia · Unit C-001' })).toBeVisible()
+  fireEvent.click(screen.getByRole('button', { name: 'Close new repair order' }))
+  expect(await screen.findByRole('heading', { name: /Repair history/i })).toBeVisible()
+  expect(screen.getByTestId('location')).toHaveTextContent('?selected=order-1&queue=on_floor&customer=customer-1')
+  expect(api.post).not.toHaveBeenCalled()
+})
+
+it('keeps a related truck with a different owner and bills the selected customer', async () => {
+  const baseGet = api.get.getMockImplementation()!
+  api.get.mockImplementation((url: string) => {
+    if (url === '/customers/customer-1/vehicles') return Promise.resolve({data: [{ id: 'vehicle-1', customer_id: 'other-owner', customer_relationship_types: ['operator'], unit_number: 'C-001', year: 2021, make: 'Freightliner', model: 'Cascadia' }]})
+    return baseGet(url)
+  })
+  api.post.mockResolvedValue({data: {...order, id: 'new-order', order_number: 'RO-NEW'}})
+  setup()
+  fireEvent.click(await screen.findByRole('button', { name: /Open .*Unit C-001/ }))
+  fireEvent.click(await within(screen.getByRole('region', {name:'Northline Logistics customer workspace'})).findByRole('button', { name: 'New repair order', exact: true }))
+  await screen.findByRole('dialog', {name: 'New Repair Order'})
+  const submit = screen.getByRole('button', {name: 'Create Repair Order'})
+  fireEvent.click(submit)
+  fireEvent.click(submit)
+  await waitFor(() => expect(api.post).toHaveBeenCalledWith('/repair-orders', expect.objectContaining({customer_id:'customer-1',vehicle_id:'vehicle-1'})))
+  expect(api.post.mock.calls.filter(([url])=>url === '/repair-orders')).toHaveLength(1)
+  await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
 })
