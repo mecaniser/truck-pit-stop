@@ -16,6 +16,7 @@ from app.core.security import get_password_hash
 from app.core.password_policy import validate_password
 from app.core.logging import get_logger
 from app.db.models.user import User, UserRole
+from app.services import operation_execution
 from app.db.models.repair_order import RepairOrder, RepairOrderStatus
 from app.db.models.tenant import Tenant
 from app.db.models.vehicle import Vehicle
@@ -263,6 +264,7 @@ class ServiceItem(BaseModel):
 
 
 class MechanicJobDetail(BaseModel):
+    is_order_lead: bool = True
     """Job detail for mechanic portal - NO customer info"""
     id: str
     order_number: str
@@ -285,6 +287,7 @@ class MechanicJobDetail(BaseModel):
 
 
 class MechanicJobSummary(BaseModel):
+    is_order_lead: bool = True
     """Job summary for mechanic job list"""
     id: str
     order_number: str
@@ -964,7 +967,7 @@ async def get_my_jobs(
     base_query = select(RepairOrder).where(
         and_(
             RepairOrder.tenant_id == current_user.tenant_id,
-            RepairOrder.assigned_mechanic_id == current_user.id,
+            operation_execution.job_scope(current_user.tenant_id, current_user.id),
             RepairOrder.status.in_([
                 RepairOrderStatus.ASSIGNED,
                 RepairOrderStatus.ACKNOWLEDGED,
@@ -979,7 +982,7 @@ async def get_my_jobs(
         select(func.count(RepairOrder.id)).where(
             and_(
                 RepairOrder.tenant_id == current_user.tenant_id,
-                RepairOrder.assigned_mechanic_id == current_user.id,
+                operation_execution.job_scope(current_user.tenant_id, current_user.id),
                 RepairOrder.status.in_([
                     RepairOrderStatus.ASSIGNED,
                     RepairOrderStatus.ACKNOWLEDGED,
@@ -1030,9 +1033,10 @@ async def get_my_jobs(
         vehicle = order.vehicle
         vehicle_info = vehicle_display_label(vehicle.year, vehicle.make, vehicle.model, vehicle.unit_number) if vehicle else "Unknown"
         
-        services = _build_mechanic_scope_items(order, pm_entries_by_order.get(order.id, []))
+        services = _build_mechanic_scope_items(order, pm_entries_by_order.get(order.id, [])) if order.assigned_mechanic_id == current_user.id else [ServiceItem(name=line.description) for line in order.labor_items if line.mechanic_id == current_user.id and line.deleted_at is None]
         
         jobs.append(MechanicJobSummary(
+            is_order_lead=order.assigned_mechanic_id == current_user.id,
             id=str(order.id),
             order_number=order.order_number,
             status=order.status.value,
@@ -1160,9 +1164,10 @@ async def get_my_job_detail(
     current_user: User = Depends(require_role(UserRole.MECHANIC)),
 ):
     """Get job detail for mechanic - NO customer info exposed"""
+    await operation_execution.load_order(db, order_id, current_user)
     result = await db.execute(
         select(RepairOrder)
-        .where(RepairOrder.id == order_id, RepairOrder.deleted_at.is_(None))
+        .where(RepairOrder.id == order_id, RepairOrder.tenant_id == current_user.tenant_id, RepairOrder.deleted_at.is_(None))
         .options(
             selectinload(RepairOrder.vehicle),
             selectinload(RepairOrder.labor_items),
@@ -1174,8 +1179,6 @@ async def get_my_job_detail(
     if not order:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job not found")
     
-    if order.assigned_mechanic_id != current_user.id:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="This job is not assigned to you")
     tenant_result = await db.execute(select(Tenant).where(Tenant.id == current_user.tenant_id))
     tenant = tenant_result.scalar_one_or_none()
     if not tenant:
@@ -1193,9 +1196,10 @@ async def get_my_job_detail(
         .where(RepairOrderPMService.repair_order_id == order.id)
         .options(selectinload(RepairOrderPMService.service))
     )
-    services = _build_mechanic_scope_items(order, pm_result.scalars().all())
+    services = _build_mechanic_scope_items(order, pm_result.scalars().all()) if order.assigned_mechanic_id == current_user.id else [ServiceItem(name=line.description) for line in order.labor_items if line.mechanic_id == current_user.id and line.deleted_at is None]
     
     return MechanicJobDetail(
+        is_order_lead=order.assigned_mechanic_id == current_user.id,
         id=str(order.id),
         order_number=order.order_number,
         status=order.status.value,
@@ -1244,7 +1248,8 @@ async def get_mechanic_work(
 
     base_filters = and_(
         RepairOrder.tenant_id == tenant_id,
-        RepairOrder.assigned_mechanic_id == mechanic.id,
+        operation_execution.job_scope(tenant_id, mechanic.id),
+        RepairOrder.deleted_at.is_(None),
     )
     total_result = await db.execute(
         select(func.count(RepairOrder.id)).where(base_filters)

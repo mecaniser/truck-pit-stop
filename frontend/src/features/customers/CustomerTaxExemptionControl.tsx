@@ -1,4 +1,5 @@
-import { useRef, useState } from 'react'
+import { useId, useRef, useState, type ReactNode } from 'react'
+import { ChevronDown } from 'lucide-react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
 import api from '@/lib/api'
@@ -83,9 +84,21 @@ function TaxSettingForm({ customerId, initial, onSaved, onReload, onEdit }: {
   </section>
 }
 
-export default function CustomerTaxExemptionControl({ customerId }: { customerId: string }) {
+function BusinessSettings({ children }: { children: ReactNode }) {
+  const [expanded, setExpanded] = useState(false)
+  const settingsId = useId()
+  return <div className="db-customer-business-settings">
+    <button type="button" aria-expanded={expanded} aria-controls={settingsId} onClick={() => setExpanded(value => !value)}>
+      <ChevronDown aria-hidden="true" className={expanded ? 'rotate-180' : ''} />Business settings
+    </button>
+    <section id={settingsId} aria-label="Business settings" hidden={!expanded}>{children}</section>
+  </div>
+}
+
+export default function CustomerTaxExemptionControl({ customerId, collapsible = false }: { customerId: string; collapsible?: boolean }) {
   const user = useAuthStore(state => state.user)
   if (!user || !(user.role === 'garage_owner' || (user.role === 'garage_admin' && user.permissions?.payments === true))) return null
   const scope = `${user.tenant_id}:${user.id}`
-  return <CustomerTaxExemptionEditor key={`${scope}:${customerId}`} customerId={customerId} scope={scope} />
+  const editor = <CustomerTaxExemptionEditor key={`${scope}:${customerId}`} customerId={customerId} scope={scope} />
+  return collapsible ? <BusinessSettings key={`${scope}:${customerId}`}>{editor}</BusinessSettings> : editor
 }

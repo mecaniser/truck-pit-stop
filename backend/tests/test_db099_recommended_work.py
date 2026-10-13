@@ -133,7 +133,7 @@ async def test_technical_continuity_reduced_payload_and_no_side_effects(client, 
         assert (page['total'], page['skip'], page['limit']) == (1, 0, 25)
         row = page['items'][0]
         assert row['id'] == expected_id and row['source_order']['id'] == source_id
-        assert set(row) == {'id', 'description', 'priority', 'created_at', 'vehicle', 'source_order'}
+        assert set(row) == {'id', 'description', 'priority', 'created_at', 'vehicle', 'source_order', 'conversion'}
         assert set(row['vehicle']) == {'id', 'unit_number', 'year', 'make', 'model'}
         assert set(row['source_order']) == {'id', 'order_number', 'status', 'created_at'}
         assert payer_id not in response.text and '123.45' not in response.text and 'Private' not in response.text

@@ -1,0 +1,158 @@
+{
+  "date": "2026-10-12",
+  "tool": "rea-agents@6.4.0",
+  "scope": "User-approved web subset; browser-observed JavaScript only",
+  "analysis_ok": true,
+  "root_artifact_sha256": "703ac89db8d1bd1c81c481c686589d61b34ae3b85283d4c4308429e3e1b71e44",
+  "statistics": {
+    "relevant_files": 5,
+    "nested_asar_containers": 0,
+    "text_bytes_read": 15694,
+    "invalid_utf8_files": 0,
+    "parsed_javascript_files": 5,
+    "visited_ast_nodes": 3633,
+    "findings": 59,
+    "modules": 0,
+    "parse_failures": 0
+  },
+  "coverage": {
+    "application": {
+      "status": "complete",
+      "truncated": false,
+      "omitted_count": 0,
+      "limits": []
+    },
+    "semantic": {
+      "status": "unknown",
+      "truncated": false,
+      "omitted_nodes": 0,
+      "omitted_relations": 0,
+      "limits": [],
+      "families": [
+        {
+          "family": "boundary",
+          "status": "partial",
+          "retained_relations": 0,
+          "omitted_relations": 0,
+          "unknown_count": 0
+        },
+        {
+          "family": "call-flow",
+          "status": "partial",
+          "retained_relations": 5,
+          "omitted_relations": 0,
+          "unknown_count": 225
+        },
+        {
+          "family": "child-process",
+          "status": "partial",
+          "retained_relations": 0,
+          "omitted_relations": 0,
+          "unknown_count": 0
+        },
+        {
+          "family": "closure",
+          "status": "partial",
+          "retained_relations": 37,
+          "omitted_relations": 0,
+          "unknown_count": 0
+        },
+        {
+          "family": "configuration",
+          "status": "partial",
+          "retained_relations": 0,
+          "omitted_relations": 0,
+          "unknown_count": 0
+        },
+        {
+          "family": "data-flow",
+          "status": "partial",
+          "retained_relations": 1705,
+          "omitted_relations": 0,
+          "unknown_count": 88
+        },
+        {
+          "family": "event",
+          "status": "partial",
+          "retained_relations": 0,
+          "omitted_relations": 0,
+          "unknown_count": 0
+        },
+        {
+          "family": "object-flow",
+          "status": "partial",
+          "retained_relations": 261,
+          "omitted_relations": 0,
+          "unknown_count": 301
+        },
+        {
+          "family": "promise-ownership",
+          "status": "partial",
+          "retained_relations": 0,
+          "omitted_relations": 0,
+          "unknown_count": 0
+        },
+        {
+          "family": "request",
+          "status": "partial",
+          "retained_relations": 0,
+          "omitted_relations": 0,
+          "unknown_count": 0
+        },
+        {
+          "family": "resource-lifecycle",
+          "status": "partial",
+          "retained_relations": 0,
+          "omitted_relations": 0,
+          "unknown_count": 0
+        },
+        {
+          "family": "timer",
+          "status": "partial",
+          "retained_relations": 0,
+          "omitted_relations": 0,
+          "unknown_count": 0
+        }
+      ]
+    },
+    "application_unknowns": 0,
+    "semantic_unknowns": 614
+  },
+  "assets": [
+    {
+      "name": "VehicleCard.4OhwnSjJ.js",
+      "url": "https://static.easytruck.shop/2026-10-09-19-44-07/build/assets/VehicleCard.4OhwnSjJ.js",
+      "bytes": 1553,
+      "sha256": "a7d4f92d7691d54d6c6c29a736b3af323f759324a8ab5e1539fd5dbffbf9b4c4"
+    },
+    {
+      "name": "CustomerNavigation.CUZqjEhL.js",
+      "url": "https://static.easytruck.shop/2026-10-09-19-44-07/build/assets/CustomerNavigation.CUZqjEhL.js",
+      "bytes": 7701,
+      "sha256": "b450f3ccf8bb58633e58e5f55f4d1739d3499921a922edb75593af88a6745c29"
+    },
+    {
+      "name": "VehicleInfoModal.DwNeuY8z.js",
+      "url": "https://static.easytruck.shop/2026-10-09-19-44-07/build/assets/VehicleInfoModal.DwNeuY8z.js",
+      "bytes": 2609,
+      "sha256": "f88534870ba6f3ac2a8c2fc83fc9eee9734d8a828469b61f7e8bcb8459dcfbd5"
+    },
+    {
+      "name": "VehicleCell.B4jDAfVd.js",
+      "url": "https://static.easytruck.shop/2026-10-09-19-44-07/build/assets/VehicleCell.B4jDAfVd.js",
+      "bytes": 3098,
+      "sha256": "8b5a167d0da83cfee01cc7af4c09541240be6064b91a63d73b1e2a406f67101a"
+    },
+    {
+      "name": "ServiceItem.kEVACYWF.js",
+      "url": "https://static.easytruck.shop/2026-10-09-19-44-07/build/assets/ServiceItem.kEVACYWF.js",
+      "bytes": 733,
+      "sha256": "1986db35a04bcfce4c3538d755702aa4772f501be9f53c1b31eef0b09dc8d59e"
+    }
+  ],
+  "limitations": [
+    "Static asset findings support navigation analysis; they do not prove runtime workflow parity.",
+    "Only five loaded modules were analyzed; 614 semantic unknowns remain.",
+    "No private payloads, credentials, or vendor code included."
+  ]
+}

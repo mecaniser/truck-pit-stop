@@ -292,6 +292,202 @@ describe('PriceBuilderPanel pending feedback', () => {
     vi.unstubAllGlobals()
   })
 
+  it('opens truck details in an anchored popover and returns keyboard focus to the truck', async () => {
+    apiMocks.get.mockResolvedValue({ data: emptySummary })
+    const user = userEvent.setup()
+    const { container } = renderPanel({ vehicleUnit: '609', vehicleVin: 'TESTVIN609', customerName: 'Carrier' })
+    const trigger = screen.getByRole('button', { name: '609' })
+    await user.click(trigger)
+    const panel = screen.getByLabelText('Truck and customer details')
+    expect(panel).toHaveTextContent('VIN: TESTVIN609')
+    expect(container.querySelector('.db-workspace-body')).not.toContainElement(panel)
+    expect(screen.getByRole('heading', { name: 'Truck and customer' })).toHaveFocus()
+    await user.keyboard('{Escape}')
+    await waitFor(() => expect(screen.queryByLabelText('Truck and customer details')).not.toBeInTheDocument())
+    expect(trigger).toHaveFocus()
+  })
+
+  it('saves only changed intake fields and clears the carried-reading flag', async () => {
+    apiMocks.get.mockResolvedValue({ data: emptySummary })
+    const onSaveIntake = vi.fn().mockResolvedValue(undefined)
+    const user = userEvent.setup()
+    renderPanel({ vehicleUnit: '609', mileageIn: 123, mileageOut: 130, poNumber: 'PO-1', mileageInCarried: true, onSaveIntake })
+    await user.click(screen.getByRole('button', { name: '609' }))
+    await user.click(screen.getByRole('button', { name: 'Edit intake' }))
+    await user.clear(screen.getByRole('textbox', { name: 'Mileage in' }))
+    await user.type(screen.getByRole('textbox', { name: 'Mileage in' }), '125')
+    await user.click(screen.getByRole('button', { name: 'Save intake' }))
+    expect(onSaveIntake).toHaveBeenCalledExactlyOnceWith({ mileage_in: 125, mileage_in_carried: false })
+  })
+
+  it('clears a PO without overwriting unchanged mileage', async () => {
+    apiMocks.get.mockResolvedValue({ data: emptySummary })
+    const onSaveIntake = vi.fn().mockResolvedValue(undefined)
+    const user = userEvent.setup()
+    renderPanel({ vehicleUnit: '609', mileageIn: 123, poNumber: 'PO-1', onSaveIntake })
+    await user.click(screen.getByRole('button', { name: '609' }))
+    await user.click(screen.getByRole('button', { name: 'Edit intake' }))
+    await user.clear(screen.getByRole('textbox', { name: 'PO number' }))
+    await user.click(screen.getByRole('button', { name: 'Save intake' }))
+    expect(onSaveIntake).toHaveBeenCalledExactlyOnceWith({ po_number: null })
+  })
+
+  it.each(['-1', '1.5', '1e6', '2147483648'])('rejects invalid intake mileage %s without a write', async (value) => {
+    apiMocks.get.mockResolvedValue({ data: emptySummary })
+    const onSaveIntake = vi.fn()
+    const user = userEvent.setup()
+    renderPanel({ vehicleUnit: '609', onSaveIntake })
+    await user.click(screen.getByRole('button', { name: '609' }))
+    await user.click(screen.getByRole('button', { name: 'Edit intake' }))
+    await user.type(screen.getByRole('textbox', { name: 'Mileage in' }), value)
+    await user.click(screen.getByRole('button', { name: 'Save intake' }))
+    expect(screen.getByRole('alert')).toHaveTextContent('whole number')
+    expect(onSaveIntake).not.toHaveBeenCalled()
+  })
+
+  it('retains the intake draft after a save failure and allows retry', async () => {
+    apiMocks.get.mockResolvedValue({ data: emptySummary })
+    const onSaveIntake = vi.fn().mockRejectedValueOnce(new Error('offline')).mockResolvedValueOnce(undefined)
+    const user = userEvent.setup()
+    renderPanel({ vehicleUnit: '609', onSaveIntake })
+    await user.click(screen.getByRole('button', { name: '609' }))
+    await user.click(screen.getByRole('button', { name: 'Edit intake' }))
+    await user.type(screen.getByRole('textbox', { name: 'PO number' }), 'PO-123')
+    await user.click(screen.getByRole('button', { name: 'Save intake' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('Could not save intake')
+    expect(screen.getByRole('textbox', { name: 'PO number' })).toHaveValue('PO-123')
+    await user.click(screen.getByRole('button', { name: 'Save intake' }))
+    expect(onSaveIntake).toHaveBeenCalledTimes(2)
+  })
+
+  it('discards an intake draft on Escape without saving and returns focus', async () => {
+    apiMocks.get.mockResolvedValue({ data: emptySummary })
+    const onSaveIntake = vi.fn()
+    const user = userEvent.setup()
+    renderPanel({ vehicleUnit: '609', poNumber: 'Original', onSaveIntake })
+    const trigger = screen.getByRole('button', { name: '609' })
+    await user.click(trigger)
+    await user.click(screen.getByRole('button', { name: 'Edit intake' }))
+    await user.type(screen.getByRole('textbox', { name: 'PO number' }), ' draft')
+    await user.keyboard('{Escape}')
+    expect(trigger).toHaveFocus()
+    expect(onSaveIntake).not.toHaveBeenCalled()
+    await user.click(trigger)
+    await user.click(screen.getByRole('button', { name: 'Edit intake' }))
+    expect(screen.getByRole('textbox', { name: 'PO number' })).toHaveValue('Original')
+  })
+
+  it.each([{ canEdit: false }, { orderStatus: 'completed' as const }, { isDeleted: true }])('hides the intake editor on read-only orders %j', async (props) => {
+    apiMocks.get.mockResolvedValue({ data: emptySummary })
+    const user = userEvent.setup()
+    renderPanel({ vehicleUnit: '609', onSaveIntake: vi.fn(), ...props })
+    await user.click(screen.getByRole('button', { name: '609' }))
+    expect(screen.queryByRole('button', { name: 'Edit intake' })).not.toBeInTheDocument()
+  })
+
+  it('does not resubmit intake while the first save is pending', async () => {
+    apiMocks.get.mockResolvedValue({ data: emptySummary })
+    let resolveSave!: () => void
+    const onSaveIntake = vi.fn(() => new Promise<void>(resolve => { resolveSave = resolve }))
+    const user = userEvent.setup()
+    renderPanel({ vehicleUnit: '609', onSaveIntake })
+    await user.click(screen.getByRole('button', { name: '609' }))
+    await user.click(screen.getByRole('button', { name: 'Edit intake' }))
+    await user.type(screen.getByRole('textbox', { name: 'Mileage out' }), '0')
+    await user.dblClick(screen.getByRole('button', { name: 'Save intake' }))
+    expect(screen.getByRole('button', { name: 'Saving…' })).toBeDisabled()
+    expect(screen.getByRole('textbox', { name: 'Mileage out' })).toBeDisabled()
+    expect(onSaveIntake).toHaveBeenCalledExactlyOnceWith({ mileage_out: 0 })
+    await act(async () => resolveSave())
+  })
+
+  it('clears mileage explicitly and cancels without changing the order', async () => {
+    apiMocks.get.mockResolvedValue({ data: emptySummary })
+    const onSaveIntake = vi.fn().mockResolvedValue(undefined)
+    const user = userEvent.setup()
+    renderPanel({ vehicleUnit: '609', mileageIn: 123, mileageOut: 124, onSaveIntake })
+    await user.click(screen.getByRole('button', { name: '609' }))
+    await user.click(screen.getByRole('button', { name: 'Edit intake' }))
+    await user.clear(screen.getByRole('textbox', { name: 'Mileage in' }))
+    await user.click(screen.getByRole('button', { name: 'Cancel', exact: true }))
+    expect(onSaveIntake).not.toHaveBeenCalled()
+    await user.click(screen.getByRole('button', { name: 'Edit intake' }))
+    expect(screen.getByRole('textbox', { name: 'Mileage in' })).toHaveValue('123')
+    await user.clear(screen.getByRole('textbox', { name: 'Mileage in' }))
+    await user.clear(screen.getByRole('textbox', { name: 'Mileage out' }))
+    await user.click(screen.getByRole('button', { name: 'Save intake' }))
+    expect(onSaveIntake).toHaveBeenCalledExactlyOnceWith({ mileage_in: null, mileage_in_carried: false, mileage_out: null })
+  })
+
+  it('sends no intake request for an unchanged draft', async () => {
+    apiMocks.get.mockResolvedValue({ data: emptySummary })
+    const onSaveIntake = vi.fn()
+    const user = userEvent.setup()
+    renderPanel({ vehicleUnit: '609', mileageIn: 123, poNumber: 'PO-1', onSaveIntake })
+    await user.click(screen.getByRole('button', { name: '609' }))
+    await user.click(screen.getByRole('button', { name: 'Edit intake' }))
+    await user.click(screen.getByRole('button', { name: 'Save intake' }))
+    expect(onSaveIntake).not.toHaveBeenCalled()
+    expect(screen.getByRole('button', { name: 'Edit intake' })).toBeInTheDocument()
+  })
+
+  it('shows held work and its readable reason instead of active work', async () => {
+    apiMocks.get.mockResolvedValue({ data: emptySummary })
+    const user = userEvent.setup()
+    const { container } = renderPanel({ orderStatus: 'in_progress', workflowInfo: { created_at: '2026-10-12', hold_reason: 'waiting_for_parts' } })
+    expect(container.querySelector('.db-job-stage')).toHaveTextContent('On hold')
+    expect(screen.getByText('On hold · Waiting for parts')).toHaveAttribute('role', 'status')
+    expect(screen.queryByText('Work in progress')).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'On hold' }))
+    expect(screen.getByText('Waiting for parts')).toBeVisible()
+  })
+
+  it('does not label completed work as held when an old reason remains', () => {
+    apiMocks.get.mockResolvedValue({ data: emptySummary })
+    const { container } = renderPanel({ orderStatus: 'completed', workflowInfo: { created_at: '2026-10-12', hold_reason: 'waiting_for_parts' } })
+    expect(container.querySelector('.db-job-stage')).toHaveTextContent('completed')
+    expect(screen.queryByRole('button', { name: 'On hold' })).not.toBeInTheDocument()
+  })
+
+  it.each(['0.00', '2.50'])('only allocates a Savings column when a part has savings (%s)', async (savings) => {
+    const part = {
+      id: 'usage-1', repair_order_id: 'order-1', inventory_id: 'part-1', inventory_sku: 'BS-1', inventory_name: 'Brake Shoes',
+      quantity: '1', unit_type: 'each', unit_price: '50', total_price: '50', savings, source_service_id: null, source_line_id: null,
+    }
+    apiMocks.get.mockImplementation((url: string) => Promise.resolve({ data: url.endsWith('/price-build') ? { ...emptySummary, parts: [part] } : [] }))
+    renderPanel()
+    await screen.findByText('Brake Shoes')
+    expect(screen.getByRole('textbox', { name: 'Quantity for Brake Shoes' })).toHaveValue('1')
+    if (savings === '0.00') expect(screen.queryByRole('columnheader', { name: 'Savings' })).not.toBeInTheDocument()
+    else expect(screen.getByRole('columnheader', { name: 'Savings' })).toBeInTheDocument()
+  })
+
+  it('dismisses part pricing without saving and preserves explicit price application', async () => {
+    const part = {
+      id: 'usage-1', repair_order_id: 'order-1', inventory_id: 'part-1', inventory_sku: 'BS-1', inventory_name: 'Brake Shoes',
+      quantity: '1', unit_type: 'each', unit_price: '50', total_price: '50', savings: '0', source_service_id: null, source_line_id: null,
+    }
+    apiMocks.get.mockImplementation((url: string) => Promise.resolve({ data: url.endsWith('/price-build') ? { ...emptySummary, parts: [part] } : [] }))
+    apiMocks.patch.mockResolvedValue({ data: {} })
+    const user = userEvent.setup()
+    renderPanel()
+    const trigger = await screen.findByRole('button', { name: '$50.00' })
+    await user.click(trigger)
+    await user.clear(screen.getByRole('textbox', { name: 'Customer price' }))
+    await user.type(screen.getByRole('textbox', { name: 'Customer price' }), '42')
+    await user.keyboard('{Escape}')
+    await waitFor(() => expect(screen.queryByLabelText('Part pricing for Brake Shoes')).not.toBeInTheDocument())
+    expect(trigger).toHaveFocus()
+    expect(apiMocks.patch).not.toHaveBeenCalled()
+    await user.click(trigger)
+    expect(screen.getByRole('textbox', { name: 'Customer price' })).toHaveValue('50.00')
+    await user.clear(screen.getByRole('textbox', { name: 'Customer price' }))
+    await user.type(screen.getByRole('textbox', { name: 'Customer price' }), '45')
+    await user.click(screen.getByRole('button', { name: 'Apply', exact: true }))
+    await waitFor(() => expect(apiMocks.patch).toHaveBeenCalledWith('/repair-orders/order-1/parts/usage-1', { unit_price: 45 }))
+    await waitFor(() => expect(screen.queryByLabelText('Part pricing for Brake Shoes')).not.toBeInTheDocument())
+  })
+
   it('keeps one selected-order header without duplicating Shop Work return controls', async () => {
     apiMocks.get.mockResolvedValue({ data: emptySummary })
 
@@ -416,6 +612,24 @@ describe('PriceBuilderPanel pending feedback', () => {
       resolveApply?.()
       await pendingApply
     })
+  })
+
+  it('persists manually entered labor duration through the optimistic pricing rollup', async () => {
+    apiMocks.get.mockImplementation((url: string) => {
+      if (url.endsWith('/price-build')) return Promise.resolve({ data: {
+        ...emptySummary,
+        lines: [{ id: 'labor-1', repair_order_id: 'order-1', description: 'Duration test', hours: '1.00', hourly_rate: '100.00', total_cost: '100.00', line_type: 'manual', source_service_id: null }],
+      } })
+      return Promise.resolve({ data: [] })
+    })
+    apiMocks.patch.mockResolvedValue({ data: {} })
+    const user = userEvent.setup()
+    renderPanel()
+    await user.click(await screen.findByRole('button', { name: /Duration test/ }))
+    const duration = screen.getByRole('textbox', { name: 'Labor duration', exact: true })
+    await user.click(duration)
+    await user.keyboard('1:20{Enter}')
+    await waitFor(() => expect(apiMocks.patch).toHaveBeenCalledWith('/repair-orders/order-1/price-build/lines/labor-1', { hours: 1.33 }))
   })
 
   it.each(['main', 'operation'])('offers a new part alongside similar results in the %s picker', async (picker) => {
@@ -727,7 +941,7 @@ describe('PriceBuilderPanel pending feedback', () => {
       onOverrideTechnicianAssignment: vi.fn(),
     }
     const view = renderPanel(props)
-    expect(await screen.findByLabelText('Technician status')).toHaveTextContent('Technician: Mike Johnson')
+    expect(await screen.findByLabelText('Technician status')).toHaveTextContent('Mike Johnson')
     const trigger = screen.getByRole('button', { name: 'Change technician…' })
     await user.click(trigger)
     const options = screen.getByLabelText('Change technician options')
@@ -791,6 +1005,53 @@ describe('PriceBuilderPanel pending feedback', () => {
 
     await user.click(screen.getByRole('button', { name: 'Mark completed' }))
     expect(onAdminCompleteWork).toHaveBeenCalledTimes(1)
+  })
+
+  it('requires fresh completion confirmation when switching orders through a recommendation link', async () => {
+    apiMocks.get.mockImplementation((url: string) => Promise.resolve({ data: url.endsWith('/price-build') ? emptySummary : [] }))
+    const user = userEvent.setup()
+    const props = { orderStatus: 'in_progress' as const, quoteIsApproved: true, onAdminCompleteWork: vi.fn() }
+    const view = renderPanel(props)
+    await user.click(await screen.findByRole('button', { name: 'Mark Completed' }))
+    expect(screen.getByText('Mark work completed')).toBeInTheDocument()
+    view.rerenderPanel({ ...props, orderId: 'order-2' })
+    expect(screen.queryByText('Mark work completed')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Mark Completed' })).toBeEnabled()
+    expect(props.onAdminCompleteWork).not.toHaveBeenCalled()
+  })
+
+  it('keeps labeled invoice actions one-tap on phones and retains paid and pending guards', async () => {
+    apiMocks.get.mockImplementation((url: string) => Promise.resolve({ data: url.endsWith('/price-build') ? emptySummary : [] }))
+    const compact = vi.spyOn(window, 'matchMedia').mockImplementation((query) => ({
+      matches: query.includes('max-width'), media: query, onchange: null,
+      addListener: vi.fn(), removeListener: vi.fn(), addEventListener: vi.fn(), removeEventListener: vi.fn(), dispatchEvent: vi.fn(),
+    }))
+    const onRecordPayment = vi.fn()
+    const onResendInvoice = vi.fn()
+    const onVoidInvoice = vi.fn()
+    const invoice = {
+      id: 'invoice-1', tenant_id: 'tenant-1', repair_order_id: 'order-1', invoice_number: 'INV-1001',
+      status: 'sent' as const, subtotal: '100', tax_amount: '0', discount_amount: '0', total_amount: '100',
+      due_date: null, paid_at: null, notes: null, created_at: '2026-10-12T00:00:00Z', updated_at: '2026-10-12T00:00:00Z',
+    }
+    const props = { orderStatus: 'invoiced' as const, invoice, onRecordPayment, onResendInvoice, onVoidInvoice }
+    const view = renderPanel(props)
+    const user = userEvent.setup()
+    await user.click(screen.getByRole('button', { name: 'Record payment' }))
+    await user.click(screen.getByRole('button', { name: 'Resend invoice' }))
+    await user.click(screen.getByRole('button', { name: 'Void & revise' }))
+    expect(onRecordPayment).toHaveBeenCalledOnce()
+    expect(onResendInvoice).toHaveBeenCalledOnce()
+    expect(onVoidInvoice).toHaveBeenCalledOnce()
+    view.rerenderPanel({ ...props, invoiceActionPending: true })
+    expect(screen.getByRole('button', { name: 'Record payment' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Resend invoice' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Void & revise' })).toBeDisabled()
+    view.rerenderPanel({ ...props, orderStatus: 'paid', invoice: { ...invoice, status: 'paid', paid_at: '2026-10-12T12:00:00Z' } })
+    expect(screen.queryByRole('button', { name: 'Record payment' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Void & revise' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Resend copy' })).toBeEnabled()
+    compact.mockRestore()
   })
 
   it('shows Zelle confirmation actions and the non-card total for an invoiced internal fleet order', async () => {
@@ -953,6 +1214,22 @@ describe('PriceBuilderPanel pending feedback', () => {
 
     expect(await screen.findByText('1 photo attached')).toBeInTheDocument()
     expect(screen.queryByText('Upload photo')).not.toBeInTheDocument()
+  })
+
+  it.each([
+    ['invoiced', 'Invoiced'],
+    ['paid', 'Paid'],
+    ['completed', 'Work complete'],
+    ['cancelled', 'Cancelled'],
+  ] as const)('keeps the %s footer canonical while invoice detail is absent', async (orderStatus, label) => {
+    apiMocks.get.mockImplementation((url: string) => Promise.resolve({ data: url.endsWith('/price-build') ? emptySummary : [] }))
+
+    const { container } = renderPanel({ orderStatus })
+    const footer = container.querySelector('.db-workspace-footer') as HTMLElement
+
+    expect(within(footer).getByText(label)).toHaveAttribute('role', 'status')
+    expect(within(footer).queryByText('Work order open')).not.toBeInTheDocument()
+    await waitFor(() => expect(within(footer).getByText('$0.00')).toBeVisible())
   })
 
   it('uses one canonical finalize-and-invoice action for fleet orders in quality review', async () => {

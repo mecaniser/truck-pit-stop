@@ -1,0 +1,85 @@
+{
+  "captured_at": "2026-10-12",
+  "tool": "rea-agents@6.4.0",
+  "evidence_id": "ev_876883bc3381f158cee426bd343c72e7ab8a853e35467ccf1be31c5a39335603",
+  "artifact_sha256": "ca02584a89e3d33a9d80f9b5251fc3bf1a1c62eb11e005e15ed03d739916895b",
+  "statistics": {
+    "relevant_files": 6,
+    "nested_asar_containers": 0,
+    "text_bytes_read": 26338,
+    "invalid_utf8_files": 0,
+    "parsed_javascript_files": 6,
+    "visited_ast_nodes": 6076,
+    "findings": 120,
+    "modules": 0,
+    "parse_failures": 0
+  },
+  "assets": [
+    {
+      "url": "https://static.easytruck.shop/2026-10-09-19-44-07/build/assets/ServiceCard.B_Q0z2Yu.js",
+      "file": "ServiceCard.B_Q0z2Yu.js",
+      "bytes": 2966,
+      "sha256": "2e76d900db72ad81a191793d2c50fdb52dd7759ccc85e3e1547428e837d6f535"
+    },
+    {
+      "url": "https://static.easytruck.shop/2026-10-09-19-44-07/build/assets/ServiceForm.DYsFk10N.js",
+      "file": "ServiceForm.DYsFk10N.js",
+      "bytes": 7483,
+      "sha256": "b4be53708fdb81d97f8e159ac883dda2cce6071578b240310dcf15b91a1ce784"
+    },
+    {
+      "url": "https://static.easytruck.shop/2026-10-09-19-44-07/build/assets/create.EquRSG5w.js",
+      "file": "create.EquRSG5w.js",
+      "bytes": 10097,
+      "sha256": "6d1ebe0bd8941dff2dcda067e177b39f3141e50bd4f34914cff5b847e15073a2"
+    },
+    {
+      "url": "https://static.easytruck.shop/2026-10-09-19-44-07/build/assets/ServiceItem.kEVACYWF.js",
+      "file": "ServiceItem.kEVACYWF.js",
+      "bytes": 733,
+      "sha256": "1986db35a04bcfce4c3538d755702aa4772f501be9f53c1b31eef0b09dc8d59e"
+    },
+    {
+      "url": "https://static.easytruck.shop/2026-10-09-19-44-07/build/assets/Recommendation.KOnZj9IC.js",
+      "file": "Recommendation.KOnZj9IC.js",
+      "bytes": 3517,
+      "sha256": "4cad97f5097fb542807509958cf762834adc99164c9908c03986e26fe568bf77"
+    },
+    {
+      "url": "https://static.easytruck.shop/2026-10-09-19-44-07/build/assets/OpenServicesWarning.BWKz_X-U.js",
+      "file": "OpenServicesWarning.BWKz_X-U.js",
+      "bytes": 1542,
+      "sha256": "37b55684dffb65365f2a6ce2f8b5fb0085d1902d1c48bea6b1dd0a100fd419c6"
+    }
+  ],
+  "traces": {
+    "po_number": {
+      "status": "ambiguous",
+      "summary": {
+        "total_seed_matches": 1,
+        "traversed_nodes": 1,
+        "traversed_relations": 0,
+        "traversed_functions": 1,
+        "traversed_modules": 1,
+        "relevant_unknowns": 1
+      },
+      "coverage": {
+        "status": "partial"
+      }
+    },
+    "recommendations": {
+      "status": "ambiguous",
+      "summary": {
+        "total_seed_matches": 1,
+        "traversed_nodes": 1,
+        "traversed_relations": 0,
+        "traversed_functions": 1,
+        "traversed_modules": 1,
+        "relevant_unknowns": 1
+      },
+      "coverage": {
+        "status": "partial"
+      }
+    }
+  }
+}

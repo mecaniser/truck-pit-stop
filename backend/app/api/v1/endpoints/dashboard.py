@@ -1370,6 +1370,7 @@ async def get_dashboard_stats(
 
 
 class ManagerTimerStartRequest(BaseModel):
+    labor_id: Optional[UUID] = None
     session_type: str = Field(..., description="repair_order or misc")
     repair_order_id: Optional[UUID] = None
     misc_category: Optional[str] = None
@@ -1672,6 +1673,9 @@ async def get_mechanic_board_detail(
         {
             "id": str(s.id),
             "session_type": s.session_type.value if hasattr(s.session_type, "value") else s.session_type,
+            "labor_id": str(s.labor_id) if s.labor_id else None,
+            "labor_id_snapshot": str(s.labor_id_snapshot) if s.labor_id_snapshot else None,
+            "labor_description_snapshot": s.labor_description_snapshot,
             "repair_order_id": str(s.repair_order_id) if s.repair_order_id else None,
             "misc_category": s.misc_category.value if getattr(s, "misc_category", None) else None,
             "note": s.note,
@@ -1730,6 +1734,7 @@ async def manager_start_mechanic_timer(
         actor_user=current_user,
         session_type=body.session_type,
         repair_order_id=repair_order_uuid,
+        labor_id=body.labor_id,
         misc_category=body.misc_category,
         note=body.note,
         manager_reason=body.manager_reason,

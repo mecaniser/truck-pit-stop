@@ -1,3 +1,4 @@
+import { openChecklistOnCompletionError } from '@/features/service-checklists/queries'
 /**
  * FleetBoard's client for the price-build API.
  *
@@ -408,7 +409,7 @@ export function useCompleteWork(orderId: string, onDone?: () => void) {
         mileage_out: mileageOut ?? null,
       })).data,
     onSuccess: () => { toast.success('Repair order completed'); invalidateOrder(qc, orderId); onDone?.() },
-    onError: (error) => toast.error(errorMessage(error, 'Unable to complete')),
+    onError: (error) => { openChecklistOnCompletionError(error, orderId); toast.error(errorMessage(error, 'Unable to complete')) },
   })
 }
 

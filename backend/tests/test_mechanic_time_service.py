@@ -166,6 +166,8 @@ async def test_start_session_auto_switches_existing_active_timer(monkeypatch):
         AsyncMock(return_value=None),
     )
 
+    from app.services import operation_execution
+    monkeypatch.setattr(operation_execution, "validate_timer", AsyncMock(return_value=None))
     new_session, auto_clocked_in, _attendance_session_id, _auto_held_ro = await mechanic_time_service.start_session(
         db,
         tenant=tenant,
@@ -174,6 +176,7 @@ async def test_start_session_auto_switches_existing_active_timer(monkeypatch):
         session_type=MechanicSessionType.REPAIR_ORDER.value,
         repair_order_id=uuid4(),
         stop_previous_reason="auto_switch",
+        manager_reason="Test manager adjustment",
     )
 
     assert new_session.mechanic_id == mechanic.id

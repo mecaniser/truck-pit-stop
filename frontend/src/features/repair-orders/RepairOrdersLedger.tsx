@@ -362,8 +362,8 @@ export default function RepairOrdersLedger({
                 row.quoteSent === false ? { label: 'Estimate', value: 'Not sent' } : null,
               ].filter((fact): fact is { label: string; value: string } => fact !== null)
               const vehicleLine = [
-                [row.vehicleYear, row.vehicleMake, row.vehicleModel].filter(Boolean).join(' ').trim() || row.vehicleInfo || null,
                 row.vehicleUnitNumber ? `Unit ${row.vehicleUnitNumber}` : null,
+                [row.vehicleYear, row.vehicleMake, row.vehicleModel].filter(Boolean).join(' ').trim() || row.vehicleInfo || null,
               ].filter(Boolean).join(' · ') || null
 
               return (
@@ -380,6 +380,7 @@ export default function RepairOrdersLedger({
                       type="button"
                       className="db-repair-orders-ledger__record"
                       aria-label={`Open repair order ${row.orderNumber}`}
+                      aria-current={isOpenInWorkspace ? 'true' : undefined}
                       onKeyDown={(event) => {
                         if (event.key !== 'Enter' && event.key !== ' ') return
                         event.preventDefault()
@@ -393,11 +394,13 @@ export default function RepairOrdersLedger({
                               truck, so those lead. The order number stays on the
                               row as reference, below the identity. */}
                           <strong>{row.customerName || row.orderNumber}</strong>
-                          <span className={`db-repair-orders-ledger__status db-repair-orders-ledger__status--${row.statusTone}`}>{row.status}</span>
                           {row.internal && <small>Internal</small>}
                         </span>
                         {vehicleLine && <span className="db-repair-orders-ledger__vehicle">{vehicleLine}</span>}
-                        {row.customerName && <small className="db-repair-orders-ledger__reference">{row.orderNumber}</small>}
+                        <span className="db-queue-reference">
+                          <span className={`db-repair-orders-ledger__status db-repair-orders-ledger__status--${row.statusTone}`}>{row.status}</span>
+                          {row.customerName && <small className="db-repair-orders-ledger__reference">{row.orderNumber}</small>}
+                        </span>
                       </span>
                       {requestOnRow && <span className="db-repair-orders-ledger__work">{row.description}</span>}
                       <span className="db-repair-orders-ledger__money">

@@ -343,6 +343,7 @@ async def broadcast_repair_order_update(
     hold_reason: Optional[str] = None,
     held_at: Optional[str] = None,
     send_to_customer: bool = True,
+    notify_status_change: bool = True,
 ) -> None:
     """
     Broadcast a repair order status update to relevant parties.
@@ -353,6 +354,7 @@ async def broadcast_repair_order_update(
     """
     message = {
         "type": WSEventType.REPAIR_ORDER_UPDATE,
+        "notify_status_change": notify_status_change,
         "order_id": order_id,
         "order_number": order_number,
         "status": status,

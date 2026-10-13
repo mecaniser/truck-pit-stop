@@ -17,6 +17,11 @@ import SuggestingInput from '@/components/SuggestingInput'
 import { useViewPreference } from '@/hooks/useViewPreference'
 import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 import { getServiceStockStatus } from '@/utils/serviceStock'
+import { useAuthStore } from '@/stores/authStore'
+import ServiceChecklistEditor, { type ServiceChecklistEditorHandle } from '@/features/service-checklists/ServiceChecklistEditor'
+import TemplateTaskEditor from '@/features/service-checklists/TemplateTaskEditor'
+import { checklistKeys, errorDetail } from '@/features/service-checklists/queries'
+import type { ServiceChecklistTemplate, TemplateTaskDraft } from '@/features/service-checklists/types'
 
 interface ServicePart {
   id: string
@@ -95,7 +100,21 @@ function unitStepConfig(unitType?: string): { step: number; min: number; unitLab
 }
 
 export default function ServicesManagementPage() {
+  const user = useAuthStore(state => state.user)
+  const sessionEpoch = useAuthStore(state => state.authSessionEpoch)
+  // Unsaved internal task text belongs to this authenticated scope only.
+  return <ServicesManagementWorkspace key={`${user?.tenant_id}:${user?.id}:${user?.role}:${sessionEpoch}`} />
+}
+
+function ServicesManagementWorkspace() {
   const queryClient = useQueryClient()
+  const checklistUser = useAuthStore(state => state.user)
+  const canEditChecklist = !!checklistUser?.tenant_id && ['garage_owner', 'garage_admin'].includes(checklistUser.role)
+  const [newChecklistTasks, setNewChecklistTasks] = useState<TemplateTaskDraft[]>([])
+  const [unsavedCreatedChecklist, setUnsavedCreatedChecklist] = useState<TemplateTaskDraft[] | undefined>()
+  const checklistEditorRef = useRef<ServiceChecklistEditorHandle>(null)
+  const closingServiceRef = useRef(false)
+  const [isClosingService, setIsClosingService] = useState(false)
   const [editingService, setEditingService] = useState<Service | null>(null)
   const [isAddingNew, setIsAddingNew] = useState(false)
   const [showClearConfirm, setShowClearConfirm] = useState(false)
@@ -219,15 +238,39 @@ export default function ServicesManagementPage() {
 
   const createMutation = useMutation({
     mutationFn: async (data: ServiceFormData) => {
-      const response = await api.post('/services', buildPayload(data))
-      return response.data as Service
-    },
-    onSuccess: (svc) => {
-      queryClient.invalidateQueries({ queryKey: ['admin-services'] })
-      // Transition into edit mode so the user can immediately add parts.
+      const tenantId = checklistUser?.tenant_id
+      const actorId = checklistUser?.id
+      const role = checklistUser?.role
+      const epoch = useAuthStore.getState().authSessionEpoch
+      const scopeIsCurrent = () => {
+        const current = useAuthStore.getState()
+        return current.user?.tenant_id === tenantId && current.user?.id === actorId && current.user?.role === role && current.authSessionEpoch === epoch
+      }
+      const response = await api.post<Service>('/services', buildPayload(data))
+      const service = response.data
+      if (!scopeIsCurrent()) return { service, partial: true }
+      // The service exists now. A checklist retry must use its ID, never POST again.
       setIsAddingNew(false)
-      setEditingService(svc)
-      toast.success(`${svc.name} created — add parts below if needed`)
+      setEditingService(service)
+      if (canEditChecklist && newChecklistTasks.length) {
+        setUnsavedCreatedChecklist(newChecklistTasks)
+        try {
+          const checklist = await api.put<ServiceChecklistTemplate>(`/services/${service.id}/checklist`, {
+            expected_version: 0,
+            items: newChecklistTasks.map(item => ({ ...item, label: item.label.trim() })),
+          })
+          queryClient.setQueryData(checklistKeys.template(checklistUser!.tenant_id!, service.id), checklist.data)
+          if (scopeIsCurrent()) setUnsavedCreatedChecklist(undefined)
+        } catch (error) {
+          if (scopeIsCurrent()) toast.error(`Service created. ${errorDetail(error, 'Checklist was not saved. Retry below.')}`)
+          return { service, partial: true }
+        }
+      }
+      return { service, partial: !scopeIsCurrent() }
+    },
+    onSuccess: ({ service, partial }) => {
+      queryClient.invalidateQueries({ queryKey: ['admin-services'] })
+      if (!partial) toast.success(`${service.name} created — add parts below if needed`)
     },
     onError: (err: any) => {
       toast.error(err?.response?.data?.detail || 'Failed to create service')
@@ -240,7 +283,7 @@ export default function ServicesManagementPage() {
   // It never closes the drawer or resets the form.
   const [autoSaveState, setAutoSaveState] = useState<'idle' | 'saving' | 'saved'>('idle')
   // After a save the green "saved" check lingers briefly then settles back to
-  // the quiet "Changes save automatically" resting state.
+  // the quiet "Service details save automatically" resting state.
   const savedRevertTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   useEffect(() => () => { if (savedRevertTimer.current) clearTimeout(savedRevertTimer.current) }, [])
   const autoSave = useMutation({
@@ -417,6 +460,8 @@ export default function ServicesManagementPage() {
   })
 
   const startEdit = (service: Service) => {
+    setUnsavedCreatedChecklist(undefined)
+    setNewChecklistTasks([])
     setEditingService(service)
     setIsAddingNew(false)
     if (savedRevertTimer.current) clearTimeout(savedRevertTimer.current)
@@ -438,6 +483,8 @@ export default function ServicesManagementPage() {
   }
 
   const startAdd = () => {
+    setUnsavedCreatedChecklist(undefined)
+    setNewChecklistTasks([])
     setIsAddingNew(true)
     setEditingService(null)
     setPartError(null)
@@ -453,19 +500,33 @@ export default function ServicesManagementPage() {
     })
   }
 
-  const cancelEdit = () => {
-    setEditingService(null)
-    setIsAddingNew(false)
-    setPartError(null)
-    reset()
+  const cancelEdit = async () => {
+    if (createMutation.isPending || closingServiceRef.current) return
+    closingServiceRef.current = true
+    setIsClosingService(true)
+    try {
+      if (editingService && checklistEditorRef.current && !(await checklistEditorRef.current.saveBeforeClose())) return
+      setEditingService(null)
+      setIsAddingNew(false)
+      setPartError(null)
+      reset()
+    } finally {
+      closingServiceRef.current = false
+      setIsClosingService(false)
+    }
   }
 
   const onSubmit = (data: ServiceFormData) => {
+    if (createMutation.isPending) return
     // Editing auto-saves; a stray Enter just flushes the current values silently
     // (no drawer close). Only the create flow has an explicit submit.
     if (editingService) {
       autoSave.mutate({ id: editingService.id, data })
     } else {
+      if (newChecklistTasks.some(item => !item.label.trim())) {
+        toast.error('Enter a label for each checklist task')
+        return
+      }
       createMutation.mutate(data)
     }
   }
@@ -842,6 +903,7 @@ export default function ServicesManagementPage() {
                 <button
                   type="button"
                   onClick={cancelEdit}
+                  disabled={createMutation.isPending || isClosingService}
                   className={[
                     'p-2',
                     'text-gray-500',
@@ -1190,6 +1252,20 @@ export default function ServicesManagementPage() {
                     </>
                   )}
                 </div>
+                {canEditChecklist && (editingService ? (
+                  !createMutation.isPending && <ServiceChecklistEditor
+                    key={editingService.id}
+                    serviceId={editingService.id}
+                    editorRef={checklistEditorRef}
+                    initialDraft={unsavedCreatedChecklist}
+                    onSaved={() => setUnsavedCreatedChecklist(undefined)}
+                  />
+                ) : (
+                  <section aria-label="New service checklist" className="space-y-3 border-t border-gray-200 pt-4">
+                    <div><h3 className="text-sm font-semibold text-gray-900">Checklist</h3><p className="mt-1 text-xs text-gray-500">Required tasks must be checked before finishing each new job.</p></div>
+                    <TemplateTaskEditor items={newChecklistTasks} onChange={setNewChecklistTasks} disabled={createMutation.isPending} />
+                  </section>
+                ))}
               </div>
 
               <div className="px-5 py-4 border-t border-gray-200 flex items-center justify-between gap-3">
@@ -1204,11 +1280,11 @@ export default function ServicesManagementPage() {
                   ) : autoSaveState === 'saved' ? (
                     <span key="saved" className="animate-status-swap flex items-center gap-1.5 text-xs text-green-600">
                       <Check className="w-3.5 h-3.5" />
-                      All changes saved
+                      Service details saved
                     </span>
                   ) : (
                     <span key="idle" className="animate-status-swap text-xs text-gray-400">
-                      Changes save automatically
+                      {canEditChecklist ? 'Details autosave · Checklist saves on close' : 'Service details save automatically'}
                     </span>
                   )
                 ) : (
@@ -1218,9 +1294,10 @@ export default function ServicesManagementPage() {
                   <button
                     type="button"
                     onClick={cancelEdit}
+                    disabled={createMutation.isPending || isClosingService}
                     className="px-5 py-2 bg-white/10 hover:bg-white/20 text-gray-700 rounded-lg text-sm font-medium"
                   >
-                    {editingService ? 'Done' : 'Cancel'}
+                    {isClosingService ? 'Saving…' : editingService ? 'Done' : 'Cancel'}
                   </button>
                   {!editingService && (
                     <button

@@ -18,6 +18,7 @@ from app.db.models.fleet import FleetIncident
 from app.db.models.repair_order_history import RepairOrderHistoryEvent
 from app.db.models.repair_order import RepairOrder, RepairOrderStatus
 from app.db.models.tenant import Tenant
+from app.db.models.service_checklist import RepairOrderChecklistItem
 from app.db.models.user import User, UserRole
 from app.db.models.vehicle import Vehicle
 
@@ -27,6 +28,9 @@ class _ScalarResult:
         self._value = value
 
     def scalar_one_or_none(self):
+        return self._value
+
+    def one(self):
         return self._value
 
     def scalars(self):
@@ -54,6 +58,11 @@ class _FakeAsyncSession:
             return _ScalarResult(self.mechanic)
         raise AssertionError(f"Unexpected query call #{self.execute_calls} for entity {entity}")
 
+    async def scalars(self, statement):
+        from app.db.models.recommendation_conversion import RecommendationConversion
+        assert statement.column_descriptions[0].get("entity") is RecommendationConversion
+        return _ScalarResult([])
+
     async def commit(self):
         self.commit_count += 1
 
@@ -80,10 +89,22 @@ class _FakeOverrideSession:
             return _ScalarResult(None)
         if entity is FleetIncident:
             return _ScalarResult([])
+        if entity is None and len(statement.selected_columns) == 4:
+            # The combined checklist branch counts the active task subquery
+            # before completion. These notification fixtures contain no tasks;
+            # answer that specific aggregate without bypassing either guard.
+            scope = statement.get_final_froms()[0].element
+            assert scope.column_descriptions[0].get("entity") is RepairOrderChecklistItem
+            return _ScalarResult((0, 0, 0, 0))
         raise AssertionError(f"Unexpected query call #{self.execute_calls} for entity {entity}")
 
     def add(self, obj):
         self.added.append(obj)
+
+    async def scalars(self, statement):
+        from app.db.models.recommendation_conversion import RecommendationConversion
+        assert statement.column_descriptions[0].get("entity") is RecommendationConversion
+        return _ScalarResult([])
 
     async def commit(self):
         self.commit_count += 1
@@ -457,3 +478,15 @@ async def test_approving_completion_resolves_incidents_linked_to_the_order(monke
     )
 
     assert resolved_for == [(order, manager.id)]
+
+
+@pytest.fixture(autouse=True)
+def isolate_operation_services_in_notification_unit_tests(monkeypatch):
+    """These fakes prove notification routing; DB110 tests cover real execution DB rules."""
+    from unittest.mock import AsyncMock
+    from app.services import operation_execution
+    monkeypatch.setattr(operation_execution, "guard_completion", AsyncMock())
+    async def finish_order(_db, order, _actor):
+        order.work_completed_at = order.work_completed_at or datetime.now(timezone.utc)
+    monkeypatch.setattr(operation_execution, "finish_order", finish_order)
+    monkeypatch.setattr(operation_execution, "stop_order_sessions", AsyncMock(return_value=[]))

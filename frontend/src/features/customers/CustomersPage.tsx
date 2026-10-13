@@ -1,14 +1,19 @@
+import { canStartCustomerOrder, repairOrderEntrySearch, type RepairOrderReturn } from '../repair-orders/repairOrderEntry'
 import React, { useState, useMemo, useEffect, useRef } from 'react'
 import { Spinner, LoadingLine, StaffSearchField } from '@/components/ui'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { useQuery, useQueryClient, keepPreviousData } from '@tanstack/react-query'
 import api from '../../lib/api'
-import { Customer, Vehicle, Contact, RepairOrder } from '../../types'
+import { Customer, Vehicle, Contact } from '../../types'
 import { customerDisplayName, customerPersonalName } from '../../lib/customerName'
 import { vehicleDisplayLabel } from '../../lib/vehicleName'
-import { Combine, ArrowDown, ArrowRight, ArrowUp, ChevronDown, Mail, Pencil, Phone, Plus, Search, Star, Trash2, Truck, Wrench } from 'lucide-react'
+import { ArrowDown, ArrowRight, ArrowUp, ChevronDown, Mail, Phone, Plus, Search, Star, Truck } from 'lucide-react'
 import SlidePanel from '@/components/SlidePanel'
 import CustomerDetailPanel from './CustomerDetailPanel'
+import CustomerLoadError from './CustomerLoadError'
+import CustomerHistoryOrderDetail from './CustomerHistoryOrderDetail'
+import CustomerVehicleDetail from './CustomerVehicleDetail'
+import CustomerVehicleFooter from './CustomerVehicleFooter'
 import CustomerDetailFooter from './CustomerDetailFooter'
 import CustomerFormModals, { type CustomerFormModalsHandle } from './CustomerFormModals'
 import CustomerContactModals, { type CustomerContactModalsHandle } from './CustomerContactModals'
@@ -123,7 +128,11 @@ export default function CustomersPage() {
   const [isMobile, setIsMobile] = useState(false)
   
   // Detail panel state
-  const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null)
+  const selectedCustomerId = useMemo(() => {
+    return new URLSearchParams(location.search).get('selected')
+  }, [location.search])
+  const [selectedCustomerState, setSelectedCustomer] = useState<Customer | null>(null)
+  const selectedCustomer = (presentationVariant === 'new' || selectedCustomerId) && selectedCustomerState?.id !== selectedCustomerId ? null : selectedCustomerState
   const [isDetailOpen, setIsDetailOpen] = useState(false)
   const [vehiclesViewMode, setVehiclesViewMode] = useViewPreference('customer-vehicles')
   const [vehicleRelationshipSearch, setVehicleRelationshipSearch] = useState('')
@@ -150,18 +159,8 @@ export default function CustomersPage() {
   const openAddContactModal = () => contactModalControls.current?.openAdd()
   const openEditContactModal = (contact: Contact) => contactModalControls.current?.openEdit(contact)
   const handleDeleteContactClick = (contact: Contact) => contactModalControls.current?.requestDelete(contact)
-  const selectedCustomerId = useMemo(() => {
-    return new URLSearchParams(location.search).get('selected')
-  }, [location.search])
   const selectedVehicleId = new URLSearchParams(location.search).get('vehicle')
 
-  // Mechanic lookup for vehicle history
-  interface Mechanic {
-    id: string
-    first_name: string
-    last_name: string
-  }
-  
   // Vehicle form state
 
   // Contact form state
@@ -176,6 +175,13 @@ export default function CustomersPage() {
     window.addEventListener('resize', checkMobile)
     return () => window.removeEventListener('resize', checkMobile)
   }, [])
+
+  const startCustomerOrder = (customer: Customer, vehicle?: Vehicle) => {
+    const params = new URLSearchParams(location.search)
+    params.set('selected', customer.id)
+    const origin: RepairOrderReturn = { pathname: '/dashboard/customers', search: `?${params}`,  customerId: customer.id, vehicleId: vehicle?.id }
+    navigate(`/dashboard/repair-orders${repairOrderEntrySearch(customer.id, vehicle?.id)}`, { state: { repairOrderReturn: origin } })
+  }
 
   const activeViewMode = isMobile ? 'list' : viewMode
 
@@ -198,7 +204,7 @@ export default function CustomersPage() {
     })
     return response.data as { items: Customer[]; total: number; has_more: boolean }
   }
-  const { data: customerPage, isLoading, isPlaceholderData, isFetching } = useQuery({
+  const { data: customerPage, isLoading, isPlaceholderData, isFetching, isError: customersError, refetch: refetchCustomers } = useQuery({
     queryKey: customerPageKey(page),
     queryFn: () => fetchCustomerPage(page),
     placeholderData: keepPreviousData,
@@ -215,6 +221,7 @@ export default function CustomersPage() {
     data: selectedCustomerRecord,
     isFetching: isFetchingSelectedCustomer,
     isError: isSelectedCustomerUnavailable,
+    refetch: refetchSelectedCustomer,
   } = useQuery<Customer>({
     queryKey: ['customer', selectedCustomerId],
     queryFn: async () => (await api.get(`/customers/${selectedCustomerId}`)).data,
@@ -222,9 +229,11 @@ export default function CustomersPage() {
     retry: false,
   })
 
+  const workspaceCustomerId = useRef<string | null>(null)
   useEffect(() => {
     if (!selectedCustomerId) {
       if (presentationVariant !== 'new') return
+      workspaceCustomerId.current = null
       setIsDetailOpen(false)
       setSelectedCustomer(null)
       setSelectedVehicleInPanel(null)
@@ -240,8 +249,11 @@ export default function CustomersPage() {
     }
     setSelectedCustomer(customer)
     setIsDetailOpen(true)
-    setDetailTab('overview')
-    setSelectedVehicleInPanel(null)
+    if (workspaceCustomerId.current !== selectedCustomerId) {
+      workspaceCustomerId.current = selectedCustomerId
+      setDetailTab('overview')
+      setSelectedVehicleInPanel(null)
+    }
   }, [customerOnCurrentPage, presentationVariant, selectedCustomerId, selectedCustomerRecord])
 
   const linkedVehicleQuery = useQuery<Vehicle>({
@@ -281,7 +293,7 @@ export default function CustomersPage() {
   // has its own server-side search query (only runs while the merge modal input
   // has a term).
   
-  const { data: customerVehicles, isLoading: isLoadingVehicles } = useQuery<Vehicle[]>({
+  const { data: customerVehicles, isLoading: isLoadingVehicles, isError: vehiclesError, isFetching: isFetchingVehicles, refetch: refetchVehicles } = useQuery<Vehicle[]>({
     queryKey: ['customerVehicles', selectedCustomer?.id],
     queryFn: async () => {
       if (!selectedCustomer?.id) return []
@@ -290,8 +302,29 @@ export default function CustomersPage() {
     },
     enabled: !!selectedCustomer?.id && isDetailOpen,
   })
+  const restoredVehicleForLocation = useRef<string | null>(null)
+  const restoredOrderFocus = useRef<string | null>(null)
+  const createOrderButtonRef = useRef<HTMLButtonElement>(null)
+  useEffect(() => {
+    const origin = location.state?.restoreOrderOrigin as RepairOrderReturn | undefined
+    if (!origin || restoredVehicleForLocation.current === location.key || !customerVehicles || selectedCustomer?.id !== origin.customerId) return
+    restoredVehicleForLocation.current = location.key
+    setSelectedVehicleInPanel(customerVehicles.find(vehicle => vehicle.id === origin.vehicleId) ?? null)
+  }, [location.key, location.state, customerVehicles, selectedCustomer?.id])
 
-  const { data: customerContacts, isLoading: isLoadingContacts } = useQuery<Contact[]>({
+
+  useEffect(() => {
+    const origin = location.state?.restoreOrderOrigin as RepairOrderReturn | undefined
+    if (!origin || restoredOrderFocus.current === location.key || selectedCustomer?.id !== origin.customerId
+      || (selectedVehicleInPanel?.id ?? undefined) !== origin.vehicleId) return
+    const frame = requestAnimationFrame(() => {
+      createOrderButtonRef.current?.focus({ preventScroll: true })
+      restoredOrderFocus.current = location.key
+    })
+    return () => cancelAnimationFrame(frame)
+  }, [location.key, location.state, selectedCustomer?.id, selectedVehicleInPanel?.id])
+
+  const { data: customerContacts, isLoading: isLoadingContacts, isError: contactsError, isFetching: isFetchingContacts, refetch: refetchContacts } = useQuery<Contact[]>({
     queryKey: ['customerContacts', selectedCustomer?.id],
     queryFn: async () => {
       if (!selectedCustomer?.id) return []
@@ -301,25 +334,7 @@ export default function CustomersPage() {
     enabled: !!selectedCustomer?.id && isDetailOpen,
   })
 
-  const { data: customerRepairOrders, isLoading: isLoadingOrders } = useQuery<RepairOrder[]>({
-    queryKey: ['customerVehicleRepairOrders', selectedVehicleInPanel?.id],
-    queryFn: async () => {
-      if (!selectedVehicleInPanel?.id) return []
-      const response = await api.get('/repair-orders', {
-        params: {
-          vehicle_id: selectedVehicleInPanel.id,
-        },
-      })
-      return response.data
-    },
-    // The overview already has a dedicated History tab. Fetch orders only
-    // after a vehicle is opened, and only for that vehicle rather than every
-    // order the customer has ever created.
-    enabled: !!selectedVehicleInPanel?.id && isDetailOpen,
-    staleTime: 30_000,
-  })
-
-  const { data: customerHistory, isLoading: isLoadingHistory } = useQuery<CustomerHistoryResponse>({
+  const { data: customerHistory, isLoading: isLoadingHistory, isError: historyError, refetch: refetchHistory } = useQuery<CustomerHistoryResponse>({
     queryKey: ['customerHistory', selectedCustomer?.id],
     queryFn: async () => {
       const response = await api.get(`/customers/${selectedCustomer!.id}/history`)
@@ -328,133 +343,7 @@ export default function CustomersPage() {
     enabled: !!selectedCustomer?.id && isDetailOpen && detailTab === 'history',
   })
 
-  interface HistoryRoDetailData {
-    id: string
-    order_number: string
-    mechanic_name: string | null
-    amount_paid: string | null
-    total_cost: string
-    customer_notes: string | null
-    internal_notes: string | null
-    labor: { id: string; description: string; hours: string; hourly_rate: string; total_cost: string }[]
-    parts: { id: string; name: string | null; sku: string | null; quantity: number; unit_price: string; total_price: string }[]
-  }
 
-  const HistoryRoDetail = ({ customerId, orderId }: { customerId: string; orderId: string }) => {
-    const { data, isLoading } = useQuery<HistoryRoDetailData>({
-      queryKey: ['customerHistoryDetail', customerId, orderId],
-      queryFn: async () => {
-        const response = await api.get(`/customers/${customerId}/history/${orderId}`)
-        return response.data
-      },
-    })
-    if (isLoading) return <p className="text-xs text-gray-400">Loading…</p>
-    if (!data) return <p className="text-xs text-gray-400">No details available</p>
-    // Try to pull a human-readable internal-notes body if it's not JSON.
-    let internalNotesDisplay: string | null = null
-    if (data.internal_notes) {
-      try {
-        JSON.parse(data.internal_notes)
-      } catch {
-        internalNotesDisplay = data.internal_notes
-      }
-    }
-    return (
-      <div className="space-y-3 text-sm">
-        <div className="flex flex-wrap gap-x-6 gap-y-1 text-xs">
-          <div>
-            <span className="text-gray-500">Mechanic: </span>
-            <span className="font-medium text-gray-800">{data.mechanic_name || '—'}</span>
-          </div>
-          <div>
-            <span className="text-gray-500">Amount paid: </span>
-            <span className="font-medium text-emerald-700">
-              {data.amount_paid ? `$${parseFloat(data.amount_paid).toFixed(2)}` : 'Not paid'}
-            </span>
-          </div>
-          <div>
-            <span className="text-gray-500">RO total: </span>
-            <span className="font-medium text-gray-800">${parseFloat(data.total_cost).toFixed(2)}</span>
-          </div>
-        </div>
-
-        <div>
-          <p className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-1">Work performed</p>
-          {data.labor.length === 0 ? (
-            <p className="text-xs text-gray-400">No labor recorded</p>
-          ) : (
-            <ul className="space-y-1">
-              {data.labor.map((li) => (
-                <li key={li.id} className="flex items-baseline justify-between gap-3">
-                  <span className="text-gray-800">{li.description || 'Labor'}</span>
-                  <span className="text-xs text-gray-500 whitespace-nowrap">
-                    {parseFloat(li.hours).toFixed(2)} hr × ${parseFloat(li.hourly_rate).toFixed(2)} ={' '}
-                    <span className="font-medium text-gray-800">${parseFloat(li.total_cost).toFixed(2)}</span>
-                  </span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-
-        <div>
-          <p className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-1">Parts used</p>
-          {data.parts.length === 0 ? (
-            <p className="text-xs text-gray-400">No parts used</p>
-          ) : (
-            <ul className="space-y-1">
-              {data.parts.map((p) => (
-                <li key={p.id} className="flex items-baseline justify-between gap-3">
-                  <span className="text-gray-800">
-                    {p.name || 'Part'}
-                    {p.sku && <span className="text-xs text-gray-500 ml-1">· {p.sku}</span>}
-                  </span>
-                  <span className="text-xs text-gray-500 whitespace-nowrap">
-                    {p.quantity} × ${parseFloat(p.unit_price).toFixed(2)} ={' '}
-                    <span className="font-medium text-gray-800">${parseFloat(p.total_price).toFixed(2)}</span>
-                  </span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-
-        {(data.customer_notes || internalNotesDisplay) && (
-          <div>
-            <p className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-1">Notes</p>
-            {data.customer_notes && (
-              <p className="text-xs text-gray-700 whitespace-pre-wrap"><span className="text-gray-500">Customer: </span>{data.customer_notes}</p>
-            )}
-            {internalNotesDisplay && (
-              <p className="text-xs text-gray-700 whitespace-pre-wrap mt-1"><span className="text-gray-500">Internal: </span>{internalNotesDisplay}</p>
-            )}
-          </div>
-        )}
-      </div>
-    )
-  }
-
-  // Fetch mechanics for displaying who worked on the vehicle
-  const { data: mechanics } = useQuery<Mechanic[]>({
-    queryKey: ['mechanics'],
-    queryFn: async () => {
-      const response = await api.get('/mechanics')
-      return response.data
-    },
-    enabled: !!selectedVehicleInPanel,
-  })
-
-
-
-  // Filter repair orders for the selected vehicle
-  const vehicleRepairOrders = customerRepairOrders || []
-
-  // Create mechanic lookup map
-  const mechanicLookup = useMemo(() => {
-    const map = new Map<string, Mechanic>()
-    mechanics?.forEach(m => map.set(m.id, m))
-    return map
-  }, [mechanics])
 
 
   // VIN Decoder
@@ -766,6 +655,7 @@ export default function CustomersPage() {
         </div>
 
         <div className="db-operating-surface__scroller">
+        {customersError && <div className="db-customer-recovery"><CustomerLoadError subject="customers" onRetry={() => void refetchCustomers()} isRetrying={isFetching} /></div>}
         <div className="db-operating-surface__card relative">
           {/* Loading overlay for page/search/sort changes (first load uses the
               full skeleton below; this covers subsequent batch fetches). */}
@@ -1136,13 +1026,13 @@ export default function CustomersPage() {
         )}
       </div>
 
-      {filteredCustomers?.length === 0 && searchQuery && (
+      {!selectedCustomerId && !customersError && filteredCustomers?.length === 0 && searchQuery && (
         <div className="text-center py-12 text-white/70">
           No customers match your search. Try a different term.
         </div>
       )}
 
-      {(!customers || customers.length === 0) && !searchQuery && (
+      {!selectedCustomerId && !customersError && (!customers || customers.length === 0) && !searchQuery && (
         <div className="text-center py-12 text-white/70">
           No customers found. Add your first customer to get started.
         </div>
@@ -1167,7 +1057,7 @@ export default function CustomersPage() {
         subtitle={
           selectedVehicleInPanel
             ? selectedVehicleInPanel.license_plate || undefined
-            : selectedCustomer
+            : selectedCustomer && presentationVariant !== 'new'
             ? `Customer since ${new Date(selectedCustomer.created_at).toLocaleDateString()}`
             : undefined
         }
@@ -1187,20 +1077,7 @@ export default function CustomersPage() {
             </div>
           ) : null
         }
-        headerExtra={selectedVehicleInPanel ? (
-          <div className="flex justify-end">
-            <button
-              type="button"
-              onClick={() => openEditVehicleModal(selectedVehicleInPanel)}
-              className="inline-flex min-h-11 items-center gap-2 rounded-lg bg-white px-4 py-2.5 font-semibold text-slate-800 shadow-sm transition-colors hover:bg-slate-100"
-            >
-              <Pencil className="h-4 w-4" />
-              Edit Vehicle
-            </button>
-          </div>
-        ) : selectedCustomer?.fleet_enabled ? (
-          <FleetMemberBadge variant="header" />
-        ) : undefined}
+        headerExtra={!selectedVehicleInPanel && selectedCustomer?.fleet_enabled ? <FleetMemberBadge variant="header" /> : undefined}
         onBack={
           selectedVehicleInPanel
             ? returnToCustomer
@@ -1210,45 +1087,21 @@ export default function CustomersPage() {
         }
         backLabel={
           selectedVehicleInPanel && selectedCustomer
-            ? `Back to ${selectedCustomer.first_name}`
+            ? `Back to ${customerDisplayName(selectedCustomer)}`
             : presentationVariant === 'new'
               ? 'Back to Customers'
               : undefined
         }
         footer={
           selectedVehicleInPanel ? (
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <button
-                type="button"
-                onClick={() => handleDeleteVehicleClick(selectedVehicleInPanel)}
-                className="flex min-h-11 items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium text-red-600 transition-colors hover:bg-red-50"
-              >
-                <Trash2 className="h-4 w-4" />
-                Delete Vehicle
-              </button>
-              <div className="flex flex-wrap items-center justify-end gap-2">
-                {(currentUser?.role === 'garage_owner' || currentUser?.role === 'garage_admin') && (
-                  <button
-                    type="button"
-                    onClick={openVehicleMerge}
-                    disabled={!selectedVehicleInPanel.vin || selectedVehicleInPanel.vin.replace(/[\s-]/g, '').length !== 17}
-                    title={!selectedVehicleInPanel.vin || selectedVehicleInPanel.vin.replace(/[\s-]/g, '').length !== 17 ? 'A complete VIN is required to find safe duplicates' : undefined}
-                    className="flex min-h-11 items-center gap-2 rounded-lg bg-gray-100 px-4 py-2.5 font-medium text-gray-700 transition-colors hover:bg-gray-200 disabled:cursor-not-allowed disabled:opacity-45"
-                  >
-                    <Combine className="h-4 w-4" />
-                    Merge duplicate
-                  </button>
-                )}
-                <button
-                  type="button"
-                  onClick={() => openManageVehicleLinks(selectedVehicleInPanel)}
-                  className="flex min-h-11 items-center gap-2 rounded-lg bg-amber-50 px-4 py-2.5 font-medium text-amber-700 transition-colors hover:bg-amber-100"
-                >
-                  <Truck className="h-4 w-4" />
-                  Manage Connections
-                </button>
-              </div>
-            </div>
+            <CustomerVehicleFooter
+              vehicle={selectedVehicleInPanel}
+              canMerge={currentUser?.role === 'garage_owner' || currentUser?.role === 'garage_admin'}
+              onDelete={handleDeleteVehicleClick}
+              onMerge={openVehicleMerge}
+              onManage={openManageVehicleLinks}
+              onEdit={openEditVehicleModal}
+            />
           ) : selectedCustomer ? (
             <CustomerDetailFooter
               selectedCustomer={selectedCustomer}
@@ -1261,157 +1114,36 @@ export default function CustomersPage() {
       >
         {selectedVehicleId && linkedVehicleQuery.isFetching && <p role="status" className="p-4 text-sm text-slate-600">Opening vehicle…</p>}
         {selectedVehicleId && linkedVehicleQuery.isError && <div role="alert" className="flex flex-wrap items-center gap-3 p-4 text-sm text-red-700"><span>That vehicle is unavailable for this customer.</span><button type="button" onClick={returnToCustomer} className="min-h-11 whitespace-nowrap font-semibold underline">Back to customer</button></div>}
+        {selectedCustomer && !customerOnCurrentPage && isSelectedCustomerUnavailable && <div className="db-customer-recovery"><CustomerLoadError subject="customer updates" onRetry={() => void refetchSelectedCustomer()} isRetrying={isFetchingSelectedCustomer} /></div>}
         {!selectedCustomer ? null : selectedVehicleInPanel ? (
-          /* Vehicle Detail Content */
-          <div className="p-6 space-y-6">
-            {/* Owner */}
-            <div>
-              <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">Owner</h3>
-              <div className="bg-gray-50 rounded-xl p-4 flex items-center gap-3">
-                <div className="w-10 h-10 rounded-lg bg-amber-100 flex items-center justify-center text-amber-700 font-bold">
-                  {selectedCustomer.first_name.charAt(0)}{selectedCustomer.last_name.charAt(0)}
-                </div>
-                <div>
-                  <p className="text-gray-900 font-semibold">
-                    {customerDisplayName(selectedCustomer)}
-                  </p>
-                  {selectedCustomer.company_name && customerPersonalName(selectedCustomer) && (
-                    <p className="text-sm text-gray-500">{customerPersonalName(selectedCustomer)}</p>
-                  )}
-                  <p className="text-sm text-gray-500">{selectedCustomer.email}</p>
-                </div>
-              </div>
-            </div>
-
-            {/* Key Details */}
-            <div>
-              <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">Key Details</h3>
-              <div className="grid grid-cols-2 gap-3 bg-gray-50 rounded-xl p-4 text-sm text-gray-700">
-                <div>
-                  <p className="text-gray-500">VIN</p>
-                  <p className="font-mono break-all">{selectedVehicleInPanel.vin || '—'}</p>
-                </div>
-                <div>
-                  <p className="text-gray-500">Plate</p>
-                  <p className="font-semibold">{selectedVehicleInPanel.license_plate || '—'}</p>
-                </div>
-                <div>
-                  <p className="text-gray-500">Color</p>
-                  <p className="font-semibold">{selectedVehicleInPanel.color || '—'}</p>
-                </div>
-                <div>
-                  <p className="text-gray-500">Mileage</p>
-                  <p className="font-semibold">
-                    {typeof selectedVehicleInPanel.mileage === 'number'
-                      ? `${selectedVehicleInPanel.mileage.toLocaleString()} mi`
-                      : '—'}
-                  </p>
-                </div>
-              </div>
-            </div>
-
-            {/* Unit Number */}
-            {selectedVehicleInPanel.unit_number && (
-              <div>
-                <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">Unit Number</h3>
-                <div className="bg-amber-50 rounded-xl p-4">
-                  <p className="text-amber-800 font-mono font-semibold text-lg">{selectedVehicleInPanel.unit_number}</p>
-                </div>
-              </div>
-            )}
-
-            {/* Notes */}
-            {selectedVehicleInPanel.notes && (
-              <div>
-                <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">Notes</h3>
-                <div className="bg-gray-50 rounded-xl p-4">
-                  <p className="text-gray-700 whitespace-pre-wrap">{selectedVehicleInPanel.notes}</p>
-                </div>
-              </div>
-            )}
-
-            {/* Repair History */}
-            <div>
-              <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">
-                Repair History{isLoadingOrders ? '' : ` (${vehicleRepairOrders.length})`}
-              </h3>
-              {isLoadingOrders ? (
-                <div className="bg-gray-50 rounded-xl p-4 text-center">
-                  <LoadingLine className="text-gray-400">Loading repair history…</LoadingLine>
-                </div>
-              ) : vehicleRepairOrders.length === 0 ? (
-                <div className="bg-gray-50 rounded-xl p-4 text-center">
-                  <p className="text-gray-500 text-sm">No repair orders for this vehicle yet</p>
-                </div>
-              ) : (
-                <div className="space-y-2">
-                  {vehicleRepairOrders.map((order) => {
-                    const mechanic = order.assigned_mechanic_id ? mechanicLookup.get(order.assigned_mechanic_id) : null
-                    const statusColors: Record<string, string> = {
-                      draft: 'bg-gray-100 text-gray-700',
-                      quoted: 'bg-blue-100 text-blue-700',
-                      declined: 'bg-red-100 text-red-700',
-                      approved: 'bg-cyan-100 text-cyan-700',
-                      assigned: 'bg-amber-100 text-amber-700',
-                      acknowledged: 'bg-amber-100 text-amber-700',
-                      in_progress: 'bg-amber-100 text-amber-700',
-                      pending_review: 'bg-purple-100 text-purple-700',
-                      completed: 'bg-green-100 text-green-700',
-                      invoiced: 'bg-indigo-100 text-indigo-700',
-                      paid: 'bg-green-100 text-green-700',
-                      cancelled: 'bg-gray-100 text-gray-500',
-                    }
-                    return (
-                      <div
-                        key={order.id}
-                        className="bg-gray-50 rounded-xl p-3 hover:bg-gray-100 transition-colors cursor-pointer"
-                        onClick={() => {
-                          // Navigate to repair order (SPA nav, not a hard reload —
-                          // a full page reload here would blow away the RO list's
-                          // React Query cache and force the whole paginated fetch
-                          // to run again just to open one panel)
-                          navigate(`/dashboard/repair-orders?selected=${order.id}`)
-                        }}
-                      >
-                        <div className="flex items-center justify-between mb-1">
-                          <span className="font-mono text-sm font-semibold text-gray-900">#{order.order_number}</span>
-                          <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${statusColors[order.status] || 'bg-gray-100 text-gray-700'}`}>
-                            {order.status.replace(/_/g, ' ')}
-                          </span>
-                        </div>
-                        <p className="text-sm text-gray-600 line-clamp-1">{order.description || 'No description'}</p>
-                        <div className="flex items-center justify-between mt-2 text-xs text-gray-500">
-                          <span>{new Date(order.created_at).toLocaleDateString()}</span>
-                          {mechanic && (
-                            <span className="flex items-center gap-1">
-                              <Wrench className="w-3 h-3" />
-                              {mechanic.first_name} {mechanic.last_name}
-                            </span>
-                          )}
-                          <span className="font-semibold text-gray-700">${parseFloat(order.total_cost).toFixed(2)}</span>
-                        </div>
-                      </div>
-                    )
-                  })}
-                </div>
-              )}
-            </div>
-
-          </div>
+          <CustomerVehicleDetail createOrderButtonRef={createOrderButtonRef} customer={selectedCustomer} vehicle={selectedVehicleInPanel}
+            onCreateOrder={canStartCustomerOrder(currentUser?.role) ? () => startCustomerOrder(selectedCustomer, selectedVehicleInPanel) : undefined}
+            onOpenOrder={order => navigate(`/dashboard/repair-orders?selected=${order.id}`)} />
               ) : (
                 <CustomerDetailPanel
+                  createOrderButtonRef={createOrderButtonRef}
+                  onCreateOrder={canStartCustomerOrder(currentUser?.role) ? () => startCustomerOrder(selectedCustomer) : undefined}
                   selectedCustomer={selectedCustomer}
                   detailTab={detailTab}
                   setDetailTab={setDetailTab}
                   expandedHistoryId={expandedHistoryId}
                   setExpandedHistoryId={setExpandedHistoryId}
-                  HistoryRoDetail={HistoryRoDetail}
+                  HistoryRoDetail={CustomerHistoryOrderDetail}
+                  onOpenHistoryOrder={orderId => navigate(`/dashboard/repair-orders?selected=${orderId}`)}
                   customerVehicles={customerVehicles}
                   customerContacts={customerContacts}
                   customerHistory={customerHistory}
+                  vehiclesError={vehiclesError}
+                  contactsError={contactsError}
+                  isFetchingVehicles={isFetchingVehicles}
+                  isFetchingContacts={isFetchingContacts}
+                  onRetryVehicles={() => void refetchVehicles()}
+                  onRetryContacts={() => void refetchContacts()}
                   isLoadingVehicles={isLoadingVehicles}
                   isLoadingContacts={isLoadingContacts}
                   isLoadingHistory={isLoadingHistory}
+                  historyError={historyError}
+                  onRetryHistory={() => void refetchHistory()}
                   ownedVehicles={ownedVehicles}
                   authorityVehicles={authorityVehicles}
                   visibleCustomerVehicleGroups={visibleCustomerVehicleGroups}
@@ -1440,23 +1172,23 @@ export default function CustomersPage() {
               )}
       </SlidePanel>
 
-      {selectedCustomerId && !selectedCustomer && (
-        <section
-          className="db-customer-detail-workspace db-customer-detail-workspace--unavailable"
-          role="region"
-          aria-label="Customer workspace"
-        >
-          {isFetchingSelectedCustomer ? (
-            <LoadingLine>Loading customer workspace…</LoadingLine>
-          ) : isSelectedCustomerUnavailable ? (
-            <>
-              <h2>Customer workspace unavailable</h2>
-              <p>This customer cannot be opened with your current access.</p>
-              <button type="button" onClick={closeDetailPanel}>Back to Customers</button>
-            </>
-          ) : null}
-        </section>
-      )}
+      <SlidePanel
+        isOpen={!!selectedCustomerId && !selectedCustomer}
+        layout="workspace"
+        onClose={closeDetailPanel}
+        onBack={closeDetailPanel}
+        backLabel="Back to Customers"
+        title="Customer workspace"
+        headerVariant="minimal"
+        hideClose
+        panelClassName="db-customer-detail-workspace"
+      >
+        <div className="db-customer-recovery">
+          {isSelectedCustomerUnavailable ? (
+            <CustomerLoadError subject="customer" onRetry={() => void refetchSelectedCustomer()} isRetrying={isFetchingSelectedCustomer} />
+          ) : <LoadingLine>Loading customer workspace…</LoadingLine>}
+        </div>
+      </SlidePanel>
 
       {/* Delete Confirmation Modal */}
 

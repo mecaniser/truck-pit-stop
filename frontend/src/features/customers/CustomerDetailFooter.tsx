@@ -1,6 +1,7 @@
 import { Pencil, Trash2, User } from 'lucide-react'
 
 import type { Customer } from '@/types'
+import './customer-workspace.css'
 
 /**
  * Delete, Merge and Edit for the customer on screen.
@@ -23,7 +24,7 @@ export default function CustomerDetailFooter({
   handleEditFromDetail: () => void
 }) {
   return (
-    <div className="flex items-center justify-between">
+    <div className="db-customer-actions flex items-center justify-between">
       <div className="flex items-center gap-2">
         <button
           onClick={() => handleDeleteClick(selectedCustomer)}
