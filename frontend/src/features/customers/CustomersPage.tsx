@@ -10,6 +10,7 @@ import { vehicleDisplayLabel } from '../../lib/vehicleName'
 import { ArrowDown, ArrowRight, ArrowUp, ChevronDown, Mail, Phone, Plus, Search, Star, Truck } from 'lucide-react'
 import SlidePanel from '@/components/SlidePanel'
 import CustomerDetailPanel from './CustomerDetailPanel'
+import CustomerLoadError from './CustomerLoadError'
 import CustomerHistoryOrderDetail from './CustomerHistoryOrderDetail'
 import CustomerVehicleDetail from './CustomerVehicleDetail'
 import CustomerVehicleFooter from './CustomerVehicleFooter'
@@ -127,7 +128,11 @@ export default function CustomersPage() {
   const [isMobile, setIsMobile] = useState(false)
   
   // Detail panel state
-  const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null)
+  const selectedCustomerId = useMemo(() => {
+    return new URLSearchParams(location.search).get('selected')
+  }, [location.search])
+  const [selectedCustomerState, setSelectedCustomer] = useState<Customer | null>(null)
+  const selectedCustomer = (presentationVariant === 'new' || selectedCustomerId) && selectedCustomerState?.id !== selectedCustomerId ? null : selectedCustomerState
   const [isDetailOpen, setIsDetailOpen] = useState(false)
   const [vehiclesViewMode, setVehiclesViewMode] = useViewPreference('customer-vehicles')
   const [vehicleRelationshipSearch, setVehicleRelationshipSearch] = useState('')
@@ -154,9 +159,6 @@ export default function CustomersPage() {
   const openAddContactModal = () => contactModalControls.current?.openAdd()
   const openEditContactModal = (contact: Contact) => contactModalControls.current?.openEdit(contact)
   const handleDeleteContactClick = (contact: Contact) => contactModalControls.current?.requestDelete(contact)
-  const selectedCustomerId = useMemo(() => {
-    return new URLSearchParams(location.search).get('selected')
-  }, [location.search])
   const selectedVehicleId = new URLSearchParams(location.search).get('vehicle')
 
   // Vehicle form state
@@ -219,6 +221,7 @@ export default function CustomersPage() {
     data: selectedCustomerRecord,
     isFetching: isFetchingSelectedCustomer,
     isError: isSelectedCustomerUnavailable,
+    refetch: refetchSelectedCustomer,
   } = useQuery<Customer>({
     queryKey: ['customer', selectedCustomerId],
     queryFn: async () => (await api.get(`/customers/${selectedCustomerId}`)).data,
@@ -290,7 +293,7 @@ export default function CustomersPage() {
   // has its own server-side search query (only runs while the merge modal input
   // has a term).
   
-  const { data: customerVehicles, isLoading: isLoadingVehicles } = useQuery<Vehicle[]>({
+  const { data: customerVehicles, isLoading: isLoadingVehicles, isError: vehiclesError, isFetching: isFetchingVehicles, refetch: refetchVehicles } = useQuery<Vehicle[]>({
     queryKey: ['customerVehicles', selectedCustomer?.id],
     queryFn: async () => {
       if (!selectedCustomer?.id) return []
@@ -321,7 +324,7 @@ export default function CustomersPage() {
     return () => cancelAnimationFrame(frame)
   }, [location.key, location.state, selectedCustomer?.id, selectedVehicleInPanel?.id])
 
-  const { data: customerContacts, isLoading: isLoadingContacts } = useQuery<Contact[]>({
+  const { data: customerContacts, isLoading: isLoadingContacts, isError: contactsError, isFetching: isFetchingContacts, refetch: refetchContacts } = useQuery<Contact[]>({
     queryKey: ['customerContacts', selectedCustomer?.id],
     queryFn: async () => {
       if (!selectedCustomer?.id) return []
@@ -1110,6 +1113,7 @@ export default function CustomersPage() {
       >
         {selectedVehicleId && linkedVehicleQuery.isFetching && <p role="status" className="p-4 text-sm text-slate-600">Opening vehicle…</p>}
         {selectedVehicleId && linkedVehicleQuery.isError && <div role="alert" className="flex flex-wrap items-center gap-3 p-4 text-sm text-red-700"><span>That vehicle is unavailable for this customer.</span><button type="button" onClick={returnToCustomer} className="min-h-11 whitespace-nowrap font-semibold underline">Back to customer</button></div>}
+        {selectedCustomer && !customerOnCurrentPage && isSelectedCustomerUnavailable && <div className="db-customer-recovery"><CustomerLoadError subject="customer updates" onRetry={() => void refetchSelectedCustomer()} isRetrying={isFetchingSelectedCustomer} /></div>}
         {!selectedCustomer ? null : selectedVehicleInPanel ? (
           <CustomerVehicleDetail createOrderButtonRef={createOrderButtonRef} customer={selectedCustomer} vehicle={selectedVehicleInPanel}
             onCreateOrder={canStartCustomerOrder(currentUser?.role) ? () => startCustomerOrder(selectedCustomer, selectedVehicleInPanel) : undefined}
@@ -1128,6 +1132,12 @@ export default function CustomersPage() {
                   customerVehicles={customerVehicles}
                   customerContacts={customerContacts}
                   customerHistory={customerHistory}
+                  vehiclesError={vehiclesError}
+                  contactsError={contactsError}
+                  isFetchingVehicles={isFetchingVehicles}
+                  isFetchingContacts={isFetchingContacts}
+                  onRetryVehicles={() => void refetchVehicles()}
+                  onRetryContacts={() => void refetchContacts()}
                   isLoadingVehicles={isLoadingVehicles}
                   isLoadingContacts={isLoadingContacts}
                   isLoadingHistory={isLoadingHistory}
@@ -1167,15 +1177,12 @@ export default function CustomersPage() {
           role="region"
           aria-label="Customer workspace"
         >
-          {isFetchingSelectedCustomer ? (
-            <LoadingLine>Loading customer workspace…</LoadingLine>
-          ) : isSelectedCustomerUnavailable ? (
-            <>
-              <h2>Customer workspace unavailable</h2>
-              <p>This customer cannot be opened with your current access.</p>
-              <button type="button" onClick={closeDetailPanel}>Back to Customers</button>
-            </>
-          ) : null}
+          <div className="db-customer-recovery">
+            <button className="db-customer-recovery__back" type="button" onClick={closeDetailPanel}>Back to Customers</button>
+            {isSelectedCustomerUnavailable ? (
+              <CustomerLoadError subject="customer" onRetry={() => void refetchSelectedCustomer()} isRetrying={isFetchingSelectedCustomer} />
+            ) : <LoadingLine>Loading customer workspace…</LoadingLine>}
+          </div>
         </section>
       )}
 
