@@ -9,10 +9,11 @@ import { ChevronDown, Download, Lightbulb } from 'lucide-react'
 import api from '../../lib/api'
 import { useTheme } from '../../contexts/ThemeContext'
 import {
-  ChartCard, ProfitabilityScatter, QuoteFunnel, RankedBar, ParetoChart,
+  ChartCard, QuoteFunnel, RankedBar, ParetoChart,
 } from '../analytics/ChartKit'
 import { TAB_ACCENT } from '../analytics/chartTheme'
 import ReportingDatePicker from './ReportingDatePicker'
+import CostContributionBreakdown, { type ProfitabilityResp } from './CostContributionBreakdown'
 import CashReceiptsByCustomer, { type CashReceipt } from './CashReceiptsByCustomer'
 import { readReportRange, type ReportRange } from './reportRange'
 
@@ -362,8 +363,7 @@ function DashboardTab({ range }: { range: ReportRange }) {
 }
 
 // ---- Advanced analytics charts (wired to /reports/analytics/*) ----
-interface ProfitabilityResp { ros: { type: string; subtotal: number; marginPct: number; hours: number }[] }
-interface AccountsResp { accounts: { name: string; revenue: number; marginPct: number; cumPct: number }[] }
+interface AccountsResp { accounts: { name: string; revenue: number; marginPct: number | null; cumPct: number }[] }
 interface FunnelResp { sent: number; approved: number; invoiced: number }
 interface TruckCostResp { trucks: { unit: string; ytdCost: number }[] }
 
@@ -385,15 +385,16 @@ function InsightsSection({ range }: { range: ReportRange }) {
     queryFn: async () => (await api.get('/reports/analytics/truck-costs', { params: range })).data,
   })
 
-  const hasProfit = (profit.data?.ros.length ?? 0) > 0
   const hasAccounts = (accounts.data?.accounts.length ?? 0) > 0
   const hasFunnel = (funnel.data?.sent ?? 0) > 0
   const hasTrucks = (trucks.data?.trucks.length ?? 0) > 0
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-      <ChartCard title="Labor vs. Parts Profitability" subtitle="Each bubble is a repair order — subtotal × margin %, sized by labor hours">
-        {hasProfit ? <ProfitabilityScatter ros={profit.data!.ros} /> : <EmptyChart loading={profit.isLoading} />}
+      <ChartCard title="Parts and sublet contribution" subtitle="Recorded component revenue less known expense" height={260} fit>
+        {profit.isError
+          ? <p role="alert" className="text-sm text-red-400">Unable to load cost breakdown. Try refreshing the report.</p>
+          : profit.isLoading ? <EmptyChart loading /> : <CostContributionBreakdown data={profit.data} />}
       </ChartCard>
 
       <ChartCard title="Quote → Approval Funnel" subtitle="Sent → approved → invoiced">
@@ -401,7 +402,9 @@ function InsightsSection({ range }: { range: ReportRange }) {
       </ChartCard>
 
       <ChartCard title="Revenue by Account" subtitle="Which accounts are your 80/20 — bars are revenue, line is cumulative %">
-        {hasAccounts ? <ParetoChart accounts={accounts.data!.accounts.slice(0, 12)} /> : <EmptyChart loading={accounts.isLoading} />}
+        {accounts.isError
+          ? <p role="alert" className="text-sm text-red-400">Unable to load account revenue. Try refreshing the report.</p>
+          : hasAccounts ? <ParetoChart accounts={accounts.data!.accounts.slice(0, 12)} /> : <EmptyChart loading={accounts.isLoading} />}
       </ChartCard>
 
       <ChartCard title="Cost per Truck" subtitle="Internal-fleet maintenance spend, top 10" height={380} fit>

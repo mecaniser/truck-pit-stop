@@ -5,7 +5,7 @@ last-period equivalents, or a custom range).
 """
 from datetime import date, datetime, timedelta
 from decimal import Decimal
-from typing import Dict, List, Optional
+from typing import Dict, List, Literal, Optional, Tuple
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -20,7 +20,7 @@ from app.db.models.inventory import Inventory, PartsUsage
 from app.db.models.invoice import Invoice, InvoiceStatus
 from app.db.models.payment import Payment, PaymentMethod, PaymentStatus
 from app.db.models.invoice_settlement import ProviderSettlementBatch
-from app.db.models.labor import Labor
+from app.db.models.labor import Labor, LaborLineType
 from app.db.models.repair_order import RepairOrder
 from app.db.models.service import Service
 from app.db.models.tenant import Tenant
@@ -1108,16 +1108,63 @@ async def get_reports_internal(
 # ===========================================================================
 
 
+class ComponentContribution(BaseModel):
+    revenue: str
+    known_cost: str
+    line_count: int
+    missing_cost_line_count: int
+    status: Literal["complete", "partial", "unavailable", "not_applicable"]
+    contribution: Optional[str]
+    margin_pct: Optional[str]
+
+
+def _component_contribution(
+    lines: List[Tuple[Decimal, Optional[Decimal]]],
+) -> ComponentContribution:
+    """Use recorded line amounts; missing expense is never an inferred zero.
+
+    Round only the serialized aggregates. These amounts precede order/labor
+    discounts and exclude ordinary labor expense, fees, tax and overhead.
+    """
+    revenue = sum((charge for charge, _ in lines), Decimal("0"))
+    known_cost = sum((cost for _, cost in lines if cost is not None), Decimal("0"))
+    missing = sum(cost is None for _, cost in lines)
+    coverage = (
+        "not_applicable" if not lines else
+        "unavailable" if missing == len(lines) else
+        "partial" if missing else "complete"
+    )
+    contribution = revenue - known_cost if coverage == "complete" else None
+    margin = contribution / revenue * 100 if contribution is not None and revenue > 0 else None
+    return ComponentContribution(
+        revenue=str(_money(revenue)),
+        known_cost=str(_money(known_cost)),
+        line_count=len(lines),
+        missing_cost_line_count=missing,
+        status=coverage,
+        contribution=str(_money(contribution)) if contribution is not None else None,
+        margin_pct=str(_money(margin)) if margin is not None else None,
+    )
+
+
 class ScatterPoint(BaseModel):
+    repair_order_id: str
+    order_number: str
     type: str
     subtotal: float
-    marginPct: float
+    # Deprecated: ordinary labor expense is not recorded, so whole-job margin
+    # cannot be supported. Retain the nullable field for existing consumers.
+    marginPct: Optional[float] = None
     hours: float
+    parts_contribution: ComponentContribution
+    sublet_contribution: ComponentContribution
 
 
 class ProfitabilityResponse(BaseModel):
     range_start: date
     range_end: date
+    cost_basis: Literal["current_lines_before_order_discounts"] = "current_lines_before_order_discounts"
+    labor_cost_status: Literal["unavailable"] = "unavailable"
     ros: List[ScatterPoint]
 
 
@@ -1139,22 +1186,15 @@ async def get_analytics_profitability(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
-    """Per-RO subtotal vs margin %, sized by labor hours — powers the
-    labor-vs-parts profitability bubble scatter."""
+    """Current parts/sublet contribution with explicit expense coverage.
+
+    Whole-job margin remains unavailable because wage costs are not recorded.
+    """
     _require_manager(current_user)
     if not current_user.tenant_id:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="User must belong to a tenant")
     tenant_id = current_user.tenant_id
     rng = await _resolve_range(db, tenant_id, range, from_date, to_date)
-
-    # Sum labor hours per RO in one grouped query, then join the orders.
-    hours_result = await db.execute(
-        select(Labor.repair_order_id, func.coalesce(func.sum(Labor.hours), 0))
-        .join(RepairOrder, Labor.repair_order_id == RepairOrder.id)
-        .where(RepairOrder.tenant_id == tenant_id)
-        .group_by(Labor.repair_order_id)
-    )
-    hours_by_ro = {rid: Decimal(str(h or 0)) for rid, h in hours_result.all()}
 
     result = await db.execute(
         select(RepairOrder).where(
@@ -1166,19 +1206,62 @@ async def get_analytics_profitability(
     )
     orders = result.scalars().all()
 
-    points: List[ScatterPoint] = []
-    for o in orders:
-        subtotal = _money(o.total_cost)
-        cost = _money(o.total_labor_cost) + _money(o.total_parts_cost)
-        if subtotal <= 0:
-            continue
-        margin_pct = float(((subtotal - cost) / subtotal) * 100) if subtotal else 0.0
-        points.append(ScatterPoint(
-            type=_ro_type(o),
-            subtotal=float(subtotal),
-            marginPct=round(max(0.0, min(100.0, margin_pct)), 1),
-            hours=float(hours_by_ro.get(o.id, Decimal("0"))),
-        ))
+    # Keep the report's existing positive-subtotal row selection. Cost queries
+    # only inspect those orders, with independent tenant and soft-delete guards.
+    orders = [order for order in orders if _money(order.total_cost) > 0]
+    order_ids = [order.id for order in orders]
+    parts_by_ro: Dict[UUID, List[Tuple[Decimal, Optional[Decimal]]]] = {}
+    sublets_by_ro: Dict[UUID, List[Tuple[Decimal, Optional[Decimal]]]] = {}
+    hours_by_ro: Dict[UUID, Decimal] = {}
+    if order_ids:
+        parts = await db.execute(
+            select(PartsUsage.repair_order_id, PartsUsage.total_price, PartsUsage.unit_cost, PartsUsage.quantity)
+            .join(RepairOrder, and_(
+                PartsUsage.repair_order_id == RepairOrder.id,
+                PartsUsage.tenant_id == RepairOrder.tenant_id,
+            ))
+            .where(
+                RepairOrder.id.in_(order_ids),
+                RepairOrder.tenant_id == tenant_id,
+                RepairOrder.deleted_at.is_(None),
+                PartsUsage.tenant_id == tenant_id,
+                PartsUsage.deleted_at.is_(None),
+            )
+        )
+        for order_id, revenue, unit_cost, quantity in parts.all():
+            expense = unit_cost * quantity if unit_cost is not None else None
+            parts_by_ro.setdefault(order_id, []).append((revenue, expense))
+
+        labor = await db.execute(
+            select(Labor.repair_order_id, Labor.hours, Labor.line_type, Labor.total_cost, Labor.vendor_cost)
+            .join(RepairOrder, and_(
+                Labor.repair_order_id == RepairOrder.id,
+                Labor.tenant_id == RepairOrder.tenant_id,
+            ))
+            .where(
+                RepairOrder.id.in_(order_ids),
+                RepairOrder.tenant_id == tenant_id,
+                RepairOrder.deleted_at.is_(None),
+                Labor.tenant_id == tenant_id,
+                Labor.deleted_at.is_(None),
+            )
+        )
+        for order_id, hours, line_type, revenue, vendor_cost in labor.all():
+            hours_by_ro[order_id] = hours_by_ro.get(order_id, Decimal("0")) + hours
+            if line_type == LaborLineType.SUBLET:
+                # vendor_cost is the whole line expense, not an hourly rate.
+                sublets_by_ro.setdefault(order_id, []).append((revenue, vendor_cost))
+
+    points = [ScatterPoint(
+        repair_order_id=str(order.id),
+        order_number=order.order_number,
+        type=_ro_type(order),
+        subtotal=float(_money(order.total_cost)),
+        marginPct=None,
+        hours=float(hours_by_ro.get(order.id, Decimal("0"))),
+        parts_contribution=_component_contribution(parts_by_ro.get(order.id, [])),
+        sublet_contribution=_component_contribution(sublets_by_ro.get(order.id, [])),
+    ) for order in orders]
 
     return ProfitabilityResponse(range_start=rng.start, range_end=rng.end, ros=points)
 
@@ -1186,13 +1269,15 @@ async def get_analytics_profitability(
 class AccountRow(BaseModel):
     name: str
     revenue: float
-    marginPct: float
+    marginPct: Optional[float] = None
     cumPct: float
 
 
 class AccountsResponse(BaseModel):
     range_start: date
     range_end: date
+    cost_basis: Literal["current_lines_before_order_discounts"] = "current_lines_before_order_discounts"
+    labor_cost_status: Literal["unavailable"] = "unavailable"
     accounts: List[AccountRow]
 
 
@@ -1204,8 +1289,7 @@ async def get_analytics_accounts(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
-    """Revenue + margin per customer account, sorted desc with a running
-    cumulative % — powers the Pareto chart and the account detail table."""
+    """Account revenue and cumulative share; unsupported margins are null."""
     _require_manager(current_user)
     if not current_user.tenant_id:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="User must belong to a tenant")
@@ -1214,10 +1298,21 @@ async def get_analytics_accounts(
 
     result = await db.execute(
         select(Invoice, RepairOrder, Customer)
-        .join(RepairOrder, Invoice.repair_order_id == RepairOrder.id)
-        .join(Customer, RepairOrder.customer_id == Customer.id)
+        .join(RepairOrder, and_(
+            Invoice.repair_order_id == RepairOrder.id,
+            Invoice.tenant_id == RepairOrder.tenant_id,
+        ))
+        .join(Customer, and_(
+            RepairOrder.customer_id == Customer.id,
+            RepairOrder.tenant_id == Customer.tenant_id,
+        ))
         .where(
             Invoice.tenant_id == tenant_id,
+            RepairOrder.tenant_id == tenant_id,
+            Customer.tenant_id == tenant_id,
+            RepairOrder.deleted_at.is_(None),
+            Customer.deleted_at.is_(None),
+            Invoice.deleted_at.is_(None),
             Invoice.status == InvoiceStatus.PAID,
             Invoice.is_internal.is_(False),
             Invoice.paid_at >= rng.utc_start,
@@ -1228,10 +1323,9 @@ async def get_analytics_accounts(
 
     by_customer: Dict[UUID, Dict[str, Decimal]] = {}
     labels: Dict[UUID, str] = {}
-    for invoice, order, customer in rows:
-        b = by_customer.setdefault(customer.id, {"rev": Decimal("0"), "cost": Decimal("0")})
+    for invoice, _order, customer in rows:
+        b = by_customer.setdefault(customer.id, {"rev": Decimal("0")})
         b["rev"] += _money(invoice.total_amount)
-        b["cost"] += _money(order.total_labor_cost) + _money(order.total_parts_cost)
         labels[customer.id] = customer.company_name or f"{customer.first_name} {customer.last_name}".strip()
 
     ranked = sorted(by_customer.items(), key=lambda kv: kv[1]["rev"], reverse=True)
@@ -1241,11 +1335,10 @@ async def get_analytics_accounts(
     running = Decimal("0")
     for cid, vals in ranked:
         running += vals["rev"]
-        margin = float(((vals["rev"] - vals["cost"]) / vals["rev"]) * 100) if vals["rev"] else 0.0
         accounts.append(AccountRow(
             name=labels[cid],
             revenue=float(vals["rev"]),
-            marginPct=round(max(0.0, min(100.0, margin)), 1),
+            marginPct=None,
             cumPct=round(float(running / total_rev * 100), 1),
         ))
 
