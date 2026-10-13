@@ -41,6 +41,7 @@ export type CustomerDetailPanelProps = {
   setExpandedHistoryId: (id: string | null) => void
   HistoryRoDetail: (props: { customerId: string; orderId: string; onOpenOrder?: (orderId: string) => void }) => ReactNode
   onCreateOrder?: () => void
+  createOrderButtonRef?: React.Ref<HTMLButtonElement>
   onOpenHistoryOrder?: (orderId: string) => void
 
   customerVehicles?: Vehicle[]
@@ -96,6 +97,7 @@ export default function CustomerDetailPanel({
   HistoryRoDetail,
   onOpenHistoryOrder,
   onCreateOrder,
+  createOrderButtonRef,
   customerVehicles,
   customerContacts,
   customerHistory,
@@ -138,7 +140,7 @@ export default function CustomerDetailPanel({
           <strong className={balanceLabelClass(selectedCustomer.balance)}>{selectedCustomer.balance != null ? balanceAmountLabel(selectedCustomer.balance) : '—'}</strong>
         </div>
       </div>
-      {onCreateOrder && <div className="db-customer-record__work-actions"><button type="button" onClick={onCreateOrder}><Plus aria-hidden="true" />New repair order</button></div>}
+      {onCreateOrder && <div className="db-customer-record__work-actions"><button ref={createOrderButtonRef} type="button" onClick={onCreateOrder}><Plus aria-hidden="true" />New repair order</button></div>}
       {/* Tabs */}
       <div className="db-customer-record__tabs" role="group" aria-label="Customer views">
         <button

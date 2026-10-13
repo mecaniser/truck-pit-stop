@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, type Ref } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { ChevronRight, Plus } from 'lucide-react'
 import api from '@/lib/api'
@@ -6,9 +6,9 @@ import { customerDisplayName } from '@/lib/customerName'
 import type { Customer, RepairOrder, Vehicle } from '@/types'
 import './customer-workspace.css'
 
-type Props = { customer: Customer; vehicle: Vehicle; onOpenOrder: (order: RepairOrder) => void; onCreateOrder?: () => void }
+type Props = { customer: Customer; vehicle: Vehicle; onOpenOrder: (order: RepairOrder) => void; onCreateOrder?: () => void; createOrderButtonRef?: Ref<HTMLButtonElement> }
 type HistoryPage = { items: RepairOrder[]; total: number; has_more: boolean }
-function VehicleRecord({ customer, vehicle, onOpenOrder, onCreateOrder }: Props) {
+function VehicleRecord({ customer, vehicle, onOpenOrder, onCreateOrder, createOrderButtonRef }: Props) {
   const [page, setPage] = useState(0)
   const history = useQuery({
     queryKey: ['customerVehicleRepairOrders', customer.id, vehicle.id, page],
@@ -30,7 +30,7 @@ function VehicleRecord({ customer, vehicle, onOpenOrder, onCreateOrder }: Props)
     return mechanic ? `${mechanic.first_name} ${mechanic.last_name}` : null
   }
   return <div className="db-customer-record db-customer-vehicle-record">
-    {onCreateOrder && <div className="db-customer-record__work-actions"><button type="button" onClick={onCreateOrder}><Plus aria-hidden="true" />New repair order</button></div>}
+    {onCreateOrder && <div className="db-customer-record__work-actions"><button ref={createOrderButtonRef} type="button" onClick={onCreateOrder}><Plus aria-hidden="true" />New repair order</button></div>}
     <dl className="db-customer-record__facts">
       <div><dt>Customer</dt><dd>{customerDisplayName(customer)}</dd></div>
       <div><dt>Unit</dt><dd>{vehicle.unit_number || '—'}</dd></div>

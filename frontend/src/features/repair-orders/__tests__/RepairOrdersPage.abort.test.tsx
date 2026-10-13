@@ -505,8 +505,8 @@ describe('RepairOrdersPage request cancellation', () => {
     renderPage(['/?new=true'])
 
     const heading = await screen.findByRole('heading', { name: 'New Repair Order' })
-    const dialog = heading.closest('[role="dialog"]')
-    expect(dialog).toHaveClass('h-[100dvh]', 'overflow-hidden')
+    expect(heading.closest('[role="dialog"]')).toHaveAttribute('aria-modal', 'true')
+    expect(screen.getByTestId('new-repair-order-panel')).toHaveClass('h-[100dvh]', 'overflow-hidden')
     expect(screen.getByTestId('new-repair-order-scroll-region')).toHaveClass(
       'overflow-y-auto',
       'overscroll-contain',
