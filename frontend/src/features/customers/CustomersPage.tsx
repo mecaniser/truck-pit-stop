@@ -1,4 +1,4 @@
-import { canStartCustomerOrder, repairOrderEntrySearch, type RepairOrderReturn } from '../repair-orders/repairOrderEntry'
+import { canStartCustomerOrder, readCustomerDirectoryContext, repairOrderEntrySearch, type RepairOrderReturn } from '../repair-orders/repairOrderEntry'
 import React, { useState, useMemo, useEffect, useRef } from 'react'
 import { Spinner, LoadingLine, StaffSearchField } from '@/components/ui'
 import { useLocation, useNavigate } from 'react-router-dom'
@@ -106,13 +106,17 @@ export default function CustomersPage() {
   const currentUser = useAuthStore((state) => state.user)
   const navigate = useNavigate()
   const location = useLocation()
-  const [searchQuery, setSearchQuery] = useState('')
+  // Route-local context survives the order detour without becoming a global preference.
+  const returnedOrigin = location.state?.restoreOrderOrigin as RepairOrderReturn | undefined
+  const directory = returnedOrigin?.customerId === new URLSearchParams(location.search).get('selected')
+    ? readCustomerDirectoryContext(returnedOrigin?.directory) : null
+  const [searchQuery, setSearchQuery] = useState(directory?.searchQuery ?? '')
   const debouncedSearch = useDebouncedValue(searchQuery.trim(), 300)
   const PAGE_SIZE = 25
-  const [page, setPage] = useState(0)
+  const [page, setPage] = useState(directory?.page ?? 0)
   type CustomerSortField = 'name' | 'balance' | 'vehicle_count'
-  const [sortField, setSortField] = useState<CustomerSortField>('name')
-  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc')
+  const [sortField, setSortField] = useState<CustomerSortField>(directory?.sortField ?? 'name')
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>(directory?.sortDirection ?? 'asc')
   const toggleSort = (field: CustomerSortField) => {
     setPage(0)
     if (sortField === field) {
@@ -123,7 +127,11 @@ export default function CustomersPage() {
     }
   }
   // Any new search term returns to the first page of results.
-  useEffect(() => { setPage(0) }, [debouncedSearch])
+  const previousSearch = useRef(debouncedSearch)
+  useEffect(() => {
+    if (previousSearch.current !== debouncedSearch) setPage(0)
+    previousSearch.current = debouncedSearch
+  }, [debouncedSearch])
   const [viewMode, setViewMode] = useViewPreference('customers')
   const [isMobile, setIsMobile] = useState(false)
   
@@ -179,7 +187,9 @@ export default function CustomersPage() {
   const startCustomerOrder = (customer: Customer, vehicle?: Vehicle) => {
     const params = new URLSearchParams(location.search)
     params.set('selected', customer.id)
-    const origin: RepairOrderReturn = { pathname: '/dashboard/customers', search: `?${params}`,  customerId: customer.id, vehicleId: vehicle?.id }
+    const origin: RepairOrderReturn = { pathname: '/dashboard/customers', search: `?${params}`, customerId: customer.id, vehicleId: vehicle?.id,
+      directory: { searchQuery, page: searchQuery.trim() === debouncedSearch ? page : 0, sortField, sortDirection },
+    }
     navigate(`/dashboard/repair-orders${repairOrderEntrySearch(customer.id, vehicle?.id)}`, { state: { repairOrderReturn: origin } })
   }
 

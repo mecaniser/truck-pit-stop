@@ -2,7 +2,22 @@ import api from '@/lib/api'
 import type { Customer, Vehicle } from '@/types'
 
 export type RepairOrderEntry = { customer: Customer; vehicle?: Vehicle }
-export type RepairOrderReturn = { pathname: '/dashboard/customers'; search: string; customerId: string; vehicleId?: string }
+export type CustomerDirectoryContext = {
+  searchQuery: string
+  page: number
+  sortField: 'name' | 'balance' | 'vehicle_count'
+  sortDirection: 'asc' | 'desc'
+}
+export type RepairOrderReturn = { pathname: '/dashboard/customers'; search: string; customerId: string; vehicleId?: string; directory?: CustomerDirectoryContext }
+
+export function readCustomerDirectoryContext(value: unknown): CustomerDirectoryContext | null {
+  const context = value as Partial<CustomerDirectoryContext> | null
+  return context && typeof context.searchQuery === 'string'
+    && typeof context.page === 'number' && Number.isSafeInteger(context.page) && context.page >= 0
+    && ['name', 'balance', 'vehicle_count'].includes(context.sortField ?? '')
+    && ['asc', 'desc'].includes(context.sortDirection ?? '')
+    ? context as CustomerDirectoryContext : null
+}
 
 export const canStartCustomerOrder = (role?: string) => ['garage_owner', 'garage_admin', 'receptionist'].includes(role ?? '')
 
