@@ -163,10 +163,30 @@ Owner107 focused tests, independent QA98 focused tests and independent Security4
 focused tests passed. New regressions cover ordinary and1/3-conversion query
 budgets and10 projection lifecycle/tenant cases. PostgreSQL concurrency and
 projection equivalence were independently rechecked. Combined preview6fbd1a64
-includes this backend-only correction; readiness remains healthy. The earlier
-actual UI acceptance remains valid evidence for unchanged interactions. A final
-browser recheck encountered an expired login session; this is recorded separately
-from the successful prior signed-in desktop/mobile workflows.
+includes this backend-only correction; readiness remains healthy. After the user
+restored the local login, the final authenticated browser recheck passed against
+this preview. At 1280×720 the renamed operation retains its original source text,
+the source link focuses the resolved recommendation, and its return link focuses
+the exact operation with the unchanged72.50 total. At390×844 and320×740 the mobile
+order retains two operations totaling253.75 after reload. Both source/target
+links work; converted recommendations show their current operation without a
+duplicate Add action. Duration/rate inputs are44px high and document widths match
+both viewports without horizontal overflow. At320px the rate field requires
+vertical scrolling and was verified reachable above the footer. No browser
+console errors were recorded. The temporary tab was closed and viewport restored.
+
+Screenshots: `desktop-post-optimization.png`, `mobile-390-post-optimization.png`,
+`mobile-320-post-optimization.png`, `mobile-320-scrolled-post-optimization.png` in
+`output/db107/`. This recheck was read-only; earlier conversion/retry/replacement
+and resolution acceptance above remains the full workflow evidence. These are
+actual browser viewport checks, not physical-device certification.
+
+All six jobs in [Quality gates38322077925](https://github.com/mecaniser/truck-pit-stop/actions/runs/38322077925)
+passed on sourcead53e2e7: migration graph, frontend checks, backend tests,
+Playwright smoke, and both informational full suites. The final CI receipt is
+saved in `output/db107/ci-final-receipt.json`. Subsequent changes only record this
+verification evidence; product code remains the CI-validated tree. PR506 stays
+draft/in Review, with no merge or deployment performed.
 
 Final synthetic database receipt: six historical conversions, three current,
 one per source recommendation. The steering recommendation explicitly resolves
