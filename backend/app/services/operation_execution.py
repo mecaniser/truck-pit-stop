@@ -228,7 +228,8 @@ async def guard_completion(db, order):
     remaining = await db.scalar(select(func.count(Labor.id)).where(Labor.tenant_id == order.tenant_id, Labor.repair_order_id == order.id,
         Labor.deleted_at.is_(None), Labor.line_type != LaborLineType.SUBLET, Labor.execution_status == 'pending'))
     if remaining:
-        raise HTTPException(409, f'Complete the {remaining} remaining operations before finishing this work order.')
+        noun = 'operation' if remaining == 1 else 'operations'
+        raise HTTPException(409, f'Complete the {remaining} remaining {noun} before finishing this work order.')
     if order.hold_reason:
         raise HTTPException(409, 'Resume the held order before finishing work.')
 
@@ -243,8 +244,9 @@ async def finish_order(db, order, actor):
     order.actual_tracked_minutes = sum(max(0, int((e-s).total_seconds())) for s,e in intervals) // 60
     if order.work_started_at:
         start = utc(order.work_started_at)
-        clipped = [(max(s,start), min(e,now)) for s,e in intervals if min(e,now)>max(s,start)]
-        order.total_hold_minutes = max(0, int((now-start).total_seconds()) - _sum_interval_seconds(_merge_intervals(clipped))) // 60
+        work_end = utc(order.work_completed_at) or now
+        clipped = [(max(s,start), min(e,work_end)) for s,e in intervals if min(e,work_end)>max(s,start)]
+        order.total_hold_minutes = max(0, int((work_end-start).total_seconds()) - _sum_interval_seconds(_merge_intervals(clipped))) // 60
 
 async def guard_material_edit(db, order, line, changes):
     if 'mechanic_id' in changes and changes['mechanic_id'] != line.mechanic_id:

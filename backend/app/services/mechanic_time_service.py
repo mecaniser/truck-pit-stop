@@ -818,9 +818,9 @@ async def start_session(
             and str(current.repair_order_id) == str(repair_order_id)
         )
         same_operation = same_ro and current.labor_id == labor_id
-        if same_operation and labor_id is not None:
+        if same_operation:
             return current, auto_clocked_in, str(attendance_session.id), None
-        if same_misc or same_operation:
+        if same_misc:
             raise ValueError("This job is already being timed")
 
         # Auto-hold previous RO when switching RO → RO
@@ -951,9 +951,14 @@ async def edit_session(
     manager_reason: Optional[str] = None,
 ) -> MechanicTimeSession:
     _manager_action_requires_reason(actor_user.role.value, manager_reason)
+    observed = (session.started_at, session.ended_at, session.deleted_at)
     await lock_tenant_financials(db, session.tenant_id)
     if isinstance(db, AsyncSession):
         await db.refresh(session)
+        from app.services.operation_execution import utc
+        if tuple(utc(value) for value in observed) != tuple(utc(value) for value in (session.started_at, session.ended_at, session.deleted_at)):
+            from fastapi import HTTPException
+            raise HTTPException(409, "This timer changed while it was being edited. Refresh before correcting its time.")
     before = _session_snapshot(session)
 
     if misc_category is not None:
@@ -1030,7 +1035,7 @@ async def _compute_book_hours_for_orders(db: AsyncSession, *, order_ids: list, t
         stmt = stmt.where(Labor.tenant_id == tenant_id)
     rows = (await db.execute(stmt)).all()
     present = {line.repair_order_id for line, _ in rows}
-    total = sum(float(line.hours or 0) for line, lead in rows if mechanic_id is None or (line.mechanic_id or lead) == mechanic_id)
+    total = sum(float(line.hours or 0) for line, lead in rows if mechanic_id is None or ((line.mechanic_id if line.execution_status is not None else None) or lead) == mechanic_id)
     missing = set(order_ids) - present
     if missing:
         query = select(RepairOrder).where(RepairOrder.id.in_(missing))

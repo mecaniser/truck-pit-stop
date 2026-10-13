@@ -1,16 +1,17 @@
 from datetime import datetime
 from typing import Literal
 from uuid import UUID
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, StrictInt, StrictBool, ConfigDict
 
 class OperationVersion(BaseModel):
-    expected_version: int = Field(ge=0)
+    model_config = ConfigDict(extra="forbid")
+    expected_version: StrictInt = Field(ge=0)
 
 class OperationAssignment(OperationVersion):
     mechanic_id: UUID | None
 
 class OperationCompletion(OperationVersion):
-    is_completed: bool
+    is_completed: StrictBool
 
 class OperationTimerStop(OperationVersion):
     session_id: UUID

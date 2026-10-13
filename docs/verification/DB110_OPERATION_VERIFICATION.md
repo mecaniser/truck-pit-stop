@@ -22,7 +22,7 @@ CUA IAB browser5 temporary tab5 rendered signed-in Performance Owner, Diesel Bri
 
 ## Local migration preparation
 
-A full custom-format backup of the isolated preview database is stored outside Git at `/tmp/db110-qa/preview-before-operation-execution.dump` (3,917,507 bytes, mode0600). Pre-migration evidence:3,826 labor rows,7,651.30 planned hours,$460,402.22 labor totals;80 ended timer sessions totaling3,138,014.823655 seconds;2,804 orders totaling$938,070.30. This is preservation evidence, not operation execution evidence. The additive migration has not yet been applied to preview.
+A full custom-format backup of the isolated preview database is stored outside Git at `/tmp/db110-qa/preview-before-operation-execution.dump` (3,917,507 bytes, mode0600). Pre-migration evidence:3,826 labor rows,7,651.30 planned hours,$460,402.22 labor totals;80 ended timer sessions totaling3,138,014.823655 seconds;2,804 orders totaling$938,070.30. This is preservation evidence, not operation execution evidence. Migration168 was applied to preview at14:33 local. Before fixture creation, exact pre/post counts, hours, totals and80 historical durations matched; all3,826 existing Labor rows remained null/untracked. API readiness passed at168.
 
 A separate empty `db110_test_operation_execution` database on localhost5432 is allocated for migration and two-session concurrency testing. Connection material stays in a restricted temporary file and is not committed.
 
@@ -32,11 +32,11 @@ Dedicated local fixtures will use a synthetic customer without delivery contacts
 
 | Journey | Required observation | Result |
 | --- | --- | --- |
-| Staff desktop assignment | Selected operation changes technician; lead and timers stay unchanged | Pending |
-| Helper job discovery | Job appears through own operation; lead controls absent | Pending |
+| Staff desktop assignment | Selected operation changes technician; lead and timers stay unchanged | Passed in actual UI |
+| Helper job discovery | Job appears through own operation; lead controls absent | Passed for Alex and Blair, each seeing own operation only |
 | Self timer and switch | Explicit start, one clock; same-order switch no hold | Pending |
 | Completion with checklist | Required check blocks until checked; completion stops only linked timer | Pending |
-| Parallel technicians | Completing one operation leaves other technician timer running | Pending |
+| Parallel technicians | Completing one operation leaves other technician timer running | Passed: Alex completed2m36s while Blair continued |
 | Order gate and reopen | Remaining scope blocks review; reopen clears review-ready stage | Pending |
 | Legacy and provenance | Not tracked remains explicit; recommendation source survives | Pending |
 | Phone390 and320 | Visible controls, no horizontal overflow; full mutation round trip | Pending |
@@ -45,3 +45,9 @@ Dedicated local fixtures will use a synthetic customer without delivery contacts
 ## Implementation, checks and runtime acceptance
 
 Pending. No merge/deployment authorized.
+
+### Desktop acceptance checkpoint
+
+Source93dd34d3 / previewbe1da5d8. Staff signed-in127.0.0.1:5174; synthetic mechanics signed in normally at localhost:5174 in an origin-isolated tab, without affecting owner session. Synthetic DB110-DESKTOP02c73fd3-fb52-4890-b524-a08c6b3e83e3 has distinct Lead/Alex/Blair. UI assignment persisted with no timers; Alex clock-in/start/checklist passed; Blair independently started second operation. Staff completed Alex, preserving Blair clock. Lead DONE returned409 with1unfinished operation and preserved order InProgress/timer. Required checkbox disabled after operation completion. Source recommendation link stillvisible, legacyuntracked explicit.
+
+Initial desktop screenshot revealed metadata squeezing title to~65px. Fixed layout to two compact rows with fullwidthdescription and independently wrappingmetadata; visually rechecked at1280x800. Corrected screenshot `output/db110/desktop-parallel-timers-fixed.png`; initialfailure `output/db110/desktop-parallel-timers.png`.

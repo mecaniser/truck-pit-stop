@@ -102,6 +102,7 @@ async def test_helper_scope_checklist_and_completion_reopen(db_session):
 async def test_parallel_person_time_union_and_book_scope(db_session):
     a=await seed(db_session)
     now=datetime.now(UTC)
+    a.legacy.mechanic_id = a.helper.id  # Historical adding mechanic is not tracked assignment.
     for mechanic,line in zip([a.lead,a.helper],a.lines):
         db_session.add(MechanicTimeSession(tenant_id=a.tenant.id, mechanic_id=mechanic.id, repair_order_id=a.order.id, labor_id=line.id, labor_id_snapshot=line.id, labor_description_snapshot=line.description, session_type='repair_order', started_at=now-timedelta(hours=1), ended_at=now, started_by_user_id=mechanic.id))
         line.execution_status='completed'
@@ -149,3 +150,117 @@ async def test_tenant_and_foreign_child_boundaries(db_session):
     await assert_error(404,ops.assign(db_session,a.order.id,b.lines[0].id,a.owner,Assign(mechanic_id=a.lead.id,expected_version=0)))
     await assert_error(404,ops.assign(db_session,a.order.id,a.lines[0].id,a.owner,Assign(mechanic_id=b.lead.id,expected_version=0)))
     await assert_error(403,ops.page(db_session,a.order.id,SimpleNamespace(role=UserRole.CUSTOMER,tenant_id=a.tenant.id)))
+from app.schemas.repair_order import LaborCreate, LaborUpdate
+from app.db.models.labor import Labor, LaborLineType
+from app.db.models.repair_order import RepairOrderStatus as Status
+from app.services import operation_execution as ops
+from app.api.v1.endpoints import repair_orders
+from app.services.price_build_service import PriceBuildService
+from sqlalchemy import select
+import pytest
+
+@pytest.mark.asyncio
+async def test_new_sublet_converted_to_manual_remains_completion_gated(db_session):
+    a = await seed(db_session)
+    created = await repair_orders.add_labor_to_repair_order(a.order.id, LaborCreate(description='External work', hours=1, hourly_rate=100, line_type=LaborLineType.SUBLET), db_session, a.owner)
+    changed = await repair_orders.update_repair_order_labor(a.order.id, created.id, LaborUpdate(line_type=LaborLineType.MANUAL), db_session, a.owner)
+    line = await db_session.scalar(select(Labor).where(Labor.id == created.id))
+    assert line.execution_status == 'pending', f'new internal work is {line.execution_status=}'
+
+@pytest.mark.asyncio
+async def test_adding_service_to_review_reopens_operation_work(db_session):
+    a = await seed(db_session)
+    a.order.status=Status.PENDING_REVIEW
+    for line in a.lines: line.execution_status='completed'
+    await db_session.commit()
+    await PriceBuildService().add_flat_service_line(db_session, a.order, a.service.id, actor=a.owner)
+    assert a.order.status == Status.IN_PROGRESS, f'{a.order.status=}'
+
+@pytest.mark.asyncio
+async def test_helper_cannot_edit_whole_order_through_legacy_put(db_session, monkeypatch):
+    from unittest.mock import AsyncMock
+    from app.schemas.repair_order import RepairOrderUpdate
+    from fastapi import HTTPException
+    a = await seed(db_session)
+    monkeypatch.setattr(repair_orders, 'broadcast_repair_order_update', AsyncMock())
+    with pytest.raises(HTTPException) as exc:
+        await repair_orders.update_repair_order(a.order.id, RepairOrderUpdate(description='Helper changed the full order'), db_session, a.helper)
+    assert exc.value.status_code == 403
+
+@pytest.mark.asyncio
+async def test_helper_cannot_read_whole_order_detail(db_session):
+    from fastapi import HTTPException
+    a = await seed(db_session)
+    with pytest.raises(HTTPException) as exc:
+        await repair_orders.get_repair_order_detail(a.order.id, db_session, a.helper)
+    assert exc.value.status_code == 403
+
+async def test_review_approval_does_not_count_review_wait_as_hold(db_session):
+    a=await seed(db_session)
+    now=datetime.now(UTC)
+    a.order.work_started_at=now-timedelta(hours=3)
+    a.order.work_completed_at=now-timedelta(hours=1)
+    a.order.status=Status.PENDING_REVIEW
+    for line in a.lines:line.execution_status='completed'
+    db_session.add(MechanicTimeSession(tenant_id=a.tenant.id, mechanic_id=a.helper.id, repair_order_id=a.order.id,
+        labor_id=a.lines[1].id,labor_id_snapshot=a.lines[1].id,session_type='repair_order',
+        started_at=now-timedelta(hours=2),ended_at=now-timedelta(hours=1),started_by_user_id=a.helper.id))
+    await db_session.flush()
+    await ops.finish_order(db_session,a.order,a.owner)
+    assert a.order.actual_tracked_minutes==60
+    assert a.order.total_hold_minutes==60
+
+@pytest.mark.parametrize('transition',['start','resume'])
+async def test_order_timer_failure_does_not_commit_stage_change(db_session,monkeypatch,transition):
+    from unittest.mock import AsyncMock
+    a=await seed(db_session)
+    if transition=='start':a.order.status=Status.ASSIGNED
+    else:a.order.hold_reason='Waiting for parts'
+    await db_session.commit()
+    monkeypatch.setattr(repair_orders,'start_session',AsyncMock(side_effect=RuntimeError('Synthetic timer failure')))
+    action=repair_orders.start_work if transition=='start' else repair_orders.resume_repair_order
+    with pytest.raises(RuntimeError,match='Synthetic timer failure'):
+        await action(a.order.id,db_session,a.lead)
+    await db_session.rollback()
+    await db_session.refresh(a.order)
+    assert (a.order.status==Status.ASSIGNED) if transition=='start' else a.order.hold_reason=='Waiting for parts'
+
+@pytest.mark.parametrize('route',['mechanic','admin','approve','fleet','pending_review','completed','invoiced','paid','invoice_helper'])
+async def test_pending_operations_guard_every_completion_entrypoint(db_session,monkeypatch,route):
+    from unittest.mock import AsyncMock
+    from app.api.v1.endpoints import fleet,invoices
+    from app.schemas.repair_order import RepairOrderUpdate
+    a=await seed(db_session)
+    if route=='admin':a.order.assigned_mechanic_id=None
+    if route=='approve':a.order.status=Status.PENDING_REVIEW
+    await db_session.commit()
+    side_effect=AsyncMock(side_effect=AssertionError('Completion side effect before operation gate'))
+    monkeypatch.setattr(repair_orders,'broadcast_repair_order_update',side_effect)
+    monkeypatch.setattr(repair_orders,'send_sms',side_effect)
+    monkeypatch.setattr(fleet,'_load_fleet_ro_or_404',AsyncMock(return_value=a.order))
+    if route=='mechanic':call=repair_orders.complete_work(a.order.id,db_session,a.lead)
+    elif route=='admin':call=repair_orders.admin_complete_unassigned_work(a.order.id,db_session,a.owner)
+    elif route=='approve':call=repair_orders.approve_completion(a.order.id,body=None,idempotency_key=None,db=db_session,current_user=a.owner)
+    elif route=='fleet':call=fleet.complete_work_order(a.order.id,db=db_session,current_user=a.owner)
+    elif route=='invoice_helper':call=invoices.auto_create_invoice_for_order(db_session,a.order,a.tenant,a.owner.id,commit=False,notify=False)
+    else:call=repair_orders.update_repair_order(a.order.id,RepairOrderUpdate(status=Status(route)),db_session,a.owner)
+    await assert_error(409,call,'remaining operations')
+    side_effect.assert_not_awaited()
+
+@pytest.mark.parametrize('action',['delete','reopen','base','workspace','photos','notes'])
+async def test_helper_generic_workspace_and_writes_stay_forbidden(db_session,action):
+    a=await seed(db_session)
+    routes={'delete':repair_orders.delete_repair_order,'reopen':repair_orders.reopen_repair_order,
+        'base':repair_orders.get_repair_order,'workspace':repair_orders.get_repair_order_workspace,
+        'photos':repair_orders.list_repair_order_photos,'notes':repair_orders.list_repair_order_notes}
+    await assert_error(403,routes[action](a.order.id,db_session,a.helper))
+
+async def test_helper_discovery_returns_only_reduced_assigned_scope(db_session):
+    a=await seed(db_session)
+    jobs=await mechanics.get_my_jobs(skip=0,limit=100,paginated=False,db=db_session,current_user=a.helper)
+    assert len(jobs)==1 and jobs[0].is_order_lead is False and jobs[0].services_count==1
+    detail=await mechanics.get_my_job_detail(a.order.id,db_session,a.helper)
+    assert detail.is_order_lead is False
+    assert [row.name for row in detail.services]==[a.lines[1].description]
+    assert all(row.base_price is None for row in detail.services)
+    assert not {'customer_email','customer_phone','total_cost','internal_notes'} & detail.model_dump().keys()

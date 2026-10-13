@@ -3552,7 +3552,7 @@ async def add_service_to_work_order(
         (tenant.labor_rate if fleet_labor_uses_customer_rate(ro) else tenant.internal_labor_rate) if tenant else 0
     ))
 
-    new_labor = Labor(execution_status="pending", 
+    new_labor = Labor(execution_status="pending",
         id=uuid4(), tenant_id=current_user.tenant_id, repair_order_id=ro.id,
         description=service.name, hours=hours, hourly_rate=labor_rate,
         total_cost=(hours * labor_rate).quantize(Decimal("0.01")),
@@ -3794,7 +3794,7 @@ async def new_work_order(
     ))
     for line in body.labor_lines:
         hours = Decimal(str(line.hours))
-        db.add(Labor(execution_status="pending", 
+        db.add(Labor(execution_status="pending",
             id=uuid4(), tenant_id=current_user.tenant_id, repair_order_id=ro.id,
             description=line.description.strip(), hours=hours, hourly_rate=labor_rate,
             total_cost=(hours * labor_rate).quantize(Decimal("0.01")),

@@ -478,3 +478,13 @@ async def test_approving_completion_resolves_incidents_linked_to_the_order(monke
     )
 
     assert resolved_for == [(order, manager.id)]
+
+
+@pytest.fixture(autouse=True)
+def isolate_operation_services_in_notification_unit_tests(monkeypatch):
+    """These fakes prove notification routing; DB110 tests cover real execution DB rules."""
+    from unittest.mock import AsyncMock
+    from app.services import operation_execution
+    monkeypatch.setattr(operation_execution, "guard_completion", AsyncMock())
+    monkeypatch.setattr(operation_execution, "finish_order", AsyncMock())
+    monkeypatch.setattr(operation_execution, "stop_order_sessions", AsyncMock(return_value=[]))

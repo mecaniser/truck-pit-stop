@@ -359,7 +359,7 @@ class PriceBuildService:
             # Reset previously-attached parts so we can re-snapshot at current prices/stock.
             await self._restore_service_parts(db, order, service.id)
         else:
-            line = Labor(execution_status="pending", 
+            line = Labor(execution_status="pending",
                 tenant_id=order.tenant_id,
                 repair_order_id=order.id,
                 service_code=None,
@@ -589,7 +589,7 @@ class PriceBuildService:
         tenant = await self._get_tenant(db, order.tenant_id)
 
         hourly_rate = _labor_rate_for(order, tenant)
-        line = Labor(execution_status="pending", 
+        line = Labor(execution_status="pending",
             tenant_id=order.tenant_id,
             repair_order_id=order.id,
             description=est_name,

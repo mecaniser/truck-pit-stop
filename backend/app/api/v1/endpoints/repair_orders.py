@@ -908,6 +908,8 @@ async def repair_order_status_counts(
         if customer_id:
             filters.append(RepairOrderReadModel.customer_id == customer_id)
 
+    if current_user.role == UserRole.MECHANIC:
+        filters.append(RepairOrderReadModel.repair_order_id.in_(select(RepairOrder.id).where(RepairOrder.tenant_id == current_user.tenant_id, RepairOrder.assigned_mechanic_id == current_user.id)))
     if vehicle_id:
         filters.append(RepairOrderReadModel.vehicle_id == vehicle_id)
     filters.append(RepairOrderReadModel.is_deleted.is_(deleted))
@@ -968,6 +970,9 @@ async def repair_order_value_summary(
         projection_filters.append(RepairOrderReadModel.customer_id == customer_id)
         source_filters.append(RepairOrder.customer_id == customer_id)
 
+    if current_user.role == UserRole.MECHANIC:
+        source_filters.append(RepairOrder.assigned_mechanic_id == current_user.id)
+        projection_filters.append(RepairOrderReadModel.repair_order_id.in_(select(RepairOrder.id).where(RepairOrder.tenant_id == current_user.tenant_id, RepairOrder.assigned_mechanic_id == current_user.id)))
     if vehicle_id:
         projection_filters.append(RepairOrderReadModel.vehicle_id == vehicle_id)
         source_filters.append(RepairOrder.vehicle_id == vehicle_id)
@@ -1096,6 +1101,9 @@ async def list_repair_orders(
             projection_filters.append(RepairOrderReadModel.customer_id == customer_id)
             source_filters.append(RepairOrder.customer_id == customer_id)
 
+    if current_user.role == UserRole.MECHANIC:
+        source_filters.append(RepairOrder.assigned_mechanic_id == current_user.id)
+        projection_filters.append(RepairOrderReadModel.repair_order_id.in_(select(RepairOrder.id).where(RepairOrder.tenant_id == current_user.tenant_id, RepairOrder.assigned_mechanic_id == current_user.id)))
     if vehicle_id:
         projection_filters.append(RepairOrderReadModel.vehicle_id == vehicle_id)
         source_filters.append(RepairOrder.vehicle_id == vehicle_id)
@@ -1219,6 +1227,9 @@ async def _list_repair_orders_legacy(
             query = query.where(RepairOrder.customer_id == customer_id)
             count_query = count_query.where(RepairOrder.customer_id == customer_id)
     
+    if current_user.role == UserRole.MECHANIC:
+        query = query.where(RepairOrder.assigned_mechanic_id == current_user.id)
+        count_query = count_query.where(RepairOrder.assigned_mechanic_id == current_user.id)
     if vehicle_id:
         query = query.where(RepairOrder.vehicle_id == vehicle_id)
         count_query = count_query.where(RepairOrder.vehicle_id == vehicle_id)
@@ -1426,6 +1437,11 @@ async def get_repair_order_workspace(
     transactionally maintained projection that powers the list; retain a
     one-query fallback while a projection is being backfilled.
     """
+    if current_user.role == UserRole.MECHANIC:
+        access_order = await db.scalar(tenant_repair_order_statement(order_id, current_user))
+        if not access_order:
+            raise HTTPException(404, "Repair order not found")
+        _check_ro_access(current_user, access_order)
     projection = await db.scalar(
         select(RepairOrderReadModel)
         .where(RepairOrderReadModel.repair_order_id == order_id)
@@ -1803,6 +1819,7 @@ async def get_repair_order(
             detail="Repair order not found",
         )
     
+    _check_ro_access(current_user, order)
     # Check access
     if current_user.role == UserRole.CUSTOMER:
         if not current_user.customer_id or current_user.customer_id != order.customer_id:
@@ -1859,6 +1876,7 @@ async def update_repair_order(
             detail="Repair order not found",
         )
     
+    _check_ro_access(current_user, order)
     if current_user.tenant_id != order.tenant_id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -2309,9 +2327,8 @@ async def start_work(
             repair_order_id=order.id,
             stop_previous_reason="auto_switch",
         )
-    except Exception:
-        # Don't block workflow transition if timer start fails.
-        pass
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from exc
 
     await db.commit()
     await db.refresh(order)
@@ -2552,8 +2569,8 @@ async def resume_repair_order(
             repair_order_id=order.id,
             stop_previous_reason="resume_from_hold",
         )
-    except Exception:
-        pass
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from exc
 
     await db.commit()
     await db.refresh(order)
@@ -3250,6 +3267,7 @@ async def delete_repair_order(
             detail="Repair order not found",
         )
 
+    _check_ro_access(current_user, order)
     if current_user.tenant_id != order.tenant_id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -3381,6 +3399,7 @@ async def reopen_repair_order(
     order = result.scalar_one_or_none()
     if not order:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repair order not found")
+    _check_ro_access(current_user, order)
     if current_user.tenant_id != order.tenant_id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
     if not order.is_internal:
@@ -3410,6 +3429,8 @@ async def reopen_repair_order(
 
 
 def _check_ro_access(current_user: User, order: RepairOrder) -> None:
+    if current_user.role == UserRole.MECHANIC and order.assigned_mechanic_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Use your assigned operation workspace for this job.")
     if current_user.role == UserRole.CUSTOMER:
         if not current_user.customer_id or current_user.customer_id != order.customer_id:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
@@ -3971,7 +3992,7 @@ async def add_sublet_to_price_build(
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="User must be associated with a tenant")
         # Sublet: we store vendor cost and charge the customer the charge_to_customer amount.
         # hours=1, hourly_rate=charge_to_customer gives total_cost = charge_to_customer.
-        labor = Labor(execution_status=None, 
+        labor = Labor(execution_status=None,
             tenant_id=current_user.tenant_id,
             repair_order_id=order_id,
             description=body.description,
@@ -4977,7 +4998,7 @@ async def add_labor_to_repair_order(
         )
     await operation_execution.validate_assignee(db, order.tenant_id, mechanic_id)
     total_cost = hours * hourly_rate
-    labor = Labor(execution_status=None if body.line_type == LaborLineType.SUBLET else "pending", 
+    labor = Labor(execution_status=None if body.line_type == LaborLineType.SUBLET else "pending",
         tenant_id=current_user.tenant_id,
         repair_order_id=order_id,
         description=body.description or "",
