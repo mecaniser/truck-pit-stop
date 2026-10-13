@@ -354,7 +354,7 @@ describe('DB-035 Stage 4 Repair Orders presentation', () => {
     renderLedger({ rows: [{ ...rows[0], status: 'Authorization Pending' }] })
 
     const row = screen.getByRole('article', { name: 'Repair order RO-1017' })
-    const identity = row.querySelector('.db-repair-orders-ledger__order-line')
+    const identity = row.querySelector('.db-repair-orders-ledger__order')
     const status = within(row).getByText('Authorization Pending')
     expect(identity).toContainElement(status)
     expect(LEDGER_CSS).toContain('white-space: nowrap')
@@ -394,7 +394,7 @@ describe('DB-035 Stage 4 Repair Orders presentation', () => {
     // with both and keeps the order number as reference. The work request still
     // belongs to the expanded brief, which the assertion above guards.
     expect(row).toHaveTextContent('Northline Logistics')
-    expect(row).toHaveTextContent('2022 Freightliner Cascadia · Unit 218')
+    expect(row).toHaveTextContent('Unit 218 · 2022 Freightliner Cascadia')
   })
 
   it('keeps the daily Shop Work navigator compact without hiding operational overview facts', () => {
@@ -441,7 +441,7 @@ describe('DB-035 Stage 4 Repair Orders presentation', () => {
     // here split the card into columns too narrow to hold "VOLVO TRUCK".
     expect(within(brief).queryByRole('region', { name: 'Vehicle' })).not.toBeInTheDocument()
     expect(brief).not.toHaveTextContent('Unit number')
-    expect(screen.getByRole('article', { name: 'Repair order RO-1018' })).toHaveTextContent('2024 Volvo VNL 760 · Unit 402')
+    expect(screen.getByRole('article', { name: 'Repair order RO-1018' })).toHaveTextContent('Unit 402 · 2024 Volvo VNL 760')
     expect(brief).toHaveTextContent('Work requested')
     expect(brief).toHaveTextContent('Replace air dryer cartridge')
     expect(brief).toHaveTextContent('Not sent')

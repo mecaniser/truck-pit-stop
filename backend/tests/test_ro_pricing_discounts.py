@@ -18,10 +18,13 @@ from app.db.models.customer import Customer
 from app.db.models.inventory import Inventory, PartsUsage
 from app.db.models.labor import Labor, LaborLineType
 from app.db.models.repair_order import RepairOrder, RepairOrderStatus
+from app.db.models.recommended_service import RecommendedService
 from app.db.models.tenant import Tenant
 from app.db.models.user import User, UserRole
 from app.db.models.vehicle import Vehicle
 from app.schemas.repair_order import PartsPricingModeRequest, DiscountUpdate
+from app.schemas.recommendation_conversion import RecommendationConvertRequest
+from app.services import recommendation_conversion
 
 
 async def _seed_order(db):
@@ -125,7 +128,7 @@ async def test_pricing_adjustments_stay_within_query_budget(db_session):
     sync_engine = db_session.bind.sync_engine
     event.listen(sync_engine, "before_cursor_execute", _count_query)
     try:
-        await ro.set_parts_pricing_mode(
+        summary = await ro.set_parts_pricing_mode(
             order_id=order.id,
             body=PartsPricingModeRequest(mode="stock"),
             db=db_session,
@@ -138,3 +141,68 @@ async def test_pricing_adjustments_stay_within_query_budget(db_session):
     # once. Do not reload it to compute totals and then reload it again to
     # serialize the response.
     assert query_count <= 6
+    assert all(line.recommendation_source is None for line in summary.lines)
+    assert summary.recommendation_hourly_rate == Decimal("100.00")
+    assert summary.can_convert_recommendations is True
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("conversion_count", [1, 3])
+async def test_converted_pricing_summary_preserves_provenance_within_query_budget(db_session, conversion_count):
+    tenant, owner, order = await _seed_order(db_session)
+    source = RepairOrder(
+        id=uuid4(), tenant_id=tenant.id, customer_id=order.customer_id,
+        vehicle_id=order.vehicle_id, order_number=f"SOURCE-{uuid4().hex[:6]}",
+        status=RepairOrderStatus.COMPLETED,
+    )
+    db_session.add(source)
+    await db_session.commit()
+    conversions = []
+    for index in range(conversion_count):
+        recommendation = RecommendedService(
+            id=uuid4(), tenant_id=tenant.id, repair_order_id=source.id,
+            description=f"Inspect converted component {index}",
+        )
+        db_session.add(recommendation)
+        await db_session.commit()
+        conversion, replayed = await recommendation_conversion.convert(
+            db_session, target_id=order.id, recommendation_id=recommendation.id,
+            body=RecommendationConvertRequest(
+                request_id=uuid4(), hours=Decimal("1.25"), hourly_rate=Decimal("100.00"),
+            ), user=owner,
+        )
+        assert replayed is False
+        conversions.append(conversion)
+        await db_session.commit()
+
+    query_count = 0
+
+    def _count_query(*_args):
+        nonlocal query_count
+        query_count += 1
+
+    sync_engine = db_session.bind.sync_engine
+    event.listen(sync_engine, "before_cursor_execute", _count_query)
+    try:
+        summary = await ro.set_parts_pricing_mode(
+            order_id=order.id, body=PartsPricingModeRequest(mode="stock"),
+            db=db_session, current_user=owner,
+        )
+    finally:
+        event.remove(sync_engine, "before_cursor_execute", _count_query)
+
+    assert query_count <= 6
+    assert summary.total_cost == Decimal("280.00") + conversion_count * Decimal("125.00")
+    assert summary.recommendation_hourly_rate == Decimal("100.00")
+    assert summary.can_convert_recommendations is True
+    lines = {line.id: line for line in summary.lines}
+    for conversion in conversions:
+        provenance = lines[conversion.labor_id].recommendation_source
+        assert provenance is not None
+        assert provenance.conversion_id == conversion.id
+        assert provenance.recommendation_id == conversion.recommendation_id
+        assert provenance.source_order.id == source.id
+        assert provenance.source_order.order_number == source.order_number
+        assert provenance.source_order.available is True
+        assert provenance.description == conversion.source_description
+        assert provenance.state == "active"

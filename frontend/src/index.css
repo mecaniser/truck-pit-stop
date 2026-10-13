@@ -4002,22 +4002,13 @@ html::-webkit-scrollbar-thumb:hover {
 .db-repair-orders-workspace--detail-open .db-repair-orders-ledger > header { flex-wrap: wrap; gap: 4px 8px; margin-bottom: 6px; padding: 4px 2px; }
 .db-repair-orders-workspace--detail-open .db-repair-orders-ledger > header > div:first-child { flex-wrap: wrap; gap: 4px 8px; }
 .db-repair-orders-workspace--detail-open .db-repair-orders-ledger > header h2 { white-space: nowrap; }
+/* The header already reserves the scrollbar gutter. Match the row's 12px
+   inset minus the header's 2px padding; keep the summary label at the left. */
+.db-repair-orders-workspace--detail-open .db-repair-orders-ledger__header-actions { width: 100%; padding-right: 10px; }
+.db-repair-orders-workspace--detail-open .db-repair-orders-ledger__value-summary { width: 100%; justify-content: space-between; white-space: normal; }
+.db-repair-orders-workspace--detail-open .db-repair-orders-ledger__value-summary strong { margin-left: auto; white-space: nowrap; }
+
 @media (max-width: 639px) {
-  /* At phone widths the wrapped header, workflow and footer can consume the
-     entire fixed-height order sheet. Scroll that sheet as one document instead
-     of squeezing the job content into a tiny independently scrolling strip. */
-  .db-repair-order-detail-new--price-builder .db-price-builder {
-    overflow-x: hidden;
-    overflow-y: auto;
-    overscroll-behavior-y: contain;
-  }
-  .db-repair-order-detail-new--price-builder .db-price-builder > * {
-    flex-shrink: 0;
-  }
-  .db-repair-order-detail-new--price-builder .db-price-builder > .db-workspace-body {
-    flex: 0 0 auto;
-    overflow: visible;
-  }
   .db-repair-order-detail-new--price-builder .db-workspace-actions {
     flex-basis: 100%;
   }
@@ -4279,10 +4270,10 @@ html::-webkit-scrollbar-thumb:hover {
    100deg puts the light end on the left; the copper is darkened from
    --product-copper-500 because a saturated block that size costs the white
    text its contrast. */
-.db-repair-order-price-shell-new > :last-child > :first-child {
+.db-repair-order-price-shell-new .db-workspace-header {
   background: linear-gradient(100deg,#1d3d63 0%,#17314f 45%,#0c2037 100%) !important;
 }
-.db-repair-order-price-shell-new--customer > :last-child > :first-child {
+.db-repair-order-price-shell-new--customer .db-workspace-header {
   background: linear-gradient(100deg,#a03a0b 0%,#8a3208 45%,#5c1f04 100%) !important;
 }
 
@@ -6878,3 +6869,216 @@ html.customer-portal-active {
   inline-size: .9rem;
   block-size: .9rem;
 }
+
+/* The queue supports the job; detail keeps the working space. */
+.db-queue-reference { display: flex; min-width: 0; align-items: center; gap: 8px; }
+.db-queue-reference .db-repair-orders-ledger__reference { align-self: center; }
+.db-repair-orders-ledger__row-shell[data-selected='true'] { outline: 1px solid var(--db-ledger-focus); outline-offset: -1px; }
+@media (min-width: 1100px) {
+  .db-repair-orders-workspace--new.db-repair-orders-workspace--detail-open { grid-template-columns: minmax(300px, 29fr) minmax(0, 71fr); }
+  .db-repair-orders-workspace--detail-open .db-repair-orders-ledger__row { padding-inline: 12px; }
+  .db-repair-orders-workspace--detail-open .db-repair-orders-ledger__record { grid-template-columns: minmax(0, 1fr) 72px; min-height: 80px; gap: 8px; padding-block: 10px; }
+  .db-repair-orders-workspace--detail-open .db-repair-orders-ledger__order-line strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; line-height: 1.4; }
+  .db-repair-orders-workspace--detail-open .db-repair-orders-ledger__vehicle { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .db-repair-orders-workspace--detail-open .db-repair-orders-ledger__money { padding-bottom: 24px; }
+  .db-repair-orders-workspace--detail-open .db-repair-orders-ledger__money strong { font-size: 14px; }
+  .db-repair-orders-workspace--detail-open .db-repair-orders-ledger__details-toggle { bottom: 4px; right: 8px; min-height: 28px; padding: 2px 4px; }
+}
+.db-price-builder .db-job-title { margin: 0; color: #fff !important; font-size: 20px !important; line-height: 1.3; }
+.db-job-vehicle { display: flex; align-items: center; gap: 8px; min-height: 36px; max-width: 100%; text-align: left; font-weight: 700; }
+.db-job-vehicle span { min-width: 0; overflow-wrap: anywhere; }
+.db-job-reference { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 2px; }
+.db-price-builder .db-workspace-header .db-job-reference h3 { font-size: 12px !important; line-height: 1.5; font-weight: 600; }
+.db-job-stage { padding: 2px 8px; border: 1px solid #ffffff60; border-radius: 6px; font-size: 11px; font-weight: 700; text-transform: capitalize; white-space: nowrap; }
+.db-price-builder .db-job-workflow { padding: 8px 16px; }
+.db-job-stages > span[aria-hidden='true'] { display: none; }
+.db-price-builder .db-job-stages .db-pipeline-step { min-height: 32px; white-space: nowrap; font-size: 11px; }
+.db-presentation-new .db-price-builder .db-job-stages .bg-emerald-100 { background: #ecfdf5 !important; color: #065f46 !important; }
+.db-presentation-new .db-price-builder .db-job-stages .text-gray-500 { color: #4b5563 !important; }
+.db-price-builder .db-job-stages > button { margin-left: 0; }
+.db-price-builder .db-workspace-line-trigger { min-height: 56px; gap: 8px; border-radius: 6px; }
+.db-price-builder .db-workspace-line-trigger > span:nth-child(2) { width: 28px; height: 28px; }
+.db-price-builder .db-workspace-line-trigger .db-service-breakdown { display: none; }
+.db-price-builder .db-workspace-line-trigger > span:nth-child(3) > span:first-child > span:last-child { display: none; }
+.db-price-builder .db-workspace-line-trigger > span:nth-child(3) > span:first-child > span:first-child { white-space: normal; overflow-wrap: anywhere; font-size: 14px; }
+.db-price-builder .db-workspace-line-trigger .db-service-total { font-size: 16px; white-space: nowrap; }
+.db-price-builder .db-workspace-footer { padding: 10px 16px; box-shadow: none; }
+.db-workspace-actions > div { flex-wrap: wrap; }
+.db-invoice-actions { display: flex; min-width: 0; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 6px; }
+.db-stage-action { display: inline-flex; min-height: 36px; align-items: center; justify-content: center; gap: 6px; padding: 8px 12px; border-radius: 8px; font-size: 12px; font-weight: 600; white-space: nowrap; }
+.db-stage-action--primary { background: #087252; color: #fff; }
+.db-stage-action--primary:hover { background: #065f46; }
+.db-stage-action--secondary { border: 1px solid #d1d5db; color: #374151; background: #fff; }
+.db-stage-action--secondary:hover { background: #f3f4f6; }
+.db-stage-action:disabled { opacity: .5; cursor: not-allowed; }
+.db-stage-action:focus-visible, .db-job-vehicle:focus-visible { outline: 2px solid currentColor; outline-offset: 3px; }
+@media (max-width: 639px) {
+  .db-price-builder .db-workspace-header > div:first-child > div:last-child { justify-content: flex-start; }
+  .db-price-builder .db-workspace-header { padding: 12px; }
+  .db-price-builder .db-job-title { font-size: 18px !important; }
+  .db-price-builder .db-job-workflow { padding-inline: 12px; }
+  .db-price-builder .db-workspace-body { padding-inline: 12px; }
+  .db-price-builder .db-workspace-footer { padding: 12px; }
+  .db-invoice-actions { width: 100%; justify-content: flex-start; }
+  .db-stage-action { min-height: 44px; }
+  .db-invoice-actions .db-stage-action--primary { flex-basis: 100%; }
+  .db-price-builder .db-job-stages .db-pipeline-step { min-height: 44px; }
+  .db-job-vehicle { min-height: 44px; }
+  .db-workspace-header .db-order-customer-pill { max-width: 100%; }
+}
+@media (pointer: coarse) {
+  .db-stage-action, .db-job-vehicle, .db-price-builder .db-job-stages .db-pipeline-step { min-height: 44px; }
+}
+
+/* Keep the white job sheet legible inside a dark staff shell. */
+.db-presentation-new .db-price-builder :is(.db-workspace-body, .db-workspace-footer) :is(.text-gray-400, .text-gray-500, .text-gray-600, .text-gray-700) { color: #4b5563 !important; }
+.db-presentation-new .db-price-builder :is(.db-workspace-body, .db-workspace-footer) :is(.text-gray-800, .text-gray-900) { color: #111827 !important; }
+.db-presentation-new .db-price-builder [data-authorization-quote-action] { color: #92400e !important; border-color: #d1d5db; }
+.db-presentation-new .db-price-builder [data-authorization-quote-action].bg-emerald-600 { color: #fff !important; }
+@media (max-width: 639px) {
+  .db-price-builder .db-workspace-header > div:first-child > div:last-child button { min-width: 44px; min-height: 44px; }
+}
+/* The desktop sheet must not retain the phone document's scroll offset. */
+@media (min-width: 640px) {
+  .db-repair-order-detail-new--price-builder .db-price-builder { overflow: clip; }
+}
+.db-presentation-new .db-price-builder .db-workspace-body th { color: #4b5563 !important; }
+
+/* DB-103 density correction: compact desktop data, anchored record context. */
+.db-job-reference { font-size: 12px; }
+.db-job-details :is(.text-gray-400, .text-gray-500) { color: #4b5563; }
+.db-job-details p { overflow-wrap: anywhere; }
+.db-intake { border-bottom: 1px solid #e5e7eb; padding-bottom: 8px; }
+.db-intake-description { overflow-wrap: anywhere; }
+.db-parts-table table { width: 100%; }
+.db-parts-table th { white-space: nowrap; }
+.db-parts-table .db-part-name { width: 100%; min-width: 160px; }
+.db-part-quantity { min-width: 0; white-space: nowrap; }
+.db-part-mobile-label { display: none; }
+.db-standalone-parts .db-standalone-heading { margin: 0 0 4px; padding: 0; gap: 8px; }
+.db-standalone-heading > span { display: none; }
+.db-standalone-heading > div { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px; }
+.db-standalone-heading p:first-child { font-size: 13px; }
+.db-prior-recommendations { border-top: 1px solid #e5e7eb; padding: 8px 0; }
+.db-prior-recommendations h3 { font-size: 13px; }
+.db-prior-recommendation > .db-recommendation-conversion { display: block; }
+.db-price-builder .db-recommendation-replacement-warning { color: #78350f !important; }
+.db-price-builder .db-recommendation-conversion [role='alert'] { color: #991b1b !important; }
+.db-price-builder .db-recommendation-resolved { color: #065f46 !important; }
+@media (min-width: 640px) and (pointer: fine) {
+  .db-price-builder .db-recommendation-conversion input { height: 32px !important; min-height: 32px !important; }
+}
+@media (max-width: 639px), (pointer: coarse) {
+  .db-recommendation-conversion :is(button, input, a) { min-height: 44px; }
+}
+.db-presentation-new .db-price-builder .db-workspace-body .db-prior-source { color: #374151; }
+@media (min-width: 640px) and (pointer: fine) {
+  .db-price-builder .db-workspace-header { padding: 8px 14px; }
+  .db-price-builder .db-job-vehicle { min-height: 28px !important; padding-block: 0; }
+  .db-price-builder .db-job-title { font-size: 18px !important; }
+  .db-price-builder .db-job-reference { gap: 6px; margin-top: 4px; }
+  .db-price-builder .db-job-reference > :is(button, span) { min-height: 24px !important; padding-block: 2px; }
+  .db-price-builder .db-job-navigation button { width: 28px; height: 28px; min-height: 28px !important; }
+  .db-price-builder .db-job-navigation > span { font-size: 12px; padding: 4px 6px; }
+  .db-price-builder .db-job-workflow { padding: 4px 14px; }
+  .db-price-builder .db-job-stages :is(.db-pipeline-step, [data-authorization-quote-action]) { min-height: 28px !important; height: 28px; padding-block: 3px; }
+  .db-price-builder .db-workspace-body { padding: 8px 14px; }
+  .db-price-builder .db-workspace-body > * + * { margin-top: 8px; }
+  .db-intake[data-editing='false'] { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: baseline; gap: 8px; }
+  .db-intake[data-editing='false'] .db-intake-heading { display: contents; }
+  .db-intake[data-editing='false'] .db-intake-heading > p { grid-column: 1; grid-row: 1; font-size: 11px; letter-spacing: 0; text-transform: none; }
+  .db-intake[data-editing='false'] .db-intake-heading > button { grid-column: 3; grid-row: 1; min-height: 28px !important; }
+  .db-intake[data-editing='false'] .db-intake-description { grid-column: 2; grid-row: 1; font-size: 13px; }
+  .db-price-builder .db-service-list > div { padding-block: 0; }
+  .db-presentation-new .db-price-builder .db-workspace-line-trigger { min-height: 40px !important; padding: 4px; gap: 6px; }
+  .db-price-builder .db-workspace-line-trigger > span:nth-child(2) { width: 22px; height: 22px; background: transparent; }
+  .db-service-label > span:last-child { margin-top: 2px; white-space: normal; font-size: 12px; }
+  .db-price-builder .db-workspace-line-trigger .db-service-total { font-size: 14px; min-width: 76px; }
+  .db-price-builder .db-standalone-parts { padding-top: 8px !important; }
+  .db-parts-table :is(th, td) { padding: 4px 6px; font-size: 13px; }
+  .db-parts-table th { font-size: 11px; }
+  .db-parts-table .db-part-name > div:last-child { font-size: 11px; }
+  .db-presentation-new .db-price-builder .db-parts-table :is(button, input) { min-height: 28px !important; height: 28px !important; padding-block: 2px; }
+  .db-presentation-new .db-price-builder .db-part-quantity button { min-width: 28px; width: 28px !important; padding-inline: 0; }
+  .db-presentation-new .db-price-builder .db-part-quantity input { width: 40px !important; padding-inline: 2px; font-size: calc(var(--font-size-body) * 0.8125) !important; }
+  .db-part-quantity > span:first-child { box-shadow: none; border-radius: 5px; }
+  .db-part-quantity > span:last-child:not(:first-child) { width: auto; }
+  .db-presentation-new .db-price-builder .db-part-price { min-width: 76px; border-radius: 5px; box-shadow: none; }
+  .db-prior-recommendation > div { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; }
+  .db-prior-recommendation > div > div { margin: 0; }
+  .db-prior-recommendation p { font-size: 13px; }
+  .db-price-builder .db-prior-recommendations :is(button, a) { min-height: 28px !important; }
+  .db-price-builder .db-workspace-footer { padding-block: 6px; }
+}
+@media (max-width: 639px), (pointer: coarse) {
+  .db-price-builder .db-part-quantity :is(button, input), .db-price-builder .db-part-price { min-height: 44px !important; }
+}
+
+/* Desktop keeps the header and footer fixed around the scrolling work. On phones,
+   header, stages and work share one scroller so wrapped controls can never squeeze
+   the work area to zero; the footer remains outside that scroller. */
+.db-price-builder .db-workspace-scroll { display: contents; }
+@media (max-width: 639px) {
+  .db-staff-content:has(> .db-repair-orders-workspace--detail-open) > .db-mobile-nav-spacer { display: none !important; }
+  .db-repair-orders-workspace--new.db-repair-orders-workspace--detail-open { height: 100%; flex: 1 1 0; min-height: 0; }
+  .db-repair-orders-workspace--new > .db-repair-order-detail-new--price-builder { height: 100%; min-height: 0; overflow: hidden; }
+  .db-repair-order-detail-new--price-builder > .slide-panel-content { flex: 1 1 0; overflow: hidden; clip-path: none; }
+  .db-repair-order-detail-new--price-builder .db-repair-order-price-shell-new,
+  .db-repair-order-detail-new--price-builder .db-price-builder { height: 100%; min-height: 0; overflow: hidden; }
+  .db-price-builder .db-workspace-scroll { display: block; flex: 1 1 0; min-height: 0; overflow-x: hidden; overflow-y: auto; overscroll-behavior-y: contain; }
+  .db-price-builder .db-workspace-scroll > .db-workspace-body { flex: none; overflow: visible; }
+  .db-price-builder .db-workspace-footer { flex: 0 0 auto; padding: 8px 12px; }
+  .db-price-builder .db-job-workflow { padding-block: 4px; }
+  .db-price-builder .db-job-stages { flex-wrap: nowrap; overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: thin; padding-bottom: 2px; }
+  .db-repair-order-detail-new--price-builder .db-price-builder { border-radius: 11px; }
+  .db-repair-order-detail-new--price-builder .db-workspace-header { border-radius: 11px 11px 0 0; }
+  .db-price-builder .db-job-navigation > span { padding-inline: 4px; font-size: 12px; }
+  .db-price-builder .db-workspace-tool-tabs { gap: 4px; }
+  .db-price-builder .db-workspace-tool-tabs button { white-space: nowrap; min-width: 0; min-height: 44px !important; padding-inline: 4px; }
+  .db-price-builder .db-workspace-tool-tabs button svg { display: none; }
+  .db-price-builder .db-workspace-tool-row input { min-height: 44px !important; font-size: 16px; }
+  .db-price-builder .db-job-stages .db-pipeline-step { min-height: 44px !important; }
+  .db-price-builder .db-workspace-line-details { margin-left: 0; padding-right: 0; }
+  .db-presentation-new .db-price-builder :is(button, input, select, textarea) { min-height: 44px !important; }
+  .db-price-builder .db-workspace-line-details button[aria-label] { min-width: 44px; }
+  .db-parts-table { overflow: visible; }
+  .db-parts-table :is(table, tbody) { display: block; width: 100%; }
+  .db-parts-table thead { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  .db-parts-table tbody > tr { display: grid; grid-template-columns: minmax(168px, 1fr) minmax(0, 1fr); gap: 8px; padding: 12px 0; }
+  .db-parts-table td { display: block; min-width: 0; padding: 0; }
+  .db-presentation-new .db-price-builder .db-parts-table td { height: auto; }
+  .db-parts-table .db-part-name { grid-column: 1 / -1; width: auto; min-width: 0; overflow-wrap: anywhere; }
+  .db-parts-table .db-part-qty { text-align: left; }
+  .db-parts-table .db-part-unit-price > span.inline-block { display: block; width: 100%; }
+  .db-price-builder .db-part-unit-price .db-part-price { width: 100%; min-width: 0; }
+  .db-part-mobile-label { display: block; margin-bottom: 4px; color: #4b5563; font-size: 11px; font-weight: 500; }
+  .db-parts-table .db-part-total { grid-column: 2; align-self: end; }
+  .db-parts-table .db-part-savings { grid-column: 1; text-align: left; }
+  .db-parts-table :is(.db-part-total, .db-part-savings) .db-part-mobile-label { display: inline-block; margin-right: 6px; white-space: nowrap; }
+  .db-presentation-new .db-price-builder .db-part-quantity :is(button, input) { width: 44px !important; min-width: 44px; padding-inline: 0; }
+  .db-price-builder .db-part-quantity input { font-size: 16px !important; }
+  .db-part-price-panel :is(button, input) { min-height: 44px; }
+  .db-part-price-panel button[aria-label='Close part pricing'] { min-width: 44px; display: inline-flex; align-items: center; justify-content: center; }
+  .db-part-price-panel input { font-size: 16px; }
+  .db-job-details button { min-width: 44px; min-height: 44px; display: inline-flex; align-items: center; justify-content: center; }
+}
+
+/* Contextual intake stays usable on narrow screens even with a fine pointer. */
+@media (max-width: 639px), (pointer: coarse) {
+  .db-order-entry-panel button {
+    min-height: 44px !important;
+    min-block-size: 44px !important;
+  }
+}
+
+/* The operation title always gets its own full-width row, independent of viewport
+   or workspace width. Execution metadata wraps individual items on the next row. */
+.db-price-builder .db-workspace-line-trigger .db-service-label { display: block; min-width: 0; }
+.db-price-builder .db-service-label > .db-service-execution-meta { display: flex; flex-wrap: wrap; width: 100%; white-space: normal; }
+.db-price-builder .db-service-execution-meta .db-operation-status { display: contents; font-size: 11px; }
+
+/* Lead actions wrap as whole controls rather than squeezing labels into phone columns. */
+.db-mechanic-stage-actions button { white-space: nowrap; }
+.db-mechanic-stage-buttons { display: flex; flex-wrap: wrap; gap: 8px; }
+.db-mechanic-stage-buttons > button { flex: 1 1 120px; width: auto; min-width: max-content; min-height: 44px; padding: 12px; font-size: 14px; gap: 8px; }
+.db-mechanic-stage-buttons > button svg { flex-shrink: 0; width: 20px; height: 20px; }

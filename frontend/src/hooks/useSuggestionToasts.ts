@@ -43,6 +43,7 @@ function buildMechanicSuggestionToast(suggestion: MechanicSuggestion): string {
         ? `Stop misc timer, then open ${suggestion.recommendedJob.order_number}.`
         : 'Stop misc timer and pick up the next assigned repair order.'
     case 'start_assigned_ro':
+      if (suggestion.recommendedJob?.is_order_lead === false) return `Open your assigned operations on ${suggestion.recommendedJob.order_number}.`
       return suggestion.recommendedJob
         ? `Next up: ${suggestion.recommendedJob.order_number}.`
         : 'Start your assigned repair order.'
@@ -122,7 +123,6 @@ export function useSuggestionToasts({ userId, view, isClockedIn, suggestion }: U
     view,
     isClockedIn,
     userId,
-    suggestion.action,
-    suggestion.recommendedJob?.id,
+    suggestion,
   ])
 }

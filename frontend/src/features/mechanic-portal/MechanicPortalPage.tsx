@@ -1,3 +1,6 @@
+import { MechanicOperations } from '@/features/operation-execution/OperationExecution'
+import OrderChecklist from '@/features/service-checklists/OrderChecklist'
+import { errorDetail as checklistErrorDetail, openChecklistOnCompletionError } from '@/features/service-checklists/queries'
 import { useState, useEffect, useCallback, useRef } from 'react'
 import DatePicker from '@/components/DatePicker'
 import { Spinner } from '@/components/ui'
@@ -46,6 +49,7 @@ import { formatSuggestedNextAction, getSuggestedActionButtonLabel } from '@/lib/
 import { formatFileSize, isSupportedPhotoFile, runPhotoUploadQueue, uploadDirectPhoto, type PhotoUploadStatus } from '@/lib/photoUpload'
 
 interface MechanicJob {
+  is_order_lead: boolean
   id: string
   order_number: string
   status: string
@@ -67,6 +71,7 @@ interface ServiceItem {
 }
 
 interface MechanicJobDetail {
+  is_order_lead: boolean
   id: string
   order_number: string
   status: string
@@ -163,6 +168,8 @@ interface MechanicDaySummary {
     id: string
     session_type: 'repair_order' | 'misc'
     repair_order_id?: string | null
+    labor_id?: string | null
+    labor_description_snapshot?: string | null
     misc_category: string | null
     started_at?: string | null
   } | null
@@ -248,7 +255,7 @@ function formatMinutesShort(totalMinutes: number): string {
   return h > 0 ? `${h}h ${m}m` : `${m}m`
 }
 
-function LiveTimer({ startedAt, totalMinutesToday = 0 }: { startedAt: string; totalMinutesToday?: number }) {
+function LiveTimer({ startedAt, totalMinutesToday = 0, operationTime = false }: { startedAt: string; totalMinutesToday?: number; operationTime?: boolean }) {
   const calc = useCallback(() => {
     const secs = Math.floor((Date.now() - new Date(startedAt).getTime()) / 1000)
     if (secs < 0) return '0m 0s'
@@ -267,10 +274,11 @@ function LiveTimer({ startedAt, totalMinutesToday = 0 }: { startedAt: string; to
 
   return (
     <div className="bg-amber-500/10 border border-amber-500/30 rounded-2xl p-4 text-center">
-      <p className="text-xs text-amber-400 uppercase tracking-wide mb-1">Time on job</p>
+      <p className="text-xs text-amber-400 uppercase tracking-wide mb-1">{operationTime ? 'Operation time' : 'General order time'}</p>
       <p className="text-2xl font-mono font-bold text-amber-400">{display}</p>
+      {!operationTime && <p className="mt-1 text-xs text-amber-200">Not allocated to an operation</p>}
       <p className="mt-1 text-xs text-amber-200">
-        Total time on this RO today: <span className="font-semibold">{formatMinutesShort(totalMinutesToday)}</span>
+        Your time on this RO today: <span className="font-semibold">{formatMinutesShort(totalMinutesToday)}</span>
       </p>
     </div>
   )
@@ -337,7 +345,7 @@ export default function MechanicPortalPage() {
   const [holdReason, setHoldReason] = useState('')
 
   // Active jobs
-  const { data: jobs, isLoading } = useQuery<MechanicJob[]>({
+  const { data: jobs, isLoading, isError: jobsError, refetch: refetchJobs } = useQuery<MechanicJob[]>({
     queryKey: ['mechanic-jobs'],
     queryFn: async () => {
       const response = await api.get('/mechanics/my-jobs')
@@ -364,6 +372,8 @@ export default function MechanicPortalPage() {
     refetchOnWindowFocus: true,
   })
 
+  useEffect(() => { void queryClient.invalidateQueries({ queryKey: ['order-operations'] }) }, [queryClient, daySummary?.active_session?.id, daySummary?.break_active])
+
   // Completed work can grow without bound. Keep the job workspace focused on
   // live work, then fetch the richer history only when the mechanic opens it.
   const { data: history, isLoading: historyLoading } = useQuery<WorkHistoryItem[]>({
@@ -386,7 +396,7 @@ export default function MechanicPortalPage() {
   })
 
   // Job detail (for full-page detail view - history items)
-  const { data: jobDetail } = useQuery<MechanicJobDetail>({
+  const { data: jobDetail, isError: jobDetailError, refetch: refetchJobDetail } = useQuery<MechanicJobDetail>({
     queryKey: ['mechanic-job-detail', selectedJobId],
     queryFn: async () => {
       const response = await api.get(`/mechanics/my-jobs/${selectedJobId}`)
@@ -396,7 +406,7 @@ export default function MechanicPortalPage() {
   })
   
   // Expanded job detail (for inline expandable cards)
-  const { data: expandedJobDetail, isLoading: expandedJobLoading } = useQuery<MechanicJobDetail>({
+  const { data: expandedJobDetail, isLoading: expandedJobLoading, isError: expandedJobError, refetch: refetchExpandedJob } = useQuery<MechanicJobDetail>({
     queryKey: ['mechanic-job-detail', expandedJobId],
     queryFn: async () => {
       const response = await api.get(`/mechanics/my-jobs/${expandedJobId}`)
@@ -412,7 +422,7 @@ export default function MechanicPortalPage() {
       const response = await api.get(`/mechanics/my-jobs/${expandedJobId}/photos`)
       return response.data
     },
-    enabled: !!expandedJobId,
+    enabled: !!expandedJobId && expandedJobDetail?.is_order_lead === true,
   })
   
   // Photo upload state
@@ -480,7 +490,17 @@ export default function MechanicPortalPage() {
       setSelectedJobId(null)
       toast.success('🎉 Job completed!')
     },
-    onError: (error: any) => toast.error(error.response?.data?.detail || 'Failed'),
+    onError: (error: unknown, orderId: string) => {
+      if (openChecklistOnCompletionError(error, orderId)) {
+        // Quick Job Done can run from a collapsed card: reveal the tasks.
+        setExpandedJobId(orderId)
+        queryClient.invalidateQueries({ queryKey: ['order-checklist', user?.tenant_id, orderId] })
+      }
+      setExpandedJobId(orderId)
+      queryClient.invalidateQueries({ queryKey: ['order-operations', user?.tenant_id, orderId] })
+      queryClient.invalidateQueries({ queryKey: ['mechanic-job-detail', orderId] })
+      toast.error(checklistErrorDetail(error, 'Failed'))
+    },
   })
 
   const holdOrderMutation = useMutation({
@@ -887,7 +907,9 @@ export default function MechanicPortalPage() {
         })
         break
       case 'start_assigned_ro':
-        if (mechanicSuggestion.recommendedJob) {
+        if (mechanicSuggestion.recommendedJob?.is_order_lead === false) {
+          setExpandedJobId(mechanicSuggestion.recommendedJob.id)
+        } else if (mechanicSuggestion.recommendedJob?.is_order_lead === true) {
           acceptAndStartMutation.mutate({
             orderId: mechanicSuggestion.recommendedJob.id,
             currentStatus: mechanicSuggestion.recommendedJob.status,
@@ -917,6 +939,7 @@ export default function MechanicPortalPage() {
   const isActiveMisc = hasActiveDayTimer && daySummary?.active_session?.session_type === 'misc'
   const showStickyBar = isClockedIn && !isOnBreak && view === 'list' && !(mechanicSuggestion.action === 'start_misc' && isActiveMisc)
   const stickyIsLiveTimer = mechanicSuggestion.action === 'continue_ro' && hasActiveDayTimer
+  const suggestedOperationsOnly = mechanicSuggestion.recommendedJob?.is_order_lead !== true || Boolean(daySummary?.active_session?.labor_id)
 
   const BottomNav = () => {
     const currentView = view as ViewType
@@ -932,11 +955,11 @@ export default function MechanicPortalPage() {
                   <span className="font-mono text-emerald-300">{formatSecondsAsClock(activeSessionElapsedSeconds)}</span>
                 </div>
                 <button
-                  onClick={() => mechanicSuggestion.recommendedJob && completeWorkMutation.mutate(mechanicSuggestion.recommendedJob.id)}
+                  onClick={() => { if (mechanicSuggestion.recommendedJob) { if (suggestedOperationsOnly) setExpandedJobId(mechanicSuggestion.recommendedJob.id); else completeWorkMutation.mutate(mechanicSuggestion.recommendedJob.id) } }}
                   disabled={completeWorkMutation.isPending || !mechanicSuggestion.recommendedJob}
-                  className="px-5 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 active:scale-[0.98] text-white text-base font-semibold disabled:opacity-50 disabled:cursor-not-allowed shrink-0 border border-emerald-400/50 transition-all hover:shadow-[0_0_24px_rgba(16,185,129,0.5)]"
+                  className="px-5 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 active:scale-[0.98] text-white text-base font-semibold whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed shrink-0 border border-emerald-400/50 transition-all hover:shadow-[0_0_24px_rgba(16,185,129,0.5)]"
                 >
-                  {completeWorkMutation.isPending ? 'Completing...' : 'Job Done'}
+                  {completeWorkMutation.isPending ? 'Completing...' : suggestedOperationsOnly ? 'Operations' : 'Job Done'}
                 </button>
               </div>
             ) : (
@@ -944,18 +967,18 @@ export default function MechanicPortalPage() {
                 <div className="flex-1 min-w-0 text-base text-zinc-300 truncate">
                   {mechanicSuggestion.action === 'start_misc'
                     ? `Start ${MISC_WORK_OPTIONS.find((o) => o.value === miscCategory)?.label || 'misc'} timer`
-                    : formatSuggestedNextAction(mechanicSuggestion.action)}
+                    : mechanicSuggestion.action === 'start_assigned_ro' && suggestedOperationsOnly ? 'Your assigned work' : formatSuggestedNextAction(mechanicSuggestion.action)}
                 </div>
                 <button
                   onClick={handleStickyAction}
                   disabled={stickyActionBusy}
-                  className="px-5 py-3 rounded-xl bg-[var(--accent-600)] hover:bg-[var(--accent-500)] active:scale-[0.98] text-white text-base font-semibold disabled:opacity-50 disabled:cursor-not-allowed shrink-0 border border-[var(--accent-400)]/50 transition-all hover:shadow-[0_0_24px_var(--accent-500)]"
+                  className="px-5 py-3 rounded-xl bg-[var(--accent-600)] hover:bg-[var(--accent-500)] active:scale-[0.98] text-white text-base font-semibold whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed shrink-0 border border-[var(--accent-400)]/50 transition-all hover:shadow-[0_0_24px_var(--accent-500)]"
                 >
                   {stickyActionBusy
                     ? '...'
                     : mechanicSuggestion.action === 'start_misc'
                       ? `Start ${MISC_WORK_OPTIONS.find((o) => o.value === miscCategory)?.label || 'Misc'}`
-                      : getSuggestedActionButtonLabel(mechanicSuggestion.action)}
+                      : mechanicSuggestion.action === 'start_assigned_ro' && suggestedOperationsOnly ? 'Open operations' : getSuggestedActionButtonLabel(mechanicSuggestion.action)}
                 </button>
               </div>
             )}
@@ -993,6 +1016,10 @@ export default function MechanicPortalPage() {
         </div>
       </div>
     )
+  }
+
+  if (view === 'detail' && selectedJobId && (!jobDetail || jobDetailError)) {
+    return <Container><div className="p-4 space-y-3"><button type="button" onClick={goBack} className="inline-flex min-h-10 items-center gap-2 text-zinc-200"><ArrowLeft size={18} />Back to jobs</button>{jobDetailError ? <p role="alert" className="text-red-300">Job details could not be refreshed. <button type="button" onClick={() => void refetchJobDetail()} className="min-h-10 whitespace-nowrap underline">Retry job details</button></p> : <p role="status">Loading job…</p>}</div><BottomNav /></Container>
   }
 
   // ============ JOB DETAIL VIEW ============
@@ -1040,35 +1067,25 @@ export default function MechanicPortalPage() {
           {/* Live Timer */}
           {jobDetail.status === 'in_progress' && isTimedForDetail && timedStartForDetail && (
             <div className="px-4">
-              <LiveTimer startedAt={timedStartForDetail} totalMinutesToday={jobDetail.ro_today_tracked_minutes} />
+              <LiveTimer startedAt={timedStartForDetail} totalMinutesToday={jobDetail.ro_today_tracked_minutes} operationTime={Boolean(daySummary?.active_session?.labor_id)} />
             </div>
           )}
-          {jobDetail.status === 'in_progress' && !isTimedForDetail && (
+          {jobDetail.is_order_lead && jobDetail.status === 'in_progress' && !isTimedForDetail && (
             <div className="px-4">
               <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-300">
-                In-progress job is currently not timed. Resume timer for this repair order.
+                Choose an operation timer below, or resume general order time.
               </div>
             </div>
           )}
 
-          {/* Services */}
-          {jobDetail.services.length > 0 && (
-            <div className="px-4 flex-1">
-              <p className="text-xs font-bold uppercase tracking-[0.2em] text-zinc-500 mb-2">Work to do</p>
-              <div className="space-y-2">
-                {jobDetail.services.map((svc, idx) => (
-                  <div key={idx} className="flex items-center gap-3 bg-zinc-800/60 rounded-xl p-3 border border-zinc-700/50">
-                    <Wrench className="w-5 h-5 text-[var(--accent-400)] shrink-0" />
-                    <span className="text-zinc-100 font-medium">{svc.name}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
+          <div className="px-4 py-3"><MechanicOperations orderId={jobDetail.id} refreshToken={jobDetail} leadScope={jobDetail.is_order_lead ? jobDetail.services : []} /></div>
+          {!jobDetail.is_order_lead && <p className="px-4 pb-2 text-xs text-zinc-400">You are assigned to operations on this job. The order lead manages the job stage.{jobDetail.hold_reason ? ` On hold: ${HOLD_REASON_LABELS[jobDetail.hold_reason] || jobDetail.hold_reason}.` : ''}</p>}
+
+          <div className="px-4"><OrderChecklist orderId={jobDetail.id} orderStatus={jobDetail.status} refreshToken={jobDetail} dark /></div>
 
           {/* BIG ACTION BUTTON */}
-          <div className="p-4 mt-auto">
-            {(jobDetail.status === 'assigned' || jobDetail.status === 'acknowledged') && (
+          <div className="db-mechanic-stage-actions p-4 mt-auto">
+            {jobDetail.is_order_lead && (jobDetail.status === 'assigned' || jobDetail.status === 'acknowledged') && (
               <button
                 onClick={() => acceptAndStartMutation.mutate({ orderId: jobDetail.id, currentStatus: jobDetail.status })}
                 disabled={isPending}
@@ -1079,7 +1096,7 @@ export default function MechanicPortalPage() {
               </button>
             )}
 
-            {jobDetail.status === 'in_progress' && jobDetail.hold_reason && (
+            {jobDetail.is_order_lead && jobDetail.status === 'in_progress' && jobDetail.hold_reason && (
               <div className="space-y-3">
                 <div className="bg-amber-500/10 border border-amber-500/30 rounded-2xl px-4 py-3 flex items-center gap-2">
                   <StatusLED status="warning" />
@@ -1087,7 +1104,7 @@ export default function MechanicPortalPage() {
                     On hold: {HOLD_REASON_LABELS[jobDetail.hold_reason || ''] || jobDetail.hold_reason}
                   </span>
                 </div>
-                <div className="grid grid-cols-2 gap-3">
+                <div className="db-mechanic-stage-buttons">
                   <button
                     onClick={() => resumeOrderMutation.mutate(jobDetail.id)}
                     disabled={isPending}
@@ -1108,7 +1125,7 @@ export default function MechanicPortalPage() {
               </div>
             )}
 
-            {jobDetail.status === 'in_progress' && !jobDetail.hold_reason && (
+            {jobDetail.is_order_lead && jobDetail.status === 'in_progress' && !jobDetail.hold_reason && (
               <div className="space-y-3">
                 {holdTarget === jobDetail.id ? (
                   <div className="space-y-3">
@@ -1129,7 +1146,7 @@ export default function MechanicPortalPage() {
                         </button>
                       ))}
                     </div>
-                    <div className="grid grid-cols-2 gap-3">
+                    <div className="db-mechanic-stage-buttons">
                       <button
                         onClick={() => { setHoldTarget(null); setHoldReason('') }}
                         className="py-4 bg-zinc-800/80 hover:bg-zinc-700 active:scale-[0.98] text-zinc-300 text-lg font-semibold rounded-2xl transition-all border border-zinc-600/50"
@@ -1147,7 +1164,7 @@ export default function MechanicPortalPage() {
                   </div>
                 ) : (
                   <div className="space-y-3">
-                    <div className={`grid gap-3 ${isTimedForDetail ? 'grid-cols-2' : 'grid-cols-3'}`}>
+                    <div className="db-mechanic-stage-buttons">
                       {!isTimedForDetail && (
                         <button
                           onClick={() => acceptAndStartMutation.mutate({ orderId: jobDetail.id, currentStatus: jobDetail.status })}
@@ -2355,6 +2372,8 @@ export default function MechanicPortalPage() {
           <div className="flex justify-center py-12">
             <Spinner size="lg" />
           </div>
+        ) : jobsError && !jobs ? (
+          <p role="alert" className="text-sm text-red-300">Jobs could not be loaded. <button type="button" onClick={() => void refetchJobs()} className="min-h-10 whitespace-nowrap underline">Retry jobs</button></p>
         ) : activeJobs.length === 0 && pendingReview.length === 0 ? (
           <>
             {/* No Active Jobs - Show Stats Instead */}
@@ -2394,11 +2413,12 @@ export default function MechanicPortalPage() {
           </>
         ) : (
           <>
+            {jobsError && <p role="alert" className="text-sm text-red-300">Jobs could not be refreshed. <button type="button" onClick={() => void refetchJobs()} className="min-h-10 whitespace-nowrap underline">Retry jobs</button></p>}
             {/* Active Jobs - Expandable Cards */}
             {activeJobs.length > 0 && (
               <div className="flex items-center gap-2 mb-1">
                 <p className="text-xs font-bold uppercase tracking-[0.2em] text-zinc-500">Active Jobs</p>
-                <SectionInfoTooltip text="Jobs you can accept, resume, or complete. Expanding a card shows services, photos, and job actions." />
+                <SectionInfoTooltip text="Expand a job to track and complete your assigned operations. Order leads also manage the job stage." />
               </div>
             )}
             {activeJobs.map((job) => {
@@ -2433,7 +2453,7 @@ export default function MechanicPortalPage() {
                         <div className="min-w-0 flex-1">
                           <h3 className="text-zinc-100 font-semibold truncate">{job.vehicle_info}</h3>
                           <p className="text-sm text-zinc-400">
-                            {job.services_count} service{job.services_count !== 1 ? 's' : ''} · {job.order_number}
+                            {job.is_order_lead ? 'Order lead' : 'Assigned operations'} · {job.order_number}
                           </p>
                           <p className="text-xs text-zinc-500 mt-0.5">Created {formatCreatedAt(job.created_at)}</p>
                         </div>
@@ -2467,10 +2487,12 @@ export default function MechanicPortalPage() {
                   
                   {/* Expanded Content */}
                   <div className={`overflow-hidden transition-all duration-200 ${
-                    isExpanded ? 'max-h-[800px] opacity-100' : 'max-h-0 opacity-0'
+                    isExpanded ? 'opacity-100' : 'hidden'
                   }`}>
                     <div className="px-4 pb-4 space-y-3 border-t border-zinc-700/50 pt-3">
-                      {expandedJobLoading ? (
+                      {expandedJobError ? (
+                        <p role="alert" className="text-sm text-red-300">Job details could not be refreshed. <button type="button" onClick={() => void refetchExpandedJob()} className="min-h-10 whitespace-nowrap underline">Retry job details</button></p>
+                      ) : expandedJobLoading ? (
                         <div className="flex justify-center py-6">
                           <Spinner size="md" />
                         </div>
@@ -2480,36 +2502,24 @@ export default function MechanicPortalPage() {
                           {isWorking && isTimedForThisJob && timedStartForJob && (
                             <LiveTimer
                               startedAt={timedStartForJob}
+                              operationTime={Boolean(daySummary?.active_session?.labor_id)}
                               totalMinutesToday={detail?.ro_today_tracked_minutes ?? job.ro_today_tracked_minutes}
                             />
                           )}
-                          {isWorking && !isTimedForThisJob && (
+                          {detail.is_order_lead && isWorking && !isTimedForThisJob && (
                             <div className="rounded-xl border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-xs text-amber-300 flex items-center gap-2">
                               <StatusLED status="warning" size="sm" />
-                              In-progress job is currently not timed. Resume timer for this repair order.
+                              Choose an operation timer below, or resume general order time.
                             </div>
                           )}
                           
-                          {/* Services List */}
-                          {detail.services.length > 0 && (
-                            <div>
-                              <p className="text-xs font-bold uppercase tracking-[0.2em] text-zinc-500 mb-2">Services</p>
-                              <div className="space-y-1.5">
-                                {detail.services.map((svc, idx) => (
-                                  <div 
-                                    key={idx} 
-                                    className="flex items-center gap-2 text-sm"
-                                  >
-                                    <Wrench className="w-3.5 h-3.5 text-[var(--accent-400)] shrink-0" />
-                                    <span className="text-zinc-200">{svc.name}</span>
-                                  </div>
-                                ))}
-                              </div>
-                            </div>
-                          )}
-                          
+                          <MechanicOperations orderId={job.id} refreshToken={detail} leadScope={detail.is_order_lead ? detail.services : []} />
+                          {!detail.is_order_lead && <p className="text-xs text-zinc-400">The order lead manages the job stage.{job.hold_reason ? ` On hold: ${HOLD_REASON_LABELS[job.hold_reason] || job.hold_reason}.` : ''}</p>}
+
+                          <OrderChecklist orderId={job.id} orderStatus={job.status} refreshToken={detail} dark />
+
                           {/* Work Photos Section */}
-                          {['assigned', 'acknowledged', 'in_progress'].includes(job.status) && (
+                          {detail.is_order_lead && ['assigned', 'acknowledged', 'in_progress'].includes(job.status) && (
                             <div>
                               <div className="flex items-center justify-between mb-2">
                                 <p className="text-xs font-bold uppercase tracking-[0.2em] text-zinc-500">Photos</p>
@@ -2612,8 +2622,8 @@ export default function MechanicPortalPage() {
                           )}
                           
                           {/* Action Button */}
-                          <div className="pt-2">
-                            {(job.status === 'assigned' || job.status === 'acknowledged') && (
+                          <div className="db-mechanic-stage-actions pt-2">
+                            {detail.is_order_lead && (job.status === 'assigned' || job.status === 'acknowledged') && (
                               <button
                                 onClick={(e) => {
                                   e.stopPropagation()
@@ -2627,7 +2637,7 @@ export default function MechanicPortalPage() {
                               </button>
                             )}
                             
-                            {job.status === 'in_progress' && job.hold_reason && (
+                            {detail.is_order_lead && job.status === 'in_progress' && job.hold_reason && (
                               <div className="space-y-2">
                                 <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl px-4 py-3 flex items-center gap-2">
                                   <StatusLED status="warning" size="sm" />
@@ -2635,7 +2645,7 @@ export default function MechanicPortalPage() {
                                     On hold: {HOLD_REASON_LABELS[job.hold_reason || ''] || job.hold_reason}
                                   </span>
                                 </div>
-                                <div className="grid grid-cols-2 gap-2">
+                                <div className="db-mechanic-stage-buttons">
                                   <button
                                     onClick={(e) => {
                                       e.stopPropagation()
@@ -2662,7 +2672,7 @@ export default function MechanicPortalPage() {
                               </div>
                             )}
 
-                            {job.status === 'in_progress' && !job.hold_reason && (
+                            {detail.is_order_lead && job.status === 'in_progress' && !job.hold_reason && (
                               <div className="space-y-2">
                                 {holdTarget === job.id ? (
                                   <div className="space-y-2" onClick={(e) => e.stopPropagation()}>
@@ -2683,7 +2693,7 @@ export default function MechanicPortalPage() {
                                         </button>
                                       ))}
                                     </div>
-                                    <div className="grid grid-cols-2 gap-2">
+                                    <div className="db-mechanic-stage-buttons">
                                       <button
                                         onClick={() => { setHoldTarget(null); setHoldReason('') }}
                                         className="py-3 bg-zinc-800/80 hover:bg-zinc-700 active:scale-[0.98] text-zinc-300 text-sm font-semibold rounded-xl transition-all border border-zinc-600/50"
@@ -2700,7 +2710,7 @@ export default function MechanicPortalPage() {
                                     </div>
                                   </div>
                                 ) : (
-                                  <div className={`grid gap-2 ${isTimedForThisJob ? 'grid-cols-2' : 'grid-cols-3'}`}>
+                                  <div className="db-mechanic-stage-buttons">
                                     {!isTimedForThisJob && (
                                       <button
                                         onClick={(e) => {
@@ -2756,9 +2766,11 @@ export default function MechanicPortalPage() {
                   <SectionInfoTooltip text="Completed jobs waiting for manager verification before final closeout." />
                 </div>
                 {pendingReview.map((job) => (
-                  <div
+                  <button
+                    type="button"
+                    onClick={() => openJob(job.id, 'list')}
                     key={job.id}
-                    className="bg-zinc-900/80 backdrop-blur-sm rounded-2xl p-4 border border-zinc-700/50 shadow-xl shadow-black/20 flex items-center gap-3"
+                    className="w-full text-left bg-zinc-900/80 backdrop-blur-sm rounded-2xl p-4 border border-zinc-700/50 shadow-xl shadow-black/20 flex flex-wrap items-center gap-3"
                   >
                     <StatusLED status="warning" />
                     <div className="flex-1 min-w-0">
@@ -2769,7 +2781,7 @@ export default function MechanicPortalPage() {
                     <span className="inline-flex items-center gap-1.5 text-xs text-amber-300 bg-amber-500/20 px-2.5 py-1 rounded-full border border-amber-500/30 shrink-0">
                       Pending Review
                     </span>
-                  </div>
+                  </button>
                 ))}
               </div>
             )}

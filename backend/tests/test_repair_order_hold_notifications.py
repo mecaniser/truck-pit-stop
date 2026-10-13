@@ -152,3 +152,13 @@ async def test_resume_repair_order_broadcast_is_staff_only(monkeypatch):
     assert fake_db.commit_count == 1
     assert len(broadcast_calls) == 1
     assert broadcast_calls[0]["send_to_customer"] is False
+
+
+@pytest.fixture(autouse=True)
+def isolate_operation_services_in_notification_unit_tests(monkeypatch):
+    """These fakes prove notification routing; DB110 tests cover real execution DB rules."""
+    from unittest.mock import AsyncMock
+    from app.services import operation_execution
+    monkeypatch.setattr(operation_execution, "guard_completion", AsyncMock())
+    monkeypatch.setattr(operation_execution, "finish_order", AsyncMock())
+    monkeypatch.setattr(operation_execution, "stop_order_sessions", AsyncMock(return_value=[]))

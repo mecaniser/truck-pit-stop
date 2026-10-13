@@ -33,6 +33,9 @@ from app.db.models.mechanic_points import MechanicPoints, MechanicPointsBalance,
 from app.db.models.description_library import DescriptionLibraryEntry
 from app.db.models.work_photo import WorkPhoto
 from app.db.models.repair_order_history import RepairOrderHistoryEvent
+from app.services import service_checklist, operation_execution
+from app.schemas.operation_execution import OperationPage, OperationAssignment, OperationCompletion, OperationVersion, OperationTimerStop
+from app.schemas.service_checklist import ChecklistPage, ChecklistTaskUpdate, ChecklistTaskUpdateResponse
 from app.core.payment_step_up import (
     PaymentStepUpContext,
     PaymentStepUpScope,
@@ -76,6 +79,8 @@ from app.core.websocket import broadcast_mechanic_attendance_update
 from app.schemas.order_value import FilteredRepairOrderValueSummary
 from app.schemas.recommended_work import RecommendedWorkPage
 from app.services.recommended_work import list_recommended_work
+from app.services import recommendation_conversion
+from app.schemas.recommendation_conversion import RecommendationConvertRequest, RecommendationConvertResponse
 from app.services.mechanic_time_service import fetch_tenant_and_mechanic, get_active_session, start_session, stop_active_session
 from app.services.cloudinary_service import create_direct_image_upload_signature, is_cloudinary_configured, upload_work_photo
 from app.db.models.mechanic_time import MechanicSessionType, MechanicTimeSession
@@ -202,18 +207,31 @@ def require_role(*allowed_roles: UserRole):
     return role_checker
 
 
-def _to_price_build_summary(
+async def _to_price_build_summary(
+    db: AsyncSession,
+    current_user: User,
     order: RepairOrder,
     *,
     warnings: Optional[list[PriceBuildWarning]] = None,
 ) -> PriceBuildSummaryResponse:
     labor_resp = [LaborResponse.model_validate(li) for li in order.labor_items]
+    default_rate = None
+    staff_can_convert = False
+    if current_user.role in recommendation_conversion.STAFF_ROLES:
+        provenance = await recommendation_conversion.line_sources(db, order.tenant_id, order.id, [li.id for li in order.labor_items])
+        for line in labor_resp:
+            line.recommendation_source = provenance.get(line.id)
+        tenant = await db.get(Tenant, order.tenant_id)
+        default_rate = recommendation_conversion.policy_rate(order, tenant)
+        staff_can_convert = recommendation_conversion.can_convert(order)
     pricing_locked = _is_pricing_locked_for_edits(order)
     can_edit_work = not pricing_locked and (
         (order.is_internal and order.status not in INTERNAL_FROZEN_RO_STATUSES)
         or (not order.is_internal and order.status in EDITABLE_RO_STATUSES)
     )
     return PriceBuildSummaryResponse(
+        recommendation_hourly_rate=default_rate,
+        can_convert_recommendations=staff_can_convert,
         order_id=order.id,
         labor_total=order.total_labor_cost,
         parts_total=order.total_parts_cost,
@@ -890,6 +908,8 @@ async def repair_order_status_counts(
         if customer_id:
             filters.append(RepairOrderReadModel.customer_id == customer_id)
 
+    if current_user.role == UserRole.MECHANIC:
+        filters.append(RepairOrderReadModel.repair_order_id.in_(select(RepairOrder.id).where(RepairOrder.tenant_id == current_user.tenant_id, RepairOrder.assigned_mechanic_id == current_user.id)))
     if vehicle_id:
         filters.append(RepairOrderReadModel.vehicle_id == vehicle_id)
     filters.append(RepairOrderReadModel.is_deleted.is_(deleted))
@@ -950,6 +970,9 @@ async def repair_order_value_summary(
         projection_filters.append(RepairOrderReadModel.customer_id == customer_id)
         source_filters.append(RepairOrder.customer_id == customer_id)
 
+    if current_user.role == UserRole.MECHANIC:
+        source_filters.append(RepairOrder.assigned_mechanic_id == current_user.id)
+        projection_filters.append(RepairOrderReadModel.repair_order_id.in_(select(RepairOrder.id).where(RepairOrder.tenant_id == current_user.tenant_id, RepairOrder.assigned_mechanic_id == current_user.id)))
     if vehicle_id:
         projection_filters.append(RepairOrderReadModel.vehicle_id == vehicle_id)
         source_filters.append(RepairOrder.vehicle_id == vehicle_id)
@@ -1078,6 +1101,9 @@ async def list_repair_orders(
             projection_filters.append(RepairOrderReadModel.customer_id == customer_id)
             source_filters.append(RepairOrder.customer_id == customer_id)
 
+    if current_user.role == UserRole.MECHANIC:
+        source_filters.append(RepairOrder.assigned_mechanic_id == current_user.id)
+        projection_filters.append(RepairOrderReadModel.repair_order_id.in_(select(RepairOrder.id).where(RepairOrder.tenant_id == current_user.tenant_id, RepairOrder.assigned_mechanic_id == current_user.id)))
     if vehicle_id:
         projection_filters.append(RepairOrderReadModel.vehicle_id == vehicle_id)
         source_filters.append(RepairOrder.vehicle_id == vehicle_id)
@@ -1201,6 +1227,9 @@ async def _list_repair_orders_legacy(
             query = query.where(RepairOrder.customer_id == customer_id)
             count_query = count_query.where(RepairOrder.customer_id == customer_id)
     
+    if current_user.role == UserRole.MECHANIC:
+        query = query.where(RepairOrder.assigned_mechanic_id == current_user.id)
+        count_query = count_query.where(RepairOrder.assigned_mechanic_id == current_user.id)
     if vehicle_id:
         query = query.where(RepairOrder.vehicle_id == vehicle_id)
         count_query = count_query.where(RepairOrder.vehicle_id == vehicle_id)
@@ -1408,6 +1437,11 @@ async def get_repair_order_workspace(
     transactionally maintained projection that powers the list; retain a
     one-query fallback while a projection is being backfilled.
     """
+    if current_user.role == UserRole.MECHANIC:
+        access_order = await db.scalar(tenant_repair_order_statement(order_id, current_user))
+        if not access_order:
+            raise HTTPException(404, "Repair order not found")
+        _check_ro_access(current_user, access_order)
     projection = await db.scalar(
         select(RepairOrderReadModel)
         .where(RepairOrderReadModel.repair_order_id == order_id)
@@ -1526,7 +1560,8 @@ async def get_repair_order_detail(
         )
         .order_by(RepairOrderHistoryEvent.created_at.asc())
     )
-    history_resp = [RepairOrderHistoryEventResponse.model_validate(event) for event in history_result.scalars().all()]
+    history_resp = [RepairOrderHistoryEventResponse.model_validate(event) for event in history_result.scalars().all()
+                    if current_user.role != UserRole.CUSTOMER or event.event_type not in (service_checklist.INTERNAL_EVENT_TYPES | operation_execution.INTERNAL_EVENT_TYPES)]
 
     # Selected PM services (fleet PM work orders). Ordered as chosen.
     from app.db.models.fleet import RepairOrderPMService
@@ -1784,6 +1819,7 @@ async def get_repair_order(
             detail="Repair order not found",
         )
     
+    _check_ro_access(current_user, order)
     # Check access
     if current_user.role == UserRole.CUSTOMER:
         if not current_user.customer_id or current_user.customer_id != order.customer_id:
@@ -1831,7 +1867,7 @@ async def update_repair_order(
 ):
     from app.services.financial_transaction_lock import lock_tenant_financials
     await lock_tenant_financials(db, current_user.tenant_id)
-    result = await db.execute(select(RepairOrder).where(RepairOrder.id == order_id, RepairOrder.deleted_at.is_(None)))
+    result = await db.execute(select(RepairOrder).where(RepairOrder.id == order_id, RepairOrder.tenant_id == current_user.tenant_id, RepairOrder.deleted_at.is_(None)).with_for_update(of=RepairOrder).execution_options(populate_existing=True))
     order = result.scalar_one_or_none()
     
     if not order:
@@ -1840,18 +1876,28 @@ async def update_repair_order(
             detail="Repair order not found",
         )
     
+    _check_ro_access(current_user, order)
     if current_user.tenant_id != order.tenant_id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Access denied",
         )
 
+    if order_data.status != order.status and order_data.status in {RepairOrderStatus.PENDING_REVIEW, RepairOrderStatus.COMPLETED, RepairOrderStatus.INVOICED, RepairOrderStatus.PAID}:
+        await service_checklist.guard_completion(db, order)
+        await operation_execution.finish_order(db, order, current_user)
+
+    if order_data.status is not None and order_data.status != RepairOrderStatus.CANCELLED:
+        await recommendation_conversion.guard_reactivation(db, order, current_user)
+    if order_data.status is not None and order_data.status != order.status and order_data.status not in operation_execution.FINAL | {RepairOrderStatus.PENDING_REVIEW}:
+        operation_execution.clear_completion_snapshot(order)
     cancelling_now = (
         order_data.status == RepairOrderStatus.CANCELLED
         and order.status != RepairOrderStatus.CANCELLED
     )
     if cancelling_now:
         _require_cancelable_ro(order)
+        await operation_execution.stop_order_sessions(db, order, current_user, reason="manual")
         # Cancelling an *early* order (draft/quoted) means the work never happened,
         # so give the parts' stock back and drop the part rows. But once the order
         # is past quoting (approved / in_progress / completed) the parts were
@@ -1939,6 +1985,7 @@ async def override_start_work_without_mechanic(
     )),
 ):
     """Owner/admin: start active customer work without assigning a mechanic."""
+    await recommendation_conversion.lock_tenant_financials(db, current_user.tenant_id)
     result = await db.execute(
         select(RepairOrder)
         .where(
@@ -1974,6 +2021,7 @@ async def override_start_work_without_mechanic(
             detail="Work can only be started from an active checked-in repair order",
         )
 
+    await recommendation_conversion.guard_reactivation(db, order, current_user)
     order.status = RepairOrderStatus.IN_PROGRESS
     if order.work_started_at is None:
         order.work_started_at = datetime.now(timezone.utc)
@@ -2016,10 +2064,13 @@ async def assign_mechanic(
     )),
 ):
     """Assign/reassign mechanic, set status to assigned when needed, and notify mechanic."""
+    await recommendation_conversion.lock_tenant_financials(db, current_user.tenant_id)
     result = await db.execute(
         select(RepairOrder)
         .where(RepairOrder.id == order_id, RepairOrder.deleted_at.is_(None))
         .options(selectinload(RepairOrder.customer), selectinload(RepairOrder.vehicle))
+        .with_for_update(of=RepairOrder)
+        .execution_options(populate_existing=True)
     )
     order = result.scalar_one_or_none()
     
@@ -2080,6 +2131,7 @@ async def assign_mechanic(
         RepairOrderStatus.APPROVED,
         RepairOrderStatus.ACKNOWLEDGED,
     ):
+        await recommendation_conversion.guard_reactivation(db, order, current_user)
         order.status = RepairOrderStatus.ASSIGNED
     
     await db.commit()
@@ -2174,8 +2226,7 @@ async def assign_mechanic(
     return RepairOrderResponse.model_validate(order)
 
 
-# ============ Mechanic Workflow Endpoints ============
-
+# ============ Mechanic Workflow Endpoints =====
 @router.post("/{order_id}/acknowledge", response_model=RepairOrderResponse)
 async def acknowledge_job(
     order_id: UUID,
@@ -2183,6 +2234,7 @@ async def acknowledge_job(
     current_user: User = Depends(require_role(UserRole.MECHANIC)),
 ):
     """Mechanic acknowledges job assignment"""
+    await recommendation_conversion.lock_tenant_financials(db, current_user.tenant_id)
     result = await db.execute(
         select(RepairOrder).where(RepairOrder.id == order_id, RepairOrder.deleted_at.is_(None))
     )
@@ -2200,6 +2252,7 @@ async def acknowledge_job(
             detail=f"Cannot acknowledge job in '{order.status.value}' status",
         )
     
+    await recommendation_conversion.guard_reactivation(db, order, current_user)
     order.status = RepairOrderStatus.ACKNOWLEDGED
     order.acknowledged_at = datetime.now(timezone.utc)
     await db.commit()
@@ -2227,6 +2280,7 @@ async def start_work(
     current_user: User = Depends(require_role(UserRole.MECHANIC)),
 ):
     """Mechanic starts work - notifies customer"""
+    await recommendation_conversion.lock_tenant_financials(db, current_user.tenant_id)
     result = await db.execute(
         select(RepairOrder)
         .where(RepairOrder.id == order_id, RepairOrder.deleted_at.is_(None))
@@ -2242,6 +2296,7 @@ async def start_work(
     
     resume_existing = False
     if order.status in (RepairOrderStatus.ASSIGNED, RepairOrderStatus.ACKNOWLEDGED):
+        await recommendation_conversion.guard_reactivation(db, order, current_user)
         order.status = RepairOrderStatus.IN_PROGRESS
         order.work_started_at = datetime.now(timezone.utc)
     elif order.status == RepairOrderStatus.IN_PROGRESS:
@@ -2274,9 +2329,8 @@ async def start_work(
             repair_order_id=order.id,
             stop_previous_reason="auto_switch",
         )
-    except Exception:
-        # Don't block workflow transition if timer start fails.
-        pass
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from exc
 
     await db.commit()
     await db.refresh(order)
@@ -2422,6 +2476,7 @@ async def hold_repair_order(
     current_user: User = Depends(require_role(UserRole.MECHANIC)),
 ):
     """Mechanic puts an in-progress RO on hold (waiting for parts, customer approval, etc.)"""
+    await recommendation_conversion.lock_tenant_financials(db, current_user.tenant_id)
     result = await db.execute(
         select(RepairOrder).where(RepairOrder.id == order_id, RepairOrder.deleted_at.is_(None))
     )
@@ -2443,22 +2498,8 @@ async def hold_repair_order(
     order.hold_reason = reason
     order.held_at = datetime.now(timezone.utc)
 
-    # Auto-stop the active RO timer for this order.
-    stopped_session = None
-    active_session = await get_active_session(db, tenant_id=order.tenant_id, mechanic_id=current_user.id)
-    if (
-        active_session
-        and (active_session.session_type.value if hasattr(active_session.session_type, "value") else active_session.session_type)
-        == MechanicSessionType.REPAIR_ORDER.value
-        and active_session.repair_order_id == order.id
-    ):
-        stopped_session = await stop_active_session(
-            db,
-            tenant_id=order.tenant_id,
-            mechanic_id=current_user.id,
-            actor_user=current_user,
-            stop_reason="hold",
-        )
+    stopped_sessions = await operation_execution.stop_order_sessions(db, order, current_user, reason="hold")
+    stopped_session = stopped_sessions[0] if stopped_sessions else None
 
     await db.commit()
     await db.refresh(order)
@@ -2494,6 +2535,7 @@ async def resume_repair_order(
     current_user: User = Depends(require_role(UserRole.MECHANIC)),
 ):
     """Mechanic resumes a held RO — clears hold state and restarts the timer."""
+    await recommendation_conversion.lock_tenant_financials(db, current_user.tenant_id)
     result = await db.execute(
         select(RepairOrder)
         .where(RepairOrder.id == order_id, RepairOrder.deleted_at.is_(None))
@@ -2529,8 +2571,8 @@ async def resume_repair_order(
             repair_order_id=order.id,
             stop_previous_reason="resume_from_hold",
         )
-    except Exception:
-        pass
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from exc
 
     await db.commit()
     await db.refresh(order)
@@ -2589,10 +2631,13 @@ async def complete_work(
     current_user: User = Depends(require_role(UserRole.MECHANIC)),
 ):
     """Mechanic marks work as complete - awards points and notifies manager"""
+    await recommendation_conversion.lock_tenant_financials(db, current_user.tenant_id)
     result = await db.execute(
         select(RepairOrder)
-        .where(RepairOrder.id == order_id, RepairOrder.deleted_at.is_(None))
+        .where(RepairOrder.id == order_id, RepairOrder.tenant_id == current_user.tenant_id, RepairOrder.deleted_at.is_(None))
         .options(selectinload(RepairOrder.customer), selectinload(RepairOrder.vehicle))
+        .with_for_update(of=RepairOrder)
+        .execution_options(populate_existing=True)
     )
     order = result.scalar_one_or_none()
     
@@ -2608,149 +2653,117 @@ async def complete_work(
             detail=f"Cannot complete job in '{order.status.value}' status",
         )
     
+    await service_checklist.guard_completion(db, order)
+    await operation_execution.finish_order(db, order, current_user)
+    await recommendation_conversion.guard_reactivation(db, order, current_user)
     order.status = RepairOrderStatus.PENDING_REVIEW
-    order.work_completed_at = datetime.now(timezone.utc)
+    # finish_order stamps the common cutoff before stopping all matching timers.
     # Clear hold state if completing from hold
     order.hold_reason = None
     order.held_at = None
 
-    # Auto-stop active repair-order timer for this work order when work completes.
-    stopped_session = None
-    try:
-        active_session = await get_active_session(
-            db,
-            tenant_id=order.tenant_id,
-            mechanic_id=current_user.id,
+    stopped_session = None  # All order sessions were stopped atomically above.
+
+    # Completion credit belongs to the order, not each review submission. The
+    # tenant transaction lock serializes this check with every completion path.
+    prior_credit = await db.scalar(select(MechanicPoints.id).where(
+        MechanicPoints.tenant_id == order.tenant_id,
+        MechanicPoints.repair_order_id == order.id,
+        MechanicPoints.transaction_type == PointsTransactionType.EARNED,
+    ).limit(1))
+    if prior_credit is None:
+        # ============ AWARD POINTS =====    # Points = job value (1 point per $1)
+        # Use service prices from internal_notes if available, else total_labor_cost
+        labor_value = float(order.total_labor_cost or 0)
+    
+        # Check for services in internal_notes (quote-based orders with service menu prices)
+        if order.internal_notes:
+            try:
+                import json
+                notes_data = json.loads(order.internal_notes)
+                selected_services = notes_data.get("selected_services", [])
+                if selected_services:
+                    service_total = sum(
+                        float(svc.get("base_price", 0))
+                        for svc in selected_services
+                    )
+                    if service_total > labor_value:
+                        labor_value = service_total
+            except (json.JSONDecodeError, TypeError, ValueError):
+                pass
+    
+        # Get or create balance record
+        result = await db.execute(
+            select(MechanicPointsBalance).where(
+                MechanicPointsBalance.mechanic_id == current_user.id
+            )
         )
-        if (
-            active_session
-            and (active_session.session_type.value if hasattr(active_session.session_type, "value") else active_session.session_type)
-            == MechanicSessionType.REPAIR_ORDER.value
-            and active_session.repair_order_id == order.id
-        ):
-            stopped_session = await stop_active_session(
-                db,
-                tenant_id=order.tenant_id,
+        balance = result.scalar_one_or_none()
+    
+        if not balance:
+            balance = MechanicPointsBalance(
+                tenant_id=current_user.tenant_id,
                 mechanic_id=current_user.id,
-                actor_user=current_user,
-                stop_reason="auto_complete_work",
+                available_points=0,
+                total_earned=0,
+                total_redeemed=0,
+                current_streak_days=0,
             )
-    except Exception:
-        pass
-
-    # Stamp actual tracked and hold/idle minutes on the RO
-    try:
-        ro_sessions = await db.execute(
-            select(MechanicTimeSession).where(
-                MechanicTimeSession.repair_order_id == order.id,
-                MechanicTimeSession.deleted_at.is_(None),
-            )
-        )
-        total_tracked = 0
-        for s in ro_sessions.scalars():
-            end = s.ended_at or order.work_completed_at
-            total_tracked += int((end - s.started_at).total_seconds() / 60)
-        order.actual_tracked_minutes = total_tracked
-
-        if order.work_started_at and order.work_completed_at:
-            wall_minutes = int((order.work_completed_at - order.work_started_at).total_seconds() / 60)
-            order.total_hold_minutes = max(0, wall_minutes - total_tracked)
-    except Exception:
-        pass
+            db.add(balance)
     
-    # ============ AWARD POINTS ============
-    # Points = job value (1 point per $1)
-    # Use service prices from internal_notes if available, else total_labor_cost
-    labor_value = float(order.total_labor_cost or 0)
+        # Calculate streak multiplier
+        today = date.today()
+        multiplier = Decimal("1.00")
     
-    # Check for services in internal_notes (quote-based orders with service menu prices)
-    if order.internal_notes:
-        try:
-            import json
-            notes_data = json.loads(order.internal_notes)
-            selected_services = notes_data.get("selected_services", [])
-            if selected_services:
-                service_total = sum(
-                    float(svc.get("base_price", 0))
-                    for svc in selected_services
-                )
-                if service_total > labor_value:
-                    labor_value = service_total
-        except (json.JSONDecodeError, TypeError, ValueError):
-            pass
+        if balance.last_work_date:
+            last_work = balance.last_work_date.date() if hasattr(balance.last_work_date, 'date') else balance.last_work_date
+            days_since = (today - last_work).days
+        
+            if days_since == 0:
+                # Same day, keep streak
+                pass
+            elif days_since == 1:
+                # Consecutive day, increment streak
+                balance.current_streak_days += 1
+            else:
+                # Streak broken
+                balance.current_streak_days = 1
+        else:
+            balance.current_streak_days = 1
     
-    # Get or create balance record
-    result = await db.execute(
-        select(MechanicPointsBalance).where(
-            MechanicPointsBalance.mechanic_id == current_user.id
-        )
-    )
-    balance = result.scalar_one_or_none()
+        balance.last_work_date = today
     
-    if not balance:
-        balance = MechanicPointsBalance(
+        # Apply streak bonus
+        if balance.current_streak_days >= 10:
+            multiplier = Decimal("1.25")  # 25% bonus after 10 days
+        elif balance.current_streak_days >= 5:
+            multiplier = Decimal("1.10")  # 10% bonus after 5 days
+    
+        # Calculate final points
+        base_points = int(labor_value)  # 1 point per $1 labor
+        final_points = int(base_points * float(multiplier))
+    
+        # Minimum 10 points per job (even if no labor recorded yet)
+        if final_points < 10:
+            final_points = 10
+            labor_value = 10.0
+    
+        # Create points transaction
+        points_tx = MechanicPoints(
             tenant_id=current_user.tenant_id,
             mechanic_id=current_user.id,
-            available_points=0,
-            total_earned=0,
-            total_redeemed=0,
-            current_streak_days=0,
+            transaction_type=PointsTransactionType.EARNED,
+            points=final_points,
+            repair_order_id=order.id,
+            labor_value=Decimal(str(labor_value)),
+            multiplier=multiplier,
+            notes=f"Completed {order.order_number}" + (f" (streak x{multiplier})" if multiplier > 1 else ""),
         )
-        db.add(balance)
+        db.add(points_tx)
     
-    # Calculate streak multiplier
-    today = date.today()
-    multiplier = Decimal("1.00")
-    
-    if balance.last_work_date:
-        last_work = balance.last_work_date.date() if hasattr(balance.last_work_date, 'date') else balance.last_work_date
-        days_since = (today - last_work).days
-        
-        if days_since == 0:
-            # Same day, keep streak
-            pass
-        elif days_since == 1:
-            # Consecutive day, increment streak
-            balance.current_streak_days += 1
-        else:
-            # Streak broken
-            balance.current_streak_days = 1
-    else:
-        balance.current_streak_days = 1
-    
-    balance.last_work_date = today
-    
-    # Apply streak bonus
-    if balance.current_streak_days >= 10:
-        multiplier = Decimal("1.25")  # 25% bonus after 10 days
-    elif balance.current_streak_days >= 5:
-        multiplier = Decimal("1.10")  # 10% bonus after 5 days
-    
-    # Calculate final points
-    base_points = int(labor_value)  # 1 point per $1 labor
-    final_points = int(base_points * float(multiplier))
-    
-    # Minimum 10 points per job (even if no labor recorded yet)
-    if final_points < 10:
-        final_points = 10
-        labor_value = 10.0
-    
-    # Create points transaction
-    points_tx = MechanicPoints(
-        tenant_id=current_user.tenant_id,
-        mechanic_id=current_user.id,
-        transaction_type=PointsTransactionType.EARNED,
-        points=final_points,
-        repair_order_id=order.id,
-        labor_value=Decimal(str(labor_value)),
-        multiplier=multiplier,
-        notes=f"Completed {order.order_number}" + (f" (streak x{multiplier})" if multiplier > 1 else ""),
-    )
-    db.add(points_tx)
-    
-    # Update balance
-    balance.available_points += final_points
-    balance.total_earned += final_points
+        # Update balance
+        balance.available_points += final_points
+        balance.total_earned += final_points
     
     await db.commit()
     await db.refresh(order)
@@ -2858,10 +2871,13 @@ async def admin_complete_unassigned_work(
     current_user: User = Depends(require_role(UserRole.GARAGE_OWNER, UserRole.GARAGE_ADMIN)),
 ):
     """Admin marks an override-started customer repair order ready for review."""
+    await recommendation_conversion.lock_tenant_financials(db, current_user.tenant_id)
     result = await db.execute(
         select(RepairOrder)
-        .where(RepairOrder.id == order_id, RepairOrder.deleted_at.is_(None))
+        .where(RepairOrder.id == order_id, RepairOrder.tenant_id == current_user.tenant_id, RepairOrder.deleted_at.is_(None))
         .options(selectinload(RepairOrder.customer), selectinload(RepairOrder.vehicle))
+        .with_for_update(of=RepairOrder)
+        .execution_options(populate_existing=True)
     )
     order = result.scalar_one_or_none()
 
@@ -2883,8 +2899,11 @@ async def admin_complete_unassigned_work(
             detail=f"Cannot complete job in '{order.status.value}' status",
         )
 
+    await service_checklist.guard_completion(db, order)
+    await operation_execution.finish_order(db, order, current_user)
+    await recommendation_conversion.guard_reactivation(db, order, current_user)
     order.status = RepairOrderStatus.PENDING_REVIEW
-    order.work_completed_at = datetime.now(timezone.utc)
+    # finish_order stamps the common cutoff before stopping all matching timers.
     order.hold_reason = None
     order.held_at = None
     _record_repair_order_history_event(
@@ -2969,7 +2988,8 @@ async def approve_completion(
             selectinload(RepairOrder.parts_usage).selectinload(PartsUsage.inventory_item),
             selectinload(RepairOrder.labor_items),
         )
-        .with_for_update()
+        .with_for_update(of=RepairOrder)
+        .execution_options(populate_existing=True)
     )
     order = result.scalar_one_or_none()
     
@@ -2981,6 +3001,9 @@ async def approve_completion(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Cannot approve job in '{order.status.value}' status",
         )
+
+    await service_checklist.guard_completion(db, order)
+    await operation_execution.finish_order(db, order, current_user)
 
     # Finalization shares the repair-order row lock with every price mutation.
     # Reconcile canonical children before authorization checks and invoice
@@ -3245,7 +3268,7 @@ async def delete_repair_order(
 ):
     from app.services.financial_transaction_lock import lock_tenant_financials
     await lock_tenant_financials(db, current_user.tenant_id)
-    result = await db.execute(select(RepairOrder).where(RepairOrder.id == order_id))
+    result = await db.execute(select(RepairOrder).where(RepairOrder.id == order_id, RepairOrder.tenant_id == current_user.tenant_id).with_for_update(of=RepairOrder).execution_options(populate_existing=True))
     order = result.scalar_one_or_none()
 
     if not order:
@@ -3254,6 +3277,7 @@ async def delete_repair_order(
             detail="Repair order not found",
         )
 
+    _check_ro_access(current_user, order)
     if current_user.tenant_id != order.tenant_id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -3283,6 +3307,7 @@ async def delete_repair_order(
     if order.status in DANGER_ACTION_RO_STATUSES:
         await _release_reserved_stock(db, order.id)
 
+    await operation_execution.stop_order_sessions(db, order, current_user, reason="manual")
     order.deleted_at = datetime.now(timezone.utc)
     order.deleted_by_user_id = current_user.id
     await db.commit()
@@ -3317,7 +3342,7 @@ async def restore_repair_order(
     when deleted — restoring never changes status on its own."""
     from app.services.financial_transaction_lock import lock_tenant_financials
     await lock_tenant_financials(db, current_user.tenant_id)
-    result = await db.execute(select(RepairOrder).where(RepairOrder.id == order_id))
+    result = await db.execute(select(RepairOrder).where(RepairOrder.id == order_id, RepairOrder.tenant_id == current_user.tenant_id).with_for_update(of=RepairOrder).execution_options(populate_existing=True))
     order = result.scalar_one_or_none()
 
     if not order:
@@ -3329,6 +3354,7 @@ async def restore_repair_order(
     if order.deleted_at is None:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Repair order is not deleted")
 
+    await recommendation_conversion.guard_reactivation(db, order, current_user)
     order.deleted_at = None
     order.deleted_by_user_id = None
 
@@ -3346,7 +3372,7 @@ async def restore_repair_order(
     # keep their status (they have quotes/invoices tied to completion).
     if order.is_internal and order.status == RepairOrderStatus.COMPLETED:
         order.status = RepairOrderStatus.IN_PROGRESS
-        order.work_completed_at = None
+        operation_execution.clear_completion_snapshot(order)
 
     await db.commit()
     await db.refresh(order)
@@ -3378,11 +3404,12 @@ async def reopen_repair_order(
     from app.services.financial_transaction_lock import lock_tenant_financials
     await lock_tenant_financials(db, current_user.tenant_id)
     result = await db.execute(
-        select(RepairOrder).where(RepairOrder.id == order_id, RepairOrder.deleted_at.is_(None))
+        select(RepairOrder).where(RepairOrder.id == order_id, RepairOrder.tenant_id == current_user.tenant_id, RepairOrder.deleted_at.is_(None)).with_for_update(of=RepairOrder).execution_options(populate_existing=True)
     )
     order = result.scalar_one_or_none()
     if not order:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repair order not found")
+    _check_ro_access(current_user, order)
     if current_user.tenant_id != order.tenant_id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
     if not order.is_internal:
@@ -3390,8 +3417,9 @@ async def reopen_repair_order(
     if order.status != RepairOrderStatus.COMPLETED:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Only completed work orders can be reopened")
 
+    await recommendation_conversion.guard_reactivation(db, order, current_user)
     order.status = RepairOrderStatus.IN_PROGRESS
-    order.work_completed_at = None
+    operation_execution.clear_completion_snapshot(order)
     await db.commit()
     await db.refresh(order)
 
@@ -3411,6 +3439,8 @@ async def reopen_repair_order(
 
 
 def _check_ro_access(current_user: User, order: RepairOrder) -> None:
+    if current_user.role == UserRole.MECHANIC and order.assigned_mechanic_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Use your assigned operation workspace for this job.")
     if current_user.role == UserRole.CUSTOMER:
         if not current_user.customer_id or current_user.customer_id != order.customer_id:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
@@ -3552,12 +3582,14 @@ async def _load_pricing_order_for_update(
     *,
     tenant_id: Optional[UUID] = None,
 ) -> Optional[RepairOrder]:
+    if tenant_id is not None:
+        await operation_execution.lock_tenant_financials(db, tenant_id)
     statement = (
         select(RepairOrder)
         .where(RepairOrder.id == order_id, RepairOrder.deleted_at.is_(None))
         .options(
             joinedload(RepairOrder.tenant, innerjoin=True),
-            selectinload(RepairOrder.parts_usage).selectinload(PartsUsage.inventory_item),
+            selectinload(RepairOrder.parts_usage).joinedload(PartsUsage.inventory_item),
             selectinload(RepairOrder.labor_items),
         )
         .execution_options(populate_existing=True)
@@ -3741,7 +3773,7 @@ async def get_price_build_summary(
     try:
         order = await _load_tenant_price_build_order(db, order_id, current_user)
         _check_ro_access(current_user, order)
-        return _to_price_build_summary(order)
+        return await _to_price_build_summary(db, current_user, order)
     except Exception as exc:
         raise _map_price_build_error(exc)
 
@@ -3768,6 +3800,7 @@ async def add_price_build_flat_service(
             order,
             body.service_id,
             quantity=body.quantity,
+            actor=current_user,
             mechanic_additive_only=current_user.role == UserRole.MECHANIC,
             mechanic_id=(
                 current_user.id if current_user.role == UserRole.MECHANIC else None
@@ -3786,7 +3819,7 @@ async def add_price_build_flat_service(
             ),
         )
         await db.commit()
-        return _to_price_build_summary(
+        return await _to_price_build_summary(db, current_user,
             result.order,
             warnings=[PriceBuildWarning(code=w.code, message=w.message, line_id=w.line_id) for w in result.warnings],
         )
@@ -3848,6 +3881,7 @@ async def apply_price_build_repair_operation(
             estimated_hours=body.estimated_hours,
             provider=body.provider,
             auto_recalc_enabled=body.auto_recalc_enabled,
+            actor=current_user,
             mechanic_additive_only=current_user.role == UserRole.MECHANIC,
             mechanic_id=(
                 current_user.id if current_user.role == UserRole.MECHANIC else None
@@ -3862,7 +3896,7 @@ async def apply_price_build_repair_operation(
             detail=body.name or "Repair operation",
         )
         await db.commit()
-        return _to_price_build_summary(
+        return await _to_price_build_summary(db, current_user,
             result.order,
             warnings=[PriceBuildWarning(code=w.code, message=w.message, line_id=w.line_id) for w in result.warnings],
         )
@@ -3890,7 +3924,7 @@ async def update_price_build_line(
             hourly_rate=body.hourly_rate,
             auto_recalc_enabled=body.auto_recalc_enabled,
         )
-        return _to_price_build_summary(
+        return await _to_price_build_summary(db, current_user,
             result.order,
             warnings=[PriceBuildWarning(code=w.code, message=w.message, line_id=w.line_id) for w in result.warnings],
         )
@@ -3912,7 +3946,7 @@ async def delete_price_build_line(
         # removed rather than only that something was.
         removed = next((li for li in order.labor_items if li.id == line_id), None)
         removed_label = removed.description if removed else None
-        result = await price_build_service.remove_line(db, order, line_id=line_id)
+        result = await price_build_service.remove_line(db, order, line_id=line_id, actor=current_user)
         _record_repair_order_history_event(
             db,
             order=result.order,
@@ -3923,7 +3957,7 @@ async def delete_price_build_line(
             entity_id=line_id,
         )
         await db.commit()
-        return _to_price_build_summary(
+        return await _to_price_build_summary(db, current_user,
             result.order,
             warnings=[PriceBuildWarning(code=w.code, message=w.message, line_id=w.line_id) for w in result.warnings],
         )
@@ -3941,7 +3975,7 @@ async def recalculate_price_build(
         order = await _load_tenant_price_build_order(db, order_id, current_user)
         _check_ro_access(current_user, order)
         result = await price_build_service.recalculate_order(db, order)
-        return _to_price_build_summary(
+        return await _to_price_build_summary(db, current_user,
             result.order,
             warnings=[PriceBuildWarning(code=w.code, message=w.message, line_id=w.line_id) for w in result.warnings],
         )
@@ -3968,7 +4002,7 @@ async def add_sublet_to_price_build(
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="User must be associated with a tenant")
         # Sublet: we store vendor cost and charge the customer the charge_to_customer amount.
         # hours=1, hourly_rate=charge_to_customer gives total_cost = charge_to_customer.
-        labor = Labor(
+        labor = Labor(execution_status=None,
             tenant_id=current_user.tenant_id,
             repair_order_id=order_id,
             description=body.description,
@@ -3986,7 +4020,7 @@ async def add_sublet_to_price_build(
         if order is None:
             raise PriceBuildNotFoundError("Repair order not found")
         order = await _load_tenant_price_build_order(db, order_id, current_user)
-        return _to_price_build_summary(order)
+        return await _to_price_build_summary(db, current_user, order)
     except HTTPException:
         raise
     except Exception as exc:
@@ -4178,6 +4212,7 @@ async def force_void_repair_order(
         invoice.void_reason = body.reason
         voided_numbers.append(invoice.invoice_number)
 
+    await operation_execution.stop_order_sessions(db, order, current_user, reason="manual")
     order.status = RepairOrderStatus.CANCELLED
     order.cancelled_at = now
     order.cancelled_by_user_id = current_user.id
@@ -4775,7 +4810,7 @@ async def set_parts_pricing_mode(
     _apply_parts_mode(order, body.mode)
     _apply_repair_order_totals(order)
     await db.commit()
-    return _to_price_build_summary(order)
+    return await _to_price_build_summary(db, current_user, order)
 
 
 @router.patch("/{order_id}/discounts", response_model=PriceBuildSummaryResponse)
@@ -4805,7 +4840,7 @@ async def update_repair_order_discounts(
     order.order_discount_amount = total.quantize(Decimal('0.01'))
     _apply_repair_order_totals(order)
     await db.commit()
-    return _to_price_build_summary(order)
+    return await _to_price_build_summary(db, current_user, order)
 
 
 @router.delete("/{order_id}/parts/{parts_usage_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -4972,8 +5007,9 @@ async def add_labor_to_repair_order(
         hourly_rate = (
             tenant.labor_rate if fleet_labor_uses_customer_rate(order) else tenant.internal_labor_rate
         )
+    await operation_execution.validate_assignee(db, order.tenant_id, mechanic_id)
     total_cost = hours * hourly_rate
-    labor = Labor(
+    labor = Labor(execution_status=None if body.line_type == LaborLineType.SUBLET else "pending",
         tenant_id=current_user.tenant_id,
         repair_order_id=order_id,
         description=body.description or "",
@@ -4988,7 +5024,14 @@ async def add_labor_to_repair_order(
         auto_recalc_enabled=body.auto_recalc_enabled,
         source_service_id=body.source_service_id,
     )
+    if labor.execution_status is not None:
+        operation_execution.enroll_new_scope(order)
     db.add(labor)
+    if body.source_service_id:
+        source = (await db.execute(select(Service).where(Service.id == body.source_service_id, Service.tenant_id == order.tenant_id, Service.deleted_at.is_(None), Service.is_active.is_(True)))).scalar_one_or_none()
+        if source is None:
+            raise HTTPException(404, "Source reference not found")
+        await service_checklist.snapshot_service(db, order, labor, source, current_user)
     await _refresh_repair_order_totals(db, order_id)
     await db.commit()
     await db.refresh(labor)
@@ -5063,6 +5106,8 @@ async def update_repair_order_labor(
     if not labor:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Labor item not found")
     update_data = body.model_dump(exclude_unset=True)
+    await operation_execution.guard_material_edit(db, order, labor, update_data)
+    await service_checklist.forbid_source_change(db, order, labor, update_data.get("source_service_id", labor.source_service_id))
     await _validate_source_references(
         db,
         tenant_id=current_user.tenant_id,
@@ -5111,10 +5156,27 @@ async def remove_labor_from_repair_order(
     labor = result.scalar_one_or_none()
     if not labor:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Labor item not found")
+    await service_checklist.archive_labor(db, order, labor, current_user)
     await db.delete(labor)
     await _refresh_repair_order_totals(db, order_id)
     await db.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.post("/{order_id}/recommended-work/{recommendation_id}/convert", response_model=RecommendationConvertResponse)
+async def convert_recommendation_to_operation(
+    order_id: UUID,
+    recommendation_id: UUID,
+    body: RecommendationConvertRequest,
+    response: Response,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role(*recommendation_conversion.STAFF_ROLES)),
+):
+    conversion, replayed = await recommendation_conversion.convert(
+        db, target_id=order_id, recommendation_id=recommendation_id, body=body, user=current_user)
+    await db.commit()
+    response.status_code = status.HTTP_200_OK if replayed else status.HTTP_201_CREATED
+    return RecommendationConvertResponse(conversion=conversion, replayed=replayed)
 
 
 # --- Recommended Services ---
@@ -5186,7 +5248,8 @@ async def list_recommended_services(
         )
     )
     svcs = svcs_result.scalars().all()
-    return [RecommendedServiceResponse.model_validate(s) for s in svcs]
+    projected = await recommendation_conversion.projections(db, current_user.tenant_id, [s.id for s in svcs]) if current_user.role in recommendation_conversion.STAFF_ROLES else {}
+    return [RecommendedServiceResponse.model_validate(s).model_copy(update={"conversion": projected.get(s.id)}) for s in svcs]
 
 
 @router.patch("/{order_id}/recommended-services/{service_id}", response_model=RecommendedServiceResponse)
@@ -5199,6 +5262,7 @@ async def update_recommended_service(
 ):
     if not current_user.tenant_id:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="User must be associated with a tenant")
+    await recommendation_conversion.lock_tenant_financials(db, current_user.tenant_id)
     result = await db.execute(
         tenant_repair_order_statement(order_id, current_user)
     )
@@ -5212,18 +5276,23 @@ async def update_recommended_service(
                 RecommendedService.id == service_id,
                 RecommendedService.repair_order_id == order_id,
                 RecommendedService.tenant_id == current_user.tenant_id,
+                RecommendedService.deleted_at.is_(None),
             )
-        )
+        ).with_for_update()
     )
     svc = svc_result.scalar_one_or_none()
     if not svc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Recommended service not found")
     update_data = body.model_dump(exclude_unset=True)
+    await recommendation_conversion.guard_resolution(db, svc, update_data, current_user)
     for field, value in update_data.items():
         setattr(svc, field, value)
     await db.commit()
     await db.refresh(svc)
-    return RecommendedServiceResponse.model_validate(svc)
+    result = RecommendedServiceResponse.model_validate(svc)
+    if current_user.role in recommendation_conversion.STAFF_ROLES:
+        result.conversion = (await recommendation_conversion.projections(db, current_user.tenant_id, [svc.id])).get(svc.id)
+    return result
 
 
 @router.delete("/{order_id}/recommended-services/{service_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -5235,6 +5304,7 @@ async def delete_recommended_service(
 ):
     if not current_user.tenant_id:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="User must be associated with a tenant")
+    await recommendation_conversion.lock_tenant_financials(db, current_user.tenant_id)
     result = await db.execute(
         tenant_repair_order_statement(order_id, current_user)
     )
@@ -5248,12 +5318,81 @@ async def delete_recommended_service(
                 RecommendedService.id == service_id,
                 RecommendedService.repair_order_id == order_id,
                 RecommendedService.tenant_id == current_user.tenant_id,
+                RecommendedService.deleted_at.is_(None),
             )
-        )
+        ).with_for_update()
     )
     svc = svc_result.scalar_one_or_none()
     if not svc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Recommended service not found")
+    await recommendation_conversion.guard_source_delete(db, svc)
     await db.delete(svc)
     await db.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.get("/{order_id}/checklist", response_model=ChecklistPage)
+async def get_order_checklist(
+    order_id: UUID,
+    response: Response,
+    skip: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=100),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    response.headers["Cache-Control"] = "no-store"
+    return await service_checklist.read_checklist(db, order_id, current_user, skip, limit)
+
+
+@router.patch("/{order_id}/checklist/{item_id}", response_model=ChecklistTaskUpdateResponse)
+async def patch_order_checklist(
+    order_id: UUID,
+    item_id: UUID,
+    body: ChecklistTaskUpdate,
+    response: Response,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    response.headers["Cache-Control"] = "no-store"
+    result = await service_checklist.update_task(db, order_id, item_id, current_user, body)
+    await db.commit()
+    return result
+
+
+@router.get("/{order_id}/operations", response_model=OperationPage)
+async def get_order_operations(order_id: UUID, response: Response, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    response.headers["Cache-Control"] = "no-store"
+    return await operation_execution.page(db, order_id, current_user)
+
+
+async def _publish_operation_change(db, order_id, actor, result):
+    await db.commit()
+    order = await operation_execution.load_order(db, order_id, actor)
+    await broadcast_repair_order_update(tenant_id=str(order.tenant_id), customer_id=str(order.customer_id), order_id=str(order.id), order_number=order.order_number, status=order.status.value, send_to_customer=False, notify_status_change=False)
+    # Existing timer event invalidates job and attendance/timer queries.
+    await broadcast_mechanic_timer_update(tenant_id=str(order.tenant_id), mechanic_id=str(actor.id), session_id=str(order.id), action="operation_updated")
+    return result
+
+
+@router.put("/{order_id}/operations/{labor_id}/assignment", response_model=OperationPage)
+async def assign_order_operation(order_id: UUID, labor_id: UUID, body: OperationAssignment, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    result = await operation_execution.assign(db, order_id, labor_id, current_user, body)
+    return await _publish_operation_change(db, order_id, current_user, result)
+
+
+@router.put("/{order_id}/operations/{labor_id}/completion", response_model=OperationPage)
+async def complete_order_operation(order_id: UUID, labor_id: UUID, body: OperationCompletion, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    result = await operation_execution.complete(db, order_id, labor_id, current_user, body)
+    return await _publish_operation_change(db, order_id, current_user, result)
+
+
+@router.post("/{order_id}/operations/{labor_id}/timer/start", response_model=OperationPage)
+async def start_operation_timer(order_id: UUID, labor_id: UUID, body: OperationVersion, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    result = await operation_execution.timer(db, order_id, labor_id, current_user, body)
+    return await _publish_operation_change(db, order_id, current_user, result)
+
+
+@router.post("/{order_id}/operations/{labor_id}/timer/stop", response_model=OperationPage)
+async def stop_operation_timer(order_id: UUID, labor_id: UUID, body: OperationTimerStop, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    result = await operation_execution.timer(db, order_id, labor_id, current_user, body, stop=True)
+    return await _publish_operation_change(db, order_id, current_user, result)

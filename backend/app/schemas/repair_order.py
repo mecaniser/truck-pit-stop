@@ -6,6 +6,7 @@ from decimal import Decimal
 from app.db.models.repair_order import RepairOrderStatus
 from app.db.models.labor import LaborLineType
 from app.db.models.recommended_service import RecommendedServicePriority
+from app.schemas.recommendation_conversion import RecommendationConversionResponse, RecommendationSourceResponse
 from app.core.work_value_validation import validate_labor_hours, validate_part_quantity
 
 
@@ -233,6 +234,7 @@ class LaborUpdate(BaseModel):
 
 
 class LaborResponse(BaseModel):
+    recommendation_source: Optional[RecommendationSourceResponse] = None
     id: UUID
     repair_order_id: UUID
     description: str
@@ -490,6 +492,8 @@ class PriceBuildLineUpdateRequest(BaseModel):
 
 
 class PriceBuildSummaryResponse(BaseModel):
+    recommendation_hourly_rate: Optional[Decimal] = None
+    can_convert_recommendations: bool = False
     order_id: UUID
     labor_total: Decimal                          # gross labor (before discount)
     parts_total: Decimal                          # gross parts
@@ -544,6 +548,7 @@ class RecommendedServiceUpdate(BaseModel):
 
 
 class RecommendedServiceResponse(BaseModel):
+    conversion: Optional[RecommendationConversionResponse] = None
     id: UUID
     repair_order_id: UUID
     tenant_id: UUID

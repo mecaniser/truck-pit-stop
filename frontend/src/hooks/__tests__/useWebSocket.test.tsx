@@ -568,4 +568,25 @@ describe('useWebSocket cookie-session transport', () => {
     for (const key of keys) expect(client.getQueryState(key)?.isInvalidated).toBe(true)
   })
 
+  it.each([false, true, undefined])('refreshes operation and workspace state while respecting notify_status_change=%s', (notifyStatusChange) => {
+    authenticateWithWorkOS()
+    const client = new QueryClient()
+    const onNotification = vi.fn()
+    const keys = [
+      ['repair-orders'], ['repair-order-detail', 'order-1'], ['repair-order-workspace', 'order-1'],
+      ['order-operations', 'tenant-1', 'order-1'], ['order-checklist', 'tenant-1', 'order-1'],
+      ['mechanic-job-detail', 'order-1'], ['mechanic-jobs'],
+    ]
+    client.setQueryData(keys[0], [{ id: 'order-1', status: 'assigned' }])
+    for (const key of keys.slice(1)) client.setQueryData(key, { id: 'order-1', status: 'assigned' })
+    renderHook(() => useWebSocket({ onNotification }), { wrapper: ({ children }: PropsWithChildren) => <QueryClientProvider client={client}>{children}</QueryClientProvider> })
+    act(() => latestSocket().emitMessage(JSON.stringify({
+      type: 'repair_order_update', order_id: 'order-1', order_number: 'RO-1', status: 'in_progress', notify_status_change: notifyStatusChange,
+    })))
+    for (const key of keys) expect(client.getQueryState(key)?.isInvalidated).toBe(true)
+    expect(client.getQueryData(keys[0])).toEqual([expect.objectContaining({ status: 'in_progress' })])
+    if (notifyStatusChange === false) expect(onNotification).not.toHaveBeenCalled()
+    else expect(onNotification).toHaveBeenCalledWith(expect.objectContaining({ type: 'repair_order_update', orderId: 'order-1', status: 'in_progress' }))
+  })
+
 })

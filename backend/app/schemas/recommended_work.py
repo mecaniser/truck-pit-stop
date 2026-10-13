@@ -6,6 +6,7 @@ from pydantic import BaseModel
 
 from app.db.models.recommended_service import RecommendedServicePriority
 from app.db.models.repair_order import RepairOrderStatus
+from app.schemas.recommendation_conversion import RecommendationConversionResponse
 
 
 class RecommendedWorkVehicle(BaseModel):
@@ -24,6 +25,7 @@ class RecommendedWorkSourceOrder(BaseModel):
 
 
 class RecommendedWorkItem(BaseModel):
+    conversion: RecommendationConversionResponse | None = None
     id: UUID
     description: str
     priority: RecommendedServicePriority

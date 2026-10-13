@@ -1,10 +1,10 @@
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { MemoryRouter, useLocation } from 'react-router-dom'
+import { MemoryRouter, useLocation, useNavigate } from 'react-router-dom'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import type { Customer } from '../../types'
+import type { Customer, Vehicle } from '../../types'
 
 const apiMocks = vi.hoisted(() => ({
   get: vi.fn(),
@@ -28,7 +28,7 @@ vi.mock('../../contexts/ThemeContext', () => ({
 }))
 
 vi.mock('../../stores/authStore', () => ({
-  useAuthStore: (selector: (state: { user: { role: string } }) => unknown) => selector({ user: { role: 'shop_owner' } }),
+  useAuthStore: (selector: (state: { user: { role: string } }) => unknown) => selector({ user: { role: 'garage_owner' } }),
 }))
 
 import CustomersPage from './CustomersPage'
@@ -75,7 +75,8 @@ const secondCustomer = {
 
 function LocationProbe() {
   const location = useLocation()
-  return <output data-testid="customers-location">{location.search}</output>
+  const navigate = useNavigate()
+  return <><output data-testid="customers-location">{location.search}</output><button onClick={() => navigate('/dashboard/customers?selected=missing-customer')}>Test missing customer navigation</button></>
 }
 
 function renderPage(initialEntry = '/dashboard/customers?view=list') {
@@ -131,6 +132,22 @@ describe('DB-035C customer workstation', () => {
     expect(document.querySelector('.db-customers-workspace--detail-open')).toBeInTheDocument()
   })
 
+  it('returns from a truck to the company using its visible name', async () => {
+    installApiFixture()
+    const defaultGet = apiMocks.get.getMockImplementation()!
+    apiMocks.get.mockImplementation((url: string) => {
+      if (url === '/customers/customer-1/vehicles') return Promise.resolve({ data: [{ id: 'truck-1', customer_id: customer.id, year: 2021, make: 'Freightliner', model: 'Cascadia', unit_number: 'C-001' }] })
+      if (url === '/repair-orders') return Promise.resolve({ data: { items: [], total: 0, has_more: false } })
+      return defaultGet(url)
+    })
+    renderPage('/dashboard/customers?selected=customer-1')
+    fireEvent.click(await screen.findByRole('button', { name: 'Open 2021 Freightliner Cascadia · Unit C-001' }))
+    expect(await screen.findByRole('heading', { name: 'Repair history (0)' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Edit vehicle' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Back to Northline Logistics' }))
+    expect(screen.getByRole('region', { name: 'Account details' })).toBeInTheDocument()
+  })
+
   it('restores a deep-linked customer using the existing customer endpoint', async () => {
     installApiFixture([])
     renderPage('/dashboard/customers?filter=active&selected=customer-1')
@@ -138,6 +155,34 @@ describe('DB-035C customer workstation', () => {
     expect(await screen.findByRole('region', { name: 'Northline Logistics' })).toBeInTheDocument()
     expect(apiMocks.get).toHaveBeenCalledWith('/customers/customer-1')
     expect(screen.getByTestId('customers-location')).toHaveTextContent('?filter=active&selected=customer-1')
+  })
+
+  it.each(['new', 'legacy'] as const)('opens a direct customer/vehicle search result in the %s presentation', async presentation => {
+    themeState.presentationVariant = presentation
+    installApiFixture([])
+    const original = apiMocks.get.getMockImplementation()!
+    const vehicle = { id: 'vehicle-144', customer_id: customer.id, make: 'Freightliner', model: 'Cascadia', year: 2020, unit_number: '144', vin: 'VIN144', license_plate: 'ABC144', notes: null, mileage: 1000 } as Vehicle
+    apiMocks.get.mockImplementation((url: string) => url === '/customers/customer-1/vehicles/vehicle-144' ? Promise.resolve({ data: vehicle }) : original(url))
+    renderPage('/dashboard/customers?view=list&selected=customer-1&vehicle=vehicle-144')
+    expect(await screen.findByRole(presentation === 'new' ? 'region' : 'dialog', { name: '2020 Freightliner Cascadia' })).toBeInTheDocument()
+    expect(screen.getByText('VIN144')).toBeInTheDocument()
+    expect(apiMocks.get).toHaveBeenCalledWith('/customers/customer-1/vehicles/vehicle-144', expect.objectContaining({ signal: expect.any(AbortSignal) }))
+    fireEvent.click(screen.getByRole('button', { name: 'Back to Northline Logistics' }))
+    expect(await screen.findByRole(presentation === 'new' ? 'region' : 'dialog', { name: /Northline Logistics/ })).toBeInTheDocument()
+    expect(screen.getByTestId('customers-location')).toHaveTextContent('?view=list&selected=customer-1')
+    expect(screen.getByTestId('customers-location')).not.toHaveTextContent('vehicle=')
+    fireEvent.click(screen.getByRole('button', { name: presentation === 'new' ? 'Back to Customers' : 'Close' }))
+    expect(screen.getByTestId('customers-location')).toHaveTextContent('?view=list')
+    expect(screen.getByTestId('customers-location')).not.toHaveTextContent('selected=')
+  })
+
+  it('shows an unavailable vehicle instead of substituting another record', async () => {
+    installApiFixture([])
+    const original = apiMocks.get.getMockImplementation()!
+    apiMocks.get.mockImplementation((url: string) => url === '/customers/customer-1/vehicles/foreign-vehicle' ? Promise.reject({ response: { status: 403 } }) : original(url))
+    renderPage('/dashboard/customers?selected=customer-1&vehicle=foreign-vehicle')
+    expect(await screen.findByRole('alert')).toHaveTextContent('That vehicle is unavailable for this customer.')
+    expect(screen.queryByRole('button', { name: 'Edit Vehicle' })).not.toBeInTheDocument()
   })
 
   it('moves focus into the workspace for keyboard activation and restores it on Back', async () => {
@@ -342,4 +387,69 @@ describe('DB-035C customer workstation', () => {
     expect(document.documentElement.scrollWidth).toBe(document.documentElement.clientWidth)
     expect(navigator).toHaveClass('db-customer-navigator')
   })
+})
+
+it('retries an unavailable canonical customer without claiming an access denial', async () => {
+  installApiFixture([])
+  const base = apiMocks.get.getMockImplementation()!
+  let failed = true
+  apiMocks.get.mockImplementation((url: string) => url === '/customers/customer-1' && failed ? Promise.reject(new Error('Network')) : base(url))
+  renderPage('/dashboard/customers?selected=customer-1')
+  expect(await screen.findByRole('button', {name:'Retry customer'})).toBeVisible()
+  expect(screen.queryByText(/current access/)).not.toBeInTheDocument()
+  failed = false
+  fireEvent.click(screen.getByRole('button', {name:'Retry customer'}))
+  expect(await screen.findByRole('heading', {name:'Northline Logistics'})).toBeVisible()
+})
+it('removes previous customer actions when the next identity cannot load', async () => {
+  installApiFixture()
+  const base = apiMocks.get.getMockImplementation()!
+  apiMocks.get.mockImplementation((url: string) => url === '/customers/missing-customer' ? Promise.reject(new Error('Not found')) : base(url))
+  renderPage('/dashboard/customers?selected=customer-1')
+  expect(await screen.findByRole('button', {name:'Edit Customer'})).toBeVisible()
+  fireEvent.click(screen.getByRole('button', {name:'Test missing customer navigation'}))
+  expect(await screen.findByRole('button', {name:'Retry customer'})).toBeVisible()
+  expect(screen.queryByRole('heading', {name:'Northline Logistics'})).not.toBeInTheDocument()
+  expect(screen.queryByRole('button', {name:'Edit Customer'})).not.toBeInTheDocument()
+  fireEvent.click(screen.getByRole('button', {name:'Back to Customers'}))
+  expect(screen.getByTestId('customers-location')).not.toHaveTextContent('selected=')
+})
+
+it('ignores a late response from the previously selected customer', async () => {
+  installApiFixture()
+  const base = apiMocks.get.getMockImplementation()!
+  let finish!: (value: { data: Customer }) => void
+  apiMocks.get.mockImplementation((url: string) => {
+    if (url === '/customers/customer-2') return new Promise(resolve => { finish = resolve })
+    if (url === '/customers/missing-customer') return Promise.reject(new Error('Not found'))
+    return base(url)
+  })
+  renderPage('/dashboard/customers?selected=customer-2')
+  expect(await screen.findByText('Loading customer workspace…')).toBeVisible()
+  fireEvent.click(screen.getByRole('button', {name:'Test missing customer navigation'}))
+  expect(await screen.findByRole('button', {name:'Retry customer'})).toBeVisible()
+  await act(async () => { finish({ data: secondCustomer }) })
+  expect(screen.getByRole('button', {name:'Retry customer'})).toBeVisible()
+  expect(screen.queryByRole('heading', {name:'Miles Freight'})).not.toBeInTheDocument()
+  expect(screen.queryByRole('button', {name:'Edit Customer'})).not.toBeInTheDocument()
+})
+
+it('recovers a failed customer list without inviting duplicate customer creation', async () => {
+  installApiFixture()
+  const base = apiMocks.get.getMockImplementation()!
+  let failed = true
+  apiMocks.get.mockImplementation((url: string) => url === '/customers' && failed ? Promise.reject(new Error('Network')) : base(url))
+  renderPage()
+  expect(await screen.findByRole('button', {name:'Retry customers'})).toBeVisible()
+  expect(screen.queryByText(/No customers found/)).not.toBeInTheDocument()
+  failed = false
+  fireEvent.click(screen.getByRole('button', {name:'Retry customers'}))
+  expect(await screen.findByRole('button', {name:'Open Northline Logistics customer workspace'})).toBeVisible()
+})
+it('uses the regular full-height workspace shell when a customer cannot load', async () => {
+  apiMocks.get.mockRejectedValue(new Error('Network'))
+  renderPage('/dashboard/customers?selected=customer-1')
+  const retry = await screen.findByRole('button', {name:'Retry customer'})
+  expect(retry.closest('.db-slide-panel-workspace')).not.toBeNull()
+  expect(screen.queryByText(/No customers found/)).not.toBeInTheDocument()
 })

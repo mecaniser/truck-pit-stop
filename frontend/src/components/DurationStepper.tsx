@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 import { Minus, Plus } from 'lucide-react'
 import { formatHoursMinutes } from '@/lib/durationFormat'
 
@@ -40,12 +40,25 @@ const DUR_SIZE = {
   lg: { btn: 42, value: 84, font: 15 },
 } as const
 
-/**
- * A single control for entering how long a job takes. Reads out as "1h 45m",
- * steps by 15 minutes, and reports the value back in decimal hours (the number
- * billing math needs). The user never sees the decimal — one control, one
- * reading, no unit label or secondary hint.
- */
+// Accept decimal hours, h:mm, or explicit hour/minute units. Never partially
+// parse malformed values (e.g. "1:75" or "2hours-extra") into billable time.
+function parseMinutes(value: string): number | null {
+  const text = value.trim().toLowerCase()
+  let minutes: number
+  if (/^\d+(?:\.\d+)?$/.test(text)) {
+    minutes = Number(text) * 60
+  } else {
+    const clock = text.match(/^(\d+):([0-5]\d)$/)
+    const units = text.match(/^(?:(\d+)h)?\s*(?:(\d+)m)?$/)
+    if (clock) minutes = Number(clock[1]) * 60 + Number(clock[2])
+    else if (units && (units[1] || units[2])) minutes = Number(units[1] || 0) * 60 + Number(units[2] || 0)
+    else return null
+  }
+  // Preserve typed hundredths of an hour; only the readout rounds to minutes.
+  return Number.isSafeInteger(Math.round(minutes)) ? minutes : null
+}
+
+/** Editable duration with minute precision and quarter-hour shortcuts. */
 export default function DurationStepper({
   hours,
   onChange,
@@ -64,6 +77,12 @@ export default function DurationStepper({
   const [localHours, setLocalHours] = useState(hours)
   const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const lastEmitted = useRef(hours)
+  const [draft, setDraft] = useState<string | null>(null)
+  const [error, setError] = useState(false)
+  const dirtyDraft = useRef(false)
+  const skipBlur = useRef(false)
+  const helpId = useId()
+  const errorId = useId()
 
   const displayHours = commitDebounceMs != null ? localHours : hours
   const totalMinutes = Math.round((Number(displayHours) || 0) * 60)
@@ -79,8 +98,14 @@ export default function DurationStepper({
   useEffect(() => () => { if (debounceTimer.current) clearTimeout(debounceTimer.current) }, [])
 
   const setMinutes = (mins: number) => {
+    if (disabled) return
+    setDraft(null)
+    dirtyDraft.current = false
+    setError(false)
     const clamped = Math.max(floor, mins)
-    const nextHours = clamped / 60
+    // Existing labor APIs accept hundredths of an hour. Keep non-quarter
+    // minute entry without sending repeating decimals such as 80 / 60.
+    const nextHours = Number((clamped / 60).toFixed(2))
     onLocalChange?.(nextHours)
     if (commitDebounceMs == null) {
       onChange(nextHours)
@@ -95,35 +120,88 @@ export default function DurationStepper({
       onChange(nextHours)
     }, commitDebounceMs)
   }
-  const dec = () => setMinutes(totalMinutes - stepMinutes)
-  const inc = () => setMinutes(totalMinutes + stepMinutes)
+  const resolveDraft = () => {
+    const minutes = draft == null ? totalMinutes : parseMinutes(draft)
+    if (minutes == null || minutes < floor) {
+      setError(true)
+      return null
+    }
+    return minutes
+  }
+  const commitDraft = () => {
+    if (disabled) return
+    if (!dirtyDraft.current) { setDraft(null); return }
+    const minutes = resolveDraft()
+    if (minutes != null) setMinutes(minutes)
+  }
+  const step = (direction: number) => {
+    const minutes = dirtyDraft.current ? resolveDraft() : totalMinutes
+    if (minutes != null) setMinutes(minutes + direction * stepMinutes)
+  }
 
   return (
     <span
-      className={`inline-flex items-center rounded-lg border shadow-sm ${t.pill}`}
+      className={`relative inline-flex items-center rounded-lg border shadow-sm ${t.pill}`}
       role="group"
       aria-label={ariaLabel}
     >
       <button
         type="button"
         disabled={disabled || totalMinutes <= floor}
-        onClick={dec}
+        onPointerDown={(e) => e.preventDefault()}
+        onClick={() => step(-1)}
         aria-label="Decrease duration"
         style={{ width: sz.btn, height: sz.btn }}
         className={`flex items-center justify-center rounded-l-lg disabled:opacity-40 ${t.btn}`}
       >
         <Minus className="h-3.5 w-3.5" />
       </button>
-      <span
-        style={{ minWidth: sz.value, height: sz.btn, fontSize: sz.font }}
-        className={`inline-flex items-center justify-center border-x px-2 text-center font-['JetBrains_Mono',monospace] tabular-nums ${t.text}`}
-      >
-        {formatHoursMinutes(displayHours)}
-      </span>
+      <input
+        type="text"
+        inputMode="decimal"
+        disabled={disabled}
+        aria-label={ariaLabel}
+        aria-invalid={error || undefined}
+        aria-describedby={error ? `${helpId} ${errorId}` : helpId}
+        title="Type hours (1.5) or h:mm (1:30). Enter to save; Escape to cancel."
+        value={draft ?? formatHoursMinutes(displayHours)}
+        onFocus={(e) => e.currentTarget.select()}
+        onChange={(e) => { setDraft(e.target.value); dirtyDraft.current = true; setError(false) }}
+        onBlur={() => {
+          if (skipBlur.current) { skipBlur.current = false; return }
+          commitDraft()
+        }}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') {
+            e.preventDefault()
+            e.stopPropagation()
+            commitDraft()
+            skipBlur.current = true
+            e.currentTarget.blur()
+          } else if (e.key === 'Escape') {
+            e.preventDefault()
+            e.stopPropagation()
+            setDraft(null)
+            dirtyDraft.current = false
+            setError(false)
+            skipBlur.current = true
+            e.currentTarget.blur()
+          }
+        }}
+        style={{ width: sz.value, height: sz.btn, fontSize: sz.font }}
+        className={`min-w-0 flex-none rounded-none border-x bg-transparent px-1 text-center font-['JetBrains_Mono',monospace] tabular-nums outline-none focus:ring-2 focus:ring-inset focus:ring-orange-400 disabled:opacity-40 ${t.text}`}
+      />
+      <span id={helpId} className="sr-only">Enter decimal hours or hours:minutes. Enter saves; Escape cancels.</span>
+      {error && (
+        <span id={errorId} role="alert" className="absolute bottom-full left-0 z-10 mb-1 w-52 rounded-md bg-red-700 px-2 py-1 text-xs text-white shadow">
+          Enter hours (1.5) or h:mm (1:30){floor > 0 ? `, at least ${floor} minutes` : ''}.
+        </span>
+      )}
       <button
         type="button"
         disabled={disabled}
-        onClick={inc}
+        onPointerDown={(e) => e.preventDefault()}
+        onClick={() => step(1)}
         aria-label="Increase duration"
         style={{ width: sz.btn, height: sz.btn }}
         className={`flex items-center justify-center rounded-r-lg disabled:opacity-40 ${t.btn}`}

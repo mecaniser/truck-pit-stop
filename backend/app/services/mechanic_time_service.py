@@ -23,6 +23,7 @@ from app.db.models.mechanic_time import (
 from app.db.models.repair_order import RepairOrder, RepairOrderStatus
 from app.db.models.tenant import Tenant
 from app.db.models.user import User, UserRole
+from app.services.operation_execution import lock_tenant_financials
 
 
 MISC_CATEGORIES = {m.value for m in MiscWorkCategory}
@@ -120,6 +121,9 @@ def _session_snapshot(session: Optional[MechanicTimeSession]) -> Optional[dict[s
         "tenant_id": str(session.tenant_id),
         "mechanic_id": str(session.mechanic_id),
         "repair_order_id": str(session.repair_order_id) if session.repair_order_id else None,
+        "labor_id": str(session.labor_id) if session.labor_id else None,
+        "labor_id_snapshot": str(session.labor_id_snapshot) if session.labor_id_snapshot else None,
+        "labor_description_snapshot": session.labor_description_snapshot,
         "session_type": session.session_type.value if hasattr(session.session_type, "value") else str(session.session_type),
         "misc_category": misc_value,
         "note": session.note,
@@ -291,7 +295,7 @@ async def get_active_session(
                 MechanicTimeSession.ended_at.is_(None),
                 MechanicTimeSession.deleted_at.is_(None),
             )
-        )
+        ).execution_options(populate_existing=True)
     )
     return result.scalar_one_or_none()
 
@@ -567,6 +571,7 @@ async def clock_out(
     ended_at: Optional[datetime] = None,
     end_source: str = "manual_clock_out",
 ) -> ClockOutResult:
+    await lock_tenant_financials(db, tenant.id)
     if end_source not in ATTENDANCE_END_SOURCES:
         raise ValueError("Invalid attendance end source")
     attendance = await get_active_attendance_session(
@@ -642,6 +647,7 @@ async def start_break(
     started_at: Optional[datetime] = None,
     start_source: str = "manual_break_start",
 ) -> BreakStartResult:
+    await lock_tenant_financials(db, tenant.id)
     attendance = await get_active_attendance_session(
         db,
         tenant_id=tenant.id,
@@ -741,6 +747,7 @@ async def start_session(
     actor_user: User,
     session_type: str,
     repair_order_id=None,
+    labor_id=None,
     misc_category: Optional[str] = None,
     note: Optional[str] = None,
     manager_reason: Optional[str] = None,
@@ -756,6 +763,16 @@ async def start_session(
             raise ValueError("Invalid misc category")
     else:
         misc_category = None
+    await lock_tenant_financials(db, tenant.id)
+    _manager_action_requires_reason(actor_user.role.value, manager_reason)
+    if mechanic.tenant_id != tenant.id or mechanic.role != UserRole.MECHANIC or not mechanic.is_active or mechanic.deleted_at:
+        raise ValueError("Choose an active technician from this shop")
+    from app.services.operation_execution import validate_timer
+    line = None
+    if labor_id is not None and session_type != MechanicSessionType.REPAIR_ORDER.value:
+        raise ValueError("Operation attribution requires a repair-order timer")
+    if session_type == MechanicSessionType.REPAIR_ORDER.value:
+        line = await validate_timer(db, tenant.id, mechanic.id, repair_order_id, labor_id)
     now_utc = started_at or datetime.now(timezone.utc)
     attendance_session, auto_clocked_in = await ensure_attendance_started(
         db,
@@ -800,7 +817,10 @@ async def start_session(
             and current.session_type == MechanicSessionType.REPAIR_ORDER.value
             and str(current.repair_order_id) == str(repair_order_id)
         )
-        if same_misc or same_ro:
+        same_operation = same_ro and current.labor_id == labor_id
+        if same_operation:
+            return current, auto_clocked_in, str(attendance_session.id), None
+        if same_misc:
             raise ValueError("This job is already being timed")
 
         # Auto-hold previous RO when switching RO → RO
@@ -808,12 +828,20 @@ async def start_session(
             current.session_type == MechanicSessionType.REPAIR_ORDER.value
             and session_type == MechanicSessionType.REPAIR_ORDER.value
             and current.repair_order_id
+            and str(current.repair_order_id) != str(repair_order_id)
         ):
             prev_ro = await db.get(RepairOrder, current.repair_order_id)
             if (
                 prev_ro
                 and prev_ro.status == RepairOrderStatus.IN_PROGRESS
                 and not prev_ro.hold_reason
+                and prev_ro.tenant_id == tenant.id
+                and prev_ro.assigned_mechanic_id == mechanic.id
+                and not await db.scalar(select(MechanicTimeSession.id).where(
+                    MechanicTimeSession.tenant_id == tenant.id,
+                    MechanicTimeSession.repair_order_id == prev_ro.id,
+                    MechanicTimeSession.mechanic_id != mechanic.id,
+                    MechanicTimeSession.ended_at.is_(None), MechanicTimeSession.deleted_at.is_(None)).limit(1))
             ):
                 prev_ro.hold_reason = "switched_to_other_ro"
                 prev_ro.held_at = now_utc
@@ -833,6 +861,9 @@ async def start_session(
         tenant_id=tenant.id,
         mechanic_id=mechanic.id,
         repair_order_id=repair_order_id,
+        labor_id=line.id if line else None,
+        labor_id_snapshot=line.id if line else None,
+        labor_description_snapshot=line.description if line else None,
         session_type=session_type,
         misc_category=misc_category,
         note=note,
@@ -876,6 +907,7 @@ async def stop_active_session(
     manager_reason: Optional[str] = None,
     stopped_at: Optional[datetime] = None,
 ) -> Optional[MechanicTimeSession]:
+    await lock_tenant_financials(db, tenant_id)
     if stop_reason not in TIMER_STOP_REASONS:
         raise ValueError("Invalid stop reason")
     session = await get_active_session(
@@ -919,6 +951,14 @@ async def edit_session(
     manager_reason: Optional[str] = None,
 ) -> MechanicTimeSession:
     _manager_action_requires_reason(actor_user.role.value, manager_reason)
+    observed = (session.started_at, session.ended_at, session.deleted_at)
+    await lock_tenant_financials(db, session.tenant_id)
+    if isinstance(db, AsyncSession):
+        await db.refresh(session)
+        from app.services.operation_execution import utc
+        if tuple(utc(value) for value in observed) != tuple(utc(value) for value in (session.started_at, session.ended_at, session.deleted_at)):
+            from fastapi import HTTPException
+            raise HTTPException(409, "This timer changed while it was being edited. Refresh before correcting its time.")
     before = _session_snapshot(session)
 
     if misc_category is not None:
@@ -959,6 +999,9 @@ async def delete_session(
     deleted_at: Optional[datetime] = None,
 ) -> MechanicTimeSession:
     _manager_action_requires_reason(actor_user.role.value, manager_reason)
+    await lock_tenant_financials(db, session.tenant_id)
+    if isinstance(db, AsyncSession):
+        await db.refresh(session)
     before = _session_snapshot(session)
 
     now_utc = deleted_at or datetime.now(timezone.utc)
@@ -983,48 +1026,30 @@ async def delete_session(
     return session
 
 
-async def _compute_book_hours_for_orders(
-    db: AsyncSession,
-    *,
-    order_ids: list,
-) -> float:
+async def _compute_book_hours_for_orders(db: AsyncSession, *, order_ids: list, tenant_id=None, mechanic_id=None) -> float:
     if not order_ids:
         return 0.0
-    order_ids_unique = list(set(order_ids))
-
-    labor_result = await db.execute(
-        select(
-            Labor.repair_order_id,
-            func.coalesce(func.sum(Labor.hours), 0),
-        )
-        .where(Labor.repair_order_id.in_(order_ids_unique))
-        .group_by(Labor.repair_order_id)
-    )
-    labor_by_order = {
-        row[0]: float(row[1] or 0)
-        for row in labor_result.all()
-    }
-
-    missing_orders = [oid for oid in order_ids_unique if labor_by_order.get(oid, 0) <= 0]
-    if missing_orders:
-        ro_result = await db.execute(
-            select(RepairOrder.id, RepairOrder.internal_notes).where(RepairOrder.id.in_(missing_orders))
-        )
-        for order_id, internal_notes in ro_result.all():
-            fallback_hours = 0.0
-            if internal_notes:
-                try:
-                    parsed = json.loads(internal_notes)
-                    selected_services = parsed.get("selected_services", [])
-                    for svc in selected_services:
-                        duration_minutes = svc.get("duration_minutes")
-                        if duration_minutes:
-                            fallback_hours += float(duration_minutes) / 60.0
-                except Exception:
-                    fallback_hours = 0.0
-            labor_by_order[order_id] = fallback_hours
-
-    return float(sum(labor_by_order.values()))
+    stmt = select(Labor, RepairOrder.assigned_mechanic_id).join(RepairOrder, and_(RepairOrder.id == Labor.repair_order_id, RepairOrder.tenant_id == Labor.tenant_id)).where(
+        Labor.repair_order_id.in_(set(order_ids)), Labor.deleted_at.is_(None))
+    if tenant_id is not None:
+        stmt = stmt.where(Labor.tenant_id == tenant_id)
+    rows = (await db.execute(stmt)).all()
+    present = {line.repair_order_id for line, _ in rows}
+    total = sum(float(line.hours or 0) for line, lead in rows if mechanic_id is None or ((line.mechanic_id if line.execution_status is not None else None) or lead) == mechanic_id)
+    missing = set(order_ids) - present
+    if missing:
+        query = select(RepairOrder).where(RepairOrder.id.in_(missing))
+        if tenant_id is not None:
+            query = query.where(RepairOrder.tenant_id == tenant_id)
+        if mechanic_id is not None:
+            query = query.where(RepairOrder.assigned_mechanic_id == mechanic_id)
+        for order in (await db.execute(query)).scalars().all():
+            try:
+                data = json.loads(order.internal_notes or '{}')
+                total += sum(float(row.get('duration_minutes') or 0)/60 for row in data.get('selected_services', []))
+            except (ValueError, TypeError, AttributeError):
+                pass
+    return float(total)
 
 
 def _clip_interval(
@@ -1237,7 +1262,7 @@ async def compute_day_summary(
     utilization = min((tracked_seconds / core_target_seconds) * 100.0, 100.0)
     overtime_seconds = max(tracked_seconds - core_target_seconds, 0)
     actual_ro_hours = ro_seconds / 3600.0
-    book_hours = await _compute_book_hours_for_orders(db, order_ids=order_ids)
+    book_hours = await _compute_book_hours_for_orders(db, order_ids=order_ids, tenant_id=tenant.id, mechanic_id=mechanic.id)
     efficiency = None
     if actual_ro_hours > 0 and book_hours > 0:
         efficiency = round((book_hours / actual_ro_hours) * 100.0, 2)
@@ -1590,6 +1615,11 @@ async def close_sessions_crossing_midnight(
     closed: list[MechanicTimeSession] = []
 
     for session, tenant in rows:
+        await lock_tenant_financials(db, tenant.id)
+        if isinstance(db, AsyncSession):
+            await db.refresh(session)
+        if session.ended_at is not None or session.deleted_at is not None:
+            continue
         tz = _safe_zoneinfo(tenant.timezone or "America/New_York")
         start_local = session.started_at.astimezone(tz)
         now_local = now.astimezone(tz)
@@ -1638,6 +1668,11 @@ async def close_breaks_crossing_midnight(
     rows = result.all()
     closed: list[MechanicBreakSession] = []
     for session, tenant in rows:
+        await lock_tenant_financials(db, tenant.id)
+        if isinstance(db, AsyncSession):
+            await db.refresh(session)
+        if session.ended_at is not None or session.deleted_at is not None:
+            continue
         tz = _safe_zoneinfo(tenant.timezone or "America/New_York")
         start_local = session.started_at.astimezone(tz)
         now_local = now.astimezone(tz)
@@ -1686,6 +1721,11 @@ async def close_attendance_crossing_midnight(
     rows = result.all()
     closed: list[MechanicAttendanceSession] = []
     for session, tenant in rows:
+        await lock_tenant_financials(db, tenant.id)
+        if isinstance(db, AsyncSession):
+            await db.refresh(session)
+        if session.ended_at is not None or session.deleted_at is not None:
+            continue
         tz = _safe_zoneinfo(tenant.timezone or "America/New_York")
         start_local = session.started_at.astimezone(tz)
         now_local = now.astimezone(tz)

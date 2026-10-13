@@ -45,6 +45,7 @@ from app.db.models.labor import Labor
 from app.db.models.labor import LaborLineType
 from app.db.models.labor_operation_memory import LaborOperationMemory
 from app.db.models.recommended_service import RecommendedService, RecommendedServicePriority
+from app.db.models.recommendation_conversion import RecommendationConversion
 from app.db.models.quote import Quote
 from app.db.models.invoice import Invoice
 from app.db.models.invoice_charge_adjustment import InvoiceChargeAdjustment
@@ -246,3 +247,5 @@ from app.db.models.fleet_fuel import FleetFuelDaily  # noqa: F401
 from app.db.models.fleet_diagnostic import FleetDiagnosticCapture  # noqa: F401
 
 from app.db.models.fleet_driver_record import FleetDriverDirectoryCapture, FleetDriverRecordCapture
+
+from app.db.models.service_checklist import RepairOrderChecklistItem  # noqa: F401

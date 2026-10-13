@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Numeric, Integer, ForeignKey, Text, Boolean, Enum as SQLEnum
+from sqlalchemy import Column, String, Numeric, Integer, ForeignKey, Text, Boolean, DateTime, CheckConstraint, Enum as SQLEnum
 from sqlalchemy.orm import relationship
 from sqlalchemy.dialects.postgresql import UUID
 from decimal import Decimal
@@ -15,6 +15,17 @@ class LaborLineType(str, enum.Enum):
 
 class Labor(BaseModel):
     __tablename__ = "labor"
+    __table_args__ = (
+        CheckConstraint("execution_status IS NULL OR execution_status IN ('pending', 'completed')", name="ck_labor_execution_status"),
+        CheckConstraint("execution_version >= 0", name="ck_labor_execution_version"),
+    )
+    # Null explicitly represents legacy scope; production creation enrolls new work.
+    execution_status = Column(String(16), nullable=True)
+    execution_version = Column(Integer, nullable=False, default=0, server_default="0")
+    completed_at = Column(DateTime(timezone=True), nullable=True)
+    completed_by_user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
+    completed_by_name = Column(String(255), nullable=True)
+
     
     tenant_id = Column(UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=False, index=True)
     tenant = relationship("Tenant", backref="labor")
