@@ -82,3 +82,21 @@ Frontend & UX owns the Fast UI correction: remove forced no-wrap from the booked
 The approved local 5174/8001 preview was freshly checked: both processes use the integration preview, isolated database schema is 168, readiness/proxy checks passed, and the rendered summary uses normal whitespace. At an actual measured 320 CSS pixels all six fixture operation summaries remain left of the price column, without page overflow. Focused PriceBuilder pending-feedback and recommendation suites, TypeScript/Vite build and whitespace checks passed. The fixture lacks the production savings summary, so the exact long-summary production reproduction remains required after the follow-up deploy. No production or local business data was changed.
 
 The worker starts independently of Web migrations and its timer task catches exceptions into a returned payload. Acceptance requires schema168/preflight, both service versions, readiness, and one naturally scheduled timer-maintenance result with `status: success`; Celery task-success status alone is insufficient. No production task is manually triggered for testing.
+
+
+## Follow-up protected CI
+
+PR #511 source `94ddfe458f0397f7a6f67a04cfe77989ca88f572` entered protected run 38464532662. The first Playwright smoke attempt failed before checkout/tests: the pinned PostgreSQL image registry returned `toomanyrequests: Data limit exceeded` during container initialization. Other checks continued. Release retained the required gate and planned a failed-job retry after the run completed; no test or protection was bypassed.
+
+The same-head retry passed with all 5 Playwright smoke tests. The full backend suite recorded 2,856 passed and 125 skipped. All six protected checks are successful in run 38464532662, attempt 2; merge state was CLEAN and there were zero unresolved review threads. PR #511 merged as `5c3ac80a0110fb513745097575292119333cc35f` at 2026-10-13T21:02:29Z using the exact reviewed head guard. Its committed tree matches tested `94ddfe45`. Automatic Web deployment and the exact production compact reproduction remain pending.
+
+
+## Final production acceptance — complete
+
+Web deployment `4cb0c0f5-1f62-4939-8b20-bacef9fc810f` reached SUCCESS at exact follow-up merge `5c3ac80a0110fb513745097575292119333cc35f`. Readiness returned 200 with healthy database and Redis. This frontend-only correction did not require a worker redeploy; worker remains on the accepted checkpoint `2ea74087`.
+
+The exact existing invoiced order and long booked-hours/parts/savings summary were reopened in the authenticated production browser after deployment. At measured 320×700 CSS pixels, the summary uses normal whitespace, wraps to two lines (32px), and ends at x199.78 before the price begins at x207.78. Document width equals viewport width at 320px. The expanded operation retains its read-only labor and part details, unchanged amount, legacy Not tracked/Unassigned state and disabled add-part control. No business data was mutated.
+
+At measured 1280px desktop width, the same summary remains one line (16px), with no overlap or page overflow; order header, ledger and bottom controls remain intact. Screenshots were inspected and retained outside the public repository. These are actual browser responsive-viewport checks, not physical-phone or native Safari acceptance. Temporary browser size overrides were restored afterward.
+
+DB-111 is Done for the authorized checkpoint, with Release & Reliability accountable. Application outcomes are merged and deployed; PRs501–509 remain closed as superseded with source branches preserved. This is not a claim of exhaustive ETS parity: external history, resource scheduling and native A/R aging remain the previously recorded backlog. The final documentation update changes only this receipt and the board, not application behavior or deployment settings.
