@@ -3961,7 +3961,7 @@ export default function PriceBuilderPanel({
                           <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-slate-600">{lineTypeLabel(line)}</span>
                         </span>
                         <span className="db-service-execution-meta mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-slate-600">
-                          <span className="whitespace-nowrap">{formatHoursMinutes(line.hours)} booked{groupedParts.length > 0 ? ` · ${groupedParts.length} parts` : ''}{partSavings > 0 ? ` · saves ${money(partSavings)}` : ''}</span>
+                          <span className="min-w-0">{formatHoursMinutes(line.hours)} booked{groupedParts.length > 0 ? ` · ${groupedParts.length} parts` : ''}{partSavings > 0 ? ` · saves ${money(partSavings)}` : ''}</span>
                           {execution && <OperationExecutionStatus item={execution} />}
                         </span>
                       </span>

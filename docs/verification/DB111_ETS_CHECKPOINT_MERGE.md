@@ -54,3 +54,31 @@ PR #500 subsequently merged after all six current-main jobs passed, at 2026-10-1
 
 
 PR #499 passed all six current-main checks in run38459541333 and merged as `b7746f2579c041d8d0bd1353474dea0e5461621f` at 2026-10-13T20:12:21Z. PR #501 refreshed against this main as `febbadff6d9cc986d6c2669cb7a95843a7ef6426`; only the board conflicted. Candidate publication is draft review/CI preparation, not authorization to use the combined merge exception. Separate feature merges continue unless the user chooses consolidation.
+
+
+## Selected checkpoint and merge
+
+The user explicitly selected **One checkpoint integration PR** on 2026-10-13, authorizing this exception to the default separate focused PR sequence. PR #510 was marked ready and merged only after all six protected jobs passed on `912c76f85ed6dbf4ce2f852cc62ef989ef774565`, with a clean main-compatible merge state and zero unresolved review threads. No admin/protection bypass was used.
+
+- Combined CI: https://github.com/mecaniser/truck-pit-stop/actions/runs/38461131600 (all six success).
+- Independent final composition GO: current main `b7746f25` is a direct parent; application/test/configuration tree remains accepted `a1733df2` except one trailing blank line; all focused evidence documents preserved.
+- PR #510: https://github.com/mecaniser/truck-pit-stop/pull/510.
+- Merge: `2ea740872fd6e6c81a1acb8bbad670d80430ba5b` at 2026-10-13T20:23:34Z.
+- PRs #501–509 closed as superseded after this merge, with a link to the checkpoint and their source branches retained. They were not individually merged.
+- Reporting release `b7746f25` reached Web deployment `142e5e21-58bf-45c9-8df3-e5a1b7f06921` and worker `7c9eb102-08d0-4b74-b27c-01e844135dc8`, both SUCCESS. Readiness and read-only schema preflight passed. Desktop and measured390px cost-contribution views and the linked existing repair order loaded correctly. The scheduled20:20 timer-maintenance task returned `status: success`.
+
+## Checkpoint deployment gate
+
+Automatic checkpoint Web deployment `2875dfa2-e880-4193-89ff-67a937493997` and worker deployment `56e466ba-1544-4985-8510-596244f6c645` both reached SUCCESS at the exact merge `2ea740872fd6e6c81a1acb8bbad670d80430ba5b`. Readiness returned 200 with database and Redis healthy. Read-only remote `alembic current` returned `168_operation_execution (head)` and schema preflight confirmed the required revision and objects. Web logs record successful additive upgrades through 165/166, merge 167 and operation execution 168.
+
+The naturally scheduled 20:30 UTC timer-maintenance task returned `status: success` with zero closed sessions, breaks, attendance or idle alerts. No missing-table/column error was present. No task or production business mutation was triggered for acceptance.
+
+Authenticated read-only production acceptance passed for the existing invoiced order, anchored truck details, legacy operation display, source recommendation link, customer navigation and return to the same order. The customer workspace shows account details, retains bottom edit/merge/delete controls, and places tax exemption inside Business settings. Measured desktop 1164 CSS pixels and compact 355/320 CSS pixels had no page-level horizontal overflow. The 320-pixel operation summary did reveal an internal overlap described below; release acceptance remains open only for that correction's protected CI and exact production reproduction.
+
+## Narrow operation-summary correction
+
+Frontend & UX owns the Fast UI correction: remove forced no-wrap from the booked-hours/parts/savings summary so it can wrap within the existing metadata column. The independent price column, amounts, controls and workflow behavior are unchanged. Independent reviewer `checkpoint_release_audit` gave GO for the exact one-line change and verified that source and preview match.
+
+The approved local 5174/8001 preview was freshly checked: both processes use the integration preview, isolated database schema is 168, readiness/proxy checks passed, and the rendered summary uses normal whitespace. At an actual measured 320 CSS pixels all six fixture operation summaries remain left of the price column, without page overflow. Focused PriceBuilder pending-feedback and recommendation suites, TypeScript/Vite build and whitespace checks passed. The fixture lacks the production savings summary, so the exact long-summary production reproduction remains required after the follow-up deploy. No production or local business data was changed.
+
+The worker starts independently of Web migrations and its timer task catches exceptions into a returned payload. Acceptance requires schema168/preflight, both service versions, readiness, and one naturally scheduled timer-maintenance result with `status: success`; Celery task-success status alone is insufficient. No production task is manually triggered for testing.
