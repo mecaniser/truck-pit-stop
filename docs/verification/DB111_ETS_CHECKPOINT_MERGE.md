@@ -36,7 +36,9 @@ Integration-only changes identified: no-op migration 167 (`25fdec64`), checklist
 ## Merge and runtime receipts
 
 - PR #498: exact reviewed head `790a0715c95392d279938f35dc8b8c909f9638f1`; all six protected jobs passed, no unresolved review thread, mergeable. Squash merged at 2026-10-13T19:41:42Z as `8bc82cd458ecf728ead5e64d99689376928f64a3`.
-- PR #500: refreshed against 8bc82cd4 as `1b32e78fa06513655aef3ef1adb9726ce0e32da0`. Conflict only in concurrent board entries; both retained. Current-head PR CI: https://github.com/mecaniser/truck-pit-stop/actions/runs/38457066584. Awaiting completion.
+- PR #500: refreshed against 8bc82cd4 as `1b32e78fa06513655aef3ef1adb9726ce0e32da0`. Conflict only in concurrent board entries; both retained. All six current-head jobs passed: https://github.com/mecaniser/truck-pit-stop/actions/runs/38457066584. Squash merged at 2026-10-13T20:01:02Z as `6cd51f6e4818f1ac1632a35e87f4cef7f5bd9705`.
+- Production after #498: Web deployment `cb721251-0a0b-4989-8b55-bf5a2b421e0b` and worker `871b1387-90b8-4600-93cb-f105e6c0d296` succeeded at `8bc82cd4`. Readiness returned 200 with database and Redis healthy. Authenticated read-only UI loaded the recommendation panel and its canonical empty state on an existing completed order.
+- Production after #500: Web deployment `1ec5aef6-895a-41ab-9ce4-b16520f1e2a4` succeeded at `6cd51f6e`; the worker remained successfully deployed at `8bc82cd4` (frontend-only change). Authenticated production search returned a customer and repair-order results, and selecting the customer opened the exact selected customer workspace. No customer/order data was changed.
 
 ## Rollback and boundaries
 
