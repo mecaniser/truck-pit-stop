@@ -80,12 +80,15 @@ export function OperationExecutionControls({ orderId, item, technicians = [], di
   </div>
 }
 
-export function MechanicOperations({ orderId, refreshToken }: { orderId: string; refreshToken?: unknown }) {
+export function MechanicOperations({ orderId, refreshToken, leadScope = [] }: { orderId: string; refreshToken?: unknown; leadScope?: Array<{ name: string; description?: string | null }> }) {
   const query = useOperationExecution(orderId, refreshToken)
+  // Historical orders may carry scope in notes or standalone parts, without Labor rows.
+  // Only the lead's successful, empty operation response may reveal that read-only fallback.
+  const showLeadScope = query.isSuccess && query.data.is_order_lead && query.data.items.length === 0 && leadScope.length > 0
   return <section aria-label="Operation progress" className="min-w-0 space-y-2">
     <div className="flex flex-wrap items-baseline justify-between gap-2">
-      <h3 className="text-sm font-semibold text-zinc-100">{query.data?.is_order_lead ? 'Operations' : 'Assigned operations'}</h3>
-      {query.data && !query.isError && <span className="text-xs text-zinc-400">{query.data.summary.completed}/{query.data.summary.tracked} tracked complete{query.data.summary.legacy_untracked > 0 ? ` · ${query.data.summary.legacy_untracked} not tracked` : ''}</span>}
+      <h3 className="text-sm font-semibold text-zinc-100">{showLeadScope ? 'Work to do' : query.data?.is_order_lead ? 'Operations' : 'Assigned operations'}</h3>
+      {query.data && !query.isError && query.data.items.length > 0 && <span className="text-xs text-zinc-400">{query.data.summary.completed}/{query.data.summary.tracked} tracked complete{query.data.summary.legacy_untracked > 0 ? ` · ${query.data.summary.legacy_untracked} not tracked` : ''}</span>}
     </div>
     <OperationExecutionFeedback query={query} dark />
     {query.data && ['draft', 'quoted', 'approved', 'assigned', 'acknowledged'].includes(query.data.order_status) && <p className="text-xs text-zinc-400">Operation timers become available when the order lead starts work.</p>}
@@ -94,6 +97,7 @@ export function MechanicOperations({ orderId, refreshToken }: { orderId: string;
       <OperationExecutionStatus item={item} dark />
       <OperationExecutionControls orderId={orderId} item={item} disabled={query.isError || query.isFetching} dark />
     </article>)}
-    {query.data?.items.length === 0 && !query.isError && <p className="text-xs text-zinc-400">No operations assigned.</p>}
+    {showLeadScope && <ul className="divide-y divide-zinc-700 rounded-xl border border-zinc-700 px-3">{leadScope.map((service, index) => <li key={`${service.name}:${index}`} className="py-2"><p className="break-words text-sm text-zinc-100">{service.name}</p>{service.description && <p className="mt-1 break-words text-xs text-zinc-400">{service.description}</p>}</li>)}</ul>}
+    {query.data?.items.length === 0 && !query.isError && !showLeadScope && <p className="text-xs text-zinc-400">No operations assigned.</p>}
   </section>
 }

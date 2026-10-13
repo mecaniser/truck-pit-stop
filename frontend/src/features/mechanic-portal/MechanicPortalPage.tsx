@@ -1078,13 +1078,13 @@ export default function MechanicPortalPage() {
             </div>
           )}
 
-          <div className="px-4 py-3"><MechanicOperations orderId={jobDetail.id} refreshToken={jobDetail} /></div>
+          <div className="px-4 py-3"><MechanicOperations orderId={jobDetail.id} refreshToken={jobDetail} leadScope={jobDetail.is_order_lead ? jobDetail.services : []} /></div>
           {!jobDetail.is_order_lead && <p className="px-4 pb-2 text-xs text-zinc-400">You are assigned to operations on this job. The order lead manages the job stage.{jobDetail.hold_reason ? ` On hold: ${HOLD_REASON_LABELS[jobDetail.hold_reason] || jobDetail.hold_reason}.` : ''}</p>}
 
           <div className="px-4"><OrderChecklist orderId={jobDetail.id} orderStatus={jobDetail.status} refreshToken={jobDetail} dark /></div>
 
           {/* BIG ACTION BUTTON */}
-          <div className="p-4 mt-auto">
+          <div className="db-mechanic-stage-actions p-4 mt-auto">
             {jobDetail.is_order_lead && (jobDetail.status === 'assigned' || jobDetail.status === 'acknowledged') && (
               <button
                 onClick={() => acceptAndStartMutation.mutate({ orderId: jobDetail.id, currentStatus: jobDetail.status })}
@@ -1104,7 +1104,7 @@ export default function MechanicPortalPage() {
                     On hold: {HOLD_REASON_LABELS[jobDetail.hold_reason || ''] || jobDetail.hold_reason}
                   </span>
                 </div>
-                <div className="grid grid-cols-2 gap-3">
+                <div className="db-mechanic-stage-buttons">
                   <button
                     onClick={() => resumeOrderMutation.mutate(jobDetail.id)}
                     disabled={isPending}
@@ -1146,7 +1146,7 @@ export default function MechanicPortalPage() {
                         </button>
                       ))}
                     </div>
-                    <div className="grid grid-cols-2 gap-3">
+                    <div className="db-mechanic-stage-buttons">
                       <button
                         onClick={() => { setHoldTarget(null); setHoldReason('') }}
                         className="py-4 bg-zinc-800/80 hover:bg-zinc-700 active:scale-[0.98] text-zinc-300 text-lg font-semibold rounded-2xl transition-all border border-zinc-600/50"
@@ -1164,7 +1164,7 @@ export default function MechanicPortalPage() {
                   </div>
                 ) : (
                   <div className="space-y-3">
-                    <div className={`grid gap-3 ${isTimedForDetail ? 'grid-cols-2' : 'grid-cols-3'}`}>
+                    <div className="db-mechanic-stage-buttons">
                       {!isTimedForDetail && (
                         <button
                           onClick={() => acceptAndStartMutation.mutate({ orderId: jobDetail.id, currentStatus: jobDetail.status })}
@@ -2513,7 +2513,7 @@ export default function MechanicPortalPage() {
                             </div>
                           )}
                           
-                          <MechanicOperations orderId={job.id} refreshToken={detail} />
+                          <MechanicOperations orderId={job.id} refreshToken={detail} leadScope={detail.is_order_lead ? detail.services : []} />
                           {!detail.is_order_lead && <p className="text-xs text-zinc-400">The order lead manages the job stage.{job.hold_reason ? ` On hold: ${HOLD_REASON_LABELS[job.hold_reason] || job.hold_reason}.` : ''}</p>}
 
                           <OrderChecklist orderId={job.id} orderStatus={job.status} refreshToken={detail} dark />
@@ -2622,7 +2622,7 @@ export default function MechanicPortalPage() {
                           )}
                           
                           {/* Action Button */}
-                          <div className="pt-2">
+                          <div className="db-mechanic-stage-actions pt-2">
                             {detail.is_order_lead && (job.status === 'assigned' || job.status === 'acknowledged') && (
                               <button
                                 onClick={(e) => {
@@ -2645,7 +2645,7 @@ export default function MechanicPortalPage() {
                                     On hold: {HOLD_REASON_LABELS[job.hold_reason || ''] || job.hold_reason}
                                   </span>
                                 </div>
-                                <div className="grid grid-cols-2 gap-2">
+                                <div className="db-mechanic-stage-buttons">
                                   <button
                                     onClick={(e) => {
                                       e.stopPropagation()
@@ -2693,7 +2693,7 @@ export default function MechanicPortalPage() {
                                         </button>
                                       ))}
                                     </div>
-                                    <div className="grid grid-cols-2 gap-2">
+                                    <div className="db-mechanic-stage-buttons">
                                       <button
                                         onClick={() => { setHoldTarget(null); setHoldReason('') }}
                                         className="py-3 bg-zinc-800/80 hover:bg-zinc-700 active:scale-[0.98] text-zinc-300 text-sm font-semibold rounded-xl transition-all border border-zinc-600/50"
@@ -2710,7 +2710,7 @@ export default function MechanicPortalPage() {
                                     </div>
                                   </div>
                                 ) : (
-                                  <div className={`grid gap-2 ${isTimedForThisJob ? 'grid-cols-2' : 'grid-cols-3'}`}>
+                                  <div className="db-mechanic-stage-buttons">
                                     {!isTimedForThisJob && (
                                       <button
                                         onClick={(e) => {

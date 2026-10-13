@@ -70,4 +70,45 @@ describe('mechanic operation workspace', () => {
     mount(); await screen.findByRole('button', { name: 'Retry jobs' })
     expect(screen.queryByText('All caught up!')).not.toBeInTheDocument()
   })
+  it('preserves read-only parts-only scope for the lead when no operation rows exist', async () => {
+    job.is_order_lead = true
+    const normal = api.get.getMockImplementation()!
+    api.get.mockImplementation(async (url: string) => {
+      if (url === '/repair-orders/order-a/operations') return { data: { items: [], summary: { tracked: 0, completed: 0, remaining: 0, legacy_untracked: 0 }, order_status: 'in_progress', is_order_lead: true } }
+      const response = await normal(url)
+      return url === '/mechanics/my-jobs/order-a' ? { data: { ...response.data, services: [{ name: 'Install oil filter', description: 'Parts-only legacy scope' }] } } : response
+    })
+    mount()
+    await userEvent.setup().click(await screen.findByRole('button', { name: /C-001 Test truck.*Order lead/ }))
+    await screen.findByText('Install oil filter')
+    expect(screen.getByText('Parts-only legacy scope')).toBeVisible()
+    expect(screen.queryByText('No operations assigned.')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Complete operation' })).not.toBeInTheDocument()
+  })
+  it('never reveals legacy lead scope to a helper or substitutes it for a failed operation request', async () => {
+    const normal = api.get.getMockImplementation()!
+    api.get.mockImplementation(async (url: string) => {
+      if (url === '/repair-orders/order-a/operations') return { data: { items: [], summary: { tracked: 0, completed: 0, remaining: 0, legacy_untracked: 0 }, order_status: 'in_progress', is_order_lead: false } }
+      const response = await normal(url)
+      return url === '/mechanics/my-jobs/order-a' ? { data: { ...response.data, services: [{ name: 'Private lead scope' }] } } : response
+    })
+    mount()
+    await userEvent.setup().click(await screen.findByRole('button', { name: 'Open operations' }))
+    await screen.findByText('No operations assigned.')
+    expect(screen.queryByText('Private lead scope')).not.toBeInTheDocument()
+  })
+  it('keeps operation load failure distinct from successful empty legacy scope for the lead', async () => {
+    job.is_order_lead = true
+    const normal = api.get.getMockImplementation()!
+    api.get.mockImplementation(async (url: string) => {
+      if (url === '/repair-orders/order-a/operations') throw new Error('Offline')
+      const response = await normal(url)
+      return url === '/mechanics/my-jobs/order-a' ? { data: { ...response.data, services: [{ name: 'Unverified old scope' }] } } : response
+    })
+    mount()
+    await userEvent.setup().click(await screen.findByRole('button', { name: /C-001 Test truck.*Order lead/ }))
+    await screen.findByRole('button', { name: 'Retry operation progress' })
+    expect(screen.queryByText('Unverified old scope')).not.toBeInTheDocument()
+    expect(screen.queryByText('No operations assigned.')).not.toBeInTheDocument()
+  })
 })
