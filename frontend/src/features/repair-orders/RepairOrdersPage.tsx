@@ -3448,7 +3448,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
             
             <DialogPanel
               data-testid="new-repair-order-panel"
-              className="relative flex h-full h-[100dvh] w-full max-w-4xl flex-col overflow-hidden bg-white shadow-2xl sm:h-auto sm:max-h-[90vh] sm:max-h-[90dvh] sm:rounded-2xl"
+              className="db-order-entry-panel relative flex h-full h-[100dvh] w-full max-w-4xl flex-col overflow-hidden bg-white shadow-2xl sm:h-auto sm:max-h-[90vh] sm:max-h-[90dvh] sm:rounded-2xl"
             >
               <div className="z-10 shrink-0 border-b border-gray-200 bg-white px-4 py-4 sm:rounded-t-2xl sm:px-6">
                 <div className="flex items-center justify-between">

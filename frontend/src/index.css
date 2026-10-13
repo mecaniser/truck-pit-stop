@@ -7074,3 +7074,11 @@ html.customer-portal-active {
   .db-part-price-panel input { font-size: 16px; }
   .db-job-details button { min-width: 44px; min-height: 44px; display: inline-flex; align-items: center; justify-content: center; }
 }
+
+/* Contextual intake stays usable on narrow screens even with a fine pointer. */
+@media (max-width: 639px), (pointer: coarse) {
+  .db-order-entry-panel button {
+    min-height: 44px !important;
+    min-block-size: 44px !important;
+  }
+}
