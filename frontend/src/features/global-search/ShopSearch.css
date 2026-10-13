@@ -1,0 +1,36 @@
+.db-shop-search-trigger { display: inline-flex; min-height: 44px; flex-shrink: 0; align-items: center; justify-content: center; gap: 8px; padding: 8px; color: var(--shell-text, #e2e8f0); border-radius: 10px; white-space: nowrap; font-size: 13px; font-weight: 600; }
+.db-shop-search-trigger:hover { background: var(--shell-hover, #ffffff12); }
+.db-shop-search-trigger:focus-visible { outline: 2px solid var(--accent-500, #b9472f); outline-offset: 2px; }
+.db-shop-search-trigger--mobile { align-self: center; }
+.db-presentation-legacy .db-staff-nav__profile { display: flex; align-items: center; gap: 8px; }
+@media (min-width: 768px) { .db-shop-search-trigger--mobile { display: none; } }
+/* The new staff rail starts at 960px; its navigation is hidden below that. */
+@media (min-width: 768px) and (max-width: 959px) { .db-presentation-new .db-shop-search-trigger--mobile { display: inline-flex; } }
+.db-shop-search-dialog { position: relative; z-index: 10000; color: #172033; }
+.db-shop-search-backdrop { position: fixed; inset: 0; background: #0f172a99; backdrop-filter: blur(4px); }
+.db-shop-search-position { position: fixed; inset: 0; display: flex; align-items: flex-start; justify-content: center; padding: min(12vh, 96px) 16px 16px; }
+.db-shop-search-panel { display: flex; flex-direction: column; width: 100%; max-width: 640px; max-height: 80dvh; overflow: hidden; border: 1px solid #cbd5e1; border-radius: 18px; background: #fff; box-shadow: 0 24px 80px #0f172a40; }
+.db-shop-search-header { display: flex; align-items: center; justify-content: space-between; padding: 8px 12px 4px 20px; }
+.db-shop-search-header h2 { font-size: 16px; font-weight: 700; }
+.db-shop-search-close { display: inline-flex; align-items: center; justify-content: center; width: 44px; height: 44px; border-radius: 10px; color: #64748b; }
+.db-shop-search-close:hover { background: #f1f5f9; }
+.db-shop-search-field { display: flex; align-items: center; gap: 10px; margin: 0 16px; padding: 0 12px; min-height: 48px; border: 1px solid #94a3b8; border-radius: 10px; color: #64748b; }
+.db-shop-search-field:focus-within { outline: 2px solid #b9472f; outline-offset: 2px; }
+.db-shop-search-field input { width: 100%; min-width: 0; border: 0; outline: none; box-shadow: none; background: transparent; color: #172033; font-size: 16px; padding: 12px 0; }
+.db-shop-search-hint { padding: 10px 20px 14px; color: #64748b; font-size: 12px; }
+.db-shop-search-results { overflow-y: auto; overscroll-behavior: contain; min-height: 120px; border-top: 1px solid #e2e8f0; padding: 12px; }
+.db-shop-search-message { padding: 28px 8px; font-size: 14px; color: #64748b; }
+.db-shop-search-status { padding: 0 8px 10px; font-size: 12px; color: #64748b; }
+.db-shop-search-group + .db-shop-search-group { margin-top: 12px; }
+.db-shop-search-group h3 { padding: 6px 8px; font-size: 12px; font-weight: 700; color: #475569; }
+.db-shop-search-group-note { padding: 6px 8px; font-size: 12px; color: #64748b; }
+.db-shop-search-result { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 56px; padding: 10px 12px; border-radius: 10px; color: #475569; }
+.db-shop-search-result:hover, .db-shop-search-result:focus-visible { background: #f1f5f9; }
+.db-shop-search-result-copy { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.db-shop-search-result-copy strong { color: #172033; font-size: 14px; font-weight: 650; overflow-wrap: anywhere; }
+.db-shop-search-result-copy > span { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 12px; }
+.db-shop-search-error { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; padding: 0 8px; color: #9a3412; font-size: 13px; }
+.db-shop-search-error button { min-height: 44px; padding: 6px 10px; font-weight: 600; white-space: nowrap; text-decoration: underline; border-radius: 8px; }
+.db-shop-search-panel button:focus-visible, .db-shop-search-result:focus-visible { outline: 2px solid #b9472f; outline-offset: -2px; }
+.db-shop-search-footer { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; flex-shrink: 0; border-top: 1px solid #e2e8f0; padding: 12px 20px; font-size: 11px; color: #64748b; }
+@media (max-width: 639px) { .db-shop-search-position { padding: max(12px, env(safe-area-inset-top)) 12px 12px; } .db-shop-search-panel { max-height: calc(100dvh - 24px - env(safe-area-inset-top)); border-radius: 14px; } }

@@ -1,7 +1,7 @@
 /* eslint-disable react-refresh/only-export-components -- Session-scoped purchase preparation is shared with Purchasing. */
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react'
 import { useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import { Archive, ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Boxes, Camera, ChevronsUpDown, EllipsisVertical, History, MapPin, Package, Pencil, Plus, Search, Settings2, ShoppingCart, Trash2, X } from 'lucide-react'
 
 import api from '@/lib/api'
@@ -442,6 +442,9 @@ export default function PartsInventoryWorkspace({ summary }: { summary: Summary 
   const role = useAuthStore((state) => state.user?.role)
   const manage = canManage(role)
   const navigate = useNavigate()
+  const { key: locationKey } = useLocation()
+  const [searchParams, setSearchParams] = useSearchParams()
+  const linkedPartId = searchParams.get('selected')
   const queryClient = useQueryClient()
   const { data: branding } = useTenantBranding()
   const [workspaceView, setWorkspaceView] = useState<WorkspaceView>('parts')
@@ -453,7 +456,7 @@ export default function PartsInventoryWorkspace({ summary }: { summary: Summary 
   const [search, setSearch] = useState('')
   const [debouncedSearch, setDebouncedSearch] = useState('')
   const [partsSequence, setPartsSequence] = useState(0)
-  const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [selectedId, setSelectedId] = useState<string | null>(linkedPartId)
   const [checkedParts, setCheckedParts] = useState<Map<string, PartRecord>>(() => new Map())
   const [preparedPartIds, setPreparedPartIds] = useState<Set<string>>(() => new Set(readPurchasePreparation().map((line) => line.inventoryId)))
   const [allPartsCount, setAllPartsCount] = useState<number | null>(null)
@@ -469,6 +472,23 @@ export default function PartsInventoryWorkspace({ summary }: { summary: Summary 
   const headerSortFocus = useRef<Exclude<PartSort, 'catalog'> | null>(null)
   const selectionMembership = useRef('')
   const reorderPreselection = useRef<{ context: string; pages: Set<string> }>({ context: '', pages: new Set() })
+
+  useEffect(() => {
+    if (!linkedPartId) return
+    setSelectedId(linkedPartId)
+    setWorkspaceView('parts')
+    setMobileDetailOpen(true)
+  }, [linkedPartId, locationKey])
+
+  const selectPart = (id: string) => {
+    setSelectedId(id)
+    setMobileDetailOpen(true)
+    if (linkedPartId) {
+      const params = new URLSearchParams(searchParams)
+      params.delete('selected')
+      setSearchParams(params, { replace: true })
+    }
+  }
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -529,7 +549,7 @@ export default function PartsInventoryWorkspace({ summary }: { summary: Summary 
   }, [catalogView, debouncedSearch, firstPartsPage, stockFilter, workspaceView])
 
   useEffect(() => {
-    if (workspaceView === 'activity' || !firstPartsPage) return
+    if (workspaceView === 'activity' || !firstPartsPage || linkedPartId) return
     const membershipChanged = selectionMembership.current !== preselectionContext
     if (!selectionMembership.current || membershipChanged) {
       selectionMembership.current = preselectionContext
@@ -538,7 +558,7 @@ export default function PartsInventoryWorkspace({ summary }: { summary: Summary 
       return
     }
     if (!selectedId && parts.length) setSelectedId(parts[0].id)
-  }, [firstPartsPage, parts, preselectionContext, selectedId, workspaceView])
+  }, [firstPartsPage, linkedPartId, parts, preselectionContext, selectedId, workspaceView])
 
   useEffect(() => {
     if (workspaceView !== 'reorder' || !partsQuery.data) return
@@ -887,7 +907,7 @@ export default function PartsInventoryWorkspace({ summary }: { summary: Summary 
             <strong>{checkedParts.size} {checkedParts.size === 1 ? 'part' : 'parts'} selected</strong>
             <div><button type="button" onClick={clearChecked}>Clear selection</button><button type="button" onClick={prepareChecked}>Add to purchase list<ArrowRight aria-hidden="true" /></button></div>
           </div>}
-          <PartLedger page={partsPage} loading={partsQuery.isLoading} loadingMore={partsQuery.isFetchingNextPage} failed={partsQuery.isError && !partsQuery.data} manage={manage} salesEnabled={counterSalesEnabled} selectedId={selectedId} checkedIds={new Set(checkedParts.keys())} density={density} sort={sort} direction={direction} logoUrl={branding?.logo_url || null} companyName={branding?.name || null} onSort={toggleHeaderSort} onCheck={toggleChecked} onSelect={(id) => { setSelectedId(id); setMobileDetailOpen(true) }} onSell={(id) => navigate(`/dashboard/garage/inventory/sales?new=1&part=${encodeURIComponent(id)}`)} onRetry={() => void partsQuery.refetch()} onLoadMore={() => void partsQuery.fetchNextPage()} />
+          <PartLedger page={partsPage} loading={partsQuery.isLoading} loadingMore={partsQuery.isFetchingNextPage} failed={partsQuery.isError && !partsQuery.data} manage={manage} salesEnabled={counterSalesEnabled} selectedId={selectedId} checkedIds={new Set(checkedParts.keys())} density={density} sort={sort} direction={direction} logoUrl={branding?.logo_url || null} companyName={branding?.name || null} onSort={toggleHeaderSort} onCheck={toggleChecked} onSelect={selectPart} onSell={(id) => navigate(`/dashboard/garage/inventory/sales?new=1&part=${encodeURIComponent(id)}`)} onRetry={() => void partsQuery.refetch()} onLoadMore={() => void partsQuery.fetchNextPage()} />
         </div>
         <PartInspector part={detailQuery.data} loading={detailQuery.isLoading} failed={detailQuery.isError} manage={manage} prepared={Boolean(detailQuery.data && preparedPartIds.has(detailQuery.data.id))} logoUrl={branding?.logo_url || null} companyName={branding?.name || null} onBack={() => setMobileDetailOpen(false)} onRetry={() => void detailQuery.refetch()} onAdjust={updatePart} onReceive={receiveStock} onUpdateIdentity={updatePartIdentity} onUploadPhoto={uploadPartPhoto} onRemovePhoto={removePartPhoto} onPrepare={addToPreparation} onPurchasing={() => navigate('/dashboard/garage/purchasing')} onOpenPurchaseOrder={(id) => navigate(`/dashboard/garage/purchasing?view=orders&purchase_order=${encodeURIComponent(id)}`)} onOpenRepair={(id) => navigate(`/dashboard/repair-orders?selected=${encodeURIComponent(id)}`)} />
       </div>}

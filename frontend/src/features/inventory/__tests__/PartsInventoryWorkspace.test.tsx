@@ -2,7 +2,7 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import type { FormEvent, ReactNode } from 'react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { MemoryRouter } from 'react-router-dom'
+import { Link, MemoryRouter } from 'react-router-dom'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 const apiMocks = vi.hoisted(() => ({ get: vi.fn(), put: vi.fn(), post: vi.fn(), patch: vi.fn(), delete: vi.fn() }))
@@ -232,18 +232,44 @@ function installApi(detailOverride?: ReturnType<typeof detail>) {
   apiMocks.delete.mockResolvedValue({ data: null })
 }
 
-function renderWorkspace(summary: { needs_reorder_count?: number; low_stock_count: number; open_purchase_order_count: number; total_stock_value?: string } = { needs_reorder_count: 5, low_stock_count: 7, open_purchase_order_count: 2 }) {
+function renderWorkspace(summary: { needs_reorder_count?: number; low_stock_count: number; open_purchase_order_count: number; total_stock_value?: string } = { needs_reorder_count: 5, low_stock_count: 7, open_purchase_order_count: 2 }, initialEntry = '/dashboard/garage/inventory') {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
   return render(
     <QueryClientProvider client={client}>
-      <MemoryRouter initialEntries={['/dashboard/garage/inventory']}>
+      <MemoryRouter initialEntries={[initialEntry]}>
         <PartsInventoryWorkspace summary={summary} />
+        {initialEntry.includes('selected=') && <Link to={initialEntry}>Open search result again</Link>}
       </MemoryRouter>
     </QueryClientProvider>,
   )
 }
 
 describe('DB-038 Parts & inventory workspace', () => {
+  it('opens a search deep link outside the current catalog page without loading more pages', async () => {
+    installApi()
+    renderWorkspace(undefined, '/dashboard/garage/inventory?selected=part-brake')
+    expect(await screen.findByRole('heading', { name: brakePart.name })).toBeInTheDocument()
+    expect(apiMocks.get).toHaveBeenCalledWith('/parts-operations/parts/part-brake')
+    expect(apiMocks.get.mock.calls.filter(([url]) => url === '/parts-operations/parts')).toHaveLength(1)
+    expect(document.querySelector('.db-parts-workbench__body')).toHaveClass('is-mobile-detail')
+    fireEvent.click(screen.getByRole('button', { name: 'Back to parts' }))
+    expect(document.querySelector('.db-parts-workbench__body')).not.toHaveClass('is-mobile-detail')
+    fireEvent.click(screen.getByRole('link', { name: 'Open search result again' }))
+    expect(document.querySelector('.db-parts-workbench__body')).toHaveClass('is-mobile-detail')
+    fireEvent.click(screen.getByRole('button', { name: /Alternator ALT-42/ }))
+    expect(await screen.findByRole('heading', { name: activePart.name })).toBeInTheDocument()
+  })
+
+  it('does not replace an unavailable deep-linked part with the first list result', async () => {
+    installApi()
+    const original = apiMocks.get.getMockImplementation()!
+    apiMocks.get.mockImplementation((url: string, config?: { params?: Record<string, unknown> }) => url === '/parts-operations/parts/foreign-part' ? Promise.reject({ response: { status: 404 } }) : original(url, config))
+    renderWorkspace(undefined, '/dashboard/garage/inventory?selected=foreign-part')
+    expect(await screen.findByRole('alert')).toHaveTextContent('Part details could not be loaded.')
+    expect(screen.queryByRole('heading', { name: activePart.name })).not.toBeInTheDocument()
+    expect(apiMocks.get).not.toHaveBeenCalledWith(`/parts-operations/parts/${activePart.id}`)
+  })
+
   afterEach(() => {
     apiMocks.get.mockReset()
     apiMocks.put.mockReset()

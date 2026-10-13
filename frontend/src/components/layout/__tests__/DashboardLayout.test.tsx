@@ -301,6 +301,7 @@ describe('DB-035 authenticated staff shell', () => {
     expect(legacyLinks.map(link => link.textContent?.trim())).toEqual([
       'Dashboard', 'Customers', 'Repair Orders', 'Messages', 'My Shop',
     ])
-    expect(desktop.querySelector('.db-staff-nav__utility')).not.toBeInTheDocument()
+    expect(desktop.querySelector('a.db-staff-nav__utility')).not.toBeInTheDocument()
+    expect(within(desktop).getByRole('button', { name: 'Search shop' })).toBeInTheDocument()
   })
 })

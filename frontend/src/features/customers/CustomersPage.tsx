@@ -128,7 +128,7 @@ export default function CustomersPage() {
   const [vehiclesViewMode, setVehiclesViewMode] = useViewPreference('customer-vehicles')
   const [vehicleRelationshipSearch, setVehicleRelationshipSearch] = useState('')
   const [vehicleRelationshipFilter, setVehicleRelationshipFilter] = useState<'all' | 'owned' | 'authority'>('all')
-  const [selectedVehicleInPanel, setSelectedVehicleInPanel] = useState<Vehicle | null>(null)
+  const [manualSelectedVehicle, setSelectedVehicleInPanel] = useState<Vehicle | null>(null)
   const [detailTab, setDetailTab] = useState<'overview' | 'history'>('overview')
   const [expandedHistoryId, setExpandedHistoryId] = useState<string | null>(null)
   const [workspaceFocusRequest, setWorkspaceFocusRequest] = useState(0)
@@ -151,9 +151,9 @@ export default function CustomersPage() {
   const openEditContactModal = (contact: Contact) => contactModalControls.current?.openEdit(contact)
   const handleDeleteContactClick = (contact: Contact) => contactModalControls.current?.requestDelete(contact)
   const selectedCustomerId = useMemo(() => {
-    if (presentationVariant !== 'new') return null
     return new URLSearchParams(location.search).get('selected')
-  }, [location.search, presentationVariant])
+  }, [location.search])
+  const selectedVehicleId = new URLSearchParams(location.search).get('vehicle')
 
   // Mechanic lookup for vehicle history
   interface Mechanic {
@@ -218,13 +218,13 @@ export default function CustomersPage() {
   } = useQuery<Customer>({
     queryKey: ['customer', selectedCustomerId],
     queryFn: async () => (await api.get(`/customers/${selectedCustomerId}`)).data,
-    enabled: presentationVariant === 'new' && !!selectedCustomerId && !customerOnCurrentPage,
+    enabled: !!selectedCustomerId && !customerOnCurrentPage,
     retry: false,
   })
 
   useEffect(() => {
-    if (presentationVariant !== 'new') return
     if (!selectedCustomerId) {
+      if (presentationVariant !== 'new') return
       setIsDetailOpen(false)
       setSelectedCustomer(null)
       setSelectedVehicleInPanel(null)
@@ -232,12 +232,37 @@ export default function CustomersPage() {
     }
 
     const customer = customerOnCurrentPage ?? selectedCustomerRecord
-    if (!customer) return
+    if (!customer) {
+      setSelectedCustomer(null)
+      setIsDetailOpen(false)
+      setSelectedVehicleInPanel(null)
+      return
+    }
     setSelectedCustomer(customer)
     setIsDetailOpen(true)
     setDetailTab('overview')
     setSelectedVehicleInPanel(null)
   }, [customerOnCurrentPage, presentationVariant, selectedCustomerId, selectedCustomerRecord])
+
+  const linkedVehicleQuery = useQuery<Vehicle>({
+    queryKey: ['customer-search-vehicle', currentUser?.tenant_id, currentUser?.id, selectedCustomerId, selectedVehicleId],
+    queryFn: async ({ signal }) => (await api.get(`/customers/${selectedCustomerId}/vehicles/${selectedVehicleId}`, { signal })).data,
+    enabled: !!selectedCustomerId && !!selectedVehicleId && selectedCustomer?.id === selectedCustomerId,
+    retry: false,
+  })
+  const selectedVehicleInPanel = selectedVehicleId
+    ? selectedCustomer?.id === selectedCustomerId && linkedVehicleQuery.data?.id === selectedVehicleId
+      ? linkedVehicleQuery.data
+      : null
+    : manualSelectedVehicle
+
+  const returnToCustomer = () => {
+    setSelectedVehicleInPanel(null)
+    if (!selectedVehicleId) return
+    const params = new URLSearchParams(location.search)
+    params.delete('vehicle')
+    navigate({ pathname: location.pathname, search: params.toString() }, { replace: true })
+  }
 
   // Prefetch the next page once the current one has settled, so paging forward
   // feels instant. Only when a next page exists and we're showing live data.
@@ -448,6 +473,7 @@ export default function CustomersPage() {
 
   const updateSelectedCustomerQuery = (customerId: string | null) => {
     const params = new URLSearchParams(location.search)
+    params.delete('vehicle')
     if (customerId) params.set('selected', customerId)
     else params.delete('selected')
     const search = params.toString()
@@ -489,7 +515,7 @@ export default function CustomersPage() {
     setExpandedHistoryId(null)
     setVehicleRelationshipSearch('')
     setVehicleRelationshipFilter('all')
-    if (presentationVariant === 'new') {
+    if (presentationVariant === 'new' || selectedCustomerId) {
       updateSelectedCustomerQuery(null)
       window.requestAnimationFrame(() => {
         if (restoreCustomerId) customerRowRefs.current.get(restoreCustomerId)?.focus()
@@ -1177,7 +1203,7 @@ export default function CustomersPage() {
         ) : undefined}
         onBack={
           selectedVehicleInPanel
-            ? () => setSelectedVehicleInPanel(null)
+            ? returnToCustomer
             : presentationVariant === 'new'
               ? closeDetailPanel
               : undefined
@@ -1233,6 +1259,8 @@ export default function CustomersPage() {
           ) : undefined
         }
       >
+        {selectedVehicleId && linkedVehicleQuery.isFetching && <p role="status" className="p-4 text-sm text-slate-600">Opening vehicle…</p>}
+        {selectedVehicleId && linkedVehicleQuery.isError && <div role="alert" className="flex flex-wrap items-center gap-3 p-4 text-sm text-red-700"><span>That vehicle is unavailable for this customer.</span><button type="button" onClick={returnToCustomer} className="min-h-11 whitespace-nowrap font-semibold underline">Back to customer</button></div>}
         {!selectedCustomer ? null : selectedVehicleInPanel ? (
           /* Vehicle Detail Content */
           <div className="p-6 space-y-6">
@@ -1412,7 +1440,7 @@ export default function CustomersPage() {
               )}
       </SlidePanel>
 
-      {presentationVariant === 'new' && selectedCustomerId && !selectedCustomer && (
+      {selectedCustomerId && !selectedCustomer && (
         <section
           className="db-customer-detail-workspace db-customer-detail-workspace--unavailable"
           role="region"
