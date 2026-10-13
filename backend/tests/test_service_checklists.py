@@ -529,6 +529,11 @@ async def test_optional_does_not_gate_and_paging_is_full_scope(db_session):
                 a.owner,
                 ChecklistTaskUpdate(is_completed=True, expected_version=1),
             )
+    from app.services import operation_execution
+    from app.schemas.operation_execution import OperationCompletion
+    for line in (await db_session.execute(select(Labor).where(Labor.repair_order_id == a.order.id))).scalars():
+        if line.execution_status == 'pending':
+            await operation_execution.complete(db_session, a.order.id, line.id, a.owner, OperationCompletion(is_completed=True, expected_version=line.execution_version))
     await checks.guard_completion(db_session, a.order)
     for _ in range(35):
         line = Labor(
@@ -635,7 +640,7 @@ async def test_pm_reseed_preserves_removes_and_rejects_ambiguous(db_session):
     second = await checks.read_checklist(db_session, a.order.id, a.owner)
     assert [x.id for x in first.items] == [x.id for x in second.items] and first.items[
         0
-    ].labor_id != second.items[0].labor_id
+    ].labor_id == second.items[0].labor_id
     duplicate = Labor(
         id=uuid4(),
         tenant_id=a.tenant.id,
@@ -861,6 +866,9 @@ async def test_completion_paths_accept_finished_required_tasks(
                 a.owner,
                 ChecklistTaskUpdate(is_completed=True, expected_version=1),
             )
+    from app.services import operation_execution
+    from app.schemas.operation_execution import OperationCompletion
+    await operation_execution.complete(db_session, a.order.id, page.items[0].labor_id, a.owner, OperationCompletion(is_completed=True, expected_version=0))
     a.customer.phone = None
     if route == "mechanic":
         a.owner.role = UserRole.MECHANIC

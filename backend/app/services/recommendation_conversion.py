@@ -231,7 +231,7 @@ async def convert(db, *, target_id, recommendation_id, body, user):
         existing.superseded_at = now
         # Flush the partial unique index release before inserting its successor.
         await db.flush()
-    line = Labor(id=line_id, tenant_id=tenant_id, repair_order_id=target.id,
+    line = Labor(execution_status="pending", id=line_id, tenant_id=tenant_id, repair_order_id=target.id,
                  description=rec.description, hours=body.hours, hourly_rate=body.hourly_rate,
                  total_cost=total, line_type=LaborLineType.MANUAL, auto_recalc_enabled=False)
     conversion = RecommendationConversion(
@@ -241,6 +241,8 @@ async def convert(db, *, target_id, recommendation_id, body, user):
         vehicle_id=source.vehicle_id, target_order_id=target.id, target_order_number=target.order_number,
         target_labor_id=line_id, request_id=body.request_id, request_hash=digest,
         hours=body.hours, hourly_rate=body.hourly_rate, created_by_user_id=user.id, created_at=now)
+    from app.services.operation_execution import enroll_new_scope
+    enroll_new_scope(target)
     db.add_all([line, conversion])
     await db.flush()
     if existing is not None:

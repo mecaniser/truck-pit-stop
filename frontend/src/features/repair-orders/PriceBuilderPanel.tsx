@@ -1,3 +1,5 @@
+import { OperationExecutionControls, OperationExecutionFeedback, OperationExecutionStatus } from '@/features/operation-execution/OperationExecution'
+import { useOperationExecution } from '@/features/operation-execution/queries'
 import OrderChecklist from '@/features/service-checklists/OrderChecklist'
 import { type ReactNode, type ChangeEvent, type MouseEvent as ReactMouseEvent, useEffect, useRef, useState } from 'react'
 import { Popover, PopoverButton, PopoverPanel } from '@headlessui/react'
@@ -1185,6 +1187,8 @@ export default function PriceBuilderPanel({
     // them), so don't fetch when deleted — the panel shows the Restore state.
     enabled: !!orderId && !isDeleted,
   })
+
+  const operationExecution = useOperationExecution(orderId, summary, !isDeleted)
 
   const isFinalizedOrder = ['completed', 'invoiced', 'paid', 'cancelled'].includes(orderStatus)
   const { data: repairPhotosData, isFetching: repairPhotosFetching } = useQuery<RepairOrderPhoto[]>({
@@ -3922,10 +3926,12 @@ export default function PriceBuilderPanel({
               </span>
               <SectionInfoTooltip text="Each card is one billable item. Service packages bundle labor with their required parts — edit hours, rate, or part quantity inline. Stock adjusts automatically." tooltipClassName="w-72" />
             </div>
+            <OperationExecutionFeedback query={operationExecution} />
             <div className="db-service-list divide-y divide-gray-100 border-y border-gray-100">
               {lines.map((line) => {
                 const groupedParts = groupedPartsForLine(line)
                 const isOpen = openLineIds.has(line.id)
+                const execution = operationExecution.data?.items.find(item => item.labor_id === line.id)
                 const isAddingPartHere = isAddingPartToLine(line.id)
                 const warningsForLine = lineWarnings[line.id] || []
                 const partTotal = groupedParts.reduce((sum, part) => sum + (parseFloat(part.total_price || '0') || 0), 0)
@@ -3953,8 +3959,9 @@ export default function PriceBuilderPanel({
                           <span className="truncate font-semibold text-gray-900">{line.description || lineTypeLabel(line)}</span>
                           <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-slate-600">{lineTypeLabel(line)}</span>
                         </span>
-                        <span className="mt-0.5 block truncate text-xs text-slate-600">
-                          {formatHoursMinutes(line.hours)}{groupedParts.length > 0 ? ` · ${groupedParts.length} parts` : ''}{partSavings > 0 ? ` · saves ${money(partSavings)}` : ''}
+                        <span className="db-service-execution-meta mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-slate-600">
+                          <span className="whitespace-nowrap">{formatHoursMinutes(line.hours)} booked{groupedParts.length > 0 ? ` · ${groupedParts.length} parts` : ''}{partSavings > 0 ? ` · saves ${money(partSavings)}` : ''}</span>
+                          {execution && <OperationExecutionStatus item={execution} />}
                         </span>
                       </span>
                       <span className="text-right">
@@ -3967,6 +3974,7 @@ export default function PriceBuilderPanel({
                     {line.recommendation_source && <RecommendationSourceLink source={line.recommendation_source} currentDescription={line.description} />}
                     {isOpen && (
                       <div id={`service-line-${line.id}`} className="db-workspace-line-details ml-3 space-y-2 pb-2 pr-2">
+                        {execution && <OperationExecutionControls key={`${orderId}:${line.id}`} orderId={orderId} item={execution} technicians={technicianOptions} disabled={operationExecution.isError || operationExecution.isFetching} onUpdated={onUpdated} /> }
                         {warningsForLine.length > 0 && (
                           <div role="alert" className="space-y-1 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
                             {warningsForLine.map((warning) => (
@@ -4645,6 +4653,12 @@ export default function PriceBuilderPanel({
                 {isInitialSummaryLoad || summaryLoadFailed ? '…' : money(orderTotalValue)}
               </p>
             </div>
+            {!isFinalizedOrder && operationExecution.allowed && (operationExecution.isError ? <span className="text-xs text-red-700">Operation status unverified</span> : operationExecution.data && operationExecution.data.summary.tracked > 0 ? (
+              <button type="button" className="min-h-8 max-w-44 text-left text-xs font-medium text-slate-600 underline decoration-dotted underline-offset-2" onClick={() => {
+                const next = operationExecution.data.items.find(item => item.status === 'pending') || operationExecution.data.items[0]
+                if (next) openLinkedOperation(next.labor_id)
+              }}>{operationExecution.data.summary.remaining > 0 ? `${operationExecution.data.summary.remaining} operation${operationExecution.data.summary.remaining === 1 ? '' : 's'} remaining` : `Operations ${operationExecution.data.summary.completed}/${operationExecution.data.summary.tracked} complete`}</button>
+            ) : null)}
             {(!isInternalOrder || hasInvoice || completionMode) && (
               canCreateInvoice ? (
                 <div className="relative">

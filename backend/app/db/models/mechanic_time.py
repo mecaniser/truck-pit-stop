@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, DateTime, ForeignKey, Text, Enum as SQLEnum, JSON, Boolean, Date, Integer
+from sqlalchemy import Column, String, DateTime, ForeignKey, Text, Enum as SQLEnum, JSON, Boolean, Date, Integer, CheckConstraint
 from sqlalchemy.orm import relationship
 from sqlalchemy.dialects.postgresql import UUID
 import enum
@@ -22,6 +22,11 @@ class MiscWorkCategory(str, enum.Enum):
 
 class MechanicTimeSession(BaseModel):
     __tablename__ = "mechanic_time_sessions"
+    __table_args__ = (CheckConstraint("labor_id_snapshot IS NULL OR (session_type = 'repair_order' AND repair_order_id IS NOT NULL)", name="ck_timer_operation_type"),)
+    labor_id = Column(UUID(as_uuid=True), ForeignKey("labor.id", ondelete="SET NULL"), nullable=True, index=True)
+    labor_id_snapshot = Column(UUID(as_uuid=True), nullable=True, index=True)
+    labor_description_snapshot = Column(Text, nullable=True)
+
 
     tenant_id = Column(UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=False, index=True)
     tenant = relationship("Tenant", backref="mechanic_time_sessions")

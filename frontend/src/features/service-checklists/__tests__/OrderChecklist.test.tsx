@@ -106,4 +106,16 @@ describe('persisted work checklists', () => {
     expect(mocks.get).not.toHaveBeenCalled()
     expect(screen.queryByRole('region')).not.toBeInTheDocument()
   })
+  it('requires explicit per-task execution permission for mechanics on mixed-assignment jobs', async () => {
+    setUser('tenant-a', 'mechanic', 'helper-a')
+    mocks.get.mockResolvedValue({ data: page([
+      { ...task, id: 'mine', label: 'My inspection', can_update: true },
+      { ...task, id: 'other', label: 'Other technician inspection', can_update: false },
+      { ...task, id: 'unknown', label: 'Permission unavailable' },
+    ], { summary: { total: 3, completed: 0, required: 3, required_remaining: 3 } }) })
+    mount()
+    expect(await screen.findByRole('checkbox', { name: 'My inspection' })).toBeEnabled()
+    expect(screen.getByRole('checkbox', { name: 'Other technician inspection' })).toBeDisabled()
+    expect(screen.getByRole('checkbox', { name: 'Permission unavailable' })).toBeDisabled()
+  })
 })

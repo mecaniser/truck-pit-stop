@@ -1,4 +1,5 @@
 from __future__ import annotations
+from fastapi import HTTPException
 
 import math
 import re
@@ -21,7 +22,7 @@ from app.db.models.labor_operation_memory import LaborOperationMemory
 from app.db.models.repair_order import RepairOrder, RepairOrderStatus
 from app.db.models.service import Service, ServicePart
 from app.db.models.user import User
-from app.services import service_checklist
+from app.services import service_checklist, operation_execution
 from app.db.models.tenant import Tenant
 from app.core.logging import get_logger
 from app.services.repair_operation_library import (
@@ -251,6 +252,8 @@ class PriceBuildService:
         for_update: bool = False,
         tenant_id: Optional[UUID] = None,
     ) -> RepairOrder:
+        if for_update and tenant_id is not None:
+            await operation_execution.lock_tenant_financials(db, tenant_id)
         statement = (
             select(RepairOrder)
             .where(RepairOrder.id == order_id, RepairOrder.deleted_at.is_(None))
@@ -346,6 +349,7 @@ class PriceBuildService:
         # times this service is being performed). A 60-minute service × quantity 2 = 2 hours.
         if existing_line:
             line = existing_line
+            await operation_execution.guard_material_edit(db, order, line, {"description": service.name, "hours": total_hours})
             line.description = service.name
             line.hours = total_hours
             line.hourly_rate = hourly_rate
@@ -355,7 +359,7 @@ class PriceBuildService:
             # Reset previously-attached parts so we can re-snapshot at current prices/stock.
             await self._restore_service_parts(db, order, service.id)
         else:
-            line = Labor(
+            line = Labor(execution_status="pending", 
                 tenant_id=order.tenant_id,
                 repair_order_id=order.id,
                 service_code=None,
@@ -369,6 +373,7 @@ class PriceBuildService:
                 auto_recalc_enabled=True,
                 source_service_id=service.id,
             )
+            operation_execution.enroll_new_scope(order)
             db.add(line)
             await db.flush()
             await service_checklist.snapshot_service(db, order, line, service, actor)
@@ -584,7 +589,7 @@ class PriceBuildService:
         tenant = await self._get_tenant(db, order.tenant_id)
 
         hourly_rate = _labor_rate_for(order, tenant)
-        line = Labor(
+        line = Labor(execution_status="pending", 
             tenant_id=order.tenant_id,
             repair_order_id=order.id,
             description=est_name,
@@ -598,6 +603,7 @@ class PriceBuildService:
             source_service_id=None,
         )
 
+        operation_execution.enroll_new_scope(order)
         db.add(line)
         await self._upsert_internal_memory(
             db=db,
@@ -644,6 +650,7 @@ class PriceBuildService:
         if not line:
             raise PriceBuildNotFoundError("Price build line not found")
 
+        await operation_execution.guard_material_edit(db, order, line, {key: value for key, value in {"description": description, "hours": hours}.items() if value is not None})
         if description is not None:
             line.description = description
             # Renaming is an override of the Service's name, so stop recalc
@@ -700,6 +707,8 @@ class PriceBuildService:
         line = line_result.scalar_one_or_none()
         if not line:
             raise PriceBuildNotFoundError("Price build line not found")
+        if await operation_execution.active_for_line(db, order, line):
+            raise HTTPException(409, "Stop the operation timer before removing this work.")
         # If this labor line came from a Service, also release its bundled parts.
         if line.source_service_id:
             await self._restore_service_parts(db, order, line.source_service_id)
@@ -850,15 +859,17 @@ class PriceBuildService:
                 # a line the operator has taken over — so renaming a line is
                 # what stops its Service name being reapplied here.
                 if service:
-                    line.description = service.name
+                    if line.execution_status != 'completed':
+                        line.description = service.name
                 # Service-sourced lines are billed as labor-hour units.
-                if line.line_type == LaborLineType.FLAT_SERVICE:
+                if line.line_type == LaborLineType.FLAT_SERVICE and line.execution_status != 'completed':
                     line.line_type = LaborLineType.MANUAL
                 line.hourly_rate = _labor_rate_for(order, tenant)
                 line.total_cost = _money(Decimal(str(line.hours)) * Decimal(str(line.hourly_rate)))
             elif line.line_type == LaborLineType.REPAIR_OPERATION and line.provider_operation_id:
                 estimate, estimated_hours = generated_estimates[line.id]
-                line.hours = estimated_hours
+                if line.execution_status != 'completed':
+                    line.hours = estimated_hours
                 line.hourly_rate = _labor_rate_for(order, tenant)
                 line.total_cost = _money(Decimal(str(line.hours)) * Decimal(str(line.hourly_rate)))
                 warnings.extend(estimate.warnings)

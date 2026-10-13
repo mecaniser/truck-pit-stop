@@ -3,6 +3,7 @@ import type { SuggestedNextAction } from '@/types'
 
 export interface MechanicSuggestionJob {
   id: string
+  is_order_lead?: boolean
   order_number: string
   status: string
   updated_at: string

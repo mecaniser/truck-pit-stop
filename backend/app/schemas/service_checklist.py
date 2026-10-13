@@ -61,6 +61,7 @@ class ChecklistActor(BaseModel):
 
 
 class ChecklistTaskResponse(BaseModel):
+    can_update: bool = True
     id: UUID
     labor_id: UUID
     service_name: str

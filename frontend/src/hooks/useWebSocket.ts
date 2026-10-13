@@ -212,6 +212,9 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
           }
           queryClient.invalidateQueries({ queryKey: ['repair-orders'] })
           queryClient.invalidateQueries({ queryKey: ['repair-order-detail'] })
+          queryClient.invalidateQueries({ queryKey: ['order-operations'] })
+          queryClient.invalidateQueries({ queryKey: ['order-checklist'] })
+          queryClient.invalidateQueries({ queryKey: ['mechanic-job-detail'] })
           queryClient.invalidateQueries({ queryKey: ['mechanic-jobs'] })
           queryClient.invalidateQueries({ queryKey: ['mechanic-history'] })
           // Keep an unmounted dashboard stale without making its queue request
@@ -320,6 +323,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
         case 'mechanic_timer_update':
           queryClient.invalidateQueries({ queryKey: ['mechanic-jobs'] })
           queryClient.invalidateQueries({ queryKey: ['mechanic-day-summary'] })
+          queryClient.invalidateQueries({ queryKey: ['order-operations'] })
           queryClient.invalidateQueries({ queryKey: ['mechanic-board-team'] })
           queryClient.invalidateQueries({ queryKey: ['mechanic-board-detail'] })
           queryClient.invalidateQueries({ queryKey: ['dashboard-action-queue'] })
@@ -328,6 +332,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
         case 'mechanic_attendance_update':
         case 'mechanic_break_update':
           queryClient.invalidateQueries({ queryKey: ['mechanic-day-summary'] })
+          queryClient.invalidateQueries({ queryKey: ['order-operations'] })
           queryClient.invalidateQueries({ queryKey: ['mechanic-board-team'] })
           queryClient.invalidateQueries({ queryKey: ['mechanic-board-detail'] })
           queryClient.invalidateQueries({ queryKey: ['dashboard-action-queue'] })
@@ -344,6 +349,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
             })
           }
           queryClient.invalidateQueries({ queryKey: ['mechanic-day-summary'] })
+          queryClient.invalidateQueries({ queryKey: ['order-operations'] })
           queryClient.invalidateQueries({ queryKey: ['mechanic-board-team'] })
           queryClient.invalidateQueries({ queryKey: ['mechanic-board-detail'] })
           break

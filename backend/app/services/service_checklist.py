@@ -128,28 +128,8 @@ async def save_template(db, service_id, actor, body: ChecklistTemplateUpdate):
 
 
 async def load_order(db, order_id, actor, *, for_update=False):
-    require_staff(actor)
-    stmt = (
-        select(RepairOrder)
-        .where(
-            RepairOrder.id == order_id,
-            RepairOrder.tenant_id == actor.tenant_id,
-            RepairOrder.deleted_at.is_(None),
-        )
-        .execution_options(populate_existing=True)
-    )
-    if for_update:
-        stmt = stmt.with_for_update(of=RepairOrder)
-    order = (await db.execute(stmt)).scalar_one_or_none()
-    if order is None:
-        raise HTTPException(404, "Work order not found")
-    if actor.role == UserRole.MECHANIC and order.assigned_mechanic_id != actor.id:
-        raise HTTPException(403, "Access denied")
-    if actor.role == UserRole.FLEET_MANAGER and not (
-        order.is_fleet_work or order.is_internal
-    ):
-        raise HTTPException(403, "Access denied")
-    return order
+    from app.services.operation_execution import load_order as load_execution_order
+    return await load_execution_order(db, order_id, actor, write=for_update)
 
 
 def can_update(order):
@@ -164,8 +144,8 @@ def can_update(order):
     )
 
 
-def active_scope(order):
-    return (
+def active_scope(order, actor=None):
+    scope = (
         select(Task)
         .join(
             Labor,
@@ -183,10 +163,13 @@ def active_scope(order):
             Task.deleted_at.is_(None),
         )
     )
+    if actor and actor.role == UserRole.MECHANIC and order.assigned_mechanic_id != actor.id:
+        scope = scope.where(Labor.mechanic_id == actor.id)
+    return scope
 
 
-async def summary(db, order):
-    scope = active_scope(order).subquery()
+async def summary(db, order, actor=None):
+    scope = active_scope(order, actor).subquery()
     row = (
         await db.execute(
             select(
@@ -240,11 +223,11 @@ def task_response(task):
 
 async def read_checklist(db, order_id, actor, skip=0, limit=100):
     order = await load_order(db, order_id, actor)
-    totals = await summary(db, order)
+    totals = await summary(db, order, actor)
     tasks = (
         (
             await db.execute(
-                active_scope(order)
+                active_scope(order, actor)
                 .order_by(Labor.created_at, Labor.id, Task.position, Task.id)
                 .offset(skip)
                 .limit(limit)
@@ -253,8 +236,14 @@ async def read_checklist(db, order_id, actor, skip=0, limit=100):
         .scalars()
         .all()
     )
+    assignments = dict((await db.execute(select(Labor.id, Labor.mechanic_id).where(Labor.tenant_id == order.tenant_id, Labor.repair_order_id == order.id))).all())
+    items = []
+    for task in tasks:
+        item = task_response(task)
+        item.can_update = can_update(order) and (actor.role != UserRole.MECHANIC or assignments.get(task.labor_id) == actor.id or (assignments.get(task.labor_id) is None and order.assigned_mechanic_id == actor.id))
+        items.append(item)
     return ChecklistPage(
-        items=[task_response(task) for task in tasks],
+        items=items,
         total=totals.total,
         skip=skip,
         limit=limit,
@@ -274,6 +263,11 @@ async def update_task(db, order_id, item_id, actor, body: ChecklistTaskUpdate):
     ).scalar_one_or_none()
     if task is None:
         raise HTTPException(404, "Checklist task not found")
+    line = (await db.execute(select(Labor).where(Labor.id == task.labor_id, Labor.tenant_id == order.tenant_id, Labor.repair_order_id == order.id))).scalar_one()
+    if actor.role == UserRole.MECHANIC and line.mechanic_id != actor.id and not (line.mechanic_id is None and order.assigned_mechanic_id == actor.id):
+        raise HTTPException(403, "Only the assigned technician can update this operation's checklist.")
+    if task.required and task.is_completed and not body.is_completed and line.execution_status == 'completed':
+        raise HTTPException(409, "Reopen the operation before reopening a required task.")
     if not can_update(order):
         raise HTTPException(409, "Checklist changes require an open work order.")
     if task.version != body.expected_version:
@@ -301,8 +295,8 @@ async def update_task(db, order_id, item_id, actor, body: ChecklistTaskUpdate):
         )
         await db.flush()
     return ChecklistTaskUpdateResponse(
-        **task_response(task).model_dump(),
-        summary=await summary(db, order),
+        **task_response(task).model_dump(exclude={"can_update"}),
+        summary=await summary(db, order, actor),
         can_update=True,
     )
 
@@ -339,6 +333,8 @@ async def snapshot_service(db: AsyncSession, order, labor, service, actor=None):
 
 
 async def archive_labor(db, order, labor, actor=None):
+    from app.services.operation_execution import remove
+    await remove(db, order, labor, actor)
     tasks = (
         (await db.execute(active_scope(order).where(Task.labor_id == labor.id)))
         .scalars()
@@ -392,9 +388,11 @@ async def forbid_source_change(db, order, labor, source_service_id):
 
 
 async def guard_completion(db, order):
+    from app.services.operation_execution import guard_completion as operations_guard
     remaining = (await summary(db, order)).required_remaining
     if remaining:
         raise HTTPException(
             409,
             f"Complete the {remaining} required checklist tasks before finishing this work order.",
         )
+    await operations_guard(db, order)

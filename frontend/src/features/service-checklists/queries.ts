@@ -15,6 +15,7 @@ export function isConflict(error: unknown): boolean {
 export async function invalidateOrderChecklist(client: QueryClient, tenantId: string, orderId: string) {
   await Promise.all([
     client.invalidateQueries({ queryKey: checklistKeys.order(tenantId, orderId) }),
+    client.invalidateQueries({ queryKey: ['order-operations', tenantId, orderId] }),
     client.invalidateQueries({ queryKey: ['repair-order-detail', orderId] }),
     client.invalidateQueries({ queryKey: ['mechanic-job-detail', orderId] }),
     client.invalidateQueries({ queryKey: ['fleet-ro-detail', orderId] }),

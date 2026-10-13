@@ -2,7 +2,7 @@ import { z } from 'zod'
 
 const count = z.number().int().nonnegative()
 const taskSchema = z.object({
-  id: z.string().min(1), labor_id: z.string().min(1), service_name: z.string(), label: z.string().min(1),
+  can_update: z.boolean().optional(), id: z.string().min(1), labor_id: z.string().min(1), service_name: z.string(), label: z.string().min(1),
   required: z.boolean(), position: count, is_completed: z.boolean(), version: z.number().int().positive(),
   completed_at: z.string().nullable(), completed_by: z.object({ id: z.string().min(1), name: z.string() }).nullable(),
 })

@@ -7082,3 +7082,10 @@ html.customer-portal-active {
     min-block-size: 44px !important;
   }
 }
+
+/* Execution stays with its operation; long names and phone widths wrap whole controls. */
+.db-price-builder .db-service-label > .db-service-execution-meta { flex: 1 1 auto; white-space: normal; }
+.db-price-builder .db-service-execution-meta .db-operation-status { font-size: 11px; }
+@container (min-width: 720px) {
+  .db-price-builder .db-service-label:has(.db-service-execution-meta) { flex-wrap: wrap; column-gap: 8px; }
+}

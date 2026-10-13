@@ -27,7 +27,7 @@ from app.db.models.inventory import PartsUsage, Inventory
 from app.db.models.repair_order import RepairOrder, RepairOrderStatus
 from app.db.models.repair_order_history import RepairOrderHistoryEvent
 from app.db.models.labor import Labor, LaborLineType
-from app.services import service_checklist
+from app.services import service_checklist, operation_execution
 from app.db.models.service import Service, ServicePart
 from app.db.models.tenant import Tenant
 from app.db.models.customer import Customer
@@ -2821,6 +2821,7 @@ async def complete_work_order(
     from app.api.v1.endpoints.repair_orders import _refresh_repair_order_totals
 
     await service_checklist.guard_completion(db, ro)
+    await operation_execution.finish_order(db, ro, current_user)
 
     # Rebuild the invoice source values from the locked canonical children.
     # Price mutations use the same repair-order lock, so completion either
@@ -3128,6 +3129,7 @@ async def _apply_pm_services_to_ro(
     # mutating any repair-order data.
     validated_values = _validated_service_work_values(services)
 
+    await operation_execution.lock_tenant_financials(db, tenant_id)
     # Serialize reseeding with completion/task edits; newly created rows have
     # been flushed by the caller and are owned by this same transaction.
     await db.execute(select(RepairOrder.id).where(RepairOrder.id == ro.id, RepairOrder.tenant_id == tenant_id).with_for_update(of=RepairOrder))
@@ -3182,19 +3184,24 @@ async def _apply_pm_services_to_ro(
 
     for s in services:
         hours, part_quantities = validated_values[s.id]
-        new_labor = Labor(
-            id=uuid4(), tenant_id=tenant_id, repair_order_id=ro.id,
-            description=s.name, hours=hours, hourly_rate=labor_rate,
-            total_cost=(hours * labor_rate).quantize(Decimal("0.01")),
-            line_type=LaborLineType.FLAT_SERVICE, source_service_id=s.id,
-        )
-        db.add(new_labor)
-        await db.flush()
         prior_labor = old_by_service.get(s.id)
         if prior_labor is not None:
-            await service_checklist.preserve_labor_snapshot(db, ro, prior_labor, new_labor)
-        elif s.id not in prior_pm_service_ids:
-            await service_checklist.snapshot_service(db, ro, new_labor, s, actor)
+            # Retained service keeps execution, checklist and recommendation identity.
+            new_labor = prior_labor
+            await operation_execution.guard_material_edit(db, ro, prior_labor, {"description": s.name, "hours": hours})
+            new_labor.description = s.name
+            new_labor.hours = hours
+            new_labor.hourly_rate = labor_rate
+            new_labor.total_cost = (hours * labor_rate).quantize(Decimal("0.01"))
+        else:
+            new_labor = Labor(execution_status="pending", id=uuid4(), tenant_id=tenant_id, repair_order_id=ro.id,
+                description=s.name, hours=hours, hourly_rate=labor_rate, total_cost=(hours * labor_rate).quantize(Decimal("0.01")),
+                line_type=LaborLineType.FLAT_SERVICE, source_service_id=s.id)
+            operation_execution.enroll_new_scope(ro)
+            db.add(new_labor)
+            await db.flush()
+            if s.id not in prior_pm_service_ids:
+                await service_checklist.snapshot_service(db, ro, new_labor, s, actor)
         for sp in s.service_parts:
             inv = sp.inventory_item
             if inv is None:
@@ -3214,7 +3221,7 @@ async def _apply_pm_services_to_ro(
     for old_labor in old_lines:
         if old_labor.source_service_id not in selected_ids:
             await service_checklist.archive_labor(db, ro, old_labor, actor)
-        await db.delete(old_labor)
+            await db.delete(old_labor)
     await db.flush()
 
 
@@ -3545,12 +3552,13 @@ async def add_service_to_work_order(
         (tenant.labor_rate if fleet_labor_uses_customer_rate(ro) else tenant.internal_labor_rate) if tenant else 0
     ))
 
-    new_labor = Labor(
+    new_labor = Labor(execution_status="pending", 
         id=uuid4(), tenant_id=current_user.tenant_id, repair_order_id=ro.id,
         description=service.name, hours=hours, hourly_rate=labor_rate,
         total_cost=(hours * labor_rate).quantize(Decimal("0.01")),
         line_type=LaborLineType.FLAT_SERVICE, source_service_id=service.id,
     )
+    operation_execution.enroll_new_scope(ro)
     db.add(new_labor)
     await service_checklist.snapshot_service(db, ro, new_labor, service, current_user)
     for sp in service.service_parts:
@@ -3786,7 +3794,7 @@ async def new_work_order(
     ))
     for line in body.labor_lines:
         hours = Decimal(str(line.hours))
-        db.add(Labor(
+        db.add(Labor(execution_status="pending", 
             id=uuid4(), tenant_id=current_user.tenant_id, repair_order_id=ro.id,
             description=line.description.strip(), hours=hours, hourly_rate=labor_rate,
             total_cost=(hours * labor_rate).quantize(Decimal("0.01")),

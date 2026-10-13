@@ -15,6 +15,7 @@ export default function OrderChecklist({ orderId, refreshToken, orderStatus, dar
 }
 function Checklist({ tenantId, orderId, refreshToken, orderStatus, dark, actorScope }: { tenantId: string; orderId: string; refreshToken?: unknown; orderStatus?: string; dark: boolean; actorScope: string }) {
   const client = useQueryClient()
+  const isMechanic = useAuthStore(state => state.user?.role === 'mechanic')
   const [open, setOpen] = useState(true)
   const [message, setMessage] = useState('')
   const section = useRef<HTMLElement>(null)
@@ -65,7 +66,7 @@ function Checklist({ tenantId, orderId, refreshToken, orderStatus, dark, actorSc
       {first && !canUpdate && <p className={`text-xs ${muted}`}>Read only. Checks can be changed while this work order is open and work has started.</p>}
       {first && groups.map(items => <div key={items[0].labor_id}>
         <h4 className={`mb-1 text-xs font-semibold ${muted}`}>{items[0].service_name}</h4>
-        <ul className="divide-y divide-current/10">{items.map(item => <ChecklistRow key={item.id} item={item} tenantId={tenantId} orderId={orderId} canUpdate={canUpdate} dark={dark} />)}</ul>
+        <ul className="divide-y divide-current/10">{items.map(item => <ChecklistRow key={item.id} item={item} tenantId={tenantId} orderId={orderId} canUpdate={canUpdate && (isMechanic ? item.can_update === true : item.can_update !== false)} dark={dark} />)}</ul>
       </div>)}
       {query.hasNextPage && <button type="button" disabled={query.isFetchingNextPage} onClick={() => void query.fetchNextPage()} className="min-h-10 whitespace-nowrap text-sm font-semibold underline disabled:opacity-40">{query.isFetchingNextPage ? 'Loading more…' : 'Load more tasks'}</button>}
       {query.isFetching && !query.isPending && !query.isFetchingNextPage && <p role="status" className={`text-xs ${muted}`}>Refreshing checklist…</p>}
