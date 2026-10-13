@@ -65,6 +65,7 @@ jobs:
             tests/test_schema_preflight.py \
             tests/test_db036*.py \
             tests/test_db107_recommendation_conversion.py \
+            tests/test_operation_execution.py \
             tests/test_fleet_driver_records.py \
             tests/test_motive_driver_worker.py \
             tests/test_motive_driver_worker_process.py \

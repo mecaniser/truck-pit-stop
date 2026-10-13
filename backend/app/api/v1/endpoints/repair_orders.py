@@ -2664,98 +2664,106 @@ async def complete_work(
 
     stopped_session = None  # All order sessions were stopped atomically above.
 
-    # ============ AWARD POINTS =====    # Points = job value (1 point per $1)
-    # Use service prices from internal_notes if available, else total_labor_cost
-    labor_value = float(order.total_labor_cost or 0)
+    # Completion credit belongs to the order, not each review submission. The
+    # tenant transaction lock serializes this check with every completion path.
+    prior_credit = await db.scalar(select(MechanicPoints.id).where(
+        MechanicPoints.tenant_id == order.tenant_id,
+        MechanicPoints.repair_order_id == order.id,
+        MechanicPoints.transaction_type == PointsTransactionType.EARNED,
+    ).limit(1))
+    if prior_credit is None:
+        # ============ AWARD POINTS =====    # Points = job value (1 point per $1)
+        # Use service prices from internal_notes if available, else total_labor_cost
+        labor_value = float(order.total_labor_cost or 0)
     
-    # Check for services in internal_notes (quote-based orders with service menu prices)
-    if order.internal_notes:
-        try:
-            import json
-            notes_data = json.loads(order.internal_notes)
-            selected_services = notes_data.get("selected_services", [])
-            if selected_services:
-                service_total = sum(
-                    float(svc.get("base_price", 0))
-                    for svc in selected_services
-                )
-                if service_total > labor_value:
-                    labor_value = service_total
-        except (json.JSONDecodeError, TypeError, ValueError):
-            pass
+        # Check for services in internal_notes (quote-based orders with service menu prices)
+        if order.internal_notes:
+            try:
+                import json
+                notes_data = json.loads(order.internal_notes)
+                selected_services = notes_data.get("selected_services", [])
+                if selected_services:
+                    service_total = sum(
+                        float(svc.get("base_price", 0))
+                        for svc in selected_services
+                    )
+                    if service_total > labor_value:
+                        labor_value = service_total
+            except (json.JSONDecodeError, TypeError, ValueError):
+                pass
     
-    # Get or create balance record
-    result = await db.execute(
-        select(MechanicPointsBalance).where(
-            MechanicPointsBalance.mechanic_id == current_user.id
+        # Get or create balance record
+        result = await db.execute(
+            select(MechanicPointsBalance).where(
+                MechanicPointsBalance.mechanic_id == current_user.id
+            )
         )
-    )
-    balance = result.scalar_one_or_none()
+        balance = result.scalar_one_or_none()
     
-    if not balance:
-        balance = MechanicPointsBalance(
+        if not balance:
+            balance = MechanicPointsBalance(
+                tenant_id=current_user.tenant_id,
+                mechanic_id=current_user.id,
+                available_points=0,
+                total_earned=0,
+                total_redeemed=0,
+                current_streak_days=0,
+            )
+            db.add(balance)
+    
+        # Calculate streak multiplier
+        today = date.today()
+        multiplier = Decimal("1.00")
+    
+        if balance.last_work_date:
+            last_work = balance.last_work_date.date() if hasattr(balance.last_work_date, 'date') else balance.last_work_date
+            days_since = (today - last_work).days
+        
+            if days_since == 0:
+                # Same day, keep streak
+                pass
+            elif days_since == 1:
+                # Consecutive day, increment streak
+                balance.current_streak_days += 1
+            else:
+                # Streak broken
+                balance.current_streak_days = 1
+        else:
+            balance.current_streak_days = 1
+    
+        balance.last_work_date = today
+    
+        # Apply streak bonus
+        if balance.current_streak_days >= 10:
+            multiplier = Decimal("1.25")  # 25% bonus after 10 days
+        elif balance.current_streak_days >= 5:
+            multiplier = Decimal("1.10")  # 10% bonus after 5 days
+    
+        # Calculate final points
+        base_points = int(labor_value)  # 1 point per $1 labor
+        final_points = int(base_points * float(multiplier))
+    
+        # Minimum 10 points per job (even if no labor recorded yet)
+        if final_points < 10:
+            final_points = 10
+            labor_value = 10.0
+    
+        # Create points transaction
+        points_tx = MechanicPoints(
             tenant_id=current_user.tenant_id,
             mechanic_id=current_user.id,
-            available_points=0,
-            total_earned=0,
-            total_redeemed=0,
-            current_streak_days=0,
+            transaction_type=PointsTransactionType.EARNED,
+            points=final_points,
+            repair_order_id=order.id,
+            labor_value=Decimal(str(labor_value)),
+            multiplier=multiplier,
+            notes=f"Completed {order.order_number}" + (f" (streak x{multiplier})" if multiplier > 1 else ""),
         )
-        db.add(balance)
+        db.add(points_tx)
     
-    # Calculate streak multiplier
-    today = date.today()
-    multiplier = Decimal("1.00")
-    
-    if balance.last_work_date:
-        last_work = balance.last_work_date.date() if hasattr(balance.last_work_date, 'date') else balance.last_work_date
-        days_since = (today - last_work).days
-        
-        if days_since == 0:
-            # Same day, keep streak
-            pass
-        elif days_since == 1:
-            # Consecutive day, increment streak
-            balance.current_streak_days += 1
-        else:
-            # Streak broken
-            balance.current_streak_days = 1
-    else:
-        balance.current_streak_days = 1
-    
-    balance.last_work_date = today
-    
-    # Apply streak bonus
-    if balance.current_streak_days >= 10:
-        multiplier = Decimal("1.25")  # 25% bonus after 10 days
-    elif balance.current_streak_days >= 5:
-        multiplier = Decimal("1.10")  # 10% bonus after 5 days
-    
-    # Calculate final points
-    base_points = int(labor_value)  # 1 point per $1 labor
-    final_points = int(base_points * float(multiplier))
-    
-    # Minimum 10 points per job (even if no labor recorded yet)
-    if final_points < 10:
-        final_points = 10
-        labor_value = 10.0
-    
-    # Create points transaction
-    points_tx = MechanicPoints(
-        tenant_id=current_user.tenant_id,
-        mechanic_id=current_user.id,
-        transaction_type=PointsTransactionType.EARNED,
-        points=final_points,
-        repair_order_id=order.id,
-        labor_value=Decimal(str(labor_value)),
-        multiplier=multiplier,
-        notes=f"Completed {order.order_number}" + (f" (streak x{multiplier})" if multiplier > 1 else ""),
-    )
-    db.add(points_tx)
-    
-    # Update balance
-    balance.available_points += final_points
-    balance.total_earned += final_points
+        # Update balance
+        balance.available_points += final_points
+        balance.total_earned += final_points
     
     await db.commit()
     await db.refresh(order)
@@ -4204,6 +4212,7 @@ async def force_void_repair_order(
         invoice.void_reason = body.reason
         voided_numbers.append(invoice.invoice_number)
 
+    await operation_execution.stop_order_sessions(db, order, current_user, reason="manual")
     order.status = RepairOrderStatus.CANCELLED
     order.cancelled_at = now
     order.cancelled_by_user_id = current_user.id
@@ -5351,7 +5360,8 @@ async def patch_order_checklist(
 
 
 @router.get("/{order_id}/operations", response_model=OperationPage)
-async def get_order_operations(order_id: UUID, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+async def get_order_operations(order_id: UUID, response: Response, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    response.headers["Cache-Control"] = "no-store"
     return await operation_execution.page(db, order_id, current_user)
 
 

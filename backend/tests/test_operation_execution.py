@@ -309,3 +309,25 @@ async def test_operation_publish_invalidates_without_status_notification(db_sess
     payload=sent.await_args.args[1]
     assert payload['type']=='repair_order_update' and payload['notify_status_change'] is False
     customer.assert_not_awaited()
+
+async def test_operation_reopen_review_loop_credits_order_only_once(db_session,monkeypatch):
+    from unittest.mock import AsyncMock
+    from app.db.models.mechanic_points import MechanicPoints,MechanicPointsBalance
+    a=await seed(db_session)
+    for name in ['send_email','send_sms','broadcast_repair_order_update','broadcast_mechanic_timer_update']:
+        monkeypatch.setattr(repair_orders,name,AsyncMock())
+    for line in a.lines:
+        await ops.complete(db_session,a.order.id,line.id,a.owner,Complete(is_completed=True,expected_version=0))
+    await repair_orders.complete_work(a.order.id,db_session,a.lead)
+    points=(await db_session.scalars(select(MechanicPoints).where(MechanicPoints.repair_order_id==a.order.id))).all()
+    assert len(points)==1
+    initial_credit=points[0].points
+    balance=await db_session.scalar(select(MechanicPointsBalance).where(MechanicPointsBalance.mechanic_id==a.lead.id))
+    initial_streak=balance.current_streak_days
+    await ops.complete(db_session,a.order.id,a.lines[1].id,a.helper,Complete(is_completed=False,expected_version=1))
+    await ops.complete(db_session,a.order.id,a.lines[1].id,a.helper,Complete(is_completed=True,expected_version=2))
+    await repair_orders.complete_work(a.order.id,db_session,a.lead)
+    await db_session.refresh(balance)
+    assert await db_session.scalar(select(func.count(MechanicPoints.id)).where(MechanicPoints.repair_order_id==a.order.id))==1
+    assert balance.total_earned==initial_credit and balance.available_points==initial_credit
+    assert balance.current_streak_days==initial_streak

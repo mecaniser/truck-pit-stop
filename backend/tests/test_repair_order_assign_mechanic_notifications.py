@@ -486,5 +486,7 @@ def isolate_operation_services_in_notification_unit_tests(monkeypatch):
     from unittest.mock import AsyncMock
     from app.services import operation_execution
     monkeypatch.setattr(operation_execution, "guard_completion", AsyncMock())
-    monkeypatch.setattr(operation_execution, "finish_order", AsyncMock())
+    async def finish_order(_db, order, _actor):
+        order.work_completed_at = order.work_completed_at or datetime.now(timezone.utc)
+    monkeypatch.setattr(operation_execution, "finish_order", finish_order)
     monkeypatch.setattr(operation_execution, "stop_order_sessions", AsyncMock(return_value=[]))
