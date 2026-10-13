@@ -71,3 +71,7 @@ All owned frontend product files match the intentional shared preview byte-for-b
 - `frontend/src/components/workspace-mobile.css` — `d23b5f43ff8b195b`
 - `frontend/src/hooks/useCompactWorkspace.ts` — `fb5604fc5b061e71`
 - `frontend/src/hooks/useWorkspaceViewport.ts` — `e05b490b22859f74`
+
+## Review handoff
+
+Draft [PR513](https://github.com/mecaniser/truck-pit-stop/pull/513), source `86e11a447292e5925f907395b010d1ee772d059f`; protected [Quality gates](https://github.com/mecaniser/truck-pit-stop/actions/runs/38475099360) started. Later commits that only update this receipt do not alter tested product source. Final local login/navigation/operation acceptance remains pending.
