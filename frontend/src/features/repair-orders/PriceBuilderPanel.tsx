@@ -2388,6 +2388,7 @@ export default function PriceBuilderPanel({
 
   return (
     <div className="db-price-builder relative flex h-full min-h-full flex-col overflow-hidden bg-white">
+      <div className="db-workspace-scroll">
       <div
         className="db-workspace-header px-5 py-4 text-white"
         style={{
@@ -4457,6 +4458,7 @@ export default function PriceBuilderPanel({
         )}
       </div>
       </div>
+      </div>
 
       <div className="db-workspace-footer z-10 border-t border-gray-200 bg-white/95 px-3 py-4 shadow-[0_-10px_30px_rgba(20,25,35,.08)] backdrop-blur sm:px-5">
         <details key={orderId} className="db-workspace-pricing">
@@ -4801,6 +4803,11 @@ export default function PriceBuilderPanel({
                     ? `Waiting for ${assignedTechnicianName} to start`
                     : isOnHold ? `On hold · ${holdLabel}`
                     : orderStatus === 'in_progress' ? 'Work in progress'
+                    : orderStatus === 'pending_review' ? 'Awaiting quality review'
+                    : orderStatus === 'completed' ? 'Work complete'
+                    : orderStatus === 'invoiced' ? 'Invoiced'
+                    : orderStatus === 'paid' ? 'Paid'
+                    : orderStatus === 'cancelled' ? 'Cancelled'
                     : orderStatus === 'draft' ? 'Checked in · work order open' : 'Work order open'}
                 </span>
               )

@@ -4009,21 +4009,6 @@ html::-webkit-scrollbar-thumb:hover {
 .db-repair-orders-workspace--detail-open .db-repair-orders-ledger__value-summary strong { margin-left: auto; white-space: nowrap; }
 
 @media (max-width: 639px) {
-  /* At phone widths the wrapped header, workflow and footer can consume the
-     entire fixed-height order sheet. Scroll that sheet as one document instead
-     of squeezing the job content into a tiny independently scrolling strip. */
-  .db-repair-order-detail-new--price-builder .db-price-builder {
-    overflow-x: hidden;
-    overflow-y: auto;
-    overscroll-behavior-y: contain;
-  }
-  .db-repair-order-detail-new--price-builder .db-price-builder > * {
-    flex-shrink: 0;
-  }
-  .db-repair-order-detail-new--price-builder .db-price-builder > .db-workspace-body {
-    flex: 0 0 auto;
-    overflow: visible;
-  }
   .db-repair-order-detail-new--price-builder .db-workspace-actions {
     flex-basis: 100%;
   }
@@ -7029,8 +7014,10 @@ html.customer-portal-active {
   .db-price-builder .db-part-quantity :is(button, input), .db-price-builder .db-part-price { min-height: 44px !important; }
 }
 
-/* Phone workspaces fill the available staff area. A single inner sheet owns
-   scrolling, with its action bar pinned to the bottom. */
+/* Desktop keeps the header and footer fixed around the scrolling work. On phones,
+   header, stages and work share one scroller so wrapped controls can never squeeze
+   the work area to zero; the footer remains outside that scroller. */
+.db-price-builder .db-workspace-scroll { display: contents; }
 @media (max-width: 639px) {
   .db-staff-content:has(> .db-repair-orders-workspace--detail-open) > .db-mobile-nav-spacer { display: none !important; }
   .db-repair-orders-workspace--new.db-repair-orders-workspace--detail-open { height: 100%; flex: 1 1 0; min-height: 0; }
@@ -7038,8 +7025,11 @@ html.customer-portal-active {
   .db-repair-order-detail-new--price-builder > .slide-panel-content { flex: 1 1 0; overflow: hidden; clip-path: none; }
   .db-repair-order-detail-new--price-builder .db-repair-order-price-shell-new,
   .db-repair-order-detail-new--price-builder .db-price-builder { height: 100%; min-height: 0; overflow: hidden; }
-  .db-repair-order-detail-new--price-builder .db-price-builder { overflow-y: auto; }
-  .db-repair-order-detail-new--price-builder .db-workspace-footer { position: sticky; bottom: 0; margin-top: auto; }
+  .db-price-builder .db-workspace-scroll { display: block; flex: 1 1 0; min-height: 0; overflow-x: hidden; overflow-y: auto; overscroll-behavior-y: contain; }
+  .db-price-builder .db-workspace-scroll > .db-workspace-body { flex: none; overflow: visible; }
+  .db-price-builder .db-workspace-footer { flex: 0 0 auto; padding: 8px 12px; }
+  .db-price-builder .db-job-workflow { padding-block: 4px; }
+  .db-price-builder .db-job-stages { flex-wrap: nowrap; overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: thin; padding-bottom: 2px; }
   .db-repair-order-detail-new--price-builder .db-price-builder { border-radius: 11px; }
   .db-repair-order-detail-new--price-builder .db-workspace-header { border-radius: 11px 11px 0 0; }
   .db-price-builder .db-job-navigation > span { padding-inline: 4px; font-size: 12px; }
