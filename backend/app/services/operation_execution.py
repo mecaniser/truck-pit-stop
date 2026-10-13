@@ -36,12 +36,16 @@ def job_scope(tenant_id, mechanic_id):
 def editable(order):
     return order.deleted_at is None and order.status not in FINAL and not (order.pricing_locked_at and order.pricing_lock_reason != 'quote_sent')
 
+def clear_completion_snapshot(order):
+    order.work_completed_at = None
+    order.actual_tracked_minutes = None
+    order.total_hold_minutes = None
+
+
 def enroll_new_scope(order):
     if order.status == Status.PENDING_REVIEW:
         order.status = Status.IN_PROGRESS
-        order.work_completed_at = None
-        order.actual_tracked_minutes = None
-        order.total_hold_minutes = None
+        clear_completion_snapshot(order)
 
 
 def executable(order):
@@ -157,9 +161,7 @@ async def complete(db, order_id, labor_id, actor, body):
         await stop_order_sessions(db, order, actor, labor_id=line.id, now=now, reason='auto_complete_work')
     elif order.status == Status.PENDING_REVIEW:
         order.status = Status.IN_PROGRESS
-        order.work_completed_at = None
-        order.actual_tracked_minutes = None
-        order.total_hold_minutes = None
+        clear_completion_snapshot(order)
     line.execution_status = 'completed' if body.is_completed else 'pending'
     line.execution_version = (line.execution_version or 0) + 1
     line.completed_at = now if body.is_completed else None
@@ -237,6 +239,8 @@ async def finish_order(db, order, actor):
     from app.services.mechanic_time_service import _merge_intervals, _sum_interval_seconds
     await guard_completion(db, order)
     now = datetime.now(UTC)
+    if order.work_completed_at is None:
+        order.work_completed_at = now
     await stop_order_sessions(db, order, actor, now=now)
     sessions = (await db.execute(select(MechanicTimeSession).where(MechanicTimeSession.tenant_id == order.tenant_id,
         MechanicTimeSession.repair_order_id == order.id, MechanicTimeSession.deleted_at.is_(None)))).scalars().all()

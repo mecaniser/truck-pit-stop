@@ -901,6 +901,33 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
   // takes the whole workspace down instead of showing an empty roster.
   const technicianRoster = Array.isArray(mechanics) ? mechanics : []
 
+  // A ledger selection is only the first-render snapshot. Keep the compact
+  // workspace projection observed so remote stage/operation changes refresh
+  // the open panel even while its heavier History detail query stays disabled.
+  const { data: workspaceOrder } = useQuery<RepairOrder>({
+    queryKey: ['repair-order-workspace', selectedOrder?.id],
+    queryFn: async ({ signal }) => {
+      const orderId = selectedOrder!.id
+      const response = await api.get(`/repair-orders/${orderId}/workspace`, { signal })
+      if (response.data?.id !== orderId) throw new Error('Unexpected repair order workspace response')
+      return response.data
+    },
+    enabled: !!selectedOrder?.id && isDetailOpen,
+  })
+  useEffect(() => {
+    if (!workspaceOrder || workspaceOrder.id !== selectedOrder?.id) return
+    setSelectedOrder(current => {
+      if (current?.id !== workspaceOrder.id || Date.parse(current.updated_at) > Date.parse(workspaceOrder.updated_at)) return current
+      return retainRepairOrderPresentation(current, workspaceOrder)
+    })
+    // A previous History visit may have left a now-disabled full-detail cache.
+    // Preserve its history/lines but refresh the authoritative header fields too.
+    queryClient.setQueryData<RepairOrderDetail | undefined>(['repair-order-detail', workspaceOrder.id], current => {
+      if (!current || Date.parse(current.updated_at) > Date.parse(workspaceOrder.updated_at)) return current
+      return { ...current, ...workspaceOrder }
+    })
+  }, [queryClient, workspaceOrder, selectedOrder?.id])
+
   const { data: orderDetail, refetch: refetchOrderDetail, isLoading: isOrderDetailLoading } = useQuery<RepairOrderDetail>({
     queryKey: ['repair-order-detail', selectedOrder?.id],
     queryFn: async ({ signal }) => {

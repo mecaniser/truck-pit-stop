@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter, useLocation } from 'react-router-dom'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -28,15 +28,17 @@ vi.mock('@/contexts/ThemeContext', () => ({
 }))
 
 vi.mock('../PriceBuilderPanel', () => ({
-  default: ({ onForceVoidOrder }: {
+  default: ({ onForceVoidOrder, orderStatus, completionMode }: {
     onForceVoidOrder?: (args: { reason: string; password: string }) => Promise<void> | void
+    orderStatus?: string
+    completionMode?: boolean
   }) => (
-    <button
+    <><output data-testid="workspace-stage">{orderStatus}</output><output data-testid="workspace-review-mode">{String(Boolean(completionMode))}</output><button
       type="button"
       onClick={() => void onForceVoidOrder?.({ reason: 'Duplicate invoice', password: 'test-password' })}
     >
       Test force void
-    </button>
+    </button></>
   ),
 }))
 
@@ -474,6 +476,39 @@ describe('RepairOrdersPage request cancellation', () => {
       '/repair-orders/order-1/detail',
       expect.anything(),
     )
+  })
+
+  it('refreshes the selected workspace stage and review actions without opening full history or reloading', async () => {
+    let order = {
+      id: 'live-order', tenant_id: 'tenant-1', customer_id: 'customer-1', vehicle_id: 'vehicle-1',
+      vehicle_make: 'Freightliner', vehicle_model: 'Cascadia', vehicle_year: 2024, vehicle_unit_number: '204',
+      vehicle_vin: 'VIN204', customer_company_name: 'Northline Freight', order_number: 'RO-LIVE',
+      status: 'in_progress', description: 'Live operation execution', customer_notes: null, internal_notes: null,
+      assigned_mechanic_id: 'lead-1', total_parts_cost: '0.00', total_labor_cost: '145.00', total_cost: '145.00',
+      created_at: '2026-10-13T12:00:00Z', updated_at: '2026-10-13T12:00:00Z',
+    }
+    apiMocks.get.mockImplementation((url: string) => {
+      if (url === '/repair-orders') return Promise.resolve({ data: { items: [order], total: 1, has_more: false } })
+      if (url === '/repair-orders/live-order/workspace') return Promise.resolve({ data: { ...order } })
+      if (url === '/quotes?repair_order_id=live-order') return Promise.resolve({ data: null })
+      return Promise.resolve({ data: {} })
+    })
+    themeState.presentationVariant = 'new'
+    const { queryClient } = renderPage(['/?selected=live-order'])
+    await waitFor(() => expect(screen.getByTestId('workspace-stage')).toHaveTextContent('in_progress'))
+    expect(screen.getByTestId('workspace-review-mode')).toHaveTextContent('false')
+    // Simulate a previously visited History cache, now inactive like the real workspace.
+    queryClient.setQueryData(['repair-order-detail', 'live-order'], { ...order, labor_items: [], parts_usage: [], history_events: [] })
+    order = { ...order, status: 'pending_review', updated_at: '2026-10-13T12:01:00Z' }
+    await act(async () => { await queryClient.invalidateQueries({ queryKey: ['repair-order-workspace', 'live-order'] }) })
+    await waitFor(() => expect(screen.getByTestId('workspace-stage')).toHaveTextContent('pending_review'))
+    expect(screen.getByTestId('workspace-review-mode')).toHaveTextContent('true')
+    expect(apiMocks.get).not.toHaveBeenCalledWith('/repair-orders/live-order/detail', expect.anything())
+    expect(queryClient.getQueryData(['repair-order-detail', 'live-order'])).toMatchObject({ status: 'pending_review', history_events: [] })
+    order = { ...order, status: 'in_progress', updated_at: '2026-10-13T12:02:00Z' }
+    await act(async () => { await queryClient.invalidateQueries({ queryKey: ['repair-order-workspace', 'live-order'] }) })
+    await waitFor(() => expect(screen.getByTestId('workspace-stage')).toHaveTextContent('in_progress'))
+    expect(screen.getByTestId('workspace-review-mode')).toHaveTextContent('false')
   })
 
   it('shows the selected company trucks as model-and-unit cards', async () => {

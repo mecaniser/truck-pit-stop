@@ -59,6 +59,8 @@ export interface WSMessage {
   order_id?: string
   order_number?: string
   status?: string
+  /** False for operation-only updates that do not represent an order-stage transition. */
+  notify_status_change?: boolean
   hold_reason?: string | null
   held_at?: string | null
   quote_id?: string
@@ -212,6 +214,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
           }
           queryClient.invalidateQueries({ queryKey: ['repair-orders'] })
           queryClient.invalidateQueries({ queryKey: ['repair-order-detail'] })
+          queryClient.invalidateQueries({ queryKey: ['repair-order-workspace'] })
           queryClient.invalidateQueries({ queryKey: ['order-operations'] })
           queryClient.invalidateQueries({ queryKey: ['order-checklist'] })
           queryClient.invalidateQueries({ queryKey: ['mechanic-job-detail'] })
@@ -223,7 +226,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
           queryClient.invalidateQueries({ queryKey: ['activity-feed'] })
 
           // Route to notification manager
-          if (onNotificationRef.current && data.order_number && data.status) {
+          if (data.notify_status_change !== false && onNotificationRef.current && data.order_number && data.status) {
             onNotificationRef.current({
               type: 'repair_order_update',
               orderId: data.order_id,

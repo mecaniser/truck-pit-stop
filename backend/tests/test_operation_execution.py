@@ -264,3 +264,48 @@ async def test_helper_discovery_returns_only_reduced_assigned_scope(db_session):
     assert [row.name for row in detail.services]==[a.lines[1].description]
     assert all(row.base_price is None for row in detail.services)
     assert not {'customer_email','customer_phone','total_cost','internal_notes'} & detail.model_dump().keys()
+
+
+@pytest.mark.asyncio
+async def test_generic_review_transition_records_effective_work_end(db_session, monkeypatch):
+    from unittest.mock import AsyncMock
+    from app.api.v1.endpoints import repair_orders
+    from app.schemas.repair_order import RepairOrderUpdate
+    a = await seed(db_session)
+    for line in a.lines:
+        line.execution_status = 'completed'
+    await db_session.commit()
+    monkeypatch.setattr(repair_orders, 'broadcast_repair_order_update', AsyncMock())
+    await repair_orders.update_repair_order(a.order.id, RepairOrderUpdate(status=Status.PENDING_REVIEW), db_session, a.owner)
+    assert a.order.work_completed_at is not None, 'Generic completion lost the effective work-end cutoff'
+
+@pytest.mark.asyncio
+async def test_generic_reopen_clears_effective_work_end(db_session, monkeypatch):
+    from unittest.mock import AsyncMock
+    from app.api.v1.endpoints import repair_orders
+    from app.schemas.repair_order import RepairOrderUpdate
+    a = await seed(db_session)
+    a.order.status = Status.PENDING_REVIEW
+    a.order.work_completed_at = datetime.now(UTC) - timedelta(hours=1)
+    a.order.actual_tracked_minutes = 60
+    a.order.total_hold_minutes = 0
+    for line in a.lines:
+        line.execution_status = 'completed'
+    await db_session.commit()
+    monkeypatch.setattr(repair_orders, 'broadcast_repair_order_update', AsyncMock())
+    await repair_orders.update_repair_order(a.order.id, RepairOrderUpdate(status=Status.IN_PROGRESS), db_session, a.owner)
+    assert a.order.work_completed_at is None, 'Reopened work retained a stale completion cutoff'
+    assert a.order.actual_tracked_minutes is None and a.order.total_hold_minutes is None
+
+async def test_operation_publish_invalidates_without_status_notification(db_session,monkeypatch):
+    from unittest.mock import AsyncMock
+    from app.core import websocket
+    a=await seed(db_session)
+    sent=AsyncMock();customer=AsyncMock()
+    monkeypatch.setattr(websocket.manager,'broadcast_to_tenant',sent)
+    monkeypatch.setattr(websocket.manager,'send_to_customer',customer)
+    monkeypatch.setattr(repair_orders,'broadcast_mechanic_timer_update',AsyncMock())
+    await repair_orders.assign_order_operation(a.order.id,a.lines[0].id,Assign(mechanic_id=a.helper.id,expected_version=0),db_session,a.owner)
+    payload=sent.await_args.args[1]
+    assert payload['type']=='repair_order_update' and payload['notify_status_change'] is False
+    customer.assert_not_awaited()

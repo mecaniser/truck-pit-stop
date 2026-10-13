@@ -1889,6 +1889,8 @@ async def update_repair_order(
 
     if order_data.status is not None and order_data.status != RepairOrderStatus.CANCELLED:
         await recommendation_conversion.guard_reactivation(db, order, current_user)
+    if order_data.status is not None and order_data.status != order.status and order_data.status not in operation_execution.FINAL | {RepairOrderStatus.PENDING_REVIEW}:
+        operation_execution.clear_completion_snapshot(order)
     cancelling_now = (
         order_data.status == RepairOrderStatus.CANCELLED
         and order.status != RepairOrderStatus.CANCELLED
@@ -2655,7 +2657,7 @@ async def complete_work(
     await operation_execution.finish_order(db, order, current_user)
     await recommendation_conversion.guard_reactivation(db, order, current_user)
     order.status = RepairOrderStatus.PENDING_REVIEW
-    order.work_completed_at = datetime.now(timezone.utc)
+    # finish_order stamps the common cutoff before stopping all matching timers.
     # Clear hold state if completing from hold
     order.hold_reason = None
     order.held_at = None
@@ -2893,7 +2895,7 @@ async def admin_complete_unassigned_work(
     await operation_execution.finish_order(db, order, current_user)
     await recommendation_conversion.guard_reactivation(db, order, current_user)
     order.status = RepairOrderStatus.PENDING_REVIEW
-    order.work_completed_at = datetime.now(timezone.utc)
+    # finish_order stamps the common cutoff before stopping all matching timers.
     order.hold_reason = None
     order.held_at = None
     _record_repair_order_history_event(
@@ -3362,7 +3364,7 @@ async def restore_repair_order(
     # keep their status (they have quotes/invoices tied to completion).
     if order.is_internal and order.status == RepairOrderStatus.COMPLETED:
         order.status = RepairOrderStatus.IN_PROGRESS
-        order.work_completed_at = None
+        operation_execution.clear_completion_snapshot(order)
 
     await db.commit()
     await db.refresh(order)
@@ -3409,7 +3411,7 @@ async def reopen_repair_order(
 
     await recommendation_conversion.guard_reactivation(db, order, current_user)
     order.status = RepairOrderStatus.IN_PROGRESS
-    order.work_completed_at = None
+    operation_execution.clear_completion_snapshot(order)
     await db.commit()
     await db.refresh(order)
 
@@ -5356,7 +5358,7 @@ async def get_order_operations(order_id: UUID, db: AsyncSession = Depends(get_db
 async def _publish_operation_change(db, order_id, actor, result):
     await db.commit()
     order = await operation_execution.load_order(db, order_id, actor)
-    await broadcast_repair_order_update(tenant_id=str(order.tenant_id), customer_id=str(order.customer_id), order_id=str(order.id), order_number=order.order_number, status=order.status.value, send_to_customer=False)
+    await broadcast_repair_order_update(tenant_id=str(order.tenant_id), customer_id=str(order.customer_id), order_id=str(order.id), order_number=order.order_number, status=order.status.value, send_to_customer=False, notify_status_change=False)
     # Existing timer event invalidates job and attendance/timer queries.
     await broadcast_mechanic_timer_update(tenant_id=str(order.tenant_id), mechanic_id=str(actor.id), session_id=str(order.id), action="operation_updated")
     return result

@@ -41,7 +41,7 @@ export function useOperationExecution(orderId: string, refreshToken?: unknown, e
 export async function invalidateOperationExecution(client: QueryClient, tenantId: string, orderId: string) {
   await Promise.all([
     operationKeys.order(tenantId, orderId), ['order-checklist', tenantId, orderId],
-    ['repair-order-detail', orderId], ['price-build', orderId], ['fleet-ro-detail', orderId],
+    ['repair-order-detail', orderId], ['repair-order-workspace', orderId], ['price-build', orderId], ['fleet-ro-detail', orderId],
     ['repair-orders'], ['mechanic-job-detail'], ['mechanic-jobs'], ['mechanic-day-summary'],
     ['mechanic-board-team'], ['mechanic-board-detail'], ['dashboard-action-queue'], ['activity-feed'],
   ].map(queryKey => client.invalidateQueries({ queryKey })))
