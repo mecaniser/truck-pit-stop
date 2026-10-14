@@ -767,7 +767,10 @@ async def get_vehicle(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
-    result = await db.execute(select(Vehicle).where(Vehicle.id == vehicle_id))
+    result = await db.execute(select(Vehicle).where(
+        Vehicle.id == vehicle_id,
+        Vehicle.deleted_at.is_(None),
+    ))
     vehicle = result.scalar_one_or_none()
     
     if not vehicle:
@@ -789,7 +792,44 @@ async def get_vehicle(
             detail="Access denied",
         )
     
-    return VehicleResponse.model_validate(vehicle)
+    item = VehicleResponse.model_validate(vehicle)
+    # The staff vehicle workspace can open a truck from an older repair order,
+    # after ownership changes or outside a customer's first list page. Retain
+    # current owner/operator context without widening customer/driver payloads.
+    if current_user.role in {UserRole.GARAGE_OWNER, UserRole.GARAGE_ADMIN, UserRole.RECEPTIONIST}:
+        rows = (await db.execute(
+            select(VehicleCustomerRelationship, Customer)
+            .join(Customer, Customer.id == VehicleCustomerRelationship.customer_id)
+            .where(
+                VehicleCustomerRelationship.tenant_id == vehicle.tenant_id,
+                VehicleCustomerRelationship.vehicle_id == vehicle.id,
+                VehicleCustomerRelationship.relationship_type.in_(["owner", "operator"]),
+                VehicleCustomerRelationship.effective_to.is_(None),
+                VehicleCustomerRelationship.deleted_at.is_(None),
+                Customer.tenant_id == vehicle.tenant_id,
+                Customer.deleted_at.is_(None),
+            )
+            .order_by(VehicleCustomerRelationship.relationship_type,
+                      VehicleCustomerRelationship.is_primary.desc(),
+                      VehicleCustomerRelationship.effective_from.desc(),
+                      VehicleCustomerRelationship.id.desc())
+        )).all()
+        roles = {}
+        for relationship, related_customer in rows:
+            roles.setdefault(relationship.relationship_type, related_customer)
+        owner = roles.get("owner") or await db.scalar(select(Customer).where(
+            Customer.id == vehicle.customer_id,
+            Customer.tenant_id == vehicle.tenant_id,
+            Customer.deleted_at.is_(None),
+        ))
+        if owner:
+            item.owner_customer_id = owner.id
+            item.owner_company_name = owner.company_name or f"{owner.first_name} {owner.last_name}".strip()
+        operator = roles.get("operator")
+        if operator:
+            item.operating_authority_customer_id = operator.id
+            item.operating_authority_company_name = operator.company_name or f"{operator.first_name} {operator.last_name}".strip()
+    return item
 
 
 @router.put("/{vehicle_id}", response_model=VehicleResponse)

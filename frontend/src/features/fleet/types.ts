@@ -217,6 +217,7 @@ export interface VehicleMergeSummary {
   mileage?: number | null
   source?: string | null
   repair_order_count: number
+  external_service_count?: number
   appointment_count: number
   inspection_count: number
   incident_count: number

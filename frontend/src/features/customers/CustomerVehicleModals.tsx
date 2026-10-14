@@ -47,6 +47,7 @@ interface VehicleMergeSummary {
   source: string | null
   ets_external_id: string | null
   repair_order_count: number
+  external_service_count?: number
   appointment_count: number
   inspection_count: number
   incident_count: number
@@ -418,6 +419,8 @@ export default function CustomerVehicleModals({
     onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: ['customerVehicles'] })
       queryClient.invalidateQueries({ queryKey: ['customerVehicleRepairOrders'] })
+      queryClient.invalidateQueries({ queryKey: ['external-services'] })
+      queryClient.invalidateQueries({ queryKey: ['external-service-history'] })
       queryClient.invalidateQueries({ queryKey: ['vehicle-link-candidates'] })
       queryClient.invalidateQueries({ queryKey: ['vehicle-merge-candidates'] })
       queryClient.invalidateQueries({ queryKey: ['fleet-board'] })
@@ -425,7 +428,7 @@ export default function CustomerVehicleModals({
       setIsVehicleMergeOpen(false)
       setMergeDuplicateVehicleId(null)
       setMergeIdentityConfirmed(false)
-      const movedHistory = (result.moved.repair_orders || 0) + (result.moved.inspections || 0) + (result.moved.incidents || 0)
+      const movedHistory = (result.moved.repair_orders || 0) + (result.moved.inspections || 0) + (result.moved.incidents || 0) + (result.moved.external_services || 0)
       toast.success(`Trucks merged. ${movedHistory} history record${movedHistory === 1 ? '' : 's'} moved to the kept truck.`)
     },
     onError: (error: AxiosError<{ detail?: string }>) => {
@@ -1331,6 +1334,7 @@ const {
                           <div className="mt-3 grid grid-cols-2 gap-x-6 gap-y-3 sm:grid-cols-4">
                             {[
                               ['Repair orders', archivedMergeVehicle?.repair_order_count],
+                              ['Outside services', archivedMergeVehicle?.external_service_count ?? 0],
                               ['Appointments', archivedMergeVehicle?.appointment_count],
                               ['Inspections', archivedMergeVehicle?.inspection_count],
                               ['Incidents', archivedMergeVehicle?.incident_count],

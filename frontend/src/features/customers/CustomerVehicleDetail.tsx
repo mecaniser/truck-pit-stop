@@ -4,6 +4,7 @@ import { ChevronRight, Plus } from 'lucide-react'
 import api from '@/lib/api'
 import { customerDisplayName } from '@/lib/customerName'
 import type { Customer, RepairOrder, Vehicle } from '@/types'
+import { ExternalServiceHistory } from '@/features/external-services/ExternalServiceHistory'
 import './customer-workspace.css'
 
 type Props = { customer: Customer; vehicle: Vehicle; onOpenOrder: (order: RepairOrder) => void; onCreateOrder?: () => void; createOrderButtonRef?: Ref<HTMLButtonElement> }
@@ -42,6 +43,7 @@ function VehicleRecord({ customer, vehicle, onOpenOrder, onCreateOrder, createOr
       {vehicle.operating_authority_company_name && <div><dt>Operating authority</dt><dd>{vehicle.operating_authority_company_name}</dd></div>}
     </dl>
     {vehicle.notes && <div className="db-customer-record__notes"><h3>Notes</h3><p className="whitespace-pre-wrap">{vehicle.notes}</p></div>}
+    <ExternalServiceHistory vehicleId={vehicle.id} />
     <section aria-label="Vehicle repair history">
       <h3>Repair history{history.data && !history.isError ? ` (${history.data.total})` : ''}</h3>
       {history.isLoading ? <p role="status">Loading repair history…</p> : history.isError || !history.data ? <div role="alert">Could not load repair history. <button type="button" onClick={() => void history.refetch()}>Retry repair history</button></div> : <>

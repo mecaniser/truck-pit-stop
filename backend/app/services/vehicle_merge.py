@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.appointment import Appointment
 from app.db.models.customer import Customer
+from app.db.models.external_service import ExternalServiceRecord
 from app.db.models.fleet import FleetIncident, FleetInspection, VehiclePMService
 from app.db.models.fleet_board_read_model import FleetBoardReadModel
 from app.db.models.repair_order import RepairOrder
@@ -60,6 +61,7 @@ async def vehicle_merge_summary(db: AsyncSession, vehicle: Vehicle) -> dict[str,
         "appointment_count": await _count(db, Appointment, vehicle.id),
         "inspection_count": await _count(db, FleetInspection, vehicle.id),
         "incident_count": await _count(db, FleetIncident, vehicle.id),
+        "external_service_count": await _count(db, ExternalServiceRecord, vehicle.id),
         "active_relationship_count": int((await db.execute(select(func.count(VehicleCustomerRelationship.id)).where(
             VehicleCustomerRelationship.vehicle_id == vehicle.id,
             VehicleCustomerRelationship.effective_to.is_(None),
@@ -82,6 +84,7 @@ def canonical_value_rank(summary: dict[str, Any]) -> tuple[int, ...]:
         + int(summary.get("appointment_count") or 0)
         + int(summary.get("inspection_count") or 0)
         + int(summary.get("incident_count") or 0)
+        + int(summary.get("external_service_count") or 0)
     )
     identity_fields = sum(bool(summary.get(field)) for field in (
         "license_plate", "year", "make", "model", "unit_number",
@@ -349,6 +352,7 @@ async def merge_vehicles(
         "appointments": await _count(db, Appointment, duplicate.id),
         "inspections": await _count(db, FleetInspection, duplicate.id),
         "incidents": await _count(db, FleetIncident, duplicate.id),
+        "external_services": await _count(db, ExternalServiceRecord, duplicate.id),
     }
     moved["relationships"] = await _merge_relationships(db, canonical.id, duplicate.id, now)
     moved["fleet_memberships"] = await _merge_memberships(db, canonical.id, duplicate.id, now)
@@ -356,6 +360,12 @@ async def merge_vehicles(
 
     for model in (RepairOrder, Appointment, FleetInspection, FleetIncident):
         await db.execute(update(model).where(model.vehicle_id == duplicate.id).values(vehicle_id=canonical.id))
+    # Retain original_vehicle_id and immutable revision snapshots. Both vehicle
+    # locks are already held, serializing this move with outside-service saves.
+    await db.execute(update(ExternalServiceRecord).where(
+        ExternalServiceRecord.tenant_id == tenant_id,
+        ExternalServiceRecord.vehicle_id == duplicate.id,
+    ).values(vehicle_id=canonical.id, updated_at=ExternalServiceRecord.updated_at))
     # SQLite tests do not run the PostgreSQL projection triggers. Production
     # triggers rebuild these rows from the changed repair orders.
     await db.execute(update(RepairOrderReadModel).where(

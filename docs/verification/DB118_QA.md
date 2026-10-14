@@ -4,7 +4,7 @@ Reviewer: independent QA Gatekeeper; no application or test implementation parti
 
 ## Current decision
 
-**GO for the local workflow gate, 2026-10-14.** Reviewed implementation, independent focused reruns, owner-run backend/race results, local browser journey evidence and actual desktop/phone screenshots support the changed workflow. No remaining blocking functional finding. The separate [Security gate](DB118_SECURITY.md) is GO. Protected CI, deployment and production acceptance remain required; this is not a production sign-off.
+**GO — production acceptance reviewed, 2026-10-14.** The final checked source is merged and deployed; production desktop/mobile workflow receipts and all eight screenshots are accepted. No remaining blocking functional finding or observed rollback trigger. The separate [Security gate](DB118_SECURITY.md) is GO. This review combines independently executed focused tests, source and artifact inspection with owner-performed signed-in browser actions, as distinguished below.
 
 ## Independently checked
 
@@ -30,9 +30,9 @@ The implementation owner performed the signed-in browser actions and measurement
 - Network failure injection was limited to the owner QA tab and cleared afterward. This proves visible failure recovery, not a lost response after commit. Actual ambiguous replay and contention are supported separately by backend PostgreSQL and stable-client-ID tests.
 - Runtime acceptance is browser emulation, not physical mobile hardware or native-keyboard testing. Synthetic local notes are retained as evidence.
 
-## Release evidence still required
+## Release conditions recorded at the local gate
 
-Protected CI on the final source; exact merge/deployment and signed-in production desktop/mobile workflow acceptance, with a usable desktop capture. Material changes to reviewed behavior require a new focused reassessment. Production runtime evidence supplied by the implementation owner will be reviewed as evidence, not represented as independently performed browser actions.
+These conditions are now satisfied by the final review below: protected CI on the final source; exact merge/deployment; signed-in production desktop/mobile workflow acceptance with a usable desktop capture. Material changes to reviewed behavior require a new focused reassessment. Production runtime evidence supplied by the implementation owner is reviewed as evidence, not represented as independently performed browser actions.
 
 ## CI correction reassessment — GO for the focused fix
 
@@ -43,3 +43,26 @@ The owner corrected `RepairOrdersPage` to memoize the selected detail query key 
 Independent rerun on 2026-10-14: customer, operation notes, operation-note privacy, request-cancellation and deleted-order suites **53 passed across 5 files in 7.80 seconds**. The previously hanging customer suite completed all **15 cases**, including embedded customer return and preservation of search/page through cancelled order creation. Log: `/tmp/db118-qa-ci-correction.log`. Existing framework/React act warnings remain; no failed assertions or hung suites. `git diff --check` passed. QA edited only this receipt.
 
 The focused correction is accepted. A complete frontend rerun and all protected checks on the corrected head remain release conditions, followed by the already-required production workflow acceptance.
+
+## CI assertion correction reassessment — GO
+
+The second full frontend run, `38617876518`, completed with **1463 passed and 1 failed**. Independent inspection of `/tmp/db118-ci-frontend-fixed.log` confirms the sole failure was the QA-strengthened deleted-order cache assertion: React Query recreated a scoped entry with `undefined` data through its disabled observer. There was no stale history payload in the reported entry. The owner changed the assertion to reject every matching scoped entry whose data is not `undefined`, preserving the relevant invariant without requiring an observer's empty cache bookkeeping to disappear. Existing immediate Restore and unavailable-request assertions remain intact; no application source changed for this correction.
+
+Independent rerun from the frontend working directory: **4 deleted-order cases passed in 3.50 seconds**, `/tmp/db118-qa-deleted-corrected.log`. `git diff --check` passed. The initial QA invocation from the repository root did not load the frontend test environment and is excluded from acceptance evidence.
+
+The owner also repeated authenticated local desktop customer→order return and verified the two Brake inspection notes. Independently inspected `/tmp/db118-ui/local-customer-return-390.png`: customer data and whole controls fit the 390-pixel view with a compact header/footer and the existing content scroller. Owner measurements identify only `.db-customer-embedded__body` as the vertical scroller, with document width 390. New Order→Cancel retained selected order, queue and customer route and returned focus without writes. This is local regression evidence; production verification remains outstanding.
+
+## Final production and release review — GO
+
+Reviewed the completed [release receipt](DB118_OPERATION_NOTES.md), final CI logs and production readiness artifacts. All six protected checks passed on `14bd7819c8d7cb30ecabcff1e43a9cce1a59db89`; the frontend log records **1464 passed across 160 files**, critical backend **530 passed / 11 skipped**, and full backend **2967 passed / 140 skipped**. PR519 merged as `182fa5f6b58ef0bce78716cb7b9266fbcc930374`. Independently compared checked and merged Git tree IDs: both `cd43ed6654958cc6704d5ab0f224c8d2f14e00b4`. The release owner records Railway Web deployment `89cc30b4-7c70-4028-8990-ebd73fe19e49` SUCCESS on that exact merge and fresh signed-in asset `index-B9r7oiQG.js`. Initial and final production readiness JSON both report database and Redis healthy, at 55 and 416 seconds uptime.
+
+Independently opened and inspected all eight production images under `/Users/sergio_m1_promax/.codex/visualizations/2026/10/14/db118-production/`: `desktop.png`, `mobile.png`, `mobile-320-composer.png`, `landscape.png`, `customer-mobile.png`, `customer-desktop.png`, `finalized-mobile.png`, and `cleanup-deleted.png`. No visual blocker found. Desktop is a clean 1280×720 capture. Phone 390×700 and 320×640 preserve compact headers/footers, readable notes and whole action labels. The 740×400 landscape composer visibly retains accessible Cancel/Save controls above the footer. Owner measurements establish one relevant content scroller and no horizontal overflow, with 44-pixel note controls and 16-pixel textarea text.
+
+Accepted owner-performed production journeys:
+
+- Synthetic zero-charge operation: desktop draft survives collapse/reopen and saves with actor/time; mobile reload retains it. Deliberately blocked notes requests expose failure, preserve the draft and hide unavailable cached notes. Clearing the block, Retry notes and Retry save produce exactly two intended records, both retained after a full reload. No automatic mutation retry or third empty-composer write. Order remains in progress, operation incomplete/unassigned, total $0 and tracked time unchanged.
+- Desktop and mobile customer→New Repair Order→Cancel retain selected order/customer context and return focus. Desktop retains queue search; Back returns to the same order; mobile Close returns to `/dashboard/repair-orders`. No new order is submitted.
+- Existing finalized real order is inspected read-only on desktop and 390-pixel phone: explicit finalized/cancelled explanation and no Add operation note action. No note, invoice, payment or other mutation on that real order.
+- Synthetic fixture is recoverably soft-deleted through mobile UI. Deletion closes the selected workspace into the ledger; reopening its known URL shows Deleted, actor/time, preserved-record explanation and Restore, with no unavailable work/checklist/history panels or error. This evidence does not claim an immediate in-place Restore transition. The two QA notes and their zero-charge operation remain recoverable.
+
+All injected blocking was cleared and Network observation disabled. These checks used browser emulation; physical-device and native-keyboard behavior remain outside this evidence. Blocked requests do not prove an ambiguous post-commit response loss; exact replay/concurrency remain established by the independent test review. No production invoice/payment, technician/timer/completion or real-customer note mutation was submitted. No unresolved DB118 QA blocker remains. Only this receipt was edited by QA; no application/test code or browser state was changed by this reviewer.
