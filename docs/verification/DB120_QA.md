@@ -4,7 +4,7 @@ Reviewer: independent QA Gatekeeper, with no product, contract or test implement
 
 ## Current decision
 
-**Local QA GO.** Final source, focused tests, actual downloaded CSV content and desktop/compact-screen evidence meet the DB120 local acceptance criteria. No unresolved local blocker. Protected CI, merge/deployment and production acceptance remain separate pending release gates; this is not production GO.
+**Release QA GO.** Final source, focused and protected tests, exact checked/merged tree, actual local and production CSV contents, desktop/compact-screen images and production workflow evidence meet the DB120 acceptance criteria. No unresolved release blocker. Browser interaction and deployment execution were owner-performed; this reviewer independently ran focused tests, queried CI/merge, inspected files/images/receipts and checked live readiness. This does not certify a physical mobile device.
 
 ## Independently checked
 
@@ -40,7 +40,33 @@ Reviewed the owner's final actual 390px pending-calendar workflow: open calendar
 
 Reviewed the final owner build log `/tmp/db120-build-final.log`: production build passed in 6.99 seconds. Owner reports changed-source ESLint and `git diff --check` both clean. No remaining local gate finding.
 
-## Release evidence still required
+## Evidence boundaries
 
-- Protected CI, exact merge/deployment and actual production desktop/mobile download content and negative workflow evidence.
-- No physical-device or native-mobile-keyboard claim may be inferred from browser emulation. Production GO requires its own receipt and independent review.
+- Production acceptance is recorded separately below, after the protected CI and merge gate.
+- No physical-device or native-mobile-keyboard claim may be inferred from browser emulation.
+
+## Protected CI and merge gate
+
+Independently queried GitHub for [PR #521](https://github.com/mecaniser/truck-pit-stop/pull/521) and [Quality gates run 38650113547](https://github.com/mecaniser/truck-pit-stop/actions/runs/38650113547). The run completed successfully on checked head `7654057fea97b98c0372409f7a0da10856e8fbdf`, with all six check runs successful: Migration graph, Frontend checks, Frontend full suite, Backend tests, Backend full suite and Playwright smoke. Independently reviewed the retained CI log `/tmp/db120-ci-final.log`: frontend full suite 1,538 passed; backend full suite 3,049 passed and 152 skipped; critical frontend 205 passed; critical backend 530 passed and 11 skipped; Playwright smoke 5 passed. Reported deprecations and warnings do not represent failed assertions.
+
+GitHub confirms the PR merged at `2026-10-14T23:07:18Z` as `648c8ba60d6c479ab8fc00f78475c5a12a1bb344`. Independently compared the local Git objects: checked head and merge commit both have tree `2e8d068a9cb927eb3ca79ff1ead545941a449fa2`, with an empty diff. Thus the tested source tree matches the merged tree. This gate establishes source/CI/merge only; it does not establish deployment health or production workflow behavior.
+
+## Production release QA gate
+
+**GO.** Independently reviewed the final production acceptance section in `DB120_VEHICLE_HISTORY_EXPORT.md` and the actual artifacts below. The owner executed production browser interactions and release operations; this reviewer did not share or manipulate the browser.
+
+Independently reviewed the owner-retained Railway CLI receipts `/tmp/db120-ui/production-web-deployment.json` and `production-worker-deployment.json`, which identify Web `b8a232e8-9853-488e-b05e-e4968ecd4be7` and worker `89c765f5-65a4-4e3e-841b-32d0aa1e4ddb` as SUCCESS at merged `648c8ba60d6c479ab8fc00f78475c5a12a1bb344`, with production browser asset `index-C7w7dGBg.js`. No migration was introduced. The owner observed healthy readiness before and after the workflow. Independently fetched the public `/health/ready` endpoint afterward: production ready at 366 seconds uptime, database and Redis both OK. This health check verifies service readiness rather than authenticated workflow correctness.
+
+Independently parsed all six production CSV files, keeping real record content local rather than adding it to this receipt:
+
+- `/tmp/db120-ui/production-synthetic-0.csv`, `production-synthetic-1.csv` and `production-synthetic-2.csv` are identical 612-byte files, each with UTF-8 BOM and the exact approved 18-column header. Each contains one unique Outside-shop history record for the synthetic truck, October 1 service/history dates, Reported service date basis and 98,000 historical miles with Reported outside reading basis. No financial column or synthetic 240.50 cost appears. SHA-256: `1d7e7ba588d3f12ad117e3b069c505b0e7bc04805b50ed31ab3055d31641a50e`.
+- `production-imported-0.csv` and `production-imported-1.csv` are identical 1308-byte files, each with four distinct records for one exact vehicle, Imported ETS history source, two October 12 and two October 13 history dates, and Record created basis. Unknown Service date and odometer fields remain blank. No financial column is included. SHA-256: `92cc3e1ab05f0d388ea722fed62ba9ad690f6b5726cea99530f8397ee4ba81c4`.
+- `production-imported-filtered.csv` is 748 bytes and contains exactly the two October 12 rows from the all-history file, with each entire row equal to its unfiltered counterpart. SHA-256: `8e6030f207e876d39672667517c482ee2217a37dd9bce5f27375e3b769b72a6f`.
+
+Independently inspected `/tmp/db120-ui/production-desktop.png`, `production-390-success.png`, `production-320-calendar.png`, `production-landscape.png` and `production-390-final.png`. The final desktop retains compact fields/actions; phone form labels and buttons remain intact; the 320px calendar fits the content width within the parent scroll flow; landscape retains accessible complete Cancel/Download CSV controls above its compact footer. No horizontal clipping or layout blocker appears in the reviewed evidence. CSS viewport sizes are the owner's individually measured 1280×720, 390×700, 320×640 and 740×400, not dimensions inferred from screenshot pixels or a requested viewport: existing browser zoom affected initial sizing. The intermediate 352px calendar image is not used as 320px proof.
+
+Reviewed the owner's complete production recovery/navigation receipt: blank-date export on the empty synthetic truck produces explicit empty recovery and no download; reversed date range is rejected; calendar selection corrects the range; an injected blocked CSV request retains both dates with visible recovery and no file; explicit retry after unblocking returns the matching one-row file. At 320px, Escape closes the calendar first; pending Enter closes the calendar and disables retained dates, then Escape aborts only the export while keeping truck context. Network overrides are cleared. New repair order preselects the intended synthetic customer/truck, and Cancel restores exact context without creating an order. Desktop and phone repair-order truck shortcuts download identical four-row imported files; Escape and Back through customer return to the same source repair order. Unknown imported dates remain explicitly labeled rather than inferred from creation dates.
+
+Independently inspected `/tmp/db120-ui/production-cleanup.png` after the owner's fresh navigation: active Outside-shop history and Repair history both show zero. Cleanup evidence returns only the temporarily restored synthetic outside entry to its voided baseline; active outside/native history returns to zero and export is empty again. The owner also verified eight outside-record audit events, the original six plus this controlled restore/void pair, and cleared viewport/touch/network overrides. The synthetic QA order remained deleted. No real customer work, billing, payments, timers, current mileage or repair-order status was changed by QA. The owner's anonymous endpoint probe also returns private/nosniff 401 JSON with no export attachment; tenant/role/privacy boundary rejection is independently covered by source and automated tests rather than production attempts against another tenant.
+
+The owner noted pre-existing ledger page preloading behind New repair order; cancellation still completed and it is a separate performance follow-up, not a hidden DB120 blocker. Browser touch emulation and recorded dimensions do not establish physical-device or native mobile keyboard certification. Within these explicit boundaries, release QA has no unresolved finding.

@@ -1,6 +1,6 @@
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import RepairOrdersLedger, { type RepairOrdersLedgerRow } from '../RepairOrdersLedger'
 import SlidePanel from '../../../components/SlidePanel'
@@ -559,4 +559,68 @@ describe('DB-035 Stage 4 Repair Orders presentation', () => {
     expect(screen.getByRole('alert')).toHaveTextContent('Repair orders could not be loaded')
   })
 
+})
+
+
+describe('bounded visible-page loading', () => {
+  afterEach(() => vi.unstubAllGlobals())
+  function observePages() {
+    const observers: { emit: (visible: boolean) => void; disconnect: ReturnType<typeof vi.fn>; options?: IntersectionObserverInit }[] = []
+    vi.stubGlobal('IntersectionObserver', vi.fn((callback: IntersectionObserverCallback, options?: IntersectionObserverInit) => {
+      const observer = { observe: vi.fn(), disconnect: vi.fn() }
+      observers.push({ ...observer, options, emit: (visible) => callback([{ isIntersecting: visible } as IntersectionObserverEntry], observer as unknown as IntersectionObserver) })
+      return observer
+    }))
+    return observers
+  }
+
+  it('observes the viewport rather than the unbounded mobile list and requests once per page', () => {
+    const observers = observePages()
+    const { props, rerender } = renderLedger({ hasMore: true, loadedCount: 25, totalOrders: 100 })
+    expect(observers).toHaveLength(1)
+    expect(observers[0].options?.root).toBeNull()
+    act(() => { observers[0].emit(false) })
+    expect(props.onLoadMore).not.toHaveBeenCalled()
+    act(() => { observers[0].emit(true); observers[0].emit(true) })
+    expect(props.onLoadMore).toHaveBeenCalledOnce()
+    expect(observers[0].disconnect).toHaveBeenCalled()
+    rerender(<RepairOrdersLedger {...props} loadedCount={50} />)
+    act(() => { observers[0].emit(true); observers[1].emit(false) })
+    expect(props.onLoadMore).toHaveBeenCalledOnce()
+    act(() => { observers[1].emit(true) })
+    expect(props.onLoadMore).toHaveBeenCalledTimes(2)
+  })
+
+  it('ignores queued callbacks when intake or a covered record takes over, then resumes', () => {
+    const observers = observePages()
+    const { props, rerender } = renderLedger({ hasMore: true, loadedCount: 25, totalOrders: 100 })
+    rerender(<RepairOrdersLedger {...props} autoLoadEnabled={false} />)
+    act(() => { observers[0].emit(true) })
+    expect(props.onLoadMore).not.toHaveBeenCalled()
+    expect(observers).toHaveLength(1)
+    rerender(<RepairOrdersLedger {...props} />)
+    act(() => { observers[1].emit(true) })
+    expect(props.onLoadMore).toHaveBeenCalledOnce()
+  })
+
+  it.each([{ isFetching: true }, { isLoadingMore: true }, { showPagination: false }, { autoLoadEnabled: false }])('does not auto-load while unavailable: %j', (state) => {
+    const observers = observePages()
+    renderLedger({ hasMore: true, loadedCount: 25, totalOrders: 100, ...state })
+    expect(observers).toHaveLength(0)
+  })
+
+  it('stops automatic retries after a failure while retaining explicit keyboard retry', async () => {
+    const observers = observePages()
+    const { props, rerender } = renderLedger({ hasMore: true, loadedCount: 25, totalOrders: 100 })
+    act(() => { observers[0].emit(true) })
+    rerender(<RepairOrdersLedger {...props} errorMessage="Connection failed" />)
+    act(() => { observers[0].emit(true) })
+    expect(observers).toHaveLength(1)
+    expect(props.onLoadMore).toHaveBeenCalledOnce()
+    const user = userEvent.setup()
+    const button = screen.getByRole('button', { name: /Load more repair orders/ })
+    button.focus()
+    await user.keyboard('{Enter}')
+    expect(props.onLoadMore).toHaveBeenCalledTimes(2)
+  })
 })

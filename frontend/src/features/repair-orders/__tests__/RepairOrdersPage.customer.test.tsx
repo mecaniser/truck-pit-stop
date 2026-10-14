@@ -1,7 +1,7 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
-import { beforeEach, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 
 const authState = vi.hoisted(() => ({ user: { id: 'actor-1', tenant_id: 'tenant-1', role: 'garage_owner' }, authSessionEpoch: 1 }))
 vi.mock('@/stores/authStore', () => ({ useAuthStore: (select: (state: typeof authState) => unknown) => select(authState) }))
@@ -356,4 +356,32 @@ it('keeps typed customer search and page through a cancelled truck order and all
   await waitFor(() => expect(api.get).toHaveBeenCalledWith('/customers', expect.objectContaining({ params: expect.objectContaining({ search: 'Other', skip: 0 }) })))
   expect(api.post).not.toHaveBeenCalled()
   expect(api.put).not.toHaveBeenCalled()
+})
+
+
+afterEach(() => vi.unstubAllGlobals())
+
+it('never drains order pages behind contextual customer intake and resumes after cancel', async () => {
+  const callbacks: IntersectionObserverCallback[] = []
+  vi.stubGlobal('IntersectionObserver', vi.fn((callback: IntersectionObserverCallback) => {
+    callbacks.push(callback)
+    return { observe: vi.fn(), disconnect: vi.fn() }
+  }))
+  const baseGet = api.get.getMockImplementation()!
+  api.get.mockImplementation((url: string, config?: { params?: { skip?: number } }) => {
+    if (url === '/repair-orders') return Promise.resolve({ data: { items: [{ ...order, id: `order-${config?.params?.skip ?? 0}` }], total: 100, has_more: (config?.params?.skip ?? 0) === 0 } })
+    return baseGet(url, config)
+  })
+  setup('/dashboard?newCustomer=customer-1&newVehicle=vehicle-1')
+  const dialog = await screen.findByRole('dialog', { name: 'New Repair Order' })
+  expect(dialog).toHaveTextContent('Northline Logistics')
+  expect(await within(dialog).findByRole('button', { name: /Select Freightliner/ })).toHaveAttribute('aria-pressed', 'true')
+  const emitVisible = () => callbacks.forEach(callback => callback([{ isIntersecting: true } as IntersectionObserverEntry], {} as IntersectionObserver))
+  await act(async () => { emitVisible() })
+  expect(api.get.mock.calls.filter(([url, config]) => url === '/repair-orders' && config?.params?.skip > 0)).toHaveLength(0)
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel', exact: true }))
+  await waitFor(() => expect(screen.queryByRole('dialog', { name: 'New Repair Order' })).not.toBeInTheDocument())
+  await act(async () => { emitVisible() })
+  await waitFor(() => expect(api.get).toHaveBeenCalledWith('/repair-orders', expect.objectContaining({ params: expect.objectContaining({ skip: 25 }) })))
+  expect(api.post).not.toHaveBeenCalled()
 })
