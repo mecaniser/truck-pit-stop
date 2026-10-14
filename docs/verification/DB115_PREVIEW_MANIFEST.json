@@ -1,0 +1,13 @@
+{
+  "backend/app/core/websocket.py": "ee0c5407bdbb30d24b89eee1819499ce9dc6511a837e9d49f04c6233a4bc5cd9",
+  "backend/app/api/v1/endpoints/dashboard.py": "784a3386f4cc32cda57cd959d0c03f0b886ba96382bcdccd3f9ca65ed5b65d6a",
+  "backend/app/api/v1/endpoints/repair_orders.py": "a8a7368c4f63dbe14a891ee7deda30f021833d4acfe5651668e197e92f7a44bc",
+  "backend/app/services/staff_work_hold.py": "b89f322273aff830b156bb22225a0698c57ad12fc37e3eb4509f943a8114d4dc",
+  "backend/app/schemas/staff_work_hold.py": "14462d956c4d973a940439bec2fe428309e72ae1ea319c01efc08ec7960189ed",
+  "frontend/src/features/repair-orders/StaffHoldDialog.tsx": "efca19511c8b9e9f8370586405dfe2dd62b015c5c788488d3347c35cdfd60b92",
+  "frontend/src/features/repair-orders/staffHold.ts": "93a063cd97e6ea35b3b2d31ae13de817298e1815c74eefebc35966f83641c4ec",
+  "frontend/src/features/repair-orders/PriceBuilderPanel.tsx": "eeefe2a63c8b7993108f58fb820276cfedde5b507f89efed04f0c8c07a314a8d",
+  "frontend/src/features/repair-orders/RepairOrdersPage.tsx": "8761e6e098f5e61db00bf8d243a4f6950cbb349672b8bf8dd09fc1ae6fd6f55a",
+  "frontend/src/features/repair-orders/StartWorkAction.tsx": "3b49115bb7d5118cc24b55b944846b3b2eadc292f25735c5e1a0ff49914c615d",
+  "frontend/src/features/repair-orders/repairOrderHistory.ts": "20bfa968e7c3b5d3124084411fc150c4dd0b72a48addb5350c7214a5f362caae"
+}

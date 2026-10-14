@@ -739,6 +739,7 @@ async def get_dashboard_stats(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
+    require_daily_workset_staff(current_user)
     tenant_id = current_user.tenant_id
     if not tenant_id:
         return DashboardStats(

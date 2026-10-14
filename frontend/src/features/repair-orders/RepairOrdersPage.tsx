@@ -4654,6 +4654,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                     recommendedWorkPanel={(context) => <RecommendedWorkPanel vehicleId={selectedOrder.vehicle_id} contextOrderId={selectedOrder.id} {...context} />}
                     orderId={selectedOrder.id}
                     workflowInfo={orderDetail ?? selectedOrder}
+                    workHoldOrder={orderDetail ?? selectedOrder}
                     orderStatus={(orderDetail ?? selectedOrder).status}
                     canEdit={canEditPriceBuilderByRole}
                     isInternalOrder={!!(orderDetail ?? selectedOrder).is_internal}

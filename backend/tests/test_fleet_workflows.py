@@ -895,7 +895,8 @@ async def test_dashboard_stats_reports_internal_costs_separately_from_revenue(db
     import sqlalchemy
     from app.api.v1.endpoints import dashboard
 
-    _, vehicle, user = await _seed_fleet(db_session)
+    # Tenant-wide shop accounting is not part of the fleet-manager surface.
+    _, vehicle, user = await _seed_fleet(db_session, role=UserRole.GARAGE_OWNER)
     await fleet.new_work_order(vehicle_id=vehicle.id, body=WorkOrderCreate(description="Brakes"),
                                db=db_session, current_user=user)
     ro = (await db_session.execute(

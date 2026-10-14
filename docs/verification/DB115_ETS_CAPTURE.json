@@ -1,0 +1,32 @@
+[
+  {
+    "url": "https://static.easytruck.shop/2026-10-13-14-00-47/build/assets/index.CIRbAkCE.js",
+    "file": "index.CIRbAkCE.js",
+    "bytes": 56347,
+    "sha256": "3015795ee8a167a701e36e9744fbbfea3dc2334ba74c3eb55cc3195302be43d6"
+  },
+  {
+    "url": "https://static.easytruck.shop/2026-10-13-14-00-47/build/assets/layout.BbfQi207.js",
+    "file": "layout.BbfQi207.js",
+    "bytes": 71776,
+    "sha256": "f661eb90f5a4f434728a3d6b7c09e7b26871d0f6a98faf095a538dcb7decbbd4"
+  },
+  {
+    "url": "https://static.easytruck.shop/2026-10-13-14-00-47/build/assets/Heading.DOmBfukR.js",
+    "file": "Heading.DOmBfukR.js",
+    "bytes": 3415,
+    "sha256": "df2ef044a1260338c9a4a132d39124dae8fc3dd038d58a11285b332fb54f1f4c"
+  },
+  {
+    "url": "https://static.easytruck.shop/2026-10-13-14-00-47/build/assets/ServiceItem.BMDIHCGN.js",
+    "file": "ServiceItem.BMDIHCGN.js",
+    "bytes": 733,
+    "sha256": "db94487fee29e14519ae63064bc8492e51322616a2b511dcbcb36fd1af9aeb1c"
+  },
+  {
+    "url": "https://static.easytruck.shop/2026-10-13-14-00-47/build/assets/ServiceItemProgress.FEhBU_Xc.js",
+    "file": "ServiceItemProgress.FEhBU_Xc.js",
+    "bytes": 2659,
+    "sha256": "b9665a934c04d0e78a4e4b2989f2b2eb8468d416b5bf24f0f678adb7fea04f4d"
+  }
+]

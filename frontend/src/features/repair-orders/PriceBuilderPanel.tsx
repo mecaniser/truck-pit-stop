@@ -42,6 +42,9 @@ import { revealWorkspaceContent } from './recommendationConversion'
 import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 import QuantityStepper from '@/components/QuantityStepper'
 import StartWorkAction from './StartWorkAction'
+import StaffHoldDialog from './StaffHoldDialog'
+import { canManageWorkHold, type WorkHoldOrder } from './staffHold'
+import { useAuthStore } from '@/stores/authStore'
 import OrderIntakeDetails, { type OrderIntakePatch } from './OrderIntakeDetails'
 import { holdReasonLabel } from './holdReason'
 import DiscountAmountInput from './DiscountAmountInput'
@@ -144,6 +147,7 @@ type Props = {
   orderId: string
   orderStatus: RepairOrderStatus
   canEdit: boolean
+  workHoldOrder?: WorkHoldOrder
   isInternalOrder?: boolean
   defaultLaborRate?: number
   description?: string | null
@@ -847,6 +851,7 @@ export default function PriceBuilderPanel({
   orderId,
   orderStatus,
   canEdit,
+  workHoldOrder,
   isInternalOrder = false,
   defaultLaborRate,
   description,
@@ -962,6 +967,8 @@ export default function PriceBuilderPanel({
   initialLineWarnings = [],
 }: Props) {
   const queryClient = useQueryClient()
+  const staffRole = useAuthStore(state => state.user?.role)
+  const [holdDialogOrderId, setHoldDialogOrderId] = useState<string | null>(null)
   const [searchTerm, setSearchTerm] = useState('')
   const [candidates, setCandidates] = useState<RepairOperationCandidate[]>([])
   const [searchWarnings, setSearchWarnings] = useState<{ code: string; message: string }[]>([])
@@ -1430,6 +1437,9 @@ export default function PriceBuilderPanel({
 
 
   const isOnHold = orderStatus === 'in_progress' && !!workflowInfo?.hold_reason
+  useEffect(() => {
+    if (isOnHold) setArmWoComplete(false)
+  }, [isOnHold])
   const holdLabel = isOnHold ? holdReasonLabel(workflowInfo!.hold_reason!) : ''
   const isLocked = !!summary?.pricing_locked
   const hasInvoice = !!invoice && ['invoiced', 'paid'].includes(orderStatus)
@@ -1453,6 +1463,8 @@ export default function PriceBuilderPanel({
   const INTERNAL_FROZEN_STATUSES: RepairOrderStatus[] = ['completed', 'invoiced', 'paid', 'cancelled']
   const isEditableStatus = summary?.can_edit_work ?? !INTERNAL_FROZEN_STATUSES.includes(orderStatus)
   const canMutate = canEdit && !isLocked && isEditableStatus
+  const canManageHold = !!workHoldOrder && canMutate && !isDeleted && !hasInvoice && canManageWorkHold(staffRole, workHoldOrder)
+  const holdAction = (beforeOpen?: () => void) => canManageHold && <button type="button" onClick={() => { beforeOpen?.(); setHoldDialogOrderId(orderId) }} className="db-stage-action inline-flex min-h-11 items-center justify-center whitespace-nowrap rounded-lg border border-gray-300 px-3 text-sm font-semibold text-gray-700 hover:bg-gray-50">{isOnHold ? 'Release hold' : 'Put on hold'}</button>
   useEffect(() => {
     if (!focusedOperationId || !summary?.lines.some((line) => line.id === focusedOperationId)) return
     const key = `operation-${focusedOperationId}`
@@ -2593,6 +2605,7 @@ export default function PriceBuilderPanel({
               <StartWorkAction
                 key={`technician-${orderId}`}
                 mode={hasAssignedTechnician ? 'reassign' : 'assign'}
+                compact={canManageHold && !compactWorkspace}
                 technicians={availableTechnicians}
                 onAssign={onAssignTechnician}
                 assignmentPending={technicianAssignmentPending}
@@ -2738,6 +2751,7 @@ export default function PriceBuilderPanel({
 
       <div className="db-workspace-scroll">
       {compactWorkspace && <div className="db-job-customer-mobile">{customerIdentity}</div>}
+      {isOnHold && <p role="status" className="break-words border-b border-amber-200 bg-amber-50 px-4 py-2 text-sm text-[#78350f]"><strong>On hold</strong> · {holdLabel}</p>}
       {/* Operational workflow is primary. Estimates are optional authorization
           records and appear as a secondary action, never as a work gate. */}
       {!isInternalOrder && !isDeleted && (
@@ -2992,7 +3006,7 @@ export default function PriceBuilderPanel({
         </div>
       )}
 
-      {canAdminCompleteBypassedWork && armWoComplete && (
+      {canAdminCompleteBypassedWork && armWoComplete && !isOnHold && (
         <div className="rounded-2xl border border-yellow-200 bg-yellow-50/70 p-4">
           <div className="mb-3 flex items-center gap-3">
             <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-yellow-100 text-yellow-700">
@@ -3025,7 +3039,7 @@ export default function PriceBuilderPanel({
         </div>
       )}
 
-      {isInternalOrder && armWoComplete && !completionMode && (
+      {isInternalOrder && armWoComplete && !completionMode && !isOnHold && (
         <div className="rounded-2xl border border-yellow-200 bg-yellow-50/70 p-4">
           <div className="mb-3 flex items-center gap-3">
             <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-yellow-100 text-yellow-700">
@@ -4834,7 +4848,7 @@ export default function PriceBuilderPanel({
                   assignmentPending={technicianAssignmentPending}
                   startPending={technicianOverridePending}
                 />
-              ) : (
+              ) : canManageHold ? null : (
                 <span className="db-workspace-stage-caption max-w-64 text-right text-sm font-medium text-gray-600" role="status">
                   {hasAssignedTechnician && ['draft', 'quoted', 'declined', 'approved', 'assigned', 'acknowledged'].includes(orderStatus)
                     ? `Waiting for ${assignedTechnicianName} to start`
@@ -4849,8 +4863,9 @@ export default function PriceBuilderPanel({
                 </span>
               )
             )}
+            {(!compactWorkspace || isOnHold) && holdAction()}
             {!compactWorkspace && technicianActions}
-            {canAdminCompleteBypassedWork && !isDeleted && !armWoComplete && (
+            {canAdminCompleteBypassedWork && !isDeleted && !isOnHold && !armWoComplete && (
               <button
                 type="button"
                 onClick={() => setArmWoComplete(true)}
@@ -4871,7 +4886,7 @@ export default function PriceBuilderPanel({
                   {startWorkOrderPending ? <Spinner size="xs" /> : <Play className="h-4 w-4" />}
                   {startWorkOrderPending ? 'Starting...' : 'Start Work'}
                 </button>
-              ) : orderStatus === 'in_progress' && !armWoComplete ? (
+              ) : orderStatus === 'in_progress' && !isOnHold && !armWoComplete ? (
                 <button
                   type="button"
                   onClick={() => { setWoMileageOut(mileageIn != null ? String(mileageIn) : ''); setArmWoComplete(true) }}
@@ -4901,6 +4916,7 @@ export default function PriceBuilderPanel({
           </div>
           {compactWorkspace && <WorkspaceActionOverflow label="Repair order actions">{close => <>
             <div className="db-workspace-order-navigation" onClick={() => close()}>{orderNavigation}</div>
+            {!isOnHold && holdAction(close)}
             {!operationExecution.isError && operationProgress}
             {technicianActions}
             {hasInvoice && invoice && !invoiceFinanciallyPaid && <div className="db-workspace-secondary-actions" onClick={() => close()}>{invoiceSecondaryActions}</div>}
@@ -4908,6 +4924,8 @@ export default function PriceBuilderPanel({
           </>}</WorkspaceActionOverflow>}
         </div>
       </div>
+
+      {holdDialogOrderId === orderId && workHoldOrder && <StaffHoldDialog key={orderId} order={workHoldOrder} onClose={() => setHoldDialogOrderId(null)} onUpdated={onUpdated} />}
 
       {/* Danger actions open as a bottom sheet on top of the panel so the page
           geometry never shifts (no inline accordion pushing content down). */}

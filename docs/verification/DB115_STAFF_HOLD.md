@@ -1,0 +1,40 @@
+# DB-115 Staff repair-order hold and release
+
+Backend & Integrations accountable. High-risk lane for role/timer boundaries; Architecture contract plus independent QA and Security required. Branch `codex/staff-work-hold`; implementation and local runtime acceptance complete, independent QA/Security GO, PR CI pending. No production release or production business-data writes.
+
+## Audit and process decision
+
+Authenticated ETS read-only inspection on 2026-10-13: On Site is currently empty; previously active job1764 is now paid and locked. No work/timer, unlock or payment actions submitted. Five already-loaded static scripts were captured through the browser CDP capability, analyzed offline with the previously approved `rea-agents6.4.0` subset and projected with `inspect-analysis-view`. 134930bytes,5 parsed files,31390ASTnodes,394findings,zero parse failures. ArtifactSHA256 `87a6db8c017d37bd4514c8afb0b9c8a1183997bb16c889c02f0bedb86cdd435c`. The semantic graph remains unknown/partial; no full parity or actual hold execution claim. Vendor source stays outside this repository under `/tmp/dieselbridge-rea-hold-20261013`; no credentials, authenticated data payloads or headers captured.
+
+The captured service layout confirms a hold confirmation that checks out technicians and moves work to Upcoming. DieselBridge currently exposes only mechanic-only whole-order hold/resume. Selected improvement: staff can deliberately pause an in-progress job with a reason while retaining its lifecycle and location. All matching timers stop; operation ownership/completion/checklists, recommendation provenance and pricing remain. Release makes work available but creates no attendance or timer for someone else. Existing mechanic self-resume remains supported.
+
+## Runtime preflight
+
+2026-10-13 local. Source `codex/staff-work-hold` atb318bb94, board intake dirty. Intentional shared preview split remains approved: VitePID23640 binds127.0.0.1:5174, cwd`ets-parity-preview/truck-pit-stop/frontend`, proxy127.0.0.1:8001. Docker`dieselbridge_api_ets-workflow-parity` binds preview/backend to/app and localhost8001 to8000. Database`postgres / truckpitstop_ets_workflow_parity_20261012`, Alembic168 head. Direct/proxy readiness200 DB+Redishealthy. No restart, migration, reseed or provider configuration change. Signed-in PerformanceOwner ShopWork renders; source changes will be selectively mirrored and feature-verified before acceptance.
+
+## Acceptance and delivery
+
+Acceptance is recorded in the board and contract. Source uses two new staff routes, exact raw timestamp guards, atomic timer stops, internal actor history and no automatic restart on release. No migration. Existing mechanic self-resume remains distinct. Staff can cancel with Escape, named close or Cancel; pending submissions cannot be duplicated/dismissed; failed drafts remain and are never automatically replayed.
+
+## Actual local browser acceptance
+
+Signed-in Performance Owner; dedicated synthetic order `DB115-HOLD-QA` in the isolated Performance Lab preview. Seeded two operation timers on this order plus a third unrelated synthetic misc timer to test isolation. Setup receipt `/tmp/db115-runtime-fixture.json`; no existing business records were altered except use of the existing synthetic customer/truck relationship. No outbound message/payment/invoice action.
+
+- **1280×700 desktop:** hold reason selection, Escape and focus return, submit, held status/visible reason and release confirmation/Cancel/submit/reload pass. Both order timers stopped at the exact same instant with staff actor and `hold` reason. The unrelated timer remained active. Price $290 and both assignments/pending states stayed unchanged. Release added history and restarted no timer. The footer initially wrapped; compact technician trigger corrected it to **57px, one row** at a 716px-wide order panel, preserving its complete accessible name.
+- **390×700 touch emulation:** More → Put on hold → Other reason; whitespace/blank submission disabled. Blocked only the exact local hold POST with CDP. Failure retained the 66-character draft and unchanged order; cleared the block, explicitly retried, and the hold saved. Reload preserved reason/state. Release is directly accessible in the footer. Customer details and Back to the same order worked. The order has **one vertical scroller** (`db-workspace-scroll`, 567px body), no horizontal page overflow (390px document width), and a **57px footer at y643**.
+- **320×700:** release confirmation fully fits; Cancel/close/confirm controls remain accessible. In a second QA window, changed this synthetic order's requested work while the first held an unsaved reason. The original submit received 409, refreshed the newer text, preserved the 47-character draft and disabled stale retry. No duplicate hold/history or overwrite occurred. Closed stale dialog explicitly.
+- **740×400 touch landscape:** custom-reason field remained usable; dialog has one scrolling body (254px visible / 327px content), fixed header/footer, and **44px controls**, with Cancel/submit at y336–380 inside the viewport. Hold and release saved successfully.
+- **Operation consistency:** held operation exposes no completion control. After release, Complete operation becomes available and successfully completed Brake inspection. A subsequent hold/release on the final backend retained that completion, assignment, tracked time and $290 total; Steering check remains pending and becomes completable after release. The history panel renders staff actor plus human-readable hold/release reason. No order finalization/invoice was issued.
+- **Contrast:** actual initial banner inherited a broad legacy amber override; corrected foreground is `rgb(120,53,15)` on `rgb(255,251,235)`. Screenshots confirm readable reason and whole action labels.
+
+Artifacts: `/tmp/db115-desktop-held.png`, `/tmp/db115-mobile-error.png`, `/tmp/db115-mobile-held.png`, `/tmp/db115-320-release.png`, `/tmp/db115-320-stale.png`, `/tmp/db115-landscape-dialog.png`; database receipts `/tmp/db115-runtime-held.json`, `/tmp/db115-runtime-released.json`, `/tmp/db115-runtime-final.json`. Final receipt records four holds/four releases, released order, unchanged $290, original stopped-time boundaries and retained completed/pending operations. The unrelated synthetic timer was subsequently stopped through the audited service solely as QA cleanup; no records were deleted. These are browser-emulated dimensions, **not physical-device or native-keyboard verification**.
+
+## Review fixes and final checks
+
+Independent QA found armed admin/fleet completion panels remained enabled after a hold. Both now guard held state and disarm; release does not silently re-arm. Two regression cases pass. Independent Security found three alternate privacy leaks (customer websocket, legacy dashboard stats, driver reads); all fixed and independently regated GO. The old tenant-wide stats route now uses the existing shop-workset staff gate; no current frontend caller exists. Dedicated fleet routes remain unchanged. See separate QA/Security/backend evidence for exact test ownership and counts.
+
+Owner frontend: **102 focused tests pass**, production TypeScript/Vite build passes, changed-file lint has zero errors and only two pre-existing hook warnings in RepairOrdersPage. All **11 changed application files** are byte-identical to the running preview (hash manifest `DB115_PREVIEW_MANIFEST.json`). After backend autoreload, both direct/proxy readiness return200 with healthy database/Redis; bind mount, approved5174/8001 and isolated database identity remain unchanged. Independent backend evidence includes seven real PostgreSQL races. Protected PR CI, merge and production deployment remain separate outstanding gates.
+
+## Remaining audit candidate
+
+Actual history review exposed raw technician UUIDs and implementation fields in older operation-completion event text. Hold events now use readable actor/reason text, but existing operation-history presentation is a useful next refinement. This observation is not implemented or claimed complete in DB115.
