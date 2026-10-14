@@ -225,3 +225,27 @@ async def test_invalid_invoice_is_audited_without_blocking_other_history(_db_eng
         failure = next(event for event in events if event.event_type == 'job.history_capture_failed')
         assert failure.status == 'dead'
         assert failure.payload == {'invoice_id': str(invoice.id), 'reason': 'invalid_source_history'}
+
+
+@pytest.mark.asyncio
+async def test_invalid_correction_quarantines_previous_valid_context(_db_engine, monkeypatch):
+    factory = async_sessionmaker(_db_engine, expire_on_commit=False)
+    async with factory() as db:
+        tenant, customer, vehicle, order, invoice = await seed(db)
+        await db.commit()
+    monkeypatch.setattr('app.core.config.settings.SHOP_HISTORY_CAPTURE_ENABLED', True)
+    monkeypatch.setattr('app.core.config.settings.SHOP_HISTORY_CAPTURE_TENANT_IDS', str(tenant.id))
+    await capture_shop_history_batch(session_factory=factory)
+    async with factory() as db:
+        current = await db.get(Invoice, invoice.id)
+        current.total_amount = Decimal('-1')
+        await db.commit()
+    assert (await capture_shop_history_batch(session_factory=factory))['captured'] == 1
+    assert (await capture_shop_history_batch(session_factory=factory))['captured'] == 0
+    async with factory() as db:
+        events = (await db.execute(select(ProviderOutboxEvent).where(
+            ProviderOutboxEvent.event_type == 'job.history_snapshot').order_by(ProviderOutboxEvent.created_at))).scalars().all()
+        assert len(events) == 2
+        assert events[-1].payload['source_observation'] == 2
+        assert events[-1].payload['snapshot']['grouping_uncertain']
+        assert events[-1].payload['snapshot']['invoice_total'] == '1992.62'

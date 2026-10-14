@@ -6,6 +6,7 @@ or financial state mutation occurs here.
 """
 from __future__ import annotations
 
+from copy import deepcopy
 import hashlib
 import json
 import re
@@ -155,8 +156,19 @@ async def capture_tenant_history(db: Session, tenant: Tenant, *, batch_size: int
                     payload={"invoice_id": str(invoice.id), "reason": "invalid_source_history"},
                     status=ProviderOutboxStatus.DEAD.value, available_at=now, completed_at=now,
                     last_error="Source history validation failed; source review required"))
-            cursor.last_invoice_id = invoice.id
-            continue
+            previous = await db.scalar(select(ProviderOutboxEvent).where(
+                ProviderOutboxEvent.tenant_id == tenant.id,
+                ProviderOutboxEvent.event_type == SHOP_HISTORY_EVENT,
+                ProviderOutboxEvent.aggregate_id == invoice.id,
+            ).order_by(ProviderOutboxEvent.created_at.desc(), ProviderOutboxEvent.id.desc()).limit(1))
+            prior_snapshot = (previous.payload or {}).get("snapshot") if previous else None
+            if not prior_snapshot:
+                # PII expiry must not be undone by reconstructing old evidence.
+                # The durable failed-capture audit is the explicit boundary.
+                cursor.last_invoice_id = invoice.id
+                continue
+            snapshot = deepcopy(prior_snapshot)
+            snapshot["grouping_uncertain"] = True
         revision = snapshot_revision(snapshot)
         observation = await db.scalar(select(ShopHistoryObservation).where(
             ShopHistoryObservation.tenant_id == tenant.id,

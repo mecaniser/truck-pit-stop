@@ -21,12 +21,16 @@ Backend & Integrations → independent QA/Security → Release.
 
 ## Verification
 
-2026-10-14: 49 focused tests passed across history source, existing paid webhook,
+2026-10-14: 50 focused tests passed across history source, existing paid webhook,
 and native ELIS outcome contract. Coverage includes replay, A→B→A, bounded cursor,
 rollback, tenant rejection, split operations, dates, redaction, disabled scope,
 and history terminal failure isolation. Invalid allowlist disables only history;
 oversized descriptions are explicitly marked and held. Invalid source records
-produce a non-deliverable audit event and do not strand other invoices. Migration170 PostgreSQL offline SQL
+produce a non-deliverable audit event and do not strand other invoices. A
+previous valid retained snapshot is re-emitted as uncertain with a new sequence
+so its prior automatic match can be quarantined. If retention already erased that
+snapshot, no old private payload is reconstructed; failed-capture audit remains
+an explicit operator exception requiring source repair. Migration170 PostgreSQL offline SQL
 compiles. Independent gates and actual PostgreSQL migration/concurrency runtime
 acceptance remain required; synthetic SQLite tests do not prove lock semantics.
 
