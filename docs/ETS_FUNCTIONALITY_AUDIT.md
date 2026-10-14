@@ -1,7 +1,9 @@
 # Easy Truck Shop → DieselBridge functionality audit
 
-Date: 2026-10-12. Accountable owner: Product & Delivery Lead. Board item: DB-101.
+Baseline audit date: 2026-10-12. Accountable owner: Product & Delivery Lead. Board item: DB-101.
 DieselBridge baseline: `origin/main` at `91045a625f89d84221aaf8ed74d1cdc7d92438b6`.
+
+The matrix below preserves the original baseline comparison. Subsequent implementation and release evidence is recorded in dated continuations and [the delivery board](PROJECT_BOARD.md); baseline gap labels are not a current release-status dashboard.
 
 ## Evidence and scope
 
@@ -81,7 +83,7 @@ These are the relevant implementation locations, not declarations of deployed ac
 
 The four implemented outcomes have focused branches/PRs; DB099 compact scrolling should precede or accompany DB102 Modern rollout. They intentionally avoid creating parallel billing, stock or identity systems. Their verification records and board entries must distinguish source implementation, local browser acceptance, pull request, merge and deployment. This audit does not mark any implementation Done.
 
-Current delivery: [search/audit PR500](https://github.com/mecaniser/truck-pit-stop/pull/500), [recommendations PR498](https://github.com/mecaniser/truck-pit-stop/pull/498), [cost evidence PR499](https://github.com/mecaniser/truck-pit-stop/pull/499), and [checklists PR501](https://github.com/mecaniser/truck-pit-stop/pull/501). All four are locally implemented and authenticated-browser verified in an isolated combined preview at `http://127.0.0.1:5174` (API8001). Independent Security/QA gates for the cross-layer changes pass; combined frontend142files/1247tests pass. PR/CI status is time-sensitive; nothing in this initiative is merged or deployed. Detailed implementation, runtime, migration and remaining release gates are in each focused PR and verification record.
+Historical delivery snapshot (2026-10-12): [search/audit PR500](https://github.com/mecaniser/truck-pit-stop/pull/500), [recommendations PR498](https://github.com/mecaniser/truck-pit-stop/pull/498), [cost evidence PR499](https://github.com/mecaniser/truck-pit-stop/pull/499), and [checklists PR501](https://github.com/mecaniser/truck-pit-stop/pull/501). All four are locally implemented and authenticated-browser verified in an isolated combined preview at `http://127.0.0.1:5174` (API8001). Independent Security/QA gates for the cross-layer changes pass; combined frontend142files/1247tests pass. PR/CI status is time-sensitive; nothing in this initiative is merged or deployed. Detailed implementation, runtime, migration and remaining release gates are in each focused PR and verification record.
 
 ## Official ETS sources
 
@@ -101,3 +103,8 @@ Current delivery: [search/audit PR500](https://github.com/mecaniser/truck-pit-st
 14. [Integrations](https://support.easytruckshop.io/en/collections/19131242-integrations)
 
 [Help center](https://support.easytruckshop.io/en/) and [navigation articles](https://support.easytruckshop.io/en/collections/13751702-navigation) were used to map modules. Authenticated evidence was retained as read-only observations; source account data is not a committed fixture.
+
+
+## 2026-10-14 focused continuation: operation documentation (DB118)
+
+Fresh authenticated ETS item Notes inspection and REA6.4.0 evidence confirm per-operation notes with separate internal order notes. DieselBridge already had order-level notes but lacked operation linkage. DB118 adds exact labor-linked, attributed, append-only shop notes and safe retry, with shop-only default and explicit role/assignment boundaries instead of copying ETS public-by-default note behavior. Staff history preserves original operation identity after removal. No price/timer/completion side effects or customer publication. Implementation, tests, runtime and release status: [DB118 evidence](verification/DB118_OPERATION_NOTES.md); board remains the current status source. This does not claim all ETS functionality is complete. External service history and capacity-aware scheduling remain separate model/workflow gaps.

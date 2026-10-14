@@ -1,6 +1,7 @@
 import RepairOrderActivity from './RepairOrderActivity'
 import { OperationExecutionControls, OperationExecutionFeedback, OperationExecutionStatus } from '@/features/operation-execution/OperationExecution'
 import { useOperationExecution } from '@/features/operation-execution/queries'
+import { OperationNotes } from '@/features/operation-execution/OperationNotes'
 import OrderChecklist from '@/features/service-checklists/OrderChecklist'
 import { type ReactNode, type ChangeEvent, type MouseEvent as ReactMouseEvent, useEffect, useRef, useState } from 'react'
 import { Popover, PopoverButton, PopoverPanel } from '@headlessui/react'
@@ -4167,6 +4168,7 @@ export default function PriceBuilderPanel({
                         {renderOperationPartPicker(line, groupedParts)}
                       </div>
                     )}
+                    <OperationNotes orderId={orderId} laborId={line.id} description={line.description || lineTypeLabel(line)} expanded={isOpen} orderStatus={orderStatus} assignmentId={execution?.mechanic_id} />
                   </div>
                 )
               })}

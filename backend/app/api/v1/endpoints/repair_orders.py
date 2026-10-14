@@ -35,7 +35,8 @@ from app.db.models.mechanic_points import MechanicPoints, MechanicPointsBalance,
 from app.db.models.description_library import DescriptionLibraryEntry
 from app.db.models.work_photo import WorkPhoto
 from app.db.models.repair_order_history import RepairOrderHistoryEvent
-from app.services import service_checklist, operation_execution
+from app.services import service_checklist, operation_execution, operation_notes
+from app.schemas.operation_notes import OperationNoteCreate, OperationNoteItem, OperationNotesPage
 from app.schemas.operation_execution import OperationPage, OperationAssignment, OperationCompletion, OperationVersion, OperationTimerStop
 from app.schemas.service_checklist import ChecklistPage, ChecklistTaskUpdate, ChecklistTaskUpdateResponse
 from app.core.payment_step_up import (
@@ -1570,7 +1571,8 @@ async def get_repair_order_detail(
         )
         .order_by(RepairOrderHistoryEvent.created_at.asc())
     )
-    history_resp = [RepairOrderHistoryEventResponse.model_validate(event) for event in history_result.scalars().all()
+    visible_history = await operation_notes.visible_history(db, order, current_user, history_result.scalars().all())
+    history_resp = [RepairOrderHistoryEventResponse.model_validate(event) for event in visible_history
                     if (current_user.role != UserRole.CUSTOMER or event.event_type not in (service_checklist.INTERNAL_EVENT_TYPES | operation_execution.INTERNAL_EVENT_TYPES))
                     and (staff_work_hold.can_read(current_user) or event.event_type not in staff_work_hold.INTERNAL_EVENT_TYPES)]
 
@@ -5438,6 +5440,21 @@ async def patch_order_checklist(
 async def get_order_operations(order_id: UUID, response: Response, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
     response.headers["Cache-Control"] = "no-store"
     return await operation_execution.page(db, order_id, current_user)
+
+
+@router.get("/{order_id}/operations/{labor_id}/notes", response_model=OperationNotesPage)
+async def get_operation_notes(order_id: UUID, labor_id: UUID, response: Response, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    response.headers["Cache-Control"] = "no-store"
+    return await operation_notes.page(db, order_id, labor_id, current_user)
+
+
+@router.post("/{order_id}/operations/{labor_id}/notes", response_model=OperationNoteItem, status_code=status.HTTP_201_CREATED)
+async def add_operation_note(order_id: UUID, labor_id: UUID, body: OperationNoteCreate, response: Response, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    response.headers["Cache-Control"] = "no-store"
+    result, created = await operation_notes.append(db, order_id, labor_id, current_user, body)
+    await db.commit()
+    response.status_code = status.HTTP_201_CREATED if created else status.HTTP_200_OK
+    return result
 
 
 async def _publish_operation_change(db, order_id, actor, result):

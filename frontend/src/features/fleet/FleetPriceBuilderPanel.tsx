@@ -228,7 +228,9 @@ export default function FleetPriceBuilderPanel({ repairOrderId, onClose, onChang
     setPendingRemoval({ kind, id, label })
   }
   const started = !['draft', 'quoted'].includes(detail.status)
-  const historyEvents: FleetHistoryEvent[] = detail.history_events ?? []
+  // Shop notes belong to the staff/technician workspace, even when a shop
+  // administrator visits the fleet presentation with broader API permissions.
+  const historyEvents: FleetHistoryEvent[] = (detail.history_events ?? []).filter(event => event.event_type !== 'operation_note_shop')
 
   return (
     <Shell
