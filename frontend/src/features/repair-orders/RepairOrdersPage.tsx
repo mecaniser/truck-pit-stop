@@ -9,6 +9,7 @@ import { Spinner, LoadingLine } from '@/components/ui'
 import { useMutation, useQuery, useQueryClient, keepPreviousData, useInfiniteQuery,
 } from '@tanstack/react-query'
 import { useDebouncedValue } from '@/hooks/useDebouncedValue'
+import { useCompactWorkspace } from '@/hooks/useCompactWorkspace'
 import { formatHoursMinutes } from '@/lib/durationFormat'
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import toast from 'react-hot-toast'
@@ -304,6 +305,7 @@ function RepairOrderLaborBreakdown({
 }
 
 export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbenchScope?: WorkbenchScope }) {
+  const compactWorkspace = useCompactWorkspace()
   const currentUser = useAuthStore((s) => s.user)
   const authSessionEpoch = useAuthStore((s) => s.authSessionEpoch)
   const { accentColors, presentationVariant } = useTheme()
@@ -3133,6 +3135,9 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
           hasMore={isQueueWorkset ? false : Boolean(hasNextPage)}
           isLoadingMore={isFetchingNextPage}
           showPagination={!isQueueWorkset}
+          autoLoadEnabled={!isModalOpen && !newCustomerId
+            && !(compactWorkspace && (isDetailOpen || Boolean(customerViewId)))
+            && searchQuery.trim() === debouncedSearch && !ordersQuery.isPlaceholderData}
           onSearchChange={setSearchQuery}
           onStatusChange={setStatusFilter}
           onOpenOrder={(id, options) => {
