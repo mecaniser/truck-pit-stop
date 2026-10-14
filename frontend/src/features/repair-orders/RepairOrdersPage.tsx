@@ -680,18 +680,20 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
   // Repair Orders, so the ledger keeps its place and there is one way back.
   // The customer *list* lives on its own tab; this is the single-customer view.
   const customerViewId = searchParams.get('customer')
-  const openCustomerView = (customerId: string) => {
-    setCustomerTruckSelection(null)
+  const customerViewVehicleId = customerViewId ? searchParams.get('customer_vehicle') : null
+  const openCustomerView = (customerId: string, vehicleId?: string) => {
     setCustomerViewTab('overview')
     setCustomerViewExpandedHistoryId(null)
     const next = new URLSearchParams(searchParams)
     next.set('customer', customerId)
+    if (vehicleId) next.set('customer_vehicle', vehicleId)
+    else next.delete('customer_vehicle')
     setSearchParams(next, { replace: false })
   }
   const closeCustomerView = () => {
-    setCustomerTruckSelection(null)
     const next = new URLSearchParams(searchParams)
     next.delete('customer')
+    next.delete('customer_vehicle')
     setSearchParams(next, { replace: true })
   }
 
@@ -721,16 +723,33 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
     enabled: !!customerViewId && customerViewTab === 'history',
   })
 
-  const [customerTruckSelection, setCustomerTruckSelection] = useState<{ customerId: string; vehicleId: string } | null>(null)
-  const customerViewVehicle = customerTruckSelection?.customerId === customerViewId
-    ? customerViewVehicles?.find(vehicle => vehicle.id === customerTruckSelection.vehicleId) ?? null
-    : null
-  const selectCustomerTruck = (vehicle: Vehicle | null) => setCustomerTruckSelection(vehicle && customerViewId ? { customerId: customerViewId, vehicleId: vehicle.id } : null)
+  // Truck identity outlives its customer relationships and the first page of
+  // the customer's truck list. Resolve the explicit URL target independently.
+  // Keep the customerVehicles prefix so edits/merges invalidate both views.
+  const customerVehicleQuery = useQuery<Vehicle>({
+    queryKey: ['customerVehicles', customerViewId, 'selected', currentUser?.tenant_id, currentUser?.id, currentUser?.role, authSessionEpoch, customerViewVehicleId],
+    queryFn: async ({ signal }) => {
+      const { data } = await api.get<Vehicle>(`/vehicles/${customerViewVehicleId}`, { signal })
+      if (!data || data.id !== customerViewVehicleId || data.tenant_id !== currentUser?.tenant_id) throw new Error('That vehicle is unavailable.')
+      return data
+    },
+    enabled: Boolean(customerViewId && customerViewVehicleId && currentUser?.tenant_id),
+    retry: false,
+    staleTime: 0,
+  })
+  const customerViewVehicle = !customerVehicleQuery.isError ? customerVehicleQuery.data ?? null : null
+  const selectCustomerTruck = (vehicle: Vehicle | null) => {
+    const next = new URLSearchParams(searchParams)
+    if (vehicle && customerViewId) next.set('customer_vehicle', vehicle.id)
+    else next.delete('customer_vehicle')
+    setSearchParams(next, { replace: true })
+    if (vehicle) void queryClient.invalidateQueries({ queryKey: ['customerVehicles', customerViewId, 'selected'] })
+  }
   const openCustomerHistoryOrder = (orderId: string) => {
     if (selectedOrder?.id && selectedOrder.id !== orderId) cancelOrderQueries(selectedOrder.id)
-    setCustomerTruckSelection(null)
     const next = new URLSearchParams(searchParams)
     next.delete('customer')
+    next.delete('customer_vehicle')
     next.set('selected', orderId)
     setSearchParams(next, { replace: true })
   }
@@ -755,7 +774,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
     // browser history. Dismiss the record explicitly, preserving this queue's
     // list context instead of reopening that historical selection.
     const next = new URLSearchParams(searchParams)
-    for (const key of ['selected', 'customer', 'operation', 'recommendation']) next.delete(key)
+    for (const key of ['selected', 'customer', 'customer_vehicle', 'operation', 'recommendation']) next.delete(key)
     setSearchParams(next, { replace: true })
   }
 
@@ -4207,19 +4226,23 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
             <header className="db-customer-embedded__header">
               <button
                 type="button"
-                onClick={customerViewVehicle ? () => selectCustomerTruck(null) : closeCustomerView}
+                onClick={customerViewVehicleId ? () => selectCustomerTruck(null) : closeCustomerView}
                 className="db-inline-text-action inline-flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-sm font-semibold text-orange-700 hover:bg-orange-50"
               >
                 <ChevronLeft className="h-4 w-4" />
-                <span className="db-customer-back-label">Back to {customerViewVehicle ? customerNameOf(customerViewRecord, 'Customer') : selectedOrder ? `#${selectedOrder.order_number}` : 'the repair order'}</span>
+                <span className="db-customer-back-label">Back to {customerViewVehicleId ? customerNameOf(customerViewRecord, 'Customer') : selectedOrder ? `#${selectedOrder.order_number}` : 'the repair order'}</span>
               </button>
               <h2>
-                {customerViewVehicle ? vehicleDisplayLabel(customerViewVehicle) : customerNameOf(customerViewRecord, 'Customer')}
+                {customerViewVehicle ? vehicleDisplayLabel(customerViewVehicle) : customerViewVehicleId ? 'Vehicle history' : customerNameOf(customerViewRecord, 'Customer')}
               </h2>
             </header>
-            <div className="db-customer-embedded__body" key={customerViewVehicle?.id || customerViewId}>
+            <div className="db-customer-embedded__body" key={customerViewVehicleId || customerViewId}>
               {customerViewError && <div className="db-customer-recovery"><CustomerLoadError subject="customer updates" onRetry={() => void refetchCustomerView()} isRetrying={customerViewFetching} /></div>}
-              {customerViewVehicle ? <CustomerVehicleDetail customer={customerViewRecord} vehicle={customerViewVehicle} onOpenOrder={openDetail} onCreateOrder={canStartCustomerOrder(currentUser?.role) ? () => startCustomerOrder(customerViewRecord.id, customerViewVehicle.id) : undefined} /> : <CustomerDetailPanel
+              {customerViewVehicleId && !customerViewVehicle ? <div className="db-customer-recovery">
+                {customerVehicleQuery.isError
+                  ? <CustomerLoadError subject="vehicle history" onRetry={() => void customerVehicleQuery.refetch()} isRetrying={customerVehicleQuery.isFetching} />
+                  : <LoadingLine>Loading vehicle history…</LoadingLine>}
+              </div> : customerViewVehicle ? <CustomerVehicleDetail customer={customerViewRecord} vehicle={customerViewVehicle} onOpenOrder={openDetail} onCreateOrder={canStartCustomerOrder(currentUser?.role) ? () => startCustomerOrder(customerViewRecord.id, customerViewVehicle.id) : undefined} /> : <CustomerDetailPanel
                 selectedCustomer={customerViewRecord}
                 onCreateOrder={canStartCustomerOrder(currentUser?.role) ? () => startCustomerOrder(customerViewRecord.id) : undefined}
                 detailTab={customerViewTab}
@@ -4267,12 +4290,12 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                 onMerge={() => customerVehicleControls.current?.openMerge()}
                 onManage={(vehicle) => customerVehicleControls.current?.openManageLinks(vehicle)}
                 onEdit={(vehicle) => customerVehicleControls.current?.openEdit(vehicle)}
-              /> : <CustomerDetailFooter
+              /> : !customerViewVehicleId ? <CustomerDetailFooter
                 selectedCustomer={customerViewRecord}
                 handleDeleteClick={(customer) => customerFormControls.current?.requestDelete(customer)}
                 onMerge={() => customerFormControls.current?.openMerge()}
                 handleEditFromDetail={() => customerFormControls.current?.openEdit(customerViewRecord)}
-              />}
+              /> : null}
             </div>
             <CustomerContactModals customer={customerViewRecord} controlsRef={customerContactControls} />
             <CustomerVehicleModals customer={customerViewRecord} selectedVehicleInPanel={customerViewVehicle} setSelectedVehicleInPanel={selectCustomerTruck} controlsRef={customerVehicleControls} />
@@ -4699,6 +4722,9 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                     isFleetMember={!!selectedOrderCustomer?.fleet_enabled}
                     onOpenCustomer={selectedOrder.customer_id
                       ? () => openCustomerView(selectedOrder.customer_id)
+                      : undefined}
+                    onOpenVehicleHistory={selectedOrder.customer_id && selectedOrder.vehicle_id
+                      ? () => openCustomerView(selectedOrder.customer_id, selectedOrder.vehicle_id)
                       : undefined}
                     onSaveDescription={async (d) => { await saveDescriptionMutation.mutateAsync(d) }}
                     descriptionSaving={saveDescriptionMutation.isPending}

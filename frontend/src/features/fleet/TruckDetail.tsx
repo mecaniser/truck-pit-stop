@@ -1674,11 +1674,14 @@ export function MergeTruckModal({ truck, onClose, onMerged }: {
       const movedHistory = (result.moved.repair_orders || 0)
         + (result.moved.inspections || 0)
         + (result.moved.incidents || 0)
+        + (result.moved.external_services || 0)
       const keptLabel = recommended ? mergeRecordLabel(recommended) : 'Canonical truck'
       const archivedLabel = archived ? mergeRecordLabel(archived) : 'Duplicate truck'
       toast.success(`${keptLabel} kept; ${archivedLabel} archived. ${movedHistory} service record${movedHistory === 1 ? '' : 's'} moved.`)
       qc.invalidateQueries({ queryKey: ['fleet-board'] })
       qc.invalidateQueries({ queryKey: ['fleet-truck', truck.id] })
+      qc.invalidateQueries({ queryKey: ['external-services'] })
+      qc.invalidateQueries({ queryKey: ['external-service-history'] })
       onMerged(result.canonical_vehicle.id)
     },
     onError: (error: AxiosError<{ detail?: string }>) => {
@@ -1695,6 +1698,7 @@ export function MergeTruckModal({ truck, onClose, onMerged }: {
     : null
   const historySummary = preview ? [
     { label: 'repair orders', count: preview.canonical.repair_order_count + preview.duplicate.repair_order_count },
+    { label: 'outside services', count: (preview.canonical.external_service_count ?? 0) + (preview.duplicate.external_service_count ?? 0) },
     { label: 'inspections', count: preview.canonical.inspection_count + preview.duplicate.inspection_count },
     { label: 'incidents', count: preview.canonical.incident_count + preview.duplicate.incident_count },
     { label: 'appointments', count: preview.canonical.appointment_count + preview.duplicate.appointment_count },

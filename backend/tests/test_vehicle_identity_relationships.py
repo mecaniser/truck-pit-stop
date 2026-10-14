@@ -1,4 +1,6 @@
 from decimal import Decimal
+from datetime import UTC, datetime, timedelta
+from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
@@ -19,6 +21,94 @@ from app.services.vehicle_identity import (
     ensure_vehicle_relationship,
     seed_vehicle_account_relationships,
 )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("role", [UserRole.GARAGE_OWNER, UserRole.GARAGE_ADMIN, UserRole.RECEPTIONIST])
+async def test_direct_staff_vehicle_preserves_current_owner_and_operator_context(db_session, role):
+    from test_service_checklists import seed
+    a = await seed(db_session)
+    a.owner.role = role
+    primary_owner = Customer(id=uuid4(), tenant_id=a.tenant.id, first_name="Actual", last_name="Owner", company_name="Current Owner LLC", email=f"{uuid4()}@example.invalid")
+    operator = Customer(id=uuid4(), tenant_id=a.tenant.id, first_name="Operating", last_name="Company", company_name="Operating Authority LLC", email=f"{uuid4()}@example.invalid")
+    db_session.add_all([primary_owner, operator])
+    await db_session.flush()
+    now = datetime.now(UTC)
+    db_session.add_all([
+        VehicleCustomerRelationship(tenant_id=a.tenant.id, vehicle_id=a.vehicle.id, customer_id=primary_owner.id, relationship_type="owner", is_primary=True, effective_from=now-timedelta(days=10)),
+        VehicleCustomerRelationship(tenant_id=a.tenant.id, vehicle_id=a.vehicle.id, customer_id=a.customer.id, relationship_type="owner", is_primary=False, effective_from=now),
+        VehicleCustomerRelationship(tenant_id=a.tenant.id, vehicle_id=a.vehicle.id, customer_id=operator.id, relationship_type="operator", is_primary=True),
+    ])
+    await db_session.commit()
+    item = await vehicles.get_vehicle(a.vehicle.id, db_session, a.owner)
+    assert item.owner_customer_id == primary_owner.id and item.owner_company_name == "Current Owner LLC"
+    assert item.operating_authority_customer_id == operator.id and item.operating_authority_company_name == "Operating Authority LLC"
+    assert item.id == a.vehicle.id and item.customer_id == a.customer.id
+
+
+@pytest.mark.asyncio
+async def test_direct_vehicle_context_ignores_ended_deleted_or_foreign_relationships(db_session):
+    from test_service_checklists import seed
+    a, other = await seed(db_session), await seed(db_session)
+    same_tenant = Customer(id=uuid4(), tenant_id=a.tenant.id, first_name="Old", last_name="Operator", company_name="Excluded Operator", email=f"{uuid4()}@example.invalid")
+    deleted_customer = Customer(id=uuid4(), tenant_id=a.tenant.id, first_name="Deleted", last_name="Company", company_name="Deleted Company", email=f"{uuid4()}@example.invalid", deleted_at=datetime.now(UTC))
+    db_session.add_all([same_tenant, deleted_customer])
+    await db_session.flush()
+    db_session.add_all([
+        VehicleCustomerRelationship(tenant_id=a.tenant.id, vehicle_id=a.vehicle.id, customer_id=same_tenant.id, relationship_type="operator", effective_to=datetime.now(UTC)),
+        VehicleCustomerRelationship(tenant_id=a.tenant.id, vehicle_id=a.vehicle.id, customer_id=same_tenant.id, relationship_type="operator", deleted_at=datetime.now(UTC)),
+        VehicleCustomerRelationship(tenant_id=a.tenant.id, vehicle_id=a.vehicle.id, customer_id=deleted_customer.id, relationship_type="operator"),
+        # Defensive filters even if legacy data contains inconsistent links.
+        VehicleCustomerRelationship(tenant_id=other.tenant.id, vehicle_id=a.vehicle.id, customer_id=same_tenant.id, relationship_type="operator"),
+        VehicleCustomerRelationship(tenant_id=a.tenant.id, vehicle_id=a.vehicle.id, customer_id=other.customer.id, relationship_type="owner"),
+    ])
+    await db_session.commit()
+    item = await vehicles.get_vehicle(a.vehicle.id, db_session, a.owner)
+    assert item.owner_customer_id == a.customer.id and item.owner_company_name == "Synthetic Account"
+    assert item.operating_authority_customer_id is None and item.operating_authority_company_name is None
+
+
+@pytest.mark.asyncio
+async def test_direct_vehicle_archived_and_access_boundaries(db_session):
+    from test_service_checklists import seed
+    a, other = await seed(db_session), await seed(db_session)
+    for actor in [other.owner, SimpleNamespace(role=UserRole.CUSTOMER, customer_id=other.customer.id, tenant_id=a.tenant.id)]:
+        with pytest.raises(HTTPException) as denied:
+            await vehicles.get_vehicle(a.vehicle.id, db_session, actor)
+        assert denied.value.status_code == 403
+    a.vehicle.deleted_at = datetime.now(UTC)
+    await db_session.commit()
+    for actor in [a.owner, SimpleNamespace(role=UserRole.CUSTOMER, customer_id=a.customer.id, tenant_id=a.tenant.id)]:
+        with pytest.raises(HTTPException) as archived:
+            await vehicles.get_vehicle(a.vehicle.id, db_session, actor)
+        assert archived.value.status_code == 404 and archived.value.detail == "Vehicle not found"
+
+
+@pytest.mark.asyncio
+async def test_direct_customer_vehicle_payload_does_not_expand_staff_relationship_fields(db_session):
+    from test_service_checklists import seed
+    a = await seed(db_session)
+    actor = SimpleNamespace(role=UserRole.CUSTOMER, customer_id=a.customer.id, tenant_id=a.tenant.id)
+    item = await vehicles.get_vehicle(a.vehicle.id, db_session, actor)
+    assert item.id == a.vehicle.id and item.owner_company_name is None and item.operating_authority_company_name is None
+
+
+@pytest.mark.asyncio
+async def test_direct_vehicle_http_archived_response_is_not_live_data(client, db_session):
+    from app.main import app
+    from app.core.dependencies import get_current_active_user
+    from test_service_checklists import seed
+    a = await seed(db_session)
+    app.dependency_overrides[get_current_active_user] = lambda: a.owner
+    try:
+        response = await client.get(f"/api/v1/vehicles/{a.vehicle.id}")
+        assert response.status_code == 200 and response.json()["owner_company_name"] == "Synthetic Account"
+        a.vehicle.deleted_at = datetime.now(UTC)
+        await db_session.commit()
+        archived = await client.get(f"/api/v1/vehicles/{a.vehicle.id}")
+        assert archived.status_code == 404 and str(a.vehicle.id) not in archived.text
+    finally:
+        app.dependency_overrides.pop(get_current_active_user, None)
 
 
 @pytest.mark.asyncio

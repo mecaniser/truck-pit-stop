@@ -128,6 +128,7 @@ class VehicleMergeVehicleSummary(BaseModel):
     appointment_count: int = 0
     inspection_count: int = 0
     incident_count: int = 0
+    external_service_count: int = 0
     active_relationship_count: int = 0
     active_fleet_membership_count: int = 0
     repair_orders_by_source: Dict[str, int] = Field(default_factory=dict)

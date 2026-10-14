@@ -1,0 +1,42 @@
+.db-external-services { min-width: 0; border-top: 1px solid var(--customer-rule, #d5dde6); padding-top: 12px; color: var(--customer-ink, #17243b); }
+.db-external-services p { margin: 4px 0; overflow-wrap: anywhere; }
+.db-external-services h3, .db-external-services h4 { margin: 0; font-weight: 600; }
+.db-external-services button { display: inline-flex; align-items: center; justify-content: center; gap: 5px; min-height: 32px; padding: 4px 8px; border-radius: 6px; font-size: 13px; white-space: nowrap; }
+.db-external-services button:hover { background: #e8edf2; }
+.db-external-services button:disabled { opacity: .5; cursor: not-allowed; }
+.db-external-services button:focus-visible, .db-external-services input:focus-visible, .db-external-services textarea:focus-visible { outline: 2px solid #ea580c; outline-offset: 2px; }
+.db-external-services__heading, .db-external-services__row, .db-external-services__actions, .db-external-services__meta { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; }
+.db-external-services__heading { justify-content: space-between; }
+.db-external-services__heading > button { color: #a43b0a; }
+.db-external-services__row { align-items: flex-start; justify-content: space-between; }
+.db-external-services__row > div { min-width: 0; flex: 1 1 180px; overflow-wrap: anywhere; }
+.db-external-services__meta, .db-external-services__muted, .db-external-services__audit { font-size: 12px; color: #53657a; }
+.db-external-services__meta b { color: #9f1239; }
+.db-external-services__cost { font-size: 13px; font-variant-numeric: tabular-nums; }
+.db-external-services__description { white-space: pre-wrap; }
+.db-external-services__toggle { display: inline-flex; align-items: center; gap: 7px; min-height: 32px; font-size: 12px; margin-top: 4px; }
+.db-external-services__toggle input { width: 16px; height: 16px; }
+.db-external-services__list { list-style: none; padding: 0; margin: 0; }
+.db-external-services__list > li { border-top: 1px solid var(--customer-rule, #d5dde6); padding: 10px 0; font-size: 14px; }
+.db-external-services__actions { justify-content: flex-end; margin-top: 6px; }
+.db-external-services__actions > .db-external-services__muted { margin-right: auto; }
+.db-external-services__editor { margin: 10px 0; border: 1px solid #b8c8d8; border-radius: 8px; background: #f8fafc; padding: 12px; }
+.db-external-services__fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 12px; margin-top: 8px; }
+.db-external-services__editor label { display: flex; flex-direction: column; gap: 4px; min-width: 0; font-size: 12px; font-weight: 600; }
+.db-external-services__editor input, .db-external-services__editor textarea { width: 100%; min-width: 0; border: 1px solid #b8c8d8; border-radius: 6px; padding: 7px 8px; min-height: 36px; font-size: 14px; font-weight: 400; background: white; color: #17243b; }
+.db-external-services__editor textarea { resize: vertical; }
+.db-external-services__wide { grid-column: 1 / -1; }
+.db-external-services .db-external-services__primary { background: #c2410c; color: white; }
+.db-external-services .db-external-services__primary:hover { background: #9a3412; }
+.db-external-services [role='alert'] { color: #b91c1c; font-size: 13px; }
+.db-external-services__success { color: #166534; font-size: 13px; }
+.db-external-services__audit ol { padding: 0 0 0 18px; }
+.db-external-services__audit li { padding: 8px 0; border-top: 1px solid #e2e8f0; }
+.db-external-services__latest { padding: 8px; margin-top: 8px; border: 1px solid #ca8a04; font-size: 12px; }
+@container customer-record (max-width: 420px) { .db-external-services__fields { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 639px), (pointer: coarse) {
+  .db-external-services button, .db-external-services__toggle { min-height: 44px !important; }
+  .db-external-services__editor input, .db-external-services__editor textarea { min-height: 44px; font-size: 16px !important; }
+  .db-external-services__editor { padding: 8px; }
+  .db-external-services__latest button { white-space: normal; text-align: left; }
+}

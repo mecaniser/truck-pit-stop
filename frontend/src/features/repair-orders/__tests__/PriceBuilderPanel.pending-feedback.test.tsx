@@ -305,6 +305,17 @@ describe('PriceBuilderPanel pending feedback', () => {
     expect(trigger).toHaveFocus()
   })
 
+  it('opens vehicle history from the truck header without leaving an open popover', async () => {
+    apiMocks.get.mockResolvedValue({ data: emptySummary })
+    const onOpenVehicleHistory = vi.fn()
+    const user = userEvent.setup()
+    renderPanel({ vehicleUnit: '609', onOpenVehicleHistory })
+    await user.click(screen.getByRole('button', { name: '609' }))
+    await user.click(screen.getByRole('button', { name: 'View vehicle history' }))
+    expect(onOpenVehicleHistory).toHaveBeenCalledOnce()
+    await waitFor(() => expect(screen.queryByLabelText('Truck and customer details')).not.toBeInTheDocument())
+  })
+
   it('saves only changed intake fields and clears the carried-reading flag', async () => {
     apiMocks.get.mockResolvedValue({ data: emptySummary })
     const onSaveIntake = vi.fn().mockResolvedValue(undefined)

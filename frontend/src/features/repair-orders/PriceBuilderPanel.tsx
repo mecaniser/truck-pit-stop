@@ -175,6 +175,7 @@ type Props = {
       the shop's own trucks. A customer can be one, both, or neither. */
   isFleetMember?: boolean
   onOpenCustomer?: () => void
+  onOpenVehicleHistory?: () => void
   onSaveDescription?: (description: string | null) => Promise<void> | void
   descriptionSaving?: boolean
   notes?: PriceBuilderNote[]
@@ -880,6 +881,7 @@ export default function PriceBuilderPanel({
   orderTypeLabel,
   isFleetMember = false,
   onOpenCustomer,
+  onOpenVehicleHistory,
   onSaveDescription,
   descriptionSaving = false,
   notes = [],
@@ -2697,6 +2699,7 @@ export default function PriceBuilderPanel({
                     </div>
                     <OrderIntakeDetails key={orderId} mileageIn={mileageIn} mileageOut={mileageOut} mileageInCarried={mileageInCarried} poNumber={poNumber} orderTypeLabel={orderTypeLabel} canEdit={canMutate && !isDeleted && !['completed', 'invoiced', 'paid', 'cancelled'].includes(orderStatus)} onSave={onSaveIntake} />
                   </div>
+                  {onOpenVehicleHistory && !isDeleted && <button type="button" className="mt-3 inline-flex min-h-11 items-center gap-2 whitespace-nowrap rounded-lg border border-slate-200 px-3 text-sm font-semibold text-slate-700 hover:bg-slate-50" onClick={() => { close(); onOpenVehicleHistory() }}><History className="h-4 w-4" aria-hidden="true" />View vehicle history</button>}
                 </PopoverPanel>
               </>}
             </Popover>
