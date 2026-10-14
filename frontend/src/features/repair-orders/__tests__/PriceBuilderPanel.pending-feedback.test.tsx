@@ -235,7 +235,7 @@ describe('PriceBuilderPanel pending feedback', () => {
     expect(apiMocks.patch).toHaveBeenCalledTimes(2)
     expect(apiMocks.post).not.toHaveBeenCalled()
   })
-  it('shows only three quick picks without focusing search and keeps history collapsed', async () => {
+  it('shows only three quick picks without focusing search and opens history in one click', async () => {
     const parts = [1, 2, 3, 4].map(n => ({ inventory_id: `part-${n}`, name: `Part ${n}`, sku: `${n}`, stock_quantity: 10, unit_type: 'each', selling_price: '10' }))
     const labor = [1, 2, 3, 4].map(n => ({ id: `labor-${n}`, operation_name: `Labor ${n}`, normalized_hours: '1', usage_count: n }))
     apiMocks.get.mockImplementation((url: string) => Promise.resolve({ data: url.endsWith('/price-build') ? emptySummary : url.endsWith('/suggestions') ? { for_this_order: [], most_used: parts } : url === '/labor-book-time' ? labor : [] }))
@@ -251,8 +251,6 @@ describe('PriceBuilderPanel pending feedback', () => {
     expect(screen.queryByRole('button', { name: 'Add Labor 1' })).not.toBeInTheDocument()
     expect(screen.getByPlaceholderText(/Search labor book time/)).not.toHaveFocus()
     await user.click(screen.getByRole('button', { name: 'History', exact: true }))
-    expect(screen.queryByText('No repair order history has been recorded yet.')).not.toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: /Repair order history/ }))
     expect(screen.getByText('No repair order history has been recorded yet.')).toBeInTheDocument()
   })
   it('keeps secondary work flows on demand and vehicle details accessible from the header', async () => {

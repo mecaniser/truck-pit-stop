@@ -927,7 +927,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
     })
   }, [queryClient, workspaceOrder, selectedOrder?.id])
 
-  const { data: orderDetail, refetch: refetchOrderDetail, isLoading: isOrderDetailLoading } = useQuery<RepairOrderDetail>({
+  const { data: orderDetail, refetch: refetchOrderDetail, isLoading: isOrderDetailLoading, isFetching: isHistoryDetailFetching, isError: isHistoryDetailError } = useQuery<RepairOrderDetail>({
     queryKey: ['repair-order-detail', selectedOrder?.id],
     queryFn: async ({ signal }) => {
       const response = await api.get(`/repair-orders/${selectedOrder!.id}/detail`, { signal })
@@ -964,7 +964,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
     enabled: !!(selectedOrder?.id && isDetailOpen && !selectedOrder.deleted_at),
   })
 
-  const { data: authorizationHistory, refetch: refetchAuthorizationHistory } = useQuery<AuthorizationHistory>({
+  const { data: authorizationHistory, refetch: refetchAuthorizationHistory, isFetching: isAuthorizationHistoryFetching, isError: isAuthorizationHistoryError } = useQuery<AuthorizationHistory>({
     queryKey: ['authorization-history', selectedOrder?.id],
     queryFn: async ({ signal }) => {
       const response = await api.get(`/quotes/repair-order/${selectedOrder!.id}/history`, { signal })
@@ -4807,6 +4807,12 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                     } : undefined}
                     historyEvents={priceBuilderHistoryEvents}
                     onHistoryOpen={() => setWorkspaceHistoryRequested(true)}
+                    historyLoading={workspaceHistoryRequested && (isHistoryDetailFetching || isAuthorizationHistoryFetching)}
+                    historyError={workspaceHistoryRequested && (isHistoryDetailError || (!selectedOrder.is_internal && isAuthorizationHistoryError))}
+                    onHistoryRetry={() => {
+                      void refetchOrderDetail()
+                      if (!selectedOrder.is_internal) void refetchAuthorizationHistory()
+                    }}
                     onClose={closeDetail}
                     onPrev={showNavigation || hasPrev ? goToPrevOrder : undefined}
                     onNext={showNavigation || hasNext ? goToNextOrder : undefined}

@@ -1,3 +1,4 @@
+import RepairOrderActivity from './RepairOrderActivity'
 import { OperationExecutionControls, OperationExecutionFeedback, OperationExecutionStatus } from '@/features/operation-execution/OperationExecution'
 import { useOperationExecution } from '@/features/operation-execution/queries'
 import OrderChecklist from '@/features/service-checklists/OrderChecklist'
@@ -227,6 +228,9 @@ type Props = {
   onVoidInvoice?: () => void
   historyEvents?: PriceBuilderHistoryEvent[]
   onHistoryOpen?: () => void
+  historyLoading?: boolean
+  historyError?: boolean
+  onHistoryRetry?: () => void
   onClose?: () => void
   onPrev?: () => void
   onNext?: () => void
@@ -928,6 +932,9 @@ export default function PriceBuilderPanel({
   onVoidInvoice,
   historyEvents = [],
   onHistoryOpen,
+  historyLoading = false,
+  historyError = false,
+  onHistoryRetry,
   onClose,
   onPrev,
   onNext,
@@ -977,8 +984,6 @@ export default function PriceBuilderPanel({
   ))
   const [paletteOpen, setPaletteOpen] = useState(false)
   const [invoiceDetailsOpen, setInvoiceDetailsOpen] = useState(false)
-  const [historyOpen, setHistoryOpen] = useState(false)
-  const [historyVisibleCount, setHistoryVisibleCount] = useState(5)
   const [openLineIds, setOpenLineIds] = useState<Set<string>>(new Set())
   const focusedLink = useRef<string | null>(null)
   const openLinkedOperation = (id: string) => {
@@ -1523,22 +1528,6 @@ export default function PriceBuilderPanel({
   const lockContextMessage = quoteButtonDisabledReason || (
     'Pricing is locked because this repair order has been finalized.'
   )
-  const formatHistoryDate = (value: string) => {
-    const date = new Date(value)
-    if (Number.isNaN(date.getTime())) return value
-    return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
-  }
-  const formatHistoryTime = (value: string) => {
-    const date = new Date(value)
-    if (Number.isNaN(date.getTime())) return ''
-    return date.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })
-  }
-  const sortedHistoryEvents = [...historyEvents].sort((a, b) => {
-    return new Date(b.at).getTime() - new Date(a.at).getTime()
-  })
-  const visibleHistoryEvents = sortedHistoryEvents.slice(0, historyVisibleCount)
-  const hiddenHistoryCount = Math.max(0, sortedHistoryEvents.length - visibleHistoryEvents.length)
-
   const invalidate = async () => {
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: ['price-build', orderId] }),
@@ -1604,11 +1593,6 @@ export default function PriceBuilderPanel({
       setSearchWarnings([])
     }
   }, [addBarReadOnly, orderId])
-
-  useEffect(() => {
-    setHistoryOpen(false)
-    setHistoryVisibleCount(5)
-  }, [orderId])
 
   useEffect(() => {
     if (!['in_progress', 'pending_review'].includes(orderStatus)) {
@@ -3221,100 +3205,15 @@ export default function PriceBuilderPanel({
         </div>
 
         {addType === 'history' && (
-          // Same card shape as the invoice display (icon circle · title/subtitle ·
-          // chevron), so a read-only order shows History and Invoice as two
-          // matching buttons.
-          <div className={addBarReadOnly ? 'rounded-2xl border border-gray-200 bg-gray-50/70 p-3' : 'py-3'}>
-            <button
-              type="button"
-              onClick={() => {
-                onHistoryOpen?.()
-                setHistoryOpen((open) => !open)
-                setHistoryVisibleCount(5)
-              }}
-              className="flex w-full items-center justify-between gap-3 text-left"
-              aria-expanded={historyOpen}
-            >
-              <div className="flex min-w-0 items-center gap-3">
-                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-gray-200 text-gray-600">
-                  <History className="h-5 w-5" />
-                </div>
-                <div className="min-w-0">
-                  <p className="truncate font-semibold text-gray-900">Repair order history</p>
-                  <p className="text-sm text-gray-500">
-                    {historyEvents.length ? `${historyEvents.length} recorded events` : 'No recorded events'}
-                  </p>
-                </div>
-              </div>
-              <span className="flex shrink-0 items-center gap-3">
-                <span className="rounded-full bg-gray-200 px-2 py-0.5 text-[11px] font-bold text-gray-600">
-                  {historyEvents.length} events
-                </span>
-                <ChevronRight className={`h-4 w-4 text-gray-400 transition-transform ${historyOpen ? 'rotate-90' : ''}`} />
-              </span>
-            </button>
-            {historyOpen && (
-              <div className={addBarReadOnly ? 'border-t border-gray-100 p-3' : ''}>
-                {sortedHistoryEvents.length ? (
-                  <>
-                  <ol className="space-y-3">
-                    {visibleHistoryEvents.map((event, index) => (
-                      <li key={event.id} className="grid grid-cols-[88px_1fr] gap-3">
-                        <div className="pt-0.5 text-right">
-                          <p className="text-xs font-bold text-gray-700">{formatHistoryDate(event.at)}</p>
-                          <p className="font-['JetBrains_Mono',monospace] text-[11px] text-gray-400">{formatHistoryTime(event.at)}</p>
-                        </div>
-                        <div className="relative min-w-0 pb-1 pl-4">
-                          {index < visibleHistoryEvents.length - 1 && (
-                            <span className="absolute left-[5px] top-4 h-[calc(100%+0.75rem)] w-px bg-gray-200" />
-                          )}
-                          <span className="absolute left-0 top-1.5 h-2.5 w-2.5 rounded-full bg-orange-500 ring-4 ring-orange-50" />
-                          <p className="text-sm font-semibold text-gray-900">{event.label}</p>
-                          {(event.actor || event.detail) && (
-                            <p className="mt-0.5 text-xs text-gray-500">
-                              {event.actor && <span className="font-semibold text-gray-700">{event.actor}</span>}
-                              {event.actor && event.detail ? ' · ' : ''}
-                              {event.detail}
-                            </p>
-                          )}
-                        </div>
-                      </li>
-                    ))}
-                  </ol>
-                  {(hiddenHistoryCount > 0 || historyVisibleCount > 5) && (
-                    <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-gray-100 pt-3">
-                      <p className="text-xs font-medium text-gray-500">
-                        Showing {visibleHistoryEvents.length} of {sortedHistoryEvents.length} events
-                      </p>
-                      <div className="flex flex-wrap gap-2">
-                        {historyVisibleCount > 5 && (
-                          <button
-                            type="button"
-                            onClick={() => setHistoryVisibleCount(5)}
-                            className="rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-bold text-gray-600 hover:bg-gray-50"
-                          >
-                            Show less
-                          </button>
-                        )}
-                        {hiddenHistoryCount > 0 && (
-                          <button
-                            type="button"
-                            onClick={() => setHistoryVisibleCount((count) => Math.min(count + 5, sortedHistoryEvents.length))}
-                            className="rounded-lg bg-orange-50 px-3 py-1.5 text-xs font-bold text-orange-700 hover:bg-orange-100"
-                          >
-                            Show {Math.min(5, hiddenHistoryCount)} older events
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  )}
-                  </>
-                ) : (
-                  <p className="px-2 py-3 text-sm text-gray-500">No repair order history has been recorded yet.</p>
-                )}
-              </div>
-            )}
-          </div>
+          <RepairOrderActivity
+            key={orderId}
+            events={historyEvents}
+            initiallyOpen={!addBarReadOnly}
+            loading={historyLoading}
+            error={historyError}
+            onOpen={onHistoryOpen}
+            onRetry={onHistoryRetry}
+          />
         )}
 
         {paletteOpen && addType !== 'history' && (addType !== 'operation' || searchTerm.trim().length > 0) && (
