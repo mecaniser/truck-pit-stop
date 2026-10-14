@@ -60,3 +60,39 @@ Initial run38614337519 passed five jobs, including backend2967passed/140skipped,
 Corrected-head CI38617876518 frontend completed1463passed/1failed. The sole failure expected no query-cache entry after deletion; a disabled observer had recreated the scoped entry with undefined data. The assertion now requires no retained data across all scoped keys, preserving the real privacy/stale-data requirement and the existing no-unavailable-requests/Restore checks. Application code is unchanged by this test correction.
 
 After sign-in restoration, source-matched preview readiness/database/Redis healthy. Actual1280desktop customer→same order→exact Brake inspection notes retains both notes. Actual390phone customer→New repair order→Cancel returns focus to New repair order and retains selected order/queue/customer route; Back→Close returns exactly/dashboard?queue=on_floor. Customer has one .db-customer-embedded__body scroller,390px document width; screenshot /tmp/db118-ui/local-customer-return-390.png. No new orders or notes created during this recheck.
+
+## Final release candidate and production fixture
+
+Final candidate14bd7819c8d7cb30ecabcff1e43a9cce1a59db89; committed-head changed-source lint passes11files (/tmp/db118-lint-final.log). Corrected CI38618926558 has passed frontend full suite, frontend checks, critical backend tests, migration graph and Playwright smoke; full backend is still running. No merge/deployment claim yet.
+
+Production session restored by product owner. Existing synthetic orderTPS-828ACD84-000056 (bce9b62b-a7e3-4ba9-a740-6ced6857e9b3), customer DB115 Production QA — not customer work, vehicle DB115-QA, was restored through UI for verification. Added DB118 QA Note Verification,15minutes booked, then set hourly rate0; order total0, not completed, unassigned, no tracked time. No estimate/invoice/payment or technician/time actions submitted. These setup actions used the prior deployed version and are not DB118 release acceptance. After deployment, validate notes then return this fixture to recoverable deleted state.
+
+## Merge and deployment
+
+All six Quality gates38618926558 succeeded on14bd7819c8d7cb30ecabcff1e43a9cce1a59db89: frontend160files/1464passed, critical backend530passed/11skipped, full backend2967passed/140skipped, frontend build/lint, migration graph and Playwright smoke. Full backend703.13s. Logs /tmp/db118-ci-frontend-final.log, /tmp/db118-ci-backend-critical.log, /tmp/db118-ci-backend-final.log.
+
+PR519 squash merged2026-10-14T19:07:37Z as182fa5f6b58ef0bce78716cb7b9266fbcc930374. Checked and merge trees bothcd43ed6654958cc6704d5ab0f224c8d2f14e00b4. Automatic Railway Web deployment89cc30b4-7c70-4028-8990-ebd73fe19e49 started19:07:40Z for that exact merge; building at this checkpoint. No migration. Production acceptance follows confirmed deployment.
+
+Railway deployment89cc30b4 reached SUCCESS for182fa5f6. Readiness at initial acceptance: ready,production,database/Redisok,uptime55s (/tmp/db118-production-ready.json). Fresh signed-in browser loads /assets/index-B9r7oiQG.js. Production operationdc20ee71-a00b-4913-be51-7fd3ea32eb87 notesGET200; desktop draft collapse/reopen retained, first save succeeded with actor/time, total0/unassigned/incomplete/no tracked time unchanged. Desktop1280x720 document width1280, one db-workspace-body scroller. Full phone/landscape/recovery/finalized acceptance still in progress.
+
+Production mobile390x700 reload retained desktop note. Exact QA notes URL blocked only in this browser tab: Save showed explicit error, retained80-character draft, hid cached list after failed refresh. Cleared block; Retry notes restored original note; Retry save created second intended note, count2. This simulates blocked requests, not a lost response after commit. No live outage claimed. At320x640 composer is280px wide with16px text; note/Cancel/Save controls44px tall. At740x400 touch landscape textarea, whole Cancel/Save labels and footer are reachable. All three mobile document widths match viewport and only db-workspace-scroll scrolls. Empty third composer cancelled without a write.
+
+Production390 full reload confirms exactly two saved notes with correct actor/time and unchanged operation/order state. Customer→New Repair Order loaded→Cancel retains selected order/customer URL and returns focus to New repair order; Back returns same order; Close leaves exactly/dashboard/repair-orders with no order workspace. Customer390 has one db-customer-embedded__body scroll and no horizontal overflow. Repeated desktop customer→New Repair Order→Cancel retains DB115 Production QA queue search, selected order/customer and focus; Back returns same order. No new order was submitted. Screenshots customer-mobile.png and customer-desktop.png in the production artifact directory.
+
+Finalized production orderTPS-828ACD84-000054 (5d8249a2-ea8a-404e-8e9d-0f20b59a589b) inspected read-only at1280desktop and390phone: operation notes load successfully, explicit finalized/cancelled read-only explanation and zero Add operation note buttons. No note, invoice, payment, revision or customer mutation on this real order. Screenshot finalized-mobile.png.
+
+## Production acceptance complete — independent QA GO
+
+2026-10-14: exact deployed merge182fa5f6; signed-in desktop1280x720 and touch-emulated390x700,320x640,740x400 passed. Both intended notes persist after reload; per-operation author/time, retained collapsed draft, blocked-request recovery with explicit refresh/save, customer navigation/cancellation/search preservation, Close and finalized read-only behavior verified. No added notes on real customer work; no invoice/payment/technician/timer/completion actions submitted. Pricing remains0 on the synthetic fixture. Browser emulation does not establish physical-device or native-keyboard behavior.
+
+Cleanup: syntheticTPS-828ACD84-000056 was soft-deleted through the mobile UI. Deletion returned to the order ledger. Opening the known deleted-order URL then shows Deleted, actor/time, preserved-record explanation and Restore; operation/checklist/history unavailable panels stay absent with no error. Two QA notes and their zero-charge operation remain recoverable as audit evidence. This is not claimed as an immediate in-place Restore transition, because this ledger flow closes the selected workspace after delete.
+
+All injected request blocking was cleared and Network observation disabled. Final readiness remains ready with database/Redisok, uptime416s (/tmp/db118-production-ready-final.json), after approximately six minutes of production UI acceptance. No rollback trigger observed.
+
+Production screenshots are local artifacts under /Users/sergio_m1_promax/.codex/visualizations/2026/10/14/db118-production/: desktop.png, mobile.png, mobile-320-composer.png, landscape.png, customer-mobile.png, customer-desktop.png, finalized-mobile.png and cleanup-deleted.png. Independent QA reviewed the first five without a visual blocker; final receipt/images supplied for closure.
+
+## Closure
+
+Independent QA reviewed all eight production screenshots, final journey/cleanup receipt, CI logs, readiness and exact tree identity: GO, recorded in DB118_QA.md. Security GO remains valid on the unchanged application source. DB118 is Done. Temporary local/production QA tabs closed; device/touch overrides and browser viewport reset; shared preview services remain running.
+
+Final post-release documentation is committed locally on the delivery branch for the next documentation checkpoint. It is release evidence, not a second production code change. Full ETS parity remains incomplete; the scoped operation-note gap is released.
