@@ -5,7 +5,7 @@
   "backend/app/services/staff_work_hold.py": "b89f322273aff830b156bb22225a0698c57ad12fc37e3eb4509f943a8114d4dc",
   "backend/app/schemas/staff_work_hold.py": "14462d956c4d973a940439bec2fe428309e72ae1ea319c01efc08ec7960189ed",
   "frontend/src/features/repair-orders/StaffHoldDialog.tsx": "efca19511c8b9e9f8370586405dfe2dd62b015c5c788488d3347c35cdfd60b92",
-  "frontend/src/features/repair-orders/staffHold.ts": "fd4276903f97dfd9e74cc25e81dc776cf81fdd94033bd06333829cae92070ff7",
+  "frontend/src/features/repair-orders/staffHold.ts": "93a063cd97e6ea35b3b2d31ae13de817298e1815c74eefebc35966f83641c4ec",
   "frontend/src/features/repair-orders/PriceBuilderPanel.tsx": "eeefe2a63c8b7993108f58fb820276cfedde5b507f89efed04f0c8c07a314a8d",
   "frontend/src/features/repair-orders/RepairOrdersPage.tsx": "8761e6e098f5e61db00bf8d243a4f6950cbb349672b8bf8dd09fc1ae6fd6f55a",
   "frontend/src/features/repair-orders/StartWorkAction.tsx": "3b49115bb7d5118cc24b55b944846b3b2eadc292f25735c5e1a0ff49914c615d",

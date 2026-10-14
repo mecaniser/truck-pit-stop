@@ -25,4 +25,3 @@ export function staffHoldHistoryDetail(eventType: string, detail?: string | null
     return typeof reason === 'string' && reason.trim() ? holdReasonLabel(reason) : undefined
   } catch { return undefined }
 }
-
