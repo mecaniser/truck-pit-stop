@@ -4,7 +4,7 @@ Reviewer: independent QA Gatekeeper, with no application, contract or test imple
 
 ## Current decision
 
-**GO for the local workflow QA gate.** The reported findings are resolved and no source, test or reviewed local UI blocker remains. This does not approve a production release by itself: independent Security, protected CI, exact deployment/migration and production workflow acceptance remain separate gates. The earlier DB118 gate does not establish DB119 acceptance.
+**GO for DB119 release verification.** The reported findings are resolved, protected CI and merge identity are confirmed, and the reviewed production workflow evidence and screenshots contain no unresolved QA blocker. Browser actions were executed by the owner and independently reviewed here; this reviewer did not perform a second production write pass. This gate covers DB119 outside-shop history, not completion of all ETS parity.
 
 ## Independently checked
 
@@ -35,6 +35,25 @@ The final getter was mirrored and the owner rechecked the exact embedded route a
 
 Independent Security renewed GO after final getter review in `DB119_SECURITY.md`; this remains a separate security decision from this workflow QA gate.
 
-## Remaining release evidence
+## Production release verification — 2026-10-14
 
-- Protected CI, exact merge/deploy/migration head and signed-in production synthetic workflow. Final production fixture must be voided with audit history retained. Browser emulation must not be described as physical-device/native-keyboard testing.
+Independently queried GitHub for PR #520: merged at `2026-10-14T20:12:06Z`, all six Quality gates successful on source `828dac5ceeac6bb3cb558679b3762df1cb2ac628`, merge `6b7dfcb018028a96ec416f75c4a368c1ee9f80fb`. Independently compared the local Git objects: both have tree `e2df3e908aa367eaf2e436ad380095cef6db812f`. Reviewed the CI logs: **1503 frontend tests across 161 files passed**, and **3018 backend tests passed, 149 skipped**. The nine real PostgreSQL cases remain the separate local race/constraint evidence; skipped CI cases are not described as passed.
+
+Reviewed the owner's deployment receipt: Web `4ef3dc1b-46ce-470d-9990-d71881087c40` and worker `b2baa9f5-7a02-454f-8edd-9b34e82a7cf6` succeeded at the exact merge. Independently inspected `/tmp/db119-production-startup.log`, which explicitly records the migration from `168_operation_execution` to `169_external_service_history`. The owner's read-only production checks report `169 (head)`, passing schema preflight, and healthy DB/Redis readiness before and after acceptance. Deployment pins and those health/schema commands were owner-executed evidence, not commands rerun by this reviewer.
+
+Independently inspected all six production images under `/Users/sergio_m1_promax/.codex/visualizations/2026/10/14/db119-production/`:
+
+- `desktop.png`: customer search context remains visible beside a dense truck history record; outside-source label, reported cost, attribution and edit/void actions are readable.
+- `mobile-390.png`: long truck/provider labels wrap within the workspace, the saved record and actions remain readable, and the compact footer fits.
+- `mobile-320-controls.png`: lower editor fields, explanatory text and Cancel/Save controls fit above the footer. The unchanged Save action is visibly disabled.
+- `landscape.png`: void explanation, complete reason field and Cancel/Void actions fit in the content area above the footer.
+- `order-mobile.png`: the repair-order shortcut opens the exact truck with its owner and outside-shop record in the embedded workspace.
+- `order-cleanup.png`: the synthetic order is recoverably deleted, Restore order is visible, and no unavailable-panel error appears in the captured state.
+
+No visual blocker was found in these captures. The owner measured CSS viewports of 1280×720, 390×700, 320×640 and 740×400, exact document widths, one primary workspace content scroller and 16px phone form fields. The production tab's existing 110% zoom means image pixel dimensions are not themselves proof of CSS viewport dimensions; the measured receipt is the geometry evidence. These checks use browser touch emulation and do not establish physical-device or native mobile keyboard behavior.
+
+Reviewed the signed-in production interaction receipt: create/reload, mobile correction with retained audit values, failed request with retained draft and explicit retry, landscape void, Show voided, restore/reload, Escape without a write, customer search/New repair order/Cancel return, and repair-order truck shortcut/reload/Back navigation. Failure injection blocked requests before commit; exact postcommit lost-response replay is supported by automated tests, not claimed as browser-tested. Local two-tab stale-edit acceptance additionally confirmed draft retention, latest-version review and explicit reapplication without a second record.
+
+Writes were limited to the explicitly synthetic DB115 QA customer/truck/order. Final outside history has zero active records; the QA entry is voided and retains all six events. The pre-existing QA order was returned to its original recoverably deleted state. The receipt records unchanged customer balance, blank current mileage, zero order charge and unchanged 15-minute unassigned/incomplete operation with no tracked time; no real customer work, financial transaction or notification was changed. The delete flow closed its workspace, so this review does not claim immediate in-place Restore for that action.
+
+**Final independent decision: GO.** No outstanding DB119 workflow or reviewed visual blocker remains. Independent Security GO and the owner's deployment/production acceptance receipt provide the complementary release gates.
