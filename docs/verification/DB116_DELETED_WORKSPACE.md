@@ -29,6 +29,17 @@ The server's deletion notification uses status `deleted` as an event marker whil
 - Repeated warm History/delete/reopen in390×700 touch emulation, checked320×568 and740×400 landscape: direct44px Restore remains visible, intact label, no horizontal overflow or unavailable panels. Reloaded deleted landscape and restored through UI; active controls return. Final cleanup soft-deleted only the QA order. No services, invoice, timer, customer or vehicle changes.
 - Screenshots: `/tmp/db116-local-desktop.png`, `/tmp/db116-local-mobile.png`, `/tmp/db116-local-320.png`, `/tmp/db116-local-landscape.png`. Temporary viewport/touch/request-block overrides cleared and QA tab closed. Browser emulation, not physical device testing.
 
+## Additional live-update verification
+
+With the same local synthetic order open in two signed-in tabs, the observing tab had History cached and its description editor open. Deleting in the second tab replaced the observing editor and active panels with Deleted and Restore without refresh. Observed responses were workspace200, list/count/value200 and unrelated unread-summary200; no active-only endpoint404. Fixture remains soft-deleted; both temporary tabs closed.
+
 ## Release gate
 
-Protected PR CI, merge, deployment and authenticated production workflow verification remain outstanding. ETS parity remains paused.
+[PR517](https://github.com/mecaniser/truck-pit-stop/pull/517), source `2ee2c0b0c59685d17e947f22f31c9a63aecfe37f`, [protected CI run38496789106](https://github.com/mecaniser/truck-pit-stop/actions/runs/38496789106). All six required checks must pass, including both full suites. No bypass. Merge, deployment and authenticated production verification remain outstanding. ETS parity remains paused.
+
+Prior healthy Web deployment/rollback reference: `04a94deb-08de-43f4-9616-3dddea3dcce9`, source `2461084e45d77cc3e84d2d77e76fe55939079c12`. No schema changes or downgrade. Production acceptance reuses only `TPS-828ACD84-000056` / `bce9b62b-a7e3-4ba9-a740-6ced6857e9b3`, the clearly labeled zero-value DB115 QA fixture. It starts soft-deleted and must finish soft-deleted. Do not assign technicians, start timers, invoice, send estimates or modify real customer orders. Verify deletion/restore HTTP results, canonical status/amount preservation, no unsupported panel requests, production asset/deployment identity, viewport bounds and final recoverable cleanup.
+
+
+## CI correction
+
+Initial full frontend gate found one outdated recommendation test that expected the unavailable panel to remain mounted with conversion disabled. DB116 deliberately does not mount that panel. The assertion now verifies the panel and stale cached operation are absent and the deleted notice is visible. No application behavior changed after browser acceptance. Full local frontend rerun:157 files /1432 tests passed. Changed test lint and diff check pass.
