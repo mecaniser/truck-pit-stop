@@ -915,6 +915,12 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
     },
     enabled: !!selectedOrder?.id && isDetailOpen,
   })
+  // Scope private detail by identity values, not the user object's reference.
+  // Profile refreshes must not repeatedly replace the selected workspace.
+  const selectedOrderDetailKey = useMemo(() => [
+    'repair-order-detail', selectedOrder?.id, currentUser?.tenant_id,
+    currentUser?.id, currentUser?.role, authSessionEpoch,
+  ] as const, [selectedOrder?.id, currentUser?.tenant_id, currentUser?.id, currentUser?.role, authSessionEpoch])
   useEffect(() => {
     if (!workspaceOrder || workspaceOrder.id !== selectedOrder?.id) return
     setSelectedOrder(current => {
@@ -923,14 +929,14 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
     })
     // A previous History visit may have left a now-disabled full-detail cache.
     // Preserve its history/lines but refresh the authoritative header fields too.
-    queryClient.setQueryData<RepairOrderDetail | undefined>(scopedOrderDetailKey('repair-order-detail', workspaceOrder.id, currentUser, authSessionEpoch), current => {
+    queryClient.setQueryData<RepairOrderDetail | undefined>(selectedOrderDetailKey, current => {
       if (!current || Date.parse(current.updated_at) > Date.parse(workspaceOrder.updated_at)) return current
       return { ...current, ...workspaceOrder }
     })
-  }, [queryClient, workspaceOrder, selectedOrder?.id, currentUser, authSessionEpoch])
+  }, [queryClient, workspaceOrder, selectedOrder?.id, selectedOrderDetailKey])
 
   const { data: orderDetail, refetch: refetchOrderDetail, isLoading: isOrderDetailLoading, isFetching: isHistoryDetailFetching, isError: isHistoryDetailError } = useQuery<RepairOrderDetail>({
-    queryKey: scopedOrderDetailKey('repair-order-detail', selectedOrder?.id, currentUser, authSessionEpoch),
+    queryKey: selectedOrderDetailKey,
     queryFn: async ({ signal }) => {
       const response = await api.get(`/repair-orders/${selectedOrder!.id}/detail`, { signal })
       return response.data

@@ -33,3 +33,13 @@ The implementation owner performed the signed-in browser actions and measurement
 ## Release evidence still required
 
 Protected CI on the final source; exact merge/deployment and signed-in production desktop/mobile workflow acceptance, with a usable desktop capture. Material changes to reviewed behavior require a new focused reassessment. Production runtime evidence supplied by the implementation owner will be reviewed as evidence, not represented as independently performed browser actions.
+
+## CI correction reassessment — GO for the focused fix
+
+PR519's first full frontend run did not complete. The owner isolated a render loop in the existing customer-workspace test, whose authentication mock returns a new user object for every render. The new workspace/history synchronization effect depended on that object reference and replaced selected state repeatedly. This is a real unstable-dependency defect exposed by the mock; the failed/hung gate is not counted as passing.
+
+The owner corrected `RepairOrdersPage` to memoize the selected detail query key from order ID, tenant ID, user ID, role and session epoch, and reused that key in the effect and query. Independent review confirms the cache identity values, authorization partitioning and invalidation prefix are unchanged. Updating an unrelated user-object reference no longer reruns workspace synchronization; genuine identity changes still select a distinct cache key.
+
+Independent rerun on 2026-10-14: customer, operation notes, operation-note privacy, request-cancellation and deleted-order suites **53 passed across 5 files in 7.80 seconds**. The previously hanging customer suite completed all **15 cases**, including embedded customer return and preservation of search/page through cancelled order creation. Log: `/tmp/db118-qa-ci-correction.log`. Existing framework/React act warnings remain; no failed assertions or hung suites. `git diff --check` passed. QA edited only this receipt.
+
+The focused correction is accepted. A complete frontend rerun and all protected checks on the corrected head remain release conditions, followed by the already-required production workflow acceptance.

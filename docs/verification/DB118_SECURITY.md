@@ -104,3 +104,23 @@ Rollback must retain the `operation_note_shop` privacy filter and the protected
 client history boundaries. An older serializer does not recognize this event
 type and must not be redeployed unchanged after note rows exist. No migration,
 provider, external notification or data-backfill change is present.
+
+## PR519 final memoization re-review
+
+Security GO remains valid after reviewing the application diff against
+`eab4b247`. The only application change is in `RepairOrdersPage`: its selected
+detail key is now memoized from scalar order ID, tenant ID, user ID, role and
+session epoch. The tuple values and their order exactly match the previously
+reviewed scoped key. The workspace-to-detail write remains guarded by matching
+workspace/selected order IDs and targets the same memoized tuple as the query.
+Removing the whole user-object reference from the effect dependency list does
+not remove an authorization dimension; every identity scalar remains a
+dependency. Role filtering, fleet exclusions, mutation replay and backend
+authorization are unchanged.
+
+Independently reran `OperationNotes.privacy.test.tsx` against this working tree:
+**4 passed**, covering dashboard and fleet caches through different-account and
+same-account new-session transitions while the new response remains pending.
+Existing React test `act`, Router future-flag and Browserslist notices remain;
+there were no failed assertions. This re-review does not sign off the pending
+full CI, merge, deployment or production workflow gates.

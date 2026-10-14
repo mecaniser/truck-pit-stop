@@ -46,3 +46,11 @@ The browser network failure was deliberately injected only into this QA tab; blo
 ## Rollback
 
 No migration. Stop adding notes and retain the operation_note_shop privacy filter if rolling application code back: older full-detail serializers do not recognize the new event. Rollback trigger: unauthorized note disclosure, duplicate/lost notes, or changed lifecycle/accounting behavior. Do not roll back to a serializer that would reveal existing new events.
+
+## Release tracking
+
+PR519: https://github.com/mecaniser/truck-pit-stop/pull/519. Source eab4b2477bf3672a6f94529a9dee21560ca8d981. Committed-head BASE_SHA=origin/main lint passes across11files. Quality gates38614337519 running; no merge/deployment acceptance yet. Pre-push MEDIUM scanner warning was inspected: a synthetic confidentiality marker in backend/tests/test_operation_notes.py:105, not production data or a credential.
+
+### CI correction
+
+Initial run38614337519 passed five jobs, including backend2967passed/140skipped, but frontend full suite stalled. Local full run isolated RepairOrdersPage.customer.test.tsx (159of160files completed): its existing auth mock recreates the user object, exposing a repeating workspace sync effect introduced by the cache scoping. Memoize the selected detail key using the same primitive tenant/actor/role/session/order values; effect now depends on that stable key. No privacy partition or authorization change. Independent QA53passed and Security4privacy cases pass. Corrected full local suite **160files/1464tests passed**,45.75s (/tmp/db118-frontend-full-fixed.log). Initial cancelled run is not a complete CI gate; fresh corrected-head CI required.

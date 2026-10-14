@@ -1,7 +1,9 @@
 # Easy Truck Shop → DieselBridge functionality audit
 
-Date: 2026-10-12. Accountable owner: Product & Delivery Lead. Board item: DB-101.
+Baseline audit date: 2026-10-12. Accountable owner: Product & Delivery Lead. Board item: DB-101.
 DieselBridge baseline: `origin/main` at `91045a625f89d84221aaf8ed74d1cdc7d92438b6`.
+
+The matrix below preserves the original baseline comparison. Subsequent implementation and release evidence is recorded in dated continuations and [the delivery board](PROJECT_BOARD.md); baseline gap labels are not a current release-status dashboard.
 
 ## Evidence and scope
 
@@ -81,7 +83,7 @@ These are the relevant implementation locations, not declarations of deployed ac
 
 The four implemented outcomes have focused branches/PRs; DB099 compact scrolling should precede or accompany DB102 Modern rollout. They intentionally avoid creating parallel billing, stock or identity systems. Their verification records and board entries must distinguish source implementation, local browser acceptance, pull request, merge and deployment. This audit does not mark any implementation Done.
 
-Current delivery: [search/audit PR500](https://github.com/mecaniser/truck-pit-stop/pull/500), [recommendations PR498](https://github.com/mecaniser/truck-pit-stop/pull/498), [cost evidence PR499](https://github.com/mecaniser/truck-pit-stop/pull/499), and [checklists PR501](https://github.com/mecaniser/truck-pit-stop/pull/501). All four are locally implemented and authenticated-browser verified in an isolated combined preview at `http://127.0.0.1:5174` (API8001). Independent Security/QA gates for the cross-layer changes pass; combined frontend142files/1247tests pass. PR/CI status is time-sensitive; nothing in this initiative is merged or deployed. Detailed implementation, runtime, migration and remaining release gates are in each focused PR and verification record.
+Historical delivery snapshot (2026-10-12): [search/audit PR500](https://github.com/mecaniser/truck-pit-stop/pull/500), [recommendations PR498](https://github.com/mecaniser/truck-pit-stop/pull/498), [cost evidence PR499](https://github.com/mecaniser/truck-pit-stop/pull/499), and [checklists PR501](https://github.com/mecaniser/truck-pit-stop/pull/501). All four are locally implemented and authenticated-browser verified in an isolated combined preview at `http://127.0.0.1:5174` (API8001). Independent Security/QA gates for the cross-layer changes pass; combined frontend142files/1247tests pass. PR/CI status is time-sensitive; nothing in this initiative is merged or deployed. Detailed implementation, runtime, migration and remaining release gates are in each focused PR and verification record.
 
 ## Official ETS sources
 
