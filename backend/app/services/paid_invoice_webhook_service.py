@@ -11,7 +11,7 @@ from uuid import UUID, uuid4
 
 import anyio
 import httpx
-from sqlalchemy import and_, exists, or_, select
+from sqlalchemy import and_, case, exists, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.exc import IntegrityError
 
@@ -32,10 +32,12 @@ from app.db.models.user import User, UserRole
 from app.db.session import AsyncSessionLocal
 from app.services.conversion_pii_retention_service import (
     CONVERSION_EVENT_TYPES,
+    SHOP_HISTORY_EVENT,
     conversion_event_must_expire,
     expire_conversion_event,
 )
 from app.services.provider_outbox_service import ProviderDeliveryError, enqueue_email_notification
+from app.services.shop_history_source import history_allowed_tenants
 
 
 PAID_INVOICE_WEBHOOK_EVENT = "repair_order.paid"  # compatibility export
@@ -205,11 +207,15 @@ async def enqueue_paid_invoice_webhook(db: AsyncSession, *, tenant: Optional[Ten
 
 async def _claim(db: AsyncSession, limit: int) -> tuple[list[tuple[UUID, str]], int]:
     now = _now()
+    history_tenants = history_allowed_tenants()
+    event_filter = ProviderOutboxEvent.event_type.in_(CONVERSION_EVENT_TYPES)
+    if settings.SHOP_HISTORY_CAPTURE_ENABLED and history_tenants:
+        event_filter = or_(event_filter, and_(ProviderOutboxEvent.event_type == SHOP_HISTORY_EVENT, ProviderOutboxEvent.tenant_id.in_(history_tenants)))
     due = or_(
         and_(ProviderOutboxEvent.status == ProviderOutboxStatus.PENDING.value, ProviderOutboxEvent.available_at <= now),
         and_(ProviderOutboxEvent.status == ProviderOutboxStatus.PROCESSING.value, ProviderOutboxEvent.locked_until <= now),
     )
-    rows = (await db.execute(select(ProviderOutboxEvent).join(Tenant, Tenant.id == ProviderOutboxEvent.tenant_id).where(Tenant.paid_invoice_webhook_enabled.is_(True), Tenant.paid_invoice_webhook_delivery_paused.is_(False), ProviderOutboxEvent.event_type.in_(CONVERSION_EVENT_TYPES), due).order_by(ProviderOutboxEvent.available_at).limit(limit).with_for_update(skip_locked=True, of=ProviderOutboxEvent))).scalars()
+    rows = (await db.execute(select(ProviderOutboxEvent).join(Tenant, Tenant.id == ProviderOutboxEvent.tenant_id).where(Tenant.paid_invoice_webhook_enabled.is_(True), Tenant.paid_invoice_webhook_delivery_paused.is_(False), event_filter, due).order_by(case((ProviderOutboxEvent.event_type == SHOP_HISTORY_EVENT, 1), else_=0), ProviderOutboxEvent.available_at).limit(limit).with_for_update(skip_locked=True, of=ProviderOutboxEvent))).scalars()
     claims = []
     expired = 0
     for event in rows:
@@ -253,6 +259,10 @@ async def _deliver(tenant: Tenant, event: ProviderOutboxEvent) -> tuple[Optional
 
 
 async def _deliver_within_budget(tenant: Tenant, event: ProviderOutboxEvent) -> tuple[Optional[str], int]:
+    if event.event_type == SHOP_HISTORY_EVENT and (
+        tenant.id not in history_allowed_tenants()
+    ):
+        raise ConversionDeliveryPaused()
     if tenant.paid_invoice_webhook_delivery_paused or not tenant.paid_invoice_webhook_enabled:
         raise ConversionDeliveryPaused()
     if not tenant.paid_invoice_webhook_url or not tenant.paid_invoice_webhook_secret_encrypted:
@@ -439,7 +449,8 @@ async def process_due_paid_invoice_webhooks(*, session_factory: async_sessionmak
                     result["retried"] += 1
                 else:
                     event.status, event.completed_at = ProviderOutboxStatus.DEAD.value, _now()
-                    await _pause_and_notify(db, tenant, event)
+                    if event.event_type != SHOP_HISTORY_EVENT:
+                        await _pause_and_notify(db, tenant, event)
                     result["dead"] += 1
             event.lock_token = event.locked_until = None
             await db.commit()

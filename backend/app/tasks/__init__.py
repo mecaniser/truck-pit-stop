@@ -64,6 +64,7 @@ celery_app.conf.update(
             "task": "process_db048_settlement_maintenance",
             "schedule": timedelta(minutes=1),
         },
+        "capture-shop-history": {"task": "capture_shop_history", "schedule": timedelta(minutes=5)},
         "process-paid-invoice-webhooks": {
             "task": "process_paid_invoice_webhooks",
             "schedule": timedelta(seconds=10),

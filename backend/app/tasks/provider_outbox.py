@@ -63,3 +63,10 @@ def process_paid_invoice_webhooks() -> dict[str, int]:
 @celery_app.task(name="process_conversion_pii_retention", soft_time_limit=120, time_limit=180)
 def process_conversion_pii_retention() -> int:
     return run_async(purge_expired_conversion_event_pii())
+
+
+@celery_app.task(name="capture_shop_history", acks_late=True, reject_on_worker_lost=True, soft_time_limit=45, time_limit=60)
+def capture_shop_history() -> dict[str, int]:
+    """Capture changed history only; signed outbox owns delivery."""
+    from app.services.shop_history_source import capture_shop_history_batch
+    return run_async(capture_shop_history_batch())
