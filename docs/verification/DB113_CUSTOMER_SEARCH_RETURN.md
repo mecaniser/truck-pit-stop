@@ -20,4 +20,4 @@ Accountable: Frontend & UX. Fast UI, no server/API/data changes.
 
 ## Release gate
 
-Protected CI, merge/deployment identity and signed-in production desktop/mobile recheck pending. ETS parity remains paused until DB-114 also passes.
+All six protected checks passed on17dfdf74 in run38484443162. PR514 merged asd5c870f1 on2026-10-13 at23:41 UTC; automatic Web deploymentdcf1e242 is building. Signed-in production desktop/mobile recheck pending. ETS parity remains paused until DB-114 also passes.

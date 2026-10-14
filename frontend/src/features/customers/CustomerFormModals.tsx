@@ -391,6 +391,13 @@ const mergeMutation = useMutation({
   },
 })
 
+const closeMergeModal = () => {
+  if (mergeMutation.isPending) return
+  setIsMergeModalOpen(false)
+  setMergeTargetCustomer(null)
+  setMergeSearchQuery('')
+}
+
 const resetForm = () => {
   setEditingCustomer(null)
   setFormData(emptyForm)
@@ -1209,37 +1216,32 @@ const renderCustomerForm = (onCancel: () => void) => (
         </div>
       )}
       {isMergeModalOpen && selectedCustomer && (
-        <div className="fixed inset-0 z-[80] overflow-y-auto">
+        <Dialog open onClose={closeMergeModal} className="fixed inset-0 z-[120] overflow-y-auto">
           <div className="flex min-h-full items-center justify-center p-4">
             {/* Backdrop */}
             <div
               className="fixed inset-0 bg-black/60 backdrop-blur-sm"
-              onClick={() => {
-                setIsMergeModalOpen(false)
-                setMergeTargetCustomer(null)
-                setMergeSearchQuery('')
-              }}
+              onClick={closeMergeModal}
             />
 
             {/* Modal */}
-            <div className="db-customer-modal relative bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+            <DialogPanel className="db-customer-modal relative bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
               <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 rounded-t-2xl">
-                <div className="flex items-center justify-between">
+                <div className="flex items-start justify-between gap-3">
                   <div>
-                    <h2 className="text-xl font-bold text-gray-900">Merge Duplicate Customer</h2>
+                    <DialogTitle as="h2" className="text-xl font-bold text-gray-900">Merge Duplicate Customer</DialogTitle>
                     <p className="text-sm text-gray-500">
                       Combine another record into {customerDisplayName(selectedCustomer)}
                     </p>
                   </div>
                   <button
-                    onClick={() => {
-                      setIsMergeModalOpen(false)
-                      setMergeTargetCustomer(null)
-                      setMergeSearchQuery('')
-                    }}
-                    className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                    type="button"
+                    aria-label="Close merge dialog"
+                    onClick={closeMergeModal}
+                    disabled={mergeMutation.isPending}
+                    className="flex min-h-11 min-w-11 shrink-0 items-center justify-center p-2 hover:bg-gray-100 rounded-lg transition-colors disabled:opacity-50"
                   >
-                    <X className="w-5 h-5 text-gray-500" />
+                    <X aria-hidden="true" className="w-5 h-5 text-gray-500" />
                   </button>
                 </div>
               </div>
@@ -1255,6 +1257,7 @@ const renderCustomerForm = (onCancel: () => void) => (
                     <input
                       type="text"
                       autoFocus
+                      aria-label="Search duplicate customers"
                       placeholder="Search by name, email, or phone..."
                       value={mergeSearchQuery}
                       onChange={(e) => setMergeSearchQuery(e.target.value)}
@@ -1287,7 +1290,7 @@ const renderCustomerForm = (onCancel: () => void) => (
                   </>
                 ) : (
                   <>
-                    <div className="grid grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 break-words">
                       <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4">
                         <p className="text-xs font-semibold text-emerald-700 uppercase tracking-wider mb-2">Keep (this record)</p>
                         <p className="font-semibold text-gray-900">{customerDisplayName(selectedCustomer)}</p>
@@ -1307,17 +1310,18 @@ const renderCustomerForm = (onCancel: () => void) => (
                       <span className="font-medium">{customerDisplayName(selectedCustomer)}</span>, then the duplicate
                       record will be permanently deleted. This cannot be undone.
                     </p>
-                    <div className="flex items-center justify-between pt-2">
+                    <div className="flex flex-wrap items-center justify-between gap-2 pt-2">
                       <button
                         onClick={() => setMergeTargetCustomer(null)}
-                        className="px-4 py-2 text-gray-700 font-medium hover:bg-gray-100 rounded-lg transition-colors"
+                        disabled={mergeMutation.isPending}
+                        className="min-h-11 whitespace-nowrap px-4 py-2 text-gray-700 font-medium hover:bg-gray-100 rounded-lg transition-colors disabled:opacity-50"
                       >
                         Back
                       </button>
                       <button
                         onClick={() => mergeMutation.mutate({ winnerId: selectedCustomer.id, loserId: mergeTargetCustomer.id })}
                         disabled={mergeMutation.isPending}
-                        className="px-5 py-2.5 bg-red-600 hover:bg-red-700 disabled:bg-red-300 text-white font-medium rounded-lg transition-colors flex items-center gap-2"
+                        className="min-h-11 whitespace-nowrap px-5 py-2.5 bg-red-600 hover:bg-red-700 disabled:bg-red-300 text-white font-medium rounded-lg transition-colors flex items-center gap-2"
                       >
                         {mergeMutation.isPending && (
                           <Spinner size="xs" className="border-white/40 border-t-white" />
@@ -1328,9 +1332,9 @@ const renderCustomerForm = (onCancel: () => void) => (
                   </>
                 )}
               </div>
-            </div>
+            </DialogPanel>
           </div>
-        </div>
+        </Dialog>
       )}
     </>,
     document.body,
