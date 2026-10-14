@@ -368,7 +368,10 @@ async def broadcast_repair_order_update(
     
     # Send to customer (optional for internal-only state transitions like hold/resume)
     if send_to_customer:
-        await manager.send_to_customer(customer_id, message)
+        # Other updates (for example lead reassignment) may carry a live hold.
+        # Keep its free-form operational reason private on every delivery path.
+        customer_message = {**message, "hold_reason": None, "held_at": None}
+        await manager.send_to_customer(customer_id, customer_message)
 
 
 async def broadcast_quote_event(

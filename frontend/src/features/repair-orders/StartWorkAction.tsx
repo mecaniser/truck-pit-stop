@@ -4,6 +4,7 @@ import { Spinner } from '@/components/ui'
 
 interface StartWorkActionProps {
   mode?: 'start' | 'assign' | 'reassign'
+  compact?: boolean
   technicians: { mechanic_id: string; mechanic_name: string; load: number }[]
   onAssign?: (mechanicId: string) => void
   onStartWithoutTechnician?: () => void
@@ -12,7 +13,7 @@ interface StartWorkActionProps {
 }
 
 export default function StartWorkAction({
-  technicians, onAssign, onStartWithoutTechnician, assignmentPending, startPending, mode = 'start',
+  technicians, onAssign, onStartWithoutTechnician, assignmentPending, startPending, mode = 'start', compact = false,
 }: StartWorkActionProps) {
   const pending = assignmentPending || startPending
   const title = mode === 'start' ? 'Start work' : mode === 'reassign' ? 'Change technician' : 'Assign technician'
@@ -25,10 +26,11 @@ export default function StartWorkAction({
           <PopoverButton
             disabled={pending}
             aria-busy={pending}
+            aria-label={startPending ? 'Starting…' : assignmentPending ? 'Assigning…' : `${title}…`}
             className={`inline-flex h-11 items-center justify-center gap-2 rounded-xl px-4 text-sm font-bold focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-orange-600 disabled:opacity-60 ${mode === 'start' ? 'bg-orange-600 text-white hover:bg-orange-700' : 'border border-gray-300 bg-white text-gray-700 hover:bg-gray-50'}`}
           >
             {pending ? <span aria-hidden="true"><Spinner size="xs" /></span> : <ActionIcon className="h-4 w-4" aria-hidden="true" />}
-            {startPending ? 'Starting…' : assignmentPending ? 'Assigning…' : `${title}…`}
+            {startPending ? 'Starting…' : assignmentPending ? 'Assigning…' : compact && mode !== 'start' ? 'Technician' : `${title}…`}
             {!pending && <ChevronUp className="h-4 w-4" aria-hidden="true" />}
           </PopoverButton>
           <PopoverPanel

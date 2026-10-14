@@ -1,4 +1,5 @@
 import type { PartsUsage, RepairOrderHistoryEvent } from '../../types'
+import { staffHoldHistoryDetail } from './staffHold'
 
 const PART_UNIT_LABELS: Record<string, string> = {
   each: 'ea',
@@ -15,7 +16,8 @@ export function buildPartHistoryEvents(parts: PartsUsage[], historyEvents: Repai
     id: event.id,
     label: event.label,
     at: event.created_at,
-    detail: event.detail || undefined,
+    detail: ['work_held', 'work_hold_released'].includes(event.event_type)
+      ? staffHoldHistoryDetail(event.event_type, event.detail) : event.detail || undefined,
     actor: event.actor_name || undefined,
     ...(event.entity_id ? { entityId: event.entity_id } : {}),
   }))

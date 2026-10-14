@@ -11,6 +11,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_, exists, or_, func, literal_column, case
 from sqlalchemy.orm import joinedload, selectinload
 from pydantic import BaseModel
+from app.schemas.staff_work_hold import StaffHoldRequest, StaffReleaseHoldRequest, StaffHoldResponse
+from app.services import staff_work_hold
 from app.core.dependencies import get_db, get_current_active_user
 from app.core.pagination import paginated_or_list
 from app.core.search import build_search
@@ -1169,6 +1171,10 @@ async def list_repair_orders(
         .limit(limit)
     )
     items = [RepairOrderResponse.model_validate(payload) for payload in result.scalars().all()]
+    if not staff_work_hold.can_read(current_user):
+        for item in items:
+            item.hold_reason = None
+            item.held_at = None
     if current_user.role == UserRole.CUSTOMER:
         items = [
             item.model_copy(
@@ -1409,6 +1415,10 @@ async def _list_repair_orders_legacy(
         )
         for o in orders
     ]
+    if not staff_work_hold.can_read(current_user):
+        for item in items:
+            item.hold_reason = None
+            item.held_at = None
     if current_user.role == UserRole.CUSTOMER:
         for item, order in zip(items, orders):
             item.internal_notes = None
@@ -1417,8 +1427,6 @@ async def _list_repair_orders_legacy(
                 item.total_parts_cost = Decimal("0.00")
                 item.total_labor_cost = Decimal("0.00")
                 item.total_cost = Decimal("0.00")
-                item.labor_discount_amount = Decimal("0.00")
-                item.order_discount_amount = Decimal("0.00")
     return paginated_or_list(items, total, skip, limit, paginated)
 
 
@@ -1448,6 +1456,9 @@ async def get_repair_order_workspace(
     )
     if projection:
         item = RepairOrderResponse.model_validate(projection.payload)
+        if not staff_work_hold.can_read(current_user):
+            item.hold_reason = None
+            item.held_at = None
         if projection.is_deleted and current_user.role not in (UserRole.GARAGE_OWNER, UserRole.GARAGE_ADMIN):
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repair order not found")
         if current_user.role == UserRole.CUSTOMER:
@@ -1460,8 +1471,6 @@ async def get_repair_order_workspace(
                 item.total_parts_cost = Decimal("0.00")
                 item.total_labor_cost = Decimal("0.00")
                 item.total_cost = Decimal("0.00")
-                item.labor_discount_amount = Decimal("0.00")
-                item.order_discount_amount = Decimal("0.00")
         elif current_user.tenant_id != projection.tenant_id:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
         elif current_user.role == UserRole.FLEET_MANAGER and not (item.is_fleet_work or item.is_internal):
@@ -1506,6 +1515,9 @@ async def get_repair_order_workspace(
         customer_phone=customer.phone if customer else None,
         customer_fleet_enabled=bool(customer.fleet_enabled) if customer else False,
     )
+    if not staff_work_hold.can_read(current_user):
+        item.hold_reason = None
+        item.held_at = None
     if current_user.role == UserRole.CUSTOMER:
         item.shop_notes = None
     if current_user.role == UserRole.CUSTOMER and not _customer_financials_are_published(order):
@@ -1513,8 +1525,6 @@ async def get_repair_order_workspace(
         item.total_parts_cost = Decimal("0.00")
         item.total_labor_cost = Decimal("0.00")
         item.total_cost = Decimal("0.00")
-        item.labor_discount_amount = Decimal("0.00")
-        item.order_discount_amount = Decimal("0.00")
     return item
 
 
@@ -1561,7 +1571,8 @@ async def get_repair_order_detail(
         .order_by(RepairOrderHistoryEvent.created_at.asc())
     )
     history_resp = [RepairOrderHistoryEventResponse.model_validate(event) for event in history_result.scalars().all()
-                    if current_user.role != UserRole.CUSTOMER or event.event_type not in (service_checklist.INTERNAL_EVENT_TYPES | operation_execution.INTERNAL_EVENT_TYPES)]
+                    if (current_user.role != UserRole.CUSTOMER or event.event_type not in (service_checklist.INTERNAL_EVENT_TYPES | operation_execution.INTERNAL_EVENT_TYPES))
+                    and (staff_work_hold.can_read(current_user) or event.event_type not in staff_work_hold.INTERNAL_EVENT_TYPES)]
 
     # Selected PM services (fleet PM work orders). Ordered as chosen.
     from app.db.models.fleet import RepairOrderPMService
@@ -1612,6 +1623,9 @@ async def get_repair_order_detail(
     if current_user.role == UserRole.CUSTOMER:
         detail_base["internal_notes"] = None
         detail_base["shop_notes"] = None
+    if not staff_work_hold.can_read(current_user):
+        detail_base["hold_reason"] = None
+        detail_base["held_at"] = None
     if customer_financials_hidden:
         detail_base.update({
             "total_parts_cost": Decimal("0.00"),
@@ -1852,6 +1866,9 @@ async def get_repair_order(
     # note is never theirs to read.
     if current_user.role == UserRole.CUSTOMER:
         payload["shop_notes"] = None
+    if not staff_work_hold.can_read(current_user):
+        payload["hold_reason"] = None
+        payload["held_at"] = None
     return RepairOrderResponse(
         **payload,
         pending_zelle_confirmation=pending_zelle_confirmation,
@@ -2466,6 +2483,64 @@ SYSTEM_HOLD_REASONS = {
 
 class HoldRequest(BaseModel):
     reason: str
+
+
+async def _staff_hold_transition(order_id, body, db, current_user, *, release=False):
+    try:
+        order, stopped_sessions = await staff_work_hold.transition(
+            db, order_id, current_user, body, release=release
+        )
+        response = StaffHoldResponse(
+            id=order.id, status=order.status, hold_reason=order.hold_reason,
+            held_at=order.held_at, updated_at=order.updated_at,
+            stopped_sessions_count=len(stopped_sessions),
+        )
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        raise
+
+    # Delivery is best-effort after commit: a socket outage is not a failed write.
+    try:
+        await broadcast_repair_order_update(
+            tenant_id=str(order.tenant_id), customer_id=str(order.customer_id),
+            order_id=str(order.id), order_number=order.order_number,
+            status=order.status.value, updated_at=response.updated_at.isoformat(),
+            hold_reason=response.hold_reason,
+            held_at=response.held_at.isoformat() if response.held_at else None,
+            send_to_customer=False, notify_status_change=False,
+        )
+    except Exception:
+        pass
+    for session in stopped_sessions:
+        try:
+            await broadcast_mechanic_timer_update(
+                tenant_id=str(order.tenant_id), mechanic_id=str(session.mechanic_id),
+                session_id=str(session.id), action="hold_repair_order",
+            )
+        except Exception:
+            pass
+    return response
+
+
+@router.post("/{order_id}/staff-hold", response_model=StaffHoldResponse)
+async def staff_hold_repair_order(
+    order_id: UUID,
+    body: StaffHoldRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role(*operation_execution.STAFF)),
+):
+    return await _staff_hold_transition(order_id, body, db, current_user)
+
+
+@router.post("/{order_id}/staff-release-hold", response_model=StaffHoldResponse)
+async def staff_release_repair_order_hold(
+    order_id: UUID,
+    body: StaffReleaseHoldRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role(*operation_execution.STAFF)),
+):
+    return await _staff_hold_transition(order_id, body, db, current_user, release=True)
 
 
 @router.post("/{order_id}/hold", response_model=RepairOrderResponse)
