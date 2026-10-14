@@ -183,7 +183,19 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
       // Notifications are routed through onNotification callback for centralized handling.
       switch (data.type) {
         case 'repair_order_update':
-          if (data.order_id && data.status) {
+          // "deleted" is a notification, not a repair-order lifecycle status.
+          // Keep the last canonical status/version; workspace refresh supplies
+          // the persisted deletion metadata. Active-only panels must stop now.
+          if (data.order_id && data.status === 'deleted') {
+            const activeOnlyKeys = ['repair-order-detail', 'price-build', 'repair-order-photos', 'quote', 'invoice-for-order', 'recommended-services', 'repair-order-notes', 'authorization-history', 'recommended-work', 'order-operations', 'order-checklist']
+            void queryClient.cancelQueries({ predicate: query => activeOnlyKeys.includes(String(query.queryKey[0])) && query.queryKey.includes(data.order_id) })
+            for (const key of ['repair-order-workspace', 'repair-order-detail']) {
+              queryClient.setQueriesData<RepairOrder | undefined>({ queryKey: [key, data.order_id] }, previous => previous && data.updated_at
+                ? { ...previous, deleted_at: data.updated_at }
+                : previous)
+            }
+          }
+          if (data.order_id && data.status && data.status !== 'deleted') {
             queryClient.setQueryData<RepairOrder[] | undefined>(['repair-orders'], (previous) => {
               if (!previous) return previous
               return previous.map((order) => {
@@ -213,10 +225,10 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
             })
           }
           queryClient.invalidateQueries({ queryKey: ['repair-orders'] })
-          queryClient.invalidateQueries({ queryKey: ['repair-order-detail'] })
+          queryClient.invalidateQueries({ queryKey: ['repair-order-detail'], ...(data.status === 'deleted' ? { refetchType: 'none' as const } : {}) })
           queryClient.invalidateQueries({ queryKey: ['repair-order-workspace'] })
-          queryClient.invalidateQueries({ queryKey: ['order-operations'] })
-          queryClient.invalidateQueries({ queryKey: ['order-checklist'] })
+          queryClient.invalidateQueries({ queryKey: ['order-operations'], ...(data.status === 'deleted' ? { refetchType: 'none' as const } : {}) })
+          queryClient.invalidateQueries({ queryKey: ['order-checklist'], ...(data.status === 'deleted' ? { refetchType: 'none' as const } : {}) })
           queryClient.invalidateQueries({ queryKey: ['mechanic-job-detail'] })
           queryClient.invalidateQueries({ queryKey: ['mechanic-jobs'] })
           queryClient.invalidateQueries({ queryKey: ['mechanic-history'] })

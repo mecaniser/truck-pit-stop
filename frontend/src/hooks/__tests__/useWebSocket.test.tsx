@@ -568,6 +568,30 @@ describe('useWebSocket cookie-session transport', () => {
     for (const key of keys) expect(client.getQueryState(key)?.isInvalidated).toBe(true)
   })
 
+  it('treats deletion as metadata without poisoning lifecycle status or timestamp precedence', () => {
+    authenticateWithWorkOS()
+    const client = new QueryClient()
+    const original = { id: 'order-1', status: 'in_progress', updated_at: '2026-10-13T12:00:00Z', deleted_at: null }
+    const unrelated = { ...original, id: 'order-2' }
+    client.setQueryData(['repair-orders'], [original, unrelated])
+    for (const key of ['repair-order-detail', 'repair-order-workspace']) {
+      client.setQueryData([key, 'order-1'], original)
+      client.setQueryData([key, 'order-2'], unrelated)
+    }
+    const invalidation = vi.spyOn(client, 'invalidateQueries')
+    renderHook(() => useWebSocket(), { wrapper: ({ children }: PropsWithChildren) => <QueryClientProvider client={client}>{children}</QueryClientProvider> })
+    act(() => latestSocket().emitMessage(JSON.stringify({ type: 'repair_order_update', order_id: 'order-1', status: 'deleted', updated_at: '2026-10-13T14:00:00Z' })))
+    for (const key of ['repair-order-detail', 'repair-order-workspace']) {
+      expect(client.getQueryData([key, 'order-1'])).toEqual({ ...original, deleted_at: '2026-10-13T14:00:00Z' })
+      expect(client.getQueryData([key, 'order-2'])).toEqual(unrelated)
+    }
+    expect(client.getQueryData(['repair-orders'])).toEqual([original, unrelated])
+    for (const key of ['repair-order-detail', 'order-operations', 'order-checklist']) {
+      expect(invalidation).toHaveBeenCalledWith({ queryKey: [key], refetchType: 'none' })
+    }
+    expect(client.getQueryState(['repair-order-workspace', 'order-1'])?.isInvalidated).toBe(true)
+  })
+
   it.each([false, true, undefined])('refreshes operation and workspace state while respecting notify_status_change=%s', (notifyStatusChange) => {
     authenticateWithWorkOS()
     const client = new QueryClient()

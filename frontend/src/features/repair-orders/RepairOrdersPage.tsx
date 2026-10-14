@@ -883,6 +883,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
   const shouldLoadMechanics = !!(
     selectedOrder?.id
     && isDetailOpen
+    && !selectedOrder.deleted_at
     && ['draft', 'quoted', 'declined', 'approved', 'assigned', 'acknowledged', 'in_progress', 'pending_review'].includes(selectedOrder.status)
   )
 
@@ -940,6 +941,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
     enabled: !!(
       selectedOrder?.id
       && isDetailOpen
+      && !selectedOrder.deleted_at
       && (
         workspaceHistoryRequested
         || !PRICE_BUILDER_STATUSES.includes(selectedOrder.status)
@@ -959,7 +961,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
       const response = await api.get(`/quotes?repair_order_id=${selectedOrder!.id}`, { signal })
       return response.data
     },
-    enabled: !!(selectedOrder?.id && isDetailOpen),
+    enabled: !!(selectedOrder?.id && isDetailOpen && !selectedOrder.deleted_at),
   })
 
   const { data: authorizationHistory, refetch: refetchAuthorizationHistory } = useQuery<AuthorizationHistory>({
@@ -972,6 +974,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
       selectedOrder?.id
       && isDetailOpen
       && workspaceHistoryRequested
+      && !selectedOrder.deleted_at
       && !selectedOrder.is_internal
     ),
   })
@@ -983,7 +986,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
       const invoices = response.data
       return invoices.length > 0 ? invoices[0] : null
     },
-    enabled: !!(selectedOrder?.id && isDetailOpen && ['invoiced', 'paid'].includes(selectedOrder?.status || '')),
+    enabled: !!(selectedOrder?.id && isDetailOpen && !selectedOrder.deleted_at && ['invoiced', 'paid'].includes(selectedOrder?.status || '')),
   })
 
   const settlementAccess = invoiceForOrder?.id
@@ -1051,6 +1054,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
     enabled: !!(
       selectedOrder?.id
       && isDetailOpen
+      && !selectedOrder.deleted_at
       && (
         recommendedServicesOpen
         || !PRICE_BUILDER_STATUSES.includes((orderDetail ?? selectedOrder).status)
@@ -1421,7 +1425,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
   const canVoidInvoices = ['garage_owner', 'garage_admin'].includes(currentUser?.role || '')
   const showLegacyPriceEditor = false
   const detailStatus = (orderDetail ?? selectedOrder)?.status ?? null
-  const showPriceBuilder = detailStatus ? PRICE_BUILDER_STATUSES.includes(detailStatus) : false
+  const showPriceBuilder = !!selectedOrder?.deleted_at || (detailStatus ? PRICE_BUILDER_STATUSES.includes(detailStatus) : false)
   const priceBuilderOwnsShell = showPriceBuilder
   const showLaborBreakdown = detailStatus ? LABOR_BREAKDOWN_STATUSES.includes(detailStatus) : false
   const assignmentBypassedInDrawer = !(orderDetail ?? selectedOrder)?.assigned_mechanic_id &&
@@ -1589,6 +1593,10 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
       if (selectedOrder?.id === orderId) {
         closeDetail()
       }
+      // A previous History visit must not win over the freshly deleted ledger
+      // row when it is reopened. Cancelled requests are already aborted above.
+      queryClient.removeQueries({ queryKey: ['repair-order-detail', orderId], exact: true })
+      queryClient.removeQueries({ queryKey: ['repair-order-workspace', orderId], exact: true })
       toast.success(orderNumber ? `Repair order ${orderNumber} deleted` : 'Repair order deleted')
       // Let the card play its fade+collapse exit before the refetch drops it.
       window.setTimeout(() => {
@@ -1608,11 +1616,13 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
       return response.data as { order: RepairOrder; stock_shortages: string[] }
     },
     onSuccess: ({ order: updated, stock_shortages }) => {
+      queryClient.setQueryData(['repair-order-workspace', updated.id], updated)
+      queryClient.removeQueries({ queryKey: ['repair-order-detail', updated.id], exact: true })
       invalidateOrderBoards()
-      queryClient.invalidateQueries({ queryKey: ['repair-order-detail', updated.id] })
       queryClient.invalidateQueries({ queryKey: ['price-build', updated.id] })
       queryClient.invalidateQueries({ queryKey: ['inventory-typeahead'] })
-      setSelectedOrder((current) => retainRepairOrderPresentation(current, updated))
+      setSelectedOrder((current) => current?.id === updated.id ? retainRepairOrderPresentation(current, updated) : current)
+      setShowDangerActions(false)
       toast.success(`Repair order ${updated.order_number} restored`)
       // While the order sat deleted its parts went back on the shelf and may
       // have been used elsewhere — say so rather than letting stock go silently
@@ -2200,7 +2210,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
       const response = await api.get(`/repair-orders/${selectedOrder!.id}/notes`, { signal })
       return response.data
     },
-    enabled: !!(selectedOrder?.id && isDetailOpen),
+    enabled: !!(selectedOrder?.id && isDetailOpen && !selectedOrder.deleted_at),
   })
 
   const orderNotes = useMemo(() => {
@@ -4812,10 +4822,12 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                     }
                     forceVoidPending={forceVoidOrderMutation.isPending}
                     onForceVoidOrder={async (args) => { await forceVoidOrderMutation.mutateAsync(args) }}
-                    isDeleted={!!(orderDetail ?? selectedOrder).deleted_at}
-                    deletedByName={(orderDetail ?? selectedOrder).deleted_by_name}
-                    deletedAt={(orderDetail ?? selectedOrder).deleted_at}
-                    onRestoreOrder={() => selectedOrder.id && restoreRepairOrderMutation.mutate(selectedOrder.id)}
+                    isDeleted={!!selectedOrder.deleted_at}
+                    deletedByName={selectedOrder.deleted_by_name}
+                    deletedAt={selectedOrder.deleted_at}
+                    onRestoreOrder={['garage_owner', 'garage_admin'].includes(currentUser?.role || '')
+                      ? () => selectedOrder.id && restoreRepairOrderMutation.mutate(selectedOrder.id)
+                      : undefined}
                     restorePending={restoreRepairOrderMutation.isPending}
                     onReopenWorkOrder={() => selectedOrder.id && reopenWorkOrderMutation.mutate(selectedOrder.id)}
                     reopenPending={reopenWorkOrderMutation.isPending}

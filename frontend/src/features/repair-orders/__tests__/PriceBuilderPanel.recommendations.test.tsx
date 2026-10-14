@@ -57,6 +57,8 @@ describe('recommendation navigation in repair workspace', () => {
 
   it('hides conversion on a deleted target even if a stale server capability is true', async () => {
     setup({ isDeleted: true, recommendedWorkPanel: (context) => <output data-testid="context">{String(context.canConvert)}</output> })
-    expect(screen.getByTestId('context')).toHaveTextContent('false')
+    expect(screen.queryByTestId('context')).not.toBeInTheDocument()
+    expect(screen.getByRole('region', { name: 'Deleted repair order' })).toBeVisible()
+    expect(screen.queryByRole('button', { name: /Renamed operation/ })).not.toBeInTheDocument()
   })
 })

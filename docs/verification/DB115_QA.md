@@ -38,3 +38,23 @@ Final owner browser receipt in [DB115_STAFF_HOLD.md](DB115_STAFF_HOLD.md) covers
 The reviewer independently SHA-256 compared **all 11 changed application files** between source and preview: every file matches [DB115_PREVIEW_MANIFEST.json](DB115_PREVIEW_MANIFEST.json), including final privacy and completion-guard corrections. The owner confirms final direct/proxy readiness and preserved runtime identity after autoreload.
 
 Bounds: these checks establish local browser-emulated desktop/390/320/landscape behavior, not physical-device or native-keyboard behavior. No production journey, merge, deployment or final protected CI pass is claimed. Existing operation-completion history contains technical identifiers; owner recorded that separate next-audit refinement without folding it into DB115 acceptance.
+
+## Independent post-release gate: GO (2026-10-13 local)
+
+Following the user's explicit release authorization, the same independent QA reviewer reviewed [the completed production receipt](DB115_PRODUCTION.md), production screenshots, captured transition/workspace responses, history and cleanup evidence. **GO for DB115's released active-order hold/release workflow.** The reviewer did not operate the production browser, mutate production data or perform the merge/deploy.
+
+Independently verified release identity:
+
+- GitHub PR516 is merged at `2026-10-14T01:04:55Z`. All six protected checks succeeded in run `38492057105` on exact head `694e7aa5ac7cee9504403dcf6234aa08ba4d2f20`.
+- Checked head and merge `2461084e45d77cc3e84d2d77e76fe55939079c12` have identical Git tree `1201bbab4bd0b7788d324a78147fdc43f4172a88`. Changes since the original local QA source are documentation and one trailing blank line.
+- Read-only Railway inspection confirms Web deployment `04a94deb-08de-43f4-9616-3dddea3dcce9` **SUCCESS** on that exact main merge. Independent fresh `/health/ready` is ready with database/Redis both ok. Public dashboard HTML references `/assets/index-0SQE4SMf.js`, matching the owner's fresh authenticated browser asset. Raw deployment metadata is `/tmp/db115-independent-production-deployment.json`.
+
+Reviewed production acceptance:
+
+- Clearly labeled synthetic order `TPS-828ACD84-000056` / `bce9b62b-a7e3-4ba9-a740-6ced6857e9b3`; synthetic customer/vehicle, invalid email domain, no phone, no mechanic assignment, zero price and no invoice/payment. Before/final workspace reads preserve the in-progress/unassigned/$0 baseline and clear hold state after release.
+- Desktop hold/reload/release/reload succeeds; Cancel/Escape add no transition. Mobile exact-request failure retains the custom draft, followed by explicit successful retry and reload. 320px release and 740×400 landscape draft/close controls fit with intact labels. Screenshots and recorded bounds support one workspace/dialog body scroller, 57px mobile footer and reachable 44px dialog actions.
+- Captured 200 responses and readable history agree on **two holds and two releases**. The custom reason and staff actor remain readable after release. No stale/conflict production injection is claimed; that case was verified locally.
+- Production returned zero stopped sessions and retained null assignment/tracked-minute fields. These are not a production timer-start count. No production timer-count database query or live multi-technician scenario was performed; the no-auto-restart and atomic multi-technician invariants remain supported by reviewed source, independent local tests and real PostgreSQL evidence. The production UI showed no timer start. No real customer or technician workflow was used for mutations.
+- Cleanup response/readback confirms recoverable soft deletion at `2026-10-14T01:11:34.337869Z`; the final screenshot exposes **Restore order** and deletion actor/time. The synthetic customer and vehicle remain for provenance; no permanent deletion. Parent confirms temporary viewport, touch and request-block overrides were cleared.
+
+The cleanup screenshots also expose existing Deleted-view recovery/fetch defects. Those are explicitly tracked as **DB116**, to address before another parity feature; this GO does not certify the Deleted workflow or the whole application as error-free. Physical-device and native mobile-keyboard behavior remain unverified. No unresolved issue remains in the released DB115 active-order hold/release scope.
