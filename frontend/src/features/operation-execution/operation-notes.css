@@ -1,0 +1,5 @@
+.db-operation-note-action { min-height: 32px; }
+@media (max-width: 639px), (max-width: 959px) and (pointer: coarse) {
+  .db-operation-note-action { min-height: 44px; }
+  .db-operation-notes textarea.text-sm { font-size: max(16px, var(--db-type-sm, 14px)) !important; }
+}

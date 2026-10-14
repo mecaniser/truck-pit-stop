@@ -16,6 +16,8 @@ import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tansta
 import toast from 'react-hot-toast'
 
 import api from '@/lib/api'
+import { useAuthStore } from '@/stores/authStore'
+import { scopedOrderDetailKey } from '@/features/operation-execution/notesPrivacy'
 import type {
   PartsUsage,
   PriceBuildSummary,
@@ -124,9 +126,11 @@ export function usePriceBuildSummary(orderId: string) {
 }
 
 export function useRepairOrderDetail(orderId: string) {
+  const user = useAuthStore(state => state.user)
+  const epoch = useAuthStore(state => state.authSessionEpoch)
   return useQuery<FleetRepairOrderDetail>({
-    queryKey: fleetPriceBuildKeys.detail(orderId),
-    queryFn: async () => (await api.get(`/repair-orders/${orderId}/detail`)).data,
+    queryKey: scopedOrderDetailKey('fleet-ro-detail', orderId, user, epoch),
+    queryFn: async ({ signal }) => (await api.get(`/repair-orders/${orderId}/detail`, { signal })).data,
   })
 }
 

@@ -80,7 +80,7 @@ describe('deleted repair-order workspace', () => {
     await user.click(screen.getByRole('button', { name: 'Delete', exact: true }))
     await user.click(screen.getByRole('button', { name: 'Delete order', exact: true }))
     await waitFor(() => expect(screen.queryByRole('region', { name: '#QA116', exact: true })).not.toBeInTheDocument())
-    expect(client.getQueryData(['repair-order-detail', order.id])).toBeUndefined()
+    expect(client.getQueriesData({ queryKey: ['repair-order-detail', order.id] })).toEqual([])
     api.get.mockClear()
     await user.click(screen.getByRole('button', { name: 'Deleted', exact: true }))
     await user.click(await screen.findByRole('button', { name: 'Open repair order QA116', exact: true }))

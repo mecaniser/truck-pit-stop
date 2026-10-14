@@ -30,6 +30,7 @@ import { useViewPreference } from '@/hooks/useViewPreference'
 import { useTheme } from '../../contexts/ThemeContext'
 import { useWebSocket } from '../../hooks/useWebSocket'
 import { useAuthStore } from '@/stores/authStore'
+import { canReadOperationNotes, scopedOrderDetailKey } from '@/features/operation-execution/notesPrivacy'
 import CustomerDetailPanel from '../customers/CustomerDetailPanel'
 import CustomerLoadError from '../customers/CustomerLoadError'
 import CustomerHistoryOrderDetail from '../customers/CustomerHistoryOrderDetail'
@@ -304,6 +305,7 @@ function RepairOrderLaborBreakdown({
 
 export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbenchScope?: WorkbenchScope }) {
   const currentUser = useAuthStore((s) => s.user)
+  const authSessionEpoch = useAuthStore((s) => s.authSessionEpoch)
   const { accentColors, presentationVariant } = useTheme()
   const [searchParams, setSearchParams] = useSearchParams()
   const navigate = useNavigate()
@@ -921,14 +923,14 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
     })
     // A previous History visit may have left a now-disabled full-detail cache.
     // Preserve its history/lines but refresh the authoritative header fields too.
-    queryClient.setQueryData<RepairOrderDetail | undefined>(['repair-order-detail', workspaceOrder.id], current => {
+    queryClient.setQueryData<RepairOrderDetail | undefined>(scopedOrderDetailKey('repair-order-detail', workspaceOrder.id, currentUser, authSessionEpoch), current => {
       if (!current || Date.parse(current.updated_at) > Date.parse(workspaceOrder.updated_at)) return current
       return { ...current, ...workspaceOrder }
     })
-  }, [queryClient, workspaceOrder, selectedOrder?.id])
+  }, [queryClient, workspaceOrder, selectedOrder?.id, currentUser, authSessionEpoch])
 
   const { data: orderDetail, refetch: refetchOrderDetail, isLoading: isOrderDetailLoading, isFetching: isHistoryDetailFetching, isError: isHistoryDetailError } = useQuery<RepairOrderDetail>({
-    queryKey: ['repair-order-detail', selectedOrder?.id],
+    queryKey: scopedOrderDetailKey('repair-order-detail', selectedOrder?.id, currentUser, authSessionEpoch),
     queryFn: async ({ signal }) => {
       const response = await api.get(`/repair-orders/${selectedOrder!.id}/detail`, { signal })
       return response.data
@@ -1595,7 +1597,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
       }
       // A previous History visit must not win over the freshly deleted ledger
       // row when it is reopened. Cancelled requests are already aborted above.
-      queryClient.removeQueries({ queryKey: ['repair-order-detail', orderId], exact: true })
+      queryClient.removeQueries({ queryKey: ['repair-order-detail', orderId] })
       queryClient.removeQueries({ queryKey: ['repair-order-workspace', orderId], exact: true })
       toast.success(orderNumber ? `Repair order ${orderNumber} deleted` : 'Repair order deleted')
       // Let the card play its fade+collapse exit before the refetch drops it.
@@ -1617,7 +1619,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
     },
     onSuccess: ({ order: updated, stock_shortages }) => {
       queryClient.setQueryData(['repair-order-workspace', updated.id], updated)
-      queryClient.removeQueries({ queryKey: ['repair-order-detail', updated.id], exact: true })
+      queryClient.removeQueries({ queryKey: ['repair-order-detail', updated.id] })
       invalidateOrderBoards()
       queryClient.invalidateQueries({ queryKey: ['price-build', updated.id] })
       queryClient.invalidateQueries({ queryKey: ['inventory-typeahead'] })
@@ -1739,7 +1741,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
       queryClient.invalidateQueries({ queryKey: ['invoice-for-order', updated.repair_order_id] })
       queryClient.invalidateQueries({ queryKey: ['price-build', updated.repair_order_id] })
       queryClient.setQueryData<RepairOrderDetail>(
-        ['repair-order-detail', updated.repair_order_id],
+        scopedOrderDetailKey('repair-order-detail', updated.repair_order_id, currentUser, authSessionEpoch),
         prev => prev ? { ...prev, status: updated.raw_status } : prev,
       )
       setSelectedOrder(prev => prev ? { ...prev, status: updated.raw_status } : null)
@@ -2445,7 +2447,8 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
       : undefined
     const orderHistoryEvents = orderDetail?.history_events ?? []
     const nonAuthorizationHistoryEvents = orderHistoryEvents.filter(
-      (event) => !event.event_type.startsWith('authorization_'),
+      (event) => !event.event_type.startsWith('authorization_')
+        && (event.event_type !== 'operation_note_shop' || (canReadOperationNotes(currentUser?.role) && !isHistoryDetailError)),
     )
     const canonicalAuthorizationEvents = canonicalizeAuthorizationHistoryEvents(
       orderHistoryEvents,

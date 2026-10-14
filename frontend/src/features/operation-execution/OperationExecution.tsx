@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { trackedTimeLabel } from './format'
+import { OperationNotes } from './OperationNotes'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Check, Play, RefreshCw, RotateCcw, Square } from 'lucide-react'
 import api from '@/lib/api'
@@ -96,6 +97,7 @@ export function MechanicOperations({ orderId, refreshToken, leadScope = [] }: { 
       <h4 className="break-words text-sm font-semibold text-zinc-100">{item.description}</h4>
       <OperationExecutionStatus item={item} dark />
       <OperationExecutionControls orderId={orderId} item={item} disabled={query.isError || query.isFetching} dark />
+      <OperationNotes orderId={orderId} laborId={item.labor_id} description={item.description} orderStatus={query.data?.order_status} assignmentId={item.mechanic_id} dark />
     </article>)}
     {showLeadScope && <ul className="divide-y divide-zinc-700 rounded-xl border border-zinc-700 px-3">{leadScope.map((service, index) => <li key={`${service.name}:${index}`} className="py-2"><p className="break-words text-sm text-zinc-100">{service.name}</p>{service.description && <p className="mt-1 break-words text-xs text-zinc-400">{service.description}</p>}</li>)}</ul>}
     {query.data?.items.length === 0 && !query.isError && !showLeadScope && <p className="text-xs text-zinc-400">No operations assigned.</p>}

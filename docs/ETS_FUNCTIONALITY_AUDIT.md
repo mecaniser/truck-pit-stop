@@ -101,3 +101,8 @@ Current delivery: [search/audit PR500](https://github.com/mecaniser/truck-pit-st
 14. [Integrations](https://support.easytruckshop.io/en/collections/19131242-integrations)
 
 [Help center](https://support.easytruckshop.io/en/) and [navigation articles](https://support.easytruckshop.io/en/collections/13751702-navigation) were used to map modules. Authenticated evidence was retained as read-only observations; source account data is not a committed fixture.
+
+
+## 2026-10-14 focused continuation: operation documentation (DB118)
+
+Fresh authenticated ETS item Notes inspection and REA6.4.0 evidence confirm per-operation notes with separate internal order notes. DieselBridge already had order-level notes but lacked operation linkage. DB118 adds exact labor-linked, attributed, append-only shop notes and safe retry, with shop-only default and explicit role/assignment boundaries instead of copying ETS public-by-default note behavior. Staff history preserves original operation identity after removal. No price/timer/completion side effects or customer publication. Implementation, tests, runtime and release status: [DB118 evidence](verification/DB118_OPERATION_NOTES.md); board remains the current status source. This does not claim all ETS functionality is complete. External service history and capacity-aware scheduling remain separate model/workflow gaps.
