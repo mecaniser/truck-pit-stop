@@ -54,3 +54,9 @@ PR519: https://github.com/mecaniser/truck-pit-stop/pull/519. Source eab4b2477bf3
 ### CI correction
 
 Initial run38614337519 passed five jobs, including backend2967passed/140skipped, but frontend full suite stalled. Local full run isolated RepairOrdersPage.customer.test.tsx (159of160files completed): its existing auth mock recreates the user object, exposing a repeating workspace sync effect introduced by the cache scoping. Memoize the selected detail key using the same primitive tenant/actor/role/session/order values; effect now depends on that stable key. No privacy partition or authorization change. Independent QA53passed and Security4privacy cases pass. Corrected full local suite **160files/1464tests passed**,45.75s (/tmp/db118-frontend-full-fixed.log). Initial cancelled run is not a complete CI gate; fresh corrected-head CI required.
+
+### Second CI assertion and local browser recheck
+
+Corrected-head CI38617876518 frontend completed1463passed/1failed. The sole failure expected no query-cache entry after deletion; a disabled observer had recreated the scoped entry with undefined data. The assertion now requires no retained data across all scoped keys, preserving the real privacy/stale-data requirement and the existing no-unavailable-requests/Restore checks. Application code is unchanged by this test correction.
+
+After sign-in restoration, source-matched preview readiness/database/Redis healthy. Actual1280desktop customer→same order→exact Brake inspection notes retains both notes. Actual390phone customer→New repair order→Cancel returns focus to New repair order and retains selected order/queue/customer route; Back→Close returns exactly/dashboard?queue=on_floor. Customer has one .db-customer-embedded__body scroller,390px document width; screenshot /tmp/db118-ui/local-customer-return-390.png. No new orders or notes created during this recheck.
