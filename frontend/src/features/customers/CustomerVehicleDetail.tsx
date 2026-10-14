@@ -5,6 +5,7 @@ import api from '@/lib/api'
 import { customerDisplayName } from '@/lib/customerName'
 import type { Customer, RepairOrder, Vehicle } from '@/types'
 import { ExternalServiceHistory } from '@/features/external-services/ExternalServiceHistory'
+import VehicleHistoryExport from './VehicleHistoryExport'
 import './customer-workspace.css'
 
 type Props = { customer: Customer; vehicle: Vehicle; onOpenOrder: (order: RepairOrder) => void; onCreateOrder?: () => void; createOrderButtonRef?: Ref<HTMLButtonElement> }
@@ -31,7 +32,7 @@ function VehicleRecord({ customer, vehicle, onOpenOrder, onCreateOrder, createOr
     return mechanic ? `${mechanic.first_name} ${mechanic.last_name}` : null
   }
   return <div className="db-customer-record db-customer-vehicle-record">
-    {onCreateOrder && <div className="db-customer-record__work-actions"><button ref={createOrderButtonRef} type="button" onClick={onCreateOrder}><Plus aria-hidden="true" />New repair order</button></div>}
+    <VehicleHistoryExport vehicle={vehicle}>{onCreateOrder && <button ref={createOrderButtonRef} type="button" onClick={onCreateOrder}><Plus aria-hidden="true" />New repair order</button>}</VehicleHistoryExport>
     <dl className="db-customer-record__facts">
       <div><dt>Customer</dt><dd>{customerDisplayName(customer)}</dd></div>
       <div><dt>Unit</dt><dd>{vehicle.unit_number || '—'}</dd></div>
