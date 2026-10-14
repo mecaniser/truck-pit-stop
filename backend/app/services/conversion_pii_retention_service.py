@@ -21,13 +21,15 @@ CONVERSION_EVENT_TYPES = {
     "repair_order.payment_voided",
     "repair_order.payment_adjusted",
 }
+SHOP_HISTORY_EVENT = "job.history_snapshot"
+SIGNED_OUTCOME_EVENT_TYPES = CONVERSION_EVENT_TYPES | {SHOP_HISTORY_EVENT}
 RETAINED_FIELDS = {
     "event_id", "event_type", "occurred_at", "shop_id", "repair_order_id",
     "invoice_id", "paid_at", "currency", "total_amount",
     "schema_version", "source_system", "source_revision", "repair_order_uuid",
-    "repair_order_number", "value_basis", "amount_semantics",
+    "repair_order_number", "value_basis", "amount_semantics", "source_observation",
 }
-SENSITIVE_FIELDS = {"customer", "attribution", "service_lines"}
+SENSITIVE_FIELDS = {"customer", "attribution", "service_lines", "snapshot"}
 TERMINAL_STATUSES = {
     ProviderOutboxStatus.SUCCEEDED.value,
     ProviderOutboxStatus.DEAD.value,
@@ -99,7 +101,7 @@ async def purge_expired_conversion_event_pii(
     cutoff = conversion_retention_cutoff(current)
     async with session_factory() as db:
         rows = (await db.execute(select(ProviderOutboxEvent).where(
-            ProviderOutboxEvent.event_type.in_(CONVERSION_EVENT_TYPES),
+            ProviderOutboxEvent.event_type.in_(SIGNED_OUTCOME_EVENT_TYPES),
             # Retention is an absolute ceiling measured from creation, not
             # completion. It therefore includes queued, leased, and
             # configuration-blocked events.
@@ -124,7 +126,7 @@ async def erase_customer_conversion_event_pii(db: AsyncSession, *, tenant_id: UU
         .join(RepairOrder, Invoice.repair_order_id == RepairOrder.id)
         .where(
             ProviderOutboxEvent.tenant_id == tenant_id,
-            ProviderOutboxEvent.event_type.in_(CONVERSION_EVENT_TYPES),
+            ProviderOutboxEvent.event_type.in_(SIGNED_OUTCOME_EVENT_TYPES),
             RepairOrder.customer_id == customer_id,
         )
         .with_for_update()

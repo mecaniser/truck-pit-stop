@@ -1,0 +1,49 @@
+{
+  "schema_version": 1,
+  "event_type": "job.history_snapshot",
+  "event_id": "00000000-0000-4000-8000-000000000006",
+  "occurred_at": "2026-10-14T12:00:00+00:00",
+  "shop_id": "00000000-0000-4000-8000-000000000001",
+  "source_system": "dieselbridge",
+  "source_revision": "1e314769448167a4b8f30e613ef1c99618fc41206375211a962f321072f3d084",
+  "snapshot": {
+    "source": "easy_truck_shop_import",
+    "repair_order_uuid": "00000000-0000-4000-8000-000000000002",
+    "repair_order_number": "ETS-100-200",
+    "invoice_id": "00000000-0000-4000-8000-000000000003",
+    "invoice_number": "ETSINV-100",
+    "job_status": "completed",
+    "invoice_status": "paid",
+    "currency": "USD",
+    "invoice_total": "320.00",
+    "completed_date": "2026-10-13",
+    "invoiced_date": "2026-10-13",
+    "paid_date": "2026-10-14",
+    "paid_at": null,
+    "paid_time_precision": "day",
+    "grouping_uncertain": false,
+    "customer": {
+      "id": "00000000-0000-4000-8000-000000000004",
+      "name": "Synthetic Fleet",
+      "phone": "+12025550123",
+      "email": null
+    },
+    "vehicle": {
+      "id": "00000000-0000-4000-8000-000000000005",
+      "vin": null,
+      "unit_number": "TEST-01"
+    },
+    "operations": [
+      {
+        "repair_order_uuid": "00000000-0000-4000-8000-000000000002",
+        "repair_order_number": "ETS-100-200",
+        "description": "Tire replacement"
+      }
+    ],
+    "attribution": {
+      "elis_opportunity_id": null,
+      "callrail_call_id": null
+    }
+  },
+  "source_observation": 1
+}

@@ -250,3 +250,5 @@ from app.db.models.fleet_diagnostic import FleetDiagnosticCapture  # noqa: F401
 from app.db.models.fleet_driver_record import FleetDriverDirectoryCapture, FleetDriverRecordCapture
 
 from app.db.models.service_checklist import RepairOrderChecklistItem  # noqa: F401
+
+from app.db.models.shop_history_cursor import ShopHistoryCursor, ShopHistoryObservation

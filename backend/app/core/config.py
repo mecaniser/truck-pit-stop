@@ -241,6 +241,9 @@ class Settings(BaseSettings):
     PAID_INVOICE_WEBHOOK_ENCRYPTION_KEYS: str = ""
     PAID_INVOICE_WEBHOOK_ACTIVE_KEY_VERSION: str = "v1"
     PAID_INVOICE_WEBHOOK_SIGNATURE_TOLERANCE_SECONDS: int = Field(default=300, ge=60, le=3600)
+    SHOP_HISTORY_CAPTURE_ENABLED: bool = False
+    SHOP_HISTORY_CAPTURE_TENANT_IDS: str = ""
+    SHOP_HISTORY_CAPTURE_BATCH_SIZE: int = Field(default=50, ge=1, le=200)
     CONVERSION_OUTBOX_PII_RETENTION_DAYS: int = Field(default=30, ge=1, le=365)
     
     # Cloudinary (for work photos)
