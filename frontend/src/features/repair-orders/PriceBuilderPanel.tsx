@@ -1429,7 +1429,7 @@ export default function PriceBuilderPanel({
       })
       return response.data
     },
-    enabled: addType === 'saved_labor',
+    enabled: !isDeleted && addType === 'saved_labor',
   })
 
   const [editingPartsSaving, setEditingPartsSaving] = useState(false)
@@ -1441,6 +1441,13 @@ export default function PriceBuilderPanel({
     if (isOnHold) setArmWoComplete(false)
   }, [isOnHold])
   const holdLabel = isOnHold ? holdReasonLabel(workflowInfo!.hold_reason!) : ''
+  useEffect(() => {
+    if (isDeleted) {
+      setDescriptionEditing(false)
+      setArmWoComplete(false)
+      setHoldDialogOrderId(null)
+    }
+  }, [isDeleted])
   const isLocked = !!summary?.pricing_locked
   const hasInvoice = !!invoice && ['invoiced', 'paid'].includes(orderStatus)
   const invoiceDisplayTotal = invoiceSettlement
@@ -1462,7 +1469,7 @@ export default function PriceBuilderPanel({
   // server capability is authoritative; the fallback supports older responses.
   const INTERNAL_FROZEN_STATUSES: RepairOrderStatus[] = ['completed', 'invoiced', 'paid', 'cancelled']
   const isEditableStatus = summary?.can_edit_work ?? !INTERNAL_FROZEN_STATUSES.includes(orderStatus)
-  const canMutate = canEdit && !isLocked && isEditableStatus
+  const canMutate = canEdit && !isDeleted && !isLocked && isEditableStatus
   const canManageHold = !!workHoldOrder && canMutate && !isDeleted && !hasInvoice && canManageWorkHold(staffRole, workHoldOrder)
   const holdAction = (beforeOpen?: () => void) => canManageHold && <button type="button" onClick={() => { beforeOpen?.(); setHoldDialogOrderId(orderId) }} className="db-stage-action inline-flex min-h-11 items-center justify-center whitespace-nowrap rounded-lg border border-gray-300 px-3 text-sm font-semibold text-gray-700 hover:bg-gray-50">{isOnHold ? 'Release hold' : 'Put on hold'}</button>
   useEffect(() => {
@@ -1711,7 +1718,7 @@ export default function PriceBuilderPanel({
   const { data: discountLimits, isError: discountLimitsError } = useQuery({
     queryKey: ['discount-limits', orderId, summary],
     queryFn: async () => (await api.get<Record<'current' | 'stock' | 'list', DiscountCapacity>>(`/repair-orders/${orderId}/discount-limits`)).data,
-    enabled: discountsOpen && canEdit,
+    enabled: !isDeleted && discountsOpen && canEdit,
     retry: false,
   })
   const discountCapacity = discountLimits?.[draftPartsPricingMode === partsPricingMode ? 'current' : draftPartsPricingMode]
@@ -2815,7 +2822,7 @@ export default function PriceBuilderPanel({
         <div className="db-intake" data-editing={descriptionEditing}>
           <div className="db-intake-heading mb-1 flex items-center justify-between gap-2">
             <p className="text-xs font-medium text-gray-400 uppercase tracking-wider">Work Requested</p>
-            {onSaveDescription && !descriptionEditing && (
+            {onSaveDescription && !isDeleted && !descriptionEditing && (
               <button
                 type="button"
                 onClick={() => { setDescriptionDraft(description || ''); setDescriptionEditing(true) }}
@@ -2868,6 +2875,15 @@ export default function PriceBuilderPanel({
         </div>
       )}
 
+      {isDeleted ? (
+        <section aria-label="Deleted repair order" className="rounded-xl border border-gray-200 bg-gray-50 p-4">
+          <h3 className="font-semibold text-gray-900">This order is deleted.</h3>
+          {deletedAt && <p className="mt-1 text-sm text-slate-600">
+            {deletedByName ? `Deleted by ${deletedByName}` : 'Deleted'} on {format(new Date(deletedAt), 'MMM d, yyyy h:mm a')}.
+          </p>}
+          <p className="mt-2 text-sm text-slate-600">Restore the order to view its work, checklist, notes and history. All records are preserved.</p>
+        </section>
+      ) : <>
       <OrderChecklist orderId={orderId} orderStatus={orderStatus} refreshToken={summary} />
 
       {!!summary?.warnings?.filter((w) => !w.line_id).length && (
@@ -4092,14 +4108,6 @@ export default function PriceBuilderPanel({
           />
         )
 
-        if (isDeleted) {
-          return (
-            <div className="rounded-xl border border-dashed border-gray-200 bg-gray-50 px-4 py-6 text-center">
-              <p className="font-semibold text-gray-900">This order is deleted.</p>
-              <p className="mt-1 text-sm text-slate-600">Restore it from Order actions to view and edit its work &amp; labor.</p>
-            </div>
-          )
-        }
         if (isLoading) {
           // Skeleton that mirrors the Services & Parts list, so a slow fetch (prod)
           // reads as "loading" in the open drawer rather than an empty panel.
@@ -4694,10 +4702,18 @@ export default function PriceBuilderPanel({
           </div>
         )}
       </div>
+      </>}
       </div>
       </div>
 
       <div className="db-workspace-footer z-10 border-t border-gray-200 bg-white/95 px-3 py-4 shadow-[0_-10px_30px_rgba(20,25,35,.08)] backdrop-blur sm:px-5">
+        {isDeleted ? <div className="db-workspace-actions flex items-center justify-between gap-3">
+          <span className="text-sm font-medium text-slate-600">Deleted order</span>
+          {onRestoreOrder && <button type="button" onClick={onRestoreOrder} disabled={restorePending} className="db-stage-action db-stage-action--primary min-h-11">
+            {restorePending ? <Spinner size="xs" /> : <RotateCcw className="h-4 w-4" />}
+            {restorePending ? 'Restoring…' : 'Restore order'}
+          </button>}
+        </div> : <>
         {!compactWorkspace && pricingControls}
         <div className="db-workspace-actions flex flex-wrap items-center justify-between gap-3">
           <div className={hasInvoice
@@ -4923,6 +4939,7 @@ export default function PriceBuilderPanel({
             {pricingControls}
           </>}</WorkspaceActionOverflow>}
         </div>
+        </>}
       </div>
 
       {holdDialogOrderId === orderId && workHoldOrder && <StaffHoldDialog key={orderId} order={workHoldOrder} onClose={() => setHoldDialogOrderId(null)} onUpdated={onUpdated} />}
@@ -4964,7 +4981,7 @@ export default function PriceBuilderPanel({
                   </p>
                   <button
                     type="button"
-                    disabled={restorePending}
+                    disabled={restorePending || !onRestoreOrder}
                     onClick={onRestoreOrder}
                     className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-red-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-50"
                   >
