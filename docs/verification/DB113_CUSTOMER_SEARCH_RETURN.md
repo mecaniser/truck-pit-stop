@@ -21,3 +21,20 @@ Accountable: Frontend & UX. Fast UI, no server/API/data changes.
 ## Release gate
 
 All six protected checks passed on17dfdf74 in run38484443162. PR514 merged asd5c870f1 on2026-10-13 at23:41 UTC; automatic Web deploymentdcf1e242 is building. Signed-in production desktop/mobile recheck pending. ETS parity remains paused until DB-114 also passes.
+
+
+## Production acceptance — 2026-10-13
+
+- PR514: all six protected checks passed (run38484443162), source17dfdf74; merge **d5c870f1dbae403b9e7e3c8acfc6e65b29012e75**.
+- Railway Web deployment **dcf1e242-720a-4682-82c0-ab5e620d572e** SUCCESS at that exact merge; `/health/ready` healthy for database and Redis.
+- Fresh signed-in production browser loaded `index-A1RSurpp.js`.
+-1280×700 desktop and390×700 touch emulation:77 CARGO search → customer → W900 truck → New repair order (correct truck pressed) → Cancel → customer → directory. Search retained, filtered results retained; no horizontal overflow.
+- Changed query to77, used customer-level new-order shortcut, verified no truck implicitly selected, closed draft and returned to directory with the new77 query retained.
+- No order/customer mutation submitted; captured console errors empty.
+- Local proof: `/tmp/db113-production-desktop.png`, `/tmp/db113-production-mobile.png`. Live business screenshots remain local.
+- **DB113 Done.** Physical-device/native-keyboard behavior not claimed. ETS parity still waits for DB114 production acceptance.
+
+
+### Final combined release recheck
+
+Search cancellation was repeated at1280px and320px against final merge `1c76d805`, successful deployment `53448622`, fresh asset `index-TQ0GnU-d.js`: exact W900 selection, Cancel, Back to customer, Back to Customers with77 CARGO retained. Proof: `/tmp/db113-production-desktop-final.png`, `/tmp/db113-production-320-final.png`. DB114 production acceptance also passed; ETS parity is now unblocked.
