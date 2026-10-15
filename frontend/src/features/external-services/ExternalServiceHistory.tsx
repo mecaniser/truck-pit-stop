@@ -5,6 +5,7 @@ import { z } from 'zod'
 import api from '@/lib/api'
 import { useAuthStore } from '@/stores/authStore'
 import { errorDetail } from '@/features/service-checklists/queries'
+import { ExternalServiceReceipts } from './ExternalServiceReceipts'
 import './external-services.css'
 
 const fieldsSchema = z.object({
@@ -94,6 +95,7 @@ function ScopedHistory({ vehicleId, scope }: { vehicleId: string; scope: (string
             <button type="button" disabled={Boolean(editor) || query.isFetching} aria-label={`Void service from ${record.provider_name}`} onClick={event => openEditor({ kind: 'void', record }, event.currentTarget)}>Void</button>
           </>}
         </div>
+        <ExternalServiceReceipts vehicleId={vehicleId} recordId={record.id} recordVersion={record.version} voidedAt={record.voided_at} providerName={record.provider_name} disabled={Boolean(editor) || query.isFetching} />
         <RecordHistory record={record} path={path} scope={scope} />
       </li>)}</ul>
       {(page > 0 || query.data.has_more) && <nav aria-label="Outside service pages" className="db-external-services__actions">

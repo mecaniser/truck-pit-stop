@@ -69,3 +69,24 @@ All67 focused tests pass (14history,27customer,26navigation); changed-source lin
 Run38668172675 passed all six checks on beee67fb, before the newly reproduced truck-selection correction. A fresh protected run is required for this final UI change.
 
 Final application head38d3f7d5 passed all six checks in run38670425359 (1,556frontend tests;530critical backend tests). Protected merge was blocked because independently reviewed fleet-label PR529 advanced main70a63e7c and conflicted only in the board header. Preserved both entries and placed DB123 updates beside its existing intake, leaving the shared header available for other work. Application diff is unchanged; refreshed strict-base CI remains required. Latest390phone Escape, sequential steering search and reload retain exact truck/filter and one-scroll layout.
+
+## Corrective merge and deployment
+
+Run38671703685 passed all six protected gates on0241735653f89f262d20b6528c3850f56739400d. PR527 merged01d8146bc19124b5b398ee78fa6548f3ad0077bd at2026-10-15T02:48:56Z. Fetched main and verified exact tree equality with the checked source. Railway Web732200cf-3d1f-4402-b2d5-8b78a82e1f38 is building that merge; final production acceptance remains pending.
+
+## Final production acceptance — 2026-10-14 local / 2026-10-15 UTC
+
+Railway Web732200cf-3d1f-4402-b2d5-8b78a82e1f38 reached SUCCESS for merge01d8146bc19124b5b398ee78fa6548f3ad0077bd. Production HTML and authenticated browser load index-DafQAQ8U.js. Readiness reports production database and Redis healthy. Final refreshed CI full backend:3,093passed/152skipped; frontend1,556tests/162files; critical backend530passed/11skipped; all six protected checks succeeded. Source tree exactly equals checked02417356.
+
+Actual signed-in production acceptance passed without business writes:
+
+-1280x720desktop: manually choose VIN-identified truck among two sharing unit77; open fully loaded NewRepairOrder and Cancel; type PM character-by-character with search focus retained. Back to customer, choose the other truck by plate, search coolant + Paid, reload: correct truck, unchanged filters, one matching paid order. The pre-fix production control reopened the former truck and seven unrelated records; the corrected build retains the explicitly selected truck.
+-390x700portrait: open intake from the filtered truck; Escape after load; append tank character-by-character without focus loss, same matching record.44px search control; content/viewport390x700.
+-320x640portrait: Back to customer and reload leaves company details (no vehicle query or truck search input); open the other truck without inherited filters, search PM, NewOrder Cancel, append service, then switch truck/search coolant + Paid/reload. Correct exact truck and matching record remain. Content/viewport320x640; exactly one visible vertical scroll container (slide-panel-content),526px viewport/706px content. Buttons stay whole and wrap into rows when needed.
+-740x400landscape: open the exact filtered repair order, browser Back preserves truck/search/status; a no-match query shows an explicit no-match state; Clear recovers all21truck records, reapplying coolant + Paid returns1. Content/viewport740x400.
+-Shared repair-order entry: order -> customer -> exact truck -> coolant -> NewOrder Cancel restores selected order/customer/truck/query;2matching records. Resize390, continue typing coolant tank, reload: same scoped context and2records.
+-Night Shop Export history and New repair order now inherit rgb(246,248,251), matching their parent. Actual screenshots confirm readable desktop/portrait actions; desktop action height34px, phone controls44px. Local light-theme screenshot remains legible.
+
+Production screenshots: /tmp/db123-ui/production-final-desktop.png, production-final-390.png, production-final-320.png, production-final-landscape.png. Local final screenshot: /tmp/db123-ui/local-final-390.png. Browser viewport/touch emulation only; no physical-device or mobile-Safari certification. Prior production request-block/retry acceptance remains recorded above; the corrective change does not alter that data contract. No records, financial state, settings, or vendor data changed during final acceptance. Temporary browser overrides/tabs are removed after evidence capture.
+
+DB123 Done. Owner Frontend & UX. Existing API/auth/tenant/model unchanged; Fast UI owner acceptance plus protected CI, not a separate specialist QA gate. Outside-shop receipt attachments and capacity-aware scheduling remain separate parity backlog items; this release does not claim exhaustive ETS parity.

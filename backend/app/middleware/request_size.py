@@ -4,6 +4,7 @@ from fastapi.responses import JSONResponse
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from app.core.correlation import normalize_correlation_id
+from app.middleware.receipt_paths import is_receipt_path
 
 
 class RequestBodyTooLargeError(Exception):
@@ -22,6 +23,10 @@ class RequestBodyLimitMiddleware:
         if scope.get("type") != "http":
             return False
         path = scope.get("path", "")
+        if is_receipt_path(path) and scope.get("method") == "POST" and path.rstrip("/").endswith("/receipts"):
+            # This raw binary endpoint authenticates before reading and applies
+            # its stricter 5 MiB stream cap, including dishonest/chunked bodies.
+            return False
         if not path.startswith("/api/v1"):
             return False
         return True
