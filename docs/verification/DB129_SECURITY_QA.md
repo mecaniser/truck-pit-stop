@@ -8,11 +8,32 @@ Review date: 2026-10-14. Worktree: `ets-checkpoint-merge/truck-pit-stop`; branch
 
 ## Gate status
 
+**Current production QA decision: NO-GO — Night Shop visual failure (2026-10-15).** The independent security and earlier local/source gates below remain valid for their stated scope. They do not override the production failure. DB-129 must remain open until the scoped theme correction is deployed and accepted and the synthetic workflow/cleanup is complete.
+
 **Independent Security GO and local QA GO — 2026-10-15 03:49UTC (Oct14 local).** All initial findings are resolved, final focused checks pass, and the local authenticated workflow plus PostgreSQL race/migration evidence has been reviewed. Backend & Integrations remains accountable. No unresolved implementation blocker was found.
 
 This approves progression to release gates; it does not mark DB-129 Done or approve production solely from local evidence. Protected CI, current integration migration head, merge/deploy SHA, production readiness and the scoped synthetic production workflow remain required. The delivery owner records those separately.
 
 ID-correction recheck at branch HEAD `e3918085c47bf98ec99b692cc2c8036832d1334a`: all17 reviewed implementation/migration files retain manifest SHA256 `71a5b40e17647e6c4935c5030707c1aee4e96d639568ba8fdd470da7cd199df3`. The same application manifest remains Security GO and local QA GO. The delivery owner will rerun protected CI after integrating current main; this recheck is not a claim that the integration/deployment gate has passed.
+
+## Source and integration gate — independently verified 2026-10-15 04:51UTC
+
+**Source/integration GO. Production release approval remains pending.** Read GitHub PR, workflow, branch-protection and Git commit objects independently; no reliance on the parent summary for this gate and no local test rerun because the reviewed application files are unchanged.
+
+- [PR533](https://github.com/mecaniser/truck-pit-stop/pull/533) is `MERGED` into `main` at `2026-10-15T04:50:05Z`, merge commit `2d9c8b1733eff8da7da78bf93e481077d0d7b2f8`; its parent is `d31d659789e8dadf2c0f30b586de4cabac5c441b`.
+- [Quality gates run38680555945](https://github.com/mecaniser/truck-pit-stop/actions/runs/38680555945) completed successfully at `2026-10-15T04:49:46Z` on tested head `7950b335a78da0c00eacc23afac467efa386ef7e`. All six required checks completed successfully: Migration graph, Frontend checks, Frontend full suite (informational), Backend tests, Backend full suite (informational), and Playwright smoke. GitHub's current `main` protection reports `strict:true` and explicitly requires all six, including the two whose names contain “informational.”
+- Independently read both Git commit objects: tested head and merge commit have the identical tree `4c35bd5143fe78a329cb8a7d3a812e68b4a601e0`. Rehashed the17 reviewed implementation/migration files directly from the tested commit's Git blobs: approved manifest remains `71a5b40e17647e6c4935c5030707c1aee4e96d639568ba8fdd470da7cd199df3`.
+- Independently read final job logs: [frontend full suite](https://github.com/mecaniser/truck-pit-stop/actions/runs/38680555945/job/116243883328) **164 files /1,622 tests passed**; [backend full suite](https://github.com/mecaniser/truck-pit-stop/actions/runs/38680555945/job/116247488739) **3,195 passed,162 skipped**,850.50s; [Playwright smoke](https://github.com/mecaniser/truck-pit-stop/actions/runs/38680555945/job/116247488823) **5 passed**,13.7s. Successful Migration graph includes the one-head check; it is not evidence of the production database's applied revision.
+
+Exact deployed Web/Worker revisions, migration/readiness evidence, production browser workflow, synthetic cleanup and rollback observation await independent review. No production GO is issued in this integration update. Only this verification file was edited; no commit was created.
+
+## Production visual gate failure — returned to Frontend & UX
+
+Independently inspected `/tmp/db128-qa/production-desktop.png`. The Night Shop customer/vehicle workspace makes the outside-service title, description, receipt disclosure, filename and action labels nearly indistinguishable from the dark surface. Source inspection confirms the outside-history container initially uses `color: var(--customer-ink, #17243b)` and the receipt controls inherit its foreground; additional outside-history text uses fixed light-theme colors. Earlier local light-theme acceptance did not cover this production theme. This is an actionable production usability failure, not a security finding.
+
+The delivery owner reports successful Web `299db445-d870-4a21-882d-97cadbe2f8c6` and Worker `20742f2c-9065-4f96-9759-c9b828c23371` at merge `2d9c8b1733eff8da7da78bf93e481077d0d7b2f8`, migration172/readiness and successful production PDF byte equality/private headers plus duplicate, invalid and oversize rejection. These functional results do not close the visual gate. The owner record retains the details; the synthetic service `DB129 Production Receipt QA` still requires final lifecycle acceptance and void cleanup.
+
+Correction ownership: Frontend & UX, scoped to outside-history/receipt CSS on `codex/outside-history-theme` from `2d9c8b1733eff8da7da78bf93e481077d0d7b2f8`. Apply the Fast UI lane to this existing-contract palette correction. Require readable controls/text in light and Night Shop desktop and compact states, focused checks, protected CI and a deployed visual smoke check. No additional backend security review is required unless the actual correction changes an API, storage, authorization or other sensitive boundary. Await corrected visual/release artifacts before a production QA GO. This reviewer has not edited the correction or approved its implementation.
 
 ## Initial findings returned to owner
 

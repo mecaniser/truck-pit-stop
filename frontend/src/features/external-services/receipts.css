@@ -1,7 +1,7 @@
 .db-receipts { min-width: 0; color: inherit; font-size: 13px; }
 .db-receipts__panel { margin-top: 4px; padding: 8px; border: 1px solid var(--customer-rule, var(--workspace-border, #d5dde6)); border-radius: 6px; }
 .db-receipts button { color: inherit; }
-.db-external-services .db-receipts button:hover, .db-receipts button:hover { background: var(--surface-raised, #edf1f5); }
+.db-external-services .db-receipts button:hover, .db-receipts button:hover { background: color-mix(in srgb, var(--workspace-text, #14243a) 8%, var(--surface-raised, #f6f8fb)); }
 .db-receipts__muted { color: var(--customer-muted, var(--workspace-muted, #53657a)); font-size: 12px; }
 .db-receipts__toolbar, .db-receipts__buttons, .db-receipts__selection, .db-receipts__row { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 8px; min-width: 0; }
 .db-receipts__selection, .db-receipts__row { justify-content: space-between; }
@@ -18,10 +18,10 @@
 .db-receipts__history li { margin: 4px 0; }
 .db-receipts__confirmation, .db-receipts__latest { padding: 8px; margin-top: 8px; border: 1px solid var(--customer-rule, var(--workspace-border, #d5dde6)); border-radius: 6px; }
 .db-receipts__confirmation label { display: flex; flex-direction: column; gap: 4px; margin: 8px 0; }
-.db-receipts__confirmation textarea { width: 100%; min-width: 0; border: 1px solid var(--customer-rule, var(--workspace-border, #d5dde6)); border-radius: 6px; padding: 8px; background: var(--surface-raised, #fff); color: inherit; resize: vertical; }
+.db-receipts__confirmation textarea { width: 100%; min-width: 0; border: 1px solid var(--customer-rule, var(--workspace-border, #d5dde6)); border-radius: 6px; padding: 8px; background: var(--surface-overlay, #fff); color: inherit; resize: vertical; }
 .db-receipts__confirmation > .db-receipts__buttons { justify-content: flex-end; }
 .db-receipts__close { margin-left: auto; }
-.db-external-services .db-receipts [role='alert'], .db-receipts [role='alert'] { color: inherit; border-left: 3px solid var(--product-copper-500, #df5a13); padding-left: 8px; }
+.db-external-services .db-receipts [role='alert'], .db-receipts [role='alert'] { color: color-mix(in srgb, var(--semantic-danger-500, #ef4444) 40%, var(--workspace-text, #17243b)); border-left: 3px solid var(--semantic-danger-500, #ef4444); padding-left: 8px; }
 @media (max-width: 639px), (pointer: coarse) {
   .db-receipts button, .db-receipts__toggle { min-height: 44px !important; }
   .db-receipts__confirmation textarea { min-height: 44px; font-size: 16px !important; }
