@@ -1,6 +1,6 @@
 # DB132 / P1 parts pricing matrix
 
-Accountable: Backend & Integrations. State: **In progress — implementation and local acceptance; independent corrections returned to owners**. Selected second in the [parity tracker](../ETS_PARITY_TRACKER.md), after R1 production closure.
+Accountable: Backend & Integrations. State: **Review — PR542 CI and final responsive correction**. Selected second in the [parity tracker](../ETS_PARITY_TRACKER.md), after R1 production closure.
 
 ## Scope and acceptance
 [Architecture contract](../contracts/db132-parts-pricing-matrix.md) defines acceptance, writer coverage, privacy, tenant/concurrency boundaries and production verification limits. Reuse existing inventory settings and price controls; preserve compact desktop and complete mobile journeys. No existing prices, inventory valuation, financial records or shop defaults change merely from deployment.
@@ -9,7 +9,7 @@ Accountable: Backend & Integrations. State: **In progress — implementation and
 Branch `codex/ets-parts-pricing-matrix` begins at R1 merge7b3dc4b3. Preparation reviewed21546789; full application tree is identical. Backend/frontend integration handoffs and later C1/M1/B1/A1 drafts are preserved in `/Users/sergio_m1_promax/Documents/Codex/ets-priority-preparation-20261015/`; those are preparation, not completion receipts. Canonical tracker retains all29 discoveries and selected order.
 
 ## Remaining gates
-All-writer integration and focused automated checks; final independent QA/Security; actual Light/Night desktop/mobile workflows; focused PR and protected CI; exact release; authorized production acceptance with no invented real-shop pricing activation. P1 source, migration and synthetic inactive configuration are local only; no PR or production release yet.
+Owner and independent automated pricing/writer boundaries pass. PR542 protected CI, final fleet mobile correction, independent local closure, exact release and production acceptance remain. No invented real-shop pricing activation. P1 remains local and unmerged.
 
 ## DB137 prerequisite closure and implementation handoff — 2026-10-15
 Compact controls DB137 are Done after PR539 exact deployment and Light/Night desktop/mobile production acceptance. P1 now continues on `codex/ets-parts-pricing-matrix-implementation` from `fc92c7b9944a0d07db80399b9f6e1eda13840b87`; the older preparation branch is preserved. Architecture owns canonical incorporation of four accepted wire/deletion clarifications before frontend/backend work begins. Backend owns all backend integration writers and migration together; Frontend owns the shared configuration and workflow UI. Independent gates remain separate.
@@ -23,15 +23,16 @@ Entries are updated from actual evidence rather than inferring runtime success f
 
 | Journey | Local Light/Night desktop,390,320,740 landscape | Automated boundary evidence | Production permitted acceptance |
 | --- | --- | --- | --- |
-| Settings entry, empty state, Back/cancel | Night desktop entry/empty passed; phone Escape closes, focus return correction pending |18 foundation tests independently pass; final negatives pending | Read-only entry/empty/history |
-| Matrix draft preview/save/reload | Night desktop samples20→40,25→37.50,100→130/save/reload passed. Night320/390/740 sample/history and one scroll/no overflow passed after input contrast fix; density refinement and Light pending | Bands/config/tenant/CAS foundation covered; final integration pending | Draft preview only; no real policy save/default |
-| Default, revision, clear, archive/restore | Night390 inactive archive/restore/revision1→2 and old history retained; invalid gap rejected with draft kept. Default/clear and other cells pending | CAS/ABA foundation passes; PostgreSQL immutability pending | Authorized reads; no guessed activation |
-| Fixed price, pricing-cost floor, minimum sale price | Pending | Distinct precedence/null/invalid combo pending | Authorized policy read/draft preview |
-| RO direct + bundle add; retained price after revision | Pending | All writer/stock/financial snapshot coverage pending | Historical value unchanged; cancel previews |
-| Manual, List/Stock, discount rejection and409 review | Pending | Role/CAS/minimum/atomic rollback pending | Existing editor and cancel; no real price edits |
-| Internal/external fleet and restricted roles | Pending | Projection/tenant/assignment negatives pending | Scope/read-only/cancel |
-| Counter-sale retained draft and additions | Pending | Immutable IDs/snapshots/tax/return regression pending | Existing gate respected; no real sale |
-| Legacy/locked history and account/tenant switch | Pending | Serializer/replay/cache boundaries pending | Read-only historical checks |
+| Settings entry, empty state, Back/cancel | Night/Light entry, close and Escape focus return passed | Final frontend223 independently pass; scope/role reset covered | Pending deployed read-only entry |
+| Matrix draft preview/save/reload | Night desktop samples20→40/25→37.50/100→130; revision/save/reload/history. Final Light320/740 and Night320/740/1280 readable, no document overflow | Bands/config/tenant/CAS; production-mode PostgreSQL12 pass | Pending draft-only preview |
+| Default, revision, clear, archive/restore | Explicit local default; revision2→3; gap rejection retains draft; clear default and archive verified | ABA/default/archive races and append-only history pass | No guessed activation |
+| Fixed price, pricing-cost floor, minimum sale price | Floor50/min85 on actualcost28 resolves85; manual84 rejected; fixed59 overrides matrix, both-theme320 policy forms pass; baseline reset | Precedence/null/bounds/atomic validation pass | Pending policy read/cancel |
+| RO direct + bundle add; retained price after revision | Direct390 and bundle1280; reload337.75; mobile bundledqty1→2 keeps59/total396.75. Template reapply resets qty to1 with retained59/one operation. New-order cancel/retry creates once | All writers, reservation/core and historical financial snapshots pass | Pending historical reads/cancel only |
+| Manual, List/Stock, discount rejection and409 review | Manual requires reason; minimum rejection retains draft; List39 and Stock26 verified. Actual409 uncovered and fixed production autoflushFalse bug | Explicit409 re-resolution/reacceptance, role/CAS/minimum/rollback pass | Pending editor/cancel only |
+| Internal/external fleet and restricted roles | Owner fleet internal directpart26/qty2total52 passes. Per-line money controls absent. Narrow-name mobile defect returned for correction. External/restricted accounts unavailable; no role alteration | Tenant/assignment/projection/current-role retry negatives, internal actualcost semantics pass | Read-only/cancel where available; no claim of restricted-role UI |
+| Counter-sale retained draft and additions | Counter-sale entry not exposed for local fixture; flag unchanged, no browser claim | Retained snapshots, receptionist manual-price carry-forward, tax/return and scope tests pass | Existing gate respected; no real sale |
+| Legacy/locked history and account/tenant switch | Existing order history reads unchanged; no real financial finalization | Serializer/replay/cache/lock guards covered; CI void-revision regression correction underway | Pending unchanged-value read |
+
 
 Local database checkpoint before any P1 schema changes: `Documents/Codex/ets-priority-preparation-20261015/db132-local-before-migration.dump`, custom pg_dump,3967918bytes, mode0600. Preserves existing populated local database; do not commit or upload database data. Disposable migration proof precedes a coordinated preview upgrade. No production database checkpoint or production financial mutation performed.
 
@@ -85,3 +86,21 @@ Independent review additionally found ad-hoc owner-requestedfleet projection, re
 ## Stable application candidate — 22:19 UTC
 
 Bundle failure reproduced independently with production `autoflush=False`; default test factories had masked a stale reread of computed totals. Explicit flush now preserves totals before reread. ActualUI retry confirms337.75 and saves exactly one15min operation with one59fixed-price bundled part, alongside unchanged242.50standaloneparts. No financial finalization. Owner31 pricing tests and12actualPG cases now useproductionautoflushFalse; completeaffectedrerun pending. Frontendfinal223tests,TypeScript and30-filedifferentiallintpass; [commands](DB132_FRONTEND_HANDOFF.txt). Independentfinalgate andremainingUIcontinue beforemerge.
+
+## Final local journeys and CI handoff — 22:22–22:32 UTC
+
+Application candidate23c3f9a0 synced unrelated main1063e26e asf04c318d; board conflict preserved both owners. PR542 opened draft; frontendchecks passed. Initial full frontend suite1687passed/3failed in void-revision summary mocks/call counts; correction assigned to Frontend without weakening lock coverage. Independent269backend/223frontend/12actualPostgreSQL passed and findings1–12 closed, final runtime closure pending.
+
+Fresh runtime: frontendPID52183/same checkout5174, owned API source mount8001/imagebde2e27b, preserved databasepostgres/truckpitstop_ets_workflow_parity_20261012/schema174, both readiness paths healthy. Rendered feature proves current edits despite startup stampfc92c7b.
+
+New-order mobile390 createdPERF-295757AF-000007/1769a531-11e7-4467-8699-ff31fbf7029c once; cancelling price review retained that order, Retry remaining confirmed95.25 on same identity with one15minute operation/onepart. Both000006 and000007 soft-deleted via actual UI. Ad-hoc12.50withblankcost saved Unknown, Stockdisabled; knowncostStock26/List39 preserved originalrevision2 default. Notes touchclick expanded successfully after backend adjacent regression fix.
+
+Fleet owner route is accessible; created synthetic000008 with complaintDB132QA localfleetpricingverification, directpart0001cost26, quantity2total52. Per-line pricing management is absent, existing owner house-account total remains visible. Soft-deleted through fleetdialog. At390pxpartname squeezed to~35px besidecontrols; frontend correction now wrapsname/SKUabovecontrols while preservingdesktop. Final screenshot and independent review pending.
+
+Cleanup: synthetic matrix archived and defaultcleared; part0003/0004 floors/minimumsNULL/fixedfalse, catalog58/59retained. Syntheticservice unchecked and inactive verified after autosave completes. Initial read-only comparison to pre174backup confirms stocks102,102,104,105,104,106 and costs26–31/catalog56–61 unchanged; final fleet teardown recheck pending. A zero-stock ad-hoc placeholder remains local for recoverable audit history; no supported per-item archive action exists. OriginalNight preference restored. No quote/invoice/payment/completion or production pricing mutation.
+
+## Responsive correction accepted locally — 22:35 UTC
+
+Fleet PartRow now wraps name/SKU onto a full-width first row at≤680px, with44pxquantity/removecontrols below;1280desktop remains onecompactrow. Actual synthetic000009 directadd/quantity1→2 yields52,390and320 screenshots showcomplete readablepartname andnooverflow, desktopdensityretained.000009softdeleted andfleetattention empty. Evidence`db132/night-fleet-final-{390,320}.png`,`db132/fleet-final-desktop.png`. Existingfleettheme is independent ofshopappearance; this owner-in-fleet check does not establish restricted-role access.
+
+CI3failures reproduced as stale test assumptions after actor/session-scoped querykeys and gcTime0. Test locates active scoped summary and requires a fresh server read after void while preserving all lock/capability assertions. Final226focused tests,TypeScript,changedTSXlintpass; independent review and finalCIpending. Production sessionexpired; user asked tosign in whileCIcontinues.

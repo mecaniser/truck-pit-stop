@@ -890,15 +890,16 @@ function PartRow({ part, canEdit, nested, onQuantity, onRemove }: {
     finally { setSaving(false) }
   }
   return (
-    <div className="wo-builder-line" style={nested ? { paddingLeft: 12 } : undefined}>
+    <div className="wo-builder-line wo-builder-part-line" style={nested ? { paddingLeft: 12 } : undefined}>
       <span className="wo-builder-kind">Part</span>
-      <div>
+      <div className="wo-builder-part-copy">
         <strong>{part.inventory_name}</strong>
         <small>{part.inventory_sku}</small>
         {error && <small role="alert">{error} Saved quantity {num(part.quantity)}. <button type="button" disabled={saving} onClick={() => { if (draft !== null) void commit(draft) }}>Retry</button></small>}
       </div>
       {canEdit ? (
         <QuantityStepper
+          className="wo-builder-part-quantity"
           value={draft ?? num(part.quantity)}
           disabled={saving}
           onChange={(quantity) => { void commit(quantity) }}
@@ -910,7 +911,7 @@ function PartRow({ part, canEdit, nested, onQuantity, onRemove }: {
           ariaLabel={`Quantity of ${part.inventory_name}`}
         />
       ) : (
-        <b>{num(part.quantity)}</b>
+        <b className="wo-builder-part-quantity">{num(part.quantity)}</b>
       )}
       {canEdit ? (
         <button type="button" className="icon-hit" disabled={saving} onClick={onRemove} aria-label={`Remove ${part.inventory_name}`}>

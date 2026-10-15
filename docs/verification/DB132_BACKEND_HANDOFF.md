@@ -179,5 +179,6 @@ mapping rejection, and an injected second-component failure proving rollback of
 labor, parts, stock, audit and receipt. The same command retries successfully after
 that rollback. A quarter-hour service plus existing standalone parts specifically
 asserts the exact preview, response and persisted total under `autoflush=False`.
-Migration174 remains unchanged. Full affected regression is being rerun on this
-correction checkpoint; its final result is recorded below when complete.
+Migration174 remains unchanged. Full affected regression on this correction checkpoint: **269 passed, 39 warnings in 95.91s (0:01:35)**.
+Evidence: `/tmp/db132-backend-evidence/combined-boundary-final.log`. The exact
+command is the combined command above, now including the new cases in the P1 file.
