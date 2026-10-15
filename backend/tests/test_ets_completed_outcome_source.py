@@ -218,3 +218,89 @@ async def test_known_grouping_conflict_immediately_invalidates_original_identity
     assert event.payload["snapshot"]["hold_reason"] == "source_identity_conflict"
     assert event.aggregate_id == original_id
     assert event.payload["snapshot"]["repair_order_uuid"] == str(original_id)
+
+
+def legacy_fixture():
+    from decimal import Decimal
+    args = fixture()
+    order = args['order']
+    snapshot = source.completed_snapshot(**args)
+    canonical = SimpleNamespace(id=args['evidence'][0]['imported_invoice_uuid'],
+        repair_order_id=order.id, tenant_id=order.tenant_id, source=source.SOURCE,
+        invoice_number='ETSINV-100', status='paid', deleted_at=None,
+        total_amount=Decimal('10.30'), billed_customer_id=order.customer_id)
+    sibling = deepcopy(order)
+    sibling.id = uuid4()
+    sibling.order_number += '-2'
+    duplicate = deepcopy(canonical)
+    duplicate.id = uuid4()
+    duplicate.repair_order_id = sibling.id
+    duplicate.invoice_number += '-' + sibling.order_number
+    duplicate.status = 'cancelled'
+    return args, snapshot, canonical, sibling, duplicate
+
+
+@pytest.mark.asyncio
+async def test_verified_cancelled_operation_copy_does_not_duplicate_revenue():
+    args, snapshot, canonical, sibling, duplicate = legacy_fixture()
+    order = args.pop('order')
+    db = SimpleNamespace(scalar=AsyncMock(side_effect=[SimpleNamespace(id=order.tenant_id), order, None]),
+        scalars=AsyncMock(side_effect=[[order, sibling], [order.id, sibling.id], [canonical, duplicate]]),
+        add=lambda _: None, flush=AsyncMock())
+    before = deepcopy(vars(duplicate))
+    event = await source.persist_completed_observation(db, order_id=order.id, **args)
+    assert event.event_type == source.ETS_COMPLETED_EVENT
+    assert event.payload['snapshot'] == snapshot
+    assert len(event.payload['snapshot']['invoices']) == 1
+    assert vars(duplicate) == before
+    db.scalar.side_effect = [SimpleNamespace(id=order.tenant_id), order, event]
+    db.scalars.side_effect = [[order, sibling], [order.id, sibling.id], [canonical, duplicate]]
+    assert await source.persist_completed_observation(db, order_id=order.id, **args) is event
+    assert db.flush.await_count == 1
+
+
+@pytest.mark.parametrize('target,field,value', [
+    ('duplicate', 'status', 'paid'), ('duplicate', 'status', None),
+    ('duplicate', 'invoice_number', 'ETSINV-100-unknown'),
+    ('duplicate', 'total_amount', 99), ('duplicate', 'deleted_at', NOW),
+    ('duplicate', 'tenant_id', uuid4()), ('duplicate', 'billed_customer_id', uuid4()),
+    ('duplicate', 'source', 'native'), ('sibling', 'customer_id', uuid4()),
+    ('sibling', 'vehicle_id', uuid4()), ('sibling', 'tenant_id', uuid4()),
+    ('sibling', 'deleted_at', NOW), ('sibling', 'order_number', 'ETS-999-456-2'),
+    ('canonical', 'status', 'cancelled'), ('canonical', 'id', uuid4()),
+    ('canonical', 'invoice_number', 'ETSINV-other'),
+])
+def test_unverified_cancelled_roots_remain_conflicts(target, field, value):
+    args, snapshot, canonical, sibling, duplicate = legacy_fixture()
+    setattr({'duplicate': duplicate, 'sibling': sibling, 'canonical': canonical}[target], field, value)
+    roots = source._verified_legacy_duplicate_roots(order=args['order'],
+        siblings=[args['order'], sibling], invoices=[canonical, duplicate], snapshot=snapshot)
+    assert duplicate.repair_order_id in roots
+
+
+@pytest.mark.parametrize('manifest', [None, {'complete': False}])
+def test_duplicate_exemption_requires_verified_positive_snapshot(manifest):
+    args, snapshot, canonical, sibling, duplicate = legacy_fixture()
+    snapshot['invoice_manifest'] = manifest or {}
+    assert source._verified_legacy_duplicate_roots(order=args['order'], siblings=[args['order'], sibling],
+        invoices=[canonical, duplicate], snapshot=snapshot) == {canonical.repair_order_id, duplicate.repair_order_id}
+
+
+@pytest.mark.asyncio
+async def test_active_extra_operation_invoice_still_holds():
+    args, _, canonical, sibling, duplicate = legacy_fixture()
+    order = args.pop('order')
+    duplicate.status = 'paid'
+    db = SimpleNamespace(scalar=AsyncMock(side_effect=[SimpleNamespace(id=order.tenant_id), order, None]),
+        scalars=AsyncMock(side_effect=[[order, sibling], [order.id, sibling.id], [canonical, duplicate]]),
+        add=AsyncMock(), flush=AsyncMock())
+    with pytest.raises(source.ETSCompletionHold, match='canonical_source_root_conflict'):
+        await source.persist_completed_observation(db, order_id=order.id, **args)
+    db.add.assert_not_called()
+
+
+def test_multiple_source_invoices_cannot_exempt_legacy_roots():
+    args, snapshot, canonical, sibling, duplicate = legacy_fixture()
+    snapshot['invoices'].append(deepcopy(snapshot['invoices'][0]))
+    assert source._verified_legacy_duplicate_roots(order=args['order'], siblings=[args['order'], sibling],
+        invoices=[canonical, duplicate], snapshot=snapshot) == {canonical.repair_order_id, duplicate.repair_order_id}
