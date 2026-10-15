@@ -2,7 +2,7 @@ from copy import deepcopy
 from datetime import datetime, timezone
 from types import SimpleNamespace
 from uuid import uuid4
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 
@@ -246,7 +246,7 @@ async def test_verified_cancelled_operation_copy_does_not_duplicate_revenue():
     order = args.pop('order')
     db = SimpleNamespace(scalar=AsyncMock(side_effect=[SimpleNamespace(id=order.tenant_id), order, None]),
         scalars=AsyncMock(side_effect=[[order, sibling], [order.id, sibling.id], [canonical, duplicate]]),
-        add=lambda _: None, flush=AsyncMock())
+        add=Mock(), flush=AsyncMock())
     before = deepcopy(vars(duplicate))
     event = await source.persist_completed_observation(db, order_id=order.id, **args)
     assert event.event_type == source.ETS_COMPLETED_EVENT
@@ -257,6 +257,7 @@ async def test_verified_cancelled_operation_copy_does_not_duplicate_revenue():
     db.scalars.side_effect = [[order, sibling], [order.id, sibling.id], [canonical, duplicate]]
     assert await source.persist_completed_observation(db, order_id=order.id, **args) is event
     assert db.flush.await_count == 1
+    assert db.add.call_count == 1
 
 
 @pytest.mark.parametrize('target,field,value', [
@@ -268,7 +269,7 @@ async def test_verified_cancelled_operation_copy_does_not_duplicate_revenue():
     ('sibling', 'vehicle_id', uuid4()), ('sibling', 'tenant_id', uuid4()),
     ('sibling', 'deleted_at', NOW), ('sibling', 'order_number', 'ETS-999-456-2'),
     ('canonical', 'status', 'cancelled'), ('canonical', 'id', uuid4()),
-    ('canonical', 'invoice_number', 'ETSINV-other'),
+    ('canonical', 'invoice_number', 'ETSINV-other'), ('canonical', 'total_amount', 99),
 ])
 def test_unverified_cancelled_roots_remain_conflicts(target, field, value):
     args, snapshot, canonical, sibling, duplicate = legacy_fixture()
