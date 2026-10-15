@@ -161,7 +161,9 @@ def _verified_legacy_duplicate_roots(*, order, siblings, invoices, snapshot):
     """Ignore only canceled operation copies of a verified singleton invoice.
 
     This is a read-time identity rule, never a financial-record correction.
-    Every unrecognized invoice continues to participate in the root conflict.
+    Legacy copies may be soft-deleted by import cleanup; the canonical invoice
+    and operation rows must still be live. Every unrecognized invoice continues
+    to participate in the root conflict.
     """
     roots = {invoice.repair_order_id for invoice in invoices}
     verified = snapshot.get("invoices", [])
@@ -189,7 +191,7 @@ def _verified_legacy_duplicate_roots(*, order, siblings, invoices, snapshot):
             and sibling.vehicle_id == order.vehicle_id
             and re.fullmatch(re.escape(order.order_number) + r"-(?:[2-9]|[1-9][0-9]+)", sibling.order_number)
             and invoice.tenant_id == order.tenant_id and invoice.source == SOURCE
-            and invoice.status == "cancelled" and invoice.deleted_at is None
+            and invoice.status == "cancelled"
             and invoice.invoice_number == canonical.invoice_number + "-" + sibling.order_number
             and invoice.total_amount == canonical.total_amount
             and invoice.billed_customer_id == canonical.billed_customer_id
