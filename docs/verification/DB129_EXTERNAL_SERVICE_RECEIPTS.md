@@ -42,3 +42,23 @@ Oct15 local day refresh during CI: implementation e3918085 with only release doc
 ## Integration refresh and board identity
 
 The concurrent infrastructure PR530 reserved DB-128 and merged as d31d6597. This receipt item is now DB-129; earlier artifact paths and synthetic labels intentionally retain DB128 for traceability. No application code changed with this renumbering. Initial CI passed migration, frontend build/critical, full frontend1622 and backendcritical530/full3195 (162skipped). The Playwright retry cleared its initial registry block. Strict branch protection requires incorporation of updated main and a fresh exact-head CI run.
+
+All six initial protected checks passed on e3918085 after the targeted smoke retry (run38678423462 attempt2). Main then advanced with reviewed CI infrastructure d31d6597; branch merged it and reconciled board/audit links. Final receipt application files remain identical to the independent manifest. Refreshed protected run38680555945 tests7950b335; shared disposable workers are online and executing earlier queued jobs. No gate or runner setting was changed by this feature.
+
+Production fixture preparation while refreshed CI queued: at the existing synthetic DB115 QA customer/truck, created outside entry `DB129 Production Receipt QA`, Oct1,2026, reference DB129-PRODUCTION-QA, explicit synthetic/no-service/no-billing description. Mileage and cost left unknown. Existing DB119 UI saved it (active outside count0→1); this is fixture preparation on the previous production build, not receipt-feature acceptance. Screenshot `/tmp/db128-qa/production-fixture-baseline.png`, measured1280×720. Must void this new synthetic entry after acceptance or before ending a blocked release.
+
+## Merge and deployment
+
+All six protected gates passed on7950b335a78da0c00eacc23afac467efa386ef7e (run38680555945). PR533 merged2d9c8b1733eff8da7da78bf93e481077d0d7b2f8 at2026-10-15T04:50:05Z. Checked and merged trees both4c35bd5143fe78a329cb8a7d3a812e68b4a601e0. No protection bypass. Deployment/migration and production acceptance pending.
+
+Independent integration recheck confirms all six checks are required by strict main protection and actually passed. Final full frontend164files/1622tests, backend3195passed/162skipped in850.50s, Playwright5passed in13.7s. All17 application Git blobs retain the approved manifest. Web299db445-d870-4a21-882d-97cadbe2f8c6 and Worker20742f2c-9065-4f96-9759-c9b828c23371 building exact2d9c8b17.
+
+## Production visual gate failure
+
+Web and Worker SUCCESS at2d9c8b17; startup log confirms171→172, readiness database/Redis healthy. Authenticated asset index-axINRxWi.js exposes receipt controls. Production synthetic service a10024be-93d9-4f85-b56c-58ff71a47809: PDF618bytes uploaded/downloaded byte-identically; authenticated download private/no-store/nosniff/no-referrer/octет-stream/attachment/CSP sandbox. Anonymous route401private. Duplicate copy rejected, disguisedHTMLPDF rejected, >5MiB blocked. Screenshot `/tmp/db128-qa/production-desktop.png` then revealed unreadable inherited dark foreground in Night Shop across receipts and pre-existing outside-history text. Local light-theme evidence missed this production theme defect. Visual acceptance failed; scoped theme correction required before Done. One PDF remains attached to the active synthetic QA entry; final void cleanup pending.
+
+## Scoped Night Shop correction
+
+Branch `codex/outside-history-theme` changes only outside-history/receipt CSS: workspace foreground/muted/border tokens, themed surfaces, readable hover/status/error colors, and scoped form overrides for the shell's forced light input background. No API, schema, layout, or lifecycle change. 85 focused frontend tests, app TypeScript, changed-source lint and whitespace checks pass. Exact two-file preview overlay preserved unrelated work. Local sign-in expired; corrected actual light/Night Shop desktop/mobile acceptance remains pending before merge.
+
+Production functional continuation on2d9c8b17: 390px blocked PNG upload retained its selection; explicit retry saved exactly one PNG. Remove Escape returned focus; reasoned remove→Show removed→Restore retained uploaded/removed/restored actor/time events. 320px restored PNG browser download matches original bytes. Document width320, all receipt buttons44px, one slide-panel-content scroller. 740x400 Cancel and named Close both dismissed removal without mutation. These are functional results on the visually defective version, not visual acceptance. PDF and PNG retained on synthetic entry; final void cleanup pending.
