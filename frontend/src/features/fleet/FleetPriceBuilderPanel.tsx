@@ -1,3 +1,4 @@
+import { pricingError } from '@/features/parts-pricing/contract'
 import { checklistOpenEvent } from '@/features/service-checklists/queries'
 import OrderChecklist from '@/features/service-checklists/OrderChecklist'
 /**
@@ -265,6 +266,9 @@ export default function FleetPriceBuilderPanel({ repairOrderId, onClose, onChang
       )}
     >
       <div className="wo-drawer-body">
+        {addPart.pricingDialog}
+        {applyOperation.pricingDialog}
+        {addAdHoc.pricingDialog}
         {/* Which pricing applies, stated where the work is being scoped. */}
         <div className="wo-truckstrip">
           <span style={{ color: chip.tone, fontWeight: 700 }}>{chip.label}</span>
@@ -450,7 +454,7 @@ export default function FleetPriceBuilderPanel({ repairOrderId, onClose, onChang
                       onHours={(hours) => updateLine.mutate({ lineId: line.id, hours })}
                       onRemove={() => requestRemoval('line', line.id, line.description)}
                       onPartQuantity={(partUsageId, quantity) =>
-                        updatePart.mutate({ partUsageId, quantity })}
+                        updatePart.mutateAsync({ partUsageId, quantity, pricingVersion: parts.find(part => part.id === partUsageId)?.pricing_version })}
                       onPartRemove={(partUsageId, name) => requestRemoval('part', partUsageId, name)}
                     />
                   ))}
@@ -460,7 +464,7 @@ export default function FleetPriceBuilderPanel({ repairOrderId, onClose, onChang
                       part={part}
                       canEdit={canEdit}
                       onQuantity={(quantity) =>
-                        updatePart.mutate({ partUsageId: part.id, quantity })}
+                        updatePart.mutateAsync({ partUsageId: part.id, quantity, pricingVersion: part.pricing_version })}
                       onRemove={() => requestRemoval('part', part.id, part.inventory_name)}
                     />
                   ))}
@@ -732,6 +736,7 @@ function PmScopeSection({ orderId, vehicleId, canEdit }: {
 
   return (
     <section>
+      {setPmServices.pricingDialog}
       <div className="wo-draft-section-head">
         <h3>PM scope</h3>
         <span>{selected ? '1 selected' : 'none selected'}</span>
@@ -803,7 +808,7 @@ function LineRow({ line, parts, canEdit, onHours, onRemove, onPartQuantity, onPa
   canEdit: boolean
   onHours: (hours: number) => void
   onRemove: () => void
-  onPartQuantity: (partUsageId: string, quantity: number) => void
+  onPartQuantity: (partUsageId: string, quantity: number) => Promise<unknown>
   onPartRemove: (partUsageId: string, name: string) => void
 }) {
   const [open, setOpen] = useState(false)
@@ -871,20 +876,32 @@ function PartRow({ part, canEdit, nested, onQuantity, onRemove }: {
   part: PartsUsage
   canEdit: boolean
   nested?: boolean
-  onQuantity: (quantity: number) => void
+  onQuantity: (quantity: number) => Promise<unknown>
   onRemove: () => void
 }) {
+  const [draft, setDraft] = useState<number | null>(null)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const commit = async (quantity: number) => {
+    if (saving) return
+    setDraft(quantity); setSaving(true); setError(null)
+    try { await onQuantity(quantity); setDraft(null) }
+    catch (cause) { setError(pricingError(cause, 'Quantity was not saved.')) }
+    finally { setSaving(false) }
+  }
   return (
     <div className="wo-builder-line" style={nested ? { paddingLeft: 12 } : undefined}>
       <span className="wo-builder-kind">Part</span>
       <div>
         <strong>{part.inventory_name}</strong>
         <small>{part.inventory_sku}</small>
+        {error && <small role="alert">{error} Saved quantity {num(part.quantity)}. <button type="button" disabled={saving} onClick={() => { if (draft !== null) void commit(draft) }}>Retry</button></small>}
       </div>
       {canEdit ? (
         <QuantityStepper
-          value={num(part.quantity)}
-          onChange={onQuantity}
+          value={draft ?? num(part.quantity)}
+          disabled={saving}
+          onChange={(quantity) => { void commit(quantity) }}
           theme="dark"
           size="lg"
           commitDebounceMs={600}
@@ -896,7 +913,7 @@ function PartRow({ part, canEdit, nested, onQuantity, onRemove }: {
         <b>{num(part.quantity)}</b>
       )}
       {canEdit ? (
-        <button type="button" className="icon-hit" onClick={onRemove} aria-label={`Remove ${part.inventory_name}`}>
+        <button type="button" className="icon-hit" disabled={saving} onClick={onRemove} aria-label={`Remove ${part.inventory_name}`}>
           <Trash2 size={16} />
         </button>
       ) : <span />}

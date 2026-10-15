@@ -696,7 +696,10 @@ Plan discriminators:
 - `parts_add`: `lines:[{client_key,inventory_id,quantity,source_line_id?,
   source_service_id?,pricing_intent:"default"|"manual"|"stock",
   unit_price?,price_override_reason?}]` (standalone or existing-operation parts).
-- `service_apply`: `service_id,quantity` for the exact canonical service-apply path.
+- `service_apply`: `service_id,quantity,attachment_path?`, where attachment_path is
+  `"shop_flat_service"` (default) or `"fleet_legacy_service"`. It identifies the
+  existing mutation adapter whose exact attachment/stock behavior is previewed;
+  it is not an actor-supplied internal-pricing or stock-override permission.
 - `pm_replace`: ordered `service_ids` for existing PM selection/reseeding.
 - `fleet_create`: ordered `service_ids`, staged `part_lines` as above, and the
   existing staged labor inputs when present. Their unchanged canonical labor math
@@ -712,6 +715,27 @@ and optional presentation metadata defined above. Exact expected sale version
 remains mandatory
 on sale edits. The deprecated callable fleet staging/service endpoints use these
 same semantics; a hidden UI is not a safe pricing bypass.
+
+For service_apply, `shop_flat_service` means the canonical
+`POST /repair-orders/{id}/price-build/flat-service` behavior, including reservation,
+shortage omission and its existing retained/reapply semantics. The deprecated
+`POST /fleet/work-orders/{id}/add-service` adapter normalizes server-side to
+`fleet_legacy_service` with quantity="1": append its new operation/components using
+its existing no-reservation behavior and record zero reserved packages. Existing
+fleet/non-PM/lifecycle access checks must independently pass. A resolve request for
+that path validates those same route guards; quantity other than 1 is 422
+`invalid_legacy_service_quantity`. Canonical fleet UI still uses shop_flat_service.
+
+Mutation adapters set attachment_path from the actual route, not a request-body
+choice. Their normalized plan and fingerprint bind it, so a fleet-legacy preview
+cannot authorize an unreserved shop attach (or the reverse). A caller cannot
+select a path to bypass scope or stock controls on another endpoint. A missing
+path in resolve defaults to shop_flat_service for compatibility. This small plan
+discriminator preserves existing behavior; do not normalize deprecated add-service
+to pm_replace, which also changes PM membership/description and reconciles other
+service scope. Do not alter reservations simply to make those distinct writers
+share an indistinguishable preview. Price rules still resolve from the order's
+actual internal/external status on both paths.
 
 The exact shop/fleet response schemas, private management projection and error
 envelopes appear in “Exact privacy projections” below. Use those schemas for
@@ -795,11 +819,25 @@ known saved prices; their pricing_version is the current usage version (or NULL
 for counter lines). `can_override` is false when actor/lifecycle forbids mutation.
 Public/fleet/receipt serializers omit pricing as specified above.
 
+Authorized **fleet saved PartsUsage** lines expose standalone
+`pricing_version: number` (nonnegative integer, including 0 on legacy rows) beside
+their existing identity/quantity fields. This is a concurrency version only; it
+adds no unit price, cost, matrix/provenance or override permission. Fleet quantity
+PATCH sends this value as `expected_pricing_version`; it never fetches the shop
+pricing object or a management summary. On stale version, preserve typed quantity
+and refetch the same authorized fleet projection before explicit retry. Existing
+legacy clients omitting a quantity-only version retain the compatibility already
+defined below. Counter-sale lines continue to use their sale CAS, not this field.
+Fleet preview rows expose pricing_version=NULL for newly planned rows and the saved
+nonnegative version for retained/removed usage rows. No version alone authorizes
+lookup or mutation outside the existing tenant/order/assignment/lifecycle guard.
+
 Existing shop `GET /repair-orders/{id}/price-build` and every mutation returning
 PriceBuildSummaryResponse add `parts_pricing_fingerprint: string | null` at the
 top level. It is the server-computed opaque bulk CAS token for all active parts,
-including the empty set; use NULL for a read-only/noneditable order. This is not
-pricing_preview_fingerprint. `ShopPreview` also returns the same token for an
+including the empty set; bind its authenticated tenant/actor and exact order ID
+as well as canonically sorted saved line IDs/versions/amounts. Use NULL for a
+read-only/noneditable order. This is not pricing_preview_fingerprint. `ShopPreview` also returns the same token for an
 existing editable RO and NULL for fleet_draft/counter contexts. Fleet/public
 projections omit it. The frontend reads the price-build summary it already loads,
 then sends the token as `expected_parts_fingerprint` for a bulk pricing-mode change
@@ -1107,6 +1145,7 @@ type ShopPreviewLine = LineIdentity & {
 };
 type FleetPreviewLine = LineIdentity & {
   availability: LineAvailability;
+  pricing_version: number | null; // safe CAS only; saved usage version or new-row NULL
 };
 type PreviewAvailability = {
   state: 'ready' | 'requires_stock_acknowledgement' | 'partial_bundle';
@@ -1269,7 +1308,10 @@ preview unknown/zero-cost cases, retained read-only management lookup, and bulk 
 token return/refresh/missing/stale behavior without widening any role or mutation
 lifecycle boundary. New-order wizard tests must assert that pricing cancellation,
 409/error and retry retain one created RO and never reapply successful services;
-fleet staged retry must retain one command/order identity. No tests were executed during this contract-only refinement;
+fleet staged retry must retain one command/order identity. Verify fleet saved-line
+version round-trip and stale quantity conflicts without any shop pricing payload;
+service_apply path fingerprints must reject cross-adapter reuse while canonical
+reservation and deprecated fleet append/no-reservation behavior stay unchanged. No tests were executed during this contract-only refinement;
 passing results must be produced during implementation and independent acceptance.
 
 

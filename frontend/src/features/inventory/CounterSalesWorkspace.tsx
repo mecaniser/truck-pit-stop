@@ -1,8 +1,12 @@
+import { useDebouncedValue } from '@/hooks/useDebouncedValue'
+import { usePricingScope } from '@/features/parts-pricing/usePricingScope'
 import { useEffect, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ArrowLeft, ArrowRight, Download, Plus, ReceiptText, RotateCcw, Search, ShoppingBag, X } from 'lucide-react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 
+import { usePricingCommand } from '@/features/parts-pricing/usePricingCommand'
+import { PricingCancelled, pricingError, priceSourceLabel, parsePricingPreview, previewTotal, type ResolveRequest, type SafePrice } from '@/features/parts-pricing/contract'
 import QuantityStepper from '@/components/QuantityStepper'
 import { useTheme } from '@/contexts/ThemeContext'
 import api from '@/lib/api'
@@ -21,7 +25,7 @@ import {
 type PartSearchPage = { items: PartRecord[]; total: number; skip: number; limit: number; has_more: boolean }
 type CustomerOption = { id: string; name: string; email?: string | null; phone?: string | null }
 type SalePart = Pick<PartRecord, 'id' | 'sku' | 'name' | 'unit_type' | 'available_packages' | 'physical_on_hand_packages' | 'held_for_checkout_packages' | 'available_to_sell_packages'> & Partial<Pick<PartRecord, 'is_archived' | 'is_placeholder'>>
-type DraftSelection = { part: SalePart; quantity: number; overridePrice: string; overrideReason: string }
+type DraftSelection = { part: SalePart; quantity: number; overridePrice: string; overrideReason: string; resetToList?: boolean; savedLineId?: string; pricing?: SafePrice; savedPrice?: string; savedReason?: string }
 type ReturnDraft = { quantity: number; reason: string; disposition: 'restock' | 'damaged' }
 
 const SALE_STATUSES = ['', 'draft', 'completed', 'partially_returned', 'returned', 'cancelled'] as const
@@ -36,7 +40,7 @@ function idempotency(family: string) {
 }
 
 function safeError(error: unknown, fallback: string) {
-  return (error as { response?: { data?: { detail?: string } } }).response?.data?.detail || fallback
+  return pricingError(error, fallback)
 }
 
 function saleStateLabel(value: string) {
@@ -48,13 +52,14 @@ function canManage(role?: string) {
 }
 
 function SaleList({ onOpen, onNew }: { onOpen: (id: string) => void; onNew: () => void }) {
+  const pricingScope = usePricingScope()
   const [searchDraft, setSearchDraft] = useState('')
   const [search, setSearch] = useState('')
   const [status, setStatus] = useState('')
   const [cursors, setCursors] = useState<Array<string | null>>([null])
   const cursor = cursors[cursors.length - 1] || null
   const query = useQuery<CursorPage<CounterSaleListItem>>({
-    queryKey: ['counter-sales', 'list', search, status, cursor],
+    queryKey: ['counter-sales', 'list', search, status, cursor, pricingScope], gcTime: 0,
     queryFn: async () => (await api.get('/parts-operations/counter-sales', {
       params: { ...(search ? { text: search } : {}), ...(status ? { status } : {}), ...(cursor ? { cursor } : {}), limit: 50 },
     })).data,
@@ -76,13 +81,13 @@ function SaleList({ onOpen, onNew }: { onOpen: (id: string) => void; onNew: () =
     {query.isPending && <div className="db-counter-sales__state" role="status">Loading parts sales…</div>}
     {query.isError && <div className="db-counter-sales__state" role="alert">Parts sales could not be loaded.<button type="button" onClick={() => void query.refetch()}>Retry</button></div>}
     {!query.isPending && !query.isError && !query.data.items.length && <div className="db-counter-sales__state"><ShoppingBag aria-hidden="true" /><strong>No counter sales match this view.</strong><span>Start a walk-in sale or adjust the filters.</span></div>}
-    {!!query.data?.items.length && <div className="db-counter-sales__sale-rows">{query.data.items.map((sale) =>
+    {!query.isError && !!query.data?.items.length && <div className="db-counter-sales__sale-rows">{query.data.items.map((sale) =>
       <button type="button" key={sale.id} onClick={() => onOpen(sale.id)}>
         <span><strong>{sale.sale_number}</strong><small>{sale.buyer_name || 'Walk-in customer'} · {sale.line_count} {sale.line_count === 1 ? 'line' : 'lines'}</small></span>
         <span><em data-status={sale.status}>{saleStateLabel(sale.status)}</em><strong>{formatMoney(sale.total_amount)}</strong><small>{new Date(sale.completed_at || sale.created_at).toLocaleString()}</small></span>
         <ArrowRight aria-hidden="true" />
       </button>)}</div>}
-    {query.data && <div className="db-counter-sales__pager">
+    {!query.isError && query.data && <div className="db-counter-sales__pager">
       <span aria-live="polite">Showing {query.data.items.length} sales</span>
       <div><button type="button" disabled={cursors.length === 1 || query.isFetching} onClick={() => setCursors((current) => current.slice(0, -1))}>Previous</button><button type="button" disabled={!query.data.next_cursor || query.isFetching} onClick={() => query.data.next_cursor && setCursors((current) => [...current, query.data.next_cursor])}>Next</button></div>
     </div>}
@@ -90,9 +95,13 @@ function SaleList({ onOpen, onNew }: { onOpen: (id: string) => void; onNew: () =
 }
 
 function DraftSale({ initialPartId, existingSale, onSaved, onCancel }: { initialPartId: string | null; existingSale?: CounterSale; onSaved: (id: string) => void; onCancel: () => void }) {
+  const pricingScope = usePricingScope()
   const role = useAuthStore((state) => state.user?.role)
   const { appearance } = useTheme()
   const manager = canManage(role)
+  const [saleVersion, setSaleVersion] = useState(existingSale?.version ?? null)
+  const [freshSale, setFreshSale] = useState<CounterSale | null>(null)
+  const [versionBlocked, setVersionBlocked] = useState(false)
   const [partSearch, setPartSearch] = useState('')
   const [customerSearch, setCustomerSearch] = useState(existingSale?.buyer_name || '')
   const [customer, setCustomer] = useState<CustomerOption | null>(existingSale?.customer_id ? { id: existingSale.customer_id, name: existingSale.buyer_name || 'Linked customer', email: existingSale.buyer_email, phone: existingSale.buyer_phone } : null)
@@ -110,27 +119,29 @@ function DraftSale({ initialPartId, existingSale, onSaved, onCancel }: { initial
       held_for_checkout_packages: 0,
       available_to_sell_packages: line.available_to_sell,
     },
+    savedLineId: line.id, pricing: line.pricing, savedPrice: line.price_override_reason ? line.charged_unit_price : '', savedReason: line.price_override_reason || '',
     quantity: line.quantity,
     overridePrice: line.price_override_reason ? line.charged_unit_price : '',
     overrideReason: line.price_override_reason || '',
   })) || [])
   const [error, setError] = useState<string | null>(null)
   const initialAdded = useRef(false)
+  const pricingCommand = usePricingCommand(`counter:${existingSale?.id || 'new'}:${customer?.id || 'walk-in'}`)
 
   const partsQuery = useQuery<PartSearchPage>({
-    queryKey: ['parts-operations', 'sale-part-search', partSearch],
+    queryKey: ['parts-operations', 'sale-part-search', partSearch, pricingScope], gcTime: 0,
     queryFn: async () => (await api.get('/parts-operations/parts', { params: { view: 'active', search: partSearch.trim(), sort: 'name', direction: 'asc', paginated: true, skip: 0, limit: 20 } })).data,
     enabled: partSearch.trim().length >= 2,
     retry: false,
   })
   const initialPartQuery = useQuery<SalePart>({
-    queryKey: ['parts-operations', 'sale-initial-part', initialPartId],
+    queryKey: ['parts-operations', 'sale-initial-part', initialPartId, pricingScope], gcTime: 0,
     queryFn: async () => (await api.get(`/parts-operations/parts/${initialPartId}`)).data,
     enabled: Boolean(initialPartId) && !existingSale,
     retry: false,
   })
   const customersQuery = useQuery<CustomerOption[]>({
-    queryKey: ['customer-typeahead', customerSearch],
+    queryKey: ['customer-typeahead', customerSearch, pricingScope], gcTime: 0,
     queryFn: async () => {
       const response = await api.get('/customers/typeahead', { params: { q: customerSearch.trim(), limit: 8 } })
       return Array.isArray(response.data) ? response.data : response.data.items || []
@@ -146,32 +157,52 @@ function DraftSale({ initialPartId, existingSale, onSaved, onCancel }: { initial
   }, [initialPartId, initialPartQuery.data])
 
   const addPart = (part: PartRecord) => setLines((current) => current.some((line) => line.part.id === part.id) ? current : [...current, { part, quantity: 1, overridePrice: '', overrideReason: '' }])
-  const payloadLines = (): CounterSaleDraftLine[] => lines.map((line) => ({
-    inventory_id: line.part.id,
-    quantity: line.quantity,
-    ...(line.overridePrice.trim() ? { charged_unit_price: line.overridePrice.trim(), price_override_reason: line.overrideReason.trim() } : {}),
-  }))
+  const payloadLines = (): CounterSaleDraftLine[] => lines.map((line) => {
+    const changed = !line.savedLineId || line.overridePrice !== line.savedPrice || line.overrideReason !== line.savedReason
+    return { inventory_id: line.part.id, quantity: line.quantity, ...(line.savedLineId ? { sale_line_id: line.savedLineId } : {}),
+      pricing_intent: line.resetToList ? 'list' : changed && line.overridePrice.trim() ? 'manual' : 'default',
+      ...(!line.resetToList && changed && line.overridePrice.trim() ? { charged_unit_price: line.overridePrice.trim(), price_override_reason: line.overrideReason.trim() } : {}) }
+  })
+  const quoteRequest: ResolveRequest = { context: { kind: 'counter_sale', sale_id: existingSale?.id || null, customer_id: customer?.id || null, expected_sale_version: saleVersion }, plan: { kind: 'counter_draft', lines: payloadLines().map(line => ({ ...line, quantity: String(line.quantity), pricing_intent: line.pricing_intent || 'default' })) } }
+  const quoteKey = JSON.stringify(quoteRequest)
+  const delayedQuoteKey = useDebouncedValue(quoteKey, 250)
+  const quoteReady = lines.length > 0 && !versionBlocked && payloadLines().every(line => line.pricing_intent !== 'manual' || (manager && (line.price_override_reason?.length || 0) >= 3))
+  const preview = useQuery({ queryKey: ['counter-pricing-quote', pricingScope, delayedQuoteKey], gcTime: 0, retry: false, enabled: quoteReady && quoteKey === delayedQuoteKey, queryFn: async ({ signal }) => {
+    const request = JSON.parse(delayedQuoteKey) as ResolveRequest
+    return parsePricingPreview((await api.post('/parts-pricing/resolve', request, { signal })).data, request, role)
+  } })
+  const displayedQuote = quoteReady && quoteKey === delayedQuoteKey && !preview.isError && !preview.isFetching && preview.data?.projection === 'shop' ? preview.data : null
   const save = useMutation({
     mutationFn: async () => {
       const payload = {
-        ...(existingSale ? { expected_version: existingSale.version } : {}),
+        ...(existingSale ? { expected_version: saleVersion } : {}),
         customer_id: customer?.id || null,
         buyer_name: buyerName.trim() || customer?.name || null,
         buyer_email: buyerEmail.trim() || customer?.email || null,
         buyer_phone: buyerPhone.trim() || customer?.phone || null,
         lines: payloadLines(),
       }
-      const response = existingSale
-        ? await api.patch(`/parts-operations/counter-sales/${existingSale.id}`, payload, { headers: { 'Idempotency-Key': idempotency('counter-sale-update') } })
-        : await api.post('/parts-operations/counter-sales', payload, { headers: { 'Idempotency-Key': idempotency('counter-sale-create') } })
-      return response.data as CounterSale
+      return pricingCommand.execute<CounterSale>({ context: { kind: 'counter_sale', sale_id: existingSale?.id || null, customer_id: customer?.id || null, expected_sale_version: saleVersion }, plan: { kind: 'counter_draft', lines: payload.lines.map(line => ({ ...line, quantity: String(line.quantity), pricing_intent: line.pricing_intent || 'default' })) } }, async (confirmation, options) => {
+        const response = existingSale
+          ? await api.patch(`/parts-operations/counter-sales/${existingSale.id}`, { ...payload, ...confirmation }, options)
+          : await api.post('/parts-operations/counter-sales', { ...payload, ...confirmation }, options)
+        return response.data
+      }, payload)
     },
     onSuccess: (sale) => onSaved(sale.id),
-    onError: (cause) => setError(safeError(cause, existingSale ? 'The draft sale could not be updated.' : 'The draft sale could not be created.')),
+    onError: async (cause) => {
+      if (cause instanceof PricingCancelled) return
+      setError(safeError(cause, existingSale ? 'The draft sale could not be updated.' : 'The draft sale could not be created.'))
+      if (existingSale && (cause as { response?: { status?: number } }).response?.status === 409) {
+        setVersionBlocked(true)
+        try { const fresh = (await api.get(`/parts-operations/counter-sales/${existingSale.id}`)).data as CounterSale; if (fresh.id === existingSale.id) setFreshSale(fresh) } catch { /* Keep typed work and block stale replacement. */ }
+      }
+    },
   })
   const submit = () => {
+    if (versionBlocked) return
     if (!lines.length) { setError('Add at least one part.'); return }
-    if (lines.some((line) => line.overridePrice && (!manager || line.overrideReason.trim().length < 3))) {
+    if (payloadLines().some((line) => line.pricing_intent === 'manual' && (!manager || (line.price_override_reason?.length || 0) < 3))) {
       setError(manager ? 'Every price override needs a reason of at least 3 characters.' : 'Only an owner or admin can override catalog price.')
       return
     }
@@ -180,22 +211,26 @@ function DraftSale({ initialPartId, existingSale, onSaved, onCancel }: { initial
   }
 
   return <div className="db-counter-sales__draft">
-    <div className="db-counter-sales__workspace-head"><button type="button" onClick={onCancel}><ArrowLeft aria-hidden="true" />{existingSale ? existingSale.sale_number : 'Parts sales'}</button><div><h1>{existingSale ? 'Edit draft sale' : 'New counter sale'}</h1><p>Choose whole quantities, then record one manual tender at checkout.</p></div></div>
-    <div className="db-counter-sales__draft-grid">
+    {pricingCommand.dialog}
+    {freshSale && <div className="db-counter-sales__notice"><strong>Saved sale changed · {freshSale.sale_number}</strong><span>{freshSale.buyer_name || 'Walk-in'} · {formatMoney(freshSale.total_amount)}</span>{freshSale.lines.map(line => <span key={line.id}>{line.name} × {line.quantity} · {formatMoney(line.charged_unit_price)}</span>)}<button type="button" disabled={!freshSale.allowed_actions.includes('edit_draft')} onClick={() => { setSaleVersion(freshSale.version); setLines(current => current.map(line => { const saved = freshSale.lines.find(item => item.inventory_id === line.part.id); return { ...line, savedLineId: saved?.id, savedPrice: saved?.price_override_reason ? saved.charged_unit_price : '', savedReason: saved?.price_override_reason || '' } })); setFreshSale(null); setVersionBlocked(false); setError(null) }}>Keep my draft</button><button type="button" onClick={onCancel}>Return to saved sale</button></div>}
+
+    <div className="db-counter-sales__workspace-head"><button type="button" disabled={save.isPending} onClick={onCancel}><ArrowLeft aria-hidden="true" />{existingSale ? existingSale.sale_number : 'Parts sales'}</button><div><h1>{existingSale ? 'Edit draft sale' : 'New counter sale'}</h1><p>Choose whole quantities, then record one manual tender at checkout.</p></div></div>
+    <fieldset className="db-counter-sales__draft-grid" disabled={save.isPending}>
       <section>
         <h2>Parts</h2>
         <label className="db-counter-sales__search"><Search aria-hidden="true" /><span className="sr-only">Search catalog parts</span><input autoFocus type="search" value={partSearch} onChange={(event) => setPartSearch(event.target.value)} placeholder="Search part name or SKU" /></label>
         {initialPartQuery.isFetching && <p role="status">Loading selected part…</p>}
         {initialPartQuery.isError && <p role="alert">The selected part could not be loaded. Search for it to continue.</p>}
         {partsQuery.isFetching && <p role="status">Searching catalog…</p>}
-        {partsQuery.data && <div className="db-counter-sales__search-results">{partsQuery.data.items.filter((part) => !part.is_archived && !part.is_placeholder).map((part) =>
+        {!partsQuery.isError && partsQuery.data && <div className="db-counter-sales__search-results">{partsQuery.data.items.filter((part) => !part.is_archived && !part.is_placeholder).map((part) =>
           <button type="button" key={part.id} onClick={() => addPart(part)}><span><strong>{part.name}</strong><small>{part.sku}</small></span><span>{part.available_packages} on hand<Plus aria-hidden="true" /></span></button>)}</div>}
         <div className="db-counter-sales__draft-lines">{lines.map((line, index) => {
           const maximum = Math.max(1, line.part.available_to_sell_packages ?? line.part.available_packages)
+          const quotedPrice = displayedQuote?.lines.find(item => item.inventory_id === line.part.id && (!line.savedLineId || item.sale_line_id === line.savedLineId))?.pricing
           return <article key={line.part.id}>
-            <div><strong>{line.part.name}</strong><small>{line.part.sku} · {line.part.unit_type || 'each'}</small><small>{line.part.physical_on_hand_packages ?? line.part.available_packages} on hand</small></div>
+            <div><strong>{line.part.name}</strong><small>{line.part.sku} · {line.part.unit_type || 'each'}</small><small>{line.part.physical_on_hand_packages ?? line.part.available_packages} on hand</small>{quotedPrice && <small>{formatMoney(quotedPrice.charged_unit_price)} · {priceSourceLabel(quotedPrice.current_source)}</small>}</div>
             <QuantityStepper value={line.quantity} min={1} step={1} unitLabel={line.part.unit_type || 'units'} ariaLabel={`Quantity for ${line.part.name}`} size="lg" theme={appearance.mode === 'light' ? 'light' : 'dark'} onChange={(quantity) => setLines((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, quantity: Math.min(maximum, Math.max(1, quantity)) } : item))} />
-            {manager && <details><summary>Manager price override</summary><label>Charged unit price<input inputMode="decimal" value={line.overridePrice} onChange={(event) => setLines((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, overridePrice: event.target.value } : item))} placeholder="Use catalog price" /></label><label>Reason<input value={line.overrideReason} minLength={3} maxLength={500} onChange={(event) => setLines((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, overrideReason: event.target.value } : item))} placeholder="Required when price changes" /></label></details>}
+            {manager && <details><summary>Manager price override</summary>{line.savedLineId && <button type="button" onClick={() => setLines(current => current.map((item, row) => row === index ? { ...item, resetToList: true, overridePrice: '', overrideReason: '' } : item))}>{line.resetToList ? 'Restore saved default selected' : 'Restore saved default'}</button>}<label>Charged unit price<input inputMode="decimal" value={line.overridePrice} onChange={(event) => setLines((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, overridePrice: event.target.value, resetToList: false } : item))} placeholder={line.savedLineId ? 'Keep saved price' : 'Use shop price'} /></label><label>Reason<input value={line.overrideReason} minLength={3} maxLength={500} onChange={(event) => setLines((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, overrideReason: event.target.value } : item))} placeholder="Required when price changes" /></label></details>}
             <button type="button" aria-label={`Remove ${line.part.name}`} onClick={() => setLines((current) => current.filter((_, itemIndex) => itemIndex !== index))}><X aria-hidden="true" /></button>
           </article>
         })}</div>
@@ -203,16 +238,18 @@ function DraftSale({ initialPartId, existingSale, onSaved, onCancel }: { initial
       <aside>
         <h2>Buyer</h2>
         <label>Existing customer<input value={customerSearch} onChange={(event) => { setCustomerSearch(event.target.value); setCustomer(null) }} placeholder="Optional customer lookup" /></label>
-        {customersQuery.data && !customer && <div className="db-counter-sales__customer-results">{customersQuery.data.map((option) =>
+        {!customersQuery.isError && customersQuery.data && !customer && <div className="db-counter-sales__customer-results">{customersQuery.data.map((option) =>
           <button type="button" key={option.id} onClick={() => { setCustomer(option); setCustomerSearch(option.name); setBuyerName(option.name); setBuyerEmail(option.email || ''); setBuyerPhone(option.phone || '') }}><strong>{option.name}</strong><small>{option.email || option.phone || 'Customer record'}</small></button>)}</div>}
         <p>Anonymous walk-ins are valid. These optional details are saved as receipt snapshots.</p>
         <label>Buyer name<input value={buyerName} onChange={(event) => setBuyerName(event.target.value)} /></label>
         <label>Email<input type="email" value={buyerEmail} onChange={(event) => setBuyerEmail(event.target.value)} /></label>
         <label>Phone<input type="tel" value={buyerPhone} onChange={(event) => setBuyerPhone(event.target.value)} /></label>
+        {displayedQuote && <p><strong>Quoted total {formatMoney(previewTotal(displayedQuote))}</strong></p>}
+        {quoteReady && !displayedQuote && <p role={preview.isError ? 'alert' : 'status'}>{preview.isError ? pricingError(preview.error, 'Price preview unavailable. Retry before checkout.') : 'Checking prices…'}{preview.isError && <button type="button" onClick={() => void preview.refetch()}>Retry preview</button>}</p>}
         {error && <p className="db-counter-sales__error" role="alert">{error}</p>}
-        <button className="db-counter-sales__primary" type="button" disabled={save.isPending} onClick={submit}>{save.isPending ? 'Saving draft…' : existingSale ? 'Save draft' : 'Review checkout'}<ArrowRight aria-hidden="true" /></button>
+        <button className="db-counter-sales__primary" type="button" disabled={save.isPending || versionBlocked} onClick={submit}>{save.isPending ? 'Saving draft…' : existingSale ? 'Save draft' : 'Review checkout'}<ArrowRight aria-hidden="true" /></button>
       </aside>
-    </div>
+    </fieldset>
   </div>
 }
 
@@ -269,6 +306,7 @@ function ReturnPanel({ sale, onClose, onChanged }: { sale: CounterSale; onClose:
 }
 
 function SaleDetail({ saleId, tenders, onBack }: { saleId: string; tenders: CounterSaleTender[]; onBack: () => void }) {
+  const pricingScope = usePricingScope()
   const role = useAuthStore((state) => state.user?.role)
   const manager = canManage(role)
   const queryClient = useQueryClient()
@@ -280,7 +318,7 @@ function SaleDetail({ saleId, tenders, onBack }: { saleId: string; tenders: Coun
   const [returnOpen, setReturnOpen] = useState(false)
   const [editing, setEditing] = useState(false)
   const returnTriggerRef = useRef<HTMLButtonElement>(null)
-  const query = useQuery<CounterSale>({ queryKey: ['counter-sale', saleId], queryFn: async () => (await api.get(`/parts-operations/counter-sales/${saleId}`)).data, retry: false })
+  const query = useQuery<CounterSale>({ queryKey: ['counter-sale', saleId, pricingScope], gcTime: 0, queryFn: async () => (await api.get(`/parts-operations/counter-sales/${saleId}`)).data, retry: false })
   const sale = query.data
 
   useEffect(() => { if (tenders.length && !tenders.includes(tender)) setTender(tenders[0]) }, [tender, tenders])
@@ -339,7 +377,7 @@ function SaleDetail({ saleId, tenders, onBack }: { saleId: string; tenders: Coun
       <main>
         <section className="db-counter-sales__lines">
           <div><h2>Sale lines</h2><span><strong>{sale.lines.length}</strong>{sale.allowed_actions.includes('edit_draft') && <button type="button" onClick={() => setEditing(true)}>Edit draft</button>}</span></div>
-          {sale.lines.map((line) => <article key={line.id}><div><strong>{line.name}</strong><small>{line.sku} · {line.quantity} {line.unit_type || 'units'} × {formatMoney(line.charged_unit_price)}</small>{line.price_override_reason && <small>Manager override · {line.price_override_reason}</small>}</div><div><strong>{formatMoney(line.total_amount)}</strong><small>{line.physical_on_hand} on hand</small></div></article>)}
+          {sale.lines.map((line) => <article key={line.id}><div><strong>{line.name}</strong><small>{line.sku} · {line.quantity} {line.unit_type || 'units'} × {formatMoney(line.charged_unit_price)}</small>{line.pricing && <small>{priceSourceLabel(line.pricing.current_source)}</small>}{line.price_override_reason && <small>Manager override · {line.price_override_reason}</small>}</div><div><strong>{formatMoney(line.total_amount)}</strong><small>{line.physical_on_hand} on hand</small></div></article>)}
         </section>
         {!!sale.payment_attempts.length && <section className="db-counter-sales__attempts"><h2>Tender record</h2>{sale.payment_attempts.map((attempt) => <article key={attempt.id}><span><strong>{COUNTER_SALE_TENDER_LABELS[attempt.tender]}</strong><small>{attempt.reference || 'No external reference'} · {new Date(attempt.created_at).toLocaleString()}</small></span><span><em data-status={attempt.state}>recorded</em><strong>{formatMoney(attempt.amount)}</strong></span></article>)}</section>}
         {!!sale.returns.length && <section className="db-counter-sales__attempts"><h2>Returns</h2>{sale.returns.map((record) => <article key={record.id}><span><strong>{record.lines.reduce((sum, line) => sum + line.quantity, 0)} returned units</strong><small>{record.refund_reference || 'No external refund reference'} · {new Date(record.created_at).toLocaleString()}</small></span><span><em data-status={record.state}>recorded</em><strong>{formatMoney(record.refund_amount)}</strong></span></article>)}</section>}
@@ -354,11 +392,12 @@ function SaleDetail({ saleId, tenders, onBack }: { saleId: string; tenders: Coun
   </div>
 }
 
-export default function CounterSalesWorkspace() {
+function CounterSalesContent() {
+  const pricingScope = usePricingScope()
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
   const summary = useQuery<{ capabilities?: { counter_sales?: boolean; counter_sale_tenders?: CounterSaleTender[] } }>({
-    queryKey: ['parts-operations', 'summary'],
+    queryKey: ['parts-operations', 'summary', pricingScope], gcTime: 0,
     queryFn: async () => (await api.get('/parts-operations/summary')).data,
     retry: false,
   })
@@ -378,4 +417,9 @@ export default function CounterSalesWorkspace() {
         ? <DraftSale initialPartId={initialPartId} onSaved={(id) => setSearchParams({ sale: id }, { replace: true })} onCancel={back} />
         : <SaleList onOpen={(id) => setSearchParams({ sale: id })} onNew={() => setSearchParams({ new: '1' })} />}
   </section>
+}
+
+export default function CounterSalesWorkspace() {
+  const scope = usePricingScope()
+  return <CounterSalesContent key={scope} />
 }

@@ -1,3 +1,7 @@
+import { pricingError, pricingMoney } from '@/features/parts-pricing/contract'
+import PartPolicySummary from '@/features/parts-pricing/PartPolicySummary'
+import PartsPricingSettings from '@/features/parts-pricing/PartsPricingSettings'
+import PartPricingPolicy from '@/features/parts-pricing/PartPricingPolicy'
 import { createPortal } from 'react-dom'
 import { useState, useMemo, useEffect, useRef } from 'react'
 import { LoadingLine } from '@/components/ui'
@@ -290,10 +294,14 @@ function LegacyInventoryPage() {
   const [searchParams, setSearchParams] = useSearchParams()
   const user = useAuthStore(state => state.user)
   const linkedItemId = searchParams.get('selected')
+  const [pricingSettingsOpen, setPricingSettingsOpen] = useState(false)
+  const [pricingPart, setPricingPart] = useState<InventoryItem | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
   const [showLowStock, setShowLowStock] = useState(false)
   const [stockSort, setStockSort] = useState<'none' | 'low-high' | 'high-low'>('none')
   const [viewMode, setViewMode] = useViewPreference('inventory')
+  const [pricingBaseVersion, setPricingBaseVersion] = useState<number | undefined>(undefined)
+  const [freshPricingItem, setFreshPricingItem] = useState<InventoryItem | null>(null)
   const [selectedItem, setSelectedItem] = useState<InventoryItem | null>(null)
   const [lightboxSrc, setLightboxSrc] = useState<string | null>(null)
   const photoInputRef = useRef<HTMLInputElement>(null)
@@ -483,6 +491,7 @@ function LegacyInventoryPage() {
 
   useEffect(() => {
     if (selectedItem) {
+      setPricingBaseVersion(selectedItem.pricing_version); setFreshPricingItem(null)
       setManageForm({
         sku: selectedItem.sku || '',
         name: selectedItem.name || '',
@@ -543,6 +552,7 @@ function LegacyInventoryPage() {
   const updateMutation = useMutation({
     mutationFn: async () => {
       if (!selectedItem) return
+      if (freshPricingItem) throw new Error('Review the current saved prices before saving.')
       const payload: Record<string, any> = {}
 
       // Quantity fields: an empty input means "set to 0" so users can clear stock back to none.
@@ -596,6 +606,7 @@ function LegacyInventoryPage() {
       if (manageForm.supplier_contact !== '') payload.supplier_contact = manageForm.supplier_contact
       if (manageForm.unit_type !== selectedItem.unit_type) payload.unit_type = manageForm.unit_type
 
+      if ('cost' in payload || 'selling_price' in payload) payload.expected_pricing_version = pricingBaseVersion
       return api.put(`/inventory/${selectedItem.id}`, payload)
     },
     onSuccess: () => {
@@ -603,9 +614,11 @@ function LegacyInventoryPage() {
       queryClient.invalidateQueries({ queryKey: ['inventory'] })
       setSelectedItem(null)
     },
-    onError: (err: any) => {
-      const message = err?.message || err?.response?.data?.detail || 'Failed to update inventory'
-      setError(Array.isArray(message) ? message.join(', ') : message)
+    onError: async (err: unknown) => {
+      setError(pricingError(err, 'Failed to update inventory'))
+      if (selectedItem && (err as { response?: { status?: number } }).response?.status === 409) {
+        try { const fresh = (await api.get(`/inventory/${selectedItem.id}`)).data as InventoryItem; if (fresh.id === selectedItem.id) setFreshPricingItem(fresh) } catch { /* Original version remains in force; the typed draft stays intact. */ }
+      }
     },
   })
 
@@ -943,6 +956,8 @@ function LegacyInventoryPage() {
 
   return (
     <div className="db-inventory-workspace flex flex-col gap-3 lg:h-full lg:min-h-0">
+      {pricingSettingsOpen && <PartsPricingSettings onClose={() => setPricingSettingsOpen(false)} />}
+      {pricingPart && <PartPricingPolicy inventoryId={pricingPart.id} name={pricingPart.name} onClose={() => setPricingPart(null)} onSaved={() => void queryClient.invalidateQueries({ queryKey: ['inventory'] })} />}
       {linkedItemId && linkedItemQuery.isFetching && <p role="status" className="p-3 text-sm">Opening inventory item…</p>}
       {linkedItemId && linkedItemQuery.isError && <p role="alert" className="p-3 text-sm text-red-600">That inventory item is unavailable with your current access.</p>}
       {syncStatus?.ets_last_synced_at && (
@@ -992,6 +1007,7 @@ function LegacyInventoryPage() {
                 </div>
               ) : (
                 <>
+                  {(user?.role === 'garage_owner' || user?.role === 'garage_admin') && <button type="button" onClick={() => { setShowMenu(false); mobileMenuRef.current?.querySelector('button')?.focus(); setPricingSettingsOpen(true) }} className="w-full flex items-center gap-2.5 px-3 py-2.5 min-h-11 text-sm text-gray-200 hover:bg-white/10 whitespace-nowrap"><Settings className="w-3.5 h-3.5 shrink-0" />Parts pricing</button>}
                   <button
                     onClick={() => { preloadInventoryMutation.mutate(); setShowMenu(false) }}
                     disabled={preloadInventoryMutation.isPending}
@@ -1086,6 +1102,7 @@ function LegacyInventoryPage() {
                 </div>
               ) : (
                 <>
+                  {(user?.role === 'garage_owner' || user?.role === 'garage_admin') && <button type="button" onClick={() => { setShowMenu(false); desktopMenuRef.current?.querySelector('button')?.focus(); setPricingSettingsOpen(true) }} className="w-full flex items-center gap-2.5 px-3 py-2.5 min-h-11 text-sm text-gray-200 hover:bg-white/10 whitespace-nowrap"><Settings className="w-3.5 h-3.5 shrink-0" />Parts pricing</button>}
                   <button
                     onClick={() => { preloadInventoryMutation.mutate(); setShowMenu(false) }}
                     disabled={preloadInventoryMutation.isPending}
@@ -1515,7 +1532,7 @@ function LegacyInventoryPage() {
       )}
 
       <SlidePanelForm
-        isOpen={!!selectedItem}
+        isOpen={!!selectedItem && !pricingPart}
         onClose={() => setSelectedItem(null)}
         category="Manage Inventory"
         title={selectedItem?.name || ''}
@@ -1523,7 +1540,7 @@ function LegacyInventoryPage() {
         onSubmit={handleSubmit}
         submitLabel="Save Changes"
         isSubmitting={updateMutation.isPending}
-        submitDisabled={!selectedItem}
+        submitDisabled={!selectedItem || Boolean(freshPricingItem)}
         ariaLabel="Manage inventory"
         panelClassName="db-inventory-editor-panel"
         titleIcon={
@@ -1558,6 +1575,9 @@ function LegacyInventoryPage() {
           </button>
         }
       >
+        {selectedItem && (user?.role === 'garage_owner' || user?.role === 'garage_admin') && <button type="button" className="min-h-11 whitespace-nowrap px-2 text-sm" onClick={() => { setPricingPart(selectedItem) }}>Part pricing</button>}
+        {freshPricingItem && <div className="db-parts-pricing__confirm"><p>Saved prices changed · Cost {pricingMoney(String(freshPricingItem.cost))} · Catalog {pricingMoney(String(freshPricingItem.selling_price))}. Your draft is kept.</p><button type="button" className="min-h-11 whitespace-nowrap px-2 text-sm" onClick={() => { setPricingBaseVersion(freshPricingItem.pricing_version); setFreshPricingItem(null); setError(null) }}>Keep my draft</button></div>}
+        {selectedItem && <PartPolicySummary inventoryId={selectedItem.id} />}
         {/* Part details editor — only visible when pencil toggled */}
         {editingIdentity && (
           <div className="db-inventory-identity-editor rounded-lg border p-3 space-y-2">

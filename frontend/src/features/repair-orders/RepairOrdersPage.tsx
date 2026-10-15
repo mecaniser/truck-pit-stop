@@ -1,3 +1,5 @@
+import { usePricingCommand } from '@/features/parts-pricing/usePricingCommand'
+import { PricingCancelled, pricingError } from '@/features/parts-pricing/contract'
 import { formatScheduleDate, overdueSearchParams, scheduleDeadline, scheduleRefreshInterval } from './repairOrderSchedule'
 import { openChecklistOnCompletionError } from '@/features/service-checklists/queries'
 import RepairOrderEntryGate from './RepairOrderEntryGate'
@@ -310,6 +312,13 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
   const compactWorkspace = useCompactWorkspace()
   const currentUser = useAuthStore((s) => s.user)
   const authSessionEpoch = useAuthStore((s) => s.authSessionEpoch)
+  const servicePricing = usePricingCommand('new-order-services')
+  type PendingService = { id: string; name: string; status: 'pending' | 'applied' | 'failed'; reason?: string }
+  const [serviceRecovery, setServiceRecovery] = useState<{ order: RepairOrder; services: PendingService[] } | null>(null)
+  const createdForServices = useRef<RepairOrder | null>(null)
+  const serviceFlowMounted = useRef(true)
+  useEffect(() => { serviceFlowMounted.current = true; return () => { serviceFlowMounted.current = false } }, [])
+  useEffect(() => { setServiceRecovery(null); createdForServices.current = null }, [currentUser?.tenant_id, currentUser?.id, currentUser?.role, authSessionEpoch])
   const canSelectOriginatingCall = ['garage_owner', 'garage_admin', 'receptionist', 'mechanic'].includes(currentUser?.role ?? '')
   const { accentColors, presentationVariant } = useTheme()
   const [searchParams, setSearchParams] = useSearchParams()
@@ -2090,17 +2099,20 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
     },
   })
 
+  const legacyPartPricing = usePricingCommand(`legacy-ro:${selectedOrder?.id || ''}`)
   const addPartMutation = useMutation({
     mutationFn: async ({ orderId, inventory_id, quantity }: { orderId: string; inventory_id: string; quantity: number }) => {
-      const response = await api.post(`/repair-orders/${orderId}/parts`, { inventory_id, quantity })
-      return response.data as PartsUsage
+      const line = { client_key: `legacy:${inventory_id}`, inventory_id, quantity: String(quantity), pricing_intent: 'default' as const }
+      return legacyPartPricing.execute<PartsUsage>({ context: { kind: 'repair_order', repair_order_id: orderId }, plan: { kind: 'parts_add', lines: [line] } }, async (confirmation, options) => (await api.post(`/repair-orders/${orderId}/parts`, { ...line, quantity, ...confirmation }, options)).data)
     },
     onSuccess: (_, vars) => {
+      setAddPartInventoryId(''); setAddPartQuantity(1)
       queryClient.invalidateQueries({ queryKey: ['repair-orders'] })
       queryClient.invalidateQueries({ queryKey: ['repair-order-detail', vars.orderId] })
       queryClient.invalidateQueries({ queryKey: ['customerRepairOrders'] })
       refetchOrderDetail()
     },
+    onError: (cause) => { if (!(cause instanceof PricingCancelled)) toast.error(pricingError(cause, 'Part could not be added. Your selection is kept.')) },
   })
 
   const removePartMutation = useMutation({
@@ -2905,10 +2917,38 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
     return Object.keys(errors).length === 0
   }
 
+  const pricingIdentity = () => { const state = useAuthStore.getState(); return JSON.stringify([state.user?.tenant_id, state.user?.id, state.user?.role, state.authSessionEpoch, state.logoutInProgress]) }
+  const applyPendingServices = async (order: RepairOrder, services: PendingService[]) => {
+    const owner = pricingIdentity()
+    const active = () => serviceFlowMounted.current && pricingIdentity() === owner
+
+    const progress = services.map(service => ({ ...service }))
+    const warnings: PriceBuildWarning[] = []
+    for (const service of progress) {
+      if (service.status === 'applied') continue
+      try {
+        const result = await servicePricing.execute<{ warnings?: PriceBuildWarning[] }>({ context: { kind: 'repair_order', repair_order_id: order.id }, plan: { kind: 'service_apply', service_id: service.id, quantity: '1' } }, async (confirmation, options) => (await api.post(`/repair-orders/${order.id}/price-build/flat-service`, { service_id: service.id, quantity: 1, ...confirmation }, options)).data)
+        if (!active()) return
+        warnings.push(...(result.warnings || [])); service.status = 'applied'; delete service.reason
+      } catch (cause) {
+        if (!active()) return
+        service.status = 'failed'; service.reason = cause instanceof PricingCancelled ? 'Not added · review cancelled' : pricingError(cause, 'Could not be applied')
+        if (cause instanceof PricingCancelled) break
+      }
+    }
+    if (!active()) return
+    if (warnings.length) setInitialPriceBuildWarningsByOrder(current => ({ ...current, [order.id]: [...(current[order.id] || []), ...warnings] }))
+    const remaining = progress.filter(service => service.status !== 'applied')
+    setServiceRecovery(remaining.length ? { order, services: progress } : null)
+    if (remaining.length) toast.error(`Order ${order.order_number} exists. ${remaining.length} service${remaining.length === 1 ? '' : 's'} still need applying.`)
+    await queryClient.invalidateQueries({ queryKey: ['price-build', order.id] })
+  }
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (submittingOrder.current || !validateRepairOrderForm()) return
+    if (submittingOrder.current || createdForServices.current || !validateRepairOrderForm()) return
 
+    const pricingOwner = pricingIdentity()
     submittingOrder.current = true
     setIsSubmitting(true)
 
@@ -2931,6 +2971,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
           // Explicitly allow customer creation without an inline initial_vehicle payload.
           no_vehicle: true,
         })
+        if (!serviceFlowMounted.current || pricingIdentity() !== pricingOwner) return
         finalCustomerId = createdCustomer.id
         customerForCreatedOrder = createdCustomer
       } else if (!finalCustomerId) {
@@ -2960,6 +3001,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
           customer_id: finalCustomerId,
           data: newVehicle,
         })
+        if (!serviceFlowMounted.current || pricingIdentity() !== pricingOwner) return
         finalVehicleId = createdVehicle.id
         finalCustomerId = createdVehicle.customer_id
         vehicleForCreatedOrder = createdVehicle
@@ -3000,6 +3042,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
         mileage_in: mileageIn.trim() === '' ? null : Number(mileageIn),
         mileage_in_carried: mileageInCarried && mileageIn.trim() !== '',
       })
+      if (!serviceFlowMounted.current || pricingIdentity() !== pricingOwner) return
       const createdOrderWithPresentation = seedRepairOrderPresentation(
         createdOrder,
         customerForCreatedOrder && {
@@ -3018,34 +3061,13 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
         },
       )
 
+      createdForServices.current = createdOrderWithPresentation
       if (selectedServicePayload.length > 0) {
-        // Apply sequentially so a stock-failure on one service doesn't abort the rest,
-        // and so we can surface a per-service reason to the user.
-        const failures: { name: string; reason: string }[] = []
-        const warnings: PriceBuildWarning[] = []
-        for (const svc of selectedServicePayload) {
-          try {
-            const response = await api.post(`/repair-orders/${createdOrder.id}/price-build/flat-service`, {
-              service_id: svc.id,
-              quantity: 1,
-            })
-            warnings.push(...(response.data?.warnings || []))
-          } catch (err) {
-            console.error(`Failed to apply service "${svc.name}" to price builder`, err)
-            failures.push({ name: svc.name, reason: getErrorDetail(err, 'could not be applied') })
-          }
-        }
-        if (warnings.length > 0) {
-          setInitialPriceBuildWarningsByOrder((current) => ({
-            ...current,
-            [createdOrder.id]: warnings,
-          }))
-        }
-        if (failures.length > 0) {
-          const detail = failures.map((f) => `${f.name}: ${f.reason}`).join('; ')
-          toast.error(`Repair order created, but ${failures.length} service line${failures.length > 1 ? 's' : ''} failed — ${detail}`)
-        }
+        const pending = selectedServicePayload.map(service => ({ ...service, status: 'pending' as const }))
+        setServiceRecovery({ order: createdOrderWithPresentation, services: pending })
+        await applyPendingServices(createdOrderWithPresentation, pending)
       }
+      if (!serviceFlowMounted.current || pricingIdentity() !== pricingOwner) return
 
       queryClient.invalidateQueries({ queryKey: ['repair-orders'] })
       queryClient.invalidateQueries({ queryKey: ['customer-typeahead'] })
@@ -3058,7 +3080,15 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
       // Drop the operator straight into the new order's drawer so they can start
       // building it, instead of hunting for it back in the list.
       openDetail(createdOrderWithPresentation)
+      createdForServices.current = null
     } catch (err: unknown) {
+      if (!serviceFlowMounted.current || pricingIdentity() !== pricingOwner) return
+      if (createdForServices.current) {
+        const created = createdForServices.current; createdForServices.current = null
+        setIsModalOpen(false); openDetail(created)
+        toast.error(`Order ${created.order_number} exists. Remaining services were not added.`)
+        return
+      }
       setFormErrors((current) => ({ ...current, root: getErrorDetail(err, 'Failed to create repair order') }))
     } finally {
       submittingOrder.current = false
@@ -3175,6 +3205,8 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
   const activeValueQuery = isQueueWorkset ? dailyValueQuery : repairOrderValueQuery
   return (
     <div className={`db-repair-orders-workspace flex flex-col h-full ${presentationVariant === 'new' ? 'db-repair-orders-workspace--new' : ''} ${presentationVariant === 'new' && isDetailOpen && selectedOrder ? 'db-repair-orders-workspace--detail-open' : ''}`}>
+      {servicePricing.dialog}{legacyPartPricing.dialog}
+      {serviceRecovery && <div role="status" className="db-service-pricing-recovery"><span><strong>{serviceRecovery.order.order_number} created</strong> · {serviceRecovery.services.filter(service => service.status !== 'applied').map(service => `${service.name}${service.reason ? `: ${service.reason}` : ': pending'}`).join('; ')}</span><button type="button" disabled={servicePricing.busy} onClick={() => { openDetail(serviceRecovery.order); void applyPendingServices(serviceRecovery.order, serviceRecovery.services) }}>Retry remaining</button><button type="button" disabled={servicePricing.busy} onClick={() => { openDetail(serviceRecovery.order); setServiceRecovery(null) }}>Keep current work</button></div>}
       {voidedOrderNumber && (
         <div role="status" className="mb-3 flex items-center justify-between gap-3 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
           <span>Order {voidedOrderNumber} voided. The record is preserved.</span>
@@ -5200,8 +5232,6 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                                     onClick={() => {
                                       if (!selectedOrder?.id || !addPartInventoryId) return
                                       addPartMutation.mutate({ orderId: selectedOrder.id, inventory_id: addPartInventoryId, quantity: addPartQuantity })
-                                      setAddPartInventoryId('')
-                                      setAddPartQuantity(1)
                                     }}
                                     className="h-[42px] px-3 bg-amber-500 hover:bg-amber-600 disabled:bg-gray-300 text-white text-sm font-medium rounded-lg shrink-0"
                                   >

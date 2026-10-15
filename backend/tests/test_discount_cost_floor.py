@@ -84,7 +84,7 @@ async def test_atomic_mode_reset_and_partial_discount_validation(db_session):
         await ro.update_repair_order_discounts(o.id, DiscountUpdate(labor_discount_amount=D('100')), db_session, owner)
     with pytest.raises(HTTPException):
         await ro.set_parts_pricing_mode(o.id, PartsPricingModeRequest(mode='stock'), db_session, owner)
-    result = await ro.update_repair_order_discounts(o.id, DiscountUpdate(parts_pricing_mode='stock', labor_discount_amount=D('100'), order_discount_amount=D('0')), db_session, owner)
+    result = await ro.update_repair_order_discounts(o.id, DiscountUpdate(expected_parts_fingerprint=ro.parts_pricing.parts_fingerprint(await ro._load_pricing_order_for_update(db_session, o.id)), parts_pricing_mode='stock', labor_discount_amount=D('100'), order_discount_amount=D('0')), db_session, owner)
     assert result.total_cost == D('180')  # 100 labor cost + 80 parts cost
 
 
@@ -151,7 +151,7 @@ async def test_invalid_atomic_repricing_rolls_back_all_persisted_fields(db_sessi
     await ro.update_repair_order_discounts(order_id, DiscountUpdate(order_discount_amount=D('120')), db_session, owner)
     with pytest.raises(HTTPException) as exc:
         await ro.update_repair_order_discounts(order_id,
-            DiscountUpdate(parts_pricing_mode='stock', labor_discount_amount=D('100'), order_discount_amount=D('.01')),
+            DiscountUpdate(expected_parts_fingerprint=ro.parts_pricing.parts_fingerprint(await ro._load_pricing_order_for_update(db_session, o.id)), parts_pricing_mode='stock', labor_discount_amount=D('100'), order_discount_amount=D('.01')),
             db_session, owner)
     assert exc.value.status_code == 400
     await db_session.rollback()

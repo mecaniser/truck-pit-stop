@@ -1,4 +1,4 @@
-from sqlalchemy import BigInteger, Boolean, Column, String, Integer, Numeric, ForeignKey, Text, Date, DateTime, UniqueConstraint, and_, or_
+from sqlalchemy import BigInteger, Boolean, Column, String, Integer, Numeric, ForeignKey, Text, Date, DateTime, UniqueConstraint, ForeignKeyConstraint, CheckConstraint, JSON, and_, or_
 from sqlalchemy.orm import relationship
 from sqlalchemy.dialects.postgresql import UUID
 from decimal import Decimal
@@ -9,6 +9,8 @@ class Inventory(BaseModel):
     __tablename__ = "inventory"
     __table_args__ = (
         UniqueConstraint("tenant_id", "id", name="uq_inventory_tenant_id_id_db038"),
+        CheckConstraint("pricing_cost_floor IS NULL OR pricing_cost_floor >= 0", name="ck_inventory_pricing_cost_floor"),
+        CheckConstraint("minimum_sale_price IS NULL OR minimum_sale_price >= 0", name="ck_inventory_minimum_sale_price"),
     )
     
     tenant_id = Column(UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=False, index=True)
@@ -33,6 +35,11 @@ class Inventory(BaseModel):
     # (core_charge x stock_quantity). 0 for parts with no core.
     core_charge = Column(Numeric(10, 2), default=Decimal("0.00"), nullable=False)
     stock_version = Column(BigInteger, default=0, server_default="0", nullable=False)
+
+    pricing_cost_floor = Column(Numeric(10, 2), nullable=True)
+    minimum_sale_price = Column(Numeric(10, 2), nullable=True)
+    fixed_sales_price = Column(Boolean, nullable=False, default=False, server_default="false")
+    pricing_version = Column(BigInteger, nullable=False, default=1, server_default="0")
 
     # Unit this part is dispensed in. "each" parts (filters, belts) use whole-number
     # quantities; fluids (oil, coolant, DEF) are dispensed in fractional amounts of
@@ -102,6 +109,14 @@ class Inventory(BaseModel):
 
 class PartsUsage(BaseModel):
     __tablename__ = "parts_usage"
+    __table_args__ = (ForeignKeyConstraint(
+        ["tenant_id", "pricing_matrix_revision_id"],
+        ["parts_price_matrix_revisions.tenant_id", "parts_price_matrix_revisions.id"],
+        name="fk_parts_usage_pricing_revision"),)
+    pricing_snapshot = Column(JSON, nullable=True)
+    pricing_matrix_revision_id = Column(UUID(as_uuid=True), nullable=True)
+    pricing_version = Column(BigInteger, nullable=False, default=0, server_default="0")
+    source_component_id = Column(UUID(as_uuid=True), nullable=True)
     
     tenant_id = Column(UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=False, index=True)
     tenant = relationship("Tenant", backref="parts_usage")

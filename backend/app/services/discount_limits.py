@@ -14,7 +14,10 @@ def amount(value):
 
 def part_cost(part):
     cost = amount(part.unit_cost)
-    if cost is None:
+    snapshot = getattr(part, 'pricing_snapshot', None) or {}
+    if snapshot.get('managed'):
+        return max(cost or ZERO, amount(snapshot.get('minimum_sale_price')) or ZERO)
+    if cost is None and not snapshot:
         inventory = part.inventory_item
         if inventory is not None and inventory.tenant_id == part.tenant_id:
             cost = amount(inventory.cost)
@@ -26,7 +29,10 @@ def proposed_part_price(part, mode):
     if mode == 'stock':
         if cost is None:
             raise ValueError('Set the shop cost for every part before using stock pricing.')
-        return cost
+        original = amount(part.unit_cost) if getattr(part, 'pricing_snapshot', None) else cost
+        if original is None or original < cost:
+            raise ValueError('Stock pricing is below the allowed minimum for a part.')
+        return original
     inventory = part.inventory_item
     fallback = inventory.selling_price if inventory is not None and inventory.tenant_id == part.tenant_id else part.unit_price
     price = amount(part.list_price if part.list_price is not None else fallback)

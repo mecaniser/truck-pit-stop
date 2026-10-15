@@ -48,3 +48,6 @@ api_router.include_router(motive_webhooks.router, prefix="/webhooks/motive", tag
 
 from app.api.v1.endpoints import fleet_telemetry
 api_router.include_router(fleet_telemetry.router, prefix="/fleet", tags=["fleet"])
+
+from app.api.v1.endpoints import parts_pricing
+api_router.include_router(parts_pricing.router, prefix="/parts-pricing", tags=["parts-pricing"])

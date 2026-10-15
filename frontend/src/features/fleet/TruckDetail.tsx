@@ -1,3 +1,5 @@
+import { usePricingCommand } from '@/features/parts-pricing/usePricingCommand'
+import { PricingCancelled, pricingError } from '@/features/parts-pricing/contract'
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 import { Spinner } from '@/components/ui'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
@@ -253,15 +255,16 @@ export default function TruckDetail({
    * work record is then server-built from the first line onward, so every line
    * goes through the same pricing the shop uses.
    */
+  const createPricing = usePricingCommand(`fleet-create:${truckId}`)
   const createRepairOrder = useMutation({
-    mutationFn: async () => (await api.post(`/fleet/trucks/${truckId}/work-order`, {})).data,
+    mutationFn: async () => createPricing.execute<{ created_work_order?: { repair_order_id: string } }>({ context: { kind: 'fleet_draft', vehicle_id: truckId, bill_to_customer_id: null }, plan: { kind: 'fleet_create', service_ids: [], part_lines: [] }, pricing_presentation: 'fleet' }, async (confirmation, options) => (await api.post(`/fleet/trucks/${truckId}/work-order`, confirmation, options)).data),
     onSuccess: (result: { created_work_order?: { repair_order_id: string } }) => {
       refresh()
       const created = result?.created_work_order
       if (created) setRoPanelId(created.repair_order_id)
       else toast.success('Repair order created')
     },
-    onError: (e: AxiosError<{ detail?: string }>) => toast.error(e.response?.data?.detail || 'Failed to create repair order'),
+    onError: (cause) => { if (!(cause instanceof PricingCancelled)) toast.error(pricingError(cause, 'Failed to create repair order')) },
   })
   const deleteIncidentPhoto = useMutation({
     mutationFn: async ({ incidentId, photoId }: { incidentId: string; photoId: string }) => {
@@ -553,6 +556,7 @@ export default function TruckDetail({
   )
   return (
     <div className="detail">
+      {createPricing.dialog}
       <div className="dhead truck-telemetry-header">
         <div className="dhead-main">
           <div>

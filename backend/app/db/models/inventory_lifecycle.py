@@ -143,7 +143,10 @@ class CounterSale(BaseModel):
 
 class CounterSaleLine(BaseModel):
     __tablename__ = "counter_sale_lines"
+    pricing_snapshot = Column(JSON, nullable=True)
+    pricing_matrix_revision_id = Column(UUID(as_uuid=True), nullable=True)
     __table_args__ = (
+        ForeignKeyConstraint(["tenant_id", "pricing_matrix_revision_id"], ["parts_price_matrix_revisions.tenant_id", "parts_price_matrix_revisions.id"], name="fk_counter_sale_lines_pricing_revision"),
         UniqueConstraint("tenant_id", "id", name="uq_counter_sale_lines_tenant_id_id"),
         UniqueConstraint(
             "tenant_id", "sale_id", "id",

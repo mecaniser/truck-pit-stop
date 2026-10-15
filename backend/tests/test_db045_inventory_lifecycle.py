@@ -292,7 +292,7 @@ async def test_price_override_requires_manager_reason_and_receptionist_uses_cata
     await db_session.commit()
     override = {
         "buyer_name": "Walk-in",
-        "lines": [{"inventory_id": str(item.id), "quantity": 1, "charged_unit_price": "45.00"}],
+        "lines": [{"inventory_id": str(item.id), "quantity": 1, "charged_unit_price": "45.00", "pricing_intent": "manual"}],
     }
 
     receptionist_response = await client.post(
@@ -305,10 +305,14 @@ async def test_price_override_requires_manager_reason_and_receptionist_uses_cata
         headers={**auth(owner, tenant), "Idempotency-Key": "db045-owner-no-reason"},
         json=override,
     )
+    requested = {**override, "lines": [{**override["lines"][0], "price_override_reason": "Damaged packaging"}]}
+    preview = await client.post('/api/v1/parts-pricing/resolve', headers=auth(owner, tenant), json={
+        'context': {'kind': 'counter_sale'}, 'plan': {'kind': 'counter_draft', 'lines': requested['lines']}})
+    assert preview.status_code == 200, preview.text
     accepted = await client.post(
         f"{PREFIX}/counter-sales",
         headers={**auth(owner, tenant), "Idempotency-Key": "db045-owner-with-reason"},
-        json={**override, "lines": [{**override["lines"][0], "price_override_reason": "Damaged packaging"}]},
+        json={**requested, 'pricing_preview_fingerprint': preview.json()['pricing_preview_fingerprint']},
     )
 
     assert receptionist_response.status_code == 403
