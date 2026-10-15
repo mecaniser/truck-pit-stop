@@ -12,7 +12,8 @@ from sqlalchemy import select, and_, exists, or_, func, literal_column, case
 from sqlalchemy.orm import joinedload, selectinload
 from pydantic import BaseModel
 from app.schemas.staff_work_hold import StaffHoldRequest, StaffReleaseHoldRequest, StaffHoldResponse
-from app.services import staff_work_hold
+from app.services import staff_work_hold, repair_order_schedule
+from app.schemas.repair_order_schedule import RepairOrderScheduleUpdate, RepairOrderScheduleResponse
 from app.core.dependencies import get_db, get_current_active_user
 from app.core.pagination import paginated_or_list
 from app.core.search import build_search
@@ -931,61 +932,111 @@ async def regenerate_description_library_endpoint(
     return DescriptionLibraryRegenerateResponse()
 
 
+def _schedule_projection_join():
+    return and_(RepairOrderReadModel.repair_order_id == RepairOrder.id,
+                RepairOrderReadModel.tenant_id == RepairOrder.tenant_id)
+
+
+def _ledger_filters(actor, *, customer_id=None, vehicle_id=None, status=None, deleted=False, overdue=False, now=None):
+    """Keep page, count and value scope identical before search and pagination."""
+    if overdue:
+        repair_order_schedule.require_reader(actor)
+    if deleted and actor.role not in (UserRole.GARAGE_OWNER, UserRole.GARAGE_ADMIN):
+        raise HTTPException(403, "Access denied")
+    if actor.role == UserRole.CUSTOMER:
+        identity = actor.customer_id
+        source = [RepairOrder.customer_id == identity] if identity else [False]
+        projection = [RepairOrderReadModel.customer_id == identity] if identity else [False]
+    else:
+        identity = actor.tenant_id
+        source = [RepairOrder.tenant_id == identity] if identity else [False]
+        projection = [RepairOrderReadModel.tenant_id == identity] if identity else [False]
+        if actor.role == UserRole.FLEET_MANAGER:
+            source.append(RepairOrder.is_internal.is_(True))
+            projection.append(RepairOrderReadModel.is_internal.is_(True))
+        if customer_id:
+            source.append(RepairOrder.customer_id == customer_id)
+            projection.append(RepairOrderReadModel.customer_id == customer_id)
+    if actor.role == UserRole.MECHANIC:
+        # Preserve the existing ledger's lead-only scope. Per-operation mechanics
+        # still have their separately authorized exact-order schedule endpoint.
+        source.append(RepairOrder.assigned_mechanic_id == actor.id)
+        projection.append(RepairOrder.assigned_mechanic_id == actor.id)
+    if vehicle_id:
+        source.append(RepairOrder.vehicle_id == vehicle_id)
+        projection.append(RepairOrderReadModel.vehicle_id == vehicle_id)
+    if status:
+        source.append(RepairOrder.status == status)
+        projection.append(RepairOrderReadModel.status == status.value)
+    source.append(RepairOrder.deleted_at.isnot(None) if deleted else RepairOrder.deleted_at.is_(None))
+    projection.append(RepairOrderReadModel.is_deleted.is_(deleted))
+    if overdue:
+        predicate = repair_order_schedule.overdue_predicate(now)
+        source.append(predicate)
+        projection.append(predicate)
+    return source, projection
+
+
+def _projection_search(filters, search):
+    term = (search if isinstance(search, str) else "").strip()
+    if term:
+        compact = re.sub(r"[^A-Za-z0-9]", "", term)
+        conditions = [RepairOrderReadModel.search_document.ilike(f"%{term}%")]
+        if compact:
+            conditions.append(RepairOrderReadModel.search_compact.ilike(f"%{compact}%"))
+        filters.append(or_(*conditions))
+    return bool(term)
+
+
+def _legacy_ledger_search(statement, search):
+    term = (search if isinstance(search, str) else "").strip()
+    if not term:
+        return statement
+    full_name = Customer.first_name + literal_column("' '") + Customer.last_name
+    clause, _ = build_search(term,
+        primary=[RepairOrder.order_number, Customer.first_name, Customer.last_name, full_name,
+                 Customer.company_name, Vehicle.vin, Vehicle.unit_number],
+        squashed=[RepairOrder.order_number, Vehicle.vin, Vehicle.unit_number],
+        secondary=[RepairOrder.description, Customer.usdot_number, Customer.mc_number, Vehicle.make, Vehicle.model],
+        similarity=[full_name, Customer.company_name, Vehicle.make])
+    stripped = re.sub(r"[\s().+-]", "", term)
+    if stripped and stripped.isdigit():
+        clause = or_(clause, func.regexp_replace(func.coalesce(Customer.phone, ""), r"\D", "", "g").ilike(f"%{stripped}%"))
+    return (statement.join(Customer, RepairOrder.customer_id == Customer.id)
+            .join(Vehicle, RepairOrder.vehicle_id == Vehicle.id).where(clause))
+
+
+async def _ledger_coverage(db, source_filters):
+    return (await db.execute(
+        select(func.count(RepairOrder.id), func.count(RepairOrderReadModel.repair_order_id))
+        .select_from(RepairOrder).outerjoin(RepairOrderReadModel, _schedule_projection_join())
+        .where(*source_filters))).one()
+
+
 @router.get("/status-counts")
 async def repair_order_status_counts(
     customer_id: Optional[UUID] = Query(None),
     vehicle_id: Optional[UUID] = Query(None),
     search: Optional[str] = Query(None, description="Same search the list applies, so the counts match what it shows"),
     deleted: bool = Query(False),
+    overdue: bool = Query(False),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
-    """How many orders sit in each status, for the filters currently applied.
-
-    The status filters showed no counts, so an operator could not tell an empty
-    stage from a busy one without selecting it and waiting for an empty list.
-    Counting here rather than client-side keeps the numbers true across the
-    whole ledger instead of the loaded page, and honouring the same search means
-    a filter never advertises rows the list would not show.
-    """
-    if current_user.role == UserRole.CUSTOMER:
-        if not current_user.customer_id:
-            return {"all": 0}
-        filters = [RepairOrderReadModel.customer_id == current_user.customer_id]
+    """All statuses under the current scope/search, including unbackfilled rows."""
+    source, projection = _ledger_filters(current_user, customer_id=customer_id,
+        vehicle_id=vehicle_id, deleted=deleted, overdue=overdue is True, now=repair_order_schedule.now_utc())
+    source_count, projected_count = await _ledger_coverage(db, source)
+    if source_count == projected_count:
+        _projection_search(projection, search)
+        statement = (select(RepairOrderReadModel.status, func.count(RepairOrderReadModel.repair_order_id))
+                     .select_from(RepairOrderReadModel).join(RepairOrder, _schedule_projection_join())
+                     .where(*projection).group_by(RepairOrderReadModel.status))
     else:
-        if not current_user.tenant_id:
-            return {"all": 0}
-        filters = [RepairOrderReadModel.tenant_id == current_user.tenant_id]
-        if current_user.role == UserRole.FLEET_MANAGER:
-            filters.append(RepairOrderReadModel.is_internal.is_(True))
-        if customer_id:
-            filters.append(RepairOrderReadModel.customer_id == customer_id)
-
-    if current_user.role == UserRole.MECHANIC:
-        filters.append(RepairOrderReadModel.repair_order_id.in_(select(RepairOrder.id).where(RepairOrder.tenant_id == current_user.tenant_id, RepairOrder.assigned_mechanic_id == current_user.id)))
-    if vehicle_id:
-        filters.append(RepairOrderReadModel.vehicle_id == vehicle_id)
-    filters.append(RepairOrderReadModel.is_deleted.is_(deleted))
-
-    search_term = (search if isinstance(search, str) else "").strip()
-    if search_term:
-        compact_term = re.sub(r"[^A-Za-z0-9]", "", search_term)
-        search_filters = [RepairOrderReadModel.search_document.ilike(f"%{search_term}%")]
-        if compact_term:
-            search_filters.append(RepairOrderReadModel.search_compact.ilike(f"%{compact_term}%"))
-        filters.append(or_(*search_filters))
-
-    result = await db.execute(
-        select(RepairOrderReadModel.status, func.count(RepairOrderReadModel.repair_order_id))
-        .where(*filters)
-        .group_by(RepairOrderReadModel.status)
-    )
-    counts: dict[str, int] = {}
-    total = 0
-    for status_value, count in result.all():
-        counts[str(status_value)] = int(count)
-        total += int(count)
-    counts["all"] = total
+        statement = _legacy_ledger_search(select(RepairOrder.status, func.count(RepairOrder.id))
+            .select_from(RepairOrder).where(*source), search).group_by(RepairOrder.status)
+    counts = {getattr(value, "value", str(value)): int(count) for value, count in (await db.execute(statement)).all()}
+    counts["all"] = sum(counts.values())
     return counts
 
 
@@ -996,123 +1047,29 @@ async def repair_order_value_summary(
     status: Optional[RepairOrderStatus] = Query(None),
     search: Optional[str] = Query(None),
     deleted: bool = Query(False),
+    overdue: bool = Query(False),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
     """Return the complete filtered ledger's canonical net order value."""
-    if current_user.role not in (
-        UserRole.GARAGE_OWNER,
-        UserRole.GARAGE_ADMIN,
-        UserRole.RECEPTIONIST,
-        UserRole.MECHANIC,
-        UserRole.FLEET_MANAGER,
-    ):
-        raise HTTPException(status_code=403, detail="Shop access denied")
-
-    if deleted and current_user.role not in (UserRole.GARAGE_OWNER, UserRole.GARAGE_ADMIN):
-        raise HTTPException(status_code=403, detail="Access denied")
-
-    if not current_user.tenant_id:
-        return FilteredRepairOrderValueSummary(order_count=0, order_value=Decimal("0.00"))
-    projection_filters = [RepairOrderReadModel.tenant_id == current_user.tenant_id]
-    source_filters = [RepairOrder.tenant_id == current_user.tenant_id]
-    if current_user.role == UserRole.FLEET_MANAGER:
-        projection_filters.append(RepairOrderReadModel.is_internal.is_(True))
-        source_filters.append(RepairOrder.is_internal.is_(True))
-    if customer_id:
-        projection_filters.append(RepairOrderReadModel.customer_id == customer_id)
-        source_filters.append(RepairOrder.customer_id == customer_id)
-
-    if current_user.role == UserRole.MECHANIC:
-        source_filters.append(RepairOrder.assigned_mechanic_id == current_user.id)
-        projection_filters.append(RepairOrderReadModel.repair_order_id.in_(select(RepairOrder.id).where(RepairOrder.tenant_id == current_user.tenant_id, RepairOrder.assigned_mechanic_id == current_user.id)))
-    if vehicle_id:
-        projection_filters.append(RepairOrderReadModel.vehicle_id == vehicle_id)
-        source_filters.append(RepairOrder.vehicle_id == vehicle_id)
-    if status:
-        projection_filters.append(RepairOrderReadModel.status == status.value)
-        source_filters.append(RepairOrder.status == status)
-    projection_filters.append(RepairOrderReadModel.is_deleted.is_(deleted))
-    source_filters.append(RepairOrder.deleted_at.isnot(None) if deleted else RepairOrder.deleted_at.is_(None))
-
-    source_count, projected_count = (
-        await db.execute(
-            select(func.count(RepairOrder.id), func.count(RepairOrderReadModel.repair_order_id))
-            .select_from(RepairOrder)
-            .outerjoin(RepairOrderReadModel, RepairOrderReadModel.repair_order_id == RepairOrder.id)
-            .where(*source_filters)
-        )
-    ).one()
-
-    search_term = (search if isinstance(search, str) else "").strip()
-    visible_value = case(
-        (
-            RepairOrder.total_cost < 0,
-            Decimal("0.00"),
-        ),
-        else_=func.coalesce(RepairOrder.total_cost, Decimal("0.00")),
-    )
-    if (source_count or 0) == (projected_count or 0):
-        if search_term:
-            compact_term = re.sub(r"[^A-Za-z0-9]", "", search_term)
-            search_filters = [RepairOrderReadModel.search_document.ilike(f"%{search_term}%")]
-            if compact_term:
-                search_filters.append(RepairOrderReadModel.search_compact.ilike(f"%{compact_term}%"))
-            projection_filters.append(or_(*search_filters))
-        statement = (
-            select(
-                func.count(RepairOrderReadModel.repair_order_id),
-                func.coalesce(func.sum(visible_value), Decimal("0.00")),
-            )
-            .select_from(RepairOrderReadModel)
-            .join(RepairOrder, RepairOrder.id == RepairOrderReadModel.repair_order_id)
-            .where(*projection_filters)
-        )
+    if not repair_order_schedule.can_read(current_user):
+        raise HTTPException(403, "Shop access denied")
+    source, projection = _ledger_filters(current_user, customer_id=customer_id, vehicle_id=vehicle_id,
+        status=status, deleted=deleted, overdue=overdue is True, now=repair_order_schedule.now_utc())
+    source_count, projected_count = await _ledger_coverage(db, source)
+    visible_value = case((RepairOrder.total_cost < 0, Decimal("0.00")),
+                         else_=func.coalesce(RepairOrder.total_cost, Decimal("0.00")))
+    if source_count == projected_count:
+        _projection_search(projection, search)
+        statement = (select(func.count(RepairOrderReadModel.repair_order_id),
+                            func.coalesce(func.sum(visible_value), Decimal("0.00")))
+                     .select_from(RepairOrderReadModel).join(RepairOrder, _schedule_projection_join()).where(*projection))
     else:
-        statement = select(
-            func.count(RepairOrder.id),
-            func.coalesce(func.sum(visible_value), Decimal("0.00")),
-        ).select_from(RepairOrder).where(*source_filters)
-        if search_term:
-            full_name = Customer.first_name + literal_column("' '") + Customer.last_name
-            search_clause, _ = build_search(
-                search_term,
-                primary=[
-                    RepairOrder.order_number,
-                    Customer.first_name,
-                    Customer.last_name,
-                    full_name,
-                    Customer.company_name,
-                    Vehicle.vin,
-                    Vehicle.unit_number,
-                ],
-                squashed=[RepairOrder.order_number, Vehicle.vin, Vehicle.unit_number],
-                secondary=[
-                    RepairOrder.description,
-                    Customer.usdot_number,
-                    Customer.mc_number,
-                    Vehicle.make,
-                    Vehicle.model,
-                ],
-                similarity=[full_name, Customer.company_name, Vehicle.make],
-            )
-            stripped = re.sub(r"[\s().+-]", "", search_term)
-            if stripped and stripped.isdigit():
-                phone_hit = func.regexp_replace(func.coalesce(Customer.phone, ""), r"\D", "", "g").ilike(
-                    f"%{stripped}%"
-                )
-                search_clause = or_(search_clause, phone_hit)
-            statement = (
-                statement.join(Customer, RepairOrder.customer_id == Customer.id)
-                .join(Vehicle, RepairOrder.vehicle_id == Vehicle.id)
-                .where(search_clause)
-            )
-
+        statement = _legacy_ledger_search(select(func.count(RepairOrder.id),
+            func.coalesce(func.sum(visible_value), Decimal("0.00"))).select_from(RepairOrder).where(*source), search)
     order_count, order_value = (await db.execute(statement)).one()
-    return FilteredRepairOrderValueSummary(
-        order_count=int(order_count or 0),
-        order_value=Decimal(str(order_value or 0)).quantize(Decimal("0.01")),
-    )
+    return FilteredRepairOrderValueSummary(order_count=int(order_count or 0),
+        order_value=Decimal(str(order_value or 0)).quantize(Decimal("0.01")))
 
 
 @router.get("", response_model=List[RepairOrderResponse])
@@ -1122,6 +1079,7 @@ async def list_repair_orders(
     status: Optional[RepairOrderStatus] = Query(None),
     search: Optional[str] = Query(None, description="Filter by order number or description"),
     deleted: bool = Query(False, description="Show only soft-deleted orders (owner/admin only)"),
+    overdue: bool = Query(False),
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=100),
     paginated: bool = Query(False),
@@ -1131,61 +1089,14 @@ async def list_repair_orders(
     """Return a bounded repair-order list from its screen-specific projection.
 
     The legacy query remains only for databases restored without the projection
-    backfill. A healthy migrated tenant takes two bounded queries: one count
-    and one indexed projection read, regardless of its invoice/quote history.
+    backfill. A healthy migrated tenant uses bounded count/page reads and one
+    shop-timezone lookup, regardless of its invoice/quote history.
     """
-    if deleted and current_user.role not in (UserRole.GARAGE_OWNER, UserRole.GARAGE_ADMIN):
-        raise HTTPException(status_code=403, detail="Access denied")
-
-    if current_user.role == UserRole.CUSTOMER:
-        if not current_user.customer_id:
-            return paginated_or_list([], 0, skip, limit, paginated)
-        projection_filters = [RepairOrderReadModel.customer_id == current_user.customer_id]
-        source_filters = [RepairOrder.customer_id == current_user.customer_id]
-    else:
-        if not current_user.tenant_id:
-            return paginated_or_list([], 0, skip, limit, paginated)
-        projection_filters = [RepairOrderReadModel.tenant_id == current_user.tenant_id]
-        source_filters = [RepairOrder.tenant_id == current_user.tenant_id]
-        if current_user.role == UserRole.FLEET_MANAGER:
-            projection_filters.append(RepairOrderReadModel.is_internal.is_(True))
-            source_filters.append(RepairOrder.is_internal.is_(True))
-        if customer_id:
-            projection_filters.append(RepairOrderReadModel.customer_id == customer_id)
-            source_filters.append(RepairOrder.customer_id == customer_id)
-
-    if current_user.role == UserRole.MECHANIC:
-        source_filters.append(RepairOrder.assigned_mechanic_id == current_user.id)
-        projection_filters.append(RepairOrderReadModel.repair_order_id.in_(select(RepairOrder.id).where(RepairOrder.tenant_id == current_user.tenant_id, RepairOrder.assigned_mechanic_id == current_user.id)))
-    if vehicle_id:
-        projection_filters.append(RepairOrderReadModel.vehicle_id == vehicle_id)
-        source_filters.append(RepairOrder.vehicle_id == vehicle_id)
-    if status:
-        projection_filters.append(RepairOrderReadModel.status == status.value)
-        source_filters.append(RepairOrder.status == status)
-
-    projection_filters.append(RepairOrderReadModel.is_deleted.is_(deleted))
-    source_filters.append(
-        RepairOrder.deleted_at.isnot(None) if deleted else RepairOrder.deleted_at.is_(None)
-    )
-
-    # Compare source and projection counts in one query. Any mismatch means a
-    # restored database has rows awaiting backfill, so preserve correctness by
-    # falling back to the pre-projection implementation for that request.
-    source_count, projected_count = (
-        await db.execute(
-            select(
-                func.count(RepairOrder.id),
-                func.count(RepairOrderReadModel.repair_order_id),
-            )
-            .select_from(RepairOrder)
-            .outerjoin(
-                RepairOrderReadModel,
-                RepairOrderReadModel.repair_order_id == RepairOrder.id,
-            )
-            .where(*source_filters)
-        )
-    ).one()
+    overdue = overdue is True
+    now = repair_order_schedule.now_utc()
+    source_filters, projection_filters = _ledger_filters(current_user, customer_id=customer_id,
+        vehicle_id=vehicle_id, status=status, deleted=deleted, overdue=overdue, now=now)
+    source_count, projected_count = await _ledger_coverage(db, source_filters)
     total = source_count or 0
     if total != (projected_count or 0):
         return await _list_repair_orders_legacy(
@@ -1194,6 +1105,8 @@ async def list_repair_orders(
             status=status,
             search=search,
             deleted=deleted,
+            overdue=overdue,
+            _schedule_now=now,
             skip=skip,
             limit=limit,
             paginated=paginated,
@@ -1201,27 +1114,22 @@ async def list_repair_orders(
             current_user=current_user,
         )
 
-    search_term = (search if isinstance(search, str) else "").strip()
-    if search_term:
-        compact_term = re.sub(r"[^A-Za-z0-9]", "", search_term)
-        search_filters = [RepairOrderReadModel.search_document.ilike(f"%{search_term}%")]
-        if compact_term:
-            search_filters.append(RepairOrderReadModel.search_compact.ilike(f"%{compact_term}%"))
-        projection_filters.append(or_(*search_filters))
-        total = (
-            await db.execute(
-                select(func.count(RepairOrderReadModel.repair_order_id)).where(*projection_filters)
-            )
-        ).scalar() or 0
+    if _projection_search(projection_filters, search):
+        total = (await db.execute(select(func.count(RepairOrderReadModel.repair_order_id))
+            .select_from(RepairOrderReadModel).join(RepairOrder, _schedule_projection_join())
+            .where(*projection_filters))).scalar() or 0
 
+    ordering = ([RepairOrder.promised_finish_at.asc(), RepairOrder.id.asc()] if overdue else
+                [RepairOrderReadModel.created_at.desc(), RepairOrderReadModel.repair_order_id.desc()])
     result = await db.execute(
-        select(RepairOrderReadModel.payload)
-        .where(*projection_filters)
-        .order_by(RepairOrderReadModel.created_at.desc(), RepairOrderReadModel.repair_order_id.desc())
-        .offset(skip)
-        .limit(limit)
-    )
-    items = [RepairOrderResponse.model_validate(payload) for payload in result.scalars().all()]
+        select(RepairOrderReadModel.payload, RepairOrder.scheduled_start_at, RepairOrder.promised_finish_at,
+               RepairOrder.status, RepairOrder.deleted_at, RepairOrder.vehicle_released_at)
+        .select_from(RepairOrderReadModel).join(RepairOrder, _schedule_projection_join())
+        .where(*projection_filters).order_by(*ordering).offset(skip).limit(limit))
+    zone = await repair_order_schedule.tenant_timezone(db, current_user.tenant_id) if repair_order_schedule.can_read(current_user) else None
+    items = [RepairOrderResponse.model_validate({**row.payload,
+        **repair_order_schedule.fields(row, zone, now, visible=repair_order_schedule.can_read(current_user))})
+        for row in result.all()]
     if not staff_work_hold.can_read(current_user):
         for item in items:
             item.hold_reason = None
@@ -1255,44 +1163,14 @@ async def _list_repair_orders_legacy(
     paginated: bool = Query(False),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
+    overdue: bool = False,
+    _schedule_now: datetime | None = None,
 ):
-    if deleted and current_user.role not in (UserRole.GARAGE_OWNER, UserRole.GARAGE_ADMIN):
-        raise HTTPException(status_code=403, detail="Access denied")
-
-    query = select(RepairOrder)
-    count_query = select(func.count(RepairOrder.id))
-    query = query.where(RepairOrder.deleted_at.isnot(None) if deleted else RepairOrder.deleted_at.is_(None))
-    count_query = count_query.where(RepairOrder.deleted_at.isnot(None) if deleted else RepairOrder.deleted_at.is_(None))
-
-    if current_user.role == UserRole.CUSTOMER:
-        # Customers can only see their own repair orders
-        if not current_user.customer_id:
-            return paginated_or_list([], 0, skip, limit, paginated)
-        query = query.where(RepairOrder.customer_id == current_user.customer_id)
-        count_query = count_query.where(RepairOrder.customer_id == current_user.customer_id)
-    else:
-        # Staff can filter by customer/vehicle/status or see all in tenant
-        if not current_user.tenant_id:
-            return paginated_or_list([], 0, skip, limit, paginated)
-        query = query.where(RepairOrder.tenant_id == current_user.tenant_id)
-        count_query = count_query.where(RepairOrder.tenant_id == current_user.tenant_id)
-        # Fleet operations may be customer-billed; pricing scope is separate.
-        if current_user.role == UserRole.FLEET_MANAGER:
-            query = query.where(RepairOrder.is_internal.is_(True))
-            count_query = count_query.where(RepairOrder.is_internal.is_(True))
-        if customer_id:
-            query = query.where(RepairOrder.customer_id == customer_id)
-            count_query = count_query.where(RepairOrder.customer_id == customer_id)
-    
-    if current_user.role == UserRole.MECHANIC:
-        query = query.where(RepairOrder.assigned_mechanic_id == current_user.id)
-        count_query = count_query.where(RepairOrder.assigned_mechanic_id == current_user.id)
-    if vehicle_id:
-        query = query.where(RepairOrder.vehicle_id == vehicle_id)
-        count_query = count_query.where(RepairOrder.vehicle_id == vehicle_id)
-    if status:
-        query = query.where(RepairOrder.status == status)
-        count_query = count_query.where(RepairOrder.status == status)
+    now = _schedule_now or repair_order_schedule.now_utc()
+    source, _ = _ledger_filters(current_user, customer_id=customer_id, vehicle_id=vehicle_id,
+        status=status, deleted=deleted, overdue=overdue, now=now)
+    query = select(RepairOrder).where(*source)
+    count_query = select(func.count(RepairOrder.id)).where(*source)
     # Search across the order plus its customer and vehicle: order number,
     # description, customer name/company/DOT/MC/phone, and vehicle VIN/unit/
     # make/model. The Customer/Vehicle joins are added only when a term is
@@ -1346,6 +1224,9 @@ async def _list_repair_orders_legacy(
         query = query.where(search_clause)
         count_query = count_query.where(search_clause)
         order_by = [relevance.desc(), RepairOrder.created_at.desc()]
+
+    if overdue:
+        order_by = [RepairOrder.promised_finish_at.asc(), RepairOrder.id.asc()]
 
     total_result = await db.execute(count_query)
     total = total_result.scalar() or 0
@@ -1466,6 +1347,10 @@ async def _list_repair_orders_legacy(
         )
         for o in orders
     ]
+    zone = await repair_order_schedule.tenant_timezone(db, current_user.tenant_id) if repair_order_schedule.can_read(current_user) else None
+    for item, order in zip(items, orders):
+        for key, value in repair_order_schedule.fields(order, zone, now, visible=repair_order_schedule.can_read(current_user)).items():
+            setattr(item, key, value)
     if not staff_work_hold.can_read(current_user):
         for item in items:
             item.hold_reason = None
@@ -1479,6 +1364,40 @@ async def _list_repair_orders_legacy(
                 item.total_labor_cost = Decimal("0.00")
                 item.total_cost = Decimal("0.00")
     return paginated_or_list(items, total, skip, limit, paginated)
+
+
+@router.get("/{order_id}/schedule", response_model=RepairOrderScheduleResponse)
+async def get_repair_order_schedule(
+    order_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    return await repair_order_schedule.read(db, order_id, current_user)
+
+
+@router.patch("/{order_id}/schedule", response_model=RepairOrderScheduleResponse)
+async def update_repair_order_schedule(
+    order_id: UUID,
+    body: RepairOrderScheduleUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    try:
+        order, response, changed = await repair_order_schedule.update(db, order_id, current_user, body)
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        raise
+    if changed:
+        try:
+            await broadcast_repair_order_update(
+                tenant_id=str(order.tenant_id), customer_id=str(order.customer_id),
+                order_id=str(order.id), order_number=order.order_number, status=order.status.value,
+                updated_at=response.updated_at.isoformat(), send_to_customer=False, notify_status_change=False,
+            )
+        except Exception:
+            pass  # A socket outage must not turn a committed write into a failure.
+    return response
 
 
 @router.get("/{order_id}/workspace", response_model=RepairOrderResponse)
@@ -1501,12 +1420,18 @@ async def get_repair_order_workspace(
         if not access_order:
             raise HTTPException(404, "Repair order not found")
         _check_ro_access(current_user, access_order)
-    projection = await db.scalar(
-        select(RepairOrderReadModel)
+    projection_row = (await db.execute(
+        select(RepairOrderReadModel, RepairOrder.scheduled_start_at, RepairOrder.promised_finish_at,
+               RepairOrder.status, RepairOrder.deleted_at, RepairOrder.vehicle_released_at, Tenant.timezone.label("schedule_timezone"))
+        .select_from(RepairOrderReadModel).join(RepairOrder, _schedule_projection_join())
+        .join(Tenant, Tenant.id == RepairOrderReadModel.tenant_id)
         .where(RepairOrderReadModel.repair_order_id == order_id)
-    )
+    )).first()
+    projection = projection_row[0] if projection_row else None
     if projection:
-        item = RepairOrderResponse.model_validate(projection.payload)
+        zone = repair_order_schedule.valid_timezone(projection_row.schedule_timezone) if repair_order_schedule.can_read(current_user) else None
+        item = RepairOrderResponse.model_validate({**projection.payload,
+            **repair_order_schedule.fields(projection_row, zone, repair_order_schedule.now_utc(), visible=repair_order_schedule.can_read(current_user))})
         if not staff_work_hold.can_read(current_user):
             item.hold_reason = None
             item.held_at = None
@@ -1576,6 +1501,9 @@ async def get_repair_order_workspace(
         item.total_parts_cost = Decimal("0.00")
         item.total_labor_cost = Decimal("0.00")
         item.total_cost = Decimal("0.00")
+    zone = await repair_order_schedule.tenant_timezone(db, current_user.tenant_id) if repair_order_schedule.can_read(current_user) else None
+    for key, value in repair_order_schedule.fields(order, zone, repair_order_schedule.now_utc(), visible=repair_order_schedule.can_read(current_user)).items():
+        setattr(item, key, value)
     return item
 
 
@@ -1624,7 +1552,7 @@ async def get_repair_order_detail(
     visible_history = await operation_notes.visible_history(db, order, current_user, history_result.scalars().all())
     history_resp = [RepairOrderHistoryEventResponse.model_validate(event) for event in visible_history
                     if (current_user.role != UserRole.CUSTOMER or event.event_type not in (service_checklist.INTERNAL_EVENT_TYPES | operation_execution.INTERNAL_EVENT_TYPES))
-                    and (staff_work_hold.can_read(current_user) or event.event_type not in staff_work_hold.INTERNAL_EVENT_TYPES)]
+                    and (staff_work_hold.can_read(current_user) or event.event_type not in (staff_work_hold.INTERNAL_EVENT_TYPES | repair_order_schedule.INTERNAL_EVENT_TYPES))]
 
     # Selected PM services (fleet PM work orders). Ordered as chosen.
     from app.db.models.fleet import RepairOrderPMService
@@ -1664,6 +1592,9 @@ async def get_repair_order_detail(
         return f"{u.first_name} {u.last_name}".strip() if u else None
 
     detail_base = RepairOrderResponse.model_validate(order).model_dump(exclude=_detail_vf_exclude)
+    detail_base.update(repair_order_schedule.fields(order,
+        await repair_order_schedule.tenant_timezone(db, current_user.tenant_id) if repair_order_schedule.can_read(current_user) else None,
+        repair_order_schedule.now_utc(), visible=repair_order_schedule.can_read(current_user)))
     customer = order.customer
     detail_base.update({
         "customer_first_name": customer.first_name or "" if customer else "",
@@ -1914,6 +1845,9 @@ async def get_repair_order(
     )
 
     payload = RepairOrderResponse.model_validate(order).model_dump(exclude={'pending_zelle_confirmation'})
+    payload.update(repair_order_schedule.fields(order,
+        await repair_order_schedule.tenant_timezone(db, current_user.tenant_id) if repair_order_schedule.can_read(current_user) else None,
+        repair_order_schedule.now_utc(), visible=repair_order_schedule.can_read(current_user)))
     # This path authorises the customer but returns the row as-is. The shop's
     # note is never theirs to read.
     if current_user.role == UserRole.CUSTOMER:

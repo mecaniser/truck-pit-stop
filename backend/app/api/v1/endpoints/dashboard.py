@@ -19,6 +19,7 @@ from app.core.websocket import (
 )
 from app.db.models.user import User, UserRole
 from app.db.models.repair_order import RepairOrder, RepairOrderStatus
+from app.services import repair_order_schedule, operation_execution
 from app.db.models.quote import Quote
 from app.db.models.customer import Customer
 from app.db.models.vehicle import Vehicle
@@ -112,6 +113,10 @@ class RecentOrder(BaseModel):
     created_at: datetime
     updated_at: datetime
     mechanic_name: Optional[str] = None
+    scheduled_start_at: Optional[datetime] = None
+    promised_finish_at: Optional[datetime] = None
+    schedule_timezone: Optional[str] = None
+    is_overdue: bool = False
     work_started_at: Optional[datetime] = None
     hold_reason: Optional[str] = None
     held_at: Optional[datetime] = None
@@ -235,6 +240,9 @@ def _dashboard_order(
     *,
     pending_zelle_confirmation: bool = False,
     quote_sent: Optional[bool] = None,
+    schedule_timezone: Optional[str] = None,
+    schedule_now: Optional[datetime] = None,
+    schedule_visible: bool = True,
 ) -> RecentOrder:
     mechanic_name = None
     if mechanic and mechanic.first_name:
@@ -256,7 +264,33 @@ def _dashboard_order(
         hold_reason=order.hold_reason,
         held_at=order.held_at,
         quote_sent=quote_sent,
+        **repair_order_schedule.fields(order, schedule_timezone, schedule_now or repair_order_schedule.now_utc(), visible=schedule_visible),
     )
+
+
+async def _mask_dashboard_schedules(db, actor, rows):
+    """Legacy dashboard lanes are broader than exact-order execution access.
+
+    Preserve their existing membership, but authorize the new private schedule
+    using a single bounded source query for fleet and technician principals.
+    """
+    if actor.role in {UserRole.GARAGE_OWNER, UserRole.GARAGE_ADMIN, UserRole.RECEPTIONIST}:
+        return
+    allowed = set()
+    ids = {UUID(row.id) for row in rows}
+    if ids and actor.tenant_id and actor.role in {UserRole.FLEET_MANAGER, UserRole.MECHANIC}:
+        scope = (or_(RepairOrder.is_internal.is_(True), RepairOrder.is_fleet_work.is_(True))
+                 if actor.role == UserRole.FLEET_MANAGER
+                 else operation_execution.job_scope(actor.tenant_id, actor.id))
+        allowed = {str(value) for value in (await db.scalars(select(RepairOrder.id).where(
+            RepairOrder.tenant_id == actor.tenant_id, RepairOrder.id.in_(ids),
+            RepairOrder.deleted_at.is_(None), scope))).all()}
+    for row in rows:
+        if row.id not in allowed:
+            row.scheduled_start_at = None
+            row.promised_finish_at = None
+            row.schedule_timezone = None
+            row.is_overdue = False
 
 
 def _action_queue_load_options(mechanic):
@@ -273,6 +307,10 @@ def _action_queue_load_options(mechanic):
             RepairOrder.created_at,
             RepairOrder.updated_at,
             RepairOrder.work_started_at,
+            RepairOrder.scheduled_start_at,
+            RepairOrder.promised_finish_at,
+            RepairOrder.deleted_at,
+            RepairOrder.vehicle_released_at,
             RepairOrder.hold_reason,
             RepairOrder.held_at,
         ),
@@ -311,10 +349,13 @@ async def _load_dashboard_action_queue(
     db: AsyncSession,
     tenant_id: UUID,
     fleet_company_name: Optional[str],
+    *, schedule_timezone: Optional[str] = None, schedule_now: Optional[datetime] = None,
+    schedule_visible: bool = True,
 ) -> DashboardActionQueue:
     """Load only the repair-order lanes used by the operational dashboard."""
     mechanic = aliased(User)
-    new_order_float_cutoff = datetime.now(timezone.utc) - timedelta(minutes=15)
+    schedule_now = schedule_now or repair_order_schedule.now_utc()
+    new_order_float_cutoff = schedule_now - timedelta(minutes=15)
 
     needs_action_priority = case(
         (
@@ -361,7 +402,7 @@ async def _load_dashboard_action_queue(
         .limit(ACTION_QUEUE_LANE_LIMIT + 1)
     )
     standard_needs_action = [
-        _dashboard_order(order, customer, vehicle, fleet_company_name, assigned_mechanic, quote_sent=sent)
+        _dashboard_order(order, customer, vehicle, fleet_company_name, assigned_mechanic, schedule_timezone=schedule_timezone, schedule_now=schedule_now, schedule_visible=schedule_visible, quote_sent=sent)
         for order, customer, vehicle, assigned_mechanic, sent in needs_action_result.all()
     ]
 
@@ -383,7 +424,7 @@ async def _load_dashboard_action_queue(
         .limit(ACTION_QUEUE_LANE_LIMIT + 1)
     )
     pending_zelle_orders = [
-        _dashboard_order(order, customer, vehicle, fleet_company_name, assigned_mechanic, pending_zelle_confirmation=True)
+        _dashboard_order(order, customer, vehicle, fleet_company_name, assigned_mechanic, schedule_timezone=schedule_timezone, schedule_now=schedule_now, schedule_visible=schedule_visible, pending_zelle_confirmation=True)
         for order, customer, vehicle, assigned_mechanic in pending_zelle_result.all()
     ]
     pending_zelle_order_ids = {order.id for order in pending_zelle_orders}
@@ -408,7 +449,7 @@ async def _load_dashboard_action_queue(
         .limit(ACTION_QUEUE_LANE_LIMIT + 1)
     )
     orders_on_floor = [
-        _dashboard_order(order, customer, vehicle, fleet_company_name, assigned_mechanic)
+        _dashboard_order(order, customer, vehicle, fleet_company_name, assigned_mechanic, schedule_timezone=schedule_timezone, schedule_now=schedule_now, schedule_visible=schedule_visible)
         for order, customer, vehicle, assigned_mechanic in on_floor_result.all()
     ]
 
@@ -449,7 +490,7 @@ async def _load_dashboard_action_queue(
         .limit(ACTION_QUEUE_LANE_LIMIT + 1)
     )
     orders_ready_to_close = [
-        _dashboard_order(order, customer, vehicle, fleet_company_name, assigned_mechanic)
+        _dashboard_order(order, customer, vehicle, fleet_company_name, assigned_mechanic, schedule_timezone=schedule_timezone, schedule_now=schedule_now, schedule_visible=schedule_visible)
         for order, customer, vehicle, assigned_mechanic in ready_result.all()
     ]
 
@@ -475,10 +516,13 @@ async def get_dashboard_action_queue(
     if not current_user.tenant_id:
         return DashboardActionQueue()
 
-    fleet_company_name = await db.scalar(
-        select(Tenant.fleet_company_name).where(Tenant.id == current_user.tenant_id)
-    )
-    return await _load_dashboard_action_queue(db, current_user.tenant_id, fleet_company_name)
+    tenant_row = (await db.execute(select(Tenant.fleet_company_name, Tenant.timezone)
+        .where(Tenant.id == current_user.tenant_id))).one_or_none()
+    fleet_company_name, zone = tenant_row if tenant_row else (None, None)
+    queue = await _load_dashboard_action_queue(db, current_user.tenant_id, fleet_company_name,
+        schedule_timezone=repair_order_schedule.valid_timezone(zone), schedule_visible=repair_order_schedule.can_read(current_user))
+    await _mask_dashboard_schedules(db, current_user, [*queue.orders_needing_action, *queue.orders_on_floor, *queue.orders_ready_to_close])
+    return queue
 
 
 @router.get("/daily-workset", response_model=DashboardDailyWorkbench)
@@ -509,7 +553,9 @@ async def get_dashboard_daily_workset(
     fleet_company_name, configured_timezone, _, _ = tenant_row
 
     timezone_name, tenant_timezone = _resolve_tenant_timezone(configured_timezone)
-    local_now = datetime.now(timezone.utc).astimezone(tenant_timezone)
+    schedule_now = repair_order_schedule.now_utc()
+    schedule_zone = repair_order_schedule.valid_timezone(configured_timezone)
+    local_now = schedule_now.astimezone(tenant_timezone)
     local_day_start = datetime.combine(local_now.date(), datetime.min.time(), tzinfo=tenant_timezone)
     next_reset_at = local_day_start + timedelta(days=1)
 
@@ -517,6 +563,7 @@ async def get_dashboard_daily_workset(
         db,
         current_user.tenant_id,
         fleet_company_name,
+        schedule_timezone=schedule_zone, schedule_now=schedule_now,
     )
     mechanic = aliased(User)
     closed_today_result = await db.execute(
@@ -540,12 +587,14 @@ async def get_dashboard_daily_workset(
     )
     closed_today_orders = [
         DailyWorkbenchOrder(
-            **_dashboard_order(order, customer, vehicle, fleet_company_name, assigned_mechanic).model_dump(),
+            **_dashboard_order(order, customer, vehicle, fleet_company_name, assigned_mechanic, schedule_timezone=schedule_zone, schedule_now=schedule_now).model_dump(),
             paid_at=paid_at,
         )
         for order, customer, vehicle, assigned_mechanic, paid_at in closed_today_result.all()
     ]
 
+    await _mask_dashboard_schedules(db, current_user, [*action_queue.orders_needing_action,
+        *action_queue.orders_on_floor, *action_queue.orders_ready_to_close, *closed_today_orders])
     return DashboardDailyWorkbench(
         timezone=timezone_name,
         business_date=local_now.date(),
@@ -769,6 +818,7 @@ async def get_dashboard_stats(
     dashboard_totals = (
         await db.execute(
             select(
+                select(Tenant.timezone).where(Tenant.id == tenant_id).scalar_subquery().label("schedule_timezone"),
                 select(Tenant.fleet_company_name)
                 .where(Tenant.id == tenant_id)
                 .scalar_subquery()
@@ -809,6 +859,8 @@ async def get_dashboard_stats(
         )
     ).one()
     fleet_company_name = dashboard_totals.fleet_company_name
+    schedule_zone = repair_order_schedule.valid_timezone(getattr(dashboard_totals, "schedule_timezone", None))
+    schedule_now = repair_order_schedule.now_utc()
     total_customers = dashboard_totals.total_customers or 0
     total_vehicles = dashboard_totals.total_vehicles or 0
     total_repair_orders = dashboard_totals.total_repair_orders or 0
@@ -879,6 +931,7 @@ async def get_dashboard_stats(
             total_cost=str(get_effective_total(order)),
             created_at=order.created_at,
             updated_at=order.updated_at,
+            **repair_order_schedule.fields(order, schedule_zone, schedule_now),
         )
         for order, customer, vehicle in recent_rows
     ]
@@ -902,6 +955,7 @@ async def get_dashboard_stats(
             total_cost=str(get_effective_total(order)),
             created_at=order.created_at,
             updated_at=order.updated_at,
+            **repair_order_schedule.fields(order, schedule_zone, schedule_now),
             mechanic_name=mech_name,
             work_started_at=getattr(order, 'work_started_at', None),
             hold_reason=getattr(order, 'hold_reason', None),
@@ -1346,6 +1400,8 @@ async def get_dashboard_stats(
                 )
             )
 
+    await _mask_dashboard_schedules(db, current_user, [*recent_orders, *orders_needing_action,
+        *orders_on_floor, *orders_ready_to_close])
     return DashboardStats(
         total_customers=total_customers,
         total_vehicles=total_vehicles,

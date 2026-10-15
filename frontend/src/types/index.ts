@@ -292,6 +292,10 @@ export interface RepairOrderPhoto {
 }
 
 export interface RepairOrder {
+  scheduled_start_at?: string | null
+  promised_finish_at?: string | null
+  schedule_timezone?: string | null
+  is_overdue?: boolean
   id: string
   tenant_id: string
   customer_id: string

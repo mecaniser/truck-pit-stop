@@ -1,3 +1,5 @@
+import RepairOrderScheduleControl from './RepairOrderScheduleControl'
+import type { OrderScheduleSummary } from './repairOrderSchedule'
 import RepairOrderActivity from './RepairOrderActivity'
 import { OperationExecutionControls, OperationExecutionFeedback, OperationExecutionStatus } from '@/features/operation-execution/OperationExecution'
 import { useOperationExecution } from '@/features/operation-execution/queries'
@@ -149,6 +151,7 @@ type Props = {
   orderId: string
   orderStatus: RepairOrderStatus
   canEdit: boolean
+  schedule?: OrderScheduleSummary
   workHoldOrder?: WorkHoldOrder
   isInternalOrder?: boolean
   defaultLaborRate?: number
@@ -858,6 +861,7 @@ export default function PriceBuilderPanel({
   orderStatus,
   canEdit,
   workHoldOrder,
+  schedule,
   isInternalOrder = false,
   defaultLaborRate,
   description,
@@ -2712,6 +2716,7 @@ export default function PriceBuilderPanel({
                   a different question from whose truck this is: the shop's own
                   fleet is isInternalOrder, and a paying carrier can be on a fleet
                   plan too. */}
+              {!isDeleted && <RepairOrderScheduleControl key={orderId} orderId={orderId} schedule={schedule} onUpdated={onUpdated} />}
               {!compactWorkspace && customerIdentity}
               {isInternalOrder && (
                 <span className="inline-flex items-center gap-1 rounded-full bg-white/24 px-2.5 py-1.5 text-[11px] uppercase tracking-[0.08em] text-white ring-1 ring-white/30">

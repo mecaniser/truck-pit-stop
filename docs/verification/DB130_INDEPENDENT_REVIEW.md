@@ -54,3 +54,30 @@ delivery owner; production fixtures must remain synthetic and be restored.
 
 Pre-existing deprecation and Browserslist-age warnings were emitted; no test
 failures or new dependency changes were observed.
+
+## Local visual gate
+
+**PASS for the six supplied local captures; no blocking visual findings.** The
+reviewer independently opened these images with `view_image`:
+
+| Capture in `/tmp/db130-qa/` | Dimensions | Result |
+| --- | --- | --- |
+| `local-light-desktop.png` | 1280 × 720 | Dense desktop search, count, result and controls readable |
+| `local-light-320.png` | 320 × 700 | Whole controls wrap; search and result fit narrow portrait |
+| `local-light-landscape.png` | 740 × 400 | Search and record remain usable between compact header/footer |
+| `local-night-mobile-empty.png` | 390 × 700 | Distinct zero-match state; query, clear and voided controls readable |
+| `local-night-320.png` | 320 × 700 | Query/result readable; no visible horizontal clipping |
+| `local-night-landscape.png` | 740 × 400 | Theme-consistent search and record with visible focus |
+
+The scoped search surface shows readable foreground/background contrast, a
+visible focus outline, and no wrapped button labels or visible horizontal
+overflow. Search/clear/voided controls remain distinct from the native history.
+No Night desktop capture was supplied for this review, and no pixel contrast
+ratio or physical-device certification is asserted.
+
+The delivery owner separately reports real local ref/provider/work searches,
+clear/no-match, typing, Cancel/Escape retaining the query, disabled filters while
+editing, and customer Back followed by return to originating `#PERF-0000001`.
+Those interaction results are owner evidence, not actions performed by this
+reviewer. Production browser checks, protected CI and release identity remain
+required. All narrow-screen captures use simulated browser viewports.

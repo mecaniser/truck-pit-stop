@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Numeric, ForeignKey, Text, DateTime, Integer, Boolean, Enum as SQLEnum, text
+from sqlalchemy import Column, String, Numeric, ForeignKey, Text, DateTime, Integer, Boolean, Enum as SQLEnum, text, CheckConstraint, Index
 from sqlalchemy.orm import relationship
 from sqlalchemy.dialects.postgresql import UUID
 import enum
@@ -23,6 +23,10 @@ class RepairOrderStatus(str, enum.Enum):
 
 class RepairOrder(BaseModel):
     __tablename__ = "repair_orders"
+    __table_args__ = (
+        CheckConstraint("scheduled_start_at IS NULL OR promised_finish_at IS NULL OR promised_finish_at > scheduled_start_at", name="ck_repair_orders_schedule_order"),
+        Index("ix_repair_orders_tenant_promised_finish", "tenant_id", "promised_finish_at", "id", postgresql_where=text("promised_finish_at IS NOT NULL")),
+    )
     
     tenant_id = Column(UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=False, index=True)
     tenant = relationship("Tenant", backref="repair_orders")
@@ -86,6 +90,10 @@ class RepairOrder(BaseModel):
     # Manager-applied dollar discounts (owner dashboard price builder).
     labor_discount_amount = Column(Numeric(10, 2), default=Decimal("0.00"), nullable=False)  # $ off labor
     order_discount_amount = Column(Numeric(10, 2), default=Decimal("0.00"), nullable=False)  # $ off total
+
+    # Staff planning dates, separate from actual execution and invoice dates.
+    scheduled_start_at = Column(DateTime(timezone=True), nullable=True)
+    promised_finish_at = Column(DateTime(timezone=True), nullable=True)
 
     # Per-job time tracking
     work_started_at = Column(DateTime(timezone=True), nullable=True)

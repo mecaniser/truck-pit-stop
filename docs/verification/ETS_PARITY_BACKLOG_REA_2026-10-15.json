@@ -1,0 +1,103 @@
+{
+  "date": "2026-10-15",
+  "purpose": "Read-only ETS capability audit; user selection before implementation",
+  "source": "ETS loaded public static browser modules; no account payloads",
+  "ets_build": "2026-10-14-17-02-12",
+  "rea_evidence_id": "ev_dd23a222a269441d5ac9d228ea05477633c66a9e63b0579e43c598ee795c82ee",
+  "provider": {
+    "id": "rea-javascript-application",
+    "name": "REA JavaScript application analyzer",
+    "version": "1"
+  },
+  "root_artifact_sha256": "dd2d83d97974d9ff2bb0b5b80bd5df94776d911d11e6268e4114ab2adbac6310",
+  "statistics": {
+    "relevant_files": 10,
+    "nested_asar_containers": 0,
+    "text_bytes_read": 40646,
+    "invalid_utf8_files": 0,
+    "parsed_javascript_files": 10,
+    "visited_ast_nodes": 9707,
+    "findings": 193,
+    "modules": 0,
+    "parse_failures": 0
+  },
+  "limitations": [
+    "CommonJS and ESM binding relationships were recovered from inert syntax and resolved only within the inventoried artifact container.",
+    "JavaScript and HTML were parsed as inert text; bundle bootstrap code was never executed.",
+    "Static imports, entrypoints, workers, endpoints, and storage relationships do not prove runtime execution.",
+    "Static paths and relationships may remain unresolved when expressions are dynamic or obfuscated.",
+    "Webpack/Rspack factories were recovered from AST literals; REA did not invoke push handlers or bundle bootstrap code."
+  ],
+  "assets": [
+    {
+      "url": "https://static.easytruck.shop/2026-10-14-17-02-12/build/assets/index.CMPCcfq7.js",
+      "file": "index.CMPCcfq7.js",
+      "bytes": 1646,
+      "area": "parts-price-matrix",
+      "sha256": "a6630cf0618a56c9ae928b871d10ef70b012abf75e48cc6bf31d9c3c959b5170"
+    },
+    {
+      "url": "https://static.easytruck.shop/2026-10-14-17-02-12/build/assets/layout.BFUAlMtx.js",
+      "file": "layout.BFUAlMtx.js",
+      "bytes": 1605,
+      "area": "parts-price-matrix",
+      "sha256": "68edf93192cb58ecbbc0a2af836ad69b623c37dde98ea716bab6a1f56b597c4a"
+    },
+    {
+      "url": "https://static.easytruck.shop/2026-10-14-17-02-12/build/assets/show.COxwfArS.js",
+      "file": "show.COxwfArS.js",
+      "bytes": 1908,
+      "area": "parts-price-matrix",
+      "sha256": "d90466514e4495c1d4becac16af2367e117487fc7266ab4780dceca0857ab8cf"
+    },
+    {
+      "url": "https://static.easytruck.shop/2026-10-14-17-02-12/build/assets/form.DRoet8ik.js",
+      "file": "form.DRoet8ik.js",
+      "bytes": 5270,
+      "area": "parts-price-matrix",
+      "sha256": "a734cbafa9868ddd2bb7b5fea2a9030a68a065b6d7eb2eee8829fadbb15653e9"
+    },
+    {
+      "url": "https://static.easytruck.shop/2026-10-14-17-02-12/build/assets/PMServiceCard.CGlD2m8g.js",
+      "file": "PMServiceCard.CGlD2m8g.js",
+      "bytes": 2428,
+      "area": "maintenance-programs",
+      "sha256": "608f0bb88e191a52428d59a9786e477d016b38689b0b971524882b6ae0b5d2cb"
+    },
+    {
+      "url": "https://static.easytruck.shop/2026-10-14-17-02-12/build/assets/IntervalFrequencyCell.Cg3kLqi3.js",
+      "file": "IntervalFrequencyCell.Cg3kLqi3.js",
+      "bytes": 1140,
+      "area": "maintenance-programs",
+      "sha256": "90d8a928e02a002eb6a705d51d7381016ffd78a95ac2005b039abc3211cb2ff3"
+    },
+    {
+      "url": "https://static.easytruck.shop/2026-10-14-17-02-12/build/assets/StartPMServiceModal.mXLbZRLh.js",
+      "file": "StartPMServiceModal.mXLbZRLh.js",
+      "bytes": 3883,
+      "area": "maintenance-programs",
+      "sha256": "793540ee69bd5c6da69826508ab12b3ecccd0aecd7a5bf8be4da6bb3114f180d"
+    },
+    {
+      "url": "https://static.easytruck.shop/2026-10-14-17-02-12/build/assets/IntervalDueCell.C7-m5J4n.js",
+      "file": "IntervalDueCell.C7-m5J4n.js",
+      "bytes": 2850,
+      "area": "maintenance-programs",
+      "sha256": "ccf7d83bebc8f10a807c47e26b07109fd91e9e0ba7ee6731bae75949e9e7dda7"
+    },
+    {
+      "url": "https://static.easytruck.shop/2026-10-14-17-02-12/build/assets/PMServiceIntervalModal.BXs8ZxV2.js",
+      "file": "PMServiceIntervalModal.BXs8ZxV2.js",
+      "bytes": 14907,
+      "area": "maintenance-programs",
+      "sha256": "65a7f43910d64c7044ec6f6e0aad3383a9647378722bfc860bd2bc2085e31c61"
+    },
+    {
+      "url": "https://static.easytruck.shop/2026-10-14-17-02-12/build/assets/index.CufiLYei.js",
+      "file": "index.CufiLYei.js",
+      "bytes": 5009,
+      "area": "maintenance-programs",
+      "sha256": "00d2edcdffca293046f322e2af7dbb5b6ee08266f3a4897a5b86fc4c657e0616"
+    }
+  ]
+}

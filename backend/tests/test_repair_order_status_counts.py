@@ -17,6 +17,9 @@ import pytest
 
 from app.core.security import create_access_token
 from app.db.models.repair_order_read_model import RepairOrderReadModel
+from app.db.models.repair_order import RepairOrder, RepairOrderStatus
+from app.db.models.customer import Customer
+from app.db.models.vehicle import Vehicle
 from app.db.models.tenant import Tenant
 from app.db.models.user import User, UserRole
 
@@ -37,10 +40,20 @@ async def _seed(db, rows: list[tuple[str, bool]]):
         first_name="Count", last_name="Owner", role=UserRole.GARAGE_OWNER,
         is_active=True, is_verified=True,
     )
-    db.add(owner)
+    customer = Customer(tenant_id=tenant.id, first_name="Count", last_name="Customer", email=f"customer-{suffix}@example.test")
+    db.add_all([owner, customer])
+    await db.flush()
+    vehicle = Vehicle(tenant_id=tenant.id, customer_id=customer.id, make="Volvo", model="VNL")
+    db.add(vehicle)
+    await db.flush()
     for status_value, is_deleted in rows:
+        order = RepairOrder(tenant_id=tenant.id, customer_id=customer.id, vehicle_id=vehicle.id,
+            order_number=f"COUNT-{uuid4().hex}", status=RepairOrderStatus(status_value),
+            deleted_at=datetime.now(timezone.utc) if is_deleted else None)
+        db.add(order)
+        await db.flush()
         db.add(RepairOrderReadModel(
-            repair_order_id=uuid4(), tenant_id=tenant.id, customer_id=uuid4(), vehicle_id=uuid4(),
+            repair_order_id=order.id, tenant_id=tenant.id, customer_id=customer.id, vehicle_id=vehicle.id,
             status=status_value, is_internal=False, is_deleted=is_deleted,
             created_at=datetime.now(timezone.utc), search_document="", search_compact="",
             payload={},

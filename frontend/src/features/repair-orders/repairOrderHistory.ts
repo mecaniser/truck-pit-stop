@@ -1,3 +1,4 @@
+import { formatScheduleDate } from './repairOrderSchedule'
 import type { PartsUsage, RepairOrderHistoryEvent } from '../../types'
 import { staffHoldHistoryDetail } from './staffHold'
 
@@ -13,6 +14,18 @@ const OPERATION_EVENTS = new Set([
 ])
 
 export function repairOrderHistoryDetail(event: RepairOrderHistoryEvent): string | undefined {
+  if (event.event_type === 'schedule_changed') {
+    try {
+      const detail = JSON.parse(event.detail ?? '{}') as { timezone?: string; previous?: { scheduled_start_at?: string | null; promised_finish_at?: string | null }; current?: { scheduled_start_at?: string | null; promised_finish_at?: string | null } }
+      if (!detail.previous || !detail.current || !detail.timezone) return undefined
+      return [['scheduled_start_at', 'Start'], ['promised_finish_at', 'Promised finish']].map(([key, label]) => {
+        const field = key as 'scheduled_start_at' | 'promised_finish_at'
+        const before = formatScheduleDate(detail.previous![field], detail.timezone) ?? 'Not set'
+        const after = formatScheduleDate(detail.current![field], detail.timezone) ?? 'Not set'
+        return `${label}: ${before} → ${after}`
+      }).join(' · ')
+    } catch { return undefined }
+  }
   if (['work_held', 'work_hold_released'].includes(event.event_type)) {
     return staffHoldHistoryDetail(event.event_type, event.detail)
   }
