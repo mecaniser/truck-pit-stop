@@ -216,7 +216,7 @@
 }
 
 .db-customer-record__work-actions { display: flex; justify-content: flex-end; margin-bottom: 8px; }
-.db-customer-record__work-actions button { display: inline-flex; align-items: center; gap: 6px; min-height: 32px; padding: 4px 10px; border: 1px solid var(--customer-border, #cbd5e1); border-radius: 8px; color: var(--customer-text, #17283f); font-weight: 600; white-space: nowrap; }
+.db-customer-record__work-actions button { display: inline-flex; align-items: center; gap: 6px; min-height: 32px; padding: 4px 10px; border: 1px solid var(--customer-rule); border-radius: 8px; color: inherit; font-weight: 600; white-space: nowrap; }
 .db-customer-record__work-actions svg { width: 16px; height: 16px; }
 @media (max-width: 639px) { .db-customer-record__work-actions button { min-height: 44px; } }
 
