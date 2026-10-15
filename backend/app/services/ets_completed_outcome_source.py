@@ -157,6 +157,48 @@ def completed_snapshot(*, tenant_id, order, evidence, ets_shop_id, manifest, obs
                         "callrail_call_id": order.callrail_call_id}}
 
 
+def _verified_legacy_duplicate_roots(*, order, siblings, invoices, snapshot):
+    """Ignore only canceled operation copies of a verified singleton invoice.
+
+    This is a read-time identity rule, never a financial-record correction.
+    Every unrecognized invoice continues to participate in the root conflict.
+    """
+    roots = {invoice.repair_order_id for invoice in invoices}
+    verified = snapshot.get("invoices", [])
+    if len(verified) != 1 or snapshot.get("invoice_manifest", {}).get("complete") is not True:
+        return roots
+    source_invoice = verified[0]
+    canonical = [invoice for invoice in invoices
+                 if invoice.repair_order_id == order.id]
+    if len(canonical) != 1:
+        return roots
+    canonical = canonical[0]
+    if (str(canonical.id) != source_invoice["imported_invoice_uuid"]
+            or canonical.invoice_number != "ETSINV-" + source_invoice["invoice_number"]
+            or canonical.status != "paid" or canonical.deleted_at is not None
+            or canonical.total_amount != Decimal(source_invoice["total"])):
+        return roots
+    sibling_map = {sibling.id: sibling for sibling in siblings}
+    retained = set()
+    for invoice in invoices:
+        sibling = sibling_map.get(invoice.repair_order_id)
+        artifact = (
+            sibling is not None and sibling.id != order.id
+            and sibling.tenant_id == order.tenant_id and sibling.source == SOURCE
+            and sibling.deleted_at is None and sibling.customer_id == order.customer_id
+            and sibling.vehicle_id == order.vehicle_id
+            and re.fullmatch(re.escape(order.order_number) + r"-(?:[2-9]|[1-9][0-9]+)", sibling.order_number)
+            and invoice.tenant_id == order.tenant_id and invoice.source == SOURCE
+            and invoice.status == "cancelled" and invoice.deleted_at is None
+            and invoice.invoice_number == canonical.invoice_number + "-" + sibling.order_number
+            and invoice.total_amount == canonical.total_amount
+            and invoice.billed_customer_id == canonical.billed_customer_id
+        )
+        if not artifact:
+            retained.add(invoice.repair_order_id)
+    return retained
+
+
 async def persist_completed_observation(db: AsyncSession, *, tenant_id, order_id, evidence,
                                         ets_shop_id, manifest, observed_at, force_hold=None):
     """Persist immutable outbox evidence. Delivery remains independently disabled.
@@ -212,6 +254,13 @@ async def persist_completed_observation(db: AsyncSession, *, tenant_id, order_id
     roots = set(await db.scalars(select(Invoice.repair_order_id).where(
         Invoice.tenant_id == tenant_id, Invoice.source == SOURCE,
         Invoice.repair_order_id.in_([row.id for row in siblings]))))
+    if (not grouping_conflict and roots != {order.id}
+            and roots.issubset({row.id for row in siblings}) and event_type == ETS_COMPLETED_EVENT):
+        invoices = list(await db.scalars(select(Invoice).where(
+            Invoice.tenant_id == tenant_id, Invoice.source == SOURCE,
+            Invoice.repair_order_id.in_([row.id for row in siblings]))))
+        roots = _verified_legacy_duplicate_roots(
+            order=order, siblings=siblings, invoices=invoices, snapshot=snapshot)
     grouping_conflict |= roots != {order.id}
     identity = hashlib.sha256(f"{snapshot['ets_shop_id']}:{snapshot['source_job_id']}".encode()).hexdigest()
     key_prefix = f"ets-completed:{identity}:"
