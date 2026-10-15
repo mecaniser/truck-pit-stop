@@ -1,0 +1,17 @@
+#!/usr/sbin/nft -f
+flush ruleset
+table inet ci_isolation {
+  chain output {
+    type filter hook output priority 0; policy accept;
+    oifname "lo" accept
+    ct state established,related accept
+    # Lima DNS only; never allow arbitrary TCP to the host gateway.
+    ip daddr 192.168.5.2 udp dport 53 accept
+    ip daddr 192.168.5.2 tcp dport 53 accept
+    ip daddr { 0.0.0.0/8, 10.0.0.0/8, 100.64.0.0/10, 127.0.0.0/8, 169.254.0.0/16, 172.16.0.0/12, 192.0.0.0/24, 192.168.0.0/16, 198.18.0.0/15, 224.0.0.0/4, 240.0.0.0/4 } reject
+    meta nfproto ipv6 reject
+  }
+  chain forward {
+    type filter hook forward priority 0; policy drop;
+  }
+}

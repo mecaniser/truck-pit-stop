@@ -17,7 +17,9 @@ concurrency:
 jobs:
   migration-graph:
     name: Migration graph
-    runs-on: ubuntu-latest
+    # Forks retain all checks on free hosted runners. VM isolation is the
+    # security boundary even if a fork edits this routing expression.
+    runs-on: ${{ fromJSON((github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && '["self-hosted", "Linux", "ARM64", "dieselbridge-local"]' || '["ubuntu-latest"]') }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -46,7 +48,9 @@ jobs:
   backend-tests:
     name: Backend tests
     needs: migration-graph
-    runs-on: ubuntu-latest
+    # Forks retain all checks on free hosted runners. VM isolation is the
+    # security boundary even if a fork edits this routing expression.
+    runs-on: ${{ fromJSON((github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && '["self-hosted", "Linux", "ARM64", "dieselbridge-local"]' || '["ubuntu-latest"]') }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -83,7 +87,9 @@ jobs:
   backend-full-suite:
     name: Backend full suite (informational)
     needs: migration-graph
-    runs-on: ubuntu-latest
+    # Forks retain all checks on free hosted runners. VM isolation is the
+    # security boundary even if a fork edits this routing expression.
+    runs-on: ${{ fromJSON((github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && '["self-hosted", "Linux", "ARM64", "dieselbridge-local"]' || '["ubuntu-latest"]') }}
     continue-on-error: true
     steps:
       - uses: actions/checkout@v4
@@ -100,7 +106,9 @@ jobs:
 
   frontend-checks:
     name: Frontend checks
-    runs-on: ubuntu-latest
+    # Forks retain all checks on free hosted runners. VM isolation is the
+    # security boundary even if a fork edits this routing expression.
+    runs-on: ${{ fromJSON((github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && '["self-hosted", "Linux", "ARM64", "dieselbridge-local"]' || '["ubuntu-latest"]') }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -128,7 +136,9 @@ jobs:
 
   frontend-full-suite:
     name: Frontend full suite (informational)
-    runs-on: ubuntu-latest
+    # Forks retain all checks on free hosted runners. VM isolation is the
+    # security boundary even if a fork edits this routing expression.
+    runs-on: ${{ fromJSON((github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && '["self-hosted", "Linux", "ARM64", "dieselbridge-local"]' || '["ubuntu-latest"]') }}
     continue-on-error: true
     steps:
       - uses: actions/checkout@v4
@@ -147,7 +157,9 @@ jobs:
   playwright-smoke:
     name: Playwright smoke
     needs: migration-graph
-    runs-on: ubuntu-latest
+    # Forks retain all checks on free hosted runners. VM isolation is the
+    # security boundary even if a fork edits this routing expression.
+    runs-on: ${{ fromJSON((github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && '["self-hosted", "Linux", "ARM64", "dieselbridge-local"]' || '["ubuntu-latest"]') }}
     timeout-minutes: 15
     services:
       postgres:
@@ -205,7 +217,13 @@ jobs:
         working-directory: e2e
         run: |
           npm ci
-          npx playwright install --with-deps chromium
+          if [ "${{ runner.environment }}" = "self-hosted" ]; then
+            # Matching OS dependencies are baked into the pristine VM image;
+            # job users deliberately cannot sudo or modify that base image.
+            npx playwright install chromium
+          else
+            npx playwright install --with-deps chromium
+          fi
       - name: Prepare isolated test database
         working-directory: backend
         run: python -m alembic upgrade head

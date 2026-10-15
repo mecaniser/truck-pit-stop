@@ -1,0 +1,23 @@
+# Pinned Ubuntu image, downloaded and digest-verified by Lima.
+vmType: vz
+arch: aarch64
+cpus: 4
+memory: 8GiB
+disk: 40GiB
+images:
+  - location: https://cloud-images.ubuntu.com/releases/noble/release-20260926/ubuntu-24.04-server-cloudimg-arm64.img
+    arch: aarch64
+    digest: sha256:1d6bffe64b848468ac97f821d369a4846d983de1800ccf6b5ec8853e85cefc55
+mounts: []
+ssh:
+  forwardAgent: false
+  forwardX11: false
+  forwardX11Trusted: false
+portForwards:
+  - guestIP: 0.0.0.0
+    proto: any
+    guestPortRange: [1, 65535]
+    ignore: true
+containerd:
+  user: false
+  system: false
