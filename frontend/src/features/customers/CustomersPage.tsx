@@ -278,6 +278,19 @@ export default function CustomersPage() {
       : null
     : manualSelectedVehicle
 
+  const selectCustomerTruck = (vehicle: Vehicle | null) => {
+    setSelectedVehicleInPanel(vehicle)
+    if (!selectedCustomer) return
+    const params = new URLSearchParams(location.search)
+    params.set('selected', selectedCustomer.id)
+    if (vehicle) {
+      params.set('vehicle', vehicle.id)
+      queryClient.setQueryData(['customer-search-vehicle', currentUser?.tenant_id, currentUser?.id, selectedCustomer.id, vehicle.id], vehicle)
+    } else params.delete('vehicle')
+    // An explicit truck choice supersedes the earlier cancelled-order return.
+    navigate({ pathname: location.pathname, search: params.toString() }, { replace: true })
+  }
+
   const returnToCustomer = () => {
     setSelectedVehicleInPanel(null)
     if (!selectedVehicleId) return
@@ -1172,7 +1185,7 @@ export default function CustomersPage() {
                   setVehicleRelationshipSearch={setVehicleRelationshipSearch}
                   vehicleRelationshipFilter={vehicleRelationshipFilter}
                   setVehicleRelationshipFilter={setVehicleRelationshipFilter}
-                  setSelectedVehicleInPanel={setSelectedVehicleInPanel}
+                  setSelectedVehicleInPanel={selectCustomerTruck}
                   openAddContactModal={openAddContactModal}
                   openEditContactModal={openEditContactModal}
                   handleDeleteContactClick={handleDeleteContactClick}
@@ -1220,7 +1233,7 @@ export default function CustomersPage() {
           <CustomerVehicleModals
             customer={selectedCustomer}
             selectedVehicleInPanel={selectedVehicleInPanel}
-            setSelectedVehicleInPanel={setSelectedVehicleInPanel}
+            setSelectedVehicleInPanel={selectCustomerTruck}
             controlsRef={vehicleModalControls}
           />
         </>

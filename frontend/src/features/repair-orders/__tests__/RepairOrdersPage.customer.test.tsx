@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
@@ -413,5 +413,37 @@ it('keeps history-filter focus after order cancellation and restores return focu
   await cancelOrder()
   expect(screen.getByRole('searchbox',{name:'Search this truck’s repair history'})).toHaveValue('RO')
   expect(screen.getByRole('combobox',{name:'Repair history status'})).toHaveValue('in_progress')
+  expect(api.post).not.toHaveBeenCalled()
+})
+
+
+it('reloads the truck chosen after cancellation with its own history filters', async () => {
+  const otherVehicle = { ...vehicle, id: 'vehicle-2', unit_number: 'C-002', vin: '1FUJGLDR4DLAA0002' }
+  const baseGet = api.get.getMockImplementation()!
+  api.get.mockImplementation((url: string, options?: unknown) => {
+    if (url === '/customers/customer-1/vehicles') return Promise.resolve({ data: [vehicle, otherVehicle] })
+    if (url === '/customers/customer-1/vehicles/vehicle-2' || url === '/vehicles/vehicle-2') return Promise.resolve({ data: otherVehicle })
+    if (url === '/repair-orders') return Promise.resolve({ data: { items: [], total: 0, has_more: false } })
+    return baseGet(url, options)
+  })
+  setup('/dashboard/customers?view=list&selected=customer-1')
+  fireEvent.click(await screen.findByRole('button', { name: /Open .*Unit C-001/ }))
+  fireEvent.click(await screen.findByRole('button', { name: 'New repair order', exact: true }))
+  const dialog = await screen.findByRole('dialog', { name: 'New Repair Order' })
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel', exact: true }))
+  fireEvent.click(await screen.findByRole('button', { name: 'Back to Northline Logistics' }))
+  fireEvent.click(await screen.findByRole('button', { name: /Open .*Unit C-002/ }))
+  fireEvent.change(await screen.findByRole('searchbox', { name: 'Search this truck’s repair history' }), { target: { value: 'brake' } })
+  fireEvent.change(screen.getByRole('combobox', { name: 'Repair history status' }), { target: { value: 'completed' } })
+  expect(screen.getByTestId('location')).toHaveTextContent('vehicle=vehicle-2')
+  const restoredRoute = `/dashboard/customers${screen.getByTestId('location').textContent}`
+  cleanup()
+  setup(restoredRoute)
+  expect(await screen.findByRole('searchbox', { name: 'Search this truck’s repair history' })).toHaveValue('brake')
+  expect(screen.getByRole('combobox', { name: 'Repair history status' })).toHaveValue('completed')
+  await waitFor(() => expect(api.get).toHaveBeenCalledWith('/repair-orders', expect.objectContaining({ params: expect.objectContaining({ vehicle_id: 'vehicle-2', search: 'brake', status: 'completed' }) })))
+  fireEvent.click(screen.getByRole('button', { name: 'Back to Northline Logistics' }))
+  expect(screen.getByTestId('location')).not.toHaveTextContent('vehicle=')
+  expect(screen.getByRole('region', { name: 'Account details' })).toBeVisible()
   expect(api.post).not.toHaveBeenCalled()
 })
