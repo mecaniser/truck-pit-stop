@@ -56,7 +56,8 @@ def snapshot_revision(snapshot: dict) -> str:
 
 def history_snapshot(*, tenant: Tenant, invoice: Invoice, order: RepairOrder,
                      customer: Customer, vehicle: Vehicle | None,
-                     operations: list[RepairOrder], grouping_uncertain: bool = False) -> dict:
+                     operations: list[RepairOrder], grouping_uncertain: bool = False,
+                     settled_amount: Decimal | None = None) -> dict:
     resources = [invoice, order, customer, *operations] + ([vehicle] if vehicle else [])
     if any(resource.tenant_id != tenant.id for resource in resources):
         raise ValueError("History resources must belong to the same tenant")
@@ -73,7 +74,14 @@ def history_snapshot(*, tenant: Tenant, invoice: Invoice, order: RepairOrder,
         # Native timestamp columns are timezone-aware; SQLite fixture roundtrip
         # loses that metadata. PostgreSQL supplies aware UTC values.
         paid_at = paid_at.replace(tzinfo=timezone.utc)
+    native_paid = not imported and _status(invoice.status) == "paid"
+    if native_paid:
+        if settled_amount is None:
+            paid_at = None
+        else:
+            amount = settled_amount
     uncertain = grouping_uncertain or invoice.source != order.source
+    uncertain |= native_paid and settled_amount is None
     uncertain |= any(item.customer_id != order.customer_id or item.vehicle_id != order.vehicle_id for item in operations)
     uncertain |= any(item.deleted_at is not None for item in resources)
     # Bound even worst-case escaped Unicode under the receiver body ceiling.
@@ -84,7 +92,7 @@ def history_snapshot(*, tenant: Tenant, invoice: Invoice, order: RepairOrder,
         "repair_order_uuid": str(order.id), "repair_order_number": order.order_number,
         "invoice_id": str(invoice.id), "invoice_number": invoice.invoice_number,
         "job_status": _status(order.status), "invoice_status": _status(invoice.status),
-        "currency": "USD", "invoice_total": str(Decimal(invoice.total_amount).quantize(Decimal("0.01"))),
+        "currency": "USD", "invoice_total": str(amount.quantize(Decimal("0.01"))),
         "completed_date": _date(order.work_completed_at),
         "invoiced_date": invoice.ets_invoiced_at.isoformat() if imported and invoice.ets_invoiced_at else None,
         "paid_date": _date(paid_at.astimezone(timezone.utc)) if paid_at else None,
@@ -139,8 +147,12 @@ async def capture_tenant_history(db: Session, tenant: Tenant, *, batch_size: int
     for invoice, order, customer, vehicle in rows:
         operations, uncertain = await _operations(db, order)
         try:
+            settled_amount = None
+            if invoice.source is None and order.source is None and _status(invoice.status) == "paid":
+                from app.services.paid_invoice_webhook_service import native_settled_amount
+                settled_amount = await native_settled_amount(db, tenant=tenant, invoice=invoice, order=order)
             snapshot = history_snapshot(tenant=tenant, invoice=invoice, order=order, customer=customer,
-                                        vehicle=vehicle, operations=operations, grouping_uncertain=uncertain or vehicle is None)
+                                        vehicle=vehicle, operations=operations, grouping_uncertain=uncertain or vehicle is None, settled_amount=settled_amount)
         except (ValueError, TypeError, InvalidOperation):
             # Record a non-deliverable, non-PII failure instead of allowing one
             # malformed source record to strand the rest of the scan forever.

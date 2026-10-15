@@ -1610,13 +1610,6 @@ async def confirm_attempt(
         if invoice.paid_at is None:
             invoice.paid_at = datetime.now(timezone.utc)
         invoice.repair_order.status = RepairOrderStatus.PAID
-        await enqueue_paid_invoice_webhook(
-            db,
-            tenant=tenant,
-            invoice=invoice,
-            order=invoice.repair_order,
-            customer=invoice.repair_order.customer,
-        )
     settlement.state = settlement_state(settlement)
     await append_ledger_event(
         db,
@@ -1735,6 +1728,12 @@ async def confirm_attempt(
             available_at=datetime.now(timezone.utc),
         )
         db.add(outbox)
+
+    if paid_transition:
+        await enqueue_paid_invoice_webhook(
+            db, tenant=tenant, invoice=invoice,
+            order=invoice.repair_order, customer=invoice.repair_order.customer,
+        )
 
     return AttemptConfirmation(attempt, settlement, payment, overpayment, refund, paid_transition)
 
@@ -2362,13 +2361,6 @@ async def apply_customer_credit(
         invoice.status = InvoiceStatus.PAID
         invoice.paid_at = invoice.paid_at or datetime.now(timezone.utc)
         invoice.repair_order.status = RepairOrderStatus.PAID
-        await enqueue_paid_invoice_webhook(
-            db,
-            tenant=tenant,
-            invoice=invoice,
-            order=invoice.repair_order,
-            customer=invoice.repair_order.customer,
-        )
     settlement.state = settlement_state(settlement)
     await append_ledger_event(
         db,
@@ -2381,6 +2373,11 @@ async def apply_customer_credit(
         principal_delta=amount,
         evidence={"credit_id": str(origin.id), "target_invoice_id": str(invoice.id)},
     )
+    if paid_transition:
+        await enqueue_paid_invoice_webhook(
+            db, tenant=tenant, invoice=invoice,
+            order=invoice.repair_order, customer=invoice.repair_order.customer,
+        )
     link = PaymentAccountingLink(
         tenant_id=tenant.id,
         invoice_id=invoice.id,
