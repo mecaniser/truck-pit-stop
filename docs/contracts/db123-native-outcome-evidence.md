@@ -44,3 +44,15 @@ source exclusions and original outbox preservation. Independent QA and Security
 must approve before merge. Local frontend/backend are owned by other worktrees;
 no UI changes or claim of aligned local browser acceptance. Backend isolated tests
 exercise this transaction-only change.
+
+
+## Local acceptance receipt — 2026-10-14
+
+Implementation `488df0f6`: owner 144 focused tests passed across outcome contract,
+source history, cash and invoice settlements. Independent QA/Security GO:115 cases
+passed plus the corrected customer fixture passed separately. Two review findings
+were fixed: capture follows all overpayment/refund evidence; supplied customer must
+be the order customer. Diff integrity passes. No production mutations or recovery
+were executed. PR526 requires protected CI and explicit release evidence; none is
+claimed here. The local frontend and Docker API belong to unrelated worktrees and
+were preserved. No local browser/runtime alignment claim is made.
