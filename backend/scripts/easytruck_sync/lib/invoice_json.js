@@ -55,4 +55,54 @@ function extractLaborHours(rawDataPage) {
   return Math.round((minutes / 60) * 100) / 100;
 }
 
-module.exports = { extractLaborHours };
+// This is source evidence only, never a settlement assertion. Do not retain
+// arbitrary Inertia fields: they include contacts, notes and session data.
+function extractSourceEvidence(rawDataPage) {
+  let service;
+  try { service = JSON.parse(rawDataPage)?.props?.service; } catch { return null; }
+  if (!service || !service.invoice || typeof service.invoice !== 'object') return null;
+  const scalar = value => (typeof value === 'string' && value.length <= 160)
+    || (typeof value === 'number' && Number.isFinite(value))
+    || typeof value === 'boolean' ? value : null;
+  const money = value => value && typeof value === 'object' ? {
+    amount: scalar(value.amount), currency: scalar(value.currency),
+  } : null;
+  const invoice = service.invoice;
+  if (service.int_id == null || invoice.service_id == null
+      || String(service.int_id) !== String(invoice.service_id)
+      || service.id == null || String(service.id) !== String(service.number)) return null;
+  const lines = Array.isArray(invoice.payment_lines) ? invoice.payment_lines : [];
+  return {
+    schema_version: 1,
+    source: 'easy_truck_shop',
+    settlement_semantics: 'unverified',
+    service_id: scalar(service.id),
+    service_internal_id: scalar(service.int_id),
+    invoice_service_id: scalar(invoice.service_id),
+    completed_at_source: scalar(service.completed_at),
+    invoice_id: scalar(invoice.id),
+    invoice_number: scalar(invoice.number),
+    invoice_status: scalar(invoice.status),
+    currency: scalar(invoice.currency),
+    total: money(invoice.total),
+    balance: money(invoice.balance),
+    payment_lines_truncated: lines.length > 200,
+    payment_lines: lines.slice(0, 200).map(line => {
+      const payment = line?.payment || {};
+      return {
+        id: scalar(line?.id), amount: money(line?.amount),
+        payment: {
+          id: scalar(payment.id), date_source: scalar(payment.date),
+          date_semantics: 'source_datetime_unverified',
+          status: scalar(payment.status), type: scalar(payment.type),
+          provider: scalar(payment.provider), qb_reference: scalar(payment.qb_reference),
+          total: money(payment.total), credit_total: money(payment.credit_total),
+          unapplied_amount: money(payment.unapplied_amount),
+          canceled: scalar(payment.canceled),
+        },
+      };
+    }),
+  };
+}
+
+module.exports = { extractLaborHours, extractSourceEvidence };
