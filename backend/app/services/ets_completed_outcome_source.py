@@ -177,6 +177,7 @@ async def persist_completed_observation(db: AsyncSession, *, tenant_id, order_id
     if (not service_id.isdigit() or len(service_id) > 140 or first.get("ets_shop_id") != ets_shop_id or order.source != SOURCE
             or not re.fullmatch(rf"ETS-{re.escape(service_id)}-[0-9]+(?:-[0-9]+)?", order.order_number)):
         raise ETSCompletionHold("source_identity_mismatch")
+    captured_at = datetime.now(timezone.utc)
     event_type = ETS_COMPLETED_EVENT
     try:
         if force_hold:
@@ -194,6 +195,7 @@ async def persist_completed_observation(db: AsyncSession, *, tenant_id, order_id
                        "source_identity_conflict" if "identity" in reason or "conflict" in reason else
                        "source_fields_missing")
         event_type = ETS_HOLD_EVENT
+        observed_at = captured_at
         snapshot = {"source": SOURCE, "ets_shop_id": identifier(ets_shop_id),
             "source_job_id": f"ets-service:{service_id}", "service_id": service_id,
             "service_internal_id": internal_id, "repair_order_uuid": str(order.id), "hold_reason": hold_reason}
@@ -204,35 +206,46 @@ async def persist_completed_observation(db: AsyncSession, *, tenant_id, order_id
     siblings = list(await db.scalars(select(RepairOrder).where(
         RepairOrder.tenant_id == tenant_id, RepairOrder.source == SOURCE,
         RepairOrder.order_number.like(service_prefix + "%")).limit(201)))
-    if len(siblings) > 200 or any(row.deleted_at is not None or row.customer_id != order.customer_id or row.vehicle_id != order.vehicle_id
-           for row in siblings):
-        raise ETSCompletionHold("source_grouping_uncertain")
+    grouping_conflict = len(siblings) > 200 or any(
+        row.deleted_at is not None or row.customer_id != order.customer_id or row.vehicle_id != order.vehicle_id
+        for row in siblings)
     roots = set(await db.scalars(select(Invoice.repair_order_id).where(
         Invoice.tenant_id == tenant_id, Invoice.source == SOURCE,
         Invoice.repair_order_id.in_([row.id for row in siblings]))))
-    if roots != {order.id}:
-        raise ETSCompletionHold("canonical_source_root_conflict")
-    digest = hashlib.sha256(json.dumps(snapshot, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+    grouping_conflict |= roots != {order.id}
     identity = hashlib.sha256(f"{snapshot['ets_shop_id']}:{snapshot['source_job_id']}".encode()).hexdigest()
     key_prefix = f"ets-completed:{identity}:"
     previous = await db.scalar(select(ProviderOutboxEvent).where(
         ProviderOutboxEvent.tenant_id == tenant_id, ProviderOutboxEvent.event_type.in_(ETS_EVENTS),
         ProviderOutboxEvent.idempotency_key.like(key_prefix + "%"),
-    ).order_by(ProviderOutboxEvent.created_at.desc(), ProviderOutboxEvent.id.desc()).limit(1))
-    if previous:
-        if not previous.payload.get("snapshot"):
-            raise ETSCompletionHold("source_observation_expired")
-        if previous.payload["snapshot"]["repair_order_uuid"] != str(order.id):
+    ).order_by(ProviderOutboxEvent.payload["source_observation"].as_integer().desc()).limit(1))
+    if previous and not previous.payload.get("snapshot"):
+        raise ETSCompletionHold("source_observation_expired")
+    grouping_conflict |= bool(previous and previous.payload["snapshot"]["repair_order_uuid"] != str(order.id))
+    if grouping_conflict:
+        if previous is None:
             raise ETSCompletionHold("canonical_source_root_conflict")
+        # Invalidate the previously verified identity; never move its association
+        # to whichever conflicting local operation happened to be scanned.
+        snapshot = {key: previous.payload["snapshot"][key] for key in (
+            "source", "ets_shop_id", "source_job_id", "service_id", "service_internal_id", "repair_order_uuid")}
+        snapshot["hold_reason"] = "source_identity_conflict"
+        event_type, observed_at = ETS_HOLD_EVENT, captured_at
+    digest = hashlib.sha256(json.dumps(snapshot, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+    if previous:
+        prior_observed_at = datetime.fromisoformat(previous.payload["observed_at"].replace("Z", "+00:00"))
+        if event_type == ETS_COMPLETED_EVENT and observed_at < prior_observed_at:
+            # A cached/late older positive cannot undo a newer diagnostic hold.
+            return previous
         if (previous.payload.get("source_revision") == digest
                 and (event_type == ETS_HOLD_EVENT or previous.payload.get("observed_at") == observed_at.astimezone(timezone.utc).isoformat())):
             return previous
     sequence = previous.payload["source_observation"] + 1 if previous else 1
     event_id = uuid4()
     event = ProviderOutboxEvent(id=event_id, tenant_id=tenant_id, event_type=event_type,
-        aggregate_type="repair_order", aggregate_id=order.id,
+        aggregate_type="repair_order", aggregate_id=UUID(snapshot["repair_order_uuid"]),
         idempotency_key=f"{key_prefix}{sequence}:{digest}", status=ProviderOutboxStatus.PENDING.value,
-        available_at=observed_at, created_at=observed_at,
+        available_at=captured_at, created_at=captured_at,
         payload={"schema_version": 1, "source_system": "dieselbridge", "event_type": event_type,
                  "event_id": str(event_id), "shop_id": str(tenant_id), "occurred_at": snapshot.get("completed_at", observed_at.isoformat()),
                  "observed_at": observed_at.astimezone(timezone.utc).isoformat(), "source_observation": sequence,

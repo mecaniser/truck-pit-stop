@@ -5,7 +5,7 @@ const path = require('path');
 const { loginSession, SHOP, BASE } = require('./lib/auth');
 const { parseInvoicePage } = require('./lib/invoice_parse');
 const { extractLaborHours, extractSourceEvidence } = require('./lib/invoice_json');
-const { collectInvoiceManifest } = require('./lib/invoice_manifest');
+const { collectInvoiceManifest, applyCurrentManifest, invalidateCachedService } = require('./lib/invoice_manifest');
 
 const CUSTOMER_DETAILS_FILE = path.join(__dirname, 'data', 'customer_details.json');
 const OUT_FILE = path.join(__dirname, 'data', 'invoices.json');
@@ -21,7 +21,7 @@ function getAllServiceNumbers() {
 }
 
 (async () => {
-  const serviceNumbers = getAllServiceNumbers();
+  let serviceNumbers = getAllServiceNumbers();
   console.log(`Found ${serviceNumbers.length} unique service numbers to scrape`);
 
   let results = {};
@@ -29,6 +29,7 @@ function getAllServiceNumbers() {
     results = JSON.parse(fs.readFileSync(OUT_FILE, 'utf8'));
     console.log(`Resuming: ${Object.keys(results).length} already scraped`);
   }
+  serviceNumbers = [...new Set([...serviceNumbers, ...Object.keys(results)])];
   const failures = fs.existsSync(FAIL_FILE) ? JSON.parse(fs.readFileSync(FAIL_FILE, 'utf8')) : [];
 
   const { browser, page } = await loginSession({ headless: true });
@@ -38,7 +39,7 @@ function getAllServiceNumbers() {
   catch { console.warn('Complete source invoice enumeration unavailable; completion outcomes held'); }
   let processed = 0;
   for (const serviceNo of serviceNumbers) {
-    if (results[serviceNo]) continue;
+    invalidateCachedService(results, serviceNo);
     try {
       await page.goto(`${BASE}/${SHOP}/services/${serviceNo}/invoice`, { waitUntil: 'networkidle', timeout: 20000 });
       if (new URL(page.url()).pathname !== new URL(`${BASE}/${SHOP}/services/${serviceNo}/invoice`).pathname) throw new Error('Invoice route mismatch');
@@ -60,10 +61,7 @@ function getAllServiceNumbers() {
         throw new Error('Invoice source evidence identity unavailable or mismatched');
       }
 
-      parsed.sourceEvidence.observed_at_source = new Date().toISOString();
-      const manifest = manifests[String(serviceNo)];
-      parsed.sourceEvidence.invoice_manifest = manifest
-        && manifest.service_internal_id === String(parsed.sourceEvidence.service_internal_id) ? manifest : null;
+      parsed.sourceEvidence = applyCurrentManifest(parsed.sourceEvidence, manifests, serviceNo, new Date().toISOString());
       results[serviceNo] = parsed;
     } catch (e) {
       failures.push({ serviceNo, reason: e.message, observed_at_source: new Date().toISOString() });

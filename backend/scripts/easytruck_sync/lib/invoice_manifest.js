@@ -53,4 +53,14 @@ async function collectInvoiceManifest(page, base, shop) {
   }
   return mergeInvoicePages(pages, shop);
 }
-module.exports = {mergeInvoicePages, collectInvoiceManifest};
+function applyCurrentManifest(evidence, manifests, serviceNo, observedAt) {
+  const manifest = manifests[String(serviceNo)];
+  return {...evidence, observed_at_source: observedAt,
+    invoice_manifest: manifest && manifest.service_internal_id === String(evidence.service_internal_id) ? manifest : null};
+}
+
+function invalidateCachedService(results, serviceNo) {
+  // A cached positive must not survive a failed current read or missing manifest.
+  delete results[serviceNo];
+}
+module.exports = {mergeInvoicePages, collectInvoiceManifest, applyCurrentManifest, invalidateCachedService};
