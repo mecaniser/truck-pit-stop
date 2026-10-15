@@ -24,7 +24,7 @@ Last updated: 2026-10-15. Program owner: Product & Delivery Lead. Discovery inve
   - Status: **Done — merged, deployed and production verified**. Board: **DB-131**. Owner: Backend & Integrations.
   - Evidence: [R1 verification receipt](verification/DB131_REPAIR_ORDER_SCHEDULING.md).
 - [ ] **P1 — Cost-based parts markup matrices with minimum price and locked-price rules**
-  - Status: **In progress — implementation and local verification; early independent findings returned to owners**. Board: **DB-132**. Owner: Backend & Integrations.
+  - Status: **In progress — PR542 final local recovery-layout correction and CI; independent gate pending**. Board: **DB-132**. Owner: Backend & Integrations.
   - Evidence: [P1 contract](contracts/db132-parts-pricing-matrix.md); [intake receipt](verification/DB132_PARTS_PRICING_MATRIX.md).
 - [ ] **C1 — Customer-specific labor rates and parts pricing defaults**
   - Status: **Queued**. Board: **DB-133**. Owner: Backend & Integrations.

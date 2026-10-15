@@ -78,6 +78,19 @@ describe('PriceBuilderPanel pending feedback', () => {
     const capacity = { labor_discount_max: '10000', combined_discount_max: '20000', labor_discount_block_reason: null, order_discount_block_reason: null }
     apiMocks.limits.mockResolvedValue({ data: { current: capacity, stock: capacity, list: capacity } })
   })
+  it('keeps recovery notices in the work scroller with the footer outside that content', async () => {
+    apiMocks.get.mockResolvedValue({ data: emptySummary })
+    const { container } = renderPanel({ workspaceNotice: <div role="status" aria-label="Unfinished service attachment">Service pending<button>Retry remaining</button><button>Keep current work</button></div> })
+    const notice = await screen.findByRole('status', { name: 'Unfinished service attachment' })
+    const scroll = notice.closest('.db-workspace-scroll')
+    expect(scroll).not.toBeNull()
+    const footer = container.querySelector('.db-workspace-footer')
+    expect(footer).not.toBeNull()
+    expect(scroll).not.toContainElement(footer as HTMLElement)
+    expect(within(notice).getByRole('button', { name: 'Retry remaining' })).toBeEnabled()
+    expect(within(notice).getByRole('button', { name: 'Keep current work' })).toBeEnabled()
+  })
+
   it('limits combined discounts to cost headroom and rechecks a stock-price draft', async () => {
     apiMocks.get.mockResolvedValue({ data: emptySummary })
     const current = { labor_discount_max: '150', combined_discount_max: '450', labor_discount_block_reason: null, order_discount_block_reason: null }

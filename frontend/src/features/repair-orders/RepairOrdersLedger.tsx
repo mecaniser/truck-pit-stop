@@ -1,6 +1,6 @@
 import './repairOrderSchedule.css'
 import './repairOrderControls.css'
-import { useEffect, useId, useRef, useState } from 'react'
+import { type ReactNode, useEffect, useId, useRef, useState } from 'react'
 import { Check, ChevronDown, ChevronRight, Plus } from 'lucide-react'
 import { StaffSearchField } from '@/components/ui'
 import { REPAIR_ORDERS_QUEUE_LABEL, type RepairOrdersQueueOrigin } from './repairOrdersPresentation'
@@ -29,6 +29,7 @@ export type RepairOrdersLedgerRow = {
 }
 
 export default function RepairOrdersLedger({
+  notice,
   rows,
   totalOrders,
   searchQuery,
@@ -60,6 +61,7 @@ export default function RepairOrdersLedger({
   overdue = false,
   onOverdueChange,
 }: {
+  notice?: ReactNode
   rows: RepairOrdersLedgerRow[]
   totalOrders: number
   searchQuery: string
@@ -202,6 +204,7 @@ export default function RepairOrdersLedger({
 
   return (
     <section className={`db-repair-orders-new db-repair-orders-controls${compact ? ' db-repair-orders-new--compact' : ''}`} aria-labelledby="repair-orders-title" aria-busy={isFetching}>
+      {notice}
       <header className="db-repair-orders-new__header db-operating-page-header">
         <div>
           <h1 id="repair-orders-title">{pageTitle}</h1>

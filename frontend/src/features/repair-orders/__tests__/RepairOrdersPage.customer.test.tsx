@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
@@ -7,7 +8,7 @@ const authState = vi.hoisted(() => ({ user: { id: 'actor-1', tenant_id: 'tenant-
 vi.mock('@/stores/authStore', () => ({ useAuthStore: Object.assign((select: (state: typeof authState) => unknown) => select(authState), { getState: () => authState }) }))
 vi.mock('@/hooks/useWebSocket', () => ({ useWebSocket: vi.fn() }))
 vi.mock('@/contexts/ThemeContext', () => ({ useTheme: () => ({ presentationVariant: 'new', accentColors: { 500: '#d97706' } }) }))
-vi.mock('../PriceBuilderPanel', () => ({ default: ({ onClose, onOpenCustomer, onOpenVehicleHistory }: { onClose: () => void; onOpenCustomer: () => void; onOpenVehicleHistory?: () => void }) => <div>Repair order workspace<button onClick={onClose}>Close repair order</button><button onClick={onOpenCustomer}>Open customer</button>{onOpenVehicleHistory && <button onClick={onOpenVehicleHistory}>View vehicle history</button>}</div> }))
+vi.mock('../PriceBuilderPanel', () => ({ default: ({ workspaceNotice, onClose, onOpenCustomer, onOpenVehicleHistory }: { workspaceNotice?: ReactNode; onClose: () => void; onOpenCustomer: () => void; onOpenVehicleHistory?: () => void }) => <section aria-label="Repair order work">{workspaceNotice}Repair order workspace<button onClick={onClose}>Close repair order</button><button onClick={onOpenCustomer}>Open customer</button>{onOpenVehicleHistory && <button onClick={onOpenVehicleHistory}>View vehicle history</button>}</section> }))
 const api = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn(), put: vi.fn() }))
 vi.mock('@/lib/api', () => ({ default: api }))
 import RepairOrdersPage from '../RepairOrdersPage'
@@ -513,7 +514,9 @@ it('retains the created order and original service request identity after an unc
     return Promise.resolve({ data: {} })
   })
   await startOrderWithService()
-  fireEvent.click(await screen.findByRole('button', { name: 'Retry remaining' }))
+  const work = await screen.findByRole('region', { name: 'Repair order work' })
+  expect(within(work).getByRole('alert')).toHaveTextContent('Your draft is kept')
+  fireEvent.click(within(work).getByRole('button', { name: 'Retry remaining' }))
   await waitFor(() => expect(screen.queryByRole('button', { name: 'Retry remaining' })).not.toBeInTheDocument())
   expect(api.post.mock.calls.filter(([url]) => url === '/repair-orders')).toHaveLength(1)
   expect(api.post.mock.calls.filter(([url]) => url === '/parts-pricing/resolve')).toHaveLength(1)
@@ -527,9 +530,28 @@ it('keeps the created order when the service preview is cancelled and resumes wi
   api.post.mockImplementation((url, body) => url === '/repair-orders' ? Promise.resolve({ data: { ...order, id: 'new-order', order_number: 'RO-NEW' } }) : url === '/parts-pricing/resolve' ? Promise.resolve({ data: quote({ plan: body.plan }) }) : Promise.resolve({ data: { warnings: [] } }))
   await startOrderWithService()
   const review = await screen.findByRole('dialog', { name: 'Review parts pricing' }); fireEvent.click(within(review).getByRole('button', { name: 'Cancel' }))
-  fireEvent.click(await screen.findByRole('button', { name: 'Retry remaining' })); fireEvent.click(await screen.findByRole('button', { name: 'Confirm price' }))
+  const work = await screen.findByRole('region', { name: 'Repair order work' })
+  expect(within(work).getByRole('status', { name: 'Unfinished service attachment' })).toHaveTextContent('RO-NEW created')
+  fireEvent.click(within(work).getByRole('button', { name: 'Retry remaining' })); fireEvent.click(await screen.findByRole('button', { name: 'Confirm price' }))
   await waitFor(() => expect(screen.queryByRole('button', { name: 'Retry remaining' })).not.toBeInTheDocument())
   expect(api.post.mock.calls.filter(([url]) => url === '/repair-orders')).toHaveLength(1); expect(api.post.mock.calls.filter(([url]) => url.endsWith('/flat-service'))).toHaveLength(1)
+})
+
+it.each(['Retry remaining', 'Keep current work'])('keeps recovery inside the ledger and %s reopens the same order', async action => {
+  const { quote } = await import('@/features/parts-pricing/__tests__/fixtures')
+  api.post.mockImplementation((url, body) => url === '/repair-orders' ? Promise.resolve({ data: { ...order, id: 'new-order', order_number: 'RO-NEW' } }) : url === '/parts-pricing/resolve' ? Promise.resolve({ data: quote({ plan: body.plan }) }) : Promise.resolve({ data: {} }))
+  await startOrderWithService()
+  fireEvent.click(within(await screen.findByRole('dialog', { name: 'Review parts pricing' })).getByRole('button', { name: 'Cancel' }))
+  fireEvent.click(await screen.findByRole('button', { name: 'Close repair order' }))
+  const notice = await screen.findByRole('status', { name: 'Unfinished service attachment' })
+  expect(notice.closest('section')).toHaveClass('db-repair-orders-new')
+  fireEvent.click(within(notice).getByRole('button', { name: action }))
+  if (action === 'Retry remaining') fireEvent.click(await screen.findByRole('button', { name: 'Confirm price' }))
+  expect(await screen.findByRole('region', { name: 'Repair order work' })).toBeInTheDocument()
+  await waitFor(() => expect(screen.queryByRole('status', { name: 'Unfinished service attachment' })).not.toBeInTheDocument())
+  expect(screen.getByTestId('location')).toHaveTextContent('selected=new-order')
+  expect(api.post.mock.calls.filter(([url]) => url === '/repair-orders')).toHaveLength(1)
+  expect(api.post.mock.calls.filter(([url]) => url.endsWith('/flat-service'))).toHaveLength(action === 'Retry remaining' ? 1 : 0)
 })
 
 it.each(['preview', 'write'])('does not restore another actor\'s order recovery after pending service %s completes', async stage => {

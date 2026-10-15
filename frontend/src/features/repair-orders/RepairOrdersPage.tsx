@@ -3203,10 +3203,12 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
     ? 'Today’s repair work, ready to operate.'
     : 'Review and update repair work from check-in through payment.'
   const activeValueQuery = isQueueWorkset ? dailyValueQuery : repairOrderValueQuery
+  const recoveryInPriceBuilder = isDetailOpen && !!selectedOrder && !customerViewId && showPriceBuilder
+  const serviceRecoveryNotice = serviceRecovery ? <div role="status" aria-label="Unfinished service attachment" className="db-service-pricing-recovery"><span><strong>{serviceRecovery.order.order_number} created</strong> · {serviceRecovery.services.filter(service => service.status !== 'applied').map(service => `${service.name}${service.reason ? `: ${service.reason}` : ': pending'}`).join('; ')}</span><button type="button" disabled={servicePricing.busy} onClick={() => { openDetail(serviceRecovery.order); void applyPendingServices(serviceRecovery.order, serviceRecovery.services) }}>Retry remaining</button><button type="button" disabled={servicePricing.busy} onClick={() => { openDetail(serviceRecovery.order); setServiceRecovery(null) }}>Keep current work</button></div> : null
+  const pricingNotice = <>{servicePricing.dialog}{legacyPartPricing.dialog}{serviceRecoveryNotice}</>
   return (
     <div className={`db-repair-orders-workspace flex flex-col h-full ${presentationVariant === 'new' ? 'db-repair-orders-workspace--new' : ''} ${presentationVariant === 'new' && isDetailOpen && selectedOrder ? 'db-repair-orders-workspace--detail-open' : ''}`}>
-      {servicePricing.dialog}{legacyPartPricing.dialog}
-      {serviceRecovery && <div role="status" className="db-service-pricing-recovery"><span><strong>{serviceRecovery.order.order_number} created</strong> · {serviceRecovery.services.filter(service => service.status !== 'applied').map(service => `${service.name}${service.reason ? `: ${service.reason}` : ': pending'}`).join('; ')}</span><button type="button" disabled={servicePricing.busy} onClick={() => { openDetail(serviceRecovery.order); void applyPendingServices(serviceRecovery.order, serviceRecovery.services) }}>Retry remaining</button><button type="button" disabled={servicePricing.busy} onClick={() => { openDetail(serviceRecovery.order); setServiceRecovery(null) }}>Keep current work</button></div>}
+
       {voidedOrderNumber && (
         <div role="status" className="mb-3 flex items-center justify-between gap-3 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
           <span>Order {voidedOrderNumber} voided. The record is preserved.</span>
@@ -3218,6 +3220,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
       {presentationVariant === 'new' ? (
         <RepairOrdersLedger
           key="repair-orders-ledger"
+          notice={!recoveryInPriceBuilder ? pricingNotice : null}
           rows={displayedLedgerRows}
           totalOrders={displayedLedgerTotal}
           searchQuery={searchQuery}
@@ -3266,6 +3269,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
         />
       ) : (
         <>
+      {!recoveryInPriceBuilder && pricingNotice}
       <h1 className="text-xl sm:text-2xl font-bold text-white mb-4 flex-shrink-0">Repair Orders</h1>
 
       {/* Search + Filters */}
@@ -4803,6 +4807,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
 
                 {showPriceBuilder && (
                   <PriceBuilderPanel
+                    workspaceNotice={recoveryInPriceBuilder ? pricingNotice : null}
                     focusedOperationId={searchParams.get('operation')}
                     focusedRecommendationId={searchParams.get('recommendation')}
                     recommendedWorkPanel={(context) => <RecommendedWorkPanel vehicleId={selectedOrder.vehicle_id} contextOrderId={selectedOrder.id} {...context} />}

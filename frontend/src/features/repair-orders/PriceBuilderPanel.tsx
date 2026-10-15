@@ -153,6 +153,7 @@ type LineWarning = {
 }
 
 type Props = {
+  workspaceNotice?: ReactNode
   orderId: string
   orderStatus: RepairOrderStatus
   canEdit: boolean
@@ -884,6 +885,7 @@ export default function PriceBuilderPanel({
   restorePending = false,
   onReopenWorkOrder,
   reopenPending = false,
+  workspaceNotice,
   recommendedWorkPanel,
   focusedOperationId,
   focusedRecommendationId,
@@ -2661,6 +2663,7 @@ export default function PriceBuilderPanel({
       </div>
 
       <div className="db-workspace-scroll">
+      {workspaceNotice}
       {compactWorkspace && <div className="db-job-customer-mobile">{customerIdentity}</div>}
       {isOnHold && <p role="status" className="break-words border-b border-amber-200 bg-amber-50 px-4 py-2 text-sm text-[#78350f]"><strong>On hold</strong> · {holdLabel}</p>}
       {/* Operational workflow is primary. Estimates are optional authorization
