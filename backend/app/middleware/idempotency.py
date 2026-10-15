@@ -14,6 +14,7 @@ from app.core.logging import get_logger
 from app.core.rate_limit import rate_limit_key
 from app.core.redis import get_redis
 from app.core.redaction import sanitize_request_path
+from app.middleware.receipt_paths import is_receipt_path
 
 logger = get_logger(__name__)
 
@@ -59,6 +60,10 @@ class IdempotencyMiddleware:
         if not path.startswith("/api/v1"):
             return False
         if path in SENSITIVE_NON_IDEMPOTENT_PATHS:
+            return False
+        # Private files must be authenticated before receive(), and their replay
+        # and current permission checks belong to the database transaction.
+        if is_receipt_path(path):
             return False
         # Telemetry has durable actor/membership-aware replay checks.
         if path.startswith("/api/v1/fleet/trucks/") and path.endswith("/telemetry-snapshots"):

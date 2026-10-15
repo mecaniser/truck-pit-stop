@@ -5,6 +5,7 @@ from typing import Callable
 from fastapi import Request, Response
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.types import ASGIApp
+from app.middleware.receipt_paths import is_receipt_path
 
 
 class CacheControlMiddleware(BaseHTTPMiddleware):
@@ -24,5 +25,8 @@ class CacheControlMiddleware(BaseHTTPMiddleware):
             response.headers["Cache-Control"] = "no-store, private"
             response.headers["Pragma"] = "no-cache"
             response.headers["Expires"] = "0"
+            if is_receipt_path(request.url.path):
+                response.headers["Cache-Control"] = "private, no-store, max-age=0"
+                response.headers["X-Content-Type-Options"] = "nosniff"
 
         return response

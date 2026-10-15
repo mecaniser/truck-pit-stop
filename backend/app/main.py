@@ -34,6 +34,7 @@ from app.middleware.throttling import ThrottlingMiddleware
 from app.middleware.cache_control import CacheControlMiddleware
 from app.middleware.idempotency import IdempotencyMiddleware
 from app.middleware.request_size import RequestBodyLimitMiddleware
+from app.middleware.receipt_paths import is_receipt_path
 from app.api.v1.router import api_router
 from app.db.session import engine
 from app.core.redis import close_redis, get_redis
@@ -97,7 +98,7 @@ app.add_middleware(
     allow_origins=settings.CORS_ORIGINS,
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allow_headers=["Authorization", "Content-Type", "X-Requested-With", "X-Correlation-ID", "X-Step-Up-Authorization"],
+    allow_headers=["Authorization", "Content-Type", "X-Requested-With", "X-Correlation-ID", "X-Step-Up-Authorization", "X-Request-ID", "X-Expected-Record-Version", "X-Receipt-Filename"],
 )
 
 
@@ -116,6 +117,11 @@ async def add_security_headers(request: Request, call_next):
     response.headers["X-Frame-Options"] = "DENY"
     response.headers["X-XSS-Protection"] = "1; mode=block"
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    if is_receipt_path(request.url.path):
+        # Also covers early middleware errors, before the private route runs.
+        response.headers["Cache-Control"] = "private, no-store, max-age=0"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Referrer-Policy"] = "no-referrer"
     response.headers["Permissions-Policy"] = "geolocation=(), microphone=(), camera=()"
     if settings.COOKIE_SECURE_EFFECTIVE:  # Only add HSTS in production (HTTPS)
         response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
@@ -171,6 +177,11 @@ def _snapshot_error(
 ) -> error_service.ErrorPersistenceEnvelope:
     """Synchronously detach the safe persistence fields from the request."""
 
+    if is_receipt_path(request.url.path):
+        # SQL/decoder exceptions can contain bytes or private filenames. Keep
+        # diagnostic identity and status, never file-derived error text/stacks.
+        message = "Private receipt request failed"
+        stack_trace = None
     try:
         user_id, tenant_id = _get_user_context(request)
         client_ip = request.client.host if request.client else None
@@ -579,6 +590,9 @@ async def global_exception_handler(request: Request, exc: Exception):
             "correlation_id": correlation_id,
             "message": f"An unexpected error occurred. Reference: {correlation_id}",
         },
+        headers={"Cache-Control": "private, no-store, max-age=0", "Pragma": "no-cache",
+                 "X-Content-Type-Options": "nosniff", "Referrer-Policy": "no-referrer"}
+        if is_receipt_path(request.url.path) else None,
         background=background,
     )
 

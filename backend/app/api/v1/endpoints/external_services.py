@@ -9,12 +9,14 @@ from app.db.models.user import User
 from app.db.session import get_db
 from app.schemas.external_service import ExternalServiceCreate, ExternalServiceHistoryPage, ExternalServiceMutation, ExternalServicePage, ExternalServiceRestore, ExternalServiceUpdate, ExternalServiceVoid
 from app.services import external_service
+from app.api.v1.endpoints.external_service_receipts import router as receipt_router
 
 def private_response(response: Response):
     response.headers["Cache-Control"] = "no-store"
 
 
 router = APIRouter(prefix="/{vehicle_id}/external-services", dependencies=[Depends(private_response)])
+router.include_router(receipt_router)
 
 
 @router.get("", response_model=ExternalServicePage)

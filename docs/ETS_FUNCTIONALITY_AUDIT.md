@@ -139,3 +139,11 @@ DB122 released: PR523 merged53995654 after six green CI checks; exact Web deploy
 Fresh authenticated ETS vehicle-history search was exercised with a matching description and a no-match term. Filter state appears in the page URL. REA6.4.0 parsed four observed public assets from build2026-10-14-17-02-12 (17,371bytes,4,248ASTnodes,zero parse failures), evidence ev_bb4bcd33bfc3289d94b1c9d03159b0e9a35c4ec80fa154f0bddeead83855327a. Static syntax corroborates search/status/page routing; no vendor writes or source reuse.
 
 DB123 exposes DBN’s existing exact-vehicle server-side search and status filters in the shared customer/repair-order truck workspace. Filters apply across all pages, preserve navigation context in scoped URL parameters and separate no matches from failures. This shop’s repair history precedes outside-shop records; compact controls wrap on touch screens. Search covers the existing order-number/work-requested contract, not operation notes or outside-shop entries. Receipt attachments and capacity-aware scheduling remain separate gaps. [Evidence](verification/DB123_VEHICLE_HISTORY_SEARCH.md).
+
+
+DB123 released: PR525 and corrective PR527 are merged; Web732200cf succeeded at01d8146b, authenticated production index-DafQAQ8U.js verified. Exact-truck search/status, cancellation focus, deliberate truck selection/reload and theme-readable actions pass real desktop1280, portrait320/390 and landscape740x400 workflows, including two trucks sharing a unit number. No business writes; touch/browser emulation only. [Final release receipt](verification/DB123_VEHICLE_HISTORY_SEARCH.md).
+
+
+## DB129 continuation — outside-shop receipt files (2026-10-14)
+
+Fresh authenticated ETS external-service UI and REA static evidence confirm attachment controls. DieselBridge DB119 retains historical fields but no receipt. Implement private record-linked PDF/JPEG/PNG storage, authenticated download, duplicate-safe retries and recoverable remove/restore with attribution. This improves traceability without affecting invoices, balances or current mileage. Contract/implementation and production acceptance in [DB129 receipt](verification/DB129_EXTERNAL_SERVICE_RECEIPTS.md); no full-parity claim.
