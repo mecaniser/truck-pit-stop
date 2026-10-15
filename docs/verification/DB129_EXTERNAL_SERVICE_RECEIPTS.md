@@ -1,4 +1,4 @@
-# DB128 — Outside-shop receipt attachments
+# DB129 — Outside-shop receipt attachments
 
 Accountable owner: Backend & Integrations. High-risk lane: private documents and additive schema.
 
@@ -31,4 +31,14 @@ Measured 390 portrait has one `.slide-panel-content` scroller, no document overf
 
 ## Independent local gate
 
-Independent Security and local QA GO at 2026-10-15 03:49 UTC (Oct14 local), with all initial findings resolved. See [review receipt](DB128_SECURITY_QA.md). Fresh durable PostgreSQL evidence at `/tmp/db128-backend-evidence/runtime-receipt.log` records 10 passes and the empty172→171→172 migration cycle; guarded runner and step logs are retained beside it. Protected CI and production release acceptance remain pending.
+Independent Security and local QA GO at 2026-10-15 03:49 UTC (Oct14 local), with all initial findings resolved. See [review receipt](DB129_SECURITY_QA.md). Fresh durable PostgreSQL evidence at `/tmp/db128-backend-evidence/runtime-receipt.log` records 10 passes and the empty172→171→172 migration cycle; guarded runner and step logs are retained beside it. Protected CI and production release acceptance remain pending.
+
+## Protected integration gate
+
+PR #533 tests `e3918085c47bf98ec99b692cc2c8036832d1334a`; Quality gates run38678423462. Initial Playwright job116237297248 failed before checkout at container initialization after three registry `toomanyrequests: Data limit exceeded` responses. No application test ran in that job. A job retry while the overall run was still active was refused; retry awaits run completion. All six protected checks remain required.
+
+Oct15 local day refresh during CI: implementation e3918085 with only release documentation dirty; approved preview Vite PID97270 on5174, cwd preview/frontend, effective API origin8001. Docker bind mount and ports unchanged; database postgres/truckpitstop_ets_workflow_parity_20261012, development, migration172 current, proxied database/Redis ready. All16 directly comparable DB128 application files still match; models init retains documented equivalent import. No restart/migration/setting change. Current-day source/HTTP aligned; local browser acceptance is the completed Oct14 record above, not a new Oct15 browser run.
+
+## Integration refresh and board identity
+
+The concurrent infrastructure PR530 reserved DB-128 and merged as d31d6597. This receipt item is now DB-129; earlier artifact paths and synthetic labels intentionally retain DB128 for traceability. No application code changed with this renumbering. Initial CI passed migration, frontend build/critical, full frontend1622 and backendcritical530/full3195 (162skipped). The Playwright retry cleared its initial registry block. Strict branch protection requires incorporation of updated main and a fresh exact-head CI run.

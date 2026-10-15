@@ -1,4 +1,6 @@
-# DB128 independent Security and QA gate
+# DB-129 independent Security and QA gate
+
+Historical ID correction (2026-10-15): this receipt outcome was reviewed as DB-128 before main PR530 assigned that ID to a separate infrastructure item. The canonical receipt item is now DB-129. Existing `/tmp/db128*` evidence paths, fixture names and original execution records retain their historical identifiers. This documentation-only correction does not change the reviewed application or test behavior.
 
 Reviewer: fresh independent Security & QA agent; no implementation or design participation. Scope: private outside-shop receipt storage, authorization, request handling, replay/concurrency, migration, frontend isolation, and owner-provided browser acceptance. Only this verification record is owned by the reviewer.
 
@@ -8,7 +10,9 @@ Review date: 2026-10-14. Worktree: `ets-checkpoint-merge/truck-pit-stop`; branch
 
 **Independent Security GO and local QA GO — 2026-10-15 03:49UTC (Oct14 local).** All initial findings are resolved, final focused checks pass, and the local authenticated workflow plus PostgreSQL race/migration evidence has been reviewed. Backend & Integrations remains accountable. No unresolved implementation blocker was found.
 
-This approves progression to release gates; it does not mark DB128 Done or approve production solely from local evidence. Protected CI, current integration migration head, merge/deploy SHA, production readiness and the scoped synthetic production workflow remain required. The delivery owner records those separately.
+This approves progression to release gates; it does not mark DB-129 Done or approve production solely from local evidence. Protected CI, current integration migration head, merge/deploy SHA, production readiness and the scoped synthetic production workflow remain required. The delivery owner records those separately.
+
+ID-correction recheck at branch HEAD `e3918085c47bf98ec99b692cc2c8036832d1334a`: all17 reviewed implementation/migration files retain manifest SHA256 `71a5b40e17647e6c4935c5030707c1aee4e96d639568ba8fdd470da7cd199df3`. The same application manifest remains Security GO and local QA GO. The delivery owner will rerun protected CI after integrating current main; this recheck is not a claim that the integration/deployment gate has passed.
 
 ## Initial findings returned to owner
 
@@ -29,7 +33,7 @@ Remediation recheck: the owners added identity-segment receipt matching, receipt
 
 ## Runtime evidence reviewed
 
-Reviewed the completed owner record [DB128_EXTERNAL_SERVICE_RECEIPTS.md](DB128_EXTERNAL_SERVICE_RECEIPTS.md) and independently inspected all four parent-provided screenshots: `/tmp/db128-qa/local-desktop.png`, `local-mobile-390.png`, `local-mobile-320.png`, `local-landscape.png`. Desktop,320/390 portrait and740x400 landscape show readable receipt metadata, whole action labels, recovery history and removal controls without visible horizontal clipping.
+Reviewed the completed owner record [DB129_EXTERNAL_SERVICE_RECEIPTS.md](DB129_EXTERNAL_SERVICE_RECEIPTS.md) and independently inspected all four parent-provided screenshots: `/tmp/db128-qa/local-desktop.png`, `local-mobile-390.png`, `local-mobile-320.png`, `local-landscape.png`. Desktop,320/390 portrait and740x400 landscape show readable receipt metadata, whole action labels, recovery history and removal controls without visible horizontal clipping.
 
 The parent executed the authenticated browser journey; this reviewer did not control the browser. The record documents exact-byte PDF and restored PNG downloads, reload persistence, duplicate/invalid/oversize rejection, failed mobile upload followed by explicit one-copy retry, removal cancellation/focus and attributed remove/restore, customer/repair-order return navigation, voided-service restrictions, unchanged native values and single-scroll measurements. JPEG content handling was verified by backend tests; the documented browser upload/download paths used PDF and PNG. Mobile evidence is viewport/touch emulation, not physical-device certification. The approved split preview has scoped-source comparison and migration172/readiness evidence; it does not represent all unrelated main changes.
 

@@ -1,4 +1,4 @@
-# DB-128 — private outside-shop receipts
+# DB-129 — private outside-shop receipts
 
 2026-10-14. Architecture & API Contracts: approved for implementation against
 the contract below. Backend & Integrations accountable; Frontend & UX consumes
@@ -455,7 +455,7 @@ complete the board only after required independent/release evidence exists.
 
 ## Handoff
 
-Board ID: DB-128.
+Board ID: DB-129.
 From / To: Architecture & API Contracts → Backend & Integrations / Frontend & UX.
 User outcome: private, recoverable receipts attached to exact outside-shop work.
 Scope completed: API, data, validation, lifecycle, retry, fixtures and rollback
