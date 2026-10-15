@@ -38,7 +38,9 @@ function VehicleRecord({ customer, vehicle, onOpenOrder, onCreateOrder, createOr
         else updated.delete(key)
       }
       return updated
-    }, { replace: true, state: location.state })
+    }, { replace: true, state: location.state?.restoreOrderOrigin
+      ? { ...location.state, restoreOrderFocus: false }
+      : location.state })
   }
   const history = useQuery({
     queryKey: ['customerVehicleRepairOrders', customer.id, vehicle.id, debouncedSearch, status, page],
