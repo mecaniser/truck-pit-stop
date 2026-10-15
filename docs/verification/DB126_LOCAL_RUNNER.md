@@ -32,7 +32,7 @@ verified against the actual CI workers instead.
   against malicious workflow edits that request the local label.
 - Production Railway Docker build, migration and hosting are unchanged.
 
-## Verification in progress
+## Verification
 
 - `actionlint .github/workflows/quality.yml`: pass.
 - `shellcheck scripts/ci_runner/provision.sh`: pass.
@@ -44,10 +44,31 @@ verified against the actual CI workers instead.
   rootless/rootful Docker separation, firewall/service ownership and deny rules.
 - Shell and rootless-container probes: public GitHub succeeds; host gateway,
   private networks and metadata endpoints are unreachable.
-- [Quality run](https://github.com/mecaniser/truck-pit-stop/actions/runs/38670616253):
-  migration/readiness passed on `db-ci-worker-2`; remaining suites pending.
+- [Quality run](https://github.com/mecaniser/truck-pit-stop/actions/runs/38671553825)
+  at `6a23db18`: frontend full 1,554 passed, critical frontend 205 passed and
+  production build passed; migration/readiness and Playwright smoke passed;
+  critical backend 530 passed / 11 skipped. A remote merge-main update canceled
+  the full backend suite; it is not counted as passing. Final revision requires
+  an uncanceled six-check run.
 - [Deliberate failure acceptance](https://github.com/mecaniser/truck-pit-stop/actions/runs/38670750634):
   `exit 42` is reported Failed by GitHub; worker subsequently discarded.
+  Dependent fresh-worker acceptance succeeds. Independent QA also verified
+  the sentinel is absent in the replacement of the same worker slot.
+- Fresh independent Security GO for `6a23db18`: installed supervisor matches
+  source; both active VMs satisfy the reviewed isolation boundary. Nonblocking
+  hardening notes: Lima expanded the base image list with default fallback URLs
+  (the intended ARM64 digest matches); preflight tests table existence rather
+  than exact firewall contents. Live rules match the reviewed source. Full
+  configuration identity and drift-proof preflight are not claimed.
 
-Final six-check outcome, clean-disk recovery, supervisor restart, independent
-operational GO and merge/main-run evidence remain required. Not Done.
+- Controlled service restart on October 14, 22:59–23:04 America/New_York:
+  bootout discarded both worker VMs; the base remained stopped. Bootstrap
+  restored both online registrations (old IDs 35/36, new IDs 37/38). A canceled
+  job briefly retained GitHub's busy state; the supervisor failed closed and
+  recovered automatically after GitHub released it. Both replacements have no
+  discard sentinel. Installed supervisor SHA256 matches reviewed source:
+  `9af8f3c43b9bc92af33a43078171ce36226fd47f25d563d49c0d4710e81dd02b`.
+  This proves service recovery, not an unattended pre-login reboot.
+
+Final uncanceled six-check outcome, independent operational GO and protected
+merge/main routing evidence remain required. Not Done.
