@@ -6,7 +6,7 @@ from uuid import uuid4
 from zoneinfo import ZoneInfo
 
 from fastapi import HTTPException
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.exc import IntegrityError
 
 from app.db.models.external_service import ExternalServiceEvent as Event, ExternalServiceRecord as Record
@@ -50,11 +50,14 @@ def item(record):
     return ExternalServiceItem.model_validate(record)
 
 
-async def page(db, vehicle_id, actor, *, skip=0, limit=25, include_voided=False):
+async def page(db, vehicle_id, actor, *, skip=0, limit=25, include_voided=False, search=None):
     await load_vehicle(db, vehicle_id, actor)
     conditions = [Record.tenant_id == actor.tenant_id, Record.vehicle_id == vehicle_id, Record.deleted_at.is_(None)]
     if not include_voided:
         conditions.append(Record.voided_at.is_(None))
+    term = (search or "").strip()
+    if term:
+        conditions.append(or_(*(field.icontains(term, autoescape=True) for field in (Record.provider_name, Record.description, Record.reference))))
     total = await db.scalar(select(func.count(Record.id)).where(*conditions))
     records = (await db.scalars(select(Record).where(*conditions).order_by(Record.service_date.desc(), Record.created_at.desc(), Record.id.desc()).offset(skip).limit(limit))).all()
     return ExternalServicePage(items=[item(record) for record in records], total=total, has_more=skip + len(records) < total)

@@ -21,7 +21,11 @@ async function compose() {
 }
 beforeEach(() => {
   vi.clearAllMocks(); auth(); rows = []
-  api.get.mockImplementation(async (_url, config) => ({ data: { items: rows.filter(row => config?.params?.include_voided || !row.voided_at), total: rows.length, has_more: false } }))
+  api.get.mockImplementation(async (_url, config) => {
+    const { search = '', skip = 0, limit = 10, include_voided = false } = config?.params ?? {}
+    const matches = rows.filter(row => (include_voided || !row.voided_at) && [row.provider_name, row.description, row.reference].some(value => value?.toLowerCase().includes(search.toLowerCase())))
+    return { data: { items: matches.slice(skip, skip + limit), total: matches.length, has_more: skip + limit < matches.length } }
+  })
   api.post.mockImplementation(async (_url, body) => { const saved = { ...record, ...body }; rows = [saved]; return { data: { record: saved, replayed: false } } })
   api.put.mockImplementation(async (_url, body) => { const saved = { ...record, ...body, version: 2 }; rows = [saved]; return { data: { record: saved, replayed: false } } })
 })
@@ -104,5 +108,83 @@ describe('outside-shop history', () => {
     expect(screen.getByLabelText('Work performed')).toHaveValue('Replaced air dryer new context draft')
     expect(screen.queryByText('Outside service saved.')).not.toBeInTheDocument()
     expect(screen.queryByText('Reported cost $240.50')).not.toBeInTheDocument()
+  })
+})
+
+describe('outside-shop history search', () => {
+  it('searches the entire history, resets paging, preserves filters on Cancel and Escape, and clears', async () => {
+    rows = [...Array.from({ length: 11 }, (_, i) => ({ ...record, id: `service-${i}`, description: `Recent ${i}` })), { ...record, id: 'older', provider_name: 'Older shop', description: 'Needle valve' }]
+    mount(); const user = userEvent.setup()
+    await user.click(await screen.findByRole('button', { name: 'Next services' }))
+    expect(await screen.findByText('Page 2')).toBeVisible()
+    const search = screen.getByRole('searchbox', { name: 'Search outside-shop history' })
+    await user.type(search, '  needle  ')
+    expect(await screen.findByRole('heading', { name: 'Outside-shop history (1 matching)' })).toBeVisible()
+    expect(screen.queryByText('Page 2')).not.toBeInTheDocument()
+    expect(api.get).toHaveBeenLastCalledWith('/vehicles/vehicle-a/external-services', expect.objectContaining({ params: expect.objectContaining({ skip: 0, search: 'needle' }), signal: expect.any(AbortSignal) }))
+    for (const cancel of ['Cancel', 'Escape']) {
+      await user.click(screen.getByRole('button', { name: 'Edit service from Older shop' }))
+      expect(search).toBeDisabled(); expect(screen.getByRole('button', { name: 'Clear search' })).toBeDisabled(); expect(screen.getByLabelText('Show voided')).toBeDisabled()
+      await user.type(screen.getByLabelText('Work performed'), ' draft')
+      if (cancel === 'Cancel') await user.click(screen.getByRole('button', { name: 'Cancel' }))
+      else await user.keyboard('{Escape}')
+      expect(search).toHaveValue('  needle  '); expect(screen.getByText('Needle valve')).toBeVisible()
+    }
+    await user.click(screen.getByRole('button', { name: 'Clear search' }))
+    expect(await screen.findByText('Recent 0')).toBeVisible(); expect(search).toHaveFocus(); expect(api.put).not.toHaveBeenCalled()
+  })
+  it('hides previous results while typing and ignores a delayed earlier search response', async () => {
+    rows = [record]; const original = api.get.getMockImplementation()!
+    let resolveOld!: (value: unknown) => void
+    api.get.mockImplementation((url, config) => config.params.search === 'old' ? new Promise(resolve => { resolveOld = resolve }) : original(url, config))
+    mount(); const user = userEvent.setup(); await screen.findByText('Replaced air dryer')
+    const search = screen.getByRole('searchbox'); fireEvent.change(search, { target: { value: 'old' } })
+    expect(screen.queryByText('Replaced air dryer')).not.toBeInTheDocument()
+    await waitFor(() => expect(resolveOld).toBeTypeOf('function'))
+    await user.clear(search); await user.type(search, 'dryer')
+    expect(await screen.findByText('Replaced air dryer')).toBeVisible()
+    await act(async () => resolveOld({ data: { items: [{ ...record, description: 'Stale old result' }], total: 1, has_more: false } }))
+    expect(screen.queryByText('Stale old result')).not.toBeInTheDocument()
+  })
+  it('distinguishes failed search from no matches and retries with the same query', async () => {
+    rows = [record]; mount(); await screen.findByText('Replaced air dryer')
+    api.get.mockRejectedValueOnce(new Error('offline'))
+    fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'missing' } })
+    expect(await screen.findByRole('alert')).toHaveTextContent('Could not load')
+    expect(screen.queryByText(/No outside-shop services match/)).not.toBeInTheDocument()
+    await userEvent.setup().click(screen.getByRole('button', { name: 'Retry outside history' }))
+    expect(await screen.findByText('No outside-shop services match this search.')).toBeVisible()
+    expect(screen.getByRole('searchbox')).toHaveValue('missing')
+  })
+  it('retains a draft if a conflicting edit removes the record from search results', async () => {
+    rows = [record]; mount(); const user = userEvent.setup(); await screen.findByText('Replaced air dryer')
+    await user.type(screen.getByRole('searchbox'), 'dryer'); await screen.findByRole('heading', { name: 'Outside-shop history (1 matching)' })
+    await user.click(screen.getByRole('button', { name: 'Edit service from Outside QA Shop' })); await user.type(screen.getByLabelText('Work performed'), ' my draft')
+    api.put.mockImplementationOnce(async () => { rows = [{ ...record, description: 'Other work', version: 2 }]; throw { response: { status: 409, data: { detail: 'Record changed' } } } })
+    await user.click(screen.getByRole('button', { name: 'Save service' })); await screen.findByText('Record changed')
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Refresh record' })).toBeEnabled())
+    await user.click(screen.getByRole('button', { name: 'Refresh record' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('no longer in this list')
+    expect(screen.getByLabelText('Work performed')).toHaveValue('Replaced air dryer my draft')
+    await user.click(screen.getByRole('button', { name: 'Cancel' })); expect(screen.getByRole('searchbox')).toHaveValue('dryer')
+  })
+  it('returns to page one with the query retained after the last match on a later page is edited away', async () => {
+    rows = Array.from({ length: 11 }, (_, i) => ({ ...record, id: `service-${i}`, provider_name: `Shop ${i}` }))
+    mount(); const user = userEvent.setup(); await screen.findByText('Shop 0')
+    await user.type(screen.getByRole('searchbox'), 'dryer'); await screen.findByRole('heading', { name: 'Outside-shop history (11 matching)' })
+    await user.click(screen.getByRole('button', { name: 'Next services' })); await user.click(await screen.findByRole('button', { name: 'Edit service from Shop 10' }))
+    await user.clear(screen.getByLabelText('Work performed')); await user.type(screen.getByLabelText('Work performed'), 'Different work')
+    api.put.mockImplementationOnce(async (_url, body) => { rows[10] = { ...rows[10], ...body, version: 2 }; return { data: { record: rows[10], replayed: false } } })
+    await user.click(screen.getByRole('button', { name: 'Save service' })); expect(await screen.findByText('Outside service saved.')).toBeVisible()
+    expect(await screen.findByText('Shop 0')).toBeVisible(); expect(screen.queryByText('Page 2')).not.toBeInTheDocument(); expect(screen.getByRole('searchbox')).toHaveValue('dryer')
+    await user.click(screen.getByRole('button', { name: 'Clear search' })); expect(await screen.findByRole('heading', { name: 'Outside-shop history (11)' })).toBeVisible()
+    await user.click(screen.getByRole('button', { name: 'Next services' })); expect(await screen.findByText('Different work')).toBeVisible()
+  })
+  it('resets search on vehicle or session changes and includes voided matches only when requested', async () => {
+    rows = [{ ...record, voided_at: '2026-10-14T17:00:00Z' }]; const view = mount(); const user = userEvent.setup()
+    await user.type(screen.getByRole('searchbox'), 'dryer'); await screen.findByText('No outside-shop services match this search.')
+    await user.click(screen.getByLabelText('Show voided')); expect(await screen.findByText('Replaced air dryer')).toBeVisible()
+    view.change('vehicle-b'); expect(screen.getByRole('searchbox')).toHaveValue('')
+    await user.type(screen.getByRole('searchbox'), 'other'); act(() => useAuthStore.setState({ authSessionEpoch: 2 })); expect(screen.getByRole('searchbox')).toHaveValue('')
   })
 })
