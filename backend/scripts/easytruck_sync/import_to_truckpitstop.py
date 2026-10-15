@@ -45,6 +45,11 @@ from pathlib import Path
 import psycopg2
 import psycopg2.extras
 
+try:
+    from .source_evidence import normalize_source_evidence, append_source_evidence
+except ImportError:
+    from source_evidence import normalize_source_evidence, append_source_evidence
+
 # Let psycopg2 adapt uuid.UUID objects directly in parameterized queries.
 psycopg2.extras.register_uuid()
 
@@ -546,6 +551,48 @@ def _create_invoice_and_payments(w, tenant_id, ro_id, order_number, service_no,
         stats["pay_ins"] += 1
 
 
+def _preserve_source_evidence(w, tenant_id, invoices_by_service_no):
+    """Append provenance under invoice row lock; never mutate financial state."""
+    # Scraper and API deploy independently. Retain the scrape file but defer
+    # persistence if the additive migration has not reached the database yet.
+    w.execute("""SELECT EXISTS (SELECT 1 FROM information_schema.columns
+                 WHERE table_schema=current_schema() AND table_name='invoices'
+                   AND column_name='ets_source_evidence')""")
+    if not w.fetchone()[0]:
+        import warnings
+        warnings.warn("ETS evidence migration unavailable; preservation deferred", RuntimeWarning)
+        return
+    for service_no, data in invoices_by_service_no.items():
+        evidence = normalize_source_evidence(data.get("sourceEvidence"))
+        if evidence is None:
+            continue
+        number = str(data.get("invoiceNumber") or service_no)
+        if not re.fullmatch(r"[0-9]+", number) or not re.fullmatch(r"[0-9]+", str(service_no)):
+            continue
+        if evidence["service_id"] != str(service_no) or evidence["invoice_number"] != number:
+            continue
+        w.execute(
+            """SELECT i.id, i.ets_source_evidence FROM invoices i
+               JOIN repair_orders ro ON i.repair_order_id=ro.id
+               WHERE i.tenant_id=%s AND i.source=%s AND i.deleted_at IS NULL
+                 AND i.status <> 'cancelled' AND i.invoice_number=%s
+                 AND ro.tenant_id=i.tenant_id AND ro.source=%s
+                 AND ro.deleted_at IS NULL AND ro.order_number LIKE %s
+               FOR UPDATE OF i""",
+            (tenant_id, IMPORT_SOURCE, f"ETSINV-{number}", IMPORT_SOURCE, f"ETS-{service_no}-%"))
+        matches = w.fetchall()
+        if len(matches) != 1:
+            continue  # ambiguous invoice identity is held, never fanned out
+        invoice_id, existing = matches[0]
+        updated = append_source_evidence(existing, evidence)
+        if updated == existing:
+            continue
+        w.execute(
+            """UPDATE invoices SET ets_source_evidence=%s
+               WHERE id=%s AND tenant_id=%s AND source=%s""",
+            (psycopg2.extras.Json(updated), invoice_id, tenant_id, IMPORT_SOURCE))
+
+
 def _sync_payments_for_existing_invoices(conn, w, cur, tenant_id, invoices_by_service_no, stats, now):
     """Add payments that landed on an invoice we already imported.
 
@@ -812,6 +859,8 @@ def resync(conn, tenant_id, commit):
     # creation path above, which skips an invoice that exists. Sync them here.
     _sync_payments_for_existing_invoices(
         conn, w, cur, tenant_id, invoices_by_service_no, stats, now)
+
+    _preserve_source_evidence(w, tenant_id, invoices_by_service_no)
 
     w.close()
     cur.close()

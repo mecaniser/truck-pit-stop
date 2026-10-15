@@ -4,7 +4,7 @@ const fs = require('fs');
 const path = require('path');
 const { loginSession, SHOP, BASE } = require('./lib/auth');
 const { parseInvoicePage } = require('./lib/invoice_parse');
-const { extractLaborHours } = require('./lib/invoice_json');
+const { extractLaborHours, extractSourceEvidence } = require('./lib/invoice_json');
 
 const CUSTOMER_DETAILS_FILE = path.join(__dirname, 'data', 'customer_details.json');
 const OUT_FILE = path.join(__dirname, 'data', 'invoices.json');
@@ -37,6 +37,7 @@ function getAllServiceNumbers() {
     if (results[serviceNo]) continue;
     try {
       await page.goto(`${BASE}/${SHOP}/services/${serviceNo}/invoice`, { waitUntil: 'networkidle', timeout: 20000 });
+      if (new URL(page.url()).pathname !== new URL(`${BASE}/${SHOP}/services/${serviceNo}/invoice`).pathname) throw new Error('Invoice route mismatch');
       await page.waitForTimeout(400);
       const text = await page.locator('body').innerText();
       const parsed = parseInvoicePage(text);
@@ -47,6 +48,12 @@ function getAllServiceNumbers() {
       // lib/invoice_json.js for how it was reverse-engineered and verified.
       const raw = await page.evaluate(() => document.querySelector('[data-page]')?.getAttribute('data-page') || null);
       parsed.laborHours = extractLaborHours(raw);
+      parsed.sourceEvidence = extractSourceEvidence(raw);
+      if (!parsed.sourceEvidence
+          || String(parsed.sourceEvidence.service_id) !== String(serviceNo)
+          || String(parsed.sourceEvidence.invoice_number) !== String(parsed.invoiceNumber)) {
+        throw new Error('Invoice source evidence identity unavailable or mismatched');
+      }
 
       results[serviceNo] = parsed;
     } catch (e) {
