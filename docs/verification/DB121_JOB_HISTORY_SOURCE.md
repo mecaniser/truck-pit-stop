@@ -56,8 +56,11 @@ retains its historical hold. The 20 native history records lacking payment proof
 remain blocked from job delivery; source context does not establish settlement.
 Manual links and their holds were preserved.
 
-All 9,356 pre-existing Google delivery attempts remained exactly unchanged.
-Existing conversion records and financial revisions were unchanged. Thirteen new
+All 9,356 pre-existing Google delivery attempts retained their verified IDs,
+event bindings, destinations, attempt numbers, payload hashes and timestamps.
+Existing conversion IDs, types, statuses, creation timestamps and repair-order
+bindings were unchanged. Financial revision count remained2; history intake
+created no financial rows. Thirteen new
 qualified-lead events arose concurrently through normal operations; **zero new job
 conversion events** were created. No Google conversion was resent by this work.
 
