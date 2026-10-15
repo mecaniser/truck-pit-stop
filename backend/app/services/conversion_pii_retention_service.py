@@ -22,7 +22,8 @@ CONVERSION_EVENT_TYPES = {
     "repair_order.payment_adjusted",
 }
 SHOP_HISTORY_EVENT = "job.history_snapshot"
-SIGNED_OUTCOME_EVENT_TYPES = CONVERSION_EVENT_TYPES | {SHOP_HISTORY_EVENT}
+ETS_OUTCOME_EVENTS = {"repair.completed_invoice_snapshot", "repair.completed_invoice_hold"}
+SIGNED_OUTCOME_EVENT_TYPES = CONVERSION_EVENT_TYPES | {SHOP_HISTORY_EVENT} | ETS_OUTCOME_EVENTS
 RETAINED_FIELDS = {
     "event_id", "event_type", "occurred_at", "shop_id", "repair_order_id",
     "invoice_id", "paid_at", "currency", "total_amount",

@@ -241,6 +241,9 @@ class Settings(BaseSettings):
     PAID_INVOICE_WEBHOOK_ENCRYPTION_KEYS: str = ""
     PAID_INVOICE_WEBHOOK_ACTIVE_KEY_VERSION: str = "v1"
     PAID_INVOICE_WEBHOOK_SIGNATURE_TOLERANCE_SECONDS: int = Field(default=300, ge=60, le=3600)
+    ETS_COMPLETED_OUTCOMES_ENABLED: bool = False
+    # Explicit tenant UUID -> verified public ETS shop ID; empty means disabled.
+    ETS_COMPLETED_OUTCOME_SHOPS: str = "{}"
     SHOP_HISTORY_CAPTURE_ENABLED: bool = False
     SHOP_HISTORY_CAPTURE_TENANT_IDS: str = ""
     SHOP_HISTORY_CAPTURE_BATCH_SIZE: int = Field(default=50, ge=1, le=200)

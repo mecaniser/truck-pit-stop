@@ -386,6 +386,49 @@ it('never drains order pages behind contextual customer intake and resumes after
   expect(api.post).not.toHaveBeenCalled()
 })
 
+it.each([true, false])('sends only an explicitly selected call token and preserves it after save failure (selected=%s)', async selected => {
+  const option = { reference_token: 'signed-reference', call_id: 'private-call-id', opportunity_id: 'private-op-id', started_at: '2026-10-14T15:00:00Z', contact_label: 'Shop contact', service_summary: 'Tire repair', expires_at: '2026-10-15T15:00:00Z' }
+  api.post.mockImplementation((url: string) => url.endsWith('/originating-call-options')
+    ? Promise.resolve({ data: { options: [option] } }) : Promise.reject(new Error('offline')))
+  setup()
+  fireEvent.click(await screen.findByRole('button', { name: /Open .*Unit C-001/ }))
+  fireEvent.click(await within(screen.getByRole('region', { name: 'Northline Logistics customer workspace' })).findByRole('button', { name: 'New repair order', exact: true }))
+  const dialog = await screen.findByRole('dialog', { name: 'New Repair Order' })
+  if (selected) {
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Link originating call' }))
+    fireEvent.click(await within(dialog).findByRole('radio', { name: /Shop contact/ }))
+  }
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Create Repair Order' }))
+  await within(dialog).findByRole('alert')
+  const payload = api.post.mock.calls.find(([url]) => url === '/repair-orders')![1]
+  expect(payload.originating_call_reference).toBe(selected ? 'signed-reference' : undefined)
+  expect(payload).not.toHaveProperty('call_id')
+  expect(payload).not.toHaveProperty('opportunity_id')
+  if (selected) expect(within(dialog).getByRole('radio', { name: /Shop contact/ })).toBeChecked()
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }))
+  fireEvent.click(await within(screen.getByRole('region', { name: 'Northline Logistics customer workspace' })).findByRole('button', { name: 'New repair order', exact: true }))
+  const reopened = await screen.findByRole('dialog', { name: 'New Repair Order' })
+  expect(within(reopened).queryByRole('radio')).not.toBeInTheDocument()
+})
+
+it.each(['fleet_manager', 'customer', 'driver'])('removes call selection and its payload after changing to %s', async role => {
+  const option = { reference_token: 'signed-reference', call_id: 'call-1', opportunity_id: 'op-1', started_at: '2026-10-14T15:00:00Z', contact_label: 'Shop contact', service_summary: 'Tire repair', expires_at: '2026-10-15T15:00:00Z' }
+  api.post.mockImplementation((url: string) => url.endsWith('/originating-call-options')
+    ? Promise.resolve({ data: { options: [option] } }) : Promise.reject(new Error('offline')))
+  setup()
+  fireEvent.click(await screen.findByRole('button', { name: /Open .*Unit C-001/ }))
+  fireEvent.click(await within(screen.getByRole('region', { name: 'Northline Logistics customer workspace' })).findByRole('button', { name: 'New repair order', exact: true }))
+  const dialog = await screen.findByRole('dialog', { name: 'New Repair Order' })
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Link originating call' }))
+  fireEvent.click(await within(dialog).findByRole('radio', { name: /Shop contact/ }))
+  authState.user = { ...authState.user, role }
+  fireEvent.change(within(dialog).getByPlaceholderText('Briefly describe the repair work or concern...'), { target: { value: 'Tire repair' } })
+  expect(within(dialog).queryByText('Originating call')).not.toBeInTheDocument()
+  expect(within(dialog).queryByRole('radio')).not.toBeInTheDocument()
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Create Repair Order' }))
+  await within(dialog).findByRole('alert')
+  expect(api.post.mock.calls.find(([url]) => url === '/repair-orders')![1]).not.toHaveProperty('originating_call_reference')
+})
 
 it('keeps history-filter focus after order cancellation and restores return focus on the next cancellation', async () => {
   setup('/dashboard/customers?view=list&filter=active&selected=customer-1')

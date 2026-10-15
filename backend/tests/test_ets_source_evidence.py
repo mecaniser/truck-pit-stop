@@ -67,7 +67,7 @@ def test_actual_storage_is_scoped_idempotent_and_financial_state_untouched():
         ("other-service", "tenant", "easy_truck_shop_import", "paid", "124"),
     ]:
         db.execute("INSERT INTO repair_orders VALUES(?,?,?,?,?)", (key, tenant, src, None, f"ETS-{svc}-789"))
-        db.execute("INSERT INTO invoices VALUES(?,?,?,?,?,?,?,?,?,?)", (key, tenant, src, None, status, None, "ETSINV-456", key, "2026-10-07", 100))
+        db.execute("INSERT INTO invoices VALUES(?,?,?,?,?,?,?,?,?,?)", (key, tenant, src, None, status, None, "ETSINV-457" if key == "cancelled" else "ETSINV-456", key, "2026-10-07", 100))
 
     class Cursor:
         def execute(self, sql, args=()):
@@ -126,3 +126,26 @@ def test_missing_migration_defers_capture_without_financial_writes():
     with pytest.warns(RuntimeWarning, match="migration unavailable"):
         _preserve_source_evidence(cursor, "tenant", {"123": {"invoiceNumber": "456", "sourceEvidence": source()}})
     assert cursor.execute.call_count == 1
+
+
+def test_cancelled_source_observations_are_not_filtered_out():
+    cursor = Mock()
+    cursor.fetchone.return_value = (True,)
+    cursor.fetchall.return_value = []
+    _preserve_source_evidence(cursor, "tenant", {"123": {"invoiceNumber": "456", "sourceEvidence": source()}})
+    query = cursor.execute.call_args_list[1].args[0]
+    assert "status <> 'cancelled'" not in query
+
+
+def test_failed_source_read_only_invalidates_previously_verified_service():
+    from scripts.easytruck_sync.import_to_truckpitstop import _preserve_source_read_failures
+    cursor = Mock()
+    cursor.fetchone.return_value = (True,)
+    prior = {"schema_version": 1, "observations": [{"evidence": {"service_id": "123"}}]}
+    cursor.fetchall.return_value = [("invoice", prior)]
+    _preserve_source_read_failures(cursor, "tenant", [{"serviceNo": "123", "observed_at_source": "2020-01-01T00:00:00Z"}])
+    sql, params = cursor.execute.call_args.args
+    assert sql.startswith("UPDATE invoices SET ets_source_evidence=")
+    assert "paid_at" not in sql
+    assert params[0].adapted["observations"] == prior["observations"]
+    assert params[0].adapted["source_read_unavailable_at"] == "2020-01-01T00:00:00+00:00"

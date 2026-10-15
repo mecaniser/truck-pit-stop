@@ -50,13 +50,27 @@ def normalize_source_evidence(value):
         return None
     result = {"schema_version": 1, "source": "easy_truck_shop", "settlement_semantics": "unverified",
               "service_id": service_id, "invoice_id": invoice_id,
+              "ets_shop_id": ident(value.get("ets_shop_id")),
+              "observed_at_source": date(value.get("observed_at_source")),
               "invoice_number": ident(value.get("invoice_number")),
               "service_internal_id": internal_id, "invoice_service_id": internal_id,
               "completed_at_source": date(value.get("completed_at_source")),
+              "completed": value.get("completed") if type(value.get("completed")) is bool else None,
+              "service_status": value.get("service_status") if type(value.get("service_status")) is int else None,
               "invoice_status": ident(value.get("invoice_status")),
               "currency": value.get("currency") if re.fullmatch(r"[A-Z]{3}", str(value.get("currency"))) else None,
               "total": money(value.get("total")), "balance": money(value.get("balance")),
               "payment_lines_truncated": value.get("payment_lines_truncated") is True, "payment_lines": []}
+    manifest = value.get("invoice_manifest")
+    result["invoice_manifest"] = None
+    if (isinstance(manifest, dict) and manifest.get("complete") is True
+            and manifest.get("evidence_kind") == "verified_source_service_invoice_manifest"
+            and ident(manifest.get("service_internal_id")) == internal_id
+            and isinstance(manifest.get("invoice_ids"), list) and 0 < len(manifest["invoice_ids"]) <= 200
+            and all(ident(item) for item in manifest["invoice_ids"])
+            and len(set(manifest["invoice_ids"])) == len(manifest["invoice_ids"])):
+        result["invoice_manifest"] = {"complete": True, "evidence_kind": manifest["evidence_kind"],
+            "service_internal_id": internal_id, "invoice_ids": [ident(item) for item in manifest["invoice_ids"]]}
     for line in lines:
         if not isinstance(line, dict) or not isinstance(line.get("payment"), dict):
             return None

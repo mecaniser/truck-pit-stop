@@ -306,6 +306,7 @@ class RepairOrderBase(BaseModel):
 
 
 class RepairOrderCreate(RepairOrderBase):
+    originating_call_reference: Optional[str] = Field(None, min_length=1, max_length=4096)
     customer_id: UUID
     vehicle_id: UUID
     assigned_mechanic_id: Optional[UUID] = None
