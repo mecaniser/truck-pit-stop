@@ -1,8 +1,9 @@
-import { useRef, useState } from 'react'
+import { useId, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { ChevronRight, Plus } from 'lucide-react'
 import { z } from 'zod'
 import api from '@/lib/api'
+import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 import { useAuthStore } from '@/stores/authStore'
 import { errorDetail } from '@/features/service-checklists/queries'
 import { ExternalServiceReceipts } from './ExternalServiceReceipts'
@@ -46,6 +47,14 @@ export function ExternalServiceHistory({ vehicleId }: { vehicleId: string }) {
 function ScopedHistory({ vehicleId, scope }: { vehicleId: string; scope: (string | number)[] }) {
   const client = useQueryClient()
   const [page, setPage] = useState(0)
+  const [search, setSearch] = useState('')
+  const normalizedSearch = search.trim()
+  const debouncedSearch = useDebouncedValue(normalizedSearch)
+  const searching = normalizedSearch !== debouncedSearch
+  const searchInput = useRef<HTMLInputElement>(null)
+  const searchHint = useId()
+  const changeSearch = (value: string) => { setSearch(value); setPage(0) }
+  const clearSearch = () => { changeSearch(''); searchInput.current?.focus() }
   const [includeVoided, setIncludeVoided] = useState(false)
   const [editor, setEditor] = useState<Editor | null>(null)
   const [message, setMessage] = useState('')
@@ -54,9 +63,9 @@ function ScopedHistory({ vehicleId, scope }: { vehicleId: string; scope: (string
   const path = `/vehicles/${vehicleId}/external-services`
   const prefix = ['external-services', ...scope, vehicleId]
   const query = useQuery({
-    queryKey: [...prefix, page, includeVoided],
+    queryKey: [...prefix, page, includeVoided, debouncedSearch], enabled: !searching,
     queryFn: async ({ signal }) => {
-      const result = pageSchema.parse((await api.get(path, { params: { skip: page * 10, limit: 10, include_voided: includeVoided }, signal })).data)
+      const result = pageSchema.parse((await api.get(path, { params: { skip: page * 10, limit: 10, include_voided: includeVoided, search: debouncedSearch || undefined }, signal })).data)
       if (result.items.some(item => item.vehicle_id !== vehicleId)) throw new Error('Invalid vehicle history')
       return result
     }, retry: false, staleTime: 0,
@@ -65,13 +74,19 @@ function ScopedHistory({ vehicleId, scope }: { vehicleId: string; scope: (string
   const closeEditor = () => { setEditor(null); requestAnimationFrame(() => (trigger.current?.isConnected ? trigger.current : addButton.current)?.focus()) }
   const accessDenied = [401, 403, 404].includes((query.error as { response?: { status?: number } } | null)?.response?.status ?? 0)
   return <section aria-label="Outside-shop service history" className="db-external-services">
-    <div className="db-external-services__heading"><h3>Outside-shop history{query.data && !query.isError ? ` (${query.data.total})` : ''}</h3>
-      <button ref={addButton} type="button" disabled={Boolean(editor) || !query.data || query.isError || query.isFetching} onClick={event => openEditor({ kind: 'create' }, event.currentTarget)}><Plus size={14} aria-hidden="true" />Add outside service</button>
+    <div className="db-external-services__heading"><h3>Outside-shop history{query.data && !query.isError && !searching ? ` (${query.data.total}${debouncedSearch ? ' matching' : ''})` : ''}</h3>
+      <button ref={addButton} type="button" disabled={Boolean(editor) || searching || !query.data || query.isError || query.isFetching} onClick={event => openEditor({ kind: 'create' }, event.currentTarget)}><Plus size={14} aria-hidden="true" />Add outside service</button>
     </div>
     <p className="db-external-services__muted">Work performed elsewhere · Not billed by this shop.</p>
+    <div className="db-external-services__search">
+      <input ref={searchInput} type="search" aria-label="Search outside-shop history" aria-describedby={searchHint} placeholder="Shop, work, or reference" maxLength={200} value={search} disabled={Boolean(editor)} onChange={event => changeSearch(event.target.value)} />
+      {search && <button type="button" disabled={Boolean(editor)} onClick={clearSearch}>Clear search</button>}
+      <label className="db-external-services__toggle"><input type="checkbox" checked={includeVoided} disabled={Boolean(editor)} onChange={event => { setIncludeVoided(event.target.checked); setPage(0) }} />Show voided</label>
+    </div>
+    <span id={searchHint} className="sr-only">Search all outside-shop records for this vehicle by shop, work performed, or reference.</span>
     {message && <p role="status" className="db-external-services__success">{message}</p>}
-    {query.isPending && <p role="status">Loading outside-shop history…</p>}
-    {query.isError && <div role="alert">Could not load outside-shop history. <button type="button" disabled={query.isFetching} onClick={() => void query.refetch()}>Retry outside history</button></div>}
+    {(searching || query.isPending) && <p role="status">{normalizedSearch ? 'Searching outside-shop history…' : 'Loading outside-shop history…'}</p>}
+    {!searching && query.isError && <div role="alert">Could not load outside-shop history. <button type="button" disabled={query.isFetching} onClick={() => void query.refetch()}>Retry outside history</button></div>}
     {editor && accessDenied && <button type="button" onClick={closeEditor}>Close service editor</button>}
     {editor && !accessDenied && <ServiceEditor key={`${editor.kind}:${editor.record?.id ?? 'new'}`} editor={editor} path={path} vehicleId={vehicleId} disabled={query.isError || query.isFetching} onCancel={closeEditor}
       onWriteError={() => { void client.invalidateQueries({ queryKey: prefix }) }}
@@ -79,12 +94,12 @@ function ScopedHistory({ vehicleId, scope }: { vehicleId: string; scope: (string
       onSaved={result => {
         if (result.record.vehicle_id !== vehicleId) throw new Error('Invalid saved vehicle')
         setMessage(result.replayed ? 'Save confirmed. No duplicate added.' : editor.kind === 'void' ? 'Service voided. You can restore it from Show voided.' : editor.kind === 'restore' ? 'Service restored.' : 'Outside service saved.')
+        setPage(0)
         closeEditor()
         void client.invalidateQueries({ queryKey: prefix })
       }} />}
-    <label className="db-external-services__toggle"><input type="checkbox" checked={includeVoided} disabled={Boolean(editor)} onChange={event => { setIncludeVoided(event.target.checked); setPage(0) }} />Show voided</label>
-    {query.data && !query.isError && <>
-      {!query.data.items.length && <p className="db-external-services__muted">No outside-shop services recorded{includeVoided ? '.' : ' for this vehicle.'}</p>}
+    {query.data && !query.isError && !searching && <>
+      {!query.data.items.length && <p role="status" className="db-external-services__muted">{debouncedSearch ? 'No outside-shop services match this search.' : `No outside-shop services recorded${includeVoided ? '.' : ' for this vehicle.'}`}</p>}
       <ul className="db-external-services__list">{query.data.items.map(record => <li key={record.id}>
         <div className="db-external-services__row"><div><strong>{record.provider_name}</strong><span className="db-external-services__meta"><time dateTime={record.service_date}>{dateLabel(record.service_date)}</time><span>Outside shop</span>{record.voided_at && <b>Voided</b>}</span></div><span className="db-external-services__cost">{costLabel(record.reported_cost)}</span></div>
         <p className="db-external-services__description">{record.description}</p>

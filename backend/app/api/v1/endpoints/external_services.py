@@ -20,9 +20,9 @@ router.include_router(receipt_router)
 
 
 @router.get("", response_model=ExternalServicePage)
-async def list_external_services(vehicle_id: UUID, skip: int = Query(0, ge=0), limit: int = Query(25, ge=1, le=100), include_voided: bool = False,
+async def list_external_services(vehicle_id: UUID, skip: int = Query(0, ge=0), limit: int = Query(25, ge=1, le=100), include_voided: bool = False, search: str | None = Query(None, max_length=200),
                                  db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
-    return await external_service.page(db, vehicle_id, current_user, skip=skip, limit=limit, include_voided=include_voided)
+    return await external_service.page(db, vehicle_id, current_user, skip=skip, limit=limit, include_voided=include_voided, search=search)
 
 
 @router.post("", response_model=ExternalServiceMutation, status_code=201)
