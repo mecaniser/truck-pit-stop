@@ -19,6 +19,7 @@ from app.services.paid_invoice_webhook_service import conversion_signature
 
 class OriginatingCallOptionsRequest(BaseModel):
     customer_id: UUID
+    include_other_callers: bool = False
 
 
 class OriginatingCallOption(BaseModel):

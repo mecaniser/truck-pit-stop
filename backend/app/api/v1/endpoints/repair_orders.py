@@ -504,7 +504,9 @@ async def originating_call_options(
     tenant = await db.get(Tenant, current_user.tenant_id)
     if not tenant:
         raise HTTPException(404, "Tenant not found")
-    return await repair_intake_reference.originating_call_options(tenant, customer.phone)
+    return await repair_intake_reference.originating_call_options(
+        tenant, None if data.include_other_callers else customer.phone,
+    )
 
 
 @router.post("", response_model=RepairOrderResponse, status_code=status.HTTP_201_CREATED)

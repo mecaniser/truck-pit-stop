@@ -193,3 +193,27 @@ async def test_fleet_manager_cannot_reserve_call_before_any_database_or_provider
         )
     assert error.value.status_code == 403
     remote.assert_not_called()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("include_other_callers", [None, False, True])
+async def test_options_broadening_requires_explicit_staff_choice(monkeypatch, include_other_callers):
+    from app.api.v1.endpoints.repair_orders import originating_call_options
+    shop = tenant()
+    customer = SimpleNamespace(phone="+17045550123")
+    class DB:
+        async def execute(self, query):
+            assert "customers.tenant_id" in str(query)
+            return SimpleNamespace(scalar_one_or_none=lambda: customer)
+        async def get(self, model, key):
+            assert key == shop.id
+            return shop
+    remote = AsyncMock(return_value=service.OriginatingCallOptions(options=[]))
+    monkeypatch.setattr(service, "originating_call_options", remote)
+    args = {"customer_id": uuid4()}
+    if include_other_callers is not None:
+        args["include_other_callers"] = include_other_callers
+    result = await originating_call_options(service.OriginatingCallOptionsRequest(**args), DB(),
+                                            SimpleNamespace(tenant_id=shop.id))
+    assert result.options == []
+    remote.assert_awaited_once_with(shop, None if include_other_callers else customer.phone)
