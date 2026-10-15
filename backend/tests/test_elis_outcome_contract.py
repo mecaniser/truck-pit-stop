@@ -16,7 +16,7 @@ from app.core.paid_invoice_webhook_crypto import encrypt_paid_invoice_webhook_se
 from app.core.webhook_destination import ResolvedWebhookDestination
 from app.db.models.customer import Customer
 from app.db.models.invoice import Invoice, InvoiceStatus
-from app.db.models.invoice_settlement import InvoiceSettlement
+from app.db.models.invoice_settlement import InvoiceSettlement, InvoicePaymentLedgerEvent
 from app.db.models.provider_outbox import ProviderOutboxEvent
 from app.db.models.repair_order import RepairOrder, RepairOrderStatus
 from app.db.models.tenant import Tenant
@@ -38,8 +38,11 @@ def resources():
     return tenant, customer, order, invoice
 
 
-def native_proof(db, tenant, customer, invoice):
-    db.add(InvoiceSettlement(tenant_id=tenant.id, invoice_id=invoice.id, customer_id=customer.id, principal_total=100, legacy_reconciliation_status="native"))
+def native_proof(db, tenant, customer, invoice, *, kind="cash_payment_confirmed", delta=100, evidence=None):
+    settlement = InvoiceSettlement(id=uuid4(), tenant_id=tenant.id, invoice_id=invoice.id, customer_id=customer.id, principal_total=100, confirmed_principal=100, last_event_sequence=1, legacy_reconciliation_status="native")
+    db.add(settlement)
+    db.add(InvoicePaymentLedgerEvent(tenant_id=tenant.id, invoice_id=invoice.id, settlement_id=settlement.id, customer_id=customer.id, actor_name_snapshot="Synthetic", sequence=1, idempotency_key=f"proof:{invoice.id}", event_type=kind, principal_delta=delta, evidence_snapshot=evidence or {}))
+    return settlement
 
 
 def test_v2_payload_matches_receiver_fixture():
@@ -271,7 +274,7 @@ async def test_v2_export_csv_and_json_share_stable_identity(client, db_session):
 @pytest.mark.asyncio
 @pytest.mark.parametrize("proof", ["imported_invoice", "imported_order", "missing", "wrong_tenant", "wrong_customer", "legacy"])
 async def test_v2_requires_native_invoice_creation_authority(db_session, proof):
-    from app.db.models.invoice_settlement import InvoiceSettlement
+    from app.db.models.invoice_settlement import InvoiceSettlement, InvoicePaymentLedgerEvent
     tenant, customer, order, invoice = resources()
     if proof == "imported_invoice": invoice.source = "easy_truck_shop_import"
     if proof == "imported_order": order.source = "easy_truck_shop_import"
@@ -329,6 +332,7 @@ async def test_native_cash_confirmation_captures_once_in_same_transaction(db_ses
     assert event is not None
     assert event.payload["repair_order_uuid"] == str(invoice.repair_order_id)
     assert event.payload["value_basis"] == "invoice_settled"
+    assert event.payload["total_amount"] == 100.0  # cash excludes maximum card surcharge
     await db_session.rollback()
     assert await db_session.scalar(select(func.count()).select_from(Payment)) == 0
     assert await db_session.scalar(select(func.count()).select_from(ProviderOutboxEvent)) == 0
@@ -341,3 +345,90 @@ async def test_native_cash_confirmation_captures_once_in_same_transaction(db_ses
     replayed_id, _ = await pay(db_session, ctx)
     assert replayed_id == payment_id
     assert await db_session.scalar(select(func.count()).select_from(ProviderOutboxEvent)) == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("defect", ["no_ledger", "short_payment", "wrong_currency", "missing_time", "naive_time", "future_time", "refund_pending", "sequence_gap", "ledger_mismatch", "foreign_customer", "deleted"])
+async def test_native_capture_requires_reconciled_settlement(db_session, defect):
+    tenant, customer, order, invoice = resources()
+    db_session.add_all([tenant, customer, order, invoice])
+    await db_session.flush()
+    settlement = native_proof(db_session, tenant, customer, invoice)
+    await db_session.flush()
+    if defect == "no_ledger":
+        from sqlalchemy import delete
+        await db_session.execute(delete(InvoicePaymentLedgerEvent).where(InvoicePaymentLedgerEvent.settlement_id == settlement.id))
+    elif defect == "short_payment": settlement.confirmed_principal = 99
+    elif defect == "wrong_currency": settlement.currency = "EUR"
+    elif defect == "missing_time": invoice.paid_at = None
+    elif defect == "naive_time": invoice.paid_at = NOW.replace(tzinfo=None)
+    elif defect == "future_time":
+        from datetime import timedelta
+        invoice.paid_at = datetime.now(timezone.utc) + timedelta(days=1)
+    elif defect == "refund_pending": settlement.refund_pending = 1
+    elif defect == "sequence_gap": settlement.last_event_sequence = 2
+    elif defect == "ledger_mismatch":
+        settlement.confirmed_principal = settlement.principal_total = invoice.total_amount = 101
+    elif defect == "foreign_customer": settlement.customer_id = uuid4()
+    elif defect == "deleted": settlement.deleted_at = NOW
+    with db_session.no_autoflush:
+        result = await service.enqueue_paid_invoice_webhook(db_session, tenant=tenant, invoice=invoice, order=order, customer=customer)
+    assert result is None
+
+
+@pytest.mark.asyncio
+async def test_native_capture_replay_preserves_original_event_after_ledger_change(db_session):
+    tenant, customer, order, invoice = resources()
+    db_session.add_all([tenant, customer, order, invoice]); await db_session.flush()
+    settlement = native_proof(db_session, tenant, customer, invoice)
+    first = await service.enqueue_paid_invoice_webhook(db_session, tenant=tenant, invoice=invoice, order=order, customer=customer)
+    assert first is not None
+    settlement.confirmed_principal = 0
+    replay = await service.enqueue_paid_invoice_webhook(db_session, tenant=tenant, invoice=invoice, order=order, customer=customer)
+    assert replay.id == first.id
+    assert replay.payload == first.payload
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("rail,fee,tax,expected", [("cash_payment_confirmed", "0", "0", "100.00"), ("credit_applied", "0", "0", "100.00"), ("payment_confirmed", "2.50", "0.18", "102.68")])
+async def test_settled_snapshot_uses_actual_earned_fees(db_session, rail, fee, tax, expected):
+    tenant, customer, order, invoice = resources()
+    invoice.total_amount = Decimal("103")
+    invoice.service_fee_amount = Decimal("3")
+    db_session.add_all([tenant, customer, order, invoice]); await db_session.flush()
+    native_proof(db_session, tenant, customer, invoice, kind=rail, evidence={"earned_card_fee": fee, "earned_card_fee_tax": tax})
+    result = await service.enqueue_paid_invoice_webhook(db_session, tenant=tenant, invoice=invoice, order=order, customer=customer)
+    assert result is not None
+    assert Decimal(str(result.payload["total_amount"])) == Decimal(expected)
+
+
+@pytest.mark.asyncio
+async def test_mixed_receipts_count_only_applied_card_fee(db_session):
+    tenant, customer, order, invoice = resources()
+    invoice.total_amount = Decimal("103"); invoice.service_fee_amount = Decimal("3")
+    db_session.add_all([tenant, customer, order, invoice]); await db_session.flush()
+    settlement = native_proof(db_session, tenant, customer, invoice, delta=50)
+    settlement.last_event_sequence = 2
+    db_session.add(InvoicePaymentLedgerEvent(tenant_id=tenant.id, invoice_id=invoice.id, settlement_id=settlement.id, customer_id=customer.id, actor_name_snapshot="Synthetic", sequence=2, idempotency_key="second", event_type="payment_confirmed", principal_delta=50, evidence_snapshot={"earned_card_fee":"1.50", "earned_card_fee_tax":"0"}))
+    result = await service.enqueue_paid_invoice_webhook(db_session, tenant=tenant, invoice=invoice, order=order, customer=customer)
+    assert result.payload["total_amount"] == 101.50
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("event_type", ["payment_refunded", "dispute_won", "payment_confirmed"])
+async def test_missing_fee_or_correction_evidence_stays_uncaptured(db_session, event_type):
+    tenant, customer, order, invoice = resources()
+    db_session.add_all([tenant, customer, order, invoice]); await db_session.flush()
+    native_proof(db_session, tenant, customer, invoice, kind=event_type)
+    result = await service.enqueue_paid_invoice_webhook(db_session, tenant=tenant, invoice=invoice, order=order, customer=customer)
+    assert result is None
+
+
+@pytest.mark.asyncio
+async def test_same_tenant_wrong_customer_cannot_supply_conversion_contact(db_session):
+    tenant, customer, order, invoice = resources()
+    other = Customer(id=uuid4(), tenant=tenant, tenant_id=tenant.id, first_name="Other", last_name="Customer", email="other@example.test", phone="+12025550124")
+    db_session.add_all([tenant, customer, other, order, invoice]); await db_session.flush()
+    native_proof(db_session, tenant, customer, invoice)
+    with pytest.raises(ValueError, match="customer does not belong"):
+        await service.enqueue_paid_invoice_webhook(db_session, tenant=tenant, invoice=invoice, order=order, customer=other)

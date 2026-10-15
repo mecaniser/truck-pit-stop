@@ -261,6 +261,10 @@ async def _add_eligible_invoice(
 @pytest.mark.asyncio
 async def test_mixed_tenders_keep_legacy_payment_principal_only(db_session, monkeypatch):
     tenant, owner, customer, invoice = await _financial_context(db_session, monkeypatch)
+    tenant.paid_invoice_webhook_enabled = True
+    tenant.paid_invoice_webhook_payload_version = 2
+    tenant.paid_invoice_webhook_url = "https://receiver.example/hook"
+    tenant.paid_invoice_webhook_secret_encrypted = "configured"
     settlement = await get_or_create_settlement(
         db_session, invoice=invoice, customer_id=customer.id, tenant=tenant,
     )
@@ -329,6 +333,11 @@ async def test_mixed_tenders_keep_legacy_payment_principal_only(db_session, monk
     assert money(final.settlement.confirmed_principal) == Decimal("100.00")
     assert money(final.settlement.active_pending_principal) == Decimal("0.00")
 
+    event = await db_session.scalar(select(ProviderOutboxEvent).where(
+        ProviderOutboxEvent.tenant_id == tenant.id,
+        ProviderOutboxEvent.event_type == "repair_order.paid"))
+    assert event is not None
+    assert event.payload["total_amount"] == 101.20
 
 @pytest.mark.asyncio
 async def test_pending_zelle_reserves_only_declared_principal_and_replay_is_idempotent(db_session, monkeypatch):
@@ -482,6 +491,10 @@ async def test_domain_error_handler_preserves_safe_contract():
 @pytest.mark.asyncio
 async def test_accidental_card_overpayment_is_unapplied_and_refund_first(db_session, monkeypatch):
     tenant, owner, customer, invoice = await _financial_context(db_session, monkeypatch, fee=Decimal("0"))
+    tenant.paid_invoice_webhook_enabled = True
+    tenant.paid_invoice_webhook_payload_version = 2
+    tenant.paid_invoice_webhook_url = "https://receiver.example/hook"
+    tenant.paid_invoice_webhook_secret_encrypted = "configured"
     settlement = await get_or_create_settlement(db_session, invoice=invoice, customer_id=customer.id, tenant=tenant)
     creation = await create_attempt(
         db_session, invoice=invoice, tenant=tenant, customer_id=customer.id,
@@ -516,6 +529,9 @@ async def test_accidental_card_overpayment_is_unapplied_and_refund_first(db_sess
     ))
     assert refund_event is not None
 
+    assert await db_session.scalar(select(ProviderOutboxEvent.id).where(
+        ProviderOutboxEvent.tenant_id == tenant.id,
+        ProviderOutboxEvent.event_type == "repair_order.paid")) is None
 
 @pytest.mark.asyncio
 async def test_credit_consent_channel_is_server_bound_to_principal(db_session, monkeypatch):
@@ -2479,6 +2495,10 @@ async def test_provider_reversal_reopens_invoices_funded_by_applied_store_credit
         customer_id=customer.id,
         tenant=tenant,
     )
+    tenant.paid_invoice_webhook_enabled = True
+    tenant.paid_invoice_webhook_payload_version = 2
+    tenant.paid_invoice_webhook_url = "https://receiver.example/hook"
+    tenant.paid_invoice_webhook_secret_encrypted = "configured"
     _application, target_settlement = await apply_customer_credit(
         db_session,
         credit_id=origin.id,
@@ -2493,6 +2513,13 @@ async def test_provider_reversal_reopens_invoices_funded_by_applied_store_credit
     assert target_invoice.status == InvoiceStatus.PAID
     assert target_settlement.confirmed_principal == Decimal("6.00")
     assert await available_credit(db_session, tenant.id, customer.id) == Decimal("4.00")
+
+    paid_event = await db_session.scalar(select(ProviderOutboxEvent).where(
+        ProviderOutboxEvent.tenant_id == tenant.id,
+        ProviderOutboxEvent.aggregate_id == target_invoice.id,
+        ProviderOutboxEvent.event_type == "repair_order.paid"))
+    assert paid_event is not None
+    assert paid_event.payload["total_amount"] == 6.0
 
     reversed_attempt = await reverse_confirmed_attempt(
         db_session,

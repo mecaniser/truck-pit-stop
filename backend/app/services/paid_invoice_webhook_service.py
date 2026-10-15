@@ -24,7 +24,7 @@ from app.core.webhook_destination import (
 )
 from app.db.models.customer import Customer
 from app.db.models.invoice import Invoice, InvoiceStatus
-from app.db.models.invoice_settlement import InvoiceSettlement
+from app.db.models.invoice_settlement import InvoiceSettlement, InvoicePaymentLedgerEvent
 from app.db.models.provider_outbox import ProviderOutboxEvent, ProviderOutboxStatus
 from app.db.models.repair_order import RepairOrder, RepairOrderStatus
 from app.db.models.tenant import Tenant
@@ -149,6 +149,68 @@ def native_invoice_outcome_predicate():
     )
 
 
+async def native_settled_amount(db: AsyncSession, *, tenant: Tenant, invoice: Invoice,
+                                order: RepairOrder) -> Decimal | None:
+    """Fail closed on status-only paid rows; never synthesize settlement time.
+
+    This checks the native ledger in the same transaction as capture. Imported
+    history and existing outbox events are not converted or re-enqueued here.
+    """
+    if (invoice.paid_at is None or invoice.paid_at.tzinfo is None
+            or invoice.paid_at.utcoffset() is None or invoice.paid_at > _now()
+            or invoice.deleted_at is not None):
+        return None
+    settlement = await db.scalar(select(InvoiceSettlement).where(
+        InvoiceSettlement.tenant_id == tenant.id,
+        InvoiceSettlement.invoice_id == invoice.id,
+        InvoiceSettlement.customer_id == order.customer_id,
+        InvoiceSettlement.legacy_reconciliation_status == "native",
+        InvoiceSettlement.deleted_at.is_(None),
+    ))
+    if (settlement is None or settlement.currency != "USD"
+            or settlement.customer_id != order.customer_id or settlement.deleted_at is not None):
+        return None
+    from app.services.invoice_settlement_service import invoice_money_snapshot
+    principal = Decimal(settlement.principal_total or 0)
+    confirmed = Decimal(settlement.confirmed_principal or 0)
+    if (principal <= 0 or principal != invoice_money_snapshot(invoice)[0]
+            or confirmed != principal or Decimal(settlement.refund_pending or 0) != 0):
+        return None
+    await db.flush()  # Session disables autoflush; include this transaction's ledger append.
+    events = list((await db.scalars(select(InvoicePaymentLedgerEvent).where(
+        InvoicePaymentLedgerEvent.tenant_id == tenant.id,
+        InvoicePaymentLedgerEvent.invoice_id == invoice.id,
+        InvoicePaymentLedgerEvent.settlement_id == settlement.id,
+        InvoicePaymentLedgerEvent.customer_id == order.customer_id,
+    ).order_by(InvoicePaymentLedgerEvent.sequence))).all())
+    if (not events or [event.sequence for event in events]
+            != list(range(1, int(settlement.last_event_sequence or 0) + 1))):
+        return None
+    if sum((Decimal(event.principal_delta or 0) for event in events), Decimal(0)) != confirmed:
+        return None
+    fees = Decimal(0)
+    confirmed_event = False
+    for event in events:
+        # Corrections require their own reconciliation; do not infer net fees.
+        if (Decimal(event.principal_delta or 0) < 0
+                or Decimal(event.refund_pending_delta or 0) != 0
+                or any(word in event.event_type for word in ("refund", "dispute", "reversal"))):
+            return None
+        if event.event_type in {"payment_confirmed", "cash_payment_confirmed", "credit_applied"} and Decimal(event.principal_delta or 0) > 0:
+            confirmed_event = True
+            if event.event_type == "payment_confirmed":
+                evidence = event.evidence_snapshot or {}
+                try:
+                    fee = Decimal(evidence["earned_card_fee"])
+                    fee_tax = Decimal(evidence["earned_card_fee_tax"])
+                except (KeyError, TypeError, ValueError, ArithmeticError):
+                    return None
+                if not fee.is_finite() or not fee_tax.is_finite() or fee < 0 or fee_tax < 0:
+                    return None
+                fees += fee + fee_tax
+    return (principal + fees).quantize(Decimal("0.01")) if confirmed_event else None
+
+
 async def enqueue_conversion_event(db: AsyncSession, *, tenant: Optional[Tenant], invoice: Invoice, order: RepairOrder, customer: Optional[Customer], event_type: str, idempotency_key: str, total_amount=None) -> Optional[ProviderOutboxEvent]:
     if event_type not in CONVERSION_EVENT_TYPES:
         raise ValueError("Unsupported conversion event type")
@@ -156,6 +218,8 @@ async def enqueue_conversion_event(db: AsyncSession, *, tenant: Optional[Tenant]
         return None
     if invoice.tenant_id != tenant.id or order.tenant_id != tenant.id or (customer and customer.tenant_id != tenant.id):
         raise ValueError("Conversion event resources must belong to the same shop")
+    if customer and customer.id != order.customer_id:
+        raise ValueError("Conversion customer does not belong to the repair order")
     if invoice.repair_order_id != order.id:
         raise ValueError("Conversion event invoice does not belong to the repair order")
     if not order.id or not order.order_number or order.deleted_at is not None:
@@ -183,6 +247,10 @@ async def enqueue_conversion_event(db: AsyncSession, *, tenant: Optional[Tenant]
         if existing.aggregate_id != invoice.id:
             raise ValueError("Conversion event identity belongs to another invoice")
         return existing
+    if tenant.paid_invoice_webhook_payload_version == 2 and event_type == PAID_INVOICE_WEBHOOK_EVENT:
+        total_amount = await native_settled_amount(db, tenant=tenant, invoice=invoice, order=order)
+        if total_amount is None:
+            return None
     event_id = uuid4()
     event = ProviderOutboxEvent(
         id=event_id, tenant_id=tenant.id, event_type=event_type, aggregate_type="invoice", aggregate_id=invoice.id,
