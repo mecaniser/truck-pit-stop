@@ -1,4 +1,4 @@
-# DB-123 — Native paid-outcome capture evidence
+# DB-124 — Native paid-outcome capture evidence
 
 Backend & Integrations owns this high-risk financial capture change. It changes
 capture admission only; the v2 signed payload, destination, idempotency identity,
