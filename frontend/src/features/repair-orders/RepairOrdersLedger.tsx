@@ -37,6 +37,7 @@ export default function RepairOrdersLedger({
   hasMore,
   isLoadingMore,
   showPagination = true,
+  autoLoadEnabled = true,
   onSearchChange,
   onStatusChange,
   onOpenOrder,
@@ -65,6 +66,8 @@ export default function RepairOrdersLedger({
   hasMore: boolean
   isLoadingMore: boolean
   showPagination?: boolean
+  /** The ledger may remain mounted behind intake or a compact record. */
+  autoLoadEnabled?: boolean
   onSearchChange: (value: string) => void
   onStatusChange: (value: string) => void
   onOpenOrder: (id: string, options?: { focusWorkspace?: boolean }) => void
@@ -90,29 +93,30 @@ export default function RepairOrdersLedger({
   const scopeMenuId = useId()
   const statusMenu = useRef<HTMLDivElement>(null)
   const loadMoreSentinelRef = useRef<HTMLDivElement | null>(null)
-  const scrollerRef = useRef<HTMLDivElement | null>(null)
   const onLoadMoreRef = useRef(onLoadMore)
   useEffect(() => { onLoadMoreRef.current = onLoadMore }, [onLoadMore])
-  // Fetch the next page as the end of the list comes into view. The callback is
-  // read from a ref so a new function identity each render does not tear the
-  // observer down and rebuild it mid-scroll. rootMargin starts the request
-  // before the sentinel is actually visible, so rows are usually there by the
-  // time the operator reaches them.
+  // Use the viewport, which also clips through scrolling ancestors. On compact
+  // screens the list wrapper grows with its content: using it as the root makes
+  // the sentinel permanently intersect and drains every server page unseen.
   useEffect(() => {
     const node = loadMoreSentinelRef.current
-    if (!node || !hasMore || isLoadingMore) return
+    if (!node || !showPagination || !autoLoadEnabled || !hasMore || isFetching || isLoadingMore || errorMessage) return
     if (typeof IntersectionObserver === 'undefined') return
-    // The root must be the scroller, not the viewport. Left to default, the
-    // margin is applied to the viewport while the scroller still clips the
-    // sentinel out of existence, so the observer only fires once the sentinel
-    // is genuinely on screen — at the very bottom, with nothing prefetched.
+    let active = true
     const observer = new IntersectionObserver(
-      (entries) => { if (entries.some((entry) => entry.isIntersecting)) onLoadMoreRef.current() },
-      { root: scrollerRef.current, rootMargin: '320px' },
+      (entries) => {
+        if (!active || !entries.some((entry) => entry.isIntersecting)) return
+        // One request per observed page, including callbacks already queued
+        // when a dialog opens, filters change, or the observer disconnects.
+        active = false
+        observer.disconnect()
+        onLoadMoreRef.current()
+      },
+      { root: null, rootMargin: '320px 0px' },
     )
     observer.observe(node)
-    return () => observer.disconnect()
-  }, [hasMore, isLoadingMore, loadedCount])
+    return () => { active = false; observer.disconnect() }
+  }, [showPagination, autoLoadEnabled, hasMore, isFetching, isLoadingMore, errorMessage, loadedCount])
 
   const [statusOpen, setStatusOpen] = useState(false)
   // A menu closes when you look away from it, not only on a second click.
@@ -329,7 +333,7 @@ export default function RepairOrdersLedger({
         {/* The scroller wraps the bordered card so the scrollbar sits outside the
             border; the ledger header and pagination footer stay pinned outside
             the scroller. */}
-        <div className="db-operating-surface__scroller" ref={scrollerRef}>
+        <div className="db-operating-surface__scroller">
         <div className="db-repair-orders-ledger__card db-operating-surface__card">
         {errorMessage ? (
           <div className="db-repair-orders-ledger__empty" role="alert">
@@ -515,7 +519,7 @@ export default function RepairOrdersLedger({
               <button
                 type="button"
                 onClick={onLoadMore}
-                disabled={isLoadingMore}
+                disabled={isFetching || isLoadingMore}
                 aria-label={`Load more repair orders, ${loadedCount} of ${totalOrders} loaded`}
               >
                 {isLoadingMore && <span className="db-repair-orders-ledger__spinner" aria-hidden="true" />}

@@ -5,13 +5,13 @@ Final reconciliation evidence is submitted for independent review with this docu
 
 ## Release and verification
 
-[PR522](https://github.com/mecaniser/truck-pit-stop/pull/522) merged2026-10-14
-at23:31:06UTC as `1e128457a4f9039e5ebcb72fc5018b59575366a7`.
+[PR522](https://github.com/mecaniser/truck-pit-stop/pull/522) merged 2026-10-14
+at 23:31:06 UTC as `1e128457a4f9039e5ebcb72fc5018b59575366a7`.
 Fifty focused tests and actual PostgreSQL migration/concurrency acceptance passed.
 All six gates in [CI38652409965](https://github.com/mecaniser/truck-pit-stop/actions/runs/38652409965)
-passed: backend full3,060 passed/152 skipped in1,056.58s; critical530 passed/11 skipped.
+passed: backend full 3,060 passed/152 skipped in 1,056.58s; critical 530 passed/11 skipped.
 
-Production migration170 is applied. Initial Web deployment `e7722f26` and activated
+Production migration 170 is applied. Initial Web deployment `e7722f26` and activated
 Worker `3dd47589` were verified at `1e128457`. Newer Web `53995654`, deployment
 `e430fe54`, subsequently succeeded. That [PR523](https://github.com/mecaniser/truck-pit-stop/pull/523)
 release contains `1e128457` with unchanged history runtime and is preserved.
@@ -19,12 +19,12 @@ Capture and delivery are enabled only for the approved shop allowlist.
 
 ## Observed automatic flow
 
-The existing ETS→DieselBridge nightly sync completed2026-10-14 at02:11:39UTC,
-adding10 invoices. Its deployed manifest runs at00:00UTC; its source sync/import
+The existing ETS→DieselBridge nightly sync completed 2026-10-14 at 02:11:39 UTC,
+adding 10 invoices. Its deployed manifest runs at 00:00 UTC; its source sync/import
 code matches the inspected source. The new five-minute history schedule produced
-its first100 observations and39 deliveries before the separately reviewed initial
-catch-up. A full capture found2,389 invoice histories; a full repeat scan of2,389
-records created0 additional observations.
+its first 100 observations and 39 deliveries before the separately reviewed initial
+catch-up. A full capture found 2,389 invoice histories; a full repeat scan of 2,389
+records created 0 additional observations.
 
 A reviewed, private, bounded catch-up accelerated first-attempt **source history**
 delivery without changing the normal scheduler or shared delivery batch size.
@@ -34,7 +34,7 @@ idempotent source retry resolved those acknowledgements.
 
 ## Final reconciliation
 
-Source checked2026-10-15 at00:13:45UTC; ELIS checked00:13:46UTC.
+Source checked 2026-10-15 at 00:13:45 UTC; ELIS checked 00:13:46 UTC.
 
 | Evidence | Result |
 | --- | ---: |
@@ -52,11 +52,11 @@ Source checked2026-10-15 at00:13:45UTC; ELIS checked00:13:46UTC.
 
 These are source-history snapshot counts, not new customers, landed jobs or Google
 conversions. Multiple invoices can belong to one canonical job. Imported history
-retains its historical hold. The20 native history records lacking payment proof
+retains its historical hold. The 20 native history records lacking payment proof
 remain blocked from job delivery; source context does not establish settlement.
 Manual links and their holds were preserved.
 
-All9,356 pre-existing Google delivery attempts remained exactly unchanged.
+All 9,356 pre-existing Google delivery attempts remained exactly unchanged.
 Existing conversion records and financial revisions were unchanged. Thirteen new
 qualified-lead events arose concurrently through normal operations; **zero new job
 conversion events** were created. No Google conversion was resent by this work.
@@ -66,7 +66,7 @@ conversion events** were created. No Google conversion was resent by this work.
 - The invoice's repair-order identity owns the job. Exact ETS operation siblings
   provide context, never additional invoice value. Conflicting equipment/source,
   deleted context and oversized truncated descriptions force review.
-- Durable tenant cursors scan50 invoice records per run (configurable1–200).
+- Durable tenant cursors scan 50 invoice records per run (configurable 1–200).
   Per-invoice sequences handle changes including A→B→A; cursor, observation and
   immutable outbox commit together under tenant locking.
 - Imported payment dates retain day precision. History snapshots do not create
@@ -83,7 +83,7 @@ Automatic capture, authenticated receipt, projection and conservative matching a
 verified. Unmatched/uncertain history remains held; bulk history ingestion does not
 mean those jobs are attributable to ads or eligible for conversion delivery.
 No payment or campaign settings changed. This backend-only change adds no browser
-journey. Local preflight found another checkout on5173 and no approved local
+journey. Local preflight found another checkout on 5173 and no approved local
 runtime configuration; isolated tests were followed by PostgreSQL acceptance and
 separate production evidence above.
 
