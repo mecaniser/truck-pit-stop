@@ -345,3 +345,66 @@ async def test_service_date_uses_shop_timezone_at_midnight(db_session, monkeypat
     await db_session.flush()
     result = await service.mutate(db_session, a.vehicle.id, a.owner, create(service_date="2026-01-10"))
     assert result.record.service_date == date(2026, 1, 10)
+
+
+@pytest.mark.asyncio
+async def test_search_complete_history_literal_scope_and_pagination(db_session):
+    a, b = await seed(db_session), await seed(db_session)
+    other_vehicle = await add_vehicle(db_session, a)
+    for i in range(12):
+        await service.mutate(db_session, a.vehicle.id, a.owner, create(provider_name=f"Recent shop {i}", description="Recent work", reference=None))
+    matches = []
+    for values in [dict(provider_name="Needle Shop"), dict(description="Repaired NEEDLE valve"), dict(reference="needle-001")]:
+        matches.append((await service.mutate(db_session, a.vehicle.id, a.owner, create(service_date="2024-01-01", **values))).record)
+    # All matches are beyond the first unfiltered page.
+    assert not ({r.id for r in matches} & {r.id for r in (await service.page(db_session, a.vehicle.id, a.owner, limit=10)).items})
+    for vehicle, actor in [(other_vehicle, a.owner), (b.vehicle, b.owner)]:
+        await service.mutate(db_session, vehicle.id, actor, create(description="needle"))
+    hidden = (await service.mutate(db_session, a.vehicle.id, a.owner, create(description="needle voided"))).record
+    await service.mutate(db_session, a.vehicle.id, a.owner, Void(request_id=uuid4(), expected_version=1, reason="QA"), action="void", record_id=hidden.id)
+    deleted = (await service.mutate(db_session, a.vehicle.id, a.owner, create(description="needle deleted"))).record
+    (await db_session.get(Record, deleted.id)).deleted_at = datetime.now(UTC)
+    stamp = datetime(2024, 1, 1, tzinfo=UTC)
+    for record in matches:
+        (await db_session.get(Record, record.id)).created_at = stamp
+    await db_session.flush()
+    before = [await db_session.scalar(select(func.count(model.id))) for model in (Event, RepairOrder, Invoice, Payment)]
+    first = await service.page(db_session, a.vehicle.id, a.owner, search="  NeEdLe  ", limit=2)
+    second = await service.page(db_session, a.vehicle.id, a.owner, search="needle", skip=2, limit=2)
+    assert first.total == second.total == 3 and first.has_more and not second.has_more
+    assert [r.id for r in first.items + second.items] == sorted([r.id for r in matches], reverse=True)
+    assert (await service.page(db_session, a.vehicle.id, a.owner, search="needle", include_voided=True)).total == 4
+    assert (await service.page(db_session, a.vehicle.id, a.owner, search="not found")).model_dump() == dict(items=[], total=0, has_more=False)
+    assert (await service.page(db_session, a.vehicle.id, a.owner, search=" \t ")).total == (await service.page(db_session, a.vehicle.id, a.owner)).total
+    special = (await service.mutate(db_session, a.vehicle.id, a.owner, create(description=r"Literal 50% A_B C\D ' OR 1=1 --"))).record
+    for term in ["50%", "A_B", "C\\D", "' OR 1=1 --"]:
+        result = await service.page(db_session, a.vehicle.id, a.owner, search=term)
+        assert result.total == 1 and result.items[0].id == special.id
+    for term in ["50_", "A%B", "C_D"]:
+        assert (await service.page(db_session, a.vehicle.id, a.owner, search=term)).total == 0
+    assert [await db_session.scalar(select(func.count(model.id))) for model in (Event, RepairOrder, Invoice, Payment)] == [before[0] + 1, *before[1:]]
+    await assert_error(404, service.page(db_session, b.vehicle.id, a.owner, search="needle"))
+    a.vehicle.deleted_at = datetime.now(UTC)
+    await db_session.flush()
+    await assert_error(404, service.page(db_session, a.vehicle.id, a.owner, search="needle"))
+
+
+@pytest.mark.asyncio
+async def test_search_http_bounds_cache_and_role_denial(client, db_session):
+    from app.main import app
+    from app.core.dependencies import get_current_active_user
+    a = await seed(db_session)
+    path = f"/api/v1/vehicles/{a.vehicle.id}/external-services"
+    assert (await client.get(path, params={"search": "needle"})).status_code == 401
+    app.dependency_overrides[get_current_active_user] = lambda: a.owner
+    try:
+        saved = (await service.mutate(db_session, a.vehicle.id, a.owner, create(description="Needle work"))).record
+        response = await client.get(path, params={"search": "  NEEDLE "})
+        assert response.status_code == 200 and "no-store" in response.headers["cache-control"]
+        assert response.json() == dict(items=[saved.model_dump(mode="json")], total=1, has_more=False)
+        assert (await client.get(path, params={"search": "x" * 200})).status_code == 200
+        assert (await client.get(path, params={"search": "x" * 201})).status_code == 422
+        a.owner.role = UserRole.MECHANIC
+        assert (await client.get(path, params={"search": "needle"})).status_code == 403
+    finally:
+        app.dependency_overrides.pop(get_current_active_user, None)
