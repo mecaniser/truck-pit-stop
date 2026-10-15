@@ -17,5 +17,8 @@ Branch `codex/compact-repair-order-controls`, baseline `7face2d6` (R1 deployed a
 
 Evidence: [Light desktop](db137/local-light-desktop.png), [Night phone](db137/local-night-390.png), [Light narrow phone](db137/local-light-320.png), [wide filters/empty](db137/local-light-wide-empty.png).
 
+## CI correction
+Initial run38801191200 rejected the existing search cancellation test because it used the old placeholder. Locator updated to the stable accessible searchbox name; same-element, retained value and mounted-state assertions remain unchanged. Final-revision CI must pass.
+
 ## Release
 Protected CI, merge, exact Web deployment and production Light/Night desktop/mobile acceptance pending. P1 remains contract-only until this release passes.
