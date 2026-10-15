@@ -24,6 +24,28 @@ class SupervisorSafety(unittest.TestCase):
                 s.cycle('db-ci-worker-1')
             api.assert_not_called()
 
+    def test_identity_failure_prevents_registration(self):
+        with patch.object(s, 'destroy'), patch.object(s, 'command'), \
+             patch.object(s, 'guest', side_effect=[None, RuntimeError('runner has sudo')]), \
+             patch.object(s, 'api') as api:
+            with self.assertRaises(RuntimeError):
+                s.cycle('db-ci-worker-1')
+            api.assert_not_called()
+
+    def test_clone_ports_and_token_transport(self):
+        with patch.object(s, 'destroy'), patch.object(s, 'command') as run, \
+             patch.object(s, 'guest') as guest, \
+             patch.object(s, 'api', return_value={'token': 'registration-canary'}), \
+             patch.object(s.STOP, 'wait', return_value=True):
+            s.cycle('db-ci-worker-1')
+            self.assertIn('--ssh-port=0', run.call_args_list[0].args[0])
+            self.assertIn('--mount-none', run.call_args_list[0].args[0])
+            registration = guest.call_args_list[2]
+            self.assertIn('ACTIONS_RUNNER_INPUT_TOKEN', registration.args[-1])
+            self.assertNotIn('registration-canary', str(registration.args))
+            self.assertEqual(registration.kwargs['data'], 'registration-canary')
+            self.assertIn('--ephemeral', registration.args[-1])
+
     def test_failed_cleanup_prevents_reusing_guest(self):
         with patch.object(s, 'destroy', side_effect=RuntimeError('cannot delete')), \
              patch.object(s, 'command') as run, patch.object(s, 'api') as api:
