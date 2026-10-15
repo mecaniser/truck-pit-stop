@@ -144,6 +144,6 @@ DB123 exposes DBN’s existing exact-vehicle server-side search and status filte
 DB123 released: PR525 and corrective PR527 are merged; Web732200cf succeeded at01d8146b, authenticated production index-DafQAQ8U.js verified. Exact-truck search/status, cancellation focus, deliberate truck selection/reload and theme-readable actions pass real desktop1280, portrait320/390 and landscape740x400 workflows, including two trucks sharing a unit number. No business writes; touch/browser emulation only. [Final release receipt](verification/DB123_VEHICLE_HISTORY_SEARCH.md).
 
 
-## DB128 continuation — outside-shop receipt files (2026-10-14)
+## DB129 continuation — outside-shop receipt files (2026-10-14)
 
-Fresh authenticated ETS external-service UI and REA static evidence confirm attachment controls. DieselBridge DB119 retains historical fields but no receipt. Implement private record-linked PDF/JPEG/PNG storage, authenticated download, duplicate-safe retries and recoverable remove/restore with attribution. This improves traceability without affecting invoices, balances or current mileage. Contract/implementation and production acceptance in [DB128 receipt](verification/DB128_EXTERNAL_SERVICE_RECEIPTS.md); no full-parity claim.
+Fresh authenticated ETS external-service UI and REA static evidence confirm attachment controls. DieselBridge DB119 retains historical fields but no receipt. Implement private record-linked PDF/JPEG/PNG storage, authenticated download, duplicate-safe retries and recoverable remove/restore with attribution. This improves traceability without affecting invoices, balances or current mileage. Contract/implementation and production acceptance in [DB129 receipt](verification/DB129_EXTERNAL_SERVICE_RECEIPTS.md); no full-parity claim.
