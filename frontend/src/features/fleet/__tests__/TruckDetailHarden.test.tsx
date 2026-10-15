@@ -94,7 +94,7 @@ describe('TruckDetail hardening', () => {
     const providerRow = document.querySelector('.fleet-motive-driver') as HTMLElement
     expect(within(providerRow).getByText('Example Driver')).toBeVisible()
     expect(within(providerRow).getByRole('button', { name: /Driver record for Example Driver/ })).toHaveTextContent('82')
-    expect(within(providerRow).getByText('Local contact · Example · (704) 555-0123')).toBeVisible()
+    expect(within(providerRow).getByText('Example · (704) 555-0123')).toBeVisible()
   })
 
   it('keeps mileage comparison and speed in the header, with hours and entry in details', async () => {

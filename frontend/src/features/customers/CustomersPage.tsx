@@ -278,6 +278,19 @@ export default function CustomersPage() {
       : null
     : manualSelectedVehicle
 
+  const selectCustomerTruck = (vehicle: Vehicle | null) => {
+    setSelectedVehicleInPanel(vehicle)
+    if (!selectedCustomer) return
+    const params = new URLSearchParams(location.search)
+    params.set('selected', selectedCustomer.id)
+    if (vehicle) {
+      params.set('vehicle', vehicle.id)
+      queryClient.setQueryData(['customer-search-vehicle', currentUser?.tenant_id, currentUser?.id, selectedCustomer.id, vehicle.id], vehicle)
+    } else params.delete('vehicle')
+    // An explicit truck choice supersedes the earlier cancelled-order return.
+    navigate({ pathname: location.pathname, search: params.toString() }, { replace: true })
+  }
+
   const returnToCustomer = () => {
     setSelectedVehicleInPanel(null)
     if (!selectedVehicleId) return
@@ -325,7 +338,8 @@ export default function CustomersPage() {
 
   useEffect(() => {
     const origin = location.state?.restoreOrderOrigin as RepairOrderReturn | undefined
-    if (!origin || restoredOrderFocus.current === location.key || selectedCustomer?.id !== origin.customerId
+    // Filter edits preserve return context, but must not replay its one-time focus move.
+    if (!origin || location.state?.restoreOrderFocus === false || restoredOrderFocus.current === location.key || selectedCustomer?.id !== origin.customerId
       || (selectedVehicleInPanel?.id ?? undefined) !== origin.vehicleId) return
     const frame = requestAnimationFrame(() => {
       createOrderButtonRef.current?.focus({ preventScroll: true })
@@ -1171,7 +1185,7 @@ export default function CustomersPage() {
                   setVehicleRelationshipSearch={setVehicleRelationshipSearch}
                   vehicleRelationshipFilter={vehicleRelationshipFilter}
                   setVehicleRelationshipFilter={setVehicleRelationshipFilter}
-                  setSelectedVehicleInPanel={setSelectedVehicleInPanel}
+                  setSelectedVehicleInPanel={selectCustomerTruck}
                   openAddContactModal={openAddContactModal}
                   openEditContactModal={openEditContactModal}
                   handleDeleteContactClick={handleDeleteContactClick}
@@ -1219,7 +1233,7 @@ export default function CustomersPage() {
           <CustomerVehicleModals
             customer={selectedCustomer}
             selectedVehicleInPanel={selectedVehicleInPanel}
-            setSelectedVehicleInPanel={setSelectedVehicleInPanel}
+            setSelectedVehicleInPanel={selectCustomerTruck}
             controlsRef={vehicleModalControls}
           />
         </>

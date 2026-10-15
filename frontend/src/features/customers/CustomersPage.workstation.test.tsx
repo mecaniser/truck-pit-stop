@@ -166,6 +166,7 @@ describe('DB-035C customer workstation', () => {
     const defaultGet = apiMocks.get.getMockImplementation()!
     apiMocks.get.mockImplementation((url: string) => {
       if (url === '/customers/customer-1/vehicles') return Promise.resolve({ data: [{ id: 'truck-1', customer_id: customer.id, year: 2021, make: 'Freightliner', model: 'Cascadia', unit_number: 'C-001' }] })
+      if (url === '/customers/customer-1/vehicles/truck-1') return Promise.resolve({ data: { id: 'truck-1', customer_id: customer.id, year: 2021, make: 'Freightliner', model: 'Cascadia', unit_number: 'C-001' } })
       if (url === '/repair-orders') return Promise.resolve({ data: { items: [], total: 0, has_more: false } })
       return defaultGet(url)
     })

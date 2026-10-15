@@ -59,7 +59,7 @@ function DriverRecordContent({ truck }: { truck: DriverTruck }) {
   if (data?.unavailable_reason) return <p className="driver-record-message">{unavailableCopy[data.unavailable_reason]}</p>
   if (data?.availability === 'assignment_unverified') return <p className="driver-record-message">Motive has not verified the current driver assignment for this truck.</p>
   if (data?.availability !== 'available' || !data.record) return <p className="driver-record-message">No verified Motive record is available for this driver.</p>
-  return <><div className="driver-record-assignment">Current Motive assignment · Verified <time dateTime={data.record.assignment_verified_at}>{checkedTime(data.record.assignment_verified_at)}</time>{data.record.local_driver_name && data.record.local_driver_name !== data.record.driver_name && <span>Local contact · {data.record.local_driver_name}</span>}</div><RecordDetails record={data.record} /></>
+  return <><div className="driver-record-assignment">Current Motive assignment · Verified <time dateTime={data.record.assignment_verified_at}>{checkedTime(data.record.assignment_verified_at)}</time>{data.record.local_driver_name && data.record.local_driver_name !== data.record.driver_name && <span>{data.record.local_driver_name}</span>}</div><RecordDetails record={data.record} /></>
 }
 
 function Section({ title, period, state, children }: { title: string; period?: string | null; state: DriverRecordSection; children: ReactNode }) {

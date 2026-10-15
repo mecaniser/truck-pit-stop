@@ -10,7 +10,7 @@ import { formatDriveTime, useRoadProximity } from './roadProximity'
 import { useFleetHome } from './fleetHome'
 import FleetMapCanvas from './FleetMapCanvas'
 import CurrentDriver from './CurrentDriver'
-import { currentDriverName, currentDriverRecord } from './driverIdentity'
+import { currentDriverName } from './driverIdentity'
 import './proximity.css'
 
 interface Props {
@@ -99,7 +99,7 @@ function FleetMap({ trucks, focusId, onFocusChange, onSelect, compact, homeAddre
           </div>}
           {road.phase === 'loading' && <div className="proximity-route-summary" role="status">Calculating road distances…</div>}
           {currentDriverName(focus) && <p className="proximity-driver"><CurrentDriver truck={focus} /></p>}
-          {focus.driver_phone && /^[+\d\s().-]+$/.test(focus.driver_phone) && <div className="proximity-actions"><a href={`tel:${focus.driver_phone.replace(/[^+\d]/g, '')}`}>{currentDriverRecord(focus) ? 'Call local contact' : 'Call driver'}</a></div>}
+          {focus.driver_phone && /^[+\d\s().-]+$/.test(focus.driver_phone) && <div className="proximity-actions"><a href={`tel:${focus.driver_phone.replace(/[^+\d]/g, '')}`}>Call</a></div>}
         </div>}
         {(searching || focus || !homeAddress) && <div className="proximity-list-heading"><h3>{searching ? 'Search results' : focus ? 'Nearby trucks' : 'Select a truck'}</h3><span>{searching ? matches.length : focus ? nearby.length : trucks.length}</span></div>}
         {!focus && homeAddress && homeStatus && <div className="proximity-basis" role="status">{homeStatus}</div>}

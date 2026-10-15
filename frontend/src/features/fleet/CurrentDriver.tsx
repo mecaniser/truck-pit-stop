@@ -7,7 +7,7 @@ export function LocalDriverContact({ truck }: { truck: DriverTruck }) {
   if (!record) return truck.driver_phone ? <span className="driver-local-contact">{formatUSPhone(truck.driver_phone)}</span> : null
   const differentAlias = truck.driver_name && truck.driver_name.trim() !== record.driver_name.trim()
   if (!differentAlias && !truck.driver_phone) return null
-  return <span className="driver-local-contact">Local contact{differentAlias ? ` · ${truck.driver_name}` : ''}{truck.driver_phone ? ` · ${formatUSPhone(truck.driver_phone)}` : ''}</span>
+  return <span className="driver-local-contact">{[differentAlias && truck.driver_name, truck.driver_phone && formatUSPhone(truck.driver_phone)].filter(Boolean).join(' · ')}</span>
 }
 
 /** Provider identity and local contact remain separate, including managed custody. */
