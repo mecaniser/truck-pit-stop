@@ -241,9 +241,12 @@ def legacy_fixture():
 
 
 @pytest.mark.asyncio
-async def test_verified_cancelled_operation_copy_does_not_duplicate_revenue():
+@pytest.mark.parametrize("soft_deleted", [False, True])
+async def test_verified_cancelled_operation_copy_does_not_duplicate_revenue(soft_deleted):
     args, snapshot, canonical, sibling, duplicate = legacy_fixture()
     order = args.pop('order')
+    if soft_deleted:
+        duplicate.deleted_at = NOW
     db = SimpleNamespace(scalar=AsyncMock(side_effect=[SimpleNamespace(id=order.tenant_id), order, None]),
         scalars=AsyncMock(side_effect=[[order, sibling], [order.id, sibling.id], [canonical, duplicate]]),
         add=Mock(), flush=AsyncMock())
@@ -263,7 +266,7 @@ async def test_verified_cancelled_operation_copy_does_not_duplicate_revenue():
 @pytest.mark.parametrize('target,field,value', [
     ('duplicate', 'status', 'paid'), ('duplicate', 'status', None),
     ('duplicate', 'invoice_number', 'ETSINV-100-unknown'),
-    ('duplicate', 'total_amount', 99), ('duplicate', 'deleted_at', NOW),
+    ('duplicate', 'total_amount', 99), ('canonical', 'deleted_at', NOW),
     ('duplicate', 'tenant_id', uuid4()), ('duplicate', 'billed_customer_id', uuid4()),
     ('duplicate', 'source', 'native'), ('sibling', 'customer_id', uuid4()),
     ('sibling', 'vehicle_id', uuid4()), ('sibling', 'tenant_id', uuid4()),
@@ -305,3 +308,14 @@ def test_multiple_source_invoices_cannot_exempt_legacy_roots():
     snapshot['invoices'].append(deepcopy(snapshot['invoices'][0]))
     assert source._verified_legacy_duplicate_roots(order=args['order'], siblings=[args['order'], sibling],
         invoices=[canonical, duplicate], snapshot=snapshot) == {canonical.repair_order_id, duplicate.repair_order_id}
+
+
+@pytest.mark.parametrize('field,value', [('status', 'paid'), ('status', None),
+    ('invoice_number', 'unrecognized-copy'), ('total_amount', 99)])
+def test_deleted_unverified_invoice_still_conflicts(field, value):
+    args, snapshot, canonical, sibling, duplicate = legacy_fixture()
+    duplicate.deleted_at = NOW
+    setattr(duplicate, field, value)
+    assert duplicate.repair_order_id in source._verified_legacy_duplicate_roots(
+        order=args['order'], siblings=[args['order'], sibling],
+        invoices=[canonical, duplicate], snapshot=snapshot)
