@@ -4153,7 +4153,10 @@ async def add_ad_hoc_part_to_repair_order(
     from sqlalchemy.exc import IntegrityError
     if not current_user.tenant_id:
         raise HTTPException(400, "User must be associated with a tenant")
-    observed = await price_build_service.load_order(db, order_id, tenant_id=current_user.tenant_id)
+    try:
+        observed = await price_build_service.load_order(db, order_id, tenant_id=current_user.tenant_id)
+    except PriceBuildNotFoundError as exc:
+        raise _map_price_build_error(exc) from exc
     _check_mechanic_order_assignment(current_user, observed)
     record, replay = await parts_pricing.begin_write(db, current_user, idempotency_key,
         f'order:{order_id}:ad-hoc', body.model_dump(mode='json'))
@@ -4456,7 +4459,10 @@ async def add_parts_to_repair_order(
     if not current_user.tenant_id:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="User must be associated with a tenant")
     # Reauthorize the exact live order before replaying a previously saved body.
-    observed = await price_build_service.load_order(db, order_id, tenant_id=current_user.tenant_id)
+    try:
+        observed = await price_build_service.load_order(db, order_id, tenant_id=current_user.tenant_id)
+    except PriceBuildNotFoundError as exc:
+        raise _map_price_build_error(exc) from exc
     _check_mechanic_order_assignment(current_user, observed)
     if current_user.role == UserRole.MECHANIC and body.pricing_intent != 'default':
         parts_pricing.fail('price_override_forbidden', 'You cannot override a part price.', 403)
@@ -4469,7 +4475,6 @@ async def add_parts_to_repair_order(
         'plan': {'kind': 'parts_add', 'lines': [{k:v for k,v in body.model_dump().items() if k not in {'allow_stock_shortage','pricing_preview_fingerprint','pricing_presentation'}}]},
         'pricing_presentation': body.pricing_presentation,
     }), lock=True)
-    plan.confirm(body.pricing_preview_fingerprint)
     order = plan.order
     planned = plan.new(body.client_key)
     inv = planned.inventory
@@ -4487,6 +4492,7 @@ async def add_parts_to_repair_order(
                 available_packages=available_packages,
             ),
         )
+    plan.confirm(body.pricing_preview_fingerprint, stock_acknowledged=body.allow_stock_shortage)
     unit_price = planned.price.charged
     list_price = planned.price.default
     total_price = parts_pricing.line_total(unit_price, body.quantity)

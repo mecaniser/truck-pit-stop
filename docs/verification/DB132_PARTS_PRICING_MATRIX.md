@@ -1,10 +1,10 @@
 # DB132 / P1 parts pricing matrix
 
-Accountable: Backend & Integrations. State: **Review — local acceptance complete; final CI and release pending**. Selected second in the [parity tracker](../ETS_PARITY_TRACKER.md), after R1 production closure.
+Accountable: Backend & Integrations. State: **Review — corrected source independently approved; fresh protected CI and release pending**. Selected second in the [parity tracker](../ETS_PARITY_TRACKER.md), after R1 production closure.
 
 ## Current result
 
-Independent local QA and Security approved application candidate `d94133a0`. All13 review findings are closed. Independent runs passed269 affected backend tests,269 focused frontend tests and12 PostgreSQL boundary/concurrency tests. TypeScript and changed-source lint passed.
+The final full-suite CI return was corrected and independently re-reviewed. Local QA/Security GO is restored on the six-file manifest recorded in the independent receipt. All15 findings are closed. The earlier baseline evidence remains: Independent runs passed269 affected backend tests,269 focused frontend tests and12 PostgreSQL boundary/concurrency tests. TypeScript and changed-source lint passed.
 
 Actual local Light/Night desktop and browser-emulated mobile checks cover matrix configuration, saved-price retention, part policies, manual/List/Stock edits, bundle attachment, create-once service recovery and readable fleet quantity controls. Six synthetic orders were soft-deleted; stock, policies, default and service availability returned to baseline. One zero-stock ad-hoc placeholder remains as recoverable local evidence. Restricted-role and counter-sale journeys have automated coverage; they are not claimed as authenticated UI passes.
 
@@ -17,7 +17,7 @@ Actual local Light/Night desktop and browser-emulated mobile checks cover matrix
 Branch `codex/ets-parts-pricing-matrix` begins at R1 merge7b3dc4b3. Preparation reviewed21546789; full application tree is identical. Backend/frontend integration handoffs and later C1/M1/B1/A1 drafts are preserved in `/Users/sergio_m1_promax/Documents/Codex/ets-priority-preparation-20261015/`; those are preparation, not completion receipts. Canonical tracker retains all29 discoveries and selected order.
 
 ## Remaining gates
-Owner and independent automated pricing/writer boundaries pass. PR542 protected CI, final fleet mobile correction, independent local closure, exact release and production acceptance remain. No invented real-shop pricing activation. P1 remains local and unmerged.
+The full-backend regression correction now has independent QA/Security GO. Fresh exact-final CI, release and production acceptance remain. No invented real-shop pricing activation. P1 remains local and unmerged.
 
 ## DB137 prerequisite closure and implementation handoff — 2026-10-15
 Compact controls DB137 are Done after PR539 exact deployment and Light/Night desktop/mobile production acceptance. P1 now continues on `codex/ets-parts-pricing-matrix-implementation` from `fc92c7b9944a0d07db80399b9f6e1eda13840b87`; the older preparation branch is preserved. Architecture owns canonical incorporation of four accepted wire/deletion clarifications before frontend/backend work begins. Backend owns all backend integration writers and migration together; Frontend owns the shared configuration and workflow UI. Independent gates remain separate.
@@ -126,3 +126,25 @@ Owner269focusedfrontend (previous226plusrecovery/ledger),TypeScript,differential
 [Read-only cleanup receipt](db132/local-cleanup.json) verifies all11 invariants: sixQAorders000006–000011softdeleted,13reserved/13released/netzero,0activereservations,0quotes/invoices/payment/completionartifacts. Allsixinventoryquantities/costs/catalog/corevalues equalpre174backup. Matrixarchived/defaultNULL;policiesreset;serviceinactive. Onezero-stock unknown-cost ad-hocplaceholderretainedlocallyforrecoverableevidence. OriginalNightappearance saveconfirmed. Local QA isfinished; nofurtherfixturemutationplanned.
 
 Mainadvancedwith unrelatedPR54113d5c867; mergedas d94133a0 preservingbothboardentries, P1applicationmatchesfacf1482. Productionbaseline at173hasnoneofthenewpricingtables; selecteddeletedQAorderTPS-828ACD84-000056remains0.00/in_progress/deleted. Production hasnoP1activation. FinalindependentGO/protectedCI/release stillseparate.
+
+## Final CI gate returned — 2026-10-15 23:39 UTC
+
+Run38819011151 on ad99dff0 passed migration, frontend checks/build,1693 frontend tests,530 critical backend tests/11skipped and Playwright smoke. The full backend job failed17 tests, with3300passed/181skipped. Overall workflow success does not override the failed required job. No merge or deployment occurred.
+
+The real HTTP regression is `test_db003_additive_tenant_boundary.py::test_cross_tenant_mechanic_additive_http_paths_are_generic_404_and_noop`: the new initial price-build load raises uncaught PriceBuildNotFoundError instead of the generic404 response. Fifteen fractional-part direct-call tests and one legacy fleet service-checklist direct-call test also fail with a Depends value where the actor was expected after the signature change. Backend owns diagnosis/correction without weakening tenant/no-op/stock assertions; independent QA/Security has been reopened for the delta. Log retained locally at /tmp/db132-final-full-backend-ci.log.
+
+Production sign-in restored. Pre-release read-only fingerprints captured at23:16:59UTC for existing inventory1612, saved part lines2934 and invoices2424, fixed cutoff23:15UTC; no production records changed. Existing invoiced order000055 was visually read without editing for post-release price comparison. P1 production acceptance still pending.
+
+
+## CI correction owner handoff — 2026-10-15 23:47 UTC
+
+Backend corrected catalog and ad-hoc pre-replay error mapping to preserve generic404 for foreign, missing and soft-deleted orders. Negative HTTP coverage verifies no inventory, reservation, pricing audit, idempotency or notification side effects. Existing direct-call fixtures now supply the named dependency arguments; assertions remain intact. The corrected tests exposed and fixed an unmanaged stock-only compatibility issue: original insufficient_stock400 and explicit shortage acknowledgment are retained, while managed/manual prices and supplied stale fingerprints still require exact pricing review.
+
+Owner affected suites:101passed/39warnings; broader pricing/financial/fleet regression:338passed/39warnings (collected before the final additional HTTP replay test). Six-file source manifest is retained locally at /tmp/db132-backend-evidence/ci-correction-manifest.json. Fresh independent review and final protected CI remain required.
+
+Runtime rechecked after code reload: frontendPID52183 serves the implementation checkout at5174; Docker source bind matches at8001; preserved postgres/truckpitstop_ets_workflow_parity_20261012 is at174. Direct and proxied readiness pass. Signed-in local Parts pricing renders No default and no active matrices; previous synthetic cleanup remains preserved. Local preview is aligned and browser-verified.
+
+
+## Fresh independent correction gate — 2026-10-15
+
+Independent reviewer passed339 affected backend tests,12 real PostgreSQL boundary/concurrency tests and3 disposable HTTP probes for manual/Stock intent and invalid-fingerprint rejection despite shortage consent. All six file hashes match the owner manifest before and after review. Findings14/15 closed; local QA/Security GO restored. Fresh six-context CI on the next committed revision is mandatory. Frontend and existing browser acceptance are unchanged by this backend-only correction.

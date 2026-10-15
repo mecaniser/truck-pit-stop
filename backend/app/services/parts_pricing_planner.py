@@ -73,10 +73,18 @@ class PricingPlan:
     response: dict
     policy: PricePolicy
 
-    def confirm(self, supplied):
+    def confirm(self, supplied, *, stock_acknowledged=False):
         actual=self.response['pricing_preview_fingerprint']
         if not supplied:
-            if self.response['confirmation_required']:
+            # An unmanaged direct add already carries explicit shortage consent
+            # in allow_stock_shortage. Keep that existing stock contract without
+            # weakening managed/manual prices or a supplied quote's comparison.
+            stock_only_ack = (
+                stock_acknowledged and self.request.plan.kind == 'parts_add'
+                and not self.response['availability']['omitted_line_keys']
+                and all(p.existing or (not p.snapshot.get('managed') and p.intent == 'default') for p in self.lines)
+            )
+            if self.response['confirmation_required'] and not stock_only_ack:
                 fail('pricing_preview_required','Review the proposed parts and total before applying.',409,preview=self.safe_response())
             return
         if supplied==actual: return

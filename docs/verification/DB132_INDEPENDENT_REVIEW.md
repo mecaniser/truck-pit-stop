@@ -5,13 +5,14 @@ edits, runtime changes, browser actions, deployment or production mutation.
 Accountable implementation owner: Backend & Integrations. This reviewer owns only
 this receipt. Delivery owner handles remediation and final gate assignment.
 
-## Current gate: independent local QA and Security GO
+## Current gate: local QA GO / Security GO — fresh protected CI and release pending
 
-Independent local QA and Security **GO** for application candidate
-`d94133a05acddde4a4d05c7859fd5028a12bcc8b`. Findings1–13 are closed. No unresolved
-P1 source or local acceptance blocker remains. This is a pre-merge gate, not a
-deployed/P1 Done claim: exact-final protected CI, merge, migration/service release
-identity and authorized production acceptance remain separate required gates.
+The final-CI regressions were returned to the owner and independently verified
+corrected. Findings 14 and 15 are closed by the exact-source delta below. This
+restores local QA/Security approval only: the failed CI run is not a pass, and
+fresh protected checks, merge/deploy identity and production acceptance remain
+required. Findings 1–13 and the final local cleanup evidence remain valid because
+this correction changes only two backend application files and related tests.
 
 Review baseline: branch `codex/ets-parts-pricing-matrix-implementation`, HEAD
 `4d6d5b133116b9960675b211e03b91d31fe95dbf` plus the evolving owner diff. Read the
@@ -144,6 +145,36 @@ in-memory SQLite, not the preserved preview or production database.
     keep footer reachable within one workspace and prevent extra page scroll.
     This finding is based on supplied rendered pixels plus source, not an
     independently driven browser session.
+
+14. **Closed — part-add pre-replay authorization leaks a domain exception as500.**
+    Full CI `test_db003_additive_tenant_boundary.py` reproduces a cross-tenant
+    mechanic catalog attachment raising unhandled `PriceBuildNotFoundError`,
+    rather than the established generic404. Independent source review also finds
+    the same raw `price_build_service.load_order` pattern in ad-hoc attachment
+    (`repair_orders.py:4156`), in addition to catalog attachment at:4459. The
+    query remains tenant-scoped and no foreign order is returned, but an expected
+    authorization/not-found response becomes an unhandled server failure.
+    Missing and soft-deleted orders use the same failing read. Require consistent
+    generic404 for both endpoints before any receipt/planning/stock mutation,
+    retaining same-tenant assignment403. Source review confirms planner context
+    already maps its own read and service/operation endpoints retain their error
+    mapping. The existing HTTP additive fixture does not cover ad-hoc and must
+    gain the analogous negative cases. CI log:
+    `/tmp/db132-final-full-backend-ci.log`. Source at review start:
+    `ad99dff0ed6f05c456a0ae60225d1e92eb80830b`.
+
+15. **Closed — stock confirmation changes the legacy shortage contract.**
+    With the corrected dependency arguments, the original fractional stock tests
+    reproduce two real regressions: an unmanaged direct add without enough stock
+    returns pricing409 before the established insufficient-stock400; an explicit
+    `allow_stock_shortage=true` still demands an additional pricing token. The
+    accepted contract preserves the existing stock guard and explicit override
+    for unmanaged/default direct additions. This is an application defect exposed
+    by restoring the tests, not a reason to weaken their stock assertions.
+    The owner moved the existing stock guard before confirmation and introduced a
+    narrow stock-only acknowledgment; new managed/manual prices and every supplied
+    fingerprint still require their established validation. Initial owner failure
+    log: `/tmp/db132-backend-evidence/ci-correction-initial.log`.
 
 The descriptions above retain the initial failures for traceability. Closure is
 based on the independent delta checks below, not an assumption that later owner
@@ -497,3 +528,70 @@ verify migration174 and exact service SHAs/health, and complete the permitted
 production Light/Night desktop/mobile read/preview/cancel checks before marking
 DB132/P1 Done. Earlier failed CI is not a pass; the final protected run remains
 mandatory. This receipt is frozen for the delivery owner's final docs commit.
+
+
+## Final-CI correction: independent delta closure — 2026-10-15 23:48 UTC
+
+**Local QA GO / Security GO on the corrected source.** Reviewed baseline HEAD is
+`ad99dff0ed6f05c456a0ae60225d1e92eb80830b` plus the frozen six-file backend delta.
+Only two application files change; the four test files expand negative coverage
+or repair dependency arguments without weakening existing assertions. All other
+previously reviewed backend application files and all frontend files are unchanged.
+The owner may commit this receipt and the matching delta for one fresh protected
+CI run. This is not merge/deployment approval before those checks pass.
+
+Exact application SHA256 values independently matched both before and after tests:
+
+| File | SHA256 |
+| --- | --- |
+| `backend/app/api/v1/endpoints/repair_orders.py` | `c44989fe6c75bb3bac1cb4e544a90d426aa1dc20e2f97cda1d466ec037719f49` |
+| `backend/app/services/parts_pricing_planner.py` | `2fffabdb7f5d274a0a56773c4d8152024eadeb8d23fa393ef02d9a31e2af9e1c` |
+
+The complete six-file manifest is
+`/tmp/db132-backend-evidence/ci-correction-manifest.json`; the SHA256 of that
+manifest file's bytes is
+`1883e1afc6fefab74abe7e74dfaee6b91c4f0db8cbc91e1ab92be82ca64b568d`.
+
+Finding 14: both catalog and ad-hoc attachment now map the tenant-qualified
+pre-replay order lookup through the existing generic 404 error mapper. Assignment
+checks remain before replay/planning. The expanded real HTTP matrix covers
+foreign-tenant, missing and soft-deleted orders (404) and same-tenant unassigned
+mechanics (403), while asserting no placeholder, usage, stock movement, pricing
+history or durable receipt is created. Existing order/financial/outbox/websocket
+no-op assertions remain. Source review also reconfirmed planner context and
+service/operation entry-point error mapping; no analogous unhandled read was
+found among those changed writer paths.
+
+Finding 15: the existing insufficient-stock 400 guard executes before pricing
+confirmation. Without a submitted pricing fingerprint, explicit shortage consent
+can satisfy the stock-only review for a direct `parts_add` whose newly resolved
+lines are all unmanaged/default and whose scope omits no component. It cannot
+approve managed or manual/stock pricing. Every supplied fingerprint still follows
+exact validation, even for an unmanaged line. Canonical prices, fractional package
+reservation and shortage metadata remain unchanged. HTTP same-key replay returns
+one usage and one reservation, without another stock decrement.
+
+Independent execution on the final files:
+
+- **339 passed**, 39 warnings, 93.59 seconds: the prior 19-file affected pricing,
+  financial, fleet, notes and writer suite plus
+  `test_db003_additive_tenant_boundary.py`, `test_fractional_part_quantity.py` and
+  `test_service_checklists.py`. This includes all 33 P1 tests and the corrected
+  101-test affected matrix. Log: `/tmp/db132-independent-ci-correction.log`.
+- **12 actual PostgreSQL tests passed**, 9 warnings, 3.65 seconds, using only
+  localhost `db132_test_pricing`, production `autoflush=False`, and the existing
+  isolated runner. Log: `/tmp/db132-independent-ci-correction-postgres.log`.
+- **3 additional independent HTTP probes passed**, 37 warnings, 4.98 seconds,
+  stored only under `/tmp/db132-independent-stock/`. Explicit shortage consent
+  cannot approve a new manual price, a Stock-intent price, or an invalid supplied
+  unmanaged fingerprint. Each rejection retains stock and creates zero usages.
+  Log: `/tmp/db132-independent-stock-intent.log`. These probes are separate from
+  the 339 repository tests and did not edit application or repository test files.
+
+The prior **269 frontend tests**, supplied actual Light/Night desktop/mobile
+journeys and six-fixture cleanup readback are unchanged evidence, not rerun or
+newly claimed browser acceptance in this backend-only correction. This reviewer
+performed no browser operation, preserved-preview mutation or production action.
+The final protected run must pass on the committed correction; migration 174,
+exact release identity, permitted production acceptance and rollback evidence
+remain the delivery owner's release gate. This receipt is frozen for that commit.

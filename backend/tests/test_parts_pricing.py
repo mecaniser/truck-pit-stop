@@ -525,3 +525,63 @@ async def test_bundle_core_quantity_sync_and_recovered_core_fail_atomically(db_s
     persisted=await db_session.get(PartsUsage,ids[0]); saved_core=await db_session.get(CoreObligation,ids[1]); saved_inv=await db_session.get(Inventory,ids[2])
     assert persisted.quantity==saved_core.quantity==3
     assert saved_inv.stock_quantity==stock
+
+
+@pytest.mark.asyncio
+async def test_http_stock_ack_does_not_bypass_managed_or_stale_pricing(client, db_session):
+    from app.core.security import create_access_token
+    a = await setup(db_session)
+    a.part.stock_quantity = 1
+    await db_session.commit()
+    rules = await matrix(db_session, a)
+    await api.set_default(s.DefaultUpdate(matrix_id=rules['id'], expected_generation=0), str(uuid4()), db_session, a.actor)
+    headers = {'Authorization':'Bearer '+create_access_token({'sub':str(a.actor.id)},tenant_id=str(a.tenant.id)), 'Idempotency-Key':str(uuid4())}
+    path = f'/api/v1/repair-orders/{a.order.id}/parts'
+    body = {'inventory_id':str(a.part.id), 'quantity':'2', 'allow_stock_shortage':True}
+    required = await client.post(path,json=body,headers=headers)
+    assert required.status_code == 409, required.text
+    assert required.json()['detail']['code'] == 'pricing_preview_required'
+    body['pricing_preview_fingerprint'] = required.json()['detail']['preview']['pricing_preview_fingerprint']
+    a.part.cost = D(21); a.part.pricing_version += 1
+    await db_session.commit()
+    changed = await client.post(path,json=body,headers=headers)
+    assert changed.status_code == 409, changed.text
+    assert changed.json()['detail']['code'] == 'pricing_preview_changed'
+    assert await db_session.scalar(select(func.count(PartsUsage.id)).where(PartsUsage.repair_order_id==a.order.id)) == 0
+    body['pricing_preview_fingerprint'] = changed.json()['detail']['preview']['pricing_preview_fingerprint']
+    saved = await client.post(path,json=body,headers=headers)
+    assert saved.status_code == 201, saved.text
+    assert saved.json()['quantity'] == '2.00' and saved.json()['stock_shortage_override']
+    row = await db_session.get(PartsUsage, UUID(saved.json()['id']))
+    assert row.unit_price == D(42) and row.stock_reserved_packages == 1
+    await db_session.refresh(a.part)
+    assert a.part.stock_quantity == 0
+
+
+@pytest.mark.asyncio
+async def test_http_unmanaged_stock_ack_preserves_original_guard_and_replay(client, db_session):
+    from app.core.security import create_access_token
+    a = await setup(db_session)
+    a.part.stock_quantity = 1
+    await db_session.commit()
+    headers = {'Authorization':'Bearer '+create_access_token({'sub':str(a.actor.id)},tenant_id=str(a.tenant.id)), 'Idempotency-Key':str(uuid4())}
+    path = f'/api/v1/repair-orders/{a.order.id}/parts'
+    body = {'inventory_id':str(a.part.id), 'quantity':'2'}
+    shortage = await client.post(path,json=body,headers=headers)
+    assert shortage.status_code == 400, shortage.text
+    assert shortage.json()['detail']['code'] == 'insufficient_stock'
+    assert shortage.json()['detail']['available_packages'] == 1
+    assert shortage.json()['detail']['required_packages'] == 2
+    assert shortage.json()['detail']['can_override']
+    body['allow_stock_shortage'] = True
+    saved = await client.post(path,json=body,headers=headers)
+    replay = await client.post(path,json=body,headers=headers)
+    assert saved.status_code == replay.status_code == 201, (saved.text,replay.text)
+    assert saved.json()['id'] == replay.json()['id']
+    assert not saved.json()['pricing']['managed']
+    assert saved.json()['stock_shortage_override']
+    row = await db_session.get(PartsUsage,UUID(saved.json()['id']))
+    assert row.stock_reserved_packages == 1 and row.quantity == D(2)
+    await db_session.refresh(a.part)
+    assert a.part.stock_quantity == 0
+    assert await db_session.scalar(select(func.count(PartsUsage.id)).where(PartsUsage.repair_order_id==a.order.id)) == 1
