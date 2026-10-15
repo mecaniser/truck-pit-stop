@@ -82,6 +82,7 @@ from app.core.websocket import broadcast_mechanic_attendance_update
 from app.schemas.order_value import FilteredRepairOrderValueSummary
 from app.schemas.recommended_work import RecommendedWorkPage
 from app.services.recommended_work import list_recommended_work
+from app.services import repair_intake_reference
 from app.services import recommendation_conversion
 from app.schemas.recommendation_conversion import RecommendationConvertRequest, RecommendationConvertResponse
 from app.services.mechanic_time_service import fetch_tenant_and_mechanic, get_active_session, start_session, stop_active_session
@@ -179,6 +180,7 @@ RO_MANAGE_ROLES = (
     UserRole.MECHANIC,
     UserRole.FLEET_MANAGER,
 )
+CALL_INTAKE_ROLES = tuple(role for role in RO_MANAGE_ROLES if role != UserRole.FLEET_MANAGER)
 ALLOWED_REPAIR_PHOTO_CONTENT_TYPES = {
     "image/jpeg",
     "image/png",
@@ -488,12 +490,31 @@ async def generate_order_number(db: AsyncSession, tenant_id: UUID) -> str:
     )
 
 
+@router.post("/originating-call-options", response_model=repair_intake_reference.OriginatingCallOptions)
+async def originating_call_options(
+    data: repair_intake_reference.OriginatingCallOptionsRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role(*CALL_INTAKE_ROLES)),
+):
+    customer = (await db.execute(select(Customer).where(
+        Customer.id == data.customer_id, Customer.tenant_id == current_user.tenant_id,
+    ))).scalar_one_or_none()
+    if not customer:
+        raise HTTPException(404, "Customer not found")
+    tenant = await db.get(Tenant, current_user.tenant_id)
+    if not tenant:
+        raise HTTPException(404, "Tenant not found")
+    return await repair_intake_reference.originating_call_options(tenant, customer.phone)
+
+
 @router.post("", response_model=RepairOrderResponse, status_code=status.HTTP_201_CREATED)
 async def create_repair_order(
     order_data: RepairOrderCreate,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role(*RO_MANAGE_ROLES)),
 ):
+    if order_data.originating_call_reference and current_user.role not in CALL_INTAKE_ROLES:
+        raise HTTPException(403, "Only shop staff can select an originating call")
     if not current_user.tenant_id:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -552,6 +573,33 @@ async def create_repair_order(
                 detail="Fleet managers can only create work orders for active fleet vehicles",
             )
 
+    create_data = order_data.model_dump(exclude={"originating_call_reference"})
+    reservation = None
+    if order_data.originating_call_reference:
+        # Browser-supplied IDs cannot override the signed operator selection.
+        if any(create_data.get(key) for key in (
+            "elis_opportunity_id", "callrail_call_id", "external_lead_id", "google_click_id", "gbraid", "wbraid",
+        )):
+            raise HTTPException(422, "Call selection cannot be combined with attribution identifiers")
+        reservation = await repair_intake_reference.reserve_originating_call(
+            tenant, current_user.id, order_data.originating_call_reference,
+        )
+        # Serialize retries of the same reserved ID inside the local transaction.
+        await db.execute(select(Tenant).where(Tenant.id == tenant.id).with_for_update())
+        existing = (await db.execute(select(RepairOrder).where(
+            RepairOrder.id == reservation.repair_order_uuid,
+            RepairOrder.tenant_id == tenant.id,
+        ))).scalar_one_or_none()
+        if existing:
+            if (existing.customer_id != order_data.customer_id or existing.vehicle_id != order_data.vehicle_id
+                    or existing.elis_opportunity_id != reservation.elis_opportunity_id
+                    or existing.callrail_call_id != reservation.callrail_call_id):
+                raise HTTPException(409, "Call selection already belongs to another repair intake")
+            return RepairOrderResponse.model_validate(existing)
+        create_data.update(id=reservation.repair_order_uuid,
+                           elis_opportunity_id=reservation.elis_opportunity_id,
+                           callrail_call_id=reservation.callrail_call_id)
+
     await ensure_vehicle_relationship(
         db,
         tenant_id=current_user.tenant_id,
@@ -575,7 +623,7 @@ async def create_repair_order(
                 bool(vehicle.bill_labor_at_customer_rate)
                 if uses_internal_pricing else False
             ),
-            **order_data.model_dump(),
+            **create_data,
         )
         db.add(repair_order)
         # Don't commit here - create_with_retry uses savepoints and handles commit
