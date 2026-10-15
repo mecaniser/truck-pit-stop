@@ -360,6 +360,10 @@ class RepairOrderResponse(RepairOrderBase):
     total_cost: Decimal
     created_at: datetime
     updated_at: datetime
+    scheduled_start_at: Optional[datetime] = None
+    promised_finish_at: Optional[datetime] = None
+    schedule_timezone: Optional[str] = None
+    is_overdue: bool = False
     work_started_at: Optional[datetime] = None
     work_completed_at: Optional[datetime] = None
     vehicle_released_at: Optional[datetime] = None

@@ -1,3 +1,4 @@
+import { formatScheduleDate, overdueSearchParams, scheduleDeadline, scheduleRefreshInterval } from './repairOrderSchedule'
 import { openChecklistOnCompletionError } from '@/features/service-checklists/queries'
 import RepairOrderEntryGate from './RepairOrderEntryGate'
 import OriginatingCallPicker from './OriginatingCallPicker'
@@ -317,22 +318,44 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
 
   // Connect to WebSocket for real-time updates (cache/status refresh only on this page).
   useWebSocket()
-  const [searchQuery, setSearchQuery] = useState('')
+  const searchQuery = searchParams.get('search') ?? ''
+  const setSearchQuery = (value: string) => setSearchParams(current => {
+    const next = new URLSearchParams(current)
+    if (value) next.set('search', value); else next.delete('search')
+    return next
+  }, { replace: true })
   const debouncedSearch = useDebouncedValue(searchQuery.trim(), 300)
-  const [statusFilter, setStatusFilter] = useState<string>('all')
+  const statusFilter = searchParams.get('status') ?? 'all'
+  const setStatusFilter = (value: string) => setSearchParams(current => {
+    const next = new URLSearchParams(current)
+    if (value === 'all') next.delete('status'); else next.set('status', value)
+    return next
+  }, { replace: true })
+  const overdue = searchParams.get('overdue') === 'true'
+  const customerFilter = searchParams.get('customer_id')
+  const vehicleFilter = searchParams.get('vehicle_id')
+  const scheduleFilters = {
+    ...(overdue ? { overdue: true } : {}),
+    ...(customerFilter ? { customer_id: customerFilter } : {}),
+    ...(vehicleFilter ? { vehicle_id: vehicleFilter } : {}),
+  }
+  const overdueRefresh = overdue ? 60_000 : false
   // Counts for the status filters. Kept with the other hooks: this component
   // returns early for the legacy presentation, so a query declared beside
   // statusOptions further down runs on only some renders.
   const statusCountsQuery = useQuery<Record<string, number>>({
-    queryKey: ['repair-orders', 'status-counts', debouncedSearch],
+    queryKey: ['repair-orders', 'status-counts', debouncedSearch, scheduleFilters, statusFilter === 'deleted'],
     queryFn: async () => (await api.get('/repair-orders/status-counts', {
-      params: { ...(debouncedSearch ? { search: debouncedSearch } : {}) },
+      params: { ...scheduleFilters, ...(statusFilter === 'deleted' ? { deleted: true } : {}), ...(debouncedSearch ? { search: debouncedSearch } : {}) },
     })).data,
     staleTime: 15_000,
+    refetchInterval: overdueRefresh,
+    refetchIntervalInBackground: false,
+    refetchOnWindowFocus: true,
     retry: false,
   })
   const statusCounts = statusCountsQuery.data
-  const queueParam = searchParams.get('queue')
+  const queueParam = overdue ? null : searchParams.get('queue')
   const workQueueLane: WorkQueueLane | null = queueParam && queueParam in DAILY_WORKBENCH_FIELD
     ? queueParam as WorkQueueLane
     : null
@@ -490,6 +513,9 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
     queryKey: ['dashboard-action-queue'],
     queryFn: async () => (await api.get('/dashboard/action-queue')).data,
     enabled: workbenchScope === 'all' && Boolean(workQueueLane && workQueueLane !== 'closed_today'),
+    refetchInterval: query => scheduleRefreshInterval([...(query.state.data?.orders_needing_action ?? []), ...(query.state.data?.orders_on_floor ?? []), ...(query.state.data?.orders_ready_to_close ?? [])]),
+    refetchIntervalInBackground: false,
+    refetchOnWindowFocus: true,
     staleTime: 60 * 1000,
   })
   const {
@@ -501,6 +527,9 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
     queryKey: ['dashboard-daily-workset'],
     queryFn: async () => (await api.get('/dashboard/daily-workset')).data,
     enabled: workbenchScope === 'daily' && Boolean(workQueueLane),
+    refetchInterval: query => scheduleRefreshInterval(query.state.data ? ['needs_attention', 'on_floor', 'ready_to_close', 'closed_today'].flatMap(key => query.state.data![key as keyof Pick<DailyWorkbench, 'needs_attention' | 'on_floor' | 'ready_to_close' | 'closed_today'>].items) : []),
+    refetchIntervalInBackground: false,
+    refetchOnWindowFocus: true,
     staleTime: 60 * 1000,
   })
   const workQueueErrorForScope = workbenchScope === 'daily' ? dailyWorkbenchError : workQueueError
@@ -519,6 +548,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
     const response = await api.get('/repair-orders', {
       signal,
       params: {
+        ...scheduleFilters,
         paginated: true,
         skip: p * RO_PAGE_SIZE,
         limit: RO_PAGE_SIZE,
@@ -533,11 +563,14 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
     return response.data as OrderPage
   }
   const ordersQuery = useInfiniteQuery({
-    queryKey: ['repair-orders', 'infinite', { search: debouncedSearch, status: statusFilter }] as const,
+    queryKey: ['repair-orders', 'infinite', { search: debouncedSearch, status: statusFilter, ...scheduleFilters }] as const,
     queryFn: ({ pageParam, signal }: { pageParam: number; signal: AbortSignal }) => fetchOrderPage(pageParam, signal),
     initialPageParam: 0,
     getNextPageParam: (last: OrderPage, all: OrderPage[]) => (last.has_more ? all.length : undefined),
     staleTime: 30_000,
+    refetchInterval: query => scheduleRefreshInterval(query.state.data?.pages.flatMap(page => page.items) ?? [], overdue),
+    refetchIntervalInBackground: false,
+    refetchOnWindowFocus: true,
     enabled: !workQueueLane,
     // The search term is part of the query key, so every keystroke that
     // settles starts a query with no cached data. Without this, isLoading goes
@@ -565,9 +598,10 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
   const totalOrders = ordersQuery.data?.pages[0]?.total ?? 0
   const loadedOrderCount = orders?.length ?? 0
   const repairOrderValueQuery = useQuery<OrderValueSummary>({
-    queryKey: ['repair-orders', 'value-summary', { search: debouncedSearch, status: statusFilter }],
+    queryKey: ['repair-orders', 'value-summary', { search: debouncedSearch, status: statusFilter, ...scheduleFilters }],
     queryFn: async () => (await api.get('/repair-orders/value-summary', {
       params: {
+        ...scheduleFilters,
         ...(statusFilter === 'deleted'
           ? { deleted: true }
           : statusFilter !== 'all'
@@ -578,6 +612,9 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
     })).data,
     enabled: presentationVariant === 'new' && !workQueueLane,
     staleTime: 15_000,
+    refetchInterval: overdueRefresh,
+    refetchIntervalInBackground: false,
+    refetchOnWindowFocus: true,
     retry: false,
   })
   const dailyValueQuery = useQuery<OrderValueSummary>({
@@ -602,7 +639,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
     const newParam = searchParams.get('new')
     if (newParam === 'true') {
       setIsModalOpen(true)
-      setSearchParams({}, { replace: true })
+      setSearchParams(current => { const next = new URLSearchParams(current); next.delete('new'); return next }, { replace: true })
     }
   }, [searchParams, setSearchParams])
 
@@ -650,8 +687,10 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
     // workset. The explicit "All orders" control is the only way to drop this
     // navigation context; a ledger click must not silently turn a lane review
     // into the unrelated global list.
-    const nextSearchParams: Record<string, string> = { selected: order.id }
-    if (workQueueLane) nextSearchParams.queue = workQueueLane
+    const nextSearchParams = new URLSearchParams(searchParams)
+    nextSearchParams.set('selected', order.id)
+    for (const key of ['customer', 'customer_vehicle', 'operation', 'recommendation']) nextSearchParams.delete(key)
+    if (workQueueLane) nextSearchParams.set('queue', workQueueLane)
     // Fresh open pushes ?selected= so Back/close return to the view underneath;
     // switching orders while open (prev/next, arrow keys) replaces the entry so
     // Back still exits to the origin instead of replaying every order viewed.
@@ -664,7 +703,11 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
       cancelOrderQueries(selectedOrder.id)
     }
     if (options?.focusWorkspace) setWorkspaceFocusRequest((request) => request + 1)
-    setSearchParams({ selected: orderId, queue: workQueueLane }, { replace: true })
+    const next = new URLSearchParams(searchParams)
+    next.set('selected', orderId)
+    next.set('queue', workQueueLane)
+    for (const key of ['customer', 'customer_vehicle', 'operation', 'recommendation']) next.delete(key)
+    setSearchParams(next, { replace: true })
   }
 
   const clearDetailState = () => {
@@ -785,8 +828,9 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
   }
 
   const showAllOrders = () => {
-    const selectedId = searchParams.get('selected')
-    setSearchParams(selectedId ? { selected: selectedId } : {}, { replace: true })
+    const next = new URLSearchParams(searchParams)
+    next.delete('queue')
+    setSearchParams(next, { replace: true })
   }
 
   // The ?selected= URL param is the source of truth for the detail panel: it
@@ -820,7 +864,11 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
       .catch(() => {
         if (cancelled) return
         toast.error("Couldn't open that repair order — it may have been deleted")
-        setSearchParams({}, { replace: true })
+        setSearchParams(current => {
+          const next = new URLSearchParams(current)
+          for (const key of ['selected', 'customer', 'customer_vehicle', 'operation', 'recommendation']) next.delete(key)
+          return next
+        }, { replace: true })
       })
     return () => {
       cancelled = true
@@ -939,6 +987,9 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
       return response.data
     },
     enabled: !!selectedOrder?.id && isDetailOpen,
+    refetchInterval: query => scheduleRefreshInterval(query.state.data ? [query.state.data] : []),
+    refetchIntervalInBackground: false,
+    refetchOnWindowFocus: true,
   })
   // Scope private detail by identity values, not the user object's reference.
   // Profile refreshes must not repeatedly replace the selected workspace.
@@ -3055,6 +3106,9 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
       technicianName: order.assigned_mechanic_id ? mechanicLookup.get(order.assigned_mechanic_id) ?? null : null,
       holdReason: order.hold_reason ?? null,
       quoteSent: order.quote_sent ?? null,
+      deadline: scheduleDeadline(order),
+      overdue: order.is_overdue,
+      scheduledStart: formatScheduleDate(order.scheduled_start_at, order.schedule_timezone),
     }
   })
 
@@ -3102,6 +3156,9 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
         technicianName: order.mechanic_name,
         holdReason: order.hold_reason,
         quoteSent: order.quote_sent,
+        deadline: scheduleDeadline(order),
+        overdue: order.is_overdue,
+        scheduledStart: formatScheduleDate(order.scheduled_start_at, order.schedule_timezone),
       }
     })
 
@@ -3147,6 +3204,12 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
             && searchQuery.trim() === debouncedSearch && !ordersQuery.isPlaceholderData}
           onSearchChange={setSearchQuery}
           onStatusChange={setStatusFilter}
+          overdue={overdue}
+          onOverdueChange={enabled => {
+            const next = overdueSearchParams(searchParams, enabled)
+            if (enabled && workbenchScope === 'daily') navigate(`/dashboard/repair-orders?${next.toString()}`)
+            else setSearchParams(next)
+          }}
           onOpenOrder={(id, options) => {
             if (isQueueWorkset) {
               openWorkQueueOrder(id, options)
@@ -4714,6 +4777,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                     orderId={selectedOrder.id}
                     workflowInfo={orderDetail ?? selectedOrder}
                     workHoldOrder={orderDetail ?? selectedOrder}
+                    schedule={orderDetail ?? selectedOrder}
                     orderStatus={(orderDetail ?? selectedOrder).status}
                     canEdit={canEditPriceBuilderByRole}
                     isInternalOrder={!!(orderDetail ?? selectedOrder).is_internal}

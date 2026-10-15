@@ -6,7 +6,7 @@ Last updated: 2026-10-15. Program owner: Product & Delivery Lead. Discovery inve
 
 ## Approved delivery order
 
-**R1 → P1 → C1 → M1 → B1 → A1.** A1 is last in this selected wave. The other 23 items remain retained backlog, not silently discarded or automatically selected.
+**R1 → P1 → C1 → M1 → B1 → A1.** A1 is last in this selected wave. The other 23 items remain in the delivery backlog after this priority wave; retain every discovery and refine their order when the priority wave closes.
 
 ## Operating rules
 
@@ -21,7 +21,7 @@ Last updated: 2026-10-15. Program owner: Product & Delivery Lead. Discovery inve
 ## Selected outcomes
 
 - [ ] **R1 — Scheduled start, promised finish and an overdue queue**
-  - Status: **In progress — contract and runtime alignment**. Board: **DB-131**. Owner: Backend & Integrations.
+  - Status: **In progress — implementation and local acceptance**. Board: **DB-131**. Owner: Backend & Integrations.
   - Evidence: [R1 verification receipt](verification/DB131_REPAIR_ORDER_SCHEDULING.md).
 - [ ] **P1 — Cost-based parts markup matrices with minimum price and locked-price rules**
   - Status: **Queued**. Board: **DB-132**. Owner: Backend & Integrations.
@@ -43,29 +43,29 @@ Dependencies: P1 precedes C1 parts-price defaults. M1 must retain existing PM/te
 
 ## Retained backlog
 
-- [ ] **R2 — Repeat or selectively copy a prior repair order/estimate** — Backlog; not yet selected. Relative value/size: Medium / M. See audit for evidence and dependencies.
-- [ ] **R3 — Defer an existing operation into tracked recommended work** — Backlog; not yet selected. Relative value/size: High / L. See audit for evidence and dependencies.
-- [ ] **R4 — Signed authorization attached to the exact estimate revision** — Backlog; not yet selected. Relative value/size: High / L. See audit for evidence and dependencies.
-- [ ] **R5 — Operation/issue findings with linked photos and a customer-ready report** — Backlog; not yet selected. Relative value/size: Medium / L. See audit for evidence and dependencies.
-- [ ] **R6 — Structured arrival and handover details: parking, key location, arrival condition** — Backlog; not yet selected. Relative value/size: Medium / S–M. See audit for evidence and dependencies.
-- [ ] **C2 — Customer groups with directory/report filters** — Backlog; not yet selected. Relative value/size: Medium / M. See audit for evidence and dependencies.
-- [ ] **C3 — Truck issues and follow-up work recorded without opening an RO** — Backlog; not yet selected. Relative value/size: High / M–L. See audit for evidence and dependencies.
-- [ ] **C4 — Customer payment terms, credit limits and review warnings** — Backlog; not yet selected. Relative value/size: High / L. See audit for evidence and dependencies.
-- [ ] **S1 — Capacity-aware appointment and dispatch calendar** — Backlog; not yet selected. Relative value/size: High / L. See audit for evidence and dependencies.
-- [ ] **S2 — Reusable fees: flat, percent, capped and quantity-based** — Backlog; not yet selected. Relative value/size: High / M–L. See audit for evidence and dependencies.
-- [ ] **S3 — Shared tags and saved work queues** — Backlog; not yet selected. Relative value/size: Medium / M. See audit for evidence and dependencies.
-- [ ] **S4 — Invoice and contact results in global shop search** — Backlog; not yet selected. Relative value/size: Medium / M. See audit for evidence and dependencies.
-- [ ] **P2 — Canonical part aliases and interchangeable alternatives** — Backlog; not yet selected. Relative value/size: High / M–L. See audit for evidence and dependencies.
-- [ ] **P3 — Purchase-order freight, tax, discounts and other expenses** — Backlog; not yet selected. Relative value/size: High / M–L. See audit for evidence and dependencies.
-- [ ] **P4 — Scan a vendor invoice into a purchase-order draft** — Backlog; not yet selected. Relative value/size: Medium / L. See audit for evidence and dependencies.
-- [ ] **P5 — Formal cycle counts with optional barcode scanning** — Backlog; not yet selected. Relative value/size: Medium / L. See audit for evidence and dependencies.
-- [ ] **P6 — Accurate bulk-fluid and package-to-dispensed-unit stock** — Backlog; not yet selected. Relative value/size: High if dispensing fluids / L. See audit for evidence and dependencies.
-- [ ] **M2 — Shop inspection findings and a versioned inspection report** — Backlog; not yet selected. Relative value/size: Medium–High when sold by shop / L. See audit for evidence and dependencies.
-- [ ] **B2 — Repair-order deposits before the invoice is issued** — Backlog; not yet selected. Relative value/size: High / L. See audit for evidence and dependencies.
-- [ ] **B3 — One fleet remittance allocated across multiple invoices** — Backlog; not yet selected. Relative value/size: High for fleet billing / L. See audit for evidence and dependencies.
-- [ ] **A2 — Work-in-progress aging and delay bottlenecks** — Backlog; not yet selected. Relative value/size: High / M. See audit for evidence and dependencies.
-- [ ] **A3 — Deferred-work conversion and follow-up value** — Backlog; not yet selected. Relative value/size: Medium / M. See audit for evidence and dependencies.
-- [ ] **A4 — Inventory velocity, dead stock and purchasing priorities** — Backlog; not yet selected. Relative value/size: Medium / M–L. See audit for evidence and dependencies.
+- [ ] **R2 — Repeat or selectively copy a prior repair order/estimate** — Backlog; after the priority wave. Relative value/size: Medium / M. See audit for evidence and dependencies.
+- [ ] **R3 — Defer an existing operation into tracked recommended work** — Backlog; after the priority wave. Relative value/size: High / L. See audit for evidence and dependencies.
+- [ ] **R4 — Signed authorization attached to the exact estimate revision** — Backlog; after the priority wave. Relative value/size: High / L. See audit for evidence and dependencies.
+- [ ] **R5 — Operation/issue findings with linked photos and a customer-ready report** — Backlog; after the priority wave. Relative value/size: Medium / L. See audit for evidence and dependencies.
+- [ ] **R6 — Structured arrival and handover details: parking, key location, arrival condition** — Backlog; after the priority wave. Relative value/size: Medium / S–M. See audit for evidence and dependencies.
+- [ ] **C2 — Customer groups with directory/report filters** — Backlog; after the priority wave. Relative value/size: Medium / M. See audit for evidence and dependencies.
+- [ ] **C3 — Truck issues and follow-up work recorded without opening an RO** — Backlog; after the priority wave. Relative value/size: High / M–L. See audit for evidence and dependencies.
+- [ ] **C4 — Customer payment terms, credit limits and review warnings** — Backlog; after the priority wave. Relative value/size: High / L. See audit for evidence and dependencies.
+- [ ] **S1 — Capacity-aware appointment and dispatch calendar** — Backlog; after the priority wave. Relative value/size: High / L. See audit for evidence and dependencies.
+- [ ] **S2 — Reusable fees: flat, percent, capped and quantity-based** — Backlog; after the priority wave. Relative value/size: High / M–L. See audit for evidence and dependencies.
+- [ ] **S3 — Shared tags and saved work queues** — Backlog; after the priority wave. Relative value/size: Medium / M. See audit for evidence and dependencies.
+- [ ] **S4 — Invoice and contact results in global shop search** — Backlog; after the priority wave. Relative value/size: Medium / M. See audit for evidence and dependencies.
+- [ ] **P2 — Canonical part aliases and interchangeable alternatives** — Backlog; after the priority wave. Relative value/size: High / M–L. See audit for evidence and dependencies.
+- [ ] **P3 — Purchase-order freight, tax, discounts and other expenses** — Backlog; after the priority wave. Relative value/size: High / M–L. See audit for evidence and dependencies.
+- [ ] **P4 — Scan a vendor invoice into a purchase-order draft** — Backlog; after the priority wave. Relative value/size: Medium / L. See audit for evidence and dependencies.
+- [ ] **P5 — Formal cycle counts with optional barcode scanning** — Backlog; after the priority wave. Relative value/size: Medium / L. See audit for evidence and dependencies.
+- [ ] **P6 — Accurate bulk-fluid and package-to-dispensed-unit stock** — Backlog; after the priority wave. Relative value/size: High if dispensing fluids / L. See audit for evidence and dependencies.
+- [ ] **M2 — Shop inspection findings and a versioned inspection report** — Backlog; after the priority wave. Relative value/size: Medium–High when sold by shop / L. See audit for evidence and dependencies.
+- [ ] **B2 — Repair-order deposits before the invoice is issued** — Backlog; after the priority wave. Relative value/size: High / L. See audit for evidence and dependencies.
+- [ ] **B3 — One fleet remittance allocated across multiple invoices** — Backlog; after the priority wave. Relative value/size: High for fleet billing / L. See audit for evidence and dependencies.
+- [ ] **A2 — Work-in-progress aging and delay bottlenecks** — Backlog; after the priority wave. Relative value/size: High / M. See audit for evidence and dependencies.
+- [ ] **A3 — Deferred-work conversion and follow-up value** — Backlog; after the priority wave. Relative value/size: Medium / M. See audit for evidence and dependencies.
+- [ ] **A4 — Inventory velocity, dead stock and purchasing priorities** — Backlog; after the priority wave. Relative value/size: Medium / M–L. See audit for evidence and dependencies.
 
 ## Current implementation: R1 / DB-131
 
@@ -79,4 +79,4 @@ Acceptance before editing application code:
 - No appointment/resource calendar, customer sends, billing, payment, technician time or completion mutation side effects.
 - Additive migration/rollback proof, focused backend/frontend tests, independent QA/security appropriate to schema/tenant boundaries, protected CI and deployed acceptance.
 
-Branch: `codex/ets-repair-order-scheduling`. Contract: `docs/contracts/db131-repair-order-scheduling.md` (Architecture in progress). PR, merge and deployment: not yet created.
+Branch: `codex/ets-repair-order-scheduling`. Contract: `docs/contracts/db131-repair-order-scheduling.md` (approved). PR, merge and deployment: not yet created.

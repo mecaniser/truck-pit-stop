@@ -1,3 +1,4 @@
+import './repairOrderSchedule.css'
 import { useEffect, useId, useRef, useState } from 'react'
 import { ChevronDown, ChevronRight, Plus } from 'lucide-react'
 import { StaffSearchField } from '@/components/ui'
@@ -21,6 +22,9 @@ export type RepairOrdersLedgerRow = {
   technicianName?: string | null
   holdReason?: string | null
   quoteSent?: boolean | null
+  deadline?: string | null
+  overdue?: boolean
+  scheduledStart?: string | null
 }
 
 export default function RepairOrdersLedger({
@@ -52,6 +56,8 @@ export default function RepairOrdersLedger({
   valueSummaryLoading = false,
   valueSummaryError = false,
   valueSummaryLabel = 'Filtered order value',
+  overdue = false,
+  onOverdueChange,
 }: {
   rows: RepairOrdersLedgerRow[]
   totalOrders: number
@@ -83,10 +89,12 @@ export default function RepairOrdersLedger({
   valueSummary?: { order_count: number; order_value: string } | null
   valueSummaryLoading?: boolean
   valueSummaryError?: boolean
+  overdue?: boolean
+  onOverdueChange?: (enabled: boolean) => void
   valueSummaryLabel?: string
 }) {
   const queueLabel = !compact && queueOrigin ? REPAIR_ORDERS_QUEUE_LABEL[queueOrigin] : null
-  const filtered = Boolean(searchQuery || statusFilter !== 'all')
+  const filtered = Boolean(searchQuery || statusFilter !== 'all' || overdue)
   const [scopeMenuOpen, setScopeMenuOpen] = useState(false)
   const scopeControlRef = useRef<HTMLDivElement>(null)
   const scopeTriggerRef = useRef<HTMLButtonElement>(null)
@@ -268,6 +276,8 @@ export default function RepairOrdersLedger({
         )}
       </div>
 
+      {onOverdueChange && <div className="flex shrink-0 justify-end pb-1"><button type="button" className="db-order-overdue-filter" aria-pressed={overdue} onClick={() => onOverdueChange(!overdue)}>{queueOrigin || compact && !overdue ? 'All overdue work' : 'Overdue'}</button></div>}
+
       <section
         className={`db-repair-orders-ledger${compact ? ' db-repair-orders-ledger--compact' : ''}`}
         aria-label="Repair order ledger"
@@ -359,6 +369,8 @@ export default function RepairOrdersLedger({
               const isBriefOpen = expandedBriefId === row.id && !isOpenInWorkspace
               const isBriefMounted = mountedBriefId === row.id && !isOpenInWorkspace
               const briefFacts = [
+                row.scheduledStart ? { label: 'Scheduled start', value: row.scheduledStart } : null,
+                row.deadline ? { label: 'Promised finish', value: row.deadline } : null,
                 row.internal ? { label: 'Order type', value: 'Internal fleet' } : null,
                 row.technicianName ? { label: 'Technician', value: row.technicianName } : null,
                 row.holdReason ? { label: 'Hold', value: row.holdReason } : null,
@@ -383,6 +395,7 @@ export default function RepairOrdersLedger({
                     <button
                       type="button"
                       className="db-repair-orders-ledger__record"
+                      data-has-deadline={!!row.deadline || undefined}
                       aria-label={`Open repair order ${row.orderNumber}`}
                       aria-current={isOpenInWorkspace ? 'true' : undefined}
                       onKeyDown={(event) => {
@@ -409,8 +422,9 @@ export default function RepairOrdersLedger({
                       {requestOnRow && <span className="db-repair-orders-ledger__work">{row.description}</span>}
                       <span className="db-repair-orders-ledger__money">
                         <strong>{row.total}</strong>
-                        <small>{row.updated}</small>
+                        {!row.deadline && <small>{row.updated}</small>}
                       </span>
+                      {row.deadline && <span className="db-order-schedule-deadline db-order-schedule-ledger-date" data-overdue={row.overdue || undefined} title={row.deadline}>{row.deadline}</span>}
                     </button>
                     {!isOpenInWorkspace && <button
                       type="button"

@@ -52,3 +52,16 @@ An item is Done only when its acceptance criteria are met and the board records:
   data changes;
 - branch, pull request, and merge/deploy evidence as applicable;
 - no unresolved blocker or required follow-up hidden in the completion note.
+
+## ETS parity tracking
+
+For ETS parity work, read `docs/ETS_PARITY_TRACKER.md` before selecting or
+resuming implementation. It preserves all audit IDs and the user-approved
+sequence. Keep it synchronized with `docs/PROJECT_BOARD.md` and each item's
+verification receipt at intake, gate failure, merge, deployment and acceptance.
+
+Check an outcome complete only when its required tests, independent gates,
+protected CI, merge/deployment and actual production acceptance are recorded.
+Then advance to the next selected item; retain remaining discoveries in the
+backlog. Do not equate implementation or green CI with Done, silently skip a
+blocker, or renumber discoveries.
