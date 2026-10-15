@@ -2,7 +2,7 @@
 
 Last updated: 2026-10-15. Program owner: Product & Delivery Lead. Discovery inventory: [audit and evidence](ETS_PARITY_BACKLOG_2026-10-15.md). Delivery history: [PROJECT_BOARD](PROJECT_BOARD.md).
 
-**Progress: 0/29 completed; 0/6 selected outcomes completed. Current: R1. Next: P1.**
+**Progress: 1/29 completed; 1/6 selected outcomes completed. Current: P1. Next: C1.**
 
 ## Approved delivery order
 
@@ -20,12 +20,12 @@ Last updated: 2026-10-15. Program owner: Product & Delivery Lead. Discovery inve
 
 ## Selected outcomes
 
-- [ ] **R1 — Scheduled start, promised finish and an overdue queue**
-  - Status: **Review — local acceptance complete; CI pending**. Board: **DB-131**. Owner: Backend & Integrations.
+- [x] **R1 — Scheduled start, promised finish and an overdue queue**
+  - Status: **Done — merged, deployed and production verified**. Board: **DB-131**. Owner: Backend & Integrations.
   - Evidence: [R1 verification receipt](verification/DB131_REPAIR_ORDER_SCHEDULING.md).
 - [ ] **P1 — Cost-based parts markup matrices with minimum price and locked-price rules**
-  - Status: **Queued**. Board: **DB-132**. Owner: Backend & Integrations.
-  - Evidence: Not started.
+  - Status: **In progress — contract intake; application implementation not yet started**. Board: **DB-132**. Owner: Backend & Integrations.
+  - Evidence: [P1 contract](contracts/db132-parts-pricing-matrix.md); [intake receipt](verification/DB132_PARTS_PRICING_MATRIX.md).
 - [ ] **C1 — Customer-specific labor rates and parts pricing defaults**
   - Status: **Queued**. Board: **DB-133**. Owner: Backend & Integrations.
   - Evidence: Not started.
@@ -67,7 +67,7 @@ Dependencies: P1 precedes C1 parts-price defaults. M1 must retain existing PM/te
 - [ ] **A3 — Deferred-work conversion and follow-up value** — Backlog; after the priority wave. Relative value/size: Medium / M. See audit for evidence and dependencies.
 - [ ] **A4 — Inventory velocity, dead stock and purchasing priorities** — Backlog; after the priority wave. Relative value/size: Medium / M–L. See audit for evidence and dependencies.
 
-## Current implementation: R1 / DB-131
+## Completed: R1 / DB-131
 
 Outcome: staff can set an intended start and promised finish, see approaching/overdue work, and act from a filtered queue. These timestamps are distinct from appointment time, invoice due date and actual work timestamps.
 
@@ -79,4 +79,16 @@ Acceptance before editing application code:
 - No appointment/resource calendar, customer sends, billing, payment, technician time or completion mutation side effects.
 - Additive migration/rollback proof, focused backend/frontend tests, independent QA/security appropriate to schema/tenant boundaries, protected CI and deployed acceptance.
 
-Branch: `codex/ets-repair-order-scheduling`. Contract: `docs/contracts/db131-repair-order-scheduling.md` (approved). PR: [538](https://github.com/mecaniser/truck-pit-stop/pull/538). Merge and deployment pending.
+Branch: `codex/ets-repair-order-scheduling`. Contract: `docs/contracts/db131-repair-order-scheduling.md` (approved). PR: [538](https://github.com/mecaniser/truck-pit-stop/pull/538) merged as `7b3dc4b30a52e6880580f1511716afc38dbd1ba2` on 2026-10-15. All six protected checks passed on `21546789`; merged tree is identical. Exact Web/Worker and schema173 verified; production Light/Night desktop,390/320 portrait and740 landscape accepted; independent closure GO. Synthetic baseline restored.
+
+## Current implementation: P1 / DB-132
+
+Accountable: Backend & Integrations. Branch: `codex/ets-parts-pricing-matrix` from R1 merge `7b3dc4b3`. Intake begins after R1 closure. Prepared Architecture contract and integration maps have been refreshed against the identical merged application tree; application implementation, tests, independent gates and release remain ahead.
+
+Acceptance before editing application code:
+- Owner/admin can define and preview cost-band markup, optional pricing-cost basis floor, minimum sale price and fixed catalog pricing, with explicit activation and no guessed defaults.
+- One Decimal resolver covers new external RO/service/PM/counter-sale attachments; internal fleet remains actual cost. Retained lines, quantity edits and issued financial records preserve their existing snapshots and prices.
+- Immutable revision/line provenance, audited authorized overrides and tenant/role/concurrency boundaries prevent silent repricing or cost-data leakage.
+- Compact existing price/inventory controls; complete Light/Night desktop/mobile journeys, negative/tenant/concurrency tests, independent QA/Security, protected CI and exact production release evidence before Done.
+
+See [contract](contracts/db132-parts-pricing-matrix.md) for full scope, writer coverage, locking, inactive defaults and safe production verification limits. No P1 application changes or production pricing settings have been applied.
