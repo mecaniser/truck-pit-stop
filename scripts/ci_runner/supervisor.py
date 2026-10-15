@@ -60,7 +60,7 @@ def destroy(name):
 
 def cycle(name):
     destroy(name)
-    command(['limactl', 'clone', BASE, name, '--mount-none', '-y'], timeout=180)
+    command(['limactl', 'clone', BASE, name, '--mount-none', '--ssh-port=0', '-y'], timeout=180)
     command(['limactl', 'start', '-y', name], timeout=180)
     # No job can start unless the root-owned firewall is active and identity is safe.
     guest(name, 'sudo', 'nft', 'list', 'table', 'inet', 'ci_isolation')
@@ -68,7 +68,7 @@ def cycle(name):
     token = api(f'repos/{REPO}/actions/runners/registration-token', 'POST')['token']
     configure = '''set -eu
 cd /opt/actions-runner
-export VSTS_AGENT_INPUT_TOKEN="$(cat)"
+export ACTIONS_RUNNER_INPUT_TOKEN="$(cat)"
 ./config.sh --unattended --ephemeral --url https://github.com/''' + REPO + ''' --name ''' + name + ''' --labels ''' + LABEL + ''' --work _work
 '''
     # Token sent only over SSH stdin, not command-line args, files, or logs.

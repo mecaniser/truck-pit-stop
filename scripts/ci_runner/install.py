@@ -21,7 +21,7 @@ settings = {
     'EnvironmentVariables': {'PATH': str(Path(shutil.which('gh')).parent) + ':/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin'},
     'WorkingDirectory': str(root),
     'RunAtLoad': True, 'KeepAlive': True, 'ThrottleInterval': 30,
-    'ExitTimeOut': 120, 'ProcessType': 'Background',
+    'ExitTimeOut': 120, 'ProcessType': 'Standard',
     'StandardOutPath': str(root / 'supervisor.log'),
     'StandardErrorPath': str(root / 'supervisor.log'),
 }
