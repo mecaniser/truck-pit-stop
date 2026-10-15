@@ -1,0 +1,301 @@
+{
+  "checked_at_utc": "2026-10-15T22:41:42.411857+00:00",
+  "environment": "Preserved local Performance Lab preview only",
+  "read_only_transaction": true,
+  "orders": [
+    {
+      "id": "dd2a606d-1500-4456-8eb0-9997553fd76c",
+      "order_number": "PERF-295757AF-000006",
+      "deleted_at": "2026-10-15 22:24:55.660340+00:00",
+      "status": "draft",
+      "work_completed_at": null,
+      "vehicle_released_at": null,
+      "pricing_locked_at": null
+    },
+    {
+      "id": "1769a531-11e7-4467-8699-ff31fbf7029c",
+      "order_number": "PERF-295757AF-000007",
+      "deleted_at": "2026-10-15 22:23:54.694042+00:00",
+      "status": "draft",
+      "work_completed_at": null,
+      "vehicle_released_at": null,
+      "pricing_locked_at": null
+    },
+    {
+      "id": "cfe7686c-0eb3-47bb-ada7-0b2dc7080a9d",
+      "order_number": "PERF-295757AF-000008",
+      "deleted_at": "2026-10-15 22:30:08.806508+00:00",
+      "status": "draft",
+      "work_completed_at": null,
+      "vehicle_released_at": null,
+      "pricing_locked_at": null
+    },
+    {
+      "id": "4eebdd0d-d263-4abc-a99d-8b307850badd",
+      "order_number": "PERF-295757AF-000009",
+      "deleted_at": "2026-10-15 22:32:58.308520+00:00",
+      "status": "draft",
+      "work_completed_at": null,
+      "vehicle_released_at": null,
+      "pricing_locked_at": null
+    },
+    {
+      "id": "6e888f0d-726d-40d8-9b4b-4fdcdc3f0ff2",
+      "order_number": "PERF-295757AF-000010",
+      "deleted_at": "2026-10-15 22:39:19.469887+00:00",
+      "status": "draft",
+      "work_completed_at": null,
+      "vehicle_released_at": null,
+      "pricing_locked_at": null
+    },
+    {
+      "id": "652cf9b9-6892-4309-95f3-e851e1f51fc3",
+      "order_number": "PERF-295757AF-000011",
+      "deleted_at": "2026-10-15 22:40:12.881194+00:00",
+      "status": "draft",
+      "work_completed_at": null,
+      "vehicle_released_at": null,
+      "pricing_locked_at": null
+    }
+  ],
+  "active_reservation_rows": 0,
+  "stock_movements": [
+    {
+      "repair_order_id": "1769a531-11e7-4467-8699-ff31fbf7029c",
+      "inventory_id": "a9d420c7-7678-43d5-a645-5d77fbd948d0",
+      "net_stock_delta": 0,
+      "reserved_packages": 1,
+      "released_packages": 1
+    },
+    {
+      "repair_order_id": "4eebdd0d-d263-4abc-a99d-8b307850badd",
+      "inventory_id": "3bc0ecf0-b8c7-4973-90fd-c014afbcc99a",
+      "net_stock_delta": 0,
+      "reserved_packages": 2,
+      "released_packages": 2
+    },
+    {
+      "repair_order_id": "652cf9b9-6892-4309-95f3-e851e1f51fc3",
+      "inventory_id": "a9d420c7-7678-43d5-a645-5d77fbd948d0",
+      "net_stock_delta": 0,
+      "reserved_packages": 1,
+      "released_packages": 1
+    },
+    {
+      "repair_order_id": "cfe7686c-0eb3-47bb-ada7-0b2dc7080a9d",
+      "inventory_id": "3bc0ecf0-b8c7-4973-90fd-c014afbcc99a",
+      "net_stock_delta": 0,
+      "reserved_packages": 2,
+      "released_packages": 2
+    },
+    {
+      "repair_order_id": "dd2a606d-1500-4456-8eb0-9997553fd76c",
+      "inventory_id": "002b72e2-5dbc-47b3-a2f5-a135cc1215a3",
+      "net_stock_delta": 0,
+      "reserved_packages": 1,
+      "released_packages": 1
+    },
+    {
+      "repair_order_id": "dd2a606d-1500-4456-8eb0-9997553fd76c",
+      "inventory_id": "0039851b-8dc4-4487-b529-712375c01663",
+      "net_stock_delta": 0,
+      "reserved_packages": 1,
+      "released_packages": 1
+    },
+    {
+      "repair_order_id": "dd2a606d-1500-4456-8eb0-9997553fd76c",
+      "inventory_id": "3bc0ecf0-b8c7-4973-90fd-c014afbcc99a",
+      "net_stock_delta": 0,
+      "reserved_packages": 3,
+      "released_packages": 3
+    },
+    {
+      "repair_order_id": "dd2a606d-1500-4456-8eb0-9997553fd76c",
+      "inventory_id": "a9d420c7-7678-43d5-a645-5d77fbd948d0",
+      "net_stock_delta": 0,
+      "reserved_packages": 2,
+      "released_packages": 2
+    }
+  ],
+  "financial_and_completion_artifact_counts": {
+    "quotes": 0,
+    "invoices": 0,
+    "payments": 0,
+    "invoice_settlements": 0,
+    "invoice_payment_attempts": 0,
+    "invoice_payment_ledger_events": 0,
+    "invoice_charge_adjustments": 0,
+    "completed_operations": 0
+  },
+  "pricing_default": {
+    "default_matrix_id": null,
+    "generation": 2
+  },
+  "matrix": {
+    "id": "e76e124b-276f-4f77-8320-b0b442208f7e",
+    "archived_at": "2026-10-15 22:26:56.455501+00:00",
+    "version": 6
+  },
+  "inventory": [
+    {
+      "sku": "PERF-PART-0001",
+      "stock_quantity": 102,
+      "cost": "26.00",
+      "selling_price": "56.00",
+      "core_charge": "0.00",
+      "pricing_cost_floor": null,
+      "minimum_sale_price": null,
+      "fixed_sales_price": false,
+      "stock_value": "2652.00",
+      "baseline": {
+        "stock_quantity": "102",
+        "cost": "26.00",
+        "selling_price": "56.00",
+        "core_charge": "0.00"
+      },
+      "matches_pre_migration_backup": true
+    },
+    {
+      "sku": "PERF-PART-0002",
+      "stock_quantity": 102,
+      "cost": "27.00",
+      "selling_price": "57.00",
+      "core_charge": "0.00",
+      "pricing_cost_floor": null,
+      "minimum_sale_price": null,
+      "fixed_sales_price": false,
+      "stock_value": "2754.00",
+      "baseline": {
+        "stock_quantity": "102",
+        "cost": "27.00",
+        "selling_price": "57.00",
+        "core_charge": "0.00"
+      },
+      "matches_pre_migration_backup": true
+    },
+    {
+      "sku": "PERF-PART-0003",
+      "stock_quantity": 104,
+      "cost": "28.00",
+      "selling_price": "58.00",
+      "core_charge": "0.00",
+      "pricing_cost_floor": null,
+      "minimum_sale_price": null,
+      "fixed_sales_price": false,
+      "stock_value": "2912.00",
+      "baseline": {
+        "stock_quantity": "104",
+        "cost": "28.00",
+        "selling_price": "58.00",
+        "core_charge": "0.00"
+      },
+      "matches_pre_migration_backup": true
+    },
+    {
+      "sku": "PERF-PART-0004",
+      "stock_quantity": 105,
+      "cost": "29.00",
+      "selling_price": "59.00",
+      "core_charge": "0.00",
+      "pricing_cost_floor": null,
+      "minimum_sale_price": null,
+      "fixed_sales_price": false,
+      "stock_value": "3045.00",
+      "baseline": {
+        "stock_quantity": "105",
+        "cost": "29.00",
+        "selling_price": "59.00",
+        "core_charge": "0.00"
+      },
+      "matches_pre_migration_backup": true
+    },
+    {
+      "sku": "PERF-PART-0005",
+      "stock_quantity": 104,
+      "cost": "30.00",
+      "selling_price": "60.00",
+      "core_charge": "0.00",
+      "pricing_cost_floor": null,
+      "minimum_sale_price": null,
+      "fixed_sales_price": false,
+      "stock_value": "3120.00",
+      "baseline": {
+        "stock_quantity": "104",
+        "cost": "30.00",
+        "selling_price": "60.00",
+        "core_charge": "0.00"
+      },
+      "matches_pre_migration_backup": true
+    },
+    {
+      "sku": "PERF-PART-0006",
+      "stock_quantity": 106,
+      "cost": "31.00",
+      "selling_price": "61.00",
+      "core_charge": "0.00",
+      "pricing_cost_floor": null,
+      "minimum_sale_price": null,
+      "fixed_sales_price": false,
+      "stock_value": "3286.00",
+      "baseline": {
+        "stock_quantity": "106",
+        "cost": "31.00",
+        "selling_price": "61.00",
+        "core_charge": "0.00"
+      },
+      "matches_pre_migration_backup": true
+    }
+  ],
+  "service": {
+    "id": "38a9a893-e3a7-4df4-9701-c52c78e00476",
+    "is_active": false,
+    "deleted_at": null,
+    "updated_at": "2026-10-15 22:40:27.665667+00:00"
+  },
+  "retained_ad_hoc": [
+    {
+      "inventory_id": "990885d0-b6ed-494f-877c-ef14b9d0efa3",
+      "sku": "ADHOC-D6899C9EC5",
+      "is_placeholder": true,
+      "stock_quantity": 0,
+      "deleted_at": null,
+      "ets_retired_at": null,
+      "usage_id": "11ac22b3-e0cb-407e-954b-518b65a37ca1",
+      "saved_actual_unit_cost": null,
+      "saved_charge": "12.50",
+      "actual_cost_known": "false",
+      "pricing_source": "ad_hoc",
+      "order_deleted_at": "2026-10-15 22:24:55.660340+00:00"
+    }
+  ],
+  "baseline_source": "Read-only pg_restore extraction of inventory table from db132-local-before-migration.dump; no database restore executed.",
+  "retained_ad_hoc_disposition": "Intentionally retained recoverable zero-stock placeholder. Saved usage actual cost remains NULL and charge 12.50; parent order is soft-deleted. No supported per-item archive mutation API exists in current source; no bulk clear or direct data mutation was used.",
+  "checks": {
+    "six_qa_orders_soft_deleted": true,
+    "no_completion_release_or_price_lock": true,
+    "no_active_reservations": true,
+    "all_qa_reservation_movements_balanced": true,
+    "no_linked_financial_or_completion_artifacts": true,
+    "matrix_archived_default_cleared": true,
+    "original_stock_cost_catalog_core_values_preserved": true,
+    "part_policies_restored": true,
+    "synthetic_service_inactive": true,
+    "recoverable_placeholder_has_no_stock_and_keeps_unknown_actual_cost": true,
+    "cancelled_wizard_order_empty_retry_order_single_bundle": true
+  },
+  "all_checks_passed": true,
+  "final_wizard_cancel_retry_orders": [
+    {
+      "order_number": "PERF-295757AF-000010",
+      "total_cost": "0.00",
+      "saved_labor_rows": 0,
+      "saved_parts_rows": 0
+    },
+    {
+      "order_number": "PERF-295757AF-000011",
+      "total_cost": "95.25",
+      "saved_labor_rows": 1,
+      "saved_parts_rows": 1
+    }
+  ]
+}

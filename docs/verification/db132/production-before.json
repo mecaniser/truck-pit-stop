@@ -1,0 +1,1 @@
+{"migration": "173_repair_order_schedule", "pricing_tables": [], "baseline_order": [{"id": "bce9b62b-a7e3-4ba9-a740-6ced6857e9b3", "order_number": "TPS-828ACD84-000056", "status": "in_progress", "total_parts_cost": "0.00", "total_labor_cost": "0.00", "total_cost": "0.00", "deleted_at": "2026-10-15 19:56:49.214269+00:00"}]}

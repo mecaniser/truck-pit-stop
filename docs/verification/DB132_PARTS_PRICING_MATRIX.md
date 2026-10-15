@@ -1,6 +1,14 @@
 # DB132 / P1 parts pricing matrix
 
-Accountable: Backend & Integrations. State: **Review — PR542 CI and final responsive correction**. Selected second in the [parity tracker](../ETS_PARITY_TRACKER.md), after R1 production closure.
+Accountable: Backend & Integrations. State: **Review — local acceptance complete; final CI and release pending**. Selected second in the [parity tracker](../ETS_PARITY_TRACKER.md), after R1 production closure.
+
+## Current result
+
+Independent local QA and Security approved application candidate `d94133a0`. All13 review findings are closed. Independent runs passed269 affected backend tests,269 focused frontend tests and12 PostgreSQL boundary/concurrency tests. TypeScript and changed-source lint passed.
+
+Actual local Light/Night desktop and browser-emulated mobile checks cover matrix configuration, saved-price retention, part policies, manual/List/Stock edits, bundle attachment, create-once service recovery and readable fleet quantity controls. Six synthetic orders were soft-deleted; stock, policies, default and service availability returned to baseline. One zero-stock ad-hoc placeholder remains as recoverable local evidence. Restricted-role and counter-sale journeys have automated coverage; they are not claimed as authenticated UI passes.
+
+**Still required:** all six CI contexts on the final revision, protected merge, migration174 and exact service deployment, then authenticated production desktop/mobile acceptance. Production pricing remains inactive unless a shop owner explicitly configures it.
 
 ## Scope and acceptance
 [Architecture contract](../contracts/db132-parts-pricing-matrix.md) defines acceptance, writer coverage, privacy, tenant/concurrency boundaries and production verification limits. Reuse existing inventory settings and price controls; preserve compact desktop and complete mobile journeys. No existing prices, inventory valuation, financial records or shop defaults change merely from deployment.
@@ -112,3 +120,9 @@ Independent finding13 reproduced from the original390 screenshot and source: rec
 Nightfixture000010/6e888f0d-726d-40d8-9b4b-4fdcdc3f0ff2: cancelreview, close→ledgernotice, Retry reopenssameorder, cancel, Keepcurrent clearsnotice andretainsidentity. Lightfixture000011/652cf9b9-6892-4309-95f3-e851e1f51fc3: cancelreview, visiblefooter, Retry→Confirm savesone15minuteoperation+59part/95.25sameorder. Bothsoftdeleted. Fixedpolicy0004clearedagain, serviceinactive/autosavechecked, originalNightrestorationnext; freshcleanup receipt supersedes22:34checkpoint. Noquote/invoice/payment/completion.
 
 Owner269focusedfrontend (previous226plusrecovery/ledger),TypeScript,differentiallintpass. Independent269rerun andfinalcleanup gate pending. Backendsource unchanged fromindependentlyreviewed candidate. ProtectedCI mustrerun onthisfinal correction; olderpasses/cancellations are notfinalapproval.
+
+## Final local teardown — 22:41 UTC
+
+[Read-only cleanup receipt](db132/local-cleanup.json) verifies all11 invariants: sixQAorders000006–000011softdeleted,13reserved/13released/netzero,0activereservations,0quotes/invoices/payment/completionartifacts. Allsixinventoryquantities/costs/catalog/corevalues equalpre174backup. Matrixarchived/defaultNULL;policiesreset;serviceinactive. Onezero-stock unknown-cost ad-hocplaceholderretainedlocallyforrecoverableevidence. OriginalNightappearance saveconfirmed. Local QA isfinished; nofurtherfixturemutationplanned.
+
+Mainadvancedwith unrelatedPR54113d5c867; mergedas d94133a0 preservingbothboardentries, P1applicationmatchesfacf1482. Productionbaseline at173hasnoneofthenewpricingtables; selecteddeletedQAorderTPS-828ACD84-000056remains0.00/in_progress/deleted. Production hasnoP1activation. FinalindependentGO/protectedCI/release stillseparate.
