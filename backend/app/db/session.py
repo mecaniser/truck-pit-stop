@@ -21,6 +21,7 @@ def build_engine_options(url: str) -> dict:
     """Return driver-safe engine options for the configured database URL."""
     options: dict = {
         "echo": False,
+        "hide_parameters": True,
         "future": True,
         "pool_pre_ping": settings.DATABASE_POOL_PRE_PING,
     }
