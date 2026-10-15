@@ -34,3 +34,15 @@ Implementation: ets-checkpoint-merge, codex/vehicle-history-search, base30758c96
 [PR525](https://github.com/mecaniser/truck-pit-stop/pull/525), checked source a1c0071f4f26623fdd772a4a08a4b5920631be7b. [Quality gates](https://github.com/mecaniser/truck-pit-stop/actions/runs/38660652943) in progress. Fast UI owner verification; no independent specialist gate required by this existing-contract change. Merge/deploy and production acceptance pending.
 
 Main advanced with documentation-only PR524 during CI. Preserved its DB121 receipt and DB122/DB123 board entries when resolving the board-header conflict; application diff unchanged. First run had5/6green, fullbackend still running; strict branch protection requires a new complete gate on the merged base.
+
+## CI and merge
+
+Final checked source9931c571188ac8f2230ed28a01ac8a1ac8381347. [Quality gates38661170151](https://github.com/mecaniser/truck-pit-stop/actions/runs/38661170151) all six SUCCESS: frontend1,554tests/162files; critical backend530passed/11skipped; full backend3,060passed/152skipped; frontend build/checks, migration graph and Playwright smoke pass. First superseded CI run was automatically cancelled after five successful jobs when the main-doc sync was pushed; no code/test failure.
+
+PR525 merged b12048d7442c23256d791fa69134659c346319b2 at2026-10-15T00:58:18Z. Fetched main and verified exact tree equality with checked9931c571. Web deployment56194765-658a-46b2-ae47-626b474262ab building the exact merge. Production session renewed by user; acceptance pending deployment.
+
+## Final acceptance correction — history-filter focus
+
+A new regression test reproduced a real return-path edge: after Customers → truck → NewOrder → Cancel, changing the history query created a new location key and replayed the customer page’s focus-on-NewOrder effect. The test failed with NewRepairOrder focused instead of the search input. This was not covered by bulk fill followed only by result assertions. Product completion withheld.
+
+Correction preserves the full navigation/directory/truck return state while marking its focus intent consumed for history-filter URL edits. A fresh order return still restores focus normally. Regression covers search focus, status focus, original query/truck retention and repeated cancellation. Branch codex/history-filter-return-focus from merged b12048d7. Runtime preflight repeated: same5174PID47264 preview source and8001Docker backend, proxy readiness healthy; schema/config unchanged. Browser acceptance pending renewed local sign-in. Fast UI, no API/model change.

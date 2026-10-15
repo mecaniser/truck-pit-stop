@@ -385,3 +385,33 @@ it('never drains order pages behind contextual customer intake and resumes after
   await waitFor(() => expect(api.get).toHaveBeenCalledWith('/repair-orders', expect.objectContaining({ params: expect.objectContaining({ skip: 25 }) })))
   expect(api.post).not.toHaveBeenCalled()
 })
+
+
+it('keeps history-filter focus after order cancellation and restores return focus on the next cancellation', async () => {
+  setup('/dashboard/customers?view=list&filter=active&selected=customer-1')
+  fireEvent.click(await screen.findByRole('button', { name: /Open .*Unit C-001/ }))
+  const cancelOrder = async () => {
+    fireEvent.click(screen.getByRole('button', {name:'New repair order',exact:true}))
+    const dialog = await screen.findByRole('dialog', {name:'New Repair Order'})
+    fireEvent.click(within(dialog).getByRole('button', {name:'Cancel'}))
+    await waitFor(() => expect(screen.getByRole('button', {name:'New repair order',exact:true})).toHaveFocus())
+  }
+  await cancelOrder()
+  const search = screen.getByRole('searchbox', {name:'Search this truck’s repair history'})
+  search.focus()
+  fireEvent.change(search, {target:{value:'R'}})
+  await act(async () => { await new Promise(resolve => requestAnimationFrame(resolve)) })
+  expect(search).toHaveFocus()
+  fireEvent.change(search, {target:{value:'RO'}})
+  const status = screen.getByRole('combobox', {name:'Repair history status'})
+  status.focus()
+  fireEvent.change(status, {target:{value:'in_progress'}})
+  await act(async () => { await new Promise(resolve => requestAnimationFrame(resolve)) })
+  expect(status).toHaveFocus()
+  expect(screen.getByTestId('location')).toHaveTextContent('filter=active')
+  expect(screen.getByRole('button',{name:'Edit vehicle'})).toBeVisible()
+  await cancelOrder()
+  expect(screen.getByRole('searchbox',{name:'Search this truck’s repair history'})).toHaveValue('RO')
+  expect(screen.getByRole('combobox',{name:'Repair history status'})).toHaveValue('in_progress')
+  expect(api.post).not.toHaveBeenCalled()
+})

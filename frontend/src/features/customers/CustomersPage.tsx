@@ -325,7 +325,8 @@ export default function CustomersPage() {
 
   useEffect(() => {
     const origin = location.state?.restoreOrderOrigin as RepairOrderReturn | undefined
-    if (!origin || restoredOrderFocus.current === location.key || selectedCustomer?.id !== origin.customerId
+    // Filter edits preserve return context, but must not replay its one-time focus move.
+    if (!origin || location.state?.restoreOrderFocus === false || restoredOrderFocus.current === location.key || selectedCustomer?.id !== origin.customerId
       || (selectedVehicleInPanel?.id ?? undefined) !== origin.vehicleId) return
     const frame = requestAnimationFrame(() => {
       createOrderButtonRef.current?.focus({ preventScroll: true })
