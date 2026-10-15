@@ -58,8 +58,8 @@ function extractLaborHours(rawDataPage) {
 // This is source evidence only, never a settlement assertion. Do not retain
 // arbitrary Inertia fields: they include contacts, notes and session data.
 function extractSourceEvidence(rawDataPage) {
-  let service;
-  try { service = JSON.parse(rawDataPage)?.props?.service; } catch { return null; }
+  let service, user;
+  try { const props = JSON.parse(rawDataPage)?.props; service = props?.service; user = props?.user; } catch { return null; }
   if (!service || !service.invoice || typeof service.invoice !== 'object') return null;
   const scalar = value => (typeof value === 'string' && value.length <= 160)
     || (typeof value === 'number' && Number.isFinite(value))
@@ -75,11 +75,14 @@ function extractSourceEvidence(rawDataPage) {
   return {
     schema_version: 1,
     source: 'easy_truck_shop',
+    ets_shop_id: user?.current_shop_public_id && service.shop_id === user.current_shop_id ? scalar(user.current_shop_public_id) : null,
     settlement_semantics: 'unverified',
     service_id: scalar(service.id),
     service_internal_id: scalar(service.int_id),
     invoice_service_id: scalar(invoice.service_id),
     completed_at_source: scalar(service.completed_at),
+    completed: typeof service.completed === 'boolean' ? service.completed : null,
+    service_status: Number.isInteger(service.status) ? service.status : null,
     invoice_id: scalar(invoice.id),
     invoice_number: scalar(invoice.number),
     invoice_status: scalar(invoice.status),

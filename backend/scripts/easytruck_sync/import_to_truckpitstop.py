@@ -575,7 +575,7 @@ def _preserve_source_evidence(w, tenant_id, invoices_by_service_no):
             """SELECT i.id, i.ets_source_evidence FROM invoices i
                JOIN repair_orders ro ON i.repair_order_id=ro.id
                WHERE i.tenant_id=%s AND i.source=%s AND i.deleted_at IS NULL
-                 AND i.status <> 'cancelled' AND i.invoice_number=%s
+                 AND i.invoice_number=%s
                  AND ro.tenant_id=i.tenant_id AND ro.source=%s
                  AND ro.deleted_at IS NULL AND ro.order_number LIKE %s
                FOR UPDATE OF i""",
@@ -591,6 +591,45 @@ def _preserve_source_evidence(w, tenant_id, invoices_by_service_no):
             """UPDATE invoices SET ets_source_evidence=%s
                WHERE id=%s AND tenant_id=%s AND source=%s""",
             (psycopg2.extras.Json(updated), invoice_id, tenant_id, IMPORT_SOURCE))
+
+
+def _preserve_source_read_failures(w, tenant_id, failures):
+    """Invalidate previously verified service evidence without changing finance."""
+    if not isinstance(failures, list):
+        return
+    w.execute("""SELECT EXISTS (SELECT 1 FROM information_schema.columns
+                 WHERE table_schema=current_schema() AND table_name='invoices'
+                   AND column_name='ets_source_evidence')""")
+    if not w.fetchone()[0]:
+        return
+    for failure in failures:
+        if not isinstance(failure, dict) or not re.fullmatch(r"[0-9]{1,140}", str(failure.get("serviceNo", ""))):
+            continue
+        try:
+            timestamp = datetime.fromisoformat(failure["observed_at_source"].replace("Z", "+00:00"))
+            if timestamp.utcoffset() is None or timestamp > datetime.now(timezone.utc):
+                continue
+        except (KeyError, TypeError, AttributeError, ValueError):
+            continue
+        service_id = str(failure["serviceNo"])
+        w.execute("""SELECT i.id, i.ets_source_evidence FROM invoices i
+          JOIN repair_orders ro ON ro.id=i.repair_order_id AND ro.tenant_id=i.tenant_id
+          WHERE i.tenant_id=%s AND i.source=%s AND ro.source=%s AND ro.order_number LIKE %s
+          FOR UPDATE OF i""", (tenant_id, IMPORT_SOURCE, IMPORT_SOURCE, f"ETS-{service_id}-%"))
+        for invoice_id, envelope in w.fetchall():
+            observations = envelope.get("observations", []) if isinstance(envelope, dict) else []
+            if not observations or observations[-1].get("evidence", {}).get("service_id") != service_id:
+                continue
+            latest = observations[-1]["evidence"].get("observed_at_source")
+            if latest:
+                try:
+                    if datetime.fromisoformat(latest.replace("Z", "+00:00")) >= timestamp:
+                        continue
+                except (ValueError, TypeError):
+                    continue
+            updated = dict(envelope, source_read_unavailable_at=timestamp.isoformat())
+            w.execute("UPDATE invoices SET ets_source_evidence=%s WHERE id=%s AND tenant_id=%s AND source=%s",
+                      (psycopg2.extras.Json(updated), invoice_id, tenant_id, IMPORT_SOURCE))
 
 
 def _sync_payments_for_existing_invoices(conn, w, cur, tenant_id, invoices_by_service_no, stats, now):
@@ -861,6 +900,9 @@ def resync(conn, tenant_id, commit):
         conn, w, cur, tenant_id, invoices_by_service_no, stats, now)
 
     _preserve_source_evidence(w, tenant_id, invoices_by_service_no)
+    failure_file = INVOICES_FILE.with_name("invoices_failures.json")
+    if failure_file.exists():
+        _preserve_source_read_failures(w, tenant_id, json.loads(failure_file.read_text()))
 
     w.close()
     cur.close()

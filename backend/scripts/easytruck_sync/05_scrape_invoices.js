@@ -5,6 +5,7 @@ const path = require('path');
 const { loginSession, SHOP, BASE } = require('./lib/auth');
 const { parseInvoicePage } = require('./lib/invoice_parse');
 const { extractLaborHours, extractSourceEvidence } = require('./lib/invoice_json');
+const { collectInvoiceManifest } = require('./lib/invoice_manifest');
 
 const CUSTOMER_DETAILS_FILE = path.join(__dirname, 'data', 'customer_details.json');
 const OUT_FILE = path.join(__dirname, 'data', 'invoices.json');
@@ -32,6 +33,9 @@ function getAllServiceNumbers() {
 
   const { browser, page } = await loginSession({ headless: true });
 
+  let manifests = {};
+  try { manifests = await collectInvoiceManifest(page, BASE, SHOP); }
+  catch { console.warn('Complete source invoice enumeration unavailable; completion outcomes held'); }
   let processed = 0;
   for (const serviceNo of serviceNumbers) {
     if (results[serviceNo]) continue;
@@ -50,14 +54,19 @@ function getAllServiceNumbers() {
       parsed.laborHours = extractLaborHours(raw);
       parsed.sourceEvidence = extractSourceEvidence(raw);
       if (!parsed.sourceEvidence
+          || parsed.sourceEvidence.ets_shop_id !== SHOP
           || String(parsed.sourceEvidence.service_id) !== String(serviceNo)
           || String(parsed.sourceEvidence.invoice_number) !== String(parsed.invoiceNumber)) {
         throw new Error('Invoice source evidence identity unavailable or mismatched');
       }
 
+      parsed.sourceEvidence.observed_at_source = new Date().toISOString();
+      const manifest = manifests[String(serviceNo)];
+      parsed.sourceEvidence.invoice_manifest = manifest
+        && manifest.service_internal_id === String(parsed.sourceEvidence.service_internal_id) ? manifest : null;
       results[serviceNo] = parsed;
     } catch (e) {
-      failures.push({ serviceNo, reason: e.message });
+      failures.push({ serviceNo, reason: e.message, observed_at_source: new Date().toISOString() });
     }
     processed++;
     if (processed % 20 === 0) {
