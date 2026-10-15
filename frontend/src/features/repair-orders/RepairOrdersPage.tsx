@@ -1,5 +1,6 @@
 import { openChecklistOnCompletionError } from '@/features/service-checklists/queries'
 import RepairOrderEntryGate from './RepairOrderEntryGate'
+import OriginatingCallPicker from './OriginatingCallPicker'
 import { canStartCustomerOrder, readRepairOrderReturn, type RepairOrderEntry, type RepairOrderReturn } from './repairOrderEntry'
 import type { OrderIntakePatch } from './OrderIntakeDetails'
 import { useEffect, useMemo, useRef, useState } from 'react'
@@ -308,6 +309,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
   const compactWorkspace = useCompactWorkspace()
   const currentUser = useAuthStore((s) => s.user)
   const authSessionEpoch = useAuthStore((s) => s.authSessionEpoch)
+  const canSelectOriginatingCall = ['garage_owner', 'garage_admin', 'receptionist', 'mechanic'].includes(currentUser?.role ?? '')
   const { accentColors, presentationVariant } = useTheme()
   const [searchParams, setSearchParams] = useSearchParams()
   const navigate = useNavigate()
@@ -344,6 +346,8 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
   const [pendingNavIndex, setPendingNavIndex] = useState<number | null>(null)
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [selectedCustomerId, setSelectedCustomerId] = useState<string>('')
+  const [originatingCallReference, setOriginatingCallReference] = useState<string | null>(null)
+  useEffect(() => { setOriginatingCallReference(null) }, [selectedCustomerId, isModalOpen, currentUser?.role, currentUser?.id, currentUser?.tenant_id, authSessionEpoch])
   const [selectedVehicleId, setSelectedVehicleId] = useState<string>('')
   const [customerQuery, setCustomerQuery] = useState('')
   const [vehicleQuery, setVehicleQuery] = useState('')
@@ -1518,8 +1522,10 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
       internal_notes,
       mileage_in,
       mileage_in_carried,
-    }: { customer_id: string; vehicle_id: string; description: string; internal_notes?: string | null; mileage_in?: number | null; mileage_in_carried?: boolean | null }) => {
+      originating_call_reference,
+    }: { originating_call_reference?: string; customer_id: string; vehicle_id: string; description: string; internal_notes?: string | null; mileage_in?: number | null; mileage_in_carried?: boolean | null }) => {
       const response = await api.post('/repair-orders', {
+        ...(originating_call_reference ? { originating_call_reference } : {}),
         customer_id,
         vehicle_id,
         description: roDescription || null,
@@ -2936,6 +2942,7 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
 
       const createdOrder = await createRepairOrderMutation.mutateAsync({
         customer_id: finalCustomerId,
+        ...(canSelectOriginatingCall && originatingCallReference ? { originating_call_reference: originatingCallReference } : {}),
         vehicle_id: finalVehicleId,
         description: combinedDescription,
         internal_notes: null,
@@ -3902,6 +3909,11 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
                     </div>
                   )}
                 </div>
+
+                {canSelectOriginatingCall && selectedCustomerId && selectedCustomerId !== 'add_new' && (
+                  <OriginatingCallPicker key={`${authSessionEpoch}:${currentUser?.id}:${currentUser?.tenant_id}:${selectedCustomerId}`} customerId={selectedCustomerId}
+                    value={originatingCallReference} onChange={setOriginatingCallReference} disabled={isSubmitting} />
+                )}
 
                 {/* Order details */}
                 <div className="space-y-3">

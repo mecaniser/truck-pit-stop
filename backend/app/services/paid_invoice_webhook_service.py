@@ -33,6 +33,7 @@ from app.db.session import AsyncSessionLocal
 from app.services.conversion_pii_retention_service import (
     CONVERSION_EVENT_TYPES,
     SHOP_HISTORY_EVENT,
+    ETS_OUTCOME_EVENTS,
     conversion_event_must_expire,
     expire_conversion_event,
 )
@@ -279,6 +280,10 @@ async def _claim(db: AsyncSession, limit: int) -> tuple[list[tuple[UUID, str]], 
     event_filter = ProviderOutboxEvent.event_type.in_(CONVERSION_EVENT_TYPES)
     if settings.SHOP_HISTORY_CAPTURE_ENABLED and history_tenants:
         event_filter = or_(event_filter, and_(ProviderOutboxEvent.event_type == SHOP_HISTORY_EVENT, ProviderOutboxEvent.tenant_id.in_(history_tenants)))
+    from app.services.ets_completed_outcome_source import configured_shops
+    ets_tenants = list(configured_shops())
+    if ets_tenants:
+        event_filter = or_(event_filter, and_(ProviderOutboxEvent.event_type.in_(ETS_OUTCOME_EVENTS), ProviderOutboxEvent.tenant_id.in_(ets_tenants)))
     due = or_(
         and_(ProviderOutboxEvent.status == ProviderOutboxStatus.PENDING.value, ProviderOutboxEvent.available_at <= now),
         and_(ProviderOutboxEvent.status == ProviderOutboxStatus.PROCESSING.value, ProviderOutboxEvent.locked_until <= now),
@@ -327,6 +332,11 @@ async def _deliver(tenant: Tenant, event: ProviderOutboxEvent) -> tuple[Optional
 
 
 async def _deliver_within_budget(tenant: Tenant, event: ProviderOutboxEvent) -> tuple[Optional[str], int]:
+    if event.event_type in ETS_OUTCOME_EVENTS:
+        from app.services.ets_completed_outcome_source import configured_shops
+        expected = configured_shops().get(tenant.id)
+        if not expected or (event.payload.get("snapshot") or {}).get("ets_shop_id") != expected:
+            raise ConversionDeliveryPaused()
     if event.event_type == SHOP_HISTORY_EVENT and (
         tenant.id not in history_allowed_tenants()
     ):

@@ -204,6 +204,14 @@ async def capture_tenant_history(db: Session, tenant: Tenant, *, batch_size: int
                          "occurred_at": now.isoformat(), "shop_id": str(tenant.id), "source_system": "dieselbridge",
                          "source_revision": revision, "source_observation": observation.sequence, "snapshot": snapshot}))
             captured += 1
+        if order.source == ETS:
+            from app.services.ets_completed_outcome_source import capture_imported_order, ETSCompletionHold
+            try:
+                await capture_imported_order(db, tenant.id, order.id)
+            except ETSCompletionHold:
+                # Unbound identities cannot become evidence. Freshness gating in
+                # ELIS prevents older positive observations remaining usable.
+                pass
         cursor.last_invoice_id = invoice.id
     if len(rows) < batch_size:
         cursor.last_invoice_id = None

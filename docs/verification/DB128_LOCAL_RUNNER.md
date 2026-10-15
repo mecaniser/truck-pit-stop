@@ -1,4 +1,4 @@
-# DB-126 — dedicated local CI runners
+# DB-128 — dedicated local CI runners
 
 Owner: Release & Reliability. High-risk infrastructure lane.
 Branch: `codex/dedicated-ci-runner`; PR [#530](https://github.com/mecaniser/truck-pit-stop/pull/530).
@@ -72,3 +72,13 @@ verified against the actual CI workers instead.
 
 Final uncanceled six-check outcome, independent operational GO and protected
 merge/main routing evidence remain required. Not Done.
+
+## Complete runner acceptance
+
+[Run38674355692](https://github.com/mecaniser/truck-pit-stop/actions/runs/38674355692)
+completed successfully on70d52de6: all six jobs and their test steps passed.
+Frontend full suite:1,556 passed; backend full suite:3,093 passed/152 skipped
+in19m08s. Restart and fresh independent Security evidence above still apply.
+Main subsequently advanced to9fe12aba; protected CI must validate the combined
+revision before merge. Board identifier changed toDB-128 because an independently
+landed repair-intake item also usedDB-126; that item's evidence is preserved.
