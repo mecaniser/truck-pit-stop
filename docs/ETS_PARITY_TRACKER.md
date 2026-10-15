@@ -21,7 +21,7 @@ Last updated: 2026-10-15. Program owner: Product & Delivery Lead. Discovery inve
 ## Selected outcomes
 
 - [ ] **R1 — Scheduled start, promised finish and an overdue queue**
-  - Status: **In progress — implementation and local acceptance**. Board: **DB-131**. Owner: Backend & Integrations.
+  - Status: **Review — local acceptance complete; CI pending**. Board: **DB-131**. Owner: Backend & Integrations.
   - Evidence: [R1 verification receipt](verification/DB131_REPAIR_ORDER_SCHEDULING.md).
 - [ ] **P1 — Cost-based parts markup matrices with minimum price and locked-price rules**
   - Status: **Queued**. Board: **DB-132**. Owner: Backend & Integrations.
@@ -79,4 +79,4 @@ Acceptance before editing application code:
 - No appointment/resource calendar, customer sends, billing, payment, technician time or completion mutation side effects.
 - Additive migration/rollback proof, focused backend/frontend tests, independent QA/security appropriate to schema/tenant boundaries, protected CI and deployed acceptance.
 
-Branch: `codex/ets-repair-order-scheduling`. Contract: `docs/contracts/db131-repair-order-scheduling.md` (approved). PR, merge and deployment: not yet created.
+Branch: `codex/ets-repair-order-scheduling`. Contract: `docs/contracts/db131-repair-order-scheduling.md` (approved). PR: [538](https://github.com/mecaniser/truck-pit-stop/pull/538). Merge and deployment pending.

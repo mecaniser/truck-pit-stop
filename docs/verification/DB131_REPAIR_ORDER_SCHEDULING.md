@@ -33,4 +33,18 @@ Synthetic pre-existing `DB115-HOLD-QA` in Performance Lab only; initial dates bo
 - Two real browser editors: newer18:00 saved, stale19:00 rejected;19:00 draft preserved alongside18:00 saved values, Save disabled until explicit Keep my draft; subsequent save succeeds.
 - At320px, actual screenshot caught date AM/PM clipping. Corrected narrow layout moves Clear beside label and gives date field full width.390px save/clear/reload complete; desktop Light snapshot shows compact queue deadline and aligned values.
 - Initial `tab.screenshot` after emulation produced host-canvas scaling artifacts; those images are NOT acceptance evidence. Exact-viewport `Page.captureScreenshot` and DOM client/scroll dimensions are used for final receipts in `/tmp/db131-qa/`.
-- Still pending: live deadline transition, final Night/landscape screenshots, final independent gate and release.
+- Live deadline: saved Oct15 14:40 EDT; observed Due with0/$0 before deadline, then Overdue in selected workspace and queue1/$290 without reload. Tab remained visibility=visible; bringing the test tab to front is also an allowed focus refresh. Interval-specific behavior is separately covered by the page clock test.
+- Both Light and Night: desktop1280×800, portrait390×844, narrow320×568 and landscape740×400 inspected; layoutfits, namedclose/Cancel/Save accessible. Landscape panel448×328 with Save44px high, inside400px viewport.320px full-width date controls visible after reopening.
+- Night landscape edited and saved, Night phone cleared/reloaded. Invoiced DB110-DESKTOP exposes disabled dates/Clear and noSave. Phoneclose retainssearch=DB110-DESKTOP.
+- From dashboardOnFloor queue, All overdue work removes boundedqueue and routes to full ledger withoverdue=true while preservingselectedorder.
+- Multipage count/value/search semantics are covered by real PostgreSQL fixtures and frontend page tests, not a claimed25-row browser fixture.
+- Both localfixture dates restorednull and verifiedafterreload; status/total/operations unchanged. Original Night appearance restored. Browser timezone and viewport overrides cleared. Final QA has no consoleerrors; earlier18:25hot-reload errors predatefrozen18:34candidate.
+- Final independent gate, protected CI and production release remain separate.
+
+## Review candidate
+PR [538](https://github.com/mecaniser/truck-pit-stop/pull/538), application candidate `e12994da`; CI run38787687512 initiallyqueued behind existing busy runners. No protection changes/bypass. Final documentation evidence will receive an updated exact-head CI run.
+
+## Durable visual evidence
+Synthetic QA content only. Exact viewport captures (not physical-device screenshots):
+- [Light desktop](db131/light-desktop.png), [Light320 editor](db131/light-320.png)
+- [Night desktop](db131/night-desktop.png), [Night390 editor](db131/night-390.png), [Night320 editor](db131/night-320.png), [Night landscape](db131/night-landscape.png)

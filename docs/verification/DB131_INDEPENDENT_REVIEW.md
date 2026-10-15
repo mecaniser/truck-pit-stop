@@ -7,10 +7,15 @@ acceptance and current working diff on `codex/ets-repair-order-scheduling`.
 
 ## Current gate
 
-**Source/security checks pass; final QA pending runtime evidence.** Both review
-findings below have corrections and passing independent focused regressions.
-Final candidate identity, complete runtime evidence, protected CI and deployment
-acceptance have not been reviewed here. This is not a release approval.
+**Independent local QA GO / Security GO**, 2026-10-15, for implementation commit
+`e12994da5978e90a1bff329034b8cf01ad3d822a` (PR #538). No unresolved application
+blocker remains in the reviewed scope. Both findings below are corrected, their
+focused regressions pass and the final local runtime evidence is accepted.
+
+This permits the candidate to proceed through protected CI and release checks;
+it does **not** assert merge, deployment or production acceptance. Do not mark
+R1/DB-131 Done until those separate gates have completed. A subsequent app-source
+change requires review of the affected delta.
 
 ## Findings returned to owners
 
@@ -65,6 +70,9 @@ acceptance have not been reviewed here. This is not a release approval.
 - Independently ran schedule editor/page, ledger and customer-return frontend
   suites after the final queue-deadline layout correction: **86 passed across
   four files**, 24.30 seconds. `/tmp/db131-independent-frontend-final.log`.
+- Independently reran the editor/page suites against committed `e12994da`, after
+  the final 320px field-layout correction: **16 passed across two files**,
+  6.27 seconds. `/tmp/db131-independent-e129-schedule-ui.log`.
 - Independently reran the stable schedule suite including dashboard masks and
   the final date-overflow validation: **62 passed**, 33.29 seconds.
   `/tmp/db131-independent-schedule-final.log`.
@@ -78,23 +86,70 @@ acceptance have not been reviewed here. This is not a release approval.
   `/tmp/db131-independent-backend-final.log` and
   `/tmp/db131-independent-counts-recheck.log`.
 
-## Interim visual inspection
+## Final local runtime and independent visual review
 
-`local-phone-dialog.png` is readable at 390px with fitting date/Clear controls
-and a compact footer. `local-conflict.png` shows the kept draft and explicit
-saved-schedule/keep-draft choices. The preliminary `local-phone-workspace.png`
-capture instead shows an approximately 106px-wide application in the corner of
-a 390px white canvas; it is **not accepted as mobile layout evidence**. Parent
-notified to recapture settled viewport-matched workspace/theme images and
-confirm whether the malformed image is capture state or actual layout. These
-interim images do not substitute for the remaining complete theme/device matrix.
+Parent executed the signed-in browser journeys on the aligned local preview;
+reviewer independently inspected the supplied screenshots and assessed the
+journey notes against code and automated tests. Mobile proof is supported browser
+viewport emulation, **not physical device testing**. Browser timezone was
+America/Los_Angeles while the shop uses America/New_York.
 
-## Remaining gates
+Accepted exact-viewport captures under `/tmp/db131-qa/`:
+- `local-light-desktop-workspace.png`, `local-light-desktop-dialog.png`, and
+  `local-light-desktop-live-overdue.png` (desktop 1280px).
+- `local-night-desktop-workspace.png`, `local-night-desktop-dialog.png`.
+- `local-light-390-workspace.png`, `local-phone-dialog.png`,
+  `local-night-390-workspace.png`, `local-night-390-dialog.png`.
+- `local-light-320-dialog.png`, `local-night-320-dialog.png`.
+- `local-light-landscape-dialog.png`, `local-night-landscape-dialog.png`
+  (740×400).
 
-- Review stable corrected candidate and independently rerun relevant focused
-  backend/frontend checks, including dashboard scope and deadline freshness.
-- Inspect actual local Light/Night desktop, phone and landscape journey evidence
-  for save/reload/clear/cancel/Escape, stale-write recovery, overdue navigation,
-  customer return, density, touch targets and scrolling.
-- Record final QA/Security decision separately from protected CI, merge,
-  schema/deployment readiness and actual production acceptance.
+These show readable dates, complete AM/PM content, fitting Clear/Save/Cancel and
+named close controls, compact queue deadlines, aligned totals and a compact
+workspace footer. The 320px layout gives date inputs full width and places Clear
+alongside their labels. Desktop density remains intact. Parent's DOM checks
+confirm viewport/scroll width agreement and touch sizes; the screenshot review
+does not itself claim a measured hit-target size. Existing repair work sheets
+are intentionally light in Night Shop; the new controls remain readable.
+
+Accepted parent runtime evidence:
+- Set/save/reload/edit and clear one/both dates on the synthetic local order.
+  Overdue list/count/value changes from one order/$290 to zero/$0 after clearing.
+- New York DST gap rejected, repeated clock time requires explicit occurrence,
+  chosen second occurrence persisted at 06:30Z; browser zone does not alter it.
+- Reversed dates rejected without losing the draft. Escape restores trigger
+  focus; Cancel/named close discard unsaved changes. Customer return and search
+  are preserved.
+- Two real browser editors demonstrate stale-write rejection, preserved draft,
+  saved-value comparison and explicit Keep my draft before a successful retry.
+- Actual live deadline: at 18:39:58Z the 14:40 EDT promise is Due and the overdue
+  queue shows zero/$0; by 18:41Z the open workspace and queue show Overdue and
+  one/$290 without a page reload or navigation away from the selected order.
+- Invoiced `DB110-DESKTOP` shows disabled date/Clear inputs and no Save; closing
+  retains `search=DB110-DESKTOP`. Dashboard On Floor → selected order → All overdue
+  work routes to the full ledger with `overdue=true` and removes the bounded
+  `queue=on_floor` context.
+- Parent restored the fixture's null dates, unchanged In Progress status/$290/
+  two operations, original Night preference and removed browser overrides.
+
+**Explicit evidence split approved by Product & Delivery Lead:** the browser
+exercised one/zero overdue row transitions; more than 25 rows, search, count,
+value and deterministic pagination are proven by the independent real
+PostgreSQL suite plus page integration tests. No >25-row browser fixture run is
+claimed. This targeted split avoids duplicating the database fixture in the
+shared preview while retaining the cross-layer evidence.
+
+Preliminary `tab.screenshot` captures after emulation produced host-canvas scaling
+artifacts (`local-phone-workspace.png` and the white-margin conflict capture).
+They were rejected as layout evidence and replaced with supported exact-viewport
+`Page.captureScreenshot` captures. No acceptance relies on those malformed
+images; conflict behavior is established by the actual two-editor journey and
+independent component tests.
+
+## Remaining release gates
+
+- Protected CI on the reviewed candidate and confirmation of the merged tree.
+- Schema-before-code deployment/readiness with application rollback retaining
+  nullable schedule columns and saved dates.
+- Actual production desktop/mobile Light/Night changed-journey acceptance and
+  release receipt. No production action was performed by this reviewer.
