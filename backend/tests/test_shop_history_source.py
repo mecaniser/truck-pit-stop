@@ -111,7 +111,8 @@ async def test_conflicting_equipment_is_held_and_foreign_tenant_rejected(_db_eng
         snapshot = history_snapshot(tenant=tenant, invoice=invoice, order=order, customer=customer,
                                     vehicle=vehicle, operations=[order, sibling])
         assert snapshot['grouping_uncertain']
-        assert snapshot['paid_at'] == '2026-10-13T00:00:00+00:00'
+        assert snapshot['paid_at'] is None
+        assert snapshot['paid_time_precision'] == 'unknown'
         sibling.tenant_id = uuid4()
         with pytest.raises(ValueError, match='same tenant'):
             history_snapshot(tenant=tenant, invoice=invoice, order=order, customer=customer,
@@ -249,3 +250,17 @@ async def test_invalid_correction_quarantines_previous_valid_context(_db_engine,
         assert events[-1].payload['source_observation'] == 2
         assert events[-1].payload['snapshot']['grouping_uncertain']
         assert events[-1].payload['snapshot']['invoice_total'] == '1992.62'
+
+
+@pytest.mark.asyncio
+async def test_native_history_uses_evidenced_amount_and_holds_missing_evidence(db_session):
+    tenant, customer, vehicle, order, invoice = await seed(db_session, imported=False)
+    invoice.total_amount = Decimal("103"); invoice.service_fee_amount = Decimal("3")
+    no_evidence = history_snapshot(tenant=tenant, invoice=invoice, order=order, customer=customer, vehicle=vehicle, operations=[order])
+    assert no_evidence["grouping_uncertain"]
+    assert no_evidence["paid_time_precision"] == "unknown"
+    paid = history_snapshot(tenant=tenant, invoice=invoice, order=order, customer=customer, vehicle=vehicle, operations=[order], settled_amount=Decimal("100"))
+    assert paid["invoice_total"] == "100.00"
+    assert paid["paid_time_precision"] == "instant"
+    assert not paid["grouping_uncertain"]
+    assert invoice.total_amount == Decimal("103")
