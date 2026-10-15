@@ -74,8 +74,6 @@ class Invoice(BaseModel):
     # stamped at import time and cannot stand in for it. Only the Invoiced
     # Hours report groups by this — every other report (revenue, parts,
     # labor $) deliberately keeps its existing payment-date/cash basis.
-    # Provider provenance only; never a settlement or Google eligibility assertion.
-    ets_source_evidence = Column(JSONB, nullable=True)
     ets_invoiced_at = Column(Date(), nullable=True, index=True)
     notes = Column(Text, nullable=True)
     source = Column(String(50), nullable=True, index=True)  # e.g. easy_truck_shop_import

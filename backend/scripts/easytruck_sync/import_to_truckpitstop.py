@@ -553,6 +553,15 @@ def _create_invoice_and_payments(w, tenant_id, ro_id, order_number, service_no,
 
 def _preserve_source_evidence(w, tenant_id, invoices_by_service_no):
     """Append provenance under invoice row lock; never mutate financial state."""
+    # Scraper and API deploy independently. Retain the scrape file but defer
+    # persistence if the additive migration has not reached the database yet.
+    w.execute("""SELECT EXISTS (SELECT 1 FROM information_schema.columns
+                 WHERE table_schema=current_schema() AND table_name='invoices'
+                   AND column_name='ets_source_evidence')""")
+    if not w.fetchone()[0]:
+        import warnings
+        warnings.warn("ETS evidence migration unavailable; preservation deferred", RuntimeWarning)
+        return
     for service_no, data in invoices_by_service_no.items():
         evidence = normalize_source_evidence(data.get("sourceEvidence"))
         if evidence is None:

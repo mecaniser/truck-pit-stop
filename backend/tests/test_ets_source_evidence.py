@@ -44,8 +44,9 @@ def test_bounded_and_dates_never_invented():
 
 def test_missing_evidence_and_wildcard_service_cannot_write():
     cursor = Mock()
+    cursor.fetchone.return_value = (True,)
     _preserve_source_evidence(cursor, "tenant", {"12%": {"sourceEvidence": source()}, "123": {}})
-    cursor.execute.assert_not_called()
+    assert cursor.execute.call_count == 1
 
 
 def test_actual_storage_is_scoped_idempotent_and_financial_state_untouched():
@@ -69,8 +70,14 @@ def test_actual_storage_is_scoped_idempotent_and_financial_state_untouched():
         db.execute("INSERT INTO invoices VALUES(?,?,?,?,?,?,?,?,?,?)", (key, tenant, src, None, status, None, "ETSINV-456", key, "2026-10-07", 100))
 
     class Cursor:
-        def execute(self, sql, args):
+        def execute(self, sql, args=()):
+            if "information_schema.columns" in sql:
+                self.cursor = db.execute("SELECT 1")
+                return
             self.cursor = db.execute(sql.replace("%s", "?").replace("FOR UPDATE OF i", ""), [json.dumps(a.adapted) if hasattr(a, "adapted") else a for a in args])
+
+        def fetchone(self):
+            return self.cursor.fetchone()
 
         def fetchall(self):
             return [(row[0], json.loads(row[1]) if row[1] else None) for row in self.cursor.fetchall()]
@@ -108,5 +115,14 @@ def test_provider_identity_changes_are_held():
     with pytest.warns(RuntimeWarning, match="identity mismatch"):
         assert append_source_evidence(envelope, changed) == envelope
     cursor = Mock()
+    cursor.fetchone.return_value = (True,)
     _preserve_source_evidence(cursor, "tenant", {"124": {"invoiceNumber": "456", "sourceEvidence": source()}})
-    cursor.execute.assert_not_called()
+    assert cursor.execute.call_count == 1
+
+
+def test_missing_migration_defers_capture_without_financial_writes():
+    cursor = Mock()
+    cursor.fetchone.return_value = (False,)
+    with pytest.warns(RuntimeWarning, match="migration unavailable"):
+        _preserve_source_evidence(cursor, "tenant", {"123": {"invoiceNumber": "456", "sourceEvidence": source()}})
+    assert cursor.execute.call_count == 1
