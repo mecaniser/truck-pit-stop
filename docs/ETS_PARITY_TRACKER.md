@@ -2,7 +2,7 @@
 
 Last updated: 2026-10-16. Program owner: Product & Delivery Lead. Discovery inventory: [audit and evidence](ETS_PARITY_BACKLOG_2026-10-15.md). Delivery history: [PROJECT_BOARD](PROJECT_BOARD.md).
 
-**Progress: 2/29 completed; 2/6 selected outcomes completed. Current: C1 final release checks; reader prerequisite deployed and worker startup guard reviewed. Next: M1 after C1.**
+**Progress: 3/29 completed; 3/6 selected outcomes completed. Current: M1 intake and implementation. Next: B1 after M1.**
 
 ## Approved delivery order
 
@@ -26,13 +26,13 @@ Last updated: 2026-10-16. Program owner: Product & Delivery Lead. Discovery inve
 - [x] **P1 — Cost-based parts markup matrices with minimum price and locked-price rules**
   - Status: **Done — merged, deployed and production verified**. Board: **DB-132**. Owner: Backend & Integrations.
   - Evidence: [P1 contract](contracts/db132-parts-pricing-matrix.md); [intake receipt](verification/DB132_PARTS_PRICING_MATRIX.md).
-- [ ] **C1 — Customer-specific labor rates and parts pricing defaults**
-  - Status: **Review — independent local QA/Security GO including worker startup guard; final protected CI against frozen main6471943f**. Board: **DB-133**. Owner: Backend & Integrations.
+- [x] **C1 — Customer-specific labor rates and parts pricing defaults**
+  - Status: **Done — PR550 merged, deployed and production verified; independent QA/Security GO**. Board: **DB-133**. Owner: Backend & Integrations.
   - Approved: new external orders use the customer agreed labor rate, otherwise the shop billing rate; existing orders retain saved rates.
   - Evidence: [C1 readiness notes](verification/DB133_CUSTOMER_PRICING_READINESS.md). [C1 contract](contracts/db133-customer-pricing-defaults.md) and [implementation receipt](verification/DB133_CUSTOMER_PRICING_DEFAULTS.md).
 - [ ] **M1 — Multiple recurring maintenance programs per truck**
-  - Status: **Queued**. Board: **DB-134**. Owner: Backend & Integrations.
-  - Evidence: Not started.
+  - Status: **In progress — contract intake and runtime alignment**. Board: **DB-134**. Owner: Backend & Integrations.
+  - Evidence: [M1 contract](contracts/db134-maintenance-programs.md); [implementation receipt](verification/DB134_MAINTENANCE_PROGRAMS.md).
 - [ ] **B1 — Customer transaction ledger, statements and overdue-balance aging**
   - Status: **Queued**. Board: **DB-135**. Owner: Backend & Integrations.
   - Evidence: Not started.
