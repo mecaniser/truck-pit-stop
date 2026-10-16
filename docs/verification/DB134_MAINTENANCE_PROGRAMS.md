@@ -26,7 +26,7 @@ Architecture owns frozen contract. Backend owns all backend/schema/lifecycle int
 
 ## Release ordering
 
-Motive555 has the next protected merge/deploy/canary slot, then collector558 after555 handback and active collector idle. M1 local implementation can continue; no main merge/deployment jumps that sequence.
+Motive555 is merged at c9beafe4; its owner handed back the completed driver canary at18:14:53UTC. Collector558 owns the next slot after its six protected checks and current ETS collector idle gate; session556 integrates afterward through the authorized coordinating owners. M1 remains local implementation and must not jump that release sequence. External owner handoff is coordination evidence, not M1 application acceptance.
 
 ## Preserved preview backup
 
@@ -78,3 +78,27 @@ Independent Findings4/5 reproduce private outside-service UUIDs exposed via nest
 ## Legacy recognition clarification — 2026-10-16
 
 Architecture and Product/Delivery accepted a narrow backward-compatible old recognize-pm adapter: explicit staff-reported legacy attestation, one atomic scalar/program advance, no independent/occupied/review bypass. New M1 evidence never edits source. Raw native RO output/arrival mileage is not admissible actual service evidence because existing routes can carry/fallback it; require explicit confirmed actual inputs instead, with no provenance backfill. Frontend removes misleading source-reading choices and silent legacy input defaults. Focused owner regressions and independent recheck required.
+
+## Local fixture preparation and correction checkpoint — 2026-10-16
+
+Independent correction-only GO closes Findings4/5 after original and expanded probes: nested fleet source IDs scrubbed while authorized/stored provenance remains; same-day pre-reset observations excluded and valid later readings still admitted. Full application gates remain open.
+
+Root created `DB134 QA Shared Maintenance` via the actual local service catalog, ID`75a424f3-d721-42d2-a70a-8404b6f11310`:30minutes, blank flat-rate override, two required tasks (Verify service condition; Verify final reading), one Performance replacement part0004 / inventory`a9d420c7-7678-43d5-a645-5d77fbd948d0` quantity1. Saved UI shows131.50 (72.50labor+59part). This named synthetic lab fixture was created after successful migration retention comparison; no production catalog, stock quantity or financial records changed. Existing inactive DB132 fixture was left intact. Screenshot `/tmp/db134-local-service-fixture.png`.
+
+## Saved local mobile CRUD and gate returns — 2026-10-16
+
+Actual signed-in Performance lab UI created DB134 QA Oil service (30days/1,000mi, targets2026-10-16/100,713mi), DB134 QA Engine hours (100hours, target500hours), and DB134 QA Safety (90days, target2026-10-15), all using the named shared service fixture. UI correctly reports Due, Unknown, and Overdue respectively. Oil name changed to DB134 QA Oil service edited and interval45days using Keep targets; date/mileage targets stayed unchanged. Safety archived through confirmation and remains available under Show archived with unchanged target/history. Restore is hidden because backend can_archive is false for archived records; returned to Backend before acceptance.
+
+At390×844 mobile/touch emulation, document dimensions390×844 have no horizontal/outer vertical overflow. One slide-panel content scroller (client730, content2468) lies between header/footer; screenshot /tmp/db134-mobile-initial.png. This is emulation, not physical-device evidence. Desktop outer-page scrolling remains under investigation; no blanket layout signoff.
+
+Reading entry starts blank. Negative mileage produces inline validation with draft retained. Native type=time DOM fill does not survive rerender in this browser; keyboard entry also left it blank. No reading POST succeeded. Frontend owns a narrow accessible manual24-hour HH:MM correction with strict validation; no assertion that this is a proven physical-device defect. Screenshot /tmp/db134-time-input.png.
+
+Independent legacy adapter gate returned three reproduced blockers (Findings6–8): server-day rather than shop-day validation, an older recognition overwriting newer controlling M1 evidence whose source correctly remains is_pmFalse, and coercive/out-of-range legacy request input. Backend owns narrow corrections; independent20 probes were12pass/8fail, all failures mapped to these findings. Existing five owner regression cases pass independently. Prior schema/privacy/reset gates remain valid; no full application/release GO.
+
+## Foundation UI correction recheck — 2026-10-16
+
+Root actual UI confirms corrected archive capabilities now expose Restore. Restoring DB134 QA Safety through its confirmation returns Overdue2026-10-15/every90days unchanged. Oil edit survives reload and its history shows separate Create/Update entries. Reading form now saves manual HH:MM successfully:100,713mi/400hours observed10:00 local remains accepted-but-stale/Unknown; a14:32 local observation changes the hour-only program to Current while all saved targets remain unchanged. These are synthetic lab observations, not telemetry or actual customer service evidence.
+
+Desktop overflow was traced to absolute sr-only labels escaping unpositioned history/search containers. Frontend added local containing blocks and retained accessible labels/descriptions. Actual1280×900 now has document900×1280, scroll0, and one584px panel content scroller. Light Shop320×740 editor focuses Name in view, retains invalid0-day draft, focuses validation, and Escape returns to Edit with no save; document740×320 and one626px content scroller. Light740×400 has document400×740, one278px content scroller, footer buttons348–392px; Add program draft and Escape return pass. Night390×844 previously passed one content scroller; complete work/finalization acceptance remains pending backend integration.
+
+Private visual evidence: /tmp/db134-local-light-desktop.png, /tmp/db134-local-light-320-editor.png, /tmp/db134-local-light-landscape-editor.png. Frontend reports manual-time17/17 and history/accessibility50/50 focused tests, TypeScript and strict changed-file lint passing. No production M1 writes or release.
