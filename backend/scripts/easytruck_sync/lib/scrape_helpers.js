@@ -127,7 +127,8 @@ async function getCustomerContacts(page, customerId) {
         }
         if (accountHeader) break;
       }
-      const search = document.querySelector('#filter-search-input input, .filter-search-input input');
+      const searchFields = document.querySelectorAll('input#filter-search-input, #filter-search-input input, .filter-search-input input');
+      const search = searchFields.length === 1 ? searchFields[0] : null;
       const archive = [...document.querySelectorAll('label')].find(el => /Show archived/.test(el.textContent));
       const checkbox = archive && (archive.querySelector('input[type=checkbox]') || document.getElementById(archive.htmlFor));
       const footer = [...document.querySelectorAll('p, div, span')].find(el => /^Showing\s+\d+\s+to\s+\d+\s+of\s+\d+\s+results$/.test(el.textContent.trim()));
