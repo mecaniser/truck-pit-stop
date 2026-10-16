@@ -173,6 +173,7 @@ export default function TruckDetail({
   const truckQuery = useQuery<TruckDetailData>({
     queryKey: ['fleet-truck', truckId],
     queryFn: async () => (await api.get(`/fleet/trucks/${truckId}`)).data,
+    refetchInterval: 60000,
   })
   const { data } = truckQuery
   const incidentsQuery = useQuery<IncidentEntry[]>({

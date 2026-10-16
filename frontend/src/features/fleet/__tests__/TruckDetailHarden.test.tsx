@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
@@ -57,7 +57,7 @@ function renderTruck(trucks: BoardTruck[] = [truck]) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   })
-  render(
+  return render(
     <QueryClientProvider client={queryClient}>
       <TruckDetail truckId={truck.id} trucks={trucks} onOpen={vi.fn()} />
     </QueryClientProvider>,
@@ -74,6 +74,40 @@ function mockSuccessfulQueries() {
 }
 
 describe('TruckDetail hardening', () => {
+  it('refreshes speed while the detail stays open, preserves zero, and expires unchanged observations', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-10-16T14:00:00Z'))
+    const speed = { source: 'motive_dashboard_manual' as const, observed_at: new Date().toISOString(), captured_at: new Date().toISOString(), freshness: 'fresh' as const, snapshot_id: 'initial-speed', source_age_text: null, value: 45, unit: 'mph' as const, basis: null }
+    let response: TruckDetailData = { ...detail, truck: { ...truck, telemetry: { location: null, speed, odometer: null, engine_hours: null, fuel: null, fault_count: null, motion: 'moving' } } }
+    apiMocks.get.mockImplementation((url: string) => {
+      if (url === `/fleet/trucks/${truck.id}`) return Promise.resolve({ data: response })
+      if (url === `/fleet/trucks/${truck.id}/incidents` || url === '/fleet/inspections') return Promise.resolve({ data: [] })
+      return Promise.reject(new Error(`Unexpected GET ${url}`))
+    })
+    const view = renderTruck()
+    try {
+      await act(async () => { await vi.advanceTimersByTimeAsync(1) })
+      expect(screen.getByText('45 mph')).toBeInTheDocument()
+      response = { ...response, truck: { ...response.truck, telemetry: { ...response.truck.telemetry!, speed: { ...speed, value: 0, observed_at: '2026-10-16T14:01:00Z', captured_at: '2026-10-16T14:01:00Z', snapshot_id: 'new-speed' }, motion: 'stopped' } } }
+
+      await act(async () => { await vi.advanceTimersByTimeAsync(60000) })
+      expect(screen.getByText('0 mph')).toBeInTheDocument()
+      expect(screen.queryByText('45 mph')).not.toBeInTheDocument()
+
+      await act(async () => { await vi.advanceTimersByTimeAsync(300000) })
+      expect(screen.getByText('0 mph')).toBeInTheDocument()
+      await act(async () => { await vi.advanceTimersByTimeAsync(30000) })
+      expect(screen.queryByText('0 mph')).not.toBeInTheDocument()
+      expect(screen.getByLabelText('Speed unavailable')).toBeInTheDocument()
+      expect(apiMocks.get.mock.calls.filter(([url]) => url === `/fleet/trucks/${truck.id}`).length).toBeGreaterThan(2)
+      expect(apiMocks.get.mock.calls.filter(([url]) => url === `/fleet/trucks/${truck.id}/incidents`)).toHaveLength(1)
+      expect(apiMocks.get.mock.calls.filter(([url]) => url === '/fleet/inspections')).toHaveLength(1)
+    } finally {
+      view.unmount()
+      vi.useRealTimers()
+    }
+  })
+
   it('keeps a managed custody profile separate from the current Motive identity and score', async () => {
     const sourceTruck = { ...driverTruck, id: truck.id }
     apiMocks.get.mockImplementation((url: string) => {
