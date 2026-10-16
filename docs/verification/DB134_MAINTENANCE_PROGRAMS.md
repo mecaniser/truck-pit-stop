@@ -1,6 +1,6 @@
 # DB134 / M1 — multiple maintenance programs
 
-Accountable: Backend & Integrations. Lane: High risk (schema, tenancy, financial/stock integration and completion state). Status: **In progress — contract intake**. Branch: `codex/maintenance-programs`, base `c42009e08b10003ddc2ab54e96c39a6a61be5bbd`. No M1 code, migration, PR or release yet.
+Accountable: Backend & Integrations. Lane: High risk (schema, tenancy, financial/stock integration and completion state). Status: **In progress — implementation handoff**. Branch: `codex/maintenance-programs`, base `c42009e08b10003ddc2ab54e96c39a6a61be5bbd`. No M1 code, applied migration, PR or release yet.
 
 ## Outcome and acceptance
 
@@ -27,3 +27,11 @@ Architecture owns frozen contract. Backend owns all backend/schema/lifecycle int
 ## Release ordering
 
 Motive555 has the next protected merge/deploy/canary slot, then collector558 after555 handback and active collector idle. M1 local implementation can continue; no main merge/deployment jumps that sequence.
+
+## Preserved preview backup
+
+Before M1 schema work, custom-format backup captured at `/Users/sergio_m1_promax/Documents/Codex/ets-priority-preparation-20261015/db134-preview-schema176-before-m1-20261016T1735Z.dump`: mode0600,4,035,153bytes,1,775 archive entries, SHA256 `ecdd6d5a250b64e0c2dbf96a357b0a6a31c59fc3cd42d66e9ad7a3b3858a72ab`. `pg_restore --list` succeeds. This local backup is not committed or uploaded. No preview migration has occurred.
+
+## Architecture handoff — 2026-10-16
+
+Architecture verifies c420 application tree equals prepared0a193, sole schema176 and dynamic Worker expected-head discovery. Accepted v1 explicitly returns resolved source readings for confirmation, limits historical RO recognition to completed/invoiced/paid, and preserves entire multi-service legacy packages with one cycle claim across all mapped operations. These are source-backed completeness corrections, not new scope. Product & Delivery accepts canonical v1 before parallel Backend/Frontend implementation.
