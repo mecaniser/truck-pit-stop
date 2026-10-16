@@ -27,6 +27,14 @@ it('shows fresh terms after 409, preserves work, and requires explicit acceptanc
   expect(screen.getByText(/135.00/)).toBeVisible(); expect(screen.getByText('Create order')).toBeDisabled(); expect(screen.getByLabelText('Work draft')).toHaveValue('Inspect brakes'); expect(mocks.submit).not.toHaveBeenCalled()
   fireEvent.click(screen.getByText('Use current defaults')); expect(mocks.submit).not.toHaveBeenCalled(); fireEvent.click(screen.getByText('Create order')); expect(mocks.submit).toHaveBeenCalledWith({ expected_pricing_policy: 'token-2', pricing_presentation: 'shop' })
 })
+it('acknowledges only the accepted valid pricing conflict without submitting or acknowledging unrelated errors', async () => {
+  setup(); await screen.findByText(/125.00/); const accepted = vi.fn()
+  act(() => expect(change({ response: { data: { detail: { code: 'vehicle_unavailable', message: 'Truck unavailable.' } } } }, undefined, accepted)).toBe(false))
+  expect(accepted).not.toHaveBeenCalled()
+  act(() => expect(change({ response: { data: { detail: { code: 'account_pricing_changed', preview: { ...initial, expected_pricing_policy: 'token-2' } } } } }, undefined, accepted)).toBe(true))
+  expect(accepted).not.toHaveBeenCalled(); fireEvent.click(screen.getByText('Use current defaults'))
+  expect(accepted).toHaveBeenCalledOnce(); expect(mocks.submit).not.toHaveBeenCalled()
+})
 it.each([{ customer_id: 'foreign' }, { vehicle_id: 'foreign' }, { projection: 'fleet' }, { private_reason: 'private' }])('fails closed on invalid preview %j', async wrong => {
   mocks.get.mockResolvedValue({ data: { ...initial, ...wrong } }); setup(); await screen.findByRole('alert'); expect(screen.getByText('Create order')).toBeDisabled(); expect(screen.queryByText(/125.00/)).not.toBeInTheDocument()
 })

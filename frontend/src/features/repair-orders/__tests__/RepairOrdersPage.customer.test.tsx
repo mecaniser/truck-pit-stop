@@ -166,8 +166,9 @@ it('keeps a failed draft and blocks repeated submit and cancel until the pending
 })
 
 it('keeps intake work on an account conflict and requires accepting current defaults before an explicit retry', async () => {
+  const message = 'The account pricing changed. Review the current defaults.'
   const preview = { schema_version: 1, customer_id: 'customer-1', vehicle_id: 'vehicle-1', expected_pricing_policy: 'fresh-account-token', policy_kind: 'external', projection: 'shop', labor: { source: 'customer', rate: '125.00' }, parts: { source: 'customer', mode: 'matrix' } }
-  api.post.mockRejectedValueOnce({ response: { status: 409, data: { detail: { code: 'account_pricing_changed', message: 'Account pricing changed.', preview } } } }).mockResolvedValueOnce({ data: { ...order, id: 'new-order', order_number: 'RO-NEW' } })
+  api.post.mockRejectedValueOnce({ response: { status: 409, data: { detail: { code: 'account_pricing_changed', message, preview } } } }).mockResolvedValueOnce({ data: { ...order, id: 'new-order', order_number: 'RO-NEW' } })
   setup(); fireEvent.click(await screen.findByRole('button', { name: /Open .*Unit C-001/ }))
   fireEvent.click(await within(screen.getByRole('region', { name: 'Northline Logistics customer workspace' })).findByRole('button', { name: 'New repair order', exact: true }))
   const dialog = await screen.findByRole('dialog', { name: 'New Repair Order' })
@@ -177,7 +178,9 @@ it('keeps intake work on an account conflict and requires accepting current defa
   await screen.findByRole('button', { name: 'Use current defaults' })
   expect(api.post).toHaveBeenCalledOnce(); expect(api.post.mock.calls[0][1]).toMatchObject({ expected_pricing_policy: 'account-token', pricing_presentation: 'shop' })
   expect(submit).toBeDisabled(); expect(work).toHaveValue('Check air leak'); expect(dialog).toHaveTextContent('Labor $125.00/hr · Account')
+  expect(within(dialog).getByText(message)).toBeVisible()
   fireEvent.click(screen.getByRole('button', { name: 'Use current defaults' }))
+  expect(within(dialog).queryByText(message)).not.toBeInTheDocument()
   expect(api.post).toHaveBeenCalledOnce(); expect(submit).toBeEnabled(); fireEvent.click(submit)
   await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
   expect(api.post).toHaveBeenCalledTimes(2); expect(api.post.mock.calls[1][1]).toMatchObject({ customer_id: 'customer-1', vehicle_id: 'vehicle-1', description: 'Check air leak', expected_pricing_policy: 'fresh-account-token', pricing_presentation: 'shop' })

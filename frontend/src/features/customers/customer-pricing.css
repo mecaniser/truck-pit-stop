@@ -5,7 +5,7 @@
 .db-customer-pricing__matrix { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: 6px; min-width: 0; }
 .db-customer-pricing label { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
 .db-customer-pricing form { display: grid; gap: 8px; }
-.db-customer-pricing :is(input, select) { min-height: 44px; width: 100%; min-width: 0; padding: 6px 8px; border: 1px solid var(--customer-rule, #cbd5df); border-radius: 6px; font-size: 16px; background: var(--surface-overlay, #fff) !important; color: inherit !important; -webkit-text-fill-color: currentColor; }
+.db-customer-pricing :is(input, textarea, select) { min-height: 44px; width: 100%; min-width: 0; padding: 6px 8px; border: 1px solid var(--customer-rule, #cbd5df); border-radius: 6px; font-size: 16px; background: var(--surface-overlay, #fff) !important; color: var(--workspace-text, #14243a) !important; -webkit-text-fill-color: var(--workspace-text, #14243a); caret-color: var(--workspace-text, #14243a); color-scheme: inherit; }
 .db-customer-pricing button, .db-account-pricing-notice button { min-height: 44px; padding: 5px 8px; white-space: nowrap; border-radius: 6px; }
 .db-customer-pricing button:hover:not(:disabled), .db-account-pricing-notice button:hover { background: color-mix(in srgb, currentColor 8%, transparent); }
 .db-customer-pricing button:disabled { opacity: .5; cursor: not-allowed; }

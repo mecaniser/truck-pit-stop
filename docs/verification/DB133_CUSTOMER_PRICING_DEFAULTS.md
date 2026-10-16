@@ -1,6 +1,6 @@
 # DB133 / C1 customer pricing defaults
 
-Accountable: Backend & Integrations. Status: **Accepted contract; implementation handoff**. Selected after completed P1 in the [parity tracker](../ETS_PARITY_TRACKER.md). Branch: `codex/customer-pricing-defaults`, from P1 release-record195c7f3a (application70530bda).
+Accountable: Backend & Integrations. Status: **Local verification complete; independent final gate and protected CI**. Selected after completed P1 in the [parity tracker](../ETS_PARITY_TRACKER.md). Branch: `codex/customer-pricing-defaults`, from P1 release-record195c7f3a (application70530bda).
 
 ## Acceptance before implementation
 
@@ -94,3 +94,26 @@ Created local-only matrix `DB133 LOCAL QA customer matrix` (20%markup, no shop d
 Root independently reproduced the blank-hours manual recommendation draft concern: enter125 before hours, Cancel then reopen displayed137.50. Root now shares frontend implementation ownership for the narrow `!rateEdited` reset guard and two Cancel/Escape regression cases.33 focused tests, application TypeScript and strict two-file lint pass; actual390 UI now preserves125 through both dismissal routes. Independent gate remains separate.
 
 Read-only geometry reports document390/viewport390. Captures: `/tmp/db133-light-desktop-order-a.png`, `db133-light-mobile-agreement-history.png`, `db133-light-mobile-manual-rate.png`. These are local QA, not production evidence. Source HMR during owner corrections reset unsaved forms as expected; no ambiguous saves were resubmitted. Remaining: Night/responsive checks, active-config/stock cleanup, final independent candidate, CI and production.
+
+## Final local runtime gate returned — Night contrast
+
+At320×740 with actual `data-appearance-mode=dark`, Customer Pricing Labor and Reason fields computed foreground/background both rgb(246,248,251), making typed values unreadable. The selected matrix text was also invisible; Tax labels inside Business settings were too dark. Screenshot `/tmp/db133-night-320-settings.png` is failure evidence, not acceptance. Frontend owns a scoped token correction and explicit Light/Night color/value recheck. Earlier checks proved error focus/visibility only and must not be treated as full Night form acceptance. Independent review reproduced the visual finding.
+
+Other completed local paths: after account inheritance was restored (both fields NULL), the test matrix archived successfully. OrderB retained its archived revision: adding another part reviewed32.40, kept the earlier31.20 line unchanged, and saved total101.41. Two-tab intake stale-policy check returned focused changed-terms145/catalog, retained actual customer/truck/work, and enabled retry only after Use current defaults. Root cancelled without creating another order. Frontend additionally corrected the stale generic pricing error left after explicit acceptance (52focusedtests/typecheck/changedlintpass), pending final browser recheck.
+
+Current cleanup state: synthetic account active defaults restored, shop default unchanged, test matrix archived. Only local ordersA/B and their parts usage require cleanup. Source application commits a5cd369b and ancestry-only0deba3ed; final intake and contrast corrections will be committed before protectedCI.
+
+
+## Final local acceptance and cleanup — 2026-10-16 03:52 UTC
+
+The scoped Business settings theme correction passed actual desktop1280×900, Night320×740/740×400 and Light390×844 checks. Labor rate137.50, Reason, selected matrix option and Tax help are readable. Computed field colors: Night rgb(246,248,251) on rgb(17,31,51),15.57:1; Light rgb(20,36,58) on white,15.63:1. Night320 document width equals viewport320; landscape Save remains reachable within the customer scroller. Independent reviewer inspected all five corrected captures. This closes the earlier Night failure rather than counting its screenshots as passes.
+
+Final two-tab mobile retry: draft reviewed shop145; the synthetic account changed to137.50. Create returned409 and retained the exact customer, truck and work description. Use current defaults cleared both the focused pricing notice and matching generic error, enabled Create, and did not auto-submit. Cancel returned to the original customer workspace. No third order was created. Active customer defaults were restored to NULL/NULL, version6. The selected local Night appearance was restored and temporary device/touch overrides cleared.
+
+[Read-only cleanup receipt](db133/local-cleanup.json) confirms both A/B soft-deleted, zero remaining part usages, archived test matrix and no active customer agreement. The immutable stock events for B independently connect both part quantities102→101 on reservation and101→102 on release; final stock is102 each. This corroborates cleanup without pretending that a separate pre-test per-row database baseline was saved. Immutable pricing/audit/history evidence remains intentionally retained. No invoices, estimates, payments or completed real work were created.
+
+Final source checks: Backend335 affected regressions,89 overlapping final-delta checks and11 real-PostgreSQL tests; final30-file manifest cafa79e290dafe731b92da3b26c8c2b775be4f5df6ac99344c89015e84349a0e. Independent16 schema probes,20 supplementary HTTP probes,1 sublet case,93 writer/fleet,11 PostgreSQL and33 recommendation cases pass. Frontend241 initial integrated tests plus later33 recommendation,32 counter,52 intake and47 settings tests pass (overlapping counts). Independent final UI delta83/83 passes. TypeScript, changed-source lint and CSS parse pass. Full protected CI is still required on the committed final candidate.
+
+Evidence images in [db133](db133/): `night-desktop-settings-fixed.png`, `night-320-settings-fixed.png`, `night-landscape-settings-fixed.png`, `light-desktop-settings-fixed.png`, `light-mobile-settings-fixed.png`, `mobile-intake-accepted-fixed.png`, `light-mobile-agreement-history.png`, `light-mobile-manual-rate.png`, `night-desktop-retained-order.png`, `night-mobile-order-b.png`. The Price Builder intentionally remains a light working sheet in Night mode; the retained-order image shows its dark surrounding queue. Browser viewport emulation is not physical-device testing. Counter optional-flag cells and restricted-role flows are covered by automated/API/PG checks, not claimed as actual signed-in browser passes.
+
+Production remains the P1 application at PR545 documentation merge ef936b8b, deployment6c2e0321-5ca4-4f96-a7dc-d0413aaf602c, public build and readiness verified. C1 has not been merged/deployed or production verified yet.

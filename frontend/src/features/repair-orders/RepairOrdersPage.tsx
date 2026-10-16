@@ -3093,14 +3093,18 @@ export default function RepairOrdersPage({ workbenchScope = 'all' }: { workbench
       createdForServices.current = null
     } catch (err: unknown) {
       if (!serviceFlowMounted.current || pricingIdentity() !== pricingOwner) return
-      intakePricing.handleConflict(err, submittedPricingContext)
       if (createdForServices.current) {
         const created = createdForServices.current; createdForServices.current = null
         setIsModalOpen(false); openDetail(created)
         toast.error(`Order ${created.order_number} exists. Remaining services were not added.`)
         return
       }
-      setFormErrors((current) => ({ ...current, root: getErrorDetail(err, 'Failed to create repair order') }))
+      const message = getErrorDetail(err, 'Failed to create repair order')
+      intakePricing.handleConflict(err, submittedPricingContext, () => setFormErrors(current => {
+        if (current.root !== message) return current
+        const next = { ...current }; delete next.root; return next
+      }))
+      setFormErrors((current) => ({ ...current, root: message }))
     } finally {
       submittingOrder.current = false
       setIsSubmitting(false)
