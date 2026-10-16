@@ -2,7 +2,7 @@
 
 Last updated: 2026-10-16. Program owner: Product & Delivery Lead. Discovery inventory: [audit and evidence](ETS_PARITY_BACKLOG_2026-10-15.md). Delivery history: [PROJECT_BOARD](PROJECT_BOARD.md).
 
-**Progress: 3/29 completed; 3/6 selected outcomes completed. Current: M1 intake and implementation. Next: B1 after M1.**
+**Progress: 3/29 completed; 3/6 selected outcomes completed. Current: M1 final independent verification. Next: B1 after M1.**
 
 ## Approved delivery order
 
@@ -31,7 +31,7 @@ Last updated: 2026-10-16. Program owner: Product & Delivery Lead. Discovery inve
   - Approved: new external orders use the customer agreed labor rate, otherwise the shop billing rate; existing orders retain saved rates.
   - Evidence: [C1 readiness notes](verification/DB133_CUSTOMER_PRICING_READINESS.md). [C1 contract](contracts/db133-customer-pricing-defaults.md) and [implementation receipt](verification/DB133_CUSTOMER_PRICING_DEFAULTS.md).
 - [ ] **M1 — Multiple recurring maintenance programs per truck**
-  - Status: **In progress — local CRUD acceptance; legacy validation and UI corrections returned, full work/completion pending**. Board: **DB-134**. Owner: Backend & Integrations.
+  - Status: **In progress — saved shop/fleet workflows verified locally; final lifecycle/privacy corrections and release pending**. Board: **DB-134**. Owner: Backend & Integrations.
   - Evidence: [M1 contract](contracts/db134-maintenance-programs.md); [implementation receipt](verification/DB134_MAINTENANCE_PROGRAMS.md).
 - [ ] **B1 — Customer transaction ledger, statements and overdue-balance aging**
   - Status: **Queued**. Board: **DB-135**. Owner: Backend & Integrations.
