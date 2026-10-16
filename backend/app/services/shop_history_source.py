@@ -84,6 +84,12 @@ def history_snapshot(*, tenant: Tenant, invoice: Invoice, order: RepairOrder,
     # Bound even worst-case escaped Unicode under the receiver body ceiling.
     # Truncation is explicit and forces review, never matching on shortened text.
     uncertain |= any(item.description and len(item.description) > 500 for item in operations)
+    from scripts.easytruck_sync.contact_snapshot import for_history
+    from app.services.ets_completed_outcome_source import configured_shops
+    source_customer_id = getattr(customer, "ets_external_id", None)
+    contact_snapshot = for_history(getattr(customer, "ets_contact_phone_snapshot", None),
+                                   customer_id=source_customer_id, dbn_customer_id=customer.id,
+                                   shop_id=configured_shops().get(order.tenant_id), source=customer.source)
     return {
         "source": ETS if imported else "dieselbridge",
         "repair_order_uuid": str(order.id), "repair_order_number": order.order_number,
@@ -97,7 +103,9 @@ def history_snapshot(*, tenant: Tenant, invoice: Invoice, order: RepairOrder,
         "paid_time_precision": ("day" if imported else "instant") if paid_at else "unknown",
         "grouping_uncertain": bool(uncertain),
         "customer": {"id": str(customer.id), "name": customer.company_name or " ".join(filter(None, [customer.first_name, customer.last_name])) or None,
-                     "phone": customer.phone, "email": customer.email},
+                     "phone": customer.phone, "email": customer.email,
+                     **({"source_customer_id": source_customer_id, "contact_phone_snapshot": contact_snapshot}
+                        if contact_snapshot is not None else {})},
         "vehicle": {"id": str(vehicle.id) if vehicle else None, "vin": vehicle.vin if vehicle else None, "unit_number": vehicle.unit_number if vehicle else None},
         "operations": [{"repair_order_uuid": str(item.id), "repair_order_number": item.order_number, "description": (item.description[:450] + " [source context truncated; review required]") if item.description and len(item.description) > 500 else item.description}
                        for item in sorted(operations, key=lambda item: (item.order_number, str(item.id)))],
@@ -213,7 +221,8 @@ async def capture_tenant_history(db: Session, tenant: Tenant, *, batch_size: int
             db.add(ProviderOutboxEvent(id=event_id, tenant_id=tenant.id, event_type=SHOP_HISTORY_EVENT,
                 aggregate_type="invoice", aggregate_id=invoice.id, idempotency_key=key,
                 status=ProviderOutboxStatus.PENDING.value, available_at=now, created_at=now,
-                payload={"schema_version": 1, "event_type": SHOP_HISTORY_EVENT, "event_id": str(event_id),
+                payload={"schema_version": 2 if "contact_phone_snapshot" in snapshot["customer"] else 1,
+                         "event_type": SHOP_HISTORY_EVENT, "event_id": str(event_id),
                          "occurred_at": now.isoformat(), "shop_id": str(tenant.id), "source_system": "dieselbridge",
                          "source_revision": revision, "source_observation": observation.sequence, "snapshot": snapshot}))
             captured += 1

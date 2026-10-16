@@ -47,8 +47,10 @@ import psycopg2.extras
 
 try:
     from .source_evidence import normalize_source_evidence, append_source_evidence, latest_source_evidence
+    from .contact_snapshot import normalize as normalize_contacts, latest as latest_contacts
 except ImportError:
     from source_evidence import normalize_source_evidence, append_source_evidence, latest_source_evidence
+    from contact_snapshot import normalize as normalize_contacts, latest as latest_contacts
 
 # Let psycopg2 adapt uuid.UUID objects directly in parameterized queries.
 psycopg2.extras.register_uuid()
@@ -258,15 +260,24 @@ def build_records(customers, tenant_id):
 
     for cust in customers:
         first_name, last_name = split_company_name(cust["company"])
+        raw_contact_snapshot = cust.get("contact_phone_snapshot")
+        valid_contact_snapshot = normalize_contacts(raw_contact_snapshot, customer_id=str(cust["id"]),
+                                                    dbn_customer_id="00000000-0000-0000-0000-000000000000")
+        contacts_verified = bool(valid_contact_snapshot and valid_contact_snapshot["complete"])
+        # Legacy files preserve existing behavior. New evidence files cannot
+        # import wrong-page contact fields, including when creating an account.
+        contacts = cust["contacts"] if raw_contact_snapshot is None or contacts_verified else []
         out["customers"].append({
             "ets_external_id": str(cust["id"]),
             "tenant_id": tenant_id,
             "first_name": first_name,
             "last_name": last_name,
             "company_name": cust["company"],
-            "email": pick_email(cust["contacts"], cust["id"]),
-            "phone": pick_phone(cust["contacts"]),
+            "email": pick_email(contacts, cust["id"]),
+            "phone": pick_phone(contacts),
             "source": IMPORT_SOURCE,
+            "contact_phone_snapshot": cust.get("contact_phone_snapshot"),
+            "contact_snapshot_valid": contacts_verified,
         })
 
         for v in cust.get("vehicles", []):
@@ -761,7 +772,8 @@ def resync(conn, tenant_id, commit):
         ex = existing_cust.get(c["ets_external_id"])
         if ex:
             cust_uuid_by_ets[c["ets_external_id"]] = ex["id"]
-            if _untouched(ex["created_at"], ex["updated_at"]):
+            if _untouched(ex["created_at"], ex["updated_at"]) and not (
+                    c.get("contact_phone_snapshot") is not None and not c["contact_snapshot_valid"]):
                 w.execute(
                     """UPDATE customers SET company_name=%s,
                          email=COALESCE(NULLIF(%s,''), email),
@@ -782,6 +794,19 @@ def resync(conn, tenant_id, commit):
                 (new_id, c["tenant_id"], c["first_name"], c["last_name"], c["company_name"],
                  c["email"], c["phone"], c["source"], c["ets_external_id"], False, False, now, now))
             stats["cust_ins"] += 1
+
+        incoming = normalize_contacts(c.get("contact_phone_snapshot"),
+                                      customer_id=c["ets_external_id"],
+                                      dbn_customer_id=cust_uuid_by_ets[c["ets_external_id"]])
+        if incoming is not None:
+            # Source evidence is independent of manually edited profile fields.
+            # Row lock serializes timestamp comparison even for overlapping importers.
+            w.execute("SELECT ets_contact_phone_snapshot FROM customers WHERE id=%s AND tenant_id=%s FOR UPDATE",
+                      (cust_uuid_by_ets[c["ets_external_id"]], c["tenant_id"]))
+            previous = w.fetchone()[0]
+            current = latest_contacts(previous, incoming)
+            w.execute("UPDATE customers SET ets_contact_phone_snapshot=%s WHERE id=%s AND tenant_id=%s",
+                      (psycopg2.extras.Json(current), cust_uuid_by_ets[c["ets_external_id"]], c["tenant_id"]))
 
     veh_uuid_by_ets = {}
     for v in recs["vehicles"]:

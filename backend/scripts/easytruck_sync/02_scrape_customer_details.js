@@ -50,7 +50,7 @@ const FAIL_FILE = path.join(__dirname, 'data', 'customer_details_failures.json')
     if (done.has(cust.id)) continue;
 
     try {
-      const contacts = await getCustomerContacts(page, cust.id);
+      const {contacts, snapshot: contact_phone_snapshot} = await getCustomerContacts(page, cust.id);
       const vehicleRows = (vehiclesByCustomer.get(String(cust.id)) || []).map(v => ({
         vehicleId: v.vehicleId,
         // The customer page's row cells used to supply unit/desc; take the
@@ -73,7 +73,7 @@ const FAIL_FILE = path.join(__dirname, 'data', 'customer_details_failures.json')
         }
       }
 
-      results.push({ id: cust.id, company: cust.company, contacts, vehicles });
+      results.push({ id: cust.id, company: cust.company, contacts, contact_phone_snapshot, vehicles });
       done.add(cust.id);
     } catch (e) {
       failures.push({ customerId: cust.id, company: cust.company, reason: e.message });

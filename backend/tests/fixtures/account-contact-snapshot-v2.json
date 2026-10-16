@@ -1,0 +1,16 @@
+{
+  "source_system": "easy_truck_shop",
+  "source_shop_id": "shop_test",
+  "source_customer_id": "123",
+  "dbn_customer_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+  "observed_at": "2026-10-10T01:00:00+00:00",
+  "complete": true,
+  "reason": null,
+  "contacts": [
+    {
+      "source_contact_id": null,
+      "phone": "+17045551234"
+    }
+  ],
+  "semantic_hash": "3da652b32db3ace1600487ff66260633c0d9d729f0714e2fe72be4b98473f45e"
+}

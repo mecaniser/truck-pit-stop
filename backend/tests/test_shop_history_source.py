@@ -44,6 +44,31 @@ async def seed(db, *, imported=True):
 
 
 @pytest.mark.asyncio
+async def test_current_account_contact_evidence_replaces_and_invalidates_without_profile_edits(_db_engine, monkeypatch):
+    from scripts.easytruck_sync.contact_snapshot import normalize
+    factory = async_sessionmaker(_db_engine, expire_on_commit=False)
+    async with factory() as db:
+        tenant, customer, vehicle, order, invoice = await seed(db)
+        customer.source = 'easy_truck_shop_import'
+        customer.ets_external_id = '123'
+        primary_before = customer.phone
+        customer.ets_contact_phone_snapshot = normalize(dict(source_shop_id='shop_test', source_customer_id='123',
+            observed_at='2026-10-16T00:00:00Z', complete=True, reason=None, phones=['7045551234']),
+            customer_id='123', dbn_customer_id=customer.id)
+        monkeypatch.setattr('app.services.ets_completed_outcome_source.configured_shops', lambda: {tenant.id: 'shop_test'})
+        snapshot = history_snapshot(tenant=tenant, invoice=invoice, order=order, customer=customer, vehicle=vehicle, operations=[order])
+        assert snapshot['customer']['source_customer_id'] == '123'
+        assert snapshot['customer']['contact_phone_snapshot']['complete']
+        customer.source = None
+        customer.ets_external_id = None
+        invalidated = history_snapshot(tenant=tenant, invoice=invoice, order=order, customer=customer, vehicle=vehicle, operations=[order])
+        assert invalidated['customer']['contact_phone_snapshot']['complete'] is False
+        assert invalidated['customer']['contact_phone_snapshot']['contacts'] == []
+        assert customer.phone == primary_before
+        assert invoice.total_amount == Decimal('1992.62')
+
+
+@pytest.mark.asyncio
 async def test_replay_changed_snapshot_split_operations_and_tenant_scope(_db_engine, monkeypatch):
     factory = async_sessionmaker(_db_engine, expire_on_commit=False)
     async with factory() as db:
