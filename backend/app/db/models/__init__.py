@@ -257,3 +257,5 @@ from app.db.models.shop_history_cursor import ShopHistoryCursor, ShopHistoryObse
 from app.db.models.parts_pricing import PartsPriceMatrix, PartsPriceMatrixRevision, PartsPricingPolicy, PartsPricingEvent  # noqa: F401
 
 from app.db.models.customer_pricing import AccountPricingEvent  # noqa: F401
+
+from app.db.models.dashboard_vehicle_binding import DashboardVehicleBinding  # noqa: F401

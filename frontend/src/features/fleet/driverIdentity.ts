@@ -7,6 +7,9 @@ export type DriverTruck = Pick<BoardTruck, 'id' | 'driver_name' | 'driver_phone'
 export function currentDriverRecord(truck: DriverTruck): DriverRecordSummary | null {
   const record = truck.driver_record
   if (!record || record.identity_basis !== 'motive_current_assignment'
+    || !['verified_vin', 'reviewed_provider_binding'].includes(record.vehicle_identity_basis ?? 'verified_vin')
+    || (record.vehicle_identity_basis === 'reviewed_provider_binding' && !record.vehicle_identity_binding_id)
+    || (record.vehicle_identity_basis !== 'reviewed_provider_binding' && !!record.vehicle_identity_binding_id)
     || !record.capture_id || !record.source_company_id || !record.provider_vehicle_id || !record.provider_driver_id
     || !record.driver_name?.trim() || !record.assignment_verified_at
     || !Number.isInteger(record.local_assignment_revision) || record.local_assignment_revision < 0
@@ -19,6 +22,6 @@ export function currentDriverName(truck: DriverTruck): string | null {
 }
 
 export function sameDriverContext(summary: DriverRecordSummary, detail: DriverRecordSummary): boolean {
-  return (['identity_basis', 'capture_id', 'source_company_id', 'provider_vehicle_id', 'provider_driver_id', 'driver_name', 'local_driver_name', 'local_assignment_revision', 'assignment_verified_at'] as const)
-    .every(key => summary[key] === detail[key])
+  return (['identity_basis', 'vehicle_identity_basis', 'vehicle_identity_binding_id', 'capture_id', 'source_company_id', 'provider_vehicle_id', 'provider_driver_id', 'driver_name', 'local_driver_name', 'local_assignment_revision', 'assignment_verified_at'] as const)
+    .every(key => key === 'vehicle_identity_binding_id' ? (summary[key] ?? null) === (detail[key] ?? null) : key === 'vehicle_identity_basis' ? (summary[key] ?? 'verified_vin') === (detail[key] ?? 'verified_vin') : summary[key] === detail[key])
 }

@@ -1,5 +1,7 @@
 """Company/tenant-scoped driver observations with conservative assignment reads."""
 
+import hashlib
+import json
 from datetime import timedelta
 
 from sqlalchemy import func, select
@@ -19,7 +21,8 @@ from app.schemas.fleet_driver_record import (
     DriverRecordSummary,
     TruckDriverRecordRead,
 )
-from app.services.fleet_diagnostics import authorize, content_digest, resolve
+from app.services import dashboard_vehicle_bindings as bindings
+from app.services.fleet_diagnostics import authorize, resolve
 from app.services.fleet_telemetry import active_membership, fail, now, utc, within
 
 
@@ -46,16 +49,37 @@ async def capture(
         fail(409, "source_company_mismatch")
     if body.source_read_at > stamp:
         fail(409, "future_source_read")
-    vehicle, member = await resolve(
-        db, tenant_id, body.vin, stamp, expected_customer_id
-    )
+    if body.dashboard_binding_id:
+        vehicle, member, _ = await bindings.resolve(
+            db,
+            tenant_id,
+            body.source_company_id,
+            body.provider_vehicle_id,
+            body.source_read_at,
+            company_label=body.source_company_label,
+            binding_id=body.dashboard_binding_id,
+            expected_customer_id=expected_customer_id,
+        )
+    else:
+        vehicle, member = await resolve(
+            db, tenant_id, body.vin, stamp, expected_customer_id
+        )
     # Locks protect concurrency; refresh also discards any older ORM identity-map
     # snapshot loaded by a caller before another transaction changed assignment.
     await db.refresh(vehicle)
     await db.refresh(member)
     if not within(member, body.source_read_at):
         fail(409, "source_outside_current_membership")
-    digest = content_digest(body)
+    # Keep old genuine-VIN replay digests byte-compatible.
+    digest_data = body.model_dump(
+        mode="json",
+        exclude={"dashboard_binding_id", "source_vin_state"}
+        if not body.dashboard_binding_id
+        else set(),
+    )
+    digest = hashlib.sha256(
+        json.dumps(digest_data, sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
     existing = (
         await db.execute(
             select(FleetDriverRecordCapture).where(
@@ -92,6 +116,7 @@ async def capture(
         fleet_customer_id=member.fleet_customer_id,
         fleet_membership_id=member.id,
         verified_vin=body.vin,
+        dashboard_binding_id=body.dashboard_binding_id,
         provider_vehicle_id=body.provider_vehicle_id,
         provider_driver_id=body.provider_driver_id,
         driver_name=body.driver_name,
@@ -216,13 +241,17 @@ async def _latest(db, tenant_id, contexts):
     return {row.vehicle_id: row for row in rows}, directory_by_customer
 
 
-def _view(vehicle, member, row, directory):
+def _view(vehicle, member, row, directory, binding_valid=False):
     result = TruckDriverRecordRead(vehicle_id=vehicle.id)
     if not row:
         result.unavailable_reason = "no_capture"
         return result
     if (
-        row.verified_vin != (vehicle.vin or "").strip().upper()
+        (
+            not binding_valid
+            if row.dashboard_binding_id
+            else row.verified_vin != (vehicle.vin or "").strip().upper()
+        )
         or row.fleet_customer_id != member.fleet_customer_id
         or not within(member, utc(row.source_read_at))
     ):
@@ -268,6 +297,10 @@ def _view(vehicle, member, row, directory):
     result.availability = "available"
     result.record = DriverRecordDetail(
         capture_id=row.id,
+        vehicle_identity_basis="reviewed_provider_binding"
+        if row.dashboard_binding_id
+        else "verified_vin",
+        vehicle_identity_binding_id=row.dashboard_binding_id,
         provider_driver_id=row.provider_driver_id,
         driver_name=row.driver_name,
         source_company_id=row.source_company_id,
@@ -292,8 +325,14 @@ async def read(db, tenant_id, vehicle_id):
         fail(404, "not_found")
     rows, directories = await _latest(db, tenant_id, contexts)
     vehicle, member = contexts[vehicle_id]
+    allowed = await bindings.valid_capture_ids(db, tenant_id, rows.values())
+    row = rows.get(vehicle_id)
     return _view(
-        vehicle, member, rows.get(vehicle_id), directories.get(member.fleet_customer_id)
+        vehicle,
+        member,
+        row,
+        directories.get(member.fleet_customer_id),
+        bool(row and row.id in allowed),
     )
 
 
@@ -302,6 +341,7 @@ async def attach(db, trucks, tenant_id):
         return
     contexts = await _contexts(db, tenant_id, [truck.id for truck in trucks])
     rows, directories = await _latest(db, tenant_id, contexts)
+    allowed = await bindings.valid_capture_ids(db, tenant_id, rows.values())
     for truck in trucks:
         truck.driver_record = None
         if truck.id not in contexts:
@@ -312,6 +352,7 @@ async def attach(db, trucks, tenant_id):
             member,
             rows.get(truck.id),
             directories.get(member.fleet_customer_id),
+            bool(rows.get(truck.id) and rows[truck.id].id in allowed),
         )
         # Stale board contact or fleet labels must not inherit a current score.
         if (

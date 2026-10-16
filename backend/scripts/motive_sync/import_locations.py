@@ -4,9 +4,9 @@ import hashlib
 import json
 import math
 import re
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
-from uuid import NAMESPACE_URL, uuid5
+from uuid import NAMESPACE_URL, UUID, uuid5
 
 from app.db.models.customer import Customer
 from app.db.models.fleet_telemetry import FleetTelemetrySnapshot as Snapshot
@@ -14,8 +14,11 @@ from app.db.models.tenant import Tenant
 from app.db.models.user import User, UserRole
 from app.db.models.vehicle import Vehicle
 from app.db.models.vehicle_relationship import FleetMembership
+from app.schemas.dashboard_vehicle_binding import BoundTelemetryCapture
 from app.schemas.fleet_telemetry import TelemetryCapture
+from app.services import dashboard_vehicle_bindings as bindings
 from app.services import fleet_telemetry as telemetry
+from fastapi import HTTPException
 from sqlalchemy import and_, func, or_, select, text
 
 
@@ -25,7 +28,7 @@ def time_value(value):
     result = datetime.fromisoformat(value.replace("Z", "+00:00"))
     if result.tzinfo is None:
         raise ValueError("Timestamp timezone required")
-    return result.astimezone(timezone.utc)
+    return result.astimezone(UTC)
 
 
 def parse_document(document, company_label, company_id, stamp, allow_replay=False):
@@ -40,6 +43,16 @@ def parse_document(document, company_label, company_id, stamp, allow_replay=Fals
     rows = document.get("vehicles")
     if not isinstance(rows, list) or not rows:
         raise ValueError("Nonempty fleet collection required")
+    source_evidence = {
+        **document,
+        "vehicles": [
+            {key: value for key, value in row.items() if not key.startswith("_")}
+            for row in rows
+        ],
+    }
+    source_digest = hashlib.sha256(
+        json.dumps(source_evidence, sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
     vins, providers = set(), set()
     for row in rows:
         vin = (row.get("vin") or "").strip().upper()
@@ -47,7 +60,14 @@ def parse_document(document, company_label, company_id, stamp, allow_replay=Fals
         if (
             (
                 not re.fullmatch(r"[A-HJ-NPR-Z0-9]{17}", vin)
-                and not (row.get("status") == "unavailable" and not vin)
+                and not (
+                    not vin
+                    and (
+                        row.get("status") == "unavailable"
+                        or row.get("source_vin_state")
+                        in {"not_displayed", "explicitly_empty"}
+                    )
+                )
             )
             or not isinstance(provider, str)
             or not provider
@@ -57,7 +77,9 @@ def parse_document(document, company_label, company_id, stamp, allow_replay=Fals
             raise ValueError("Duplicate source VIN or provider vehicle")
         vins.add(vin)
         providers.add(provider)
-        row["vin"] = vin
+        if vin and row.get("source_vin_state") is not None:
+            raise ValueError("Conflicting source VIN evidence")
+        row["vin"] = vin if row.get("status") == "unavailable" else vin or None
         if row.get("status") not in ("located", "unavailable"):
             raise ValueError("Invalid collection status")
         if row["status"] == "unavailable":
@@ -113,6 +135,8 @@ def parse_document(document, company_label, company_id, stamp, allow_replay=Fals
             or start > read + timedelta(minutes=5)
         ):
             raise ValueError("Observation outside admissible window")
+        row["_validated_company_id"] = company_id
+        row["_validated_source_sha256"] = source_digest
         make_body(
             row,
             "00000000-0000-0000-0000-000000000000",
@@ -159,6 +183,8 @@ def make_body(
         )
     }
     evidence.update(kind="motive_server_ui_v1", company_id=company_id)
+    if row["vin"] is None:
+        evidence.update(source_vin=None, source_vin_state=row.get("source_vin_state"))
     accepted_speed = speed_value(row) if speed else None
     if accepted_speed is not None:
         # Do not add null speed fields to legacy location request digests.
@@ -190,6 +216,24 @@ def make_body(
     digest = hashlib.sha256(
         json.dumps(values, sort_keys=True, default=str).encode()
     ).hexdigest()
+    if row["vin"] is None:
+        if row.get("source_vin_state") not in {"not_displayed", "explicitly_empty"}:
+            raise ValueError("Explicit source VIN state proof required")
+        values.update(
+            dashboard_binding_id=row.get("_dashboard_binding_id", UUID(int=0)),
+            source_company_id=company_id,
+            source_read_at=row["sourceReadTime"],
+            source_vin_state=row["source_vin_state"],
+        )
+        digest = hashlib.sha256(
+            json.dumps(values, sort_keys=True, default=str).encode()
+        ).hexdigest()
+        return BoundTelemetryCapture(
+            client_request_id=uuid5(
+                NAMESPACE_URL, f"motive-location:{tenant_id}:{digest}"
+            ),
+            **values,
+        )
     return TelemetryCapture(
         client_request_id=uuid5(NAMESPACE_URL, f"motive-location:{tenant_id}:{digest}"),
         **values,
@@ -340,9 +384,52 @@ async def prepare(db, rows, tenant_id, actor_id, company_label, company_id):
         if row.get("reason"):
             item["reason"] = row["reason"]
         results.append(item)
+        if (
+            row["vin"]
+            and row["status"] == "located"
+            and row.get("_validated_company_id") == company_id
+        ):
+            await bindings.invalidate_source_vin(
+                db,
+                tenant_id,
+                actor_id,
+                company_id,
+                company_label,
+                row["provider_vehicle_id"],
+                row["vin"],
+                time_value(row["sourceReadTime"]),
+                row["_validated_source_sha256"],
+            )
+        bound_vehicle = None
         if not row["vin"]:
-            item["status"] = "vin_unavailable"
-            continue
+            if row["status"] != "located" or row.get("source_vin_state") not in {
+                "not_displayed",
+                "explicitly_empty",
+            }:
+                item["status"] = "vin_unavailable"
+                continue
+            try:
+                bound_vehicle, _, binding = await bindings.resolve(
+                    db,
+                    tenant_id,
+                    company_id,
+                    row["provider_vehicle_id"],
+                    time_value(row["sourceReadTime"]),
+                    company_label=company_label,
+                )
+            except HTTPException as exc:
+                if exc.status_code != 409:
+                    raise
+                item.update(status="binding_unavailable", reason=exc.detail["code"])
+                continue
+            if row["precision"] != "unknown":
+                start, end = interval(row)
+                if start < telemetry.utc(binding.effective_from) or (
+                    binding.effective_to is not None
+                    and end >= telemetry.utc(binding.effective_to)
+                ):
+                    raise ValueError("Observation outside binding")
+            row["_dashboard_binding_id"] = binding.id
         vehicles = (
             (
                 await db.execute(
@@ -350,7 +437,9 @@ async def prepare(db, rows, tenant_id, actor_id, company_label, company_id):
                     .where(
                         Vehicle.tenant_id == tenant_id,
                         Vehicle.deleted_at.is_(None),
-                        func.upper(func.trim(Vehicle.vin)) == row["vin"],
+                        Vehicle.id == bound_vehicle.id
+                        if bound_vehicle
+                        else func.upper(func.trim(Vehicle.vin)) == row["vin"],
                     )
                     .with_for_update()
                 )
@@ -619,7 +708,9 @@ async def prepare(db, rows, tenant_id, actor_id, company_label, company_id):
         if vehicle.id in seen:
             continue
         seen.add(vehicle.id)
-        if (vehicle.vin or "").strip().upper() not in source_vins:
+        if (vehicle.vin or "").strip().upper() not in source_vins and not any(
+            item.get("vehicle_id") == str(vehicle.id) for item in results
+        ):
             results.append(
                 {
                     "vehicle_id": str(vehicle.id),

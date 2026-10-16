@@ -9,6 +9,7 @@ from app.db.models.fleet_driver_record import FleetDriverDirectoryCapture
 from app.db.models.vehicle import Vehicle
 from app.db.models.vehicle_relationship import FleetMembership
 from app.schemas.fleet_driver_record import DriverRecordCapture, DriverRecordContent
+from app.services import dashboard_vehicle_bindings as bindings
 from app.services import fleet_driver_records as service
 from app.services.fleet_diagnostics import authorize, resolve
 from app.services.fleet_telemetry import active_membership, now
@@ -18,16 +19,28 @@ from scripts.motive_sync.import_locations import time_value
 from sqlalchemy import select
 
 
-def body_for(document, row, tenant_id):
-    request = uuid5(
+def request_id(document, row, tenant_id):
+    return uuid5(
         NAMESPACE_URL,
         f"dieselbridge-driver-record:{tenant_id}:{source_hash(document)}:{row['provider_driver_id']}",
     )
+
+
+def body_for(document, row, tenant_id, binding_id=None):
     return DriverRecordCapture.model_validate(
         {
             **{key: row[key] for key in DriverRecordContent.model_fields if key in row},
-            "client_request_id": request,
+            "client_request_id": request_id(document, row, tenant_id),
             "vin": row["vin"],
+            **(
+                {
+                    "dashboard_binding_id": binding_id or UUID(int=0),
+                    "source_vin_state": row["source_vin_state"],
+                }
+                if row.get("source_vin_state") in {"not_displayed", "explicitly_empty"}
+                and row["vin"] is None
+                else {}
+            ),
             "provider_vehicle_id": row["provider_vehicle_id"],
             "provider_driver_id": row["provider_driver_id"],
             "driver_name": row["driver_name"],
@@ -148,15 +161,21 @@ def validate(document, company_label, company_id, *, recovery=False):
             continue
         if (
             not vehicle
-            or not vin
+            or (
+                not vin
+                and row.get("source_vin_state")
+                not in {"not_displayed", "explicitly_empty"}
+            )
+            or (vin and row.get("source_vin_state") is not None)
             or vehicle in captured_vehicles
-            or vin in captured_vins
+            or (vin and vin in captured_vins)
         ):
             raise ValueError(
                 "Captured driver requires unique verified vehicle/VIN assignment"
             )
         captured_vehicles.add(vehicle)
-        captured_vins.add(vin)
+        if vin:
+            captured_vins.add(vin)
         if row.get("source_timezone") != "America/New_York":
             raise ValueError("Captured driver requires verified source timezone")
         # Validate every nested reading before a database transaction can write.
@@ -192,6 +211,7 @@ async def batch(
     expected_customer_id=None,
     eligible=None,
 ):
+    validate(document, company_label, company_id, recovery=True)
     if not expected_customer_id:
         raise ValueError("Explicit fleet customer configuration required")
     await authorize(db, tenant_id, actor_id)
@@ -259,17 +279,52 @@ async def batch(
                         raise
             results.append({**item, "status": "unavailable", "reason": row["reason"]})
             continue
-        body = body_for(document, row, tenant_id)
-        item["client_request_id"] = str(body.client_request_id)
-        if eligible is not None and str(body.client_request_id) not in eligible:
+        if apply and row["vin"] is not None:
+            await bindings.invalidate_source_vin(
+                db,
+                tenant_id,
+                actor_id,
+                company_id,
+                company_label,
+                row["provider_vehicle_id"],
+                row["vin"],
+                time_value(row["source_read_at"]),
+                source_hash(document),
+            )
+        # Shared provider directories include vehicles owned by other approved
+        # local fleets. Preserve the validated request set before re-resolving
+        # a no-VIN binding; eligible requests still recheck its live context.
+        item["client_request_id"] = str(request_id(document, row, tenant_id))
+        if eligible is not None and item["client_request_id"] not in eligible:
             results.append(
                 {**item, "status": "excluded", "reason": "not_in_validated_attempt"}
             )
             continue
+        binding = None
+        if row["vin"] is None:
+            try:
+                vehicle, _, binding = await bindings.resolve(
+                    db,
+                    tenant_id,
+                    company_id,
+                    row["provider_vehicle_id"],
+                    time_value(row["source_read_at"]),
+                    company_label=company_label,
+                    expected_customer_id=expected_customer_id,
+                )
+            except HTTPException as exc:
+                if eligible is not None or exc.status_code != 409:
+                    raise
+                results.append(
+                    {**item, "status": "excluded", "reason": exc.detail["code"]}
+                )
+                continue
+        body = body_for(document, row, tenant_id, binding.id if binding else None)
         try:
-            vehicle, _ = await resolve(
-                db, tenant_id, body.vin, now(), expected_customer_id
-            )
+            if binding is None:
+                vehicle, _ = await resolve(
+                    db, tenant_id, body.vin, now(), expected_customer_id
+                )
             matched.add(vehicle.id)
             record, action = await service.capture(
                 db,

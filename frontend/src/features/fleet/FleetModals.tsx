@@ -1070,7 +1070,7 @@ export function AssignDriverModal({ truck, driverPhone, onClose }: { truck: Boar
                   {!drivers.isLoading && !legacyContacts.isLoading && !drivers.isError && !legacyContacts.isError && filteredLegacyContacts.map((contact) => (
                     <button type="button" key={`legacy:${contact.name}:${contact.phone || ''}`} className="driver-profile-option is-legacy" disabled={busy} onClick={() => chooseLegacyContact(contact)}>
                       <span className="avatar avatar-sm">{contact.name.split(/\s+/).slice(0, 2).map((part) => part[0]).join('')}</span>
-                      <span><strong>{contact.name}</strong><small>Legacy contact · {contact.vehicle_count} {contact.vehicle_count === 1 ? 'truck' : 'trucks'}{contact.phone ? ` · ${formatUSPhone(contact.phone)}` : ''}</small></span>
+                      <span><strong>{contact.name}</strong><small>{contact.vehicle_count} {contact.vehicle_count === 1 ? 'truck' : 'trucks'}{contact.phone ? ` · ${formatUSPhone(contact.phone)}` : ''}</small></span>
                       <span className="driver-profile-state">Create profile</span>
                     </button>
                   ))}
