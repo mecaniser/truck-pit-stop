@@ -13,7 +13,7 @@ import pytest
 from app.commands import worker_schema_readiness as gate
 
 
-URL = "postgresql://synthetic:DO_NOT_LOG_THIS@127.0.0.1:1/disposable"
+URL = "postgresql://DO_NOT_LOG_THIS@127.0.0.1:1/disposable"
 
 
 @pytest.fixture
@@ -177,7 +177,7 @@ from app.tasks import celery_app,settings
 from app.commands import worker_schema_readiness as gate
 assert celery.__version__=='5.3.4'
 mode=sys.argv[1];events=[];clock=[0.0]
-settings.DATABASE_URL='postgresql://synthetic:DO_NOT_LOG_THIS@127.0.0.1:1/disposable'
+settings.DATABASE_URL='postgresql://DO_NOT_LOG_THIS@127.0.0.1:1/disposable'
 celery_app.conf.broker_url='memory://';celery_app.conf.imports=()
 gate._expected_heads=lambda:{'installed_head'}
 gate.time=SimpleNamespace(monotonic=lambda:clock[0],sleep=lambda s:clock.__setitem__(0,clock[0]+s))
@@ -217,7 +217,7 @@ def test_probe_has_no_task_provider_or_application_settings_imports():
 import json,sys
 from app.commands import worker_schema_readiness as gate
 assert gate._expected_heads()
-state=gate._probe_database('postgresql://synthetic:DO_NOT_LOG_THIS@127.0.0.1:1/disposable',{'head'})
+state=gate._probe_database('postgresql://DO_NOT_LOG_THIS@127.0.0.1:1/disposable',{'head'})
 for name in sys.modules:
  assert not name.startswith(('app.tasks','app.services','app.core.config')),name
 print(json.dumps({'state':state}))
@@ -241,7 +241,7 @@ from app.tasks import celery_app,settings
 from app.commands import worker_schema_readiness as gate
 root=logging.getLogger();initial=(root.level,list(root.handlers))
 assert initial==(logging.WARNING,[])
-settings.DATABASE_URL='postgresql://synthetic:DO_NOT_LOG_THIS@127.0.0.1:1/disposable'
+settings.DATABASE_URL='postgresql://DO_NOT_LOG_THIS@127.0.0.1:1/disposable'
 celery_app.conf.broker_url='memory://';celery_app.conf.imports=()
 gate._expected_heads=lambda:{'installed_head'}
 gate._probe_process=lambda *args:'ready'

@@ -1,7 +1,7 @@
 # DB133 worker schema readiness handoff
 
 Owner: Backend & Integrations. Independent QA/Security: separate gate required.
-Implementation base: `a868859a5c408be4602331d740fb66f616cff2e9` (post-review pre-logging output correction).
+Implementation base: `62876c7669ed10dd734776ba7effc3700a2a6ea0` (test fixture credential removal only).
 
 The Celery worker now waits for the installed Alembic head and required physical schema before its Beat, Pool or Consumer bootsteps are built. This closes the Worker-before-Web migration race without giving Worker migration authority. The private manual migration experiment is abandoned and must not be executed; the normal Web startup remains the sole migration owner.
 
@@ -24,11 +24,11 @@ Run from `backend/` with the repository test interpreter:
 python -m pytest tests/test_worker_schema_readiness.py tests/test_schema_preflight.py tests/test_conversion_worker_registration.py -q
 ```
 
-Result after the pre-logging correction: **29 passed**, 2.92 seconds. Evidence: `/tmp/db133-worker-gate-logging-after.log`.
+Result after the pre-logging correction and password-free synthetic fixture update: **29 passed**, 2.78 seconds. Evidence: `/tmp/db133-worker-gate-password-free.log`.
 
 This includes actual installed Celery **5.3.4** `WorkController` and signal dispatch. A blueprint spy prevents real Beat/Pool/Consumer startup during the test. Delayed success permits blueprint application once; deadline and unexpected failures exit 78 before blueprint application. A genuinely hung child is killed/reaped; an unreachable database probe is bounded and sanitized. Existing conversion worker registrations and schedules remain registered.
 
-The actual `celery.apps.worker.Worker` lifecycle additionally proves that waiting/pass messages appear once, in order, before `Worker.setup_logging`, with default WARNING/no-handler logging unchanged by the gate. The prior implementation reproduced missing messages (`/tmp/db133-worker-gate-logging-before.log`). Fixed sanitized status now writes directly to stderr with an explicit flush, without global logging reconfiguration. The hung-child test continues to pass; no speculative timing change was made.
+The actual `celery.apps.worker.Worker` lifecycle additionally proves that waiting/pass messages appear once, in order, before `Worker.setup_logging`, with default WARNING/no-handler logging unchanged by the gate. The prior implementation reproduced missing messages (`/tmp/db133-worker-gate-logging-before.log`). Fixed sanitized status now writes directly to stderr with an explicit flush, without global logging reconfiguration. The hung-child test continues to pass; no speculative timing change was made. All four unreachable test database URLs now contain no password; the `DO_NOT_LOG_THIS` username marker retains the same disclosure assertions. The pre-push scanner was not bypassed, and application code is unchanged by this fixture correction.
 
 Real PostgreSQL command uses `WORKER_SCHEMA_POSTGRES_TEST_URL` privately, and the test fixture refuses any non-local database or name outside the dedicated `db133_test_merge_worker_gate_` prefix:
 
@@ -49,14 +49,14 @@ The disposable end-to-end runner `/tmp/db133-worker-gate-pg-evidence.py` starts 
 
 ## Frozen implementation identity and remaining release work
 
-Four-file manifest: `/tmp/db133-worker-gate-evidence/source-manifest-logging.json`.
-Aggregate SHA256: `43dc8184197cee421ff37025774f72a7102edc37f2c48573ab57cb1e646e1432`.
+Four-file manifest: `/tmp/db133-worker-gate-evidence/source-manifest-password-free.json`.
+Aggregate SHA256: `54d7828f6688b8a12b3a3c87b052d147a1660a4d84938bbeed2f2cfd07fab3af`.
 
 | File | SHA256 |
 | --- | --- |
 | gate module | `21e8776b04050c5ce7cf01063835d9231aa9db06b7852b5af168c3b46518ad03` |
 | tasks registration | `914b365bc1ff23f9897e1d13f17c0efaca1b0474099ba23d42dc0369cde4ed38` |
-| focused tests | `77563a186057daf30fc9470b3e2376c24547e9a4beb1b188d930adb58d2ccf7a` |
+| focused tests | `079ef867d15eaece42283dcb88737781a93893599da668b9eb39a7cd15af2ec2` |
 | PostgreSQL tests | `2b616cb63a4db70494e3bd17b1e8c658ac176cebd33e10617daf9a2ada0c6dae` |
 
 Independent approval, final exact-head protected CI, merge/deploy, read-only production schema/retention checks and desktop/mobile acceptance remain separate required gates. During deployment, require Web readiness at the checked schema and Worker readiness-pass/startup evidence. A worker timeout or exit is a failed startup, not permission to stamp or migrate from Worker. Investigate the Web migration/deployment result; preserve the read-only boundary.

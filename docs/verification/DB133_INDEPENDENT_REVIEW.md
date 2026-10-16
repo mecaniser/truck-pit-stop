@@ -712,3 +712,16 @@ matched before and after. The earlier four real-PG passes and ten-table retentio
 remain applicable because their probe and connection code is byte-identical;
 those database checks were not repeated. Exact final-source CI and production
 readiness-pass/deployment evidence remain required.
+
+### Password-free test fixture delta — 2026-10-16
+
+**Local QA/Security GO retained** at four-file aggregate SHA256
+`54d7828f6688b8a12b3a3c87b052d147a1660a4d84938bbeed2f2cfd07fab3af`.
+Independently verified that the entire delta is four test URL replacements:
+the synthetic password field is removed and the existing redaction marker is
+retained as the synthetic username. Every assertion is unchanged; application,
+signal and PostgreSQL-test hashes are identical to the approved logging gate.
+The owner's final focused rerun reports **29 passed**, 2.78 seconds, with two
+existing warnings (`/tmp/db133-worker-gate-password-free.log`). No tests or hooks
+are bypassed. No additional PostgreSQL run was warranted for this fixture-only
+change. Final protected CI and production gates remain pending.
