@@ -1,7 +1,7 @@
 # DB-036: percentage beside trip comparison bars
 
 Owner: Frontend & UX. Fast UI lane; existing authenticated Trips data and permissions.
-Branch: `codex/trip-median-percentage`, base `d5cb6628`.
+Branch: `codex/trip-median-percentage`, release base `2f093ca3`.
 
 ## Acceptance before implementation
 
@@ -43,3 +43,26 @@ Production signed-in acceptance remains required.
 - Local frontend fixture is aligned and browser-verified at
   `http://127.0.0.1:5173/tests/fuel-preview.html`; this is not local full-stack or
   production acceptance. Protected CI and signed-in release check remain pending.
+
+## Production release acceptance — 2026-10-16
+
+- PR553 checked head `cf13a2d2797eb90628762a890cedd2f0762046fe` passed all six
+  protected checks in run38913239743. Merged at14:38:41UTC as
+  `7299722d4966fa4fbb88bd4c577d8e0bc8b10476`. Both commits have tree
+  `ae6dfc9e089eac5d21db041022fe9eca48a3dc5b`; the redundant post-merge main
+  run38917434806 was canceled, not counted as a pass.
+- Web deployment `3033ecbb-deee-4064-9f37-fcb733353d78` serves that exact SHA
+  through `/build-version` (built14:42:17UTC). Signed-in production refreshed
+  successfully and renders the new percentage labels.
+- Desktop1280x900 and1600x1000, plus mobile390x844, verified. Weekly median
+  1,962.9mi:2,487.3mi renders green+26.7%;1,071.7mi renders red-45.4%. All16
+  row values agree with the visible median/totals within display rounding.
+  Every reporting row retains its white median marker.
+- Driving hours recalculates against37.3h; Month changes the distance median
+  to4,926.2mi, with eight positive/eight negative labels. Compact comparison
+  scrolls horizontally; document width remains390px. No errors were logged
+  during this release acceptance; older14:12 stale-asset errors belong to the
+  previous rollout and were resolved by refresh.
+- Private screenshots/readbacks retained under `output/trip-median-percentage/`,
+  including production-desktop-wide.png and production-mobile-bars.png.
+  Viewport restored. Fast UI runtime gate PASS; no API/data/security changes.
