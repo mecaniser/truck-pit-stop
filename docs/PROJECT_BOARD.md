@@ -1956,3 +1956,25 @@ and found no remaining blocking changed-code issue. Owner's broader 98 tests inc
 history capture. [PR546](https://github.com/mecaniser/truck-pit-stop/pull/546) open;
 protected CI and deployment/runtime acceptance remain pending. No production source
 or Google replay authorized by this evidence record.
+
+## DB-COMPLETION-REVENUE — In progress (2026-10-15)
+
+Backend & Integrations accountable; high-risk source observation lane. Explicit
+user policy: recognize completed repair final invoice value before payment. ETS
+v2 retains completed-service/full-invoice-manifest evidence and canonical identity
+but does not require settlement. Native v2 requires explicit completed order,
+finalized issued invoice and authoritative source completion/approval timestamp.
+Draft/internal/cancelled/conflicting evidence stays held. Later payment must not
+create another revenue identity. Only provenance/outbox observations change;
+financial records, manual decisions and Google requests remain untouched.
+Parent ELIS owner implements compatible v2 consumer before source release.
+Runtime preflight after branch change: frontend5173 belongs to another task;
+backend8000 absent, no local config in this worktree. No service replaced.
+Independent QA/Security and coordinated release remain required.
+
+Owner validation: 177 focused native/ETS completion, evidence freshness, history,
+and existing paid-contract tests pass. Production read-only coverage: 1,561 ETS
+completed-service observations all carry invoice status10; none have a nonzero
+balance, so unpaid ETS runtime acceptance remains unproven. Native26 invoices all
+have actual work completion timestamps;16 satisfy finalization predicates. No
+financial/source delivery mutation occurred. Independent review in progress.

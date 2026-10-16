@@ -212,6 +212,9 @@ async def capture_tenant_history(db: Session, tenant: Tenant, *, batch_size: int
                 # Unbound identities cannot become evidence. Freshness gating in
                 # ELIS prevents older positive observations remaining usable.
                 pass
+        elif order.source is None:
+            from app.services.native_completed_outcome_source import capture_native_order
+            await capture_native_order(db, tenant.id, order.id)
         cursor.last_invoice_id = invoice.id
     if len(rows) < batch_size:
         cursor.last_invoice_id = None
