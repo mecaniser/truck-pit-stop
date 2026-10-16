@@ -1,0 +1,162 @@
+{
+  "checked_at": "2026-10-16T03:52:13.505888+00:00",
+  "scope": "local synthetic C1 fixtures",
+  "customer": {
+    "id": "68cb3854-dbba-4282-815a-824d423e15fe",
+    "rate": null,
+    "matrix": null,
+    "version": 6,
+    "tax_exempt": false
+  },
+  "orders": [
+    {
+      "id": "107530d1-52cc-40c8-ac14-64383481d6de",
+      "number": "PERF-295757AF-000012",
+      "deleted": true,
+      "snapshot": {
+        "schema_version": 1,
+        "snapshot_id": "b945b9b9-7672-4813-a138-abffc4a83f41",
+        "captured_at": "2026-10-16T03:22:28.618604+00:00",
+        "customer_id": "68cb3854-dbba-4282-815a-824d423e15fe",
+        "customer_name": "Performance Carrier 001",
+        "customer_pricing_version": 1,
+        "customer_policy_event_id": "6a686c8b-9861-4708-a746-6cc2e49db0a2",
+        "parts": {
+          "source": "shop",
+          "mode": "catalog",
+          "matrix": null,
+          "shop_default_generation": 2
+        },
+        "labor": {
+          "source": "customer",
+          "rate": "137.50"
+        }
+      }
+    },
+    {
+      "id": "582d9f08-2963-4eb2-a66f-f04a59b5fe6e",
+      "number": "PERF-295757AF-000013",
+      "deleted": true,
+      "snapshot": {
+        "schema_version": 1,
+        "snapshot_id": "60375947-ad24-4bf7-b60b-b4f0aaffb711",
+        "captured_at": "2026-10-16T03:28:58.482725+00:00",
+        "customer_id": "68cb3854-dbba-4282-815a-824d423e15fe",
+        "customer_name": "Performance Carrier 001",
+        "customer_pricing_version": 3,
+        "customer_policy_event_id": "44680117-71dd-4eff-9881-e3d3b1e8c23a",
+        "parts": {
+          "source": "customer",
+          "mode": "matrix",
+          "matrix": {
+            "id": "97e4cc72-33d7-4192-8bae-fe47f36ad725",
+            "revision_id": "33a25f9f-2ac7-40a1-b8c7-f3044d63d530",
+            "revision": 1,
+            "name": "DB133 LOCAL QA customer matrix"
+          },
+          "shop_default_generation": null
+        },
+        "labor": {
+          "source": "customer",
+          "rate": "151.25"
+        }
+      }
+    }
+  ],
+  "stock": [
+    {
+      "sku": "PERF-PART-0001",
+      "quantity": 102
+    },
+    {
+      "sku": "PERF-PART-0002",
+      "quantity": 102
+    }
+  ],
+  "parts_usage_count": 0,
+  "matrix": [
+    {
+      "id": "97e4cc72-33d7-4192-8bae-fe47f36ad725",
+      "name": "DB133 LOCAL QA customer matrix",
+      "archived": true
+    }
+  ],
+  "stock_events": [
+    {
+      "sku": "PERF-PART-0001",
+      "event": "stock.repair_reserved",
+      "source_order": "582d9f08-2963-4eb2-a66f-f04a59b5fe6e",
+      "before": {
+        "stock_quantity": 102
+      },
+      "after": {
+        "stock_quantity": 101
+      },
+      "stock": {
+        "delta": -1,
+        "bucket": "on_hand",
+        "stock_version": 12,
+        "physical_on_hand": 101,
+        "available_to_sell": 101,
+        "held_for_checkout": 0
+      }
+    },
+    {
+      "sku": "PERF-PART-0002",
+      "event": "stock.repair_reserved",
+      "source_order": "582d9f08-2963-4eb2-a66f-f04a59b5fe6e",
+      "before": {
+        "stock_quantity": 102
+      },
+      "after": {
+        "stock_quantity": 101
+      },
+      "stock": {
+        "delta": -1,
+        "bucket": "on_hand",
+        "stock_version": 3,
+        "physical_on_hand": 101,
+        "available_to_sell": 101,
+        "held_for_checkout": 0
+      }
+    },
+    {
+      "sku": "PERF-PART-0001",
+      "event": "stock.repair_released",
+      "source_order": "582d9f08-2963-4eb2-a66f-f04a59b5fe6e",
+      "before": {
+        "stock_quantity": 101
+      },
+      "after": {
+        "stock_quantity": 102
+      },
+      "stock": {
+        "delta": 1,
+        "bucket": "on_hand",
+        "stock_version": 13,
+        "physical_on_hand": 102,
+        "available_to_sell": 102,
+        "held_for_checkout": 0
+      }
+    },
+    {
+      "sku": "PERF-PART-0002",
+      "event": "stock.repair_released",
+      "source_order": "582d9f08-2963-4eb2-a66f-f04a59b5fe6e",
+      "before": {
+        "stock_quantity": 101
+      },
+      "after": {
+        "stock_quantity": 102
+      },
+      "stock": {
+        "delta": 1,
+        "bucket": "on_hand",
+        "stock_version": 4,
+        "physical_on_hand": 102,
+        "available_to_sell": 102,
+        "held_for_checkout": 0
+      }
+    }
+  ]
+}

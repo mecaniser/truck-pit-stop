@@ -255,3 +255,5 @@ from app.db.models.service_checklist import RepairOrderChecklistItem  # noqa: F4
 from app.db.models.shop_history_cursor import ShopHistoryCursor, ShopHistoryObservation
 
 from app.db.models.parts_pricing import PartsPriceMatrix, PartsPriceMatrixRevision, PartsPricingPolicy, PartsPricingEvent  # noqa: F401
+
+from app.db.models.customer_pricing import AccountPricingEvent  # noqa: F401

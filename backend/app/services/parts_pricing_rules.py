@@ -204,7 +204,7 @@ def safe_price(row, *, can_override=False, snapshot=None, price=None, default=No
     source = snapshot.get('source', 'legacy_unknown')
     if source not in {'matrix', 'fixed', 'catalog', 'ad_hoc', 'internal', 'legacy_unknown'}:
         source = 'catalog'
-    return {'origin_source': source, 'current_source': getattr(row, '_pricing_current_source', None) or ('manual' if snapshot.get('initial_override') and source != 'ad_hoc' else source),
+    return {**({'policy_source':snapshot['policy_source']} if snapshot.get('policy_source') in {'customer','shop','internal','legacy'} else {}), 'origin_source': source, 'current_source': getattr(row, '_pricing_current_source', None) or ('manual' if snapshot.get('initial_override') and source != 'ad_hoc' else source),
             'managed': bool(snapshot.get('managed')), 'default_unit_price': cents(default) if default is not None else None,
             'charged_unit_price': cents(price) if price is not None else None, 'line_total': format(line_total(price, quantity), '.2f') if price is not None else None,
             'pricing_version': getattr(row, 'pricing_version', None) if persisted else None, 'can_override': can_override}

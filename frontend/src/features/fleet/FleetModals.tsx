@@ -683,6 +683,7 @@ export function SchedulePMModal({ truck, onClose, onDone, createMode = false }: 
   const [createWO, setCreateWO] = useState(createMode)
   const { options: billToOptions, isLoading: billToLoading } = useTruckBillToOptions(truck.id)
   const [billToCustomerId, setBillToCustomerId] = useState('')
+  const accountPricing = useIntakePricing(billToCustomerId, truck.id, createWO, 'fleet')
   useEffect(() => {
     if (!billToCustomerId && billToOptions.length) {
       const preferred = billToOptions.find((item) => item.relationship_type === 'default_payer' && item.is_primary)
@@ -759,6 +760,7 @@ export function SchedulePMModal({ truck, onClose, onDone, createMode = false }: 
       service_ids: selected,
       save_as_default: saveAsDefault,
       bill_to_customer_id: (createWO && billToCustomerId) ? billToCustomerId : undefined,
+      ...(createWO ? accountPricing.confirmation() : {}),
       }
       if (!createWO) return (await api.post(`/fleet/trucks/${truck.id}/schedule-pm`, body)).data as BoardTruck
       return pricing.execute<BoardTruck>({ context: { kind: 'fleet_draft', vehicle_id: truck.id, bill_to_customer_id: billToCustomerId || null }, plan: { kind: 'fleet_create', service_ids: selected, part_lines: [] }, pricing_presentation: 'fleet' }, async (confirmation, options) => (await api.post(`/fleet/trucks/${truck.id}/schedule-pm`, { ...body, ...confirmation }, options)).data, body)
@@ -775,7 +777,7 @@ export function SchedulePMModal({ truck, onClose, onDone, createMode = false }: 
       invalidateFleetAndCockpit(qc)
       onDone(); onClose()
     },
-    onError: (cause) => { if (!(cause instanceof PricingCancelled)) toast.error(pricingError(cause, 'Failed to schedule PM')) },
+    onError: (cause) => { accountPricing.handleConflict(cause); if (!(cause instanceof PricingCancelled)) toast.error(pricingError(cause, 'Failed to schedule PM')) },
   })
 
   const taskLabel = createMode
@@ -785,7 +787,7 @@ export function SchedulePMModal({ truck, onClose, onDone, createMode = false }: 
     <div className="fleet-sidekick-actions">
       <button className={ghostBtn} disabled={save.isPending} onClick={onClose}>Cancel</button>
       <button className={yellowBtn}
-        disabled={save.isPending || (createWO && (billToLoading || !billToCustomerId))} onClick={() => save.mutate()}>
+        disabled={save.isPending || (createWO && (billToLoading || !billToCustomerId || !accountPricing.ready))} onClick={() => save.mutate()}>
         {save.isPending ? <Spinner size="sm" /> : (createMode ? <ClipboardCheck size={15} /> : <Calendar size={15} />)}
         {createMode ? 'Create repair order' : (createWO ? `${rescheduling ? 'Reschedule' : 'Schedule'} + create repair order` : 'Save schedule')}
       </button>
@@ -854,6 +856,7 @@ export function SchedulePMModal({ truck, onClose, onDone, createMode = false }: 
           </Field>
         )}
 
+        {accountPricing.notice}
         <FieldGroup label="PM service">
           <div className="pm-svc-list" role="radiogroup" aria-label="PM service">
             {activeServices.length === 0 ? (
@@ -2123,3 +2126,4 @@ function InspectionChecklistModal({ inspectionId, truckId, vehicleId, currentOdo
     </SidekickPanel>
   )
 }
+import { useIntakePricing } from '@/features/customer-pricing/useIntakePricing'

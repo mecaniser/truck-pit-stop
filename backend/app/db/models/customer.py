@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Text, ForeignKey, Numeric, Boolean, DateTime, UniqueConstraint, Integer, JSON
+from sqlalchemy import Column, String, Text, ForeignKey, Numeric, Boolean, DateTime, UniqueConstraint, Integer, BigInteger, CheckConstraint, ForeignKeyConstraint, JSON
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import relationship
 from sqlalchemy.dialects.postgresql import UUID
@@ -9,6 +9,9 @@ class Customer(BaseModel):
     __tablename__ = "customers"
     __table_args__ = (
         UniqueConstraint("tenant_id", "id", name="uq_customers_tenant_id_id_db045"),
+        CheckConstraint('pricing_labor_rate IS NULL OR (pricing_labor_rate > 0 AND pricing_labor_rate <= 99999999.99)', name='ck_customer_pricing_rate'),
+        CheckConstraint('pricing_version >= 0', name='ck_customer_pricing_version'),
+        ForeignKeyConstraint(['tenant_id','parts_price_matrix_id'],['parts_price_matrices.tenant_id','parts_price_matrices.id'],name='fk_customer_pricing_matrix'),
     )
     
     tenant_id = Column(UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=False, index=True)
@@ -16,6 +19,12 @@ class Customer(BaseModel):
     # so make the normal customer-to-tenant ownership join explicit.
     tenant = relationship("Tenant", backref="customers", foreign_keys=[tenant_id])
     
+    pricing_labor_rate = Column(Numeric(10,2))
+    parts_price_matrix_id = Column(UUID(as_uuid=True))
+    pricing_version = Column(BigInteger, nullable=False, default=0, server_default='0')
+    pricing_updated_at = Column(DateTime(timezone=True))
+    pricing_updated_by = Column(UUID(as_uuid=True))
+
     first_name = Column(String(100), nullable=False)
     last_name = Column(String(100), nullable=False)
     company_name = Column(String(255), nullable=True, index=True)

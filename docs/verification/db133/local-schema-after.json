@@ -1,0 +1,35 @@
+{
+  "checked_at": "2026-10-16T02:52:23.237450+00:00",
+  "database": "truckpitstop_ets_workflow_parity_20261012",
+  "tables": {
+    "customers": {
+      "count": 631,
+      "fingerprint": "32d096ade23532bf22753ad2e9606791"
+    },
+    "repair_orders": {
+      "count": 2815,
+      "fingerprint": "efde8909bd8c465403044c77cf096a18"
+    },
+    "counter_sales": {
+      "count": 0,
+      "fingerprint": "d41d8cd98f00b204e9800998ecf8427e"
+    },
+    "labor": {
+      "count": 3837,
+      "fingerprint": "9bb48f811266e123b76bb4a09e61c3b3"
+    },
+    "inventory": {
+      "count": 1334,
+      "fingerprint": "8b7f9bcf759903eac8c70c896ed42867"
+    },
+    "parts_usage": {
+      "count": 2894,
+      "fingerprint": "b4c9212eee8226f4bd096b93924a8d0c"
+    },
+    "invoices": {
+      "count": 2056,
+      "fingerprint": "ac0762b0aa4d2d9891f257d5b6bdded0"
+    }
+  },
+  "schema": "175_customer_pricing_defaults"
+}

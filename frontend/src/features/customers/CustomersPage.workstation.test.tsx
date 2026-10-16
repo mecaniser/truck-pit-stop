@@ -530,3 +530,18 @@ it('keeps a pending merge open and allows Escape after a failure without losing 
   await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
   expect(apiMocks.post).toHaveBeenCalledTimes(1)
 })
+
+it('shows the pricing merge guard without clearing the duplicate or adding merge choices', async () => {
+  apiMocks.post.mockReset()
+  installApiFixture([customer, secondCustomer])
+  apiMocks.post.mockRejectedValueOnce({ response: { status: 409, data: { detail: { code: 'customer_pricing_merge_locked', message: 'Pricing history prevents merging these accounts.' } } } })
+  renderPage('/dashboard/customers?selected=customer-1'); const user = userEvent.setup()
+  await user.click(await screen.findByRole('button', { name: 'Merge', exact: true }))
+  const dialog = screen.getByRole('dialog', { name: 'Merge Duplicate Customer' })
+  await user.type(within(dialog).getByRole('textbox', { name: 'Search duplicate customers' }), 'Miles')
+  await user.click(await within(dialog).findByRole('button', { name: /Miles Freight/ }))
+  await user.click(within(dialog).getByRole('button', { name: 'Merge Customers' }))
+  expect(await within(dialog).findByRole('alert')).toHaveTextContent('Pricing history prevents merging these accounts.')
+  expect(dialog).toHaveTextContent('Miles Freight'); expect(within(dialog).getByRole('button', { name: 'Back', exact: true })).toBeEnabled()
+  expect(apiMocks.post).toHaveBeenCalledExactlyOnceWith('/customers/merge', { winner_id: 'customer-1', loser_id: 'customer-2' })
+})

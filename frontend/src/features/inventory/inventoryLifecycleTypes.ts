@@ -104,12 +104,18 @@ export type CounterSaleReturn = {
   completed_at: string | null
 }
 
+export type CounterSalePolicy = { schema_version: 1 } & (
+  | { snapshot_id: string; mode: 'captured'; parts: { source: 'customer' | 'shop'; mode: 'matrix' | 'catalog' } }
+  | { snapshot_id: null; mode: 'legacy'; parts: { source: 'legacy'; mode: 'legacy' } }
+)
+
 export type CounterSale = {
   id: string
   sale_number: string
   status: CounterSaleStatus
   version: number
   customer_id: string | null
+  pricing_policy: CounterSalePolicy
   buyer_name: string | null
   buyer_email: string | null
   buyer_phone: string | null

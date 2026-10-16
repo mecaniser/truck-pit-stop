@@ -108,7 +108,7 @@ async def test_create_selection_trusted_ids_and_retry_preservation(monkeypatch, 
     shop = tenant()
     customer_id, vehicle_id = uuid4(), uuid4()
     reservation = service.IntakeReservation(repair_order_uuid=uuid4(), elis_opportunity_id=uuid4(), callrail_call_id="CAL-synthetic")
-    existing = SimpleNamespace(id=reservation.repair_order_uuid, customer_id=customer_id, vehicle_id=vehicle_id,
+    existing = SimpleNamespace(id=reservation.repair_order_uuid, deleted_at=None, customer_id=customer_id, vehicle_id=vehicle_id,
                                elis_opportunity_id=reservation.elis_opportunity_id, callrail_call_id=reservation.callrail_call_id)
     if mode == "wrong_customer":
         existing.customer_id = uuid4()
@@ -129,9 +129,17 @@ async def test_create_selection_trusted_ids_and_retry_preservation(monkeypatch, 
             self.added.append(order)
         async def refresh(self, order):
             pass
+        async def commit(self):
+            pass
     db = DB()
     reserve = AsyncMock(return_value=reservation)
-    monkeypatch.setattr(service, "reserve_originating_call", reserve)
+    # This unit test owns trusted call-ID selection. DB133's durable reservation,
+    # policy capture and replay authorization are exercised with real sessions in
+    # test_customer_pricing; do not emulate those transactions with query queues.
+    monkeypatch.setattr(endpoint.account_pricing, "reserve_call", reserve)
+    monkeypatch.setattr(endpoint.account_pricing, "begin_intake", AsyncMock(return_value=(None, None)))
+    monkeypatch.setattr(endpoint.account_pricing, "capture", AsyncMock(return_value=(None, {})))
+    monkeypatch.setattr(endpoint, "_account_order_response", lambda order, *_: order)
     monkeypatch.setattr(endpoint, "uses_internal_fleet_pricing", lambda *_: False)
     relationship = AsyncMock()
     monkeypatch.setattr(endpoint, "ensure_vehicle_relationship", relationship)
