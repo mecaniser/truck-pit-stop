@@ -19,15 +19,18 @@ from scripts.motive_sync.import_locations import time_value
 from sqlalchemy import select
 
 
-def body_for(document, row, tenant_id, binding_id=None):
-    request = uuid5(
+def request_id(document, row, tenant_id):
+    return uuid5(
         NAMESPACE_URL,
         f"dieselbridge-driver-record:{tenant_id}:{source_hash(document)}:{row['provider_driver_id']}",
     )
+
+
+def body_for(document, row, tenant_id, binding_id=None):
     return DriverRecordCapture.model_validate(
         {
             **{key: row[key] for key in DriverRecordContent.model_fields if key in row},
-            "client_request_id": request,
+            "client_request_id": request_id(document, row, tenant_id),
             "vin": row["vin"],
             **(
                 {
@@ -288,6 +291,15 @@ async def batch(
                 time_value(row["source_read_at"]),
                 source_hash(document),
             )
+        # Shared provider directories include vehicles owned by other approved
+        # local fleets. Preserve the validated request set before re-resolving
+        # a no-VIN binding; eligible requests still recheck its live context.
+        item["client_request_id"] = str(request_id(document, row, tenant_id))
+        if eligible is not None and item["client_request_id"] not in eligible:
+            results.append(
+                {**item, "status": "excluded", "reason": "not_in_validated_attempt"}
+            )
+            continue
         binding = None
         if row["vin"] is None:
             try:
@@ -308,12 +320,6 @@ async def batch(
                 )
                 continue
         body = body_for(document, row, tenant_id, binding.id if binding else None)
-        item["client_request_id"] = str(body.client_request_id)
-        if eligible is not None and str(body.client_request_id) not in eligible:
-            results.append(
-                {**item, "status": "excluded", "reason": "not_in_validated_attempt"}
-            )
-            continue
         try:
             if binding is None:
                 vehicle, _ = await resolve(
