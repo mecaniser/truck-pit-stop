@@ -1,0 +1,13 @@
+{
+  "$schema": "https://railway.com/railway.schema.json",
+  "build": {
+    "builder": "DOCKERFILE",
+    "dockerfilePath": "backend/Dockerfile.motive-drivers"
+  },
+  "deploy": {
+    "startCommand": "python -m scripts.motive_sync.run_worker",
+    "cronSchedule": "*/5 * * * *",
+    "restartPolicyType": "NEVER",
+    "numReplicas": 1
+  }
+}
