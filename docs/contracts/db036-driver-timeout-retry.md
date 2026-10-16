@@ -25,4 +25,4 @@ Build only from merged protected source. Preserve existing driver service comman
 
 ## Candidate verification
 
-Five new focused regressions failed on the prior helper (31 pass,5 fail) and pass with the bounded retry (36 pass,0 fail). They cover initial/post-summary recovery, the shared budget, every mixed timeout/null placement, exact mismatch/source/ambiguity immediate failures, and sanitized retry metadata. Node syntax and diff checks pass. Independent candidate QA/Security and live canary remain pending.
+Five new focused regressions failed on the prior helper (31 pass,5 fail) and pass with the bounded retry (36 pass,0 fail). They cover initial/post-summary recovery, the shared budget, every mixed timeout/null placement, exact mismatch/source/ambiguity immediate failures, and sanitized retry metadata. Node syntax and diff checks pass. Independent candidate QA/Security GO at adc02f07:36 tests plus686 independent combinations pass; see [gate evidence](../evidence/db036-driver-timeout-independent-gate.md). Final-head CI and deployed three-fleet canary remain pending.
