@@ -435,3 +435,10 @@ Local synthetic evidence may exercise writes after runtime alignment. Production
 - `backend/scripts/easytruck_sync/import_to_truckpitstop.py:838,877`: imported interval0/is_pmFalse is not enrollment/evidence; no importer-policy expansion.
 
 Intake recheck, not redesign: verify final C1 head/schema, the exact frozen Worker gate and incoming changes touching these anchors; resolve any concrete source contradiction before frontend/backend GO. Implementation may proceed only on the accepted intake and runtime receipt; this contract is not QA or release approval.
+
+
+## Accepted release ancestry amendment — 2026-10-16
+
+Release order561 → truck26 binding acceptance → M1. Preserve applied177_maintenance_programs and independently reviewed177_dashboard_bindings, both from176_merge_contact_pricing. After integrating accepted binding main, add no-op178_merge_maintenance_bindings with down_revision=('177_dashboard_bindings','177_maintenance_programs'), no branch labels/depends_on, empty upgrade/downgrade. Do not stamp, renumber or reparent either177. Rehearse ordinary upgrade from176, either177 and bothheads; bothheads→178 changes only version state. Preserve populated legacy/independent M1 and binding/capture identities plus protected financial/configuration/stock values. Test guarded downgrade when traversal removes populated family data; the merge downgrade alone may harmlessly restore two versionheads.
+
+Use a newly reviewed retention receipt version with exact binding177PRE/merged178POST; reject old/mixed/split lineages and preexistingM1. Preserve13 original cohorts unchanged and prove binding/capture retention separately. Fresh production baseline follows binding acceptance and precedes M1 Web predeploy. Web remains sole migrator; Worker discovers sole178 normally. Source gate and release evidence are distinct.
