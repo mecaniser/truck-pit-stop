@@ -1,3 +1,4 @@
+> **DB-CONTACT-SOURCE / IN PROGRESS (2026-10-16), Backend & Integrations accountable, high-risk:** Current ETS account phone snapshots replace stale aliases using verified bounded page totals, account/shop identity, timestamp and digest; migration175 is nullable, importer leaves manually edited profile fields and financial records intact. Consolidated PR549 includes reviewed PR546/547 source fixes; release follows both ELIS completion and contact readers. PR549 source17cd8900 independently approved:29Python/10JS checks pass; shared hash accepted by the ELIS reader. Live collector selector verification and protected release remain pending. Local runtime blocked/mismatched (unrelated frontend5173, no backend configuration); no local visibility claim. [Contract](contracts/account-contact-snapshots-v2.md).
 > **DB-036 / IMPLEMENTATION GATES PASSED, SOURCE AND RELEASE ACCEPTANCE PENDING (2026-10-15), Backend & Integrations:** Independent QA/Security GO after correcting a lifetime speed-history limit.80 backend,4 PostgreSQL,48 collector and76 frontend tests pass. Actual component desktop/390px checks reject12-day/undated speed, preserve fresh0/45mph and age open views to unavailable. Live Motive directory22/22 agrees with last complete import; Oct15 daily driver job failed its VIN recheck. Candidate adds bounded missing-VIN retries while actual mismatches remain fatal. Source collection, protected CI, exact worker/Web deployment and committed readback remain. [Contract](contracts/db036-current-speed.md) · [Independent gate](evidence/db036-current-speed-independent-gate.md).
 
 > **DB-036 / CURRENT SPEED AND MOTIVE COVERAGE IN PROGRESS (2026-10-15), Backend & Integrations accountable, High risk:** Collect speed with the verified location observation, and prevent stale/unknown speed from being presented as current motion. Reconcile the full Motive driver/vehicle directories against approved fleet memberships; distinguish no provider score, unassigned, absent VIN, missing telemetry and actual collector gaps. Acceptance: same-source timestamp/identity validation; explicit zero preserved; missing/ambiguous speed never invented or refreshed by capture time; stale numeric speed excluded from current-speed surfaces; complete pagination/account proof; exact tenant/VIN/membership isolation, immutable replay and negative tests. Preserve 609 in Elis and existing PostgreSQL/storage plan. Architecture contract before cross-layer implementation, independent QA/security, protected CI, deployment and live desktop/mobile acceptance required. Branch `codex/motive-current-speed-coverage`, base `70530bda`.
@@ -1935,3 +1936,66 @@ Latest user refinement: removed the visible route legend while retaining blue/gr
 > **DB-036 data visualization clarity / IN PROGRESS (2026-10-04):** Frontend & UX accountable; Fast UI lane, branch `codex/fleet-data-clarity`. Acceptance: mileage-based fuel coverage with measured/estimated distinction; median reference on comparison bars; unique reporting counts and clipped/current bucket labels; departure-date heatmap semantics; collapsible no-record trucks and compact summary coverage. Preserve totals, inline drilldown, missing versus zero, keyboard access, and API/tenant contracts. Focused tests and desktop/compact preview required before review.
 
 > **DB-036 data visualization clarity / LOCAL VERIFIED (2026-10-05):** Frontend & UX implemented the accepted five-point refinement on `codex/fleet-data-clarity`. 46 focused tests pass; production build/TypeScript and changed-source lint pass. Desktop and 700px preview checked: median references, mileage fuel coverage, heatmap semantics, unique reporting counts, calendar partial labels, missing-truck disclosure; inline/back regression tests pass. Preview uses private imported snapshot only; no API, tenant, or imported totals changed. Screenshot `output/fleet-data-clarity.png`. Awaiting user review; not committed, pushed, or deployed.
+
+
+## DB-ETS-FRESHNESS — In progress (2026-10-15)
+
+Backend & Integrations accountable; high-risk worker/source-evidence lane.
+Outcome: repeated successful ETS mirror reads remain fresh without exhausting
+immutable evidence capacity. Acceptance: unchanged facts retain their original
+observations and refresh a digest-bound timestamp; new A→B→A facts remain ordered
+revisions; older replays cannot clear newer failure holds; tenant/financial/manual
+state is unchanged; the existing 24-hour freshness boundary remains enforced.
+No source replay or Google delivery is part of this change. Independent QA and
+Security, protected CI, and coordinated Web/Worker/ETS Sync deployment required.
+Local serving blocked: isolated worktree has no local configuration/launch file
+and no 5173/8000 listeners; no secrets copied or services replaced.
+
+Owner evidence: 97 focused source-evidence/completion/history tests pass; diff
+integrity passes. Contract: `docs/contracts/ets-source-evidence-refresh.md`.
+Independent QA/Security pending. Runtime remains blocked as above; unit/SQLite
+checks do not establish deployed cron or source delivery readiness. Release must
+update Web/Worker reader before ETS Sync writer. No production writes performed.
+
+Independent gate found a failure-watermark regression: an older failed scrape
+could overwrite a newer failed scrape and allow an intermediate success to clear
+it. Corrected by preserving the maximum prior failure/success watermark; regression
+covers failed → older failed → intermediate success. Owner suite now 98 passed.
+Re-review required on the corrected head; first gate was NO-GO, not a release pass.
+
+Independent code QA/Security GO on `dbd8f1a2769b217ce80a7c31cc1a9a7c02c860ab`:
+reviewer reran 86 evidence/completion tests, confirmed failure-watermark correction,
+and found no remaining blocking changed-code issue. Owner's broader 98 tests include
+history capture. [PR546](https://github.com/mecaniser/truck-pit-stop/pull/546) open;
+protected CI and deployment/runtime acceptance remain pending. No production source
+or Google replay authorized by this evidence record.
+
+## DB-COMPLETION-REVENUE — In progress (2026-10-15)
+
+Backend & Integrations accountable; high-risk source observation lane. Explicit
+user policy: recognize completed repair final invoice value before payment. ETS
+v2 retains completed-service/full-invoice-manifest evidence and canonical identity
+but does not require settlement. Native v2 requires explicit completed order,
+finalized issued invoice and authoritative source completion/approval timestamp.
+Draft/internal/cancelled/conflicting evidence stays held. Later payment must not
+create another revenue identity. Only provenance/outbox observations change;
+financial records, manual decisions and Google requests remain untouched.
+Parent ELIS owner implements compatible v2 consumer before source release.
+Runtime preflight after branch change: frontend5173 belongs to another task;
+backend8000 absent, no local config in this worktree. No service replaced.
+Independent QA/Security and coordinated release remain required.
+
+Owner validation: 177 focused native/ETS completion, evidence freshness, history,
+and existing paid-contract tests pass. Production read-only coverage: 1,561 ETS
+completed-service observations all carry invoice status10; none have a nonzero
+balance, so unpaid ETS runtime acceptance remains unproven. Native26 invoices all
+have actual work completion timestamps;16 satisfy finalization predicates. No
+financial/source delivery mutation occurred. Independent review in progress.
+
+Independent review found a native invalidation gap when a completed invoice later
+became internal and fell outside history selection. Corrected: prior native streams
+remain in the bounded cursor scan; native observation precedes optional history
+validation. Internal, unsupported invoice/order sources and malformed history
+amounts now produce holds without exporting excluded history. Added integration
+regressions. Native history retains final invoice face value even when settlement
+is absent/different. Owner's full focused suite now181 passed; re-review pending.

@@ -253,7 +253,7 @@ async def test_verified_cancelled_operation_copy_does_not_duplicate_revenue(soft
     before = deepcopy(vars(duplicate))
     event = await source.persist_completed_observation(db, order_id=order.id, **args)
     assert event.event_type == source.ETS_COMPLETED_EVENT
-    assert event.payload['snapshot'] == snapshot
+    assert event.payload['snapshot'] == source.completed_snapshot(order=order, **args, schema_version=2)
     assert len(event.payload['snapshot']['invoices']) == 1
     assert vars(duplicate) == before
     db.scalar.side_effect = [SimpleNamespace(id=order.tenant_id), order, event]
@@ -319,3 +319,44 @@ def test_deleted_unverified_invoice_still_conflicts(field, value):
     assert duplicate.repair_order_id in source._verified_legacy_duplicate_roots(
         order=args['order'], siblings=[args['order'], sibling],
         invoices=[canonical, duplicate], snapshot=snapshot)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('age_hours, expected_hold', [(1, None), (25, 'source_read_unavailable')])
+async def test_capture_uses_confirmed_observation_without_weakening_freshness(monkeypatch, age_hours, expected_hold):
+    from datetime import timedelta
+    from scripts.easytruck_sync.source_evidence import append_source_evidence
+    args = fixture()
+    first = dict(args['evidence'][0], observed_at_source='2020-01-01T00:00:00Z')
+    original = {'schema_version': 1, 'observations': [{'evidence': first} for _ in range(20)]}
+    stamp = datetime.now(timezone.utc) - timedelta(hours=age_hours)
+    fresh = dict(first, observed_at_source=stamp.isoformat())
+    envelope = append_source_evidence(original, fresh)
+    monkeypatch.setattr(source, 'configured_shops', lambda: {args['tenant_id']: 'sh_test'})
+    persist = AsyncMock()
+    monkeypatch.setattr(source, 'persist_completed_observation', persist)
+    result = Mock()
+    result.all.return_value = [(uuid4(), envelope, None)]
+    db = SimpleNamespace(execute=AsyncMock(return_value=result))
+    await source.capture_imported_order(db, args['tenant_id'], args['order'].id)
+    assert persist.call_args.kwargs['force_hold'] == expected_hold
+    assert persist.call_args.kwargs['evidence'][0]['observed_at_source'] == stamp.isoformat()
+    assert envelope['observations'] == original['observations']
+
+
+def test_v2_completed_unpaid_invoice_uses_final_total_without_payment_proof():
+    args = fixture(); row = args['evidence'][0]
+    row['balance'] = {'amount': '10.30', 'currency': 'USD'}
+    row['payment_lines'] = []; row['payment_lines_truncated'] = True
+    result = source.completed_snapshot(**args, schema_version=2)
+    assert result['invoices'][0]['total'] == '10.30'
+    assert 'allocations' not in result['invoices'][0]
+    assert 'balance' not in result['invoices'][0]
+    assert result['source_job_id'] == 'ets-service:123'
+    with pytest.raises(source.ETSCompletionHold): source.completed_snapshot(**args, schema_version=1)
+
+
+@pytest.mark.parametrize('field,value',[('invoice_status','0'),('completed',False),('service_status',40),('completed_at_source',None)])
+def test_v2_draft_incomplete_or_unverified_time_still_held(field,value):
+    args = fixture(); args['evidence'][0][field] = value
+    with pytest.raises(source.ETSCompletionHold): source.completed_snapshot(**args,schema_version=2)

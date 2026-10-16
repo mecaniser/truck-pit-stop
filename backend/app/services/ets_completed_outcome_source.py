@@ -14,6 +14,8 @@ from decimal import Decimal, InvalidOperation
 from uuid import UUID, uuid4
 
 from sqlalchemy import select, text
+
+from scripts.easytruck_sync.source_evidence import latest_source_evidence
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.provider_outbox import ProviderOutboxEvent, ProviderOutboxStatus
@@ -64,7 +66,7 @@ def _time(raw, now):
     return parsed.isoformat()
 
 
-def completed_snapshot(*, tenant_id, order, evidence, ets_shop_id, manifest, observed_at):
+def completed_snapshot(*, tenant_id, order, evidence, ets_shop_id, manifest, observed_at, schema_version=1):
     """Build only from a complete current service observation, never payment.date.
 
     `manifest` must come from a verified source enumeration, not the DB's known
@@ -106,6 +108,21 @@ def completed_snapshot(*, tenant_id, order, evidence, ets_shop_id, manifest, obs
         if invoice_id in ids:
             raise ETSCompletionHold("duplicate_invoice")
         ids.add(invoice_id)
+        if schema_version == 2:
+            total = amount(row.get("total"))
+            if total <= 0:
+                raise ETSCompletionHold("invoice_total_unavailable")
+            try:
+                imported_invoice_uuid = str(UUID(str(row.get("imported_invoice_uuid"))))
+            except ValueError as exc:
+                raise ETSCompletionHold("source_identity_unavailable") from exc
+            invoices.append({"invoice_id": invoice_id, "imported_invoice_uuid": imported_invoice_uuid,
+                "invoice_number": identifier(row.get("invoice_number")),
+                "invoice_service_internal_id": internal_id, "invoice_status": 10,
+                "currency": "USD", "total": format(total, ".2f")})
+            continue
+        if schema_version != 1:
+            raise ETSCompletionHold("unsupported_schema_version")
         total, balance = amount(row.get("total")), amount(row.get("balance"))
         if total <= 0 or balance != 0:
             raise ETSCompletionHold("invoice_not_fully_paid")
@@ -177,7 +194,7 @@ def _verified_legacy_duplicate_roots(*, order, siblings, invoices, snapshot):
     canonical = canonical[0]
     if (str(canonical.id) != source_invoice["imported_invoice_uuid"]
             or canonical.invoice_number != "ETSINV-" + source_invoice["invoice_number"]
-            or canonical.status != "paid" or canonical.deleted_at is not None
+            or canonical.status not in {"sent", "overdue", "paid"} or canonical.deleted_at is not None
             or canonical.total_amount != Decimal(source_invoice["total"])):
         return roots
     sibling_map = {sibling.id: sibling for sibling in siblings}
@@ -227,7 +244,7 @@ async def persist_completed_observation(db: AsyncSession, *, tenant_id, order_id
         if force_hold:
             raise ETSCompletionHold(force_hold)
         snapshot = completed_snapshot(tenant_id=tenant_id, order=order, evidence=evidence,
-                                     ets_shop_id=ets_shop_id, manifest=manifest, observed_at=observed_at)
+                                     ets_shop_id=ets_shop_id, manifest=manifest, observed_at=observed_at, schema_version=2)
     except ETSCompletionHold as exc:
         reason = str(exc)
         hold_reason = ("evidence_capacity_exceeded" if reason == "evidence_capacity_exceeded" else
@@ -297,7 +314,7 @@ async def persist_completed_observation(db: AsyncSession, *, tenant_id, order_id
         aggregate_type="repair_order", aggregate_id=UUID(snapshot["repair_order_uuid"]),
         idempotency_key=f"{key_prefix}{sequence}:{digest}", status=ProviderOutboxStatus.PENDING.value,
         available_at=captured_at, created_at=captured_at,
-        payload={"schema_version": 1, "source_system": "dieselbridge", "event_type": event_type,
+        payload={"schema_version": 2, "source_system": "dieselbridge", "event_type": event_type,
                  "event_id": str(event_id), "shop_id": str(tenant_id), "occurred_at": snapshot.get("completed_at", observed_at.isoformat()),
                  "observed_at": observed_at.astimezone(timezone.utc).isoformat(), "source_observation": sequence,
                  "source_revision": digest, "snapshot": snapshot})
@@ -340,9 +357,9 @@ async def capture_imported_order(db: AsyncSession, tenant_id, order_id):
             continue
         if envelope.get("source_read_unavailable_at"):
             force_hold = "source_read_unavailable"
-        if len(observations) >= 20:
+        if envelope.get("revision_capacity_exceeded") or len(observations) > 39:
             force_hold = "evidence_capacity_exceeded"
-        row = dict(observations[-1].get("evidence") or {})
+        row = latest_source_evidence(envelope)
         row["imported_invoice_uuid"] = str(invoice_id)
         evidence.append(row)
     if not evidence:

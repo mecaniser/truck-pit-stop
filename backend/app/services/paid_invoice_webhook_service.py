@@ -284,6 +284,11 @@ async def _claim(db: AsyncSession, limit: int) -> tuple[list[tuple[UUID, str]], 
     ets_tenants = list(configured_shops())
     if ets_tenants:
         event_filter = or_(event_filter, and_(ProviderOutboxEvent.event_type.in_(ETS_OUTCOME_EVENTS), ProviderOutboxEvent.tenant_id.in_(ets_tenants)))
+    if history_tenants:
+        event_filter = or_(event_filter, and_(ProviderOutboxEvent.event_type.in_(ETS_OUTCOME_EVENTS),
+            ProviderOutboxEvent.tenant_id.in_(history_tenants),
+            ProviderOutboxEvent.payload["snapshot"]["source"].as_string() == "dieselbridge",
+            ProviderOutboxEvent.payload["schema_version"].as_integer() == 2))
     due = or_(
         and_(ProviderOutboxEvent.status == ProviderOutboxStatus.PENDING.value, ProviderOutboxEvent.available_at <= now),
         and_(ProviderOutboxEvent.status == ProviderOutboxStatus.PROCESSING.value, ProviderOutboxEvent.locked_until <= now),
@@ -334,9 +339,14 @@ async def _deliver(tenant: Tenant, event: ProviderOutboxEvent) -> tuple[Optional
 async def _deliver_within_budget(tenant: Tenant, event: ProviderOutboxEvent) -> tuple[Optional[str], int]:
     if event.event_type in ETS_OUTCOME_EVENTS:
         from app.services.ets_completed_outcome_source import configured_shops
-        expected = configured_shops().get(tenant.id)
-        if not expected or (event.payload.get("snapshot") or {}).get("ets_shop_id") != expected:
-            raise ConversionDeliveryPaused()
+        snapshot = event.payload.get("snapshot") or {}
+        if event.payload.get("schema_version") == 2 and snapshot.get("source") == "dieselbridge":
+            if tenant.id not in history_allowed_tenants():
+                raise ConversionDeliveryPaused()
+        else:
+            expected = configured_shops().get(tenant.id)
+            if not expected or snapshot.get("ets_shop_id") != expected:
+                raise ConversionDeliveryPaused()
     if event.event_type == SHOP_HISTORY_EVENT and (
         tenant.id not in history_allowed_tenants()
     ):
