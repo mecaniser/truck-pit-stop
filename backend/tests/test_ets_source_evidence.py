@@ -230,3 +230,19 @@ def test_failure_older_than_confirmation_does_not_invalidate_source():
     cursor.fetchall.return_value = [('invoice', envelope)]
     _preserve_source_read_failures(cursor, 'tenant', [{'serviceNo': '123', 'observed_at_source': '2020-01-02T00:00:00Z'}])
     assert not any('UPDATE invoices' in call.args[0] for call in cursor.execute.call_args_list)
+
+
+def test_older_failed_replay_cannot_erase_newer_failure_hold():
+    from scripts.easytruck_sync.source_evidence import append_source_evidence
+    from scripts.easytruck_sync.import_to_truckpitstop import _preserve_source_read_failures
+    first = dict(normalize_source_evidence(source()), observed_at_source='2020-01-01T00:00:00Z')
+    envelope = append_source_evidence(None, first)
+    envelope['source_read_unavailable_at'] = '2020-01-05T00:00:00Z'
+    cursor = Mock()
+    cursor.fetchone.return_value = (True,)
+    cursor.fetchall.return_value = [('invoice', envelope)]
+    _preserve_source_read_failures(cursor, 'tenant', [{'serviceNo': '123', 'observed_at_source': '2020-01-03T00:00:00Z'}])
+    assert not any('UPDATE invoices' in call.args[0] for call in cursor.execute.call_args_list)
+    assert append_source_evidence(envelope, dict(first, observed_at_source='2020-01-04T00:00:00Z')) == envelope
+    newer = append_source_evidence(envelope, dict(first, observed_at_source='2020-01-06T00:00:00Z'))
+    assert 'source_read_unavailable_at' not in newer

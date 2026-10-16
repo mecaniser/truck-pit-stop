@@ -621,12 +621,13 @@ def _preserve_source_read_failures(w, tenant_id, failures):
             if not observations or observations[-1].get("evidence", {}).get("service_id") != service_id:
                 continue
             latest = latest_source_evidence(envelope).get("observed_at_source")
-            if latest:
-                try:
-                    if datetime.fromisoformat(latest.replace("Z", "+00:00")) >= timestamp:
-                        continue
-                except (ValueError, TypeError):
+            watermarks = [latest, envelope.get("source_read_unavailable_at")]
+            try:
+                if any(datetime.fromisoformat(value.replace("Z", "+00:00")) >= timestamp
+                       for value in watermarks if value):
                     continue
+            except (AttributeError, ValueError, TypeError):
+                continue  # malformed prior ordering evidence stays held
             updated = dict(envelope, source_read_unavailable_at=timestamp.isoformat())
             w.execute("UPDATE invoices SET ets_source_evidence=%s WHERE id=%s AND tenant_id=%s AND source=%s",
                       (psycopg2.extras.Json(updated), invoice_id, tenant_id, IMPORT_SOURCE))

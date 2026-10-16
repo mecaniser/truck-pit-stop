@@ -1943,3 +1943,9 @@ integrity passes. Contract: `docs/contracts/ets-source-evidence-refresh.md`.
 Independent QA/Security pending. Runtime remains blocked as above; unit/SQLite
 checks do not establish deployed cron or source delivery readiness. Release must
 update Web/Worker reader before ETS Sync writer. No production writes performed.
+
+Independent gate found a failure-watermark regression: an older failed scrape
+could overwrite a newer failed scrape and allow an intermediate success to clear
+it. Corrected by preserving the maximum prior failure/success watermark; regression
+covers failed → older failed → intermediate success. Owner suite now 98 passed.
+Re-review required on the corrected head; first gate was NO-GO, not a release pass.
