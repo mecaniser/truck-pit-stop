@@ -380,16 +380,31 @@ it('offers recovery without live truck controls when the exact vehicle is archiv
 })
 
 
-it('keeps typed customer search and page through a cancelled truck order and allows clearing it afterward', async () => {
+it.each(['immediate', 'delayed'])('keeps typed customer search and page through a cancelled truck order and allows clearing it afterward (%s response)', async responseTiming => {
   const base = api.get.getMockImplementation()!
-  api.get.mockImplementation((url: string, options?: { params?: { skip?: number } }) => url === '/customers'
-    ? Promise.resolve({ data: { items: [customer], total: 26, has_more: !options?.params?.skip } }) : base(url, options))
+  let resolveSearch!: (value: { data: { items: typeof customer[]; total: number; has_more: boolean } }) => void
+  const pendingSearch = new Promise<{ data: { items: typeof customer[]; total: number; has_more: boolean } }>(resolve => { resolveSearch = resolve })
+  api.get.mockImplementation((url: string, options?: { params?: { skip?: number; search?: string } }) => {
+    if (url !== '/customers') return base(url, options)
+    if (responseTiming === 'delayed' && options?.params?.search === 'Northline' && !options.params.skip) return pendingSearch
+    return Promise.resolve({ data: { items: [customer], total: 26, has_more: !options?.params?.skip } })
+  })
   setup('/dashboard/customers?view=list&filter=active')
   await screen.findByRole('button', { name: 'Open Northline Logistics customer workspace' })
   const search = screen.getByRole('searchbox', { name: 'Search customers' })
   fireEvent.change(search, { target: { value: 'Northline' } })
   await waitFor(() => expect(api.get).toHaveBeenCalledWith('/customers', expect.objectContaining({ params: expect.objectContaining({ search: 'Northline' }) })))
-  fireEvent.click(screen.getByRole('button', { name: 'Next', exact: true }))
+  const next = screen.getByRole('button', { name: 'Next', exact: true })
+  if (responseTiming === 'delayed') {
+    expect(next).toBeDisabled()
+    fireEvent.click(next)
+    expect(screen.getByText('1–25 of 26 customers')).toBeInTheDocument()
+    expect(api.get).not.toHaveBeenCalledWith('/customers', expect.objectContaining({ params: expect.objectContaining({ search: 'Northline', skip: 25 }) }))
+    await act(async () => resolveSearch({ data: { items: [customer], total: 26, has_more: true } }))
+  }
+  // A started request is not a rendered result: placeholder data disables paging.
+  await waitFor(() => expect(next).toBeEnabled())
+  fireEvent.click(next)
   await screen.findByText('26–26 of 26 customers')
   fireEvent.click(screen.getByRole('button', { name: 'Open Northline Logistics customer workspace', exact: true }))
   fireEvent.click(await screen.findByRole('button', { name: /Open .*Unit C-001/ }))
