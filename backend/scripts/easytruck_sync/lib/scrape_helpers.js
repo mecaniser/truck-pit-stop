@@ -136,7 +136,7 @@ async function getCustomerContacts(page, customerId) {
         archived: checkbox ? checkbox.checked : null,
         headerBound: !!accountHeader,
         headerPhones: accountHeader ? [...accountHeader.querySelectorAll('a[href^="tel:"]')].map(el => el.textContent.trim()) : [],
-        headers: [...document.querySelectorAll('table thead th')].map(el => el.textContent.trim()),
+        headers: [...document.querySelectorAll('table thead th, table thead td')].map(el => el.textContent.trim()),
         rows: [...document.querySelectorAll('table tbody tr')].map(tr => [...tr.querySelectorAll('td')].map(td => td.innerText.trim())),
         footer: footer ? footer.textContent.trim() : '',
         hasNext: [...document.querySelectorAll('a,button')].some(el => /^(Next|Next page|›|»)$/i.test(el.textContent.trim()) && !el.disabled && el.getAttribute('aria-disabled') !== 'true' && (el.tagName !== 'A' || el.hasAttribute('href')))};
