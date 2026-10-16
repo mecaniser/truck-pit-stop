@@ -202,3 +202,44 @@ test('source, ambiguity and navigation errors never trigger an identity retry',a
   assert.equal(safeReason(error),message.startsWith('navigation')?'driver_collection_failed':message);
  }
 });
+
+function uiTimeout() {return Object.assign(new Error('Timed out opening private vehicle page'),{name:'TimeoutError'});}
+test('a page timeout recovers only through a fresh verified VIN read',async()=>{
+ for(const expected of [null,expectedVin]) {
+  const error=uiTimeout(),reads=vinReads([error,expectedVin]);
+  assert.equal(await readDriverVehicleVin(reads.context,reads.link,{...reads.options,expectedVin:expected}),expectedVin);
+  assert.equal(reads.calls,2);
+  assert.deepEqual(reads.retries,[{attempt:1,max_attempts:3,reason:'ui_timeout'}]);
+  assert.equal(JSON.stringify(reads.retries).includes('private'),false);
+ }
+});
+test('null and timeout reads share the same three-attempt budget',async()=>{
+ const reads=vinReads([null,uiTimeout(),expectedVin]);
+ assert.equal(await readDriverVehicleVin(reads.context,reads.link,{...reads.options,expectedVin}),expectedVin);
+ assert.equal(reads.calls,3);
+ assert.deepEqual(reads.retries,[{attempt:1,max_attempts:3},{attempt:2,max_attempts:3,reason:'ui_timeout'}]);
+});
+test('exhausted and mixed timeouts never become missing-VIN rows',async()=>{
+ for(const expected of [null,expectedVin]) {
+  for(const timeoutPositions of [[0],[1],[2],[0,1,2]]) {
+   const error=uiTimeout(),values=[null,null,null];
+   for(const position of timeoutPositions)values[position]=error;
+   const reads=vinReads([...values,expectedVin]);
+   await assert.rejects(readDriverVehicleVin(reads.context,reads.link,{...reads.options,expectedVin:expected}),actual=>actual===error);
+   assert.equal(reads.calls,3);assert.equal(reads.retries.length,2);
+   assert.equal(safeReason(error),'ui_timeout');
+  }
+ }
+});
+test('a conflicting VIN after a timeout still aborts immediately',async()=>{
+ const reads=vinReads([uiTimeout(),differentVin,expectedVin]);
+ await assert.rejects(readDriverVehicleVin(reads.context,reads.link,{...reads.options,expectedVin}),{message:'vehicle_identity_changed'});
+ assert.equal(reads.calls,2);assert.equal(reads.retries.length,1);
+});
+test('source, ambiguity and other errors after a timeout still abort immediately',async()=>{
+ for(const message of ['vehicle_source_changed','ambiguous_vin','navigation failed with private source content']) {
+  const error=new Error(message),reads=vinReads([uiTimeout(),error,expectedVin]);
+  await assert.rejects(readDriverVehicleVin(reads.context,reads.link,{...reads.options,expectedVin}),actual=>actual===error);
+  assert.equal(reads.calls,2);assert.equal(reads.retries.length,1);
+ }
+});

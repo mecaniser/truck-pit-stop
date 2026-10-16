@@ -1,3 +1,5 @@
+> **2026-10-16 source contact evidence gate:** DB-SOURCE-CONTACT-DOM is an acceptance correction to the existing source pipeline, not a new parity outcome. First verification cycle remains safely incomplete; scoped fix and production complete-evidence receipt pending. See [receipt](verification/DB_SOURCE_CONTACT_DOM.md).
+
 # ETS parity implementation tracker
 
 Last updated: 2026-10-16. Program owner: Product & Delivery Lead. Discovery inventory: [audit and evidence](ETS_PARITY_BACKLOG_2026-10-15.md). Delivery history: [PROJECT_BOARD](PROJECT_BOARD.md).
