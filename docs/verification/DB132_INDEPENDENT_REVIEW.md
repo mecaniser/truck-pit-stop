@@ -5,14 +5,15 @@ edits, runtime changes, browser actions, deployment or production mutation.
 Accountable implementation owner: Backend & Integrations. This reviewer owns only
 this receipt. Delivery owner handles remediation and final gate assignment.
 
-## Current gate: local QA GO / Security GO — fresh protected CI and release pending
+## Current gate: production QA GO / Security GO — P1 closure supported
 
-The final-CI regressions were returned to the owner and independently verified
-corrected. Findings 14 and 15 are closed by the exact-source delta below. This
-restores local QA/Security approval only: the failed CI run is not a pass, and
-fresh protected checks, merge/deploy identity and production acceptance remain
-required. Findings 1–13 and the final local cleanup evidence remain valid because
-this correction changes only two backend application files and related tests.
+Base PR542 and focused feedback correction PR544 passed protected CI and deployed.
+The final signed-in Light/Night desktop/mobile acceptance is complete. Independent
+review confirmed release identity, the supplied runtime evidence, inactive pricing
+and preserved historical financial values. A later inventory fingerprint change
+is attributable to the existing ETS import, with exact evidentiary limits recorded
+below. No unresolved P1 release blocker remains; Product & Delivery may close the
+tracker item after recording this receipt. No production pricing was activated.
 
 Review baseline: branch `codex/ets-parts-pricing-matrix-implementation`, HEAD
 `4d6d5b133116b9960675b211e03b91d31fe95dbf` plus the evolving owner diff. Read the
@@ -595,3 +596,99 @@ performed no browser operation, preserved-preview mutation or production action.
 The final protected run must pass on the committed correction; migration 174,
 exact release identity, permitted production acceptance and rollback evidence
 remain the delivery owner's release gate. This receipt is frozen for that commit.
+
+
+## Independent production closure — 2026-10-16 02:31 UTC
+
+**Production QA GO / Security GO.** This decision covers DB132/P1 and the focused
+production feedback correction. It does not activate a pricing policy or approve
+future customer-pricing work. The reviewer made no browser, application, inventory
+or financial writes; the only new production operation in this review was the
+explicitly assigned aggregate SQL read inside a repeatable-read, read-only
+transaction with a 10-second statement timeout.
+
+Release identity was independently checked against Git and GitHub. PR542's tested
+`060bba1bd9842404e56c6225b3e0196a21e5301f` and merge
+`53eb98031d9247629e8300f14d0447c6d8b0d046` have identical trees; all six jobs in
+run38825768055 succeeded. Captured Web and Worker deployments both identify that
+merge and SUCCESS. PR544's tested `9441edf054136fa4f08ad12497e0310f53320819`
+and merge `70530bda5705b30e27c3f222421b77e9e7ce6341` have identical tree
+`d72da02d56ec7fa5671d5e784a6781190c00fb91`; all six jobs in run38830933939 succeeded.
+The [corrected deployment receipt](db132/feedback-release.json) identifies Web
+`ebc872be-cee4-4598-8165-79406459d9cf`, exact public build70530bda, and successful
+database/Redis readiness. Schema is174. The final correction changes UI only;
+the previously reviewed backend and migration remain the deployed foundation.
+Recorded Web/Worker startup samples contain no schema/fatal errors or 5xx; the
+worker connected to Redis, became ready and completed normal scheduled tasks.
+
+Root performed the authenticated production journey from02:20:12 to02:24:38UTC.
+Independently reviewed [measured evidence](db132/production-ui-evidence.json) and
+representative final screenshots for Night390 error, Light320 success and
+Night320 policy. Both themes cover1280 desktop,390/320 portrait and740 landscape.
+Successful and repeated invalid previews are fully visible and focused inside the
+existing scroller, with matching document/viewport widths. Error390 bounds797–836
+fit844; success320 bounds683–732 fit740; landscape343–392 fits400. Policy actions
+remain44px high and within the viewport. Actual action contrast is7.58:1 in Light
+and5.36:1 in Night. Close/Escape focus return, draft cancellation/reopen, readable
+saved-price text, unchanged historical order75+35.73=110.73/invoice112.98, empty
+bounded console log and original Day appearance restoration are recorded by Root.
+These are browser viewport/touch checks, not physical-device certification.
+
+Production matrix/sample and policy work remained read/unsaved-preview/cancel.
+The [post-journey state](db132/production-ui-state.json) still has zero pricing
+matrices, revisions, events, defaults and configured inventory policies. The
+synthetic zero order remains deleted with the same timestamp and totals.
+No quote, invoice, counter-sale or pricing mutation was used for acceptance.
+
+### Inventory fingerprint attribution and limits
+
+At01:10UTC, after both deployments, all three fixed-cutoff fingerprints still
+matched the pre-release baseline:1612 inventory rows,2934 saved usages and2424
+invoices. At02:23UTC the saved-usage and invoice fingerprints still match exactly;
+inventory is now `dd03d7523c7ba3b097412f8a13553008` instead of
+`9e3027f6ebea64d2bf4d2ebb70ecc2ff`. Therefore **inventory is not claimed unchanged
+throughout the later acceptance window**.
+
+Independent review of the raw inventory delta finds798 unique pre-cutoff IDs,
+all updated at exactly `2026-10-16T02:13:49.062899+00:00`, all pricing_version0.
+The existing sync log records `import_to_truckpitstop.py --parts` committing at
+that time, with795 update operations,17 inserts and4 newly retired entries.
+The independently executed production aggregate at02:29:26UTC confirms:
+
+| Group at the exact sync timestamp | Rows | Source | Pricing version |
+| --- | ---: | --- | --- |
+| Existing before cutoff, refreshed import stamp | 794 | easy_truck_shop_import | all0 |
+| Existing before cutoff, new retirement stamp and older import stamp | 4 | easy_truck_shop_import | all0 |
+| Created during this import | 17 | easy_truck_shop_import | all0 |
+
+Aggregate evidence: `/tmp/db132-independent-inventory-attribution.json`; query
+source: `/tmp/db132-independent-inventory-attribution.py`. No item values or
+customer identities are emitted by this final aggregate read.
+
+Railway identifies the sync's separate deployment10764d7a at older code
+`9fe12abacd04722e4afbf4c2c6476160a18eca96`. Its `resync_parts` function is byte-identical
+to the P1 merge and current source, SHA256
+`5933b9c8ae4c49531088241f2eef06c5972f78a31731ce20aceb019b62ee545d`.
+That pre-existing writer directly sets cost, selling price, stock, updated_at and
+ets_imported_at; its retirement update changes only retirement/updated stamps.
+It emits neither P1 pricing events nor inventory activity entries. This explains
+why the concurrent changes are not represented by those empty event tables.
+All observed old-row writes have the same importer stamp and source behavior.
+
+The795 log value counts loop/update operations, not distinct rows; the observed
+794 distinct refreshed old rows are consistent with a repeated canonical SKU in
+the input. No post-cutoff existing updated row was found, so none is invented to
+reconcile that difference. The exact repeated input cannot be identified from the
+available log. Railway reports the sync container EXITED/deploymentStopped; it
+was not restarted or SSHed into. Its retained `data_bak_*` snapshots are therefore
+unavailable for this bounded review. There is no retained row-level pre-change
+inventory image in the release receipts, so the earlier inventory fingerprint
+cannot be reconstructed from exact prior values. We do not claim that stronger
+proof or certify the sync's individual values from aggregate counts alone.
+
+The timing, exact row stamps/source, unchanged independently deployed importer,
+pre-sync fingerprint equality, inactive P1 configuration and preserved historical
+financial hashes support attribution to normal concurrent ETS sync, with no
+remaining evidence of a P1 release regression. This closes the inventory
+attribution hold with the limits above. No further production writes, restarts,
+unrelated test reruns or pricing activation are required for P1 closure.

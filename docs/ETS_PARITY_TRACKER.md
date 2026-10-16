@@ -2,7 +2,7 @@
 
 Last updated: 2026-10-15. Program owner: Product & Delivery Lead. Discovery inventory: [audit and evidence](ETS_PARITY_BACKLOG_2026-10-15.md). Delivery history: [PROJECT_BOARD](PROJECT_BOARD.md).
 
-**Progress: 1/29 completed; 1/6 selected outcomes completed. Current: P1. Next: C1.**
+**Progress: 2/29 completed; 2/6 selected outcomes completed. Current: C1 contract. Next: M1 after C1.**
 
 ## Approved delivery order
 
@@ -23,12 +23,13 @@ Last updated: 2026-10-15. Program owner: Product & Delivery Lead. Discovery inve
 - [x] **R1 — Scheduled start, promised finish and an overdue queue**
   - Status: **Done — merged, deployed and production verified**. Board: **DB-131**. Owner: Backend & Integrations.
   - Evidence: [R1 verification receipt](verification/DB131_REPAIR_ORDER_SCHEDULING.md).
-- [ ] **P1 — Cost-based parts markup matrices with minimum price and locked-price rules**
-  - Status: **Production acceptance — PR542 deployed with unchanged prices; mobile preview feedback correction required before Done**. Board: **DB-132**. Owner: Backend & Integrations.
+- [x] **P1 — Cost-based parts markup matrices with minimum price and locked-price rules**
+  - Status: **Done — merged, deployed and production verified**. Board: **DB-132**. Owner: Backend & Integrations.
   - Evidence: [P1 contract](contracts/db132-parts-pricing-matrix.md); [intake receipt](verification/DB132_PARTS_PRICING_MATRIX.md).
 - [ ] **C1 — Customer-specific labor rates and parts pricing defaults**
-  - Status: **Queued**. Board: **DB-133**. Owner: Backend & Integrations.
-  - Evidence: Not started.
+  - Status: **Contract preparation; application implementation not started**. Board: **DB-133**. Owner: Backend & Integrations.
+  - Approved: new external orders use the customer agreed labor rate, otherwise the shop billing rate; existing orders retain saved rates.
+  - Evidence: [C1 readiness notes](verification/DB133_CUSTOMER_PRICING_READINESS.md). Application implementation not started.
 - [ ] **M1 — Multiple recurring maintenance programs per truck**
   - Status: **Queued**. Board: **DB-134**. Owner: Backend & Integrations.
   - Evidence: Not started.
@@ -81,9 +82,9 @@ Acceptance before editing application code:
 
 Branch: `codex/ets-repair-order-scheduling`. Contract: `docs/contracts/db131-repair-order-scheduling.md` (approved). PR: [538](https://github.com/mecaniser/truck-pit-stop/pull/538) merged as `7b3dc4b30a52e6880580f1511716afc38dbd1ba2` on 2026-10-15. All six protected checks passed on `21546789`; merged tree is identical. Exact Web/Worker and schema173 verified; production Light/Night desktop,390/320 portrait and740 landscape accepted; independent closure GO. Synthetic baseline restored.
 
-## Current implementation: P1 / DB-132
+## Completed: P1 / DB-132
 
-Accountable: Backend & Integrations. Branch: `codex/ets-parts-pricing-matrix-implementation` from compact-controls merge `fc92c7b9`. R1 and DB137 are Done. Architecture contract is accepted; backend/frontend implementation and local verification are underway. Independent foundation review returned four findings to owners; final independent gates, protected CI and release remain ahead.
+Accountable: Backend & Integrations. Implementation branch: `codex/ets-parts-pricing-matrix-implementation`; correction branch: `codex/parts-pricing-visible-validation`. PR542 and PR544 are merged/deployed; final corrected production UI and independent QA/Security acceptance passed. R1 and DB137 are also Done.
 
 Acceptance before editing application code:
 - Owner/admin can define and preview cost-band markup, optional pricing-cost basis floor, minimum sale price and fixed catalog pricing, with explicit activation and no guessed defaults.
@@ -91,4 +92,4 @@ Acceptance before editing application code:
 - Immutable revision/line provenance, audited authorized overrides and tenant/role/concurrency boundaries prevent silent repricing or cost-data leakage.
 - Compact existing price/inventory controls; complete Light/Night desktop/mobile journeys, negative/tenant/concurrency tests, independent QA/Security, protected CI and exact production release evidence before Done.
 
-See [contract](contracts/db132-parts-pricing-matrix.md) for full scope, writer coverage, locking, inactive defaults and safe production verification limits. P1 application changes and additive migration174 are deployed through PR542. Pricing remains inactive; the mobile preview feedback correction and final production acceptance remain before Done.
+See [contract](contracts/db132-parts-pricing-matrix.md) for full scope, writer coverage, locking, inactive defaults and safe production verification limits. P1 application changes and additive migration174 are deployed through PR542; correction PR544 is live at70530bda. Both themes passed desktop and emulated mobile production acceptance. Pricing remains inactive; no guessed rates or defaults were configured. The later inventory fingerprint change is attributed to the normal ETS sync; retained usages/invoices are unchanged. See the receipt for exact evidence and limits.
