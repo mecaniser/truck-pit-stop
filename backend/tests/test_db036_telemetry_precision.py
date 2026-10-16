@@ -131,3 +131,70 @@ async def test_full_minute_must_belong_to_membership(db_session, monkeypatch):
             ),
         )
     assert error.value.detail["code"] == "invalid_observation_time"
+
+
+async def test_speed_minute_overlap_replay_and_independent_location(
+    db_session, monkeypatch
+):
+    actor, truck, _ = await prepared(db_session, monkeypatch)
+    minute = service.now().replace(second=0, microsecond=0) - timedelta(minutes=3)
+    request = body(truck, speed_mph=0, observed_at=minute, observed_precision="minute")
+    saved, _ = await service.capture(db_session, actor, truck.id, request)
+    await db_session.commit()
+    replay, created = await service.capture(db_session, actor, truck.id, request)
+    assert replay.id == saved.id and not created
+    for second in (0, 30, 59):
+        with pytest.raises(HTTPException) as error:
+            await service.capture(
+                db_session,
+                actor,
+                truck.id,
+                body(
+                    truck, speed_mph=10, observed_at=minute + timedelta(seconds=second)
+                ),
+            )
+        assert error.value.detail["code"] == "overlapping_observation_interval"
+    # The guard is field-specific: a location-only observation can coexist.
+    location, created = await service.capture(
+        db_session,
+        actor,
+        truck.id,
+        body(truck, lat=35, lng=-80, observed_at=minute, observed_precision="minute"),
+    )
+    assert created and location.speed_mph is None
+    newer, created = await service.capture(
+        db_session,
+        actor,
+        truck.id,
+        body(
+            truck,
+            speed_mph=20,
+            observed_at=minute + timedelta(minutes=1),
+            observed_precision="minute",
+        ),
+    )
+    assert created and newer.id != saved.id
+
+
+async def test_minute_speed_cannot_replace_exact_but_legacy_exact_is_preserved(
+    db_session, monkeypatch
+):
+    actor, truck, _ = await prepared(db_session, monkeypatch)
+    minute = service.now().replace(second=0, microsecond=0) - timedelta(minutes=3)
+    exact = minute + timedelta(seconds=30)
+    await service.capture(
+        db_session, actor, truck.id, body(truck, speed_mph=10, observed_at=exact)
+    )
+    with pytest.raises(HTTPException) as error:
+        await service.capture(
+            db_session,
+            actor,
+            truck.id,
+            body(truck, speed_mph=0, observed_at=minute, observed_precision="minute"),
+        )
+    assert error.value.detail["code"] == "overlapping_observation_interval"
+    # Existing exact manual reading semantics remain permitted by capture().
+    _, created = await service.capture(
+        db_session, actor, truck.id, body(truck, speed_mph=11, observed_at=exact)
+    )
+    assert created

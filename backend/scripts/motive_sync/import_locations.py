@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+import math
 import re
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
@@ -15,7 +16,7 @@ from app.db.models.vehicle import Vehicle
 from app.db.models.vehicle_relationship import FleetMembership
 from app.schemas.fleet_telemetry import TelemetryCapture
 from app.services import fleet_telemetry as telemetry
-from sqlalchemy import func, or_, select, text
+from sqlalchemy import and_, func, or_, select, text
 
 
 def time_value(value):
@@ -122,7 +123,30 @@ def parse_document(document, company_label, company_id, stamp, allow_replay=Fals
     return rows
 
 
-def make_body(row, tenant_id, customer_id, company_label, company_id):
+def speed_value(row):
+    """Accept only a real bounded measurement with its own verified source time."""
+    value = row.get("speed_mph")
+    if (
+        isinstance(value, bool)
+        or not isinstance(value, (int, float))
+        or not 0 <= value <= 250
+        or not math.isfinite(value)
+        or row.get("precision") not in ("second", "minute")
+    ):
+        return None
+    return value
+
+
+def make_body(
+    row,
+    tenant_id,
+    customer_id,
+    company_label,
+    company_id,
+    *,
+    location=True,
+    speed=True,
+):
     evidence = {
         key: row.get(key)
         for key in (
@@ -135,6 +159,10 @@ def make_body(row, tenant_id, customer_id, company_label, company_id):
         )
     }
     evidence.update(kind="motive_server_ui_v1", company_id=company_id)
+    accepted_speed = speed_value(row) if speed else None
+    if accepted_speed is not None:
+        # Do not add null speed fields to legacy location request digests.
+        evidence["speedText"] = row.get("speedText")
     values = {
         "fleet_customer_id": customer_id,
         "vin": row["vin"],
@@ -151,8 +179,14 @@ def make_body(row, tenant_id, customer_id, company_label, company_id):
     if row.get("precision") == "minute":
         values["observed_at"] = row["observed_minute_start"]
         values["observed_precision"] = "minute"
-    if values["lat"] is None or values["lng"] is None:
-        raise ValueError("Located row requires coordinate pair")
+    if location:
+        if values["lat"] is None or values["lng"] is None:
+            raise ValueError("Located row requires coordinate pair")
+    else:
+        for name in ("lat", "lng", "location_label"):
+            values.pop(name)
+    if accepted_speed is not None:
+        values["speed_mph"] = accepted_speed
     digest = hashlib.sha256(
         json.dumps(values, sort_keys=True, default=str).encode()
     ).hexdigest()
@@ -171,10 +205,16 @@ def interval(row):
     )
 
 
-def disposition(row, prior):
+def disposition(row, prior, field="location"):
     """Never use capture time as evidence that a source position is newer."""
     if row["status"] == "unavailable":
         return "unavailable"
+    if field == "speed" and speed_value(row) is None:
+        return (
+            "speed_timestamp_unavailable"
+            if row.get("precision") == "unknown"
+            else "speed_unavailable"
+        )
     if row["precision"] == "unknown":
         if not prior:
             return "update"
@@ -192,12 +232,18 @@ def disposition(row, prior):
     start, end = interval(row)
     if row["precision"] == "minute":
         end -= timedelta(microseconds=1)
+    unchanged = False
     for old in prior:
         if old.observed_at is not None:
             previous_start, previous_end = telemetry.observation_interval(
                 old.observed_at, getattr(old, "observed_precision", None)
             )
         else:
+            if field == "speed":
+                captured = getattr(old, "captured_at", None)
+                if captured is not None and start > telemetry.utc(captured):
+                    continue
+                return "prior_time_unknown"
             try:
                 note = json.loads(old.evidence_note or "{}")
                 previous_start, previous_end = interval(note)
@@ -213,13 +259,48 @@ def disposition(row, prior):
         if start > previous_end:
             continue
         if start == previous_start and end == previous_end:
-            return (
-                "unchanged"
-                if old.lat == row["lat"] and old.lng == row["lng"]
-                else "conflicting_observation"
+            same = (
+                old.speed_mph == row["speed_mph"]
+                if field == "speed"
+                else old.lat == row["lat"] and old.lng == row["lng"]
             )
+            if not same:
+                return "conflicting_observation"
+            unchanged = True
+            continue
         return "overlapping_observation_interval"
-    return "update"
+    return "unchanged" if unchanged else "update"
+
+
+def relevant_speed_history(start):
+    """Only intervals that can hold this observation count toward the bound.
+
+    Strictly earlier non-overlapping fields cannot change disposition. Exclude
+    them without relying on purge, but retain every overlapping/later interval
+    and unknown-time reading whose capture is not strictly before this start.
+    """
+    return or_(
+        and_(
+            Snapshot.observed_at.is_not(None),
+            or_(
+                and_(
+                    Snapshot.observed_precision == "minute",
+                    Snapshot.observed_at > start - timedelta(minutes=1),
+                ),
+                and_(
+                    or_(
+                        Snapshot.observed_precision.is_(None),
+                        Snapshot.observed_precision == "second",
+                    ),
+                    Snapshot.observed_at >= start,
+                ),
+            ),
+        ),
+        and_(
+            Snapshot.observed_at.is_(None),
+            Snapshot.captured_at >= start,
+        ),
+    )
 
 
 async def prepare(db, rows, tenant_id, actor_id, company_label, company_id):
@@ -334,13 +415,47 @@ async def prepare(db, rows, tenant_id, actor_id, company_label, company_id):
             item["status"] = "replay"
             plans.append((vehicle.id, body, item))
             continue
+        # A prior import may have written only one admissible field. Discover
+        # its immutable request before freshness or unchanged checks.
+        subset_replays = {}
+        if speed_value(row) is not None:
+            for field in ("location", "speed"):
+                candidate = make_body(
+                    row,
+                    tenant_id,
+                    member.fleet_customer_id,
+                    company_label,
+                    company_id,
+                    location=field == "location",
+                    speed=field == "speed",
+                )
+                saved = (
+                    await db.execute(
+                        select(Snapshot).where(
+                            Snapshot.tenant_id == tenant_id,
+                            Snapshot.client_request_id == candidate.client_request_id,
+                        )
+                    )
+                ).scalar_one_or_none()
+                if saved is not None:
+                    subset_replays[field] = candidate
         if time_value(row["sourceReadTime"]) < stamp - timedelta(minutes=30):
-            item["status"] = "stale_source_file"
+            if subset_replays:
+                body = subset_replays.get("speed", subset_replays.get("location"))
+                item["status"] = "replay"
+                plans.append((vehicle.id, body, item))
+            else:
+                item["status"] = "stale_source_file"
             continue
         if row["precision"] != "unknown":
             start, end = interval(row)
             if start < stamp - timedelta(days=30):
-                item["status"] = "older"
+                if subset_replays:
+                    body = subset_replays.get("speed", subset_replays.get("location"))
+                    item["status"] = "replay"
+                    plans.append((vehicle.id, body, item))
+                else:
+                    item["status"] = "older"
                 continue
             if not telemetry.within(member, start) or not telemetry.within(
                 member,
@@ -376,9 +491,7 @@ async def prepare(db, rows, tenant_id, actor_id, company_label, company_id):
             .scalars()
             .all()
         )
-        if len(prior) > 1000:
-            item["status"] = "history_review_required"
-            continue
+        location_history_overflow = len(prior) > 1000
         # Include canonical unknown-time position: never silently replace it.
         if (
             (not prior or row["precision"] == "unknown")
@@ -414,12 +527,67 @@ async def prepare(db, rows, tenant_id, actor_id, company_label, company_id):
                         lng=location.lng,
                     )
                 )
-        item["status"] = disposition(row, prior)
-        if item["status"] != "update":
-            continue
-        body = make_body(
-            row, tenant_id, member.fleet_customer_id, company_label, company_id
+        location_status = (
+            "replay"
+            if "location" in subset_replays
+            else "history_review_required"
+            if location_history_overflow
+            else disposition(row, prior)
         )
+        speed_status = disposition(row, [], "speed")
+        if speed_value(row) is not None:
+            speed_prior = (
+                (
+                    await db.execute(
+                        select(Snapshot)
+                        .where(
+                            Snapshot.tenant_id == tenant_id,
+                            Snapshot.vehicle_id == vehicle.id,
+                            Snapshot.fleet_membership_id == member.id,
+                            Snapshot.deleted_at.is_(None),
+                            Snapshot.speed_mph.is_not(None),
+                            relevant_speed_history(interval(row)[0]),
+                        )
+                        .order_by(
+                            Snapshot.observed_at.desc().nulls_last(),
+                            Snapshot.captured_at.desc(),
+                        )
+                        .limit(1001)
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            speed_status = (
+                "replay"
+                if "speed" in subset_replays
+                else "history_review_required"
+                if len(speed_prior) > 1000
+                else disposition(row, speed_prior, "speed")
+            )
+        if "speed_mph" in row or "speedReason" in row:
+            item.update(location_status=location_status, speed_status=speed_status)
+        writes_location, writes_speed = (
+            location_status == "update",
+            speed_status == "update",
+        )
+        if writes_location or writes_speed:
+            item["status"] = "update"
+            body = make_body(
+                row,
+                tenant_id,
+                member.fleet_customer_id,
+                company_label,
+                company_id,
+                location=writes_location,
+                speed=writes_speed,
+            )
+        elif subset_replays:
+            item["status"] = "replay"
+            body = subset_replays.get("speed", subset_replays.get("location"))
+        else:
+            item["status"] = location_status
+            continue
         plans.append((vehicle.id, body, item))
     # Reconcile the whole current fleet, including trucks omitted by the source.
     current = (
@@ -463,6 +631,32 @@ async def prepare(db, rows, tenant_id, actor_id, company_label, company_id):
     return actor, plans, results
 
 
+def projection_matches(projected, payload, snapshot_id):
+    """Verify only written fields, including speed-only supplemental snapshots."""
+    if projected is None:
+        return False
+    expected_time = telemetry.utc(payload.observed_at) if payload.observed_at else None
+
+    def provenance(reading):
+        return bool(
+            reading
+            and reading.snapshot_id == str(snapshot_id)
+            and reading.observed_at == expected_time
+            and reading.observed_precision == payload.observed_precision
+        )
+
+    matches = []
+    if payload.lat is not None or payload.location_label:
+        loc = projected.location
+        matches.append(
+            provenance(loc) and loc.lat == payload.lat and loc.lng == payload.lng
+        )
+    if payload.speed_mph is not None:
+        speed = projected.speed
+        matches.append(provenance(speed) and speed.value == payload.speed_mph)
+    return bool(matches) and all(matches)
+
+
 async def execute_pass(db, rows, tenant_id, actor_id, company_label, company_id):
     actor, plans, results = await prepare(
         db, rows, tenant_id, actor_id, company_label, company_id
@@ -483,15 +677,9 @@ async def execute_pass(db, rows, tenant_id, actor_id, company_label, company_id)
     ]
     await telemetry.attach(db, trucks, tenant_id)
     for truck, (_, body, item) in zip(trucks, plans):
-        loc = truck.telemetry.location if truck.telemetry else None
-        matches = bool(
-            loc
-            and loc.snapshot_id == item["snapshot_id"]
-            and loc.lat == body.lat
-            and loc.lng == body.lng
-        )
+        matches = projection_matches(truck.telemetry, body, item["snapshot_id"])
         if not matches and item["status"] != "replay":
-            raise ValueError("Fleet map projection did not select captured position")
+            raise ValueError("Fleet projection did not select captured fields")
         item["board_verified"] = matches
     return results
 
@@ -552,10 +740,9 @@ async def _run_import(
                 telemetry=None,
             )
             await telemetry.attach(db, [truck], tenant_id)
-            loc = truck.telemetry.location if truck.telemetry else None
             item["saved_receipt_verified"] = True
-            item["board_verified_after_commit"] = bool(
-                loc and loc.snapshot_id == str(saved.id)
+            item["board_verified_after_commit"] = projection_matches(
+                truck.telemetry, saved, saved.id
             )
             if not item["board_verified_after_commit"]:
                 item["status"] = "committed_projection_changed"

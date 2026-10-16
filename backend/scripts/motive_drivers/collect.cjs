@@ -189,6 +189,22 @@ async function summary(context, identity, ranges) {
   return result;
  }finally{await page.close();}
 }
+async function readDriverVehicleVin(context,link,{expectedVin=null,readVin=readVehicleVin,onRetry=()=>{}}={}) {
+ // readVehicleVin opens a fresh document and validates the provider route on
+ // every attempt. Retry only a missing rendered VIN, never a conflicting VIN
+ // or a source/ambiguity error. Missing verification is not a changed VIN.
+ const attempts=3;
+ for(let attempt=1;attempt<=attempts;attempt++) {
+  const vin=await readVin(context,link);
+  if(vin!==null) {
+   if(expectedVin!==null&&vin!==expectedVin)throw new Error('vehicle_identity_changed');
+   return vin;
+  }
+  if(attempt<attempts)onRetry({attempt,max_attempts:attempts});
+ }
+ if(expectedVin!==null)throw new Error('vehicle_identity_unavailable');
+ return null;
+}
 async function collect(output) {
  const companyLabel=process.env.MOTIVE_COMPANY_LABEL,companyId=process.env.MOTIVE_COMPANY_ID;
  if(!companyLabel||!companyId||!process.env.MOTIVE_EMAIL||!process.env.MOTIVE_PASSWORD)throw new Error('missing_configuration');
@@ -223,13 +239,21 @@ async function collect(output) {
    if(!identity.provider_vehicle_id)row.reason='driver_unassigned';
    else {
     const link={href:`#/fleetview/vehicles/summary/${identity.provider_vehicle_id}`,unit:identity.unit};
-    row.vin=await readVehicleVin(context,link);
+    async function identityVin(phase,expectedVin=null) {
+     const diagnostic={provider_driver_id:identity.provider_driver_id,provider_vehicle_id:identity.provider_vehicle_id,unit:identity.unit,phase};
+     try {
+      return await readDriverVehicleVin(context,link,{expectedVin,onRetry:attempt=>console.log(JSON.stringify({stage:'driver_identity_retry',...diagnostic,...attempt}))});
+     } catch(error) {
+      console.error(JSON.stringify({stage:'driver_identity_check_failed',...diagnostic,reason:safeReason(error)}));throw error;
+     }
+    }
+    row.vin=await identityVin('before_summary');
     if(!row.vin)row.reason='vin_unavailable';
     else {
      if(vins.has(row.vin))throw new Error('duplicate_vin');vins.add(row.vin);
      let content;
      try {content=await summary(context,identity,result.performance_ranges);}catch(error){if(error.message==='driver_identity_changed')throw error;content=emptyContent('Driver summary could not be read.');}
-     const verifyVin=await readVehicleVin(context,link);if(row.vin!==verifyVin)throw new Error('vehicle_identity_changed');
+     await identityVin('after_summary',row.vin);
      Object.assign(row,content,{state:'captured',source_read_at:new Date().toISOString()});
     }
    }
@@ -245,11 +269,11 @@ async function collect(output) {
  }finally{await browser.close();}
 }
 function safeReason(error) {
- const known=['missing_configuration','login_origin','company_mismatch','timezone_unverified','driver_directory_incomplete','driver_directory_layout','driver_identity_invalid','ambiguous_driver_assignment','driver_source_changed','driver_identity_changed','driver_directory_changed','vehicle_identity_changed','duplicate_vin','performance_ranges_unavailable','performance_ranges_invalid','performance_ranges_changed'];
+ const known=['missing_configuration','login_origin','company_mismatch','timezone_unverified','driver_directory_incomplete','driver_directory_layout','driver_identity_invalid','ambiguous_driver_assignment','driver_source_changed','driver_identity_changed','driver_directory_changed','vehicle_identity_changed','vehicle_identity_unavailable','vehicle_source_changed','ambiguous_vin','duplicate_vin','performance_ranges_unavailable','performance_ranges_invalid','performance_ranges_changed'];
  return known.includes(error?.message)?error.message:error?.name==='TimeoutError'?'ui_timeout':'driver_collection_failed';
 }
 if(require.main===module) {
  if(!process.argv[2]){console.error('Output file required');process.exitCode=1;}
  else collect(process.argv[2]).then(r=>console.log(JSON.stringify({stage:'driver_collection_complete',drivers:r.drivers.length}))).catch(e=>{console.error(JSON.stringify({stage:'driver_collection_failed',reason:safeReason(e),import_permitted:false}));process.exitCode=1;});
 }
-module.exports={collect,parseRanges,classify,directoryColumns,validateDirectory,validateSummaryIdentity,summaryDomReady,emptyContent,parseSummary,safeReason};
+module.exports={collect,parseRanges,classify,directoryColumns,validateDirectory,validateSummaryIdentity,summaryDomReady,emptyContent,parseSummary,readDriverVehicleVin,safeReason};
