@@ -1,6 +1,6 @@
 """Bounded Motive driver observations; source labels are not inferred risk ratings."""
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Annotated, Literal
 from uuid import UUID
 
@@ -140,7 +140,9 @@ class DriverRecordContent(DriverSourceModel):
 
 class DriverRecordCapture(DriverRecordContent):
     client_request_id: UUID
-    vin: str = Field(pattern=r"^[A-HJ-NPR-Z0-9]{17}$")
+    vin: str | None = Field(default=None, pattern=r"^[A-HJ-NPR-Z0-9]{17}$")
+    dashboard_binding_id: UUID | None = None
+    source_vin_state: Literal["not_displayed", "explicitly_empty"] | None = None
     provider_vehicle_id: str = Field(min_length=1, max_length=120)
     provider_driver_id: str = Field(min_length=1, max_length=120)
     driver_name: str = Field(min_length=1, max_length=160)
@@ -151,6 +153,20 @@ class DriverRecordCapture(DriverRecordContent):
     assignment_verified_before: Literal[True]
     assignment_verified_after: Literal[True]
     source_read_at: datetime
+
+    @model_validator(mode="after")
+    def identity_proof(self):
+        if self.vin is None:
+            if self.dashboard_binding_id is None or self.source_vin_state not in {
+                "not_displayed",
+                "explicitly_empty",
+            }:
+                raise ValueError(
+                    "Reviewed binding and verified source VIN state required"
+                )
+        elif self.dashboard_binding_id is not None or self.source_vin_state is not None:
+            raise ValueError("Genuine VIN and reviewed binding are exclusive")
+        return self
 
     @model_validator(mode="before")
     @classmethod
@@ -181,7 +197,7 @@ class DriverRecordCapture(DriverRecordContent):
     def explicit_time(cls, value):
         if value.tzinfo is None:
             raise ValueError("Source read timezone required")
-        return value.astimezone(timezone.utc)
+        return value.astimezone(UTC)
 
 
 class DriverRecordSummary(BaseModel):
@@ -189,6 +205,10 @@ class DriverRecordSummary(BaseModel):
     provider_driver_id: str
     driver_name: str
     identity_basis: Literal["motive_current_assignment"] = "motive_current_assignment"
+    vehicle_identity_basis: Literal["verified_vin", "reviewed_provider_binding"] = (
+        "verified_vin"
+    )
+    vehicle_identity_binding_id: UUID | None = None
     source_company_id: str
     provider_vehicle_id: str
     # This is an exact assignment snapshot, not normalized provider source text.

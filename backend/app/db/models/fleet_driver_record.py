@@ -23,7 +23,8 @@ class FleetDriverRecordCapture(BaseModel):
     vehicle_id = Column(UUID(as_uuid=True), nullable=False)
     fleet_customer_id = Column(UUID(as_uuid=True), nullable=False)
     fleet_membership_id = Column(UUID(as_uuid=True), nullable=False)
-    verified_vin = Column(String(17), nullable=False)
+    verified_vin = Column(String(17), nullable=True)
+    dashboard_binding_id = Column(UUID(as_uuid=True), nullable=True)
     provider_vehicle_id = Column(String(120), nullable=False)
     provider_driver_id = Column(String(120), nullable=False)
     driver_name = Column(String(160), nullable=False)
@@ -42,6 +43,19 @@ class FleetDriverRecordCapture(BaseModel):
     content_sha256 = Column(String(64), nullable=False)
     payload = Column(JSON, nullable=False)
     __table_args__ = (
+        ForeignKeyConstraint(
+            ["tenant_id", "vehicle_id", "fleet_membership_id", "dashboard_binding_id"],
+            [
+                "dashboard_vehicle_bindings.tenant_id",
+                "dashboard_vehicle_bindings.vehicle_id",
+                "dashboard_vehicle_bindings.fleet_membership_id",
+                "dashboard_vehicle_bindings.id",
+            ],
+        ),
+        CheckConstraint(
+            "(verified_vin IS NOT NULL AND dashboard_binding_id IS NULL) OR (verified_vin IS NULL AND dashboard_binding_id IS NOT NULL)",
+            name="ck_driver_record_identity_basis",
+        ),
         UniqueConstraint(
             "tenant_id", "client_request_id", name="uq_driver_record_request"
         ),

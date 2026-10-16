@@ -23,7 +23,8 @@ class FleetTelemetrySnapshot(BaseModel):
     vehicle_id = Column(UUID(as_uuid=True), nullable=False)
     fleet_customer_id = Column(UUID(as_uuid=True), nullable=False)
     fleet_membership_id = Column(UUID(as_uuid=True), nullable=False)
-    verified_vin = Column(String(17), nullable=False)
+    verified_vin = Column(String(17), nullable=True)
+    dashboard_binding_id = Column(UUID(as_uuid=True), nullable=True)
     client_request_id = Column(UUID(as_uuid=True), nullable=False)
     request_digest = Column(String(64), nullable=False)
     source = Column(String(40), nullable=False)
@@ -49,6 +50,19 @@ class FleetTelemetrySnapshot(BaseModel):
     fault_count = Column(Integer)
     evidence_note = Column(String(1000))
     __table_args__ = (
+        ForeignKeyConstraint(
+            ["tenant_id", "vehicle_id", "fleet_membership_id", "dashboard_binding_id"],
+            [
+                "dashboard_vehicle_bindings.tenant_id",
+                "dashboard_vehicle_bindings.vehicle_id",
+                "dashboard_vehicle_bindings.fleet_membership_id",
+                "dashboard_vehicle_bindings.id",
+            ],
+        ),
+        CheckConstraint(
+            "(verified_vin IS NOT NULL AND dashboard_binding_id IS NULL) OR (verified_vin IS NULL AND dashboard_binding_id IS NOT NULL)",
+            name="ck_telemetry_identity_basis",
+        ),
         CheckConstraint(
             "observed_precision IS NULL OR (observed_at IS NOT NULL AND observed_precision IN ('second', 'minute'))",
             name="ck_telemetry_observed_precision",

@@ -1,6 +1,7 @@
+const {allowlist,isReviewed,readReviewedIdentity,sameIdentity}=require('../motive_sync/vehicle_identity.cjs');
+const {readVehicleVin}=require('../motive_sync/collect_trips.cjs');
 /* Rendered Motive UI observations only; never private APIs or extracted sessions. */
 const fs = require('node:fs');
-const {readVehicleVin} = require('../motive_sync/collect_trips.cjs');
 const ORIGIN = 'https://app.gomotive.com';
 const DIRECTORY = '/en-US/#/fleetview/list/drivers';
 const RANGES = '/en-US/#/admin/safety/performance-ranges';
@@ -214,6 +215,7 @@ async function readDriverVehicleVin(context,link,{expectedVin=null,readVin=readV
 async function collect(output) {
  const companyLabel=process.env.MOTIVE_COMPANY_LABEL,companyId=process.env.MOTIVE_COMPANY_ID;
  if(!companyLabel||!companyId||!process.env.MOTIVE_EMAIL||!process.env.MOTIVE_PASSWORD)throw new Error('missing_configuration');
+ const reviewedProviders=allowlist();
  const {chromium}=require('../motive_sync/node_modules/playwright');
  const result={version:1,company_label:companyLabel,company_id:companyId,company_verified_before:false,company_verified_after:false,complete:false,started_at:new Date().toISOString(),finished_at:null,driver_directory_count:null,terminal_evidence:null,timezone_evidence:null,performance_ranges:[],drivers:[]};save(output,result);
  const browser=await chromium.launch({headless:true});
@@ -245,21 +247,27 @@ async function collect(output) {
    if(!identity.provider_vehicle_id)row.reason='driver_unassigned';
    else {
     const link={href:`#/fleetview/vehicles/summary/${identity.provider_vehicle_id}`,unit:identity.unit};
+    const reviewed=isReviewed(reviewedProviders,companyId,identity.provider_vehicle_id);
+    let identityProof=null;
     async function identityVin(phase,expectedVin=null) {
      const diagnostic={provider_driver_id:identity.provider_driver_id,provider_vehicle_id:identity.provider_vehicle_id,unit:identity.unit,phase};
      try {
-      return await readDriverVehicleVin(context,link,{expectedVin,onRetry:attempt=>console.log(JSON.stringify({stage:'driver_identity_retry',...diagnostic,...attempt}))});
+      return await readDriverVehicleVin(context,link,{expectedVin,...(reviewed?{readVin:async(c,l)=>{identityProof=await readReviewedIdentity(c,l);return identityProof.vin;}}:{}),onRetry:attempt=>console.log(JSON.stringify({stage:'driver_identity_retry',...diagnostic,...attempt}))});
      } catch(error) {
       console.error(JSON.stringify({stage:'driver_identity_check_failed',...diagnostic,reason:safeReason(error)}));throw error;
      }
     }
     row.vin=await identityVin('before_summary');
-    if(!row.vin)row.reason='vin_unavailable';
+    const beforeProof=identityProof;
+    if(!row.vin&&!reviewed)row.reason='vin_unavailable';
     else {
-     if(vins.has(row.vin))throw new Error('duplicate_vin');vins.add(row.vin);
+     if(row.vin&&vins.has(row.vin))throw new Error('duplicate_vin');if(row.vin)vins.add(row.vin);
      let content;
      try {content=await summary(context,identity,result.performance_ranges);}catch(error){if(error.message==='driver_identity_changed')throw error;content=emptyContent('Driver summary could not be read.');}
-     await identityVin('after_summary',row.vin);
+     const afterVin=await identityVin('after_summary',row.vin);
+     if(afterVin!==row.vin)throw new Error('vehicle_identity_changed');
+     if(reviewed)sameIdentity(beforeProof,identityProof);
+     if(row.vin===null)row.source_vin_state=beforeProof.source_vin_state;
      Object.assign(row,content,{state:'captured',source_read_at:new Date().toISOString()});
     }
    }

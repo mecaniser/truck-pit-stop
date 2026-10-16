@@ -1,0 +1,19 @@
+# DB-036 truck26 reviewed placeholder binding handoff
+
+Board ID: DB-036, separate placeholder outcome.
+From / To: Backend & Integrations to independent Security/QA, then parent Release & Reliability.
+User outcome: Track truck26 with its existing local `PENDING-26` reference until a genuine VIN is supplied, preserving its UUID/history and honest Motive provenance.
+
+Scope completed: explicit reviewed binding model/service/operator CLI; immutable driver and telemetry XOR identity; narrow collector allowlist and grounded positive summary reader; current-context projection guards; driver API/frontend additive vehicle identity; focused negative and retention tests. [Contract and activation commands](../contracts/db036-placeholder-binding.md).
+
+Scope not completed: no production binding/config mutation, worker run, PR, push, merge or deployment by this owner. Independent Security/QA, protected CI, source-only final collector proof, migration deployment, exact truck26 mapping activation, fresh driver/location import and signed-in app acceptance remain parent gates. No claim that truck26 is already syncing.
+
+Contract/migration: `177_dashboard_bindings` follows `176_merge_contact_pricing`, adds no mapping or fabricated VIN, and retains exact genuine VIN captures. A separate unmerged maintenance branch also starts from176 with a different177 revision; second-to-land must reparent/retest or add a proper merge revision. Downgrade blocks if reviewed history exists; revoke and roll back application/collector changes while retaining additive schema.
+
+Runtime: mandatory local-runtime preflight completed before implementation in `codex/driver-placeholder-binding`; shared5173 and parent fixture5177 preserved. No8000 or approved local backend config, so this checkout is not served and fullstack local browser acceptance is unavailable. Source-reader live acceptance was supplied by the parent against authenticated Motive, separately from local fixture tests. No production environment copied into tests.
+
+Verification environment: `/tmp/db128-backend-venv`, worktree PYTHONPATH; existing frontend dependencies symlinked solely for tests. Task-owned disposable PostgreSQL15 `db036-placeholder-pg` on127.0.0.1:55448, no volume, synthetic DB `placeholder_final`. Full empty-database Alembic upgrade to177 passed. PostgreSQL retention/XOR/FK/unique-active/downgrade-history test passed1/1. Shared PostgreSQL instances are untouched. Disposable database may be reused read-only by reviewers; tests that downgrade need a new empty database and full migration to177.
+
+Owner verification: 233 focused Python tests pass (driver capture/import/projection, binding/source-evidence boundaries, telemetry, durable journal and fleet/process runner suites); 61 Node collector/reader regressions pass; 44 frontend driver/detail/binding tests pass; TypeScript and changed-source ESLint pass. PostgreSQL1/1 and full migration upgrade pass as above. Logs remain local/private under `output/`; no raw source or sensitive data is committed. Initial synthetic SQLite idempotency assertion compared aware and naive representations of the same timestamp; the test now compares UTC values and passes, with no production logic workaround. The latest Ruff reports one pre-existing FURB162 on the unchanged timestamp `Z` normalization; changed Python checks pass with only that rule excluded.
+
+Known risks / return conditions: Reject any unsupported source layout, ambiguous/mismatched identity, source outside binding interval, revoked binding replay, real VIN, inactive tenant/admin/vehicle or changed membership. A source-only initial approval capture cannot be imported after activation because it predates the new binding. No arbitrary expiry is imposed. Send any boundary/runtime failure to Backend & Integrations with exact reproduction; do not ask the user to regress it.
