@@ -75,7 +75,7 @@ def containers():
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('command', choices=['up','migrate','seed','serve','exec','simulate-next'])
+    parser.add_argument('command', choices=['up','migrate','seed','serve','serve-managed','exec','simulate-next'])
     parser.add_argument('args',nargs=argparse.REMAINDER)
     args = parser.parse_args()
     env = environment()
@@ -92,7 +92,10 @@ def main():
         run(sys.executable,'-m','alembic','upgrade','head',cwd=ROOT/'backend',env=env)
     elif args.command == 'seed':
         run(sys.executable,str(ROOT/'scripts/communications_local_seed.py'),cwd=ROOT/'backend',env=env)
-    elif args.command == 'serve':
+    elif args.command in ('serve', 'serve-managed'):
+        if args.command == 'serve-managed':
+            env['SMS_TENANT_ROUTING_ENABLED'] = 'true'
+            env['SMS_TENANT_CREDENTIALS_JSON'] = json.dumps({f'local_shop_{n}': {'account_sid': 'AC'+f'{n:032x}', 'auth_token': f'local-only-fake-shop-{n}-token'} for n in (1,2)})
         env['PYTHONPATH'] = str(ROOT/'scripts') + os.pathsep + env['PYTHONPATH']
         os.chdir(ROOT/'backend')
         os.execve(sys.executable,[sys.executable,'-m','uvicorn','communications_local_app:app','--host','127.0.0.1','--port','8006'],env)

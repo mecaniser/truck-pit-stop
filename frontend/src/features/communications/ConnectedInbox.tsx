@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import api from "../../lib/api";
 import { useAuthStore } from "../../stores/authStore";
 import CommunicationsPreview from "./CommunicationsPreview";
+import SMSSetup from "./SMSSetup";
 import {
   createIntent,
   errorMessage,
@@ -15,6 +16,10 @@ import "./communications.css";
 
 export default function ConnectedInbox() {
   const sessionEpoch = useAuthStore((state) => state.authSessionEpoch);
+  const user = useAuthStore((state) => state.user);
+  const canSetup =
+    !!user && ["garage_owner", "garage_admin"].includes(user.role);
+  const [showSetup, setShowSetup] = useState(false);
   const [searchIds, setSearchIds] = useState<string[] | null>(null);
   const searchGeneration = useRef(0);
   const onSearch = useCallback((search: string) => {
@@ -122,6 +127,7 @@ export default function ConnectedInbox() {
   useEffect(() => {
     setRows([]);
     setBootstrap(null);
+    setShowSetup(false);
     generation.current += 1;
     void initialize();
     return () => {
@@ -298,6 +304,13 @@ export default function ConnectedInbox() {
     }
   }
   if (loginRequired) return <InboxLogin onLogin={initialize} />;
+  if (showSetup && bootstrap && canSetup)
+    return (
+      <SMSSetup
+        key={`${sessionEpoch}:${bootstrap.tenant_id}:${bootstrap.user_id}`}
+        onClose={() => setShowSetup(false)}
+      />
+    );
   if (loading || !bootstrap || !rows.length)
     return (
       <main className="inbox-entry">
@@ -308,6 +321,11 @@ export default function ConnectedInbox() {
             : error ||
               "No conversations yet. Incoming SMS conversations will appear here."}
         </p>
+        {!loading && bootstrap && canSetup && (
+          <button className="subtle-button" onClick={() => setShowSetup(true)}>
+            SMS setup
+          </button>
+        )}
         {!loading && (
           <button className="primary-button" onClick={() => void initialize()}>
             Refresh inbox
@@ -320,6 +338,7 @@ export default function ConnectedInbox() {
       key={`${bootstrap.tenant_id}:${bootstrap.user_id}`}
       connection={{
         rows,
+        onSMSSetup: canSetup ? () => setShowSetup(true) : undefined,
         searchIds,
         onSearch,
         tenantId: bootstrap.tenant_id,

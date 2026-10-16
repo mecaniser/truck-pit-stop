@@ -3,7 +3,7 @@ import hashlib
 import json
 from typing import Literal
 from uuid import UUID
-from fastapi import APIRouter, Depends, Header, Query, BackgroundTasks, Response
+from fastapi import APIRouter, Depends, Header, Query, BackgroundTasks, Response, HTTPException
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import select, func, and_, or_
 from app.core.dependencies import get_current_active_user, get_db
@@ -69,7 +69,15 @@ async def messages_page(db, tenant_id, thread_id, limit=50, cursor=None):
 async def bootstrap(db=Depends(get_db), user=Depends(get_current_active_user), sender=Depends(service.get_sms_sender)):
     tenant = await service.authorize(db, user)
     users = (await db.execute(select(User).where(User.tenant_id == tenant.id, User.is_active.is_(True), User.deleted_at.is_(None)))).scalars().all()
-    return dict(tenant_id=tenant.id, user_id=user.id, delivery_mode=sender.mode, assignees=[dict(id=u.id, name=f'{u.first_name} {u.last_name}') for u in users if service.permitted(u)], channels=[dict(channel='sms', connected=bool(tenant.sms_enabled and tenant.sms_phone_number and getattr(sender, 'ready', True))), dict(channel='whatsapp', connected=False), dict(channel='telegram', connected=False)])
+    from app.services import tenant_sms_routing as routing
+    connected = bool(tenant.sms_enabled and tenant.sms_phone_number and getattr(sender, 'ready', True))
+    if routing.enabled():
+        try:
+            await routing.resolve(db, tenant.id)
+            connected = True
+        except HTTPException:
+            connected = False
+    return dict(tenant_id=tenant.id, user_id=user.id, delivery_mode=sender.mode, assignees=[dict(id=u.id, name=f'{u.first_name} {u.last_name}') for u in users if service.permitted(u)], channels=[dict(channel='sms', connected=connected), dict(channel='whatsapp', connected=False), dict(channel='telegram', connected=False)])
 
 
 @router.get('/conversations')

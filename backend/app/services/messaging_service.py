@@ -24,6 +24,8 @@ from app.db.models.notification import Notification, NotificationStatus, Notific
 from app.db.models.sms_message import SMSDeliveryStatus, SMSMessage, SMSMessageDirection, SMSMessageSource
 from app.db.models.tenant import Tenant
 
+from app.services import tenant_sms_routing as routing
+
 logger = get_logger(__name__)
 
 _STOP_KEYWORDS = {"STOP", "STOPALL", "UNSUBSCRIBE", "CANCEL", "END", "QUIT"}
@@ -37,7 +39,8 @@ def _get_twilio_client() -> Optional[Client]:
     auth_token = settings.TWILIO_AUTH_TOKEN.strip()
     if not account_sid or not auth_token:
         return None
-    return Client(account_sid, auth_token)
+    from twilio.http.http_client import TwilioHttpClient
+    return Client(account_sid, auth_token, http_client=TwilioHttpClient(timeout=25, max_retries=0))
 
 
 def _coerce_uuid(value: UUID | str) -> UUID:
@@ -289,6 +292,19 @@ async def send_sms_with_tracking(
     source_enum = _coerce_source(source)
     if source_enum == SMSMessageSource.AUTOMATED:
         raise ValueError("Automated SMS requires transactional enqueue_automated_sms with a stable domain event")
+    context = None
+    if not routing.enabled():
+        await routing.require_legacy_tenant(db, tenant_uuid)
+    if routing.enabled():
+        context = await routing.resolve(db, tenant_uuid)
+        if not customer_id:
+            routing.deny('identity_unverified')
+        verified_customer = await db.scalar(select(Customer).where(Customer.id == _coerce_uuid(customer_id), Customer.tenant_id == tenant_uuid, Customer.deleted_at.is_(None)))
+        if not verified_customer or _normalize_for_twilio(verified_customer.phone or '') != _normalize_for_twilio(to):
+            routing.deny('identity_unverified')
+        if verified_customer.sms_opt_out:
+            routing.deny('opted_out')
+        await routing.require_consent(db, tenant_uuid, 'customer', verified_customer.id, _normalize_for_twilio(to))
     now = datetime.now(timezone.utc)
 
     notification = Notification(
@@ -313,7 +329,7 @@ async def send_sms_with_tracking(
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tenant not found")
         return notification, None, None
 
-    from_number = tenant.sms_phone_number or settings.TWILIO_PHONE_NUMBER
+    from_number = context.sender_phone if context else tenant.sms_phone_number or settings.TWILIO_PHONE_NUMBER
     if not from_number:
         notification.status = NotificationStatus.FAILED
         notification.error_message = "SMS sending number is not configured"
@@ -374,12 +390,13 @@ async def send_sms_with_tracking(
             from_number=from_number,
             to_number=to,
             delivery_status=SMSDeliveryStatus.PENDING,
+            **(context.snapshots() if context else {}),
         )
         db.add(sms_message)
         await db.flush()
 
     try:
-        twilio_client = _get_twilio_client()
+        twilio_client = routing.client_for(context) if context else _get_twilio_client()
         if not twilio_client:
             raise RuntimeError("SMS provider credentials are not configured")
 
@@ -388,6 +405,8 @@ async def send_sms_with_tracking(
             "from_": _normalize_for_twilio(from_number),
             "to": _normalize_for_twilio(to),
         }
+        if context:
+            twilio_payload["messaging_service_sid"] = context.messaging_service_sid
         status_callback = _status_callback_url()
         if status_callback:
             twilio_payload["status_callback"] = status_callback
@@ -488,17 +507,34 @@ async def handle_inbound_sms(
     from_number: str,
     body: str,
     twilio_message_sid: Optional[str] = None,
+    account_sid: Optional[str] = None,
+    messaging_service_sid: Optional[str] = None,
 ) -> tuple[MessageThread, Optional[SMSMessage], Customer, bool]:
-    tenant = await _resolve_tenant_by_to_number(db, to_number)
+    binding = None
+    managed_receipt = routing.enabled() or account_sid is not None
+    if managed_receipt and (not twilio_message_sid or not twilio_message_sid.strip()):
+        raise HTTPException(400, detail='Missing MessageSid')
+    if managed_receipt:
+        binding = await routing.inbound_binding(db, account_sid, _normalize_for_twilio(to_number))
+        if messaging_service_sid and messaging_service_sid != binding.messaging_service_sid:
+            raise HTTPException(409, detail='Inbound service mismatch')
+        tenant = await db.scalar(select(Tenant).where(Tenant.id == binding.tenant_id, Tenant.is_active.is_(True), Tenant.deleted_at.is_(None)))
+    else:
+        tenant = await _resolve_tenant_by_to_number(db, to_number)
     if not tenant:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="SMS tenant number not recognized")
+    if not managed_receipt:
+        from app.db.models.messaging_business import TenantSMSBinding
+        managed_sender = await db.scalar(select(TenantSMSBinding.id).where(TenantSMSBinding.sender_phone == _normalize_for_twilio(to_number)))
+        if managed_sender:
+            raise HTTPException(400, detail='Managed SMS requires account authentication')
 
     if twilio_message_sid:
         # Serialize duplicate provider receipts before their unique SID is committed.
         import hashlib
-        lock_key = int.from_bytes(hashlib.sha256(f"sms-inbound:{twilio_message_sid}".encode()).digest()[:8], "big", signed=True)
+        lock_key = int.from_bytes(hashlib.sha256(f"sms-inbound:{account_sid if managed_receipt else 'legacy'}:{twilio_message_sid}".encode()).digest()[:8], "big", signed=True)
         await db.execute(text("SELECT pg_advisory_xact_lock(:key)"), {"key": lock_key})
-        result = await db.execute(select(SMSMessage).where(SMSMessage.twilio_message_sid == twilio_message_sid))
+        result = await db.execute(select(SMSMessage).where(SMSMessage.twilio_message_sid == twilio_message_sid, *([SMSMessage.twilio_account_sid == account_sid] if managed_receipt else [SMSMessage.twilio_account_sid.is_(None)])))
         existing = result.scalar_one_or_none()
         if existing:
             if existing.tenant_id != tenant.id:
@@ -558,7 +594,8 @@ async def handle_inbound_sms(
         db.add(customer)
         await db.flush()
 
-    _apply_opt_keyword(customer, body)
+    if not (managed_receipt and _keyword_token(body) in _START_KEYWORDS):
+        _apply_opt_keyword(customer, body)
     thread = await _get_or_create_thread(db, tenant.id, customer)
     thread = (await db.execute(select(MessageThread).where(
         MessageThread.id == thread.id, MessageThread.tenant_id == tenant.id,
@@ -575,6 +612,7 @@ async def handle_inbound_sms(
         from_number=from_number,
         to_number=to_number,
         twilio_message_sid=twilio_message_sid,
+        **(dict(binding_id=binding.id, twilio_account_sid=binding.account_sid, messaging_service_sid=binding.messaging_service_sid) if binding else {}),
         delivery_status=SMSDeliveryStatus.DELIVERED,
         sent_at=now,
         delivered_at=now,
@@ -635,17 +673,34 @@ async def process_twilio_status_callback(
     message_status: Optional[str],
     error_code: Optional[str] = None,
     error_message: Optional[str] = None,
+    account_sid: Optional[str] = None,
+    from_number: Optional[str] = None,
+    messaging_service_sid: Optional[str] = None,
 ) -> Optional[SMSMessage]:
     if not message_sid or not message_sid.strip():
         raise HTTPException(status_code=400, detail="Missing MessageSid")
 
+    managed_receipt = routing.enabled() or account_sid is not None
+    if managed_receipt and not account_sid:
+        raise HTTPException(400, detail='Missing AccountSid')
     result = await db.execute(
         select(SMSMessage)
-        .where(SMSMessage.twilio_message_sid == message_sid)
+        .where(SMSMessage.twilio_message_sid == message_sid, *([SMSMessage.twilio_account_sid == account_sid] if managed_receipt else [SMSMessage.twilio_account_sid.is_(None)]))
         .with_for_update()
         .execution_options(populate_existing=True)
     )
     sms_message = result.scalar_one_or_none()
+    if not sms_message and managed_receipt:
+        from app.services.automated_sms_service import apply_automated_callback
+        from app.db.models.automated_sms import AutomatedSMSOperation
+        exists = await db.scalar(select(AutomatedSMSOperation.id).where(AutomatedSMSOperation.provider_message_sid == message_sid, AutomatedSMSOperation.twilio_account_sid == account_sid))
+        if exists:
+            await apply_automated_callback(db, message_sid=message_sid, message_status=(message_status or '').strip().lower(), error_code=error_code, account_sid=account_sid, from_number=from_number, messaging_service_sid=messaging_service_sid)
+            await db.commit()
+            return None
+        raise HTTPException(503, detail='Message not yet available', headers={'Retry-After': '5'})
+    if sms_message and getattr(sms_message, 'binding_id', None) and ((from_number and from_number != sms_message.from_number) or (messaging_service_sid and messaging_service_sid != sms_message.messaging_service_sid)):
+        raise HTTPException(409, detail='Receipt context mismatch')
     if not sms_message:
         # Some existing automated sends persist only a Notification. Preserve
         # their acknowledgement behavior without guessing a customer identity.
@@ -733,7 +788,7 @@ async def process_twilio_status_callback(
 
     if sms_message.source == SMSMessageSource.AUTOMATED:
         from app.services.automated_sms_service import apply_automated_callback
-        await apply_automated_callback(db, message_sid=message_sid, message_status=raw_status, error_code=error_code)
+        await apply_automated_callback(db, message_sid=message_sid, message_status=raw_status, error_code=error_code, account_sid=account_sid, from_number=from_number, messaging_service_sid=messaging_service_sid)
 
     await db.commit()
     if not advances:

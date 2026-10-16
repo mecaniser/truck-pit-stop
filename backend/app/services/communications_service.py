@@ -20,6 +20,8 @@ from app.db.models.tenant import Tenant
 from app.db.models.user import User, UserRole
 from app.services.messaging_service import _normalize_for_twilio, _get_twilio_client, _status_callback_url, enforce_tenant_send_rate_limit
 
+from app.services import tenant_sms_routing as routing
+
 STAFF_ROLES = {UserRole.GARAGE_OWNER, UserRole.GARAGE_ADMIN, UserRole.RECEPTIONIST, UserRole.MECHANIC}
 DISPATCH_TIMEOUT = timedelta(minutes=5)  # Provider I/O is bounded to 30 seconds.
 
@@ -36,13 +38,19 @@ class LiveSMSSender:
     mode = 'live'
     @property
     def ready(self):
-        return _get_twilio_client() is not None
+        return routing.enabled() or _get_twilio_client() is not None
 
-    async def send(self, *, body, from_number, to_number, status_callback):
-        client = _get_twilio_client()
+    async def send(self, *, body, from_number, to_number, status_callback, routing_context=None):
+        if routing.enabled() and routing_context is None:
+            routing.deny('binding_changed')
+        if routing_context and from_number != routing_context.sender_phone:
+            routing.deny('binding_changed')
+        client = routing.client_for(routing_context) if routing_context else _get_twilio_client()
         if client is None:
             raise RuntimeError('SMS provider unavailable')
         payload = {'body': body, 'from_': from_number, 'to': to_number}
+        if routing_context:
+            payload['messaging_service_sid'] = routing_context.messaging_service_sid
         if status_callback:
             payload['status_callback'] = status_callback
         result = await asyncio.wait_for(asyncio.to_thread(client.messages.create, **payload), timeout=30)
@@ -89,18 +97,31 @@ async def send_policy(db, tenant, thread, sender, *, ignore_operation=None):
     account_id = uuid5(NAMESPACE_URL, f'dieselbridge:sms-account:{tenant.id}:{from_number}')
     identity_id = uuid5(NAMESPACE_URL, f'dieselbridge:sms-identity:{tenant.id}:{thread.id}:{phone}')
     reason = None
-    if not tenant.sms_enabled or not re.fullmatch(r'\+[1-9]\d{7,14}', from_number) or not getattr(sender, 'ready', True):
+    if routing.enabled():
+        try:
+            context = await routing.resolve(db, tenant.id)
+            account_id, from_number = context.binding_id, context.sender_phone
+            await routing.require_consent(db, tenant.id, 'customer', thread.customer_id, phone)
+        except HTTPException as exc:
+            reason = exc.detail['code']
+    elif not tenant.sms_enabled or not re.fullmatch(r'\+[1-9]\d{7,14}', from_number) or not getattr(sender, 'ready', True):
         reason = 'not_connected'
-    elif not customer or customer.sms_opt_out:
-        reason = 'opted_out' if customer else 'identity_unverified'
-    elif not re.fullmatch(r'\+[1-9]\d{7,14}', phone):
-        reason = 'identity_unverified'
-    else:
-        others = (await db.execute(select(Customer.phone).where(Customer.tenant_id == tenant.id, Customer.id != customer.id, Customer.deleted_at.is_(None), Customer.phone.is_not(None)))).scalars().all()
-        remote_rows = (await db.execute(select(SMSMessage.direction, SMSMessage.from_number, SMSMessage.to_number).where(SMSMessage.tenant_id == tenant.id, SMSMessage.thread_id == thread.id, SMSMessage.deleted_at.is_(None)))).all()
-        remotes = {_normalize_for_twilio(f if d == SMSMessageDirection.INBOUND else t) for d, f, t in remote_rows if (f if d == SMSMessageDirection.INBOUND else t)}
-        if any(_normalize_for_twilio(p) == phone for p in others) or len(remotes) > 1 or (remotes and phone not in remotes):
+    if not routing.enabled():
+        try:
+            await routing.require_legacy_tenant(db, tenant.id)
+        except HTTPException as exc:
+            reason = exc.detail['code']
+    if reason is None:
+        if not customer or customer.sms_opt_out:
+            reason = 'opted_out' if customer else 'identity_unverified'
+        elif not re.fullmatch(r'\+[1-9]\d{7,14}', phone):
             reason = 'identity_unverified'
+        else:
+            others = (await db.execute(select(Customer.phone).where(Customer.tenant_id == tenant.id, Customer.id != customer.id, Customer.deleted_at.is_(None), Customer.phone.is_not(None)))).scalars().all()
+            remote_rows = (await db.execute(select(SMSMessage.direction, SMSMessage.from_number, SMSMessage.to_number).where(SMSMessage.tenant_id == tenant.id, SMSMessage.thread_id == thread.id, SMSMessage.deleted_at.is_(None)))).all()
+            remotes = {_normalize_for_twilio(f if d == SMSMessageDirection.INBOUND else t) for d, f, t in remote_rows if (f if d == SMSMessageDirection.INBOUND else t)}
+            if any(_normalize_for_twilio(p) == phone for p in others) or len(remotes) > 1 or (remotes and phone not in remotes):
+                reason = 'identity_unverified'
     held = select(SMSSendOperation.id).where(SMSSendOperation.tenant_id == tenant.id, SMSSendOperation.thread_id == thread.id, SMSSendOperation.state.in_(['unknown', 'dispatching']))
     if ignore_operation:
         held = held.where(SMSSendOperation.id != ignore_operation)
@@ -183,11 +204,12 @@ async def create_operation(db, user, tenant, thread_id, body, key, sender):
         fail(policy['reason'], 'This conversation cannot send messages right now.')
     if not await enforce_tenant_send_rate_limit(tenant.id, limit=30, window_seconds=60):
         raise HTTPException(429, detail={'code': 'rate_limited', 'message': 'SMS send rate limit exceeded.'}, headers={'Retry-After': '60'})
+    snapshot = (await routing.resolve(db, tenant.id)).snapshots() if routing.enabled() else {}
     now = datetime.now(timezone.utc)
-    sms = SMSMessage(id=uuid4(), tenant_id=tenant.id, thread_id=thread.id, customer_id=thread.customer_id, created_by_user_id=user.id, direction=SMSMessageDirection.OUTBOUND, source=SMSMessageSource.MANUAL, body=canonical, from_number=from_number, to_number=phone, delivery_status=SMSDeliveryStatus.PENDING, created_at=now)
+    sms = SMSMessage(id=uuid4(), tenant_id=tenant.id, thread_id=thread.id, customer_id=thread.customer_id, created_by_user_id=user.id, direction=SMSMessageDirection.OUTBOUND, source=SMSMessageSource.MANUAL, body=canonical, from_number=from_number, to_number=phone, delivery_status=SMSDeliveryStatus.PENDING, created_at=now, **snapshot)
     db.add(sms)
     await db.flush()
-    op = SMSSendOperation(id=uuid4(), tenant_id=tenant.id, thread_id=thread.id, message_id=sms.id, actor_id=user.id, idempotency_key=key, payload_hash=digest, channel_account_id=account, contact_identity_id=identity, from_number=from_number, to_number=phone, body=canonical, state='pending', attempt_count=0, reconciliation_state='none')
+    op = SMSSendOperation(id=uuid4(), tenant_id=tenant.id, thread_id=thread.id, message_id=sms.id, actor_id=user.id, idempotency_key=key, payload_hash=digest, channel_account_id=account, contact_identity_id=identity, from_number=from_number, to_number=phone, body=canonical, state='pending', attempt_count=0, reconciliation_state='none', **snapshot)
     db.add(op)
     thread.last_message_at = now
     thread.last_message_preview = canonical[:240]
@@ -217,6 +239,14 @@ async def dispatch_operation(db, operation_id, sender):
         await db.commit()
         return
     policy, account, identity, from_number, phone, _ = await send_policy(db, tenant, thread, sender, ignore_operation=op.id)
+    context = None
+    if op.binding_id and not routing.enabled():
+        policy = {'can_send': False, 'reason': 'routing_disabled'}
+    if routing.enabled():
+        try:
+            context = await routing.for_operation(db, op)
+        except HTTPException as exc:
+            policy = {'can_send': False, 'reason': exc.detail['code']}
     if not tenant.is_active or tenant.deleted_at or not tenant.messaging_enabled or not permitted(actor) or not policy['can_send'] or (account, identity, from_number, phone) != (op.channel_account_id, op.contact_identity_id, op.from_number, op.to_number):
         op.state = 'rejected'
         op.error_code = policy['reason'] or 'access_changed'
@@ -229,6 +259,8 @@ async def dispatch_operation(db, operation_id, sender):
     op.attempt_count = 1
     op.dispatch_started_at = datetime.now(timezone.utc)
     payload = dict(body=op.body, from_number=op.from_number, to_number=op.to_number, status_callback=_status_callback_url())
+    if context:
+        payload['routing_context'] = context
     await db.commit()  # Never hold a database transaction across provider I/O.
     outcome, error = None, None
     try:

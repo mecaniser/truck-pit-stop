@@ -24,6 +24,8 @@ from app.db.models.tenant import Tenant
 from app.db.models.user import User, UserRole
 from app.services.messaging_service import _normalize_for_twilio, _get_or_create_thread, _status_callback_url
 
+from app.services import tenant_sms_routing as routing
+
 CUSTOMER_TEMPLATES = {'work_started_sms', 'work_complete_sms', 'ready_pickup_sms', 'quote_sent_sms', 'invoice_reminder_sms'}
 STAFF_TEMPLATES = {'job_assigned_sms', 'quote_declined_shop', 'mechanic_idle_alert_sms', 'pending_zelle_staff_submit_sms', 'pending_zelle_staff_reminder_sms'}
 STAFF_ROLES = {UserRole.GARAGE_OWNER, UserRole.GARAGE_ADMIN, UserRole.RECEPTIONIST, UserRole.MECHANIC}
@@ -106,9 +108,20 @@ async def enqueue_automated_sms(db, *, tenant_id, domain_event_id, template_name
     await db.execute(text('SELECT pg_advisory_xact_lock(:key)'), {'key': int.from_bytes(bytes.fromhex(key)[:8], 'big', signed=True)})
     old = await db.scalar(select(AutomatedSMSOperation).where(AutomatedSMSOperation.tenant_id == tenant_id, AutomatedSMSOperation.event_key == key))
     if old:
+        if old.binding_id:
+            payload_hash = digest([old.from_number, to_number, canonical] + ([financial_hash] if financial_hash else []) + [str(old.binding_id), old.twilio_account_sid, old.messaging_service_sid])
         if old.payload_hash != payload_hash:
             fail('idempotency_conflict', 'This event already has a different immutable SMS payload.')
         return old
+    snapshot = {}
+    if not routing.enabled():
+        await routing.require_legacy_tenant(db, tenant_id)
+    if routing.enabled():
+        context = await routing.resolve(db, tenant_id)
+        from_number = context.sender_phone
+        snapshot = context.snapshots()
+        await routing.require_consent(db, tenant_id, kind, recipient_id, to_number)
+        payload_hash = digest([from_number, to_number, canonical] + ([financial_hash] if financial_hash else []) + [str(context.binding_id), context.account_sid, context.messaging_service_sid])
     current_phone = customer.phone if customer else user.phone if kind == 'user' else tenant.phone
     if not valid_phone(to_number) or _normalize_for_twilio(current_phone or '') != to_number:
         fail('identity_unverified', 'Recipient does not match its current verified identity.')
@@ -117,12 +130,12 @@ async def enqueue_automated_sms(db, *, tenant_id, domain_event_id, template_name
     message = None
     if customer:
         thread = await _get_or_create_thread(db, tenant_id, customer)
-        message = SMSMessage(id=uuid4(), tenant_id=tenant_id, thread_id=thread.id, customer_id=customer.id, direction=SMSMessageDirection.OUTBOUND, source=SMSMessageSource.AUTOMATED, body=canonical, from_number=from_number, to_number=to_number, delivery_status=SMSDeliveryStatus.PENDING)
+        message = SMSMessage(id=uuid4(), tenant_id=tenant_id, thread_id=thread.id, customer_id=customer.id, direction=SMSMessageDirection.OUTBOUND, source=SMSMessageSource.AUTOMATED, body=canonical, from_number=from_number, to_number=to_number, delivery_status=SMSDeliveryStatus.PENDING, **snapshot)
         db.add(message)
         thread.last_message_at = datetime.now(timezone.utc)
         thread.last_message_preview = canonical[:240]
     await db.flush()
-    operation = AutomatedSMSOperation(id=uuid4(), tenant_id=tenant_id, event_key=key, domain_event_id=domain_event_id, template_name=template_name, template_version=template_version, recipient_kind=kind, recipient_id=recipient_id, from_number=from_number, to_number=to_number, body=canonical, payload_hash=payload_hash, notification_id=notification.id, message_id=message.id if message else None, state='pending', attempt_count=0, reconciliation_state='none', delivery_status='pending')
+    operation = AutomatedSMSOperation(id=uuid4(), tenant_id=tenant_id, event_key=key, domain_event_id=domain_event_id, template_name=template_name, template_version=template_version, recipient_kind=kind, recipient_id=recipient_id, from_number=from_number, to_number=to_number, body=canonical, payload_hash=payload_hash, notification_id=notification.id, message_id=message.id if message else None, state='pending', attempt_count=0, reconciliation_state='none', delivery_status='pending', **snapshot)
     db.add(operation)
     await db.flush()
     return operation
@@ -153,7 +166,8 @@ async def domain_eligibility(db, op, tenant):
             if not order or order.deleted_at or order.status == RepairOrderStatus.CANCELLED:
                 return 'domain_event_obsolete'
             current_hash = await financial_snapshot(db, op.tenant_id, op.domain_event_id)
-            if op.payload_hash != digest([op.from_number, op.to_number, op.body, current_hash]):
+            routing_identity = [str(op.binding_id), op.twilio_account_sid, op.messaging_service_sid] if op.binding_id else []
+            if op.payload_hash != digest([op.from_number, op.to_number, op.body, current_hash] + routing_identity):
                 return 'financial_state_changed'
             if op.template_name == 'invoice_reminder_sms':
                 if not event.startswith('reminder:'):
@@ -196,15 +210,23 @@ async def domain_eligibility(db, op, tenant):
 
 
 async def eligibility(db, op, sender):
+    if op.binding_id and not routing.enabled():
+        return 'routing_disabled'
     tenant = await db.scalar(select(Tenant).where(Tenant.id == op.tenant_id).execution_options(populate_existing=True))
     if not tenant or not tenant.is_active or tenant.deleted_at or not tenant.sms_enabled or not tenant.messaging_enabled:
         return 'tenant_disabled'
     domain_reason = await domain_eligibility(db, op, tenant)
     if domain_reason:
         return domain_reason
+    if routing.enabled():
+        try:
+            await routing.for_operation(db, op)
+            await routing.require_consent(db, op.tenant_id, op.recipient_kind, op.recipient_id, op.to_number)
+        except HTTPException as exc:
+            return exc.detail['code']
     if not getattr(sender, 'ready', True):
         return 'provider_unavailable'
-    if not valid_phone(op.from_number) or _normalize_for_twilio(tenant.sms_phone_number or '') != op.from_number:
+    if not valid_phone(op.from_number) or (not routing.enabled() and _normalize_for_twilio(tenant.sms_phone_number or '') != op.from_number):
         return 'sender_changed'
     if not valid_phone(op.to_number):
         return 'identity_unverified'
@@ -283,6 +305,8 @@ async def dispatch_automated_operation(db, operation_id, sender):
     op.attempt_count = 1
     op.dispatch_started_at = datetime.now(timezone.utc)
     payload = dict(body=op.body, from_number=op.from_number, to_number=op.to_number, status_callback=_status_callback_url())
+    if routing.enabled():
+        payload['routing_context'] = await routing.for_operation(db, op)
     await db.commit()
     outcome, error = None, None
     try:
@@ -349,11 +373,14 @@ async def process_pending_automated_operations(db, sender, limit=50, *, tenant_i
     return counts
 
 
-async def apply_automated_callback(db, *, message_sid, message_status, error_code=None):
+async def apply_automated_callback(db, *, message_sid, message_status, error_code=None, account_sid=None, from_number=None, messaging_service_sid=None):
     """Project exact-SID receipts, including staff Notification-only deliveries."""
-    op = (await db.execute(select(AutomatedSMSOperation).where(AutomatedSMSOperation.provider_message_sid == message_sid).with_for_update().execution_options(populate_existing=True))).scalar_one_or_none()
+    account_scope = [AutomatedSMSOperation.twilio_account_sid == account_sid] if account_sid else [AutomatedSMSOperation.twilio_account_sid.is_(None)]
+    op = (await db.execute(select(AutomatedSMSOperation).where(AutomatedSMSOperation.provider_message_sid == message_sid, *account_scope).with_for_update().execution_options(populate_existing=True))).scalar_one_or_none()
     if not op:
         return
+    if op.binding_id and ((from_number and from_number != op.from_number) or (messaging_service_sid and messaging_service_sid != op.messaging_service_sid)):
+        raise HTTPException(409, detail='Receipt context mismatch')
     status = {'sending': 'sent', 'canceled': 'failed'}.get(message_status, message_status)
     terminal = {'delivered', 'failed', 'undelivered'}
     advances = status in {'queued', 'sent', *terminal} and (op.delivery_status == 'pending' or op.delivery_status == 'queued' and status != 'queued' or op.delivery_status == 'sent' and status in terminal)
