@@ -92,13 +92,15 @@ async def capture_native_order(db, tenant_id, order_id):
     if tenant is None:
         return None
     order = await db.scalar(select(RepairOrder).where(RepairOrder.id == order_id, RepairOrder.tenant_id == tenant_id))
-    if order is None or order.source is not None:
+    if order is None:
         return None
     prefix = f'native-completed:{order_id}:'
     previous = await db.scalar(select(ProviderOutboxEvent).where(
         ProviderOutboxEvent.tenant_id == tenant_id, ProviderOutboxEvent.event_type.in_(ETS_EVENTS),
         ProviderOutboxEvent.idempotency_key.like(prefix + '%'),
     ).order_by(ProviderOutboxEvent.payload['source_observation'].as_integer().desc()).limit(1))
+    if order.source is not None and previous is None:
+        return None
     if previous and not previous.payload.get('snapshot'):
         return None  # never reconstruct erased source evidence
     invoices = list(await db.scalars(select(Invoice).where(

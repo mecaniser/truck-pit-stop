@@ -63,3 +63,11 @@ completed unpaid native and ETS synthetic tests, replay/payment invariance,
 independent QA/Security, protected CI, accepting receiver deployment, source
 Web/Worker deployment, and read-only observation of scheduled capture. No manual
 source replay, Google resend, campaign change, or financial mutation is included.
+
+History `invoice_total` always remains the invoice face value. Native settlement
+proof controls only whether paid_at is an evidenced payment timestamp; missing
+settlement does not make the repair grouping uncertain. A different settled value
+is a financial reconciliation issue for the same repair, never a second repair.
+Known native completion streams remain in the bounded sweep even if the invoice
+becomes internal or source-unsupported. Capture/invalidation precedes optional
+history-context validation; excluded public history must not suppress a hold.

@@ -1978,3 +1978,11 @@ completed-service observations all carry invoice status10; none have a nonzero
 balance, so unpaid ETS runtime acceptance remains unproven. Native26 invoices all
 have actual work completion timestamps;16 satisfy finalization predicates. No
 financial/source delivery mutation occurred. Independent review in progress.
+
+Independent review found a native invalidation gap when a completed invoice later
+became internal and fell outside history selection. Corrected: prior native streams
+remain in the bounded cursor scan; native observation precedes optional history
+validation. Internal, unsupported invoice/order sources and malformed history
+amounts now produce holds without exporting excluded history. Added integration
+regressions. Native history retains final invoice face value even when settlement
+is absent/different. Owner's full focused suite now181 passed; re-review pending.

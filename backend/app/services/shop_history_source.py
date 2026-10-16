@@ -78,10 +78,7 @@ def history_snapshot(*, tenant: Tenant, invoice: Invoice, order: RepairOrder,
     if native_paid:
         if settled_amount is None:
             paid_at = None
-        else:
-            amount = settled_amount
     uncertain = grouping_uncertain or invoice.source != order.source
-    uncertain |= native_paid and settled_amount is None
     uncertain |= any(item.customer_id != order.customer_id or item.vehicle_id != order.vehicle_id for item in operations)
     uncertain |= any(item.deleted_at is not None for item in resources)
     # Bound even worst-case escaped Unicode under the receiver body ceiling.
@@ -133,18 +130,34 @@ async def capture_tenant_history(db: Session, tenant: Tenant, *, batch_size: int
         cursor = ShopHistoryCursor(tenant_id=tenant.id)
         db.add(cursor)
         await db.flush()
-    query = select(Invoice, RepairOrder, Customer, Vehicle).join(
+    known_native = select(ProviderOutboxEvent.id).where(
+        ProviderOutboxEvent.tenant_id == tenant.id,
+        ProviderOutboxEvent.aggregate_id == RepairOrder.id,
+        ProviderOutboxEvent.idempotency_key.like("native-completed:%"),
+        ProviderOutboxEvent.event_type.in_(["repair.completed_invoice_snapshot", "repair.completed_invoice_hold"]),
+    ).exists()
+    public_history = and_(Invoice.is_internal.is_(False), Customer.id.is_not(None),
+        or_(Invoice.source.is_(None), Invoice.source == ETS),
+        or_(RepairOrder.source.is_(None), RepairOrder.source == ETS))
+    query = select(Invoice, RepairOrder, Customer, Vehicle, known_native).join(
         RepairOrder, and_(Invoice.repair_order_id == RepairOrder.id, RepairOrder.tenant_id == tenant.id),
-    ).join(Customer, and_(RepairOrder.customer_id == Customer.id, Customer.tenant_id == tenant.id)).outerjoin(
+    ).outerjoin(Customer, and_(RepairOrder.customer_id == Customer.id, Customer.tenant_id == tenant.id)).outerjoin(
         Vehicle, and_(RepairOrder.vehicle_id == Vehicle.id, Vehicle.tenant_id == tenant.id),
-    ).where(Invoice.tenant_id == tenant.id, Invoice.is_internal.is_(False),
-            or_(Invoice.source.is_(None), Invoice.source == ETS),
-            or_(RepairOrder.source.is_(None), RepairOrder.source == ETS))
+    ).where(Invoice.tenant_id == tenant.id, or_(public_history, known_native))
     if cursor.last_invoice_id:
         query = query.where(Invoice.id > cursor.last_invoice_id)
     rows = (await db.execute(query.order_by(Invoice.id).limit(batch_size))).all()
     captured = 0
-    for invoice, order, customer, vehicle in rows:
+    for invoice, order, customer, vehicle, had_native in rows:
+        # Known completion streams must observe invalidation even when current
+        # facts no longer qualify for public history or its optional context.
+        if order.source is None or had_native:
+            from app.services.native_completed_outcome_source import capture_native_order
+            await capture_native_order(db, tenant.id, order.id)
+        if (invoice.is_internal or customer is None or invoice.source not in (None, ETS)
+                or order.source not in (None, ETS)):
+            cursor.last_invoice_id = invoice.id
+            continue
         operations, uncertain = await _operations(db, order)
         try:
             settled_amount = None
@@ -212,9 +225,6 @@ async def capture_tenant_history(db: Session, tenant: Tenant, *, batch_size: int
                 # Unbound identities cannot become evidence. Freshness gating in
                 # ELIS prevents older positive observations remaining usable.
                 pass
-        elif order.source is None:
-            from app.services.native_completed_outcome_source import capture_native_order
-            await capture_native_order(db, tenant.id, order.id)
         cursor.last_invoice_id = invoice.id
     if len(rows) < batch_size:
         cursor.last_invoice_id = None
