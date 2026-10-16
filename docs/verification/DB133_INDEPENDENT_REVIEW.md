@@ -519,3 +519,66 @@ Original-cohort equivalence must not be described as all-production equivalence:
 post-cutoff new work/adoption needs its own audit attribution, and a later timestamp
 alone never proves a changed charge was authorized. Final175 comparison and
 production UI acceptance remain pending.
+
+
+## Narrow main-ancestry recheck — 2026-10-16 04:25 UTC
+
+Reviewed integration of main PR548 (`e3ff99e0`) via `892f9420` and the subsequent
+board-history relocation. Exact candidate
+`0c531ad872051d5d46a53f3230cfc2db288a42cb` still matches all30 backend and all6
+final UI manifest entries, with zero mismatches. The latter commit changes only
+PROJECT_BOARD.md; incoming app changes concern the separately released Motive
+telemetry work. The local C1 QA/Security GO therefore remains valid; no unrelated
+broad suites were repeated. Fresh protected CI must pass on the integrated final
+head. Earlier incomplete/superseded runs are not passes. The version2 schema174
+production baseline remains the required comparison input; production175 and
+browser release acceptance are still pending.
+
+The board move also carried one preserved DB-036 history paragraph under the C1
+heading. This documentation-only placement was returned to Root for normal final
+docs cleanup; it does not change the application gate or justify rerunning tests.
+
+
+## Dual175 lineage integration — 2026-10-16 05:08 UTC
+
+**GO for the backed-up preview upgrade sequence**, not yet a final merged-source
+or production-release GO. Main PR549 introduced the independently released nullable
+contact snapshot and a second175 child of174. Source inspection confirms contact
+migration SHA256 `591a7ffa2c503aa158544508497a5cbbeb08dfa5c3385e5cb0e83f2073309d67`
+is byte-identical to main d5cb6628; the applied C1 migration remains unchanged at
+`2dcf08c6b502917e303ac89f21d0e438338a5abef9c014dc4e962f0f302b5f66`.
+The new no-op join SHA256
+`f7c753ea7c120e6aa0f8720bc23cfa948579c38695e8b1c164f4f6ea6026f916`
+has both exact175 parents. Independently invoked Alembic ScriptDirectory without a
+DB connection and confirmed the single head `176_merge_contact_pricing`.
+
+Reviewed the disposable runner and its completed9-case result at
+`/tmp/db133-merge-evidence/result.json`: upgrades from174/contact175/pricing175,
+repeat upgrades, empty-C1-evidence downgrade/upgrade and refusal of populated-C1
+downgrade all pass. Normalized full-row hashes across10 tables match in every
+comparison, including non-NULL contact JSON, pricing snapshots,2 immutable audit
+events and1 durable command receipt. The owner executed these disposable database
+cases; the independent reviewer inspected their source/results and hashes. No
+reviewer preview/production connection or mutation occurred.
+
+Root's sequence preserves compatibility: back up populated pricing175, apply only
+the missing contact branch and176 via Alembic while the old Customer model remains
+active, verify exact-row retention and schema, then integrate main/model. No stamp,
+revision rewrite or populated downgrade is authorized by this gate. The v2
+production baseline is historical; after main's contact175 deployment, the release
+must use fresh version3 evidence with exact contact-only pre and merged176 post.
+One bounded v3 reader gap was returned: internally inconsistent receipts could
+claim compatible despite pre-existing C1 columns/events. Capture SQL already
+checks them; receipt validation must also check its recorded fields before final
+production-evidence approval.
+
+The v3 reader finding is now closed. Corrected verifier SHA256
+`03eea7a2f0dccd3a0f0b4100483112c1d0621fa9f0756b55160e19eac1eeee73`
+recomputes exact recorded C1-column/event/contact/revision invariants. Independent
+connection-free boundary tests13/13 and self-test pass; evidence
+`/tmp/db133-independent-production-v3-probes.json`. Reviewed the owner's seven
+actual disposable SQL selector/capture cases in
+`/tmp/db133-merge-evidence/v3-capture-result.json`:174/contact-only pre, both176
+post comparisons, wrong pre/post rejection and global pre-cutoff adoption review
+all pass. Those database captures are owner-executed, not reviewer-executed.
+Fresh production v3 baseline and post176 comparison remain release requirements.

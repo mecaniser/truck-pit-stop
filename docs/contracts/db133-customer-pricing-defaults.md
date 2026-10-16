@@ -739,6 +739,14 @@ rolling back to P1-only code must pause affected new-work creation or keep the C
 policy reader compatible; do not silently fall back to different charges. Record
 that operational rollback boundary in the release receipt.
 
+Release integration on 2026-10-16 preserves the applied
+`175_customer_pricing_defaults` and incoming `175_customer_contact_snapshot`
+revisions byte-for-byte. No-op `176_merge_contact_pricing` joins their exact
+parents into one head. Verify upgrades from174 and both175 states, retaining
+contact JSON, C1 evidence and saved finances. Do not renumber, stamp or downgrade
+the populated preview to force a linear history. The existing C1 adopted-data
+downgrade guard and application rollback restrictions still apply.
+
 Shared fixture: shop labor 145, shop matrix A revision 1. Account One labor 125 and
 matrix B revision 2; Account Two unset. New external order One captures 125/B2;
 Two captures 145/A1, including external PM/staged routes. Change One to 135/A2:
