@@ -50,7 +50,7 @@ collector selector verification remains a runtime acceptance requirement.
 
 ## Release and rollback
 
-First deploy compatible ELIS historyv2 reader after completion reader release.
+First deploy both compatible ELIS completion and historyv2 readers. The source release consolidates the independently reviewed freshness, completion and contact changes.
 Then apply nullable migration175 and deploy DBN Web/Worker, then ETS collector.
 Only the normal scheduled scrape creates fresh source evidence. No replay or
 Google resend is part of this change. Verify aggregate complete/incomplete
