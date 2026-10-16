@@ -45,7 +45,9 @@
 .db-parts-pricing .db-slide-panel-form__header p { color: var(--workspace-text, #14243a); }
 .db-parts-pricing .db-slide-panel-form__header p:first-child:not(:last-child) { color: var(--workspace-muted, #5b6d82); }
 .db-parts-pricing .db-slide-panel-form__header button, .db-parts-pricing .db-slide-panel-form__footer button:not(.db-slide-panel-form__submit) { color: var(--workspace-text, #14243a); }
-.db-parts-pricing .db-slide-panel-form__submit { color: #fff; }
+/* The 600 action fill pairs with the action foreground in every appearance;
+   the brighter Night 500 selection fill does not support white button text. */
+.db-parts-pricing .db-slide-panel-form__submit { background: var(--personal-accent-600, #0e7490) !important; color: var(--personal-accent-foreground, #fff) !important; }
 .db-parts-pricing-overlay { z-index: 90; }
 .db-presentation-new .db-staff-content .db-parts-pricing :is(input, textarea, select) { background: var(--surface-overlay, #fff) !important; color: var(--workspace-text, #14243a) !important; -webkit-text-fill-color: var(--workspace-text, #14243a); caret-color: var(--workspace-text, #14243a); color-scheme: inherit; }
 .db-presentation-new .db-staff-content .db-parts-pricing :is(input, textarea)::placeholder { color: var(--workspace-muted, #5b6d82) !important; -webkit-text-fill-color: var(--workspace-muted, #5b6d82); opacity: 1; }
