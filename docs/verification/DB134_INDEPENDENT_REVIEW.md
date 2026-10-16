@@ -101,3 +101,54 @@ revisions rejected. Evidence: `/tmp/db134-independent-helper-validation.json`.
 application. Root must supply the actual reviewed post-migration revision; none
 was invented or applied by this review. Foundation and all later gates remain
 open. Review plan is frozen pending the implementation handoff.
+
+
+## Production-retention helper draft — bounded review
+
+Reviewed `/tmp/db134-production-retention-draft.py`, SHA256
+`e01d0bb07e722b7dd7d4286c7c214dff7ddf4dde6e2abfe19abbf8cb4bcb22c8`.
+No capture path or application imports were executed. Using the owner's local176
+receipt and synthetic post metadata only, independently passed28 connection-free
+comparison cases: valid matching cohorts; reject wrong revision/phase/read-only/
+isolation/version/database/baseline/cutoff/timing, reduced field scope or row
+bound, missing cohort/table/count, Boolean counts and malformed hashes; report
+missing/late/changed original rows and nonzero independent-program/completion/
+reading adoption. A recent updated_at does not excuse a changed protected hash;
+a timestamp-only change is reported separately. Evidence:
+`/tmp/db134-independent-production-helper-draft.json`.
+
+**Finding2 — missing payment retention cohort (closed below).** The accepted migration
+clause explicitly requires payment fingerprints. The draft protects ten cohorts
+but omits `payments`; therefore a payment amount/status/invoice ownership or
+refund/fee change is outside this comparator and can coexist with its green
+result. Returned to Root to include the scoped payment fields or supply separate
+reviewed payment-retention evidence. **No release-retention GO** until this scope
+gap closes. The comparator's existing fixed-cutoff/original-row and metadata
+checks passed the bounded tests; those passes do not validate eventual177
+physical schema, deterministic legacy enrollment, or complete application/UI
+behavior. Actual schema/content gates remain pending the Backend handoff.
+
+
+### Finding2 closure / production-retention comparator-only GO
+
+Root added payments, inventory and core-obligation protected fields. Final helper
+SHA256 `592372ecfb5ad5694a2f371c50c389d48cc5c8ac23b95cb39ed567023d298c56`
+now requires13 cohorts. Payment protection includes invoice/tenant identity,
+amount/method/status, provider fee/refund and attempt linkage plus soft deletion;
+inventory includes stock/cost/price/policy versions and core obligations retain
+quantity/value/status and source linkage. These fields are hashed, not emitted as
+raw financial/provider values. The fresh owner-captured LOCAL176 receipt contains
+2,225 payments, 1,334 inventory rows and zero core obligations.
+
+Independently passed15 narrow connection-free cases on that fresh receipt:
+matching13 cohorts accepted; changed/deleted payments and inventory require
+review; missing payments/core cohorts and tampered payment amount scope (including
+both receipts) rejected; a late pre-cutoff core row requires review; wrong
+baseline/cutoff/revision/read-write metadata rejected; independent adoption
+requires review. Evidence: `/tmp/db134-independent-production-helper-v2.json`.
+The earlier28-case mechanics review remains applicable to unchanged comparison
+logic. **Finding2 closed; GO for bounded production-retention comparator use.**
+This is not permission to capture production, apply177, or approve M1. Exact
+schema/content/legacy conversion, deployed identity and application/runtime gates
+remain open. No capture path, database connection or migration was executed by
+the reviewer. Receipt frozen pending the foundation handoff.
