@@ -114,7 +114,7 @@ async def test_add_part_accepts_fractional_gallon_quantity(db_session):
     user, order, inv = await _seed(db_session, stock_quantity=10)
 
     body = PartsUsageCreate(inventory_id=inv.id, quantity=Decimal("1.25"))
-    resp = await add_parts_to_repair_order(order.id, body, db_session, user)
+    resp = await add_parts_to_repair_order(order.id, body, db=db_session, current_user=user)
 
     assert resp.quantity == Decimal("1.25")
     assert resp.unit_type == "gallon"
@@ -146,7 +146,7 @@ async def test_add_part_can_attach_to_service_operation(db_session):
         quantity=Decimal("1.00"),
         source_service_id=service.id,
     )
-    resp = await add_parts_to_repair_order(order.id, body, db_session, user)
+    resp = await add_parts_to_repair_order(order.id, body, db=db_session, current_user=user)
 
     assert resp.source_service_id == service.id
     assert order.parts_usage[0].source_service_id == service.id
@@ -178,7 +178,7 @@ async def test_add_part_can_attach_to_free_form_operation_line(db_session):
         quantity=Decimal("2"),
         source_line_id=line.id,
     )
-    resp = await add_parts_to_repair_order(order.id, body, db_session, user)
+    resp = await add_parts_to_repair_order(order.id, body, db=db_session, current_user=user)
 
     assert resp.source_line_id == line.id
     assert resp.source_service_id is None
@@ -196,7 +196,7 @@ async def test_add_part_rejects_source_line_id_from_another_order(db_session):
         source_line_id=uuid4(),  # not a real line on this order
     )
     with pytest.raises(HTTPException) as exc_info:
-        await add_parts_to_repair_order(order.id, body, db_session, user)
+        await add_parts_to_repair_order(order.id, body, db=db_session, current_user=user)
     assert exc_info.value.status_code == 404
     assert exc_info.value.detail == "Source reference not found"
 
@@ -293,8 +293,8 @@ async def test_part_source_references_are_active_tenant_scoped_and_related(db_se
                     quantity=Decimal("1.00"),
                     source_service_id=missing_service_id,
                 ),
-                db_session,
-                user,
+                db=db_session,
+                current_user=user,
             )
         assert exc_info.value.status_code == 404
         assert exc_info.value.detail == "Source reference not found"
@@ -310,8 +310,8 @@ async def test_part_source_references_are_active_tenant_scoped_and_related(db_se
                 source_service_id=other_service_id,
                 source_line_id=line_id,
             ),
-            db_session,
-            user,
+            db=db_session,
+            current_user=user,
         )
     assert contradictory.value.status_code == 422
     assert contradictory.value.detail == "Source references do not match"
@@ -356,7 +356,7 @@ async def test_deleting_line_orphans_its_parts_via_set_null(db_session):
     await db_session.commit()
 
     body = PartsUsageCreate(inventory_id=inv.id, quantity=Decimal("1"), source_line_id=line.id)
-    resp = await add_parts_to_repair_order(order.id, body, db_session, user)
+    resp = await add_parts_to_repair_order(order.id, body, db=db_session, current_user=user)
 
     svc = PriceBuildService()
     loaded = await svc.load_order(db_session, order.id)
@@ -382,7 +382,7 @@ async def test_add_part_insufficient_stock_counts_whole_packages(db_session):
 
     body = PartsUsageCreate(inventory_id=inv.id, quantity=Decimal("0.25"))
     with pytest.raises(HTTPException) as exc_info:
-        await add_parts_to_repair_order(order.id, body, db_session, user)
+        await add_parts_to_repair_order(order.id, body, db=db_session, current_user=user)
     assert exc_info.value.status_code == 400
     assert exc_info.value.detail["code"] == "insufficient_stock"
     assert exc_info.value.detail["available_packages"] == 0
@@ -397,8 +397,8 @@ async def test_add_part_stock_shortage_override_records_only_available_reservati
     response = await add_parts_to_repair_order(
         order.id,
         PartsUsageCreate(inventory_id=inv.id, quantity=Decimal("2"), allow_stock_shortage=True),
-        db_session,
-        user,
+        db=db_session,
+        current_user=user,
     )
 
     assert response.quantity == Decimal("2")
@@ -428,8 +428,8 @@ async def test_part_add_quantity_update_and_removal_are_recorded_in_order_histor
     part = await add_parts_to_repair_order(
         order.id,
         PartsUsageCreate(inventory_id=inv.id, quantity=Decimal("2")),
-        db_session,
-        user,
+        db=db_session,
+        current_user=user,
     )
     await update_parts_quantity(
         order.id,
@@ -466,8 +466,8 @@ async def test_quantity_increase_can_use_stock_shortage_override_without_negativ
     part = await add_parts_to_repair_order(
         order.id,
         PartsUsageCreate(inventory_id=inv.id, quantity=Decimal("1")),
-        db_session,
-        user,
+        db=db_session,
+        current_user=user,
     )
 
     with pytest.raises(HTTPException) as exc_info:
@@ -501,7 +501,7 @@ async def test_update_quantity_within_same_package_does_not_touch_stock(db_sessi
     user, order, inv = await _seed(db_session, stock_quantity=10)
 
     body = PartsUsageCreate(inventory_id=inv.id, quantity=Decimal("0.25"))
-    resp = await add_parts_to_repair_order(order.id, body, db_session, user)
+    resp = await add_parts_to_repair_order(order.id, body, db=db_session, current_user=user)
     await db_session.refresh(inv)
     assert inv.stock_quantity == 9  # one jug opened
 
@@ -519,7 +519,7 @@ async def test_update_quantity_crossing_into_next_package_decrements_stock(db_se
     user, order, inv = await _seed(db_session, stock_quantity=10)
 
     body = PartsUsageCreate(inventory_id=inv.id, quantity=Decimal("1.00"))
-    resp = await add_parts_to_repair_order(order.id, body, db_session, user)
+    resp = await add_parts_to_repair_order(order.id, body, db=db_session, current_user=user)
     await db_session.refresh(inv)
     assert inv.stock_quantity == 9
 
@@ -536,7 +536,7 @@ async def test_update_quantity_crossing_into_next_package_decrements_stock(db_se
 async def test_update_quantity_rejects_zero(db_session):
     user, order, inv = await _seed(db_session)
     body = PartsUsageCreate(inventory_id=inv.id, quantity=Decimal("1.00"))
-    resp = await add_parts_to_repair_order(order.id, body, db_session, user)
+    resp = await add_parts_to_repair_order(order.id, body, db=db_session, current_user=user)
 
     with pytest.raises(ValidationError):
         PartsUsageUpdate(quantity=Decimal("0"))
@@ -547,7 +547,7 @@ async def test_remove_part_restores_whole_packages_to_stock(db_session):
     user, order, inv = await _seed(db_session, stock_quantity=10)
 
     body = PartsUsageCreate(inventory_id=inv.id, quantity=Decimal("1.25"))
-    resp = await add_parts_to_repair_order(order.id, body, db_session, user)
+    resp = await add_parts_to_repair_order(order.id, body, db=db_session, current_user=user)
     await db_session.refresh(inv)
     assert inv.stock_quantity == 8  # 1.25 gal rounds up to 2 packages consumed
 
@@ -561,7 +561,7 @@ async def test_each_unit_part_still_behaves_as_whole_number(db_session):
     user, order, inv = await _seed(db_session, stock_quantity=5, unit_type="each")
 
     body = PartsUsageCreate(inventory_id=inv.id, quantity=Decimal("2"))
-    resp = await add_parts_to_repair_order(order.id, body, db_session, user)
+    resp = await add_parts_to_repair_order(order.id, body, db=db_session, current_user=user)
     assert resp.quantity == Decimal("2")
     assert resp.unit_type == "each"
 

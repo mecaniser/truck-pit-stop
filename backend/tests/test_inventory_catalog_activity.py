@@ -49,6 +49,7 @@ async def test_catalog_update_records_price_core_and_supplier_activity(client, d
         json={
             "cost": "20.30",
             "selling_price": "51.78",
+            "expected_pricing_version": part.pricing_version,
             "core_charge": "5.00",
             "supplier_name": "Excel Truck Group",
             "supplier_contact": "parts@example.test",

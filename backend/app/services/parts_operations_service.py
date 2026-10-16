@@ -107,6 +107,8 @@ async def apply_inventory_movement(
     )
     item.stock_quantity = after
     item.cost = new_wac
+    if new_wac != old_wac:
+        item.pricing_version = int(item.pricing_version or 0) + 1
     item.stock_version = int(item.stock_version or 0) + 1
     db.add(movement)
     if held_for_checkout is None:

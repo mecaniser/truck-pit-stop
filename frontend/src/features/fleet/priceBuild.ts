@@ -1,3 +1,7 @@
+import { useAdHocPartCommand } from '@/features/parts-pricing/useAdHocPartCommand'
+import { usePricingCommand } from '@/features/parts-pricing/usePricingCommand'
+import { usePricingScope } from '@/features/parts-pricing/usePricingScope'
+import { PricingCancelled, pricingError } from '@/features/parts-pricing/contract'
 import { openChecklistOnCompletionError } from '@/features/service-checklists/queries'
 /**
  * FleetBoard's client for the price-build API.
@@ -113,15 +117,17 @@ function errorMessage(error: unknown, fallback: string): string {
     const messages = detail.map((item) => item?.msg).filter(Boolean)
     if (messages.length) return messages.join('. ')
   }
-  return fallback
+  return pricingError(error, fallback)
 }
 
 /* ---------- reads ---------- */
 
 export function usePriceBuildSummary(orderId: string) {
+  const scope = usePricingScope()
   return useQuery<PriceBuildSummary>({
-    queryKey: fleetPriceBuildKeys.summary(orderId),
-    queryFn: async () => (await api.get(`/repair-orders/${orderId}/price-build`)).data,
+    queryKey: [...fleetPriceBuildKeys.summary(orderId), scope],
+    gcTime: 0,
+    queryFn: async ({ signal }) => (await api.get(`/repair-orders/${orderId}/price-build`, { signal, params: { pricing_presentation: 'fleet' } })).data,
   })
 }
 
@@ -130,7 +136,8 @@ export function useRepairOrderDetail(orderId: string) {
   const epoch = useAuthStore(state => state.authSessionEpoch)
   return useQuery<FleetRepairOrderDetail>({
     queryKey: scopedOrderDetailKey('fleet-ro-detail', orderId, user, epoch),
-    queryFn: async ({ signal }) => (await api.get(`/repair-orders/${orderId}/detail`, { signal })).data,
+    gcTime: 0,
+    queryFn: async ({ signal }) => (await api.get(`/repair-orders/${orderId}/detail`, { signal, params: { pricing_presentation: 'fleet' } })).data,
   })
 }
 
@@ -230,32 +237,37 @@ export function useOperationSearch(orderId: string) {
  */
 export function useApplyOperation(orderId: string, onDone?: () => void) {
   const qc = useQueryClient()
-  return useMutation<unknown, unknown, { candidate: RepairOperationCandidate; hours: number }>({
-    mutationFn: async ({ candidate, hours }) =>
-      (await api.post(`/repair-orders/${orderId}/price-build/repair-ops/apply`, {
+  const pricing = usePricingCommand(`fleet:${orderId}:useApplyOperation`)
+  const mutation = useMutation<unknown, unknown, { candidate: RepairOperationCandidate; hours: number }>({
+    mutationFn: async ({ candidate, hours }) => {
+      if (candidate.operation_id.startsWith('service:')) {
+        const serviceId = candidate.operation_id.slice('service:'.length)
+        return pricing.execute({ context: { kind: 'repair_order', repair_order_id: orderId }, plan: { kind: 'service_apply', service_id: serviceId, quantity: '1' }, pricing_presentation: 'fleet' }, async (confirmation, options) => (await api.post(`/repair-orders/${orderId}/price-build/flat-service`, { service_id: serviceId, quantity: 1, ...confirmation }, options)).data)
+      }
+      return (await api.post(`/repair-orders/${orderId}/price-build/repair-ops/apply`, {
         operation_id: candidate.operation_id,
         name: candidate.name,
         description: candidate.description,
         estimated_hours: hours,
         provider: candidate.provider,
         auto_recalc_enabled: true,
-      })).data,
+      })).data
+    },
     onSuccess: () => { invalidateOrder(qc, orderId); onDone?.() },
-    onError: (error) => toast.error(errorMessage(error, 'Unable to add this operation')),
+    onError: (error) => { if (!(error instanceof PricingCancelled)) toast.error(errorMessage(error, 'Unable to add this operation')) },
   })
+  return { ...mutation, pricingDialog: pricing.dialog }
 }
 
 export function useAddFlatService(orderId: string, onDone?: () => void) {
   const qc = useQueryClient()
-  return useMutation<unknown, unknown, { serviceId: string; quantity?: number }>({
-    mutationFn: async ({ serviceId, quantity }) =>
-      (await api.post(`/repair-orders/${orderId}/price-build/flat-service`, {
-        service_id: serviceId,
-        ...(quantity == null ? {} : { quantity }),
-      })).data,
+  const pricing = usePricingCommand(`fleet:${orderId}:useAddFlatService`)
+  const mutation = useMutation<unknown, unknown, { serviceId: string; quantity?: number }>({
+    mutationFn: async ({ serviceId, quantity }) => pricing.execute({ context: { kind: 'repair_order', repair_order_id: orderId }, plan: { kind: 'service_apply', service_id: serviceId, quantity: String(quantity ?? 1) }, pricing_presentation: 'fleet' }, async (confirmation, options) => (await api.post(`/repair-orders/${orderId}/price-build/flat-service`, { service_id: serviceId, ...(quantity == null ? {} : { quantity }), ...confirmation }, options)).data),
     onSuccess: () => { invalidateOrder(qc, orderId); onDone?.() },
-    onError: (error) => toast.error(errorMessage(error, 'Unable to add this service')),
+    onError: (error) => { if (!(error instanceof PricingCancelled)) toast.error(errorMessage(error, 'Unable to add this service')) },
   })
+  return { ...mutation, pricingDialog: pricing.dialog }
 }
 
 export function useUpdateLine(orderId: string) {
@@ -287,22 +299,21 @@ export function useRemoveLine(orderId: string) {
 
 export function useAddPart(orderId: string, onDone?: () => void) {
   const qc = useQueryClient()
-  return useMutation<PartsUsage, unknown, {
+  const pricing = usePricingCommand(`fleet:${orderId}:useAddPart`)
+  const mutation = useMutation<PartsUsage, unknown, {
     inventoryId: string
     quantity: number
     sourceLineId?: string | null
     allowStockShortage?: boolean
   }>({
-    mutationFn: async ({ inventoryId, quantity, sourceLineId, allowStockShortage }) =>
-      (await api.post(`/repair-orders/${orderId}/parts`, {
-        inventory_id: inventoryId,
-        quantity,
-        source_line_id: sourceLineId ?? null,
-        ...(allowStockShortage ? { allow_stock_shortage: true } : {}),
-      })).data,
+    mutationFn: async ({ inventoryId, quantity, sourceLineId, allowStockShortage }) => {
+      const body = { client_key: `${sourceLineId || 'standalone'}:${inventoryId}`, inventory_id: inventoryId, quantity, source_line_id: sourceLineId ?? null, pricing_intent: 'default' as const, ...(allowStockShortage ? { allow_stock_shortage: true } : {}) }
+      return pricing.execute({ context: { kind: 'repair_order', repair_order_id: orderId }, plan: { kind: 'parts_add', lines: [{ client_key: `${sourceLineId || 'standalone'}:${inventoryId}`, inventory_id: inventoryId, quantity: String(quantity), source_line_id: sourceLineId ?? null, pricing_intent: 'default' }] }, pricing_presentation: 'fleet' }, async (confirmation, options) => (await api.post(`/repair-orders/${orderId}/parts`, { ...body, ...confirmation }, options)).data, body)
+    },
     onSuccess: () => { invalidateOrder(qc, orderId); onDone?.() },
-    onError: (error) => toast.error(errorMessage(error, 'Unable to add this part')),
+    onError: (error) => { if (!(error instanceof PricingCancelled)) toast.error(errorMessage(error, 'Unable to add this part')) },
   })
+  return { ...mutation, pricingDialog: pricing.dialog }
 }
 
 /**
@@ -318,7 +329,8 @@ export function useAddPart(orderId: string, onDone?: () => void) {
  */
 export function useAddAdHocPart(orderId: string, onDone?: () => void) {
   const qc = useQueryClient()
-  return useMutation<unknown, unknown, {
+  const pricing = useAdHocPartCommand(orderId, 'fleet', true)
+  const mutation = useMutation<unknown, unknown, {
     name: string
     sku?: string | null
     quantity: number
@@ -326,7 +338,7 @@ export function useAddAdHocPart(orderId: string, onDone?: () => void) {
     sourceLineId?: string | null
   }>({
     mutationFn: async ({ name, sku, quantity, cost, sourceLineId }) =>
-      (await api.post(`/repair-orders/${orderId}/parts/ad-hoc`, {
+      pricing.execute({
         name: name.trim(),
         sku: sku?.trim() || null,
         quantity,
@@ -335,19 +347,20 @@ export function useAddAdHocPart(orderId: string, onDone?: () => void) {
         unit_price: cost,
         unit_cost: cost,
         source_line_id: sourceLineId ?? null,
-      })).data,
+      }),
     onSuccess: () => { invalidateOrder(qc, orderId); onDone?.() },
-    onError: (error) => toast.error(errorMessage(error, 'Unable to add this part')),
+    onError: (error) => { if (!(error instanceof PricingCancelled)) toast.error(errorMessage(error, 'Unable to add this part')) },
   })
+  return { ...mutation, pricingDialog: pricing.dialog }
 }
 
 export function useUpdatePartQuantity(orderId: string) {
   const qc = useQueryClient()
-  return useMutation<unknown, unknown, { partUsageId: string; quantity: number }>({
-    mutationFn: async ({ partUsageId, quantity }) =>
-      (await api.patch(`/repair-orders/${orderId}/parts/${partUsageId}`, { quantity })).data,
+  return useMutation<unknown, unknown, { partUsageId: string; quantity: number; pricingVersion?: number }>({
+    mutationFn: async ({ partUsageId, quantity, pricingVersion }) =>
+      (await api.patch(`/repair-orders/${orderId}/parts/${partUsageId}`, { quantity, expected_pricing_version: pricingVersion, pricing_presentation: 'fleet' })).data,
     onSuccess: () => invalidateOrder(qc, orderId),
-    onError: (error) => toast.error(errorMessage(error, 'Unable to update this part')),
+    onError: (error) => { invalidateOrder(qc, orderId); toast.error(errorMessage(error, 'Unable to update this part')) },
   })
 }
 
@@ -445,10 +458,11 @@ export function useDeleteOrder(orderId: string, onDone?: () => void) {
 
 export function useSetPmServices(orderId: string) {
   const qc = useQueryClient()
-  return useMutation<PMServiceEntry[], unknown, string[]>({
-    mutationFn: async (serviceIds) =>
-      (await api.put(`/fleet/work-orders/${orderId}/pm-services`, { service_ids: serviceIds })).data,
+  const pricing = usePricingCommand(`fleet:${orderId}:useSetPmServices`)
+  const mutation = useMutation<PMServiceEntry[], unknown, string[]>({
+    mutationFn: async (serviceIds) => pricing.execute({ context: { kind: 'repair_order', repair_order_id: orderId }, plan: { kind: 'pm_replace', service_ids: serviceIds }, pricing_presentation: 'fleet' }, async (confirmation, options) => (await api.put(`/fleet/work-orders/${orderId}/pm-services`, { service_ids: serviceIds, ...confirmation }, options)).data),
     onSuccess: () => invalidateOrder(qc, orderId),
-    onError: (error) => toast.error(errorMessage(error, 'Unable to update PM services')),
+    onError: (error) => { if (!(error instanceof PricingCancelled)) toast.error(errorMessage(error, 'Unable to update PM services')) },
   })
+  return { ...mutation, pricingDialog: pricing.dialog }
 }

@@ -1,9 +1,13 @@
+import { pricingError, pricingMoney } from '@/features/parts-pricing/contract'
+import PartPolicySummary from '@/features/parts-pricing/PartPolicySummary'
 /* eslint-disable react-refresh/only-export-components -- Session-scoped purchase preparation is shared with Purchasing. */
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react'
 import { useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import { Archive, ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Boxes, Camera, ChevronsUpDown, EllipsisVertical, History, MapPin, Package, Pencil, Plus, Search, Settings2, ShoppingCart, Trash2, X } from 'lucide-react'
 
+import PartsPricingSettings from '@/features/parts-pricing/PartsPricingSettings'
+import PartPricingPolicy from '@/features/parts-pricing/PartPricingPolicy'
 import api from '@/lib/api'
 import useTenantBranding from '@/hooks/useTenantBranding'
 import { useAuthStore } from '@/stores/authStore'
@@ -116,6 +120,7 @@ type PartDetail = PartRecord & {
 }
 
 type InventoryEditorRecord = {
+  pricing_version?: number
   id: string
   sku: string
   name: string
@@ -439,6 +444,7 @@ export function PartsInventoryGate({ legacy }: { legacy: ReactNode }) {
 }
 
 export default function PartsInventoryWorkspace({ summary }: { summary: Summary }) {
+  const [pricingSettingsOpen, setPricingSettingsOpen] = useState(false)
   const role = useAuthStore((state) => state.user?.role)
   const manage = canManage(role)
   const navigate = useNavigate()
@@ -823,6 +829,7 @@ export default function PartsInventoryWorkspace({ summary }: { summary: Summary 
   }
 
   return <section className="db-parts-workbench" aria-labelledby="parts-workbench-title">
+    {pricingSettingsOpen && <PartsPricingSettings onClose={() => setPricingSettingsOpen(false)} />}
     <header className="db-parts-workbench__header">
       <div><h1 id="parts-workbench-title">Parts</h1><p className="db-parts-workbench__technical-line"><span className="db-parts-workbench__stat">{allPartsCount ?? firstPartsPage?.total ?? '—'} TRACKED /</span> <span className="db-parts-workbench__stat"><em>{needsReorderCount} NEEDS REORDER</em> /</span> <span className="db-parts-workbench__stat">{summary.open_purchase_order_count} OPEN PURCHASE ORDERS{summary.total_stock_value == null ? '' : ' /'}</span>{summary.total_stock_value == null ? null : <> <span className="db-parts-workbench__stat">{formatMoney(money(summary.total_stock_value))} STOCK VALUE</span></>}{syncFreshness == null ? null : <> <span className="db-parts-workbench__stat db-parts-workbench__stat--sync" data-testid="parts-sync-freshness" data-stale={syncFreshness.stale ? 'true' : undefined} title={syncFreshness.title}>/ {syncFreshness.label}</span></>}</p></div>
       <div className="db-parts-workbench__summary" aria-label="Parts summary">
@@ -834,6 +841,7 @@ export default function PartsInventoryWorkspace({ summary }: { summary: Summary 
         {manage && <details className="db-parts-workbench__maintenance" ref={maintenanceMenu}>
           <summary aria-label="Catalogue maintenance" title="Catalogue maintenance"><Settings2 aria-hidden="true" /></summary>
           <div role="group" aria-label="Catalogue maintenance actions">
+            <button type="button" onClick={() => { if (maintenanceMenu.current) { maintenanceMenu.current.open = false; maintenanceMenu.current.querySelector('summary')?.focus() } setPricingSettingsOpen(true) }}>Parts pricing</button>
             <button type="button" disabled={Boolean(maintenanceBusy)} onClick={() => runMaintenance('preload', '/inventory/preload', 'Sample parts added.')}>{maintenanceBusy === 'preload' ? 'Adding…' : 'Add sample parts'}</button>
             <button type="button" disabled={Boolean(maintenanceBusy)} onClick={() => runMaintenance('regenerate', '/inventory/library/regenerate', 'Part library regenerated.')}>{maintenanceBusy === 'regenerate' ? 'Regenerating…' : 'Regenerate part library'}</button>
             {!confirmClear && <button type="button" className="is-danger" disabled={Boolean(maintenanceBusy)} onClick={() => setConfirmClear(true)}>Clear all parts…</button>}
@@ -1145,6 +1153,8 @@ function PartInspector({ part, loading, failed, manage, prepared, logoUrl, compa
   const [receiveError, setReceiveError] = useState<string | null>(null)
   const [identityOpen, setIdentityOpen] = useState(false)
   const [identityForm, setIdentityForm] = useState<PartIdentityForm | null>(null)
+  const [pricingPolicyOpen, setPricingPolicyOpen] = useState(false)
+  const [identityFresh, setIdentityFresh] = useState<InventoryEditorRecord | null>(null)
   const [identityOriginal, setIdentityOriginal] = useState<InventoryEditorRecord | null>(null)
   const [identitySaving, setIdentitySaving] = useState(false)
   const [photoAction, setPhotoAction] = useState<'upload' | 'remove' | null>(null)
@@ -1174,7 +1184,7 @@ function PartInspector({ part, loading, failed, manage, prepared, logoUrl, compa
     enabled: Boolean(supplierId),
     retry: false,
   })
-  useEffect(() => { setInspectorView('overview'); setEdit(null); setEditFocusMode('pointer'); setLocalError(null); setReason(''); setIdentityOpen(false); setIdentityForm(null); setIdentityOriginal(null); setIdentityError(null); setPhotoError(null); editOrigin.current = null; restore.current = null }, [part?.id])
+  useEffect(() => { setInspectorView('overview'); setEdit(null); setEditFocusMode('pointer'); setLocalError(null); setReason(''); setIdentityOpen(false); setIdentityForm(null); setIdentityOriginal(null); setIdentityFresh(null); setIdentityError(null); setPhotoError(null); editOrigin.current = null; restore.current = null }, [part?.id])
   useEffect(() => {
     if (!identityOpen || !identityQuery.data || identityOriginal?.id === identityQuery.data.id) return
     const record = identityQuery.data
@@ -1209,11 +1219,13 @@ function PartInspector({ part, loading, failed, manage, prepared, logoUrl, compa
     setPhotoError(null)
     setIdentityForm(null)
     setIdentityOriginal(null)
+    setIdentityFresh(null)
     setIdentityOpen(true)
   }
   const closeIdentity = () => {
     setConfirmPhotoRemove(false)
     setIdentityOpen(false)
+    setIdentityFresh(null)
     setIdentityForm(null)
     setIdentityOriginal(null)
     setIdentityError(null)
@@ -1257,7 +1269,7 @@ function PartInspector({ part, loading, failed, manage, prepared, logoUrl, compa
   }, [identityForm, identityOriginal])
   const identityDirty = Object.keys(identityPatch).length > 0
   const saveIdentity = async () => {
-    if (!part || !identityForm || !identityOriginal || identitySaving) return
+    if (!part || !identityForm || !identityOriginal || identityFresh || identitySaving) return
     const name = identityForm.name.trim()
     const sku = identityForm.sku.trim()
     if (!name) { setIdentityError('Part name is required.'); return }
@@ -1266,10 +1278,14 @@ function PartInspector({ part, loading, failed, manage, prepared, logoUrl, compa
     setIdentitySaving(true)
     setIdentityError(null)
     try {
-      await onUpdateIdentity(part, identityPatch)
+      await onUpdateIdentity(part, { ...identityPatch, ...('cost' in identityPatch || 'selling_price' in identityPatch ? { expected_pricing_version: identityOriginal.pricing_version } : {}) })
       closeIdentity()
     } catch (cause) {
-      setIdentityError(errorMessage(cause))
+      setIdentityError(pricingError(cause, errorMessage(cause)))
+      if ((cause as { response?: { status?: number } }).response?.status === 409) {
+        const current = await identityQuery.refetch()
+        if (current.data?.id === part.id) setIdentityFresh(current.data)
+      }
     } finally {
       setIdentitySaving(false)
     }
@@ -1434,6 +1450,7 @@ function PartInspector({ part, loading, failed, manage, prepared, logoUrl, compa
     ? [reorderStockFact, availableStockFact, heldStockFact, sellableStockFact, neededStockFact, incomingStockFact]
     : [availableStockFact, heldStockFact, sellableStockFact, neededStockFact, reorderStockFact, incomingStockFact]
   return <aside id="selected-part-inspector" className="db-parts-workbench__inspector" aria-labelledby="selected-part-name">
+    {pricingPolicyOpen && <PartPricingPolicy inventoryId={part.id} name={part.name} onClose={() => setPricingPolicyOpen(false)} onSaved={onRetry} />}
     <div className="db-parts-workbench__selected-action" data-selected-surface="true">
       <div className="db-parts-workbench__selected-label-row">
         <p className="db-parts-workbench__selected-label">Selected part</p>
@@ -1475,6 +1492,7 @@ function PartInspector({ part, loading, failed, manage, prepared, logoUrl, compa
             </div>
             <fieldset className="db-parts-workbench__identity-group">
               <legend>Pricing</legend>
+              <button type="button" disabled={identitySaving || photoSaving} onClick={() => setPricingPolicyOpen(true)}>Part pricing policy</button>
               <div className="db-parts-workbench__identity-fields">
                 <label>Cost per unit<span className="db-parts-workbench__price-input"><span aria-hidden="true">$</span><input inputMode="decimal" disabled={identitySaving || photoSaving} value={identityForm.cost} onChange={(event) => updateIdentity('cost', event.target.value)} /></span></label>
                 <label>Core charge<span className="db-parts-workbench__price-input"><span aria-hidden="true">$</span><input inputMode="decimal" disabled={identitySaving || photoSaving} value={identityForm.coreCharge} onChange={(event) => updateIdentity('coreCharge', event.target.value)} /></span></label>
@@ -1489,8 +1507,9 @@ function PartInspector({ part, loading, failed, manage, prepared, logoUrl, compa
                 <label>Supplier contact<input maxLength={255} disabled={identitySaving || photoSaving} value={identityForm.supplierContact} onChange={(event) => updateIdentity('supplierContact', event.target.value)} /></label>
               </div>
             </fieldset>
+            {identityFresh && <div className="db-parts-workbench__identity-recovery"><span>Saved prices changed · Cost {pricingMoney(String(identityFresh.cost))} · Catalog {pricingMoney(String(identityFresh.selling_price))}. Your draft is kept.</span><button type="button" onClick={() => { setIdentityOriginal(identityFresh); setIdentityFresh(null); setIdentityError(null) }}>Keep my draft</button></div>}
             {identityError && <p className="db-parts-workbench__identity-error" role="alert">{identityError}</p>}
-            <div className="db-parts-workbench__identity-actions"><button type="submit" disabled={identitySaving || photoSaving || !identityDirty}>{identitySaving ? 'Saving…' : 'Save details'}</button></div>
+            <div className="db-parts-workbench__identity-actions"><button type="submit" disabled={identitySaving || photoSaving || Boolean(identityFresh) || !identityDirty}>{identitySaving ? 'Saving…' : 'Save details'}</button></div>
           </form>
         </>}
       </div>}
@@ -1512,7 +1531,7 @@ function PartInspector({ part, loading, failed, manage, prepared, logoUrl, compa
             try { await onAdjust(part, { is_placeholder: false }) } finally { setPromoting(false) }
           }}>{promoting ? 'Promoting…' : 'Make this a stocked part'}</button>}
         </section>}
-        <section className="db-parts-workbench__section"><h3>At a glance</h3><dl className="db-parts-workbench__facts is-overview"><div><dt>Physical on hand</dt><dd>{physicalOnHand}</dd></div><div><dt>Held for checkout</dt><dd>{heldForCheckout}</dd></div><div><dt>Available to sell</dt><dd>{availableToSell}</dd></div><div><dt>Needed for open repairs</dt><dd>{part.needed_for_open_repairs}</dd></div><div><dt>Reorder at</dt><dd>{part.reorder_level}</dd></div><div><dt>Incoming</dt><dd>{part.incoming_packages}</dd></div><div><dt>Unit cost</dt><dd>{formatMoney(money(part.average_unit_cost))}</dd></div><div><dt>Stock value</dt><dd>{formatStockValue(part)}</dd></div><div><dt>Selling price</dt><dd>{part.selling_price == null ? '—' : formatMoney(money(part.selling_price))}</dd></div><div><dt>Remarks</dt><dd>{remark}</dd></div></dl></section>
+        <section className="db-parts-workbench__section"><h3>At a glance</h3><dl className="db-parts-workbench__facts is-overview"><div><dt>Physical on hand</dt><dd>{physicalOnHand}</dd></div><div><dt>Held for checkout</dt><dd>{heldForCheckout}</dd></div><div><dt>Available to sell</dt><dd>{availableToSell}</dd></div><div><dt>Needed for open repairs</dt><dd>{part.needed_for_open_repairs}</dd></div><div><dt>Reorder at</dt><dd>{part.reorder_level}</dd></div><div><dt>Incoming</dt><dd>{part.incoming_packages}</dd></div><div><dt>Unit cost</dt><dd>{formatMoney(money(part.average_unit_cost))}</dd></div><div><dt>Stock value</dt><dd>{formatStockValue(part)}</dd></div><div><dt>Selling price</dt><dd>{part.selling_price == null ? '—' : formatMoney(money(part.selling_price))}{manage && <PartPolicySummary inventoryId={part.id} />}</dd></div><div><dt>Remarks</dt><dd>{remark}</dd></div></dl></section>
         <section className="db-parts-workbench__section db-parts-workbench__supplier-section">
           <div className="db-parts-workbench__supplier-section-head">
             <h3>Supplied by</h3>

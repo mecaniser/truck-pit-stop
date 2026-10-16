@@ -198,127 +198,69 @@ def price_sale(sale: CounterSale, lines: list[CounterSaleLine]) -> None:
 
 
 async def create_or_replace_draft(
-    db: AsyncSession,
-    *,
-    tenant: Tenant,
-    actor: User,
-    sale: CounterSale | None,
-    customer_id: UUID | None,
-    buyer_name: str | None,
-    buyer_email: str | None,
-    buyer_phone: str | None,
-    line_inputs: list[dict[str, Any]],
+    db: AsyncSession, *, tenant: Tenant, actor: User, sale: CounterSale | None,
+    customer_id: UUID | None, buyer_name: str | None, buyer_email: str | None,
+    buyer_phone: str | None, line_inputs: list[dict[str, Any]],
+    pricing_preview_fingerprint: str | None = None, pricing_presentation: str | None = None,
 ) -> tuple[CounterSale, list[CounterSaleLine]]:
-    if not line_inputs or len(line_inputs) > 100:
-        raise _unprocessable("A counter sale requires 1-100 lines")
-    customer = await _tenant_customer(db, tenant.id, customer_id)
+    from app.services import parts_pricing as pricing
+    from app.services.parts_pricing_planner import build_plan
+    from app.schemas.parts_pricing import ResolveRequest
+    plan=await build_plan(db,actor,ResolveRequest.model_validate({
+        'context': {'kind':'counter_sale','sale_id':sale.id if sale else None,'customer_id':customer_id,'expected_sale_version':sale.version if sale else None},
+        'plan': {'kind':'counter_draft','lines':line_inputs}, 'pricing_presentation':pricing_presentation,
+    }),lock=True)
+    plan.confirm(pricing_preview_fingerprint)
+    customer=await _tenant_customer(db,tenant.id,customer_id)
     if customer:
-        buyer_name = (customer.company_name or f"{customer.first_name} {customer.last_name}").strip()
-        buyer_email = customer.email
-        buyer_phone = customer.phone
-    parts = await _tenant_parts(db, tenant.id, [line["inventory_id"] for line in line_inputs])
-    is_new = sale is None
+        buyer_name=(customer.company_name or f'{customer.first_name} {customer.last_name}').strip()
+        buyer_email=customer.email;buyer_phone=customer.phone
+    is_new=sale is None;old_version=sale.version if sale else None
     if sale is None:
-        sale = CounterSale(
-            id=uuid4(),
-            tenant_id=tenant.id,
-            sale_number=await _next_sale_number(db, tenant.id),
-            status="draft",
-            version=1,
-            currency="USD",
-            customer_id=customer_id,
-            created_by_user_id=actor.id,
-            updated_by_user_id=actor.id,
-            tax_rate_snapshot=Decimal(tenant.sales_tax_rate or 0),
-        )
-        db.add(sale)
-    elif sale.status != "draft":
-        raise _conflict("Only draft sales can be edited")
-    sale.customer_id = customer_id
-    sale.buyer_name_snapshot = (buyer_name or "").strip() or None
-    sale.buyer_email_snapshot = (buyer_email or "").strip() or None
-    sale.buyer_phone_snapshot = (buyer_phone or "").strip() or None
-    sale.updated_by_user_id = actor.id
-    existing = list((await db.execute(select(CounterSaleLine).where(
-        CounterSaleLine.tenant_id == tenant.id,
-        CounterSaleLine.sale_id == sale.id,
-        CounterSaleLine.deleted_at.is_(None),
-    ))).scalars().all())
-    for row in existing:
-        row.deleted_at = now_utc()
-    lines: list[CounterSaleLine] = []
-    seen: set[UUID] = set()
-    for request in line_inputs:
-        part = parts[request["inventory_id"]]
-        if part.id in seen:
-            raise _unprocessable("Each part may appear only once")
-        seen.add(part.id)
-        quantity = int(request["quantity"])
-        if quantity <= 0:
-            raise _unprocessable("Quantity must be a positive whole package")
-        catalog = money(part.selling_price)
-        if catalog <= 0:
-            raise _unprocessable("A catalog selling price is required")
-        requested_price = request.get("charged_unit_price")
-        charged = catalog if requested_price is None else money(requested_price)
-        reason = " ".join(str(request.get("price_override_reason") or "").split())
-        if charged <= 0:
-            raise _unprocessable("Charged unit price must be positive")
-        if charged != catalog:
-            require_counter_sale_role(actor, manager=True)
-            if not 3 <= len(reason) <= 500:
-                raise _unprocessable("Manager price override reason is required")
-        row = CounterSaleLine(
-            id=uuid4(),
-            tenant_id=tenant.id,
-            sale_id=sale.id,
-            inventory_id=part.id,
-            quantity=quantity,
-            sku_snapshot=part.sku,
-            name_snapshot=part.name,
-            unit_snapshot=part.unit_type,
-            category_snapshot=part.category,
-            unit_cost=money(part.cost),
-            list_unit_price=catalog,
-            charged_unit_price=charged,
-            price_override_reason=reason or None,
-            price_override_actor_id=actor.id if charged != catalog else None,
-            item_subtotal=Decimal("0"),
-            total=Decimal("0"),
-            cost_total=Decimal("0"),
-        )
-        db.add(row)
+        sale=CounterSale(id=uuid4(),tenant_id=tenant.id,sale_number=await _next_sale_number(db,tenant.id),status='draft',version=1,currency='USD',
+            customer_id=customer_id,created_by_user_id=actor.id,updated_by_user_id=actor.id,tax_rate_snapshot=Decimal(tenant.sales_tax_rate or 0))
+        db.add(sale);await db.flush()
+    else: sale.version+=1
+    sale.customer_id=customer_id;sale.buyer_name_snapshot=(buyer_name or '').strip() or None
+    sale.buyer_email_snapshot=(buyer_email or '').strip() or None;sale.buyer_phone_snapshot=(buyer_phone or '').strip() or None;sale.updated_by_user_id=actor.id
+    lines=[];events=[]
+    for part in plan.lines:
+        if part.existing:
+            row=part.existing
+            before={'quantity':row.quantity,'charged_unit_price':str(row.charged_unit_price),'list_unit_price':str(row.list_unit_price)}
+            if part.disposition=='removed':
+                row.deleted_at=now_utc();events.append((row,'part.removed',before,{},None));continue
+            changed=row.quantity!=part.quantity or row.charged_unit_price!=part.unit_price
+            price_changed=row.charged_unit_price!=part.unit_price
+            row.quantity=int(part.quantity);row.charged_unit_price=part.unit_price
+            if price_changed:
+                row.price_override_reason=part.reason;row.price_override_actor_id=actor.id
+            if changed: events.append((row,'price.'+part.intent if price_changed else 'part.quantity_changed',before,{'quantity':row.quantity,'charged_unit_price':str(row.charged_unit_price)},part.reason))
+        else:
+            inv=part.inventory
+            row=CounterSaleLine(id=uuid4(),tenant_id=tenant.id,sale_id=sale.id,inventory_id=inv.id,quantity=int(part.quantity),
+                sku_snapshot=inv.sku,name_snapshot=inv.name,unit_snapshot=inv.unit_type,category_snapshot=inv.category,
+                unit_cost=part.price.actual_cost,list_unit_price=part.price.default,charged_unit_price=part.price.charged,
+                pricing_snapshot=part.price.snapshot,pricing_matrix_revision_id=part.price.revision_id,
+                price_override_reason=part.reason,price_override_actor_id=actor.id if part.intent!='default' else None,
+                item_subtotal=Decimal(0),total=Decimal(0),cost_total=Decimal(0))
+            db.add(row)
+            events.append((row,'part.attached',{}, {'quantity':row.quantity,'charged_unit_price':str(row.charged_unit_price),'list_unit_price':str(row.list_unit_price)},part.reason))
         lines.append(row)
-    price_sale(sale, lines)
-    if not is_new:
-        sale.version += 1
-    await db.flush()
+    price_sale(sale,lines);await db.flush()
+    for row,kind,before,after,reason in events:
+        pricing.add_event(db,actor,'counter_sale_line',row.id,kind,before=before,after=after,reason=reason,
+            old_version=old_version,new_version=sale.version,inventory_id=row.inventory_id,revision_id=row.pricing_matrix_revision_id,
+            counter_sale_id=sale.id,counter_line_id=row.id,identity={'snapshot_id':(row.pricing_snapshot or {}).get('snapshot_id')})
     for line in lines:
-        await append_part_activity(
-            db,
-            tenant_id=tenant.id,
-            inventory_id=line.inventory_id,
-            category="sales",
-            event_type="counter_sale.created" if is_new else "counter_sale.updated",
-            idempotency_key=f"counter_sale:{sale.id}:line:{line.id}:draft:v{sale.version}",
-            actor=actor,
-            correlation_id=sale.id,
-            source_type="counter_sale",
-            source_id=sale.id,
-            source_number=sale.sale_number,
-            after={"quantity": line.quantity, "status": sale.status},
-            money={
-                "currency": "USD",
-                "list_price": str(line.list_unit_price),
-                "charged_price": str(line.charged_unit_price),
-                "discount": str(line.discount_total),
-                "item_subtotal": str(line.item_subtotal),
-                "tax": str(line.tax_allocation),
-                "total": str(line.total),
-                "cost_basis": str(line.cost_total),
-            },
-        )
-    return sale, lines
+        await append_part_activity(db,tenant_id=tenant.id,inventory_id=line.inventory_id,category='sales',
+            event_type='counter_sale.created' if is_new else 'counter_sale.updated',
+            idempotency_key=f'counter_sale:{sale.id}:line:{line.id}:draft:v{sale.version}',actor=actor,correlation_id=sale.id,
+            source_type='counter_sale',source_id=sale.id,source_number=sale.sale_number,
+            after={'quantity':line.quantity,'status':sale.status},money={'currency':'USD','list_price':str(line.list_unit_price),
+                'charged_price':str(line.charged_unit_price),'discount':str(line.discount_total),'item_subtotal':str(line.item_subtotal),
+                'tax':str(line.tax_allocation),'total':str(line.total),'cost_basis':str(line.cost_total)})
+    return sale,lines
 
 
 async def tenant_sale(db: AsyncSession, tenant_id: UUID, sale_id: UUID, *, lock: bool = False) -> CounterSale:
@@ -658,8 +600,10 @@ async def complete_manual_return(
     return sale, return_row
 
 
-def serialize_line(line: CounterSaleLine, *, returned_quantity: int = 0) -> dict[str, Any]:
+def serialize_line(line: CounterSaleLine, *, returned_quantity: int = 0, actor=None, editable=False) -> dict[str, Any]:
+    from app.services.parts_pricing_rules import safe_price
     return {
+        "pricing": safe_price(line, can_override=editable and actor is not None and actor.role in MANAGER_ROLES),
         "id": str(line.id),
         "inventory_id": str(line.inventory_id),
         "quantity": line.quantity,
@@ -711,7 +655,9 @@ async def serialize_return(db: AsyncSession, row: CounterSaleReturn) -> dict[str
 
 async def serialize_sale(db: AsyncSession, sale: CounterSale, actor: User) -> dict[str, Any]:
     lines = await sale_lines(db, sale.tenant_id, sale.id)
-    parts = await _tenant_parts(db, sale.tenant_id, [line.inventory_id for line in lines]) if lines else {}
+    from app.services.parts_pricing import load_overlays, inventory as pricing_inventory
+    await load_overlays(db,sale.tenant_id,lines,"counter_sale_line")
+    parts = await pricing_inventory(db, sale.tenant_id, [line.inventory_id for line in lines], retained_ids=[line.inventory_id for line in lines]) if lines else {}
     payments = list((await db.execute(select(CounterSalePaymentAttempt).where(
         CounterSalePaymentAttempt.tenant_id == sale.tenant_id,
         CounterSalePaymentAttempt.sale_id == sale.id,
@@ -759,7 +705,7 @@ async def serialize_sale(db: AsyncSession, sale: CounterSale, actor: User) -> di
         "tax_amount": str(money(sale.tax_total)),
         "total_amount": str(money(sale.total)),
         "lines": [{
-            **serialize_line(line, returned_quantity=returned_by_line.get(line.id, 0)),
+            **serialize_line(line, returned_quantity=returned_by_line.get(line.id, 0), actor=actor, editable=sale.status == "draft"),
             "physical_on_hand": int(parts[line.inventory_id].stock_quantity or 0),
             "held_for_checkout": 0,
             "available_to_sell": int(parts[line.inventory_id].stock_quantity or 0),

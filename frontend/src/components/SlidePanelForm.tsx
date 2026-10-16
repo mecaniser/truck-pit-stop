@@ -1,4 +1,5 @@
 import { FormEvent, ReactNode, useEffect, useRef } from 'react'
+import { createPortal } from 'react-dom'
 import { Spinner } from '@/components/ui'
 import { X } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
@@ -35,6 +36,9 @@ interface SlidePanelFormProps {
   titleIcon?: ReactNode
   /** Optional surface hook for a domain-owned panel treatment. */
   panelClassName?: string
+  overlayClassName?: string
+  /** Escape transformed drawers while inheriting the staff shell theme. */
+  portalToShell?: boolean
 }
 
 export default function SlidePanelForm({
@@ -55,6 +59,8 @@ export default function SlidePanelForm({
   headerAction,
   titleIcon,
   panelClassName,
+  overlayClassName,
+  portalToShell = false,
 }: SlidePanelFormProps) {
   const { accentColors } = useTheme()
   const panelRef = useRef<HTMLElement>(null)
@@ -79,6 +85,8 @@ export default function SlidePanelForm({
       if (!panel.contains(document.activeElement)) (focusable()[0] || panel).focus()
     })
     const handleKeyDown = (event: globalThis.KeyboardEvent) => {
+      const activeDialog = document.activeElement?.closest('[role="dialog"]')
+      if (activeDialog && activeDialog !== panel) return
       if (event.key === 'Escape' && !isSubmittingRef.current) {
         event.preventDefault()
         onCloseRef.current()
@@ -162,8 +170,8 @@ export default function SlidePanelForm({
     </div>
   )
 
-  return (
-    <div className="fixed inset-0 z-[60] overflow-hidden">
+  const overlay = (
+    <div className={`fixed inset-0 z-[60] overflow-hidden ${overlayClassName || ''}`}>
       {/* Backdrop */}
       <div
         className="absolute inset-0 bg-black/50 transition-opacity"
@@ -195,4 +203,5 @@ export default function SlidePanelForm({
       </aside>
     </div>
   )
+  return portalToShell ? createPortal(overlay, document.querySelector('.db-staff-shell') || document.body) : overlay
 }

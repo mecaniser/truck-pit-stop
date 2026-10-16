@@ -194,7 +194,12 @@ async def test_add_flat_service_line_keeps_service_when_bundled_part_stock_is_sh
 
     svc = PriceBuildService()
     loaded = await svc.load_order(db_session, order.id)
-    result = await svc.add_flat_service_line(db_session, loaded, service.id, quantity=1)
+    from fastapi import HTTPException
+    with pytest.raises(HTTPException) as conflict:
+        await svc.add_flat_service_line(db_session, loaded, service.id, quantity=1)
+    assert conflict.value.detail['code'] == 'pricing_preview_required'
+    token = conflict.value.detail['preview']['pricing_preview_fingerprint']
+    result = await svc.add_flat_service_line(db_session, loaded, service.id, quantity=1, pricing_preview_fingerprint=token)
 
     assert len(result.order.labor_items) == 1
     line = result.order.labor_items[0]

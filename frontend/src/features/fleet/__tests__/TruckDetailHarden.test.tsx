@@ -184,3 +184,17 @@ describe('TruckDetail hardening', () => {
     expect(screen.getByRole('button', { name: 'Hide map' })).toHaveAttribute('aria-expanded', 'true')
   })
 })
+
+it('retries an uncertain empty fleet order creation with the same command identity', async () => {
+  const { useAuthStore } = await import('@/stores/authStore')
+  const { quote } = await import('@/features/parts-pricing/__tests__/fixtures')
+  const previous = useAuthStore.getState().user
+  useAuthStore.setState({ user: { id: 'actor-1', tenant_id: 'tenant-1', role: 'fleet_manager' } as import('@/types').User, logoutInProgress: false })
+  let writes = 0
+  mockSuccessfulQueries()
+  apiMocks.post.mockImplementation((url, body) => url === '/parts-pricing/resolve' ? Promise.resolve({ data: quote({ plan: body.plan, projection: 'fleet', required: false, total: '0.00' }) }) : ++writes === 1 ? Promise.reject(new Error('offline')) : Promise.resolve({ data: {} }))
+  try {
+    const user = userEvent.setup(); renderTruck(); const button = await screen.findByRole('button', { name: /Create repair order/ }); await user.click(button); await waitFor(() => expect(writes).toBe(1)); await waitFor(() => expect(button).toBeEnabled()); await user.click(button); await waitFor(() => expect(writes).toBe(2))
+    const commands = apiMocks.post.mock.calls.filter(([url]) => url === `/fleet/trucks/${truck.id}/work-order`); expect(commands[1][2].headers).toEqual(commands[0][2].headers); expect(commands[1][1]).toEqual({ pricing_preview_fingerprint: 'opaque-1', pricing_presentation: 'fleet' }); expect(apiMocks.post.mock.calls.filter(([url]) => url === '/parts-pricing/resolve')).toHaveLength(1)
+  } finally { useAuthStore.setState({ user: previous }) }
+})

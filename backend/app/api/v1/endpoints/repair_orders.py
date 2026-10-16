@@ -3,7 +3,7 @@ import math
 import re
 import traceback
 from decimal import Decimal
-from typing import List, Optional
+from typing import List, Optional, Literal
 from uuid import UUID, uuid4
 from datetime import date, datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, UploadFile, status, Query, Response
@@ -12,7 +12,9 @@ from sqlalchemy import select, and_, exists, or_, func, literal_column, case
 from sqlalchemy.orm import joinedload, selectinload
 from pydantic import BaseModel
 from app.schemas.staff_work_hold import StaffHoldRequest, StaffReleaseHoldRequest, StaffHoldResponse
-from app.services import staff_work_hold, repair_order_schedule
+from app.services import staff_work_hold, repair_order_schedule, parts_pricing, parts_pricing_planner
+from app.services.parts_pricing_planner import build_plan
+from app.schemas.parts_pricing import ResolveRequest
 from app.schemas.repair_order_schedule import RepairOrderScheduleUpdate, RepairOrderScheduleResponse
 from app.core.dependencies import get_db, get_current_active_user
 from app.core.pagination import paginated_or_list
@@ -219,6 +221,7 @@ async def _to_price_build_summary(
     order: RepairOrder,
     *,
     warnings: Optional[list[PriceBuildWarning]] = None,
+    pricing_presentation: Optional[str] = None,
 ) -> PriceBuildSummaryResponse:
     labor_resp = [LaborResponse.model_validate(li) for li in order.labor_items]
     default_rate = None
@@ -235,7 +238,9 @@ async def _to_price_build_summary(
         (order.is_internal and order.status not in INTERNAL_FROZEN_RO_STATUSES)
         or (not order.is_internal and order.status in EDITABLE_RO_STATUSES)
     )
+    await parts_pricing.load_overlays(db, order.tenant_id, order.parts_usage)
     return PriceBuildSummaryResponse(
+        parts_pricing_fingerprint=parts_pricing.parts_fingerprint(order) if parts_pricing.presentation(current_user, pricing_presentation) == "shop" else None,
         recommendation_hourly_rate=default_rate,
         can_convert_recommendations=staff_can_convert,
         order_id=order.id,
@@ -257,7 +262,7 @@ async def _to_price_build_summary(
         ),
         can_finalize=order.status == RepairOrderStatus.PENDING_REVIEW,
         lines=labor_resp,
-        parts=[_build_parts_usage_response(part) for part in order.parts_usage],
+        parts=[_build_parts_usage_response(part, actor=current_user, presentation=pricing_presentation, can_edit=can_edit_work) for part in order.parts_usage],
         warnings=warnings or [],
     )
 
@@ -344,18 +349,22 @@ def _insufficient_stock_detail(
     }
 
 
-def _build_parts_usage_response(pu: "PartsUsage", inv=None) -> "PartsUsageResponse":
+def _build_parts_usage_response(pu: "PartsUsage", inv=None, *, actor=None, presentation=None, can_edit=True) -> "PartsUsageResponse":
     inv = inv if inv is not None else pu.inventory_item
     list_price = pu.list_price if pu.list_price is not None else pu.unit_price
     savings = (list_price - pu.unit_price) * pu.quantity if list_price > pu.unit_price else Decimal("0")
+    audience = parts_pricing.presentation(actor, presentation) if actor and actor.role in parts_pricing.STAFF else 'public'
     return PartsUsageResponse(
+        pricing_audience=audience,
+        pricing=parts_pricing.safe_price(pu, can_override=can_edit and actor.role in parts_pricing.EDITORS) if audience == 'shop' else None,
+        pricing_version=(pu.pricing_version or 0) if audience in {'shop','fleet'} else None,
         id=pu.id,
         repair_order_id=pu.repair_order_id,
         inventory_id=pu.inventory_id,
         inventory_sku=inv.sku if inv else "",
         inventory_name=inv.name if inv else "",
         quantity=pu.quantity,
-        unit_type=inv.unit_type if inv else "each",
+        unit_type=(inv.unit_type or "each") if inv else "each",
         unit_price=pu.unit_price,
         unit_cost=pu.unit_cost,
         list_price=list_price,
@@ -1512,6 +1521,7 @@ async def get_repair_order_detail(
     order_id: UUID,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
+    pricing_presentation: Optional[Literal["shop", "fleet"]] = None,
 ):
     # Owner/admin can open a soft-deleted order's detail (e.g. from the
     # Deleted view, to review before restoring); everyone else gets a 404
@@ -1538,7 +1548,8 @@ async def get_repair_order_detail(
         current_user.role == UserRole.CUSTOMER
         and not _customer_financials_are_published(order)
     )
-    parts_resp = [] if customer_financials_hidden else [_build_parts_usage_response(pu) for pu in order.parts_usage]
+    await parts_pricing.load_overlays(db, order.tenant_id, order.parts_usage)
+    parts_resp = [] if customer_financials_hidden else [_build_parts_usage_response(pu, actor=current_user, presentation=pricing_presentation, can_edit=operation_execution.editable(order)) for pu in order.parts_usage]
     labor_resp = [] if customer_financials_hidden else [LaborResponse.model_validate(li) for li in order.labor_items]
     history_result = await db.execute(
         select(RepairOrderHistoryEvent)
@@ -3776,15 +3787,19 @@ def _validate_cost_discounts(order, **candidate):
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
-def _apply_parts_mode(order, mode):
-    # Calculate every proposed price first; a missing cost cannot partly mutate.
-    try:
-        prices = [(part, proposed_part_price(part, mode)) for part in order.parts_usage]
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    for part, price in prices:
-        part.unit_price = price
-        part.total_price = price * part.quantity
+async def _apply_parts_mode(db, actor, order, mode, expected, note=None):
+    if expected != parts_pricing.parts_fingerprint(order):
+        parts_pricing.fail('pricing_version_conflict', 'Order parts changed. Refresh them while keeping your draft.', 409)
+    planned = [(part, *parts_pricing.retained_price(part, action=mode, actor=actor, internal=order.is_internal)) for part in order.parts_usage]
+    command_id = uuid4()
+    for part, price, reason in planned:
+        if part.unit_price == price: continue
+        before = parts_pricing.usage_values(part); old = part.pricing_version or 0
+        part.unit_price = price; part.total_price = parts_pricing.line_total(price, part.quantity)
+        part.pricing_version = old + 1
+        await parts_pricing.audit_usage(db, actor, order, part, 'price.' + mode, before=before,
+            old_version=old, reason=(reason + (': ' + note.strip() if note and note.strip() else ''))[:500], correlation_id=command_id)
+        part._pricing_current_source = (part.pricing_snapshot or {}).get('source', 'legacy_unknown') if mode == 'list' else 'manual'
 
 
 @router.get('/{order_id}/discount-limits')
@@ -3830,11 +3845,12 @@ async def get_price_build_summary(
     order_id: UUID,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role(*RO_MANAGE_ROLES)),
+    pricing_presentation: Optional[Literal["shop", "fleet"]] = None,
 ):
     try:
         order = await _load_tenant_price_build_order(db, order_id, current_user)
         _check_ro_access(current_user, order)
-        return await _to_price_build_summary(db, current_user, order)
+        return await _to_price_build_summary(db, current_user, order, pricing_presentation=pricing_presentation)
     except Exception as exc:
         raise _map_price_build_error(exc)
 
@@ -3843,6 +3859,7 @@ async def get_price_build_summary(
 async def add_price_build_flat_service(
     order_id: UUID,
     body: PriceBuildFlatServiceRequest,
+    idempotency_key: Optional[str] = Header(default=None, alias="Idempotency-Key"),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role(*PRICE_BUILD_ADD_ROLES)),
 ):
@@ -3856,12 +3873,19 @@ async def add_price_build_flat_service(
             db, order_id, tenant_id=current_user.tenant_id
         )
         _check_mechanic_order_assignment(current_user, order)
+        record, replay = await parts_pricing.begin_write(db, current_user, idempotency_key,
+            f'order:{order_id}:service:apply', body.model_dump(mode='json'))
+        if replay is not None:
+            return await _to_price_build_summary(db, current_user, order, pricing_presentation=body.pricing_presentation)
         result = await price_build_service.add_flat_service_line(
             db,
             order,
             body.service_id,
             quantity=body.quantity,
             actor=current_user,
+            pricing_preview_fingerprint=body.pricing_preview_fingerprint,
+            pricing_presentation=body.pricing_presentation,
+            commit=False,
             mechanic_additive_only=current_user.role == UserRole.MECHANIC,
             mechanic_id=(
                 current_user.id if current_user.role == UserRole.MECHANIC else None
@@ -3879,11 +3903,14 @@ async def add_price_build_flat_service(
                 "Service",
             ),
         )
-        await db.commit()
-        return await _to_price_build_summary(db, current_user,
+        response = await _to_price_build_summary(db, current_user,
             result.order,
+            pricing_presentation=body.pricing_presentation,
             warnings=[PriceBuildWarning(code=w.code, message=w.message, line_id=w.line_id) for w in result.warnings],
         )
+        parts_pricing.finish_write(record, response.model_dump(mode='json'))
+        await db.commit()
+        return response
     except Exception as exc:
         raise _map_price_build_error(exc)
 
@@ -3922,8 +3949,23 @@ async def apply_price_build_repair_operation(
     body: PriceBuildRepairOpsApplyRequest,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role(*PRICE_BUILD_ADD_ROLES)),
+    idempotency_key: Optional[str] = Header(default=None, alias="Idempotency-Key"),
 ):
     try:
+        # Search exposes saved service packages as service:<UUID>. The alias
+        # shares the canonical transaction, confirmation and durable receipt.
+        if body.operation_id.startswith("service:"):
+            try:
+                service_id = UUID(body.operation_id[len("service:"):])
+            except ValueError:
+                raise HTTPException(422, "Invalid service operation identifier")
+            return await add_price_build_flat_service(
+                order_id,
+                PriceBuildFlatServiceRequest(service_id=service_id, quantity=1,
+                    pricing_preview_fingerprint=body.pricing_preview_fingerprint,
+                    pricing_presentation=body.pricing_presentation),
+                idempotency_key, db, current_user,
+            )
         if not current_user.tenant_id:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -3933,6 +3975,10 @@ async def apply_price_build_repair_operation(
             db, order_id, tenant_id=current_user.tenant_id
         )
         _check_mechanic_order_assignment(current_user, order)
+        record, replay = await parts_pricing.begin_write(db, current_user, idempotency_key,
+            f'order:{order_id}:repair-operation:apply', body.model_dump(mode='json'))
+        if replay is not None:
+            return await _to_price_build_summary(db, current_user, order, pricing_presentation=body.pricing_presentation)
         result = await price_build_service.add_repair_operation_line(
             db,
             order,
@@ -3943,6 +3989,7 @@ async def apply_price_build_repair_operation(
             provider=body.provider,
             auto_recalc_enabled=body.auto_recalc_enabled,
             actor=current_user,
+            commit=False,
             mechanic_additive_only=current_user.role == UserRole.MECHANIC,
             mechanic_id=(
                 current_user.id if current_user.role == UserRole.MECHANIC else None
@@ -3956,11 +4003,14 @@ async def apply_price_build_repair_operation(
             label="Work added to repair order",
             detail=body.name or "Repair operation",
         )
-        await db.commit()
-        return await _to_price_build_summary(db, current_user,
+        response = await _to_price_build_summary(db, current_user,
             result.order,
+            pricing_presentation=body.pricing_presentation,
             warnings=[PriceBuildWarning(code=w.code, message=w.message, line_id=w.line_id) for w in result.warnings],
         )
+        parts_pricing.finish_write(record, response.model_dump(mode='json'))
+        await db.commit()
+        return response
     except Exception as exc:
         raise _map_price_build_error(exc)
 
@@ -4095,102 +4145,84 @@ async def add_sublet_to_price_build(
 async def add_ad_hoc_part_to_repair_order(
     order_id: UUID,
     body: AdHocPartCreate,
+    idempotency_key: Optional[str] = Header(default=None, alias="Idempotency-Key"),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role(*PRICE_BUILD_ADD_ROLES)),
 ):
-    """Put a part that is not in the catalogue onto this order, and keep it.
-
-    Until now a part had to exist in inventory before it could be used, so a
-    one-off — a hose from the parts store, something a tech carried in — had no
-    route onto the order at all. Creating it here rather than sending the
-    operator to the inventory screen matters twice: it keeps them in the job,
-    and POST /inventory is admin-only while adding a part to an order is not, so
-    a mechanic could not have taken that route anyway.
-
-    The part is created as a placeholder: no stock, no location, no photo, but a
-    real catalogue row with a price and a history. If it turns out to be worth
-    stocking, clearing that one flag promotes it and everything recorded against
-    it stays attached.
-    """
+    from app.services.parts_pricing_rules import resolve_price, PricePolicy
+    from sqlalchemy.exc import IntegrityError
     if not current_user.tenant_id:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="User must be associated with a tenant")
-
+        raise HTTPException(400, "User must be associated with a tenant")
+    try:
+        observed = await price_build_service.load_order(db, order_id, tenant_id=current_user.tenant_id)
+    except PriceBuildNotFoundError as exc:
+        raise _map_price_build_error(exc) from exc
+    _check_mechanic_order_assignment(current_user, observed)
+    record, replay = await parts_pricing.begin_write(db, current_user, idempotency_key,
+        f'order:{order_id}:ad-hoc', body.model_dump(mode='json'))
+    if replay is not None:
+        return parts_pricing.replay_part(replay,current_user,body.pricing_presentation,can_edit=operation_execution.editable(observed))
+    order = await _load_pricing_order_for_update(db, order_id, tenant_id=current_user.tenant_id)
+    _check_mechanic_order_assignment(current_user, order)
+    _require_editable_ro(order)
+    _require_valid_part_quantity(body.quantity)
+    await _validate_source_references(db, tenant_id=current_user.tenant_id, order_id=order_id,
+        source_service_id=body.source_service_id, source_line_id=body.source_line_id)
     name = body.name.strip()
-    if not name:
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Part name is required")
+    if not name: parts_pricing.fail('part_name_required', 'Enter a part name.')
+    sku = (body.sku or '').strip().upper()
+    canonical = re.sub(r'[^A-Za-z0-9]', '', re.sub(r'^ETS-', '', sku))
 
-    supplied_sku = (body.sku or "").strip()
-    item: Optional[Inventory] = None
-    if supplied_sku:
-        # The catalogue is unique on a canonical SKU — the prefix stripped, every
-        # non-alphanumeric removed, upper-cased — so typing a number the shop
-        # already carries must land on that part rather than fail on the index or
-        # quietly mint a duplicate spelling of it.
-        # Upper-case first. The index strips a literal "ETS-" before normalising,
-        # so ets-0532668000 typed in lower case would otherwise canonicalise to
-        # ETS0532668000 and miss the ETS-0532668000 already in the catalogue.
-        # SKUs are stored upper-cased for the same reason.
-        supplied_sku = supplied_sku.upper()
-        canonical = re.sub(r"[^A-Za-z0-9]", "", re.sub(r"^ETS-", "", supplied_sku))
-        if canonical:
-            # Compared in Python, not SQL: regexp_replace is Postgres-only and the
-            # test database is SQLite, so an expression matching the index would
-            # pass against production and fail everywhere else. Narrow the rows
-            # first on the part of the key that is a plain string operation, so
-            # this reads a handful of candidates rather than the catalogue.
-            tail = canonical[-6:]
-            candidates = await db.execute(
-                select(Inventory).where(
-                    Inventory.tenant_id == current_user.tenant_id,
-                    Inventory.deleted_at.is_(None),
-                    Inventory.sku.ilike(f"%{tail}%"),
-                )
-            )
-            item = next(
-                (
-                    candidate
-                    for candidate in candidates.scalars().all()
-                    if re.sub(r"[^A-Za-z0-9]", "", re.sub(r"^ETS-", "", (candidate.sku or "").upper())) == canonical
-                ),
-                None,
-            )
+    tenant_id = current_user.tenant_id
 
-    if item is None:
-        item = Inventory(
-            tenant_id=current_user.tenant_id,
-            # A part with no number still needs one the index can keep unique.
-            sku=supplied_sku or f"ADHOC-{uuid4().hex[:10].upper()}",
-            name=name,
-            cost=body.unit_cost if body.unit_cost is not None else Decimal("0"),
-            selling_price=body.unit_price,
-            stock_quantity=0,
-            is_placeholder=True,
-        )
-        db.add(item)
-        await db.flush()
+    async def matched():
+        if not canonical: return None
+        stmt = select(Inventory).where(Inventory.tenant_id == tenant_id, Inventory.deleted_at.is_(None))
+        if db.get_bind().dialect.name == 'postgresql':
+            stmt = stmt.where(func.upper(func.regexp_replace(func.regexp_replace(Inventory.sku, '^ETS-', ''), '[^A-Za-z0-9]', '', 'g')) == canonical)
+            return await db.scalar(stmt)
+        rows = (await db.scalars(stmt)).all()
+        return next((r for r in rows if re.sub(r'[^A-Za-z0-9]', '', re.sub(r'^ETS-', '', r.sku.upper())) == canonical), None)
 
-    # Reuse the ordinary add-part path so movement, core obligations, activity
-    # and order totals stay identical to a catalogue part. Stock shortage is
-    # expected and allowed: a placeholder has never been stocked, and the shop is
-    # holding the part in its hand.
-    return await add_parts_to_repair_order(
-        order_id=order_id,
-        body=PartsUsageCreate(
-            inventory_id=item.id,
-            quantity=body.quantity,
-            unit_price=body.unit_price,
-            source_service_id=body.source_service_id,
-            source_line_id=body.source_line_id,
-            allow_stock_shortage=True,
-        ),
-        db=db,
-        current_user=current_user,
-    )
+    item = await matched()
+    if item:
+        parts_pricing.fail('catalog_match_requires_preview', 'This part number already exists. Review its catalog price before adding it.', 409,
+            inventory={'id': str(item.id), 'sku': item.sku, 'name': item.name})
+    item = Inventory(id=uuid4(), tenant_id=current_user.tenant_id, sku=sku or f'ADHOC-{uuid4().hex[:10].upper()}',
+        name=name, cost=body.unit_cost if body.unit_cost is not None else Decimal(0), selling_price=body.unit_price,
+        stock_quantity=0, is_placeholder=True)
+    price = resolve_price(item, PricePolicy(), internal=order.is_internal, ad_hoc=True,
+        actual_cost_known=body.unit_cost is not None, requested=body.unit_price, actor_id=current_user.id, quantity=body.quantity)
+    db.add(item)
+    try: await db.flush()
+    except IntegrityError:
+        await db.rollback()
+        item = await matched()
+        if item:
+            parts_pricing.fail('catalog_match_requires_preview', 'This part number was just added. Review its catalog price before adding it.', 409,
+                inventory={'id': str(item.id), 'sku': item.sku, 'name': item.name})
+        raise
+    pu = PartsUsage(id=uuid4(), tenant_id=current_user.tenant_id, repair_order_id=order.id, inventory_id=item.id,
+        quantity=body.quantity, unit_cost=price.actual_cost, unit_price=price.charged, list_price=price.default,
+        total_price=parts_pricing.line_total(price.charged, body.quantity), pricing_snapshot=price.snapshot,
+        source_service_id=body.source_service_id, source_line_id=body.source_line_id,
+        stock_reserved_packages=0, stock_shortage_override=True)
+    db.add(pu); await db.flush()
+    await parts_pricing.audit_usage(db, current_user, order, pu, 'ad_hoc_price_entered', reason='ad_hoc_price_entered')
+    _record_repair_order_history_event(db, order=order, current_user=current_user,
+        event_type='part_added', label='Ad-hoc part added', detail=_part_history_detail(item.name, body.quantity, item.unit_type), entity_id=pu.id)
+    await append_part_activity(db, tenant_id=order.tenant_id, inventory_id=item.id, category='repairs', event_type='repair_usage.added',
+        idempotency_key=f'parts-usage:{pu.id}:added:v1', actor=current_user, source_type='repair_order', source_id=order.id,
+        source_number=order.order_number, reason_code='ad_hoc_price_entered', after={'quantity':pu.quantity},
+        money={'currency':'USD','unit_cost':str(pu.unit_cost) if pu.unit_cost is not None else None,'unit_price':str(pu.unit_price),'line_total':str(pu.total_price)})
+    await _refresh_repair_order_totals(db, order.id)
+    response = _build_parts_usage_response(pu, item, actor=current_user, presentation=body.pricing_presentation)
+    parts_pricing.finish_write(record, parts_pricing.part_receipt(response, pu), 201)
+    await db.commit()
+    return response
 
 
-# Notes are history events, not columns. A note that "goes with the order all
-# along" has to accumulate and carry an author, and the order already has a
-# durable, ordered, tenant-scoped place for things that happened to it.
+# Notes remain tenant-scoped history events with their existing visibility.
 NOTE_EVENT_TYPES = {"note_customer": "customer", "note_shop": "shop"}
 
 
@@ -4419,39 +4451,33 @@ async def delete_repair_order_note(
 async def add_parts_to_repair_order(
     order_id: UUID,
     body: PartsUsageCreate,
+    idempotency_key: Optional[str] = Header(default=None, alias="Idempotency-Key"),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role(*PRICE_BUILD_ADD_ROLES)),
 ):
     _require_valid_part_quantity(body.quantity)
     if not current_user.tenant_id:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="User must be associated with a tenant")
-    order = await _load_pricing_order_for_update(
-        db, order_id, tenant_id=current_user.tenant_id
-    )
-    if not order:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repair order not found")
-    _check_mechanic_order_assignment(current_user, order)
-    _require_editable_ro(order)
-    if order.tenant_id != current_user.tenant_id:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
-    await _validate_source_references(
-        db,
-        tenant_id=current_user.tenant_id,
-        order_id=order_id,
-        source_service_id=body.source_service_id,
-        source_line_id=body.source_line_id,
-    )
-    result = await db.execute(
-        select(Inventory).where(
-            and_(
-                Inventory.id == body.inventory_id,
-                Inventory.tenant_id == current_user.tenant_id,
-            )
-        ).with_for_update()
-    )
-    inv = result.scalar_one_or_none()
-    if not inv:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Inventory item not found")
+    # Reauthorize the exact live order before replaying a previously saved body.
+    try:
+        observed = await price_build_service.load_order(db, order_id, tenant_id=current_user.tenant_id)
+    except PriceBuildNotFoundError as exc:
+        raise _map_price_build_error(exc) from exc
+    _check_mechanic_order_assignment(current_user, observed)
+    if current_user.role == UserRole.MECHANIC and body.pricing_intent != 'default':
+        parts_pricing.fail('price_override_forbidden', 'You cannot override a part price.', 403)
+    record, replay = await parts_pricing.begin_write(db, current_user, idempotency_key,
+        f'order:{order_id}:part:add', body.model_dump(mode='json'))
+    if replay is not None:
+        return parts_pricing.replay_part(replay,current_user,body.pricing_presentation,operation_execution.editable(observed))
+    plan = await build_plan(db, current_user, ResolveRequest.model_validate({
+        'context': {'kind': 'repair_order', 'repair_order_id': order_id},
+        'plan': {'kind': 'parts_add', 'lines': [{k:v for k,v in body.model_dump().items() if k not in {'allow_stock_shortage','pricing_preview_fingerprint','pricing_presentation'}}]},
+        'pricing_presentation': body.pricing_presentation,
+    }), lock=True)
+    order = plan.order
+    planned = plan.new(body.client_key)
+    inv = planned.inventory
     if body.quantity <= 0:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Quantity must be greater than zero")
     packages_needed = _packages_consumed(body.quantity)
@@ -4466,28 +4492,19 @@ async def add_parts_to_repair_order(
                 available_packages=available_packages,
             ),
         )
-    # Fleet parts are always billed at inventory cost. The truck's pricing
-    # preference changes labor only; non-fleet repairs use selling price.
-    default_price = inv.cost if order.is_internal else inv.selling_price
-    if (
-        current_user.role == UserRole.MECHANIC
-        and body.unit_price is not None
-        and body.unit_price != default_price
-    ):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Mechanics may add parts only at the shop's current price",
-        )
-    unit_price = body.unit_price if body.unit_price is not None else default_price
-    list_price = inv.cost if order.is_internal else inv.selling_price
-    total_price = unit_price * body.quantity
+    plan.confirm(body.pricing_preview_fingerprint, stock_acknowledged=body.allow_stock_shortage)
+    unit_price = planned.price.charged
+    list_price = planned.price.default
+    total_price = parts_pricing.line_total(unit_price, body.quantity)
     reserved_packages = min(available_packages, packages_needed)
     pu = PartsUsage(
         tenant_id=current_user.tenant_id,
         repair_order_id=order_id,
         inventory_id=body.inventory_id,
         quantity=body.quantity,
-        unit_cost=inv.cost,
+        unit_cost=planned.price.actual_cost,
+        pricing_snapshot=planned.price.snapshot,
+        pricing_matrix_revision_id=planned.price.revision_id,
         unit_price=unit_price,
         list_price=list_price,
         total_price=total_price,
@@ -4532,13 +4549,16 @@ async def add_parts_to_repair_order(
             "unit_price": pu.unit_price, "list_price": pu.list_price,
         },
         money={
-            "currency": "USD", "unit_cost": str(pu.unit_cost),
-            "unit_price": str(pu.unit_price), "list_price": str(pu.list_price),
+            "currency": "USD", "unit_cost": str(pu.unit_cost) if pu.unit_cost is not None else None,
+            "unit_price": str(pu.unit_price), "list_price": str(pu.list_price) if pu.list_price is not None else None,
             "line_total": str(pu.total_price),
         },
         source={"stock_shortage_override": bool(pu.stock_shortage_override)},
     )
+    await parts_pricing.audit_usage(db, current_user, order, pu, 'part.attached')
     await _refresh_repair_order_totals(db, order_id)
+    response = _build_parts_usage_response(pu, inv, actor=current_user, presentation=body.pricing_presentation)
+    parts_pricing.finish_write(record, parts_pricing.part_receipt(response, pu), 201)
     await db.commit()
     await db.refresh(pu)
     result = await db.execute(
@@ -4546,7 +4566,7 @@ async def add_parts_to_repair_order(
     )
     pu_loaded = result.scalar_one_or_none()
     inv_loaded = pu_loaded.inventory_item if pu_loaded else inv
-    return _build_parts_usage_response(pu, inv_loaded)
+    return _build_parts_usage_response(pu, inv_loaded, actor=current_user, presentation=body.pricing_presentation)
 
 
 @router.get("/{order_id}/parts", response_model=List[PartsUsageResponse])
@@ -4581,7 +4601,8 @@ async def list_repair_order_parts(
     )
     parts_usage = result.scalars().all()
 
-    out = [_build_parts_usage_response(pu) for pu in parts_usage]
+    await parts_pricing.load_overlays(db, order.tenant_id, parts_usage)
+    out = [_build_parts_usage_response(pu, actor=current_user, can_edit=operation_execution.editable(order)) for pu in parts_usage]
     return paginated_or_list(out, total, skip, limit, paginated)
 
 
@@ -4695,7 +4716,7 @@ async def update_parts_quantity(
 ):
     if body.quantity is not None:
         _require_valid_part_quantity(body.quantity)
-    if body.quantity is None and body.unit_price is None:
+    if body.quantity is None and body.unit_price is None and body.price_action is None:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Nothing to update")
     if body.quantity is not None and body.quantity <= 0:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Quantity must be greater than zero")
@@ -4736,13 +4757,25 @@ async def update_parts_quantity(
     old_quantity = pu.quantity
     old_unit_price = pu.unit_price
 
-    if body.quantity is not None:
+    before_price = parts_pricing.usage_values(pu)
+    old_version = pu.pricing_version or 0
+    price_change = body.price_action in {'stock', 'list'} or (body.unit_price is not None and body.unit_price != pu.unit_price)
+    parts_pricing.check_line_version(pu, body.expected_pricing_version, required=price_change)
+    proposed_price, price_reason = pu.unit_price, None
+    if price_change:
+        proposed_price, price_reason = parts_pricing.retained_price(pu, action=body.price_action,
+            requested=body.unit_price, reason=body.price_override_reason, actor=current_user, internal=order.is_internal)
+    parts_pricing.line_total(proposed_price, body.quantity if body.quantity is not None else pu.quantity)
+
+    if body.quantity is not None and body.quantity != pu.quantity:
+        await parts_pricing_planner.sync_expected_core_quantity(db, order, pu, body.quantity)
         # Stock tracks whole packages. Compare the reservation held by this row
         # to the new requirement rather than raw fractional quantity, because an
         # earlier shortage override may have reserved fewer packages than were
         # billed on the repair order.
-        old_reserved_packages = _stock_packages_reserved(pu)
-        new_packages = _packages_consumed(body.quantity)
+        old_reserved_packages = parts_pricing_planner.reservation(pu)
+        nonreserving_bundle = pu.source_service_id is not None and pu.stock_reserved_packages == 0 and not pu.stock_shortage_override
+        new_packages = 0 if nonreserving_bundle else _packages_consumed(body.quantity)
         if inv is not None:
             available_packages = max(0, inv.stock_quantity or 0)
             additional_packages = max(0, new_packages - old_reserved_packages)
@@ -4782,19 +4815,15 @@ async def update_parts_quantity(
             pu.stock_shortage_override = new_packages > 0
         pu.quantity = body.quantity
 
-    if body.unit_price is not None:
-        # Floor at the cost snapshot (or current inventory cost as fallback) — never sell below cost.
-        floor = pu.unit_cost if pu.unit_cost is not None else (inv.cost if inv else None)
-        if floor is not None and body.unit_price < floor:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Unit price cannot be lower than cost ({floor})",
-            )
-        if body.unit_price < 0:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unit price cannot be negative")
-        pu.unit_price = body.unit_price
-
-    pu.total_price = pu.unit_price * pu.quantity
+    pu.unit_price = proposed_price
+    pu.total_price = parts_pricing.line_total(pu.unit_price, pu.quantity)
+    if pu.quantity != old_quantity or pu.unit_price != old_unit_price:
+        pu.pricing_version = old_version + 1
+        await parts_pricing.audit_usage(db, current_user, order, pu,
+            'price.' + body.price_action if pu.unit_price != old_unit_price else 'part.quantity_changed',
+            before=before_price, reason=price_reason, old_version=old_version)
+        if pu.unit_price != old_unit_price:
+            pu._pricing_current_source = (pu.pricing_snapshot or {}).get('source','legacy_unknown') if body.price_action == 'list' else 'manual'
     if body.quantity is not None and body.quantity != old_quantity:
         override_update = body.allow_stock_shortage and bool(pu.stock_shortage_override)
         _record_repair_order_history_event(
@@ -4823,8 +4852,8 @@ async def update_parts_quantity(
             before={"quantity": old_quantity, "unit_price": old_unit_price},
             after={"quantity": pu.quantity, "unit_price": pu.unit_price},
             money={
-                "currency": "USD", "unit_cost": str(pu.unit_cost),
-                "unit_price": str(pu.unit_price), "list_price": str(pu.list_price),
+                "currency": "USD", "unit_cost": str(pu.unit_cost) if pu.unit_cost is not None else None,
+                "unit_price": str(pu.unit_price), "list_price": str(pu.list_price) if pu.list_price is not None else None,
                 "line_total": str(pu.total_price),
             },
             source={"stock_shortage_override": bool(pu.stock_shortage_override)},
@@ -4832,7 +4861,8 @@ async def update_parts_quantity(
     await _refresh_repair_order_totals(db, order_id)
     await db.commit()
     await db.refresh(pu)
-    return _build_parts_usage_response(pu, inv)
+    await parts_pricing.load_overlays(db, order.tenant_id, [pu])
+    return _build_parts_usage_response(pu, inv, actor=current_user, presentation=body.pricing_presentation)
 
 
 async def _load_order_for_summary(db: AsyncSession, order_id: UUID) -> RepairOrder:
@@ -4868,7 +4898,7 @@ async def set_parts_pricing_mode(
     _require_editable_ro(order)
 
     _validate_cost_discounts(order, mode=body.mode)
-    _apply_parts_mode(order, body.mode)
+    await _apply_parts_mode(db, current_user, order, body.mode, body.expected_parts_fingerprint, body.note)
     _apply_repair_order_totals(order)
     await db.commit()
     return await _to_price_build_summary(db, current_user, order)
@@ -4896,7 +4926,7 @@ async def update_repair_order_discounts(
     total = body.order_discount_amount if body.order_discount_amount is not None else (order.order_discount_amount or Decimal('0'))
     _validate_cost_discounts(order, labor=labor, total=total, mode=body.parts_pricing_mode)
     if body.parts_pricing_mode:
-        _apply_parts_mode(order, body.parts_pricing_mode)
+        await _apply_parts_mode(db, current_user, order, body.parts_pricing_mode, body.expected_parts_fingerprint, body.note)
     order.labor_discount_amount = labor.quantize(Decimal('0.01'))
     order.order_discount_amount = total.quantize(Decimal('0.01'))
     _apply_repair_order_totals(order)
@@ -4974,11 +5004,12 @@ async def remove_parts_from_repair_order(
                 status_code=status.HTTP_409_CONFLICT,
                 detail="This part's core is on a vendor return. Void that return before removing the part.",
             )
+    reserved = parts_pricing_planner.reservation(pu)
     for core in cores:
         await db.delete(core)
-    if inv is not None and _stock_packages_reserved(pu):
+    if inv is not None and reserved:
         await apply_inventory_movement(
-            db, item=inv, quantity_delta=_stock_packages_reserved(pu),
+            db, item=inv, quantity_delta=reserved,
             movement_type="repair_release", actor=current_user,
             source_type="repair_order", source_id=order.id,
             destination_type="parts_usage", destination_id=pu.id,
@@ -5009,11 +5040,12 @@ async def remove_parts_from_repair_order(
                 "unit_price": pu.unit_price, "list_price": pu.list_price,
             },
             money={
-                "currency": "USD", "unit_cost": str(pu.unit_cost),
-                "unit_price": str(pu.unit_price), "list_price": str(pu.list_price),
+                "currency": "USD", "unit_cost": str(pu.unit_cost) if pu.unit_cost is not None else None,
+                "unit_price": str(pu.unit_price), "list_price": str(pu.list_price) if pu.list_price is not None else None,
                 "line_total": str(pu.total_price),
             },
         )
+    await parts_pricing.audit_usage(db, current_user, order, pu, "part.removed", before=parts_pricing.usage_values(pu), old_version=pu.pricing_version or 0)
     await db.delete(pu)
     await _refresh_repair_order_totals(db, order_id)
     await db.commit()

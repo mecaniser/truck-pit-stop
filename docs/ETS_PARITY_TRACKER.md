@@ -24,7 +24,7 @@ Last updated: 2026-10-15. Program owner: Product & Delivery Lead. Discovery inve
   - Status: **Done — merged, deployed and production verified**. Board: **DB-131**. Owner: Backend & Integrations.
   - Evidence: [R1 verification receipt](verification/DB131_REPAIR_ORDER_SCHEDULING.md).
 - [ ] **P1 — Cost-based parts markup matrices with minimum price and locked-price rules**
-  - Status: **In progress — contract intake; application implementation not yet started**. Board: **DB-132**. Owner: Backend & Integrations.
+  - Status: **Review — CI regressions corrected; independent QA/Security GO restored; fresh protected CI and production acceptance pending**. Board: **DB-132**. Owner: Backend & Integrations.
   - Evidence: [P1 contract](contracts/db132-parts-pricing-matrix.md); [intake receipt](verification/DB132_PARTS_PRICING_MATRIX.md).
 - [ ] **C1 — Customer-specific labor rates and parts pricing defaults**
   - Status: **Queued**. Board: **DB-133**. Owner: Backend & Integrations.
@@ -83,7 +83,7 @@ Branch: `codex/ets-repair-order-scheduling`. Contract: `docs/contracts/db131-rep
 
 ## Current implementation: P1 / DB-132
 
-Accountable: Backend & Integrations. Branch: `codex/ets-parts-pricing-matrix` from R1 merge `7b3dc4b3`. Intake begins after R1 closure. Prepared Architecture contract and integration maps have been refreshed against the identical merged application tree; application implementation, tests, independent gates and release remain ahead.
+Accountable: Backend & Integrations. Branch: `codex/ets-parts-pricing-matrix-implementation` from compact-controls merge `fc92c7b9`. R1 and DB137 are Done. Architecture contract is accepted; backend/frontend implementation and local verification are underway. Independent foundation review returned four findings to owners; final independent gates, protected CI and release remain ahead.
 
 Acceptance before editing application code:
 - Owner/admin can define and preview cost-band markup, optional pricing-cost basis floor, minimum sale price and fixed catalog pricing, with explicit activation and no guessed defaults.
@@ -91,4 +91,4 @@ Acceptance before editing application code:
 - Immutable revision/line provenance, audited authorized overrides and tenant/role/concurrency boundaries prevent silent repricing or cost-data leakage.
 - Compact existing price/inventory controls; complete Light/Night desktop/mobile journeys, negative/tenant/concurrency tests, independent QA/Security, protected CI and exact production release evidence before Done.
 
-See [contract](contracts/db132-parts-pricing-matrix.md) for full scope, writer coverage, locking, inactive defaults and safe production verification limits. No P1 application changes or production pricing settings have been applied.
+See [contract](contracts/db132-parts-pricing-matrix.md) for full scope, writer coverage, locking, inactive defaults and safe production verification limits. P1 application changes and additive migration174 are local only; no P1 production release or pricing activation has occurred.

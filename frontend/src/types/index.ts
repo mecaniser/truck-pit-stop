@@ -1,3 +1,4 @@
+import type { SafePrice } from '@/features/parts-pricing/contract'
 export type UserRole = 'super_admin' | 'garage_owner' | 'garage_admin' | 'mechanic' | 'receptionist' | 'fleet_manager' | 'driver' | 'customer'
 
 export type RepairOrderStatus = 
@@ -234,6 +235,8 @@ export interface CustomerWithVehicles extends Customer {
 }
 
 export interface PartsUsage {
+  pricing_version?: number
+  pricing?: SafePrice
   id: string
   repair_order_id: string
   inventory_id: string
@@ -419,6 +422,7 @@ export interface RepairOperationCandidate {
 export interface PriceBuildLine extends Labor {}
 
 export interface PriceBuildSummary {
+  parts_pricing_fingerprint?: string | null
   can_convert_recommendations?: boolean
   recommendation_hourly_rate?: string | null
   order_id: string
@@ -469,6 +473,7 @@ export interface MechanicWorkItem {
 }
 
 export interface InventoryItem {
+  pricing_version?: number
   id: string
   tenant_id: string
   sku: string

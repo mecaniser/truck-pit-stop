@@ -24,7 +24,7 @@ from app.db.models.user import User, UserRole
 from app.db.models.vehicle import Vehicle
 from app.schemas.repair_order import PartsPricingModeRequest, DiscountUpdate
 from app.schemas.recommendation_conversion import RecommendationConvertRequest
-from app.services import recommendation_conversion
+from app.services import recommendation_conversion, parts_pricing
 
 
 async def _seed_order(db):
@@ -50,17 +50,18 @@ async def _seed_order(db):
                  hourly_rate=Decimal("100"), total_cost=Decimal("200.00"), line_type=LaborLineType.MANUAL))
     await db.commit()
     await ro._recompute_repair_order_totals(db, order.id)
+    order = await ro._load_pricing_order_for_update(db, order.id, tenant_id=t.id)
     return t, owner, order
 
 
 @pytest.mark.asyncio
 async def test_stock_and_list_pricing_modes(db_session):
     _, owner, order = await _seed_order(db_session)
-    stock = await ro.set_parts_pricing_mode(order_id=order.id, body=PartsPricingModeRequest(mode="stock"),
+    stock = await ro.set_parts_pricing_mode(order_id=order.id, body=PartsPricingModeRequest(mode="stock", expected_parts_fingerprint=parts_pricing.parts_fingerprint(order)),
                                              db=db_session, current_user=owner)
     assert stock.parts_total == Decimal("80.00")   # 40 cost * 2
     assert stock.total_cost == Decimal("280.00")    # 80 parts + 200 labor
-    lst = await ro.set_parts_pricing_mode(order_id=order.id, body=PartsPricingModeRequest(mode="list"),
+    lst = await ro.set_parts_pricing_mode(order_id=order.id, body=PartsPricingModeRequest(mode="list", expected_parts_fingerprint=parts_pricing.parts_fingerprint(order)),
                                           db=db_session, current_user=owner)
     assert lst.parts_total == Decimal("200.00")     # back to list
     assert lst.total_cost == Decimal("400.00")
@@ -108,7 +109,7 @@ async def test_discount_survives_parts_recompute(db_session):
     _, owner, order = await _seed_order(db_session)
     await ro.update_repair_order_discounts(order_id=order.id, body=DiscountUpdate(labor_discount_amount=Decimal("50")),
                                            db=db_session, current_user=owner)
-    stock = await ro.set_parts_pricing_mode(order_id=order.id, body=PartsPricingModeRequest(mode="stock"),
+    stock = await ro.set_parts_pricing_mode(order_id=order.id, body=PartsPricingModeRequest(mode="stock", expected_parts_fingerprint=parts_pricing.parts_fingerprint(order)),
                                             db=db_session, current_user=owner)
     # 80 parts + (200 labor - 50) = 230, discount preserved
     assert stock.labor_discount_amount == Decimal("50.00")
@@ -130,7 +131,7 @@ async def test_pricing_adjustments_stay_within_query_budget(db_session):
     try:
         summary = await ro.set_parts_pricing_mode(
             order_id=order.id,
-            body=PartsPricingModeRequest(mode="stock"),
+            body=PartsPricingModeRequest(mode="stock", expected_parts_fingerprint=parts_pricing.parts_fingerprint(order)),
             db=db_session,
             current_user=owner,
         )
@@ -140,7 +141,8 @@ async def test_pricing_adjustments_stay_within_query_budget(db_session):
     # Load the complete response graph once and persist the new prices/totals
     # once. Do not reload it to compute totals and then reload it again to
     # serialize the response.
-    assert query_count <= 6
+    # One immutable command audit insert and one batched price-overlay read.
+    assert query_count <= 8
     assert all(line.recommendation_source is None for line in summary.lines)
     assert summary.recommendation_hourly_rate == Decimal("100.00")
     assert summary.can_convert_recommendations is True
@@ -185,13 +187,14 @@ async def test_converted_pricing_summary_preserves_provenance_within_query_budge
     event.listen(sync_engine, "before_cursor_execute", _count_query)
     try:
         summary = await ro.set_parts_pricing_mode(
-            order_id=order.id, body=PartsPricingModeRequest(mode="stock"),
+            order_id=order.id, body=PartsPricingModeRequest(mode="stock", expected_parts_fingerprint=parts_pricing.parts_fingerprint(order)),
             db=db_session, current_user=owner,
         )
     finally:
         event.remove(sync_engine, "before_cursor_execute", _count_query)
 
-    assert query_count <= 6
+    # One immutable command audit insert and one batched price-overlay read.
+    assert query_count <= 8
     assert summary.total_cost == Decimal("280.00") + conversion_count * Decimal("125.00")
     assert summary.recommendation_hourly_rate == Decimal("100.00")
     assert summary.can_convert_recommendations is True
