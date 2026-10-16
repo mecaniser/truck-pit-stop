@@ -128,12 +128,20 @@ async def twilio_sms_status(
             error_code=values.get("ErrorCode"),
             error_message=values.get("ErrorMessage"),
         )
+    except HTTPException:
+        await db.rollback()
+        raise
     except Exception as e:
+        await db.rollback()
         logger.exception(
             "status_callback_failed",
             error=str(e),
             message_sid=values.get("MessageSid"),
             message_status=values.get("MessageStatus"),
         )
-        # Don't fail status callbacks - Twilio will retry
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Failed to persist SMS status",
+            headers={"Retry-After": "5"},
+        ) from e
     return {"status": "success"}

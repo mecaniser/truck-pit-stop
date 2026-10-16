@@ -627,51 +627,102 @@ async def process_twilio_status_callback(
     error_code: Optional[str] = None,
     error_message: Optional[str] = None,
 ) -> Optional[SMSMessage]:
-    if not message_sid:
-        return None
-
-    result = await db.execute(select(SMSMessage).where(SMSMessage.twilio_message_sid == message_sid))
-    sms_message = result.scalar_one_or_none()
-    if not sms_message:
-        return None
-
-    now = datetime.now(timezone.utc)
-    delivery_status = _twilio_status_to_delivery_status(message_status)
-    sms_message.delivery_status = delivery_status
-    if delivery_status in {SMSDeliveryStatus.QUEUED, SMSDeliveryStatus.SENT} and not sms_message.sent_at:
-        sms_message.sent_at = now
-    if delivery_status == SMSDeliveryStatus.DELIVERED:
-        sms_message.delivered_at = now
-    if delivery_status in {SMSDeliveryStatus.UNDELIVERED, SMSDeliveryStatus.FAILED}:
-        sms_message.failed_at = now
-        sms_message.error_code = error_code
-        sms_message.error_message = error_message
+    if not message_sid or not message_sid.strip():
+        raise HTTPException(status_code=400, detail="Missing MessageSid")
 
     result = await db.execute(
-        select(Notification).where(
-            and_(
+        select(SMSMessage)
+        .where(SMSMessage.twilio_message_sid == message_sid)
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    )
+    sms_message = result.scalar_one_or_none()
+    if not sms_message:
+        # Some existing automated sends persist only a Notification. Preserve
+        # their acknowledgement behavior without guessing a customer identity.
+        result = await db.execute(
+            select(Notification).where(
                 Notification.external_id == message_sid,
                 Notification.type == NotificationType.SMS,
+            ).limit(2)
+        )
+        notifications = result.scalars().all()
+        if len(notifications) == 1:
+            logger.info("sms_callback_notification_only", message_sid=message_sid)
+            await db.commit()
+            return None
+        if notifications:
+            logger.warning("sms_callback_notification_ambiguous", message_sid=message_sid)
+        # A provider callback can race the transaction storing the send SID.
+        raise HTTPException(status_code=503, detail="Message not yet available", headers={"Retry-After": "5"})
+
+    # Callback statuses are deliberately stricter than initial send responses.
+    # Unknown provider values must never reset a persisted status to pending.
+    raw_status = (message_status or "").strip().lower()
+    if raw_status not in {"queued", "sending", "sent", "delivered", "undelivered", "failed", "canceled"}:
+        logger.info("sms_callback_status_ignored", message_sid=message_sid, message_status=raw_status)
+        await db.commit()
+        return sms_message
+
+    now = datetime.now(timezone.utc)
+    delivery_status = _twilio_status_to_delivery_status(raw_status)
+    current_status = sms_message.delivery_status
+    terminal = {SMSDeliveryStatus.DELIVERED, SMSDeliveryStatus.UNDELIVERED, SMSDeliveryStatus.FAILED}
+    advances = (
+        current_status == SMSDeliveryStatus.PENDING
+        or (current_status == SMSDeliveryStatus.QUEUED and delivery_status != SMSDeliveryStatus.QUEUED)
+        or (current_status == SMSDeliveryStatus.SENT and delivery_status in terminal)
+    )
+    if current_status in terminal and delivery_status in terminal and current_status != delivery_status:
+        logger.warning(
+            "sms_callback_terminal_conflict",
+            message_sid=message_sid,
+            current_status=current_status.value,
+            callback_status=delivery_status.value,
+        )
+
+    if advances:
+        sms_message.delivery_status = delivery_status
+        if delivery_status in {SMSDeliveryStatus.QUEUED, SMSDeliveryStatus.SENT} and not sms_message.sent_at:
+            sms_message.sent_at = now
+        if delivery_status == SMSDeliveryStatus.DELIVERED:
+            sms_message.delivered_at = now
+        if delivery_status in {SMSDeliveryStatus.UNDELIVERED, SMSDeliveryStatus.FAILED}:
+            sms_message.failed_at = now
+            sms_message.error_code = error_code
+            sms_message.error_message = error_message
+
+        result = await db.execute(
+            select(Notification).where(
+                and_(
+                    Notification.external_id == message_sid,
+                    Notification.type == NotificationType.SMS,
+                    Notification.tenant_id == sms_message.tenant_id,
+                )
             )
         )
-    )
-    notification = result.scalar_one_or_none()
-    if notification:
-        notification.status = _delivery_status_to_notification_status(delivery_status)
-        if delivery_status == SMSDeliveryStatus.DELIVERED:
-            notification.delivered_at = now
-        if delivery_status in {SMSDeliveryStatus.UNDELIVERED, SMSDeliveryStatus.FAILED}:
-            notification.error_message = error_message or notification.error_message
+        notification = result.scalar_one_or_none()
+        if notification:
+            notification.status = _delivery_status_to_notification_status(delivery_status)
+            if delivery_status == SMSDeliveryStatus.DELIVERED:
+                notification.delivered_at = now
+            if delivery_status in {SMSDeliveryStatus.UNDELIVERED, SMSDeliveryStatus.FAILED}:
+                notification.error_message = error_message or notification.error_message
 
-    if error_code == _TWILIO_OPTOUT_ERROR_CODE:
-        result = await db.execute(select(Customer).where(Customer.id == sms_message.customer_id))
+    if error_code == _TWILIO_OPTOUT_ERROR_CODE and delivery_status in terminal - {SMSDeliveryStatus.DELIVERED}:
+        result = await db.execute(select(Customer).where(
+            Customer.id == sms_message.customer_id,
+            Customer.tenant_id == sms_message.tenant_id,
+        ).with_for_update().execution_options(populate_existing=True))
         customer = result.scalar_one_or_none()
-        if customer:
+        if customer and not customer.sms_opt_out:
             customer.sms_opt_out = True
             customer.sms_opted_out_at = now
             customer.sms_opt_out_source = "twilio_callback"
 
     await db.commit()
+    if not advances:
+        return sms_message
     await db.refresh(sms_message)
 
     await broadcast_sms_message_event(
