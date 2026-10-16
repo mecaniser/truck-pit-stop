@@ -7,7 +7,7 @@ const mocks = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn(), patch: vi.fn(), a
 vi.mock('@/lib/api', () => ({ default: { get: mocks.get, post: mocks.post, patch: mocks.patch } }))
 vi.mock('@/stores/authStore', () => ({ useAuthStore: Object.assign((select: (state: typeof mocks.auth) => unknown) => select(mocks.auth), { getState: () => mocks.auth }) }))
 import MaintenanceSection from '../MaintenanceSection'
-import { observation, page, program, targetPreview, workPreview } from './fixtures'
+import { completion, now, observation, page, program, targetPreview, workPreview } from './fixtures'
 import type { Program, TargetRequest, WorkRequest } from '../contract'
 function setup() { const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } }); const component = <QueryClientProvider client={client}><MaintenanceSection vehicleId="vehicle-1" customerId="customer-1" channel="shop" /></QueryClientProvider>; return { client, ...render(component), component } }
 beforeEach(() => { mocks.get.mockReset(); mocks.post.mockReset(); mocks.patch.mockReset(); mocks.auth.user = { id: 'user-1', tenant_id: 'tenant-1', role: 'garage_owner' }; mocks.auth.authSessionEpoch = 1; mocks.get.mockImplementation(async (url: string) => ({ data: url === '/services/typeahead' ? [{ id: 'service-1', name: 'Preventive service' }] : page() })) })
@@ -80,4 +80,24 @@ it('allows a legacy program with unknown intervals to be renamed without invente
 
 it('does not offer manager rebaseline or service attestation to a receptionist', async () => {
   mocks.auth.user.role = 'receptionist'; const item = program('program-1', { capabilities: { can_edit: true, can_plan: true, can_record_evidence: false, can_archive: true } }); mocks.get.mockImplementation(async (url: string) => ({ data: url === '/services/typeahead' ? [] : page([item]) })); const user = userEvent.setup(); setup(); await screen.findByText('Oil service'); await user.click(screen.getByText('Edit')); expect(screen.queryByRole('option', { name: 'Rebaseline' })).not.toBeInTheDocument(); await user.selectOptions(screen.getByLabelText('Targets'), 'replace'); expect(screen.queryByRole('option', { name: 'Actual service' })).not.toBeInTheDocument(); expect(mocks.post).not.toHaveBeenCalled()
+})
+
+
+it('omits absent history readings without losing actual readings or their provenance', async () => {
+  const completed = [
+    completion({ id: 'date-only', readings: { odometer_miles: null, engine_hours: null } }),
+    completion({ id: 'pending', result: 'pending_evidence', performed_on: null, readings: { odometer_miles: null, engine_hours: null } }),
+    completion({ id: 'recorded', readings: { odometer_miles: observation, engine_hours: { ...observation, value: '0', comparison_value: '0', unit: 'h', source: 'service_evidence', basis: 'staff_observed' } } }),
+  ]
+  mocks.get.mockImplementation(async (url: string) => ({ data: url.endsWith('/history') ? { schema_version: 1, items: completed.map(item => ({ id: `event-${item.id}`, version: 1, action: item.action, occurred_at: now, reason: null, summary: item.id, completion: item })), total: 3, has_more: false } : page() }))
+  const user = userEvent.setup(); setup(); await user.click(await screen.findByRole('button', { name: 'History' }))
+  const history = within(await screen.findByRole('region', { name: 'Oil service history' }))
+  await history.findByText('date-only')
+  expect(history.queryByText('No reading')).not.toBeInTheDocument()
+  expect(history.getByText('date-only').closest('article')).toHaveTextContent('2026-10-01 · advanced · RO-1')
+  expect(history.getByText('pending').closest('article')).toHaveTextContent('Service date unknown · pending evidence · RO-1')
+  const recorded = within(history.getByText('recorded').closest('article')!)
+  expect(recorded.getByText('100.6 mi')).toBeVisible(); expect(recorded.getByText('· Compared as 101 mi')).toBeVisible()
+  expect(recorded.getByText(/motive api · calibrated/)).toHaveTextContent(now)
+  expect(recorded.getByText('0 h')).toBeVisible(); expect(recorded.getByText(/service evidence · staff observed/)).toHaveTextContent(now)
 })

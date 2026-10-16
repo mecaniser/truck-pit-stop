@@ -427,7 +427,7 @@ export function useStartWork(orderId: string, onDone?: () => void) {
 
 export function useCompleteWork(orderId: string, onDone?: () => void, vehicleId = '') {
   const qc = useQueryClient()
-  const maintenance = useMaintenanceFinalization(orderId)
+  const maintenance = useMaintenanceFinalization(orderId, 'Complete repair order')
   const mutation = useMutation<unknown, unknown, number | null>({
     mutationFn: async (mileageOut) =>
       maintenance.execute(orderId, vehicleId, 'fleet', async review =>

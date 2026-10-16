@@ -10,8 +10,8 @@ import { errorDetail, invalidateMaintenance, maintenanceError, MaintenanceCancel
 import { orderMaintenanceSchema, parseTargetPreview, refFor, type Channel, type CompletionEntry, type MaintenanceReview, type OrderMaintenance, type TargetPreview, type TargetRequest } from './contract'
 import './maintenance.css'
 
-type Pending = { orderId: string; vehicleId: string; channel: Channel; data: OrderMaintenance; send: (review?: MaintenanceReview) => Promise<unknown>; resolve: (value: unknown) => void; reject: (failure: unknown) => void }
-export function useMaintenanceFinalization(context: string) {
+type Pending = { orderId: string; vehicleId: string; channel: Channel; submitLabel: string; data: OrderMaintenance; send: (review?: MaintenanceReview) => Promise<unknown>; resolve: (value: unknown) => void; reject: (failure: unknown) => void }
+export function useMaintenanceFinalization(context: string, submitLabel = 'Finalize & Send Invoice') {
   const client = useQueryClient()
   const scope = usePricingScope(); const identity = `${scope}:${context}`
   const live = useRef(identity); live.current = identity
@@ -30,7 +30,7 @@ export function useMaintenanceFinalization(context: string) {
     data.programs.forEach(program => scopedProgram(program, vehicleId))
     if (!data.links.some(link => link.state === 'active')) { const result = await send(); if (!active()) throw new MaintenanceCancelled(); invalidateMaintenance(client); return result }
     return new Promise<T>((resolve, reject) => {
-      const entry: Pending = { orderId, vehicleId, channel, data, send: async review => { if (!active()) throw new MaintenanceCancelled(); const result = await send(review); if (!active()) throw new MaintenanceCancelled(); invalidateMaintenance(client); return result }, resolve: value => resolve(value as T), reject }
+      const entry: Pending = { orderId, vehicleId, channel, submitLabel, data, send: async review => { if (!active()) throw new MaintenanceCancelled(); const result = await send(review); if (!active()) throw new MaintenanceCancelled(); invalidateMaintenance(client); return result }, resolve: value => resolve(value as T), reject }
       pendingRef.current = entry; setPending(entry)
     })
   }
@@ -61,7 +61,7 @@ function FinalizationPanel({ pending, onCancel, onDone }: { pending: Pending; on
     catch (failure) { if (failure instanceof MaintenanceCancelled) { onCancel(); return } setError({ message: maintenanceError(failure) }); const fresh = errorDetail(failure)?.preview; if (fresh) { try { setPreview(parseTargetPreview(fresh, request())) } catch { setPreview(null) } } }
     finally { setSaving(false) }
   }
-  return <SlidePanelForm isOpen onClose={() => { if (!saving && !command.busy) onCancel() }} title="Review maintenance completion" panelClassName="db-maintenance db-maintenance__dialog" portalToShell submitLabel="Finalize & Send Invoice" onSubmit={event => { event.preventDefault(); void finish() }} isSubmitting={saving || command.busy} submitDisabled={!preview}>
+  return <SlidePanelForm isOpen onClose={() => { if (!saving && !command.busy) onCancel() }} title="Review maintenance completion" panelClassName="db-maintenance db-maintenance__dialog" portalToShell submitLabel={pending.submitLabel} onSubmit={event => { event.preventDefault(); void finish() }} isSubmitting={saving || command.busy} submitDisabled={!preview}>
     <p>Unchecked programs keep their targets until actual service readings are recorded.</p>
     {order.programs.filter(program => order.links.some(link => link.state === 'active' && program.work?.work_link_id === link.work_link_id)).map(program => <label key={program.id} className="db-maintenance__check"><input type="checkbox" disabled={!order.can_record_evidence || saving || command.busy} checked={selected.includes(program.id)} onChange={event => { setSelected(current => event.target.checked ? [...current, program.id] : current.filter(id => id !== program.id)); setPreview(null) }} />{program.name}{program.mode === 'legacy' ? ` · ${(program.legacy_package ?? []).map(service => service.name).join(' + ')}` : ''}</label>)}
     {selected.length > 0 && <AttestationFields value={attestation} disabled={saving || command.busy} source={{ kind: 'repair_order', id: pending.orderId }} onChange={value => { setAttestation(value); setPreview(null) }} />}
