@@ -116,11 +116,8 @@ def _packages_consumed(quantity: Decimal) -> int:
 
 
 def _labor_rate_for(order: RepairOrder, tenant: Tenant) -> Decimal:
-    """Internal fleet repairs cost labor at the tenant's internal rate (no markup);
-    customer repairs use the billable labor rate."""
-    if getattr(order, "is_internal", False) and not fleet_labor_uses_customer_rate(order):
-        return Decimal(str(tenant.internal_labor_rate))
-    return Decimal(str(tenant.labor_rate))
+    from app.services.customer_pricing import labor_default
+    return labor_default(order,tenant)[0]
 
 
 def _part_unit_price_for(order: RepairOrder, inventory_item: Inventory) -> Decimal:
@@ -307,17 +304,19 @@ class PriceBuildService:
         self._assert_editable(order)
         existing_line = next((li for li in order.labor_items if li.source_service_id == service.id and li.deleted_at is None), None)
         hours = validate_mechanic_labor_hours(Decimal(service.duration_minutes) / Decimal(60) * quantity)
-        rate = _labor_rate_for(order, order.tenant)
+        from app.services import customer_pricing as account
+        rate,origin,source = account.new_labor(order,order.tenant,actor)
         if existing_line:
             line = existing_line
             await operation_execution.guard_material_edit(db, order, line, {'description': service.name, 'hours': hours})
-            line.description=service.name; line.hours=hours; line.hourly_rate=rate; line.total_cost=_money(hours*rate)
-            line.line_type=LaborLineType.MANUAL; line.auto_recalc_enabled=True
+            line.description=service.name; line.hours=hours; line.total_cost=_money(hours*line.hourly_rate)
+            line.line_type=LaborLineType.MANUAL
         else:
             line=Labor(execution_status='pending', tenant_id=order.tenant_id, repair_order_id=order.id,
                 description=service.name, hours=hours, hourly_rate=rate, total_cost=_money(hours*rate),
-                line_type=LaborLineType.MANUAL, auto_recalc_enabled=True, source_service_id=service.id)
+                line_type=LaborLineType.MANUAL, auto_recalc_enabled=True, source_service_id=service.id, pricing_snapshot=origin,pricing_source=source)
             operation_execution.enroll_new_scope(order); db.add(line); await db.flush()
+            if actor is not None: account.audit_labor(db,actor,order,line)
             await service_checklist.snapshot_service(db, order, line, service, actor)
         await apply_plan_parts(db, actor, order, plan, {service.id:line.id}, components_only=True)
         result=await self.recalculate_order(db,order,commit=False)
@@ -464,8 +463,10 @@ class PriceBuildService:
         self._assert_editable(order)
         tenant = await self._get_tenant(db, order.tenant_id)
 
-        hourly_rate = _labor_rate_for(order, tenant)
+        from app.services import customer_pricing as account
+        hourly_rate,origin,source = account.new_labor(order,tenant,actor)
         line = Labor(execution_status="pending",
+            pricing_snapshot=origin,pricing_source=source,
             tenant_id=order.tenant_id,
             repair_order_id=order.id,
             description=est_name,
@@ -481,6 +482,8 @@ class PriceBuildService:
 
         operation_execution.enroll_new_scope(order)
         db.add(line)
+        await db.flush()
+        if actor is not None: account.audit_labor(db,actor,order,line)
         await self._upsert_internal_memory(
             db=db,
             order=order,
@@ -504,6 +507,7 @@ class PriceBuildService:
         hours: Optional[Decimal] = None,
         hourly_rate: Optional[Decimal] = None,
         auto_recalc_enabled: Optional[bool] = None,
+        actor: Optional[User] = None,
     ) -> PriceBuildResult:
         if hours is not None:
             hours = validate_mechanic_labor_hours(hours)
@@ -527,6 +531,7 @@ class PriceBuildService:
             raise PriceBuildNotFoundError("Price build line not found")
 
         await operation_execution.guard_material_edit(db, order, line, {key: value for key, value in {"description": description, "hours": hours}.items() if value is not None})
+        old_rate,old_source=line.hourly_rate,line.pricing_source
         if description is not None:
             line.description = description
             # Renaming is an override of the Service's name, so stop recalc
@@ -548,6 +553,9 @@ class PriceBuildService:
         if hours is not None or hourly_rate is not None:
             line.total_cost = _money(Decimal(str(line.hours)) * Decimal(str(line.hourly_rate)))
 
+        if actor is not None and line.line_type != LaborLineType.SUBLET:
+            from app.services.customer_pricing import observe_rate_change
+            observe_rate_change(db,actor,order,line,old_rate,old_source)
         if line.line_type == LaborLineType.REPAIR_OPERATION:
             await self._upsert_internal_memory(
                 db=db,
@@ -682,13 +690,11 @@ class PriceBuildService:
                 # Service-sourced lines are billed as labor-hour units.
                 if line.line_type == LaborLineType.FLAT_SERVICE and line.execution_status != 'completed':
                     line.line_type = LaborLineType.MANUAL
-                line.hourly_rate = _labor_rate_for(order, tenant)
                 line.total_cost = _money(Decimal(str(line.hours)) * Decimal(str(line.hourly_rate)))
             elif line.line_type == LaborLineType.REPAIR_OPERATION and line.provider_operation_id:
                 estimate, estimated_hours = generated_estimates[line.id]
                 if line.execution_status != 'completed':
                     line.hours = estimated_hours
-                line.hourly_rate = _labor_rate_for(order, tenant)
                 line.total_cost = _money(Decimal(str(line.hours)) * Decimal(str(line.hourly_rate)))
                 warnings.extend(estimate.warnings)
 

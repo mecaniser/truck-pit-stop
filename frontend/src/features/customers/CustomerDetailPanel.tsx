@@ -20,7 +20,7 @@ import {
 } from './customerDetailFormat'
 import type { CustomerHistoryResponse } from './customerDetailFormat'
 import CustomerLoadError from './CustomerLoadError'
-import CustomerTaxExemptionControl from './CustomerTaxExemptionControl'
+import CustomerBusinessSettings from './CustomerBusinessSettings'
 import './customer-workspace.css'
 
 /**
@@ -690,7 +690,7 @@ export default function CustomerDetailPanel({
         </div>
       )}
 
-      <CustomerTaxExemptionControl key={selectedCustomer.id} customerId={selectedCustomer.id} collapsible />
+      <CustomerBusinessSettings customerId={selectedCustomer.id} />
 
       {/* Notes */}
       {selectedCustomer.notes && (

@@ -1,0 +1,20 @@
+.db-customer-pricing { padding: 8px 0; color: inherit; min-width: 0; }
+.db-customer-pricing__heading, .db-customer-pricing__actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
+.db-customer-pricing__heading h3 { margin-right: auto; }
+.db-customer-pricing__fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 12px; }
+.db-customer-pricing__matrix { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: 6px; min-width: 0; }
+.db-customer-pricing label { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.db-customer-pricing form { display: grid; gap: 8px; }
+.db-customer-pricing :is(input, textarea, select) { min-height: 44px; width: 100%; min-width: 0; padding: 6px 8px; border: 1px solid var(--customer-rule, #cbd5df); border-radius: 6px; font-size: 16px; background: var(--surface-overlay, #fff) !important; color: var(--workspace-text, #14243a) !important; -webkit-text-fill-color: var(--workspace-text, #14243a); caret-color: var(--workspace-text, #14243a); color-scheme: inherit; }
+.db-customer-pricing button, .db-account-pricing-notice button { min-height: 44px; padding: 5px 8px; white-space: nowrap; border-radius: 6px; }
+.db-customer-pricing button:hover:not(:disabled), .db-account-pricing-notice button:hover { background: color-mix(in srgb, currentColor 8%, transparent); }
+.db-customer-pricing button:disabled { opacity: .5; cursor: not-allowed; }
+.db-customer-pricing__actions { justify-content: end; }
+.db-customer-pricing__actions button[type='submit'] { background: var(--personal-accent-600, #0e7490); color: var(--personal-accent-foreground, #fff); }
+.db-customer-pricing__summary, .db-customer-pricing p, .db-account-pricing-notice { font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
+.db-customer-pricing__muted { color: var(--customer-muted, #52647c); }
+.db-customer-pricing [role='alert'], .db-account-pricing-notice [role='alert'] { color: color-mix(in srgb, var(--semantic-danger-500, #ef4444) 35%, currentColor); }
+.db-customer-pricing__history, .db-customer-pricing__conflict { border-top: 1px solid var(--customer-rule, #cbd5df); margin-top: 8px; padding-top: 8px; }
+.db-customer-pricing__history article + article { border-top: 1px solid var(--customer-rule, #cbd5df); margin-top: 8px; padding-top: 8px; }
+.db-account-pricing-notice { margin-block: 6px; }
+@media (max-width: 480px) { .db-customer-pricing__fields { grid-template-columns: minmax(0, 1fr); } }

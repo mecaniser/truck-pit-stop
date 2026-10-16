@@ -51,3 +51,6 @@ api_router.include_router(fleet_telemetry.router, prefix="/fleet", tags=["fleet"
 
 from app.api.v1.endpoints import parts_pricing
 api_router.include_router(parts_pricing.router, prefix="/parts-pricing", tags=["parts-pricing"])
+
+from app.api.v1.endpoints import customer_pricing
+api_router.include_router(customer_pricing.router, prefix="/customers", tags=["customer-pricing"])

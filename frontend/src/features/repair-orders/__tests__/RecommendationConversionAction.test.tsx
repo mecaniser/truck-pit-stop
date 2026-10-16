@@ -42,9 +42,67 @@ describe('tracked recommendation conversion', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Add operation' }))
     await waitFor(() => expect(onOpenOperation).toHaveBeenCalledWith(id(5)))
     expect(api.post).toHaveBeenCalledWith(`/repair-orders/${id(4)}/recommended-work/${id(2)}/convert`, {
-      request_id: expect.any(String), hours: '1.50', hourly_rate: '145.00', replaces_conversion_id: null,
+      request_id: expect.any(String), hours: '1.50', pricing_intent: 'default', replaces_conversion_id: null,
     })
     expect(client.getQueryData(['recommended-work', 'tenant'])).toEqual({ items: [{ id: id(2), conversion }, { id: id(8) }] })
+  })
+
+  it('marks a deliberately edited rate as manual even when it returns to the displayed default', async () => {
+    api.post.mockResolvedValue(receipt); setup(); open(); fill()
+    fireEvent.change(screen.getByRole('textbox', { name: 'Rate / hr' }), { target: { value: '125' } })
+    fireEvent.change(screen.getByRole('textbox', { name: 'Rate / hr' }), { target: { value: '145' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Add operation' }))
+    await waitFor(() => expect(api.post).toHaveBeenCalledOnce())
+    expect(api.post.mock.calls[0][1]).toMatchObject({ hourly_rate: '145.00', pricing_intent: 'manual' })
+    expect(api.post.mock.calls[0][1]).not.toHaveProperty('price_override_reason')
+  })
+
+  it('starts Add again with current default terms after a successful manually priced operation is removed', async () => {
+    api.post.mockResolvedValue(receipt)
+    const view = setup(); open(); fill()
+    fireEvent.change(screen.getByRole('textbox', { name: 'Rate / hr' }), { target: { value: '125' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Add operation' }))
+    await waitFor(() => expect(view.onOpenOperation).toHaveBeenCalledWith(id(5)))
+    expect(api.post.mock.calls[0][1]).toMatchObject({ hourly_rate: '125.00', pricing_intent: 'manual' })
+    view.change({ conversion: { ...conversion, state: 'operation_removed', can_replace: true }, hourlyRate: 135 })
+    fireEvent.click(screen.getByRole('button', { name: 'Add again: Inspect seal' }))
+    expect(screen.getByRole('textbox', { name: 'Rate / hr' })).toHaveValue('135.00')
+    expect(screen.getByRole('textbox', { name: 'Hours' })).toHaveValue('')
+    fill(); expect(screen.getByText('Labor $202.50')).toBeVisible()
+    fireEvent.click(screen.getByRole('button', { name: 'Add replacement' }))
+    await waitFor(() => expect(api.post).toHaveBeenCalledTimes(2))
+    expect(api.post.mock.calls[1][1]).toMatchObject({ hours: '1.50', pricing_intent: 'default', replaces_conversion_id: conversion.id })
+    expect(api.post.mock.calls[1][1]).not.toHaveProperty('hourly_rate')
+    expect(api.post.mock.calls[1][1].request_id).not.toBe(api.post.mock.calls[0][1].request_id)
+  })
+
+  it.each(['Cancel', 'Escape'])('keeps an unsaved manual rate and its intent after %s', async action => {
+    api.post.mockResolvedValue(receipt); setup(); open(); fill()
+    fireEvent.change(screen.getByRole('textbox', { name: 'Rate / hr' }), { target: { value: '125' } })
+    if (action === 'Cancel') fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+    else fireEvent.keyDown(screen.getByRole('textbox', { name: 'Rate / hr' }), { key: 'Escape' })
+    expect(api.post).not.toHaveBeenCalled(); open()
+    expect(screen.getByRole('textbox', { name: 'Hours' })).toHaveValue('1:30')
+    expect(screen.getByRole('textbox', { name: 'Rate / hr' })).toHaveValue('125')
+    expect(screen.getByText('Labor $187.50')).toBeVisible()
+    fireEvent.click(screen.getByRole('button', { name: 'Add operation' }))
+    await waitFor(() => expect(api.post).toHaveBeenCalledOnce())
+    expect(api.post.mock.calls[0][1]).toMatchObject({ hourly_rate: '125.00', pricing_intent: 'manual' })
+  })
+
+  it.each(['Cancel', 'Escape'])('retains a manual rate entered before hours after %s', async (action) => {
+    api.post.mockResolvedValue(receipt); setup(); open()
+    fireEvent.change(screen.getByRole('textbox', { name: 'Rate / hr' }), { target: { value: '125' } })
+    if (action === 'Cancel') fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+    else fireEvent.keyDown(screen.getByRole('textbox', { name: 'Rate / hr' }), { key: 'Escape' })
+    expect(api.post).not.toHaveBeenCalled(); open()
+    expect(screen.getByRole('textbox', { name: 'Hours' })).toHaveValue('')
+    expect(screen.getByRole('textbox', { name: 'Rate / hr' })).toHaveValue('125')
+    fireEvent.change(screen.getByRole('textbox', { name: 'Hours' }), { target: { value: '1' } })
+    expect(screen.getByText('Labor $125.00')).toBeVisible()
+    fireEvent.click(screen.getByRole('button', { name: 'Add operation' }))
+    await waitFor(() => expect(api.post).toHaveBeenCalledOnce())
+    expect(api.post.mock.calls[0][1]).toMatchObject({ hours: '1.00', hourly_rate: '125.00', pricing_intent: 'manual' })
   })
 
   it('blocks repeat clicks while pending and keeps exact payload and inputs after lost response', async () => {

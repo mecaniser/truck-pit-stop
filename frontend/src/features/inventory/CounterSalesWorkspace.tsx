@@ -100,6 +100,7 @@ function DraftSale({ initialPartId, existingSale, onSaved, onCancel }: { initial
   const { appearance } = useTheme()
   const manager = canManage(role)
   const [saleVersion, setSaleVersion] = useState(existingSale?.version ?? null)
+  const [pricingBaseline, setPricingBaseline] = useState(existingSale)
   const [freshSale, setFreshSale] = useState<CounterSale | null>(null)
   const [versionBlocked, setVersionBlocked] = useState(false)
   const [partSearch, setPartSearch] = useState('')
@@ -209,10 +210,17 @@ function DraftSale({ initialPartId, existingSale, onSaved, onCancel }: { initial
     setError(null)
     save.mutate()
   }
+  const savedPolicy = pricingBaseline?.pricing_policy
+  const sameSavedBuyer = pricingBaseline && (customer?.id ?? null) === pricingBaseline.customer_id
+  const pricingNotice = sameSavedBuyer
+    ? savedPolicy?.mode === 'captured' && savedPolicy.snapshot_id
+      ? `New parts use saved ${savedPolicy.parts.source === 'customer' ? 'Account' : 'Shop'} ${savedPolicy.parts.mode} pricing.`
+      : 'New parts use current quoted pricing.'
+    : customer ? `New parts use ${customer.name}’s pricing defaults.` : 'New parts use shop pricing.'
 
   return <div className="db-counter-sales__draft">
     {pricingCommand.dialog}
-    {freshSale && <div className="db-counter-sales__notice"><strong>Saved sale changed · {freshSale.sale_number}</strong><span>{freshSale.buyer_name || 'Walk-in'} · {formatMoney(freshSale.total_amount)}</span>{freshSale.lines.map(line => <span key={line.id}>{line.name} × {line.quantity} · {formatMoney(line.charged_unit_price)}</span>)}<button type="button" disabled={!freshSale.allowed_actions.includes('edit_draft')} onClick={() => { setSaleVersion(freshSale.version); setLines(current => current.map(line => { const saved = freshSale.lines.find(item => item.inventory_id === line.part.id); return { ...line, savedLineId: saved?.id, savedPrice: saved?.price_override_reason ? saved.charged_unit_price : '', savedReason: saved?.price_override_reason || '' } })); setFreshSale(null); setVersionBlocked(false); setError(null) }}>Keep my draft</button><button type="button" onClick={onCancel}>Return to saved sale</button></div>}
+    {freshSale && <div className="db-counter-sales__notice"><strong>Saved sale changed · {freshSale.sale_number}</strong><span>{freshSale.buyer_name || 'Walk-in'} · {formatMoney(freshSale.total_amount)}</span>{freshSale.lines.map(line => <span key={line.id}>{line.name} × {line.quantity} · {formatMoney(line.charged_unit_price)}</span>)}<button type="button" disabled={!freshSale.allowed_actions.includes('edit_draft')} onClick={() => { setSaleVersion(freshSale.version); setPricingBaseline(freshSale); setLines(current => current.map(line => { const saved = freshSale.lines.find(item => item.inventory_id === line.part.id); return { ...line, savedLineId: saved?.id, savedPrice: saved?.price_override_reason ? saved.charged_unit_price : '', savedReason: saved?.price_override_reason || '' } })); setFreshSale(null); setVersionBlocked(false); setError(null) }}>Keep my draft</button><button type="button" onClick={onCancel}>Return to saved sale</button></div>}
 
     <div className="db-counter-sales__workspace-head"><button type="button" disabled={save.isPending} onClick={onCancel}><ArrowLeft aria-hidden="true" />{existingSale ? existingSale.sale_number : 'Parts sales'}</button><div><h1>{existingSale ? 'Edit draft sale' : 'New counter sale'}</h1><p>Choose whole quantities, then record one manual tender at checkout.</p></div></div>
     <fieldset className="db-counter-sales__draft-grid" disabled={save.isPending}>
@@ -228,7 +236,7 @@ function DraftSale({ initialPartId, existingSale, onSaved, onCancel }: { initial
           const maximum = Math.max(1, line.part.available_to_sell_packages ?? line.part.available_packages)
           const quotedPrice = displayedQuote?.lines.find(item => item.inventory_id === line.part.id && (!line.savedLineId || item.sale_line_id === line.savedLineId))?.pricing
           return <article key={line.part.id}>
-            <div><strong>{line.part.name}</strong><small>{line.part.sku} · {line.part.unit_type || 'each'}</small><small>{line.part.physical_on_hand_packages ?? line.part.available_packages} on hand</small>{quotedPrice && <small>{formatMoney(quotedPrice.charged_unit_price)} · {priceSourceLabel(quotedPrice.current_source)}</small>}</div>
+            <div><strong>{line.part.name}</strong><small>{line.part.sku} · {line.part.unit_type || 'each'}</small><small>{line.part.physical_on_hand_packages ?? line.part.available_packages} on hand</small>{quotedPrice && <small>{formatMoney(quotedPrice.charged_unit_price)} · {priceSourceLabel(quotedPrice.current_source, quotedPrice.policy_source)}</small>}</div>
             <QuantityStepper value={line.quantity} min={1} step={1} unitLabel={line.part.unit_type || 'units'} ariaLabel={`Quantity for ${line.part.name}`} size="lg" theme={appearance.mode === 'light' ? 'light' : 'dark'} onChange={(quantity) => setLines((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, quantity: Math.min(maximum, Math.max(1, quantity)) } : item))} />
             {manager && <details><summary>Manager price override</summary>{line.savedLineId && <button type="button" onClick={() => setLines(current => current.map((item, row) => row === index ? { ...item, resetToList: true, overridePrice: '', overrideReason: '' } : item))}>{line.resetToList ? 'Restore saved default selected' : 'Restore saved default'}</button>}<label>Charged unit price<input inputMode="decimal" value={line.overridePrice} onChange={(event) => setLines((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, overridePrice: event.target.value, resetToList: false } : item))} placeholder={line.savedLineId ? 'Keep saved price' : 'Use shop price'} /></label><label>Reason<input value={line.overrideReason} minLength={3} maxLength={500} onChange={(event) => setLines((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, overrideReason: event.target.value } : item))} placeholder="Required when price changes" /></label></details>}
             <button type="button" aria-label={`Remove ${line.part.name}`} onClick={() => setLines((current) => current.filter((_, itemIndex) => itemIndex !== index))}><X aria-hidden="true" /></button>
@@ -240,7 +248,7 @@ function DraftSale({ initialPartId, existingSale, onSaved, onCancel }: { initial
         <label>Existing customer<input value={customerSearch} onChange={(event) => { setCustomerSearch(event.target.value); setCustomer(null) }} placeholder="Optional customer lookup" /></label>
         {!customersQuery.isError && customersQuery.data && !customer && <div className="db-counter-sales__customer-results">{customersQuery.data.map((option) =>
           <button type="button" key={option.id} onClick={() => { setCustomer(option); setCustomerSearch(option.name); setBuyerName(option.name); setBuyerEmail(option.email || ''); setBuyerPhone(option.phone || '') }}><strong>{option.name}</strong><small>{option.email || option.phone || 'Customer record'}</small></button>)}</div>}
-        <p>Anonymous walk-ins are valid. These optional details are saved as receipt snapshots.</p>
+        <p>{pricingNotice}{existingSale && ' Saved prices stay unchanged.'}</p>
         <label>Buyer name<input value={buyerName} onChange={(event) => setBuyerName(event.target.value)} /></label>
         <label>Email<input type="email" value={buyerEmail} onChange={(event) => setBuyerEmail(event.target.value)} /></label>
         <label>Phone<input type="tel" value={buyerPhone} onChange={(event) => setBuyerPhone(event.target.value)} /></label>
@@ -377,7 +385,7 @@ function SaleDetail({ saleId, tenders, onBack }: { saleId: string; tenders: Coun
       <main>
         <section className="db-counter-sales__lines">
           <div><h2>Sale lines</h2><span><strong>{sale.lines.length}</strong>{sale.allowed_actions.includes('edit_draft') && <button type="button" onClick={() => setEditing(true)}>Edit draft</button>}</span></div>
-          {sale.lines.map((line) => <article key={line.id}><div><strong>{line.name}</strong><small>{line.sku} · {line.quantity} {line.unit_type || 'units'} × {formatMoney(line.charged_unit_price)}</small>{line.pricing && <small>{priceSourceLabel(line.pricing.current_source)}</small>}{line.price_override_reason && <small>Manager override · {line.price_override_reason}</small>}</div><div><strong>{formatMoney(line.total_amount)}</strong><small>{line.physical_on_hand} on hand</small></div></article>)}
+          {sale.lines.map((line) => <article key={line.id}><div><strong>{line.name}</strong><small>{line.sku} · {line.quantity} {line.unit_type || 'units'} × {formatMoney(line.charged_unit_price)}</small>{line.pricing && <small>{priceSourceLabel(line.pricing.current_source, line.pricing.policy_source)}</small>}{line.price_override_reason && <small>Manager override · {line.price_override_reason}</small>}</div><div><strong>{formatMoney(line.total_amount)}</strong><small>{line.physical_on_hand} on hand</small></div></article>)}
         </section>
         {!!sale.payment_attempts.length && <section className="db-counter-sales__attempts"><h2>Tender record</h2>{sale.payment_attempts.map((attempt) => <article key={attempt.id}><span><strong>{COUNTER_SALE_TENDER_LABELS[attempt.tender]}</strong><small>{attempt.reference || 'No external reference'} · {new Date(attempt.created_at).toLocaleString()}</small></span><span><em data-status={attempt.state}>recorded</em><strong>{formatMoney(attempt.amount)}</strong></span></article>)}</section>}
         {!!sale.returns.length && <section className="db-counter-sales__attempts"><h2>Returns</h2>{sale.returns.map((record) => <article key={record.id}><span><strong>{record.lines.reduce((sum, line) => sum + line.quantity, 0)} returned units</strong><small>{record.refund_reference || 'No external refund reference'} · {new Date(record.created_at).toLocaleString()}</small></span><span><em data-status={record.state}>recorded</em><strong>{formatMoney(record.refund_amount)}</strong></span></article>)}</section>}
