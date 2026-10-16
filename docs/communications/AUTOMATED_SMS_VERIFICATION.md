@@ -1,7 +1,7 @@
 # DB-COMMS-003 verification
 
 Owner: Backend & Integrations. Branch: `codex/automated-sms-recovery`, stacked on
-shared inbox PR562. Deployment remains HOLD until authorized real SMS acceptance.
+shared inbox PR562. Draft PR563: https://github.com/mecaniser/truck-pit-stop/pull/563. Deployment remains HOLD until authorized real SMS acceptance.
 
 ## Local evidence — 2026-10-16
 
@@ -52,3 +52,7 @@ explicit deployment approval, staged migration/worker/Beat enablement. Recovery
 is false by default; deploying without enablement intentionally holds automated
 intents pending. Partial-balance reminder copy is conservatively rejected for
 review rather than sending a misleading total. See `SMS_RECOVERY_RUNBOOK.md`.
+
+The required Quality gates workflow is dispatched on this branch. Its final
+exact-revision run and job conclusions are recorded in the PR description, which
+can be updated without changing the tested revision. No merge/deploy is authorized.
