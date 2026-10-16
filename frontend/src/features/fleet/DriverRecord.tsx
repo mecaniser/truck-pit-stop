@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import { Popover, PopoverButton, PopoverPanel } from '@headlessui/react'
+import { Popover, PopoverBackdrop, PopoverButton, PopoverPanel, Portal } from '@headlessui/react'
 import { useQuery } from '@tanstack/react-query'
 import { Clock3, RotateCcw, X } from 'lucide-react'
 import api from '@/lib/api'
@@ -24,14 +24,18 @@ export default function DriverRecord({ truck }: { truck: DriverTruck }) {
   const description = score == null ? 'Safety score unavailable' : `Safety score ${number(score)}`
   const label = `Driver record for ${name}. ${description}${summary?.safety_band_label ? `, ${summary.safety_band_label}` : ''}${summary?.stale ? ', stale capture' : ''}`
   return <Popover as="span" className="driver-record" onClick={event => event.stopPropagation()} onKeyDown={event => event.stopPropagation()}>
-    <PopoverButton className="driver-record-trigger" aria-label={label} title={label}>
-      <SafetyDashes band={band} /><span className="driver-record-score">{score == null ? '—' : number(score)}</span>
-      {summary?.stale && <Clock3 size={12} aria-hidden="true" />}
-    </PopoverButton>
-    <PopoverPanel anchor={{ to: 'bottom start', gap: 8, padding: 12 }} portal focus className="driver-record-panel" role="dialog" aria-label={`Driver record for ${name}`}>
-      <header className="driver-record-heading"><div><small>Motive · Driver record</small><h2>{name}</h2></div><PopoverButton className="driver-record-close" aria-label="Close driver record"><X size={18} aria-hidden="true" /></PopoverButton></header>
-      <DriverRecordContent truck={truck} />
-    </PopoverPanel>
+    {({ close }) => <>
+      <PopoverButton className="driver-record-trigger" aria-label={label} title={label}>
+        <SafetyDashes band={band} /><span className="driver-record-score">{score == null ? '—' : number(score)}</span>
+        {summary?.stale && <Clock3 size={12} aria-hidden="true" />}
+      </PopoverButton>
+      {/* Consume dismissal clicks before they can reach the truck beneath the portal. */}
+      <Portal><PopoverBackdrop className="driver-record-backdrop" onMouseDown={event => event.preventDefault()} onClick={event => { event.stopPropagation(); close() }} /></Portal>
+      <PopoverPanel anchor={{ to: 'bottom start', gap: 8, padding: 12 }} portal focus className="driver-record-panel" role="dialog" aria-label={`Driver record for ${name}`}>
+        <header className="driver-record-heading"><div><small>Motive · Driver record</small><h2>{name}</h2></div><button type="button" className="driver-record-close" aria-label="Close driver record" onMouseDown={event => event.preventDefault()} onClick={event => { event.stopPropagation(); close() }}><X size={18} aria-hidden="true" /></button></header>
+        <DriverRecordContent truck={truck} />
+      </PopoverPanel>
+    </>}
   </Popover>
 }
 
