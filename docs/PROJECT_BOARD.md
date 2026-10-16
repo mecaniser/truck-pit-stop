@@ -1939,6 +1939,8 @@ Latest user refinement: removed the visible route legend while retaining blue/gr
 
 ## DB-133 customer pricing delivery history
 
+> **DB-133 / C1 INTEGRATION VERIFIED (2026-10-16 UTC), Backend & Integrations accountable:** Main d5cb6628 integrated as4cbdc3e8 after preview upgrade176. Nine migration paths, ten unchanged preview table fingerprints, eleven merged-model PostgreSQL tests and actual signed-in pricing-panel reload pass. Fresh production175contact v3 baseline captured read-only. Final exact-head CI and production acceptance remain; C1 stays Review.
+
 > **DB-133 / C1 MIGRATION INTEGRATION (2026-10-16 05:00 UTC), Backend & Integrations accountable:** PR549/d5cb6628 merged with a separate customer-contact revision175. Preserve both applied175 migrations and join them with no-op176; disposable retention tests and independent delta review precede preview alignment. Current preview backed up, with all C1 QA evidence retained. Run38850524237 is cancelled, not a pass; fresh final-head CI, deployment and production acceptance remain. C1 stays Review; M1 preparation only.
 
 > **DB-133 / C1 MAIN INTEGRATION (2026-10-16 UTC):** PR548 landed while PR550 CI was running. Only the shared board conflicted; both delivery histories are retained and C1 application source is unchanged. Integrated main e3ff99e0; fresh exact-head CI replaces the incomplete prior run. No failed or cancelled run is counted as passing.

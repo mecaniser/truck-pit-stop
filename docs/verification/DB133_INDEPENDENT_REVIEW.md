@@ -582,3 +582,40 @@ actual disposable SQL selector/capture cases in
 post comparisons, wrong pre/post rejection and global pre-cutoff adoption review
 all pass. Those database captures are owner-executed, not reviewer-executed.
 Fresh production v3 baseline and post176 comparison remain release requirements.
+
+
+## Final integrated local QA/Security GO — 2026-10-16 05:13 UTC
+
+**GO on exact integrated application candidate
+`4cbdc3e84ee0ebb04fdb675f389367f16901c39f`.** The prior local QA/Security gate
+extends to this bounded migration/main integration. Independent manifest comparison
+finds29/30 original backend entries unchanged and all6 final UI entries unchanged.
+The sole backend difference is Customer's JSON/JSONB imports plus main's nullable
+contact snapshot. An AST comparison removing only that new field proves the entire
+existing Customer class, including all C1 columns/constraints/relationships,
+unchanged. The two added migration identities and one-head graph were verified
+above. C1 financial logic is unchanged; separately released main behavior remains
+subject to the combined protected CI gate.
+
+Independently ran the connection-free comparison of Root's preserved-preview
+before/after receipts: pricing175→176, all10 normalized table hashes identical,
+changed_tables[]. Root then activated the merged Customer model and reports direct
+and proxied readiness plus an actual signed-in reload of customer pricing showing
+145/hr Shop and Catalog Shop with no error. Reviewed the owner's exact-head
+PostgreSQL rerun: **11/11 pass**,9warnings,3.38s on disposable schema176; evidence
+`/tmp/db133-merge-evidence/merged-source-postgres-result.json` and matching log.
+This reviewer did not perform the preview upgrade or operate its browser.
+
+Explicit read-only production-capture GO also remains valid for frozen v3 verifier
+`03eea7a2f0dccd3a0f0b4100483112c1d0621fa9f0756b55160e19eac1eeee73`.
+Independently validated the fresh private0600 v3 pre receipt at cutoff
+`2026-10-16T05:12:44.974006+00:00`: exact contact175, contact column present,
+all C1 columns/event table absent, read-only repeatable-read, readiness ready and
+all7 cohorts including1 counter header/line. Canonical digest:
+`717b8646238f1d36d18c075eaf610f2dc99f6543813eb0ac0330c59e01c018de`.
+This v3 baseline supersedes prior174/v2 release-comparison inputs. Final deployment
+must prove exact merged176 with both schemas, compare against this fixed cohort,
+review any real concurrent business changes, and complete production Light/Night
+desktop/mobile acceptance. Earlier canceled/incomplete CI runs are not passes;
+fresh protected CI on the final integrated head is still mandatory. No production
+release/Done claim follows from this local integration GO.

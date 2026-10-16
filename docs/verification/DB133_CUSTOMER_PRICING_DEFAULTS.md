@@ -1,6 +1,6 @@
 # DB133 / C1 customer pricing defaults
 
-Accountable: Backend & Integrations. Status: **Local verification complete; independent final gate and protected CI**. Selected after completed P1 in the [parity tracker](../ETS_PARITY_TRACKER.md). Branch: `codex/customer-pricing-defaults`, from P1 release-record195c7f3a (application70530bda).
+Accountable: Backend & Integrations. Status: **Local workflow and integration checks complete; final protected CI before release**. Selected after completed P1 in the [parity tracker](../ETS_PARITY_TRACKER.md). Branch: `codex/customer-pricing-defaults`, from P1 release-record195c7f3a (application70530bda).
 
 ## Acceptance before implementation
 
@@ -138,3 +138,9 @@ The preserved preview remains on175_customer_pricing_defaults with the old Custo
 Required before release: disposable upgrade/retention proof from174 and each175 branch, independent review, normal preview upgrade before new model activation, fresh final-head CI, and a fresh production baseline after PR549 deployment. Existing v2 baseline remains historical evidence; it is not silently rewritten or reused as if taken after549. No C1 production agreement, backfill or financial mutation has been made.
 
 Preview integration completed after independent GO: normal upgrade175pricing→176 applied the missing contact branch before activating the incoming Customer model. Read-only, repeatable-read before/after evidence shows all10 normalized table fingerprints identical: customers631, repair_orders2817, labor3840, parts_usage2894, inventory1334, invoices2056, counter_sales0, counter_sale_lines0, account_pricing_events10, parts_operation_idempotency39. No data cleanup, stamp or downgrade. Independent nine-path disposable migration proof and the reviewed v3 production-capture helper are accepted; final source integration and exact-head gates follow.
+
+Integrated source4cbdc3e8 includes main d5cb6628. The Customer conflict retains both import sets; only incoming nullable contact JSON is added to the accepted C1 model. Signed-in preview reload and Business settings pricing recheck pass after model activation:145/hr Shop, Catalog Shop, Edit pricing/History present. Frontend39898 remains bound to this checkout with proxy8001; backend image/mount/database unchanged, schema176, direct/proxied readiness passes. No browser draft or data mutation.
+
+Fresh production baseline v3 captured after PR549 Web582d69ad SUCCESS and public exactd5cb6628/readiness200. Cutoff2026-10-16T05:12:44.974006+00:00; exact175 contact schema, C1 fields/events absent. Seven fixed cohorts include one counter header and line. Sanitized [v3 summary](db133/production-before-v3-summary.json); full opaque-row manifest retained privately with0600 permissions. Historical v2 summary is superseded for this release, not deleted. Post-deploy comparison must use this exact v3 cutoff and manifest.
+
+Merged-model PostgreSQL recheck:11/11 passed on4cbdc3e8 using disposable schema176. All29 unaffected C1 backend files and all6 UI files retain accepted hashes; Customer differs only by the incoming contact field/imports. No broader retest was required for this integration delta; protected full suites still gate the final pushed revision.
