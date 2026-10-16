@@ -16,6 +16,8 @@
 .db-parts-pricing :is(input, textarea, select) { min-width: 0; width: 100%; min-height: 44px; padding: 6px 8px; border: 1px solid var(--workspace-border, #cbd5df); border-radius: 6px; background: var(--surface-overlay, #fff) !important; color: var(--workspace-text, #14243a); font-size: 16px; color-scheme: inherit; }
 .db-parts-pricing [role='alert'] { color: color-mix(in srgb, var(--semantic-danger-500, #ef4444) 40%, var(--workspace-text, #14243a)); }
 .db-parts-pricing__source { display: inline-block; color: var(--workspace-muted, #5b6d82); font-size: 11px; white-space: nowrap; }
+/* The repair-order table owns its surface independently of the workspace theme. */
+.db-part-unit-price .db-parts-pricing__source { color: inherit; }
 @media (max-width: 420px) { .db-parts-pricing__fields { grid-template-columns: minmax(0, 1fr); } }
 .db-parts-pricing button:not([class]) { display: inline-flex; align-items: center; justify-content: center; gap: 5px; padding: 6px 10px; border: 1px solid var(--workspace-border, #cbd5df); border-radius: 6px; background: var(--workspace-raised, transparent); color: inherit; }
 .db-parts-pricing button:disabled { opacity: .5; cursor: not-allowed; }
@@ -51,3 +53,6 @@
 .db-parts-pricing .db-slide-panel-form__header button { min-width: 44px; }
 
 .db-parts-pricing__policy-summary { display: block; white-space: normal; overflow-wrap: anywhere; }
+
+.db-parts-pricing__feedback { overflow-wrap: anywhere; }
+.db-parts-pricing__feedback:focus { outline: 2px solid var(--workspace-border, #cbd5df); outline-offset: 3px; border-radius: 4px; }

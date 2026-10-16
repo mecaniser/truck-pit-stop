@@ -1,6 +1,6 @@
 # DB132 / P1 parts pricing matrix
 
-Accountable: Backend & Integrations. State: **Review — corrected source independently approved; fresh protected CI and release pending**. Selected second in the [parity tracker](../ETS_PARITY_TRACKER.md), after R1 production closure.
+Accountable: Backend & Integrations. State: **Production acceptance — pricing deployed; mobile preview feedback correction pending**. Selected second in the [parity tracker](../ETS_PARITY_TRACKER.md), after R1 production closure.
 
 ## Current result
 
@@ -8,7 +8,7 @@ The final full-suite CI return was corrected and independently re-reviewed. Loca
 
 Actual local Light/Night desktop and browser-emulated mobile checks cover matrix configuration, saved-price retention, part policies, manual/List/Stock edits, bundle attachment, create-once service recovery and readable fleet quantity controls. Six synthetic orders were soft-deleted; stock, policies, default and service availability returned to baseline. One zero-stock ad-hoc placeholder remains as recoverable local evidence. Restricted-role and counter-sale journeys have automated coverage; they are not claimed as authenticated UI passes.
 
-**Still required:** all six CI contexts on the final revision, protected merge, migration174 and exact service deployment, then authenticated production desktop/mobile acceptance. Production pricing remains inactive unless a shop owner explicitly configures it.
+PR542 has passed all six CI contexts and is merged/deployed with migration174. **Still required:** protected CI, merge and deployment of the frontend feedback correction, then final authenticated production desktop/mobile acceptance. Production pricing remains inactive unless a shop owner explicitly configures it.
 
 ## Scope and acceptance
 [Architecture contract](../contracts/db132-parts-pricing-matrix.md) defines acceptance, writer coverage, privacy, tenant/concurrency boundaries and production verification limits. Reuse existing inventory settings and price controls; preserve compact desktop and complete mobile journeys. No existing prices, inventory valuation, financial records or shop defaults change merely from deployment.
@@ -148,3 +148,25 @@ Runtime rechecked after code reload: frontendPID52183 serves the implementation 
 ## Fresh independent correction gate — 2026-10-15
 
 Independent reviewer passed339 affected backend tests,12 real PostgreSQL boundary/concurrency tests and3 disposable HTTP probes for manual/Stock intent and invalid-fingerprint rejection despite shortage consent. All six file hashes match the owner manifest before and after review. Findings14/15 closed; local QA/Security GO restored. Fresh six-context CI on the next committed revision is mandatory. Frontend and existing browser acceptance are unchanged by this backend-only correction.
+
+
+## Protected merge — 2026-10-16 00:13:58 UTC
+
+PR542 merged as53eb98031d9247629e8300f14d0447c6d8b0d046. Its tree exactly matches final060bba1bd9842404e56c6225b3e0196a21e5301f. Run38825768055 passed all six required contexts: migration graph, frontend lint/build/207critical tests,1693 full frontend tests,530 critical backend/11skipped,3319 full backend/181skipped and5 browser smoke cases. GitHub merge state was CLEAN; no bypass used. Local CI log /tmp/db132-corrected-ci.log. Production release acceptance is still pending.
+
+
+## Production UI return — 2026-10-16
+
+Web409f8937-8151-4b30-8f3d-bbbceec46252 and Workerc9a9bf0c-467d-445e-887b-3e9d3eb97648 are SUCCESS at53eb9803; public build matches and schema174 is present. Financial fingerprints for1612inventory,2934saved part usages and2424invoices exactly match the fixed baseline. All pricing tables are empty, no default or inventory policy configured; synthetic zero order remains deleted and unchanged. Production matrix sample previews20→40,25→37.50,100→130 pass without saving.
+
+Actual390×844 Light UI rejects band gap26 but places the alert above the visible scroller (top−145,bottom−106). Screenshot retained locally /tmp/db132-prod-light-390-validation.png. Returning this existing-contract UI feedback defect to Frontend before completion. Draft is retained and no invalid save occurred, but rejection feedback must be visible. Initial route loading during the version switch resolved on fresh navigation; source/build investigation found no persistent defect or module cycles. No fix claimed for that transient observation.
+
+Branch switch preflight: same frontendPID52183/source5174 and backendbind8001; preserved postgres/truckpitstop_ets_workflow_parity_20261012/schema174, proxied readiness healthy. Branch `codex/parts-pricing-visible-validation` at53eb9803 contains only release documentation edits before the UI owner starts.
+
+Successful sample feedback has the same visibility issue at320×740: after Preview, Proposed$130.00 sits at top728/bottom755, partially below the viewport. Correction acceptance includes fully visible successful results and invalid feedback. Part-policy read/draft Cancel and Escape pass at1280desktop,390/320portrait and740landscape with footer inside viewport. All policy values remain unchanged.
+
+## Feedback correction — local acceptance
+
+Frontend & UX completed the existing-contract correction on `codex/parts-pricing-visible-validation`. Preview feedback is next to the action; responses receive focus without page scrolling and reveal their full bounds inside the existing panel scroller. Matrix/policy save errors share the same behavior. Repeated identical errors reveal again without clearing the draft. Saved-price labels inherit their repair-order cell's text color so they remain readable on its existing white surface in Night Shop.
+
+Owner validation: 42 parts-pricing tests across four files, application TypeScript, changed-file ESLint and diff check passed. Actual local signed-in checks passed: Night 320×740 three-band success (feedback top683/bottom732), repeated invalid gap with draft retained, landscape740×400 success (top343/bottom392), Light1280×900 result and390×844 rejection/recovery, named Close and Escape returning focus to Catalogue maintenance. Night desktop retained-price label is rgb(75,85,99), matching its cell. Screenshots retained in `/tmp/db132-local-{night-320-feedback,night-landscape-feedback,light-desktop-feedback,light-390-error,night-desktop-saved-price}.png`. Local Night appearance restored; all matrix drafts were discarded and no pricing configuration or order values changed. Protected CI and production acceptance of this correction remain required.
